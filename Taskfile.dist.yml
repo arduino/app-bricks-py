@@ -1,0 +1,168 @@
+version: "3"
+
+vars:
+  PYTHON_VERSION_MIN: "3.13"
+
+tasks:
+  init:
+    desc: Setup local env
+    cmds:
+      - task: check:python:version
+      - task: install:deps
+
+  init:ci:
+    desc: Initialize CI environment
+    deps:
+      - init
+    cmds:
+      - pip install reuse
+
+  check:python:version:
+    desc: Check if Python version is at least {{.PYTHON_VERSION_MIN}}
+    cmds:
+      - |
+        check_version() {
+          python_alias=$1
+          python_version=$($python_alias --version 2>&1 | awk '{print $2}')
+          required_version="{{.PYTHON_VERSION_MIN}}"
+          if [ "$(printf '%s\n' "$required_version" "$python_version" | sort -V | head -n1)" != "$required_version" ]; then
+            echo "$python_alias version must be at least $required_version. Current version: $python_version"
+            exit 1
+          fi
+        }
+
+        check_version python
+
+  install:deps:
+    desc: Install project dependencies
+    cmds:
+      - sudo apt install libasound2-dev
+      - pip install build
+      - pip install -e ".[dev]"
+
+  doc:
+    desc: Generate documentation
+    cmds:
+      - python -m docs_generator.runner
+
+  test:
+    desc: Run all tests
+    cmds:
+      - pytest -vs ./tests
+
+  test:*:
+    desc: Run tests for a specific folder
+    cmds:
+      - pytest -vs ./tests/{{index .MATCH 0}}
+
+  lint:
+    desc: Run linters
+    cmds:
+      - ruff check --fix .
+
+  fmt:
+    desc: Format code
+    cmds:
+      - ruff format
+  
+  build-dev:
+    desc: Build a development package
+    cmds:
+      - rm -rf dist
+      - task doc
+      - python -m build --config-setting "build_type=dev" .
+
+  build:
+    desc: Build a production package
+    cmds:
+      - rm -rf dist
+      - task doc
+      - python -m build .
+
+  license:
+    desc: Update license headers and files
+    cmds:
+      - |
+        git ls-files |
+        grep -Ev "(^|/)(docs|examples-internal|tools)/|\.(md|txt|json|yml|yaml|toml|gitignore|gitmodules|in|ini|eim)$" |
+        sed 's/ /\\ /g' |
+        xargs reuse annotate -r --skip-unrecognized --copyright-prefix 'spdx-string-c' --copyright 'ARDUINO SA <http://www.arduino.cc>' --year '2025' --license 'MPL-2.0'
+      - reuse download --all
+      - |
+        licenses_dir="LICENSES"
+        if [ -d "$licenses_dir" ]; then
+          count=$(find "$licenses_dir" -type f | wc -l)
+          if [ "$count" -gt 1 ]; then
+            for f in "$licenses_dir"/*; do
+              base=$(basename "$f")
+              mv "$f" "LICENSE-${base}"
+            done
+          elif [ "$count" -eq 1 ]; then
+            f=$(find "$licenses_dir" -type f | head -n1)
+            mv "$f" LICENSE.txt
+          fi
+          rmdir "$licenses_dir"
+        fi
+
+  sbom:generate:internal:
+    internal: true
+    cmds:
+      - |
+        if [ -z "{{.IMAGE}}" ] || [ -z "{{.TAG}}" ] || [ -z "{{.FILENAME}}" ]; then
+          echo "Error: IMAGE, TAG, and FILENAME must be set."
+          exit 1
+        fi
+
+        docker sbom "{{.IMAGE}}:{{.TAG}}" --output "{{.FILENAME}}" --format spdx-json
+
+  sbom:update:internal:
+    internal: true
+    cmds:
+      - task: sbom:generate:internal
+        vars:
+          IMAGE: '{{.IMAGE}}'
+          TAG: '{{.TAG}}'
+          FILENAME: '{{.DIR}}/sbom_new.json'
+      - |
+        NEW_SBOM="{{.DIR}}/sbom_new.json"
+        TMP_FILE="{{.DIR}}/sbom_tmp.json"
+        CURRENT_SBOM="{{.DIR}}/sbom.spdx.json"
+
+        jq --indent 1 --argfile current "$CURRENT_SBOM" '
+          .packages |= map(
+            . as $outer
+            | if $outer.licenseDeclared == "NONE" or $outer.licenseDeclared == "NOASSERTION" then
+                (
+                 [$current.packages[]
+                    | select(.name == $outer.name and .versionInfo == $outer.versionInfo)
+                  ] | first
+                ) as $matched
+                | if $matched != null and $matched.licenseDeclared != null then
+                    $outer 
+                    + {licenseDeclared: $matched.licenseDeclared} 
+                    + (if $matched.comment != null then {comment: $matched.comment} else {} end)
+                  else
+                    $outer
+                  end
+              else
+                $outer
+              end
+          )
+        ' "$NEW_SBOM" > "$TMP_FILE"
+
+        cp "$TMP_FILE" "$CURRENT_SBOM"
+        rm -f "$NEW_SBOM" "$TMP_FILE"
+
+  sbom:
+    desc: "Update SBOM files for python-apps-base and ei-models-runner containers. Parameters: BRICKS_TAG and EI_TAG."
+    cmds:
+      - task: sbom:update:internal
+        vars:
+          IMAGE: 'public.ecr.aws/arduino/app-bricks/python-apps-base'
+          TAG: '{{.BRICKS_TAG}}'
+          DIR: './containers/python-apps-base'
+      - task: sbom:update:internal
+        vars:
+          IMAGE: 'public.ecr.aws/arduino/app-bricks/ei-models-runner'
+          TAG: '{{.EI_TAG}}'
+          DIR: './containers/ei-models-runner'

@@ -1,0 +1,135 @@
+name: Calculate Docker Image Size
+
+on:
+  workflow_dispatch:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      PYTHON_VERSION: '3.13'
+      TASKFILE_VERSION: 'v3.44.0'
+      TASKFILE_PATH: '/home/runner/go/bin'
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issue_comment' && github.event.comment.body == '/calculate-size' && github.event.issue.pull_request)
+
+    services:
+      registry:
+        image: registry:3
+        ports:
+          - 5000:5000
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      
+      - name: Get PR Information
+        id: pr_info
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "Searching for PR from branch '${{ github.ref_name }}'..."
+            PR_NUMBER=$(gh pr list --state open --head "${{ github.ref_name }}" --json number --jq '.[0].number // empty')
+          else
+            # For issue_comment, the PR number is in the event context
+            PR_NUMBER=${{ github.event.issue.number }}
+          fi
+
+          if [ -z "$PR_NUMBER" ]; then
+            echo "Could not find an associated open pull request."
+          else
+            echo "Found PR #$PR_NUMBER"
+          fi
+          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+
+      - name: Checkout PR Branch (for comment trigger)
+        if: github.event_name == 'issue_comment'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr checkout ${{ steps.pr_info.outputs.pr_number }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: 'pyproject.toml'
+
+      - name: Install and build library
+        run: |
+          which task || curl -sSfL https://taskfile.dev/install.sh | sh -s -- -b ${{ env.TASKFILE_PATH }} ${{ env.TASKFILE_VERSION }}
+          export PATH="${{ env.TASKFILE_PATH }}:$PATH"
+          task init:ci
+          task build-dev
+          cp ./dist/arduino*.whl ./containers/python-apps-base/
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Setup Docker buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: network=host
+
+      - name: Build the base Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./containers/python-base
+          file: ./containers/python-base/Dockerfile
+          tags: localhost:5000/app-bricks/python-base:latest
+          platforms: linux/arm64
+          push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build the apps base Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./containers/python-apps-base
+          file: ./containers/python-apps-base/Dockerfile
+          tags: localhost:5000/app-bricks/python-apps-base:latest
+          platforms: linux/arm64
+          push: true
+          build-args: |
+            REGISTRY=localhost:5000/
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      
+      - name: Pull images for inspection
+        run: |
+          docker image pull --platform linux/arm64 localhost:5000/app-bricks/python-base:latest
+          docker image pull --platform linux/arm64 localhost:5000/app-bricks/python-apps-base:latest
+
+      - name: Add image sizes to Job Summary
+        run: |
+          echo "## Docker Image Sizes" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Image | Size |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|------|" >> $GITHUB_STEP_SUMMARY
+          echo "| app-bricks/python-base | $(docker images 'localhost:5000/app-bricks/python-base:latest' --format '{{.Size}}') |" >> $GITHUB_STEP_SUMMARY
+          echo "| app-bricks/python-apps-base | $(docker images 'localhost:5000/app-bricks/python-apps-base:latest' --format '{{.Size}}') |" >> $GITHUB_STEP_SUMMARY
+
+      - name: Comment on PR with image sizes
+        if: steps.pr_info.outputs.pr_number != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SIZE1=$(docker images 'localhost:5000/app-bricks/python-base:latest' --format '{{.Size}}')
+          SIZE2=$(docker images 'localhost:5000/app-bricks/python-apps-base:latest' --format '{{.Size}}')
+          gh pr comment ${{ steps.pr_info.outputs.pr_number }} --body-file - <<EOF
+          ## Docker Image Sizes
+
+          | Image | Size |
+          |-------|------|
+          | app-bricks/python-base | $SIZE1 |
+          | app-bricks/python-apps-base | $SIZE2 |
+          EOF

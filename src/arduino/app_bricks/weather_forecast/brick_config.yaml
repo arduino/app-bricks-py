@@ -1,0 +1,4 @@
+id: arduino:weather_forecast
+name: Weather Forecast
+description: "Online weather forecast module for Arduino using open-meteo.com geolocation and weather APIs. Requires an internet connection."
+category: miscellaneous

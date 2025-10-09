@@ -1,0 +1,5 @@
+services:
+  models-runner:
+    image: ${DOCKER_REGISTRY_BASE:-public.ecr.aws/arduino/}app-bricks/ei-models-runner:${APPSLAB_VERSION:-dev-latest}
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${BIND_PORT:-8100}:8100"

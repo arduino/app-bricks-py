@@ -1,0 +1,11 @@
+id: arduino:visual_anomaly_detection
+name: Visual Anomaly Detection
+description: |
+  Brick for visual anomaly detection using a pre-trained model. It processes images to identify unusual patterns and returns detected anomalies with bounding boxes. 
+  Supports pre-trained models provided by the framework or custom anomaly detection models trained on the Edge Impulse platform. 
+category: image
+requires_container: true
+requires_model: true
+model: concrete-crack-anomaly-detection
+model_configuration_variables:
+  - EI_V_ANOMALY_DETECTION_MODEL

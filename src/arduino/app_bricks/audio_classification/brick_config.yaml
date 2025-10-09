@@ -1,0 +1,11 @@
+id: arduino:audio_classification
+name: Audio Classification
+description: |
+  Brick for audio classification using a pre-trained model. It processes audio input to classify different sounds.
+  Brick is designed to work with pre-trained models provided by framework or with custom audio classification models trained on Edge Impulse platform.
+category: audio
+requires_container: true
+requires_model: true
+model: glass-breaking
+model_configuration_variables:
+  - EI_AUDIO_CLASSIFICATION_MODEL

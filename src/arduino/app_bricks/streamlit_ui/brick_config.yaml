@@ -1,0 +1,8 @@
+id: arduino:streamlit_ui
+name: WebUI - Streamlit
+description: A simplified user interface based on Streamlit and Python.
+category: ui
+requires_display: webview
+
+ports:
+  - 7000

@@ -1,0 +1,4 @@
+id: arduino:air_quality_monitoring
+name: Air Quality Monitoring
+module_description: "Online air quality monitoring module for Arduino using aqicn.org. Requires an internet connection."
+category: miscellaneous

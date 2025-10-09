@@ -1,0 +1,5 @@
+id: arduino:dbstorage_tsstore
+name: Database - Time Series
+description: "Simplified time series database storage layer for Arduino sensor samples built on top of InfluxDB."
+requires_container: true
+category: storage

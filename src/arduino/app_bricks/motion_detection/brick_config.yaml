@@ -1,0 +1,11 @@
+id: arduino:motion_detection
+name: Motion detection
+description: |
+  This Brick is designed for motion detection and recognition, leveraging pre-trained models.
+  It takes input from accelerometer sensors to identify various motion patterns.
+  You can use it with pre-trained models provided by the framework or with your custom motion classification models trained on the Edge Impulse platform.
+requires_container: true
+requires_model: true
+model: updown-wave-motion-detection
+model_configuration_variables:
+  - EI_MOTION_DETECTION_MODEL

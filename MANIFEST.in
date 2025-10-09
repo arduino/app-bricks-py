@@ -1,0 +1,5 @@
+prune tests
+prune design
+prune internal
+prune .github
+prune docs_generator

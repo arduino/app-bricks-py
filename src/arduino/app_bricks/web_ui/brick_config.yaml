@@ -1,0 +1,8 @@
+id: arduino:web_ui
+name: WebUI - HTML
+description: A user interface based on HTML and JavaScript that can rely on additional APIs and a WebSocket exposed by a web server.
+category: ui
+requires_display: webview
+
+ports:
+  - 7000

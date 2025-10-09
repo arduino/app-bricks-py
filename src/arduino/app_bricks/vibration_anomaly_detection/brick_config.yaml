@@ -1,0 +1,11 @@
+id: arduino:vibration_anomaly_detection
+name: Vibration Anomaly detection
+description: |
+  This Brick is designed for vibration anomaly detection and recognition, leveraging pre-trained models.
+  It takes input from sensors (accelerometer) to identify possible anomalies based on vibration patterns.
+  You can use it with pre-trained models provided by the framework or with your own custom anomaly detections models trained on the Edge Impulse platform.
+requires_container: true
+requires_model: true
+model: fan-anomaly-detection
+model_configuration_variables:
+  - EI_VIBRATION_ANOMALY_DETECTION_MODEL

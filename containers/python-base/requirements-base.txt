@@ -1,0 +1,12 @@
+uv
+pandas==2.3.2
+pillow
+opencv-python-headless
+pyyaml
+requests
+pyalsaaudio==0.11.0
+pyarrow==20.0.0
+streamlit
+pyzbar
+cryptography
+pyaudio

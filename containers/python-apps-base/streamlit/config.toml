@@ -1,0 +1,19 @@
+[theme]
+
+base = "light"
+
+primaryColor = "#008184"
+
+backgroundColor = "#DAE3E3"
+
+secondaryBackgroundColor = "#ECF1F1"
+
+textColor = "#2C353A"
+
+font = "Roboto Mono, monospace"
+
+baseRadius = "8px"
+
+buttonRadius = "8px"
+
+baseFontSize = 12

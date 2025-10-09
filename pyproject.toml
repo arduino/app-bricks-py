@@ -1,0 +1,159 @@
+[build-system]
+requires = ["setuptools>=77,<81", "wheel", "setuptools_scm>=8", "docstring_parser>=0.16", "msgpack>=1.0.0", "watchdog", "requests", "Pillow", "numpy"]
+build-backend = "builder"
+backend-path = ["src/arduino/app_tools"]
+
+[project]
+name = "arduino_app_bricks"
+dynamic = ["version"]
+authors = [
+  { name="Marco Colombo", email="m.colombo@arduino.cc" },
+  { name="Roberto Gazia", email="r.gazia@arduino.cc" },
+]
+description = "Arduino App Bricks for Apps Lab"
+readme = "README.md"
+requires-python = ">=3.13"
+license = "MPL-2.0"
+license-files = ["LICENSE"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "pyyaml",
+    "requests",
+    "Pillow",
+    "msgpack",
+]
+
+[project.optional-dependencies]
+dev = [
+    "setuptools",
+    "build",
+    "pytest",
+    "ruff",
+    "docstring_parser>=0.16",
+    "arduino_app_bricks[all]",
+]
+dbstorage_influx = [
+    "influxdb_client>=1.48.0",
+]
+mqtt = [
+    "paho_mqtt>=2.1.0",
+]
+folderwatcher = [
+    "watchdog>=6.0.0",
+]
+usb_camera = [
+    "opencv-python-headless>=4.10.0",
+]
+microphone = [
+    "pyalsaaudio==0.11.0; sys_platform == 'linux'",
+    "numpy",
+]
+web_ui = [
+    "fastapi",
+    "fastapi_socketio",
+    "uvicorn[standard]",
+    "cryptography",
+]
+streamlit_ui = [
+    "streamlit",
+]
+mood_detector = [
+    "nltk",
+]
+stream = [
+    "websockets",
+]
+arduino_cloud = [
+    "arduino-iot-cloud",
+]
+cloud_llm = [
+    "langchain-core >=0.3.0, <0.4.0",
+    "langchain-anthropic >=0.3.0, <0.4.0",
+    "langchain-openai >=0.3.0, <0.4.0",
+    "langchain-google-genai >=2.1.0, <2.2.0",
+]
+
+all = [
+    "arduino_app_bricks[dbstorage_influx]",
+    "arduino_app_bricks[mqtt]",
+    "arduino_app_bricks[folderwatcher]",
+    "arduino_app_bricks[usb_camera]",
+    "arduino_app_bricks[microphone]",
+    "arduino_app_bricks[web_ui]",
+    "arduino_app_bricks[streamlit_ui]",
+    "arduino_app_bricks[mood_detector]",
+    "arduino_app_bricks[stream]",
+    "arduino_app_bricks[arduino_cloud]",
+    "arduino_app_bricks[cloud_llm]",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/arduino/app-bricks-py"
+
+[project.scripts]
+arduino-bricks-list-modules = "arduino.app_tools.module_listing:main"
+arduino-bricks-release = "arduino.app_tools.module_listing:release"
+arduino-bricks-update-ai-container-ref = "arduino.app_tools.module_listing:update_ai_container_references"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.yaml", "*.md"]
+
+
+[tool.setuptools_scm]
+tag_regex = "^(ai|release)/(?P<version>[0-9.]+)$"
+write_to = "src/arduino/_version.py"
+root = "."
+version_scheme = "only-version"
+local_scheme = "no-local-version"
+
+[tool.ruff]
+line-length = 150
+preview = true
+
+[tool.ruff.format]
+indent-style = "space"
+docstring-code-format = true
+docstring-code-line-length = 150
+
+[tool.ruff.lint]
+select = [
+    "E501",    # line too long
+    "D100",    # missing docstring in public module
+    "D206",    # Docstring should be indented with 4 spaces
+    "D417",    # Missing argument descriptions in the docstring
+    "D419",    # Missing return description in the docstring
+    "F401",    # imported but unused
+    "F841",    # local variable 'x' is assigned to but never used
+    "E302",    # expected 2 blank lines, found 1
+    "E303",    # too many blank lines (3)
+    "E711",    # comparison to None should be 'if cond is None:'
+    "E712",    # comparison to True should be 'if cond is True:' or 'if cond is False:'
+    "E713",    # test for membership should be 'not in'
+    "E714",    # test for object identity should be 'is not'
+    "E721",    # do not compare types, use 'isinstance()'
+    "E203",    # whitespace before ':'
+    "E225",    # missing whitespace around operator
+    "E231",    # missing whitespace after ','
+    "E251",    # unexpected spaces around keyword / parameter equals
+    "E261",    # at least two spaces required before inline comment
+    "E262",    # inline comment should start with '# '
+    "W291",    # at least two spaces before inline comment
+    "W292",    # no newline at end of file
+    "W293",    # blank line contains whitespace
+    "W391",    # too many blank line at end of file
+]
+ignore = [
+    "D100",    # missing docstring in public module
+    "D104",    # missing docstring in public package
+    "D206",    # Docstring should be indented with 4 spaces
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"

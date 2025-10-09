@@ -1,0 +1,7 @@
+id: arduino:camera_code_detection
+name: Camera Code Detection
+description: Scans a camera for barcodes and QR codes
+category: video
+required_devices:
+  - camera
+  

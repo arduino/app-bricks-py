@@ -1,0 +1,64 @@
+name: Run Tests and Check Documentation
+
+on:
+  pull_request:
+
+jobs:
+  ci-checks:
+    runs-on: ubuntu-latest
+    env:
+      PYTHON_VERSION: '3.13'
+      TASKFILE_VERSION: 'v3.44.0'
+      TASKFILE_PATH: '/home/runner/go/bin'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          which task || curl -sSfL https://taskfile.dev/install.sh | sh -s -- -b ${{ env.TASKFILE_PATH }} ${{ env.TASKFILE_VERSION }}
+          export PATH="${{ env.TASKFILE_PATH }}:$PATH"
+          task init:ci
+
+      - name: Check code formatting
+        run: |
+          export PATH="${{ env.TASKFILE_PATH }}:$PATH"
+          task fmt > /dev/null 2>&1
+          if git diff --quiet; then
+            echo "Code is properly formatted."
+          else
+            echo "Please format the code by running 'task fmt'."
+            exit 1
+          fi
+
+      - name: Check linting
+        run: |
+          export PATH="${{ env.TASKFILE_PATH }}:$PATH"
+          task lint  > /dev/null 2>&1
+          if git diff --quiet; then
+            echo "Code is properly linted."
+          else
+            echo "Please lint the code by running 'task lint'."
+            exit 1
+          fi
+
+      - name: Run tests
+        run: |
+          export PATH="${{ env.TASKFILE_PATH }}:$PATH"
+          task test
+
+      - name: Check license headers and files
+        run: |
+          export PATH="${{ env.TASKFILE_PATH }}:$PATH"
+          task license > /dev/null 2>&1
+          if git diff --quiet; then
+            echo "License data is up to date!"
+          else
+            echo "Please update license headers and files by running 'task license'."
+            exit 1
+          fi

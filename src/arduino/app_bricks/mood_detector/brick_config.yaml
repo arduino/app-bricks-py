@@ -1,0 +1,6 @@
+id: arduino:mood_detector
+name: Mood Detection
+description: |
+  This brick analyzes text sentiment to detect the mood expressed.
+  It classifies text as positive, negative, or neutral.
+category: text

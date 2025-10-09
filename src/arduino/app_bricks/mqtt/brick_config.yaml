@@ -1,0 +1,4 @@
+id: arduino:mqtt
+name: MQTT Connector
+description: "MQTT connector module. Acts as a client for receiving and publishing messages to an MQTT broker."
+disabled: true
