@@ -147,7 +147,7 @@ class CameraCodeDetection:
     def loop(self):
         """Main loop to capture frames and detect codes."""
         try:
-            frame = self._camera.capture()
+            frame = self._camera.capture_bytes()
             if frame is None:
                 return
         except Exception as e:
@@ -155,7 +155,7 @@ class CameraCodeDetection:
             return
 
         # Use grayscale for barcode/QR code detection
-        gs_frame = cv2.cvtColor(np.asarray(frame), cv2.COLOR_RGB2GRAY)
+        gs_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
 
         self._on_frame(frame)
 
