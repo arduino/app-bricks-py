@@ -19,6 +19,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+FRAME_WIDTH = 640
+FRAME_HEIGHT = 480
+
 
 class WebCamStreamer:
     """
@@ -94,8 +97,16 @@ class WebCamStreamer:
             return
         
         self.camera.set(cv2.CAP_PROP_FPS, self.fps)
-        self.camera.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        self.camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        self.camera.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
+        self.camera.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
+
+        # Verify the resolution was set correctly
+        actual_width = int(self.camera.get(cv2.CAP_PROP_FRAME_WIDTH))
+        actual_height = int(self.camera.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        actual_fps = self.camera.get(cv2.CAP_PROP_FPS)
+
+        if actual_width != FRAME_WIDTH or actual_height != FRAME_HEIGHT:
+            logger.warning(f"Camera resolution mismatch! Requested {FRAME_WIDTH}x{FRAME_HEIGHT}, got {actual_width}x{actual_height}")
         
         logger.info("Camera opened successfully")
         
