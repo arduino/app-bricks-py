@@ -5,7 +5,7 @@
 import cv2
 import numpy as np
 import requests
-from typing import Optional, Union, Dict
+from typing import Optional
 from urllib.parse import urlparse
 
 from arduino.app_utils import Logger
@@ -125,52 +125,21 @@ class IPCamera(BaseCamera):
             self._cap = None
 
     def _read_frame(self) -> Optional[np.ndarray]:
-        """Read a frame from the IP camera."""
+        """Read a frame from the IP camera with automatic reconnection."""
         if self._cap is None:
-            return None
+            logger.info(f"No connection to IP camera {self.url}, attempting to reconnect")
+            try:
+                self._open_camera()
+            except Exception as e:
+                logger.error(f"Failed to reconnect to IP camera {self.url}: {e}")
+                return None
 
         ret, frame = self._cap.read()
-        if not ret or frame is None:
-            # For IP cameras, occasional frame drops are normal
-            logger.debug(f"Frame read failed from IP camera: {self.url}")
-            return None
+        if ret and frame is not None:
+            return frame
 
-        return frame
+        if not self._cap.isOpened():
+            logger.warning(f"IP camera connection dropped: {self.url}")
+            self._close_camera()  # Will reconnect on next call
 
-    def reconnect(self) -> None:
-        """Reconnect to the IP camera."""
-        logger.info(f"Reconnecting to IP camera: {self.url}")
-        was_started = self._is_started
-        
-        if was_started:
-            self.stop()
-        
-        try:
-            if was_started:
-                self.start()
-        except Exception as e:
-            logger.error(f"Failed to reconnect to IP camera: {e}")
-            raise
-
-    def test_connection(self) -> bool:
-        """
-        Test if the camera is accessible without starting it.
-        
-        Returns:
-            True if camera is accessible, False otherwise
-        """
-        try:
-            if self.url.startswith(('http://', 'https://')):
-                self._test_http_connectivity()
-            
-            # Quick test with OpenCV
-            test_cap = cv2.VideoCapture(self._build_authenticated_url())
-            if test_cap.isOpened():
-                ret, _ = test_cap.read()
-                test_cap.release()
-                return ret
-            
-            return False
-        except Exception as e:
-            logger.debug(f"Connection test failed: {e}")
-            return False
+        return None
