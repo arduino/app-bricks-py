@@ -1,14 +1,14 @@
 # Arduino Apps Brick Library
 
-Library is composed by configurable and reusable 'bricks', based on optional infrastructure (executed via docker compose) and wrapping python code (to simplify code usage). 
+Library is composed by configurable and reusable 'Bricks', based on optional infrastructure (executed via Docker Compose) and wrapping Python® code (to simplify code usage). 
 
 ## What is a Brick?
 
-A **brick** is a modular, reusable building block that provides specific functionality for Arduino applications. Each brick is self-contained with standardized configuration, consistent APIs, and optional Docker service definitions.
+A **Brick** is a modular, reusable building block that provides specific functionality for Arduino applications. Each Brick is self-contained with standardized configuration, consistent APIs, and optional Docker service definitions.
 
 ## Directory Structure
 
-Every brick must follow this standardized directory structure:
+Every Brick must follow this standardized directory structure:
 
 ```
 src/arduino/app_bricks/brick_name/
@@ -58,7 +58,7 @@ task init
 
 This task will check the python version and install the required dependencies.
 
-To force a specific Apps Lab container version, use 'APPSLAB_VERSION' environment variable.
+To force a specific Arduino App Lab container version, use 'APPSLAB_VERSION' environment variable.
 
 ## Linting and formatting
 
@@ -155,16 +155,16 @@ Build will start:
 
 Release is split in 2 main actions.
 * Tag "ai/{version}" to release AI containers
-* Tag "release/{version}" to release bricks library and containers
+* Tag "release/{version}" to release Bricks library and containers
 
-This is done because release cycle for AI containers and bricks is different. So release is independent.
+This is done because release cycle for AI containers and Bricks is different. So release is independent.
 After releasing a new version of AI containers, compose files that use AI containers must be updated.
 
 To perform development, it is possible to use Dev build pipeline, suited to rebuild a full dev stack with containers updated to 'dev-latest' tag.
 
 ### Container layers
 
-Library containers are based on a set of pre-defined python base images that are updated with a different frequency wrt library release.
+Library containers are based on a set of pre-defined Python base images that are updated with a different frequency wrt library release.
 Base images are built by "BASE - build base images" flow. This flow should be triggered only in case of base images update needs.
 
 Base images are required to:
