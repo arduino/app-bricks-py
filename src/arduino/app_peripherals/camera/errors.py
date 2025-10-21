@@ -20,3 +20,8 @@ class CameraReadError(CameraError):
 class CameraConfigError(CameraError):
     """Exception raised when camera configuration is invalid."""
     pass
+
+
+class CameraTransformError(CameraError):
+    """Exception raised when frame transformation fails."""
+    pass

@@ -32,9 +32,8 @@ class Camera:
                     resolution (tuple, optional): Frame resolution as (width, height). 
                         Default: None (auto)
                     fps (int, optional): Target frames per second. Default: 10
-                    compression (bool, optional): Enable frame compression. Default: False
-                    letterbox (bool, optional): Enable letterboxing for resolution changes. 
-                        Default: False
+                    transformer (callable, optional): Function to transform frames that takes a
+                        numpy array and returns a numpy array. Default: None
                 V4L Camera Parameters:
                     device_index (int, optional): V4L device index override
                     capture_format (str, optional): Video capture format (e.g., 'MJPG', 'YUYV')
@@ -43,20 +42,12 @@ class Camera:
                     username (str, optional): Authentication username
                     password (str, optional): Authentication password
                     timeout (float, optional): Connection timeout in seconds. Default: 10.0
-                    retry_attempts (int, optional): Number of connection retry attempts. 
-                        Default: 3
-                    headers (dict, optional): Additional HTTP headers
-                    verify_ssl (bool, optional): Verify SSL certificates. Default: True
                 WebSocket Camera Parameters:
-                    host (str, optional): WebSocket server host. Default: "localhost"
+                    host (str, optional): WebSocket server host. Default: "0.0.0.0"
                     port (int, optional): WebSocket server port. Default: 8080
+                    timeout (float, optional): Connection timeout in seconds. Default: 10.0
                     frame_format (str, optional): Expected frame format ("base64", "binary", 
                         "json"). Default: "base64"
-                    max_queue_size (int, optional): Maximum frames to buffer. Default: 10
-                    ping_interval (int, optional): WebSocket ping interval in seconds. 
-                        Default: 20
-                    ping_timeout (int, optional): WebSocket ping timeout in seconds. 
-                        Default: 10
             
         Returns:
             BaseCamera: Appropriate camera implementation instance

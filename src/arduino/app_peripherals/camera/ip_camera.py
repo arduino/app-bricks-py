@@ -61,12 +61,8 @@ class IPCamera(BaseCamera):
         if self.url.startswith(('http://', 'https://')):
             self._test_http_connectivity()
         
-        # Open with OpenCV
         self._cap = cv2.VideoCapture(auth_url)
-        
-        # Set timeout properties
         self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer to get latest frames
-        
         if not self._cap.isOpened():
             raise CameraOpenError(f"Failed to open IP camera: {self.url}")
 
