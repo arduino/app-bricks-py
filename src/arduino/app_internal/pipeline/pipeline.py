@@ -177,11 +177,13 @@ class Pipeline:
                     self._loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
 
                 self._loop.run_until_complete(self._loop.shutdown_asyncgens())
-                self._loop.close()
-                logger.debug("Internal event loop stopped.")
             except Exception as e:
                 logger.exception(f"Error during event loop cleanup: {e}")
-            self._loop = None
+            finally:
+                if self._loop and not self._loop.is_closed():
+                    self._loop.close()
+                self._loop = None
+                logger.debug("Internal event loop stopped.")
 
     async def _async_run_pipeline(self):
         """The main async logic using Adapters."""

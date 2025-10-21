@@ -61,16 +61,13 @@ camera = Camera(source, **options)
   - `str`: Camera index, device path, or URL
 - `resolution`: Tuple `(width, height)` or `None` for default
 - `fps`: Target frames per second (default: 10)
-- `compression`: Enable PNG compression (default: False)  
-- `letterbox`: Make images square with padding (default: False)
+- `transformer`: Pipeline of transformers that adjust the captured image
 
 **Methods:**
 - `start()`: Initialize and start camera
 - `stop()`: Stop camera and release resources
-- `capture()`: Capture frame as PIL Image
-- `capture_bytes()`: Capture frame as bytes
+- `capture()`: Capture frame as Numpy array
 - `is_started()`: Check if camera is running
-- `get_camera_info()`: Get camera properties
 
 ### Context Manager
 

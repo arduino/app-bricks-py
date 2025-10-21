@@ -28,19 +28,20 @@ class WebSocketCamera(BaseCamera):
     This camera acts as a WebSocket server that receives frames from connected clients.
     Clients can send frames in various formats:
     - Base64 encoded images
-    - Binary image data
     - JSON messages with image data
+    - Binary image data
     """
 
     def __init__(self, host: str = "0.0.0.0", port: int = 8080, timeout: int = 10, 
-                 frame_format: str = "binary", **kwargs):
+                 frame_format: str = "base64", **kwargs):
         """
         Initialize WebSocket camera server.
 
         Args:
             host: Host address to bind the server to (default: "0.0.0.0")
             port: Port to bind the server to (default: 8080)
-            frame_format: Expected frame format from clients ("binary", "base64", "json") (default: "binary")
+            timeout: Connection timeout in seconds (default: 10)
+            frame_format: Expected frame format from clients ("base64", "json", "binary") (default: "base64")
             **kwargs: Additional camera parameters
         """
         super().__init__(**kwargs)
@@ -68,7 +69,8 @@ class WebSocketCamera(BaseCamera):
         
         # Wait for server to start
         start_time = time.time()
-        while self._server is None and time.time() - start_time < self.timeout:
+        start_timeout = 10
+        while self._server is None and time.time() - start_time < start_timeout:
             if self._server is not None:
                 break
             time.sleep(0.1)
