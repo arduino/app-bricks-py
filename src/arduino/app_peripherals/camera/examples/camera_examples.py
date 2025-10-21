@@ -104,7 +104,7 @@ def example_websocket_camera():
     # Create WebSocket camera server
     try:
         # Method 1: Direct host:port specification
-        camera = Camera("localhost:8080", frame_format="base64", max_queue_size=5)
+        camera = Camera("ws://localhost:8080", frame_format="base64")
         
         camera.start()
         print(f"WebSocket camera server started: {camera.get_camera_info()}")

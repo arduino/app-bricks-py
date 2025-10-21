@@ -42,7 +42,6 @@ class BaseCamera(ABC):
         self.fps = fps
         self.compression = compression
         self.letterbox = letterbox
-        self.config = kwargs
         self._is_started = False
         self._cap_lock = threading.Lock()
         self._last_capture_time = time.monotonic()

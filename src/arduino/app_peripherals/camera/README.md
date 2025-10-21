@@ -115,10 +115,6 @@ camera = Camera("rtsp://admin:pass@192.168.1.100/stream",
 For hosting a WebSocket server that receives frames from clients (single client only):
 
 ```python
-# Host:port format
-camera = Camera("localhost:8080", frame_format="base64", max_queue_size=10)
-
-# URL format  
 camera = Camera("ws://0.0.0.0:9090", frame_format="json")
 ```
 
