@@ -20,9 +20,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      PYTHON_VERSION: '3.13'
-      TASKFILE_VERSION: 'v3.44.0'
-      TASKFILE_PATH: '/home/runner/go/bin'
+      PYTHON_VERSION: "3.13"
+      TASKFILE_VERSION: "3.45.4"
     strategy:
       fail-fast: false
       matrix:
@@ -55,8 +54,7 @@ jobs:
         env:
           PUBLIC_IMAGE_REGISTRY_BASE: ${{ env.GHCR_DESTINATION_ORG }}/
         run: |
-          which task || curl -sSfL https://taskfile.dev/install.sh | sh -s -- -b ${{ env.TASKFILE_PATH }} ${{ env.TASKFILE_VERSION }}
-          export PATH="${{ env.TASKFILE_PATH }}:$PATH"
+          pip install go-task-bin==${{ env.TASKFILE_VERSION }}
           task init:ci
           task build
           cp ./dist/arduino*.whl ./containers/python-apps-base/
