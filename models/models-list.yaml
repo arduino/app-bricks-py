@@ -105,6 +105,7 @@ models:
     metadata:
       source: "edgeimpulse"
       ei-project-id: 717280
+      ei-model-url: "https://studio.edgeimpulse.com/public/717280/live"
       source-model-id: "YOLOX-Nano"
       source-model-url: "https://github.com/Megvii-BaseDetection/YOLOX"
     bricks:
@@ -1071,6 +1072,7 @@ models:
     metadata:
       source: "edgeimpulse"
       ei-project-id: 708500
+      ei-model-url: "https://studio.edgeimpulse.com/public/708500/live"
       ei-gpu-mode: true
       source-model-id: "MobileNetV2"
       source-model-url: "https://www.tensorflow.org/api_docs/python/tf/keras/applications/MobileNetV2"
@@ -1089,9 +1091,10 @@ models:
     metadata:
       source: "edgeimpulse"
       ei-project-id: 755016
+      ei-model-url: "https://studio.edgeimpulse.com/public/755016/live"
       ei-gpu-mode: true
       source-model-id: "person-classification-wakevision"
-      source-model-url: "https://studio.edgeimpulse.com/studio/755016"
+      source-model-url: "https://studio.edgeimpulse.com/public/755016/live"
     bricks:
       - arduino:image_classification
       - arduino:video_image_classification   
@@ -1103,9 +1106,10 @@ models:
       "EI_V_ANOMALY_DETECTION_MODEL": "/models/ootb/ei/concrete-crack-anomaly-detection.eim" 
     metadata:
       source: "edgeimpulse"
-      ei-project-id: 288658
+      ei-project-id: 800941
+      ei-model-url: "https://studio.edgeimpulse.com/public/800941/live"
       source-model-id: "concrete-crack-anomaly-detection"
-      source-model-url: "https://studio.edgeimpulse.com/public/288658"
+      source-model-url: "https://studio.edgeimpulse.com/public/800941/live"
     bricks:
       - arduino:visual_anomaly_detection
  - keyword-spotting-hey-arduino:
@@ -1120,10 +1124,12 @@ models:
       - "other"
     metadata:
       source: "edgeimpulse"
-      ei-project-id: 757509   
+      ei-project-id: 757509
+      ei-model-url: "https://studio.edgeimpulse.com/studio/757509/live"
       ei-impulse-id: 30
       source-model-id: "hey-arduino"
-      source-model-url: "https://studio.edgeimpulse.com/studio/757509"
+      source-model-url: "https://studio.edgeimpulse.com/studio/757509/live"
+      private: true
     bricks:
       - arduino:keyword_spotter
  - updown-wave-motion-detection:
@@ -1140,9 +1146,11 @@ models:
     metadata:
       source: "edgeimpulse"
       ei-project-id: 734960
+      ei-model-url: "https://studio.edgeimpulse.com/public/734960/live"
       source-model-id: "continuous-motion-detection"
-      source-model-url: "https://studio.edgeimpulse.com/studio/734960"
-    brick: arduino:motion_detection
+      source-model-url: "https://studio.edgeimpulse.com/public/734960/live"
+    bricks:
+      - arduino:motion_detection
  - fan-anomaly-detection:
     runner: brick
     name : "Fan anomaly detection"
@@ -1152,8 +1160,9 @@ models:
     metadata:
       source: "edgeimpulse"
       ei-project-id: 774707
+      ei-model-url: "https://studio.edgeimpulse.com/public/774707/live"
       source-model-id: "fan-anomaly-detection"
-      source-model-url: "https://studio.edgeimpulse.com/studio/774707"
+      source-model-url: "https://studio.edgeimpulse.com/public/774707/live"
     bricks:
       - arduino:vibration_anomaly_detection    
  - glass-breaking:
@@ -1168,7 +1177,8 @@ models:
     metadata:
       source: "edgeimpulse"
       ei-project-id: 749446
+      ei-model-url: "https://studio.edgeimpulse.com/public/749446/live"
       source-model-id: "glass-breaking"
-      source-model-url: "https://studio.edgeimpulse.com/studio/749446"
+      source-model-url: "https://studio.edgeimpulse.com/public/749446/live"
     bricks:
       - arduino:audio_classifier
