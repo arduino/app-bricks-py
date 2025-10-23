@@ -3,6 +3,9 @@ name: Run Tests and Check Documentation
 on:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   ci-checks:
     runs-on: ubuntu-latest
