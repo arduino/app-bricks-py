@@ -2,8 +2,6 @@ name: Calculate Docker Image Size
 
 on:
   workflow_dispatch:
-  issue_comment:
-    types: [created]
 
 permissions:
   contents: read
