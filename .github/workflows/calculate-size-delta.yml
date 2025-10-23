@@ -2,8 +2,6 @@ name: Calculate Docker Image Size
 
 on:
   workflow_dispatch:
-  issue_comment:
-    types: [created]
 
 permissions:
   contents: read
@@ -15,9 +13,6 @@ jobs:
       PYTHON_VERSION: '3.13'
       TASKFILE_VERSION: 'v3.44.0'
       TASKFILE_PATH: '/home/runner/go/bin'
-    if: |
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'issue_comment' && github.event.comment.body == '/calculate-size' && github.event.issue.pull_request)
 
     services:
       registry:
@@ -34,16 +29,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "Searching for PR from branch '${{ github.ref_name }}'..."
-            PR_NUMBER=$(gh pr list --state open --head "${{ github.ref_name }}" --json number --jq '.[0].number // empty')
-            if [ -z "$PR_NUMBER" ]; then
-              echo "Not found in current repo, searching across forks..."
-              PR_NUMBER=$(gh pr list --state open --json number,headRefName,headRepositoryOwner --jq ".[] | select(.headRefName == \"${{ github.ref_name }}\") | .number" | head -n1)
-            fi
-          else
-            # For issue_comment, the PR number is in the event context
-            PR_NUMBER=${{ github.event.issue.number }}
+          echo "Searching for PR from branch '${{ github.ref_name }}'..."
+          PR_NUMBER=$(gh pr list --state open --head "${{ github.ref_name }}" --json number --jq '.[0].number // empty')
+          if [ -z "$PR_NUMBER" ]; then
+            echo "Not found in current repo, searching across forks..."
+            PR_NUMBER=$(gh pr list --state open --json number,headRefName,headRepositoryOwner --jq ".[] | select(.headRefName == \"${{ github.ref_name }}\") | .number" | head -n1)
           fi
 
           if [ -z "$PR_NUMBER" ]; then
@@ -52,13 +42,6 @@ jobs:
             echo "Found PR #$PR_NUMBER"
           fi
           echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
-
-      - name: Checkout PR Branch (for comment trigger)
-        if: github.event_name == 'issue_comment'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh pr checkout ${{ steps.pr_info.outputs.pr_number }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
