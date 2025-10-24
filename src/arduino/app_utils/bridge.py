@@ -559,7 +559,7 @@ class ClientServer(metaclass=SingletonMeta):
                         else:
                             on_result([GENERIC_ERR, "Unknown error occurred."])
                 else:
-                    on_error([GENERIC_ERR, f"Response for unknown msgid {msgid} received."])
+                    logger.warning(f"Response for unknown msgid {msgid} received.")
 
             elif msg_type == 2:  # Notification: [2, method, params]
                 if len(msg) != 3:
