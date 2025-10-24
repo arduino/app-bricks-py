@@ -11,7 +11,7 @@ from pyzbar.pyzbar import decode, ZBarSymbol, PyZbarError
 import numpy as np
 from PIL.Image import Image
 
-from arduino.app_peripherals.usb_camera import USBCamera
+from arduino.app_peripherals.camera import Camera
 from arduino.app_utils import brick, Logger
 
 logger = Logger("CameraCodeDetection")
@@ -55,7 +55,7 @@ class CameraCodeDetection:
 
     def __init__(
         self,
-        camera: USBCamera = None,
+        camera: Camera = None,
         detect_qr: bool = True,
         detect_barcode: bool = True,
     ):
@@ -76,7 +76,7 @@ class CameraCodeDetection:
 
         self.already_seen_codes = set()
 
-        self._camera = camera if camera else USBCamera()
+        self._camera = camera if camera else Camera()
 
     def start(self):
         """Start the detector and begin scanning for codes."""
@@ -147,7 +147,7 @@ class CameraCodeDetection:
     def loop(self):
         """Main loop to capture frames and detect codes."""
         try:
-            frame = self._camera.capture_bytes()
+            frame = self._camera.capture()
             if frame is None:
                 return
         except Exception as e:

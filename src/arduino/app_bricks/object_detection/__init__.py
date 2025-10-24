@@ -2,8 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-from PIL import Image
-from arduino.app_utils import brick, Logger, draw_bounding_boxes
+from arduino.app_utils import brick, Logger
 from arduino.app_internal.core import EdgeImpulseRunnerFacade
 
 logger = Logger("ObjectDetection")
@@ -53,19 +52,6 @@ class ObjectDetection(EdgeImpulseRunnerFacade):
             return None
         ret = super().infer_from_image(image_bytes, image_type)
         return self._extract_detection(ret, confidence)
-
-    def draw_bounding_boxes(self, image: Image.Image | bytes, detections: dict) -> Image.Image | None:
-        """Draw bounding boxes on an image enclosing detected objects using PIL.
-
-        Args:
-            image: The input image to annotate. Can be a PIL Image object or raw image bytes.
-            detections: Detection results containing object labels and bounding boxes.
-
-        Returns:
-            Image with bounding boxes and key points drawn.
-            None if no detection or invalid image.
-        """
-        return draw_bounding_boxes(image, detections)
 
     def _extract_detection(self, item, confidence: float = None):
         if not item:
