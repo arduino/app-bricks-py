@@ -195,32 +195,6 @@ class Frame:
         flat = [int(x) for x in scaled.flatten().tolist()]
         return bytes(flat)
 
-    # TODO: move to app class
-    def to_board_hex(self) -> list[str]:
-        """Return a single frame as a list of four 32-bit hex words (C format for animations).
-
-        Please note that it does NOT include any timing/interval word.
-        """
-        a = self.rescale_quantized_frame(scale_max=255)
-        height, width = a.shape
-
-        # threshold to binary presence (non-zero pixels -> 1)
-        pixels = (a > 0).astype(int).flatten().tolist()
-
-        # pad to 128 bits (4 * 32)
-        if len(pixels) > 128:
-            raise ValueError("internal error: pixel buffer too large")
-        pixels += [0] * (128 - len(pixels))
-
-        words: list[str] = []
-        for i in range(0, 128, 32):
-            w = 0
-            for j in range(32):
-                bit = int(pixels[i + j]) & 1
-                w |= bit << (31 - j)
-            words.append(f"0x{w:x}")
-        return words
-
     # -- validation helpers ----------------------------------------------
     def _validate(self) -> None:
         """Validate the current Frame instance in-place (internal)."""
