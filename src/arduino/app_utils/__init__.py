@@ -11,6 +11,7 @@ from .httprequest import *
 from .image import *
 from .jsonparser import *
 from .logger import *
+from .ledmatrix import *
 from .slidingwindowbuffer import *
 from .userinput import *
 
@@ -22,6 +23,8 @@ __all__ = [
     "call",
     "provide",
     "FolderWatcher",
+    "Frame",
+    "FrameDesigner",
     "HttpClient",
     "draw_bounding_boxes",
     "get_image_bytes",
