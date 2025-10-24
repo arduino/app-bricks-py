@@ -9,7 +9,7 @@ WebSocket Camera Proxy
 
 This example demonstrates how to use a WebSocketCamera as a proxy/relay.
 It receives frames from clients on one WebSocket server (127.0.0.1:8080) and
-forwards them as raw JPEG binary data to a TCP server (127.0.0.1:5001) at 30fps.
+forwards them as raw JPEG binary data to a TCP server (127.0.0.1:5000) at 30fps.
 
 Usage:
     python websocket_camera_proxy.py [--input-port PORT] [--output-host HOST] [--output-port PORT]
@@ -22,7 +22,6 @@ import signal
 import sys
 import time
 
-# Add the parent directory to the path to import from arduino package
 import os
 
 from arduino.app_peripherals.camera import Camera
@@ -173,17 +172,17 @@ async def main():
     global running, camera
     
     parser = argparse.ArgumentParser(description="WebSocket Camera Proxy")
-    parser.add_argument("--input-port", type=int, default=8080, 
+    parser.add_argument("--input-port", type=int, default=8080,
                        help="WebSocketCamera input port (default: 8080)")
-    parser.add_argument("--output-host", default="127.0.0.1", 
-                       help="Output TCP server host (default: 127.0.0.1)")
-    parser.add_argument("--output-port", type=int, default=5001, 
-                       help="Output TCP server port (default: 5001)")
-    parser.add_argument("--fps", type=int, default=30, 
+    parser.add_argument("--output-host", default="0.0.0.0",
+                       help="Output TCP server host (default: 0.0.0.0)")
+    parser.add_argument("--output-port", type=int, default=5000,
+                       help="Output TCP server port (default: 5000)")
+    parser.add_argument("--fps", type=int, default=30,
                        help="Target FPS for forwarding (default: 30)")
-    parser.add_argument("--quality", type=int, default=80, 
+    parser.add_argument("--quality", type=int, default=80,
                        help="JPEG quality 1-100 (default: 80)")
-    parser.add_argument("--verbose", "-v", action="store_true", 
+    parser.add_argument("--verbose", "-v", action="store_true",
                        help="Enable verbose logging")
     
     args = parser.parse_args()
@@ -204,7 +203,8 @@ async def main():
     logger.info(f"Output: TCP server at {args.output_host}:{args.output_port}")
     logger.info(f"Target FPS: {args.fps}")
     
-    camera = Camera("ws://0.0.0.0:5001")
+    from arduino.app_utils.image.image_editor import compressed_to_jpeg
+    camera = Camera("ws://0.0.0.0:5000", transformer=compressed_to_jpeg(80))
     
     try:
         # Start camera input and output connection tasks

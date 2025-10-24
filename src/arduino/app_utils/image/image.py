@@ -41,7 +41,7 @@ def _read(file_path: str) -> bytes:
         with open(file_path, "rb") as f:
             return f.read()
     except Exception as e:
-        logger(f"Error reading image: {e}")
+        logger.error(f"Error reading image: {e}")
         return None
 
 
@@ -189,7 +189,7 @@ def draw_bounding_boxes(
 def draw_anomaly_markers(
     image: Image.Image | bytes,
     detection: dict,
-    draw: ImageDraw.ImageDraw = None,
+    draw: ImageDraw.ImageDraw = None
 ) -> Image.Image | None:
     """Draw bounding boxes on an image using PIL.
 
@@ -200,9 +200,6 @@ def draw_anomaly_markers(
         detection (dict): A dictionary containing detection results with keys 'class_name', 'bounding_box_xyxy', and
             'score'.
         draw (ImageDraw.ImageDraw, optional): An existing ImageDraw object to use. If None, a new one is created.
-        label_above_box (bool, optional): If True, labels are drawn above the bounding box. Defaults to False.
-        colours (list, optional): List of colors to use for bounding boxes. Defaults to a predefined palette.
-        text_color (str, optional): Color of the text labels. Defaults to "white".
     """
     if isinstance(image, bytes):
         image_box = Image.open(io.BytesIO(image))

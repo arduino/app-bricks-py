@@ -24,7 +24,7 @@ def mock_infra(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("arduino.app_internal.core.resolve_address", lambda h: "127.0.0.1")
     monkeypatch.setattr("arduino.app_internal.core.parse_docker_compose_variable", lambda s: [(None, None), (None, "1337")])
     # identity for get_image_bytes
-    monkeypatch.setattr("arduino.app_utils.get_image_bytes", lambda b: b)
+    monkeypatch.setattr("arduino.app_utils.image.get_image_bytes", lambda b: b)
 
 
 @pytest.fixture
