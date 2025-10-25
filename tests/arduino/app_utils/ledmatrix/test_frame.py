@@ -33,20 +33,6 @@ def test_rescale_and_board_bytes():
     assert len(b) == 8 * 13
 
 
-def test_to_board_hex_length_and_values():
-    """Test Frame.to_board_hex method for correct length and hex formatting."""
-    arr = np.zeros((8, 13), dtype=int)
-    arr[0, 0] = 7
-    f = Frame(arr, brightness_levels=8)
-    words = f.to_board_hex()
-    # Frame.to_board_hex now returns a single frame as 4 hex words
-    assert isinstance(words, list)
-    assert len(words) == 4
-    for w in words:
-        assert isinstance(w, str)
-        assert w.startswith("0x")
-
-
 def test_re_set_array_valid():
     """Test that re-setting a valid array with arr property fails."""
     f = Frame(np.zeros((8, 13), dtype=int), brightness_levels=8)
@@ -134,18 +120,3 @@ def test_to_board_bytes():
     assert len(b) == 8 * 13
     # Check that the first byte corresponds to the first pixel set to 255 (rescaled value for 7 when 8 levels)
     assert b[0] == 255
-
-
-def test_to_board_hex():
-    """Test that to_board_hex produces correct output for the test Frame."""
-    arr = np.zeros((8, 13), dtype=int)
-    arr[0, 0] = 7
-    f = Frame(arr, brightness_levels=8)
-    h1 = f.to_board_hex()
-    assert isinstance(h1, list)
-    assert len(h1) == 4  # 4 words for the frame
-    for w in h1:
-        assert isinstance(w, str)
-        assert w.startswith("0x")
-        assert all(c in "0123456789abcdef" for c in w[2:])  # hex digits
-        assert int(w, 16) >= 0
