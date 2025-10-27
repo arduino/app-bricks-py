@@ -129,6 +129,17 @@ class V4LCamera(BaseCamera):
                     f"Camera {self.camera_id} resolution set to {actual_width}x{actual_height} "
                     f"instead of requested {self.resolution[0]}x{self.resolution[1]}"
                 )
+                self.resolution = (actual_width, actual_height)
+        
+        if self.fps:
+            self._cap.set(cv2.CAP_PROP_FPS, self.fps)
+
+            actual_fps = int(self._cap.get(cv2.CAP_PROP_FPS))
+            if actual_fps != self.fps:
+                logger.warning(
+                    f"Camera {self.camera_id} FPS set to {actual_fps} instead of requested {self.fps}"
+                )
+                self.fps = actual_fps
 
         logger.info(f"Opened V4L camera {self.camera_id}")
 

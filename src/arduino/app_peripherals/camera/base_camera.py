@@ -23,20 +23,20 @@ class BaseCamera(ABC):
     providing a unified API regardless of the underlying camera protocol or type.
     """
 
-    def __init__(self, resolution: Optional[Tuple[int, int]] = None, fps: int = 10, 
-                 transformer: Optional[Callable[[np.ndarray], np.ndarray]] = None, **kwargs):
+    def __init__(self, resolution: Optional[Tuple[int, int]] = (640, 480), fps: int = 10, 
+                 adjuster: Optional[Callable[[np.ndarray], np.ndarray]] = None, **kwargs):
         """
         Initialize the camera base.
 
         Args:
             resolution (tuple, optional): Resolution as (width, height). None uses default resolution.
             fps (int): Frames per second for the camera.
-            transformer (callable, optional): Function to transform frames that takes a numpy array and returns a numpy array. Default: None
+            adjuster (callable, optional): Function pipeline to adjust frames that takes a numpy array and returns a numpy array. Default: None
             **kwargs: Additional camera-specific parameters.
         """
         self.resolution = resolution
         self.fps = fps
-        self.transformer = transformer
+        self.adjuster = adjuster
         self._is_started = False
         self._cap_lock = threading.Lock()
         self._last_capture_time = time.monotonic()
@@ -100,13 +100,11 @@ class BaseCamera(ABC):
             
             self._last_capture_time = time.monotonic()
             
-            if self.transformer is None:
-                return frame
-            
-            try:
-                frame = frame | self.transformer
-            except Exception as e:
-                raise CameraTransformError(f"Frame transformation failed ({self.transformer}): {e}")
+            if self.adjuster is not None:
+                try:
+                    frame = self.adjuster(frame)
+                except Exception as e:
+                    raise CameraTransformError(f"Frame transformation failed ({self.adjuster}): {e}")
             
             return frame
 

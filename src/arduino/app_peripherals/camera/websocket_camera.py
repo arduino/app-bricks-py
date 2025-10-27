@@ -55,7 +55,7 @@ class WebSocketCamera(BaseCamera):
         self._server = None
         self._loop = None
         self._server_thread = None
-        self._stop_event = None
+        self._stop_event = asyncio.Event()
         self._client: Optional[websockets.ServerConnection] = None
 
     def _open_camera(self) -> None:
@@ -93,7 +93,7 @@ class WebSocketCamera(BaseCamera):
     async def _start_server(self) -> None:
         """Start the WebSocket server."""
         try:
-            self._stop_event = asyncio.Event()
+            self._stop_event.clear()
             
             self._server = await websockets.serve(
                 self._ws_handler,
@@ -152,7 +152,6 @@ class WebSocketCamera(BaseCamera):
             except Exception as e:
                 logger.warning(f"Could not send welcome message to {client_addr}: {e}")
 
-            warning_task = None
             async for message in conn:
                 frame = await self._parse_message(message)
                 if frame is not None:
@@ -162,16 +161,6 @@ class WebSocketCamera(BaseCamera):
                             self._frame_queue.put_nowait(frame)
                             break
                         except queue.Full:
-                            # Notify client about frame dropping
-                            try:
-                                if warning_task is None or warning_task.done():
-                                    warning_task = asyncio.create_task(self._send_to_client({
-                                        "warning": "frame_dropped",
-                                        "message": "Buffer full, dropping oldest frame"
-                                    }))
-                            except Exception:
-                                pass
-                            
                             try:
                                 # Drop oldest frame and try again
                                 self._frame_queue.get_nowait()
@@ -241,10 +230,10 @@ class WebSocketCamera(BaseCamera):
             logger.warning(f"Error parsing message: {e}")
             return None
 
-    def _close_camera(self) -> None:
+    def _close_camera(self):
         """Stop the WebSocket server."""
         # Signal async stop event if it exists
-        if self._stop_event and self._loop and not self._loop.is_closed():
+        if self._loop and not self._loop.is_closed():
             future = asyncio.run_coroutine_threadsafe(
                 self._set_async_stop_event(), 
                 self._loop
@@ -269,12 +258,10 @@ class WebSocketCamera(BaseCamera):
         self._server = None
         self._loop = None
         self._client = None
-        self._stop_event = None
 
-    async def _set_async_stop_event(self) -> None:
+    async def _set_async_stop_event(self):
         """Set the async stop event and close the client connection."""
-        if self._stop_event:
-            self._stop_event.set()
+        self._stop_event.set()
         
         # Send goodbye message and close the client connection
         if self._client:

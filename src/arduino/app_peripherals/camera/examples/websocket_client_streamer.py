@@ -13,6 +13,9 @@ import signal
 import sys
 import time
 
+from arduino.app_peripherals.camera import Camera
+from arduino.app_utils.image.image_editor import ImageEditor
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
@@ -82,31 +85,20 @@ class WebCamStreamer:
                 logger.warning(f"Error closing WebSocket: {e}")
         
         if self.camera:
-            self.camera.release()
-            logger.info("Camera released")
+            self.camera.stop()
+            logger.info("Camera stopped")
         
         logger.info("Webcam streamer stopped")
     
     async def _camera_loop(self):
         """Main camera capture loop."""
         logger.info(f"Opening camera {self.camera_id}...")
-        self.camera = cv2.VideoCapture(self.camera_id)
+        self.camera = Camera(self.camera_id, resolution=(FRAME_WIDTH, FRAME_HEIGHT), fps=self.fps)
+        self.camera.start()
         
-        if not self.camera.isOpened():
+        if not self.camera.is_started():
             logger.error(f"Failed to open camera {self.camera_id}")
             return
-        
-        self.camera.set(cv2.CAP_PROP_FPS, self.fps)
-        self.camera.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
-        self.camera.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
-
-        # Verify the resolution was set correctly
-        actual_width = int(self.camera.get(cv2.CAP_PROP_FRAME_WIDTH))
-        actual_height = int(self.camera.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        actual_fps = self.camera.get(cv2.CAP_PROP_FPS)
-
-        if actual_width != FRAME_WIDTH or actual_height != FRAME_HEIGHT:
-            logger.warning(f"Camera resolution mismatch! Requested {FRAME_WIDTH}x{FRAME_HEIGHT}, got {actual_width}x{actual_height}")
         
         logger.info("Camera opened successfully")
         
@@ -114,12 +106,12 @@ class WebCamStreamer:
         
         while self.running:
             try:
-                ret, frame = self.camera.read()
-                if not ret:
+                frame = self.camera.capture()
+                if frame is None:
                     logger.warning("Failed to capture frame")
                     await asyncio.sleep(0.1)
                     continue
-                
+
                 # Rate limiting to enforce frame rate
                 current_time = time.time()
                 time_since_last = current_time - last_frame_time
@@ -134,6 +126,8 @@ class WebCamStreamer:
                     except websockets.exceptions.ConnectionClosed:
                         logger.warning("WebSocket connection lost during frame send")
                         self.websocket = None
+                
+                await asyncio.sleep(0.001)
                 
             except Exception as e:
                 logger.error(f"Error in camera loop: {e}")
@@ -191,9 +185,6 @@ class WebCamStreamer:
                         logger.info(f"Server goodbye: {data.get('message', 'Disconnecting')}")
                         break
                     
-                    elif data.get("status") == "dropping_frames":
-                        logger.warning(f"Server warning: {data.get('message', 'Dropping frames!')}")
-                    
                     elif data.get("error"):
                         logger.warning(f"Server error: {data.get('message', 'Unknown error')}")
                         if data.get("code") == 1000:  # Server busy
@@ -216,36 +207,18 @@ class WebCamStreamer:
         try:
             if self.server_frame_format == "binary":
                 # Encode frame as JPEG and send binary data
-                encode_params = [cv2.IMWRITE_JPEG_QUALITY, self.quality]
-                success, encoded_frame = cv2.imencode('.jpg', frame, encode_params)
-                
-                if not success:
-                    logger.warning("Failed to encode frame")
-                    return
-                
+                encoded_frame = ImageEditor.compress_to_jpeg(frame)
                 await self.websocket.send(encoded_frame.tobytes())
                 
             elif self.server_frame_format == "base64":
                 # Encode frame as JPEG and send base64 data
-                encode_params = [cv2.IMWRITE_JPEG_QUALITY, self.quality]
-                success, encoded_frame = cv2.imencode('.jpg', frame, encode_params)
-                
-                if not success:
-                    logger.warning("Failed to encode frame")
-                    return
-                
+                encoded_frame = ImageEditor.compress_to_jpeg(frame)
                 frame_b64 = base64.b64encode(encoded_frame.tobytes()).decode('utf-8')
                 await self.websocket.send(frame_b64)
             
             elif self.server_frame_format == "json":
                 # Encode frame as JPEG, base64 encode and wrap in JSON
-                encode_params = [cv2.IMWRITE_JPEG_QUALITY, self.quality]
-                success, encoded_frame = cv2.imencode('.jpg', frame, encode_params)
-                
-                if not success:
-                    logger.warning("Failed to encode frame")
-                    return
-                
+                encoded_frame = ImageEditor.compress_to_jpeg(frame)
                 frame_b64 = base64.b64encode(encoded_frame.tobytes()).decode('utf-8')
                 message = json.dumps({"image": frame_b64})
                 await self.websocket.send(message)
@@ -269,7 +242,7 @@ def signal_handler(signum, frame):
 async def main():
     """Main function."""
     parser = argparse.ArgumentParser(description="WebSocket Camera Client Streamer")
-    parser.add_argument("--host", default="127.0.0.1", help="WebSocket server host (default: 127.0.0.1)")
+    parser.add_argument("--host", default="localhost", help="WebSocket server host (default: localhost)")
     parser.add_argument("--port", type=int, default=8080, help="WebSocket server port (default: 8080)")
     parser.add_argument("--camera", type=int, default=0, help="Camera device ID (default: 0)")
     parser.add_argument("--fps", type=int, default=30, help="Target FPS (default: 30)")
