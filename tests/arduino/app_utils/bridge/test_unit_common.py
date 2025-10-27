@@ -15,7 +15,9 @@ class UnitTest(unittest.TestCase):
 
         # Patch dependencies
         # Mock the logger used by ClientServer
-        patch("arduino.app_utils.bridge.logger", MagicMock()).start()
+        self.mock_logger = MagicMock()
+        self.logger_patcher = patch("arduino.app_utils.bridge.logger", self.mock_logger)
+        self.logger_patcher.start()
 
         # Mock the socket instance that will be created
         self.mock_socket_instance = MagicMock()
@@ -32,5 +34,6 @@ class UnitTest(unittest.TestCase):
 
     def tearDown(self):
         """This method is called after each test and cleans up the patched dependencies."""
+        self.logger_patcher.stop()
         self.socket_patcher.stop()
         self.threading_patcher.stop()
