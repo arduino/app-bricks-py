@@ -15,7 +15,7 @@ class TestHandleMsg(UnitTest):
         client._handle_msg([])
         self.mock_logger.warning.assert_called_once_with("Invalid RPC message received (must be a non-empty list).")
         self.mock_logger.error.assert_not_called()
-    
+
     def test_unknown_msg_type(self):
         """Test handling of an unknown message type."""
         client = ClientServer()
@@ -29,7 +29,7 @@ class TestHandleMsg(UnitTest):
         client._handle_msg([1, 9999, None, "result"])  # Msg id 9999 does not exist
         self.mock_logger.warning.assert_called_once_with("Response for unknown msgid 9999 received.")
         self.mock_logger.error.assert_not_called()
-    
+
     def test_malformed_messages(self):
         """Test handling of malformed messages."""
         client = ClientServer()
