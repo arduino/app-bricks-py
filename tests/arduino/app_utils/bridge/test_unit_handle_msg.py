@@ -9,6 +9,58 @@ from test_unit_common import UnitTest
 
 
 class TestHandleMsg(UnitTest):
+    def test_empty_msg(self):
+        """Test handling of an empty message."""
+        client = ClientServer()
+        client._handle_msg([])
+        self.mock_logger.warning.assert_called_once_with("Invalid RPC message received (must be a non-empty list).")
+        self.mock_logger.error.assert_not_called()
+
+    def test_unknown_msg_type(self):
+        """Test handling of an unknown message type."""
+        client = ClientServer()
+        client._handle_msg([99, 1, None, "result"])  # Msg type 99 does not exist
+        self.mock_logger.warning.assert_called_once_with("Invalid RPC message type received: 99")
+        self.mock_logger.error.assert_not_called()
+
+    def test_unknown_msg_id(self):
+        """Test handling of an unknown message id."""
+        client = ClientServer()
+        client._handle_msg([1, 9999, None, "result"])  # Msg id 9999 does not exist
+        self.mock_logger.warning.assert_called_once_with("Response for unknown msgid 9999 received.")
+        self.mock_logger.error.assert_not_called()
+
+    def test_malformed_messages(self):
+        """Test handling of malformed messages."""
+        client = ClientServer()
+
+        client._handle_msg([0, 1, "method", [0, 1], "extra field"])  # Malformed payload
+        self.mock_logger.warning.assert_not_called()
+        self.mock_logger.error.assert_called_once_with("Message validation error: Invalid RPC request: expected length 4, got 5")
+        self.mock_logger.reset_mock()
+        client._handle_msg([0, 1, "method", 1])  # Malformed params
+        self.mock_logger.warning.assert_not_called()
+        self.mock_logger.error.assert_called_once_with("Message validation error: Invalid RPC request params: expected array or tuple")
+        self.mock_logger.reset_mock()
+
+        client._handle_msg([1, 1, None, "result", "extra field"])  # Malformed payload
+        self.mock_logger.warning.assert_not_called()
+        self.mock_logger.error.assert_called_once_with("Message validation error: Invalid RPC response: expected length 4, got 5")
+        self.mock_logger.reset_mock()
+        client._handle_msg([1, 1, 42, "result"])  # Malformed error
+        self.mock_logger.warning.assert_not_called()
+        self.mock_logger.error.assert_called_once_with("Message validation error: Invalid error format in RPC response")
+        self.mock_logger.reset_mock()
+
+        client._handle_msg([2, 1, [0, 1], "extra field"])  # Malformed payload
+        self.mock_logger.warning.assert_not_called()
+        self.mock_logger.error.assert_called_once_with("Message validation error: Invalid RPC notification: expected length 3, got 4")
+        self.mock_logger.reset_mock()
+        client._handle_msg([2, 1, 42])  # Malformed params
+        self.mock_logger.warning.assert_not_called()
+        self.mock_logger.error.assert_called_once_with("Message validation error: Invalid RPC notification params: expected array or tuple")
+        self.mock_logger.reset_mock()
+
     def test_handle_msg_request(self):
         """Test handling of an incoming request message."""
         client = ClientServer()
@@ -26,6 +78,22 @@ class TestHandleMsg(UnitTest):
 
         handler_mock.assert_called_once_with(*params)
         client._send_response.assert_called_once_with(msgid, None, "handled")
+
+    def test_handle_msg_request_handler_fail(self):
+        """Test handling of a request for a method that fails running its handler."""
+        client = ClientServer()
+        client._send_response = MagicMock()
+
+        request_msg = [0, 111, "failing_method", []]
+        client.handlers["failing_method"] = MagicMock(side_effect=ValueError("Handler failed"))
+
+        client._handle_msg(request_msg)
+
+        client._send_response.assert_called_once()
+        args, _ = client._send_response.call_args
+        self.assertEqual(args[0], 111)  # msgid
+        self.assertIsInstance(args[1], ValueError)  # error
+        self.assertIsNone(args[2])  # result
 
     def test_handle_msg_request_method_not_found(self):
         """Test handling of a request for a method that is not found."""
@@ -79,7 +147,7 @@ class TestHandleMsg(UnitTest):
         on_error_mock.assert_not_called()
         self.assertNotIn(msgid, client.callbacks)  # Callback should be removed
 
-    def test_handle_msg_response_function_not_found(self):
+    def test_handle_msg_generic_error_response(self):
         """Test handling of an incoming error response message."""
         client = ClientServer()
 
@@ -100,7 +168,7 @@ class TestHandleMsg(UnitTest):
         on_error_mock.assert_called_once_with(result_error)
         self.assertNotIn(msgid, client.callbacks)  # Callback should be removed
 
-    def test_handle_msg_response_already_provided_error(self):
+    def test_handle_msg_method_exists_error_response(self):
         """Test handling of an incoming error response message that signals a method is already provided."""
         client = ClientServer()
 

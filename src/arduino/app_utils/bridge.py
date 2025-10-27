@@ -516,10 +516,10 @@ class ClientServer(metaclass=SingletonMeta):
         try:
             if msg_type == 0:  # Request: [0, msgid, method, params]
                 if len(msg) != 4:
-                    raise ValueError("Invalid RPC request: expected length 4")
+                    raise ValueError(f"Invalid RPC request: expected length 4, got {len(msg)}")
                 _, msgid, method, params = msg
                 if not isinstance(params, (list, tuple)):
-                    raise ValueError("Invalid RPC request params: expected array/tuple")
+                    raise ValueError("Invalid RPC request params: expected array or tuple")
 
                 method_name = self._decode_method(method)
 
@@ -538,7 +538,7 @@ class ClientServer(metaclass=SingletonMeta):
 
             elif msg_type == 1:  # Response: [1, msgid, error, result]
                 if len(msg) != 4:
-                    raise ValueError("Invalid RPC response: expected length 4")
+                    raise ValueError(f"Invalid RPC response: expected length 4, got {len(msg)}")
                 _, msgid, error, result = msg
                 if error and (not isinstance(error, list) or len(error) < 2):
                     raise ValueError("Invalid error format in RPC response")
@@ -559,11 +559,11 @@ class ClientServer(metaclass=SingletonMeta):
                         else:
                             on_result([GENERIC_ERR, "Unknown error occurred."])
                 else:
-                    on_error([GENERIC_ERR, f"Response for unknown msgid {msgid} received."])
+                    logger.warning(f"Response for unknown msgid {msgid} received.")
 
             elif msg_type == 2:  # Notification: [2, method, params]
                 if len(msg) != 3:
-                    raise ValueError("Invalid RPC notification: expected length 3")
+                    raise ValueError(f"Invalid RPC notification: expected length 3, got {len(msg)}")
                 _, method, params = msg
                 if not isinstance(params, (list, tuple)):
                     raise ValueError("Invalid RPC notification params: expected array or tuple")
