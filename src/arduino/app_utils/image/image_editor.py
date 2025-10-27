@@ -7,7 +7,7 @@ import numpy as np
 from typing import Optional, Tuple
 from PIL import Image
 
-from .pipeable import pipeable
+from arduino.app_utils.image.pipeable import PipeableFunction
 
 
 class ImageEditor:
@@ -53,6 +53,10 @@ class ImageEditor:
         target_w, target_h = target_size
         h, w = frame.shape[:2]
         
+        # Handle empty frames
+        if w == 0 or h == 0:
+            raise ValueError("Cannot letterbox empty frame")
+        
         # Calculate scaling factor to fit image inside target size
         scale = min(target_w / w, target_h / h)
         new_w, new_h = int(w * scale), int(h * scale)
@@ -78,7 +82,7 @@ class ImageEditor:
     @staticmethod
     def resize(frame: np.ndarray, 
                target_size: Tuple[int, int], 
-               maintain_aspect: bool = False, 
+               maintain_ratio: bool = False, 
                interpolation: int = cv2.INTER_LINEAR) -> np.ndarray:
         """
         Resize frame to target size.
@@ -86,16 +90,16 @@ class ImageEditor:
         Args:
             frame (np.ndarray): Input frame
             target_size (tuple): Target size as (width, height)
-            maintain_aspect (bool): If True, use letterboxing to maintain aspect ratio
+            maintain_ratio (bool): If True, use letterboxing to maintain aspect ratio
             interpolation (int): OpenCV interpolation method
             
         Returns:
             np.ndarray: Resized frame
         """
-        if maintain_aspect:
+        if maintain_ratio:
             return ImageEditor.letterbox(frame, target_size)
         else:
-            return cv2.resize(frame, target_size, interpolation=interpolation)
+            return cv2.resize(frame, (target_size[1], target_size[0]), interpolation=interpolation)
 
     @staticmethod
     def adjust(frame: np.ndarray, 
@@ -114,10 +118,29 @@ class ImageEditor:
         Returns:
             np.ndarray: adjusted frame
         """
-        # Apply brightness and contrast
-        result = cv2.convertScaleAbs(frame, alpha=contrast, beta=brightness)
+        original_dtype = frame.dtype
         
-        # Apply saturation if needed
+        # Convert to float for calculations to avoid overflow/underflow
+        result = frame.astype(np.float32)
+
+        # Apply contrast and brightness
+        result = result * contrast + brightness
+        
+        # Clamp to valid range based on original dtype
+        try:
+            if np.issubdtype(original_dtype, np.integer):
+                info = np.iinfo(original_dtype)
+                result = np.clip(result, info.min, info.max)
+            else:
+                info = np.finfo(original_dtype)
+                result = np.clip(result, info.min, info.max)
+        except ValueError:
+            # If we fail, just ensure a non-negative output
+            result = np.clip(result, 0.0, np.inf)
+        
+        result = result.astype(original_dtype)
+        
+        # Apply saturation
         if saturation != 1.0:
             hsv = cv2.cvtColor(result, cv2.COLOR_BGR2HSV).astype(np.float32)
             hsv[:, :, 1] *= saturation
@@ -129,21 +152,20 @@ class ImageEditor:
     @staticmethod
     def greyscale(frame: np.ndarray) -> np.ndarray:
         """
-        Convert frame to greyscale.
+        Convert frame to greyscale and maintain 3 channels for consistency.
         
         Args:
             frame (np.ndarray): Input frame in BGR format
             
         Returns:
-            np.ndarray: Greyscale frame (still 3 channels for consistency)
+            np.ndarray: Greyscale frame (3 channels, all identical)
         """
-        # Convert to greyscale
-        grey = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        # Convert back to 3 channels for consistency with other operations
-        return cv2.cvtColor(grey, cv2.COLOR_GRAY2BGR)
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        # Convert back to 3 channels for consistency
+        return cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
 
     @staticmethod
-    def compress_to_jpeg(frame: np.ndarray, quality: int = 90) -> Optional[bytes]:
+    def compress_to_jpeg(frame: np.ndarray, quality: int = 80) -> Optional[np.ndarray]:
         """
         Compress frame to JPEG format.
         
@@ -154,18 +176,19 @@ class ImageEditor:
         Returns:
             bytes: Compressed JPEG data, or None if compression failed
         """
+        quality = int(quality)  # Gstreamer doesn't like quality to be float
         try:
             success, encoded = cv2.imencode(
                 '.jpg', 
                 frame, 
                 [cv2.IMWRITE_JPEG_QUALITY, quality]
             )
-            return encoded.tobytes() if success else None
+            return encoded if success else None
         except Exception:
             return None
 
     @staticmethod
-    def compress_to_png(frame: np.ndarray, compression_level: int = 6) -> Optional[bytes]:
+    def compress_to_png(frame: np.ndarray, compression_level: int = 6) -> Optional[np.ndarray]:
         """
         Compress frame to PNG format.
         
@@ -176,13 +199,14 @@ class ImageEditor:
         Returns:
             bytes: Compressed PNG data, or None if compression failed
         """
+        compression_level = int(compression_level)  # Gstreamer doesn't like compression_level to be float
         try:
             success, encoded = cv2.imencode(
                 '.png', 
                 frame, 
                 [cv2.IMWRITE_PNG_COMPRESSION, compression_level]
             )
-            return encoded.tobytes() if success else None
+            return encoded if success else None
         except Exception:
             return None
 
@@ -245,7 +269,6 @@ class ImageEditor:
 # Functional API - Standalone pipeable functions
 # =============================================================================
 
-@pipeable
 def letterboxed(target_size: Optional[Tuple[int, int]] = None, 
                 color: Tuple[int, int, int] = (114, 114, 114)):
     """
@@ -259,37 +282,33 @@ def letterboxed(target_size: Optional[Tuple[int, int]] = None,
         Partial function that takes a frame and returns letterboxed frame
         
     Examples:
-        result = frame | letterboxed(target_size=(640, 640))
-        result = frame | letterboxed() | adjusted(brightness=10)
+        pipe = letterboxed(target_size=(640, 640))
+        pipe = letterboxed() | adjusted(brightness=10)
     """
-    from functools import partial
-    return partial(ImageEditor.letterbox, target_size=target_size, color=color)
+    return PipeableFunction(ImageEditor.letterbox, target_size=target_size, color=color)
 
 
-@pipeable
 def resized(target_size: Tuple[int, int], 
-            maintain_aspect: bool = False, 
+            maintain_ratio: bool = False, 
             interpolation: int = cv2.INTER_LINEAR):
     """
     Pipeable resize function - resize frame with pipe operator support.
     
     Args:
         target_size (tuple): Target size as (width, height)
-        maintain_aspect (bool): If True, use letterboxing to maintain aspect ratio
+        maintain_ratio (bool): If True, use letterboxing to maintain aspect ratio
         interpolation (int): OpenCV interpolation method
         
     Returns:
         Partial function that takes a frame and returns resized frame
         
     Examples:
-        result = frame | resized(target_size=(640, 480))
-        result = frame | letterboxed() | resized(target_size=(320, 240))
+        pipe = resized(target_size=(640, 480))
+        pipe = letterboxed() | resized(target_size=(320, 240))
     """
-    from functools import partial
-    return partial(ImageEditor.resize, target_size=target_size, maintain_aspect=maintain_aspect, interpolation=interpolation)
+    return PipeableFunction(ImageEditor.resize, target_size=target_size, maintain_ratio=maintain_ratio, interpolation=interpolation)
 
 
-@pipeable
 def adjusted(brightness: float = 0.0, 
              contrast: float = 1.0,
              saturation: float = 1.0):
@@ -305,14 +324,12 @@ def adjusted(brightness: float = 0.0,
         Partial function that takes a frame and returns the adjusted frame
         
     Examples:
-        result = frame | adjusted(brightness=10, contrast=1.2)
-        result = frame | letterboxed() | adjusted(brightness=5) | resized(target_size=(320, 240))
+        pipe = adjusted(brightness=10, contrast=1.2)
+        pipe = letterboxed() | adjusted(brightness=5) | resized(target_size=(320, 240))
     """
-    from functools import partial
-    return partial(ImageEditor.adjust, brightness=brightness, contrast=contrast, saturation=saturation)
+    return PipeableFunction(ImageEditor.adjust, brightness=brightness, contrast=contrast, saturation=saturation)
 
 
-@pipeable
 def greyscaled():
     """
     Pipeable greyscale function - convert frame to greyscale with pipe operator support.
@@ -321,14 +338,13 @@ def greyscaled():
         Function that takes a frame and returns greyscale frame
         
     Examples:
-        result = frame | greyscaled()
-        result = frame | letterboxed() | greyscaled() | adjusted(contrast=1.2)
+        pipe = greyscaled()
+        pipe = letterboxed() | greyscaled() | adjusted(contrast=1.2)
     """
-    return ImageEditor.greyscale
+    return PipeableFunction(ImageEditor.greyscale)
 
 
-@pipeable
-def compressed_to_jpeg(quality: int = 90):
+def compressed_to_jpeg(quality: int = 80):
     """
     Pipeable JPEG compression function - compress frame to JPEG with pipe operator support.
     
@@ -336,17 +352,15 @@ def compressed_to_jpeg(quality: int = 90):
         quality (int): JPEG quality (0-100, higher = better quality)
         
     Returns:
-        Partial function that takes a frame and returns compressed JPEG bytes
+        Partial function that takes a frame and returns compressed JPEG bytes as Numpy array or None
         
     Examples:
-        jpeg_bytes = frame | compressed_to_jpeg(quality=95)
-        jpeg_bytes = frame | resized(target_size=(640, 480)) | compressed_to_jpeg()
+        pipe = compressed_to_jpeg(quality=95)
+        pipe = resized(target_size=(640, 480)) | compressed_to_jpeg()
     """
-    from functools import partial
-    return partial(ImageEditor.compress_to_jpeg, quality=quality)
+    return PipeableFunction(ImageEditor.compress_to_jpeg, quality=quality)
 
 
-@pipeable
 def compressed_to_png(compression_level: int = 6):
     """
     Pipeable PNG compression function - compress frame to PNG with pipe operator support.
@@ -355,11 +369,10 @@ def compressed_to_png(compression_level: int = 6):
         compression_level (int): PNG compression level (0-9, higher = better compression)
         
     Returns:
-        Partial function that takes a frame and returns compressed PNG bytes
+        Partial function that takes a frame and returns compressed PNG bytes as Numpy array or None
         
     Examples:
-        png_bytes = frame | compressed_to_png(compression_level=9)
-        png_bytes = frame | letterboxed() | compressed_to_png()
+        pipe = compressed_to_png(compression_level=9)
+        pipe = letterboxed() | compressed_to_png()
     """
-    from functools import partial
-    return partial(ImageEditor.compress_to_png, compression_level=compression_level)
+    return PipeableFunction(ImageEditor.compress_to_png, compression_level=compression_level)

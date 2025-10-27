@@ -7,10 +7,12 @@ Decorator for adding pipe operator support to transformation functions.
 
 This module provides a decorator that wraps static functions to support
 the | (pipe) operator for functional composition.
+
+Note: Due to numpy's element-wise operator behavior, using the pipe operator
+with numpy arrays (array | function) is not supported. Use function(array) instead.
 """
 
 from typing import Callable
-from functools import wraps
 
 
 class PipeableFunction:
@@ -66,7 +68,9 @@ class PipeableFunction:
             A new pipeable function that combines both
         """
         if not callable(other):
-            return NotImplemented
+            # Raise TypeError immediately instead of returning NotImplemented
+            # This prevents Python from trying the reverse operation for nothing
+            raise TypeError(f"unsupported operand type(s) for |: '{type(self).__name__}' and '{type(other).__name__}'")
         
         def composed(value):
             return other(self(value))
@@ -75,52 +79,20 @@ class PipeableFunction:
     
     def __repr__(self):
         """String representation of the pipeable function."""
+        # Get function name safely
+        func_name = getattr(self.func, '__name__', None)
+        if func_name is None:
+            func_name =  getattr(type(self.func), '__name__', None)
+        if func_name is None:
+            from functools import partial
+            if type(self.func) == partial:
+                func_name = "partial"
+        if func_name is None:
+            func_name = "unknown"  # Fallback
+        
         if self.args or self.kwargs:
             args_str = ', '.join(map(str, self.args))
             kwargs_str = ', '.join(f'{k}={v}' for k, v in self.kwargs.items())
             all_args = ', '.join(filter(None, [args_str, kwargs_str]))
-            return f"{self.__name__}({all_args})"
-        return f"{self.__name__}()"
-
-
-def pipeable(func: Callable) -> Callable:
-    """
-    Decorator that makes a function pipeable using the | operator.
-    
-    The decorated function can be used in two ways:
-    1. Normal function call: func(args)
-    2. Pipe operator: value | func or func | other_func
-    
-    Args:
-        func: Function to make pipeable
-        
-    Returns:
-        Wrapped function that supports pipe operations
-        
-    Examples:
-        @pipeable
-        def add_one(x):
-            return x + 1
-        
-        result = 5 | add_one | add_one  -> 7
-    """
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        if args and kwargs:
-            # Both positional and keyword args - return partially applied
-            return PipeableFunction(func, *args, **kwargs)
-        elif args:
-            # Only positional args - return partially applied
-            return PipeableFunction(func, *args, **kwargs)
-        elif kwargs:
-            # Only keyword args - return partially applied
-            return PipeableFunction(func, **kwargs)
-        else:
-            # No args - return pipeable version of original function
-            return PipeableFunction(func)
-    
-    # Also add the pipeable functionality directly to the wrapper
-    wrapper.__ror__ = lambda self, other: func(other)
-    wrapper.__or__ = lambda self, other: PipeableFunction(lambda x: other(func(x)))
-    
-    return wrapper
+            return f"{func_name}({all_args})"
+        return f"{func_name}()"

@@ -24,7 +24,10 @@ import time
 
 import os
 
+import numpy as np
+
 from arduino.app_peripherals.camera import Camera
+from arduino.app_utils.image.image_editor import ImageEditor
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
 
@@ -53,22 +56,19 @@ async def connect_output_tcp(output_host: str, output_port: int):
     """Connect to the output TCP server."""
     global output_writer, output_reader
     
-    logger.info(f"Connecting to TCP server at {output_host}:{output_port}...")
+    logger.info(f"Connecting to output server at {output_host}:{output_port}...")
     
     try:
         output_reader, output_writer = await asyncio.open_connection(
             output_host, output_port
         )
-        logger.info("TCP connection established successfully")
-        
-        return True
+        logger.info("Connected successfully to output server")
         
     except Exception as e:
-        logger.error(f"Failed to connect to TCP server: {e}")
-        return False
+        raise Exception(f"Failed to connect to output server: {e}")
 
 
-async def forward_frame(frame, quality: int):
+async def forward_frame(frame: np.ndarray):
     """Forward a frame to the output TCP server as raw JPEG."""
     global output_writer
     
@@ -76,25 +76,17 @@ async def forward_frame(frame, quality: int):
         return
     
     try:
-        # Frame is already a PIL.Image.Image in JPEG format
-        # Convert PIL image to bytes
-        import io
-        img_bytes = io.BytesIO()
-        frame.save(img_bytes, format='JPEG', quality=quality)
-        frame_data = img_bytes.getvalue()
-        
-        # Send raw JPEG binary data
-        output_writer.write(frame_data)
+        output_writer.write(frame.tobytes())
         await output_writer.drain()
         
     except ConnectionResetError:
-        logger.warning("TCP connection reset while forwarding frame")
+        logger.warning("Output connection reset while forwarding frame")
         output_writer = None
     except Exception as e:
         logger.error(f"Error forwarding frame: {e}")
 
 
-async def camera_loop(fps: int, quality: int):
+async def camera_loop(fps: int):
     """Main camera capture and forwarding loop."""
     global running, camera
     
@@ -111,21 +103,26 @@ async def camera_loop(fps: int, quality: int):
         try:
             # Read frame from WebSocketCamera
             frame = camera.capture()
-            
-            if frame is not None:
-                # Rate limiting
-                current_time = time.time()
-                time_since_last = current_time - last_frame_time
-                if time_since_last < frame_interval:
-                    await asyncio.sleep(frame_interval - time_since_last)
-                
-                last_frame_time = time.time()
-                
-                # Forward frame if output TCP connection is available
-                await forward_frame(frame, quality)
-            else:
+            # frame = ImageEditor.compress_to_jpeg(frame, 80.1)
+            if frame is None:
                 # No frame available, small delay to avoid busy waiting
                 await asyncio.sleep(0.01)
+                continue
+            
+            # Rate limiting
+            current_time = time.time()
+            time_since_last = current_time - last_frame_time
+            if time_since_last < frame_interval:
+                await asyncio.sleep(frame_interval - time_since_last)
+            
+            last_frame_time = time.time()
+            
+            if output_writer is None or output_writer.is_closing():
+                # Output connection is not available, give room to the other tasks
+                await asyncio.sleep(0.01)
+            else:
+                # Forward frame if output connection is available
+                await forward_frame(frame)
             
         except Exception as e:
             logger.error(f"Error in camera loop: {e}")
@@ -138,18 +135,16 @@ async def maintain_output_connection(output_host: str, output_port: int, reconne
 
     while running:
         try:
-            # Establish connection
-            if await connect_output_tcp(output_host, output_port):
-                logger.info("TCP connection established, maintaining...")
+            await connect_output_tcp(output_host, output_port)
+            
+            # Keep monitoring
+            while running and output_writer and not output_writer.is_closing():
+                await asyncio.sleep(1.0)
                 
-                # Keep connection alive
-                while running and output_writer and not output_writer.is_closing():
-                    await asyncio.sleep(1.0)
-                    
-                logger.info("TCP connection lost")
+            logger.info("Lost connection to output server")
                 
         except Exception as e:
-            logger.error(f"TCP connection error: {e}")
+            logger.error(e)
         finally:
             # Clean up connection
             if output_writer:
@@ -163,7 +158,7 @@ async def maintain_output_connection(output_host: str, output_port: int, reconne
         
         # Wait before reconnecting
         if running:
-            logger.info(f"Reconnecting to TCP server in {reconnect_delay} seconds...")
+            logger.info(f"Reconnecting to output server in {reconnect_delay} seconds...")
             await asyncio.sleep(reconnect_delay)
 
 
@@ -172,10 +167,12 @@ async def main():
     global running, camera
     
     parser = argparse.ArgumentParser(description="WebSocket Camera Proxy")
+    parser.add_argument("--input-host", default="localhost",
+                       help="WebSocketCamera input host (default: localhost)")
     parser.add_argument("--input-port", type=int, default=8080,
                        help="WebSocketCamera input port (default: 8080)")
-    parser.add_argument("--output-host", default="0.0.0.0",
-                       help="Output TCP server host (default: 0.0.0.0)")
+    parser.add_argument("--output-host", default="localhost",
+                       help="Output TCP server host (default: localhost)")
     parser.add_argument("--output-port", type=int, default=5000,
                        help="Output TCP server port (default: 5000)")
     parser.add_argument("--fps", type=int, default=30,
@@ -204,11 +201,12 @@ async def main():
     logger.info(f"Target FPS: {args.fps}")
     
     from arduino.app_utils.image.image_editor import compressed_to_jpeg
-    camera = Camera("ws://0.0.0.0:5000", transformer=compressed_to_jpeg(80))
+    camera = Camera(f"ws://{args.input_host}:{args.input_port}", adjuster=compressed_to_jpeg(80))
+    # camera = Camera(f"ws://{args.input_host}:{args.input_port}")
     
     try:
         # Start camera input and output connection tasks
-        camera_task = asyncio.create_task(camera_loop(args.fps, args.quality))
+        camera_task = asyncio.create_task(camera_loop(args.fps))
         connection_task = asyncio.create_task(maintain_output_connection(args.output_host, args.output_port, reconnect_delay))
         
         # Run both tasks concurrently

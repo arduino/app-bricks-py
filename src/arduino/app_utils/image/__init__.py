@@ -1,6 +1,6 @@
 from .image import *
 from .image_editor import ImageEditor
-from .pipeable import PipeableFunction, pipeable
+from .pipeable import PipeableFunction
 
 __all__ = [
     "get_image_type",
@@ -8,7 +8,7 @@ __all__ = [
     "draw_bounding_boxes",
     "draw_anomaly_markers",
     "ImageEditor",
-    "pipeable",
+    "PipeableFunction",
     "letterboxed",
     "resized",
     "adjusted",
