@@ -11,7 +11,6 @@ __all__ = [
     "PipeableFunction",
     "letterboxed",
     "resized",
-    "adjusted",
     "greyscaled",
     "compressed_to_jpeg",
     "compressed_to_png",

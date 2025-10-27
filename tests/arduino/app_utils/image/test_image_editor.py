@@ -10,7 +10,6 @@ from arduino.app_utils.image.image_editor import (
     ImageEditor, 
     letterboxed, 
     resized, 
-    adjusted, 
     greyscaled, 
     compressed_to_jpeg, 
     compressed_to_png
@@ -86,53 +85,6 @@ class TestImageEditor:
         for interpolation in [cv2.INTER_LINEAR, cv2.INTER_CUBIC, cv2.INTER_NEAREST]:
             result = ImageEditor.resize(sample_frame, target_size=target_size, interpolation=interpolation)
             assert result.shape[:2] == (50, 40)
-    
-    def test_adjust_brightness(self, sample_frame):
-        """Test brightness adjustment."""
-        # Increase brightness
-        result = ImageEditor.adjust(sample_frame, brightness=50)
-        assert result.shape == sample_frame.shape
-        # Brightness should increase (but clipped at 255)
-        assert np.all(result >= sample_frame)
-        
-        # Decrease brightness - should clamp at 0, so all values <= original
-        result = ImageEditor.adjust(sample_frame, brightness=-50)
-        assert result.shape == sample_frame.shape
-        assert result.dtype == sample_frame.dtype
-        assert np.all(result <= sample_frame)
-        # Values should never go below 0
-        assert np.all(result >= 0)
-    
-    def test_adjust_contrast(self, sample_frame):
-        """Test contrast adjustment."""
-        # Increase contrast
-        result = ImageEditor.adjust(sample_frame, contrast=1.5)
-        assert result.shape == sample_frame.shape
-        
-        # Decrease contrast
-        result = ImageEditor.adjust(sample_frame, contrast=0.5)
-        assert result.shape == sample_frame.shape
-    
-    def test_adjust_saturation(self, sample_frame):
-        """Test saturation adjustment."""
-        # Increase saturation
-        result = ImageEditor.adjust(sample_frame, saturation=1.5)
-        assert result.shape == sample_frame.shape
-        
-        # Decrease saturation (towards grayscale)
-        result = ImageEditor.adjust(sample_frame, saturation=0.5)
-        assert result.shape == sample_frame.shape
-        
-        # Zero saturation should be grayscale
-        result = ImageEditor.adjust(sample_frame, saturation=0.0)
-        # All channels should be equal for grayscale
-        assert np.allclose(result[:, :, 0], result[:, :, 1], atol=1)
-        assert np.allclose(result[:, :, 1], result[:, :, 2], atol=1)
-    
-    def test_adjust_combined(self, sample_frame):
-        """Test combined brightness, contrast, and saturation adjustment."""
-        result = ImageEditor.adjust(sample_frame, brightness=10, contrast=1.2, saturation=0.8)
-        assert result.shape == sample_frame.shape
     
     def test_greyscale_conversion(self, sample_frame):
         """Test grayscale conversion."""
@@ -250,17 +202,6 @@ class TestPipeableFunctions:
         assert result.shape[:2] == (50, 40)
         assert result.shape[2] == 3
     
-    def test_adjusted_function_returns_pipeable(self):
-        """Test that adjusted function returns PipeableFunction."""
-        result = adjusted(brightness=10, contrast=1.2)
-        assert isinstance(result, PipeableFunction)
-    
-    def test_adjusted_pipe_operator(self, sample_frame):
-        """Test adjusted function with pipe operator."""
-        result = adjusted(brightness=10, contrast=1.2, saturation=0.8)(sample_frame)
-        
-        assert result.shape == sample_frame.shape
-    
     def test_greyscaled_function_returns_pipeable(self):
         """Test that greyscaled function returns PipeableFunction."""
         result = greyscaled()
@@ -329,9 +270,7 @@ class TestPipelineComposition:
     def test_complex_pipeline(self, sample_frame):
         """Test complex pipeline with multiple operations."""
         # Create pipeline using function-to-function composition
-        pipe = (letterboxed(target_size=(150, 150)) |
-                   adjusted(brightness=10, contrast=1.1, saturation=0.9) |
-                   resized(target_size=(75, 75)))
+        pipe = (letterboxed(target_size=(150, 150)) | resized(target_size=(75, 75)))
         result = pipe(sample_frame)
         
         assert result.shape[:2] == (75, 75)
@@ -344,9 +283,7 @@ class TestPipelineComposition:
         mock_imencode.return_value = (True, mock_encoded)
         
         # Create pipeline using function-to-function composition
-        pipe = (letterboxed(target_size=(100, 100)) |
-                adjusted(brightness=5) |
-                compressed_to_jpeg(quality=90))
+        pipe = (letterboxed(target_size=(100, 100)) | compressed_to_jpeg(quality=90))
         result = pipe(sample_frame)
         
         assert np.array_equal(result, mock_encoded)
@@ -354,9 +291,7 @@ class TestPipelineComposition:
     def test_pipeline_with_greyscale(self, sample_frame):
         """Test pipeline with greyscale conversion."""
         # Create pipeline using function-to-function composition
-        pipe = (letterboxed(target_size=(100, 100)) |
-                greyscaled() |
-                adjusted(brightness=10, contrast=1.2))
+        pipe = (letterboxed(target_size=(100, 100)) | greyscaled())
         result = pipe(sample_frame)
         
         assert len(result.shape) == 3 and result.shape[2] == 3
@@ -412,24 +347,3 @@ class TestEdgeCases:
         
         with pytest.raises((ValueError, cv2.error)):
             ImageEditor.resize(frame, target_size=(-10, 100))
-    
-    def test_extreme_adjustment_values(self, sample_frame=None):
-        """Test extreme adjustment values."""
-        if sample_frame is None:
-            sample_frame = np.random.randint(0, 256, (50, 50, 3), dtype=np.uint8)
-        
-        # Extreme brightness
-        result = ImageEditor.adjust(sample_frame, brightness=1000)
-        assert result.shape == sample_frame.shape
-        assert np.all(result <= 255)  # Should be clipped
-        
-        result = ImageEditor.adjust(sample_frame, brightness=-1000)
-        assert np.all(result >= 0)  # Should be clipped
-        
-        # Extreme contrast
-        result = ImageEditor.adjust(sample_frame, contrast=100)
-        assert result.shape == sample_frame.shape
-        
-        # Zero contrast
-        result = ImageEditor.adjust(sample_frame, contrast=0)
-        assert result.shape == sample_frame.shape

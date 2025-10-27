@@ -27,7 +27,7 @@ class ImageEditor:
         result = frame | letterboxed(target_size=(640, 640))
         
         Chained operations:
-        result = frame | letterboxed(target_size=(640, 640)) | adjusted(brightness=10)
+        result = frame | letterboxed(target_size=(640, 640)) | greyscaled()
     """
 
     @staticmethod
@@ -100,54 +100,6 @@ class ImageEditor:
             return ImageEditor.letterbox(frame, target_size)
         else:
             return cv2.resize(frame, (target_size[1], target_size[0]), interpolation=interpolation)
-
-    @staticmethod
-    def adjust(frame: np.ndarray, 
-               brightness: float = 0.0, 
-               contrast: float = 1.0,
-               saturation: float = 1.0) -> np.ndarray:
-        """
-        Apply basic image filters.
-        
-        Args:
-            frame (np.ndarray): Input frame
-            brightness (float): Brightness adjustment (-100 to 100)
-            contrast (float): Contrast multiplier (0.0 to 3.0)
-            saturation (float): Saturation multiplier (0.0 to 3.0)
-            
-        Returns:
-            np.ndarray: adjusted frame
-        """
-        original_dtype = frame.dtype
-        
-        # Convert to float for calculations to avoid overflow/underflow
-        result = frame.astype(np.float32)
-
-        # Apply contrast and brightness
-        result = result * contrast + brightness
-        
-        # Clamp to valid range based on original dtype
-        try:
-            if np.issubdtype(original_dtype, np.integer):
-                info = np.iinfo(original_dtype)
-                result = np.clip(result, info.min, info.max)
-            else:
-                info = np.finfo(original_dtype)
-                result = np.clip(result, info.min, info.max)
-        except ValueError:
-            # If we fail, just ensure a non-negative output
-            result = np.clip(result, 0.0, np.inf)
-        
-        result = result.astype(original_dtype)
-        
-        # Apply saturation
-        if saturation != 1.0:
-            hsv = cv2.cvtColor(result, cv2.COLOR_BGR2HSV).astype(np.float32)
-            hsv[:, :, 1] *= saturation
-            hsv[:, :, 1] = np.clip(hsv[:, :, 1], 0, 255)
-            result = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR)
-        
-        return result
 
     @staticmethod
     def greyscale(frame: np.ndarray) -> np.ndarray:
@@ -244,26 +196,6 @@ class ImageEditor:
         rgb_array = np.array(image)
         return cv2.cvtColor(rgb_array, cv2.COLOR_RGB2BGR)
 
-    @staticmethod
-    def get_frame_info(frame: np.ndarray) -> dict:
-        """
-        Get information about a frame.
-        
-        Args:
-            frame (np.ndarray): Input frame
-            
-        Returns:
-            dict: Frame information including dimensions, channels, dtype, size
-        """
-        return {
-            'height': frame.shape[0],
-            'width': frame.shape[1],
-            'channels': frame.shape[2] if len(frame.shape) > 2 else 1,
-            'dtype': str(frame.dtype),
-            'size_bytes': frame.nbytes,
-            'shape': frame.shape
-        }
-
 
 # =============================================================================
 # Functional API - Standalone pipeable functions
@@ -283,7 +215,7 @@ def letterboxed(target_size: Optional[Tuple[int, int]] = None,
         
     Examples:
         pipe = letterboxed(target_size=(640, 640))
-        pipe = letterboxed() | adjusted(brightness=10)
+        pipe = letterboxed() | greyscaled()
     """
     return PipeableFunction(ImageEditor.letterbox, target_size=target_size, color=color)
 
@@ -309,27 +241,6 @@ def resized(target_size: Tuple[int, int],
     return PipeableFunction(ImageEditor.resize, target_size=target_size, maintain_ratio=maintain_ratio, interpolation=interpolation)
 
 
-def adjusted(brightness: float = 0.0, 
-             contrast: float = 1.0,
-             saturation: float = 1.0):
-    """
-    Pipeable filter function - apply filters with pipe operator support.
-    
-    Args:
-        brightness (float): Brightness adjustment (-100 to 100)
-        contrast (float): Contrast multiplier (0.0 to 3.0)
-        saturation (float): Saturation multiplier (0.0 to 3.0)
-        
-    Returns:
-        Partial function that takes a frame and returns the adjusted frame
-        
-    Examples:
-        pipe = adjusted(brightness=10, contrast=1.2)
-        pipe = letterboxed() | adjusted(brightness=5) | resized(target_size=(320, 240))
-    """
-    return PipeableFunction(ImageEditor.adjust, brightness=brightness, contrast=contrast, saturation=saturation)
-
-
 def greyscaled():
     """
     Pipeable greyscale function - convert frame to greyscale with pipe operator support.
@@ -339,7 +250,7 @@ def greyscaled():
         
     Examples:
         pipe = greyscaled()
-        pipe = letterboxed() | greyscaled() | adjusted(contrast=1.2)
+        pipe = letterboxed() | greyscaled() | greyscaled()
     """
     return PipeableFunction(ImageEditor.greyscale)
 
