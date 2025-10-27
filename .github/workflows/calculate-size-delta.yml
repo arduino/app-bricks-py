@@ -29,8 +29,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Searching for PR from branch '${{ github.ref_name }}'..."
-          PR_NUMBER=$(gh pr list --state open --head "${{ github.ref_name }}" --json number --jq '.[0].number // empty')
+          echo "Searching for PR from branch ${GITHUB_REF_NAME}..."
+          PR_NUMBER=$(gh pr list --state open --head "${GITHUB_REF_NAME}" --json number --jq '.[0].number // empty')
           if [ -z "$PR_NUMBER" ]; then
             echo "Not found in current repo, searching across forks..."
             PR_NUMBER=$(gh pr list --state open --json number,headRefName,headRepositoryOwner --jq ".[] | select(.headRefName == \"${{ github.ref_name }}\") | .number" | head -n1)
