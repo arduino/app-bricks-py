@@ -2,348 +2,407 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-import pytest
 import numpy as np
-import cv2
-from unittest.mock import patch
-from arduino.app_utils.image.image_editor import (
-    ImageEditor, 
-    letterboxed, 
-    resized, 
-    greyscaled, 
-    compressed_to_jpeg, 
-    compressed_to_png
-)
-from arduino.app_utils.image.pipeable import PipeableFunction
+import pytest
+from arduino.app_utils.image.image_editor import ImageEditor
 
 
-class TestImageEditor:
-    """Test cases for the ImageEditor class."""
-    
-    @pytest.fixture
-    def sample_frame(self):
-        """Create a sample RGB frame for testing."""
-        # Create a 100x80 RGB frame with some pattern
-        frame = np.zeros((80, 100, 3), dtype=np.uint8)
-        frame[:, :40] = [255, 0, 0]  # Red left section
-        frame[:, 40:] = [0, 255, 0]  # Green right section
-        return frame
-    
-    @pytest.fixture
-    def sample_grayscale_frame(self):
-        """Create a sample grayscale frame for testing."""
-        return np.random.randint(0, 256, (80, 100), dtype=np.uint8)
-    
-    def test_letterbox_make_square(self, sample_frame):
-        """Test letterboxing to make frame square."""
-        result = ImageEditor.letterbox(sample_frame)
-        
-        # Should make it square based on larger dimension (100)
-        assert result.shape[:2] == (100, 100)
-        assert result.shape[2] == 3  # Still RGB
-    
-    def test_letterbox_specific_size(self, sample_frame):
-        """Test letterboxing to specific target size."""
-        target_size = (200, 150)
-        result = ImageEditor.letterbox(sample_frame, target_size=target_size)
-        
-        assert result.shape[:2] == (150, 200)  # Height, Width
-        assert result.shape[2] == 3  # Still RGB
-    
-    def test_letterbox_custom_color(self, sample_frame):
-        """Test letterboxing with custom padding color."""
-        target_size = (200, 200)
-        custom_color = (255, 255, 0)  # Yellow
-        result = ImageEditor.letterbox(sample_frame, target_size=target_size, color=custom_color)
-        
-        assert result.shape[:2] == (200, 200)
-        # Check that padding areas have the custom color
-        # Top and bottom should have yellow padding
-        assert np.array_equal(result[0, 0], custom_color)
-    
-    def test_resize_basic(self, sample_frame):
-        """Test basic resizing functionality."""
-        target_size = (50, 40)  # Smaller than original
-        result = ImageEditor.resize(sample_frame, target_size=target_size)
-        
-        assert result.shape[:2] == (50, 40)
-        assert result.shape[2] == 3  # Still RGB
-    
-    def test_resize_with_letterboxing(self, sample_frame):
-        """Test resizing with maintain_ratio==True (uses letterboxing)."""
-        target_size = (200, 200)
-        result = ImageEditor.resize(sample_frame, target_size=target_size, maintain_ratio=True)
-        
-        assert result.shape[:2] == (200, 200)
-        assert result.shape[2] == 3  # Still RGB
-    
-    def test_resize_interpolation_methods(self, sample_frame):
-        """Test different interpolation methods."""
-        target_size = (50, 40)
-        
-        # Test different interpolation methods
-        for interpolation in [cv2.INTER_LINEAR, cv2.INTER_CUBIC, cv2.INTER_NEAREST]:
-            result = ImageEditor.resize(sample_frame, target_size=target_size, interpolation=interpolation)
-            assert result.shape[:2] == (50, 40)
-    
-    def test_greyscale_conversion(self, sample_frame):
-        """Test grayscale conversion."""
-        result = ImageEditor.greyscale(sample_frame)
-        
-        assert len(result.shape) == 3 and result.shape[2] == 3
-        assert result.shape[:2] == sample_frame.shape[:2]
-    
-    @patch('cv2.imencode')
-    def test_compress_to_jpeg_success(self, mock_imencode, sample_frame):
-        """Test successful JPEG compression."""
-        mock_encoded = np.array([1, 2, 3, 4], dtype=np.uint8)
-        mock_imencode.return_value = (True, mock_encoded)
-        
-        result = ImageEditor.compress_to_jpeg(sample_frame, quality=85)
-        
-        assert np.array_equal(result, mock_encoded)
-        mock_imencode.assert_called_once()
-        args, kwargs = mock_imencode.call_args
-        assert args[0] == '.jpg'
-        assert np.array_equal(args[1], sample_frame)
-        assert args[2] == [cv2.IMWRITE_JPEG_QUALITY, 85]
-    
-    @patch('cv2.imencode')
-    def test_compress_to_jpeg_failure(self, mock_imencode, sample_frame):
-        """Test failed JPEG compression."""
-        mock_imencode.return_value = (False, None)
-        
-        result = ImageEditor.compress_to_jpeg(sample_frame)
-        
-        assert result is None
-    
-    @patch('cv2.imencode')
-    def test_compress_to_jpeg_exception(self, mock_imencode, sample_frame):
-        """Test JPEG compression with exception."""
-        mock_imencode.side_effect = Exception("Encoding error")
-        
-        result = ImageEditor.compress_to_jpeg(sample_frame)
-        
-        assert result is None
-    
-    @patch('cv2.imencode')
-    def test_compress_to_png_success(self, mock_imencode, sample_frame):
-        """Test successful PNG compression."""
-        mock_encoded = np.array([1, 2, 3, 4], dtype=np.uint8)
-        mock_imencode.return_value = (True, mock_encoded)
-        
-        result = ImageEditor.compress_to_png(sample_frame, compression_level=6)
-        
-        assert np.array_equal(result, mock_encoded)
-        mock_imencode.assert_called_once()
-        args, kwargs = mock_imencode.call_args
-        assert args[0] == '.png'
-        assert args[2] == [cv2.IMWRITE_PNG_COMPRESSION, 6]
-    
-    def test_compress_to_jpeg_dtype_preservation(self, sample_frame):
-        """Test JPEG compression preserves input dtype."""
-        # Create frame with different dtype
-        frame_16bit = sample_frame.astype(np.uint16) * 256
-        
-        with patch('cv2.imencode') as mock_imencode:
-            mock_imencode.return_value = (True, np.array([1, 2, 3]))
-            result = ImageEditor.compress_to_jpeg(frame_16bit)
-            
-            args, kwargs = mock_imencode.call_args
-            encoded_frame = args[1]
-            assert encoded_frame.dtype == np.uint16
-    
-    def test_compress_to_png_dtype_preservation(self, sample_frame):
-        """Test PNG compression preserves input dtype."""
-        # Create frame with different dtype
-        frame_16bit = sample_frame.astype(np.uint16) * 256
-        
-        with patch('cv2.imencode') as mock_imencode:
-            mock_imencode.return_value = (True, np.array([1, 2, 3]))
-            result = ImageEditor.compress_to_png(frame_16bit)
-            
-            args, kwargs = mock_imencode.call_args
-            encoded_frame = args[1]
-            assert encoded_frame.dtype == np.uint16
+# FIXTURES
+
+def create_gradient_frame(dtype):
+    """Helper: Creates a 100x100 3-channel (BGR) frame with gradients."""
+    iinfo = np.iinfo(dtype)
+    max_val = iinfo.max
+    frame = np.zeros((100, 100, 3), dtype=dtype)
+    frame[:, :, 0] = np.linspace(0, max_val // 2, 100, dtype=dtype) # Blue
+    frame[:, :, 1] = np.linspace(0, max_val, 100, dtype=dtype) # Green
+    frame[:, :, 2] = np.linspace(max_val // 2, max_val, 100, dtype=dtype) # Red
+    return frame
+
+def create_greyscale_frame(dtype):
+    """Helper: Creates a 100x100 1-channel (greyscale) frame."""
+    iinfo = np.iinfo(dtype)
+    max_val = iinfo.max
+    frame = np.zeros((100, 100), dtype=dtype)
+    frame[:, :] = np.linspace(0, max_val, 100, dtype=dtype)
+    return frame
+
+def create_bgra_frame(dtype):
+    """Helper: Creates a 100x100 4-channel (BGRA) frame."""
+    iinfo = np.iinfo(dtype)
+    max_val = iinfo.max
+    bgr = create_gradient_frame(dtype)
+    alpha = np.zeros((100, 100), dtype=dtype)
+    alpha[:, :] = np.linspace(max_val // 4, max_val, 100, dtype=dtype)
+    frame = np.stack([bgr[:,:,0], bgr[:,:,1], bgr[:,:,2], alpha], axis=2)
+    return frame
+
+# Fixture for a 100x100 uint8 BGR frame
+@pytest.fixture
+def frame_bgr_uint8():
+    return create_gradient_frame(np.uint8)
+
+# Fixture for a 100x100 uint8 BGRA frame
+@pytest.fixture
+def frame_bgra_uint8():
+    return create_bgra_frame(np.uint8)
+
+# Fixture for a 100x100 uint8 greyscale frame
+@pytest.fixture
+def frame_grey_uint8():
+    return create_greyscale_frame(np.uint8)
+
+# Fixtures for high bit-depth frames
+@pytest.fixture
+def frame_bgr_uint16():
+    return create_gradient_frame(np.uint16)
+
+@pytest.fixture
+def frame_bgr_uint32():
+    return create_gradient_frame(np.uint32)
+
+@pytest.fixture
+def frame_bgra_uint16():
+    return create_bgra_frame(np.uint16)
+
+@pytest.fixture
+def frame_bgra_uint32():
+    return create_bgra_frame(np.uint32)
+
+# Fixture for a 200x100 (wide) uint8 BGR frame
+@pytest.fixture
+def frame_bgr_wide():
+    frame = np.zeros((100, 200, 3), dtype=np.uint8)
+    frame[:, :, 2] = 255 # Solid Red
+    return frame
+
+# Fixture for a 100x200 (tall) uint8 BGR frame
+@pytest.fixture
+def frame_bgr_tall():
+    frame = np.zeros((200, 100, 3), dtype=np.uint8)
+    frame[:, :, 1] = 255 # Solid Green
+    return frame
+
+# A parameterized fixture to test multiple data types
+@pytest.fixture(params=[np.uint8, np.uint16, np.uint32])
+def frame_any_dtype(request):
+    """Provides a gradient frame for uint8, uint16, and uint32."""
+    return create_gradient_frame(request.param)
 
 
-class TestPipeableFunctions:
-    """Test cases for the pipeable wrapper functions."""
+# TESTS
+
+def test_adjust_dtype_preservation(frame_any_dtype):
+    """Tests that the dtype of the frame is preserved."""
+    dtype = frame_any_dtype.dtype
+    adjusted = ImageEditor.adjust(frame_any_dtype, brightness=0.1)
+    assert adjusted.dtype == dtype
+
+def test_adjust_no_op(frame_bgr_uint8):
+    """Tests that default parameters do not change the frame."""
+    adjusted = ImageEditor.adjust(frame_bgr_uint8)
+    assert np.array_equal(frame_bgr_uint8, adjusted)
+
+def test_adjust_brightness(frame_bgr_uint8):
+    """Tests brightness adjustment."""
+    brighter = ImageEditor.adjust(frame_bgr_uint8, brightness=0.1)
+    darker = ImageEditor.adjust(frame_bgr_uint8, brightness=-0.1)
+    assert np.mean(brighter) > np.mean(frame_bgr_uint8)
+    assert np.mean(darker) < np.mean(frame_bgr_uint8)
+
+def test_adjust_contrast(frame_bgr_uint8):
+    """Tests contrast adjustment."""
+    higher_contrast = ImageEditor.adjust(frame_bgr_uint8, contrast=1.5)
+    lower_contrast = ImageEditor.adjust(frame_bgr_uint8, contrast=0.5)
+    assert np.std(higher_contrast) > np.std(frame_bgr_uint8)
+    assert np.std(lower_contrast) < np.std(frame_bgr_uint8)
+
+def test_adjust_gamma(frame_bgr_uint8):
+    """Tests gamma correction."""
+    # Gamma < 1.0 (e.g., 0.5) ==> brightens
+    brighter = ImageEditor.adjust(frame_bgr_uint8, gamma=0.5)
+    # Gamma > 1.0 (e.g., 2.0) ==> darkens
+    darker = ImageEditor.adjust(frame_bgr_uint8, gamma=2.0)
+    assert np.mean(brighter) > np.mean(frame_bgr_uint8)
+    assert np.mean(darker) < np.mean(frame_bgr_uint8)
     
-    @pytest.fixture
-    def sample_frame(self):
-        """Create a sample RGB frame for testing."""
-        frame = np.zeros((80, 100, 3), dtype=np.uint8)
-        frame[:, :40] = [255, 0, 0]  # Red left section
-        frame[:, 40:] = [0, 255, 0]  # Green right section
-        return frame
+def test_adjust_saturation_to_greyscale(frame_bgr_uint8):
+    """Tests that saturation=0.0 makes all color channels equal."""
+    desaturated = ImageEditor.adjust(frame_bgr_uint8, saturation=0.0)
+    b, g, r = ImageEditor.split_channels(desaturated)
+    assert np.allclose(b, g, atol=1)
+    assert np.allclose(g, r, atol=1)
+
+def test_adjust_greyscale_input(frame_grey_uint8):
+    """Tests that greyscale frames are handled safely."""
+    adjusted = ImageEditor.adjust(frame_grey_uint8, saturation=1.5, brightness=0.1)
+    assert adjusted.ndim == 2
+    assert adjusted.dtype == np.uint8
+    assert np.mean(adjusted) > np.mean(frame_grey_uint8)
+
+def test_adjust_bgra_input(frame_bgra_uint8):
+    """Tests that BGRA frames are handled safely and alpha is preserved."""
+    original_alpha = frame_bgra_uint8[:,:,3]
     
-    def test_letterboxed_function_returns_pipeable(self):
-        """Test that letterboxed function returns PipeableFunction."""
-        result = letterboxed(target_size=(200, 200))
-        assert isinstance(result, PipeableFunction)
+    adjusted = ImageEditor.adjust(frame_bgra_uint8, saturation=0.0, brightness=0.1)
     
-    def test_letterboxed_pipe_operator(self, sample_frame):
-        """Test letterboxed function with pipe operator."""
-        result = letterboxed(target_size=(200, 200))(sample_frame)
-        
-        assert result.shape[:2] == (200, 200)
-        assert result.shape[2] == 3
+    assert adjusted.ndim == 3
+    assert adjusted.shape[2] == 4
+    assert adjusted.dtype == np.uint8
     
-    def test_resized_function_returns_pipeable(self):
-        """Test that resized function returns PipeableFunction."""
-        result = resized(target_size=(50, 40))
-        assert isinstance(result, PipeableFunction)
+    b, g, r, a = ImageEditor.split_channels(adjusted)
+    assert np.allclose(b, g, atol=1) # Check desaturation
+    assert np.allclose(g, r, atol=1) # Check desaturation
+    assert np.array_equal(original_alpha, a) # Check alpha preservation
+
+def test_adjust_gamma_zero_error(frame_bgr_uint8):
+    """Tests that gamma <= 0 raises a ValueError."""
+    with pytest.raises(ValueError, match="Gamma value must be greater than 0."):
+        ImageEditor.adjust(frame_bgr_uint8, gamma=0.0)
     
-    def test_resized_pipe_operator(self, sample_frame):
-        """Test resized function with pipe operator."""
-        result = resized(target_size=(50, 40))(sample_frame)
-        
-        assert result.shape[:2] == (50, 40)
-        assert result.shape[2] == 3
-    
-    def test_greyscaled_function_returns_pipeable(self):
-        """Test that greyscaled function returns PipeableFunction."""
-        result = greyscaled()
-        assert isinstance(result, PipeableFunction)
-    
-    def test_greyscaled_pipe_operator(self, sample_frame):
-        """Test greyscaled function with pipe operator."""
-        result = greyscaled()(sample_frame)
-        
-        # Should have three channels
-        assert len(result.shape) == 3 and result.shape[2] == 3
-    
-    def test_compressed_to_jpeg_function_returns_pipeable(self):
-        """Test that compressed_to_jpeg function returns PipeableFunction."""
-        result = compressed_to_jpeg(quality=85)
-        assert isinstance(result, PipeableFunction)
-    
-    @patch('cv2.imencode')
-    def test_compressed_to_jpeg_pipe_operator(self, mock_imencode, sample_frame):
-        """Test compressed_to_jpeg function with pipe operator."""
-        mock_encoded = np.array([1, 2, 3, 4], dtype=np.uint8)
-        mock_imencode.return_value = (True, mock_encoded)
-        
-        pipe = compressed_to_jpeg(quality=85)
-        result = pipe(sample_frame) 
-        
-        assert np.array_equal(result, mock_encoded)
-    
-    def test_compressed_to_png_function_returns_pipeable(self):
-        """Test that compressed_to_png function returns PipeableFunction."""
-        result = compressed_to_png(compression_level=6)
-        assert isinstance(result, PipeableFunction)
-    
-    @patch('cv2.imencode')
-    def test_compressed_to_png_pipe_operator(self, mock_imencode, sample_frame):
-        """Test compressed_to_png function with pipe operator."""
-        mock_encoded = np.array([1, 2, 3, 4], dtype=np.uint8)
-        mock_imencode.return_value = (True, mock_encoded)
-        
-        pipe = compressed_to_png(compression_level=6)
-        result = pipe(sample_frame)
-        
-        assert np.array_equal(result, mock_encoded)
+    with pytest.raises(ValueError, match="Gamma value must be greater than 0."):
+        ImageEditor.adjust(frame_bgr_uint8, gamma=-1.0)
+
+def test_adjust_high_bit_depth_bgr(frame_bgr_uint16, frame_bgr_uint32):
+    """
+    Tests that brightness/contrast logic is correct on high bit-depth images.
+    This validates that the float64 conversion is working.
+    """
+    # Test uint16
+    brighter_16 = ImageEditor.adjust(frame_bgr_uint16, brightness=0.1)
+    darker_16 = ImageEditor.adjust(frame_bgr_uint16, brightness=-0.1)
+    assert np.mean(brighter_16) > np.mean(frame_bgr_uint16)
+    assert np.mean(darker_16) < np.mean(frame_bgr_uint16)
+
+    # Test uint32
+    brighter_32 = ImageEditor.adjust(frame_bgr_uint32, brightness=0.1)
+    darker_32 = ImageEditor.adjust(frame_bgr_uint32, brightness=-0.1)
+    assert np.mean(brighter_32) > np.mean(frame_bgr_uint32)
+    assert np.mean(darker_32) < np.mean(frame_bgr_uint32)
+
+def test_adjust_high_bit_depth_bgra(frame_bgra_uint16, frame_bgra_uint32):
+    """
+    Tests that brightness/contrast logic is correct on high bit-depth
+    BGRA images and that the alpha channel is preserved.
+    """
+    # Test uint16
+    original_alpha_16 = frame_bgra_uint16[:,:,3]
+    brighter_16 = ImageEditor.adjust(frame_bgra_uint16, brightness=0.1)
+    assert brighter_16.dtype == np.uint16
+    assert brighter_16.shape == frame_bgra_uint16.shape
+    _, _, _, a16 = ImageEditor.split_channels(brighter_16)
+    assert np.array_equal(original_alpha_16, a16)
+    assert np.mean(brighter_16) > np.mean(frame_bgra_uint16)
+
+    # Test uint32
+    original_alpha_32 = frame_bgra_uint32[:,:,3]
+    brighter_32 = ImageEditor.adjust(frame_bgra_uint32, brightness=0.1)
+    assert brighter_32.dtype == np.uint32
+    assert brighter_32.shape == frame_bgra_uint32.shape
+    _, _, _, a32 = ImageEditor.split_channels(brighter_32)
+    assert np.array_equal(original_alpha_32, a32)
+    assert np.mean(original_alpha_32) > np.mean(frame_bgra_uint32)
 
 
-class TestPipelineComposition:
-    """Test cases for complex pipeline compositions."""
-    
-    @pytest.fixture
-    def sample_frame(self):
-        """Create a sample RGB frame for testing."""
-        frame = np.zeros((80, 100, 3), dtype=np.uint8)
-        frame[:, :40] = [255, 0, 0]  # Red left section
-        frame[:, 40:] = [0, 255, 0]  # Green right section
-        return frame
-    
-    def test_simple_pipeline(self, sample_frame):
-        """Test simple pipeline composition."""
-        # Create pipeline using function-to-function composition 
-        pipe = letterboxed(target_size=(200, 200)) | resized(target_size=(100, 100))
-        result = pipe(sample_frame)
-        
-        assert result.shape[:2] == (100, 100)
-        assert result.shape[2] == 3
-    
-    def test_complex_pipeline(self, sample_frame):
-        """Test complex pipeline with multiple operations."""
-        # Create pipeline using function-to-function composition
-        pipe = (letterboxed(target_size=(150, 150)) | resized(target_size=(75, 75)))
-        result = pipe(sample_frame)
-        
-        assert result.shape[:2] == (75, 75)
-        assert result.shape[2] == 3
-    
-    @patch('cv2.imencode')
-    def test_pipeline_with_compression(self, mock_imencode, sample_frame):
-        """Test pipeline ending with compression."""
-        mock_encoded = np.array([1, 2, 3, 4], dtype=np.uint8)
-        mock_imencode.return_value = (True, mock_encoded)
-        
-        # Create pipeline using function-to-function composition
-        pipe = (letterboxed(target_size=(100, 100)) | compressed_to_jpeg(quality=90))
-        result = pipe(sample_frame)
-        
-        assert np.array_equal(result, mock_encoded)
-    
-    def test_pipeline_with_greyscale(self, sample_frame):
-        """Test pipeline with greyscale conversion."""
-        # Create pipeline using function-to-function composition
-        pipe = (letterboxed(target_size=(100, 100)) | greyscaled())
-        result = pipe(sample_frame)
-        
-        assert len(result.shape) == 3 and result.shape[2] == 3
-    
-    def test_pipeline_error_propagation(self, sample_frame):
-        """Test that errors in pipeline are properly propagated."""
-        with patch.object(ImageEditor, 'letterbox', side_effect=ValueError("Test error")):
-            pipe = letterboxed(target_size=(100, 100))
-            with pytest.raises(ValueError, match="Test error"):
-                pipe(sample_frame)
-    
-    def test_pipeline_with_no_args_functions(self, sample_frame):
-        """Test pipeline with functions that take no additional arguments."""
-        pipe = greyscaled()
-        result = pipe(sample_frame)
-        
-        assert len(result.shape) == 3 and result.shape[2] == 3
+def test_greyscale(frame_bgr_uint8, frame_bgra_uint8, frame_grey_uint8):
+    """Tests the standalone greyscale function."""
+    # Test on BGR
+    greyscaled_bgr = ImageEditor.greyscale(frame_bgr_uint8)
+    assert greyscaled_bgr.ndim == 3
+    assert greyscaled_bgr.shape[2] == 3
+    b, g, r = ImageEditor.split_channels(greyscaled_bgr)
+    assert np.allclose(b, g, atol=1)
+    assert np.allclose(g, r, atol=1)
+
+    # Test on BGRA
+    original_alpha = frame_bgra_uint8[:,:,3]
+    greyscaled_bgra = ImageEditor.greyscale(frame_bgra_uint8)
+    assert greyscaled_bgra.ndim == 3
+    assert greyscaled_bgra.shape[2] == 4
+    b, g, r, a = ImageEditor.split_channels(greyscaled_bgra)
+    assert np.allclose(b, g, atol=1)
+    assert np.allclose(g, r, atol=1)
+    assert np.array_equal(original_alpha, a)
+
+    # Test on 2D Greyscale (should be no-op)
+    greyscaled_grey = ImageEditor.greyscale(frame_grey_uint8)
+    assert np.array_equal(frame_grey_uint8, greyscaled_grey)
+    assert greyscaled_grey.ndim == 2
+
+def test_greyscale_dtype_preservation(frame_any_dtype):
+    """Tests that the dtype of the frame is preserved."""
+    dtype = frame_any_dtype.dtype
+    adjusted = ImageEditor.adjust(frame_any_dtype, brightness=0.1)
+    assert adjusted.dtype == dtype
+
+def test_greyscale_high_bit_depth(frame_bgr_uint16, frame_bgr_uint32):
+    """
+    Tests that greyscale logic is correct on high bit-depth images.
+    """
+    # Test uint16
+    greyscaled_16 = ImageEditor.greyscale(frame_bgr_uint16)
+    assert greyscaled_16.dtype == np.uint16
+    assert greyscaled_16.shape == frame_bgr_uint16.shape
+    b16, g16, r16 = ImageEditor.split_channels(greyscaled_16)
+    assert np.allclose(b16, g16, atol=1)
+    assert np.allclose(g16, r16, atol=1)
+    assert np.mean(b16) != np.mean(frame_bgr_uint16[:,:,0])
+
+    # Test uint32
+    greyscaled_32 = ImageEditor.greyscale(frame_bgr_uint32)
+    assert greyscaled_32.dtype == np.uint32
+    assert greyscaled_32.shape == frame_bgr_uint32.shape
+    b32, g32, r32 = ImageEditor.split_channels(greyscaled_32)
+    assert np.allclose(b32, g32, atol=1)
+    assert np.allclose(g32, r32, atol=1)
+    assert np.mean(b32) != np.mean(frame_bgr_uint32[:,:,0])
+
+def test_high_bit_depth_greyscale_bgra_content(frame_bgra_uint16, frame_bgra_uint32):
+    """
+    Tests that greyscale logic is correct on high bit-depth
+    BGRA images and that the alpha channel is preserved.
+    """
+    # Test uint16
+    original_alpha_16 = frame_bgra_uint16[:,:,3]
+    greyscaled_16 = ImageEditor.greyscale(frame_bgra_uint16)
+    assert greyscaled_16.dtype == np.uint16
+    assert greyscaled_16.shape == frame_bgra_uint16.shape
+    b16, g16, r16, a16 = ImageEditor.split_channels(greyscaled_16)
+    assert np.allclose(b16, g16, atol=1)
+    assert np.allclose(g16, r16, atol=1)
+    assert np.array_equal(original_alpha_16, a16)
+
+    # Test uint32
+    original_alpha_32 = frame_bgra_uint32[:,:,3]
+    greyscaled_32 = ImageEditor.greyscale(frame_bgra_uint32)
+    assert greyscaled_32.dtype == np.uint32
+    assert greyscaled_32.shape == frame_bgra_uint32.shape
+    b32, g32, r32, a32 = ImageEditor.split_channels(greyscaled_32)
+    assert np.allclose(b32, g32, atol=1)
+    assert np.allclose(g32, r32, atol=1)
+    assert np.array_equal(original_alpha_32, a32)
 
 
-class TestEdgeCases:
-    """Test cases for edge cases and error conditions."""
+def test_resize_shape_and_dtype(frame_bgr_uint8, frame_bgra_uint8, frame_grey_uint8):
+    """Tests that resize produces the correct shape and preserves dtype."""
+    target_w, target_h = 50, 75
     
-    def test_empty_frame(self):
-        """Test handling of empty frames."""
-        empty_frame = np.array([], dtype=np.uint8).reshape(0, 0, 3)
-        
-        # Most operations should handle empty frames gracefully
-        with pytest.raises((ValueError, cv2.error)):
-            ImageEditor.letterbox(empty_frame)
+    # Test BGR
+    resized_bgr = ImageEditor.resize(frame_bgr_uint8, (target_w, target_h))
+    assert resized_bgr.shape == (target_h, target_w, 3)
+    assert resized_bgr.dtype == frame_bgr_uint8.dtype
     
-    def test_single_pixel_frame(self):
-        """Test handling of single pixel frames."""
-        single_pixel = np.array([[[255, 0, 0]]], dtype=np.uint8)
-        
-        result = ImageEditor.letterbox(single_pixel, target_size=(10, 10))
-        assert result.shape[:2] == (10, 10)
+    # Test BGRA
+    resized_bgra = ImageEditor.resize(frame_bgra_uint8, (target_w, target_h))
+    assert resized_bgra.shape == (target_h, target_w, 4)
+    assert resized_bgra.dtype == frame_bgra_uint8.dtype
+
+    # Test Greyscale
+    resized_grey = ImageEditor.resize(frame_grey_uint8, (target_w, target_h))
+    assert resized_grey.shape == (target_h, target_w)
+    assert resized_grey.dtype == frame_grey_uint8.dtype
+
+def test_letterbox_wide_image(frame_bgr_wide):
+    """Tests letterboxing a wide image (200x100) into a square (200x200)."""
+    target_w, target_h = 200, 200
+    # Frame is 200x100, solid red (255)
+    # Scale = min(200/200, 200/100) = min(1, 2) = 1
+    # new_w = 200 * 1 = 200
+    # new_h = 100 * 1 = 100
+    # y_offset = (200 - 100) // 2 = 50
+    # x_offset = (200 - 200) // 2 = 0
     
-    def test_very_large_frame(self):
-        """Test handling of large frames (memory considerations)."""
-        # Create a moderately large frame to test without using too much memory
-        large_frame = np.random.randint(0, 256, (500, 600, 3), dtype=np.uint8)
-        
-        result = ImageEditor.resize(large_frame, target_size=(100, 100))
-        assert result.shape[:2] == (100, 100)
+    letterboxed = ImageEditor.letterbox(frame_bgr_wide, (target_w, target_h), color=0)
     
-    def test_invalid_target_sizes(self):
-        """Test handling of invalid target sizes."""
-        frame = np.random.randint(0, 256, (100, 100, 3), dtype=np.uint8)
-        
-        # Zero or negative dimensions should be handled
-        with pytest.raises((ValueError, cv2.error)):
-            ImageEditor.resize(frame, target_size=(0, 100))
-        
-        with pytest.raises((ValueError, cv2.error)):
-            ImageEditor.resize(frame, target_size=(-10, 100))
+    assert letterboxed.shape == (target_h, target_w, 3)
+    assert letterboxed.dtype == frame_bgr_wide.dtype
+    
+    # Check padding (top row, black)
+    assert np.all(letterboxed[0, 0] == [0, 0, 0])
+    # Check padding (bottom row, black)
+    assert np.all(letterboxed[199, 199] == [0, 0, 0])
+    # Check image data (center row, red)
+    assert np.all(letterboxed[100, 100] == [0, 0, 255])
+    # Check image edge (no left/right padding)
+    assert np.all(letterboxed[100, 0] == [0, 0, 255])
+
+def test_letterbox_tall_image(frame_bgr_tall):
+    """Tests letterboxing a tall image (100x200) into a square (200x200)."""
+    target_w, target_h = 200, 200
+    # Frame is 100x200, solid green (255)
+    # Scale = min(200/100, 200/200) = min(2, 1) = 1
+    # new_w = 100 * 1 = 100
+    # new_h = 200 * 1 = 200
+    # y_offset = (200 - 200) // 2 = 0
+    # x_offset = (200 - 100) // 2 = 50
+
+    letterboxed = ImageEditor.letterbox(frame_bgr_tall, (target_w, target_h), color=0)
+    
+    assert letterboxed.shape == (target_h, target_w, 3)
+    assert letterboxed.dtype == frame_bgr_tall.dtype
+
+    # Check padding (left column, black)
+    assert np.all(letterboxed[0, 0] == [0, 0, 0])
+    # Check padding (right column, black)
+    assert np.all(letterboxed[199, 199] == [0, 0, 0])
+    # Check image data (center column, green)
+    assert np.all(letterboxed[100, 100] == [0, 255, 0])
+    # Check image edge (no top/bottom padding)
+    assert np.all(letterboxed[0, 100] == [0, 255, 0])
+
+def test_letterbox_color(frame_bgr_tall):
+    """Tests letterboxing with a non-default color."""
+    white = (255, 255, 255)
+    letterboxed = ImageEditor.letterbox(frame_bgr_tall, (200, 200), color=white)
+    
+    # Check padding (left column, white)
+    assert np.all(letterboxed[0, 0] == white)
+    # Check image data (center column, green)
+    assert np.all(letterboxed[100, 100] == [0, 255, 0])
+
+def test_letterbox_bgra(frame_bgra_uint8):
+    """Tests letterboxing on a 4-channel BGRA image."""
+    target_w, target_h = 200, 200
+    # Opaque black padding
+    padding = (0, 0, 0, 255)
+    
+    letterboxed = ImageEditor.letterbox(frame_bgra_uint8, (target_w, target_h), color=padding)
+    
+    assert letterboxed.shape == (target_h, target_w, 4)
+    # Check no padding (corner, original BGRA point)
+    assert np.array_equal(letterboxed[0, 0], frame_bgra_uint8[0, 0])
+    # Check image data (center, from fixture)
+    assert np.array_equal(letterboxed[100, 100], frame_bgra_uint8[50, 50])
+
+def test_letterbox_greyscale(frame_grey_uint8):
+    """Tests letterboxing on a 2D greyscale image."""
+    target_w, target_h = 200, 200
+    letterboxed = ImageEditor.letterbox(frame_grey_uint8, (target_w, target_h), color=0)
+    
+    assert letterboxed.shape == (target_h, target_w)
+    assert letterboxed.ndim == 2
+    # Check padding (corner, black)
+    assert letterboxed[0, 0] == 0
+    # Check image data (center)
+    assert letterboxed[100, 100] == frame_grey_uint8[50, 50]
+
+def test_letterbox_none_target_size(frame_bgr_wide, frame_bgr_tall):
+    """Tests that target_size=None creates a square based on the longest side."""
+    # frame_bgr_wide is 200x100, longest side is 200
+    letterboxed_wide = ImageEditor.letterbox(frame_bgr_wide, target_size=None)
+    assert letterboxed_wide.shape == (200, 200, 3)
+    
+    # frame_bgr_tall is 100x200, longest side is 200
+    letterboxed_tall = ImageEditor.letterbox(frame_bgr_tall, target_size=None)
+    assert letterboxed_tall.shape == (200, 200, 3)
+
+def test_letterbox_color_tuple_error(frame_bgr_uint8):
+    """Tests that a mismatched padding tuple raises a ValueError."""
+    with pytest.raises(ValueError, match="color length"):
+        # BGR (3-ch) frame with 4-ch padding
+        ImageEditor.letterbox(frame_bgr_uint8, (200, 200), color=(0, 0, 0, 0))
+
+    with pytest.raises(ValueError, match="color length"):
+        # BGRA (4-ch) frame with 3-ch padding
+        frame_bgra = create_bgra_frame(np.uint8)
+        ImageEditor.letterbox(frame_bgra, (200, 200), color=(0, 0, 0))

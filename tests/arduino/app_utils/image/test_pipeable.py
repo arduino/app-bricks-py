@@ -116,7 +116,6 @@ class TestPipeableFunction:
         pf = PipeableFunction(partial_func)
         
         repr_str = repr(pf)
-        # Should handle partial objects gracefully
         assert "test_func" in repr_str or "partial" in repr_str
     
     def test_repr_with_callable_without_name(self):
@@ -132,8 +131,8 @@ class TestPipeableFunction:
         assert "CallableClass" in repr_str
 
 
-class TestPipeableIntegration:
-    """Integration tests for pipeable functionality."""
+class TestPipeableFunctionIntegration:
+    """Integration tests for the PipeableFunction class."""
     
     def test_real_world_data_processing(self):
         """Test pipeable with real-world data processing scenario."""
@@ -154,17 +153,15 @@ class TestPipeableIntegration:
         
         data = [-2, -1, 0, 1, 2, 3]
         
-        # Pipeline: filter positive -> square -> sum
+        # Pipeline: filter positive -> square    -> sum
+        #           [1, 2, 3]       -> [1, 4, 9] -> 14
         result = data | filtered_positive() | squared() | summed()
-        # [1, 2, 3] -> [1, 4, 9] -> 14
         assert result == 14
     
     def test_error_handling_in_pipeline(self):
         """Test error handling within pipelines."""
         def divide_by(x, divisor):
-            if divisor == 0:
-                raise ValueError("Cannot divide by zero")
-            return x / divisor
+            return x / divisor  # May raise ZeroDivisionError
         def divided_by(divisor):
             return PipeableFunction(divide_by, divisor=divisor)        
 
@@ -178,5 +175,5 @@ class TestPipeableIntegration:
         assert result == 3.33
         
         # Test error propagation
-        with pytest.raises(ValueError, match="Cannot divide by zero"):
+        with pytest.raises(ZeroDivisionError):
             10 | divided_by(0) | rounded()
