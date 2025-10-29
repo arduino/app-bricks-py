@@ -41,6 +41,34 @@ with Camera(source, **options) as camera:
     # Camera automatically stopped when exiting
 ```
 
+## Frame Adjustments
+
+The `adjustments` parameter allows you to apply custom transformations to captured frames. This parameter accepts a callable that takes a numpy array (the frame) and returns a modified numpy array. It's also possible to build adjustment pipelines by concatenating these functions with the pipe (|) operator
+
+```python
+import cv2
+from arduino.app_peripherals.camera import Camera
+from arduino.app_utils.image import greyscaled
+
+
+def blurred():
+    def apply_blur(frame):
+        return cv2.GaussianBlur(frame, (15, 15), 0)
+    return PipeableFunction(apply_blur)
+
+# Using adjustments with Camera
+with Camera(0, adjustments=greyscaled) as camera:
+    frame = camera.capture()
+    # frame is now grayscale
+
+# Or with multiple transformations
+with Camera(0, adjustments=greyscaled | blurred) as camera:
+    frame = camera.capture()
+    # frame is now greyscaled and blurred
+```
+
+See the arduino.app_utils.image module for more supported adjustments.
+
 ## Camera Types
 The Camera class provides automatic camera type detection based on the format of its source argument. keyword arguments will be propagated to the underlying implementation.
 
