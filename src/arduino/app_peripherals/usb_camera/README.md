@@ -1,5 +1,8 @@
 # USB Camera
 
+> [!NOTE]
+> This peripheral is deprecated, use the Camera peripheral instead.
+
 The `USBCamera` peripheral captures images and videos from a connected USB camera.
 
 ## Features

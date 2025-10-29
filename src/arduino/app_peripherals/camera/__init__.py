@@ -3,5 +3,13 @@
 # SPDX-License-Identifier: MPL-2.0
 
 from .camera import Camera
-
-__all__ = ["Camera"]
+from .errors import *
+    
+__all__ = [
+    "Camera",
+    "CameraError",
+    "CameraReadError",
+    "CameraOpenError",
+    "CameraConfigError",
+    "CameraTransformError",
+]
