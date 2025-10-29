@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 from .image import *
-from .image_editor import ImageEditor
+from .adjustments import *
 from .pipeable import PipeableFunction
 
 __all__ = [
@@ -11,12 +11,17 @@ __all__ = [
     "get_image_bytes",
     "draw_bounding_boxes",
     "draw_anomaly_markers",
-    "ImageEditor",
-    "PipeableFunction",
+    "letterbox",
+    "resize",
+    "adjust",
+    "greyscale",
+    "compress_to_jpeg",
+    "compress_to_png",
     "letterboxed",
     "resized",
     "adjusted",
     "greyscaled",
     "compressed_to_jpeg",
     "compressed_to_png",
+    "PipeableFunction",
 ]
