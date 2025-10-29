@@ -24,19 +24,20 @@ class BaseCamera(ABC):
     """
 
     def __init__(self, resolution: Optional[Tuple[int, int]] = (640, 480), fps: int = 10, 
-                 adjuster: Optional[Callable[[np.ndarray], np.ndarray]] = None, **kwargs):
+                 adjustments: Optional[Callable[[np.ndarray], np.ndarray]] = None, **kwargs):
         """
         Initialize the camera base.
 
         Args:
             resolution (tuple, optional): Resolution as (width, height). None uses default resolution.
             fps (int): Frames per second for the camera.
-            adjuster (callable, optional): Function pipeline to adjust frames that takes a numpy array and returns a numpy array. Default: None
+            adjustments (callable, optional): Function or function pipeline to adjust frames that takes
+                a numpy array and returns a numpy array. Default: None
             **kwargs: Additional camera-specific parameters.
         """
         self.resolution = resolution
         self.fps = fps
-        self.adjuster = adjuster
+        self.adjustments = adjustments
         self._is_started = False
         self._cap_lock = threading.Lock()
         self._last_capture_time = time.monotonic()
@@ -100,11 +101,11 @@ class BaseCamera(ABC):
             
             self._last_capture_time = time.monotonic()
             
-            if self.adjuster is not None:
+            if self.adjustments is not None:
                 try:
-                    frame = self.adjuster(frame)
+                    frame = self.adjustments(frame)
                 except Exception as e:
-                    raise CameraTransformError(f"Frame transformation failed ({self.adjuster}): {e}")
+                    raise CameraTransformError(f"Frame transformation failed ({self.adjustments}): {e}")
             
             return frame
 

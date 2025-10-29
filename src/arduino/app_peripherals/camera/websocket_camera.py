@@ -42,7 +42,7 @@ class WebSocketCamera(BaseCamera):
             port: Port to bind the server to (default: 8080)
             timeout: Connection timeout in seconds (default: 10)
             frame_format: Expected frame format from clients ("base64", "json", "binary") (default: "base64")
-            **kwargs: Additional camera parameters
+            **kwargs: Additional camera parameters propagated to BaseCamera
         """
         super().__init__(**kwargs)
         

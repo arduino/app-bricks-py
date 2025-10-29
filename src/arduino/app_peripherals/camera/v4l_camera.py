@@ -32,7 +32,7 @@ class V4LCamera(BaseCamera):
             camera: Camera identifier - can be:
                    - int: Camera index (e.g., 0, 1)  
                    - str: Camera index as string or device path
-            **kwargs: Additional camera parameters
+            **kwargs: Additional camera parameters propagated to BaseCamera
         """
         super().__init__(**kwargs)
         self.camera_id = self._resolve_camera_id(camera)
