@@ -6,6 +6,7 @@ import io
 import warnings
 from PIL import Image
 from arduino.app_peripherals.camera import Camera, CameraReadError as CRE, CameraOpenError as COE
+from arduino.app_peripherals.camera.v4l_camera import V4LCamera
 from arduino.app_utils.image.image_editor import compressed_to_png, letterboxed
 from arduino.app_utils import Logger
 
@@ -47,10 +48,7 @@ class USBCamera:
         if letterbox:
             pipe = pipe | letterboxed() if pipe else letterboxed()
 
-        self._wrapped_camera = Camera(source=camera,
-                                      resolution=resolution,
-                                      fps=fps,
-                                      adjustments=pipe)
+        self._wrapped_camera = V4LCamera(camera, resolution, fps, pipe)
 
     def capture(self) -> Image.Image | None:
         """Captures a frame from the camera, blocking to respect the configured FPS.
