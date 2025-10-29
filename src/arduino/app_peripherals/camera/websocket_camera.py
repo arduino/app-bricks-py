@@ -12,6 +12,7 @@ import numpy as np
 import cv2
 import websockets
 import asyncio
+from concurrent.futures import CancelledError, TimeoutError
 
 from arduino.app_utils import Logger
 
@@ -26,7 +27,9 @@ class WebSocketCamera(BaseCamera):
     WebSocket Camera implementation that hosts a WebSocket server.
     
     This camera acts as a WebSocket server that receives frames from connected clients.
-    Clients can send frames in various formats:
+    Only one client can be connected at a time.
+
+    Clients can send frames in various 8-bit (e.g. JPEG, PNG 8-bit) formats:
     - Base64 encoded images
     - JSON messages with image data
     - Binary image data
@@ -252,6 +255,10 @@ class WebSocketCamera(BaseCamera):
             )
             try:
                 future.result(timeout=1.0)
+            except CancelledError as e:
+                logger.debug(f"Error setting async stop event: CancelledError")
+            except TimeoutError as e:
+                logger.debug(f"Error setting async stop event: TimeoutError")
             except Exception as e:
                 logger.warning(f"Error setting async stop event: {e}")
         
@@ -260,11 +267,11 @@ class WebSocketCamera(BaseCamera):
             self._server_thread.join(timeout=10.0)
         
         # Clear frame queue
-        while not self._frame_queue.empty():
-            try:
+        try:
+            while True:
                 self._frame_queue.get_nowait()
-            except queue.Empty:
-                break
+        except queue.Empty:
+            pass
         
         # Reset state
         self._server = None
@@ -273,8 +280,6 @@ class WebSocketCamera(BaseCamera):
 
     async def _set_async_stop_event(self):
         """Set the async stop event and close the client connection."""
-        self._stop_event.set()
-        
         # Send goodbye message and close the client connection
         if self._client:
             try:
@@ -285,9 +290,11 @@ class WebSocketCamera(BaseCamera):
                 })
                 # Give a brief moment for the message to be sent
                 await asyncio.sleep(0.1)
-                await self._client.close()
             except Exception as e:
                 logger.warning(f"Error closing client in stop event: {e}")
+            finally:
+                await self._client.close()
+                self._stop_event.set()
 
     def _read_frame(self) -> Optional[np.ndarray]:
         """Read a frame from the queue."""
