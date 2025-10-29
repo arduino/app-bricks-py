@@ -4,7 +4,6 @@
 
 import asyncio
 import websockets
-import cv2
 import base64
 import json
 import logging
