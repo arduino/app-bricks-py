@@ -89,14 +89,14 @@ class BaseCamera(ABC):
 
     def _extract_frame(self) -> Optional[np.ndarray]:
         """Extract a frame with FPS throttling and post-processing."""
-        # FPS throttling
-        if self._desired_interval > 0:
-            current_time = time.monotonic()
-            elapsed = current_time - self._last_capture_time
-            if elapsed < self._desired_interval:
-                time.sleep(self._desired_interval - elapsed)
-
         with self._camera_lock:
+            # FPS throttling
+            if self._desired_interval > 0:
+                current_time = time.monotonic()
+                elapsed = current_time - self._last_capture_time
+                if elapsed < self._desired_interval:
+                    time.sleep(self._desired_interval - elapsed)
+
             if not self._is_started:
                 return None
             
