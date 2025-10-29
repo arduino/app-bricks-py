@@ -4,7 +4,7 @@
 
 import numpy as np
 import pytest
-from arduino.app_utils.image.image_editor import ImageEditor
+from arduino.app_utils.image.adjustments import letterbox, resize, adjust, split_channels, greyscale
 
 
 # FIXTURES
@@ -95,47 +95,47 @@ def frame_any_dtype(request):
 def test_adjust_dtype_preservation(frame_any_dtype):
     """Tests that the dtype of the frame is preserved."""
     dtype = frame_any_dtype.dtype
-    adjusted = ImageEditor.adjust(frame_any_dtype, brightness=0.1)
+    adjusted = adjust(frame_any_dtype, brightness=0.1)
     assert adjusted.dtype == dtype
 
 def test_adjust_no_op(frame_bgr_uint8):
     """Tests that default parameters do not change the frame."""
-    adjusted = ImageEditor.adjust(frame_bgr_uint8)
+    adjusted = adjust(frame_bgr_uint8)
     assert np.array_equal(frame_bgr_uint8, adjusted)
 
 def test_adjust_brightness(frame_bgr_uint8):
     """Tests brightness adjustment."""
-    brighter = ImageEditor.adjust(frame_bgr_uint8, brightness=0.1)
-    darker = ImageEditor.adjust(frame_bgr_uint8, brightness=-0.1)
+    brighter = adjust(frame_bgr_uint8, brightness=0.1)
+    darker = adjust(frame_bgr_uint8, brightness=-0.1)
     assert np.mean(brighter) > np.mean(frame_bgr_uint8)
     assert np.mean(darker) < np.mean(frame_bgr_uint8)
 
 def test_adjust_contrast(frame_bgr_uint8):
     """Tests contrast adjustment."""
-    higher_contrast = ImageEditor.adjust(frame_bgr_uint8, contrast=1.5)
-    lower_contrast = ImageEditor.adjust(frame_bgr_uint8, contrast=0.5)
+    higher_contrast = adjust(frame_bgr_uint8, contrast=1.5)
+    lower_contrast = adjust(frame_bgr_uint8, contrast=0.5)
     assert np.std(higher_contrast) > np.std(frame_bgr_uint8)
     assert np.std(lower_contrast) < np.std(frame_bgr_uint8)
 
 def test_adjust_gamma(frame_bgr_uint8):
     """Tests gamma correction."""
     # Gamma < 1.0 (e.g., 0.5) ==> brightens
-    brighter = ImageEditor.adjust(frame_bgr_uint8, gamma=0.5)
+    brighter = adjust(frame_bgr_uint8, gamma=0.5)
     # Gamma > 1.0 (e.g., 2.0) ==> darkens
-    darker = ImageEditor.adjust(frame_bgr_uint8, gamma=2.0)
+    darker = adjust(frame_bgr_uint8, gamma=2.0)
     assert np.mean(brighter) > np.mean(frame_bgr_uint8)
     assert np.mean(darker) < np.mean(frame_bgr_uint8)
     
 def test_adjust_saturation_to_greyscale(frame_bgr_uint8):
     """Tests that saturation=0.0 makes all color channels equal."""
-    desaturated = ImageEditor.adjust(frame_bgr_uint8, saturation=0.0)
-    b, g, r = ImageEditor.split_channels(desaturated)
+    desaturated = adjust(frame_bgr_uint8, saturation=0.0)
+    b, g, r = split_channels(desaturated)
     assert np.allclose(b, g, atol=1)
     assert np.allclose(g, r, atol=1)
 
 def test_adjust_greyscale_input(frame_grey_uint8):
     """Tests that greyscale frames are handled safely."""
-    adjusted = ImageEditor.adjust(frame_grey_uint8, saturation=1.5, brightness=0.1)
+    adjusted = adjust(frame_grey_uint8, saturation=1.5, brightness=0.1)
     assert adjusted.ndim == 2
     assert adjusted.dtype == np.uint8
     assert np.mean(adjusted) > np.mean(frame_grey_uint8)
@@ -144,13 +144,13 @@ def test_adjust_bgra_input(frame_bgra_uint8):
     """Tests that BGRA frames are handled safely and alpha is preserved."""
     original_alpha = frame_bgra_uint8[:,:,3]
     
-    adjusted = ImageEditor.adjust(frame_bgra_uint8, saturation=0.0, brightness=0.1)
+    adjusted = adjust(frame_bgra_uint8, saturation=0.0, brightness=0.1)
     
     assert adjusted.ndim == 3
     assert adjusted.shape[2] == 4
     assert adjusted.dtype == np.uint8
     
-    b, g, r, a = ImageEditor.split_channels(adjusted)
+    b, g, r, a = split_channels(adjusted)
     assert np.allclose(b, g, atol=1) # Check desaturation
     assert np.allclose(g, r, atol=1) # Check desaturation
     assert np.array_equal(original_alpha, a) # Check alpha preservation
@@ -158,10 +158,10 @@ def test_adjust_bgra_input(frame_bgra_uint8):
 def test_adjust_gamma_zero_error(frame_bgr_uint8):
     """Tests that gamma <= 0 raises a ValueError."""
     with pytest.raises(ValueError, match="Gamma value must be greater than 0."):
-        ImageEditor.adjust(frame_bgr_uint8, gamma=0.0)
+        adjust(frame_bgr_uint8, gamma=0.0)
     
     with pytest.raises(ValueError, match="Gamma value must be greater than 0."):
-        ImageEditor.adjust(frame_bgr_uint8, gamma=-1.0)
+        adjust(frame_bgr_uint8, gamma=-1.0)
 
 def test_adjust_high_bit_depth_bgr(frame_bgr_uint16, frame_bgr_uint32):
     """
@@ -169,14 +169,14 @@ def test_adjust_high_bit_depth_bgr(frame_bgr_uint16, frame_bgr_uint32):
     This validates that the float64 conversion is working.
     """
     # Test uint16
-    brighter_16 = ImageEditor.adjust(frame_bgr_uint16, brightness=0.1)
-    darker_16 = ImageEditor.adjust(frame_bgr_uint16, brightness=-0.1)
+    brighter_16 = adjust(frame_bgr_uint16, brightness=0.1)
+    darker_16 = adjust(frame_bgr_uint16, brightness=-0.1)
     assert np.mean(brighter_16) > np.mean(frame_bgr_uint16)
     assert np.mean(darker_16) < np.mean(frame_bgr_uint16)
 
     # Test uint32
-    brighter_32 = ImageEditor.adjust(frame_bgr_uint32, brightness=0.1)
-    darker_32 = ImageEditor.adjust(frame_bgr_uint32, brightness=-0.1)
+    brighter_32 = adjust(frame_bgr_uint32, brightness=0.1)
+    darker_32 = adjust(frame_bgr_uint32, brightness=-0.1)
     assert np.mean(brighter_32) > np.mean(frame_bgr_uint32)
     assert np.mean(darker_32) < np.mean(frame_bgr_uint32)
 
@@ -187,19 +187,19 @@ def test_adjust_high_bit_depth_bgra(frame_bgra_uint16, frame_bgra_uint32):
     """
     # Test uint16
     original_alpha_16 = frame_bgra_uint16[:,:,3]
-    brighter_16 = ImageEditor.adjust(frame_bgra_uint16, brightness=0.1)
+    brighter_16 = adjust(frame_bgra_uint16, brightness=0.1)
     assert brighter_16.dtype == np.uint16
     assert brighter_16.shape == frame_bgra_uint16.shape
-    _, _, _, a16 = ImageEditor.split_channels(brighter_16)
+    _, _, _, a16 = split_channels(brighter_16)
     assert np.array_equal(original_alpha_16, a16)
     assert np.mean(brighter_16) > np.mean(frame_bgra_uint16)
 
     # Test uint32
     original_alpha_32 = frame_bgra_uint32[:,:,3]
-    brighter_32 = ImageEditor.adjust(frame_bgra_uint32, brightness=0.1)
+    brighter_32 = adjust(frame_bgra_uint32, brightness=0.1)
     assert brighter_32.dtype == np.uint32
     assert brighter_32.shape == frame_bgra_uint32.shape
-    _, _, _, a32 = ImageEditor.split_channels(brighter_32)
+    _, _, _, a32 = split_channels(brighter_32)
     assert np.array_equal(original_alpha_32, a32)
     assert np.mean(original_alpha_32) > np.mean(frame_bgra_uint32)
 
@@ -207,32 +207,32 @@ def test_adjust_high_bit_depth_bgra(frame_bgra_uint16, frame_bgra_uint32):
 def test_greyscale(frame_bgr_uint8, frame_bgra_uint8, frame_grey_uint8):
     """Tests the standalone greyscale function."""
     # Test on BGR
-    greyscaled_bgr = ImageEditor.greyscale(frame_bgr_uint8)
+    greyscaled_bgr = greyscale(frame_bgr_uint8)
     assert greyscaled_bgr.ndim == 3
     assert greyscaled_bgr.shape[2] == 3
-    b, g, r = ImageEditor.split_channels(greyscaled_bgr)
+    b, g, r = split_channels(greyscaled_bgr)
     assert np.allclose(b, g, atol=1)
     assert np.allclose(g, r, atol=1)
 
     # Test on BGRA
     original_alpha = frame_bgra_uint8[:,:,3]
-    greyscaled_bgra = ImageEditor.greyscale(frame_bgra_uint8)
+    greyscaled_bgra = greyscale(frame_bgra_uint8)
     assert greyscaled_bgra.ndim == 3
     assert greyscaled_bgra.shape[2] == 4
-    b, g, r, a = ImageEditor.split_channels(greyscaled_bgra)
+    b, g, r, a = split_channels(greyscaled_bgra)
     assert np.allclose(b, g, atol=1)
     assert np.allclose(g, r, atol=1)
     assert np.array_equal(original_alpha, a)
 
     # Test on 2D Greyscale (should be no-op)
-    greyscaled_grey = ImageEditor.greyscale(frame_grey_uint8)
+    greyscaled_grey = greyscale(frame_grey_uint8)
     assert np.array_equal(frame_grey_uint8, greyscaled_grey)
     assert greyscaled_grey.ndim == 2
 
 def test_greyscale_dtype_preservation(frame_any_dtype):
     """Tests that the dtype of the frame is preserved."""
     dtype = frame_any_dtype.dtype
-    adjusted = ImageEditor.adjust(frame_any_dtype, brightness=0.1)
+    adjusted = adjust(frame_any_dtype, brightness=0.1)
     assert adjusted.dtype == dtype
 
 def test_greyscale_high_bit_depth(frame_bgr_uint16, frame_bgr_uint32):
@@ -240,19 +240,19 @@ def test_greyscale_high_bit_depth(frame_bgr_uint16, frame_bgr_uint32):
     Tests that greyscale logic is correct on high bit-depth images.
     """
     # Test uint16
-    greyscaled_16 = ImageEditor.greyscale(frame_bgr_uint16)
+    greyscaled_16 = greyscale(frame_bgr_uint16)
     assert greyscaled_16.dtype == np.uint16
     assert greyscaled_16.shape == frame_bgr_uint16.shape
-    b16, g16, r16 = ImageEditor.split_channels(greyscaled_16)
+    b16, g16, r16 = split_channels(greyscaled_16)
     assert np.allclose(b16, g16, atol=1)
     assert np.allclose(g16, r16, atol=1)
     assert np.mean(b16) != np.mean(frame_bgr_uint16[:,:,0])
 
     # Test uint32
-    greyscaled_32 = ImageEditor.greyscale(frame_bgr_uint32)
+    greyscaled_32 = greyscale(frame_bgr_uint32)
     assert greyscaled_32.dtype == np.uint32
     assert greyscaled_32.shape == frame_bgr_uint32.shape
-    b32, g32, r32 = ImageEditor.split_channels(greyscaled_32)
+    b32, g32, r32 = split_channels(greyscaled_32)
     assert np.allclose(b32, g32, atol=1)
     assert np.allclose(g32, r32, atol=1)
     assert np.mean(b32) != np.mean(frame_bgr_uint32[:,:,0])
@@ -264,20 +264,20 @@ def test_high_bit_depth_greyscale_bgra_content(frame_bgra_uint16, frame_bgra_uin
     """
     # Test uint16
     original_alpha_16 = frame_bgra_uint16[:,:,3]
-    greyscaled_16 = ImageEditor.greyscale(frame_bgra_uint16)
+    greyscaled_16 = greyscale(frame_bgra_uint16)
     assert greyscaled_16.dtype == np.uint16
     assert greyscaled_16.shape == frame_bgra_uint16.shape
-    b16, g16, r16, a16 = ImageEditor.split_channels(greyscaled_16)
+    b16, g16, r16, a16 = split_channels(greyscaled_16)
     assert np.allclose(b16, g16, atol=1)
     assert np.allclose(g16, r16, atol=1)
     assert np.array_equal(original_alpha_16, a16)
 
     # Test uint32
     original_alpha_32 = frame_bgra_uint32[:,:,3]
-    greyscaled_32 = ImageEditor.greyscale(frame_bgra_uint32)
+    greyscaled_32 = greyscale(frame_bgra_uint32)
     assert greyscaled_32.dtype == np.uint32
     assert greyscaled_32.shape == frame_bgra_uint32.shape
-    b32, g32, r32, a32 = ImageEditor.split_channels(greyscaled_32)
+    b32, g32, r32, a32 = split_channels(greyscaled_32)
     assert np.allclose(b32, g32, atol=1)
     assert np.allclose(g32, r32, atol=1)
     assert np.array_equal(original_alpha_32, a32)
@@ -288,17 +288,17 @@ def test_resize_shape_and_dtype(frame_bgr_uint8, frame_bgra_uint8, frame_grey_ui
     target_w, target_h = 50, 75
     
     # Test BGR
-    resized_bgr = ImageEditor.resize(frame_bgr_uint8, (target_w, target_h))
+    resized_bgr = resize(frame_bgr_uint8, (target_w, target_h))
     assert resized_bgr.shape == (target_h, target_w, 3)
     assert resized_bgr.dtype == frame_bgr_uint8.dtype
     
     # Test BGRA
-    resized_bgra = ImageEditor.resize(frame_bgra_uint8, (target_w, target_h))
+    resized_bgra = resize(frame_bgra_uint8, (target_w, target_h))
     assert resized_bgra.shape == (target_h, target_w, 4)
     assert resized_bgra.dtype == frame_bgra_uint8.dtype
 
     # Test Greyscale
-    resized_grey = ImageEditor.resize(frame_grey_uint8, (target_w, target_h))
+    resized_grey = resize(frame_grey_uint8, (target_w, target_h))
     assert resized_grey.shape == (target_h, target_w)
     assert resized_grey.dtype == frame_grey_uint8.dtype
 
@@ -312,7 +312,7 @@ def test_letterbox_wide_image(frame_bgr_wide):
     # y_offset = (200 - 100) // 2 = 50
     # x_offset = (200 - 200) // 2 = 0
     
-    letterboxed = ImageEditor.letterbox(frame_bgr_wide, (target_w, target_h), color=0)
+    letterboxed = letterbox(frame_bgr_wide, (target_w, target_h), color=0)
     
     assert letterboxed.shape == (target_h, target_w, 3)
     assert letterboxed.dtype == frame_bgr_wide.dtype
@@ -336,7 +336,7 @@ def test_letterbox_tall_image(frame_bgr_tall):
     # y_offset = (200 - 200) // 2 = 0
     # x_offset = (200 - 100) // 2 = 50
 
-    letterboxed = ImageEditor.letterbox(frame_bgr_tall, (target_w, target_h), color=0)
+    letterboxed = letterbox(frame_bgr_tall, (target_w, target_h), color=0)
     
     assert letterboxed.shape == (target_h, target_w, 3)
     assert letterboxed.dtype == frame_bgr_tall.dtype
@@ -353,7 +353,7 @@ def test_letterbox_tall_image(frame_bgr_tall):
 def test_letterbox_color(frame_bgr_tall):
     """Tests letterboxing with a non-default color."""
     white = (255, 255, 255)
-    letterboxed = ImageEditor.letterbox(frame_bgr_tall, (200, 200), color=white)
+    letterboxed = letterbox(frame_bgr_tall, (200, 200), color=white)
     
     # Check padding (left column, white)
     assert np.all(letterboxed[0, 0] == white)
@@ -366,7 +366,7 @@ def test_letterbox_bgra(frame_bgra_uint8):
     # Opaque black padding
     padding = (0, 0, 0, 255)
     
-    letterboxed = ImageEditor.letterbox(frame_bgra_uint8, (target_w, target_h), color=padding)
+    letterboxed = letterbox(frame_bgra_uint8, (target_w, target_h), color=padding)
     
     assert letterboxed.shape == (target_h, target_w, 4)
     # Check no padding (corner, original BGRA point)
@@ -377,7 +377,7 @@ def test_letterbox_bgra(frame_bgra_uint8):
 def test_letterbox_greyscale(frame_grey_uint8):
     """Tests letterboxing on a 2D greyscale image."""
     target_w, target_h = 200, 200
-    letterboxed = ImageEditor.letterbox(frame_grey_uint8, (target_w, target_h), color=0)
+    letterboxed = letterbox(frame_grey_uint8, (target_w, target_h), color=0)
     
     assert letterboxed.shape == (target_h, target_w)
     assert letterboxed.ndim == 2
@@ -389,20 +389,20 @@ def test_letterbox_greyscale(frame_grey_uint8):
 def test_letterbox_none_target_size(frame_bgr_wide, frame_bgr_tall):
     """Tests that target_size=None creates a square based on the longest side."""
     # frame_bgr_wide is 200x100, longest side is 200
-    letterboxed_wide = ImageEditor.letterbox(frame_bgr_wide, target_size=None)
+    letterboxed_wide = letterbox(frame_bgr_wide, target_size=None)
     assert letterboxed_wide.shape == (200, 200, 3)
     
     # frame_bgr_tall is 100x200, longest side is 200
-    letterboxed_tall = ImageEditor.letterbox(frame_bgr_tall, target_size=None)
+    letterboxed_tall = letterbox(frame_bgr_tall, target_size=None)
     assert letterboxed_tall.shape == (200, 200, 3)
 
 def test_letterbox_color_tuple_error(frame_bgr_uint8):
     """Tests that a mismatched padding tuple raises a ValueError."""
     with pytest.raises(ValueError, match="color length"):
         # BGR (3-ch) frame with 4-ch padding
-        ImageEditor.letterbox(frame_bgr_uint8, (200, 200), color=(0, 0, 0, 0))
+        letterbox(frame_bgr_uint8, (200, 200), color=(0, 0, 0, 0))
 
     with pytest.raises(ValueError, match="color length"):
         # BGRA (4-ch) frame with 3-ch padding
         frame_bgra = create_bgra_frame(np.uint8)
-        ImageEditor.letterbox(frame_bgra, (200, 200), color=(0, 0, 0))
+        letterbox(frame_bgra, (200, 200), color=(0, 0, 0))
