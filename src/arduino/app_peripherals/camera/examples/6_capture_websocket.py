@@ -8,7 +8,7 @@ import numpy as np
 from arduino.app_peripherals.camera import Camera
 
 
-# Expose a WebSocket camera stream for clients to connect to and consume it
+# Expose a WebSocket camera stream for clients to connect to
 camera = Camera("ws://0.0.0.0:8080", timeout=5)
 camera.start()
 
