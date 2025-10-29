@@ -72,6 +72,7 @@ class WebSocketCamera(BaseCamera):
         self._server_thread = None
         self._stop_event = asyncio.Event()
         self._client: Optional[websockets.ServerConnection] = None
+        self._client_lock = asyncio.Lock()
 
     def _open_camera(self) -> None:
         """Start the WebSocket server."""
@@ -136,22 +137,24 @@ class WebSocketCamera(BaseCamera):
         """Handle a connected WebSocket client. Only one client allowed at a time."""
         client_addr = f"{conn.remote_address[0]}:{conn.remote_address[1]}"
         
-        if self._client is not None:
-            # Reject the new client
-            logger.warning(f"Rejecting client {client_addr}: only one client allowed at a time")
-            try:
-                await conn.send(json.dumps({
-                    "error": "Server busy",
-                    "message": "Only one client connection allowed at a time",
-                    "code": 1000
-                }))
-                await conn.close(code=1000, reason="Server busy - only one client allowed")
-            except Exception as e:
-                logger.warning(f"Error sending rejection message to {client_addr}: {e}")
-            return
+        async with self._client_lock:
+            if self._client is not None:
+                # Reject the new client
+                logger.warning(f"Rejecting client {client_addr}: only one client allowed at a time")
+                try:
+                    await conn.send(json.dumps({
+                        "error": "Server busy",
+                        "message": "Only one client connection allowed at a time",
+                        "code": 1000
+                    }))
+                    await conn.close(code=1000, reason="Server busy - only one client allowed")
+                except Exception as e:
+                    logger.warning(f"Error sending rejection message to {client_addr}: {e}")
+                return
+            
+            # Accept the client
+            self._client = conn
         
-        # Accept the client
-        self._client = conn
         logger.info(f"Client connected: {client_addr}")
         
         try:
@@ -180,16 +183,17 @@ class WebSocketCamera(BaseCamera):
                                 # Drop oldest frame and try again
                                 self._frame_queue.get_nowait()
                             except queue.Empty:
-                                break
+                                continue
                         
         except websockets.exceptions.ConnectionClosed:
             logger.info(f"Client disconnected: {client_addr}")
         except Exception as e:
             logger.warning(f"Error handling client {client_addr}: {e}")
         finally:
-            if self._client == conn:
-                self._client = None
-                logger.info(f"Client removed: {client_addr}")
+            async with self._client_lock:
+                if self._client == conn:
+                    self._client = None
+                    logger.info(f"Client removed: {client_addr}")
 
     async def _parse_message(self, message) -> Optional[np.ndarray]:
         """Parse WebSocket message to extract frame."""

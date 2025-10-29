@@ -5,200 +5,117 @@ The `Camera` peripheral provides a unified abstraction for capturing images from
 ## Features
 
 - **Universal Interface**: Single API for V4L/USB, IP cameras, and WebSocket cameras
-- **Automatic Detection**: Automatically selects appropriate camera implementation based on source
+- **Automatic Detection**: Selects appropriate camera implementation based on source
 - **Multiple Protocols**: Supports V4L, RTSP, HTTP/MJPEG, and WebSocket streams
-- **Flexible Configuration**: Resolution, FPS, compression, and protocol-specific settings
 - **Thread-Safe**: Safe concurrent access with proper locking
-- **Context Manager**: Automatic resource management with `with` statements
+- **Context Manager**: Automatic resource management
 
 ## Quick Start
 
-### Basic Usage
-
+Instantiate the default camera:
 ```python
 from arduino.app_peripherals.camera import Camera
 
-# USB/V4L camera (index 0)
+# Default camera (V4L camera at index 0)
+camera = Camera()
+```
+
+Camera needs to be started and stopped explicitly:
+
+```python
+# Specify camera and configuration
 camera = Camera(0, resolution=(640, 480), fps=15)
+camera.start()
 
-with camera:
-    frame = camera.capture()  # Returns PIL Image
-    if frame:
-        frame.save("captured.png")
+image = camera.capture()
+
+camera.stop()
 ```
 
-### Different Camera Types
-
-```python
-# V4L/USB cameras
-usb_camera = Camera(0)                    # Camera index
-usb_camera = Camera("1")                  # Index as string  
-usb_camera = Camera("/dev/video0")        # Device path
-
-# IP cameras
-ip_camera = Camera("rtsp://192.168.1.100/stream")
-ip_camera = Camera("http://camera.local/mjpeg", 
-                   username="admin", password="secret")
-
-# WebSocket cameras  
-- `"ws://localhost:8080"` - WebSocket server URL (extracts host and port)
-- `"localhost:9090"` - WebSocket server host:port format
-```
-
-## API Reference
-
-### Camera Class
-
-The main `Camera` class acts as a factory that creates the appropriate camera implementation:
-
-```python
-camera = Camera(source, **options)
-```
-
-**Parameters:**
-- `source`: Camera source identifier
-  - `int`: V4L camera index (0, 1, 2...)
-  - `str`: Camera index, device path, or URL
-- `resolution`: Tuple `(width, height)` or `None` for default
-- `fps`: Target frames per second (default: 10)
-- `transformer`: Pipeline of transformers that adjust the captured image
-
-**Methods:**
-- `start()`: Initialize and start camera
-- `stop()`: Stop camera and release resources
-- `capture()`: Capture frame as Numpy array
-- `is_started()`: Check if camera is running
-
-### Context Manager
-
+Or you can leverage context support for doing that automatically:
 ```python
 with Camera(source, **options) as camera:
     frame = camera.capture()
+    if frame is not None:
+        print(f"Captured frame with shape: {frame.shape}")
     # Camera automatically stopped when exiting
 ```
 
 ## Camera Types
+The Camera class provides automatic camera type detection based on the format of its source argument. keyword arguments will be propagated to the underlying implementation.
 
-### V4L/USB Cameras
+Note: constructor arguments (except source) must be provided in keyword format to forward them correctly to the specific camera implementations.
 
-For local USB cameras and V4L-compatible devices:
+The underlying camera implementations can be instantiated explicitly (V4LCamera, IPCamera and WebSocketCamera), if needed.
 
-```python
-camera = Camera(0, resolution=(1280, 720), fps=30)
-```
+### V4L Cameras
+For local USB cameras and V4L-compatible devices.
 
 **Features:**
-- Device enumeration via `/dev/v4l/by-id/`
-- Resolution validation
-- Backend information
+- Supports cameras compatible with the Video4Linux2 drivers
+
+```python
+camera = Camera(0)                    # Camera index
+camera = Camera("/dev/video0")        # Device path
+camera = V4LCamera(0)
+```
 
 ### IP Cameras
-
-For network cameras supporting RTSP or HTTP streams:
-
-```python
-camera = Camera("rtsp://admin:pass@192.168.1.100/stream", 
-                timeout=10, fps=5)
-```
+For network cameras supporting RTSP (Real-Time Streaming Protocol) and HLS (HTTP Live Streaming).
 
 **Features:**
-- RTSP, HTTP, HTTPS protocols
+- Supports capturing RTSP, HLS streams
 - Authentication support
-- Connection testing
 - Automatic reconnection
 
-### WebSocket Cameras
-
-For hosting a WebSocket server that receives frames from clients (single client only):
-
 ```python
-camera = Camera("ws://0.0.0.0:9090", frame_format="json")
+camera = Camera("rtsp://admin:secret@192.168.1.100/stream")
+camera = Camera("http://camera.local/stream",
+                username="admin", password="secret")
+camera = IPCamera("http://camera.local/stream", 
+                username="admin", password="secret")
 ```
+
+### WebSocket Cameras
+For hosting a WebSocket server that receives frames from a single client at a time.
 
 **Features:**
-- Hosts WebSocket server (not client)
 - **Single client limitation**: Only one client can connect at a time
-- Additional clients are rejected with error message
-- Receives frames from connected client
+- Stream data from any client with WebSockets support
 - Base64, binary, and JSON frame formats
-- Frame buffering and queue management
-- Bidirectional communication with connected client
-
-**Client Connection:**
-Only one client can connect at a time. Additional clients receive an error:
-```javascript
-// JavaScript client example
-const ws = new WebSocket('ws://localhost:8080');
-ws.onmessage = function(event) {
-    const data = JSON.parse(event.data);
-    if (data.error) {
-        console.log('Connection rejected:', data.message);
-    }
-};
-ws.send(base64EncodedImageData);
-```
-
-## Advanced Usage
-
-### Custom Configuration
+- Supports 8-bit images (e.g. JPEG, PNG 8-bit)
 
 ```python
-camera = Camera(
-    source="rtsp://camera.local/stream",
-    resolution=(1920, 1080),
-    fps=15,
-    compression=True,      # PNG compression
-    letterbox=True,        # Square images
-    username="admin",      # IP camera auth
-    password="secret",
-    timeout=5,             # Connection timeout
-    max_queue_size=20      # WebSocket buffer
-)
+camera = Camera("ws://0.0.0.0:8080", timeout=5)
+camera = WebSocketCamera("0.0.0.0", 8080, timeout=5)
 ```
 
-### Error Handling
-
+Client implementation example:
 ```python
-from arduino.app_peripherals.camera.camera import CameraError
+import time
+import base64
+import cv2
+import websockets.sync.client as wsclient
+import websockets.exceptions as wsexc
 
-try:
-    with Camera("invalid://source") as camera:
-        frame = camera.capture()
-except CameraError as e:
-    print(f"Camera error: {e}")
+
+# Open camera
+camera = cv2.VideoCapture(0)
+with wsclient.connect("ws://<board-address>:8080") as websocket:
+    while True:
+        time.sleep(1.0 / 15.0)  # 15 FPS
+        ret, frame = camera.read()
+        if ret:
+            # Compress frame to JPEG
+            _, buffer = cv2.imencode('.jpg', frame)
+            # Convert to base64
+            jpeg_b64 = base64.b64encode(buffer).decode('utf-8')
+            try:
+                websocket.send(jpeg_b64)
+            except wsexc.ConnectionClosed:
+                break
 ```
-
-### Factory Pattern
-
-```python
-from arduino.app_peripherals.camera.camera import CameraFactory
-
-# Create camera directly via factory
-camera = CameraFactory.create_camera(
-    source="ws://localhost:8080/stream",
-    frame_format="json"
-)
-```
-
-## Dependencies
-
-### Core Dependencies
-- `opencv-python` (cv2) - Image processing and V4L/IP camera support
-- `Pillow` (PIL) - Image format handling  
-- `requests` - HTTP camera connectivity testing
-
-### Optional Dependencies
-- `websockets` - WebSocket server support (install with `pip install websockets`)
-
-## Examples
-
-See the `examples/` directory for comprehensive usage examples:
-- Basic camera operations
-- Different camera types
-- Advanced configuration
-- Error handling
-- Context managers
 
 ## Migration from Legacy Camera
 
-The new Camera abstraction is backward compatible with the existing Camera implementation. Existing code using the old API will continue to work, but new code should use the improved abstraction for better flexibility and features.
+The new Camera abstraction is backward compatible with the existing Camera implementation. Existing code using the old API will continue to work, but will use the new Camera backend. New code should use the improved abstraction for better flexibility and features.
