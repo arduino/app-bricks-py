@@ -34,7 +34,7 @@ class IPCamera(BaseCamera):
             username: Optional authentication username
             password: Optional authentication password  
             timeout: Connection timeout in seconds
-            **kwargs: Additional camera parameters
+            **kwargs: Additional camera parameters propagated to BaseCamera
         """
         super().__init__(**kwargs)
         self.url = url

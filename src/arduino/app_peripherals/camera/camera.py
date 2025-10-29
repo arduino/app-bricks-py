@@ -32,7 +32,7 @@ class Camera:
                     resolution (tuple, optional): Frame resolution as (width, height). 
                         Default: None (auto)
                     fps (int, optional): Target frames per second. Default: 10
-                    adjuster (callable, optional): Function pipeline to adjust frames that takes a
+                    adjustments (callable, optional): Function pipeline to adjust frames that takes a
                         numpy array and returns a numpy array. Default: None
                 V4L Camera Parameters:
                     device_index (int, optional): V4L device index override
