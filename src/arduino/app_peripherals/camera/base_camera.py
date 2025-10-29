@@ -23,29 +23,34 @@ class BaseCamera(ABC):
     providing a unified API regardless of the underlying camera protocol or type.
     """
 
-    def __init__(self, resolution: Optional[Tuple[int, int]] = (640, 480), fps: int = 10, 
-                 adjustments: Optional[Callable[[np.ndarray], np.ndarray]] = None, **kwargs):
+    def __init__(
+        self,
+        resolution: Optional[Tuple[int, int]] = (640, 480),
+        fps: int = 10, 
+        adjustments: Optional[Callable[[np.ndarray], np.ndarray]] = None,
+    ):
         """
         Initialize the camera base.
 
         Args:
             resolution (tuple, optional): Resolution as (width, height). None uses default resolution.
-            fps (int): Frames per second for the camera.
+            fps (int): Frames per second to capture from the camera.
             adjustments (callable, optional): Function or function pipeline to adjust frames that takes
                 a numpy array and returns a numpy array. Default: None
-            **kwargs: Additional camera-specific parameters.
         """
         self.resolution = resolution
         self.fps = fps
         self.adjustments = adjustments
+        self.logger = logger  # This will be overridden by subclasses if needed
+
+        self._camera_lock = threading.Lock()
         self._is_started = False
-        self._cap_lock = threading.Lock()
         self._last_capture_time = time.monotonic()
-        self.desired_interval = 1.0 / fps if fps > 0 else 0
+        self._desired_interval = 1.0 / fps if fps > 0 else 0
 
     def start(self) -> None:
         """Start the camera capture."""
-        with self._cap_lock:
+        with self._camera_lock:
             if self._is_started:
                 return
             
@@ -53,22 +58,22 @@ class BaseCamera(ABC):
                 self._open_camera()
                 self._is_started = True
                 self._last_capture_time = time.monotonic()
-                logger.info(f"Successfully started {self.__class__.__name__}")
+                self.logger.info(f"Successfully started {self.__class__.__name__}")
             except Exception as e:
                 raise CameraOpenError(f"Failed to start camera: {e}")
 
     def stop(self) -> None:
         """Stop the camera and release resources."""
-        with self._cap_lock:
+        with self._camera_lock:
             if not self._is_started:
                 return
             
             try:
                 self._close_camera()
                 self._is_started = False
-                logger.info(f"Stopped {self.__class__.__name__}")
+                self.logger.info(f"Stopped {self.__class__.__name__}")
             except Exception as e:
-                logger.warning(f"Error stopping camera: {e}")
+                self.logger.warning(f"Error stopping camera: {e}")
 
     def capture(self) -> Optional[np.ndarray]:
         """
@@ -85,13 +90,13 @@ class BaseCamera(ABC):
     def _extract_frame(self) -> Optional[np.ndarray]:
         """Extract a frame with FPS throttling and post-processing."""
         # FPS throttling
-        if self.desired_interval > 0:
+        if self._desired_interval > 0:
             current_time = time.monotonic()
             elapsed = current_time - self._last_capture_time
-            if elapsed < self.desired_interval:
-                time.sleep(self.desired_interval - elapsed)
+            if elapsed < self._desired_interval:
+                time.sleep(self._desired_interval - elapsed)
 
-        with self._cap_lock:
+        with self._camera_lock:
             if not self._is_started:
                 return None
             

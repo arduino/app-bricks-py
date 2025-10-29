@@ -6,7 +6,7 @@ import os
 import re
 import cv2
 import numpy as np
-from typing import Optional, Union, Dict
+from typing import Callable, Optional, Tuple, Union, Dict
 
 from arduino.app_utils import Logger
 
@@ -24,26 +24,37 @@ class V4LCamera(BaseCamera):
     It supports both device indices and device paths.
     """
 
-    def __init__(self, camera: Union[str, int] = 0, **kwargs):
+    def __init__(
+        self,
+        device: Union[str, int] = 0,
+        resolution: Optional[Tuple[int, int]] = (640, 480),
+        fps: int = 10, 
+        adjustments: Optional[Callable[[np.ndarray], np.ndarray]] = None,
+    ):
         """
         Initialize V4L camera.
 
         Args:
-            camera: Camera identifier - can be:
-                   - int: Camera index (e.g., 0, 1)  
+            device: Camera identifier - can be:
+                   - int: Camera index (e.g., 0, 1)
                    - str: Camera index as string or device path
-            **kwargs: Additional camera parameters propagated to BaseCamera
+            resolution (tuple, optional): Resolution as (width, height). None uses default resolution.
+            fps (int, optional): Frames per second to capture from the camera. Default: 10.
+            adjustments (callable, optional): Function or function pipeline to adjust frames that takes
+                a numpy array and returns a numpy array. Default: None
         """
-        super().__init__(**kwargs)
-        self.camera_id = self._resolve_camera_id(camera)
+        super().__init__(resolution, fps, adjustments)
+        self.device_index = self._resolve_camera_id(device)
+        self.logger = logger
+        
         self._cap = None
 
-    def _resolve_camera_id(self, camera: Union[str, int]) -> int:
+    def _resolve_camera_id(self, device: Union[str, int]) -> int:
         """
         Resolve camera identifier to a numeric device ID.
         
         Args:
-            camera: Camera identifier
+            device: Camera identifier
             
         Returns:
             Numeric camera device ID
@@ -51,26 +62,26 @@ class V4LCamera(BaseCamera):
         Raises:
             CameraOpenError: If camera cannot be resolved
         """
-        if isinstance(camera, int):
-            return camera
+        if isinstance(device, int):
+            return device
         
-        if isinstance(camera, str):
+        if isinstance(device, str):
             # If it's a numeric string, convert directly
-            if camera.isdigit():
-                device_id = int(camera)
+            if device.isdigit():
+                device_idx = int(device)
                 # Validate using device index mapping
                 video_devices = self._get_video_devices_by_index()
-                if device_id in video_devices:
-                    return int(video_devices[device_id])
+                if device_idx in video_devices:
+                    return int(video_devices[device_idx])
                 else:
                     # Fallback to direct device ID if mapping not available
-                    return device_id
+                    return device_idx
             
             # If it's a device path like "/dev/video0"
-            if camera.startswith('/dev/video'):
-                return int(camera.replace('/dev/video', ''))
+            if device.startswith('/dev/video'):
+                return int(device.replace('/dev/video', ''))
         
-        raise CameraOpenError(f"Cannot resolve camera identifier: {camera}")
+        raise CameraOpenError(f"Cannot resolve camera identifier: {device}")
 
     def _get_video_devices_by_index(self) -> Dict[int, str]:
         """
@@ -112,9 +123,9 @@ class V4LCamera(BaseCamera):
 
     def _open_camera(self) -> None:
         """Open the V4L camera connection."""
-        self._cap = cv2.VideoCapture(self.camera_id)
+        self._cap = cv2.VideoCapture(self.device_index)
         if not self._cap.isOpened():
-            raise CameraOpenError(f"Failed to open V4L camera {self.camera_id}")
+            raise CameraOpenError(f"Failed to open V4L camera {self.device_index}")
 
         # Set resolution if specified
         if self.resolution and self.resolution[0] and self.resolution[1]:
@@ -126,7 +137,7 @@ class V4LCamera(BaseCamera):
             actual_height = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             if actual_width != self.resolution[0] or actual_height != self.resolution[1]:
                 logger.warning(
-                    f"Camera {self.camera_id} resolution set to {actual_width}x{actual_height} "
+                    f"Camera {self.device_index} resolution set to {actual_width}x{actual_height} "
                     f"instead of requested {self.resolution[0]}x{self.resolution[1]}"
                 )
                 self.resolution = (actual_width, actual_height)
@@ -137,11 +148,11 @@ class V4LCamera(BaseCamera):
             actual_fps = int(self._cap.get(cv2.CAP_PROP_FPS))
             if actual_fps != self.fps:
                 logger.warning(
-                    f"Camera {self.camera_id} FPS set to {actual_fps} instead of requested {self.fps}"
+                    f"Camera {self.device_index} FPS set to {actual_fps} instead of requested {self.fps}"
                 )
                 self.fps = actual_fps
 
-        logger.info(f"Opened V4L camera {self.camera_id}")
+        logger.info(f"Opened V4L camera with index {self.device_index}")
 
     def _close_camera(self) -> None:
         """Close the V4L camera connection."""
@@ -156,6 +167,6 @@ class V4LCamera(BaseCamera):
 
         ret, frame = self._cap.read()
         if not ret or frame is None:
-            raise CameraReadError(f"Failed to read from V4L camera {self.camera_id}")
+            raise CameraReadError(f"Failed to read from V4L camera {self.device_index}")
 
         return frame

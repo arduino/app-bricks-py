@@ -5,13 +5,13 @@
 import cv2
 import numpy as np
 import requests
-from typing import Optional
+from typing import Callable, Optional, Tuple
 from urllib.parse import urlparse
 
 from arduino.app_utils import Logger
 
 from .camera import BaseCamera
-from .errors import CameraOpenError
+from .errors import CameraConfigError, CameraOpenError
 
 logger = Logger("IPCamera")
 
@@ -24,24 +24,38 @@ class IPCamera(BaseCamera):
     Can handle authentication and various streaming protocols.
     """
 
-    def __init__(self, url: str, username: Optional[str] = None, 
-                 password: Optional[str] = None, timeout: int = 10, **kwargs):
+    def __init__(
+        self,
+        url: str,
+        username: Optional[str] = None, 
+        password: Optional[str] = None,
+        timeout: int = 10,
+        resolution: Optional[Tuple[int, int]] = (640, 480),
+        fps: int = 10, 
+        adjustments: Optional[Callable[[np.ndarray], np.ndarray]] = None,
+    ):
         """
         Initialize IP camera.
 
         Args:
-            url: Camera stream URL (rtsp://, http://, https://)
+            url: Camera stream URL (i.e. rtsp://..., http://..., https://...)
             username: Optional authentication username
             password: Optional authentication password  
             timeout: Connection timeout in seconds
-            **kwargs: Additional camera parameters propagated to BaseCamera
+            resolution (tuple, optional): Resolution as (width, height). None uses default resolution.
+            fps (int): Frames per second to capture from the camera.
+            adjustments (callable, optional): Function or function pipeline to adjust frames that takes
+                a numpy array and returns a numpy array. Default: None
         """
-        super().__init__(**kwargs)
+        super().__init__(resolution, fps, adjustments)
         self.url = url
         self.username = username
         self.password = password
         self.timeout = timeout
+        self.logger = logger
+
         self._cap = None
+        
         self._validate_url()
 
     def _validate_url(self) -> None:
@@ -49,19 +63,19 @@ class IPCamera(BaseCamera):
         try:
             parsed = urlparse(self.url)
             if parsed.scheme not in ['http', 'https', 'rtsp']:
-                raise CameraOpenError(f"Unsupported URL scheme: {parsed.scheme}")
+                raise CameraConfigError(f"Unsupported URL scheme: {parsed.scheme}")
         except Exception as e:
-            raise CameraOpenError(f"Invalid URL format: {e}")
+            raise CameraConfigError(f"Invalid URL format: {e}")
 
     def _open_camera(self) -> None:
         """Open the IP camera connection."""
-        auth_url = self._build_authenticated_url()
+        url = self._build_url()
         
         # Test connectivity first for HTTP streams
         if self.url.startswith(('http://', 'https://')):
             self._test_http_connectivity()
         
-        self._cap = cv2.VideoCapture(auth_url)
+        self._cap = cv2.VideoCapture(url)
         self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer to get latest frames
         if not self._cap.isOpened():
             raise CameraOpenError(f"Failed to open IP camera: {self.url}")
@@ -75,17 +89,15 @@ class IPCamera(BaseCamera):
 
         logger.info(f"Opened IP camera: {self.url}")
 
-    def _build_authenticated_url(self) -> str:
+    def _build_url(self) -> str:
         """Build URL with authentication if credentials provided."""
+        # If no username or password provided as parameters, return original URL
         if not self.username or not self.password:
             return self.url
         
         parsed = urlparse(self.url)
-        if parsed.username and parsed.password:
-            # URL already has credentials
-            return self.url
-        
-        # Add credentials to URL
+
+        # Override any URL credentials if credentials are provided
         auth_netloc = f"{self.username}:{self.password}@{parsed.hostname}"
         if parsed.port:
             auth_netloc += f":{parsed.port}"

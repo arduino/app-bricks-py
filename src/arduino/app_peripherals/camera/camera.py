@@ -15,6 +15,14 @@ class Camera:
     
     This class serves as both a factory and a wrapper, automatically creating
     the appropriate camera implementation based on the provided configuration.
+
+    Supports:
+        - V4L Cameras (local cameras connected to the system), the default
+        - IP Cameras (network-based cameras via RTSP, HLS)
+        - WebSocket Cameras (input streams via WebSocket client)
+
+    Note: constructor arguments (except source) must be provided in keyword
+    format to forward them correctly to the specific camera implementations.
     """
     
     def __new__(cls, source: Union[str, int] = 0, **kwargs) -> BaseCamera:
@@ -23,22 +31,20 @@ class Camera:
         Args:
             source (Union[str, int]): Camera source identifier. Supports:
                 - int: V4L camera index (e.g., 0, 1)
-                - str: Camera index as string (e.g., "0", "1") for V4L
-                - str: Device path (e.g., "/dev/video0") for V4L
+                - str: V4L camera index (e.g., "0", "1") or device path (e.g., "/dev/video0")
                 - str: URL for IP cameras (e.g., "rtsp://...", "http://...")
-                - str: WebSocket URL (e.g., "ws://0.0.0.0:8080")
+                - str: WebSocket URL for input streams (e.g., "ws://0.0.0.0:8080")
             **kwargs: Camera-specific configuration parameters grouped by type:
                 Common Parameters:
                     resolution (tuple, optional): Frame resolution as (width, height). 
-                        Default: None (auto)
+                        Default: (640, 480)
                     fps (int, optional): Target frames per second. Default: 10
                     adjustments (callable, optional): Function pipeline to adjust frames that takes a
                         numpy array and returns a numpy array. Default: None
                 V4L Camera Parameters:
-                    device_index (int, optional): V4L device index override
-                    capture_format (str, optional): Video capture format (e.g., 'MJPG', 'YUYV')
-                    buffer_size (int, optional): Number of frames to buffer
+                    device (int, optional): V4L device index override. Default: 0.
                 IP Camera Parameters:
+                    url (str): Camera stream URL
                     username (str, optional): Authentication username
                     password (str, optional): Authentication password
                     timeout (float, optional): Connection timeout in seconds. Default: 10.0
@@ -54,9 +60,10 @@ class Camera:
             
         Raises:
             CameraConfigError: If source type is not supported or parameters are invalid
+            CameraOpenError: If the camera cannot be opened
             
         Examples:
-            V4L/USB Camera:
+            V4L Camera:
             
             ```python
             camera = Camera(0, resolution=(640, 480), fps=30)
@@ -67,17 +74,16 @@ class Camera:
             
             ```python
             camera = Camera("rtsp://192.168.1.100:554/stream", username="admin", password="secret", timeout=15.0)
-            camera = Camera("http://192.168.1.100:8080/video", retry_attempts=5)
+            camera = Camera("http://192.168.1.100:8080/video.mp4")
             ```
             
             WebSocket Camera:
             
             ```python   
-            camera = Camera("ws://0.0.0.0:8080", frame_format="json", max_queue_size=20)
-            camera = Camera("ws://192.168.1.100:8080", ping_interval=30)
+            camera = Camera("ws://0.0.0.0:8080", frame_format="json")
+            camera = Camera("ws://192.168.1.100:8080", timeout=5)
             ```
         """
-        # Dynamic imports to avoid circular dependencies
         if isinstance(source, int) or (isinstance(source, str) and source.isdigit()):
             # V4L Camera
             from .v4l_camera import V4LCamera
