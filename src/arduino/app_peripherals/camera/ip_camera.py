@@ -19,7 +19,7 @@ logger = Logger("IPCamera")
 class IPCamera(BaseCamera):
     """
     IP Camera implementation for network-based cameras.
-    
+
     Supports RTSP, HTTP, and HTTPS camera streams.
     Can handle authentication and various streaming protocols.
     """
@@ -27,11 +27,11 @@ class IPCamera(BaseCamera):
     def __init__(
         self,
         url: str,
-        username: Optional[str] = None, 
+        username: Optional[str] = None,
         password: Optional[str] = None,
         timeout: int = 10,
         resolution: Optional[Tuple[int, int]] = (640, 480),
-        fps: int = 10, 
+        fps: int = 10,
         adjustments: Optional[Callable[[np.ndarray], np.ndarray]] = None,
     ):
         """
@@ -40,7 +40,7 @@ class IPCamera(BaseCamera):
         Args:
             url: Camera stream URL (i.e. rtsp://..., http://..., https://...)
             username: Optional authentication username
-            password: Optional authentication password  
+            password: Optional authentication password
             timeout: Connection timeout in seconds
             resolution (tuple, optional): Resolution as (width, height). None uses default resolution.
             fps (int): Frames per second to capture from the camera.
@@ -55,14 +55,14 @@ class IPCamera(BaseCamera):
         self.logger = logger
 
         self._cap = None
-        
+
         self._validate_url()
 
     def _validate_url(self) -> None:
         """Validate the camera URL format."""
         try:
             parsed = urlparse(self.url)
-            if parsed.scheme not in ['http', 'https', 'rtsp']:
+            if parsed.scheme not in ["http", "https", "rtsp"]:
                 raise CameraConfigError(f"Unsupported URL scheme: {parsed.scheme}")
         except Exception as e:
             raise CameraConfigError(f"Invalid URL format: {e}")
@@ -70,11 +70,11 @@ class IPCamera(BaseCamera):
     def _open_camera(self) -> None:
         """Open the IP camera connection."""
         url = self._build_url()
-        
+
         # Test connectivity first for HTTP streams
-        if self.url.startswith(('http://', 'https://')):
+        if self.url.startswith(("http://", "https://")):
             self._test_http_connectivity()
-        
+
         self._cap = cv2.VideoCapture(url)
         self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer to get latest frames
         if not self._cap.isOpened():
@@ -94,14 +94,14 @@ class IPCamera(BaseCamera):
         # If no username or password provided as parameters, return original URL
         if not self.username or not self.password:
             return self.url
-        
+
         parsed = urlparse(self.url)
 
         # Override any URL credentials if credentials are provided
         auth_netloc = f"{self.username}:{self.password}@{parsed.hostname}"
         if parsed.port:
             auth_netloc += f":{parsed.port}"
-        
+
         return f"{parsed.scheme}://{auth_netloc}{parsed.path}"
 
     def _test_http_connectivity(self) -> None:
@@ -110,19 +110,12 @@ class IPCamera(BaseCamera):
             auth = None
             if self.username and self.password:
                 auth = (self.username, self.password)
-            
-            response = requests.head(
-                self.url, 
-                auth=auth, 
-                timeout=self.timeout,
-                allow_redirects=True
-            )
-            
+
+            response = requests.head(self.url, auth=auth, timeout=self.timeout, allow_redirects=True)
+
             if response.status_code not in [200, 206]:  # 206 for partial content
-                raise CameraOpenError(
-                    f"HTTP camera returned status {response.status_code}: {self.url}"
-                )
-                
+                raise CameraOpenError(f"HTTP camera returned status {response.status_code}: {self.url}")
+
         except requests.RequestException as e:
             raise CameraOpenError(f"Cannot connect to HTTP camera {self.url}: {e}")
 

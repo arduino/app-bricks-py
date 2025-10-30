@@ -18,7 +18,7 @@ logger = Logger("Camera")
 class BaseCamera(ABC):
     """
     Abstract base class for camera implementations.
-    
+
     This class defines the common interface that all camera implementations must follow,
     providing a unified API regardless of the underlying camera protocol or type.
     """
@@ -26,7 +26,7 @@ class BaseCamera(ABC):
     def __init__(
         self,
         resolution: Optional[Tuple[int, int]] = (640, 480),
-        fps: int = 10, 
+        fps: int = 10,
         adjustments: Optional[Callable[[np.ndarray], np.ndarray]] = None,
     ):
         """
@@ -53,7 +53,7 @@ class BaseCamera(ABC):
         with self._camera_lock:
             if self._is_started:
                 return
-            
+
             try:
                 self._open_camera()
                 self._is_started = True
@@ -67,7 +67,7 @@ class BaseCamera(ABC):
         with self._camera_lock:
             if not self._is_started:
                 return
-            
+
             try:
                 self._close_camera()
                 self._is_started = False
@@ -99,19 +99,19 @@ class BaseCamera(ABC):
 
             if not self._is_started:
                 return None
-            
+
             frame = self._read_frame()
             if frame is None:
                 return None
-            
+
             self._last_capture_time = time.monotonic()
-            
+
             if self.adjustments is not None:
                 try:
                     frame = self.adjustments(frame)
                 except Exception as e:
                     raise CameraTransformError(f"Frame transformation failed ({self.adjustments}): {e}")
-            
+
             return frame
 
     def is_started(self) -> bool:

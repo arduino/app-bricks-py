@@ -19,7 +19,7 @@ logger = Logger("V4LCamera")
 class V4LCamera(BaseCamera):
     """
     V4L (Video4Linux) camera implementation for USB and local cameras.
-    
+
     This class handles USB cameras and other V4L-compatible devices on Linux systems.
     It supports both device indices and device paths.
     """
@@ -28,7 +28,7 @@ class V4LCamera(BaseCamera):
         self,
         device: Union[str, int] = 0,
         resolution: Optional[Tuple[int, int]] = (640, 480),
-        fps: int = 10, 
+        fps: int = 10,
         adjustments: Optional[Callable[[np.ndarray], np.ndarray]] = None,
     ):
         """
@@ -46,25 +46,25 @@ class V4LCamera(BaseCamera):
         super().__init__(resolution, fps, adjustments)
         self.device_index = self._resolve_camera_id(device)
         self.logger = logger
-        
+
         self._cap = None
 
     def _resolve_camera_id(self, device: Union[str, int]) -> int:
         """
         Resolve camera identifier to a numeric device ID.
-        
+
         Args:
             device: Camera identifier
-            
+
         Returns:
             Numeric camera device ID
-            
+
         Raises:
             CameraOpenError: If camera cannot be resolved
         """
         if isinstance(device, int):
             return device
-        
+
         if isinstance(device, str):
             # If it's a numeric string, convert directly
             if device.isdigit():
@@ -76,17 +76,17 @@ class V4LCamera(BaseCamera):
                 else:
                     # Fallback to direct device ID if mapping not available
                     return device_idx
-            
+
             # If it's a device path like "/dev/video0"
-            if device.startswith('/dev/video'):
-                return int(device.replace('/dev/video', ''))
-        
+            if device.startswith("/dev/video"):
+                return int(device.replace("/dev/video", ""))
+
         raise CameraOpenError(f"Cannot resolve camera identifier: {device}")
 
     def _get_video_devices_by_index(self) -> Dict[int, str]:
         """
         Map camera indices to device numbers by reading /dev/v4l/by-id/.
-        
+
         Returns:
             Dict mapping index to device number
         """
@@ -131,7 +131,7 @@ class V4LCamera(BaseCamera):
         if self.resolution and self.resolution[0] and self.resolution[1]:
             self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.resolution[0])
             self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.resolution[1])
-            
+
             # Verify resolution setting
             actual_width = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             actual_height = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -141,15 +141,13 @@ class V4LCamera(BaseCamera):
                     f"instead of requested {self.resolution[0]}x{self.resolution[1]}"
                 )
                 self.resolution = (actual_width, actual_height)
-        
+
         if self.fps:
             self._cap.set(cv2.CAP_PROP_FPS, self.fps)
 
             actual_fps = int(self._cap.get(cv2.CAP_PROP_FPS))
             if actual_fps != self.fps:
-                logger.warning(
-                    f"Camera {self.device_index} FPS set to {actual_fps} instead of requested {self.fps}"
-                )
+                logger.warning(f"Camera {self.device_index} FPS set to {actual_fps} instead of requested {self.fps}")
                 self.fps = actual_fps
 
         logger.info(f"Opened V4L camera with index {self.device_index}")

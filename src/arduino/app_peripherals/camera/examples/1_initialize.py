@@ -7,7 +7,7 @@
 from arduino.app_peripherals.camera import Camera, V4LCamera
 
 
-default = Camera() # Uses default camera (V4L)
+default = Camera()  # Uses default camera (V4L)
 
 # The following two are equivalent
 camera = Camera(2, resolution=(640, 480), fps=15)  # Infers camera type

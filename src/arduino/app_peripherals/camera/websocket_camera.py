@@ -25,7 +25,7 @@ logger = Logger("WebSocketCamera")
 class WebSocketCamera(BaseCamera):
     """
     WebSocket Camera implementation that hosts a WebSocket server.
-    
+
     This camera acts as a WebSocket server that receives frames from connected clients.
     Only one client can be connected at a time.
 
@@ -42,7 +42,7 @@ class WebSocketCamera(BaseCamera):
         timeout: int = 10,
         frame_format: str = "base64",
         resolution: Optional[Tuple[int, int]] = (640, 480),
-        fps: int = 10, 
+        fps: int = 10,
         adjustments: Optional[Callable[[np.ndarray], np.ndarray]] = None,
     ):
         """
@@ -59,13 +59,13 @@ class WebSocketCamera(BaseCamera):
                 a numpy array and returns a numpy array. Default: None
         """
         super().__init__(resolution, fps, adjustments)
-        
+
         self.host = host
         self.port = port
         self.timeout = timeout
         self.frame_format = frame_format
         self.logger = logger
-        
+
         self._frame_queue = queue.Queue(1)
         self._server = None
         self._loop = None
@@ -77,12 +77,9 @@ class WebSocketCamera(BaseCamera):
     def _open_camera(self) -> None:
         """Start the WebSocket server."""
         # Start server in separate thread with its own event loop
-        self._server_thread = threading.Thread(
-            target=self._start_server_thread,
-            daemon=True
-        )
+        self._server_thread = threading.Thread(target=self._start_server_thread, daemon=True)
         self._server_thread.start()
-        
+
         # Wait for server to start
         start_time = time.time()
         start_timeout = 10
@@ -90,7 +87,7 @@ class WebSocketCamera(BaseCamera):
             if self._server is not None:
                 break
             time.sleep(0.1)
-        
+
         if self._server is None:
             raise CameraOpenError(f"Failed to start WebSocket server on {self.host}:{self.port}")
 
@@ -110,7 +107,7 @@ class WebSocketCamera(BaseCamera):
         """Start the WebSocket server."""
         try:
             self._stop_event.clear()
-            
+
             self._server = await websockets.serve(
                 self._ws_handler,
                 self.host,
@@ -120,11 +117,11 @@ class WebSocketCamera(BaseCamera):
                 close_timeout=self.timeout,
                 ping_interval=20,
             )
-            
+
             logger.info(f"WebSocket camera server started on {self.host}:{self.port}")
-            
+
             await self._stop_event.wait()
-                
+
         except Exception as e:
             logger.error(f"Error starting WebSocket server: {e}")
             raise
@@ -136,27 +133,23 @@ class WebSocketCamera(BaseCamera):
     async def _ws_handler(self, conn: websockets.ServerConnection) -> None:
         """Handle a connected WebSocket client. Only one client allowed at a time."""
         client_addr = f"{conn.remote_address[0]}:{conn.remote_address[1]}"
-        
+
         async with self._client_lock:
             if self._client is not None:
                 # Reject the new client
                 logger.warning(f"Rejecting client {client_addr}: only one client allowed at a time")
                 try:
-                    await conn.send(json.dumps({
-                        "error": "Server busy",
-                        "message": "Only one client connection allowed at a time",
-                        "code": 1000
-                    }))
+                    await conn.send(json.dumps({"error": "Server busy", "message": "Only one client connection allowed at a time", "code": 1000}))
                     await conn.close(code=1000, reason="Server busy - only one client allowed")
                 except Exception as e:
                     logger.warning(f"Error sending rejection message to {client_addr}: {e}")
                 return
-            
+
             # Accept the client
             self._client = conn
-        
+
         logger.info(f"Client connected: {client_addr}")
-        
+
         try:
             # Send welcome message
             try:
@@ -184,7 +177,7 @@ class WebSocketCamera(BaseCamera):
                                 self._frame_queue.get_nowait()
                             except queue.Empty:
                                 continue
-                        
+
         except websockets.exceptions.ConnectionClosed:
             logger.info(f"Client disconnected: {client_addr}")
         except Exception as e:
@@ -204,36 +197,36 @@ class WebSocketCamera(BaseCamera):
                     image_data = base64.b64decode(message)
                 else:
                     image_data = base64.b64decode(message.decode())
-                
+
                 # Decode image
                 nparr = np.frombuffer(image_data, np.uint8)
                 frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
                 return frame
-            
+
             elif self.frame_format == "binary":
                 # Expect raw binary image data
                 if isinstance(message, str):
                     image_data = message.encode()
                 else:
                     image_data = message
-                
+
                 nparr = np.frombuffer(image_data, np.uint8)
                 frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
                 return frame
-            
+
             elif self.frame_format == "json":
                 # Expect JSON with image data
                 if isinstance(message, bytes):
                     message = message.decode()
-                
+
                 data = json.loads(message)
-                
+
                 if "image" in data:
                     image_data = base64.b64decode(data["image"])
                     nparr = np.frombuffer(image_data, np.uint8)
                     frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
                     return frame
-                
+
                 elif "frame" in data:
                     # Handle different frame data formats
                     frame_data = data["frame"]
@@ -242,9 +235,9 @@ class WebSocketCamera(BaseCamera):
                         nparr = np.frombuffer(image_data, np.uint8)
                         frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
                         return frame
-            
+
             return None
-            
+
         except Exception as e:
             logger.warning(f"Error parsing message: {e}")
             return None
@@ -253,10 +246,7 @@ class WebSocketCamera(BaseCamera):
         """Stop the WebSocket server."""
         # Signal async stop event if it exists
         if self._loop and not self._loop.is_closed():
-            future = asyncio.run_coroutine_threadsafe(
-                self._set_async_stop_event(), 
-                self._loop
-            )
+            future = asyncio.run_coroutine_threadsafe(self._set_async_stop_event(), self._loop)
             try:
                 future.result(timeout=1.0)
             except CancelledError as e:
@@ -265,18 +255,18 @@ class WebSocketCamera(BaseCamera):
                 logger.debug(f"Error setting async stop event: TimeoutError")
             except Exception as e:
                 logger.warning(f"Error setting async stop event: {e}")
-        
+
         # Wait for server thread to finish
         if self._server_thread and self._server_thread.is_alive():
             self._server_thread.join(timeout=10.0)
-        
+
         # Clear frame queue
         try:
             while True:
                 self._frame_queue.get_nowait()
         except queue.Empty:
             pass
-        
+
         # Reset state
         self._server = None
         self._loop = None
@@ -312,10 +302,10 @@ class WebSocketCamera(BaseCamera):
     def _send_message_to_client(self, message: Union[str, bytes, dict]) -> None:
         """
         Send a message to the connected client (if any).
-        
+
         Args:
             message: Message to send to the client
-            
+
         Raises:
             RuntimeError: If the event loop is not running or closed
             ConnectionError: If no client is connected
@@ -323,16 +313,13 @@ class WebSocketCamera(BaseCamera):
         """
         if not self._loop or self._loop.is_closed():
             raise RuntimeError("WebSocket server event loop is not running")
-        
+
         if self._client is None:
             raise ConnectionError("No client connected to send message to")
-        
+
         # Schedule message sending in the server's event loop
-        future = asyncio.run_coroutine_threadsafe(
-            self._send_to_client(message), 
-            self._loop
-        )
-        
+        future = asyncio.run_coroutine_threadsafe(self._send_to_client(message), self._loop)
+
         try:
             future.result(timeout=5.0)
         except Exception as e:
@@ -343,7 +330,7 @@ class WebSocketCamera(BaseCamera):
         """Send message to a single client."""
         if isinstance(message, dict):
             message = json.dumps(message)
-        
+
         try:
             await self._client.send(message)
         except Exception as e:
