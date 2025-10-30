@@ -40,7 +40,7 @@ class WebSocketCamera(BaseCamera):
         host: str = "0.0.0.0",
         port: int = 8080,
         timeout: int = 10,
-        frame_format: str = "base64",
+        frame_format: str = "binary",
         resolution: Optional[Tuple[int, int]] = (640, 480),
         fps: int = 10,
         adjustments: Optional[Callable[[np.ndarray], np.ndarray]] = None,
@@ -52,7 +52,7 @@ class WebSocketCamera(BaseCamera):
             host (str): Host address to bind the server to (default: "0.0.0.0")
             port (int): Port to bind the server to (default: 8080)
             timeout (int): Connection timeout in seconds (default: 10)
-            frame_format (str): Expected frame format from clients ("base64", "json", "binary") (default: "base64")
+            frame_format (str): Expected frame format from clients ("base64", "json", "binary") (default: "binary")
             resolution (tuple, optional): Resolution as (width, height). None uses default resolution.
             fps (int): Frames per second to capture from the camera.
             adjustments (callable, optional): Function or function pipeline to adjust frames that takes
