@@ -4,8 +4,6 @@
 
 import pytest
 from pathlib import Path
-import io
-from PIL import Image
 from arduino.app_bricks.object_detection import ObjectDetection
 
 

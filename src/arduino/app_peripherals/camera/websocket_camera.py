@@ -249,9 +249,9 @@ class WebSocketCamera(BaseCamera):
             future = asyncio.run_coroutine_threadsafe(self._set_async_stop_event(), self._loop)
             try:
                 future.result(timeout=1.0)
-            except CancelledError as e:
+            except CancelledError:
                 logger.debug(f"Error setting async stop event: CancelledError")
-            except TimeoutError as e:
+            except TimeoutError:
                 logger.debug(f"Error setting async stop event: TimeoutError")
             except Exception as e:
                 logger.warning(f"Error setting async stop event: {e}")

@@ -86,7 +86,7 @@ class PipeableFunction:
         if func_name is None:
             from functools import partial
 
-            if type(self.func) == partial:
+            if type(self.func) is partial:
                 func_name = "partial"
         if func_name is None:
             func_name = "unknown"  # Fallback
