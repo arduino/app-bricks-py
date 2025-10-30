@@ -76,9 +76,10 @@ class IPCamera(BaseCamera):
             self._test_http_connectivity()
 
         self._cap = cv2.VideoCapture(url)
-        self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer to get latest frames
         if not self._cap.isOpened():
             raise CameraOpenError(f"Failed to open IP camera: {self.url}")
+        
+        self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer to minimize latency
 
         # Test by reading one frame
         ret, frame = self._cap.read()
