@@ -18,6 +18,7 @@ class SineGenerator:
         sample_rate (int): Audio sample rate in Hz.
         attack (float): Attack time for amplitude smoothing in seconds.
         release (float): Release time for amplitude smoothing in seconds.
+        glide (float): Glide time for frequency smoothing in seconds.
     """
 
     def __init__(self, sample_rate: int):
@@ -97,6 +98,7 @@ class SineGenerator:
                 amplitude when increasing amplitude).
             release (float): Release time in seconds (time to fall to target
                 amplitude when decreasing amplitude).
+            glide (float): Glide time in seconds (time to reach target frequency).
         """
         self.attack = float(max(0.0, attack))
         self.release = float(max(0.0, release))
