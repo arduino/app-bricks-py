@@ -31,6 +31,7 @@ class SineGenerator:
         # envelope parameters (attack/release in seconds)
         self.attack = 0.01
         self.release = 0.03
+        self.glide = 0.02
 
         # reusable buffers
         self._buf_N = 0
@@ -88,7 +89,7 @@ class SineGenerator:
         if "freq_last" in state:
             self._freq_last = float(state["freq_last"])
 
-    def set_envelope_params(self, attack: float, release: float) -> None:
+    def set_envelope_params(self, attack: float, release: float, glide: float) -> None:
         """Update attack and release envelope parameters.
 
         Args:
@@ -99,6 +100,7 @@ class SineGenerator:
         """
         self.attack = float(max(0.0, attack))
         self.release = float(max(0.0, release))
+        self.glide = float(max(0.0, glide))
 
     def generate_block(self, freq: float, amp_target: float, block_dur: float, master_volume: float):
         """Generate a block of float32 audio samples.
@@ -149,10 +151,29 @@ class SineGenerator:
                 envelope[:] = np.linspace(amp_current, next_amp, N, dtype=np.float32)
                 amp_current = float(envelope[-1])
 
-        # oscillator
-        phase_incr = 2.0 * math.pi * float(freq) / float(self.sample_rate)
+        # frequency glide (portamento)
+        freq_current = float(self._freq_last)
+        freq_target = float(freq)
+        glide = float(self.glide)
         phase_incs = self._buf_phase_incs[:N]
-        phase_incs.fill(phase_incr)
+
+        if glide > 0.0 and freq_current != freq_target:
+            # Apply glide smoothing over time
+            frac = min(1.0, block_dur / glide)
+            next_freq = freq_current + (freq_target - freq_current) * frac
+
+            # Linear interpolation within block
+            freq_ramp = np.linspace(freq_current, next_freq, N, dtype=np.float32)
+            phase_incs[:] = 2.0 * math.pi * freq_ramp / float(self.sample_rate)
+
+            freq_current = float(next_freq)
+        else:
+            # No glide or already at target
+            phase_incr = 2.0 * math.pi * freq_target / float(self.sample_rate)
+            phase_incs.fill(phase_incr)
+            freq_current = freq_target
+
+        # oscillator (phase accumulation)
         np.cumsum(phase_incs, dtype=np.float32, out=phases)
         phases += self._phase
         self._phase = float(phases[-1] % (2.0 * math.pi))
@@ -168,6 +189,6 @@ class SineGenerator:
 
         # update state
         self._amp_current = amp_current
-        self._freq_last = float(freq)
+        self._freq_last = freq_current
 
         return samples
