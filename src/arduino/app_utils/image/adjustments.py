@@ -57,7 +57,10 @@ def letterbox(
     new_w = int(orig_w * scale)
     new_h = int(orig_h * scale)
 
-    resized_frame = cv2.resize(frame, (new_w, new_h), interpolation=interpolation)
+    if new_w == orig_w and new_h == orig_h:
+        resized_frame = frame
+    else:
+        resized_frame = cv2.resize(frame, (new_w, new_h), interpolation=interpolation)
 
     if frame.ndim == 2:
         # Greyscale
