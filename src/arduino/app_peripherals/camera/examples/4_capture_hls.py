@@ -10,7 +10,7 @@ from arduino.app_peripherals.camera import Camera
 
 # Capture a freely available HLS playlist for testing
 # Note: Public streams can be unreliable and may go offline without notice.
-url = 'https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8'
+url = "https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8"
 
 camera = Camera(url)
 camera.start()

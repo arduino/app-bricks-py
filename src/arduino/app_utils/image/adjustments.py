@@ -24,10 +24,12 @@ Frames are expected to be in BGR, BGRA or greyscale format.
 """
 
 
-def letterbox(frame: np.ndarray,
-              target_size: Optional[Tuple[int, int]] = None,
-              color: int | Tuple[int, int, int] = (114, 114, 114),
-              interpolation: int = cv2.INTER_LINEAR) -> np.ndarray:
+def letterbox(
+    frame: np.ndarray,
+    target_size: Optional[Tuple[int, int]] = None,
+    color: int | Tuple[int, int, int] = (114, 114, 114),
+    interpolation: int = cv2.INTER_LINEAR,
+) -> np.ndarray:
     """
     Add letterboxing to frame to achieve target size while maintaining aspect ratio.
 
@@ -59,18 +61,16 @@ def letterbox(frame: np.ndarray,
 
     if frame.ndim == 2:
         # Greyscale
-        if hasattr(color, '__len__'):
+        if hasattr(color, "__len__"):
             color = color[0]
         canvas = np.full((target_h, target_w), color, dtype=original_dtype)
     else:
         # Colored (BGR/BGRA)
         channels = frame.shape[2]
-        if not hasattr(color, '__len__'):
+        if not hasattr(color, "__len__"):
             color = (color,) * channels
         elif len(color) != channels:
-            raise ValueError(
-                f"color length ({len(color)}) must match frame channels ({channels})."
-            )
+            raise ValueError(f"color length ({len(color)}) must match frame channels ({channels}).")
         canvas = np.full((target_h, target_w, channels), color, dtype=original_dtype)
 
     # Calculate offsets to center the image
@@ -78,15 +78,12 @@ def letterbox(frame: np.ndarray,
     x_offset = (target_w - new_w) // 2
 
     # Paste the resized image onto the canvas
-    canvas[y_offset:y_offset + new_h, x_offset:x_offset + new_w] = resized_frame
+    canvas[y_offset : y_offset + new_h, x_offset : x_offset + new_w] = resized_frame
 
     return canvas
 
 
-def resize(frame: np.ndarray,
-           target_size: Tuple[int, int],
-           maintain_ratio: bool = False,
-           interpolation: int = cv2.INTER_LINEAR) -> np.ndarray:
+def resize(frame: np.ndarray, target_size: Tuple[int, int], maintain_ratio: bool = False, interpolation: int = cv2.INTER_LINEAR) -> np.ndarray:
     """
     Resize frame to target size.
 
@@ -105,11 +102,7 @@ def resize(frame: np.ndarray,
         return cv2.resize(frame, (target_size[0], target_size[1]), interpolation=interpolation)
 
 
-def adjust(frame: np.ndarray,
-           brightness: float = 0.0,
-           contrast: float = 1.0,
-           saturation: float = 1.0,
-           gamma: float = 1.0) -> np.ndarray:
+def adjust(frame: np.ndarray, brightness: float = 0.0, contrast: float = 1.0, saturation: float = 1.0, gamma: float = 1.0) -> np.ndarray:
     """
     Apply image adjustments to a BGR or BGRA frame, preserving channel count
     and data type.
@@ -242,9 +235,7 @@ def greyscale(frame: np.ndarray) -> np.ndarray:
 
     # Convert to greyscale using standard BT.709 weights
     # GREY = 0.0722 * B + 0.7152 * G + 0.2126 * R
-    grey_float = (0.0722 * frame_float[:, :, 0] +
-                  0.7152 * frame_float[:, :, 1] +
-                  0.2126 * frame_float[:, :, 2])
+    grey_float = 0.0722 * frame_float[:, :, 0] + 0.7152 * frame_float[:, :, 1] + 0.2126 * frame_float[:, :, 2]
 
     # Convert back to original dtype
     final_grey = (grey_float * max_val).astype(original_dtype)
@@ -257,6 +248,7 @@ def greyscale(frame: np.ndarray) -> np.ndarray:
         final_frame = np.stack([final_grey, final_grey, final_grey], axis=2)
 
     return final_frame
+
 
 def compress_to_jpeg(frame: np.ndarray, quality: int = 80) -> Optional[np.ndarray]:
     """
@@ -271,11 +263,7 @@ def compress_to_jpeg(frame: np.ndarray, quality: int = 80) -> Optional[np.ndarra
     """
     quality = int(quality)  # Gstreamer doesn't like quality to be float
     try:
-        success, encoded = cv2.imencode(
-            '.jpg',
-            frame,
-            [cv2.IMWRITE_JPEG_QUALITY, quality]
-        )
+        success, encoded = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
         return encoded if success else None
     except Exception:
         return None
@@ -294,11 +282,7 @@ def compress_to_png(frame: np.ndarray, compression_level: int = 6) -> Optional[n
     """
     compression_level = int(compression_level)  # Gstreamer doesn't like compression_level to be float
     try:
-        success, encoded = cv2.imencode(
-            '.png',
-            frame,
-            [cv2.IMWRITE_PNG_COMPRESSION, compression_level]
-        )
+        success, encoded = cv2.imencode(".png", frame, [cv2.IMWRITE_PNG_COMPRESSION, compression_level])
         return encoded if success else None
     except Exception:
         return None
@@ -329,8 +313,8 @@ def pil_to_numpy(image: Image.Image) -> np.ndarray:
     Returns:
         np.ndarray: Numpy array in BGR format
     """
-    if image.mode != 'RGB':
-        image = image.convert('RGB')
+    if image.mode != "RGB":
+        image = image.convert("RGB")
 
     # Convert to numpy and then BGR
     rgb_array = np.array(image)
@@ -341,9 +325,8 @@ def pil_to_numpy(image: Image.Image) -> np.ndarray:
 # Functional API - Standalone pipeable functions
 # =============================================================================
 
-def letterboxed(target_size: Optional[Tuple[int, int]] = None,
-                color: Tuple[int, int, int] = (114, 114, 114),
-                interpolation: int = cv2.INTER_LINEAR):
+
+def letterboxed(target_size: Optional[Tuple[int, int]] = None, color: Tuple[int, int, int] = (114, 114, 114), interpolation: int = cv2.INTER_LINEAR):
     """
     Pipeable letterbox function - apply letterboxing with pipe operator support.
 
@@ -361,9 +344,7 @@ def letterboxed(target_size: Optional[Tuple[int, int]] = None,
     return PipeableFunction(letterbox, target_size=target_size, color=color, interpolation=interpolation)
 
 
-def resized(target_size: Tuple[int, int],
-            maintain_ratio: bool = False,
-            interpolation: int = cv2.INTER_LINEAR):
+def resized(target_size: Tuple[int, int], maintain_ratio: bool = False, interpolation: int = cv2.INTER_LINEAR):
     """
     Pipeable resize function - resize frame with pipe operator support.
 
@@ -382,10 +363,7 @@ def resized(target_size: Tuple[int, int],
     return PipeableFunction(resize, target_size=target_size, maintain_ratio=maintain_ratio, interpolation=interpolation)
 
 
-def adjusted(brightness: float = 0.0,
-             contrast: float = 1.0,
-             saturation: float = 1.0,
-             gamma: float = 1.0):
+def adjusted(brightness: float = 0.0, contrast: float = 1.0, saturation: float = 1.0, gamma: float = 1.0):
     """
     Pipeable adjust function - apply image adjustments with pipe operator support.
 
@@ -451,4 +429,3 @@ def compressed_to_png(compression_level: int = 6):
         pipe = letterboxed() | compressed_to_png()
     """
     return PipeableFunction(compress_to_png, compression_level=compression_level)
-
