@@ -126,7 +126,9 @@ class V4LCamera(BaseCamera):
         self._cap = cv2.VideoCapture(self.device_index)
         if not self._cap.isOpened():
             raise CameraOpenError(f"Failed to open V4L camera {self.device_index}")
-
+        
+        self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer to minimize latency
+        
         # Set resolution if specified
         if self.resolution and self.resolution[0] and self.resolution[1]:
             self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.resolution[0])
