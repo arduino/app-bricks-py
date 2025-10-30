@@ -333,6 +333,7 @@ def letterboxed(target_size: Optional[Tuple[int, int]] = None, color: Tuple[int,
     Args:
         target_size (tuple, optional): Target size as (width, height). If None, makes frame square.
         color (tuple): RGB color for padding borders. Default: (114, 114, 114)
+        interpolation (int): OpenCV interpolation method. Default: cv2.INTER_LINEAR
 
     Returns:
         Partial function that takes a frame and returns letterboxed frame
@@ -351,7 +352,7 @@ def resized(target_size: Tuple[int, int], maintain_ratio: bool = False, interpol
     Args:
         target_size (tuple): Target size as (width, height)
         maintain_ratio (bool): If True, use letterboxing to maintain aspect ratio
-        interpolation (int): OpenCV interpolation method
+        interpolation (int): OpenCV interpolation method. Default: cv2.INTER_LINEAR
 
     Returns:
         Partial function that takes a frame and returns resized frame
