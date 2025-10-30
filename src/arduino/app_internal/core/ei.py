@@ -5,8 +5,8 @@
 import requests
 import io
 from arduino.app_internal.core import load_brick_compose_file, resolve_address
-from arduino.app_utils import get_image_bytes, get_image_type, HttpClient
-from arduino.app_utils import Logger
+from arduino.app_utils.image import get_image_bytes, get_image_type
+from arduino.app_utils import Logger, HttpClient
 
 logger = Logger(__name__)
 
