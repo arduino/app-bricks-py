@@ -29,10 +29,17 @@ class WebSocketCamera(BaseCamera):
     This camera acts as a WebSocket server that receives frames from connected clients.
     Only one client can be connected at a time.
 
-    Clients can send frames in various 8-bit (e.g. JPEG, PNG 8-bit) formats:
+    Clients must encode video frames in one of these formats:
+    - JPEG
+    - PNG
+    - WebP
+    - BMP
+    - TIFF
+
+    The frames can be serialized in one of the following formats:
+    - Binary image data
     - Base64 encoded images
     - JSON messages with image data
-    - Binary image data
     """
 
     def __init__(
@@ -52,7 +59,7 @@ class WebSocketCamera(BaseCamera):
             host (str): Host address to bind the server to (default: "0.0.0.0")
             port (int): Port to bind the server to (default: 8080)
             timeout (int): Connection timeout in seconds (default: 10)
-            frame_format (str): Expected frame format from clients ("base64", "json", "binary") (default: "binary")
+            frame_format (str): Expected frame format from clients ("binary", "base64", "json") (default: "binary")
             resolution (tuple, optional): Resolution as (width, height). None uses default resolution.
             fps (int): Frames per second to capture from the camera.
             adjustments (callable, optional): Function or function pipeline to adjust frames that takes
