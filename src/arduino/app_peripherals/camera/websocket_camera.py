@@ -207,7 +207,7 @@ class WebSocketCamera(BaseCamera):
 
                 # Decode image
                 nparr = np.frombuffer(image_data, np.uint8)
-                frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                frame = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
                 return frame
 
             elif self.frame_format == "binary":
@@ -218,7 +218,7 @@ class WebSocketCamera(BaseCamera):
                     image_data = message
 
                 nparr = np.frombuffer(image_data, np.uint8)
-                frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                frame = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
                 return frame
 
             elif self.frame_format == "json":
@@ -231,7 +231,7 @@ class WebSocketCamera(BaseCamera):
                 if "image" in data:
                     image_data = base64.b64decode(data["image"])
                     nparr = np.frombuffer(image_data, np.uint8)
-                    frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                    frame = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
                     return frame
 
                 elif "frame" in data:
@@ -240,7 +240,7 @@ class WebSocketCamera(BaseCamera):
                     if isinstance(frame_data, str):
                         image_data = base64.b64decode(frame_data)
                         nparr = np.frombuffer(image_data, np.uint8)
-                        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                        frame = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
                         return frame
 
             return None
