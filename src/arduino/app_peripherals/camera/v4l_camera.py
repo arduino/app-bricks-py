@@ -6,7 +6,7 @@ import os
 import re
 import cv2
 import numpy as np
-from typing import Callable, Optional, Tuple, Union, Dict
+from collections.abc import Callable
 
 from arduino.app_utils import Logger
 
@@ -26,10 +26,10 @@ class V4LCamera(BaseCamera):
 
     def __init__(
         self,
-        device: Union[str, int] = 0,
-        resolution: Optional[Tuple[int, int]] = (640, 480),
+        device: str | int = 0,
+        resolution: tuple[int, int] = (640, 480),
         fps: int = 10,
-        adjustments: Optional[Callable[[np.ndarray], np.ndarray]] = None,
+        adjustments: Callable[[np.ndarray], np.ndarray] = None,
     ):
         """
         Initialize V4L camera.
@@ -49,7 +49,7 @@ class V4LCamera(BaseCamera):
 
         self._cap = None
 
-    def _resolve_camera_id(self, device: Union[str, int]) -> int:
+    def _resolve_camera_id(self, device: str | int) -> int:
         """
         Resolve camera identifier to a numeric device ID.
 
@@ -83,7 +83,7 @@ class V4LCamera(BaseCamera):
 
         raise CameraOpenError(f"Cannot resolve camera identifier: {device}")
 
-    def _get_video_devices_by_index(self) -> Dict[int, str]:
+    def _get_video_devices_by_index(self) -> dict[int, str]:
         """
         Map camera indices to device numbers by reading /dev/v4l/by-id/.
 
@@ -160,7 +160,7 @@ class V4LCamera(BaseCamera):
             self._cap.release()
             self._cap = None
 
-    def _read_frame(self) -> Optional[np.ndarray]:
+    def _read_frame(self) -> np.ndarray | None:
         """Read a frame from the V4L camera."""
         if self._cap is None:
             return None

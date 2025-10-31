@@ -13,5 +13,6 @@ default = Camera()  # Uses default camera (V4L)
 camera = Camera(2, resolution=(640, 480), fps=15)  # Infers camera type
 v4l = V4LCamera(2, (640, 480), 15)  # Explicitly requests V4L camera
 
-# Note: constructor arguments (except source) must be provided in keyword
-# format to forward them correctly to the specific camera implementations.
+# Note: Camera's constructor arguments (except those in its signature)
+# must be provided in keyword format to forward them correctly to the
+# specific camera implementations.

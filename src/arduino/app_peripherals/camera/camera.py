@@ -2,8 +2,10 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-from typing import Union
+from collections.abc import Callable
 from urllib.parse import urlparse
+
+import numpy as np
 
 from .base_camera import BaseCamera
 from .errors import CameraConfigError
@@ -25,7 +27,14 @@ class Camera:
     format to forward them correctly to the specific camera implementations.
     """
 
-    def __new__(cls, source: Union[str, int] = 0, **kwargs) -> BaseCamera:
+    def __new__(
+        cls,
+        source: str | int = 0,
+        resolution: tuple[int, int] = (640, 480),
+        fps: int = 10,
+        adjustments: Callable[[np.ndarray], np.ndarray] = None,
+        **kwargs,
+    ) -> BaseCamera:
         """Create a camera instance based on the source type.
 
         Args:
@@ -34,13 +43,12 @@ class Camera:
                 - str: V4L camera index (e.g., "0", "1") or device path (e.g., "/dev/video0")
                 - str: URL for IP cameras (e.g., "rtsp://...", "http://...")
                 - str: WebSocket URL for input streams (e.g., "ws://0.0.0.0:8080")
+            resolution (tuple, optional): Frame resolution as (width, height).
+                Default: (640, 480)
+            fps (int, optional): Target frames per second. Default: 10
+            adjustments (callable, optional): Function pipeline to adjust frames that takes a
+                numpy array and returns a numpy array. Default: None
             **kwargs: Camera-specific configuration parameters grouped by type:
-                Common Parameters:
-                    resolution (tuple, optional): Frame resolution as (width, height).
-                        Default: (640, 480)
-                    fps (int, optional): Target frames per second. Default: 10
-                    adjustments (callable, optional): Function pipeline to adjust frames that takes a
-                        numpy array and returns a numpy array. Default: None
                 V4L Camera Parameters:
                     device (int, optional): V4L device index override. Default: 0.
                 IP Camera Parameters:
@@ -88,26 +96,26 @@ class Camera:
             # V4L Camera
             from .v4l_camera import V4LCamera
 
-            return V4LCamera(source, **kwargs)
+            return V4LCamera(source, resolution=resolution, fps=fps, adjustments=adjustments, **kwargs)
         elif isinstance(source, str):
             parsed = urlparse(source)
             if parsed.scheme in ["http", "https", "rtsp"]:
                 # IP Camera
                 from .ip_camera import IPCamera
 
-                return IPCamera(source, **kwargs)
+                return IPCamera(source, resolution=resolution, fps=fps, adjustments=adjustments, **kwargs)
             elif parsed.scheme in ["ws", "wss"]:
                 # WebSocket Camera - extract host and port from URL
                 from .websocket_camera import WebSocketCamera
 
                 host = parsed.hostname or "localhost"
                 port = parsed.port or 8080
-                return WebSocketCamera(host=host, port=port, **kwargs)
+                return WebSocketCamera(host=host, port=port, resolution=resolution, fps=fps, adjustments=adjustments, **kwargs)
             elif source.startswith("/dev/video") or source.isdigit():
                 # V4L device path or index as string
                 from .v4l_camera import V4LCamera
 
-                return V4LCamera(source, **kwargs)
+                return V4LCamera(source, resolution=resolution, fps=fps, adjustments=adjustments, **kwargs)
             else:
                 raise CameraConfigError(f"Unsupported camera source: {source}")
         else:

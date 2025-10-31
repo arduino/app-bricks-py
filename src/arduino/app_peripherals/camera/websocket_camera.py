@@ -7,11 +7,11 @@ import base64
 import threading
 import queue
 import time
-from typing import Callable, Optional, Tuple, Union
 import numpy as np
 import cv2
 import websockets
 import asyncio
+from collections.abc import Callable
 from concurrent.futures import CancelledError, TimeoutError
 
 from arduino.app_utils import Logger
@@ -48,9 +48,9 @@ class WebSocketCamera(BaseCamera):
         port: int = 8080,
         timeout: int = 10,
         frame_format: str = "binary",
-        resolution: Optional[Tuple[int, int]] = (640, 480),
+        resolution: tuple[int, int] = (640, 480),
         fps: int = 10,
-        adjustments: Optional[Callable[[np.ndarray], np.ndarray]] = None,
+        adjustments: Callable[[np.ndarray], np.ndarray] = None,
     ):
         """
         Initialize WebSocket camera server.
@@ -78,7 +78,7 @@ class WebSocketCamera(BaseCamera):
         self._loop = None
         self._server_thread = None
         self._stop_event = asyncio.Event()
-        self._client: Optional[websockets.ServerConnection] = None
+        self._client: websockets.ServerConnection = None
         self._client_lock = asyncio.Lock()
 
     def _open_camera(self) -> None:
@@ -195,7 +195,7 @@ class WebSocketCamera(BaseCamera):
                     self._client = None
                     logger.info(f"Client removed: {client_addr}")
 
-    async def _parse_message(self, message) -> Optional[np.ndarray]:
+    async def _parse_message(self, message) -> np.ndarray | None:
         """Parse WebSocket message to extract frame."""
         try:
             if self.frame_format == "base64":
@@ -297,7 +297,7 @@ class WebSocketCamera(BaseCamera):
                 await self._client.close()
                 self._stop_event.set()
 
-    def _read_frame(self) -> Optional[np.ndarray]:
+    def _read_frame(self) -> np.ndarray | None:
         """Read a frame from the queue."""
         try:
             # Get frame with short timeout to avoid blocking
@@ -306,7 +306,7 @@ class WebSocketCamera(BaseCamera):
         except queue.Empty:
             return None
 
-    def _send_message_to_client(self, message: Union[str, bytes, dict]) -> None:
+    def _send_message_to_client(self, message: str | bytes | dict) -> None:
         """
         Send a message to the connected client (if any).
 
@@ -333,7 +333,7 @@ class WebSocketCamera(BaseCamera):
             logger.error(f"Error sending message to client: {e}")
             raise
 
-    async def _send_to_client(self, message: Union[str, bytes, dict]) -> None:
+    async def _send_to_client(self, message: str | bytes | dict) -> None:
         """Send message to a single client."""
         if isinstance(message, dict):
             message = json.dumps(message)
