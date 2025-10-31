@@ -78,7 +78,7 @@ class IPCamera(BaseCamera):
         self._cap = cv2.VideoCapture(url)
         if not self._cap.isOpened():
             raise CameraOpenError(f"Failed to open IP camera: {self.url}")
-        
+
         self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer to minimize latency
 
         # Test by reading one frame
