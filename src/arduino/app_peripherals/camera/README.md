@@ -72,9 +72,9 @@ See the arduino.app_utils.image module for more supported adjustments.
 ## Camera Types
 The Camera class provides automatic camera type detection based on the format of its source argument. keyword arguments will be propagated to the underlying implementation.
 
-Note: constructor arguments (except source) must be provided in keyword format to forward them correctly to the specific camera implementations.
+Note: Camera's constructor arguments (except those in its signature) must be provided in keyword format to forward them correctly to the specific camera implementations.
 
-The underlying camera implementations can be instantiated explicitly (V4LCamera, IPCamera and WebSocketCamera), if needed.
+The underlying camera implementations can also be instantiated explicitly (V4LCamera, IPCamera and WebSocketCamera), if needed.
 
 ### V4L Cameras
 For local USB cameras and V4L-compatible devices.

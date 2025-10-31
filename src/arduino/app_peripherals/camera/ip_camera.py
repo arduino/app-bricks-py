@@ -5,8 +5,8 @@
 import cv2
 import numpy as np
 import requests
-from typing import Callable, Optional, Tuple
 from urllib.parse import urlparse
+from collections.abc import Callable
 
 from arduino.app_utils import Logger
 
@@ -27,12 +27,12 @@ class IPCamera(BaseCamera):
     def __init__(
         self,
         url: str,
-        username: Optional[str] = None,
-        password: Optional[str] = None,
+        username: str | None = None,
+        password: str | None = None,
         timeout: int = 10,
-        resolution: Optional[Tuple[int, int]] = (640, 480),
+        resolution: tuple[int, int] = (640, 480),
         fps: int = 10,
-        adjustments: Optional[Callable[[np.ndarray], np.ndarray]] = None,
+        adjustments: Callable[[np.ndarray], np.ndarray] = None,
     ):
         """
         Initialize IP camera.
@@ -126,7 +126,7 @@ class IPCamera(BaseCamera):
             self._cap.release()
             self._cap = None
 
-    def _read_frame(self) -> Optional[np.ndarray]:
+    def _read_frame(self) -> np.ndarray | None:
         """Read a frame from the IP camera with automatic reconnection."""
         if self._cap is None:
             logger.info(f"No connection to IP camera {self.url}, attempting to reconnect")

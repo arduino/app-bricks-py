@@ -5,7 +5,7 @@
 import threading
 import time
 from abc import ABC, abstractmethod
-from typing import Optional, Tuple, Callable
+from typing import Optional, Callable
 import numpy as np
 
 from arduino.app_utils import Logger
@@ -25,9 +25,9 @@ class BaseCamera(ABC):
 
     def __init__(
         self,
-        resolution: Optional[Tuple[int, int]] = (640, 480),
+        resolution: tuple[int, int] = (640, 480),
         fps: int = 10,
-        adjustments: Optional[Callable[[np.ndarray], np.ndarray]] = None,
+        adjustments: Callable[[np.ndarray], np.ndarray] = None,
     ):
         """
         Initialize the camera base.
@@ -87,7 +87,7 @@ class BaseCamera(ABC):
             return None
         return frame
 
-    def _extract_frame(self) -> Optional[np.ndarray]:
+    def _extract_frame(self) -> np.ndarray | None:
         """Extract a frame with FPS throttling and post-processing."""
         with self._camera_lock:
             # FPS throttling
