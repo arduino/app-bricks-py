@@ -13,7 +13,7 @@ services:
     volumes:
       - "${CUSTOM_MODEL_PATH:-/home/arduino/.arduino-bricks/ei-models/}:${CUSTOM_MODEL_PATH:-/home/arduino/.arduino-bricks/ei-models/}"
       - "/run/udev:/run/udev"
-    command: ["--model-file", "${EI_CLASSIFICATION_MODEL:-/models/ootb/ei/mobilenet-v2-224px.eim}", "--dont-print-predictions", "--mode", "streaming", "--preview-original-resolution", "--camera", "${VIDEO_DEVICE:-/dev/video1}"]
+    command: ["--model-file", "${EI_CLASSIFICATION_MODEL:-/models/ootb/ei/mobilenet-v2-224px.eim}", "--dont-print-predictions", "--mode", "streaming", "--preview-original-resolution", "--gst-launch-args", "tcpserversrc host=0.0.0.0 port=5000 ! jpegdec ! videoconvert ! video/x-raw ! jpegenc"]
     healthcheck:
       test: [ "CMD-SHELL", "wget -q --spider http://ei-video-classification-runner:4912 || exit 1" ]
       interval: 2s

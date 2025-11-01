@@ -16,7 +16,7 @@ def mock_dependencies(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("arduino.app_internal.core.parse_docker_compose_variable", lambda x: [(None, None), (None, "8200")])
     # make get_image_bytes a no-op for raw bytes
     monkeypatch.setattr(
-        "arduino.app_utils.get_image_bytes",
+        "arduino.app_utils.image.get_image_bytes",
         lambda x: x if isinstance(x, (bytes, bytearray)) else None,
     )
 

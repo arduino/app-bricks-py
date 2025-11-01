@@ -35,7 +35,7 @@ def _read(file_path: str) -> bytes:
         with open(file_path, "rb") as f:
             return f.read()
     except Exception as e:
-        logger(f"Error reading image: {e}")
+        logger.error(f"Error reading image: {e}")
         return None
 
 
@@ -76,22 +76,6 @@ def get_image_bytes(image: str | Image.Image | bytes) -> bytes:
     except Exception as e:
         logger.error(f"Error converting image to bytes: {e}")
         return None
-
-
-def draw_colored_dot(draw, x, y, color, size):
-    """Draws a large colored dot on a PIL Image at the specified coordinate.
-
-    Args:
-        draw: An ImageDraw object from PIL.
-        x: The x-coordinate of the center of the dot.
-        y: The y-coordinate of the center of the dot.
-        color: A color value that PIL understands (e.g., "red", (255, 0, 0), "#FF0000").
-        size: The radius of the dot (in pixels).
-    """
-    # Calculate the bounding box for the circle
-    bounding_box = (x - size, y - size, x + size, y + size)
-    # Draw a filled ellipse (which looks like a circle if the bounding box is a square)
-    draw.ellipse(bounding_box, fill=color)
 
 
 def draw_bounding_boxes(image: Image.Image | bytes, detection: dict, draw: ImageDraw.ImageDraw = None) -> Image.Image | None:
@@ -178,11 +162,7 @@ def draw_bounding_boxes(image: Image.Image | bytes, detection: dict, draw: Image
     return image_box
 
 
-def draw_anomaly_markers(
-    image: Image.Image | bytes,
-    detection: dict,
-    draw: ImageDraw.ImageDraw = None,
-) -> Image.Image | None:
+def draw_anomaly_markers(image: Image.Image | bytes, detection: dict, draw: ImageDraw.ImageDraw = None) -> Image.Image | None:
     """Draw bounding boxes on an image using PIL.
 
     The thickness of the box and font size are scaled based on image size.
@@ -192,9 +172,6 @@ def draw_anomaly_markers(
         detection (dict): A dictionary containing detection results with keys 'class_name', 'bounding_box_xyxy', and
             'score'.
         draw (ImageDraw.ImageDraw, optional): An existing ImageDraw object to use. If None, a new one is created.
-        label_above_box (bool, optional): If True, labels are drawn above the bounding box. Defaults to False.
-        colours (list, optional): List of colors to use for bounding boxes. Defaults to a predefined palette.
-        text_color (str, optional): Color of the text labels. Defaults to "white".
     """
     if isinstance(image, bytes):
         image_box = Image.open(io.BytesIO(image))

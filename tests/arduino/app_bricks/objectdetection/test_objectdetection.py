@@ -4,8 +4,6 @@
 
 import pytest
 from pathlib import Path
-import io
-from PIL import Image
 from arduino.app_bricks.object_detection import ObjectDetection
 
 
@@ -111,27 +109,6 @@ def test_detect_from_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, detec
     p.write_bytes(b"123")
     result = detector.detect_from_file(str(p))
     assert result["detection"] == [{"class_name": "C", "confidence": "50.00", "bounding_box_xyxy": [1.0, 2.0, 4.0, 6.0]}]
-
-
-def test_draw_bounding_boxes(detector: ObjectDetection):
-    """Test the draw_bounding_boxes method with a valid image and detection.
-
-    This test checks if the method returns a PIL Image object.
-
-    Args:
-        detector (ObjectDetection): An instance of the ObjectDetection class.
-    """
-    img = Image.new("RGB", (20, 20), color="white")
-    det = {"detection": [{"class_name": "X", "bounding_box_xyxy": [2, 2, 10, 10], "confidence": "50.0"}]}
-
-    out = detector.draw_bounding_boxes(img, det)
-    assert isinstance(out, Image.Image)
-
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    raw = buf.getvalue()
-    out2 = detector.draw_bounding_boxes(raw, det)
-    assert isinstance(out2, Image.Image)
 
 
 def test_process(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, detector: ObjectDetection):
