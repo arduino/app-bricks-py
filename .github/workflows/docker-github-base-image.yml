@@ -57,7 +57,8 @@ jobs:
           tags: |
             type=raw,value=latest,enable=true
             type=match,pattern=base\/(.*),group=1
-          images: ${{ matrix.image }}
+          images: |
+            ${{ env.GHCR_REGISTRY }}/${{ github.repository_owner }}/${{ env.REPO }}
 
       # Build and push Docker image with Buildx (don't push on PR)
       - name: Build and push Docker image
