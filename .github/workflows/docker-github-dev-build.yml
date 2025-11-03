@@ -25,11 +25,11 @@ jobs:
         include:
           - dockerfile: ./containers/python-apps-base/Dockerfile
             context: ./containers/python-apps-base
-            image: ghcr.io/bcmi-labs/app-bricks/python-apps-base
+            image: ghcr.io/${{ github.repository_owner }}/app-bricks/python-apps-base
             build_python_package: true
           - dockerfile: ./containers/ei-models-runner/Dockerfile
             context: ./containers/ei-models-runner
-            image: ghcr.io/bcmi-labs/app-bricks/ei-models-runner
+            image: ghcr.io/${{ github.repository_owner }}/app-bricks/ei-models-runner
             build_python_package: false
       max-parallel: 2
 
