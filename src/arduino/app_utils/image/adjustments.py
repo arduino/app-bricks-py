@@ -93,12 +93,15 @@ def resize(frame: np.ndarray, target_size: Tuple[int, int], maintain_ratio: bool
     Args:
         frame (np.ndarray): Input frame
         target_size (tuple): Target size as (width, height)
-        maintain_ratio (bool): If True, use letterboxing to maintain aspect ratio
-        interpolation (int): OpenCV interpolation method
+        maintain_ratio (bool): If True, use letterboxing to maintain aspect ratio. Default: False.
+        interpolation (int): OpenCV interpolation method. Default: cv2.INTER_LINEAR.
 
     Returns:
         np.ndarray: Resized frame
     """
+    if frame.shape[1] == target_size[0] and frame.shape[0] == target_size[1]:
+        return frame
+    
     if maintain_ratio:
         return letterbox(frame, target_size)
     else:
