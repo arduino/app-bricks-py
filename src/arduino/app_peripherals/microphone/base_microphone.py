@@ -2,16 +2,17 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-import threading
 import time
+import threading
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Optional, Union
+
 import numpy as np
 
-from arduino.app_utils import Logger
-
+from .config import RATE_16K, MONO, FORMAT_S16_LE, BALANCED_CHUNK
 from .errors import MicrophoneOpenError
+from arduino.app_utils import Logger
 
 logger = Logger("Microphone")
 
@@ -26,10 +27,10 @@ class BaseMicrophone(ABC):
 
     def __init__(
         self,
-        sample_rate: int = 16000,
-        channels: int = 1,
-        format: str = "S16_LE",
-        chunk_size: int = 1024,
+        sample_rate: int = RATE_16K,
+        channels: int = MONO,
+        format: str = FORMAT_S16_LE,
+        chunk_size: int = BALANCED_CHUNK,
     ):
         """
         Initialize the microphone base.
