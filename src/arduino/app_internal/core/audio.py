@@ -3,15 +3,17 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import time
-import inspect
 import math
+import inspect
 import threading
+
 from typing import Callable
+
 from arduino.app_internal.core import EdgeImpulseRunnerFacade
 from arduino.app_peripherals.microphone import Microphone
 from arduino.app_utils import Logger, SlidingWindowBuffer, brick
 
-logger = Logger(__name__)
+logger = Logger("AudioDetector")
 
 
 class AudioDetector(EdgeImpulseRunnerFacade):
@@ -43,7 +45,6 @@ class AudioDetector(EdgeImpulseRunnerFacade):
         self.model_info = model_info
 
         self._mic = mic if mic else Microphone(sample_rate=model_info.frequency, channels=model_info.axis_count)
-        self._mic_lock = threading.Lock()
 
         self._window_size = int(model_info.input_features_count / model_info.axis_count)
         self._duration = model_info.input_features_count / model_info.axis_count * model_info.interval_ms
@@ -77,12 +78,10 @@ class AudioDetector(EdgeImpulseRunnerFacade):
 
     def start(self):
         self._buffer.flush()
-        with self._mic_lock:
-            self._mic.start()
+        self._mic.start()
 
     def stop(self):
-        with self._mic_lock:
-            self._mic.stop()
+        self._mic.stop()
         self._buffer.flush()
 
     @staticmethod
@@ -122,12 +121,10 @@ class AudioDetector(EdgeImpulseRunnerFacade):
     @brick.loop
     def _read_mic_loop(self):
         try:
-            with self._mic_lock:
-                stream = self._mic.stream()
-                for chunk in stream:
-                    if chunk is None:
-                        continue
-                    self._buffer.push(chunk)
+            for chunk in self._mic.stream():
+                if chunk is None:
+                    continue
+                self._buffer.push(chunk)
         except StopIteration:
             raise
         except Exception:
