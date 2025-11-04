@@ -19,4 +19,4 @@ def on_codes_detected(frame: Image, detections: list[Detection]):
 detector = CameraCodeDetection()
 detector.on_detect(on_codes_detected)
 
-App.run()  # This will block until the app is stopped
+App.run()

@@ -6,12 +6,12 @@ from dataclasses import dataclass
 import threading
 from typing import Callable
 
-import cv2
 from pyzbar.pyzbar import decode, ZBarSymbol, PyZbarError
 import numpy as np
-from PIL.Image import Image
+from PIL.Image import Image, fromarray
 
 from arduino.app_peripherals.camera import Camera
+from arduino.app_utils.image import greyscale
 from arduino.app_utils import brick, Logger
 
 logger = Logger("CameraCodeDetection")
@@ -44,7 +44,7 @@ class CameraCodeDetection:
     """Scans a camera video feed for QR codes and/or barcodes.
 
     Args:
-        camera (USBCamera): The USB camera instance. If None, a default camera will be initialized.
+        camera (Camera): The camera instance to use for capturing video. If None, a default camera will be initialized.
         detect_qr (bool): Whether to detect QR codes. Defaults to True.
         detect_barcode (bool): Whether to detect barcodes. Defaults to True.
 
@@ -154,13 +154,13 @@ class CameraCodeDetection:
             self._on_error(e)
             return
 
+        pil_frame = fromarray(frame)
+        self._on_frame(pil_frame)
+
         # Use grayscale for barcode/QR code detection
-        gs_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
-
-        self._on_frame(frame)
-
+        gs_frame = greyscale(frame)
         detections = self._scan_frame(gs_frame)
-        self._on_detect(frame, detections)
+        self._on_detect(pil_frame, detections)
 
     def _on_frame(self, frame: Image):
         if self._on_frame_cb:
@@ -170,7 +170,7 @@ class CameraCodeDetection:
                 logger.error(f"Failed to run on_frame callback: {e}")
                 self._on_error(e)
 
-    def _scan_frame(self, frame: cv2.typing.MatLike) -> list[Detection]:
+    def _scan_frame(self, frame: np.ndarray) -> list[Detection]:
         """Scan the frame for a single barcode or QR code."""
         detections = []
 

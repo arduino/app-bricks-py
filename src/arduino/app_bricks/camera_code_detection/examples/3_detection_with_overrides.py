@@ -6,7 +6,7 @@
 # EXAMPLE_REQUIRES = "Requires an USB webcam connected to the Arduino board."
 from PIL.Image import Image
 from arduino.app_utils.app import App
-from arduino.app_peripherals.usb_camera import USBCamera
+from arduino.app_peripherals.usb_camera import Camera
 from arduino.app_bricks.camera_code_detection import CameraCodeDetection, Detection
 
 
@@ -17,7 +17,7 @@ def on_code_detected(frame: Image, detection: Detection):
     # e.g., draw a bounding box, save it to a database or log it.
 
 
-camera = USBCamera(camera=0, resolution=(640, 360), fps=10)
+camera = Camera(camera=2, resolution=(640, 360), fps=10)
 detector = CameraCodeDetection(camera)
 detector.on_detect(on_code_detected)
 
