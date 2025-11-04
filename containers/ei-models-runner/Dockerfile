@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-FROM public.ecr.aws/z9b3d4t5/inference-container-qc-adreno-702:4d7979284677b6bdb557abe8948fa1395dc89a63
+FROM public.ecr.aws/z9b3d4t5/inference-container-qc-adreno-702:39bcebb78de783cb602e1b361b71d6dafbc959b4
 
 # Create the user and group needed to run the container as non-root
 RUN set -ex; \
