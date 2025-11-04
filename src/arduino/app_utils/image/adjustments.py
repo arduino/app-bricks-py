@@ -101,7 +101,7 @@ def resize(frame: np.ndarray, target_size: Tuple[int, int], maintain_ratio: bool
     """
     if frame.shape[1] == target_size[0] and frame.shape[0] == target_size[1]:
         return frame
-    
+
     if maintain_ratio:
         return letterbox(frame, target_size)
     else:

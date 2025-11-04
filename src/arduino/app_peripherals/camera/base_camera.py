@@ -87,6 +87,25 @@ class BaseCamera(ABC):
             return None
         return frame
 
+    def is_started(self) -> bool:
+        """Check if the camera is started."""
+        return self._is_started
+
+    def stream(self):
+        """
+        Continuously capture frames from the camera.
+
+        This is a generator that yields frames continuously while the camera is started.
+        Built on top of capture() for convenience.
+
+        Yields:
+            np.ndarray: Video frames as numpy arrays.
+        """
+        while self._is_started:
+            frame = self.capture()
+            if frame is not None:
+                yield frame
+
     def _extract_frame(self) -> np.ndarray | None:
         """Extract a frame with FPS throttling and post-processing."""
         with self._camera_lock:
@@ -113,14 +132,6 @@ class BaseCamera(ABC):
                     raise CameraTransformError(f"Frame transformation failed ({self.adjustments}): {e}")
 
             return frame
-
-    def is_started(self) -> bool:
-        """Check if the camera is started."""
-        return self._is_started
-
-    def produce(self) -> Optional[np.ndarray]:
-        """Alias for capture method for compatibility."""
-        return self.capture()
 
     @abstractmethod
     def _open_camera(self) -> None:

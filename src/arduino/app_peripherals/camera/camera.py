@@ -21,10 +21,10 @@ class Camera:
     Supports:
         - V4L Cameras (local cameras connected to the system), the default
         - IP Cameras (network-based cameras via RTSP, HLS)
-        - WebSocket Cameras (input streams via WebSocket client)
+        - WebSocket Cameras (input video streams via WebSocket client)
 
-    Note: constructor arguments (except source) must be provided in keyword
-    format to forward them correctly to the specific camera implementations.
+    Note: constructor arguments (except those in signature) must be provided in
+    keyword format to forward them correctly to the specific camera implementations.
     """
 
     def __new__(

@@ -44,7 +44,7 @@ class V4LCamera(BaseCamera):
                 a numpy array and returns a numpy array. Default: None
         """
         super().__init__(resolution, fps, adjustments)
-        self.device_index = self._resolve_camera_id(device)
+        self.device = self._resolve_camera_id(device)
         self.logger = logger
 
         self._cap = None
@@ -123,9 +123,9 @@ class V4LCamera(BaseCamera):
 
     def _open_camera(self) -> None:
         """Open the V4L camera connection."""
-        self._cap = cv2.VideoCapture(self.device_index)
+        self._cap = cv2.VideoCapture(self.device)
         if not self._cap.isOpened():
-            raise CameraOpenError(f"Failed to open V4L camera {self.device_index}")
+            raise CameraOpenError(f"Failed to open V4L camera {self.device}")
 
         self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer to minimize latency
 
@@ -139,7 +139,7 @@ class V4LCamera(BaseCamera):
             actual_height = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             if actual_width != self.resolution[0] or actual_height != self.resolution[1]:
                 logger.warning(
-                    f"Camera {self.device_index} resolution set to {actual_width}x{actual_height} "
+                    f"Camera {self.device} resolution set to {actual_width}x{actual_height} "
                     f"instead of requested {self.resolution[0]}x{self.resolution[1]}"
                 )
                 self.resolution = (actual_width, actual_height)
@@ -149,10 +149,10 @@ class V4LCamera(BaseCamera):
 
             actual_fps = int(self._cap.get(cv2.CAP_PROP_FPS))
             if actual_fps != self.fps:
-                logger.warning(f"Camera {self.device_index} FPS set to {actual_fps} instead of requested {self.fps}")
+                logger.warning(f"Camera {self.device} FPS set to {actual_fps} instead of requested {self.fps}")
                 self.fps = actual_fps
 
-        logger.info(f"Opened V4L camera with index {self.device_index}")
+        logger.info(f"Opened V4L camera with index {self.device}")
 
     def _close_camera(self) -> None:
         """Close the V4L camera connection."""
@@ -167,6 +167,6 @@ class V4LCamera(BaseCamera):
 
         ret, frame = self._cap.read()
         if not ret or frame is None:
-            raise CameraReadError(f"Failed to read from V4L camera {self.device_index}")
+            raise CameraReadError(f"Failed to read from V4L camera {self.device}")
 
         return frame

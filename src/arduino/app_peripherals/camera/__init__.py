@@ -14,8 +14,8 @@ __all__ = [
     "IPCamera",
     "WebSocketCamera",
     "CameraError",
-    "CameraReadError",
-    "CameraOpenError",
     "CameraConfigError",
+    "CameraOpenError",
+    "CameraReadError",
     "CameraTransformError",
 ]
