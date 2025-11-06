@@ -56,7 +56,7 @@ jobs:
             type=raw,value=latest,enable=true
             type=match,pattern=base\/(.*),group=1
           images: |
-            ${{ env.GHCR_REGISTRY }}/arduino/${{ env.REPO }}
+            ${{ env.GHCR_REGISTRY }}/${{ github.repository_owner }}/${{ env.REPO }}
 
       # Build and push Docker image with Buildx (don't push on PR)
       - name: Build and push Docker image
