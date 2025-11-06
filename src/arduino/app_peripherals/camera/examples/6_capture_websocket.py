@@ -2,7 +2,8 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# EXAMPLE_NAME = "Capture an input WebSocket video"
+# EXAMPLE_NAME = "Capture an input WebSocket video stream"
+# EXAMPLE_REQUIRES = "Requires a connected camera"
 import time
 import numpy as np
 from arduino.app_peripherals.camera import Camera

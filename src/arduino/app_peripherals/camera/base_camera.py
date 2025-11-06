@@ -87,10 +87,6 @@ class BaseCamera(ABC):
             return None
         return frame
 
-    def is_started(self) -> bool:
-        """Check if the camera is started."""
-        return self._is_started
-
     def stream(self):
         """
         Continuously capture frames from the camera.
@@ -105,6 +101,13 @@ class BaseCamera(ABC):
             frame = self.capture()
             if frame is not None:
                 yield frame
+            else:
+                # Avoid busy-waiting if no frame available
+                time.sleep(0.001)
+
+    def is_started(self) -> bool:
+        """Check if the camera is started."""
+        return self._is_started
 
     def _extract_frame(self) -> np.ndarray | None:
         """Extract a frame with FPS throttling and post-processing."""

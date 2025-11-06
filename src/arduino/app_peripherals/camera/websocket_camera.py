@@ -7,6 +7,7 @@ import base64
 import threading
 import queue
 import time
+from typing import Literal
 import numpy as np
 import cv2
 import websockets
@@ -47,7 +48,7 @@ class WebSocketCamera(BaseCamera):
         host: str = "0.0.0.0",
         port: int = 8080,
         timeout: int = 10,
-        frame_format: str = "binary",
+        frame_format: Literal["binary", "base64", "json"] = "binary",
         resolution: tuple[int, int] = (640, 480),
         fps: int = 10,
         adjustments: Callable[[np.ndarray], np.ndarray] = None,
@@ -83,7 +84,6 @@ class WebSocketCamera(BaseCamera):
 
     def _open_camera(self) -> None:
         """Start the WebSocket server."""
-        # Start server in separate thread with its own event loop
         self._server_thread = threading.Thread(target=self._start_server_thread, daemon=True)
         self._server_thread.start()
 
@@ -251,17 +251,16 @@ class WebSocketCamera(BaseCamera):
 
     def _close_camera(self):
         """Stop the WebSocket server."""
-        # Signal async stop event if it exists
         if self._loop and not self._loop.is_closed():
-            future = asyncio.run_coroutine_threadsafe(self._set_async_stop_event(), self._loop)
             try:
+                future = asyncio.run_coroutine_threadsafe(self._stop_and_disconnect_client(), self._loop)
                 future.result(timeout=1.0)
             except CancelledError:
-                logger.debug(f"Error setting async stop event: CancelledError")
+                logger.debug(f"Error stopping WebSocket server: CancelledError")
             except TimeoutError:
-                logger.debug(f"Error setting async stop event: TimeoutError")
+                logger.debug(f"Error stopping WebSocket server: TimeoutError")
             except Exception as e:
-                logger.warning(f"Error setting async stop event: {e}")
+                logger.warning(f"Error stopping WebSocket server: {e}")
 
         # Wait for server thread to finish
         if self._server_thread and self._server_thread.is_alive():
@@ -279,7 +278,7 @@ class WebSocketCamera(BaseCamera):
         self._loop = None
         self._client = None
 
-    async def _set_async_stop_event(self):
+    async def _stop_and_disconnect_client(self):
         """Set the async stop event and close the client connection."""
         # Send goodbye message and close the client connection
         if self._client:
@@ -306,35 +305,11 @@ class WebSocketCamera(BaseCamera):
         except queue.Empty:
             return None
 
-    def _send_message_to_client(self, message: str | bytes | dict) -> None:
-        """
-        Send a message to the connected client (if any).
-
-        Args:
-            message: Message to send to the client
-
-        Raises:
-            RuntimeError: If the event loop is not running or closed
-            ConnectionError: If no client is connected
-            Exception: For other communication errors
-        """
-        if not self._loop or self._loop.is_closed():
-            raise RuntimeError("WebSocket server event loop is not running")
-
+    async def _send_to_client(self, message: str | bytes | dict) -> None:
+        """Send a message to the connected client."""
         if self._client is None:
             raise ConnectionError("No client connected to send message to")
 
-        # Schedule message sending in the server's event loop
-        future = asyncio.run_coroutine_threadsafe(self._send_to_client(message), self._loop)
-
-        try:
-            future.result(timeout=5.0)
-        except Exception as e:
-            logger.error(f"Error sending message to client: {e}")
-            raise
-
-    async def _send_to_client(self, message: str | bytes | dict) -> None:
-        """Send message to a single client."""
         if isinstance(message, dict):
             message = json.dumps(message)
 
