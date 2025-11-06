@@ -1,0 +1,96 @@
+name: DEV - build & publish Arduino dev-latest containers
+
+on:
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  DEV_REGISTRY_PATH: ghcr.io/${{ github.repository_owner }}/
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      PYTHON_VERSION: "3.13"
+      TASKFILE_VERSION: "3.45.4"
+      TASKFILE_PATH: "/home/runner/go/bin"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - dockerfile: ./containers/python-apps-base/Dockerfile
+            context: ./containers/python-apps-base
+            image: ghcr.io/${{ github.repository_owner }}/app-bricks/python-apps-base
+            build_python_package: true
+          - dockerfile: ./containers/ei-models-runner/Dockerfile
+            context: ./containers/ei-models-runner
+            image: ghcr.io/${{ github.repository_owner }}/app-bricks/ei-models-runner
+            build_python_package: false
+      max-parallel: 2
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        if: matrix.build_python_package
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install and build library
+        if: matrix.build_python_package
+        env:
+          PUBLIC_IMAGE_REGISTRY_BASE: ${{ env.DEV_REGISTRY_PATH }}/
+        run: |
+          pip install go-task-bin==${{ env.TASKFILE_VERSION }}
+          task init:ci
+          task build-dev
+          cp ./dist/arduino*.whl ./containers/python-apps-base/
+
+      #Add support for more platforms with QEMU
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: linux/arm64
+
+      - name: Setup Docker buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log into registry ${{ env.REGISTRY }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Extract metadata from the GitHub context
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          tags: |
+            type=raw,value=dev-latest,enable=true
+          images: ${{ matrix.image }}
+
+      # Build and push Docker image with Buildx (don't push on PR)
+      - name: Build and push Docker image
+        id: build-and-push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+          build-args: |
+            REGISTRY=${{ env.DEV_REGISTRY_PATH }}
