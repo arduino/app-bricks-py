@@ -3,14 +3,14 @@
 # SPDX-License-Identifier: MPL-2.0
 
 from typing import Optional
+
 import alsaaudio
 import numpy as np
-
-from arduino.app_utils import Logger
 
 from .base_microphone import BaseMicrophone
 from .config import RATE_16K, MONO, FORMAT_S16_LE, BALANCED_CHUNK
 from .errors import MicrophoneOpenError, MicrophoneReadError, MicrophoneConfigError
+from arduino.app_utils import Logger
 
 logger = Logger("ALSAMicrophone")
 
@@ -46,7 +46,7 @@ class ALSAMicrophone(BaseMicrophone):
         "FLOAT_BE": ("PCM_FORMAT_FLOAT_BE", ">f4"),
         "FLOAT64_LE": ("PCM_FORMAT_FLOAT64_LE", np.float64),
         "FLOAT64_BE": ("PCM_FORMAT_FLOAT64_BE", ">f8"),
-        # Compressed/unsupported formats:
+        # Compressed, unsupported formats:
         "MU_LAW": ("PCM_FORMAT_MU_LAW", None),
         "A_LAW": ("PCM_FORMAT_A_LAW", None),
         "IMA_ADPCM": ("PCM_FORMAT_IMA_ADPCM", None),

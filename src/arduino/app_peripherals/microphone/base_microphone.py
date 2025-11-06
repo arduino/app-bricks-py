@@ -89,10 +89,6 @@ class BaseMicrophone(ABC):
 
             return self._read_audio()
 
-    def is_started(self) -> bool:
-        """Check if the microphone is started."""
-        return self._is_started
-
     def stream(self):
         """
         Continuously capture audio chunks from the microphone.
@@ -106,6 +102,9 @@ class BaseMicrophone(ABC):
             chunk = self.capture()
             if chunk is not None:
                 yield chunk
+            else:
+                # Avoid busy-waiting if no audio available
+                time.sleep(0.001)
 
     def record(self, duration: float) -> np.ndarray:
         """
@@ -243,6 +242,10 @@ class BaseMicrophone(ABC):
             wav_file.setsampwidth(sampwidth)
             wav_file.setframerate(self.sample_rate)
             wav_file.writeframes(write_data.tobytes())
+
+    def is_started(self) -> bool:
+        """Check if the microphone is started."""
+        return self._is_started
 
     @abstractmethod
     def _open_microphone(self) -> None:

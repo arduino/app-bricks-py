@@ -11,12 +11,12 @@ import numpy as np
 import websockets
 import asyncio
 from typing import Optional
-
-from arduino.app_utils import Logger
+from concurrent.futures import CancelledError, TimeoutError
 
 from .base_microphone import BaseMicrophone
 from .config import RATE_16K, MONO, FORMAT_S16_LE, BALANCED_CHUNK
 from .errors import MicrophoneOpenError
+from arduino.app_utils import Logger
 
 logger = Logger("WebSocketMicrophone")
 
@@ -86,6 +86,10 @@ class WebSocketMicrophone(BaseMicrophone):
             "S16_BE": ">i2",
             "U16_LE": np.uint16,
             "U16_BE": ">u2",
+            "S24_LE": np.int32,  # 24bit packed in 32bit
+            "S24_BE": ">i4",
+            "S24_3LE": None,  # Not directly supported
+            "S24_3BE": None,  # Not directly supported
             "S32_LE": np.int32,
             "S32_BE": ">i4",
             "U32_LE": np.uint32,
@@ -94,12 +98,17 @@ class WebSocketMicrophone(BaseMicrophone):
             "FLOAT_BE": ">f4",
             "FLOAT64_LE": np.float64,
             "FLOAT64_BE": ">f8",
+            # Compressed, unsupported formats:
+            "MU_LAW": None,
+            "A_LAW": None,
+            "IMA_ADPCM": None,
+            "MPEG": None,
+            "GSM": None,
         }
         return format_map.get(format, np.int16)
 
     def _open_microphone(self) -> None:
         """Start the WebSocket server."""
-        # Start server in separate thread with its own event loop
         self._server_thread = threading.Thread(target=self._start_server_thread, daemon=True)
         self._server_thread.start()
 
@@ -255,36 +264,71 @@ class WebSocketMicrophone(BaseMicrophone):
             logger.error(f"Error parsing message: {e}")
             return None
 
-    async def _send_to_client(self, message: dict) -> None:
-        """Send a JSON message to the connected client."""
-        if self._client is not None:
-            try:
-                await self._client.send(json.dumps(message))
-            except Exception as e:
-                logger.warning(f"Error sending message to client: {e}")
-
     def _close_microphone(self) -> None:
         """Stop the WebSocket server."""
         if self._loop is not None and self._server is not None:
             try:
-                # Signal the server to stop
-                asyncio.run_coroutine_threadsafe(self._stop_event.set(), self._loop)
-
-                # Wait for server thread to finish
-                if self._server_thread is not None:
-                    self._server_thread.join(timeout=5)
+                future = asyncio.run_coroutine_threadsafe(self._stop_and_disconnect_client(), self._loop)
+                future.result(timeout=1.0)
+            except CancelledError:
+                logger.debug(f"Error stopping WebSocket server: CancelledError")
+            except TimeoutError:
+                logger.debug(f"Error stopping WebSocket server: TimeoutError")
             except Exception as e:
                 logger.warning(f"Error stopping WebSocket server: {e}")
+
+        # Wait for server thread to finish
+        if self._server_thread and self._server_thread.is_alive():
+            self._server_thread.join(timeout=10.0)
+
+        # Clear frame queue
+        try:
+            while True:
+                self._audio_queue.get_nowait()
+        except queue.Empty:
+            pass
+
+        # Reset state
+        self._server = None
+        self._loop = None
+        self._client = None
+
+    async def _stop_and_disconnect_client(self):
+        """Set the async stop event and close the client connection."""
+        # Send goodbye message and close the client connection
+        if self._client:
+            try:
+                # Send goodbye message before closing
+                await self._send_to_client({
+                    "status": "disconnecting",
+                    "message": "Server is shutting down. Connection will be closed.",
+                })
+                # Give a brief moment for the message to be sent
+                await asyncio.sleep(0.1)
+            except Exception as e:
+                logger.warning(f"Error closing client in stop event: {e}")
             finally:
-                self._server = None
-                self._loop = None
-                self._server_thread = None
+                await self._client.close()
+                self._stop_event.set()
 
     def _read_audio(self) -> Optional[np.ndarray]:
         """Read a single audio chunk from the WebSocket microphone."""
         try:
-            # Non-blocking get with short timeout
+            # Get chunk with short timeout to avoid blocking
             audio_chunk = self._audio_queue.get(timeout=0.1)
             return audio_chunk
         except queue.Empty:
             return None
+
+    async def _send_to_client(self, message: dict) -> None:
+        """Send a message to the connected client."""
+        if self._client is None:
+            raise ConnectionError("No client connected to send message to")
+
+        if isinstance(message, dict):
+            message = json.dumps(message)
+
+        try:
+            await self._client.send(message)
+        except Exception as e:
+            logger.warning(f"Error sending message to client: {e}")
