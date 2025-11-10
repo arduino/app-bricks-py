@@ -21,10 +21,10 @@ MOCK_USB_PCM_DEVICES = ["plughw:CARD=SomeCard,DEV=0", "plughw:CARD=OtherUSB,DEV=
 class TestMicrophoneFactoryInstantiation:
     """Test factory instantiation of different microphone types."""
 
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.cards", return_value=MOCK_USB_CARDS)
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.card_indexes", return_value=[0, 1])
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.card_name")
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.pcms", return_value=MOCK_USB_PCM_DEVICES)
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.cards", return_value=MOCK_USB_CARDS)
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_indexes", return_value=[0, 1])
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_name")
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.pcms", return_value=MOCK_USB_PCM_DEVICES)
     def test_factory_creates_alsa_microphone_with_integer(self, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
         """Test factory creates ALSA microphone with integer device index."""
         mock_card_name.side_effect = lambda idx: (MOCK_USB_CARDS[idx], f"USB Audio Device {idx}")
@@ -34,10 +34,10 @@ class TestMicrophoneFactoryInstantiation:
         assert isinstance(mic, ALSAMicrophone)
         assert mic.device == "plughw:CARD=SomeCard,DEV=0"
 
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.cards", return_value=MOCK_USB_CARDS)
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.card_indexes", return_value=[0, 1])
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.card_name")
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.pcms", return_value=MOCK_USB_PCM_DEVICES)
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.cards", return_value=MOCK_USB_CARDS)
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_indexes", return_value=[0, 1])
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_name")
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.pcms", return_value=MOCK_USB_PCM_DEVICES)
     def test_factory_creates_alsa_microphone_with_string_index(self, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
         """Test factory creates ALSA microphone with string device index."""
         mock_card_name.side_effect = lambda idx: (MOCK_USB_CARDS[idx], f"USB Audio Device {idx}")
@@ -71,10 +71,10 @@ class TestMicrophoneFactoryInstantiation:
 class TestMicrophoneConfiguration:
     """Test microphone configuration and parameters."""
 
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.cards", return_value=MOCK_USB_CARDS)
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.card_indexes", return_value=[0, 1])
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.card_name")
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.pcms", return_value=MOCK_USB_PCM_DEVICES)
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.cards", return_value=MOCK_USB_CARDS)
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_indexes", return_value=[0, 1])
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_name")
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.pcms", return_value=MOCK_USB_PCM_DEVICES)
     def test_default_parameters(self, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
         """Test that microphones use default parameters."""
         mock_card_name.side_effect = lambda idx: (MOCK_USB_CARDS[idx], f"USB Audio Device {idx}")
@@ -86,10 +86,10 @@ class TestMicrophoneConfiguration:
         assert mic.format == FORMAT_S16_LE
         assert mic.chunk_size == CHUNK_BALANCED
 
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.cards", return_value=MOCK_USB_CARDS)
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.card_indexes", return_value=[0, 1])
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.card_name")
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.pcms", return_value=MOCK_USB_PCM_DEVICES)
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.cards", return_value=MOCK_USB_CARDS)
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_indexes", return_value=[0, 1])
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_name")
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.pcms", return_value=MOCK_USB_PCM_DEVICES)
     def test_custom_parameters_alsa(self, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
         """Test ALSA microphone with custom parameters."""
         mock_card_name.side_effect = lambda idx: (MOCK_USB_CARDS[idx], f"USB Audio Device {idx}")
@@ -124,10 +124,10 @@ class TestMicrophoneConfiguration:
 class TestALSAMicrophoneDeviceResolution:
     """Test ALSA device resolution."""
 
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.cards", return_value=MOCK_USB_CARDS)
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.card_indexes", return_value=[0, 1])
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.card_name")
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.pcms", return_value=MOCK_USB_PCM_DEVICES)
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.cards", return_value=MOCK_USB_CARDS)
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_indexes", return_value=[0, 1])
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_name")
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.pcms", return_value=MOCK_USB_PCM_DEVICES)
     def test_resolve_by_integer_index(self, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
         """Test resolving device by integer index."""
         mock_card_name.side_effect = lambda idx: (MOCK_USB_CARDS[idx], f"USB Audio Device {idx}")
@@ -138,9 +138,9 @@ class TestALSAMicrophoneDeviceResolution:
         mic = ALSAMicrophone(device=1)
         assert mic.device == "plughw:CARD=OtherUSB,DEV=0"
 
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.cards", return_value=[])
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.card_indexes", return_value=[])
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.pcms", return_value=[])
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.cards", return_value=[])
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_indexes", return_value=[])
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.pcms", return_value=[])
     def test_resolve_no_usb_devices_raises_error(self, mock_pcms, mock_card_indexes, mock_cards):
         """Test that error is raised when no USB devices found."""
         with pytest.raises(MicrophoneConfigError) as exc_info:
@@ -148,10 +148,10 @@ class TestALSAMicrophoneDeviceResolution:
 
         assert "No USB microphones found" in str(exc_info.value)
 
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.cards", return_value=MOCK_USB_CARDS)
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.card_indexes", return_value=[0, 1])
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.card_name")
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.pcms", return_value=MOCK_USB_PCM_DEVICES)
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.cards", return_value=MOCK_USB_CARDS)
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_indexes", return_value=[0, 1])
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_name")
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.pcms", return_value=MOCK_USB_PCM_DEVICES)
     def test_resolve_out_of_range_raises_error(self, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
         """Test that out of range index raises error."""
         mock_card_name.side_effect = lambda idx: (MOCK_USB_CARDS[idx], f"USB Audio Device {idx}")
@@ -173,12 +173,12 @@ class TestALSAMicrophoneDeviceResolution:
 class TestMicrophoneStartStop:
     """Test start and stop lifecycle."""
 
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.cards", return_value=MOCK_USB_CARDS)
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.card_indexes", return_value=[0, 1])
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.card_name")
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.pcms", return_value=MOCK_USB_PCM_DEVICES)
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.PCM")
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.mixers", return_value=[])
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.cards", return_value=MOCK_USB_CARDS)
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_indexes", return_value=[0, 1])
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_name")
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.pcms", return_value=MOCK_USB_PCM_DEVICES)
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.PCM")
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.mixers", return_value=[])
     def test_alsa_start_opens_device(self, mock_mixers, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
         """Test that start() opens ALSA device."""
         mock_card_name.side_effect = lambda idx: (MOCK_USB_CARDS[idx], f"USB Audio Device {idx}")
@@ -196,12 +196,12 @@ class TestMicrophoneStartStop:
         assert pcm_instance.setchannels.called
         assert pcm_instance.setrate.called
 
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.cards", return_value=MOCK_USB_CARDS)
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.card_indexes", return_value=[0, 1])
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.card_name")
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.pcms", return_value=MOCK_USB_PCM_DEVICES)
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.PCM")
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.mixers", return_value=[])
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.cards", return_value=MOCK_USB_CARDS)
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_indexes", return_value=[0, 1])
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_name")
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.pcms", return_value=MOCK_USB_PCM_DEVICES)
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.PCM")
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.mixers", return_value=[])
     def test_alsa_stop_closes_device(self, mock_mixers, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
         """Test that stop() closes ALSA device."""
         mock_card_name.side_effect = lambda idx: (MOCK_USB_CARDS[idx], f"USB Audio Device {idx}")
@@ -299,12 +299,12 @@ class TestMicrophoneStartStop:
 class TestMicrophoneContextManager:
     """Test context manager behavior."""
 
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.cards", return_value=MOCK_USB_CARDS)
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.card_indexes", return_value=[0, 1])
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.card_name")
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.pcms", return_value=MOCK_USB_PCM_DEVICES)
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.PCM")
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.mixers", return_value=[])
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.cards", return_value=MOCK_USB_CARDS)
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_indexes", return_value=[0, 1])
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_name")
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.pcms", return_value=MOCK_USB_PCM_DEVICES)
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.PCM")
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.mixers", return_value=[])
     def test_context_manager_starts_and_stops(self, mock_mixers, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
         """Test that context manager starts and stops microphone."""
         mock_card_name.side_effect = lambda idx: (MOCK_USB_CARDS[idx], f"USB Audio Device {idx}")
@@ -320,12 +320,12 @@ class TestMicrophoneContextManager:
 
         assert not mic.is_started()
 
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.cards", return_value=MOCK_USB_CARDS)
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.card_indexes", return_value=[0, 1])
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.card_name")
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.pcms", return_value=MOCK_USB_PCM_DEVICES)
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.PCM")
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.mixers", return_value=[])
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.cards", return_value=MOCK_USB_CARDS)
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_indexes", return_value=[0, 1])
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_name")
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.pcms", return_value=MOCK_USB_PCM_DEVICES)
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.PCM")
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.mixers", return_value=[])
     def test_context_manager_stops_on_exception(self, mock_mixers, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
         """Test that context manager stops even on exception."""
         mock_card_name.side_effect = lambda idx: (MOCK_USB_CARDS[idx], f"USB Audio Device {idx}")
