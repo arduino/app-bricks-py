@@ -65,9 +65,9 @@ class RemoteSensor:
         self._server = None
         self._loop = None
         self._server_thread = None
-        self._stop_event = None
+        self._stop_event = asyncio.Event()
         self._client: Optional[websockets.ServerConnection] = None
-        self._client_lock = None
+        self._client_lock = asyncio.Lock()
 
     def start(self) -> None:
         """Start the WebSocket server."""
@@ -110,8 +110,6 @@ class RemoteSensor:
     async def _start_server(self) -> None:
         """Start the WebSocket server."""
         try:
-            self._stop_event = asyncio.Event()
-            self._client_lock = asyncio.Lock()
             self._stop_event.clear()
 
             self._server = await websockets.serve(
@@ -300,8 +298,7 @@ class RemoteSensor:
             finally:
                 await self._client.close()
 
-        if self._stop_event:
-            self._stop_event.set()
+        self._stop_event.set()
 
     async def _send_to_client(self, message: dict) -> None:
         """Send a message to the connected client."""
