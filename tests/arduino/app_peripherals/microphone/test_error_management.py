@@ -199,7 +199,7 @@ class TestALSAOpenErrors:
         """Test that device busy error is properly reported."""
         mock_card_name.side_effect = lambda idx: (MOCK_USB_CARDS[idx], f"USB Audio Device {idx}")
 
-        mock_pcm.side_effect = arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.ALSAAudioError("Device or resource busy")
+        mock_pcm.side_effect = alsaaudio.ALSAAudioError("Device or resource busy")
 
         mic = Microphone(device=0)
 
@@ -217,7 +217,7 @@ class TestALSAOpenErrors:
         """Test generic ALSA error handling."""
         mock_card_name.side_effect = lambda idx: (MOCK_USB_CARDS[idx], f"USB Audio Device {idx}")
 
-        mock_pcm.side_effect = arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.ALSAAudioError("Unknown error")
+        mock_pcm.side_effect = alsaaudio.ALSAAudioError("Unknown error")
 
         mic = Microphone(device=0)
 
