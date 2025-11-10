@@ -24,6 +24,7 @@ MOCK_USB_PCM_DEVICES = ["plughw:CARD=SomeCard,DEV=0"]
 class TestALSADeviceDisconnection:
     """Test ALSA device disconnection handling."""
 
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.ALSAAudioError", alsaaudio.ALSAAudioError)
     @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.cards", return_value=MOCK_USB_CARDS)
     @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_indexes", return_value=[0])
     @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_name")
@@ -164,6 +165,7 @@ class TestALSAReadErrors:
 
         assert audio is None
 
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.ALSAAudioError", alsaaudio.ALSAAudioError)
     @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.cards", return_value=MOCK_USB_CARDS)
     @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_indexes", return_value=[0])
     @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_name")
@@ -190,6 +192,7 @@ class TestALSAReadErrors:
 class TestALSAOpenErrors:
     """Test ALSA device opening errors."""
 
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.ALSAAudioError", alsaaudio.ALSAAudioError)
     @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.cards", return_value=MOCK_USB_CARDS)
     @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_indexes", return_value=[0])
     @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_name")
@@ -208,6 +211,7 @@ class TestALSAOpenErrors:
 
         assert "busy" in str(exc_info.value).lower()
 
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.ALSAAudioError", alsaaudio.ALSAAudioError)
     @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.cards", return_value=MOCK_USB_CARDS)
     @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_indexes", return_value=[0])
     @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_name")
