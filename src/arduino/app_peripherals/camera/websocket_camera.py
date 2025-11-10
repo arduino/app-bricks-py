@@ -294,7 +294,8 @@ class WebSocketCamera(BaseCamera):
                 logger.warning(f"Error closing client in stop event: {e}")
             finally:
                 await self._client.close()
-                self._stop_event.set()
+
+        self._stop_event.set()
 
     def _read_frame(self) -> np.ndarray | None:
         """Read a frame from the queue."""
