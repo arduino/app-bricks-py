@@ -7,6 +7,7 @@ import asyncio
 import websockets
 import numpy as np
 from unittest.mock import MagicMock, patch
+import alsaaudio
 
 from arduino.app_peripherals.microphone import Microphone, ALSAMicrophone
 from arduino.app_peripherals.microphone.errors import (
@@ -41,7 +42,7 @@ class TestALSADeviceDisconnection:
         mic.start()
 
         # Simulate device disconnection
-        pcm_instance.read.side_effect = arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.ALSAAudioError("No such device")
+        pcm_instance.read.side_effect = alsaaudio.ALSAAudioError("No such device")
         mock_pcms.return_value = []  # Device removed from list
 
         # Attempt to read should detect disconnection
@@ -177,7 +178,7 @@ class TestALSAReadErrors:
         mock_pcm.return_value = pcm_instance
 
         # Return ALSA error that's not disconnection
-        pcm_instance.read.side_effect = arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.ALSAAudioError("Buffer overrun")
+        pcm_instance.read.side_effect = alsaaudio.ALSAAudioError("Buffer overrun")
 
         mic = Microphone(device=0)
         mic.start()
