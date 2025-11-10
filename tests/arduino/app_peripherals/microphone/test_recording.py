@@ -34,8 +34,8 @@ class MockMicrophone(BaseMicrophone):
 
 
 # Mock ALSA for factory tests
-MOCK_USB_CARDS = ["UH34"]
-MOCK_USB_PCM_DEVICES = ["plughw:CARD=UH34,DEV=0"]
+MOCK_USB_CARDS = ["SomeCard"]
+MOCK_USB_PCM_DEVICES = ["plughw:CARD=SomeCard,DEV=0"]
 
 
 class TestRecordDuration:
@@ -461,12 +461,12 @@ class TestWAVFileFloatConversion:
 class TestRecordingWithRealMicrophone:
     """Test recording with real microphone implementations (mocked hardware)."""
 
-    @patch("alsaaudio.cards", return_value=MOCK_USB_CARDS)
-    @patch("alsaaudio.card_indexes", return_value=[0])
-    @patch("alsaaudio.card_name")
-    @patch("alsaaudio.pcms", return_value=MOCK_USB_PCM_DEVICES)
-    @patch("alsaaudio.PCM")
-    @patch("alsaaudio.mixers", return_value=[])
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.cards", return_value=MOCK_USB_CARDS)
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_indexes", return_value=[0])
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_name")
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.pcms", return_value=MOCK_USB_PCM_DEVICES)
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.PCM")
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.mixers", return_value=[])
     def test_alsa_microphone_record(self, mock_mixers, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
         """Test recording with ALSA microphone (raw PCM)."""
         mock_card_name.side_effect = lambda idx: (MOCK_USB_CARDS[idx], f"USB Audio Device {idx}")
@@ -487,12 +487,12 @@ class TestRecordingWithRealMicrophone:
         assert len(recording) > 0
         assert recording.dtype == np.int16
 
-    @patch("alsaaudio.cards", return_value=MOCK_USB_CARDS)
-    @patch("alsaaudio.card_indexes", return_value=[0])
-    @patch("alsaaudio.card_name")
-    @patch("alsaaudio.pcms", return_value=MOCK_USB_PCM_DEVICES)
-    @patch("alsaaudio.PCM")
-    @patch("alsaaudio.mixers", return_value=[])
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.cards", return_value=MOCK_USB_CARDS)
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_indexes", return_value=[0])
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_name")
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.pcms", return_value=MOCK_USB_PCM_DEVICES)
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.PCM")
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.mixers", return_value=[])
     def test_alsa_microphone_record_wav(self, mock_mixers, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
         """Test recording WAV format with ALSA microphone."""
         mock_card_name.side_effect = lambda idx: (MOCK_USB_CARDS[idx], f"USB Audio Device {idx}")

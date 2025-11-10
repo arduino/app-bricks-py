@@ -5,7 +5,8 @@
 """
 Pytest configuration for microphone tests.
 
-This file mocks alsaaudio globally so tests can run without the library installed.
+This file mocks alsaaudio so tests can run on systems without the library installed
+(e.g., macOS or Windows which doesn't have ALSA).
 """
 
 import sys
@@ -19,7 +20,7 @@ class ALSAAudioError(Exception):
     pass
 
 
-# Mock alsaaudio before any test imports it
+# Mock alsaaudio for systems where it's not installed (e.g. dev machines)
 mock_alsaaudio = MagicMock()
 mock_alsaaudio.ALSAAudioError = ALSAAudioError
 sys.modules["alsaaudio"] = mock_alsaaudio
