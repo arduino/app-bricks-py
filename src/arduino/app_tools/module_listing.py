@@ -325,8 +325,8 @@ def release():
     arduino_bricks_version = args.version
     update_ai_containers = False
     if args.dev is not None and args.dev:
-        logger.warning("Development mode enabled. Using 'dev-latest' as the version.")
-        arduino_bricks_version = "dev-latest"
+        logger.warning("Development mode enabled. Using 'dev-next' as the version.")
+        arduino_bricks_version = "dev-next"
         update_ai_containers = True
 
     modules = []
