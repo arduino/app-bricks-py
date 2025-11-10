@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 from .base_microphone import BaseMicrophone
 from .alsa_microphone import ALSAMicrophone
 from .websocket_microphone import WebSocketMicrophone
-from .config import RATE_16K, MONO, FORMAT_S16_LE, BALANCED_CHUNK
+from .config import RATE_16K, CHANNELS_MONO, FORMAT_S16_LE, CHUNK_BALANCED
 from .errors import MicrophoneConfigError
 
 
@@ -24,15 +24,16 @@ class Microphone:
 
     Note: constructor arguments (except those in signature) must be provided in
     keyword format to forward them correctly to the specific microphone implementations.
+    Refer to the documentation of each microphone type for available parameters.
     """
 
     def __new__(
         cls,
         device: str | int = 0,
         sample_rate: int = RATE_16K,
-        channels: int = MONO,
+        channels: int = CHANNELS_MONO,
         format: str = FORMAT_S16_LE,
-        chunk_size: int = BALANCED_CHUNK,
+        chunk_size: int = CHUNK_BALANCED,
         **kwargs,
     ) -> BaseMicrophone:
         """Create a microphone instance based on the device type.
@@ -92,10 +93,8 @@ class Microphone:
             parsed = urlparse(device)
             if parsed.scheme in ["ws", "wss"]:
                 # WebSocket Microphone
-                host = parsed.hostname or "localhost"
-                port = parsed.port or 8080
-                return WebSocketMicrophone(
-                    host=host,
+                port = parsed.port if parsed.port is not None else 8080
+                mic = WebSocketMicrophone(
                     port=port,
                     sample_rate=sample_rate,
                     channels=channels,
@@ -103,6 +102,9 @@ class Microphone:
                     chunk_size=chunk_size,
                     **kwargs,
                 )
+                if parsed.hostname != "0.0.0.0":
+                    mic.logger.warning(f"Ignoring bind addresses other than '0.0.0.0' ({parsed.hostname}).")
+                return mic
             else:
                 # ALSA Microphone
                 return ALSAMicrophone(

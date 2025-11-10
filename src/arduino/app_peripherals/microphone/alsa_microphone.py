@@ -2,13 +2,13 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-from typing import Optional
+from typing import Optional, Tuple
 
 import alsaaudio
 import numpy as np
 
 from .base_microphone import BaseMicrophone
-from .config import RATE_16K, MONO, FORMAT_S16_LE, BALANCED_CHUNK
+from .config import RATE_16K, CHANNELS_MONO, FORMAT_S16_LE, CHUNK_BALANCED
 from .errors import MicrophoneOpenError, MicrophoneReadError, MicrophoneConfigError
 from arduino.app_utils import Logger
 
@@ -26,41 +26,13 @@ class ALSAMicrophone(BaseMicrophone):
     It supports explicit ALSA device names (e.g., "plughw:CARD=USB,DEV=0").
     """
 
-    # Mapping ALSA format string -> (PCM_FORMAT_*, numpy dtype)
-    FORMAT_MAP = {
-        "S8": ("PCM_FORMAT_S8", np.int8),
-        "U8": ("PCM_FORMAT_U8", np.uint8),
-        "S16_LE": ("PCM_FORMAT_S16_LE", np.int16),
-        "S16_BE": ("PCM_FORMAT_S16_BE", ">i2"),
-        "U16_LE": ("PCM_FORMAT_U16_LE", np.uint16),
-        "U16_BE": ("PCM_FORMAT_U16_BE", ">u2"),
-        "S24_LE": ("PCM_FORMAT_S24_LE", np.int32),  # 24bit packed in 32bit
-        "S24_BE": ("PCM_FORMAT_S24_BE", ">i4"),
-        "S24_3LE": ("PCM_FORMAT_S24_3LE", None),  # Not directly supported
-        "S24_3BE": ("PCM_FORMAT_S24_3BE", None),  # Not directly supported
-        "S32_LE": ("PCM_FORMAT_S32_LE", np.int32),
-        "S32_BE": ("PCM_FORMAT_S32_BE", ">i4"),
-        "U32_LE": ("PCM_FORMAT_U32_LE", np.uint32),
-        "U32_BE": ("PCM_FORMAT_U32_BE", ">u4"),
-        "FLOAT_LE": ("PCM_FORMAT_FLOAT_LE", np.float32),
-        "FLOAT_BE": ("PCM_FORMAT_FLOAT_BE", ">f4"),
-        "FLOAT64_LE": ("PCM_FORMAT_FLOAT64_LE", np.float64),
-        "FLOAT64_BE": ("PCM_FORMAT_FLOAT64_BE", ">f8"),
-        # Compressed, unsupported formats:
-        "MU_LAW": ("PCM_FORMAT_MU_LAW", None),
-        "A_LAW": ("PCM_FORMAT_A_LAW", None),
-        "IMA_ADPCM": ("PCM_FORMAT_IMA_ADPCM", None),
-        "MPEG": ("PCM_FORMAT_MPEG", None),
-        "GSM": ("PCM_FORMAT_GSM", None),
-    }
-
     def __init__(
         self,
         device: str | int = 0,
         sample_rate: int = RATE_16K,
-        channels: int = MONO,
+        channels: int = CHANNELS_MONO,
         format: str = FORMAT_S16_LE,
-        chunk_size: int = BALANCED_CHUNK,
+        chunk_size: int = CHUNK_BALANCED,
     ):
         """
         Initialize ALSA microphone.
@@ -80,12 +52,10 @@ class ALSAMicrophone(BaseMicrophone):
         """
         super().__init__(sample_rate, channels, format, chunk_size)
 
-        if format not in self.FORMAT_MAP:
-            raise MicrophoneConfigError(f"Unsupported format: {format}")
-
-        self._alsa_format, self._dtype = self.FORMAT_MAP[format]
-        if self._dtype is None:
-            raise MicrophoneConfigError(f"Format {format} is not supported for numpy conversion.")
+        # Determine ALSA format and numpy dtype based on format
+        self._alsa_format, self._dtype = self._resolve_format_and_dtype(format)
+        if self._alsa_format is None or self._dtype is None:
+            raise MicrophoneConfigError(f"Unsupported ALSA format: {format}")
 
         self.device = self._resolve_device_name(device)
         self.logger = logger
@@ -94,6 +64,30 @@ class ALSAMicrophone(BaseMicrophone):
         self._mixer: Optional[alsaaudio.Mixer] = None
         self._native_rate = None
         self._reconnect_attempts = 0
+
+    def _resolve_format_and_dtype(self, format: str) -> Tuple[str, np.dtype] | None:
+        """Get numpy dtype for audio format."""
+        # Mapping format string -> (ALSA PCM_FORMAT_*, numpy dtype)
+        format_map = {
+            "S8": ("PCM_FORMAT_S8", np.int8),
+            "U8": ("PCM_FORMAT_U8", np.uint8),
+            "S16_LE": ("PCM_FORMAT_S16_LE", "<i2"),
+            "S16_BE": ("PCM_FORMAT_S16_BE", ">i2"),
+            "U16_LE": ("PCM_FORMAT_U16_LE", "<u2"),
+            "U16_BE": ("PCM_FORMAT_U16_BE", ">u2"),
+            "S24_LE": ("PCM_FORMAT_S24_LE", "<i4"),  # 24-bit packed in 32-bit container
+            "S24_BE": ("PCM_FORMAT_S24_BE", ">i4"),  # 24-bit packed in 32-bit container
+            "S32_LE": ("PCM_FORMAT_S32_LE", "<i4"),
+            "S32_BE": ("PCM_FORMAT_S32_BE", ">i4"),
+            "U32_LE": ("PCM_FORMAT_U32_LE", "<u4"),
+            "U32_BE": ("PCM_FORMAT_U32_BE", ">u4"),
+            "FLOAT_LE": ("PCM_FORMAT_FLOAT_LE", "<f4"),
+            "FLOAT_BE": ("PCM_FORMAT_FLOAT_BE", ">f4"),
+            "FLOAT64_LE": ("PCM_FORMAT_FLOAT64_LE", "<f8"),
+            "FLOAT64_BE": ("PCM_FORMAT_FLOAT64_BE", ">f8"),
+        }
+        af, nf = format_map.get(format, (None, None))
+        return af, np.dtype(nf) if nf else None
 
     def _resolve_device_name(self, device: str | int) -> str:
         """

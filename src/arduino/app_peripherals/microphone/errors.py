@@ -25,9 +25,3 @@ class MicrophoneConfigError(MicrophoneError):
     """Exception raised when microphone configuration is invalid."""
 
     pass
-
-
-class MicrophoneDisconnectedError(MicrophoneError):
-    """Exception raised when the microphone device is disconnected and max retries are exceeded."""
-
-    pass

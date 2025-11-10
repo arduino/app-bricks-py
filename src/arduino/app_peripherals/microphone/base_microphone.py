@@ -5,12 +5,11 @@
 import time
 import threading
 from abc import ABC, abstractmethod
-from pathlib import Path
-from typing import Optional, Union
+from typing import Optional
 
 import numpy as np
 
-from .config import RATE_16K, MONO, FORMAT_S16_LE, BALANCED_CHUNK
+from .config import RATE_16K, CHANNELS_MONO, FORMAT_S16_LE, CHUNK_BALANCED
 from .errors import MicrophoneOpenError
 from arduino.app_utils import Logger
 
@@ -23,14 +22,16 @@ class BaseMicrophone(ABC):
 
     This class defines the common interface that all microphone implementations must follow,
     providing a unified API regardless of the underlying audio capture protocol or type.
+
+    The output is always a numpy array with the ALSA PCM format.
     """
 
     def __init__(
         self,
         sample_rate: int = RATE_16K,
-        channels: int = MONO,
+        channels: int = CHANNELS_MONO,
         format: str = FORMAT_S16_LE,
-        chunk_size: int = BALANCED_CHUNK,
+        chunk_size: int = CHUNK_BALANCED,
     ):
         """
         Initialize the microphone base.
@@ -38,7 +39,7 @@ class BaseMicrophone(ABC):
         Args:
             sample_rate (int): Sample rate in Hz (default: 16000).
             channels (int): Number of audio channels (default: 1).
-            format (str): Audio format (default: "S16_LE").
+            format (str): Audio format in ALSA PCM notation (default: "S16_LE").
             chunk_size (int): Number of frames per chunk (default: 1024).
         """
         self.sample_rate = sample_rate
@@ -81,7 +82,7 @@ class BaseMicrophone(ABC):
         Capture an audio chunk from the microphone.
 
         Returns:
-            Numpy array or None if no audio is available.
+            Numpy array in ALSA PCM format or None if no audio is available.
         """
         with self._mic_lock:
             if not self._is_started:
@@ -106,19 +107,61 @@ class BaseMicrophone(ABC):
                 # Avoid busy-waiting if no audio available
                 time.sleep(0.001)
 
-    def record(self, duration: float) -> np.ndarray:
+    def record(self, duration: float, timeout_factor: float = 2.0) -> np.ndarray:
         """
-        Record audio for a specified duration.
+        Record audio for a specified duration and return as raw PCM format.
 
         Args:
             duration (float): Recording duration in seconds.
+            timeout_factor (float): Maximum wall-clock time as multiple of duration (default: 2.0).
+                                   This prevents indefinite blocking when audio source is sparse.
 
         Returns:
-            np.ndarray: Complete recording as a single numpy array.
+            np.ndarray: Raw audio data in raw ALSA PCM format.
 
         Raises:
             MicrophoneOpenError: If microphone is not started.
             ValueError: If duration is not positive.
+            TimeoutError: If recording takes longer than duration * timeout_factor.
+        """
+        return self._record_pcm(duration, timeout_factor)
+
+    def record_wav(self, duration: float, timeout_factor: float = 2.0) -> np.ndarray:
+        """
+        Record audio for a specified duration and return as WAV format.
+
+        Args:
+            duration (float): Recording duration in seconds.
+            timeout_factor (float): Maximum wall-clock time as multiple of duration (default: 2.0).
+                                   This prevents indefinite blocking when audio source is sparse.
+
+        Returns:
+            np.ndarray: Raw audio data in WAV format as numpy array.
+
+        Raises:
+            MicrophoneOpenError: If microphone is not started.
+            ValueError: If duration is not positive.
+            TimeoutError: If recording takes longer than duration * timeout_factor.
+        """
+        audio_data = self._record_pcm(duration, timeout_factor)
+        return self._audio_to_wav(audio_data)
+
+    def _record_pcm(self, duration: float, timeout_factor: float = 2.0) -> np.ndarray:
+        """
+        Record raw audio data for a specified duration.
+
+        Args:
+            duration (float): Recording duration in seconds.
+            timeout_factor (float): Maximum wall-clock time as multiple of duration (default: 2.0).
+                                   This prevents indefinite blocking when audio source is sparse.
+
+        Returns:
+            np.ndarray: Raw audio data in raw ALSA PCM format.
+
+        Raises:
+            MicrophoneOpenError: If microphone is not started.
+            ValueError: If duration is not positive.
+            TimeoutError: If recording takes longer than duration * timeout_factor.
         """
         if not self._is_started:
             raise MicrophoneOpenError("Microphone must be started before recording")
@@ -126,24 +169,31 @@ class BaseMicrophone(ABC):
         if duration <= 0:
             raise ValueError("Duration must be positive")
 
-        # Pre-allocate array for the entire recording
-        # Estimate total samples needed
+        # Calculate timeout to prevent indefinite blocking
+        timeout = duration * timeout_factor
         total_samples = int(duration * self.sample_rate * self.channels)
 
-        # Get dtype from first chunk to know how to allocate
+        # Get dtype from first chunk with timeout protection
         first_chunk = None
+        start_wait = time.time()
         while first_chunk is None:
+            if time.time() - start_wait > timeout:
+                raise TimeoutError(f"No audio data received after {timeout:.2f}s")
             first_chunk = self.capture()
+            if first_chunk is None:
+                time.sleep(0.01)
 
         # Allocate the full recording buffer
         recording = np.zeros(total_samples, dtype=first_chunk.dtype)
 
-        # Start recording fresh from this point
         offset = 0
         start_time = time.time()
-        elapsed = 0
+        while offset < total_samples:
+            elapsed = time.time() - start_time
+            if elapsed > timeout:
+                audio_duration = offset / (self.sample_rate * self.channels)
+                raise TimeoutError(f"Recording timeout: collected {audio_duration:.2f}s of audio in {elapsed:.2f}s (target: {duration}s)")
 
-        while elapsed < duration:
             chunk = self.capture()
             if chunk is not None:
                 chunk_len = len(chunk)
@@ -154,61 +204,59 @@ class BaseMicrophone(ABC):
                     break
                 recording[offset : offset + chunk_len] = chunk
                 offset += chunk_len
-            elapsed = time.time() - start_time
-
-        # Trim to actual recorded length if we recorded less than expected
-        if offset < total_samples:
-            recording = recording[:offset]
+            else:
+                time.sleep(0.001)
 
         return recording
 
-    def record_file(self, duration: float, output_file: Union[str, Path]) -> None:
+    def _audio_to_wav(self, audio: np.ndarray) -> np.ndarray:
         """
-        Record audio for a specified duration and save to a WAV file.
+        Convert raw PCM audio data to WAV format.
 
         Args:
-            duration (float): Recording duration in seconds.
-            output_file (Union[str, Path]): Path to save the recording as a WAV file.
+            audio (np.ndarray): Raw PCM audio data to convert.
 
-        Raises:
-            MicrophoneOpenError: If microphone is not started.
-            ValueError: If duration is not positive.
-        """
-        recording = self.record(duration)
-        self._save_wav(recording, output_file)
-        self.logger.info(f"Recording saved to {output_file}")
-
-    def _save_wav(self, audio: np.ndarray, filepath: Union[str, Path]) -> None:
-        """
-        Save audio data to a WAV file.
-
-        Args:
-            audio (np.ndarray): Audio data to save.
-            filepath (Union[str, Path]): Output file path.
+        Returns:
+            np.ndarray: WAV data as uint8 numpy array (including header).
         """
         import wave
-
-        filepath = Path(filepath)
-        filepath.parent.mkdir(parents=True, exist_ok=True)
+        import io
 
         # Get base dtype kind and size
         dtype_kind = audio.dtype.kind
         dtype_size = audio.dtype.itemsize
-        is_big_endian = audio.dtype.byteorder == ">"
 
-        # Determine sample width and prepare data for writing
-        # We'll write directly with minimal copies
+        # Convert to native byte order since the wave module handle byte ordering for the WAV format
+        if audio.dtype.byteorder not in ("=", "|"):
+            audio = audio.astype(audio.dtype.newbyteorder("="))
+
         if dtype_kind == "i":  # Signed integer
             if dtype_size == 1:  # int8
                 # WAV uses unsigned 8-bit - must convert
                 write_data = (audio.astype(np.int16) + 128).astype(np.uint8)
                 sampwidth = 1
             elif dtype_size == 2:  # int16
-                write_data = audio.byteswap() if is_big_endian else audio
+                write_data = audio
                 sampwidth = 2
             elif dtype_size == 4:  # int32
-                write_data = audio.byteswap() if is_big_endian else audio
-                sampwidth = 4
+                # Check if this is 24-bit audio packed in 32-bit containers
+                is_24bit = self.format in ("S24_LE", "S24_BE")
+                if is_24bit:
+                    # Extract 24-bit samples from 32-bit containers (padding is in LSB per ALSA)
+                    import sys
+
+                    bytes_view = audio.view("u1").reshape(-1, 4)  # Reshape to rows of 4 bytes
+                    if sys.byteorder == "little":
+                        # On LE system: LSB padding is at byte 0, take bytes 1-3
+                        write_data = bytes_view[:, 1:4].flatten()
+                    else:
+                        # On BE system: LSB padding is at byte 3, take bytes 0-2
+                        write_data = bytes_view[:, :3].flatten()
+                    sampwidth = 3
+                else:
+                    # True 32-bit audio
+                    write_data = audio
+                    sampwidth = 4
             else:
                 raise ValueError(f"Unsupported signed integer size: {dtype_size} bytes. Supported: 1, 2, 4.")
 
@@ -229,7 +277,7 @@ class BaseMicrophone(ABC):
                 raise ValueError(f"Unsupported unsigned integer size: {dtype_size} bytes. Supported: 1, 2, 4.")
 
         elif dtype_kind == "f":  # Float
-            # Assume normalized [-1.0, 1.0], convert to int16
+            # ALSA float formats are normalized [-1.0, 1.0] => scale and convert to int16
             write_data = np.clip(audio, -1.0, 1.0)
             write_data = (write_data * 32767).astype(np.int16)
             sampwidth = 2
@@ -237,11 +285,16 @@ class BaseMicrophone(ABC):
         else:
             raise ValueError(f"Unsupported audio data type: {audio.dtype}. Supported: int8/16/32, uint8/16/32, float32/64.")
 
-        with wave.open(str(filepath), "wb") as wav_file:
+        # Write to in-memory buffer
+        buffer = io.BytesIO()
+        with wave.open(buffer, "wb") as wav_file:
             wav_file.setnchannels(self.channels)
             wav_file.setsampwidth(sampwidth)
             wav_file.setframerate(self.sample_rate)
             wav_file.writeframes(write_data.tobytes())
+
+        # Convert to numpy uint8 array
+        return np.frombuffer(buffer.getvalue(), dtype=np.uint8)
 
     def is_started(self) -> bool:
         """Check if the microphone is started."""

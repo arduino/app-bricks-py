@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 from .microphone import Microphone
+from .base_microphone import BaseMicrophone
 from .alsa_microphone import ALSAMicrophone
 from .websocket_microphone import WebSocketMicrophone
 from .errors import *
@@ -10,54 +11,46 @@ from .config import (
     # Sample rate constants
     RATE_8K,
     RATE_16K,
-    RATE_22K,
     RATE_32K,
     RATE_44K,
     RATE_48K,
-    RATE_96K,
     # Channel constants
-    MONO,
-    STEREO,
+    CHANNELS_MONO,
+    CHANNELS_STEREO,
     # Format constants
     FORMAT_S16_LE,
     FORMAT_S24_LE,
     FORMAT_S32_LE,
     # Chunk size constants
-    ULTRA_LOW_LATENCY_CHUNK,
-    LOW_LATENCY_CHUNK,
-    BALANCED_CHUNK,
-    HIGH_THROUGHPUT_CHUNK,
-    ULTRA_HIGH_THROUGHPUT_CHUNK,
+    CHUNK_LOW_LATENCY,
+    CHUNK_BALANCED,
+    CHUNK_HIGH_THROUGHPUT,
 )
 
 __all__ = [
     "Microphone",
+    "BaseMicrophone",
     "ALSAMicrophone",
     "WebSocketMicrophone",
     "MicrophoneError",
     "MicrophoneConfigError",
     "MicrophoneOpenError",
     "MicrophoneReadError",
-    "MicrophoneDisconnectedError",
     # Sample rates
     "RATE_8K",
     "RATE_16K",
-    "RATE_22K",
     "RATE_32K",
     "RATE_44K",
     "RATE_48K",
-    "RATE_96K",
     # Channels
-    "MONO",
-    "STEREO",
+    "CHANNELS_MONO",
+    "CHANNELS_STEREO",
     # Formats
     "FORMAT_S16_LE",
     "FORMAT_S24_LE",
     "FORMAT_S32_LE",
     # Chunk sizes
-    "ULTRA_LOW_LATENCY_CHUNK",
-    "LOW_LATENCY_CHUNK",
-    "BALANCED_CHUNK",
-    "HIGH_THROUGHPUT_CHUNK",
-    "ULTRA_HIGH_THROUGHPUT_CHUNK",
+    "CHUNK_LOW_LATENCY",
+    "CHUNK_BALANCED",
+    "CHUNK_HIGH_THROUGHPUT",
 ]

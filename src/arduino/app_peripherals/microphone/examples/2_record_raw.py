@@ -2,16 +2,18 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# EXAMPLE_NAME = "Record audio to a file"
+# EXAMPLE_NAME = "Record raw audio for a duration"
 # EXAMPLE_REQUIRES = "Requires a connected microphone"
+import numpy as np
 from arduino.app_peripherals.microphone import Microphone
 
 
 mic = Microphone()
 mic.start()
-mic.record_file(5, "/assets/recording.wav")  # Record 5 seconds of audio
+raw_audio: np.ndarray = mic.record(5)  # Record 5 seconds of audio
+# You can process the audio here if needed, e.g save it
 mic.stop()
 
 # Otherwise, you can use contexts
 with Microphone() as mic:
-    mic.record_file(5, "/assets/recording.wav")
+    raw_audio: np.ndarray = mic.record(5)

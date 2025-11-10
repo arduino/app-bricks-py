@@ -10,12 +10,12 @@ import time
 import numpy as np
 import websockets
 import asyncio
-from typing import Optional
+from typing import Literal, Optional
 from concurrent.futures import CancelledError, TimeoutError
 
 from .base_microphone import BaseMicrophone
-from .config import RATE_16K, MONO, FORMAT_S16_LE, BALANCED_CHUNK
-from .errors import MicrophoneOpenError
+from .config import RATE_16K, CHANNELS_MONO, FORMAT_S16_LE, CHUNK_BALANCED
+from .errors import MicrophoneConfigError, MicrophoneOpenError
 from arduino.app_utils import Logger
 
 logger = Logger("WebSocketMicrophone")
@@ -25,49 +25,53 @@ class WebSocketMicrophone(BaseMicrophone):
     """
     WebSocket Microphone implementation that hosts a WebSocket server.
 
-    This microphone acts as a WebSocket server that receives audio chunks from connected clients.
+    This microphone exposes a WebSocket server that receives audio chunks from connected clients.
     Only one client can be connected at a time.
 
-    Clients must send audio data in one of these formats:
-    - Binary audio data (raw PCM)
-    - Base64 encoded audio
-    - JSON messages with audio data
+    Clients must send PCM audio data in one of these formats:
+    - Binary (raw)
+    - Base64 encoded
+    - With JSON envelope
+
+    Also, clients are expected to respect the sample rate, channels, format, and chunk size
+    specified during initialization.
     """
 
     def __init__(
         self,
-        host: str = "0.0.0.0",
         port: int = 8080,
         timeout: int = 10,
-        audio_format: str = "binary",
+        audio_format: Literal["binary", "base64", "json"] = "binary",
         sample_rate: int = RATE_16K,
-        channels: int = MONO,
+        channels: int = CHANNELS_MONO,
         format: str = FORMAT_S16_LE,
-        chunk_size: int = BALANCED_CHUNK,
+        chunk_size: int = CHUNK_BALANCED,
     ):
         """
         Initialize WebSocket microphone server.
 
         Args:
-            host (str): Host address to bind the server to (default: "0.0.0.0")
             port (int): Port to bind the server to (default: 8080)
             timeout (int): Connection timeout in seconds (default: 10)
             audio_format (str): Expected audio format from clients ("binary", "base64", "json") (default: "binary")
             sample_rate (int): Sample rate in Hz (default: 16000)
             channels (int): Number of audio channels (default: 1)
             format (str): Audio format (default: "S16_LE")
-            chunk_size (int): Number of frames per chunk (default: 1024)
+            chunk_size (int): Number of frames per chunk (default: 1024). This parameter is advisory,
+                it's sent to clients to suggest an optimal chunk size but clients may ignore it.
         """
         super().__init__(sample_rate, channels, format, chunk_size)
 
-        self.host = host
+        # Determine numpy dtype based on format
+        self._dtype = self._resolve_dtype(format)
+        if self._dtype is None:
+            raise MicrophoneConfigError(f"Unsupported format: {format}")
+
+        self.host = "0.0.0.0"
         self.port = port
         self.timeout = timeout
         self.audio_format = audio_format
         self.logger = logger
-
-        # Determine numpy dtype based on format
-        self._dtype = self._get_dtype_for_format(format)
 
         self._audio_queue = queue.Queue(10)
         self._server = None
@@ -77,35 +81,78 @@ class WebSocketMicrophone(BaseMicrophone):
         self._client: Optional[websockets.ServerConnection] = None
         self._client_lock = asyncio.Lock()
 
-    def _get_dtype_for_format(self, format: str) -> np.dtype:
+    def _resolve_dtype(self, format: str) -> np.dtype | None:
         """Get numpy dtype for audio format."""
+        # Mapping format string -> numpy dtype
         format_map = {
             "S8": np.int8,
             "U8": np.uint8,
-            "S16_LE": np.int16,
+            "S16_LE": "<i2",
             "S16_BE": ">i2",
-            "U16_LE": np.uint16,
+            "U16_LE": "<u2",
             "U16_BE": ">u2",
-            "S24_LE": np.int32,  # 24bit packed in 32bit
-            "S24_BE": ">i4",
-            "S24_3LE": None,  # Not directly supported
-            "S24_3BE": None,  # Not directly supported
-            "S32_LE": np.int32,
+            "S24_LE": "<i4",  # 24-bit packed in 32-bit container
+            "S24_BE": ">i4",  # 24-bit packed in 32-bit container
+            "S32_LE": "<i4",
             "S32_BE": ">i4",
-            "U32_LE": np.uint32,
+            "U32_LE": "<u4",
             "U32_BE": ">u4",
-            "FLOAT_LE": np.float32,
+            "FLOAT_LE": "<f4",
             "FLOAT_BE": ">f4",
-            "FLOAT64_LE": np.float64,
+            "FLOAT64_LE": "<f8",
             "FLOAT64_BE": ">f8",
-            # Compressed, unsupported formats:
-            "MU_LAW": None,
-            "A_LAW": None,
-            "IMA_ADPCM": None,
-            "MPEG": None,
-            "GSM": None,
         }
-        return format_map.get(format, np.int16)
+        nf = format_map.get(format)
+        return np.dtype(nf) if nf else None
+
+    def _get_format_details(self, format: str) -> dict | None:
+        """Get detailed format information for clients by introspecting the numpy dtype."""
+        dtype = self._resolve_dtype(format)
+        if dtype is None:
+            return None
+
+        # Ensure we have a dtype for introspection
+        dt = np.dtype(dtype)
+
+        # Determine bit depth
+        bit_depth_override = {  # Special cases where bit depth differs from dtype size
+            "S24_LE": 24,  # 24-bit packed in 32-bit container
+            "S24_BE": 24,  # 24-bit packed in 32-bit container
+        }
+        if format in bit_depth_override:
+            bit_depth = bit_depth_override[format]
+        else:
+            bit_depth = dt.itemsize * 8
+
+        # Determine sample format from dtype kind
+        if dt.kind == "i":  # signed integer
+            sample_format = "signed_integer"
+        elif dt.kind == "u":  # unsigned integer
+            sample_format = "unsigned_integer"
+        elif dt.kind == "f":  # floating point
+            sample_format = "float"
+        else:
+            sample_format = "unknown"
+
+        # Determine byte order
+        if dt.byteorder == "<":
+            byte_order = "little_endian"
+        elif dt.byteorder == ">":
+            byte_order = "big_endian"
+        elif dt.byteorder == "|":
+            # Not applicable (single byte types like int8, uint8)
+            byte_order = "n/a"
+        else:
+            # Native byte order ('=') or other - determine from system
+            import sys
+
+            byte_order = "little_endian" if sys.byteorder == "little" else "big_endian"
+
+        return {
+            "bit_depth": bit_depth,
+            "sample_format": sample_format,
+            "byte_order": byte_order,
+        }
 
     def _open_microphone(self) -> None:
         """Start the WebSocket server."""
@@ -114,11 +161,9 @@ class WebSocketMicrophone(BaseMicrophone):
 
         # Wait for server to start
         start_time = time.time()
-        start_timeout = 10
+        start_timeout = 2.0
         while self._server is None and time.time() - start_time < start_timeout:
-            if self._server is not None:
-                break
-            time.sleep(0.1)
+            time.sleep(0.01)
 
         if self._server is None:
             raise MicrophoneOpenError(f"Failed to start WebSocket server on {self.host}:{self.port}")
@@ -150,7 +195,13 @@ class WebSocketMicrophone(BaseMicrophone):
                 ping_interval=20,
             )
 
-            logger.info(f"WebSocket microphone server started on {self.host}:{self.port}")
+            # If port was 0, update with the actual bound port
+            if self.port == 0 and self._server.sockets:
+                actual_port = self._server.sockets[0].getsockname()[1]
+                self.port = actual_port
+                logger.info(f"WebSocket microphone server started on {self.host}:{self.port} (auto-assigned)")
+            else:
+                logger.info(f"WebSocket microphone server started on {self.host}:{self.port}")
 
             await self._stop_event.wait()
 
@@ -185,14 +236,22 @@ class WebSocketMicrophone(BaseMicrophone):
         try:
             # Send welcome message
             try:
-                await self._send_to_client({
+                format_details = self._get_format_details(self.format)
+                welcome_msg = {
                     "status": "connected",
                     "message": "You are now connected to the microphone server",
                     "audio_format": self.audio_format,
                     "sample_rate": self.sample_rate,
                     "channels": self.channels,
                     "format": self.format,
-                })
+                    "chunk_size": self.chunk_size,
+                }
+
+                # Add universal format details if available
+                if format_details:
+                    welcome_msg.update(format_details)
+
+                await self._send_to_client(welcome_msg)
             except Exception as e:
                 logger.warning(f"Could not send welcome message to {client_addr}: {e}")
 
@@ -309,10 +368,15 @@ class WebSocketMicrophone(BaseMicrophone):
                 logger.warning(f"Error closing client in stop event: {e}")
             finally:
                 await self._client.close()
-                self._stop_event.set()
+
+        self._stop_event.set()
 
     def _read_audio(self) -> Optional[np.ndarray]:
-        """Read a single audio chunk from the WebSocket microphone."""
+        """
+        Read a single audio chunk from the WebSocket microphone.
+
+        Returns audio chunks as received from clients.
+        """
         try:
             # Get chunk with short timeout to avoid blocking
             audio_chunk = self._audio_queue.get(timeout=0.1)
