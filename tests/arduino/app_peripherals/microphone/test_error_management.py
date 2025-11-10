@@ -7,7 +7,6 @@ import asyncio
 import websockets
 import numpy as np
 from unittest.mock import MagicMock, patch
-import alsaaudio
 
 from arduino.app_peripherals.microphone import Microphone, ALSAMicrophone
 from arduino.app_peripherals.microphone.errors import (
