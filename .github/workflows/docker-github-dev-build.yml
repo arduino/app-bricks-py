@@ -1,4 +1,4 @@
-name: DEV - build & publish Arduino dev-latest containers
+name: DEV - build & publish Arduino dev-next containers
 
 on:
   workflow_dispatch:
@@ -6,6 +6,7 @@ on:
 env:
   REGISTRY: ghcr.io
   DEV_REGISTRY_PATH: ghcr.io/${{ github.repository_owner }}/
+  GH_SOURCE_REPO: https://github.com/${{ github.repository_owner }}/app-bricks-py
 
 permissions:
   contents: write
@@ -71,8 +72,11 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           tags: |
-            type=raw,value=dev-latest,enable=true
+            type=raw,value=dev-next,enable=true
           images: ${{ matrix.image }}
+          labels: |
+            org.opencontainers.image.source=${{ env.GH_SOURCE_REPO}}
+            org.opencontainers.image.url=${{ env.GH_SOURCE_REPO}}
 
       # Build and push Docker image with Buildx (don't push on PR)
       - name: Build and push Docker image

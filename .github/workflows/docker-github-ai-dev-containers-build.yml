@@ -63,7 +63,7 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           tags: |
-            type=raw,value=dev-latest,enable=true
+            type=raw,value=dev-next,enable=true
           images: ${{ matrix.image }}
 
       # Build and push Docker image with Buildx (don't push on PR)
