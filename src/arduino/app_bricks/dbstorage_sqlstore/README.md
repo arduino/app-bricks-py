@@ -35,7 +35,7 @@ db = SQLStore("example.db")
 # ... Do work
 
 # Close database
-db.close()
+db.stop()
 ```
 
 To create a new table:
