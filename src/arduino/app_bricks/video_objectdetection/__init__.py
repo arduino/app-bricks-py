@@ -168,7 +168,7 @@ class VideoObjectDetection:
         while self._is_running.is_set():
             try:
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as tcp_socket:
-                    tcp_socket.connect((self._host, "5050"))
+                    tcp_socket.connect((self._host, 5050))
                     logger.info(f"TCP connection established to {self._host}:5050")
 
                     while self._is_running.is_set():
