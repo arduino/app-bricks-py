@@ -71,7 +71,7 @@ class BaseCamera(ABC):
             try:
                 self._close_camera()
                 self._is_started = False
-                self.logger.info(f"Stopped {self.__class__.__name__}")
+                self.logger.info(f"Successfully stopped {self.__class__.__name__}")
             except Exception as e:
                 self.logger.warning(f"Error stopping camera: {e}")
 
