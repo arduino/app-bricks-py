@@ -12,7 +12,7 @@ from typing import Callable
 from websockets.sync.client import connect, ClientConnection
 from websockets.exceptions import ConnectionClosedOK, ConnectionClosedError
 
-from arduino.app_peripherals.camera import Camera
+from arduino.app_peripherals.camera import Camera, BaseCamera
 from arduino.app_internal.core import load_brick_compose_file, resolve_address
 from arduino.app_internal.core import EdgeImpulseRunnerFacade
 from arduino.app_utils.image.adjustments import compress_to_jpeg
@@ -35,11 +35,11 @@ class VideoObjectDetection:
 
     ALL_HANDLERS_KEY = "__ALL"
 
-    def __init__(self, camera: Camera = None, confidence: float = 0.3, debounce_sec: float = 0.0):
+    def __init__(self, camera: BaseCamera = None, confidence: float = 0.3, debounce_sec: float = 0.0):
         """Initialize the VideoObjectDetection class.
 
         Args:
-            camera (Camera): The camera instance to use for capturing video. If None, a default camera will be initialized.
+            camera (BaseCamera): The camera instance to use for capturing video. If None, a default camera will be initialized.
             confidence (float): Confidence level for detection. Default is 0.3 (30%).
             debounce_sec (float): Minimum seconds between repeated detections of the same object. Default is 0 seconds.
 

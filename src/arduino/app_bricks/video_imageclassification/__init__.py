@@ -12,7 +12,7 @@ from typing import Callable
 from websockets.sync.client import connect, ClientConnection
 from websockets.exceptions import ConnectionClosedOK, ConnectionClosedError
 
-from arduino.app_peripherals.camera import Camera
+from arduino.app_peripherals.camera import Camera, BaseCamera
 from arduino.app_internal.core import load_brick_compose_file, resolve_address
 from arduino.app_internal.core import EdgeImpulseRunnerFacade
 from arduino.app_utils.image import compress_to_jpeg
@@ -30,11 +30,11 @@ class VideoImageClassification:
 
     ALL_HANDLERS_KEY = "__ALL"
 
-    def __init__(self, camera: Camera = None, confidence: float = 0.3, debounce_sec: float = 0.0):
+    def __init__(self, camera: BaseCamera = None, confidence: float = 0.3, debounce_sec: float = 0.0):
         """Initialize the VideoImageClassification class.
 
         Args:
-            camera (Camera): The camera instance to use for capturing video. If None, a default camera will be initialized.
+            camera (BaseCamera): The camera instance to use for capturing video. If None, a default camera will be initialized.
             confidence (float): The minimum confidence level for a classification to be considered valid. Default is 0.3.
             debounce_sec (float): The minimum time in seconds between consecutive detections of the same object
                 to avoid multiple triggers. Default is 0 seconds.

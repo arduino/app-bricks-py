@@ -10,7 +10,7 @@ from pyzbar.pyzbar import decode, ZBarSymbol, PyZbarError
 import numpy as np
 from PIL.Image import Image, fromarray
 
-from arduino.app_peripherals.camera import Camera
+from arduino.app_peripherals.camera import Camera, BaseCamera
 from arduino.app_utils.image import greyscale
 from arduino.app_utils import brick, Logger
 
@@ -44,7 +44,7 @@ class CameraCodeDetection:
     """Scans a camera video feed for QR codes and/or barcodes.
 
     Args:
-        camera (Camera): The camera instance to use for capturing video. If None, a default camera will be initialized.
+        camera (BaseCamera): The camera instance to use for capturing video. If None, a default camera will be initialized.
         detect_qr (bool): Whether to detect QR codes. Defaults to True.
         detect_barcode (bool): Whether to detect barcodes. Defaults to True.
 
@@ -55,13 +55,15 @@ class CameraCodeDetection:
 
     def __init__(
         self,
-        camera: Camera = None,
+        camera: BaseCamera = None,
         detect_qr: bool = True,
         detect_barcode: bool = True,
     ):
         """Initialize the CameraCodeDetection brick."""
         if detect_qr is False and detect_barcode is False:
             raise ValueError("At least one of 'detect_qr' or 'detect_barcode' must be True.")
+        
+        self._camera = camera if camera else Camera()
 
         self._detect_qr = detect_qr
         self._detect_barcode = detect_barcode
@@ -75,8 +77,6 @@ class CameraCodeDetection:
         self._on_detect_cb_lock = threading.Lock()  # Synchronizes access to both callback and bool flag
 
         self.already_seen_codes = set()
-
-        self._camera = camera if camera else Camera()
 
     def start(self):
         """Start the detector and begin scanning for codes."""
