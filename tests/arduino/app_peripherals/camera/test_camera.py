@@ -1,0 +1,145 @@
+# SPDX-FileCopyrightText: Copyright (C) 2025 ARDUINO SA <http://www.arduino.cc>
+#
+# SPDX-License-Identifier: MPL-2.0
+
+import pytest
+
+from arduino.app_peripherals.camera import Camera, V4LCamera, IPCamera, WebSocketCamera, CameraConfigError
+
+
+def test_camera_factory_with_device_path():
+    """Test Camera factory with device path (V4L)."""
+    camera = Camera("/dev/video0")
+    assert isinstance(camera, V4LCamera)
+    assert camera.device == 0
+
+
+def test_camera_factory_with_int_source():
+    """Test Camera factory with integer source (V4L)."""
+    camera = Camera(0)
+    assert isinstance(camera, V4LCamera)
+    assert camera.device == 0
+
+
+def test_camera_factory_with_string_digit_source():
+    """Test Camera factory with string digit source (V4L)."""
+    camera = Camera("1")
+    assert isinstance(camera, V4LCamera)
+    assert camera.device == 1
+
+
+def test_camera_factory_with_rtsp_url():
+    """Test Camera factory with RTSP URL (IP Camera)."""
+    camera = Camera("rtsp://192.168.1.100/stream")
+    assert isinstance(camera, IPCamera)
+    assert camera.url == "rtsp://192.168.1.100/stream"
+
+
+def test_camera_factory_with_http_url():
+    """Test Camera factory with HTTP URL (IP Camera)."""
+    camera = Camera("http://192.168.1.100:8080/video")
+    assert isinstance(camera, IPCamera)
+    assert camera.url == "http://192.168.1.100:8080/video"
+
+
+def test_camera_factory_with_https_url():
+    """Test Camera factory with HTTPS URL (IP Camera)."""
+    camera = Camera("https://192.168.1.100:8080/video")
+    assert isinstance(camera, IPCamera)
+    assert camera.url == "https://192.168.1.100:8080/video"
+
+
+def test_camera_factory_with_ws_url():
+    """Test Camera factory with WebSocket URL."""
+    camera = Camera("ws://0.0.0.0:8080")
+    assert isinstance(camera, WebSocketCamera)
+    assert camera.host == "0.0.0.0"
+    assert camera.port == 8080
+
+
+def test_camera_factory_with_wss_url():
+    """Test Camera factory with secure WebSocket URL."""
+    camera = Camera("wss://192.168.1.100:9090")
+    assert isinstance(camera, WebSocketCamera)
+    assert camera.host == "192.168.1.100"
+    assert camera.port == 9090
+
+
+def test_camera_factory_with_ws_url_default_port():
+    """Test Camera factory with WebSocket URL without port."""
+    camera = Camera("ws://localhost")
+    assert isinstance(camera, WebSocketCamera)
+    assert camera.host == "localhost"
+    assert camera.port == 8080  # Default port
+
+
+def test_camera_factory_with_ip_camera_kwargs():
+    """Test Camera factory with IP camera specific kwargs."""
+    camera = Camera("rtsp://192.168.1.100/stream", username="admin", password="secret", timeout=30)
+    assert isinstance(camera, IPCamera)
+    assert camera.username == "admin"
+    assert camera.password == "secret"
+    assert camera.timeout == 30
+
+
+def test_camera_factory_with_websocket_camera_kwargs():
+    """Test Camera factory with WebSocket camera specific kwargs."""
+    camera = Camera("ws://0.0.0.0:8080", frame_format="json", timeout=20)
+    assert isinstance(camera, WebSocketCamera)
+    assert camera.frame_format == "json"
+    assert camera.timeout == 20
+
+
+def test_camera_factory_invalid_source_type():
+    """Test Camera factory with invalid source type."""
+    with pytest.raises(CameraConfigError, match="Invalid source type"):
+        Camera({"invalid": "type"})
+
+
+def test_camera_factory_unsupported_source():
+    """Test Camera factory with unsupported source string."""
+    with pytest.raises(CameraConfigError, match="Unsupported camera source"):
+        Camera("invalid-source")
+
+
+def test_camera_factory_all_parameters():
+    """Test Camera factory with all common parameters."""
+    adjustment = lambda x: x * 2
+
+    camera = Camera(source=0, resolution=(1280, 720), fps=60, adjustments=adjustment)
+    assert isinstance(camera, V4LCamera)
+    assert camera.resolution == (1280, 720)
+    assert camera.fps == 60
+    assert camera.adjustments == adjustment
+
+
+def test_camera_factory_returns_v4l_instance():
+    """Test that Camera factory returns V4LCamera instance for V4L sources."""
+    camera = Camera(0)
+    assert isinstance(camera, V4LCamera)
+
+
+def test_camera_factory_returns_ip_instance():
+    """Test that Camera factory returns IPCamera instance for IP sources."""
+    camera = Camera("rtsp://192.168.1.100/stream")
+    assert isinstance(camera, IPCamera)
+
+
+def test_camera_factory_returns_websocket_instance():
+    """Test that Camera factory returns WebSocketCamera instance for WS sources."""
+    camera = Camera("ws://0.0.0.0:8080")
+    assert isinstance(camera, WebSocketCamera)
+
+
+def test_camera_factory_rtsp_with_port():
+    """Test RTSP URL with custom port."""
+    camera = Camera("rtsp://192.168.1.100:554/stream1")
+    assert isinstance(camera, IPCamera)
+    assert camera.url == "rtsp://192.168.1.100:554/stream1"
+
+
+def test_camera_factory_http_with_path():
+    """Test HTTP URL with path."""
+    camera = Camera("http://example.com/cameras/cam1/stream.mjpg")
+    assert isinstance(camera, IPCamera)
+    assert camera.url == "http://example.com/cameras/cam1/stream.mjpg"
