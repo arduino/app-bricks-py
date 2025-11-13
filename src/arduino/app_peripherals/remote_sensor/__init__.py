@@ -7,7 +7,6 @@ from .errors import *
 
 __all__ = [
     "RemoteSensor",
-    "RemoteSensorError",
     "RemoteSensorOpenError",
     "RemoteSensorReadError",
     "RemoteSensorConfigError",
