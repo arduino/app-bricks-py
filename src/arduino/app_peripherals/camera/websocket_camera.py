@@ -125,6 +125,11 @@ class WebSocketCamera(BaseCamera):
                 ping_interval=20,
             )
 
+            # Get the actual port if OS assigned one (e.g., when port=0)
+            if self.port == 0:
+                server_socket = list(self._server.sockets)[0]
+                self.port = server_socket.getsockname()[1]
+
             logger.info(f"WebSocket camera server started on {self.host}:{self.port}")
 
             await self._stop_event.wait()
@@ -171,7 +176,7 @@ class WebSocketCamera(BaseCamera):
                 logger.warning(f"Could not send welcome message to {client_addr}: {e}")
 
             async for message in conn:
-                frame = await self._parse_message(message)
+                frame = self._parse_message(message)
                 if frame is not None:
                     # Drop old frames until there's room for the new one
                     while True:
@@ -195,10 +200,22 @@ class WebSocketCamera(BaseCamera):
                     self._client = None
                     logger.info(f"Client removed: {client_addr}")
 
-    async def _parse_message(self, message) -> np.ndarray | None:
+    def _parse_message(self, message: str | bytes) -> np.ndarray | None:
         """Parse WebSocket message to extract frame."""
         try:
-            if self.frame_format == "base64":
+            if self.frame_format == "binary":
+                # Expect raw binary image data
+                if isinstance(message, str):
+                    # Use latin-1 encoding to preserve binary data
+                    image_data = message.encode("latin-1")
+                else:
+                    image_data = message
+
+                nparr = np.frombuffer(image_data, np.uint8)
+                frame = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
+                return frame
+
+            elif self.frame_format == "base64":
                 # Expect base64 encoded image
                 if isinstance(message, str):
                     image_data = base64.b64decode(message)
@@ -206,17 +223,6 @@ class WebSocketCamera(BaseCamera):
                     image_data = base64.b64decode(message.decode())
 
                 # Decode image
-                nparr = np.frombuffer(image_data, np.uint8)
-                frame = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
-                return frame
-
-            elif self.frame_format == "binary":
-                # Expect raw binary image data
-                if isinstance(message, str):
-                    image_data = message.encode()
-                else:
-                    image_data = message
-
                 nparr = np.frombuffer(image_data, np.uint8)
                 frame = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
                 return frame
@@ -251,10 +257,11 @@ class WebSocketCamera(BaseCamera):
 
     def _close_camera(self):
         """Stop the WebSocket server."""
-        if self._loop and not self._loop.is_closed():
+        # Only attempt async cleanup if the event loop is running
+        if self._loop and not self._loop.is_closed() and self._loop.is_running():
             try:
                 future = asyncio.run_coroutine_threadsafe(self._stop_and_disconnect_client(), self._loop)
-                future.result(timeout=1.0)
+                future.result(1.0)
             except CancelledError:
                 logger.debug(f"Error stopping WebSocket server: CancelledError")
             except TimeoutError:
@@ -293,7 +300,8 @@ class WebSocketCamera(BaseCamera):
             except Exception as e:
                 logger.warning(f"Error closing client in stop event: {e}")
             finally:
-                await self._client.close()
+                if self._client:
+                    await self._client.close()
 
         self._stop_event.set()
 
@@ -308,14 +316,15 @@ class WebSocketCamera(BaseCamera):
 
     async def _send_to_client(self, message: str | bytes | dict) -> None:
         """Send a message to the connected client."""
-        if self._client is None:
-            raise ConnectionError("No client connected to send message to")
-
         if isinstance(message, dict):
             message = json.dumps(message)
 
-        try:
-            await self._client.send(message)
-        except Exception as e:
-            logger.warning(f"Error sending to client: {e}")
-            raise
+        async with self._client_lock:
+            if self._client is None:
+                raise ConnectionError("No client connected to send message to")
+
+            try:
+                await self._client.send(message)
+            except Exception as e:
+                logger.warning(f"Error sending to client: {e}")
+                raise
