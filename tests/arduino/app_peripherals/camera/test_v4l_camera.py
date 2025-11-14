@@ -2,96 +2,174 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import time
+import numpy as np
 import pytest
 import cv2
 from unittest.mock import MagicMock, patch
 
-from arduino.app_peripherals.camera import V4LCamera, CameraOpenError, CameraReadError
+from arduino.app_peripherals.camera import V4LCamera, CameraOpenError
 
 
-def test_initialization_with_all_parameters():
-    """Test that V4LCamera properly initializes with all V4L-specific parameters."""
-
-    def dummy_adjustment(frame):
-        return frame
-
-    # Test initialization without triggering camera operations
-    camera = V4LCamera(device="/dev/video1", resolution=(1280, 720), fps=25, adjustments=dummy_adjustment)
-
-    # Verify V4L-specific device resolution worked
-    assert camera.device == 1  # Should extract 1 from "/dev/video1"
-
-    # Verify BaseCamera parameters are preserved
-    assert camera.resolution == (1280, 720)
-    assert camera.fps == 25
-    assert camera.adjustments == dummy_adjustment
+@pytest.fixture
+def mock_successful_connect() -> MagicMock:
+    """Mock successful connection for V4LCamera."""
+    mock_cap = MagicMock()
+    mock_cap.isOpened.return_value = True
+    mock_cap.get.return_value = 640
+    mock_cap.read.return_value = (True, np.zeros((480, 640, 3), dtype=np.uint8))
+    return mock_cap
 
 
-def test_device_resolution_integer():
-    """Test that V4LCamera correctly resolves integer device identifiers."""
-    camera = V4LCamera(device=0)
-    assert camera.device == 0
-
-    camera = V4LCamera(device=1)
-    assert camera.device == 1
-
-
-def test_device_resolution_string_numeric():
-    """Test that V4LCamera correctly resolves numeric string device identifiers."""
-    # Test with device mapping available
-    with patch.object(V4LCamera, "_get_video_devices_by_index", return_value={1: "2"}):
-        camera = V4LCamera(device="1")
-        assert camera.device == 2
-
-    # Test with no device mapping (fallback)
-    with patch.object(V4LCamera, "_get_video_devices_by_index", return_value={}):
-        camera = V4LCamera(device="3")
-        assert camera.device == 3
+@pytest.fixture
+def mock_failed_connect_open() -> MagicMock:
+    """Mock failed connection due to open error for V4LCamera."""
+    mock_cap = MagicMock()
+    mock_cap.isOpened.return_value = False
+    mock_cap.get.return_value = 640
+    mock_cap.read.return_value = (True, np.zeros((480, 640, 3), dtype=np.uint8))
+    return mock_cap
 
 
-def test_device_resolution_path():
-    """Test that V4LCamera correctly resolves device path identifiers."""
-    camera = V4LCamera(device="/dev/video0")
-    assert camera.device == 0
-
-    camera = V4LCamera(device="/dev/video2")
-    assert camera.device == 2
-
-
-def test_device_resolution_invalid():
-    """Test that V4LCamera raises appropriate error for invalid device identifiers."""
-    with pytest.raises(CameraOpenError, match="Cannot resolve camera identifier: invalid"):
-        V4LCamera(device="invalid")
-
-    with pytest.raises(CameraOpenError, match="Cannot resolve camera identifier: not_a_device"):
-        V4LCamera(device="not_a_device")
+@pytest.fixture
+def mock_failed_connect_read() -> MagicMock:
+    """Mock failed connection due to test read error for V4LCamera."""
+    mock_cap = MagicMock()
+    mock_cap.isOpened.return_value = True
+    mock_cap.get.return_value = 640
+    mock_cap.read.return_value = (False, None)
+    return mock_cap
 
 
-def test_device_mapping():
-    """Test that V4LCamera uses device mapping when available for string indices."""
-    device_mapping = {0: "1", 1: "3", 2: "0"}
+class TestV4LCameraInitialization:
+    def test_initialization_with_all_parameters(self):
+        """Test that V4LCamera properly initializes with all V4L-specific parameters."""
 
-    with patch.object(V4LCamera, "_get_video_devices_by_index", return_value=device_mapping):
-        camera = V4LCamera(device="1")
-        assert camera.device == 3
+        def dummy_adjustment(frame):
+            return frame
 
-        camera = V4LCamera(device="0")
+        # Test initialization without triggering camera operations
+        camera = V4LCamera(device="/dev/video1", resolution=(1280, 720), fps=25, adjustments=dummy_adjustment)
+
+        # Verify V4L-specific device resolution worked
+        assert camera.device == 1  # Should extract 1 from "/dev/video1"
+
+        # Verify BaseCamera parameters are preserved
+        assert camera.resolution == (1280, 720)
+        assert camera.fps == 25
+        assert camera.adjustments == dummy_adjustment
+
+    def test_device_resolution_integer(self):
+        """Test that V4LCamera correctly resolves integer device identifiers."""
+        camera = V4LCamera(device=0)
+        assert camera.device == 0
+
+        camera = V4LCamera(device=1)
         assert camera.device == 1
 
+    def test_device_resolution_string_numeric(self):
+        """Test that V4LCamera correctly resolves numeric string device identifiers."""
+        # Test with device mapping available
+        with patch.object(V4LCamera, "_get_video_devices_by_index", return_value={1: "2"}):
+            camera = V4LCamera(device="1")
+            assert camera.device == 2
 
-def test_device_mapping_fallback():
-    """Test that V4LCamera falls back to direct conversion when no mapping available."""
-    with patch.object(V4LCamera, "_get_video_devices_by_index", return_value={}):
-        # When no mapping is available, should convert string directly to int
-        camera = V4LCamera(device="5")
-        assert camera.device == 5
+        # Test with no device mapping (fallback)
+        with patch.object(V4LCamera, "_get_video_devices_by_index", return_value={}):
+            camera = V4LCamera(device="3")
+            assert camera.device == 3
+
+    def test_device_resolution_path(self):
+        """Test that V4LCamera correctly resolves device path identifiers."""
+        camera = V4LCamera(device="/dev/video0")
+        assert camera.device == 0
+
+        camera = V4LCamera(device="/dev/video2")
+        assert camera.device == 2
+
+    def test_device_resolution_invalid(self):
+        """Test that V4LCamera raises appropriate error for invalid device identifiers."""
+        with pytest.raises(CameraOpenError, match="Cannot resolve camera identifier: invalid"):
+            V4LCamera(device="invalid")
+
+        with pytest.raises(CameraOpenError, match="Cannot resolve camera identifier: not_a_device"):
+            V4LCamera(device="not_a_device")
+
+    def test_device_mapping(self):
+        """Test that V4LCamera uses device mapping when available for string indices."""
+        device_mapping = {0: "1", 1: "3", 2: "0"}
+
+        with patch.object(V4LCamera, "_get_video_devices_by_index", return_value=device_mapping):
+            camera = V4LCamera(device="1")
+            assert camera.device == 3
+
+            camera = V4LCamera(device="0")
+            assert camera.device == 1
+
+    def test_device_mapping_fallback(self):
+        """Test that V4LCamera falls back to direct conversion when no mapping available."""
+        with patch.object(V4LCamera, "_get_video_devices_by_index", return_value={}):
+            # When no mapping is available, should convert string directly to int
+            camera = V4LCamera(device="5")
+            assert camera.device == 5
 
 
-def test_hardware_adaptation_resolution_mismatch():
-    """Test that V4LCamera adapts when hardware doesn't support requested resolution."""
-    with patch("arduino.app_peripherals.camera.v4l_camera.cv2.VideoCapture") as mock_vc:
-        mock_cap = MagicMock()
-        mock_cap.isOpened.return_value = True
+class TestV4LCameraStartStop:
+    @patch("arduino.app_peripherals.camera.v4l_camera.cv2.VideoCapture")
+    def test_start_success(self, mock_video_capture, mock_successful_connect):
+        """Test that V4LCamera start() calls V4L-specific _open_camera and sets up hardware correctly."""
+
+        def get_caps(prop):
+            if prop == cv2.CAP_PROP_FRAME_WIDTH:
+                return 640
+            elif prop == cv2.CAP_PROP_FRAME_HEIGHT:
+                return 480
+            elif prop == cv2.CAP_PROP_FPS:
+                return 10
+            return 0
+
+        mock_successful_connect.get.side_effect = get_caps
+        mock_video_capture.return_value = mock_successful_connect
+
+        camera = V4LCamera(device=2, resolution=(640, 480), fps=10)
+
+        assert not camera.is_started()
+
+        camera.start()
+
+        assert camera.is_started()
+        mock_video_capture.assert_called_once_with(2)
+
+        # Verify V4L camera setup calls
+        assert mock_successful_connect.set.call_count == 4
+        set_call_args = [call.args for call in mock_successful_connect.set.call_args_list]
+        assert (cv2.CAP_PROP_BUFFERSIZE, 1) in set_call_args
+        assert (cv2.CAP_PROP_FRAME_WIDTH, 640) in set_call_args
+        assert (cv2.CAP_PROP_FRAME_HEIGHT, 480) in set_call_args
+        assert (cv2.CAP_PROP_FPS, 10) in set_call_args
+
+    @patch("arduino.app_peripherals.camera.v4l_camera.cv2.VideoCapture")
+    def test_start_already_started(self, mock_video_capture, mock_successful_connect):
+        """Test that V4LCamera doesn't reinitialize when already started."""
+        mock_video_capture.return_value = mock_successful_connect
+
+        camera = V4LCamera(device=0)
+
+        # Start camera first time
+        camera.start()
+        assert camera.is_started()
+        assert mock_video_capture.call_count == 1
+
+        # Start camera second time
+        camera.start()
+
+        # Should still be started but no additional VideoCapture creation
+        assert camera.is_started()
+        assert mock_video_capture.call_count == 1  # No additional calls
+
+    @patch("arduino.app_peripherals.camera.v4l_camera.cv2.VideoCapture")
+    def test_hardware_adaptation_resolution_mismatch(self, mock_video_capture, mock_successful_connect):
+        """Test that V4LCamera adapts when hardware doesn't support requested resolution."""
 
         def get_caps(prop):
             if prop == cv2.CAP_PROP_FRAME_WIDTH:
@@ -102,8 +180,8 @@ def test_hardware_adaptation_resolution_mismatch():
                 return 10
             return 0
 
-        mock_cap.get.side_effect = get_caps
-        mock_vc.return_value = mock_cap
+        mock_successful_connect.get.side_effect = get_caps
+        mock_video_capture.return_value = mock_successful_connect
 
         # Request 640x480 but hardware only supports 320x240
         camera = V4LCamera(device=0, resolution=(640, 480), fps=10)
@@ -113,12 +191,9 @@ def test_hardware_adaptation_resolution_mismatch():
         assert camera.resolution == (320, 240)
         assert camera.is_started()
 
-
-def test_hardware_adaptation_fps_mismatch():
-    """Test that V4LCamera adapts when hardware doesn't support requested FPS."""
-    with patch("arduino.app_peripherals.camera.v4l_camera.cv2.VideoCapture") as mock_vc:
-        mock_cap = MagicMock()
-        mock_cap.isOpened.return_value = True
+    @patch("arduino.app_peripherals.camera.v4l_camera.cv2.VideoCapture")
+    def test_hardware_adaptation_fps_mismatch(self, mock_video_capture, mock_successful_connect):
+        """Test that V4LCamera adapts when hardware doesn't support requested FPS."""
 
         def get_caps(prop):
             if prop == cv2.CAP_PROP_FRAME_WIDTH:
@@ -129,8 +204,8 @@ def test_hardware_adaptation_fps_mismatch():
                 return 15
             return 0
 
-        mock_cap.get.side_effect = get_caps
-        mock_vc.return_value = mock_cap
+        mock_successful_connect.get.side_effect = get_caps
+        mock_video_capture.return_value = mock_successful_connect
 
         # Request 30fps but hardware only supports 15fps
         camera = V4LCamera(device=0, resolution=(640, 480), fps=30)
@@ -139,108 +214,10 @@ def test_hardware_adaptation_fps_mismatch():
         assert camera.fps == 15
         assert camera.is_started()
 
-
-def test_read_frame_error_message():
-    """Test that V4LCamera provides specific error messages for read failures."""
-    with patch("arduino.app_peripherals.camera.v4l_camera.cv2.VideoCapture") as mock_vc:
-        mock_cap = MagicMock()
-        mock_cap.isOpened.return_value = True
-        mock_cap.read.return_value = (False, None)
-        mock_vc.return_value = mock_cap
-
-        camera = V4LCamera(device=3)
-        camera.start()
-
-        with pytest.raises(CameraReadError, match="Failed to read from V4L camera 3"):
-            camera.capture()
-
-
-def test_start_success():
-    """Test that V4LCamera start() calls V4L-specific _open_camera and sets up hardware correctly."""
-    with patch("arduino.app_peripherals.camera.v4l_camera.cv2.VideoCapture") as mock_vc:
-        mock_cap = MagicMock()
-        mock_cap.isOpened.return_value = True
-
-        def get_caps(prop):
-            if prop == cv2.CAP_PROP_FRAME_WIDTH:
-                return 640
-            elif prop == cv2.CAP_PROP_FRAME_HEIGHT:
-                return 480
-            elif prop == cv2.CAP_PROP_FPS:
-                return 10
-            return 0
-
-        mock_cap.get.side_effect = get_caps
-        mock_vc.return_value = mock_cap
-
-        camera = V4LCamera(device=2, resolution=(640, 480), fps=10)
-
-        assert not camera.is_started()
-
-        camera.start()
-
-        assert camera.is_started()
-        mock_vc.assert_called_once_with(2)  # Should open correct device
-
-        # Verify V4L camera setup calls
-        set_call_args = [call.args for call in mock_cap.set.call_args_list]
-
-        # Check that buffer size was set to 1
-        assert (cv2.CAP_PROP_BUFFERSIZE, 1) in set_call_args
-
-        # Check that resolution was set to 640x480
-        assert (cv2.CAP_PROP_FRAME_WIDTH, 640) in set_call_args
-        assert (cv2.CAP_PROP_FRAME_HEIGHT, 480) in set_call_args
-
-        # Check that FPS was set to 10
-        assert (cv2.CAP_PROP_FPS, 10) in set_call_args
-
-
-def test_start_already_started():
-    """Test that V4LCamera doesn't reinitialize when already started."""
-    with patch("arduino.app_peripherals.camera.v4l_camera.cv2.VideoCapture") as mock_vc:
-        mock_cap = MagicMock()
-        mock_cap.isOpened.return_value = True
-        mock_cap.get.return_value = 640
-        mock_vc.return_value = mock_cap
-
-        camera = V4LCamera(device=0)
-
-        # Start camera first time
-        camera.start()
-        assert camera.is_started()
-        assert mock_vc.call_count == 1
-
-        # Start camera second time
-        camera.start()
-
-        # Should still be started but no additional VideoCapture creation
-        assert camera.is_started()
-        assert mock_vc.call_count == 1  # No additional calls
-
-
-def test_start_camera_fails_to_open():
-    """Test V4LCamera start() error handling when cv2.VideoCapture fails to open."""
-    with patch("arduino.app_peripherals.camera.v4l_camera.cv2.VideoCapture") as mock_vc:
-        mock_cap = MagicMock()
-        mock_cap.isOpened.return_value = False  # Camera fails to open
-        mock_vc.return_value = mock_cap
-
-        camera = V4LCamera(device=5)
-
-        with pytest.raises(CameraOpenError, match="Failed to open V4L camera 5"):
-            camera.start()
-
-        assert not camera.is_started()
-
-
-def test_stop_success():
-    """Test that V4LCamera stop() properly releases V4L resources."""
-    with patch("arduino.app_peripherals.camera.v4l_camera.cv2.VideoCapture") as mock_vc:
-        mock_cap = MagicMock()
-        mock_cap.isOpened.return_value = True
-        mock_cap.get.return_value = 640
-        mock_vc.return_value = mock_cap
+    @patch("arduino.app_peripherals.camera.v4l_camera.cv2.VideoCapture")
+    def test_stop_success(self, mock_video_capture, mock_successful_connect):
+        """Test that V4LCamera stop() properly releases V4L resources."""
+        mock_video_capture.return_value = mock_successful_connect
 
         camera = V4LCamera(device=1)
         camera.start()
@@ -249,25 +226,21 @@ def test_stop_success():
         camera.stop()
 
         assert not camera.is_started()
-        mock_cap.release.assert_called_once()  # Should release cv2.VideoCapture
+        mock_successful_connect.release.assert_called_once()  # Should release cv2.VideoCapture
 
+    def test_stop_not_started(self):
+        """Test that V4LCamera stop() is safe when not started."""
+        camera = V4LCamera(device=0)
+        assert not camera.is_started()
 
-def test_stop_not_started():
-    """Test that V4LCamera stop() is safe when not started."""
-    camera = V4LCamera(device=0)
-    assert not camera.is_started()
+        camera.stop()  # Should not raise any exception
 
-    camera.stop()  # Should not raise any exception
-    assert not camera.is_started()
+        assert not camera.is_started()
 
-
-def test_is_started():
-    """Test V4LCamera is_started() reflects actual V4L camera state."""
-    with patch("arduino.app_peripherals.camera.v4l_camera.cv2.VideoCapture") as mock_vc:
-        mock_cap = MagicMock()
-        mock_cap.isOpened.return_value = True
-        mock_cap.get.return_value = 640
-        mock_vc.return_value = mock_cap
+    @patch("arduino.app_peripherals.camera.v4l_camera.cv2.VideoCapture")
+    def test_is_started(self, mock_video_capture, mock_successful_connect):
+        """Test V4LCamera is_started() reflects actual V4L camera state."""
+        mock_video_capture.return_value = mock_successful_connect
 
         camera = V4LCamera(device=0)
 
@@ -278,3 +251,208 @@ def test_is_started():
 
         camera.stop()
         assert not camera.is_started()
+
+
+class TestV4LCameraRecovery:
+    """Test suite for camera disconnection and recovery mechanisms."""
+
+    @patch("arduino.app_peripherals.camera.v4l_camera.cv2.VideoCapture")
+    def test_initial_connection_with_retry(self, mock_video_capture):
+        """Test that initial connection retries on failure."""
+        # First two attempts fail, third succeeds
+        mock_cap_fail = MagicMock()
+        mock_cap_fail.isOpened.return_value = False
+
+        mock_cap_success = MagicMock()
+        mock_cap_success.isOpened.return_value = True
+        mock_cap_success.get.return_value = 640
+        mock_cap_success.read.return_value = (True, np.zeros((480, 640, 3), dtype=np.uint8))
+
+        mock_video_capture.side_effect = [mock_cap_fail, mock_cap_fail, mock_cap_success]
+
+        camera = V4LCamera()
+        camera.reconnect_delay = 0
+        camera.start()
+
+        assert camera.is_started()
+        assert mock_video_capture.call_count == 3
+
+    @patch("arduino.app_peripherals.camera.v4l_camera.cv2.VideoCapture")
+    def test_start_open_error(self, mock_video_capture, mock_failed_connect_open):
+        """Test that V4LCamera raises an exception for open failures."""
+        mock_video_capture.return_value = mock_failed_connect_open
+
+        camera = V4LCamera(device=3)
+        camera.reconnect_delay = 0
+        with pytest.raises(CameraOpenError):
+            camera.start()
+
+        assert not camera.is_started()
+        assert mock_video_capture.call_count == 6  # 1 initial attempt + 5 failed retries
+
+    @patch("arduino.app_peripherals.camera.v4l_camera.cv2.VideoCapture")
+    def test_start_read_error(self, mock_video_capture, mock_failed_connect_read):
+        """Test that V4LCamera raises an exception for read failures."""
+        mock_video_capture.return_value = mock_failed_connect_read
+
+        camera = V4LCamera(device=3)
+        camera.reconnect_delay = 0
+        with pytest.raises(CameraOpenError):
+            camera.start()
+
+        assert not camera.is_started()
+        assert mock_video_capture.call_count == 6  # 1 initial attempt + 5 failed retries
+
+    @patch("arduino.app_peripherals.camera.v4l_camera.cv2.VideoCapture")
+    def test_auto_reconnect_on_read_failure(self, mock_video_capture, mock_successful_connect):
+        """Test automatic reconnection when frame read fails."""
+        # Setup connection, first actual capture() and simulate disconnect on second capture()
+        mock_successful_connect.read.side_effect = [
+            (True, np.zeros((480, 640, 3), dtype=np.uint8)),  # Read during start() succeeds
+            (True, np.zeros((480, 640, 3), dtype=np.uint8)),  # First capture succeeds
+            (False, None),  # Second capture fails
+        ]
+
+        # Setup reconnection success
+        mock_cap_reconnect = MagicMock()
+        mock_cap_reconnect.isOpened.return_value = True
+        mock_cap_reconnect.read.return_value = (True, np.zeros((480, 640, 3), dtype=np.uint8))
+
+        mock_video_capture.side_effect = [
+            mock_successful_connect,  # Used for initial connection
+            mock_cap_reconnect,  # Used for reconnection
+        ]
+
+        camera = V4LCamera()
+        camera.reconnect_delay = 0
+        camera.start()
+
+        # First capture works
+        frame1 = camera.capture()
+        assert frame1 is not None
+
+        # Second capture fails but auto-reconnects
+        frame2 = camera.capture()
+        assert frame2 is not None
+
+        # Verify reconnection happened
+        assert mock_video_capture.call_count == 2
+
+    @patch("arduino.app_peripherals.camera.v4l_camera.cv2.VideoCapture")
+    def test_auto_reconnect_on_read_failure_by_exception(self, mock_video_capture, mock_successful_connect):
+        """Test automatic reconnection when frame read fails."""
+        # Setup connection, first actual capture() and simulate disconnect on second capture()
+        mock_successful_connect.read.side_effect = [
+            (True, np.zeros((480, 640, 3), dtype=np.uint8)),  # Read during start() succeeds
+            (True, np.zeros((480, 640, 3), dtype=np.uint8)),  # First capture succeeds
+            Exception("Simulated read exception"),  # Second capture fails by exception
+        ]
+
+        # Setup reconnection success
+        mock_cap_reconnect = MagicMock()
+        mock_cap_reconnect.isOpened.return_value = True
+        mock_cap_reconnect.read.return_value = (True, np.zeros((480, 640, 3), dtype=np.uint8))
+
+        mock_video_capture.side_effect = [
+            mock_successful_connect,  # Used for initial connection
+            mock_cap_reconnect,  # Used for reconnection
+        ]
+
+        camera = V4LCamera()
+        camera.reconnect_delay = 0
+        camera.start()
+
+        # First capture works
+        frame1 = camera.capture()
+        assert frame1 is not None
+
+        # Second capture fails but auto-reconnects
+        frame2 = camera.capture()
+        assert frame2 is not None
+
+        # Verify reconnection happened
+        assert mock_video_capture.call_count == 2
+
+    @patch("arduino.app_peripherals.camera.v4l_camera.cv2.VideoCapture")
+    def test_no_auto_reconnect_when_disabled(self, mock_video_capture, mock_successful_connect):
+        """Test that auto-reconnect doesn't happen when disabled."""
+        mock_successful_connect.read.side_effect = [
+            (True, np.zeros((480, 640, 3), dtype=np.uint8)),  # Read during start() succeeds
+            (True, np.zeros((480, 640, 3), dtype=np.uint8)),  # First capture succeeds
+            (False, None),  # Second capture fails
+        ]
+        mock_video_capture.return_value = mock_successful_connect
+
+        camera = V4LCamera(auto_reconnect=False)
+        camera.start()
+
+        # First read succeeds
+        frame1 = camera.capture()
+        assert frame1 is not None
+
+        # Second read fails and returns None (no reconnect)
+        frame2 = camera.capture()
+        assert frame2 is None
+
+        # Verify only initial connection, no reconnection
+        assert mock_video_capture.call_count == 1
+
+    @patch("arduino.app_peripherals.camera.v4l_camera.cv2.VideoCapture")
+    def test_reconnect_rate_limiting(self, mock_video_capture, mock_failed_connect_open):
+        """Test that reconnection attempts are rate-limited."""
+        import time
+
+        mock_video_capture.return_value = mock_failed_connect_open
+
+        camera = V4LCamera()
+        camera.reconnect_delay = 0.1
+
+        result = camera._connect()
+        assert result is False
+        initial_time = camera._last_reconnect_attempt
+        assert initial_time > 0
+
+        # After waiting, should allow reconnect attempt
+        time.sleep(0.15)
+
+        result = camera._connect()
+        assert camera._last_reconnect_attempt > initial_time
+
+    @patch("arduino.app_peripherals.camera.v4l_camera.cv2.VideoCapture")
+    def test_exponential_backoff_on_open(self, mock_video_capture, mock_successful_connect, mock_failed_connect_open, mock_failed_connect_read):
+        """Test that exponential backoff is used during camera opening."""
+        real_sleep = time.sleep  # Save the real sleep before patching
+
+        sleep_calls = []
+
+        def spy_sleep(seconds):
+            sleep_calls.append(seconds)
+            return real_sleep(seconds)
+
+        # Patch time.sleep in the v4l_camera module only for this test
+        with patch("arduino.app_peripherals.camera.v4l_camera.time.sleep", side_effect=spy_sleep):
+            # Fail, attempt 5 times, succeed at last one
+            mock_video_capture.side_effect = [
+                mock_failed_connect_open,
+                mock_failed_connect_read,
+                mock_failed_connect_open,
+                mock_failed_connect_read,
+                mock_failed_connect_open,
+                mock_successful_connect,
+            ]
+
+            camera = V4LCamera()
+            camera.reconnect_delay = 0.1
+            camera.start()
+
+        # Check that sleep was called with exponentially increasing delays
+        # Attempt 0 fails -> sleep(0.1 * 2^0) = 0.1
+        # Attempt 1 fails -> sleep(0.1 * 2^1) = 0.2
+        # ...
+        # Attempt 5 succeeds
+        assert len(sleep_calls) == 5
+        assert sleep_calls[0] == 0.1
+        assert sleep_calls[1] == 0.2
+        assert sleep_calls[2] == 0.4
+        assert sleep_calls[3] == 0.8
+        assert sleep_calls[4] == 1.6

@@ -4,6 +4,8 @@
 
 import os
 import re
+import time
+from typing import Optional
 import cv2
 import numpy as np
 from collections.abc import Callable
@@ -29,7 +31,8 @@ class V4LCamera(BaseCamera):
         device: str | int = 0,
         resolution: tuple[int, int] = (640, 480),
         fps: int = 10,
-        adjustments: Callable[[np.ndarray], np.ndarray] = None,
+        adjustments: Optional[Callable[[np.ndarray], np.ndarray]] = None,
+        auto_reconnect: bool = True,
     ):
         """
         Initialize V4L camera.
@@ -42,12 +45,19 @@ class V4LCamera(BaseCamera):
             fps (int, optional): Frames per second to capture from the camera. Default: 10.
             adjustments (callable, optional): Function or function pipeline to adjust frames that takes
                 a numpy array and returns a numpy array. Default: None
+            auto_reconnect (bool, optional): Enable automatic reconnection on failure. Default: True.
         """
         super().__init__(resolution, fps, adjustments)
         self.device = self._resolve_camera_id(device)
         self.logger = logger
 
         self._cap = None
+
+        # Auto-reconnection parameters
+        self.reconnect_delay = 1.0
+        self.reconnect_max_retries = 5
+        self._auto_reconnect = auto_reconnect
+        self._last_reconnect_attempt = 0.0
 
     def _resolve_camera_id(self, device: str | int) -> int:
         """
@@ -122,37 +132,23 @@ class V4LCamera(BaseCamera):
         return devices_by_index
 
     def _open_camera(self) -> None:
-        """Open the V4L camera connection."""
-        self._cap = cv2.VideoCapture(self.device)
-        if not self._cap.isOpened():
-            raise CameraOpenError(f"Failed to open V4L camera {self.device}")
+        """
+        Open the V4L camera connection with retry logic.
 
-        self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer to minimize latency
+        Retries with exponential backoff until successful or self.max_retries is reached.
+        """
+        attempt = 0
 
-        # Set resolution if specified
-        if self.resolution and self.resolution[0] and self.resolution[1]:
-            self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.resolution[0])
-            self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.resolution[1])
+        while not self._connect():
+            if not self._auto_reconnect:
+                raise CameraOpenError(f"VideoCapture returned unopened state for device {self.device}")
+            if attempt >= self.reconnect_max_retries:
+                raise CameraOpenError(f"Unable to open camera {self.device} after {self.reconnect_max_retries} attempts")
 
-            # Verify resolution setting
-            actual_width = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-            actual_height = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            if actual_width != self.resolution[0] or actual_height != self.resolution[1]:
-                logger.warning(
-                    f"Camera {self.device} resolution set to {actual_width}x{actual_height} "
-                    f"instead of requested {self.resolution[0]}x{self.resolution[1]}"
-                )
-                self.resolution = (actual_width, actual_height)
-
-        if self.fps:
-            self._cap.set(cv2.CAP_PROP_FPS, self.fps)
-
-            actual_fps = int(self._cap.get(cv2.CAP_PROP_FPS))
-            if actual_fps != self.fps:
-                logger.warning(f"Camera {self.device} FPS set to {actual_fps} instead of requested {self.fps}")
-                self.fps = actual_fps
-
-        logger.info(f"Opened V4L camera with index {self.device}")
+            delay = self.reconnect_delay * (2 ** min(attempt, 5))  # Cap exponential backoff at 32s
+            logger.warning(f"Failed to open camera {self.device} (attempt {attempt + 1}/{self.reconnect_max_retries}). Retrying in {delay:.1f}s...")
+            time.sleep(delay)
+            attempt += 1
 
     def _close_camera(self) -> None:
         """Close the V4L camera connection."""
@@ -160,13 +156,105 @@ class V4LCamera(BaseCamera):
             self._cap.release()
             self._cap = None
 
+    def _connect(self) -> bool:
+        """
+        Attempt to connect to the camera.
+
+        Returns:
+            bool: True if reconnection successful, False otherwise
+        """
+        current_time = time.time()
+
+        # Prevent too frequent connection attempts
+        if current_time - self._last_reconnect_attempt < self.reconnect_delay:
+            return False
+
+        self._last_reconnect_attempt = current_time
+
+        self._close_camera()
+
+        try:
+            self._cap = cv2.VideoCapture(self.device)
+            if not self._cap.isOpened():
+                raise CameraOpenError(f"Failed to open camera {self.device}")
+
+            self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer to minimize latency
+
+            if self.resolution and self.resolution[0] and self.resolution[1]:
+                self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.resolution[0])
+                self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.resolution[1])
+
+                # Verify resolution setting
+                actual_width = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                actual_height = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                if actual_width != self.resolution[0] or actual_height != self.resolution[1]:
+                    logger.warning(
+                        f"Camera {self.device} resolution set to {actual_width}x{actual_height} "
+                        f"instead of requested {self.resolution[0]}x{self.resolution[1]}"
+                    )
+                    self.resolution = (actual_width, actual_height)
+
+            if self.fps:
+                self._cap.set(cv2.CAP_PROP_FPS, self.fps)
+
+                actual_fps = int(self._cap.get(cv2.CAP_PROP_FPS))
+                if actual_fps != self.fps:
+                    logger.warning(f"Camera {self.device} FPS set to {actual_fps} instead of requested {self.fps}")
+                    self.fps = actual_fps
+
+            # Verify connection with a test read
+            ret, _ = self._cap.read()
+            if not ret:
+                raise CameraReadError(f"Read test failed for camera {self.device}")
+
+            return True
+
+        except (CameraOpenError, CameraReadError):
+            self._close_camera()
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error connecting to camera {self.device}: {e}")
+            self._close_camera()
+            return False
+
     def _read_frame(self) -> np.ndarray | None:
-        """Read a frame from the V4L camera."""
+        """
+        Read a frame from the V4L camera with auto-reconnection on failure.
+
+        Returns:
+            np.ndarray | None: Frame data or None if read fails
+        """
         if self._cap is None:
             return None
 
-        ret, frame = self._cap.read()
-        if not ret or frame is None:
-            raise CameraReadError(f"Failed to read from V4L camera {self.device}")
+        try:
+            ret, frame = self._cap.read()
+            if not ret:
+                logger.warning(f"Failed to read from V4L camera {self.device}")
 
-        return frame
+                # Attempt auto-reconnection if enabled
+                if self._auto_reconnect:
+                    if self._connect():
+                        # Try reading again after successful reconnect
+                        ret, frame = self._cap.read()
+                        if ret:
+                            logger.info(f"Successfully reconnected to camera {self.device}")
+                            return frame
+
+                return None
+
+            return frame
+
+        except Exception as e:
+            logger.error(f"Unexpected error reading from camera {self.device}: {e}")
+
+            # Attempt reconnection on unexpected errors
+            if self._auto_reconnect:
+                if self._connect():
+                    # Try reading again after successful reconnect
+                    ret, frame = self._cap.read()
+                    if ret:
+                        logger.info(f"Successfully reconnected to camera {self.device}")
+                        return frame
+
+            return None

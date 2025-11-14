@@ -51,7 +51,7 @@ class WebSocketCamera(BaseCamera):
         frame_format: Literal["binary", "base64", "json"] = "binary",
         resolution: tuple[int, int] = (640, 480),
         fps: int = 10,
-        adjustments: Callable[[np.ndarray], np.ndarray] = None,
+        adjustments: Callable[[np.ndarray], np.ndarray] | None = None,
     ):
         """
         Initialize WebSocket camera server.
@@ -79,7 +79,7 @@ class WebSocketCamera(BaseCamera):
         self._loop = None
         self._server_thread = None
         self._stop_event = asyncio.Event()
-        self._client: websockets.ServerConnection = None
+        self._client: websockets.ServerConnection | None = None
         self._client_lock = asyncio.Lock()
 
     def _open_camera(self) -> None:
