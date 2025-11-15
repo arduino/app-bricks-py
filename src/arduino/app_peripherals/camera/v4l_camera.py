@@ -48,7 +48,8 @@ class V4LCamera(BaseCamera):
             auto_reconnect (bool, optional): Enable automatic reconnection on failure. Default: True.
         """
         super().__init__(resolution, fps, adjustments)
-        self.device = self._resolve_camera_id(device)
+        self.device_path = self._resolve_stable_path(device)
+        self.device_name = self._resolve_name(self.device_path)
         self.logger = logger
 
         self._cap = None
@@ -59,39 +60,93 @@ class V4LCamera(BaseCamera):
         self._auto_reconnect = auto_reconnect
         self._last_reconnect_attempt = 0.0
 
-    def _resolve_camera_id(self, device: str | int) -> int:
+    def _resolve_stable_path(self, device: str | int) -> str:
         """
-        Resolve camera identifier to a numeric device ID.
+        Resolve a camera identifier to a link stable across reconnections.
 
         Args:
             device: Camera identifier
 
         Returns:
-            Numeric camera device ID
+            str: stable path to the camera device
 
         Raises:
             CameraOpenError: If camera cannot be resolved
         """
-        if isinstance(device, int):
+        if isinstance(device, str) and device.startswith("/dev/v4l/by-id"):
+            # Already a stable link
             return device
+        elif isinstance(device, str) and device.startswith("/dev/v4l/by-path"):
+            # A stable link, but not the one we want, resolve to by-id.
+            if not os.path.exists(device):
+                raise CameraOpenError(f"Device path {device} does not exist")
+            resolved_path = os.path.realpath(device)
+            video_path = resolved_path
+        elif isinstance(device, int) or (isinstance(device, str) and device.isdigit()):
+            # Treat as /dev/video<device>
+            dev_num = int(device)
+            video_path = f"/dev/video{dev_num}"
+        elif isinstance(device, str) and device.startswith("/dev/video"):
+            # A device node path
+            video_path = device
+        else:
+            raise CameraOpenError(f"Unrecognized device identifier: {device}")
 
-        if isinstance(device, str):
-            # If it's a numeric string, convert directly
-            if device.isdigit():
-                device_idx = int(device)
-                # Validate using device index mapping
-                video_devices = self._get_video_devices_by_index()
-                if device_idx in video_devices:
-                    return int(video_devices[device_idx])
-                else:
-                    # Fallback to direct device ID if mapping not available
-                    return device_idx
+        # Now, map /dev/videoX to a stable link in /dev/v4l/by-id
+        by_id_dir = "/dev/v4l/by-id/"
+        if not os.path.exists(by_id_dir):
+            raise CameraOpenError(f"Directory '{by_id_dir}' not found.")
 
-            # If it's a device path like "/dev/video0"
-            if device.startswith("/dev/video"):
-                return int(device.replace("/dev/video", ""))
+        try:
+            for entry in os.listdir(by_id_dir):
+                full_path = os.path.join(by_id_dir, entry)
+                if os.path.islink(full_path):
+                    target = os.path.realpath(full_path)
+                    if target == video_path:
+                        return full_path
+        except Exception as e:
+            raise CameraOpenError(f"Error resolving stable link: {e}")
 
-        raise CameraOpenError(f"Cannot resolve camera identifier: {device}")
+        raise CameraOpenError(f"No stable link found for device {device} (resolved as {video_path})")
+
+    def _resolve_name(self, stable_path: str) -> str:
+        """
+        Resolve a human-readable name for the camera whose stable path is provided
+        by looking at /sys/class/video4linux/<video>/name. Falls back to the device
+        path (/dev/videoX) if no by-id entry exists.
+
+        Args:
+            stable_path: camera's stable path
+
+        Returns:
+            str: human readable name
+
+        Raises:
+            CameraOpenError: If device cannot be resolved at all
+        """
+        if not isinstance(stable_path, str) or not stable_path.startswith("/dev/v4l/by-id"):
+            raise CameraOpenError(f"Invalid stable path provided: {stable_path}")
+
+        if not os.path.exists(stable_path):
+            raise CameraOpenError(f"The provided stable path does not exist: {stable_path}")
+
+        target = os.path.realpath(stable_path)
+        video_basename = os.path.basename(target)
+
+        # Try sysfs name first (/sys/class/video4linux/<video>/name)
+        try:
+            sysfs_path = f"/sys/class/video4linux/{video_basename}/name"
+            if os.path.exists(sysfs_path):
+                with open(sysfs_path, "r", encoding="utf-8", errors="ignore") as f:
+                    name = f.read().strip()
+                    if name:
+                        return name
+        except Exception:
+            # Ignore and fall through to fallback
+            pass
+
+        # As fallback just return /dev/videoX
+        return target or stable_path
 
     def _get_video_devices_by_index(self) -> dict[int, str]:
         """
@@ -141,12 +196,14 @@ class V4LCamera(BaseCamera):
 
         while not self._connect():
             if not self._auto_reconnect:
-                raise CameraOpenError(f"VideoCapture returned unopened state for device {self.device}")
+                raise CameraOpenError(f"VideoCapture returned unopened state for device {self.device_name}")
             if attempt >= self.reconnect_max_retries:
-                raise CameraOpenError(f"Unable to open camera {self.device} after {self.reconnect_max_retries} attempts")
+                raise CameraOpenError(f"Unable to open camera {self.device_name} after {self.reconnect_max_retries} attempts")
 
             delay = self.reconnect_delay * (2 ** min(attempt, 5))  # Cap exponential backoff at 32s
-            logger.warning(f"Failed to open camera {self.device} (attempt {attempt + 1}/{self.reconnect_max_retries}). Retrying in {delay:.1f}s...")
+            logger.warning(
+                f"Failed to open camera {self.device_name} (attempt {attempt + 1}/{self.reconnect_max_retries}). Retrying in {delay:.1f}s..."
+            )
             time.sleep(delay)
             attempt += 1
 
@@ -174,9 +231,9 @@ class V4LCamera(BaseCamera):
         self._close_camera()
 
         try:
-            self._cap = cv2.VideoCapture(self.device)
+            self._cap = cv2.VideoCapture(self.device_path)
             if not self._cap.isOpened():
-                raise CameraOpenError(f"Failed to open camera {self.device}")
+                raise CameraOpenError(f"Failed to open camera {self.device_name}")
 
             self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer to minimize latency
 
@@ -189,7 +246,7 @@ class V4LCamera(BaseCamera):
                 actual_height = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
                 if actual_width != self.resolution[0] or actual_height != self.resolution[1]:
                     logger.warning(
-                        f"Camera {self.device} resolution set to {actual_width}x{actual_height} "
+                        f"Camera {self.device_name} resolution set to {actual_width}x{actual_height} "
                         f"instead of requested {self.resolution[0]}x{self.resolution[1]}"
                     )
                     self.resolution = (actual_width, actual_height)
@@ -199,13 +256,13 @@ class V4LCamera(BaseCamera):
 
                 actual_fps = int(self._cap.get(cv2.CAP_PROP_FPS))
                 if actual_fps != self.fps:
-                    logger.warning(f"Camera {self.device} FPS set to {actual_fps} instead of requested {self.fps}")
+                    logger.warning(f"Camera {self.device_name} FPS set to {actual_fps} instead of requested {self.fps}")
                     self.fps = actual_fps
 
             # Verify connection with a test read
             ret, _ = self._cap.read()
             if not ret:
-                raise CameraReadError(f"Read test failed for camera {self.device}")
+                raise CameraReadError(f"Read test failed for camera {self.device_name}")
 
             return True
 
@@ -213,7 +270,7 @@ class V4LCamera(BaseCamera):
             self._close_camera()
             return False
         except Exception as e:
-            logger.error(f"Unexpected error connecting to camera {self.device}: {e}")
+            logger.error(f"Unexpected error connecting to camera {self.device_name}: {e}")
             self._close_camera()
             return False
 
@@ -230,7 +287,7 @@ class V4LCamera(BaseCamera):
         try:
             ret, frame = self._cap.read()
             if not ret:
-                logger.warning(f"Failed to read from V4L camera {self.device}")
+                logger.warning(f"Failed to read from V4L camera {self.device_name}")
 
                 # Attempt auto-reconnection if enabled
                 if self._auto_reconnect:
@@ -238,7 +295,7 @@ class V4LCamera(BaseCamera):
                         # Try reading again after successful reconnect
                         ret, frame = self._cap.read()
                         if ret:
-                            logger.info(f"Successfully reconnected to camera {self.device}")
+                            logger.info(f"Successfully reconnected to camera {self.device_name}")
                             return frame
 
                 return None
@@ -246,7 +303,7 @@ class V4LCamera(BaseCamera):
             return frame
 
         except Exception as e:
-            logger.error(f"Unexpected error reading from camera {self.device}: {e}")
+            logger.error(f"Unexpected error reading from camera {self.device_name}: {e}")
 
             # Attempt reconnection on unexpected errors
             if self._auto_reconnect:
@@ -254,7 +311,7 @@ class V4LCamera(BaseCamera):
                     # Try reading again after successful reconnect
                     ret, frame = self._cap.read()
                     if ret:
-                        logger.info(f"Successfully reconnected to camera {self.device}")
+                        logger.info(f"Successfully reconnected to camera {self.device_name}")
                         return frame
 
             return None

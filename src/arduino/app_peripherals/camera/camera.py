@@ -40,7 +40,7 @@ class Camera:
         Args:
             source (Union[str, int]): Camera source identifier. Supports:
                 - int: V4L camera index (e.g., 0, 1)
-                - str: V4L camera index (e.g., "0", "1") or device path (e.g., "/dev/video0")
+                - str: V4L camera index (e.g., "0", "1") or device path (i.e., "/dev/video0", "/dev/v4l/by-id/...", "/dev/v4l/by-path/...")
                 - str: URL for IP cameras (e.g., "rtsp://...", "http://...")
                 - str: WebSocket URL for input streams (e.g., "ws://0.0.0.0:8080")
             resolution (tuple, optional): Frame resolution as (width, height).
@@ -111,8 +111,8 @@ class Camera:
                 host = parsed.hostname or "localhost"
                 port = parsed.port or 8080
                 return WebSocketCamera(host=host, port=port, resolution=resolution, fps=fps, adjustments=adjustments, **kwargs)
-            elif source.startswith("/dev/video") or source.isdigit():
-                # V4L device path or index as string
+            elif source.startswith("/dev/video") or source.startswith("/dev/v4l/by-id/") or source.startswith("/dev/v4l/by-path/"):
+                # V4L device path, by-id, or by-path
                 from .v4l_camera import V4LCamera
 
                 return V4LCamera(source, resolution=resolution, fps=fps, adjustments=adjustments, **kwargs)

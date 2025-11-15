@@ -2,30 +2,19 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+
 import pytest
 
 from arduino.app_peripherals.camera import Camera, V4LCamera, IPCamera, WebSocketCamera, CameraConfigError
 
+from conftest import v4l_device_argument  # noqa: F401
 
-def test_camera_factory_with_device_path():
-    """Test Camera factory with device path (V4L)."""
-    camera = Camera("/dev/video0")
+
+def test_camera_factory_with_v4l_device(v4l_device_argument):
+    """Test Camera factory with multiple device paths (V4L)."""
+    camera = Camera(v4l_device_argument)
     assert isinstance(camera, V4LCamera)
-    assert camera.device == 0
-
-
-def test_camera_factory_with_int_source():
-    """Test Camera factory with integer source (V4L)."""
-    camera = Camera(0)
-    assert isinstance(camera, V4LCamera)
-    assert camera.device == 0
-
-
-def test_camera_factory_with_string_digit_source():
-    """Test Camera factory with string digit source (V4L)."""
-    camera = Camera("1")
-    assert isinstance(camera, V4LCamera)
-    assert camera.device == 1
+    assert camera.device_path == "/dev/v4l/by-id/usb-Camera-video-index0"
 
 
 def test_camera_factory_with_rtsp_url():
@@ -102,20 +91,20 @@ def test_camera_factory_unsupported_source():
         Camera("invalid-source")
 
 
-def test_camera_factory_all_parameters():
+def test_camera_factory_all_parameters(v4l_device_argument):
     """Test Camera factory with all common parameters."""
     adjustment = lambda x: x * 2
 
-    camera = Camera(source=0, resolution=(1280, 720), fps=60, adjustments=adjustment)
+    camera = Camera(source=v4l_device_argument, resolution=(1280, 720), fps=60, adjustments=adjustment)
     assert isinstance(camera, V4LCamera)
     assert camera.resolution == (1280, 720)
     assert camera.fps == 60
     assert camera.adjustments == adjustment
 
 
-def test_camera_factory_returns_v4l_instance():
+def test_camera_factory_returns_v4l_instance(v4l_device_argument):
     """Test that Camera factory returns V4LCamera instance for V4L sources."""
-    camera = Camera(0)
+    camera = Camera(v4l_device_argument)
     assert isinstance(camera, V4LCamera)
 
 

@@ -10,6 +10,13 @@ from unittest.mock import MagicMock, patch
 
 from arduino.app_peripherals.camera import V4LCamera, CameraOpenError
 
+from conftest import v4l_device_argument  # noqa: F401
+
+
+@pytest.fixture(autouse=True)
+def autouse_v4l_device_argument(v4l_device_argument):
+    return v4l_device_argument
+
 
 @pytest.fixture
 def mock_successful_connect() -> MagicMock:
@@ -42,76 +49,35 @@ def mock_failed_connect_read() -> MagicMock:
 
 
 class TestV4LCameraInitialization:
-    def test_initialization_with_all_parameters(self):
+    def test_initialization_with_all_parameters(self, v4l_device_argument):
         """Test that V4LCamera properly initializes with all V4L-specific parameters."""
 
         def dummy_adjustment(frame):
             return frame
 
         # Test initialization without triggering camera operations
-        camera = V4LCamera(device="/dev/video1", resolution=(1280, 720), fps=25, adjustments=dummy_adjustment)
+        camera = V4LCamera(device=v4l_device_argument, resolution=(1280, 720), fps=25, adjustments=dummy_adjustment)
 
         # Verify V4L-specific device resolution worked
-        assert camera.device == 1  # Should extract 1 from "/dev/video1"
+        assert camera.device_path == "/dev/v4l/by-id/usb-Camera-video-index0"
 
         # Verify BaseCamera parameters are preserved
         assert camera.resolution == (1280, 720)
         assert camera.fps == 25
         assert camera.adjustments == dummy_adjustment
 
-    def test_device_resolution_integer(self):
-        """Test that V4LCamera correctly resolves integer device identifiers."""
-        camera = V4LCamera(device=0)
-        assert camera.device == 0
-
-        camera = V4LCamera(device=1)
-        assert camera.device == 1
-
-    def test_device_resolution_string_numeric(self):
-        """Test that V4LCamera correctly resolves numeric string device identifiers."""
-        # Test with device mapping available
-        with patch.object(V4LCamera, "_get_video_devices_by_index", return_value={1: "2"}):
-            camera = V4LCamera(device="1")
-            assert camera.device == 2
-
-        # Test with no device mapping (fallback)
-        with patch.object(V4LCamera, "_get_video_devices_by_index", return_value={}):
-            camera = V4LCamera(device="3")
-            assert camera.device == 3
-
-    def test_device_resolution_path(self):
+    def test_device_resolution(self, v4l_device_argument):
         """Test that V4LCamera correctly resolves device path identifiers."""
-        camera = V4LCamera(device="/dev/video0")
-        assert camera.device == 0
+        camera = V4LCamera(device=v4l_device_argument)
+        assert camera.device_path == "/dev/v4l/by-id/usb-Camera-video-index0"
 
-        camera = V4LCamera(device="/dev/video2")
-        assert camera.device == 2
-
-    def test_device_resolution_invalid(self):
+    def test_device_resolution_failure(self):
         """Test that V4LCamera raises appropriate error for invalid device identifiers."""
-        with pytest.raises(CameraOpenError, match="Cannot resolve camera identifier: invalid"):
+        with pytest.raises(CameraOpenError, match="Unrecognized device identifier"):
             V4LCamera(device="invalid")
 
-        with pytest.raises(CameraOpenError, match="Cannot resolve camera identifier: not_a_device"):
-            V4LCamera(device="not_a_device")
-
-    def test_device_mapping(self):
-        """Test that V4LCamera uses device mapping when available for string indices."""
-        device_mapping = {0: "1", 1: "3", 2: "0"}
-
-        with patch.object(V4LCamera, "_get_video_devices_by_index", return_value=device_mapping):
-            camera = V4LCamera(device="1")
-            assert camera.device == 3
-
-            camera = V4LCamera(device="0")
-            assert camera.device == 1
-
-    def test_device_mapping_fallback(self):
-        """Test that V4LCamera falls back to direct conversion when no mapping available."""
-        with patch.object(V4LCamera, "_get_video_devices_by_index", return_value={}):
-            # When no mapping is available, should convert string directly to int
-            camera = V4LCamera(device="5")
-            assert camera.device == 5
+        with pytest.raises(CameraOpenError, match="No stable link found"):
+            V4LCamera(device=1)
 
 
 class TestV4LCameraStartStop:
@@ -131,14 +97,14 @@ class TestV4LCameraStartStop:
         mock_successful_connect.get.side_effect = get_caps
         mock_video_capture.return_value = mock_successful_connect
 
-        camera = V4LCamera(device=2, resolution=(640, 480), fps=10)
+        camera = V4LCamera(resolution=(640, 480), fps=10)
 
         assert not camera.is_started()
 
         camera.start()
 
         assert camera.is_started()
-        mock_video_capture.assert_called_once_with(2)
+        mock_video_capture.assert_called_once_with("/dev/v4l/by-id/usb-Camera-video-index0")
 
         # Verify V4L camera setup calls
         assert mock_successful_connect.set.call_count == 4
@@ -153,7 +119,7 @@ class TestV4LCameraStartStop:
         """Test that V4LCamera doesn't reinitialize when already started."""
         mock_video_capture.return_value = mock_successful_connect
 
-        camera = V4LCamera(device=0)
+        camera = V4LCamera()
 
         # Start camera first time
         camera.start()
@@ -184,7 +150,7 @@ class TestV4LCameraStartStop:
         mock_video_capture.return_value = mock_successful_connect
 
         # Request 640x480 but hardware only supports 320x240
-        camera = V4LCamera(device=0, resolution=(640, 480), fps=10)
+        camera = V4LCamera(resolution=(640, 480), fps=10)
         camera.start()
 
         # Should adapt to actual hardware capabilities
@@ -208,7 +174,7 @@ class TestV4LCameraStartStop:
         mock_video_capture.return_value = mock_successful_connect
 
         # Request 30fps but hardware only supports 15fps
-        camera = V4LCamera(device=0, resolution=(640, 480), fps=30)
+        camera = V4LCamera(resolution=(640, 480), fps=30)
         camera.start()
 
         assert camera.fps == 15
@@ -219,7 +185,7 @@ class TestV4LCameraStartStop:
         """Test that V4LCamera stop() properly releases V4L resources."""
         mock_video_capture.return_value = mock_successful_connect
 
-        camera = V4LCamera(device=1)
+        camera = V4LCamera()
         camera.start()
         assert camera.is_started()
 
@@ -230,7 +196,7 @@ class TestV4LCameraStartStop:
 
     def test_stop_not_started(self):
         """Test that V4LCamera stop() is safe when not started."""
-        camera = V4LCamera(device=0)
+        camera = V4LCamera()
         assert not camera.is_started()
 
         camera.stop()  # Should not raise any exception
@@ -242,7 +208,7 @@ class TestV4LCameraStartStop:
         """Test V4LCamera is_started() reflects actual V4L camera state."""
         mock_video_capture.return_value = mock_successful_connect
 
-        camera = V4LCamera(device=0)
+        camera = V4LCamera()
 
         assert not camera.is_started()
 
@@ -282,7 +248,7 @@ class TestV4LCameraRecovery:
         """Test that V4LCamera raises an exception for open failures."""
         mock_video_capture.return_value = mock_failed_connect_open
 
-        camera = V4LCamera(device=3)
+        camera = V4LCamera()
         camera.reconnect_delay = 0
         with pytest.raises(CameraOpenError):
             camera.start()
@@ -295,7 +261,7 @@ class TestV4LCameraRecovery:
         """Test that V4LCamera raises an exception for read failures."""
         mock_video_capture.return_value = mock_failed_connect_read
 
-        camera = V4LCamera(device=3)
+        camera = V4LCamera()
         camera.reconnect_delay = 0
         with pytest.raises(CameraOpenError):
             camera.start()
