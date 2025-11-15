@@ -153,10 +153,9 @@ class V4LCamera(BaseCamera):
 
         Retries with exponential backoff until successful or self.max_retries is reached.
         """
-        attempt = 0
         delay = 0
+        attempt = 0
 
-        # while not self._connect():
         while not self._safe_connect(delay):
             if not self._auto_reconnect:
                 raise CameraOpenError(f"VideoCapture returned unopened state for device {self.device_name}")
@@ -208,6 +207,8 @@ class V4LCamera(BaseCamera):
             bool: True if reconnection successful, False otherwise.
         """
         self._close_camera()
+
+        self.logger.info(f"Connecting to camera {self.device_name} at {self.device_path}...")
 
         try:
             self._cap = cv2.VideoCapture(self.device_path)
@@ -261,36 +262,34 @@ class V4LCamera(BaseCamera):
             np.ndarray | None: Frame data or None if read fails
         """
         if self._cap is None:
-            return None
+            if not self._auto_reconnect:
+                return None
+            
+            if not os.path.exists(self.device_path):
+                self.logger.warning(f"Camera device {self.device_path} not found. Closing connection.")
+                return None
+            
+            if self._safe_connect():
+                self.logger.info(f"Successfully connected to camera {self.device_name}")
+            else:
+                return None
 
         try:
             ret, frame = self._cap.read()
             if not ret:
-                logger.warning(f"Failed to read from V4L camera {self.device_name}")
-
-                # Attempt auto-reconnection if enabled
-                if self._auto_reconnect:
-                    if self._safe_connect():
-                        # Try reading again after successful reconnect
-                        ret, frame = self._cap.read()
-                        if ret:
-                            logger.info(f"Successfully reconnected to camera {self.device_name}")
-                            return frame
-
+                self.logger.error(
+                    f"Unexpected error reading from camera {self.device_name}."
+                    f"{' Reconnecting...' if self._auto_reconnect else ' Auto-reconnect is disabled, please restart the app.'}"
+                )
+                self._close_camera()
                 return None
 
             return frame
 
         except Exception as e:
-            logger.error(f"Unexpected error reading from camera {self.device_name}: {e}")
-
-            # Attempt reconnection on unexpected errors
-            if self._auto_reconnect:
-                if self._safe_connect():
-                    # Try reading again after successful reconnect
-                    ret, frame = self._cap.read()
-                    if ret:
-                        logger.info(f"Successfully reconnected to camera {self.device_name}")
-                        return frame
-
+            self.logger.error(
+                f"Unexpected error reading from camera {self.device_name}: {type(e)}."
+                f"{' Reconnecting...' if self._auto_reconnect else ' Auto-reconnect is disabled, please restart the app.'}"
+            )
+            self._close_camera()
             return None

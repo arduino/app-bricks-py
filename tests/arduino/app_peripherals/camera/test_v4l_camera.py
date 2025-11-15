@@ -296,9 +296,13 @@ class TestV4LCameraRecovery:
         frame1 = camera.capture()
         assert frame1 is not None
 
-        # Second capture fails but auto-reconnects
+        # Second capture fails
         frame2 = camera.capture()
-        assert frame2 is not None
+        assert frame2 is None
+
+        # Third capture reconnects and succeeds
+        frame3 = camera.capture()
+        assert frame3 is not None
 
         # Verify reconnection happened
         assert mock_video_capture.call_count == 2
@@ -331,9 +335,13 @@ class TestV4LCameraRecovery:
         frame1 = camera.capture()
         assert frame1 is not None
 
-        # Second capture fails but auto-reconnects
+        # Second capture fails
         frame2 = camera.capture()
-        assert frame2 is not None
+        assert frame2 is None
+
+        # Third capture reconnects and succeeds
+        frame3 = camera.capture()
+        assert frame3 is not None
 
         # Verify reconnection happened
         assert mock_video_capture.call_count == 2
@@ -419,3 +427,48 @@ class TestV4LCameraRecovery:
         assert sleep_calls[3] == 0.4
         assert sleep_calls[4] == 0.8
         assert sleep_calls[5] == 1.6
+
+    @patch("arduino.app_peripherals.camera.v4l_camera.cv2.VideoCapture")
+    @patch("arduino.app_peripherals.camera.v4l_camera.os.path.exists")
+    def test_auto_reconnect_on_device_not_found(self, mock_path_exists, mock_video_capture, mock_successful_connect):
+        """Test automatic reconnection when the device path is not found for a period of time."""
+        mock_path_exists.side_effect = [
+            True,  # For _resolve_stable_path
+            True,  # For _read_frame check in camera.start()
+            True,  # For _read_frame check in first capture()
+            False, # Device is missing for third capture()
+            True,  # For _read_frame check to signal device reappeared for fourth capture()
+        ]
+        mock_successful_connect.read.side_effect = [
+            (True, np.zeros((480, 640, 3), dtype=np.uint8)),  # Read during _safe_connect() for initial connection
+            (True, np.zeros((480, 640, 3), dtype=np.uint8)),  # First capture() succeeds
+            Exception("Simulated read exception"),  # Second capture() fails by exception
+            (True, np.zeros((480, 640, 3), dtype=np.uint8)),  # Read during _safe_connect() for reconnection
+            (True, np.ones((480, 640, 3), dtype=np.uint8)),  # Fourth capture() succeeds
+        ]
+
+        mock_video_capture.return_value = mock_successful_connect
+
+        camera = V4LCamera()
+        camera.reconnect_delay = 0.1
+        camera.start()
+
+        # First capture() succeeds
+        frame1 = camera.capture()
+        assert frame1 is not None
+
+        # Second capture() fails: simulated disconnection via exception
+        frame2 = camera.capture()
+        assert frame2 is None
+        mock_successful_connect.release.assert_called_once()  # Ensure camera was closed
+
+        # Third capture() fails: device is still disconnected and reconnection attempt fails
+        frame3 = camera.capture()
+        assert frame3 is None
+        assert mock_video_capture.call_count == 1  # Called only during initialization, _safe_connect not called because device not found
+
+        # Fourth capture() succeeds: device reappears, reconnection is triggered and capture() returns a frame
+        frame4 = camera.capture()
+        assert frame4 is not None
+        assert mock_video_capture.call_count == 2 # Initial + after device reappeared
+        assert np.array_equal(frame4, np.ones((480, 640, 3), dtype=np.uint8))

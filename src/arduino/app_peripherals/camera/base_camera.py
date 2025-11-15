@@ -10,7 +10,7 @@ import numpy as np
 
 from arduino.app_utils import Logger
 
-from .errors import CameraOpenError, CameraTransformError
+from .errors import CameraOpenError, CameraReadError, CameraTransformError
 
 logger = Logger("Camera")
 
@@ -58,9 +58,9 @@ class BaseCamera(ABC):
                 self._open_camera()
                 self._is_started = True
                 self._last_capture_time = time.monotonic()
-                self.logger.info(f"Successfully started {self.__class__.__name__}")
+                self.logger.info(f"Successfully opened {self.__class__.__name__}")
             except Exception as e:
-                raise CameraOpenError(f"Failed to start camera: {e}")
+                raise CameraOpenError(f"Failed to open camera: {e}")
 
     def stop(self) -> None:
         """Stop the camera and release resources."""
@@ -71,9 +71,9 @@ class BaseCamera(ABC):
             try:
                 self._close_camera()
                 self._is_started = False
-                self.logger.info(f"Successfully stopped {self.__class__.__name__}")
+                self.logger.info(f"Successfully closed {self.__class__.__name__}")
             except Exception as e:
-                self.logger.warning(f"Error stopping camera: {e}")
+                self.logger.warning(f"Failed to close camera: {e}")
 
     def capture(self) -> Optional[np.ndarray]:
         """
@@ -81,7 +81,13 @@ class BaseCamera(ABC):
 
         Returns:
             Numpy array or None if no frame is available.
+
+        Raises:
+            CameraReadError: If the camera is not started.
         """
+        if not self.is_started():
+            raise CameraReadError(f"Attempted to read from {self.__class__.__name__} before starting it.")
+
         frame = self._extract_frame()
         if frame is None:
             return None
@@ -97,7 +103,10 @@ class BaseCamera(ABC):
         Yields:
             np.ndarray: Video frames as numpy arrays.
         """
-        while self._is_started:
+        if not self.is_started():
+            raise CameraReadError(f"Attempted to acquire stream from {self.__class__.__name__} before starting it.")
+
+        while self.is_started():
             frame = self.capture()
             if frame is not None:
                 yield frame

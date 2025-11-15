@@ -7,6 +7,7 @@ import time
 import numpy as np
 
 from arduino.app_peripherals.camera import BaseCamera, CameraOpenError, CameraTransformError
+from arduino.app_peripherals.usb_camera import CameraReadError
 from arduino.app_utils.image.pipeable import PipeableFunction
 
 
@@ -117,7 +118,7 @@ def test_start_error_reporting():
     camera = ConcreteCamera(should_fail_open=True, open_error_message="Mock camera failure")
 
     # Verify error is properly wrapped and reported
-    with pytest.raises(CameraOpenError, match="Failed to start camera: Mock camera failure"):
+    with pytest.raises(CameraOpenError, match="Failed to open camera: Mock camera failure"):
         camera.start()
 
     # Verify camera state remains stopped on error
@@ -179,12 +180,12 @@ def test_capture_when_started():
 
 
 def test_capture_when_stopped():
-    """Test that capture() returns None when camera is not started."""
+    """Test that capture() returns an exception when camera is not started."""
     camera = ConcreteCamera()
 
-    frame = camera.capture()
+    with pytest.raises(CameraReadError):
+        camera.capture()
 
-    assert frame is None
     assert camera.read_call_count == 0
 
 
