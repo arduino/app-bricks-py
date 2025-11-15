@@ -32,7 +32,7 @@ class IPCamera(BaseCamera):
         timeout: int = 10,
         resolution: tuple[int, int] = (640, 480),
         fps: int = 10,
-        adjustments: Callable[[np.ndarray], np.ndarray] = None,
+        adjustments: Callable[[np.ndarray], np.ndarray] | None = None,
     ):
         """
         Initialize IP camera.

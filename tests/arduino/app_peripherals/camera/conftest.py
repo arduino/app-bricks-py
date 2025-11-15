@@ -6,12 +6,13 @@ import pytest
 
 
 @pytest.fixture(
-    params=["/dev/video0", 0, "0", "/dev/v4l/by-id/usb-Camera-video-index0", "/dev/v4l/by-path/platform-xhci-hcd.2.auto-usb-0:1.3:1.0-video-index0"]
+    params=["/dev/video0", 0, "0", "/dev/v4l/by-path/platform-xhci-hcd.2.auto-usb-0:1.3:1.0-video-index0", "/dev/v4l/by-id/usb-Camera-video-index0"]
 )
 def v4l_device_argument(monkeypatch, request):
     """
     Patch os functions for V4LCamera stable path resolution to simulate a stable
     camera environment for various device arguments.
+    The only valid resolved device is "/dev/v4l/by-id/usb-Camera-video-index0".
     """
     fake_by_id_dir = "/dev/v4l/by-id/"
     fake_by_id_entry = "usb-Camera-video-index0"

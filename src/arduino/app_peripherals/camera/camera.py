@@ -32,7 +32,7 @@ class Camera:
         source: str | int = 0,
         resolution: tuple[int, int] = (640, 480),
         fps: int = 10,
-        adjustments: Callable[[np.ndarray], np.ndarray] = None,
+        adjustments: Callable[[np.ndarray], np.ndarray] | None = None,
         **kwargs,
     ) -> BaseCamera:
         """Create a camera instance based on the source type.
