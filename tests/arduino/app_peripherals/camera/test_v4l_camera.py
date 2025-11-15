@@ -2,7 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-import time
 import numpy as np
 import pytest
 import cv2
@@ -373,7 +372,7 @@ class TestV4LCameraRecovery:
         camera = V4LCamera()
         camera.reconnect_delay = 0.1
 
-        result = camera._connect()
+        result = camera._safe_connect()
         assert result is False
         initial_time = camera._last_reconnect_attempt
         assert initial_time > 0
@@ -381,19 +380,16 @@ class TestV4LCameraRecovery:
         # After waiting, should allow reconnect attempt
         time.sleep(0.15)
 
-        result = camera._connect()
+        result = camera._safe_connect()
         assert camera._last_reconnect_attempt > initial_time
 
     @patch("arduino.app_peripherals.camera.v4l_camera.cv2.VideoCapture")
     def test_exponential_backoff_on_open(self, mock_video_capture, mock_successful_connect, mock_failed_connect_open, mock_failed_connect_read):
         """Test that exponential backoff is used during camera opening."""
-        real_sleep = time.sleep  # Save the real sleep before patching
-
         sleep_calls = []
 
         def spy_sleep(seconds):
             sleep_calls.append(seconds)
-            return real_sleep(seconds)
 
         # Patch time.sleep in the v4l_camera module only for this test
         with patch("arduino.app_peripherals.camera.v4l_camera.time.sleep", side_effect=spy_sleep):
@@ -416,9 +412,10 @@ class TestV4LCameraRecovery:
         # Attempt 1 fails -> sleep(0.1 * 2^1) = 0.2
         # ...
         # Attempt 5 succeeds
-        assert len(sleep_calls) == 5
-        assert sleep_calls[0] == 0.1
-        assert sleep_calls[1] == 0.2
-        assert sleep_calls[2] == 0.4
-        assert sleep_calls[3] == 0.8
-        assert sleep_calls[4] == 1.6
+        assert len(sleep_calls) == 6
+        assert sleep_calls[0] == 0  # We still have an initial attempt with no sleep
+        assert sleep_calls[1] == 0.1
+        assert sleep_calls[2] == 0.2
+        assert sleep_calls[3] == 0.4
+        assert sleep_calls[4] == 0.8
+        assert sleep_calls[5] == 1.6

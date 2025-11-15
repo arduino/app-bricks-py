@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import os
-import re
 import time
 from typing import Optional
 import cv2
@@ -148,44 +147,6 @@ class V4LCamera(BaseCamera):
         # As fallback just return /dev/videoX
         return target or stable_path
 
-    def _get_video_devices_by_index(self) -> dict[int, str]:
-        """
-        Map camera indices to device numbers by reading /dev/v4l/by-id/.
-
-        Returns:
-            Dict mapping index to device number
-        """
-        devices_by_index = {}
-        directory_path = "/dev/v4l/by-id/"
-
-        # Check if the directory exists
-        if not os.path.exists(directory_path):
-            logger.warning(f"Directory '{directory_path}' not found.")
-            return devices_by_index
-
-        try:
-            entries = os.listdir(directory_path)
-            for entry in entries:
-                full_path = os.path.join(directory_path, entry)
-
-                if os.path.islink(full_path):
-                    # Find numeric index at end of filename
-                    match = re.search(r"index(\d+)$", entry)
-                    if match:
-                        try:
-                            index = int(match.group(1))
-                            resolved_path = os.path.realpath(full_path)
-                            device_name = os.path.basename(resolved_path)
-                            device_number = device_name.replace("video", "")
-                            devices_by_index[index] = device_number
-                        except ValueError:
-                            logger.warning(f"Could not parse index from '{entry}'")
-                            continue
-        except OSError as e:
-            logger.error(f"Error accessing directory '{directory_path}': {e}")
-
-        return devices_by_index
-
     def _open_camera(self) -> None:
         """
         Open the V4L camera connection with retry logic.
@@ -193,18 +154,19 @@ class V4LCamera(BaseCamera):
         Retries with exponential backoff until successful or self.max_retries is reached.
         """
         attempt = 0
+        delay = 0
 
-        while not self._connect():
+        # while not self._connect():
+        while not self._safe_connect(delay):
             if not self._auto_reconnect:
                 raise CameraOpenError(f"VideoCapture returned unopened state for device {self.device_name}")
             if attempt >= self.reconnect_max_retries:
                 raise CameraOpenError(f"Unable to open camera {self.device_name} after {self.reconnect_max_retries} attempts")
 
-            delay = self.reconnect_delay * (2 ** min(attempt, 5))  # Cap exponential backoff at 32s
+            delay = min(self.reconnect_delay * (2**attempt), 30)  # Cap exponential backoff at 30s
             logger.warning(
                 f"Failed to open camera {self.device_name} (attempt {attempt + 1}/{self.reconnect_max_retries}). Retrying in {delay:.1f}s..."
             )
-            time.sleep(delay)
             attempt += 1
 
     def _close_camera(self) -> None:
@@ -213,21 +175,38 @@ class V4LCamera(BaseCamera):
             self._cap.release()
             self._cap = None
 
+    def _safe_connect(self, delay: float | None = None) -> bool:
+        """
+        Attempt to reconnect to the camera with delay between attempts.
+
+        Args:
+            delay (float | None): Delay in seconds before attempting reconnection.
+                If None, uses self.reconnect_delay.
+        Returns:
+            bool: True if reconnection successful, False otherwise.
+        """
+        current_time = time.time()
+
+        # Prevent too frequent connection attempts
+        if delay is None:
+            # If no delay specified, use the default reconnect_delay
+            if current_time - self._last_reconnect_attempt < self.reconnect_delay:
+                time.sleep(self.reconnect_delay - (current_time - self._last_reconnect_attempt))
+        else:
+            # If a specific delay is forced, use it
+            time.sleep(delay)
+
+        self._last_reconnect_attempt = current_time
+
+        return self._connect()
+
     def _connect(self) -> bool:
         """
         Attempt to connect to the camera.
 
         Returns:
-            bool: True if reconnection successful, False otherwise
+            bool: True if reconnection successful, False otherwise.
         """
-        current_time = time.time()
-
-        # Prevent too frequent connection attempts
-        if current_time - self._last_reconnect_attempt < self.reconnect_delay:
-            return False
-
-        self._last_reconnect_attempt = current_time
-
         self._close_camera()
 
         try:
@@ -291,7 +270,7 @@ class V4LCamera(BaseCamera):
 
                 # Attempt auto-reconnection if enabled
                 if self._auto_reconnect:
-                    if self._connect():
+                    if self._safe_connect():
                         # Try reading again after successful reconnect
                         ret, frame = self._cap.read()
                         if ret:
@@ -307,7 +286,7 @@ class V4LCamera(BaseCamera):
 
             # Attempt reconnection on unexpected errors
             if self._auto_reconnect:
-                if self._connect():
+                if self._safe_connect():
                     # Try reading again after successful reconnect
                     ret, frame = self._cap.read()
                     if ret:
