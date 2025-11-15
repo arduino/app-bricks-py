@@ -47,6 +47,7 @@ class V4LCamera(BaseCamera):
             auto_reconnect (bool, optional): Enable automatic reconnection on failure. Default: True.
         """
         super().__init__(resolution, fps, adjustments)
+
         self.device_path = self._resolve_stable_path(device)
         self.device_name = self._resolve_name(self.device_path)
         self.logger = logger
@@ -76,7 +77,7 @@ class V4LCamera(BaseCamera):
             # Already a stable link
             return device
         elif isinstance(device, str) and device.startswith("/dev/v4l/by-path"):
-            # A stable link, but not the one we want, resolve to by-id.
+            # A stable link, but not the one we want, resolve to by-id
             if not os.path.exists(device):
                 raise CameraOpenError(f"Device path {device} does not exist")
             resolved_path = os.path.realpath(device)
@@ -91,7 +92,7 @@ class V4LCamera(BaseCamera):
         else:
             raise CameraOpenError(f"Unrecognized device identifier: {device}")
 
-        # Now, map /dev/videoX to a stable link in /dev/v4l/by-id
+        # Now map /dev/videoX to a stable link in /dev/v4l/by-id
         by_id_dir = "/dev/v4l/by-id/"
         if not os.path.exists(by_id_dir):
             raise CameraOpenError(f"Directory '{by_id_dir}' not found.")

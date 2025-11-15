@@ -434,10 +434,11 @@ class TestV4LCameraRecovery:
         """Test automatic reconnection when the device path is not found for a period of time."""
         mock_path_exists.side_effect = [
             True,  # For _resolve_stable_path
-            True,  # For _read_frame check in camera.start()
-            True,  # For _read_frame check in first capture()
-            False,  # Device is missing for third capture()
-            True,  # For _read_frame check to signal device reappeared for fourth capture()
+            True,  # For _resolve_name
+            True,  # For _resolve_name
+            True,  # For _open_camera
+            False,  # For _safe_connect tentative for third capture()
+            True,  # For _safe_connect check for fourth capture()
         ]
         mock_successful_connect.read.side_effect = [
             (True, np.zeros((480, 640, 3), dtype=np.uint8)),  # Read during _safe_connect() for initial connection
