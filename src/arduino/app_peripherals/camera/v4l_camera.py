@@ -191,6 +191,10 @@ class V4LCamera(BaseCamera):
 
         self._last_reconnect_attempt = current_time
 
+        if not os.path.exists(self.device_path):
+            self.logger.warning(f"Camera device {self.device_name} not found  at {self.device_path}.")
+            return False
+
         return self._connect()
 
     def _connect(self) -> bool:
@@ -261,10 +265,6 @@ class V4LCamera(BaseCamera):
         """
         if self._cap is None:
             if not self._auto_reconnect:
-                return None
-
-            if not os.path.exists(self.device_path):
-                self.logger.warning(f"Camera device {self.device_path} not found. Closing connection.")
                 return None
 
             if self._safe_connect():
