@@ -131,11 +131,11 @@ class BaseCamera(ABC):
             if not self._is_started:
                 return None
 
+            self._last_capture_time = time.monotonic()
+
             frame = self._read_frame()
             if frame is None:
                 return None
-
-            self._last_capture_time = time.monotonic()
 
             if self.adjustments is not None:
                 try:
