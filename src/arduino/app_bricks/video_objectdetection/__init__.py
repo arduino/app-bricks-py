@@ -5,6 +5,7 @@
 import time
 import json
 import inspect
+import queue
 import threading
 import socket
 from typing import Callable
@@ -51,6 +52,7 @@ class VideoObjectDetection:
         self._confidence = confidence
         self._debounce_sec = debounce_sec
         self._last_detected: dict[str, float] = {}
+        self._frame_queue = queue.Queue(maxsize=1)
 
         self._handlers = {}  # Dictionary to hold handlers for different actions
         self._handlers_lock = threading.Lock()
@@ -159,10 +161,24 @@ class VideoObjectDetection:
                 time.sleep(2)
 
     @brick.execute
+    def _camera_capture_loop(self):
+        """Camera capture loop.
+        
+        Captures frames from the camera and puts them in a queue.
+        """
+        while self._is_running.is_set():
+            frame = self._camera.capture()
+            if frame is not None:
+                if not self._frame_queue.full():
+                    self._frame_queue.put(frame)
+            else:
+                time.sleep(0.01)
+
+    @brick.execute
     def camera_loop(self):
         """Camera main loop.
 
-        Captures images from the camera and forwards them over the TCP connection.
+        Gets images from a queue and forwards them over the TCP connection.
         Retries on connection errors until stopped.
         """
         while self._is_running.is_set():
@@ -173,19 +189,23 @@ class VideoObjectDetection:
 
                     while self._is_running.is_set():
                         try:
-                            frame = self._camera.capture()
-                            if frame is None:
-                                time.sleep(0.01)  # Brief sleep if no image available
-                                continue
-
+                            frame = self._frame_queue.get(timeout=1.0)
                             jpeg_frame = compress_to_jpeg(frame)
                             tcp_socket.sendall(jpeg_frame.tobytes())
-
+                            self._frame_queue.task_done()
+                        except queue.Empty:
+                            # Send a heartbeat to keep TCP connection alive
+                            try:
+                                tcp_socket.sendall(b'')
+                            except (BrokenPipeError, ConnectionResetError, OSError):
+                                logger.warning("TCP connection lost while sending heartbeat. Retrying...")
+                                break
+                            continue
                         except (BrokenPipeError, ConnectionResetError, OSError) as e:
                             logger.warning(f"TCP connection lost: {e}. Retrying...")
                             break
                         except Exception as e:
-                            logger.exception(f"Error capturing/sending image: {e}")
+                            logger.exception(f"Error sending image: {e}")
 
             except (ConnectionRefusedError, OSError) as e:
                 logger.debug(f"TCP connection failed: {e}. Retrying in 2 seconds...")
