@@ -185,7 +185,7 @@ class VideoObjectDetection:
                             logger.warning(f"TCP connection lost: {e}. Retrying...")
                             break
                         except Exception as e:
-                            logger.exception(f"Error capturing/sending image: {e}")
+                            logger.exception(f"Error sending image: {e}")
 
             except (ConnectionRefusedError, OSError) as e:
                 logger.debug(f"TCP connection failed: {e}. Retrying in 2 seconds...")

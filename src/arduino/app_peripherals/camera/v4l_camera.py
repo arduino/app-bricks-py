@@ -179,13 +179,14 @@ class V4LCamera(BaseCamera):
         Returns:
             bool: True if reconnection successful, False otherwise.
         """
-        current_time = time.time()
+        current_time = time.monotonic()
 
         # Prevent too frequent connection attempts
         if delay is None:
             # If no delay specified, use the default reconnect_delay
-            if current_time - self._last_reconnect_attempt < self.reconnect_delay:
-                time.sleep(self.reconnect_delay - (current_time - self._last_reconnect_attempt))
+            elapsed = current_time - self._last_reconnect_attempt
+            if elapsed < self.reconnect_delay:
+                time.sleep(self.reconnect_delay - elapsed)
         else:
             # If a specific delay is forced, use it
             time.sleep(delay)

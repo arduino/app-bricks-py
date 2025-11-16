@@ -88,10 +88,30 @@ class BaseCamera(ABC):
         if not self.is_started():
             raise CameraReadError(f"Attempted to read from {self.__class__.__name__} before starting it.")
 
-        frame = self._extract_frame()
-        if frame is None:
-            return None
-        return frame
+        with self._camera_lock:
+            if not self.is_started():
+                raise CameraReadError(f"Attempted to read from {self.__class__.__name__} before starting it.")
+
+            # Apply FPS throttling
+            if self._desired_interval > 0:
+                current_time = time.monotonic()
+                elapsed = current_time - self._last_capture_time
+                if elapsed < self._desired_interval:
+                    time.sleep(self._desired_interval - elapsed)
+
+            self._last_capture_time = time.monotonic()
+
+            frame = self._read_frame()
+            if frame is None:
+                return None
+
+            if self.adjustments is not None:
+                try:
+                    frame = self.adjustments(frame)
+                except Exception as e:
+                    raise CameraTransformError(f"Frame transformation failed ({self.adjustments}): {e}")
+
+            return frame
 
     def stream(self):
         """
@@ -117,33 +137,6 @@ class BaseCamera(ABC):
     def is_started(self) -> bool:
         """Check if the camera is started."""
         return self._is_started
-
-    def _extract_frame(self) -> np.ndarray | None:
-        """Extract a frame with FPS throttling and post-processing."""
-        with self._camera_lock:
-            # FPS throttling
-            if self._desired_interval > 0:
-                current_time = time.monotonic()
-                elapsed = current_time - self._last_capture_time
-                if elapsed < self._desired_interval:
-                    time.sleep(self._desired_interval - elapsed)
-
-            if not self._is_started:
-                return None
-
-            self._last_capture_time = time.monotonic()
-
-            frame = self._read_frame()
-            if frame is None:
-                return None
-
-            if self.adjustments is not None:
-                try:
-                    frame = self.adjustments(frame)
-                except Exception as e:
-                    raise CameraTransformError(f"Frame transformation failed ({self.adjustments}): {e}")
-
-            return frame
 
     @abstractmethod
     def _open_camera(self) -> None:
