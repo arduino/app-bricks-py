@@ -193,7 +193,7 @@ class V4LCamera(BaseCamera):
         self._last_reconnect_attempt = current_time
 
         if not os.path.exists(self.device_path):
-            self.logger.warning(f"Camera device {self.device_name} not found at {self.device_path}")
+            self.logger.warning(f"Camera device {self.device_name} not found  at {self.device_path}.")
             return False
 
         return self._connect()
@@ -277,8 +277,8 @@ class V4LCamera(BaseCamera):
             ret, frame = self._cap.read()
             if not ret:
                 self.logger.error(
-                    f"Failed to read frame from camera {self.device_name}."
-                    f"{' Attempting reconnection...' if self._auto_reconnect else ' Auto-reconnect is disabled, please restart the app.'}"
+                    f"Unexpected error reading from camera {self.device_name}."
+                    f"{' Retrying...' if self._auto_reconnect else ' Auto-reconnect is disabled, please restart the app.'}"
                 )
                 self._close_camera()
                 return None
