@@ -94,7 +94,9 @@ def draw_colored_dot(draw, x, y, color, size):
     draw.ellipse(bounding_box, fill=color)
 
 
-def draw_bounding_boxes(image: Image.Image | bytes, detection: dict, draw: ImageDraw.ImageDraw = None) -> Image.Image | None:
+def draw_bounding_boxes(
+    image: Image.Image | bytes, detection: dict, draw: ImageDraw.ImageDraw = None, draw_centroid: bool = False
+) -> Image.Image | None:
     """Draw bounding boxes on an image using PIL.
 
     The thickness of the box and font size are scaled based on image size.
@@ -104,6 +106,8 @@ def draw_bounding_boxes(image: Image.Image | bytes, detection: dict, draw: Image
         detection (dict): A dictionary containing detection results with keys 'class_name', 'bounding_box_xyxy', and
             'confidence'.
         draw (ImageDraw.ImageDraw, optional): An existing ImageDraw object to use. If None, a new one is created.
+        draw_centroid (bool, optional): If True, draws a dot at the centroid of the bounding box instead of the box
+        itself. Defaults to False.
     """
     if isinstance(image, bytes):
         image_box = Image.open(io.BytesIO(image))
@@ -163,7 +167,12 @@ def draw_bounding_boxes(image: Image.Image | bytes, detection: dict, draw: Image
         x2_text = x1 + text_width + label_hpad * 2
 
         # Draw bounding box
-        draw.rectangle([x1, y1, x2, y2], outline=box_color, width=box_thickness)
+        if draw_centroid:
+            centroid_x = int((x1 + x2) / 2)
+            centroid_y = int((y1 + y2) / 2)
+            draw_colored_dot(draw, centroid_x, centroid_y, box_color, size=max(3, box_thickness * 2))
+        else:
+            draw.rectangle([x1, y1, x2, y2], outline=box_color, width=box_thickness)
         # Draw label background (dark gray, semi-transparent) on overlay
         label_bg_color = (0, 0, 0, 128)
         overlay = Image.new("RGBA", image_box.size, (0, 0, 0, 0))

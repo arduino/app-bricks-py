@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (C) 2025 ARDUINO SA <http://www.arduino.cc>
 #
 # SPDX-License-Identifier: MPL-2.0
+from typing import Any
 
 from PIL import Image
 from arduino.app_utils import brick, Logger, draw_bounding_boxes
@@ -20,8 +21,19 @@ class ObjectDetection(EdgeImpulseRunnerFacade):
     """
 
     def __init__(self, confidence: float = 0.3):
+        """Initialize the ObjectDetection module.
+
+        Args:
+            confidence (float): Minimum confidence threshold for detections. Default is 0.3 (30%).
+
+        Raises:
+            ValueError: If model information cannot be retrieved.
+        """
         self.confidence = confidence
         super().__init__()
+        self._model_info = self.get_model_info()
+        if not self._model_info:
+            raise ValueError("Failed to retrieve model information. Ensure the Edge Impulse service is running.")
 
     def detect_from_file(self, image_path: str, confidence: float = None) -> dict | None:
         """Process a local image file to detect and identify objects.
@@ -38,7 +50,7 @@ class ObjectDetection(EdgeImpulseRunnerFacade):
         ret = super().infer_from_file(image_path)
         return self._extract_detection(ret, confidence)
 
-    def detect(self, image_bytes, image_type: str = "jpg", confidence: float = None) -> dict:
+    def detect(self, image_bytes, image_type: str = "jpg", confidence: float = None) -> dict[str, list[Any]] | None:
         """Process an in-memory image to detect and identify objects.
 
         Args:
@@ -65,7 +77,13 @@ class ObjectDetection(EdgeImpulseRunnerFacade):
             Image with bounding boxes and key points drawn.
             None if no detection or invalid image.
         """
-        return draw_bounding_boxes(image, detections)
+        if self._model_info.model_type == "object_detection":
+            return draw_bounding_boxes(image, detections)
+        elif self._model_info.model_type == "constrained_object_detection":
+            return draw_bounding_boxes(image, detections, draw_centroid=True)
+        else:
+            logger.error("Model type not supported for drawing bounding boxes.")
+            return None
 
     def _extract_detection(self, item, confidence: float = None):
         if not item:
