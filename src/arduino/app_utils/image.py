@@ -104,10 +104,8 @@ def draw_hollow_dot(draw, x, y, color, size):
         color: A color value that PIL understands (e.g., "red", (255, 0, 0), "#FF0000"). This is the outline color.
         size: The radius of the dot (in pixels).
     """
-    # Calculate the bounding box for the outer circle
-    inner_size = int(size * 1)
-    bounding_box_inner = (x - inner_size, y - inner_size, x + inner_size, y + inner_size)
-    draw.ellipse(bounding_box_inner, outline=color)
+    bounding_box = (x - size, y - size, x + size, y + size)
+    draw.ellipse(bounding_box, outline=color, width=2)
 
 
 def draw_bounding_boxes(
@@ -186,7 +184,7 @@ def draw_bounding_boxes(
         if draw_centroid:
             centroid_x = int((x1 + x2) / 2)
             centroid_y = int((y1 + y2) / 2)
-            draw_hollow_dot(draw, centroid_x, centroid_y, box_color, size=max(3, box_thickness * 2))
+            draw_hollow_dot(draw, centroid_x, centroid_y, box_color, size=10)
         else:
             draw.rectangle([x1, y1, x2, y2], outline=box_color, width=box_thickness)
         # Draw label background (dark gray, semi-transparent) on overlay
