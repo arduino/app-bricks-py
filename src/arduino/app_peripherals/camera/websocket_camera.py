@@ -46,7 +46,6 @@ class WebSocketCamera(BaseCamera):
 
     def __init__(
         self,
-        host: str = "0.0.0.0",
         port: int = 8080,
         timeout: int = 3,
         frame_format: Literal["binary", "base64", "json"] = "binary",
@@ -70,13 +69,14 @@ class WebSocketCamera(BaseCamera):
         super().__init__(resolution, fps, adjustments)
 
         self.protocol = "ws"
-        host_ip = os.getenv("HOST_IP")
-        self.host_ip = host_ip if host_ip is not None else host
-        self.host = host
         self.port = port
         self.timeout = timeout
         self.frame_format = frame_format
         self.logger = logger
+
+        self._host = "0.0.0.0"
+        host_ip = os.getenv("HOST_IP")
+        self._host_ip = host_ip if host_ip is not None else self._host
 
         self._frame_queue = queue.Queue(1)
         self._server = None
@@ -89,7 +89,7 @@ class WebSocketCamera(BaseCamera):
     @property
     def address(self) -> str:
         """Return the WebSocket server address."""
-        return f"{self.protocol}://{self.host_ip}:{self.port}"
+        return f"{self.protocol}://{self._host_ip}:{self.port}"
 
     def _open_camera(self) -> None:
         """Start the WebSocket server."""
@@ -131,7 +131,7 @@ class WebSocketCamera(BaseCamera):
             self._server = await asyncio.wait_for(
                 websockets.serve(
                     self._ws_handler,
-                    self.host,
+                    self._host,
                     self.port,
                     open_timeout=self.timeout,
                     ping_timeout=self.timeout,

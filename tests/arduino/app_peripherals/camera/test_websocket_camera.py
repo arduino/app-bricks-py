@@ -54,8 +54,8 @@ def test_websocket_camera_init_default():
 
 def test_websocket_camera_init_custom():
     """Test WebSocketCamera initialization with custom parameters."""
-    camera = WebSocketCamera(host="127.0.0.1", port=9090, timeout=30, frame_format="json", resolution=(1920, 1080), fps=30)
-    assert camera.address == "ws://127.0.0.1:9090"
+    camera = WebSocketCamera(port=9090, timeout=30, frame_format="json", resolution=(1920, 1080), fps=30)
+    assert camera.address == "ws://0.0.0.0:9090"  # No env var is set, so uses default host
     assert camera.port == 9090
     assert camera.timeout == 30
     assert camera.frame_format == "json"

@@ -38,11 +38,19 @@ def test_camera_factory_with_https_url():
     assert camera.url == "https://192.168.1.100:8080/video"
 
 
+def test_camera_factory_with_ws_url_default_port():
+    """Test Camera factory with WebSocket URL without port."""
+    camera = Camera("ws://localhost")
+    assert isinstance(camera, WebSocketCamera)
+    assert camera.address == "ws://0.0.0.0:8080"
+    assert camera.port == 8080  # Default port
+
+
 def test_camera_factory_with_ws_url():
     """Test Camera factory with WebSocket URL."""
     camera = Camera("ws://0.0.0.0:8080")
     assert isinstance(camera, WebSocketCamera)
-    assert camera.host == "0.0.0.0"
+    assert camera.address == "ws://0.0.0.0:8080"
     assert camera.port == 8080
 
 
@@ -50,16 +58,8 @@ def test_camera_factory_with_wss_url():
     """Test Camera factory with secure WebSocket URL."""
     camera = Camera("wss://192.168.1.100:9090")
     assert isinstance(camera, WebSocketCamera)
-    assert camera.host == "192.168.1.100"
+    assert camera.address == "ws://0.0.0.0:9090"  # Host is always ignored
     assert camera.port == 9090
-
-
-def test_camera_factory_with_ws_url_default_port():
-    """Test Camera factory with WebSocket URL without port."""
-    camera = Camera("ws://localhost")
-    assert isinstance(camera, WebSocketCamera)
-    assert camera.host == "localhost"
-    assert camera.port == 8080  # Default port
 
 
 def test_camera_factory_with_ip_camera_kwargs():

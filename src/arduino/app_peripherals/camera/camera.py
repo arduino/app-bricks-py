@@ -108,9 +108,8 @@ class Camera:
                 # WebSocket Camera - extract host and port from URL
                 from .websocket_camera import WebSocketCamera
 
-                host = parsed.hostname or "localhost"
                 port = parsed.port or 8080
-                return WebSocketCamera(host=host, port=port, resolution=resolution, fps=fps, adjustments=adjustments, **kwargs)
+                return WebSocketCamera(port=port, resolution=resolution, fps=fps, adjustments=adjustments, **kwargs)
             elif source.startswith("/dev/video") or source.startswith("/dev/v4l/by-id/") or source.startswith("/dev/v4l/by-path/"):
                 # V4L device path, by-id, or by-path
                 from .v4l_camera import V4LCamera
