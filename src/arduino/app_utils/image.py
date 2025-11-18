@@ -189,6 +189,7 @@ def draw_bounding_boxes(
 def draw_anomaly_markers(
     image: Image.Image | bytes,
     detection: dict,
+    draw: ImageDraw.ImageDraw = None,
 ) -> Image.Image | None:
     """Draw bounding boxes on an image using PIL.
 
@@ -198,6 +199,10 @@ def draw_anomaly_markers(
         image (Image.Image|bytes): The image to draw on, can be a PIL Image or bytes.
         detection (dict): A dictionary containing detection results with keys 'class_name', 'bounding_box_xyxy', and
             'score'.
+        draw (ImageDraw.ImageDraw, optional): An existing ImageDraw object to use. If None, a new one is created.
+        label_above_box (bool, optional): If True, labels are drawn above the bounding box. Defaults to False.
+        colours (list, optional): List of colors to use for bounding boxes. Defaults to a predefined palette.
+        text_color (str, optional): Color of the text labels. Defaults to "white".
     """
     if isinstance(image, bytes):
         image_box = Image.open(io.BytesIO(image))
@@ -206,6 +211,9 @@ def draw_anomaly_markers(
 
     if image_box.mode != "RGBA":
         image_box = image_box.convert("RGBA")
+
+    if draw is None:
+        draw = ImageDraw.Draw(image_box)
 
     max_anomaly_score = detection.get("anomaly_max_score", 0.0)
 
@@ -239,8 +247,10 @@ def draw_anomaly_markers(
         temp_layer = Image.new("RGBA", image_box.size, (0, 0, 0, 0))
         temp_draw = ImageDraw.Draw(temp_layer)
 
-        temp_draw.rectangle((x1, y1, x2, y2), fill=fill_color_with_alpha)
-        temp_draw.rectangle((x1, y1, x2, y2), outline=outline_color, width=box_thickness)
+        temp_draw.rectangle([x1, y1, x2, y2], fill=fill_color_with_alpha)
+        temp_draw.rectangle([x1, y1, x2, y2], outline=outline_color, width=box_thickness)
         image_box = Image.alpha_composite(image_box, temp_layer)
+
+        draw = ImageDraw.Draw(image_box)
 
     return image_box
