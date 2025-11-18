@@ -9,6 +9,11 @@ from PIL import Image
 from arduino.app_bricks.object_detection import ObjectDetection
 
 
+class ModelInfo:
+    def __init__(self, model_type: str):
+        self.model_type = model_type
+
+
 @pytest.fixture(autouse=True)
 def mock_dependencies(monkeypatch: pytest.MonkeyPatch):
     """Mock external dependencies in __init__.
@@ -19,6 +24,7 @@ def mock_dependencies(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("arduino.app_internal.core.load_brick_compose_file", lambda cls: fake_compose)
     monkeypatch.setattr("arduino.app_internal.core.resolve_address", lambda host: "127.0.0.1")
     monkeypatch.setattr("arduino.app_internal.core.parse_docker_compose_variable", lambda x: [(None, None), (None, "8100")])
+    monkeypatch.setattr("arduino.app_bricks.object_detection.ObjectDetection.get_model_info", lambda self: ModelInfo("object-detection"))
 
 
 @pytest.fixture
