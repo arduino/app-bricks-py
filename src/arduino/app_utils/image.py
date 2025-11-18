@@ -84,22 +84,6 @@ def get_image_bytes(image: str | Image.Image | bytes) -> bytes | None:
         return None
 
 
-def draw_dot(draw, x, y, size, fill_color=None, outline_color=None):
-    """Draws a large colored dot on a PIL Image at the specified coordinate.
-
-    Args:
-        draw: An ImageDraw object from PIL.
-        x: The x-coordinate of the center of the dot.
-        y: The y-coordinate of the center of the dot.
-        size: The radius of the dot (in pixels).
-        fill_color: The fill color of the dot. Default is None (no fill).
-        outline_color: The outline color of the dot. Default is None (no outline).
-    """
-    # Calculate the bounding box for the circle
-    bounding_box = (x - size, y - size, x + size, y + size)
-    draw.ellipse(bounding_box, fill=fill_color, outline=outline_color, width=2)
-
-
 def draw_bounding_boxes(
     image: Image.Image | bytes,
     detection: dict,
@@ -181,7 +165,10 @@ def draw_bounding_boxes(
 
         # Draw bounding box
         if shape == Shape.CIRCLE:
-            draw_dot(draw, int((x1 + x2) / 2), int((y1 + y2) / 2), 10, outline_color=box_color)
+            center_x = int((x1 + x2) / 2)
+            center_y = int((y1 + y2) / 2)
+            bounding_box = (center_x - 10, center_y - 10, center_x + 10, center_y + 10)
+            draw.ellipse(bounding_box, outline=box_color, width=2)
         else:
             draw.rectangle((x1, y1, x2, y2), outline=box_color, width=box_thickness)
         # Draw label background (dark gray, semi-transparent) on overlay
