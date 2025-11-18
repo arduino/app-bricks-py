@@ -64,7 +64,7 @@ class BaseCamera(ABC):
         # Event handling
         self._on_event_cb: Callable[[str, dict], None] | None = None
         self._event_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="CameraEvent")
-    
+
     @property
     def _none_frame_threshold(self) -> int:
         """Heuristic: 750ms of empty frames based on current fps."""

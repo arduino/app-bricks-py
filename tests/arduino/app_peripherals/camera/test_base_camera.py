@@ -380,8 +380,9 @@ def test_capture_multiple_adjustments():
     assert camera.read_call_count == 1
     assert np.all(frame == 10)
 
+
 def test_events():
-    camera = MockedCamera(fps = 5)
+    camera = MockedCamera(fps=5)
     events = []
 
     def event_callback(event, data):
