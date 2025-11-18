@@ -403,7 +403,7 @@ def test_events():
     camera.capture()
     camera.capture()  # Should emit "paused" event
     camera.frame = np.zeros((480, 640, 3), dtype=np.uint8)
-    
+
     assert camera.status == "paused"
 
     camera.capture()  # Should emit "streaming" event

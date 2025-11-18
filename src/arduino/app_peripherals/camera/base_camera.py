@@ -46,7 +46,7 @@ class BaseCamera(ABC):
         self.adjustments = adjustments
         self.logger = logger  # This will be overridden by subclasses if needed
         self.name = self.__class__.__name__  # This will be overridden by subclasses if needed
-        self._status: Literal['disconnected', 'connected', 'streaming', 'paused'] = "disconnected"
+        self._status: Literal["disconnected", "connected", "streaming", "paused"] = "disconnected"
 
         self._camera_lock = threading.Lock()
         self._is_started = False
@@ -66,10 +66,10 @@ class BaseCamera(ABC):
         self._event_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="CameraEvent")
 
     @property
-    def status(self) -> Literal['disconnected', 'connected', 'streaming', 'paused']:
+    def status(self) -> Literal["disconnected", "connected", "streaming", "paused"]:
         """Read-only property for camera status."""
         return self._status
-    
+
     @property
     def _none_frame_threshold(self) -> int:
         """Heuristic: 750ms of empty frames based on current fps."""
@@ -255,7 +255,7 @@ class BaseCamera(ABC):
         """
         pass
 
-    def _set_status(self, new_status: str, data: dict | None = None) -> None:
+    def _set_status(self, new_status: Literal["disconnected", "connected", "streaming", "paused"], data: dict | None = None) -> None:
         """
         Updates the current status of the camera and invokes the registered status
         changed callback in the background, if any.
@@ -271,6 +271,10 @@ class BaseCamera(ABC):
             new_status (str): The name of the new status.
             data (dict): Additional data associated with the status change.
         """
+
+        if self.status == new_status:
+            return
+
         allowed_transitions = {
             "disconnected": ["connected"],
             "connected": ["disconnected", "streaming"],
@@ -278,8 +282,8 @@ class BaseCamera(ABC):
             "paused": ["streaming", "disconnected"],
         }
 
-        # If current status is not in the state machine, do nothing
-        if self._status not in allowed_transitions:
+        # If new status is not in the state machine, ignore it
+        if new_status not in allowed_transitions:
             return
 
         # Check if new_status is an allowed transition for the current status
