@@ -19,7 +19,7 @@ from concurrent.futures import CancelledError
 from arduino.app_utils import Logger
 
 from .camera import BaseCamera
-from .errors import CameraOpenError
+from .errors import CameraConfigError, CameraOpenError
 
 logger = Logger("WebSocketCamera")
 
@@ -71,6 +71,8 @@ class WebSocketCamera(BaseCamera):
         self.protocol = "ws"
         self.port = port
         self.timeout = timeout
+        if frame_format not in ["binary", "base64", "json"]:
+            raise CameraConfigError(f"Invalid frame format: {frame_format}")
         self.frame_format = frame_format
         self.logger = logger
 
@@ -270,7 +272,9 @@ class WebSocketCamera(BaseCamera):
                         frame = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
                         return frame
 
-            return None
+            else:
+                logger.error(f"Unknown video format: {self.frame_format}")
+                return None
 
         except Exception as e:
             logger.warning(f"Error parsing message: {e}")
