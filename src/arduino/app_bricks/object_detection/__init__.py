@@ -75,7 +75,11 @@ class ObjectDetection(EdgeImpulseRunnerFacade):
 
         Returns:
             Image with bounding boxes and key points drawn.
+            None if input image or detections are invalid.
         """
+        if not image or not detections:
+            return None
+
         shape = None
         if self._model_info.model_type == "object_detection":
             shape = Shape.RECTANGLE
