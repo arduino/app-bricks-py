@@ -97,7 +97,7 @@ def draw_dot(draw, x, y, size, fill_color=None, outline_color=None):
     """
     # Calculate the bounding box for the circle
     bounding_box = (x - size, y - size, x + size, y + size)
-    draw.ellipse(bounding_box, fill=fill_color, outline=outline_color)
+    draw.ellipse(bounding_box, fill=fill_color, outline=outline_color, width=2)
 
 
 def draw_bounding_boxes(
