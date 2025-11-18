@@ -57,8 +57,18 @@ class BaseCamera(ABC):
         self.auto_reconnect_delay = 1.0
         self.first_connection_max_retries = 10
 
+        # Stream interruption detection
+        self._consecutive_none_frames = 0
+        self._stream_paused = False
+
+        # Event handling
         self._on_event_cb: Callable[[str, dict], None] | None = None
         self._event_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="CameraEvent")
+    
+    @property
+    def _none_frame_threshold(self) -> int:
+        """Heuristic: 750ms of empty frames based on current fps."""
+        return int(0.75 * self.fps) if self.fps > 0 else 10
 
     def start(self) -> None:
         """
@@ -135,7 +145,17 @@ class BaseCamera(ABC):
 
             frame = self._read_frame()
             if frame is None:
+                self._consecutive_none_frames += 1
+                if self._consecutive_none_frames >= self._none_frame_threshold and not self._stream_paused:
+                    self._stream_paused = True
+                    self._emit_event("paused")
                 return None
+
+            if self._stream_paused:
+                self._stream_paused = False
+                self._emit_event("resumed")
+
+            self._consecutive_none_frames = 0
 
             if self.adjustments is not None:
                 try:
@@ -182,8 +202,8 @@ class BaseCamera(ABC):
                 names depend on the actual camera implementation being used. Some common events are:
                 - 'disconnected': The camera has been disconnected.
                 - 'connected': The camera has been reconnected.
-                - 'streaming_resumed': Streaming has been resumed.
-                - 'streaming_stopped': Streaming has been paused.
+                - 'paused': The stream has been paused and is temporarily unavailable.
+                - 'resumed': The stream has resumed after being paused.
             callback (None): To unregister the current callback, if any.
 
         Example:
@@ -233,7 +253,7 @@ class BaseCamera(ABC):
         """
         pass
 
-    def _emit_event(self, event: str, data: dict) -> None:
+    def _emit_event(self, event: str, data: dict | None = None) -> None:
         """
         Invoke the registered event callback in the background, if any.
 
@@ -242,7 +262,7 @@ class BaseCamera(ABC):
             data (dict): Additional data associated with the event.
         """
         if self._on_event_cb is not None:
-            self._event_executor.submit(self._on_event_cb, event, data)
+            self._event_executor.submit(self._on_event_cb, event, data if data is not None else {})
 
     def __enter__(self):
         """Context manager entry."""

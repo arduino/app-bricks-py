@@ -11,7 +11,7 @@ from arduino.app_peripherals.usb_camera import CameraReadError
 from arduino.app_utils.image.pipeable import PipeableFunction
 
 
-class ConcreteCamera(BaseCamera):
+class MockedCamera(BaseCamera):
     """Concrete implementation of BaseCamera for testing."""
 
     def __init__(self, *args, **kwargs):
@@ -22,6 +22,7 @@ class ConcreteCamera(BaseCamera):
         self.open_error_message = kwargs.pop("open_error_message", "Camera open failed")
         self.close_error_message = kwargs.pop("close_error_message", "Camera close failed")
         self.read_error_message = kwargs.pop("read_error_message", "Frame read failed")
+        self.frame = kwargs.pop("frame", np.zeros((480, 640, 3), dtype=np.uint8))
 
         super().__init__(*args, **kwargs)
 
@@ -35,12 +36,16 @@ class ConcreteCamera(BaseCamera):
         self.open_call_count += 1
         if self.should_fail_open:
             raise RuntimeError(self.open_error_message)
+        else:
+            self._emit_event("connected")
 
     def _close_camera(self):
         """Mock implementation of _close_camera."""
         self.close_call_count += 1
         if self.should_fail_close:
             raise RuntimeError(self.close_error_message)
+        else:
+            self._emit_event("disconnected")
 
     def _read_frame(self):
         """Mock implementation that returns a dummy frame."""
@@ -49,12 +54,12 @@ class ConcreteCamera(BaseCamera):
             raise RuntimeError(self.read_error_message)
         if not self._is_started:
             return None
-        return np.zeros((480, 640, 3), dtype=np.uint8)
+        return self.frame
 
 
 def test_base_camera_init_default():
     """Test BaseCamera initialization with default parameters."""
-    camera = ConcreteCamera()
+    camera = MockedCamera()
     assert camera.resolution == (640, 480)
     assert camera.fps == 10
     assert camera.adjustments is None
@@ -65,7 +70,7 @@ def test_base_camera_init_default():
 def test_base_camera_init_custom():
     """Test BaseCamera initialization with custom parameters."""
     adj_func = lambda x: x
-    camera = ConcreteCamera(resolution=(1920, 1080), fps=30, adjustments=adj_func, auto_reconnect=False)
+    camera = MockedCamera(resolution=(1920, 1080), fps=30, adjustments=adj_func, auto_reconnect=False)
     assert camera.resolution == (1920, 1080)
     assert camera.fps == 30
     assert camera.adjustments == adj_func
@@ -75,7 +80,7 @@ def test_base_camera_init_custom():
 
 def test_is_started_state_transitions():
     """Test is_started return value through different state transitions."""
-    camera = ConcreteCamera()
+    camera = MockedCamera()
 
     assert not camera.is_started()
     camera.start()
@@ -91,7 +96,7 @@ def test_is_started_state_transitions():
 
 def test_start_success():
     """Test that start() calls _open_camera and updates state correctly."""
-    camera = ConcreteCamera()
+    camera = MockedCamera()
 
     assert not camera.is_started()
     assert camera.open_call_count == 0
@@ -104,7 +109,7 @@ def test_start_success():
 
 def test_start_already_started():
     """Test that start() doesn't call _open_camera again when already started."""
-    camera = ConcreteCamera()
+    camera = MockedCamera()
 
     camera.start()
     assert camera.open_call_count == 1
@@ -118,7 +123,7 @@ def test_start_already_started():
 
 def test_start_error_reporting():
     """Test that errors from _open_camera are reported clearly."""
-    camera = ConcreteCamera(should_fail_open=True, open_error_message="Mock camera failure", auto_reconnect=False)
+    camera = MockedCamera(should_fail_open=True, open_error_message="Mock camera failure", auto_reconnect=False)
 
     # Verify error from _open_camera is propagated as-is
     with pytest.raises(RuntimeError, match="Mock camera failure"):
@@ -131,7 +136,7 @@ def test_start_error_reporting():
 
 def test_stop_success():
     """Test that stop() calls _close_camera and updates state correctly."""
-    camera = ConcreteCamera()
+    camera = MockedCamera()
     camera.start()
     assert camera.is_started()
 
@@ -144,7 +149,7 @@ def test_stop_success():
 
 def test_stop_not_started():
     """Test that stop() doesn't call _close_camera when not started."""
-    camera = ConcreteCamera()
+    camera = MockedCamera()
     assert not camera.is_started()
 
     camera.stop()
@@ -156,7 +161,7 @@ def test_stop_not_started():
 
 def test_stop_error_reporting():
     """Test that errors from _close_camera are handled gracefully."""
-    camera = ConcreteCamera(should_fail_close=True, close_error_message="Mock close failure")
+    camera = MockedCamera(should_fail_close=True, close_error_message="Mock close failure")
 
     camera.start()
     assert camera.is_started()
@@ -170,7 +175,7 @@ def test_stop_error_reporting():
 
 def test_capture_when_started():
     """Test that capture() calls _read_frame when started."""
-    camera = ConcreteCamera()
+    camera = MockedCamera()
     camera.start()
 
     initial_read_count = camera.read_call_count
@@ -184,7 +189,7 @@ def test_capture_when_started():
 
 def test_capture_when_stopped():
     """Test that capture() returns an exception when camera is not started."""
-    camera = ConcreteCamera()
+    camera = MockedCamera()
 
     with pytest.raises(CameraReadError):
         camera.capture()
@@ -194,7 +199,7 @@ def test_capture_when_stopped():
 
 def test_capture_read_frame_error_reporting():
     """Test that errors from _read_frame are not caught by capture()."""
-    camera = ConcreteCamera(should_fail_read=True, read_error_message="Mock read failure")
+    camera = MockedCamera(should_fail_read=True, read_error_message="Mock read failure")
     camera.start()
 
     # Verify error from _read_frame is propagated as-is
@@ -210,7 +215,7 @@ def test_capture_with_adjustments():
     def adjustment(frame):
         return frame + 10
 
-    camera = ConcreteCamera(adjustments=adjustment)
+    camera = MockedCamera(adjustments=adjustment)
     camera.start()
 
     frame = camera.capture()
@@ -226,7 +231,7 @@ def test_capture_adjustment_error_reporting():
     def bad_adjustment(frame):
         raise ValueError("Adjustment failed")
 
-    camera = ConcreteCamera(adjustments=bad_adjustment)
+    camera = MockedCamera(adjustments=bad_adjustment)
     camera.start()
 
     with pytest.raises(CameraTransformError, match="Frame transformation failed"):
@@ -237,7 +242,7 @@ def test_capture_adjustment_error_reporting():
 
 def test_capture_rate_limiting():
     """Test that FPS throttling/rate limiting is applied correctly."""
-    camera = ConcreteCamera(fps=10)  # 0.1 seconds between frames
+    camera = MockedCamera(fps=10)  # 0.1 seconds between frames
     camera.start()
 
     start_time = time.monotonic()
@@ -254,7 +259,7 @@ def test_capture_rate_limiting():
 
 def test_stream_can_be_stopped_by_user_code():
     """Test that stream() can be stopped by user code breaking out of the loop."""
-    camera = ConcreteCamera()
+    camera = MockedCamera()
     camera.start()
 
     n_frames = 0
@@ -271,7 +276,7 @@ def test_stream_can_be_stopped_by_user_code():
 
 def test_stream_stops_when_camera_stopped():
     """Test that stream() stops automatically when camera is stopped."""
-    camera = ConcreteCamera()
+    camera = MockedCamera()
     camera.start()
 
     frames = []
@@ -290,7 +295,7 @@ def test_stream_exception_propagation():
     def bad_adjustment(frame):
         raise ValueError("Stream adjustment failed")
 
-    camera = ConcreteCamera(adjustments=bad_adjustment)
+    camera = MockedCamera(adjustments=bad_adjustment)
     camera.start()
 
     # Exception should propagate out of the stream loop
@@ -301,7 +306,7 @@ def test_stream_exception_propagation():
 
 def test_context_manager_calls_start_and_stop():
     """Test that context manager calls start() and stop() when entering and exiting."""
-    camera = ConcreteCamera()
+    camera = MockedCamera()
 
     assert not camera.is_started()
     assert camera.open_call_count == 0
@@ -323,7 +328,7 @@ def test_context_manager_calls_start_and_stop():
 
 def test_context_manager_with_exception():
     """Test that context manager calls stop() even when exception occurs."""
-    camera = ConcreteCamera()
+    camera = MockedCamera()
 
     try:
         with camera:
@@ -341,7 +346,7 @@ def test_context_manager_with_exception():
 
 def test_capture_no_throttling():
     """Test capture behavior with fps=0 (no throttling)."""
-    camera = ConcreteCamera(fps=0)
+    camera = MockedCamera(fps=0)
     camera.start()
 
     start_time = time.monotonic()
@@ -366,7 +371,7 @@ def test_capture_multiple_adjustments():
 
     adjustment2 = PipeableFunction(adj2)
 
-    camera = ConcreteCamera(adjustments=adjustment1 | adjustment2)
+    camera = MockedCamera(adjustments=adjustment1 | adjustment2)
     camera.start()
 
     frame = camera.capture()
@@ -374,3 +379,36 @@ def test_capture_multiple_adjustments():
     # Verify _read_frame was called and adjustments applied: (0 + 5) * 2 = 10
     assert camera.read_call_count == 1
     assert np.all(frame == 10)
+
+def test_events():
+    camera = MockedCamera(fps = 5)
+    events = []
+
+    def event_callback(event, data):
+        events.append((event, data))
+
+    camera.on_event(event_callback)
+
+    camera.start()  # Should emit "connected" event
+
+    camera.capture()
+
+    camera.frame = None
+    camera.capture()
+    camera.capture()
+    camera.capture()  # Should emit "paused" event
+    camera.frame = np.zeros((480, 640, 3), dtype=np.uint8)
+
+    camera.capture()  # Should emit "resumed" event
+
+    camera.stop()  # Should emit "disconnected" event
+
+    # The events list is modified from another thread, so a brief sleep
+    # helps ensure the main thread sees the appended items before asserting.
+    time.sleep(0.1)
+
+    assert len(events) == 4
+    assert "connected" in events[0][0]
+    assert "paused" in events[1][0]
+    assert "resumed" in events[2][0]
+    assert "disconnected" in events[3][0]
