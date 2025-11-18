@@ -94,6 +94,21 @@ def draw_colored_dot(draw, x, y, color, size):
     draw.ellipse(bounding_box, fill=color)
 
 
+def draw_hollow_dot(draw, x, y, size):
+    """Draws a hollow dot (circle) on a PIL Image at the specified coordinate.
+
+    Args:
+        draw: An ImageDraw object from PIL.
+        x: The x-coordinate of the center of the dot.
+        y: The y-coordinate of the center of the dot.
+        size: The radius of the dot (in pixels).
+    """
+    # Calculate the bounding box for the outer circle
+    inner_size = int(size * 0.5)
+    bounding_box_inner = (x - inner_size, y - inner_size, x + inner_size, y + inner_size)
+    draw.ellipse(bounding_box_inner, fill=(0, 0, 0, 0))
+
+
 def draw_bounding_boxes(
     image: Image.Image | bytes, detection: dict, draw: ImageDraw.ImageDraw = None, draw_centroid: bool = False
 ) -> Image.Image | None:
@@ -170,7 +185,7 @@ def draw_bounding_boxes(
         if draw_centroid:
             centroid_x = int((x1 + x2) / 2)
             centroid_y = int((y1 + y2) / 2)
-            draw_colored_dot(draw, centroid_x, centroid_y, box_color, size=max(3, box_thickness * 2))
+            draw_hollow_dot(draw, centroid_x, centroid_y, size=max(3, box_thickness * 2))
         else:
             draw.rectangle([x1, y1, x2, y2], outline=box_color, width=box_thickness)
         # Draw label background (dark gray, semi-transparent) on overlay
