@@ -188,7 +188,7 @@ class V4LCamera(BaseCamera):
             if not ret and frame is None:
                 raise CameraOpenError(f"Read test failed for camera {self.name}")
 
-            self._emit_event("connected", {"camera_name": self.name, "camera_path": self.v4l_path})
+            self._set_status("connected", {"camera_name": self.name, "camera_path": self.v4l_path})
 
         except CameraOpenError:
             if self._cap is not None:
@@ -207,7 +207,7 @@ class V4LCamera(BaseCamera):
         if self._cap is not None:
             self._cap.release()
             self._cap = None
-            self._emit_event("disconnected", {"camera_name": self.name, "camera_path": self.v4l_path})
+            self._set_status("disconnected", {"camera_name": self.name, "camera_path": self.v4l_path})
 
     def _read_frame(self) -> np.ndarray | None:
         """

@@ -6,7 +6,7 @@ import threading
 import time
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
-from typing import Optional, Callable
+from typing import Literal, Optional, Callable
 import numpy as np
 
 from arduino.app_utils import Logger
@@ -46,6 +46,7 @@ class BaseCamera(ABC):
         self.adjustments = adjustments
         self.logger = logger  # This will be overridden by subclasses if needed
         self.name = self.__class__.__name__  # This will be overridden by subclasses if needed
+        self._status: Literal['disconnected', 'connected', 'streaming', 'paused'] = "disconnected"
 
         self._camera_lock = threading.Lock()
         self._is_started = False
@@ -59,12 +60,16 @@ class BaseCamera(ABC):
 
         # Stream interruption detection
         self._consecutive_none_frames = 0
-        self._stream_paused = False
 
         # Event handling
-        self._on_event_cb: Callable[[str, dict], None] | None = None
+        self._on_status_changed_cb: Callable[[str, dict], None] | None = None
         self._event_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="CameraEvent")
 
+    @property
+    def status(self) -> Literal['disconnected', 'connected', 'streaming', 'paused']:
+        """Read-only property for camera status."""
+        return self._status
+    
     @property
     def _none_frame_threshold(self) -> int:
         """Heuristic: 750ms of empty frames based on current fps."""
@@ -146,14 +151,11 @@ class BaseCamera(ABC):
             frame = self._read_frame()
             if frame is None:
                 self._consecutive_none_frames += 1
-                if self._consecutive_none_frames >= self._none_frame_threshold and not self._stream_paused:
-                    self._stream_paused = True
-                    self._emit_event("paused")
+                if self._consecutive_none_frames >= self._none_frame_threshold:
+                    self._set_status("paused")
                 return None
 
-            if self._stream_paused:
-                self._stream_paused = False
-                self._emit_event("resumed")
+            self._set_status("streaming")
 
             self._consecutive_none_frames = 0
 
@@ -190,48 +192,48 @@ class BaseCamera(ABC):
         """Check if the camera has been started."""
         return self._is_started
 
-    def on_event(self, callback: Callable[[str, dict | None], None] | None):
+    def on_status_changed(self, callback: Callable[[str, dict], None] | None):
         """Registers or removes a callback to be triggered on camera lifecycle events.
 
-        When a camera lifecycle event will happen, the provided callback function will be invoked.
+        When a camera status changes, the provided callback function will be invoked.
         If None is provided, the callback will be removed.
 
         Args:
-            callback (Callable[[str, dict | None], None]): A callback that will be called every time a camera
-                lifecycle event will happen with the event name and any associated data. The event
-                names depend on the actual camera implementation being used. Some common events are:
-                - 'disconnected': The camera has been disconnected.
+            callback (Callable[[str, dict], None]): A callback that will be called every time the
+                camera status changes with the new status and any associated data. The status names
+                depend on the actual camera implementation being used. Some common events are:
                 - 'connected': The camera has been reconnected.
+                - 'disconnected': The camera has been disconnected.
+                - 'streaming': The stream is streaming.
                 - 'paused': The stream has been paused and is temporarily unavailable.
-                - 'resumed': The stream has resumed after being paused.
             callback (None): To unregister the current callback, if any.
 
         Example:
-            def on_event(event: str, data: dict):
-                print(f"Camera is now: {event}")
+            def on_status(status: str, data: dict):
+                print(f"Camera is now: {status}")
                 print(f"Data: {data}")
                 # Here you can add your code to react to the event
 
-            camera.on_event(on_event)
+            camera.on_status_changed(on_status)
         """
         if callback is None:
-            self._on_event_cb = None
+            self._on_status_changed_cb = None
         else:
 
-            def _callback_wrapper(event: str, data: dict):
+            def _callback_wrapper(new_status: str, data: dict):
                 try:
-                    callback(event, data)
+                    callback(new_status, data)
                 except Exception as e:
-                    self.logger.error(f"Callback for event '{event}' failed with error: {e}")
+                    self.logger.error(f"Callback for '{new_status}' status failed with error: {e}")
 
-            self._on_event_cb = _callback_wrapper
+            self._on_status_changed_cb = _callback_wrapper
 
     @abstractmethod
     def _open_camera(self) -> None:
         """
         Open the camera connection.
 
-        Must be implemented by subclasses and events should be emitted accordingly.
+        Must be implemented by subclasses and status changes should be emitted accordingly.
         """
         pass
 
@@ -240,7 +242,7 @@ class BaseCamera(ABC):
         """
         Close the camera connection.
 
-        Must be implemented by subclasses and events should be emitted accordingly.
+        Must be implemented by subclasses and status changes should be emitted accordingly.
         """
         pass
 
@@ -253,16 +255,38 @@ class BaseCamera(ABC):
         """
         pass
 
-    def _emit_event(self, event: str, data: dict | None = None) -> None:
+    def _set_status(self, new_status: str, data: dict | None = None) -> None:
         """
-        Invoke the registered event callback in the background, if any.
+        Updates the current status of the camera and invokes the registered status
+        changed callback in the background, if any.
+
+        Only allowed states and transitions are considered, other states are ignored.
+        Allowed states are:
+            - disconnected
+            - connected
+            - streaming
+            - paused
 
         Args:
-            event (str): The name of the event.
-            data (dict): Additional data associated with the event.
+            new_status (str): The name of the new status.
+            data (dict): Additional data associated with the status change.
         """
-        if self._on_event_cb is not None:
-            self._event_executor.submit(self._on_event_cb, event, data if data is not None else {})
+        allowed_transitions = {
+            "disconnected": ["connected"],
+            "connected": ["disconnected", "streaming"],
+            "streaming": ["paused", "disconnected"],
+            "paused": ["streaming", "disconnected"],
+        }
+
+        # If current status is not in the state machine, do nothing
+        if self._status not in allowed_transitions:
+            return
+
+        # Check if new_status is an allowed transition for the current status
+        if new_status in allowed_transitions[self._status]:
+            self._status = new_status
+            if self._on_status_changed_cb is not None:
+                self._event_executor.submit(self._on_status_changed_cb, new_status, data if data is not None else {})
 
     def __enter__(self):
         """Context manager entry."""

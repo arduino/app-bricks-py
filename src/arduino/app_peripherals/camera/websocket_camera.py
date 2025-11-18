@@ -178,7 +178,7 @@ class WebSocketCamera(BaseCamera):
             # Accept the client
             self._client = conn
 
-        self._emit_event("connected", {"client_address": client_addr})
+        self._set_status("connected", {"client_address": client_addr})
 
         self.logger.debug(f"Client connected: {client_addr}")
 
@@ -218,7 +218,7 @@ class WebSocketCamera(BaseCamera):
             async with self._client_lock:
                 if self._client == conn:
                     self._client = None
-                    self._emit_event("disconnected", {"client_address": client_addr})
+                    self._set_status("disconnected", {"client_address": client_addr})
                     self.logger.debug(f"Client disconnected: {client_addr}")
 
     def _parse_message(self, message: str | bytes) -> np.ndarray | None:

@@ -344,7 +344,7 @@ async def test_websocket_camera_client_events():
         events.append((event_type, data))
 
     camera = WebSocketCamera(port=0)
-    camera.on_event(event_listener)
+    camera.on_status_changed(event_listener)
     camera.start()
 
     # This should emit connection and disconnection events
@@ -396,7 +396,7 @@ async def test_websocket_camera_start_stop_events():
         events.append((event_type, data))
 
     camera = WebSocketCamera(port=0)
-    camera.on_event(event_listener)
+    camera.on_status_changed(event_listener)
     camera.start()
 
     await asyncio.sleep(0.1)
@@ -425,7 +425,7 @@ async def test_websocket_camera_stop_event():
         events.append((event_type, data))
 
     camera = WebSocketCamera(port=0, timeout=1)  # Reduced timeout for faster stop() call
-    camera.on_event(event_listener)
+    camera.on_status_changed(event_listener)
     camera.start()
 
     can_close = asyncio.Event()

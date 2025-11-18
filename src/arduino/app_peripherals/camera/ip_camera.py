@@ -89,7 +89,7 @@ class IPCamera(BaseCamera):
             if not ret and frame is None:
                 raise CameraOpenError(f"Read test failed for IP camera at {self.url}")
 
-            self._emit_event("connected", {"camera_url": self.url})
+            self._set_status("connected", {"camera_url": self.url})
 
         except CameraOpenError:
             if self._cap is not None:
@@ -138,7 +138,7 @@ class IPCamera(BaseCamera):
         if self._cap is not None:
             self._cap.release()
             self._cap = None
-            self._emit_event("disconnected", {"camera_url": self.url})
+            self._set_status("disconnected", {"camera_url": self.url})
 
     def _read_frame(self) -> np.ndarray | None:
         """Read a frame from the IP camera with automatic reconnection."""

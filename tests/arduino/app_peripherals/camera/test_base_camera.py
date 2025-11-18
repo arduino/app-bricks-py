@@ -37,7 +37,7 @@ class MockedCamera(BaseCamera):
         if self.should_fail_open:
             raise RuntimeError(self.open_error_message)
         else:
-            self._emit_event("connected")
+            self._set_status("connected")
 
     def _close_camera(self):
         """Mock implementation of _close_camera."""
@@ -45,7 +45,7 @@ class MockedCamera(BaseCamera):
         if self.should_fail_close:
             raise RuntimeError(self.close_error_message)
         else:
-            self._emit_event("disconnected")
+            self._set_status("disconnected")
 
     def _read_frame(self):
         """Mock implementation that returns a dummy frame."""
@@ -388,28 +388,39 @@ def test_events():
     def event_callback(event, data):
         events.append((event, data))
 
-    camera.on_event(event_callback)
+    camera.on_status_changed(event_callback)
 
     camera.start()  # Should emit "connected" event
 
-    camera.capture()
+    assert camera.status == "connected"
+
+    camera.capture()  # Should emit "streaming" event
+
+    assert camera.status == "streaming"
 
     camera.frame = None
     camera.capture()
     camera.capture()
     camera.capture()  # Should emit "paused" event
     camera.frame = np.zeros((480, 640, 3), dtype=np.uint8)
+    
+    assert camera.status == "paused"
 
-    camera.capture()  # Should emit "resumed" event
+    camera.capture()  # Should emit "streaming" event
+
+    assert camera.status == "streaming"
 
     camera.stop()  # Should emit "disconnected" event
+
+    assert camera.status == "disconnected"
 
     # The events list is modified from another thread, so a brief sleep
     # helps ensure the main thread sees the appended items before asserting.
     time.sleep(0.1)
 
-    assert len(events) == 4
+    assert len(events) == 5
     assert "connected" in events[0][0]
-    assert "paused" in events[1][0]
-    assert "resumed" in events[2][0]
-    assert "disconnected" in events[3][0]
+    assert "streaming" in events[1][0]
+    assert "paused" in events[2][0]
+    assert "streaming" in events[3][0]
+    assert "disconnected" in events[4][0]

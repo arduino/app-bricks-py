@@ -493,7 +493,7 @@ class TestV4LCameraEventCallbacks:
         def event_callback(event, data):
             events.append((event, data))
 
-        camera.on_event(event_callback)
+        camera.on_status_changed(event_callback)
 
         camera.start()
         camera.stop()
