@@ -167,7 +167,8 @@ def draw_bounding_boxes(
         if shape == Shape.CIRCLE:
             center_x = int((x1 + x2) / 2)
             center_y = int((y1 + y2) / 2)
-            bounding_box = (center_x - 10, center_y - 10, center_x + 10, center_y + 10)
+            radius = 10
+            bounding_box = (center_x - radius, center_y - radius, center_x + radius, center_y + radius)
             draw.ellipse(bounding_box, outline=box_color, width=2)
         else:
             draw.rectangle((x1, y1, x2, y2), outline=box_color, width=box_thickness)
