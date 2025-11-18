@@ -329,9 +329,7 @@ class WebSocketCamera(BaseCamera):
     def _read_frame(self) -> np.ndarray | None:
         """Read a frame from the queue."""
         try:
-            # Get frame with short timeout to avoid blocking
-            frame = self._frame_queue.get(timeout=0.1)
-            return frame
+            return self._frame_queue.get(timeout=0.1)
         except queue.Empty:
             return None
 
