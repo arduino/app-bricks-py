@@ -43,7 +43,7 @@ def encoded_frame_json(encoded_frame_binary):
 def test_websocket_camera_init_default():
     """Test WebSocketCamera initialization with default parameters."""
     camera = WebSocketCamera()
-    assert camera.address == "ws://0.0.0.0:8080"
+    assert camera.url == "ws://0.0.0.0:8080"
     assert camera.port == 8080
     assert camera.timeout == 3
     assert camera.frame_format == "binary"
@@ -55,7 +55,7 @@ def test_websocket_camera_init_default():
 def test_websocket_camera_init_custom():
     """Test WebSocketCamera initialization with custom parameters."""
     camera = WebSocketCamera(port=9090, timeout=30, frame_format="json", resolution=(1920, 1080), fps=30)
-    assert camera.address == "ws://0.0.0.0:9090"  # No env var is set, so uses default host
+    assert camera.url == "ws://0.0.0.0:9090"  # No env var is set, so uses default host
     assert camera.port == 9090
     assert camera.timeout == 30
     assert camera.frame_format == "json"
@@ -167,7 +167,7 @@ def test_websocket_camera_read_frame_empty_queue():
 async def test_websocket_camera_capture_frame(encoded_frame_binary):
     """Test capturing frame from WebSocket camera."""
     with WebSocketCamera(port=0, frame_format="binary") as camera:
-        async with websockets.connect(camera.address) as ws:
+        async with websockets.connect(camera.url) as ws:
             # Skip welcome message
             await ws.recv()
 
@@ -189,7 +189,7 @@ async def test_websocket_camera_single_client():
 
     try:
         # Connect first client
-        async with websockets.connect(camera.address) as ws1:
+        async with websockets.connect(camera.url) as ws1:
             # First client should receive welcome message
             welcome = await ws1.recv()
             message = json.loads(welcome)
@@ -197,7 +197,7 @@ async def test_websocket_camera_single_client():
 
             # Try to connect second client while first is connected
             try:
-                async with websockets.connect(camera.address) as ws2:
+                async with websockets.connect(camera.url) as ws2:
                     # Second client should receive rejection message
                     rejection = await asyncio.wait_for(ws2.recv(), timeout=1.0)
                     message = json.loads(rejection)
@@ -213,7 +213,7 @@ async def test_websocket_camera_single_client():
 async def test_websocket_camera_welcome_message():
     """Test that welcome message is sent to connected client."""
     with WebSocketCamera(port=0) as camera:
-        async with websockets.connect(camera.address) as ws:
+        async with websockets.connect(camera.url) as ws:
             # Should receive welcome message
             welcome = await asyncio.wait_for(ws.recv(), timeout=1.0)
             message = json.loads(welcome)
@@ -226,7 +226,7 @@ async def test_websocket_camera_welcome_message():
 async def test_websocket_camera_receives_frames(encoded_frame_binary):
     """Test that server receives and queues frames from client."""
     with WebSocketCamera(port=0, frame_format="binary") as camera:
-        async with websockets.connect(camera.address) as ws:
+        async with websockets.connect(camera.url) as ws:
             # Skip welcome message
             await ws.recv()
 
@@ -247,7 +247,7 @@ async def test_websocket_camera_disconnects_client_on_stop():
     camera.start()
 
     try:
-        async with websockets.connect(camera.address) as ws:
+        async with websockets.connect(camera.url) as ws:
             # Client connected, receive welcome message
             welcome = await ws.recv()
             message = json.loads(welcome)
@@ -286,7 +286,7 @@ def test_websocket_camera_stop_without_client():
 async def test_websocket_camera_backpressure(sample_frame):
     """Test that old frames are dropped when new frames arrive faster than they're consumed."""
     with WebSocketCamera(port=0, frame_format="binary") as camera:
-        async with websockets.connect(camera.address) as ws:
+        async with websockets.connect(camera.url) as ws:
             await ws.recv()  # Skip welcome message
 
             _, buffer1 = cv2.imencode(".jpg", np.ones((480, 640, 3), dtype=np.uint8) * 1)
@@ -318,6 +318,7 @@ def test_websocket_camera_with_adjustments(sample_frame):
 
     # Capture uses adjustments
     frame = camera.capture()
+    assert frame is not None
 
     # The adjustment is applied in capture()
     expected = sample_frame + 50
@@ -355,7 +356,7 @@ async def test_websocket_camera_client_events():
 
     # This should emit connection and disconnection events
     async def client_task():
-        async with websockets.connect(camera.address):
+        async with websockets.connect(camera.url):
             pass
 
     # Run client concurrently to properly test event handling
@@ -438,7 +439,7 @@ async def test_websocket_camera_stop_event():
 
     # This should emit a connection event but no disconnection event
     async def client_task():
-        async with websockets.connect(camera.address):
+        async with websockets.connect(camera.url):
             pass
         await can_close.wait()
 

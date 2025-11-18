@@ -74,9 +74,9 @@ class WebSocketCamera(BaseCamera):
         self.frame_format = frame_format
         self.logger = logger
 
-        self._host = "0.0.0.0"
         host_ip = os.getenv("HOST_IP")
-        self._host_ip = host_ip if host_ip is not None else self._host
+        self._bind_ip = "0.0.0.0"
+        self._external_ip = host_ip if host_ip is not None else self._bind_ip
 
         self._frame_queue = queue.Queue(1)
         self._server = None
@@ -87,9 +87,9 @@ class WebSocketCamera(BaseCamera):
         self._client_lock = asyncio.Lock()
 
     @property
-    def address(self) -> str:
+    def url(self) -> str:
         """Return the WebSocket server address."""
-        return f"{self.protocol}://{self._host_ip}:{self.port}"
+        return f"{self.protocol}://{self._external_ip}:{self.port}"
 
     def _open_camera(self) -> None:
         """Start the WebSocket server."""
@@ -101,7 +101,7 @@ class WebSocketCamera(BaseCamera):
         start_timeout = self.timeout
         while time.time() - start_time < start_timeout:
             if self._server is not None:
-                logger.info(f"WebSocket camera server started on {self.address}")
+                logger.info(f"WebSocket camera server started on {self.url}")
                 return
             time.sleep(0.1)
 
@@ -109,7 +109,7 @@ class WebSocketCamera(BaseCamera):
         if self._server_thread.is_alive():
             self._server_thread.join(timeout=1.0)
 
-        raise CameraOpenError(f"Failed to start WebSocket server on {self.address}")
+        raise CameraOpenError(f"Failed to start WebSocket server on {self.url}")
 
     def _start_server_thread(self) -> None:
         """Run WebSocket server in its own thread with event loop."""
@@ -131,7 +131,7 @@ class WebSocketCamera(BaseCamera):
             self._server = await asyncio.wait_for(
                 websockets.serve(
                     self._ws_handler,
-                    self._host,
+                    self._bind_ip,
                     self.port,
                     open_timeout=self.timeout,
                     ping_timeout=self.timeout,
