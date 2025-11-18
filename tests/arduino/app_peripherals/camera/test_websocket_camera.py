@@ -8,6 +8,7 @@ import base64
 import json
 import numpy as np
 import cv2
+import websockets
 
 from arduino.app_peripherals.camera import WebSocketCamera
 
@@ -44,7 +45,7 @@ def test_websocket_camera_init_default():
     camera = WebSocketCamera()
     assert camera.host == "0.0.0.0"
     assert camera.port == 8080
-    assert camera.timeout == 10
+    assert camera.timeout == 3
     assert camera.frame_format == "binary"
     assert camera.resolution == (640, 480)
     assert camera.fps == 10
@@ -159,10 +160,8 @@ def test_websocket_camera_read_frame_empty_queue():
 @pytest.mark.asyncio
 async def test_websocket_camera_capture_frame(encoded_frame_binary):
     """Test capturing frame from WebSocket camera."""
-    import websockets
-
     with WebSocketCamera(port=0, frame_format="binary") as camera:
-        async with websockets.connect(f"ws://{camera.host}:{camera.port}") as ws:
+        async with websockets.connect(f"{camera.protocol}://{camera.host}:{camera.port}") as ws:
             # Skip welcome message
             await ws.recv()
 
@@ -179,14 +178,12 @@ async def test_websocket_camera_capture_frame(encoded_frame_binary):
 @pytest.mark.asyncio
 async def test_websocket_camera_single_client():
     """Test WebSocket server accepts only one client at a time."""
-    import websockets
-
     camera = WebSocketCamera(port=0)  # Use port 0 for auto-assignment
     camera.start()
 
     try:
         # Connect first client
-        async with websockets.connect(f"ws://{camera.host}:{camera.port}") as ws1:
+        async with websockets.connect(f"{camera.protocol}://{camera.host}:{camera.port}") as ws1:
             # First client should receive welcome message
             welcome = await ws1.recv()
             message = json.loads(welcome)
@@ -194,7 +191,7 @@ async def test_websocket_camera_single_client():
 
             # Try to connect second client while first is connected
             try:
-                async with websockets.connect(f"ws://{camera.host}:{camera.port}") as ws2:
+                async with websockets.connect(f"{camera.protocol}://{camera.host}:{camera.port}") as ws2:
                     # Second client should receive rejection message
                     rejection = await asyncio.wait_for(ws2.recv(), timeout=1.0)
                     message = json.loads(rejection)
@@ -209,10 +206,8 @@ async def test_websocket_camera_single_client():
 @pytest.mark.asyncio
 async def test_websocket_camera_welcome_message():
     """Test that welcome message is sent to connected client."""
-    import websockets
-
     with WebSocketCamera(port=0) as camera:
-        async with websockets.connect(f"ws://{camera.host}:{camera.port}") as ws:
+        async with websockets.connect(f"{camera.protocol}://{camera.host}:{camera.port}") as ws:
             # Should receive welcome message
             welcome = await asyncio.wait_for(ws.recv(), timeout=1.0)
             message = json.loads(welcome)
@@ -224,10 +219,8 @@ async def test_websocket_camera_welcome_message():
 @pytest.mark.asyncio
 async def test_websocket_camera_receives_frames(encoded_frame_binary):
     """Test that server receives and queues frames from client."""
-    import websockets
-
     with WebSocketCamera(port=0, frame_format="binary") as camera:
-        async with websockets.connect(f"ws://{camera.host}:{camera.port}") as ws:
+        async with websockets.connect(f"{camera.protocol}://{camera.host}:{camera.port}") as ws:
             # Skip welcome message
             await ws.recv()
 
@@ -244,13 +237,11 @@ async def test_websocket_camera_receives_frames(encoded_frame_binary):
 @pytest.mark.asyncio
 async def test_websocket_camera_disconnects_client_on_stop():
     """Test that connected client is disconnected when camera stops."""
-    import websockets
-
     camera = WebSocketCamera(port=0)
     camera.start()
 
     try:
-        async with websockets.connect(f"ws://{camera.host}:{camera.port}") as ws:
+        async with websockets.connect(f"{camera.protocol}://{camera.host}:{camera.port}") as ws:
             # Client connected, receive welcome message
             welcome = await ws.recv()
             message = json.loads(welcome)
@@ -288,12 +279,9 @@ def test_websocket_camera_stop_without_client():
 @pytest.mark.asyncio
 async def test_websocket_camera_backpressure(sample_frame):
     """Test that old frames are dropped when new frames arrive faster than they're consumed."""
-    import websockets
-
     with WebSocketCamera(port=0, frame_format="binary") as camera:
-        async with websockets.connect(f"ws://{camera.host}:{camera.port}") as ws:
-            # Skip welcome message
-            await ws.recv()
+        async with websockets.connect(f"{camera.protocol}://{camera.host}:{camera.port}") as ws:
+            await ws.recv()  # Skip welcome message
 
             _, buffer1 = cv2.imencode(".jpg", np.ones((480, 640, 3), dtype=np.uint8) * 1)
             _, buffer2 = cv2.imencode(".jpg", np.ones((480, 640, 3), dtype=np.uint8) * 2)
@@ -309,7 +297,7 @@ async def test_websocket_camera_backpressure(sample_frame):
             assert frame is not None
 
             mean_value = np.mean(frame)
-            assert mean_value == 3
+            assert mean_value == 3  # Only the last one should be kept
 
 
 def test_websocket_camera_with_adjustments(sample_frame):
@@ -335,3 +323,130 @@ def test_websocket_camera_multiple_formats(fmt):
     """Test WebSocket camera can be initialized with different formats."""
     camera = WebSocketCamera(frame_format=fmt)
     assert camera.frame_format == fmt
+
+
+@pytest.mark.asyncio
+async def test_websocket_camera_client_events():
+    """
+    Test that WebSocket camera emits connection and disconnection events depending on client activity.
+    """
+    events = []
+    main_loop = asyncio.get_running_loop()
+
+    connected = asyncio.Event()
+    disconnected = asyncio.Event()
+
+    def event_listener(event_type, data):
+        if event_type == "connected":
+            main_loop.call_soon_threadsafe(connected.set)
+        if event_type == "disconnected":
+            main_loop.call_soon_threadsafe(disconnected.set)
+        events.append((event_type, data))
+
+    camera = WebSocketCamera(port=0)
+    camera.on_event(event_listener)
+    camera.start()
+
+    # This should emit connection and disconnection events
+    async def client_task():
+        async with websockets.connect(f"{camera.protocol}://{camera.host}:{camera.port}"):
+            pass
+
+    # Run client concurrently to properly test event handling
+    client = asyncio.create_task(client_task())
+
+    try:
+        await asyncio.wait_for(connected.wait(), timeout=5.0)
+    except asyncio.TimeoutError:
+        pytest.fail("Connection event was not emitted within timeout")
+    try:
+        await asyncio.wait_for(disconnected.wait(), timeout=5.0)
+    except asyncio.TimeoutError:
+        pytest.fail("Disconnection event was not emitted within timeout")
+
+    await client  # Ensure client task is finished and check for errors
+
+    # The events list is modified from another thread, so a brief sleep
+    # helps ensure the main thread sees the appended items before asserting.
+    await asyncio.sleep(0.1)
+
+    assert len(events) == 2
+    assert "connected" in events[0][0]
+    assert "disconnected" in events[1][0]
+
+    camera.stop()  # This should not emit a disconnection
+
+    await asyncio.sleep(0.1)
+
+    # Check that stop() didn't emit additional events
+    assert len(events) == 2
+    assert "connected" in events[0][0]
+    assert "disconnected" in events[1][0]
+
+
+@pytest.mark.asyncio
+async def test_websocket_camera_start_stop_events():
+    """
+    Test that WebSocket camera doesn't emit connection and disconnection events when started and
+    stopped without any client connections.
+    """
+    events = []
+
+    def event_listener(event_type, data):
+        events.append((event_type, data))
+
+    camera = WebSocketCamera(port=0)
+    camera.on_event(event_listener)
+    camera.start()
+
+    await asyncio.sleep(0.1)
+
+    camera.stop()  # This should not emit a disconnection
+
+    await asyncio.sleep(0.1)
+
+    # Check that connection and disconnection events weren't emitted
+    assert len(events) == 0
+
+
+@pytest.mark.asyncio
+async def test_websocket_camera_stop_event():
+    """
+    Test that WebSocket camera emits a disconnection event when stopped if
+    there's an active client connection.
+    """
+    events = []
+
+    connected = asyncio.Event()
+
+    def event_listener(event_type, data):
+        if event_type == "connected":
+            connected.set()
+        events.append((event_type, data))
+
+    camera = WebSocketCamera(port=0, timeout=1)  # Reduced timeout for faster stop() call
+    camera.on_event(event_listener)
+    camera.start()
+
+    can_close = asyncio.Event()
+
+    # This should emit a connection event but no disconnection event
+    async def client_task():
+        async with websockets.connect(f"{camera.protocol}://{camera.host}:{camera.port}"):
+            pass
+        await can_close.wait()
+
+    asyncio.create_task(client_task())
+
+    try:
+        await asyncio.wait_for(connected.wait(), timeout=5.0)
+    except asyncio.TimeoutError:
+        pytest.fail("Connection event was not emitted within timeout")
+
+    camera.stop()  # This should emit a disconnection
+    can_close.set()
+
+    # Check that connection and disconnection events weren't emitted
+    assert len(events) == 2
+    assert "connected" in events[0][0]
+    assert "disconnected" in events[1][0]

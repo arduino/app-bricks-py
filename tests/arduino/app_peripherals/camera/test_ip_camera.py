@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import time
 import pytest
 import numpy as np
 from unittest.mock import MagicMock, patch
@@ -154,44 +155,43 @@ def test_ip_camera_start_fails_to_open(mock_videocapture, mock_requests):
     mock_cap.isOpened.return_value = False
 
     camera = IPCamera(url="rtsp://192.168.1.100/stream")
+    camera.auto_reconnect_delay = 0
 
     with pytest.raises(CameraOpenError, match="Failed to open IP camera"):
         camera.start()
 
+    assert mock_cap.isOpened.call_count == 10
 
-def test_ip_camera_start_cannot_read_frame(mock_videocapture, mock_requests):
+
+def test_ip_camera_start_fails_to_read_frame(mock_videocapture, mock_requests):
     """Test error when cannot read initial frame."""
     _, mock_cap = mock_videocapture
     mock_cap.read.return_value = (False, None)
 
     camera = IPCamera(url="rtsp://192.168.1.100/stream")
+    camera.auto_reconnect_delay = 0
 
-    with pytest.raises(CameraOpenError, match="Cannot read from IP camera"):
+    with pytest.raises(CameraOpenError, match="Read test failed for IP camera at rtsp://192.168.1.100/stream"):
         camera.start()
 
+    assert mock_cap.read.call_count == 10
 
-def test_ip_camera_http_connectivity_test_failed(mock_videocapture, mock_requests):
+
+def test_ip_camera_start_http_connectivity_test_failed(mock_videocapture, mock_requests):
     """Test error when HTTP connectivity test fails."""
     mock_requests.head.return_value.status_code = 404
     mock_requests.RequestException = Exception  # Mock the exception class
 
     camera = IPCamera(url="http://192.168.1.100:8080/video")
+    camera.auto_reconnect_delay = 0
 
     with pytest.raises(CameraOpenError, match="HTTP camera returned status 404"):
         camera.start()
 
-
-def test_ip_camera_http_connectivity_test_206(mock_videocapture, mock_requests):
-    """Test HTTP connectivity with 206 Partial Content response."""
-    mock_requests.head.return_value.status_code = 206
-
-    camera = IPCamera(url="http://192.168.1.100:8080/video")
-    camera.start()
-
-    assert camera.is_started()
+    assert mock_requests.head.call_count == 10
 
 
-def test_ip_camera_http_connectivity_network_error(mock_videocapture, mock_requests):
+def test_ip_camera_start_http_connectivity_network_fail(mock_videocapture, mock_requests):
     """Test error when HTTP request raises exception."""
 
     # Create a real exception to raise
@@ -202,9 +202,24 @@ def test_ip_camera_http_connectivity_network_error(mock_videocapture, mock_reque
     mock_requests.head.side_effect = MockRequestException("Network error")
 
     camera = IPCamera(url="http://192.168.1.100:8080/video")
+    camera.auto_reconnect_delay = 0
 
     with pytest.raises(CameraOpenError, match="Cannot connect to HTTP camera"):
         camera.start()
+
+    assert mock_requests.head.call_count == 10
+
+
+def test_ip_camera_start_http_connectivity_test_206(mock_videocapture, mock_requests):
+    """Test HTTP connectivity with 206 Partial Content response."""
+    _, mock_cap = mock_videocapture
+    mock_requests.head.return_value.status_code = 206
+
+    camera = IPCamera(url="http://192.168.1.100:8080/video")
+    camera.start()
+
+    assert camera.is_started()
+    mock_cap.isOpened.assert_called_once()
 
 
 def test_ip_camera_stop(mock_videocapture, mock_requests):
@@ -241,7 +256,7 @@ def test_ip_camera_read_frame_auto_reconnect(mock_videocapture, mock_requests):
     # Don't start the camera, let _read_frame trigger reconnection
     camera._is_started = True
 
-    frame = camera._read_frame()
+    frame = camera.capture()
 
     # Should attempt to reconnect
     assert frame is not None
@@ -287,3 +302,25 @@ def test_ip_camera_timeout_custom(mock_videocapture, mock_requests):
 
     call_kwargs = mock_requests.head.call_args[1]
     assert call_kwargs["timeout"] == 30
+
+
+def test_events(mock_videocapture, mock_requests):
+    """Test that IPCamera emits events on connect and disconnect."""
+    camera = IPCamera(url="rtsp://192.168.1.100/stream")
+    events = []
+
+    def event_callback(event, data):
+        events.append((event, data))
+
+    camera.on_event(event_callback)
+
+    camera.start()
+    camera.stop()
+
+    # The events list is modified from another thread, so a brief sleep
+    # helps ensure the main thread sees the appended items before asserting.
+    time.sleep(0.1)
+
+    assert len(events) == 2
+    assert "connected" in events[0][0]
+    assert "disconnected" in events[1][0]

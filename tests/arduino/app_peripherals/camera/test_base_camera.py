@@ -6,7 +6,7 @@ import pytest
 import time
 import numpy as np
 
-from arduino.app_peripherals.camera import BaseCamera, CameraOpenError, CameraTransformError
+from arduino.app_peripherals.camera import BaseCamera, CameraTransformError
 from arduino.app_peripherals.usb_camera import CameraReadError
 from arduino.app_utils.image.pipeable import PipeableFunction
 
@@ -58,16 +58,19 @@ def test_base_camera_init_default():
     assert camera.resolution == (640, 480)
     assert camera.fps == 10
     assert camera.adjustments is None
+    assert camera.auto_reconnect
     assert not camera.is_started()
 
 
 def test_base_camera_init_custom():
     """Test BaseCamera initialization with custom parameters."""
     adj_func = lambda x: x
-    camera = ConcreteCamera(resolution=(1920, 1080), fps=30, adjustments=adj_func)
+    camera = ConcreteCamera(resolution=(1920, 1080), fps=30, adjustments=adj_func, auto_reconnect=False)
     assert camera.resolution == (1920, 1080)
     assert camera.fps == 30
     assert camera.adjustments == adj_func
+    assert not camera.auto_reconnect
+    assert not camera.is_started()
 
 
 def test_is_started_state_transitions():
@@ -115,10 +118,10 @@ def test_start_already_started():
 
 def test_start_error_reporting():
     """Test that errors from _open_camera are reported clearly."""
-    camera = ConcreteCamera(should_fail_open=True, open_error_message="Mock camera failure")
+    camera = ConcreteCamera(should_fail_open=True, open_error_message="Mock camera failure", auto_reconnect=False)
 
-    # Verify error is properly wrapped and reported
-    with pytest.raises(CameraOpenError, match="Failed to open camera: Mock camera failure"):
+    # Verify error from _open_camera is propagated as-is
+    with pytest.raises(RuntimeError, match="Mock camera failure"):
         camera.start()
 
     # Verify camera state remains stopped on error
@@ -194,7 +197,7 @@ def test_capture_read_frame_error_reporting():
     camera = ConcreteCamera(should_fail_read=True, read_error_message="Mock read failure")
     camera.start()
 
-    # capture() should propagate the exception from _read_frame
+    # Verify error from _read_frame is propagated as-is
     with pytest.raises(RuntimeError, match="Mock read failure"):
         camera.capture()
 

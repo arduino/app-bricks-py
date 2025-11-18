@@ -14,7 +14,7 @@ def test_camera_factory_with_v4l_device(v4l_device_argument):
     """Test Camera factory with multiple device paths (V4L)."""
     camera = Camera(v4l_device_argument)
     assert isinstance(camera, V4LCamera)
-    assert camera.device_path == "/dev/v4l/by-id/usb-Camera-video-index0"
+    assert camera.v4l_path == "/dev/v4l/by-id/usb-Camera-video-index0"
 
 
 def test_camera_factory_with_rtsp_url():

@@ -11,7 +11,7 @@ from collections.abc import Callable
 from arduino.app_utils import Logger
 
 from .camera import BaseCamera
-from .errors import CameraConfigError, CameraOpenError
+from .errors import CameraConfigError, CameraOpenError, CameraReadError
 
 logger = Logger("IPCamera")
 
@@ -56,6 +56,8 @@ class IPCamera(BaseCamera):
 
         self._cap = None
 
+        self._last_reconnection_attempt = 0.0  # Used for auto-reconnection when _read_frame is called
+
         self._validate_url()
 
     def _validate_url(self) -> None:
@@ -75,20 +77,31 @@ class IPCamera(BaseCamera):
         if self.url.startswith(("http://", "https://")):
             self._test_http_connectivity()
 
-        self._cap = cv2.VideoCapture(url)
-        if not self._cap.isOpened():
-            raise CameraOpenError(f"Failed to open IP camera: {self.url}")
+        try:
+            self._cap = cv2.VideoCapture(url)
+            if not self._cap.isOpened():
+                raise CameraOpenError(f"Failed to open IP camera at {self.url}")
 
-        self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer to minimize latency
+            self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer to minimize latency
 
-        # Test by reading one frame
-        ret, frame = self._cap.read()
-        if not ret or frame is None:
-            self._cap.release()
-            self._cap = None
-            raise CameraOpenError(f"Cannot read from IP camera: {self.url}")
+            # Test by reading one frame
+            ret, frame = self._cap.read()
+            if not ret and frame is None:
+                raise CameraOpenError(f"Read test failed for IP camera at {self.url}")
 
-        logger.info(f"Opened IP camera: {self.url}")
+            self._emit_event("connected", {"camera_url": self.url})
+
+        except CameraOpenError:
+            if self._cap is not None:
+                self._cap.release()
+                self._cap = None
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error opening IP camera at {self.url}: {e}")
+            if self._cap is not None:
+                self._cap.release()
+                self._cap = None
+            raise
 
     def _build_url(self) -> str:
         """Build URL with authentication if credentials provided."""
@@ -125,23 +138,37 @@ class IPCamera(BaseCamera):
         if self._cap is not None:
             self._cap.release()
             self._cap = None
+            self._emit_event("disconnected", {"camera_url": self.url})
 
     def _read_frame(self) -> np.ndarray | None:
         """Read a frame from the IP camera with automatic reconnection."""
-        if self._cap is None:
-            logger.info(f"No connection to IP camera {self.url}, attempting to reconnect")
-            try:
-                self._open_camera()
-            except Exception as e:
-                logger.error(f"Failed to reconnect to IP camera {self.url}: {e}")
-                return None
+        try:
+            if self._cap is None:
+                if not self.auto_reconnect:
+                    return None
 
-        ret, frame = self._cap.read()
-        if ret and frame is not None:
+                # Prevent spamming connection attempts
+                import time
+
+                current_time = time.monotonic()
+                elapsed = current_time - self._last_reconnection_attempt
+                if elapsed < self.auto_reconnect_delay:
+                    time.sleep(self.auto_reconnect_delay - elapsed)
+                self._last_reconnection_attempt = current_time
+
+                self._open_camera()
+                self.logger.info(f"Successfully reconnected to IP camera at {self.url}")
+
+            ret, frame = self._cap.read()
+            if (not ret and frame is None) or not self._cap.isOpened():
+                raise CameraReadError(f"Invalid frame returned")
+
             return frame
 
-        if not self._cap.isOpened():
-            logger.warning(f"IP camera connection dropped: {self.url}")
+        except (CameraOpenError, CameraReadError, Exception) as e:
+            self.logger.error(
+                f"Failed to read from IP camera at {self.url}: {e}."
+                f"{' Retrying...' if self.auto_reconnect else ' Auto-reconnect is disabled, please restart the app.'}"
+            )
             self._close_camera()  # Will reconnect on next call
-
-        return None
+            return None

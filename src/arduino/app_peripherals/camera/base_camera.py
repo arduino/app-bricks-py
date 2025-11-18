@@ -5,6 +5,7 @@
 import threading
 import time
 from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, Callable
 import numpy as np
 
@@ -28,6 +29,7 @@ class BaseCamera(ABC):
         resolution: tuple[int, int] = (640, 480),
         fps: int = 10,
         adjustments: Callable[[np.ndarray], np.ndarray] | None = None,
+        auto_reconnect: bool = True,
     ):
         """
         Initialize the camera base.
@@ -37,43 +39,75 @@ class BaseCamera(ABC):
             fps (int): Frames per second to capture from the camera.
             adjustments (callable, optional): Function or function pipeline to adjust frames that takes
                 a numpy array and returns a numpy array. Default: None
+            auto_reconnect (bool, optional): Enable automatic reconnection on failure. Default: True.
         """
         self.resolution = resolution
         self.fps = fps
         self.adjustments = adjustments
         self.logger = logger  # This will be overridden by subclasses if needed
+        self.name = self.__class__.__name__  # This will be overridden by subclasses if needed
 
         self._camera_lock = threading.Lock()
         self._is_started = False
         self._last_capture_time = time.monotonic()
         self._desired_interval = 1.0 / fps if fps > 0 else 0
 
-    def start(self) -> None:
-        """Start the camera capture."""
-        with self._camera_lock:
-            if self._is_started:
-                return
+        # Auto-reconnection parameters
+        self.auto_reconnect = auto_reconnect
+        self.auto_reconnect_delay = 1.0
+        self.first_connection_max_retries = 10
 
-            try:
-                self._open_camera()
-                self._is_started = True
-                self._last_capture_time = time.monotonic()
-                self.logger.info(f"Successfully opened {self.__class__.__name__}")
-            except Exception as e:
-                raise CameraOpenError(f"Failed to open camera: {e}")
+        self._on_event_cb: Callable[[str, dict], None] | None = None
+        self._event_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="CameraEvent")
+
+    def start(self) -> None:
+        """
+        Start the camera capture with retries, if enabled.
+
+        Raises:
+            CameraOpenError: If the camera fails to start after the retries.
+            Exception: If the underlying implementation fails to start the camera.
+        """
+        with self._camera_lock:
+            self.logger.info("Starting camera...")
+
+            attempt = 0
+            while not self.is_started():
+                try:
+                    self._open_camera()
+                    self._is_started = True
+                    self._last_capture_time = time.monotonic()
+                    self.logger.info(f"Successfully started {self.name}")
+                except Exception as e:
+                    if not self.auto_reconnect:
+                        raise
+                    attempt += 1
+                    if attempt >= self.first_connection_max_retries:
+                        raise CameraOpenError(
+                            f"Failed to start camera {self.name} after {self.first_connection_max_retries} attempts, last error is: {e}"
+                        )
+
+                    delay = min(self.auto_reconnect_delay * (2 ** (attempt - 1)), 60)  # Exponential backoff
+                    self.logger.warning(
+                        f"Failed to start camera {self.name} (attempt {attempt}/{self.first_connection_max_retries}). Retrying in {delay:.1f}s..."
+                    )
+                    time.sleep(delay)
 
     def stop(self) -> None:
         """Stop the camera and release resources."""
         with self._camera_lock:
-            if not self._is_started:
+            if not self.is_started():
                 return
+
+            self.logger.info("Stopping camera...")
 
             try:
                 self._close_camera()
+                self._event_executor.shutdown()
                 self._is_started = False
-                self.logger.info(f"Successfully closed {self.__class__.__name__}")
+                self.logger.info(f"Successfully stopped {self.name}")
             except Exception as e:
-                self.logger.warning(f"Failed to close camera: {e}")
+                self.logger.warning(f"Failed to stop camera: {e}")
 
     def capture(self) -> Optional[np.ndarray]:
         """
@@ -84,13 +118,11 @@ class BaseCamera(ABC):
 
         Raises:
             CameraReadError: If the camera is not started.
+            Exception: If the underlying implementation fails to read a frame.
         """
-        if not self.is_started():
-            raise CameraReadError(f"Attempted to read from {self.__class__.__name__} before starting it.")
-
         with self._camera_lock:
             if not self.is_started():
-                raise CameraReadError(f"Attempted to read from {self.__class__.__name__} before starting it.")
+                raise CameraReadError(f"Attempted to read from {self.name} before starting it.")
 
             # Apply FPS throttling
             if self._desired_interval > 0:
@@ -124,7 +156,7 @@ class BaseCamera(ABC):
             np.ndarray: Video frames as numpy arrays.
         """
         if not self.is_started():
-            raise CameraReadError(f"Attempted to acquire stream from {self.__class__.__name__} before starting it.")
+            raise CameraReadError(f"Attempted to acquire stream from {self.name} before starting it.")
 
         while self.is_started():
             frame = self.capture()
@@ -135,23 +167,82 @@ class BaseCamera(ABC):
                 time.sleep(0.001)
 
     def is_started(self) -> bool:
-        """Check if the camera is started."""
+        """Check if the camera has been started."""
         return self._is_started
+
+    def on_event(self, callback: Callable[[str, dict | None], None] | None):
+        """Registers or removes a callback to be triggered on camera lifecycle events.
+
+        When a camera lifecycle event will happen, the provided callback function will be invoked.
+        If None is provided, the callback will be removed.
+
+        Args:
+            callback (Callable[[str, dict | None], None]): A callback that will be called every time a camera
+                lifecycle event will happen with the event name and any associated data. The event
+                names depend on the actual camera implementation being used. Some common events are:
+                - 'disconnected': The camera has been disconnected.
+                - 'connected': The camera has been reconnected.
+                - 'streaming_resumed': Streaming has been resumed.
+                - 'streaming_stopped': Streaming has been paused.
+            callback (None): To unregister the current callback, if any.
+
+        Example:
+            def on_event(event: str, data: dict):
+                print(f"Camera is now: {event}")
+                print(f"Data: {data}")
+                # Here you can add your code to react to the event
+
+            camera.on_event(on_event)
+        """
+        if callback is None:
+            self._on_event_cb = None
+        else:
+
+            def _callback_wrapper(event: str, data: dict):
+                try:
+                    callback(event, data)
+                except Exception as e:
+                    self.logger.error(f"Callback for event '{event}' failed with error: {e}")
+
+            self._on_event_cb = _callback_wrapper
 
     @abstractmethod
     def _open_camera(self) -> None:
-        """Open the camera connection. Must be implemented by subclasses."""
+        """
+        Open the camera connection.
+
+        Must be implemented by subclasses and events should be emitted accordingly.
+        """
         pass
 
     @abstractmethod
     def _close_camera(self) -> None:
-        """Close the camera connection. Must be implemented by subclasses."""
+        """
+        Close the camera connection.
+
+        Must be implemented by subclasses and events should be emitted accordingly.
+        """
         pass
 
     @abstractmethod
     def _read_frame(self) -> Optional[np.ndarray]:
-        """Read a single frame from the camera. Must be implemented by subclasses."""
+        """
+        Read a single frame from the camera.
+
+        Must be implemented by subclasses.
+        """
         pass
+
+    def _emit_event(self, event: str, data: dict) -> None:
+        """
+        Invoke the registered event callback in the background, if any.
+
+        Args:
+            event (str): The name of the event.
+            data (dict): Additional data associated with the event.
+        """
+        if self._on_event_cb is not None:
+            self._event_executor.submit(self._on_event_cb, event, data)
 
     def __enter__(self):
         """Context manager entry."""
