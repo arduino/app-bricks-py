@@ -106,7 +106,7 @@ def draw_hollow_dot(draw, x, y, size):
     # Calculate the bounding box for the outer circle
     inner_size = int(size * 0.5)
     bounding_box_inner = (x - inner_size, y - inner_size, x + inner_size, y + inner_size)
-    draw.ellipse(bounding_box_inner, fill=(0, 0, 0, 0))
+    draw.ellipse(bounding_box_inner)
 
 
 def draw_bounding_boxes(
