@@ -4,7 +4,7 @@
 from typing import Any
 
 from PIL import Image
-from arduino.app_utils import brick, Logger, draw_bounding_boxes
+from arduino.app_utils import brick, Logger, draw_bounding_boxes, Shape
 from arduino.app_internal.core import EdgeImpulseRunnerFacade
 
 logger = Logger("ObjectDetection")
@@ -75,15 +75,13 @@ class ObjectDetection(EdgeImpulseRunnerFacade):
 
         Returns:
             Image with bounding boxes and key points drawn.
-            None if no detection or invalid image.
         """
+        shape = None
         if self._model_info.model_type == "object_detection":
-            return draw_bounding_boxes(image, detections)
+            shape = Shape.RECTANGLE
         elif self._model_info.model_type == "constrained_object_detection":
-            return draw_bounding_boxes(image, detections, draw_centroid=True)
-        else:
-            logger.error("Model type not supported for drawing bounding boxes.")
-            return None
+            shape = Shape.CIRCLE
+        return draw_bounding_boxes(image, detections, shape=shape)
 
     def _extract_detection(self, item, confidence: float = None):
         if not item:
