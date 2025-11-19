@@ -64,7 +64,7 @@ class RemoteSensor:
         self.auto_reconnect = auto_reconnect
         self.auto_reconnect_delay = 1.0
         self.first_connection_max_retries = 10
-    
+
         host_ip = os.getenv("HOST_IP")
         self._bind_ip = "0.0.0.0"
         self._external_ip = host_ip if host_ip is not None else self._bind_ip
@@ -77,7 +77,7 @@ class RemoteSensor:
         self._stop_event = asyncio.Event()
         self._client: Optional[websockets.ServerConnection] = None
         self._client_lock = asyncio.Lock()
-        
+
         # Event handling
         # These callbacks doesn't require a lock as long as we're running on CPython
         self._on_datapoint_cb: Optional[Callable[[dict], None]] = None
@@ -308,7 +308,7 @@ class RemoteSensor:
         """Stop the WebSocket server."""
         if not self.is_started():
             return
-        
+
         self.logger.info("Stopping remote sensor...")
 
         try:
