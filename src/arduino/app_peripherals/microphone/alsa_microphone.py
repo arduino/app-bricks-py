@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import time
 from typing import Optional, Tuple
 
 import alsaaudio
@@ -13,9 +14,6 @@ from .errors import MicrophoneOpenError, MicrophoneReadError, MicrophoneConfigEr
 from arduino.app_utils import Logger
 
 logger = Logger("ALSAMicrophone")
-
-# Reconnection delay in seconds when device is disconnected
-RECONNECT_DELAY = 2.0
 
 
 class ALSAMicrophone(BaseMicrophone):
@@ -63,9 +61,10 @@ class ALSAMicrophone(BaseMicrophone):
         self._pcm: Optional[alsaaudio.PCM] = None
         self._mixer: Optional[alsaaudio.Mixer] = None
         self._native_rate = None
-        self._reconnect_attempts = 0
 
-    def _resolve_format_and_dtype(self, format: str) -> Tuple[str, np.dtype] | None:
+        self._last_reconnection_attempt = 0.0  # Used for auto-reconnection when _read_frame is called
+
+    def _resolve_format_and_dtype(self, format: str) -> Tuple[str | None, np.dtype | None]:
         """Get numpy dtype for audio format."""
         # Mapping format string -> (ALSA PCM_FORMAT_*, numpy dtype)
         format_map = {
@@ -87,7 +86,7 @@ class ALSAMicrophone(BaseMicrophone):
             "FLOAT64_BE": ("PCM_FORMAT_FLOAT64_BE", ">f8"),
         }
         af, nf = format_map.get(format, (None, None))
-        return af, np.dtype(nf) if nf else None
+        return (af, np.dtype(nf)) if nf is not None else (None, None)
 
     def _resolve_device_name(self, device: str | int) -> str:
         """
@@ -171,7 +170,7 @@ class ALSAMicrophone(BaseMicrophone):
 
                     logger.debug(f"PCM opened with plughw fallback: {plugdev}")
                 else:
-                    logger.error(f"plughw fallback failed, using native device params for {self.device}")
+                    logger.warning(f"plughw fallback failed, using native device params for {self.device}")
 
                     self._pcm = alsaaudio.PCM(
                         type=alsaaudio.PCM_CAPTURE,
@@ -186,14 +185,12 @@ class ALSAMicrophone(BaseMicrophone):
                     logger.debug("PCM opened with native params: %s, %dHz", self.device, self._native_rate)
 
         except alsaaudio.ALSAAudioError as e:
-            logger.error(f"ALSAAudioError opening PCM device {self.device}: {e}")
             if "Device or resource busy" in str(e):
                 raise MicrophoneOpenError(f"Microphone is busy. Close other audio applications and try again. ({self.device})")
             else:
                 raise MicrophoneOpenError(f"ALSA error opening microphone: {e}")
 
         except Exception as e:
-            logger.error(f"Unexpected error opening PCM device {self.device}: {e}")
             raise MicrophoneOpenError(f"Unexpected error opening microphone: {e}")
 
         self._mixer = self._load_mixer()  # Load mixer for volume control
@@ -234,51 +231,48 @@ class ALSAMicrophone(BaseMicrophone):
             finally:
                 self._pcm = None
 
-    def _read_audio(self) -> Optional[np.ndarray]:
+    def _read_audio(self) -> np.ndarray | None:
         """Read a single audio chunk from the ALSA microphone.
 
         Automatically attempts to reconnect if the device is disconnected until the device is
         available again.
         """
         if self._pcm is None:
-            self._attempt_reconnection()
-            if self._pcm is None:
+            if not self.auto_reconnect:
                 return None
+
+            # Prevent spamming connection attempts
+            current_time = time.monotonic()
+            elapsed = current_time - self._last_reconnection_attempt
+            if elapsed < self.auto_reconnect_delay:
+                time.sleep(self.auto_reconnect_delay - elapsed)
+            self._last_reconnection_attempt = current_time
+
+            self._open_microphone()
+            self.logger.info(f"Successfully reopened microphone {self.name}")
 
         try:
             length, data = self._pcm.read()
-            if length > 0:
-                try:
-                    arr = np.frombuffer(data, dtype=self._dtype)
-                    self._reconnect_attempts = 0  # Reset on successful read
-                    return arr
-                except Exception as e:
-                    logger.error(f"Error converting PCM data to numpy array: {e}")
-                    return None
-            else:
-                logger.debug("No audio data read from PCM device.")
+            if length == 0:
+                self.logger.debug("No audio data read from PCM device.")
                 return None
 
-        except alsaaudio.ALSAAudioError as e:
-            logger.warning(f"ALSA error reading audio: {e}")
+            try:
+                return np.frombuffer(data, dtype=self._dtype)
+            except Exception as e:
+                raise MicrophoneReadError(f"Error converting PCM data to numpy array: {e}")
 
+        except (alsaaudio.ALSAAudioError, MicrophoneOpenError, MicrophoneReadError, Exception) as e:
             if self._is_device_disconnected():
-                logger.error("Microphone disconnected")
-
-                if self._pcm is not None:
-                    try:
-                        self._pcm.close()
-                    except Exception:
-                        pass
-                    self._pcm = None
-
+                self.logger.error(
+                    f"Failed to read from microphone {self.name}: {e}."
+                    f"{' Retrying...' if self.auto_reconnect else ' Auto-reconnect is disabled, please restart the app.'}"
+                )
+                self._close_microphone()
                 return None
 
-            raise MicrophoneReadError(f"Failed to read from ALSA microphone: {e}")
-
-        except Exception as e:
-            logger.error(f"Unexpected error reading audio: {e}")
-            raise MicrophoneReadError(f"Unexpected error reading audio: {e}")
+            self.logger.error(f"Unexpected error reading audio: {e}")
+            return None
 
     def _is_device_disconnected(self) -> bool:
         """Check if the device is still in the USB devices list."""
@@ -289,34 +283,11 @@ class ALSAMicrophone(BaseMicrophone):
             logger.debug(f"Error checking device status: {e}")
             return True  # Assume disconnected if we can't check
 
-    def _attempt_reconnection(self) -> None:
-        """Attempt to reconnect to the microphone device.
-
-        Blocks and retries indefinitely with RECONNECT_DELAY between attempts.
-        """
-        import time
-
-        self._reconnect_attempts = 0
-        while True:
-            self._reconnect_attempts += 1
-            logger.debug(f"Waiting for microphone to be reconnected... (attempt {self._reconnect_attempts})")
-
-            time.sleep(RECONNECT_DELAY)
-
-            try:
-                self._open_microphone()
-                logger.info("Microphone reconnected successfully.")
-                self._reconnect_attempts = 0
-                return
-            except (MicrophoneOpenError, MicrophoneConfigError) as e:
-                logger.debug(f"Reconnection attempt {self._reconnect_attempts} failed: {e}")
-                continue
-
-    def get_volume(self) -> int:
+    def get_volume(self) -> int | None:
         """Get the current volume level of the microphone.
 
         Returns:
-            int: Volume level (0-100). If no mixer is available, returns None.
+            int | None: Volume level (0-100). If no mixer is available, returns None.
         """
         if self._mixer is None:
             logger.warning("No mixer available for volume control")

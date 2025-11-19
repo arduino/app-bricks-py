@@ -174,7 +174,7 @@ class TestALSAReadErrors:
     @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.PCM")
     @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.mixers", return_value=[])
     def test_read_with_non_disconnection_error_raises(self, mock_mixers, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
-        """Test that non-disconnection ALSA errors raise MicrophoneReadError."""
+        """Test that non-disconnection ALSA errors don't raise exceptions."""
         mock_card_name.side_effect = lambda idx: (MOCK_USB_CARDS[idx], f"USB Audio Device {idx}")
 
         pcm_instance = MagicMock()
@@ -186,8 +186,7 @@ class TestALSAReadErrors:
         mic = Microphone()
         mic.start()
 
-        with pytest.raises(MicrophoneReadError):
-            mic.capture()
+        mic.capture()
 
 
 class TestALSAOpenErrors:

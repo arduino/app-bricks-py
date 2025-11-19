@@ -252,13 +252,12 @@ class TestStreamingWithRealMicrophone:
         mock_card_name.side_effect = lambda idx: (MOCK_USB_CARDS[idx], f"USB Audio Device {idx}")
 
         pcm_instance = MagicMock()
-        mock_pcm.return_value = pcm_instance
-
         # Mock audio data
         test_data = np.arange(1024, dtype=np.int16)
-        pcm_instance.read.return_value = (1024, test_data.tobytes())
+        pcm_instance.read.return_value = (len(test_data), test_data.tobytes())
+        mock_pcm.return_value = pcm_instance
 
-        mic = Microphone(device=0)
+        mic = Microphone()
         mic.start()
 
         chunk = mic.capture()
@@ -284,7 +283,7 @@ class TestStreamingWithRealMicrophone:
         test_data = np.arange(1024, dtype=np.int16)
         pcm_instance.read.return_value = (1024, test_data.tobytes())
 
-        mic = Microphone(device=0)
+        mic = Microphone()
         mic.start()
 
         stream = mic.stream()
