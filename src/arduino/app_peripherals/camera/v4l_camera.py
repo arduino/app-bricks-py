@@ -45,7 +45,7 @@ class V4LCamera(BaseCamera):
                 a numpy array and returns a numpy array. Default: None
             auto_reconnect (bool, optional): Enable automatic reconnection on failure. Default: True.
         """
-        super().__init__(resolution, fps, adjustments)
+        super().__init__(resolution, fps, adjustments, auto_reconnect)
 
         self.v4l_path = self._resolve_stable_path(device)
         self.name = self._resolve_name(self.v4l_path)  # Override parent name with a human-readable name

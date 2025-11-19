@@ -33,6 +33,7 @@ class IPCamera(BaseCamera):
         resolution: tuple[int, int] = (640, 480),
         fps: int = 10,
         adjustments: Callable[[np.ndarray], np.ndarray] | None = None,
+        auto_reconnect: bool = True,
     ):
         """
         Initialize IP camera.
@@ -46,8 +47,9 @@ class IPCamera(BaseCamera):
             fps (int): Frames per second to capture from the camera.
             adjustments (callable, optional): Function or function pipeline to adjust frames that takes
                 a numpy array and returns a numpy array. Default: None
+            auto_reconnect (bool, optional): Enable automatic reconnection on failure. Default: True.
         """
-        super().__init__(resolution, fps, adjustments)
+        super().__init__(resolution, fps, adjustments, auto_reconnect)
         self.url = url
         self.username = username
         self.password = password
