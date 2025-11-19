@@ -9,7 +9,7 @@ import json
 import base64
 import numpy as np
 
-from arduino.app_peripherals.microphone import Microphone
+from arduino.app_peripherals.microphone import WebSocketMicrophone
 
 
 class TestWebSocketPCMBinaryFormat:
@@ -18,22 +18,16 @@ class TestWebSocketPCMBinaryFormat:
     @pytest.mark.asyncio
     async def test_receive_binary_pcm_int16(self):
         """Test receiving binary PCM data as int16."""
-        mic = Microphone(device="ws://0.0.0.0:0", audio_format="binary")
+        mic = WebSocketMicrophone()
 
         try:
             mic.start()
-
-            # Wait for server to be ready
-            for _ in range(50):
-                if mic._server is not None:
-                    break
-                await asyncio.sleep(0.1)
 
             # Create test PCM data
             test_audio = np.arange(1024, dtype=np.int16)
             pcm_bytes = test_audio.tobytes()
 
-            async with websockets.connect(f"ws://127.0.0.1:{mic.port}") as ws:
+            async with websockets.connect(mic.url) as ws:
                 await ws.recv()  # Welcome message
 
                 # Send binary PCM data
@@ -57,20 +51,15 @@ class TestWebSocketPCMBinaryFormat:
     @pytest.mark.asyncio
     async def test_receive_binary_pcm_int32(self):
         """Test receiving binary PCM data as int32."""
-        mic = Microphone(device="ws://0.0.0.0:0", audio_format="binary", format="S32_LE")
+        mic = WebSocketMicrophone(port=0, audio_format="binary", format="S32_LE")
 
         try:
             mic.start()
 
-            for _ in range(50):
-                if mic._server is not None:
-                    break
-                await asyncio.sleep(0.1)
-
             test_audio = np.arange(512, dtype=np.int32)
             pcm_bytes = test_audio.tobytes()
 
-            async with websockets.connect(f"ws://127.0.0.1:{mic.port}") as ws:
+            async with websockets.connect(mic.url) as ws:
                 await ws.recv()
                 await ws.send(pcm_bytes)
                 await asyncio.sleep(0.1)
@@ -88,20 +77,15 @@ class TestWebSocketPCMBinaryFormat:
     @pytest.mark.asyncio
     async def test_receive_binary_pcm_float32(self):
         """Test receiving binary PCM data as float32."""
-        mic = Microphone(device="ws://0.0.0.0:0", audio_format="binary", format="FLOAT_LE")
+        mic = WebSocketMicrophone(port=0, audio_format="binary", format="FLOAT_LE")
 
         try:
             mic.start()
 
-            for _ in range(50):
-                if mic._server is not None:
-                    break
-                await asyncio.sleep(0.1)
-
             test_audio = np.random.randn(256).astype(np.float32)
             pcm_bytes = test_audio.tobytes()
 
-            async with websockets.connect(f"ws://127.0.0.1:{mic.port}") as ws:
+            async with websockets.connect(mic.url) as ws:
                 await ws.recv()
                 await ws.send(pcm_bytes)
                 await asyncio.sleep(0.1)
@@ -123,22 +107,17 @@ class TestWebSocketPCMBase64Format:
     @pytest.mark.asyncio
     async def test_receive_base64_encoded_pcm(self):
         """Test receiving base64-encoded PCM data."""
-        mic = Microphone(device="ws://0.0.0.0:0", audio_format="base64")
+        mic = WebSocketMicrophone(port=0, audio_format="base64")
 
         try:
             mic.start()
-
-            for _ in range(50):
-                if mic._server is not None:
-                    break
-                await asyncio.sleep(0.1)
 
             # Create and encode test PCM data
             test_audio = np.arange(512, dtype=np.int16)
             pcm_bytes = test_audio.tobytes()
             base64_encoded = base64.b64encode(pcm_bytes).decode("utf-8")
 
-            async with websockets.connect(f"ws://127.0.0.1:{mic.port}") as ws:
+            async with websockets.connect(mic.url) as ws:
                 await ws.recv()
 
                 # Send base64-encoded data as text
@@ -159,15 +138,10 @@ class TestWebSocketPCMBase64Format:
     @pytest.mark.asyncio
     async def test_receive_base64_with_padding(self):
         """Test receiving base64 data with padding."""
-        mic = Microphone(device="ws://0.0.0.0:0", audio_format="base64")
+        mic = WebSocketMicrophone(port=0, audio_format="base64")
 
         try:
             mic.start()
-
-            for _ in range(50):
-                if mic._server is not None:
-                    break
-                await asyncio.sleep(0.1)
 
             # Use size that requires padding in base64
             test_audio = np.arange(100, dtype=np.int16)
@@ -177,7 +151,7 @@ class TestWebSocketPCMBase64Format:
             # Verify it has padding
             assert "=" in base64_encoded or len(base64_encoded) % 4 == 0
 
-            async with websockets.connect(f"ws://127.0.0.1:{mic.port}") as ws:
+            async with websockets.connect(mic.url) as ws:
                 await ws.recv()
                 await ws.send(base64_encoded)
                 await asyncio.sleep(0.1)
@@ -197,15 +171,10 @@ class TestWebSocketPCMJSONFormat:
     @pytest.mark.asyncio
     async def test_receive_json_wrapped_pcm(self):
         """Test receiving PCM data wrapped in JSON."""
-        mic = Microphone(device="ws://0.0.0.0:0", audio_format="json")
+        mic = WebSocketMicrophone(port=0, audio_format="json")
 
         try:
             mic.start()
-
-            for _ in range(50):
-                if mic._server is not None:
-                    break
-                await asyncio.sleep(0.1)
 
             # Create test PCM and wrap in JSON
             test_audio = np.arange(256, dtype=np.int16)
@@ -213,7 +182,7 @@ class TestWebSocketPCMJSONFormat:
             base64_encoded = base64.b64encode(pcm_bytes).decode("utf-8")
             json_message = json.dumps({"audio": base64_encoded})
 
-            async with websockets.connect(f"ws://127.0.0.1:{mic.port}") as ws:
+            async with websockets.connect(mic.url) as ws:
                 await ws.recv()
                 await ws.send(json_message)
                 await asyncio.sleep(0.1)
@@ -232,15 +201,10 @@ class TestWebSocketPCMJSONFormat:
     @pytest.mark.asyncio
     async def test_receive_json_with_metadata(self):
         """Test receiving JSON with PCM and additional metadata."""
-        mic = Microphone(device="ws://0.0.0.0:0", audio_format="json")
+        mic = WebSocketMicrophone(port=0, audio_format="json")
 
         try:
             mic.start()
-
-            for _ in range(50):
-                if mic._server is not None:
-                    break
-                await asyncio.sleep(0.1)
 
             test_audio = np.arange(128, dtype=np.int16)
             pcm_bytes = test_audio.tobytes()
@@ -249,7 +213,7 @@ class TestWebSocketPCMJSONFormat:
             # JSON with metadata
             json_message = json.dumps({"audio": base64_encoded, "timestamp": 1234567890, "metadata": {"device": "mic1"}})
 
-            async with websockets.connect(f"ws://127.0.0.1:{mic.port}") as ws:
+            async with websockets.connect(mic.url) as ws:
                 await ws.recv()
                 await ws.send(json_message)
                 await asyncio.sleep(0.1)
@@ -266,20 +230,15 @@ class TestWebSocketPCMJSONFormat:
     @pytest.mark.asyncio
     async def test_receive_json_missing_audio_field(self):
         """Test that JSON without 'audio' field is handled gracefully."""
-        mic = Microphone(device="ws://0.0.0.0:0", audio_format="json")
+        mic = WebSocketMicrophone(port=0, audio_format="json")
 
         try:
             mic.start()
 
-            for _ in range(50):
-                if mic._server is not None:
-                    break
-                await asyncio.sleep(0.1)
-
             # JSON without audio field
             json_message = json.dumps({"data": "not_audio"})
 
-            async with websockets.connect(f"ws://127.0.0.1:{mic.port}") as ws:
+            async with websockets.connect(mic.url) as ws:
                 await ws.recv()
                 await ws.send(json_message)
                 await asyncio.sleep(0.1)
@@ -298,17 +257,12 @@ class TestWebSocketMultipleChunks:
     @pytest.mark.asyncio
     async def test_receive_multiple_sequential_chunks(self):
         """Test receiving multiple PCM chunks in sequence."""
-        mic = Microphone(device="ws://0.0.0.0:0", audio_format="binary")
+        mic = WebSocketMicrophone(port=0, audio_format="binary")
 
         try:
             mic.start()
 
-            for _ in range(50):
-                if mic._server is not None:
-                    break
-                await asyncio.sleep(0.1)
-
-            async with websockets.connect(f"ws://127.0.0.1:{mic.port}") as ws:
+            async with websockets.connect(mic.url) as ws:
                 await ws.recv()
 
                 # Send 5 chunks with different values
@@ -339,17 +293,12 @@ class TestWebSocketMultipleChunks:
     @pytest.mark.asyncio
     async def test_receive_rapid_fire_chunks(self):
         """Test receiving chunks sent in rapid succession."""
-        mic = Microphone(device="ws://0.0.0.0:0", audio_format="binary")
+        mic = WebSocketMicrophone(port=0, audio_format="binary")
 
         try:
             mic.start()
 
-            for _ in range(50):
-                if mic._server is not None:
-                    break
-                await asyncio.sleep(0.1)
-
-            async with websockets.connect(f"ws://127.0.0.1:{mic.port}") as ws:
+            async with websockets.connect(mic.url) as ws:
                 await ws.recv()
 
                 # Send chunks rapidly without delay
@@ -373,20 +322,15 @@ class TestWebSocketPCMDataIntegrity:
     @pytest.mark.asyncio
     async def test_pcm_values_preserved_exactly(self):
         """Test that PCM values are preserved exactly through transmission."""
-        mic = Microphone(device="ws://0.0.0.0:0", audio_format="binary")
+        mic = WebSocketMicrophone(port=0, audio_format="binary")
 
         try:
             mic.start()
 
-            for _ in range(50):
-                if mic._server is not None:
-                    break
-                await asyncio.sleep(0.1)
-
             # Create test pattern with known values
             test_audio = np.array([0, 100, -100, 32000, -32000, 1, -1], dtype=np.int16)
 
-            async with websockets.connect(f"ws://127.0.0.1:{mic.port}") as ws:
+            async with websockets.connect(mic.url) as ws:
                 await ws.recv()
                 await ws.send(test_audio.tobytes())
                 await asyncio.sleep(0.1)
@@ -402,20 +346,15 @@ class TestWebSocketPCMDataIntegrity:
     @pytest.mark.asyncio
     async def test_pcm_byte_order_preserved(self):
         """Test that byte order is preserved in PCM transmission."""
-        mic = Microphone(device="ws://0.0.0.0:0", audio_format="binary")
+        mic = WebSocketMicrophone(port=0, audio_format="binary")
 
         try:
             mic.start()
 
-            for _ in range(50):
-                if mic._server is not None:
-                    break
-                await asyncio.sleep(0.1)
-
             # Test with values that would differ if byte order is wrong
             test_audio = np.array([256, 257, 258], dtype=np.int16)
 
-            async with websockets.connect(f"ws://127.0.0.1:{mic.port}") as ws:
+            async with websockets.connect(mic.url) as ws:
                 await ws.recv()
                 await ws.send(test_audio.tobytes())
                 await asyncio.sleep(0.1)
@@ -434,17 +373,12 @@ class TestWebSocketClientConnection:
     @pytest.mark.asyncio
     async def test_client_receives_welcome_message(self):
         """Test that client receives welcome message on connection."""
-        mic = Microphone(device="ws://0.0.0.0:0", audio_format="binary")
+        mic = WebSocketMicrophone(port=0, audio_format="binary")
 
         try:
             mic.start()
 
-            for _ in range(50):
-                if mic._server is not None:
-                    break
-                await asyncio.sleep(0.1)
-
-            async with websockets.connect(f"ws://127.0.0.1:{mic.port}") as ws:
+            async with websockets.connect(mic.url) as ws:
                 welcome = await ws.recv()
                 welcome_data = json.loads(welcome)
 
@@ -458,23 +392,18 @@ class TestWebSocketClientConnection:
     @pytest.mark.asyncio
     async def test_single_client_enforcement(self):
         """Test that only one client can connect at a time."""
-        mic = Microphone(device="ws://0.0.0.0:0", audio_format="binary")
+        mic = WebSocketMicrophone(port=0, audio_format="binary")
 
         try:
             mic.start()
 
-            for _ in range(50):
-                if mic._server is not None:
-                    break
-                await asyncio.sleep(0.1)
-
             # Connect first client
-            async with websockets.connect(f"ws://127.0.0.1:{mic.port}") as client1:
+            async with websockets.connect(mic.url) as client1:
                 await client1.recv()  # Welcome
 
                 # Try to connect second client
                 try:
-                    async with websockets.connect(f"ws://127.0.0.1:{mic.port}") as client2:
+                    async with websockets.connect(mic.url) as client2:
                         msg = await client2.recv()
                         # Should receive rejection
                         assert "error" in msg.lower() or "busy" in msg.lower()
@@ -488,18 +417,13 @@ class TestWebSocketClientConnection:
     @pytest.mark.asyncio
     async def test_client_disconnection_handled(self):
         """Test that client disconnection is handled gracefully."""
-        mic = Microphone(device="ws://0.0.0.0:0", audio_format="binary")
+        mic = WebSocketMicrophone(port=0, audio_format="binary")
 
         try:
             mic.start()
 
-            for _ in range(50):
-                if mic._server is not None:
-                    break
-                await asyncio.sleep(0.1)
-
             # Connect and disconnect
-            async with websockets.connect(f"ws://127.0.0.1:{mic.port}") as ws:
+            async with websockets.connect(mic.url) as ws:
                 await ws.recv()
                 await ws.send(np.zeros(128, dtype=np.int16).tobytes())
 
@@ -520,17 +444,12 @@ class TestWebSocketMessageParsing:
     @pytest.mark.asyncio
     async def test_invalid_json_handled_gracefully(self):
         """Test that invalid JSON is handled without crashing."""
-        mic = Microphone(device="ws://0.0.0.0:0", audio_format="json")
+        mic = WebSocketMicrophone(port=0, audio_format="json")
 
         try:
             mic.start()
 
-            for _ in range(50):
-                if mic._server is not None:
-                    break
-                await asyncio.sleep(0.1)
-
-            async with websockets.connect(f"ws://127.0.0.1:{mic.port}") as ws:
+            async with websockets.connect(mic.url) as ws:
                 await ws.recv()
 
                 # Send invalid JSON
@@ -547,17 +466,12 @@ class TestWebSocketMessageParsing:
     @pytest.mark.asyncio
     async def test_wrong_message_type_handled(self):
         """Test that wrong message type is handled."""
-        mic = Microphone(device="ws://0.0.0.0:0", audio_format="binary")
+        mic = WebSocketMicrophone(port=0, audio_format="binary")
 
         try:
             mic.start()
 
-            for _ in range(50):
-                if mic._server is not None:
-                    break
-                await asyncio.sleep(0.1)
-
-            async with websockets.connect(f"ws://127.0.0.1:{mic.port}") as ws:
+            async with websockets.connect(mic.url) as ws:
                 await ws.recv()
 
                 # Send text when expecting binary
@@ -578,46 +492,41 @@ class TestWebSocketPCMStreaming:
     @pytest.mark.asyncio
     async def test_continuous_pcm_stream(self):
         """Test continuous PCM streaming from client."""
-        mic = Microphone(device="ws://0.0.0.0:0", audio_format="binary")
+        mic = WebSocketMicrophone(port=0, audio_format="binary")
 
         try:
             mic.start()
 
-            for _ in range(50):
-                if mic._server is not None:
-                    break
-                await asyncio.sleep(0.1)
-
-            # Start a streaming task
             async def stream_audio():
-                async with websockets.connect(f"ws://127.0.0.1:{mic.port}") as ws:
+                async with websockets.connect(mic.url) as ws:
                     await ws.recv()
 
-                    # Stream 10 chunks
+                    # Stream 10 chunks then stop
                     for i in range(10):
                         chunk = np.full(128, i, dtype=np.int16)
                         await ws.send(chunk.tobytes())
-                        await asyncio.sleep(0.05)
 
             # Start streaming
             stream_task = asyncio.create_task(stream_audio())
 
-            # Capture from stream
-            await asyncio.sleep(0.3)
+            # Start capturing
+            def collect_chunks():
+                chunks = []
+                stream = mic.stream()
+                for i, chunk in enumerate(stream):
+                    chunks.append(chunk)
+                    if i >= 9:
+                        break
+                return chunks
 
-            stream_gen = mic.stream()
-            chunks = []
-
-            for i, chunk in enumerate(stream_gen):
-                chunks.append(chunk)
-                if i >= 3:
-                    break
+            chunks = await asyncio.to_thread(collect_chunks)
 
             await stream_task
 
             assert len(chunks) > 0
             for chunk in chunks:
                 assert isinstance(chunk, np.ndarray)
+                assert chunk.dtype == np.int16
 
         finally:
             mic.stop()

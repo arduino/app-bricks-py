@@ -9,6 +9,7 @@ import threading
 from unittest.mock import MagicMock, patch
 
 from arduino.app_peripherals.microphone import Microphone, BaseMicrophone
+from arduino.app_peripherals.microphone.errors import MicrophoneReadError
 
 
 class MockMicrophone(BaseMicrophone):
@@ -63,6 +64,7 @@ class TestAudioCapture:
 
         chunk = mic.capture()
 
+        assert chunk is not None
         assert len(chunk) == chunk_size
 
     def test_capture_returns_correct_dtype(self):
@@ -72,15 +74,16 @@ class TestAudioCapture:
 
         chunk = mic.capture()
 
+        assert chunk is not None
         assert chunk.dtype == np.int16
 
     def test_capture_when_not_started_returns_none(self):
         """Test that capture returns None when microphone not started."""
         mic = MockMicrophone()
 
-        chunk = mic.capture()
-
-        assert chunk is None
+        with pytest.raises(MicrophoneReadError):
+            chunk = mic.capture()
+            assert chunk is None
 
     def test_multiple_sequential_captures(self):
         """Test multiple sequential capture calls."""
@@ -325,6 +328,7 @@ class TestCaptureDataFormat:
 
         chunk = mic.capture()
 
+        assert chunk is not None
         assert chunk.dtype == expected_dtype
 
 
@@ -401,6 +405,7 @@ class TestCaptureDataIntegrity:
         mic.start()
 
         chunk1 = mic.capture()
+        assert chunk1 is not None
         original_values = chunk1.copy()
 
         # Capture more
@@ -477,6 +482,7 @@ class TestCaptureEdgeCases:
 
         chunk = mic.capture()
 
+        assert chunk is not None
         assert len(chunk) == 16
 
     def test_capture_with_very_large_chunk_size(self):
@@ -486,6 +492,7 @@ class TestCaptureEdgeCases:
 
         chunk = mic.capture()
 
+        assert chunk is not None
         assert len(chunk) == 16384
 
     def test_stream_breaking_early(self):

@@ -4,6 +4,7 @@
 
 import json
 import base64
+import os
 import threading
 import queue
 import time
@@ -67,9 +68,18 @@ class WebSocketMicrophone(BaseMicrophone):
         if self._dtype is None:
             raise MicrophoneConfigError(f"Unsupported format: {format}")
 
-        self.host = "0.0.0.0"
+        self.protocol = "ws"
         self.port = port
         self.timeout = timeout
+        if audio_format not in ["binary", "base64", "json"]:
+            raise MicrophoneConfigError(f"Invalid frame format: {audio_format}")
+        self.audio_format = audio_format
+        self.logger = logger
+
+        host_ip = os.getenv("HOST_IP")
+        self._bind_ip = "0.0.0.0"
+        self._external_ip = host_ip if host_ip is not None else self._bind_ip
+
         self.audio_format = audio_format
         self.logger = logger
 
@@ -80,6 +90,11 @@ class WebSocketMicrophone(BaseMicrophone):
         self._stop_event = asyncio.Event()
         self._client: Optional[websockets.ServerConnection] = None
         self._client_lock = asyncio.Lock()
+
+    @property
+    def url(self) -> str:
+        """Return the WebSocket server address."""
+        return f"{self.protocol}://{self._external_ip}:{self.port}"
 
     def _resolve_dtype(self, format: str) -> np.dtype | None:
         """Get numpy dtype for audio format."""
@@ -161,12 +176,18 @@ class WebSocketMicrophone(BaseMicrophone):
 
         # Wait for server to start
         start_time = time.time()
-        start_timeout = 2.0
-        while self._server is None and time.time() - start_time < start_timeout:
-            time.sleep(0.01)
+        start_timeout = self.timeout
+        while time.time() - start_time < start_timeout:
+            if self._server is not None:
+                self.logger.info(f"WebSocket server started on {self.url}")
+                return
+            time.sleep(0.1)
 
-        if self._server is None:
-            raise MicrophoneOpenError(f"Failed to start WebSocket server on {self.host}:{self.port}")
+        # Cleanup server thread if it failed to start in time
+        if self._server_thread.is_alive():
+            self._server_thread.join(timeout=1.0)
+
+        raise MicrophoneOpenError(f"Failed to start WebSocket server on {self.url}")
 
     def _start_server_thread(self) -> None:
         """Run WebSocket server in its own thread with event loop."""
@@ -175,7 +196,7 @@ class WebSocketMicrophone(BaseMicrophone):
             asyncio.set_event_loop(self._loop)
             self._loop.run_until_complete(self._start_server())
         except Exception as e:
-            logger.error(f"WebSocket server thread error: {e}")
+            self.logger.error(f"WebSocket server thread error: {e}")
         finally:
             if self._loop and not self._loop.is_closed():
                 self._loop.close()
@@ -185,33 +206,37 @@ class WebSocketMicrophone(BaseMicrophone):
         try:
             self._stop_event.clear()
 
-            self._server = await websockets.serve(
-                self._ws_handler,
-                self.host,
-                self.port,
-                open_timeout=self.timeout,
-                ping_timeout=self.timeout,
-                close_timeout=self.timeout,
-                ping_interval=20,
+            self._server = await asyncio.wait_for(
+                websockets.serve(
+                    self._ws_handler,
+                    self._bind_ip,
+                    self.port,
+                    open_timeout=self.timeout,
+                    ping_timeout=self.timeout,
+                    close_timeout=self.timeout,
+                    ping_interval=20,
+                ),
+                timeout=self.timeout,
             )
 
-            # If port was 0, update with the actual bound port
-            if self.port == 0 and self._server.sockets:
-                actual_port = self._server.sockets[0].getsockname()[1]
-                self.port = actual_port
-                logger.info(f"WebSocket microphone server started on {self.host}:{self.port} (auto-assigned)")
-            else:
-                logger.info(f"WebSocket microphone server started on {self.host}:{self.port}")
+            # Get the actual port if OS assigned one (i.e. when port=0)
+            if self.port == 0:
+                server_socket = list(self._server.sockets)[0]
+                self.port = server_socket.getsockname()[1]
 
             await self._stop_event.wait()
 
+        except TimeoutError as e:
+            self.logger.error(f"Failed to start WebSocket server in {self.timeout}s: {e}")
+            raise
         except Exception as e:
-            logger.error(f"Error starting WebSocket server: {e}")
+            self.logger.error(f"Error starting WebSocket server: {e}")
             raise
         finally:
             if self._server:
                 self._server.close()
                 await self._server.wait_closed()
+                self._server = None
 
     async def _ws_handler(self, conn: websockets.ServerConnection) -> None:
         """Handle a connected WebSocket client. Only one client allowed at a time."""
@@ -220,23 +245,24 @@ class WebSocketMicrophone(BaseMicrophone):
         async with self._client_lock:
             if self._client is not None:
                 # Reject the new client
-                logger.warning(f"Rejecting client {client_addr}: only one client allowed at a time")
+                self.logger.warning(f"Rejecting client {client_addr}: only one client allowed at a time")
                 try:
                     await conn.send(json.dumps({"error": "Server busy", "message": "Only one client connection allowed at a time", "code": 1000}))
                     await conn.close(code=1000, reason="Server busy - only one client allowed")
                 except Exception as e:
-                    logger.warning(f"Error sending rejection message to {client_addr}: {e}")
+                    self.logger.warning(f"Error sending rejection message to {client_addr}: {e}")
                 return
 
             # Accept the client
             self._client = conn
 
-        logger.info(f"Client connected: {client_addr}")
+        self._set_status("connected", {"client_address": client_addr})
+
+        self.logger.debug(f"Client connected: {client_addr}")
 
         try:
             # Send welcome message
             try:
-                format_details = self._get_format_details(self.format)
                 welcome_msg = {
                     "status": "connected",
                     "message": "You are now connected to the microphone server",
@@ -248,6 +274,7 @@ class WebSocketMicrophone(BaseMicrophone):
                 }
 
                 # Add universal format details if available
+                format_details = self._get_format_details(self.format)
                 if format_details:
                     welcome_msg.update(format_details)
 
@@ -256,7 +283,7 @@ class WebSocketMicrophone(BaseMicrophone):
                 logger.warning(f"Could not send welcome message to {client_addr}: {e}")
 
             async for message in conn:
-                audio_chunk = await self._parse_message(message)
+                audio_chunk = self._parse_message(message)
                 if audio_chunk is not None:
                     # Drop old chunks until there's room for the new one
                     while True:
@@ -271,16 +298,17 @@ class WebSocketMicrophone(BaseMicrophone):
                                 continue
 
         except websockets.exceptions.ConnectionClosed:
-            logger.info(f"Client disconnected: {client_addr}")
+            self.logger.info(f"Client disconnected: {client_addr}")
         except Exception as e:
-            logger.warning(f"Error handling client {client_addr}: {e}")
+            self.logger.warning(f"Error handling client {client_addr}: {e}")
         finally:
             async with self._client_lock:
                 if self._client == conn:
                     self._client = None
-                    logger.info(f"Client removed: {client_addr}")
+                    self._set_status("disconnected", {"client_address": client_addr})
+                    self.logger.debug(f"Client removed: {client_addr}")
 
-    async def _parse_message(self, message) -> Optional[np.ndarray]:
+    def _parse_message(self, message: str | bytes) -> np.ndarray | None:
         """Parse WebSocket message to extract audio chunk."""
         try:
             if self.audio_format == "binary":
@@ -325,16 +353,16 @@ class WebSocketMicrophone(BaseMicrophone):
 
     def _close_microphone(self) -> None:
         """Stop the WebSocket server."""
-        if self._loop is not None and self._server is not None:
+        if self._loop and not self._loop.is_closed() and self._loop.is_running():
             try:
                 future = asyncio.run_coroutine_threadsafe(self._stop_and_disconnect_client(), self._loop)
-                future.result(timeout=1.0)
+                future.result(1.0)
             except CancelledError:
-                logger.debug(f"Error stopping WebSocket server: CancelledError")
+                self.logger.debug(f"Error stopping WebSocket server: CancelledError")
             except TimeoutError:
-                logger.debug(f"Error stopping WebSocket server: TimeoutError")
+                self.logger.debug(f"Error stopping WebSocket server: TimeoutError")
             except Exception as e:
-                logger.warning(f"Error stopping WebSocket server: {e}")
+                self.logger.warning(f"Error stopping WebSocket server: {e}")
 
         # Wait for server thread to finish
         if self._server_thread and self._server_thread.is_alive():
@@ -357,42 +385,44 @@ class WebSocketMicrophone(BaseMicrophone):
         # Send goodbye message and close the client connection
         if self._client:
             try:
+                self.logger.debug("Disconnecting client...")
                 # Send goodbye message before closing
                 await self._send_to_client({
                     "status": "disconnecting",
                     "message": "Server is shutting down. Connection will be closed.",
                 })
-                # Give a brief moment for the message to be sent
-                await asyncio.sleep(0.1)
             except Exception as e:
-                logger.warning(f"Error closing client in stop event: {e}")
+                self.logger.warning(f"Failed to send 'disconnecting' event to closing client: {e}")
             finally:
-                await self._client.close()
+                if self._client:
+                    await self._client.close()
+                    self.logger.debug("Client connection closed")
 
         self._stop_event.set()
 
-    def _read_audio(self) -> Optional[np.ndarray]:
+    def _read_audio(self) -> np.ndarray | None:
         """
         Read a single audio chunk from the WebSocket microphone.
 
         Returns audio chunks as received from clients.
         """
         try:
-            # Get chunk with short timeout to avoid blocking
-            audio_chunk = self._audio_queue.get(timeout=0.1)
-            return audio_chunk
+            return self._audio_queue.get(timeout=0.1)
         except queue.Empty:
             return None
 
-    async def _send_to_client(self, message: dict) -> None:
+    async def _send_to_client(self, message: str | bytes | dict) -> None:
         """Send a message to the connected client."""
-        if self._client is None:
-            raise ConnectionError("No client connected to send message to")
-
         if isinstance(message, dict):
             message = json.dumps(message)
 
-        try:
-            await self._client.send(message)
-        except Exception as e:
-            logger.warning(f"Error sending message to client: {e}")
+        async with self._client_lock:
+            if self._client is None:
+                raise ConnectionError("No client connected to send message to")
+
+            try:
+                await self._client.send(message)
+            except websockets.ConnectionClosedOK:
+                self.logger.warning("Client has already closed the connection")
+            except Exception:
+                raise

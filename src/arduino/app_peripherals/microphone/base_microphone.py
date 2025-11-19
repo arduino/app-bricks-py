@@ -5,12 +5,14 @@
 import time
 import threading
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Literal
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 
 from .config import RATE_16K, CHANNELS_MONO, FORMAT_S16_LE, CHUNK_BALANCED
-from .errors import MicrophoneOpenError
+from .errors import MicrophoneOpenError, MicrophoneReadError
 from arduino.app_utils import Logger
 
 logger = Logger("Microphone")
@@ -32,6 +34,7 @@ class BaseMicrophone(ABC):
         channels: int = CHANNELS_MONO,
         format: str = FORMAT_S16_LE,
         chunk_size: int = CHUNK_BALANCED,
+        auto_reconnect: bool = True,
     ):
         """
         Initialize the microphone base.
@@ -40,55 +43,119 @@ class BaseMicrophone(ABC):
             sample_rate (int): Sample rate in Hz (default: 16000).
             channels (int): Number of audio channels (default: 1).
             format (str): Audio format in ALSA PCM notation (default: "S16_LE").
-            chunk_size (int): Number of frames per chunk (default: 1024).
+            chunk_size (int): Number of frames per chunk (default: 512).
+            auto_reconnect (bool, optional): Enable automatic reconnection on failure. Default: True.
         """
+        if sample_rate <= 0:
+            raise ValueError("Sample rate must be positive")
         self.sample_rate = sample_rate
+        if channels <= 0:
+            raise ValueError("Number of channels must be positive")
         self.channels = channels
+        if format == "":
+            raise ValueError("Format must be a non-empty string")
         self.format = format
+        if chunk_size <= 0:
+            raise ValueError("Chunk size must be positive")
         self.chunk_size = chunk_size
         self.logger = logger  # This will be overridden by subclasses if needed
+        self.name = self.__class__.__name__  # This will be overridden by subclasses if needed
 
         self._mic_lock = threading.Lock()
         self._is_started = False
 
+        # Auto-reconnection parameters
+        self.auto_reconnect = auto_reconnect
+        self.auto_reconnect_delay = 1.0
+        self.first_connection_max_retries = 10
+
+        # Stream interruption detection
+        self._consecutive_none_chunks = 0
+
+        # Status handling
+        self._status: Literal["disconnected", "connected", "streaming", "paused"] = "disconnected"
+        self._on_status_changed_cb: Callable[[str, dict], None] | None = None
+        self._event_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="MicrophoneCallbacksRunner")
+
+    @property
+    def status(self) -> Literal["disconnected", "connected", "streaming", "paused"]:
+        """Read-only property for camera status."""
+        return self._status
+
+    @property
+    def _none_chunk_threshold(self) -> int:
+        """Heuristic: 750ms of empty chunk based on current sample rate. Always at least 10."""
+        return max(10, int(0.75 * self.sample_rate) // self.chunk_size)
+
     def start(self) -> None:
         """Start the microphone capture."""
         with self._mic_lock:
-            if self._is_started:
-                return
+            self.logger.info("Starting microphone...")
 
-            try:
-                self._open_microphone()
-                self._is_started = True
-                self.logger.info(f"Successfully started {self.__class__.__name__}")
-            except Exception as e:
-                raise MicrophoneOpenError(f"Failed to start microphone: {e}")
+            attempt = 0
+            while not self.is_started():
+                try:
+                    self._open_microphone()
+                    self._is_started = True
+                    self.logger.info(f"Successfully started {self.name}")
+                except Exception as e:
+                    if not self.auto_reconnect:
+                        raise
+                    attempt += 1
+                    if attempt >= self.first_connection_max_retries:
+                        raise MicrophoneOpenError(
+                            f"Failed to start microphone {self.name} after {self.first_connection_max_retries} attempts, last error is: {e}"
+                        )
+
+                    delay = min(self.auto_reconnect_delay * (2 ** (attempt - 1)), 60)  # Exponential backoff
+                    self.logger.warning(
+                        f"Failed to start microphone {self.name} (attempt {attempt}/{self.first_connection_max_retries}). Retrying in {delay:.1f}s..."
+                    )
+                    time.sleep(delay)
 
     def stop(self) -> None:
         """Stop the microphone and release resources."""
         with self._mic_lock:
-            if not self._is_started:
+            if not self.is_started():
                 return
+
+            self.logger.info("Stopping microphone...")
 
             try:
                 self._close_microphone()
+                self._event_executor.shutdown()
                 self._is_started = False
-                self.logger.info(f"Stopped {self.__class__.__name__}")
+                self.logger.info(f"Successfully stopped {self.name}")
             except Exception as e:
-                self.logger.warning(f"Error stopping microphone: {e}")
+                self.logger.warning(f"Failed to stop microphone: {e}")
 
-    def capture(self) -> Optional[np.ndarray]:
+    def capture(self) -> np.ndarray | None:
         """
         Capture an audio chunk from the microphone.
 
         Returns:
             Numpy array in ALSA PCM format or None if no audio is available.
+
+        Raises:
+            MicrophoneReadError: If the microphone is not started.
+            Exception: If the underlying implementation fails to read a frame.
         """
         with self._mic_lock:
-            if not self._is_started:
+            if not self.is_started():
+                raise MicrophoneReadError(f"Attempted to read from {self.name} before starting it.")
+
+            chunk = self._read_audio()
+            if chunk is None:
+                self._consecutive_none_chunks += 1
+                if self._consecutive_none_chunks >= self._none_chunk_threshold:
+                    self._set_status("paused")
                 return None
 
-            return self._read_audio()
+            self._set_status("streaming")
+
+            self._consecutive_none_chunks = 0
+
+            return chunk
 
     def stream(self):
         """
@@ -99,7 +166,7 @@ class BaseMicrophone(ABC):
         Yields:
             np.ndarray: Audio chunks as numpy arrays.
         """
-        while self._is_started:
+        while self.is_started():
             chunk = self.capture()
             if chunk is not None:
                 yield chunk
@@ -143,8 +210,8 @@ class BaseMicrophone(ABC):
             ValueError: If duration is not positive.
             TimeoutError: If recording takes longer than duration * timeout_factor.
         """
-        audio_data = self._record_pcm(duration, timeout_factor)
-        return self._audio_to_wav(audio_data)
+        pcm_data = self._record_pcm(duration, timeout_factor)
+        return self._audio_to_wav(pcm_data)
 
     def _record_pcm(self, duration: float, timeout_factor: float = 2.0) -> np.ndarray:
         """
@@ -163,9 +230,6 @@ class BaseMicrophone(ABC):
             ValueError: If duration is not positive.
             TimeoutError: If recording takes longer than duration * timeout_factor.
         """
-        if not self._is_started:
-            raise MicrophoneOpenError("Microphone must be started before recording")
-
         if duration <= 0:
             raise ValueError("Duration must be positive")
 
@@ -300,6 +364,43 @@ class BaseMicrophone(ABC):
         """Check if the microphone is started."""
         return self._is_started
 
+    def on_status_changed(self, callback: Callable[[str, dict], None] | None):
+        """Registers or removes a callback to be triggered on microphone lifecycle events.
+
+        When a microphone status changes, the provided callback function will be invoked.
+        If None is provided, the callback will be removed.
+
+        Args:
+            callback (Callable[[str, dict], None]): A callback that will be called every time the
+                microphone status changes with the new status and any associated data. The status
+                names depend on the actual microphone implementation being used. Some common events
+                are:
+                - 'connected': The microphone has been reconnected.
+                - 'disconnected': The microphone has been disconnected.
+                - 'streaming': The stream is streaming.
+                - 'paused': The stream has been paused and is temporarily unavailable.
+            callback (None): To unregister the current callback, if any.
+
+        Example:
+            def on_status(status: str, data: dict):
+                print(f"Microphone is now: {status}")
+                print(f"Data: {data}")
+                # Here you can add your code to react to the event
+
+            microphone.on_status_changed(on_status)
+        """
+        if callback is None:
+            self._on_status_changed_cb = None
+        else:
+
+            def _callback_wrapper(new_status: str, data: dict):
+                try:
+                    callback(new_status, data)
+                except Exception as e:
+                    self.logger.error(f"Callback for '{new_status}' status failed with error: {e}")
+
+            self._on_status_changed_cb = _callback_wrapper
+
     @abstractmethod
     def _open_microphone(self) -> None:
         """Open the microphone connection. Must be implemented by subclasses."""
@@ -311,9 +412,46 @@ class BaseMicrophone(ABC):
         pass
 
     @abstractmethod
-    def _read_audio(self) -> Optional[np.ndarray]:
+    def _read_audio(self) -> np.ndarray | None:
         """Read a single audio chunk from the microphone. Must be implemented by subclasses."""
         pass
+
+    def _set_status(self, new_status: Literal["disconnected", "connected", "streaming", "paused"], data: dict | None = None) -> None:
+        """
+        Updates the current status of the microphone and invokes the registered status
+        changed callback in the background, if any.
+
+        Only allowed states and transitions are considered, other states are ignored.
+        Allowed states are:
+            - disconnected
+            - connected
+            - streaming
+            - paused
+
+        Args:
+            new_status (str): The name of the new status.
+            data (dict): Additional data associated with the status change.
+        """
+
+        if self.status == new_status:
+            return
+
+        allowed_transitions = {
+            "disconnected": ["connected"],
+            "connected": ["disconnected", "streaming"],
+            "streaming": ["paused", "disconnected"],
+            "paused": ["streaming", "disconnected"],
+        }
+
+        # If new status is not in the state machine, ignore it
+        if new_status not in allowed_transitions:
+            return
+
+        # Check if new_status is an allowed transition for the current status
+        if new_status in allowed_transitions[self._status]:
+            self._status = new_status
+            if self._on_status_changed_cb is not None:
+                self._event_executor.submit(self._on_status_changed_cb, new_status, data if data is not None else {})
 
     def __enter__(self):
         """Context manager entry."""

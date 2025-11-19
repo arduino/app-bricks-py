@@ -113,7 +113,7 @@ Trade-off: Low latency but high CPU usage
 
 CHUNK_BALANCED = 512
 """
-Balanced (DEFAULT): ~32ms @ 16kHz, ~10ms @ 48kHz
+Balanced (default): ~32ms @ 16kHz, ~10ms @ 48kHz
 
 Use for: Voice commands, keyword spotting, general audio processing
 Trade-off: Good balance between latency and efficiency

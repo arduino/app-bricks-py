@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from arduino.app_peripherals.microphone import Microphone, BaseMicrophone
-from arduino.app_peripherals.microphone.errors import MicrophoneOpenError
+from arduino.app_peripherals.microphone.errors import MicrophoneReadError
 
 
 class MockMicrophone(BaseMicrophone):
@@ -144,10 +144,10 @@ class TestRecordDuration:
         """Test that record requires microphone to be started."""
         mic = MockMicrophone()
 
-        with pytest.raises(MicrophoneOpenError) as exc_info:
+        with pytest.raises(MicrophoneReadError) as exc_info:
             mic.record(duration=1.0)
 
-        assert "must be started" in str(exc_info.value)
+        assert "start" in str(exc_info.value)
 
     def test_record_concatenates_chunks_correctly(self):
         """Test that record correctly concatenates audio chunks."""

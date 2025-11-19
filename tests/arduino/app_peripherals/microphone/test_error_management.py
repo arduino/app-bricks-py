@@ -16,6 +16,7 @@ from arduino.app_peripherals.microphone.errors import (
     MicrophoneReadError,
     MicrophoneConfigError,
 )
+from arduino.app_peripherals.microphone.websocket_microphone import WebSocketMicrophone
 
 MOCK_USB_CARDS = ["SomeCard"]
 MOCK_USB_PCM_DEVICES = ["plughw:CARD=SomeCard,DEV=0"]
@@ -39,7 +40,7 @@ class TestALSADeviceDisconnection:
         pcm_instance = MagicMock()
         mock_pcm.return_value = pcm_instance
 
-        mic = Microphone(device=0)
+        mic = ALSAMicrophone()
         mic.start()
 
         # Simulate device disconnection
@@ -65,7 +66,7 @@ class TestALSADeviceDisconnection:
         pcm_instance = MagicMock()
         mock_pcm.return_value = pcm_instance
 
-        mic = Microphone(device=0)
+        mic = ALSAMicrophone()
         mic.start()
 
         # Device present
@@ -98,13 +99,13 @@ class TestALSADeviceReconnection:
         mock_pcms.return_value = []
 
         with pytest.raises(MicrophoneConfigError):
-            mic = Microphone(device=0)
+            mic = ALSAMicrophone()
 
         # Make device available
         mock_pcms.return_value = MOCK_USB_PCM_DEVICES
 
         # Now creation and start should work
-        mic = Microphone(device=0)
+        mic = Microphone()
         mic.start()
 
         assert mic.is_started()
@@ -124,7 +125,7 @@ class TestALSADeviceReconnection:
         pcm_instance = MagicMock()
         mock_pcm.return_value = pcm_instance
 
-        mic = Microphone(device=0)
+        mic = ALSAMicrophone()
         mic.start()
 
         # Clear PCM to simulate disconnection
@@ -158,7 +159,7 @@ class TestALSAReadErrors:
         # Return 0 length
         pcm_instance.read.return_value = (0, b"")
 
-        mic = Microphone(device=0)
+        mic = Microphone()
         mic.start()
 
         audio = mic.capture()
@@ -182,7 +183,7 @@ class TestALSAReadErrors:
         # Return ALSA error that's not disconnection
         pcm_instance.read.side_effect = alsaaudio.ALSAAudioError("Buffer overrun")
 
-        mic = Microphone(device=0)
+        mic = Microphone()
         mic.start()
 
         with pytest.raises(MicrophoneReadError):
@@ -204,7 +205,8 @@ class TestALSAOpenErrors:
 
         mock_pcm.side_effect = alsaaudio.ALSAAudioError("Device or resource busy")
 
-        mic = Microphone(device=0)
+        mic = Microphone()
+        mic.auto_reconnect_delay = 0
 
         with pytest.raises(MicrophoneOpenError) as exc_info:
             mic.start()
@@ -223,7 +225,8 @@ class TestALSAOpenErrors:
 
         mock_pcm.side_effect = alsaaudio.ALSAAudioError("Unknown error")
 
-        mic = Microphone(device=0)
+        mic = Microphone()
+        mic.auto_reconnect_delay = 0
 
         with pytest.raises(MicrophoneOpenError):
             mic.start()
@@ -245,7 +248,7 @@ class TestALSAVolumeControlErrors:
         pcm_instance = MagicMock()
         mock_pcm.return_value = pcm_instance
 
-        mic = Microphone(device=0)
+        mic = ALSAMicrophone()
         mic.start()
 
         volume = mic.get_volume()
@@ -265,7 +268,7 @@ class TestALSAVolumeControlErrors:
         pcm_instance = MagicMock()
         mock_pcm.return_value = pcm_instance
 
-        mic = Microphone(device=0)
+        mic = ALSAMicrophone()
         mic.start()
 
         # Should not raise
@@ -288,7 +291,7 @@ class TestALSAVolumeControlErrors:
         mixer_instance = MagicMock()
         mock_mixer_class.return_value = mixer_instance
 
-        mic = Microphone(device=0)
+        mic = ALSAMicrophone()
         mic.start()
 
         with pytest.raises(ValueError):
@@ -304,26 +307,20 @@ class TestWebSocketClientDisconnection:
     @pytest.mark.asyncio
     async def test_client_disconnect_handled_gracefully(self):
         """Test that client disconnection is handled gracefully."""
-        mic = Microphone(device="ws://127.0.0.1:0", audio_format="binary")
+        mic = WebSocketMicrophone(port=0, audio_format="binary")
 
         try:
             mic.start()
 
-            for _ in range(50):
-                if mic._server is not None:
-                    break
-                await asyncio.sleep(0.1)
-
             # Connect and disconnect
-            async with websockets.connect(f"ws://127.0.0.1:{mic.port}") as ws:
+            async with websockets.connect(mic.url) as ws:
                 await ws.recv()
-                # Connection closed on exit
 
-            # Wait for disconnection to be processed
-            await asyncio.sleep(0.2)
+            await asyncio.sleep(0.1)
 
             # Server should still be running
             assert mic.is_started()
+            assert mic._server is not None
             assert mic._client is None
 
         finally:
@@ -332,24 +329,19 @@ class TestWebSocketClientDisconnection:
     @pytest.mark.asyncio
     async def test_client_reconnect_after_disconnect(self):
         """Test that client can reconnect after disconnecting."""
-        mic = Microphone(device="ws://127.0.0.1:0", audio_format="binary")
+        mic = WebSocketMicrophone(port=0, audio_format="binary")
 
         try:
             mic.start()
 
-            for _ in range(50):
-                if mic._server is not None:
-                    break
-                await asyncio.sleep(0.1)
-
             # First connection
-            async with websockets.connect(f"ws://127.0.0.1:{mic.port}") as ws:
+            async with websockets.connect(mic.url) as ws:
                 await ws.recv()
 
-            await asyncio.sleep(0.2)
+            await asyncio.sleep(0.1)
 
             # Second connection should work
-            async with websockets.connect(f"ws://127.0.0.1:{mic.port}") as ws:
+            async with websockets.connect(mic.url) as ws:
                 welcome = await ws.recv()
                 assert "connected" in welcome.lower()
 
@@ -359,26 +351,23 @@ class TestWebSocketClientDisconnection:
     @pytest.mark.asyncio
     async def test_client_abrupt_disconnect(self):
         """Test handling of abrupt client disconnect."""
-        mic = Microphone(device="ws://127.0.0.1:0", audio_format="binary")
+        mic = WebSocketMicrophone(port=0, audio_format="binary")
 
         try:
             mic.start()
 
-            for _ in range(50):
-                if mic._server is not None:
-                    break
-                await asyncio.sleep(0.1)
-
-            ws = await websockets.connect(f"ws://127.0.0.1:{mic.port}")
+            ws = await websockets.connect(mic.url)
             await ws.recv()
 
             # Abruptly close without proper shutdown
             await ws.close()
 
-            await asyncio.sleep(0.2)
+            await asyncio.sleep(0.1)
 
             # Server should handle it gracefully
             assert mic.is_started()
+            assert mic._server is not None
+            assert mic._client is None
 
         finally:
             mic.stop()
@@ -390,7 +379,7 @@ class TestWebSocketServerErrors:
     @pytest.mark.asyncio
     async def test_start_on_privileged_port_fails(self):
         """Test that starting on privileged port fails gracefully."""
-        mic = Microphone(device="ws://0.0.0.0:1", audio_format="binary")
+        mic = WebSocketMicrophone(port=1, audio_format="binary")
 
         try:
             mic.start()
@@ -419,7 +408,7 @@ class TestConfigurationErrors:
     def test_no_devices_found_raises_error(self, mock_pcms, mock_card_indexes, mock_cards):
         """Test that no USB devices found raises error."""
         with pytest.raises(MicrophoneConfigError):
-            Microphone(device=0)
+            Microphone()
 
     @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.cards", return_value=MOCK_USB_CARDS)
     @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_indexes", return_value=[0])
@@ -477,7 +466,7 @@ class TestErrorRecovery:
         pcm_instance = MagicMock()
         mock_pcm.return_value = pcm_instance
 
-        mic = Microphone(device=0)
+        mic = Microphone()
         mic.start()
         mic.stop()
 
@@ -498,7 +487,7 @@ class TestErrorRecovery:
         pcm_instance = MagicMock()
         mock_pcm.return_value = pcm_instance
 
-        mic = Microphone(device=0)
+        mic = Microphone()
 
         try:
             with mic:
@@ -528,7 +517,7 @@ class TestStopOnError:
         mock_pcm.return_value = pcm_instance
         pcm_instance.close.side_effect = Exception("Close failed")
 
-        mic = Microphone(device=0)
+        mic = Microphone()
         mic.start()
 
         # Should not raise

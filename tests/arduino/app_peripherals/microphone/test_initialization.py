@@ -59,7 +59,7 @@ class TestMicrophoneFactoryInstantiation:
         mic = Microphone(device="ws://localhost:9234")
 
         assert isinstance(mic, WebSocketMicrophone)
-        assert mic.host == "0.0.0.0"
+        assert mic._bind_ip == "0.0.0.0"
         assert mic.port == 9234
 
     def test_factory_invalid_device_type_raises_error(self):
@@ -404,32 +404,40 @@ class TestALSAFormatMapping:
 class TestWebSocketURLParsing:
     """Test WebSocket URL parsing."""
 
-    def test_parse_host(self):
+    def test_ignore_host(self):
         """Test parsing hosts."""
         mic = Microphone(device="ws://0.0.0.0")
-        assert mic.host == "0.0.0.0"
+        assert isinstance(mic, WebSocketMicrophone)
+        assert mic.url == "ws://0.0.0.0:8080"
 
         mic = Microphone(device=f"ws://192.168.1.1")  # Overwritten
-        assert mic.host == "0.0.0.0"
+        assert isinstance(mic, WebSocketMicrophone)
+        assert mic.url == "ws://0.0.0.0:8080"
 
         mic = Microphone(device="ws://127.0.0.1")  # Overwritten
-        assert mic.host == "0.0.0.0"
+        assert isinstance(mic, WebSocketMicrophone)
+        assert mic.url == "ws://0.0.0.0:8080"
 
         mic = Microphone(device="ws://localhost")  # Overwritten
-        assert mic.host == "0.0.0.0"
+        assert isinstance(mic, WebSocketMicrophone)
+        assert mic.url == "ws://0.0.0.0:8080"
 
         mic = Microphone(device="ws://example.com")  # Overwritten
-        assert mic.host == "0.0.0.0"
+        assert isinstance(mic, WebSocketMicrophone)
+        assert mic.url == "ws://0.0.0.0:8080"
 
     def test_parse_port(self):
         """Test parsing ports."""
         mic = Microphone(device="ws://0.0.0.0")
-        assert mic.port is not 8080  # Default port
+        assert isinstance(mic, WebSocketMicrophone)
+        assert mic.port == 8080  # Default port
 
         mic = Microphone(device="ws://0.0.0.0:9876")
+        assert isinstance(mic, WebSocketMicrophone)
         assert mic.port == 9876
 
         mic = Microphone(device="ws://0.0.0.0:0")
+        assert isinstance(mic, WebSocketMicrophone)
         mic.start()  # Bind to any available port
         assert mic.port is not 0
         mic.stop()
@@ -493,6 +501,8 @@ class TestMicrophoneInitialState:
         """Test WebSocket microphone initial state."""
         mic = Microphone(device="ws://localhost:0")
 
+        assert isinstance(mic, WebSocketMicrophone)
+        assert mic.port == 0
         assert not mic.is_started()
         assert mic._server is None
         assert mic._client is None
