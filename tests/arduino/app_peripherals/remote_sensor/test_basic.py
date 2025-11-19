@@ -8,7 +8,6 @@ Basic functionality tests for RemoteSensor.
 Tests initialization, lifecycle (start/stop), configuration, and context manager support.
 """
 
-import time
 import pytest
 
 from arduino.app_peripherals.remote_sensor import RemoteSensor, RemoteSensorConfigError
@@ -17,9 +16,9 @@ from arduino.app_peripherals.remote_sensor import RemoteSensor, RemoteSensorConf
 def test_remote_sensor_initialization():
     """Test RemoteSensor can be initialized with default parameters."""
     sensor = RemoteSensor()
-    assert sensor.host == "0.0.0.0"
+    assert sensor.url == "ws://0.0.0.0:8080"
     assert sensor.port == 8080
-    assert sensor.timeout == 10
+    assert sensor.timeout == 3
     assert sensor.data_format == "json"
     assert not sensor.is_started()
 
@@ -32,8 +31,8 @@ def test_remote_sensor_invalid_format():
 
 def test_remote_sensor_custom_parameters():
     """Test RemoteSensor can be initialized with custom parameters."""
-    sensor = RemoteSensor(host="127.0.0.1", port=9000, timeout=5, data_format="csv")
-    assert sensor.host == "127.0.0.1"
+    sensor = RemoteSensor(port=9000, timeout=5, data_format="csv")
+    assert sensor.url == "ws://0.0.0.0:9000"
     assert sensor.port == 9000
     assert sensor.timeout == 5
     assert sensor.data_format == "csv"
@@ -41,14 +40,14 @@ def test_remote_sensor_custom_parameters():
 
 def test_remote_sensor_start_stop():
     """Test RemoteSensor can be started and stopped."""
-    sensor = RemoteSensor(port=8766)
+    sensor = RemoteSensor(port=0)
+    sensor.auto_reconnect_delay = 0
 
     # Should not be started initially
     assert not sensor.is_started()
 
     # Start the sensor
     sensor.start()
-    time.sleep(0.5)  # Give server time to start
     assert sensor.is_started()
 
     # Stop the sensor
@@ -58,8 +57,7 @@ def test_remote_sensor_start_stop():
 
 def test_remote_sensor_context_manager():
     """Test RemoteSensor works as a context manager."""
-    with RemoteSensor(port=8767) as sensor:
-        time.sleep(0.5)  # Give server time to start
+    with RemoteSensor(port=0) as sensor:
         assert sensor.is_started()
 
     # Should be stopped after context exit
@@ -68,10 +66,9 @@ def test_remote_sensor_context_manager():
 
 def test_remote_sensor_multiple_start():
     """Test that calling start() multiple times is safe."""
-    sensor = RemoteSensor(port=8768)
-
+    sensor = RemoteSensor(port=0)
     sensor.start()
-    time.sleep(0.5)
+
     assert sensor.is_started()
 
     # Calling start again should be safe (no-op)
@@ -84,10 +81,9 @@ def test_remote_sensor_multiple_start():
 
 def test_remote_sensor_multiple_stop():
     """Test that calling stop() multiple times is safe."""
-    sensor = RemoteSensor(port=8769)
+    sensor = RemoteSensor(port=0)
 
     sensor.start()
-    time.sleep(0.5)
     sensor.stop()
     assert not sensor.is_started()
 

@@ -3,12 +3,13 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import json
+import os
 import threading
 import time
 import asyncio
 import numpy as np
-from typing import Optional, Callable, Dict, Any, Literal
-from concurrent.futures import CancelledError, TimeoutError
+from typing import Optional, Callable, Literal
+from concurrent.futures import CancelledError, ThreadPoolExecutor, TimeoutError
 
 import websockets
 
@@ -31,53 +32,92 @@ class RemoteSensor:
 
     def __init__(
         self,
-        host: str = "0.0.0.0",
         port: int = 8080,
-        timeout: int = 10,
+        timeout: int = 3,
         data_format: Literal["json", "csv", "binary"] = "json",
+        auto_reconnect: bool = True,
     ):
         """
         Initialize RemoteSensor WebSocket server.
 
         Args:
-            host (str): Host address to bind the server to (default: "0.0.0.0")
             port (int): Port to bind the server to (default: 8080)
-            timeout (int): Connection timeout in seconds (default: 10)
+            timeout (int): Connection timeout in seconds (default: 3)
             data_format (str): Expected data format from clients (default: "json")
                 - "json": JSON object format. Callback receives the parsed dict directly.
                 - "csv": CSV format with ",", "\\t", or " " as field separators and CRLF or LF
                   as line separator. Double quotes for escaping strings. Each line is a sensor
                   reading. Callback receives {"csv": "line_content"}.
                 - "binary": Raw binary data. Callback receives {"binary": numpy_array}.
+            auto_reconnect (bool, optional): Enable automatic reconnection on failure. Default: True.
         """
-        self.host = host
+        self.protocol = "ws"
         self.port = port
         self.timeout = timeout
+        if data_format not in ["json", "csv", "binary"]:
+            raise RemoteSensorConfigError(f"Invalid data format: {data_format}. Must be 'json', 'csv', or 'binary'")
         self.data_format = data_format.lower()
         self.logger = logger
+        self.name = self.__class__.__name__
+
+        # Auto-reconnection parameters
+        self.auto_reconnect = auto_reconnect
+        self.auto_reconnect_delay = 1.0
+        self.first_connection_max_retries = 10
+    
+        host_ip = os.getenv("HOST_IP")
+        self._bind_ip = "0.0.0.0"
+        self._external_ip = host_ip if host_ip is not None else self._bind_ip
+
+        self._status: Literal["disconnected", "connected", "streaming", "paused"] = "disconnected"
         self._is_started = False
-
-        if self.data_format not in ["json", "csv", "binary"]:
-            raise RemoteSensorConfigError(f"Invalid data_format: {data_format}. Must be 'json', 'csv', or 'binary'")
-
-        # This callback doesn't require a lock as long as we're running on CPython
-        self._datapoint_callback: Optional[Callable[[Dict[Any, Any]], None]] = None
         self._server = None
         self._loop = None
         self._server_thread = None
         self._stop_event = asyncio.Event()
         self._client: Optional[websockets.ServerConnection] = None
         self._client_lock = asyncio.Lock()
+        
+        # Event handling
+        # These callbacks doesn't require a lock as long as we're running on CPython
+        self._on_datapoint_cb: Optional[Callable[[dict], None]] = None
+        self._on_status_changed_cb: Callable[[str, dict], None] | None = None
+        self._event_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="RemoteSensorCallbackRunner")
+
+    @property
+    def status(self) -> Literal["disconnected", "connected", "streaming", "paused"]:
+        """Read-only property for camera status."""
+        return self._status
+
+    @property
+    def url(self) -> str:
+        """Return the WebSocket server address."""
+        return f"{self.protocol}://{self._external_ip}:{self.port}"
 
     def start(self) -> None:
         """Start the WebSocket server."""
-        if self._is_started:
-            logger.warning("RemoteSensor is already started")
-            return
+        self.logger.info("Starting remote sensor...")
 
-        self._open_sensor()
-        self._is_started = True
-        logger.info(f"RemoteSensor started on {self.host}:{self.port}")
+        attempt = 0
+        while not self.is_started():
+            try:
+                self._open_sensor()
+                self._is_started = True
+                self.logger.info(f"Successfully started {self.name}")
+            except Exception as e:
+                if not self.auto_reconnect:
+                    raise
+                attempt += 1
+                if attempt >= self.first_connection_max_retries:
+                    raise RemoteSensorOpenError(
+                        f"Failed to start remote sensor after {self.first_connection_max_retries} attempts, last error is: {e}"
+                    )
+
+                delay = min(self.auto_reconnect_delay * (2 ** (attempt - 1)), 60)  # Exponential backoff
+                self.logger.warning(
+                    f"Failed to start remote sensor (attempt {attempt}/{self.first_connection_max_retries}). Retrying in {delay:.1f}s..."
+                )
+                time.sleep(delay)
 
     def _open_sensor(self) -> None:
         """Start the WebSocket server."""
@@ -86,14 +126,18 @@ class RemoteSensor:
 
         # Wait for server to start
         start_time = time.time()
-        start_timeout = 10
-        while self._server is None and time.time() - start_time < start_timeout:
+        start_timeout = self.timeout
+        while time.time() - start_time < start_timeout:
             if self._server is not None:
-                break
+                self.logger.info(f"WebSocket remote sensor server started on {self.url}")
+                return
             time.sleep(0.1)
 
-        if self._server is None:
-            raise RemoteSensorOpenError(f"Failed to start WebSocket server on {self.host}:{self.port}")
+        # Cleanup server thread if it failed to start in time
+        if self._server_thread.is_alive():
+            self._server_thread.join(timeout=1.0)
+
+        raise RemoteSensorOpenError(f"Failed to start WebSocket server on {self.url}")
 
     def _start_server_thread(self) -> None:
         """Run WebSocket server in its own thread with event loop."""
@@ -102,7 +146,7 @@ class RemoteSensor:
             asyncio.set_event_loop(self._loop)
             self._loop.run_until_complete(self._start_server())
         except Exception as e:
-            logger.error(f"WebSocket server thread error: {e}")
+            self.logger.error(f"WebSocket server thread error: {e}")
         finally:
             if self._loop and not self._loop.is_closed():
                 self._loop.close()
@@ -112,27 +156,37 @@ class RemoteSensor:
         try:
             self._stop_event.clear()
 
-            self._server = await websockets.serve(
-                self._ws_handler,
-                self.host,
-                self.port,
-                open_timeout=self.timeout,
-                ping_timeout=self.timeout,
-                close_timeout=self.timeout,
-                ping_interval=20,
+            self._server = await asyncio.wait_for(
+                websockets.serve(
+                    self._ws_handler,
+                    self._bind_ip,
+                    self.port,
+                    open_timeout=self.timeout,
+                    ping_timeout=self.timeout,
+                    close_timeout=self.timeout,
+                    ping_interval=20,
+                ),
+                timeout=self.timeout,
             )
 
-            logger.info(f"RemoteSensor WebSocket server started on {self.host}:{self.port}")
+            # Get the actual port if OS assigned one (i.e. when port=0)
+            if self.port == 0:
+                server_socket = list(self._server.sockets)[0]
+                self.port = server_socket.getsockname()[1]
 
             await self._stop_event.wait()
 
+        except TimeoutError as e:
+            self.logger.error(f"Failed to start WebSocket server in a time ({self.timeout}s): {e}")
+            raise
         except Exception as e:
-            logger.error(f"Error starting WebSocket server: {e}")
+            self.logger.error(f"Failed to start WebSocket server: {e}")
             raise
         finally:
             if self._server:
                 self._server.close()
                 await self._server.wait_closed()
+                self._server = None
 
     async def _ws_handler(self, conn: websockets.ServerConnection) -> None:
         """Handle a connected WebSocket client. Only one client allowed at a time."""
@@ -141,18 +195,20 @@ class RemoteSensor:
         async with self._client_lock:
             if self._client is not None:
                 # Reject the new client
-                logger.warning(f"Rejecting client {client_addr}: only one client allowed at a time")
+                self.logger.warning(f"Rejecting client {client_addr}: only one client allowed at a time")
                 try:
                     await conn.send(json.dumps({"error": "Server busy", "message": "Only one client connection allowed at a time", "code": 1000}))
                     await conn.close(code=1000, reason="Server busy - only one client allowed")
                 except Exception as e:
-                    logger.warning(f"Error sending rejection message to {client_addr}: {e}")
+                    self.logger.warning(f"Error sending rejection message to {client_addr}: {e}")
                 return
 
             # Accept the client
             self._client = conn
 
-        logger.info(f"Client connected: {client_addr}")
+        self._set_status("connected", {"client_address": client_addr})
+
+        self.logger.debug(f"Client connected: {client_addr}")
 
         try:
             # Send welcome message
@@ -163,32 +219,33 @@ class RemoteSensor:
                     "data_format": self.data_format,
                 })
             except Exception as e:
-                logger.warning(f"Could not send welcome message to {client_addr}: {e}")
+                self.logger.warning(f"Could not send welcome message to {client_addr}: {e}")
 
             async for message in conn:
-                datapoints = await self._parse_message(message)
-                if datapoints is not None and self._datapoint_callback is not None:
+                datapoints = self._parse_message(message)
+                if datapoints is not None and self._on_datapoint_cb is not None:
                     # Handle both single datapoint and list of datapoints
                     if not isinstance(datapoints, list):
                         datapoints = [datapoints]
 
                     for datapoint in datapoints:
                         try:
-                            await self._loop.run_in_executor(None, self._datapoint_callback, datapoint)
+                            await self._loop.run_in_executor(None, self._on_datapoint_cb, datapoint)
                         except Exception as e:
-                            logger.error(f"Error in datapoint callback: {e}")
+                            self.logger.error(f"Error in datapoint callback: {e}")
 
         except websockets.exceptions.ConnectionClosed:
-            logger.info(f"Client disconnected: {client_addr}")
+            self.logger.info(f"Client disconnected: {client_addr}")
         except Exception as e:
-            logger.warning(f"Error handling client {client_addr}: {e}")
+            self.logger.warning(f"Error handling client {client_addr}: {e}")
         finally:
             async with self._client_lock:
                 if self._client == conn:
                     self._client = None
-                    logger.info(f"Client removed: {client_addr}")
+                    self._set_status("disconnected", {"client_address": client_addr})
+                    self.logger.debug(f"Client disconnected: {client_addr}")
 
-    async def _parse_message(self, message):
+    def _parse_message(self, message):
         """
         Parse WebSocket message to extract datapoint(s) based on configured format.
 
@@ -249,26 +306,32 @@ class RemoteSensor:
 
     def stop(self) -> None:
         """Stop the WebSocket server."""
-        if not self._is_started:
-            logger.warning("RemoteSensor is not started")
+        if not self.is_started():
             return
+        
+        self.logger.info("Stopping remote sensor...")
 
-        self._close_sensor()
-        self._is_started = False
-        logger.info("RemoteSensor stopped")
+        try:
+            self._close_sensor()
+            self._event_executor.shutdown()
+            self._is_started = False
+            self.logger.info(f"Successfully stopped {self.name}")
+        except Exception as e:
+            self.logger.warning(f"Failed to stop remote sensor: {e}")
 
     def _close_sensor(self) -> None:
         """Stop the WebSocket server."""
-        if self._loop is not None and self._server is not None:
+        # Only attempt cleanup if the event loop is running
+        if self._loop and not self._loop.is_closed() and self._loop.is_running():
             try:
                 future = asyncio.run_coroutine_threadsafe(self._stop_and_disconnect_client(), self._loop)
-                future.result(timeout=1.0)
+                future.result(1.0)
             except CancelledError:
-                logger.debug(f"Error stopping WebSocket server: CancelledError")
+                self.logger.debug(f"Error stopping WebSocket server: CancelledError")
             except TimeoutError:
-                logger.debug(f"Error stopping WebSocket server: TimeoutError")
+                self.logger.debug(f"Error stopping WebSocket server: TimeoutError")
             except Exception as e:
-                logger.warning(f"Error stopping WebSocket server: {e}")
+                self.logger.warning(f"Error stopping WebSocket server: {e}")
 
         # Wait for server thread to finish
         if self._server_thread and self._server_thread.is_alive():
@@ -286,32 +349,36 @@ class RemoteSensor:
         # Send goodbye message and close the client connection
         if self._client:
             try:
+                self.logger.debug("Disconnecting client...")
                 # Send goodbye message before closing
                 await self._send_to_client({
                     "status": "disconnecting",
                     "message": "Server is shutting down. Connection will be closed.",
                 })
-                # Give a brief moment for the message to be sent
-                await asyncio.sleep(0.1)
             except Exception as e:
-                logger.warning(f"Error closing client in stop event: {e}")
+                self.logger.warning(f"Error closing client in stop event: {e}")
             finally:
-                await self._client.close()
+                if self._client:
+                    await self._client.close()
+                    self.logger.debug("Client connection closed")
 
         self._stop_event.set()
 
-    async def _send_to_client(self, message: dict) -> None:
+    async def _send_to_client(self, message: str | bytes | dict) -> None:
         """Send a message to the connected client."""
-        if self._client is None:
-            raise ConnectionError("No client connected to send message to")
-
         if isinstance(message, dict):
             message = json.dumps(message)
 
-        try:
-            await self._client.send(message)
-        except Exception as e:
-            logger.warning(f"Error sending message to client: {e}")
+        async with self._client_lock:
+            if self._client is None:
+                raise ConnectionError("No client connected to send message to")
+
+            try:
+                await self._client.send(message)
+            except websockets.ConnectionClosedOK:
+                self.logger.warning("Client has already closed the connection")
+            except Exception:
+                raise
 
     def on_datapoint(self, callback: Callable[[dict], None]) -> None:
         """
@@ -327,11 +394,84 @@ class RemoteSensor:
         Args:
             callback (Callable): A function that takes a dict and returns None.
         """
-        self._datapoint_callback = callback
+        self._on_datapoint_cb = callback
 
     def is_started(self) -> bool:
         """Check if the sensor is started and running."""
         return self._is_started
+
+    def on_status_changed(self, callback: Callable[[str, dict], None] | None):
+        """Registers or removes a callback to be triggered on camera lifecycle events.
+
+        When a camera status changes, the provided callback function will be invoked.
+        If None is provided, the callback will be removed.
+
+        Args:
+            callback (Callable[[str, dict], None]): A callback that will be called every time the
+                camera status changes with the new status and any associated data. The status names
+                depend on the actual camera implementation being used. Some common events are:
+                - 'connected': The camera has been reconnected.
+                - 'disconnected': The camera has been disconnected.
+                - 'streaming': The stream is streaming.
+                - 'paused': The stream has been paused and is temporarily unavailable.
+            callback (None): To unregister the current callback, if any.
+
+        Example:
+            def on_status(status: str, data: dict):
+                print(f"Camera is now: {status}")
+                print(f"Data: {data}")
+                # Here you can add your code to react to the event
+
+            camera.on_status_changed(on_status)
+        """
+        if callback is None:
+            self._on_status_changed_cb = None
+        else:
+
+            def _callback_wrapper(new_status: str, data: dict):
+                try:
+                    callback(new_status, data)
+                except Exception as e:
+                    self.logger.error(f"Callback for '{new_status}' status failed with error: {e}")
+
+            self._on_status_changed_cb = _callback_wrapper
+
+    def _set_status(self, new_status: Literal["disconnected", "connected", "streaming", "paused"], data: dict | None = None) -> None:
+        """
+        Updates the current status of the camera and invokes the registered status
+        changed callback in the background, if any.
+
+        Only allowed states and transitions are considered, other states are ignored.
+        Allowed states are:
+            - disconnected
+            - connected
+            - streaming
+            - paused
+
+        Args:
+            new_status (str): The name of the new status.
+            data (dict): Additional data associated with the status change.
+        """
+
+        if self.status == new_status:
+            return
+
+        allowed_transitions = {
+            "disconnected": ["connected"],
+            "connected": ["disconnected", "streaming"],
+            "streaming": ["paused", "disconnected"],
+            "paused": ["streaming", "disconnected"],
+        }
+
+        # If new status is not in the state machine, ignore it
+        if new_status not in allowed_transitions:
+            return
+
+        # Check if new_status is an allowed transition for the current status
+        if new_status in allowed_transitions[self._status]:
+            self._status = new_status
+            if self._on_status_changed_cb is not None:
+                self._event_executor.submit(self._on_status_changed_cb, new_status, data if data is not None else {})
 
     def __enter__(self):
         """Context manager entry."""
