@@ -41,7 +41,7 @@ class WebSocketMicrophone(BaseMicrophone):
     def __init__(
         self,
         port: int = 8080,
-        timeout: int = 10,
+        timeout: int = 3,
         audio_format: Literal["binary", "base64", "json"] = "binary",
         sample_rate: int = RATE_16K,
         channels: int = CHANNELS_MONO,
@@ -53,7 +53,7 @@ class WebSocketMicrophone(BaseMicrophone):
 
         Args:
             port (int): Port to bind the server to (default: 8080)
-            timeout (int): Connection timeout in seconds (default: 10)
+            timeout (int): Connection timeout in seconds (default: 3)
             audio_format (str): Expected audio format from clients ("binary", "base64", "json") (default: "binary")
             sample_rate (int): Sample rate in Hz (default: 16000)
             channels (int): Number of audio channels (default: 1)

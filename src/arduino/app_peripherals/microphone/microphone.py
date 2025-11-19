@@ -50,11 +50,16 @@ class Microphone:
             chunk_size (int, optional): Number of frames per chunk. Default: 1024
             **kwargs: Microphone-specific configuration parameters grouped by type:
                 WebSocket Microphone Parameters:
-                    host (str, optional): WebSocket server host. Default: "0.0.0.0"
                     port (int, optional): WebSocket server port. Default: 8080
-                    timeout (float, optional): Connection timeout in seconds. Default: 10.0
-                    audio_format (str, optional): Expected audio format ("binary", "base64",
-                        "json"). Default: "binary"
+                    timeout (float, optional): Connection timeout in seconds. Default: 3.0
+                    audio_format (str): Expected audio format from clients ("binary", "base64",
+                        "json") (default: "binary")
+                    sample_rate (int): Sample rate in Hz (default: 16000)
+                    channels (int): Number of audio channels (default: 1)
+                    format (str): Audio format (default: "S16_LE")
+                    chunk_size (int): Number of frames per chunk (default: 1024). This parameter
+                        is advisory, it's sent to clients to suggest an optimal chunk size but
+                        clients may ignore it.
 
         Returns:
             BaseMicrophone: Appropriate microphone implementation instance
