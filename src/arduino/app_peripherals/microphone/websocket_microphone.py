@@ -47,6 +47,7 @@ class WebSocketMicrophone(BaseMicrophone):
         channels: int = CHANNELS_MONO,
         format: str = FORMAT_S16_LE,
         chunk_size: int = CHUNK_BALANCED,
+        auto_reconnect: bool = True,
     ):
         """
         Initialize WebSocket microphone server.
@@ -60,8 +61,9 @@ class WebSocketMicrophone(BaseMicrophone):
             format (str): Audio format (default: "S16_LE")
             chunk_size (int): Number of frames per chunk (default: 1024). This parameter is advisory,
                 it's sent to clients to suggest an optimal chunk size but clients may ignore it.
+            auto_reconnect (bool, optional): Enable automatic reconnection on failure. Default: True.
         """
-        super().__init__(sample_rate, channels, format, chunk_size)
+        super().__init__(sample_rate, channels, format, chunk_size, auto_reconnect)
 
         # Determine numpy dtype based on format
         self._dtype = self._resolve_dtype(format)

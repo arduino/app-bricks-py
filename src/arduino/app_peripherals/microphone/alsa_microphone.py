@@ -31,6 +31,7 @@ class ALSAMicrophone(BaseMicrophone):
         channels: int = CHANNELS_MONO,
         format: str = FORMAT_S16_LE,
         chunk_size: int = CHUNK_BALANCED,
+        auto_reconnect: bool = True,
     ):
         """
         Initialize ALSA microphone.
@@ -44,11 +45,12 @@ class ALSAMicrophone(BaseMicrophone):
             channels (int): Number of audio channels (default: 1).
             format (str): Audio format (default: "S16_LE").
             chunk_size (int): Number of frames per chunk (default: 1024).
+            auto_reconnect (bool, optional): Enable automatic reconnection on failure. Default: True.
 
         Raises:
             MicrophoneConfigError: If the format is not supported.
         """
-        super().__init__(sample_rate, channels, format, chunk_size)
+        super().__init__(sample_rate, channels, format, chunk_size, auto_reconnect)
 
         # Determine ALSA format and numpy dtype based on format
         self._alsa_format, self._dtype = self._resolve_format_and_dtype(format)
