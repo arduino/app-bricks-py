@@ -58,7 +58,6 @@ class WebSocketCamera(BaseCamera):
         Initialize WebSocket camera server.
 
         Args:
-            host (str): Host address to bind the server to (default: "0.0.0.0")
             port (int): Port to bind the server to (default: 8080)
             timeout (int): Connection timeout in seconds (default: 10)
             frame_format (str): Expected frame format from clients ("binary", "base64", "json") (default: "binary")

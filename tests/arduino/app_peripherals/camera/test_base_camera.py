@@ -5,6 +5,8 @@
 import pytest
 import time
 import numpy as np
+import tempfile
+import cv2
 
 from arduino.app_peripherals.camera import BaseCamera, CameraTransformError
 from arduino.app_peripherals.usb_camera import CameraReadError
@@ -76,6 +78,12 @@ def test_base_camera_init_custom():
     assert camera.adjustments == adj_func
     assert not camera.auto_reconnect
     assert not camera.is_started()
+
+
+def test_base_camera_init_invalid():
+    """Test BaseCamera initialization with invalid parameters."""
+    with pytest.raises(ValueError):
+        MockedCamera(fps=0)
 
 
 def test_is_started_state_transitions():
@@ -344,20 +352,6 @@ def test_context_manager_with_exception():
     assert camera.close_call_count == 1
 
 
-def test_capture_no_throttling():
-    """Test capture behavior with fps=0 (no throttling)."""
-    camera = MockedCamera(fps=0)
-    camera.start()
-
-    start_time = time.monotonic()
-    frame = camera.capture()
-    elapsed = time.monotonic() - start_time
-
-    assert elapsed < 0.01
-    assert frame is not None
-    assert camera.read_call_count == 1
-
-
 def test_capture_multiple_adjustments():
     """Test that adjustment pipelines are applied correctly."""
 
@@ -424,3 +418,94 @@ def test_events():
     assert "paused" in events[2][0]
     assert "streaming" in events[3][0]
     assert "disconnected" in events[4][0]
+
+def test_record_zero_duration():
+    camera = MockedCamera()
+    camera.start()
+    with pytest.raises(ValueError):
+        camera.record(0)
+    camera.stop()
+
+def test_record():
+    camera = MockedCamera(fps=5)
+    camera.frame = np.ones((480, 640, 3), dtype=np.uint8)
+    camera.start()
+    
+    duration = 1.0
+    expected_frames = int(camera.fps * duration)
+    frames = camera.record(duration)
+    
+    assert isinstance(frames, np.ndarray)
+    assert frames.shape[0] == expected_frames
+    assert frames.shape[1:] == camera.frame.shape
+    assert frames.dtype == camera.frame.dtype
+    assert np.all(frames == camera.frame)
+    
+    camera.stop()
+
+def test_record_avi():
+    camera = MockedCamera(fps=5)
+    camera.frame = np.ones((480, 640, 3), dtype=np.uint8)
+    camera.start()
+
+    duration = 1.0
+    expected_frames = int(camera.fps * duration)
+    avi_bytes = camera.record_avi(duration)
+
+    assert isinstance(avi_bytes, np.ndarray)
+    assert avi_bytes.dtype == np.uint8
+    assert avi_bytes.size > 0
+    
+    with tempfile.NamedTemporaryFile(suffix='.avi') as tmp:
+        tmp.write(avi_bytes.tobytes())
+        tmp.flush()
+
+        read_count = 0
+        cap = cv2.VideoCapture(tmp.name)
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            assert frame is not None
+            assert frame.dtype == np.uint8
+            read_count += 1
+        
+        cap.release()
+    
+    assert read_count == expected_frames
+    
+    camera.stop()
+
+def test_record_avi_uint8_conversion():
+    camera = MockedCamera(fps=5)
+    # Use float32 frame, should be converted to uint8 in AVI
+    camera.frame = np.ones((10, 10, 3), dtype=np.float64)
+    camera.start()
+
+    duration = 1.0
+    expected_frames = int(camera.fps * duration)
+    avi_bytes = camera.record_avi(duration)
+    
+    assert isinstance(avi_bytes, np.ndarray)
+    assert avi_bytes.dtype == np.uint8
+    assert avi_bytes.size > 0
+    
+    with tempfile.NamedTemporaryFile(suffix='.avi') as tmp:
+        tmp.write(avi_bytes.tobytes())
+        tmp.flush()
+        
+        read_count = 0
+        cap = cv2.VideoCapture(tmp.name)
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            assert frame is not None
+            assert frame.dtype == np.uint8
+            read_count += 1
+        
+        cap.release()
+
+    assert read_count == expected_frames
+    
+    camera.stop()

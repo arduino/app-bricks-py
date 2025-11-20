@@ -42,6 +42,8 @@ class BaseCamera(ABC):
             auto_reconnect (bool, optional): Enable automatic reconnection on failure. Default: True.
         """
         self.resolution = resolution
+        if fps <= 0:
+            raise ValueError("FPS must be a positive integer")
         self.fps = fps
         self.adjustments = adjustments
         self.logger = logger  # This will be overridden by subclasses if needed
@@ -176,6 +178,9 @@ class BaseCamera(ABC):
 
         Yields:
             np.ndarray: Video frames as numpy arrays.
+
+        Raises:
+            CameraReadError: If the camera is not started.
         """
         if not self.is_started():
             raise CameraReadError(f"Attempted to acquire stream from {self.name} before starting it.")
@@ -184,9 +189,107 @@ class BaseCamera(ABC):
             frame = self.capture()
             if frame is not None:
                 yield frame
-            else:
-                # Avoid busy-waiting if no frame available
-                time.sleep(0.001)
+
+    def record(self, duration) -> np.ndarray:
+        """
+        Record video for a specified duration and return it as a numpy array of raw frames.
+
+        Args:
+            duration (float): Recording duration in seconds.
+
+        Returns:
+            np.ndarray: numpy array of raw frames.
+
+        Raises:
+            CameraReadError: If camera is not started or any read error occurs.
+            ValueError: If duration is not positive.
+            MemoryError: If memory allocation for the full recording fails.
+        """
+        if duration <= 0:
+            raise ValueError("Duration must be positive")
+
+        total_frames = int(self.fps * duration)
+
+        # Get shape and dtype from first frame
+        first_frame = self.capture()
+        if first_frame is None:
+            raise CameraOpenError("Failed to inspect the video stream for metadata.")
+        frame_shape = first_frame.shape
+        frame_dtype = first_frame.dtype
+
+        try:
+            frames = np.zeros((total_frames, *frame_shape), dtype=frame_dtype)
+        except Exception as e:
+            raise MemoryError(f"Could not allocate memory for {total_frames} frames: {e}")
+
+        count = 1
+        frames[0] = first_frame
+        while count < total_frames:
+            frame = self.capture()
+            if frame is not None:
+                frames[count] = frame
+                count += 1
+
+        if not frames.any():
+            raise CameraReadError("No frames captured during recording.")
+
+        return frames[:count]
+
+    def record_avi(self, duration) -> np.ndarray:
+        """
+        Record video for a specified duration and return as MJPEG in AVI container.
+
+        Args:
+            duration (float): Recording duration in seconds.
+
+        Returns:
+            np.ndarray: AVI file containing MJPEG video.
+
+        Raises:
+            CameraReadError: If camera is not started or any read error occurs.
+            ValueError: If duration is not positive.
+            MemoryError: If memory allocation for the full recording fails.
+        """
+        if duration <= 0:
+            raise ValueError("Duration must be positive")
+
+        import os
+        import tempfile
+        import cv2
+
+        total_frames = int(self.fps * duration)
+
+        # Get width and height from first frame
+        first_frame = self.capture()
+        if first_frame is None:
+            raise CameraOpenError("Failed to inspect the video stream for metadata.")
+        height, width = first_frame.shape[:2]
+
+        # Write MJPEG AVI to a temp file
+        with tempfile.NamedTemporaryFile(suffix=".avi", delete=False) as tmp:
+            filename = tmp.name
+
+        avi_data = np.empty(0, dtype=np.uint8)
+        try:
+            fourcc = cv2.VideoWriter.fourcc(*"MJPG")
+            out = cv2.VideoWriter(filename, fourcc, self.fps, (width, height))
+            frame = first_frame
+            for i in range(total_frames):
+                if frame is not None:
+                    if frame.dtype != np.uint8:
+                        frame = _to_uint8(frame)
+                    out.write(frame)
+                
+                if i < total_frames - 1:
+                    frame = self.capture()
+            
+            out.release()
+            with open(filename, "rb") as f:
+                avi_data = f.read()
+        finally:
+            os.remove(filename)
+
+        return np.frombuffer(avi_data, dtype=np.uint8)
 
     def is_started(self) -> bool:
         """Check if the camera has been started."""
@@ -300,3 +403,16 @@ class BaseCamera(ABC):
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit."""
         self.stop()
+
+
+def _to_uint8(frame) -> np.ndarray:
+    """Normalize and convert to uint8."""
+    if np.issubdtype(frame.dtype, np.floating):
+        # We adopt the OpenCV convention: float images are in [0, 1]
+        frame = np.clip(frame * 255, 0, 255)
+    
+    elif np.issubdtype(frame.dtype, np.integer) and frame.dtype != np.uint8:
+        info = np.iinfo(frame.dtype)
+        frame = (frame.astype(np.float32) - info.min) / (info.max - info.min) * 255
+    
+    return frame.astype(np.uint8)
