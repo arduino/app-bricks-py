@@ -273,16 +273,17 @@ class BaseCamera(ABC):
         try:
             fourcc = cv2.VideoWriter.fourcc(*"MJPG")
             out = cv2.VideoWriter(filename, fourcc, self.fps, (width, height))
+
             frame = first_frame
             for i in range(total_frames):
                 if frame is not None:
                     if frame.dtype != np.uint8:
                         frame = _to_uint8(frame)
                     out.write(frame)
-                
+
                 if i < total_frames - 1:
                     frame = self.capture()
-            
+
             out.release()
             with open(filename, "rb") as f:
                 avi_data = f.read()
@@ -410,9 +411,9 @@ def _to_uint8(frame) -> np.ndarray:
     if np.issubdtype(frame.dtype, np.floating):
         # We adopt the OpenCV convention: float images are in [0, 1]
         frame = np.clip(frame * 255, 0, 255)
-    
+
     elif np.issubdtype(frame.dtype, np.integer) and frame.dtype != np.uint8:
         info = np.iinfo(frame.dtype)
         frame = (frame.astype(np.float32) - info.min) / (info.max - info.min) * 255
-    
+
     return frame.astype(np.uint8)

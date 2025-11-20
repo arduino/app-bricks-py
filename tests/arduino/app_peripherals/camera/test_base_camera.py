@@ -419,6 +419,7 @@ def test_events():
     assert "streaming" in events[3][0]
     assert "disconnected" in events[4][0]
 
+
 def test_record_zero_duration():
     camera = MockedCamera()
     camera.start()
@@ -426,22 +427,24 @@ def test_record_zero_duration():
         camera.record(0)
     camera.stop()
 
+
 def test_record():
     camera = MockedCamera(fps=5)
     camera.frame = np.ones((480, 640, 3), dtype=np.uint8)
     camera.start()
-    
+
     duration = 1.0
     expected_frames = int(camera.fps * duration)
     frames = camera.record(duration)
-    
+
     assert isinstance(frames, np.ndarray)
     assert frames.shape[0] == expected_frames
     assert frames.shape[1:] == camera.frame.shape
     assert frames.dtype == camera.frame.dtype
     assert np.all(frames == camera.frame)
-    
+
     camera.stop()
+
 
 def test_record_avi():
     camera = MockedCamera(fps=5)
@@ -455,8 +458,8 @@ def test_record_avi():
     assert isinstance(avi_bytes, np.ndarray)
     assert avi_bytes.dtype == np.uint8
     assert avi_bytes.size > 0
-    
-    with tempfile.NamedTemporaryFile(suffix='.avi') as tmp:
+
+    with tempfile.NamedTemporaryFile(suffix=".avi") as tmp:
         tmp.write(avi_bytes.tobytes())
         tmp.flush()
 
@@ -469,12 +472,13 @@ def test_record_avi():
             assert frame is not None
             assert frame.dtype == np.uint8
             read_count += 1
-        
+
         cap.release()
-    
+
     assert read_count == expected_frames
-    
+
     camera.stop()
+
 
 def test_record_avi_uint8_conversion():
     camera = MockedCamera(fps=5)
@@ -485,15 +489,15 @@ def test_record_avi_uint8_conversion():
     duration = 1.0
     expected_frames = int(camera.fps * duration)
     avi_bytes = camera.record_avi(duration)
-    
+
     assert isinstance(avi_bytes, np.ndarray)
     assert avi_bytes.dtype == np.uint8
     assert avi_bytes.size > 0
-    
-    with tempfile.NamedTemporaryFile(suffix='.avi') as tmp:
+
+    with tempfile.NamedTemporaryFile(suffix=".avi") as tmp:
         tmp.write(avi_bytes.tobytes())
         tmp.flush()
-        
+
         read_count = 0
         cap = cv2.VideoCapture(tmp.name)
         while True:
@@ -503,9 +507,9 @@ def test_record_avi_uint8_conversion():
             assert frame is not None
             assert frame.dtype == np.uint8
             read_count += 1
-        
+
         cap.release()
 
     assert read_count == expected_frames
-    
+
     camera.stop()
