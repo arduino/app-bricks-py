@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import json
-import base64
 import os
 import threading
 import queue
@@ -14,12 +13,12 @@ import cv2
 import websockets
 import asyncio
 from collections.abc import Callable
-from concurrent.futures import CancelledError
 
 from arduino.app_utils import Logger
 
 from .camera import BaseCamera
 from .errors import CameraConfigError, CameraOpenError
+from .websocket_codec import BinaryCodec, JsonCodec
 
 logger = Logger("WebSocketCamera")
 
@@ -38,43 +37,64 @@ class WebSocketCamera(BaseCamera):
     - BMP
     - TIFF
 
-    The frames can be serialized in one of the following formats:
-    - Binary image data
-    - Base64 encoded images
-    - JSON messages with image data
+    Secure communication with the WebSocket server is supported in three security modes:
+    - Security disabled (empty secret)
+    - Authenticated (secret + enable_encryption=False) - HMAC-SHA256
+    - Authenticated + Encrypted (secret + enable_encryption=True) - ChaCha20-Poly1305
+
+    The frames can be serialized in one of the following formats, whose structure depends
+    on the selected security mode:
+    - Binary format:
+        - Security disabled:            [data]
+        - Authenticated:                [sig_len:1][signature][timestamp:8][data]
+        - Authenticated + Encrypted:    [encrypted_len:4][timestamp:8][encrypted_data]
+    - JSON format:
+        - Security disabled:            {"data": "base64_data"}
+        - Authenticated:                {"data": "base64_data", "timestamp": ..., "signature": "..."}
+        - Authenticated + Encrypted:    {"data": "encrypted_base64_data", "timestamp": ...}
     """
 
     def __init__(
         self,
         port: int = 8080,
         timeout: int = 3,
-        frame_format: Literal["binary", "base64", "json"] = "binary",
+        frame_format: Literal["binary", "json"] = "binary",
+        secret: str = "",
+        enable_encryption: bool = False,
         resolution: tuple[int, int] = (640, 480),
         fps: int = 10,
         adjustments: Callable[[np.ndarray], np.ndarray] | None = None,
         auto_reconnect: bool = True,
     ):
         """
-        Initialize WebSocket camera server.
+        Initialize WebSocket camera server with security options.
 
         Args:
-            port (int): Port to bind the server to (default: 8080)
-            timeout (int): Connection timeout in seconds (default: 10)
-            frame_format (str): Expected frame format from clients ("binary", "base64", "json") (default: "binary")
-            resolution (tuple, optional): Resolution as (width, height). None uses default resolution.
-            fps (int): Frames per second to capture from the camera.
-            adjustments (callable, optional): Function or function pipeline to adjust frames that takes
-                a numpy array and returns a numpy array. Default: None
-            auto_reconnect (bool, optional): Enable automatic reconnection on failure. Default: True.
+            port: Port to bind the server to
+            timeout: Connection timeout in seconds
+            frame_format: Expected frame format ("binary", "json")
+            secret: Secret key for authentication/encryption (empty = security disabled)
+            enable_encryption: Enable encryption (only effective if secret is provided)
+            resolution: Resolution as (width, height)
+            fps: Frames per second to capture
+            adjustments: Function to adjust frames
+            auto_reconnect: Enable automatic reconnection on failure
         """
         super().__init__(resolution, fps, adjustments, auto_reconnect)
 
         self.protocol = "ws"
         self.port = port
         self.timeout = timeout
-        if frame_format not in ["binary", "base64", "json"]:
+        # Select appropriate codec
+        if frame_format == "binary":
+            self.codec = BinaryCodec(secret, enable_encryption)
+        elif frame_format == "json":
+            self.codec = JsonCodec(secret, enable_encryption)
+        else:
             raise CameraConfigError(f"Invalid frame format: {frame_format}")
         self.frame_format = frame_format
+        self.secret = secret
+        self.enable_encryption = enable_encryption
         self.logger = logger
 
         host_ip = os.getenv("HOST_IP")
@@ -94,6 +114,16 @@ class WebSocketCamera(BaseCamera):
         """Return the WebSocket server address."""
         return f"{self.protocol}://{self._external_ip}:{self.port}"
 
+    @property
+    def security_mode(self) -> str:
+        """Return current security mode for logging/debugging."""
+        if not self.secret:
+            return "none"
+        elif self.enable_encryption:
+            return "encrypted (ChaCha20-Poly1305)"
+        else:
+            return "authenticated (HMAC-SHA256)"
+
     def _open_camera(self) -> None:
         """Start the WebSocket server."""
         self._server_thread = threading.Thread(target=self._start_server_thread, daemon=True)
@@ -101,10 +131,9 @@ class WebSocketCamera(BaseCamera):
 
         # Wait for server to start
         start_time = time.time()
-        start_timeout = self.timeout
-        while time.time() - start_time < start_timeout:
+        while time.time() - start_time < self.timeout:
             if self._server is not None:
-                logger.info(f"WebSocket camera server started on {self.url}")
+                self.logger.info(f"WebSocket camera server started on {self.url}, security: {self.security_mode}")
                 return
             time.sleep(0.1)
 
@@ -140,6 +169,7 @@ class WebSocketCamera(BaseCamera):
                     ping_timeout=self.timeout,
                     close_timeout=self.timeout,
                     ping_interval=20,
+                    max_size=5 * 1024 * 1024,  # Limit max message size for security
                 ),
                 timeout=self.timeout,
             )
@@ -152,7 +182,7 @@ class WebSocketCamera(BaseCamera):
             await self._stop_event.wait()
 
         except TimeoutError as e:
-            self.logger.error(f"Failed to start WebSocket server in a time ({self.timeout}s): {e}")
+            self.logger.error(f"Failed to start WebSocket server within {self.timeout}s: {e}")
             raise
         except Exception as e:
             self.logger.error(f"Failed to start WebSocket server: {e}")
@@ -172,46 +202,51 @@ class WebSocketCamera(BaseCamera):
                 # Reject the new client
                 self.logger.warning(f"Rejecting client {client_addr}: only one client allowed at a time")
                 try:
-                    await conn.send(json.dumps({"error": "Server busy", "message": "Only one client connection allowed at a time", "code": 1000}))
-                    await conn.close(code=1000, reason="Server busy - only one client allowed")
+                    rejection = json.dumps({"error": "Server busy", "message": "Only one client connection allowed at a time", "code": 1000})
+                    await self._send_to_client(rejection, client=conn)
+                    await conn.close(code=1000, reason="Server busy")
                 except Exception as e:
-                    self.logger.warning(f"Error sending rejection message to {client_addr}: {e}")
+                    self.logger.warning(f"Failed to send rejection message to {client_addr}: {e}")
                 return
 
             # Accept the client
             self._client = conn
 
         self._set_status("connected", {"client_address": client_addr})
-
         self.logger.debug(f"Client connected: {client_addr}")
 
         try:
-            # Send welcome message
             try:
-                await self._send_to_client({
+                # Send welcome message
+                welcome = json.dumps({
                     "status": "connected",
-                    "message": "You are now connected to the camera server",
+                    "message": "Connected to camera server",
                     "frame_format": self.frame_format,
                     "resolution": self.resolution,
                     "fps": self.fps,
+                    "security_mode": self.security_mode,
                 })
+                await self._send_to_client(welcome)
             except Exception as e:
-                self.logger.warning(f"Could not send welcome message to {client_addr}: {e}")
+                self.logger.warning(f"Failed to send welcome message: {e}")
 
+            # Handle incoming messages
             async for message in conn:
                 frame = self._parse_message(message)
-                if frame is not None:
-                    # Drop old frames until there's room for the new one
-                    while True:
+                if frame is None:
+                    continue
+
+                # Drop old frames until there's room for the new one
+                while True:
+                    try:
+                        self._frame_queue.put_nowait(frame)
+                        break
+                    except queue.Full:
                         try:
-                            self._frame_queue.put_nowait(frame)
-                            break
-                        except queue.Full:
-                            try:
-                                # Drop oldest frame and try again
-                                self._frame_queue.get_nowait()
-                            except queue.Empty:
-                                continue
+                            # Drop oldest frame and try again
+                            self._frame_queue.get_nowait()
+                        except queue.Empty:
+                            continue
 
         except websockets.exceptions.ConnectionClosed:
             self.logger.debug(f"Client disconnected: {client_addr}")
@@ -222,64 +257,19 @@ class WebSocketCamera(BaseCamera):
                 if self._client == conn:
                     self._client = None
                     self._set_status("disconnected", {"client_address": client_addr})
-                    self.logger.debug(f"Client disconnected: {client_addr}")
 
-    def _parse_message(self, message: str | bytes) -> np.ndarray | None:
-        """Parse WebSocket message to extract frame."""
-        try:
-            if self.frame_format == "binary":
-                # Expect raw binary image data
-                if isinstance(message, str):
-                    # Use latin-1 encoding to preserve binary data
-                    image_data = message.encode("latin-1")
-                else:
-                    image_data = message
+    def _parse_message(self, message: websockets.Data) -> np.ndarray | None:
+        if isinstance(message, str):
+            message = message.encode()
 
-                nparr = np.frombuffer(image_data, np.uint8)
-                frame = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
-                return frame
-
-            elif self.frame_format == "base64":
-                # Expect base64 encoded image
-                if isinstance(message, str):
-                    image_data = base64.b64decode(message)
-                else:
-                    image_data = base64.b64decode(message.decode())
-
-                # Decode image
-                nparr = np.frombuffer(image_data, np.uint8)
-                frame = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
-                return frame
-
-            elif self.frame_format == "json":
-                # Expect JSON with image data
-                if isinstance(message, bytes):
-                    message = message.decode()
-
-                data = json.loads(message)
-
-                if "image" in data:
-                    image_data = base64.b64decode(data["image"])
-                    nparr = np.frombuffer(image_data, np.uint8)
-                    frame = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
-                    return frame
-
-                elif "frame" in data:
-                    # Handle different frame data formats
-                    frame_data = data["frame"]
-                    if isinstance(frame_data, str):
-                        image_data = base64.b64decode(frame_data)
-                        nparr = np.frombuffer(image_data, np.uint8)
-                        frame = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
-                        return frame
-
-            else:
-                logger.error(f"Unknown video format: {self.frame_format}")
-                return None
-
-        except Exception as e:
-            logger.warning(f"Error parsing message: {e}")
+        decoded = self.codec.decode(message)
+        if decoded is None:
+            self.logger.warning("Failed to decode/authenticate message")
             return None
+
+        nparr = np.frombuffer(decoded, np.uint8)
+        frame = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
+        return frame
 
     def _close_camera(self):
         """Stop the WebSocket server."""
@@ -288,12 +278,8 @@ class WebSocketCamera(BaseCamera):
             try:
                 future = asyncio.run_coroutine_threadsafe(self._stop_and_disconnect_client(), self._loop)
                 future.result(1.0)
-            except CancelledError:
-                self.logger.debug(f"Error stopping WebSocket server: CancelledError")
-            except TimeoutError:
-                self.logger.debug(f"Error stopping WebSocket server: TimeoutError")
             except Exception as e:
-                self.logger.warning(f"Error stopping WebSocket server: {e}")
+                self.logger.warning(f"Failed to stop WebSocket server cleanly: {e}")
 
         # Wait for server thread to finish
         if self._server_thread and self._server_thread.is_alive():
@@ -312,18 +298,14 @@ class WebSocketCamera(BaseCamera):
         self._client = None
 
     async def _stop_and_disconnect_client(self):
-        """Set the async stop event and close the client connection."""
-        # Send goodbye message and close the client connection
+        """Cleanly disconnect client with goodbye message."""
         if self._client:
             try:
                 self.logger.debug("Disconnecting client...")
-                # Send goodbye message before closing
-                await self._send_to_client({
-                    "status": "disconnecting",
-                    "message": "Server is shutting down. Connection will be closed.",
-                })
+                goodbye = json.dumps({"status": "disconnecting", "message": "Server is shutting down"})
+                await self._send_to_client(goodbye)
             except Exception as e:
-                self.logger.warning(f"Failed to send 'disconnecting' event to closing client: {e}")
+                self.logger.warning(f"Failed to send goodbye message: {e}")
             finally:
                 if self._client:
                     await self._client.close()
@@ -338,18 +320,23 @@ class WebSocketCamera(BaseCamera):
         except queue.Empty:
             return None
 
-    async def _send_to_client(self, message: str | bytes | dict) -> None:
-        """Send a message to the connected client."""
-        if isinstance(message, dict):
-            message = json.dumps(message)
+    async def _send_to_client(self, data: bytes | str, client: websockets.ServerConnection | None = None):
+        """Send secure message to connected client."""
+        if isinstance(data, str):
+            data = data.encode()
 
-        async with self._client_lock:
-            if self._client is None:
-                raise ConnectionError("No client connected to send message to")
+        encoded = self.codec.encode(data)
 
-            try:
-                await self._client.send(message)
-            except websockets.ConnectionClosedOK:
-                self.logger.warning("Client has already closed the connection")
-            except Exception:
-                raise
+        # Keep a ref to current client to avoid locking
+        client = client or self._client
+        if client is None:
+            raise ConnectionError("No client connected")
+
+        try:
+            await client.send(encoded)
+        except websockets.ConnectionClosedOK:
+            self.logger.warning("Client has already closed the connection")
+        except websockets.ConnectionClosedError as e:
+            self.logger.warning(f"Client has already closed the connection with error: {e}")
+        except Exception:
+            raise

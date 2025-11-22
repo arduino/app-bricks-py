@@ -28,16 +28,10 @@ def encoded_frame_binary(sample_frame):
 
 
 @pytest.fixture
-def encoded_frame_base64(encoded_frame_binary):
-    """Encode frame as base64."""
-    return base64.b64encode(encoded_frame_binary).decode()
-
-
-@pytest.fixture
 def encoded_frame_json(encoded_frame_binary):
     """Encode frame as JSON."""
     b64_data = base64.b64encode(encoded_frame_binary).decode()
-    return json.dumps({"image": b64_data})
+    return json.dumps({"data": b64_data})
 
 
 def test_websocket_camera_init_default():
@@ -88,7 +82,7 @@ def test_websocket_camera_start_stop():
     assert camera.status == "disconnected"
 
 
-def test_websocket_camera_parse_message_binary(sample_frame, encoded_frame_binary):
+def test_websocket_camera_handle_message_binary(sample_frame, encoded_frame_binary):
     """Test parsing binary frame message."""
     camera = WebSocketCamera(frame_format="binary")
 
@@ -99,17 +93,7 @@ def test_websocket_camera_parse_message_binary(sample_frame, encoded_frame_binar
     assert frame.shape == sample_frame.shape
 
 
-def test_websocket_camera_parse_message_base64(encoded_frame_base64):
-    """Test parsing base64 encoded frame message."""
-    camera = WebSocketCamera(frame_format="base64")
-
-    frame = camera._parse_message(encoded_frame_base64)
-
-    assert frame is not None
-    assert isinstance(frame, np.ndarray)
-
-
-def test_websocket_camera_parse_message_json_image(encoded_frame_json):
+def test_websocket_camera_handle_message_json_image(encoded_frame_json):
     """Test parsing JSON frame message with 'image' field."""
     camera = WebSocketCamera(frame_format="json")
 
@@ -119,22 +103,7 @@ def test_websocket_camera_parse_message_json_image(encoded_frame_json):
     assert isinstance(frame, np.ndarray)
 
 
-def test_websocket_camera_parse_message_json_frame():
-    """Test parsing JSON frame message with 'frame' field."""
-    test_frame = np.random.randint(0, 255, (480, 640, 3), dtype=np.uint8)
-    _, buffer = cv2.imencode(".jpg", test_frame)
-    b64_data = base64.b64encode(buffer.tobytes()).decode()
-    message = json.dumps({"frame": b64_data})
-
-    camera = WebSocketCamera(frame_format="json")
-
-    frame = camera._parse_message(message)
-
-    assert frame is not None
-    assert isinstance(frame, np.ndarray)
-
-
-def test_websocket_camera_parse_message_invalid():
+def test_websocket_camera_handle_message_invalid():
     """Test parsing invalid message."""
     camera = WebSocketCamera(frame_format="json")
 
@@ -143,7 +112,7 @@ def test_websocket_camera_parse_message_invalid():
     assert frame is None
 
 
-def test_websocket_camera_parse_message_binary_as_string(sample_frame, encoded_frame_binary):
+def test_websocket_camera_handle_message_binary_as_string(sample_frame, encoded_frame_binary):
     """Test parsing binary message received as string using latin-1 encoding."""
     camera = WebSocketCamera(frame_format="binary")
 
@@ -325,7 +294,7 @@ def test_websocket_camera_with_adjustments(sample_frame):
     assert np.array_equal(frame, expected)
 
 
-@pytest.mark.parametrize("fmt", ["binary", "base64", "json"])
+@pytest.mark.parametrize("fmt", ["binary", "json"])
 def test_websocket_camera_multiple_formats(fmt):
     """Test WebSocket camera can be initialized with different formats."""
     camera = WebSocketCamera(frame_format=fmt)
