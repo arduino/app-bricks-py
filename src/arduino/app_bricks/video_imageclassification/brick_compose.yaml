@@ -14,7 +14,9 @@ services:
       - "/run/udev:/run/udev"
     command: ["--model-file", "${EI_CLASSIFICATION_MODEL:-/models/ootb/ei/mobilenet-v2-224px.eim}", "--dont-print-predictions", "--mode", "streaming-tcp-server", "--preview-original-resolution"]
     healthcheck:
-      test: [ "CMD-SHELL", "wget -q --spider http://ei-video-classification-runner:4912 || exit 1" ]
+      # test: [ "CMD-SHELL", "wget -q --spider http://ei-video-classification-runner:4912 || exit 1" ]
+      # test: [ "CMD-SHELL", "pgrep -f gstreamer || pgrep -f gst-launch || exit 1" ]
+      test: [ "CMD-SHELL", "netstat -tuln | grep :5050 || exit 1" ]
       interval: 2s
       timeout: 2s
       retries: 25
