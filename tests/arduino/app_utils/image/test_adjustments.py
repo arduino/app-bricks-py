@@ -4,7 +4,7 @@
 
 import numpy as np
 import pytest
-from arduino.app_utils.image.adjustments import letterbox, resize, adjust, split_channels, greyscale
+from arduino.app_utils.image.adjustments import letterbox, resize, adjust, split_channels, greyscale, flip_h, flip_v
 
 
 # FIXTURES
@@ -440,3 +440,55 @@ def test_letterbox_color_tuple_error(frame_bgr_uint8):
         # BGRA (4-ch) frame with 3-ch padding
         frame_bgra = create_bgra_frame(np.uint8)
         letterbox(frame_bgra, (200, 200), color=(0, 0, 0))
+
+
+def test_flip_h_bgr(frame_bgr_uint8):
+    """Test horizontal flip for BGR image."""
+    flipped = flip_h(frame_bgr_uint8)
+    # Flipping twice should return the original
+    assert np.array_equal(flip_h(flipped), frame_bgr_uint8)
+    # Check that first column becomes last
+    assert np.array_equal(flipped[:, 0, :], frame_bgr_uint8[:, -1, :])
+    assert np.array_equal(flipped[:, -1, :], frame_bgr_uint8[:, 0, :])
+
+
+def test_flip_v_bgr(frame_bgr_uint8):
+    """Test vertical flip for BGR image."""
+    flipped = flip_v(frame_bgr_uint8)
+    # Flipping twice should return the original
+    assert np.array_equal(flip_v(flipped), frame_bgr_uint8)
+    # Check that first row becomes last
+    assert np.array_equal(flipped[0, :, :], frame_bgr_uint8[-1, :, :])
+    assert np.array_equal(flipped[-1, :, :], frame_bgr_uint8[0, :, :])
+
+
+def test_flip_h_greyscale(frame_grey_uint8):
+    """Test horizontal flip for greyscale image."""
+    flipped = flip_h(frame_grey_uint8)
+    assert np.array_equal(flip_h(flipped), frame_grey_uint8)
+    assert np.array_equal(flipped[:, 0], frame_grey_uint8[:, -1])
+    assert np.array_equal(flipped[:, -1], frame_grey_uint8[:, 0])
+
+
+def test_flip_v_greyscale(frame_grey_uint8):
+    """Test vertical flip for greyscale image."""
+    flipped = flip_v(frame_grey_uint8)
+    assert np.array_equal(flip_v(flipped), frame_grey_uint8)
+    assert np.array_equal(flipped[0, :], frame_grey_uint8[-1, :])
+    assert np.array_equal(flipped[-1, :], frame_grey_uint8[0, :])
+
+
+def test_flip_h_bgra(frame_bgra_uint8):
+    """Test horizontal flip for BGRA image."""
+    flipped = flip_h(frame_bgra_uint8)
+    assert np.array_equal(flip_h(flipped), frame_bgra_uint8)
+    assert np.array_equal(flipped[:, 0, :], frame_bgra_uint8[:, -1, :])
+    assert np.array_equal(flipped[:, -1, :], frame_bgra_uint8[:, 0, :])
+
+
+def test_flip_v_bgra(frame_bgra_uint8):
+    """Test vertical flip for BGRA image."""
+    flipped = flip_v(frame_bgra_uint8)
+    assert np.array_equal(flip_v(flipped), frame_bgra_uint8)
+    assert np.array_equal(flipped[0, :, :], frame_bgra_uint8[-1, :, :])
+    assert np.array_equal(flipped[-1, :, :], frame_bgra_uint8[0, :, :])

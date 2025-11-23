@@ -65,7 +65,7 @@ def letterbox(
     if frame.ndim == 2:
         # Greyscale
         if hasattr(color, "__len__"):
-            color = color[0]
+            raise ValueError("For greyscale images, color must be a scalar (int), not a tuple or list.")
         canvas = np.full((target_h, target_w), color, dtype=original_dtype)
     else:
         # Colored (BGR/BGRA)
@@ -106,6 +106,32 @@ def resize(frame: np.ndarray, target_size: Tuple[int, int], maintain_ratio: bool
         return letterbox(frame, target_size)
     else:
         return cv2.resize(frame, (target_size[0], target_size[1]), interpolation=interpolation)
+
+
+def flip_h(frame: np.ndarray) -> np.ndarray:
+    """
+    Flip frame horizontally.
+
+    Args:
+        frame (np.ndarray): Input frame
+
+    Returns:
+        np.ndarray: Horizontally flipped frame
+    """
+    return frame[:, ::-1, ...]
+
+
+def flip_v(frame: np.ndarray) -> np.ndarray:
+    """
+    Flip frame vertically.
+
+    Args:
+        frame (np.ndarray): Input frame
+
+    Returns:
+        np.ndarray: Vertically flipped frame
+    """
+    return frame[::-1, :, ...]
 
 
 def adjust(frame: np.ndarray, brightness: float = 0.0, contrast: float = 1.0, saturation: float = 1.0, gamma: float = 1.0) -> np.ndarray:
@@ -368,6 +394,26 @@ def resized(target_size: Tuple[int, int], maintain_ratio: bool = False, interpol
         pipe = letterboxed() | resized(target_size=(320, 240))
     """
     return PipeableFunction(resize, target_size=target_size, maintain_ratio=maintain_ratio, interpolation=interpolation)
+
+
+def flipped_h():
+    """
+    Pipeable horizontal flip function - flip frame horizontally with pipe operator support.
+
+    Returns:
+        Function that takes a frame and returns horizontally flipped frame
+    """
+    return PipeableFunction(flip_h)
+
+
+def flipped_v():
+    """
+    Pipeable vertical flip function - flip frame vertically with pipe operator support.
+
+    Returns:
+        Function that takes a frame and returns vertically flipped frame
+    """
+    return PipeableFunction(flip_v)
 
 
 def adjusted(brightness: float = 0.0, contrast: float = 1.0, saturation: float = 1.0, gamma: float = 1.0):
