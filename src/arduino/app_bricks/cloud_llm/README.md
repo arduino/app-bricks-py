@@ -24,16 +24,17 @@ This Brick acts as a gateway to powerful AI models hosted in the cloud. It is de
 
 ### Basic Conversation
 
-This example initializes the Brick with an OpenAI model and performs a simple chat interaction.
+This example initializes the Brick with an OpenAI model and performs a simple chat interaction. 
+
+**Note:** The API key is not hardcoded. It is retrieved automatically from the **Brick Configuration** in App Lab.
 
 ```python
 import os
 from arduino.app_bricks.cloud_llm import CloudLLM, CloudModel
 from arduino.app_utils import App
 
-# Initialize the Brick with your API key and preferred model
+# Initialize the Brick (API key is loaded from configuration)
 llm = CloudLLM(
-    api_key="YOUR_OPENAI_API_KEY", 
     model=CloudModel.OPENAI_GPT,
     system_prompt="You are a helpful assistant for an IoT device."
 )
@@ -56,8 +57,8 @@ from arduino.app_bricks.cloud_llm import CloudLLM, CloudModel
 from arduino.app_utils import App
 
 # Initialize with memory enabled (keeps last 10 messages)
+# API Key is retrieved automatically from Brick Configuration
 llm = CloudLLM(
-    api_key="YOUR_ANTHROPIC_API_KEY",
     model=CloudModel.ANTHROPIC_CLAUDE
 ).with_memory(max_messages=10)
 
@@ -81,13 +82,13 @@ App.run(chat_loop)
 
 The Brick is initialized with the following parameters:
 
-| Parameter       | Type                  | Default                       | Description                                                                 |
-| :-------------- | :-------------------- | :---------------------------- | :-------------------------------------------------------------------------- |
-| `api_key`       | `str`                 | `os.getenv("API_KEY")`        | The authentication key for the LLM provider.                                |
-| `model`         | `str` \| `CloudModel` | `CloudModel.ANTHROPIC_CLAUDE` | The specific model to use. Accepts a `CloudModel` enum or its string value. |
-| `system_prompt` | `str`                 | `""`                          | A base instruction that defines the AI's behavior and persona.              |
-| `temperature`   | `float`               | `0.7`                         | Controls randomness. `0.0` is deterministic, `1.0` is creative.             |
-| `timeout`       | `int`                 | `30`                          | Maximum time (in seconds) to wait for a response.                           |
+| Parameter       | Type                  | Default                       | Description                                                                                                                              |
+| :-------------- | :-------------------- | :---------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------- |
+| `api_key`       | `str`                 | `os.getenv("API_KEY")`        | The authentication key for the LLM provider. **Recommended:** Set this via the **Brick Configuration** menu in App Lab instead of code. |
+| `model`         | `str` \| `CloudModel` | `CloudModel.ANTHROPIC_CLAUDE` | The specific model to use. Accepts a `CloudModel` enum or its string value.                                                              |
+| `system_prompt` | `str`                 | `""`                          | A base instruction that defines the AI's behavior and persona.                                                                           |
+| `temperature`   | `float`               | `0.7`                         | Controls randomness. `0.0` is deterministic, `1.0` is creative.                                                                          |
+| `timeout`       | `int`                 | `30`                          | Maximum time (in seconds) to wait for a response.                                                                                        |
 
 ### Supported Models
 
