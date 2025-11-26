@@ -9,6 +9,7 @@ import hmac
 import secrets
 import struct
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+from cryptography.exceptions import InvalidTag
 
 from arduino.app_utils.logger import Logger
 
@@ -225,8 +226,11 @@ class BPPCodec:
             elif mode == MODE_NONE:
                 return message[HEADER_SIZE:]
 
+        except InvalidTag as e:
+            logger.warning(f"Decryption failed: encryption key or data integrity issue")
+            return None
         except Exception as e:
-            logger.warning(f"Crypto Error: {e}")
+            logger.error(f"Unknown error while decoding: {e} ({type(e)})")
             return None
 
     def encode_text(self, data: bytes) -> str:
