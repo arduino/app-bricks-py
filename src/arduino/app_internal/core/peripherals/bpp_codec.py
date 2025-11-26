@@ -226,7 +226,7 @@ class BPPCodec:
             elif mode == MODE_NONE:
                 return message[HEADER_SIZE:]
 
-        except InvalidTag as e:
+        except InvalidTag:
             logger.warning(f"Decryption failed: encryption key or data integrity issue")
             return None
         except Exception as e:
