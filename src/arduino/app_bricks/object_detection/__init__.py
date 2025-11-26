@@ -4,7 +4,8 @@
 from typing import Any
 
 from PIL import Image
-from arduino.app_utils import brick, Logger, draw_bounding_boxes, Shape
+from arduino.app_utils import brick, Logger
+from arduino.app_utils.image import draw_bounding_boxes, Shape
 from arduino.app_internal.core import EdgeImpulseRunnerFacade
 
 logger = Logger("ObjectDetection")
