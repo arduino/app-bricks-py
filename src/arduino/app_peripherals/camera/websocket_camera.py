@@ -2,23 +2,23 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import base64
 import json
 import os
 import threading
 import queue
 import time
-from typing import Literal
 import numpy as np
 import cv2
 import websockets
 import asyncio
 from collections.abc import Callable
 
+from arduino.app_internal.core.peripherals import BPPCodec
 from arduino.app_utils import Logger
 
 from .camera import BaseCamera
-from .errors import CameraConfigError, CameraOpenError
-from .websocket_codec import BinaryCodec, JsonCodec
+from .errors import CameraOpenError
 
 logger = Logger("WebSocketCamera")
 
@@ -42,23 +42,13 @@ class WebSocketCamera(BaseCamera):
     - Authenticated (secret + enable_encryption=False) - HMAC-SHA256
     - Authenticated + Encrypted (secret + enable_encryption=True) - ChaCha20-Poly1305
 
-    The frames can be serialized in one of the following formats, whose structure depends
-    on the selected security mode:
-    - Binary format:
-        - Security disabled:            [data]
-        - Authenticated:                [sig_len:1][signature][timestamp:8][data]
-        - Authenticated + Encrypted:    [encrypted_len:4][timestamp:8][encrypted_data]
-    - JSON format:
-        - Security disabled:            {"data": "base64_data"}
-        - Authenticated:                {"data": "base64_data", "timestamp": ..., "signature": "..."}
-        - Authenticated + Encrypted:    {"data": "encrypted_base64_data", "timestamp": ...}
+    The frames can be serialized in one of the formats supported by BPPCodec.
     """
 
     def __init__(
         self,
         port: int = 8080,
         timeout: int = 3,
-        frame_format: Literal["binary", "json"] = "binary",
         secret: str = "",
         enable_encryption: bool = False,
         resolution: tuple[int, int] = (640, 480),
@@ -85,21 +75,14 @@ class WebSocketCamera(BaseCamera):
         self.protocol = "ws"
         self.port = port
         self.timeout = timeout
-        # Select appropriate codec
-        if frame_format == "binary":
-            self.codec = BinaryCodec(secret, enable_encryption)
-        elif frame_format == "json":
-            self.codec = JsonCodec(secret, enable_encryption)
-        else:
-            raise CameraConfigError(f"Invalid frame format: {frame_format}")
-        self.frame_format = frame_format
+        self.codec = BPPCodec(secret, enable_encryption)
         self.secret = secret
         self.enable_encryption = enable_encryption
         self.logger = logger
 
         host_ip = os.getenv("HOST_IP")
         self._bind_ip = "0.0.0.0"
-        self._external_ip = host_ip if host_ip is not None else self._bind_ip
+        self.ip = host_ip if host_ip is not None else self._bind_ip
 
         self._frame_queue = queue.Queue(1)
         self._server = None
@@ -112,7 +95,7 @@ class WebSocketCamera(BaseCamera):
     @property
     def url(self) -> str:
         """Return the WebSocket server address."""
-        return f"{self.protocol}://{self._external_ip}:{self.port}"
+        return f"{self.protocol}://{self.ip}:{self.port}"
 
     @property
     def security_mode(self) -> str:
@@ -221,7 +204,6 @@ class WebSocketCamera(BaseCamera):
                 welcome = json.dumps({
                     "status": "connected",
                     "message": "Connected to camera server",
-                    "frame_format": self.frame_format,
                     "resolution": self.resolution,
                     "fps": self.fps,
                     "security_mode": self.security_mode,
@@ -260,7 +242,11 @@ class WebSocketCamera(BaseCamera):
 
     def _parse_message(self, message: websockets.Data) -> np.ndarray | None:
         if isinstance(message, str):
-            message = message.encode()
+            try:
+                message = base64.b64decode(message)
+            except Exception as e:
+                self.logger.warning(f"Failed to decode string message using base64: {e}")
+                return None
 
         decoded = self.codec.decode(message)
         if decoded is None:

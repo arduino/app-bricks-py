@@ -10,28 +10,34 @@ import numpy as np
 import cv2
 import websockets
 
+from arduino.app_internal.core.peripherals.bpp_codec import BPPCodec
 from arduino.app_peripherals.camera import WebSocketCamera
 
 
 @pytest.fixture
-def sample_frame():
+def codec() -> BPPCodec:
+    """Create codec for encoding/decoding in tests."""
+    return BPPCodec()
+
+
+@pytest.fixture
+def sample_frame() -> np.ndarray:
     """Create a sample frame for testing."""
     frame = np.random.randint(0, 255, (480, 640, 3), dtype=np.uint8)
     return frame
 
 
 @pytest.fixture
-def encoded_frame_binary(sample_frame):
+def encoded_frame_binary(codec, sample_frame) -> bytes:
     """Encode frame as binary."""
     _, buffer = cv2.imencode(".jpg", sample_frame)
-    return buffer.tobytes()
+    return codec.encode(buffer.tobytes())
 
 
 @pytest.fixture
-def encoded_frame_json(encoded_frame_binary):
-    """Encode frame as JSON."""
-    b64_data = base64.b64encode(encoded_frame_binary).decode()
-    return json.dumps({"data": b64_data})
+def encoded_frame_string(encoded_frame_binary) -> str:
+    """Encode frame as base64 string."""
+    return base64.b64encode(encoded_frame_binary).decode()
 
 
 def test_websocket_camera_init_default():
@@ -40,7 +46,6 @@ def test_websocket_camera_init_default():
     assert camera.url == "ws://0.0.0.0:8080"
     assert camera.port == 8080
     assert camera.timeout == 3
-    assert camera.frame_format == "binary"
     assert camera.resolution == (640, 480)
     assert camera.fps == 10
     assert camera.status == "disconnected"
@@ -48,11 +53,10 @@ def test_websocket_camera_init_default():
 
 def test_websocket_camera_init_custom():
     """Test WebSocketCamera initialization with custom parameters."""
-    camera = WebSocketCamera(port=9090, timeout=30, frame_format="json", resolution=(1920, 1080), fps=30)
+    camera = WebSocketCamera(port=9090, timeout=30, resolution=(1920, 1080), fps=30)
     assert camera.url == "ws://0.0.0.0:9090"  # No env var is set, so uses default host
     assert camera.port == 9090
     assert camera.timeout == 30
-    assert camera.frame_format == "json"
     assert camera.resolution == (1920, 1080)
     assert camera.fps == 30
     assert camera.status == "disconnected"
@@ -82,9 +86,9 @@ def test_websocket_camera_start_stop():
     assert camera.status == "disconnected"
 
 
-def test_websocket_camera_handle_message_binary(sample_frame, encoded_frame_binary):
+def test_websocket_camera_handle_binary_message(sample_frame, encoded_frame_binary):
     """Test parsing binary frame message."""
-    camera = WebSocketCamera(frame_format="binary")
+    camera = WebSocketCamera()
 
     frame = camera._parse_message(encoded_frame_binary)
 
@@ -93,36 +97,24 @@ def test_websocket_camera_handle_message_binary(sample_frame, encoded_frame_bina
     assert frame.shape == sample_frame.shape
 
 
-def test_websocket_camera_handle_message_json_image(encoded_frame_json):
-    """Test parsing JSON frame message with 'image' field."""
-    camera = WebSocketCamera(frame_format="json")
+def test_websocket_camera_handle_base64_message(sample_frame, encoded_frame_string):
+    """Test parsing binary message received as string using base64 encoding."""
+    camera = WebSocketCamera()
 
-    frame = camera._parse_message(encoded_frame_json)
-
-    assert frame is not None
-    assert isinstance(frame, np.ndarray)
-
-
-def test_websocket_camera_handle_message_invalid():
-    """Test parsing invalid message."""
-    camera = WebSocketCamera(frame_format="json")
-
-    frame = camera._parse_message("invalid json")
-
-    assert frame is None
-
-
-def test_websocket_camera_handle_message_binary_as_string(sample_frame, encoded_frame_binary):
-    """Test parsing binary message received as string using latin-1 encoding."""
-    camera = WebSocketCamera(frame_format="binary")
-
-    # Decode binary data using latin-1 which preserves all bytes
-    message = encoded_frame_binary.decode("latin-1")
-    frame = camera._parse_message(message)
+    frame = camera._parse_message(encoded_frame_string)
 
     assert frame is not None
     assert isinstance(frame, np.ndarray)
     assert frame.shape == sample_frame.shape
+
+
+def test_websocket_camera_handle_message_invalid():
+    """Test parsing invalid message."""
+    camera = WebSocketCamera()
+
+    frame = camera._parse_message("invalid base64 string")
+
+    assert frame is None
 
 
 def test_websocket_camera_read_frame_empty_queue():
@@ -135,7 +127,7 @@ def test_websocket_camera_read_frame_empty_queue():
 @pytest.mark.asyncio
 async def test_websocket_camera_capture_frame(encoded_frame_binary):
     """Test capturing frame from WebSocket camera."""
-    with WebSocketCamera(port=0, frame_format="binary") as camera:
+    with WebSocketCamera(port=0) as camera:
         async with websockets.connect(camera.url) as ws:
             # Skip welcome message
             await ws.recv()
@@ -151,9 +143,9 @@ async def test_websocket_camera_capture_frame(encoded_frame_binary):
 
 
 @pytest.mark.asyncio
-async def test_websocket_camera_single_client():
+async def test_websocket_camera_single_client(codec):
     """Test WebSocket server accepts only one client at a time."""
-    camera = WebSocketCamera(port=0)  # Use port 0 for auto-assignment
+    camera = WebSocketCamera(port=0)
     camera.start()
 
     try:
@@ -161,16 +153,18 @@ async def test_websocket_camera_single_client():
         async with websockets.connect(camera.url) as ws1:
             # First client should receive welcome message
             welcome = await ws1.recv()
-            message = json.loads(welcome)
-            assert message["status"] == "connected"
+            decoded_welcome = codec.decode(welcome)
+            welcome_message = json.loads(decoded_welcome)
+            assert welcome_message["status"] == "connected"
 
             # Try to connect second client while first is connected
             try:
                 async with websockets.connect(camera.url) as ws2:
                     # Second client should receive rejection message
                     rejection = await asyncio.wait_for(ws2.recv(), timeout=1.0)
-                    message = json.loads(rejection)
-                    assert message.get("error") == "Server busy"
+                    decoded_rejection = codec.decode(rejection)
+                    rejection_message = json.loads(decoded_rejection)
+                    assert "error" in rejection_message
             except websockets.exceptions.ConnectionClosed:
                 # Connection closed immediately - also acceptable
                 pass
@@ -179,22 +173,25 @@ async def test_websocket_camera_single_client():
 
 
 @pytest.mark.asyncio
-async def test_websocket_camera_welcome_message():
+async def test_websocket_camera_welcome_message(codec):
     """Test that welcome message is sent to connected client."""
     with WebSocketCamera(port=0) as camera:
         async with websockets.connect(camera.url) as ws:
             # Should receive welcome message
             welcome = await asyncio.wait_for(ws.recv(), timeout=1.0)
-            message = json.loads(welcome)
-            assert message["status"] == "connected"
-            assert message["frame_format"] == camera.frame_format
-            assert tuple(message["resolution"]) == camera.resolution
+            decoded_welcome = codec.decode(welcome)
+            welcome_message = json.loads(decoded_welcome)
+            assert "message" in welcome_message
+            assert welcome_message["status"] == "connected"
+            assert tuple(welcome_message["resolution"]) == camera.resolution
+            assert welcome_message["fps"] == camera.fps
+            assert welcome_message["security_mode"] == camera.security_mode
 
 
 @pytest.mark.asyncio
 async def test_websocket_camera_receives_frames(encoded_frame_binary):
     """Test that server receives and queues frames from client."""
-    with WebSocketCamera(port=0, frame_format="binary") as camera:
+    with WebSocketCamera(port=0) as camera:
         async with websockets.connect(camera.url) as ws:
             # Skip welcome message
             await ws.recv()
@@ -210,7 +207,7 @@ async def test_websocket_camera_receives_frames(encoded_frame_binary):
 
 
 @pytest.mark.asyncio
-async def test_websocket_camera_disconnects_client_on_stop():
+async def test_websocket_camera_disconnects_client_on_stop(codec):
     """Test that connected client is disconnected when camera stops."""
     camera = WebSocketCamera(port=0)
     camera.start()
@@ -219,8 +216,9 @@ async def test_websocket_camera_disconnects_client_on_stop():
         async with websockets.connect(camera.url) as ws:
             # Client connected, receive welcome message
             welcome = await ws.recv()
-            message = json.loads(welcome)
-            assert message["status"] == "connected"
+            decoded_welcome = codec.decode(welcome)
+            welcome_message = json.loads(decoded_welcome)
+            assert welcome_message["status"] == "connected"
 
             # Stop the camera (runs in background thread via to_thread)
             await asyncio.to_thread(camera.stop)
@@ -228,9 +226,10 @@ async def test_websocket_camera_disconnects_client_on_stop():
             with pytest.raises(websockets.exceptions.ConnectionClosed):
                 # Keep receiving until connection is closed
                 while True:
-                    msg = await asyncio.wait_for(ws.recv(), timeout=1.0)
-                    data = json.loads(msg)
-                    if data.get("status") == "disconnecting":
+                    goodbye = await asyncio.wait_for(ws.recv(), timeout=1.0)
+                    decoded_goodbye = codec.decode(goodbye)
+                    goodbye_message = json.loads(decoded_goodbye)
+                    if goodbye_message.get("status") == "disconnecting":
                         # Got goodbye message, connection should close soon
                         continue
     except websockets.exceptions.ConnectionClosed:
@@ -252,9 +251,9 @@ def test_websocket_camera_stop_without_client():
 
 
 @pytest.mark.asyncio
-async def test_websocket_camera_backpressure(sample_frame):
+async def test_websocket_camera_backpressure(codec):
     """Test that old frames are dropped when new frames arrive faster than they're consumed."""
-    with WebSocketCamera(port=0, frame_format="binary") as camera:
+    with WebSocketCamera(port=0) as camera:
         async with websockets.connect(camera.url) as ws:
             await ws.recv()  # Skip welcome message
 
@@ -262,9 +261,9 @@ async def test_websocket_camera_backpressure(sample_frame):
             _, buffer2 = cv2.imencode(".jpg", np.ones((480, 640, 3), dtype=np.uint8) * 2)
             _, buffer3 = cv2.imencode(".jpg", np.ones((480, 640, 3), dtype=np.uint8) * 3)
 
-            await ws.send(buffer1.tobytes())
-            await ws.send(buffer2.tobytes())
-            await ws.send(buffer3.tobytes())
+            await ws.send(codec.encode(buffer1.tobytes()))
+            await ws.send(codec.encode(buffer2.tobytes()))
+            await ws.send(codec.encode(buffer3.tobytes()))
 
             await asyncio.sleep(0.1)
 
@@ -292,13 +291,6 @@ def test_websocket_camera_with_adjustments(sample_frame):
     # The adjustment is applied in capture()
     expected = sample_frame + 50
     assert np.array_equal(frame, expected)
-
-
-@pytest.mark.parametrize("fmt", ["binary", "json"])
-def test_websocket_camera_multiple_formats(fmt):
-    """Test WebSocket camera can be initialized with different formats."""
-    camera = WebSocketCamera(frame_format=fmt)
-    assert camera.frame_format == fmt
 
 
 @pytest.mark.asyncio

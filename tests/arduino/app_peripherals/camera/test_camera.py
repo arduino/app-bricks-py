@@ -73,9 +73,9 @@ def test_camera_factory_with_ip_camera_kwargs():
 
 def test_camera_factory_with_websocket_camera_kwargs():
     """Test Camera factory with WebSocket camera specific kwargs."""
-    camera = Camera("ws://0.0.0.0:8080", frame_format="json", timeout=20)
+    camera = Camera("ws://0.0.0.0:8080", secret="topsecret", timeout=20)
     assert isinstance(camera, WebSocketCamera)
-    assert camera.frame_format == "json"
+    assert camera.secret == "topsecret"
     assert camera.timeout == 20
 
 
