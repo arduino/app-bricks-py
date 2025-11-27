@@ -119,7 +119,7 @@ class TestMicrophoneConfiguration:
 
         with pytest.raises(MicrophoneConfigError):
             WebSocketMicrophone(port=0, format="INVALID_FORMAT")
-    
+
     def test_invalid_port_raises_error(self):
         """Test that invalid port raises error."""
         with pytest.raises(MicrophoneConfigError):
@@ -127,7 +127,7 @@ class TestMicrophoneConfiguration:
 
         with pytest.raises(MicrophoneConfigError):
             WebSocketMicrophone(port=70000)
-    
+
     def test_invalid_timeout_raises_error(self):
         """Test that invalid timeout raises error."""
         with pytest.raises(MicrophoneConfigError):

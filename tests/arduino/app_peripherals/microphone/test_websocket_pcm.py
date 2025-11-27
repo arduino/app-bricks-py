@@ -88,7 +88,7 @@ class TestWebSocketPCMBinaryFormat:
 
         async with websockets.connect(mic.url) as ws:
             await ws.recv()
-            
+
             encoded = codec.encode(pcm_bytes)
             await ws.send(encoded)
 
@@ -282,7 +282,7 @@ class TestWebSocketClientConnection:
 
         async with websockets.connect(mic.url) as ws:
             welcome = await ws.recv()
-            
+
             decoded = codec.decode(welcome)
             welcome_data = json.loads(decoded)
 
@@ -330,7 +330,7 @@ class TestWebSocketClientConnection:
                 assert mic._server is not None
                 assert mic._client is None
                 loop.call_soon_threadsafe(test_done.set)
-        
+
         mic = WebSocketMicrophone(port=0)
         mic.on_status_changed(callback)
 

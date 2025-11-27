@@ -2,7 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-import json
 import pytest
 import asyncio
 import websockets
@@ -22,6 +21,7 @@ from arduino.app_peripherals.microphone.websocket_microphone import WebSocketMic
 
 MOCK_USB_CARDS = ["SomeCard"]
 MOCK_USB_PCM_DEVICES = ["plughw:CARD=SomeCard,DEV=0"]
+
 
 @pytest.fixture
 def codec() -> BPPCodec:
@@ -325,12 +325,11 @@ class TestWebSocketClientDisconnection:
             assert mic._client is not None
 
         mic.stop()
-        
+
         # Server should still be running
         assert not mic.is_started()
         assert mic._server is None
         assert mic._client is None
-
 
     @pytest.mark.asyncio
     async def test_client_reconnect_after_disconnect(self, codec):

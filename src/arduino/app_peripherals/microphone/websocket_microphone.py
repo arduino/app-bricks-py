@@ -306,7 +306,7 @@ class WebSocketMicrophone(BaseMicrophone):
                 audio_chunk = self._parse_message(message)
                 if audio_chunk is None:
                     continue
-                
+
                 # Drop old chunks until there's room for the new one
                 while True:
                     try:
@@ -338,12 +338,12 @@ class WebSocketMicrophone(BaseMicrophone):
             except Exception as e:
                 self.logger.warning(f"Failed to decode string message using base64: {e}")
                 return None
-        
+
         decoded = self.codec.decode(message)
         if decoded is None:
             self.logger.warning("Failed to decode message")
             return None
-        
+
         return np.frombuffer(decoded, dtype=self._dtype)
 
     def _close_microphone(self) -> None:
