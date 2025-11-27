@@ -9,7 +9,6 @@ Tests binary data handling, numpy arrays, multi-byte data, and byte order interp
 """
 
 import pytest
-import time
 import asyncio
 import numpy as np
 import websockets

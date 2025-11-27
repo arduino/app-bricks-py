@@ -46,6 +46,7 @@ def test_remote_sensor_invalid_port():
     with pytest.raises(RemoteSensorConfigError):
         RemoteSensor(port=70000)
 
+
 def test_remote_sensor_invalid_timeout():
     """Test RemoteSensor raises error for invalid timeout values."""
     with pytest.raises(RemoteSensorConfigError):
@@ -53,6 +54,7 @@ def test_remote_sensor_invalid_timeout():
 
     with pytest.raises(RemoteSensorConfigError):
         RemoteSensor(timeout=-5)
+
 
 def test_remote_sensor_start_stop():
     """Test RemoteSensor can be started and stopped."""

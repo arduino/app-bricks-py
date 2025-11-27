@@ -7,7 +7,6 @@ import base64
 import os
 import threading
 import time
-import numpy as np
 import websockets
 import asyncio
 from typing import Callable, Literal
@@ -30,7 +29,7 @@ class RemoteSensor:
 
     Clients can send data in any format, provided it's serialized in the binary format
     supported by BPPCodec.
-    
+
     Each message is handed to the registered callback via the on_datapoint method.
     """
 
@@ -363,7 +362,7 @@ class RemoteSensor:
             self._status = new_status
             if self._on_status_changed_cb is not None:
                 self._event_executor.submit(self._on_status_changed_cb, new_status, data if data is not None else {})
-    
+
     def _parse_message(self, message: str | bytes) -> bytes | None:
         """
         Parse WebSocket message to extract datapoint(s) based on configured format.
@@ -378,12 +377,12 @@ class RemoteSensor:
             except Exception as e:
                 self.logger.warning(f"Failed to decode string message using base64: {e}")
                 return None
-        
+
         decoded = self.codec.decode(message)
         if decoded is None:
             self.logger.warning("Failed to decode message")
             return None
-        
+
         return decoded
 
     def _close_sensor(self) -> None:

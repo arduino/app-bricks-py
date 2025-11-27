@@ -51,7 +51,7 @@ async def test_on_datapoint_callback(codec):
 
     await asyncio.wait_for(test_done.wait(), timeout=2)
     sensor.stop()
-    
+
     # Verify callback was called
     assert len(received_data) == 1
     assert "temperature" in received_data[0]
@@ -86,7 +86,7 @@ async def test_single_client_limitation(codec):
         except websockets.exceptions.ConnectionClosedOK:
             # Expected - server closed the connection
             pass
-    
+
     sensor.stop()
 
 
