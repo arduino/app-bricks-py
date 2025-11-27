@@ -6,18 +6,19 @@ import json
 import base64
 import os
 import threading
-import queue
 import time
+import queue
 import numpy as np
 import websockets
 import asyncio
-from typing import Literal, Optional
 from concurrent.futures import CancelledError, TimeoutError
+
+from arduino.app_internal.core.peripherals import BPPCodec
+from arduino.app_utils import Logger
 
 from .base_microphone import BaseMicrophone
 from .config import RATE_16K, CHANNELS_MONO, FORMAT_S16_LE, CHUNK_BALANCED
 from .errors import MicrophoneConfigError, MicrophoneOpenError
-from arduino.app_utils import Logger
 
 logger = Logger("WebSocketMicrophone")
 
@@ -26,23 +27,27 @@ class WebSocketMicrophone(BaseMicrophone):
     """
     WebSocket Microphone implementation that hosts a WebSocket server.
 
-    This microphone exposes a WebSocket server that receives audio chunks from connected clients.
-    Only one client can be connected at a time.
+    This microphone exposes a WebSocket server that receives audio chunks from connected
+    clients. Only one client can be connected at a time.
 
-    Clients must send PCM audio data in one of these formats:
-    - Binary (raw)
-    - Base64 encoded
-    - With JSON envelope
+    Clients must encode the audio data in PCM format and serialize the content in the
+    binary format supported by BPPCodec.
 
-    Also, clients are expected to respect the sample rate, channels, format, and chunk size
-    specified during initialization.
+    Secure communication with the WebSocket server is supported in three security modes:
+    - Security disabled (empty secret)
+    - Authenticated (secret + enable_encryption=False) - HMAC-SHA256
+    - Authenticated + Encrypted (secret + enable_encryption=True) - ChaCha20-Poly1305
+
+    Also, clients are expected to respect the sample rate, channels, format, and chunk
+    size specified during initialization.
     """
 
     def __init__(
         self,
         port: int = 8080,
         timeout: int = 3,
-        audio_format: Literal["binary", "base64", "json"] = "binary",
+        secret: str = "",
+        enable_encryption: bool = False,
         sample_rate: int = RATE_16K,
         channels: int = CHANNELS_MONO,
         format: str = FORMAT_S16_LE,
@@ -53,15 +58,16 @@ class WebSocketMicrophone(BaseMicrophone):
         Initialize WebSocket microphone server.
 
         Args:
-            port (int): Port to bind the server to (default: 8080)
-            timeout (int): Connection timeout in seconds (default: 3)
-            audio_format (str): Expected audio format from clients ("binary", "base64", "json") (default: "binary")
+            port (int): Port to bind the server to
+            timeout (int): Connection timeout in seconds
+            secret (str): Secret key for authentication/encryption (empty = security disabled)
+            enable_encryption (bool): Enable encryption (only effective if secret is provided)
             sample_rate (int): Sample rate in Hz (default: 16000)
             channels (int): Number of audio channels (default: 1)
             format (str): Audio format (default: "S16_LE")
             chunk_size (int): Number of frames per chunk (default: 1024). This parameter is advisory,
                 it's sent to clients to suggest an optimal chunk size but clients may ignore it.
-            auto_reconnect (bool, optional): Enable automatic reconnection on failure. Default: True.
+            auto_reconnect (bool): Enable automatic reconnection on failure
         """
         super().__init__(sample_rate, channels, format, chunk_size, auto_reconnect)
 
@@ -71,32 +77,43 @@ class WebSocketMicrophone(BaseMicrophone):
             raise MicrophoneConfigError(f"Unsupported format: {format}")
 
         self.protocol = "ws"
+        if port < 0 or port > 65535:
+            raise MicrophoneConfigError(f"Invalid port number: {port}")
         self.port = port
+        if timeout <= 0:
+            raise MicrophoneConfigError(f"Invalid timeout value: {timeout}")
         self.timeout = timeout
-        if audio_format not in ["binary", "base64", "json"]:
-            raise MicrophoneConfigError(f"Invalid frame format: {audio_format}")
-        self.audio_format = audio_format
+        self.codec = BPPCodec(secret, enable_encryption)
+        self.secret = secret
+        self.enable_encryption = enable_encryption
         self.logger = logger
 
         host_ip = os.getenv("HOST_IP")
         self._bind_ip = "0.0.0.0"
-        self._external_ip = host_ip if host_ip is not None else self._bind_ip
-
-        self.audio_format = audio_format
-        self.logger = logger
+        self.ip = host_ip if host_ip is not None else self._bind_ip
 
         self._audio_queue = queue.Queue(10)
         self._server = None
         self._loop = None
         self._server_thread = None
         self._stop_event = asyncio.Event()
-        self._client: Optional[websockets.ServerConnection] = None
+        self._client: websockets.ServerConnection | None = None
         self._client_lock = asyncio.Lock()
 
     @property
     def url(self) -> str:
         """Return the WebSocket server address."""
-        return f"{self.protocol}://{self._external_ip}:{self.port}"
+        return f"{self.protocol}://{self.ip}:{self.port}"
+
+    @property
+    def security_mode(self) -> str:
+        """Return current security mode for logging/debugging."""
+        if not self.secret:
+            return "none"
+        elif self.enable_encryption:
+            return "encrypted (ChaCha20-Poly1305)"
+        else:
+            return "authenticated (HMAC-SHA256)"
 
     def _resolve_dtype(self, format: str) -> np.dtype | None:
         """Get numpy dtype for audio format."""
@@ -178,10 +195,9 @@ class WebSocketMicrophone(BaseMicrophone):
 
         # Wait for server to start
         start_time = time.time()
-        start_timeout = self.timeout
-        while time.time() - start_time < start_timeout:
+        while time.time() - start_time < self.timeout:
             if self._server is not None:
-                self.logger.info(f"WebSocket server started on {self.url}")
+                self.logger.info(f"WebSocket microphone server started on {self.url}, security: {self.security_mode}")
                 return
             time.sleep(0.1)
 
@@ -217,6 +233,7 @@ class WebSocketMicrophone(BaseMicrophone):
                     ping_timeout=self.timeout,
                     close_timeout=self.timeout,
                     ping_interval=20,
+                    max_size=1 * 1024 * 1024,  # Limit max message size for security
                 ),
                 timeout=self.timeout,
             )
@@ -229,10 +246,10 @@ class WebSocketMicrophone(BaseMicrophone):
             await self._stop_event.wait()
 
         except TimeoutError as e:
-            self.logger.error(f"Failed to start WebSocket server in {self.timeout}s: {e}")
+            self.logger.error(f"Failed to start WebSocket server within {self.timeout}s: {e}")
             raise
         except Exception as e:
-            self.logger.error(f"Error starting WebSocket server: {e}")
+            self.logger.error(f"Failed to start WebSocket server: {e}")
             raise
         finally:
             if self._server:
@@ -249,26 +266,26 @@ class WebSocketMicrophone(BaseMicrophone):
                 # Reject the new client
                 self.logger.warning(f"Rejecting client {client_addr}: only one client allowed at a time")
                 try:
-                    await conn.send(json.dumps({"error": "Server busy", "message": "Only one client connection allowed at a time", "code": 1000}))
-                    await conn.close(code=1000, reason="Server busy - only one client allowed")
+                    rejection = json.dumps({"error": "Server busy", "message": "Only one client connection allowed at a time", "code": 1000})
+                    await self._send_to_client(rejection, client=conn)
+                    await conn.close(code=1000, reason="Server busy, only one client allowed")
                 except Exception as e:
-                    self.logger.warning(f"Error sending rejection message to {client_addr}: {e}")
+                    self.logger.warning(f"Failed to send rejection message to {client_addr}: {e}")
                 return
 
             # Accept the client
             self._client = conn
 
         self._set_status("connected", {"client_address": client_addr})
-
         self.logger.debug(f"Client connected: {client_addr}")
 
         try:
             # Send welcome message
             try:
-                welcome_msg = {
+                welcome = {
                     "status": "connected",
                     "message": "You are now connected to the microphone server",
-                    "audio_format": self.audio_format,
+                    "security_mode": self.security_mode,
                     "sample_rate": self.sample_rate,
                     "channels": self.channels,
                     "format": self.format,
@@ -278,29 +295,32 @@ class WebSocketMicrophone(BaseMicrophone):
                 # Add universal format details if available
                 format_details = self._get_format_details(self.format)
                 if format_details:
-                    welcome_msg.update(format_details)
+                    welcome.update(format_details)
 
-                await self._send_to_client(welcome_msg)
+                await self._send_to_client(json.dumps(welcome))
             except Exception as e:
-                logger.warning(f"Could not send welcome message to {client_addr}: {e}")
+                self.logger.warning(f"Failed to send welcome message: {e}")
 
+            # Handle incoming messages
             async for message in conn:
                 audio_chunk = self._parse_message(message)
-                if audio_chunk is not None:
-                    # Drop old chunks until there's room for the new one
-                    while True:
+                if audio_chunk is None:
+                    continue
+                
+                # Drop old chunks until there's room for the new one
+                while True:
+                    try:
+                        self._audio_queue.put_nowait(audio_chunk)
+                        break
+                    except queue.Full:
                         try:
-                            self._audio_queue.put_nowait(audio_chunk)
-                            break
-                        except queue.Full:
-                            try:
-                                # Drop oldest chunk and try again
-                                self._audio_queue.get_nowait()
-                            except queue.Empty:
-                                continue
+                            # Drop oldest chunk and try again
+                            self._audio_queue.get_nowait()
+                        except queue.Empty:
+                            continue
 
         except websockets.exceptions.ConnectionClosed:
-            self.logger.info(f"Client disconnected: {client_addr}")
+            self.logger.debug(f"Client disconnected: {client_addr}")
         except Exception as e:
             self.logger.warning(f"Error handling client {client_addr}: {e}")
         finally:
@@ -312,46 +332,19 @@ class WebSocketMicrophone(BaseMicrophone):
 
     def _parse_message(self, message: str | bytes) -> np.ndarray | None:
         """Parse WebSocket message to extract audio chunk."""
-        try:
-            if self.audio_format == "binary":
-                # Direct binary data
-                if isinstance(message, bytes):
-                    return np.frombuffer(message, dtype=self._dtype)
-                else:
-                    logger.warning("Expected binary message but got text")
-                    return None
-
-            elif self.audio_format == "base64":
-                # Base64 encoded audio
-                if isinstance(message, str):
-                    audio_data = base64.b64decode(message)
-                    return np.frombuffer(audio_data, dtype=self._dtype)
-                else:
-                    logger.warning("Expected text message for base64 but got binary")
-                    return None
-
-            elif self.audio_format == "json":
-                # JSON with audio data
-                if isinstance(message, str):
-                    data = json.loads(message)
-                    if "audio" in data:
-                        audio_b64 = data["audio"]
-                        audio_data = base64.b64decode(audio_b64)
-                        return np.frombuffer(audio_data, dtype=self._dtype)
-                    else:
-                        logger.warning("JSON message missing 'audio' field")
-                        return None
-                else:
-                    logger.warning("Expected text message for JSON but got binary")
-                    return None
-
-            else:
-                logger.error(f"Unknown audio format: {self.audio_format}")
+        if isinstance(message, str):
+            try:
+                message = base64.b64decode(message)
+            except Exception as e:
+                self.logger.warning(f"Failed to decode string message using base64: {e}")
                 return None
-
-        except Exception as e:
-            logger.error(f"Error parsing message: {e}")
+        
+        decoded = self.codec.decode(message)
+        if decoded is None:
+            self.logger.warning("Failed to decode message")
             return None
+        
+        return np.frombuffer(decoded, dtype=self._dtype)
 
     def _close_microphone(self) -> None:
         """Stop the WebSocket server."""
@@ -384,17 +377,13 @@ class WebSocketMicrophone(BaseMicrophone):
 
     async def _stop_and_disconnect_client(self):
         """Set the async stop event and close the client connection."""
-        # Send goodbye message and close the client connection
         if self._client:
             try:
                 self.logger.debug("Disconnecting client...")
-                # Send goodbye message before closing
-                await self._send_to_client({
-                    "status": "disconnecting",
-                    "message": "Server is shutting down. Connection will be closed.",
-                })
+                goodbye = json.dumps({"status": "disconnecting", "message": "Server is shutting down"})
+                await self._send_to_client(goodbye)
             except Exception as e:
-                self.logger.warning(f"Failed to send 'disconnecting' event to closing client: {e}")
+                self.logger.warning(f"Failed to send goodbye message: {e}")
             finally:
                 if self._client:
                     await self._client.close()
@@ -403,28 +392,29 @@ class WebSocketMicrophone(BaseMicrophone):
         self._stop_event.set()
 
     def _read_audio(self) -> np.ndarray | None:
-        """
-        Read a single audio chunk from the WebSocket microphone.
-
-        Returns audio chunks as received from clients.
-        """
+        """Read a single audio chunk from the queue."""
         try:
             return self._audio_queue.get(timeout=0.1)
         except queue.Empty:
             return None
 
-    async def _send_to_client(self, message: str | bytes | dict) -> None:
+    async def _send_to_client(self, message: bytes | str, client: websockets.ServerConnection | None = None):
         """Send a message to the connected client."""
-        if isinstance(message, dict):
-            message = json.dumps(message)
+        if isinstance(message, str):
+            message = message.encode()
 
-        async with self._client_lock:
-            if self._client is None:
-                raise ConnectionError("No client connected to send message to")
+        encoded = self.codec.encode(message)
 
-            try:
-                await self._client.send(message)
-            except websockets.ConnectionClosedOK:
-                self.logger.warning("Client has already closed the connection")
-            except Exception:
-                raise
+        # Keep a ref to current client to avoid locking
+        client = client or self._client
+        if client is None:
+            raise ConnectionError("No client connected")
+
+        try:
+            await client.send(encoded)
+        except websockets.ConnectionClosedOK:
+            self.logger.warning("Client has already closed the connection")
+        except websockets.ConnectionClosedError as e:
+            self.logger.warning(f"Client has already closed the connection with error: {e}")
+        except Exception:
+            raise

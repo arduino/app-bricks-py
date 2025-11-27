@@ -103,14 +103,14 @@ class TestMicrophoneConfiguration:
 
     def test_custom_parameters_websocket(self):
         """Test WebSocket microphone with custom parameters."""
-        mic = Microphone(device="ws://127.0.0.1:0", sample_rate=44100, channels=2, format="FLOAT_LE", chunk_size=512, audio_format="json", timeout=5)
+        mic = Microphone(device="ws://127.0.0.1:0", sample_rate=44100, channels=2, format="FLOAT_LE", chunk_size=512, timeout=5, secret="yolo")
 
         assert mic.sample_rate == 44100
         assert mic.channels == 2
         assert mic.format == "FLOAT_LE"
         assert mic.chunk_size == 512
-        assert mic.audio_format == "json"
         assert mic.timeout == 5
+        assert mic.secret == "yolo"
 
     def test_unsupported_format_raises_error(self):
         """Test that unsupported format raises error."""
@@ -119,6 +119,22 @@ class TestMicrophoneConfiguration:
 
         with pytest.raises(MicrophoneConfigError):
             WebSocketMicrophone(port=0, format="INVALID_FORMAT")
+    
+    def test_invalid_port_raises_error(self):
+        """Test that invalid port raises error."""
+        with pytest.raises(MicrophoneConfigError):
+            WebSocketMicrophone(port=-1)
+
+        with pytest.raises(MicrophoneConfigError):
+            WebSocketMicrophone(port=70000)
+    
+    def test_invalid_timeout_raises_error(self):
+        """Test that invalid timeout raises error."""
+        with pytest.raises(MicrophoneConfigError):
+            WebSocketMicrophone(port=0, timeout=-5)
+
+        with pytest.raises(MicrophoneConfigError):
+            WebSocketMicrophone(port=0, timeout=0)
 
 
 class TestALSAMicrophoneDeviceResolution:
