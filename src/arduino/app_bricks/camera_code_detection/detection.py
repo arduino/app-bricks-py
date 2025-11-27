@@ -68,7 +68,7 @@ class CameraCodeDetection:
         self._detect_qr = detect_qr
         self._detect_barcode = detect_barcode
 
-        # These callbacks do not require locks as long as we're running on CPython
+        # These callbacks don't require locking as long as we're running on CPython
         self._on_frame_cb = None
         self._on_error_cb = None
 
