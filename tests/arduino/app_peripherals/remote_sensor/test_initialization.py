@@ -19,24 +19,40 @@ def test_remote_sensor_initialization():
     assert sensor.url == "ws://0.0.0.0:8080"
     assert sensor.port == 8080
     assert sensor.timeout == 3
-    assert sensor.data_format == "json"
+    assert sensor.secret == ""
+    assert sensor.enable_encryption is False
+    assert sensor.auto_reconnect is True
+    assert "none" in sensor.security_mode
     assert not sensor.is_started()
-
-
-def test_remote_sensor_invalid_format():
-    """Test RemoteSensor raises error for invalid data format."""
-    with pytest.raises(RemoteSensorConfigError):
-        RemoteSensor(data_format="invalid")
 
 
 def test_remote_sensor_custom_parameters():
     """Test RemoteSensor can be initialized with custom parameters."""
-    sensor = RemoteSensor(port=9000, timeout=5, data_format="csv")
+    sensor = RemoteSensor(port=9000, timeout=5, secret="yolo", enable_encryption=True, auto_reconnect=False)
     assert sensor.url == "ws://0.0.0.0:9000"
     assert sensor.port == 9000
     assert sensor.timeout == 5
-    assert sensor.data_format == "csv"
+    assert sensor.secret == "yolo"
+    assert sensor.enable_encryption is True
+    assert sensor.auto_reconnect is False
+    assert "encrypted" in sensor.security_mode
 
+
+def test_remote_sensor_invalid_port():
+    """Test RemoteSensor raises error for invalid port values."""
+    with pytest.raises(RemoteSensorConfigError):
+        RemoteSensor(port=-1)
+
+    with pytest.raises(RemoteSensorConfigError):
+        RemoteSensor(port=70000)
+
+def test_remote_sensor_invalid_timeout():
+    """Test RemoteSensor raises error for invalid timeout values."""
+    with pytest.raises(RemoteSensorConfigError):
+        RemoteSensor(timeout=0)
+
+    with pytest.raises(RemoteSensorConfigError):
+        RemoteSensor(timeout=-5)
 
 def test_remote_sensor_start_stop():
     """Test RemoteSensor can be started and stopped."""
@@ -90,7 +106,3 @@ def test_remote_sensor_multiple_stop():
     # Calling stop again should be safe (no-op)
     sensor.stop()
     assert not sensor.is_started()
-
-
-def assert_all_dict(data):
-    assert all(isinstance(x, dict) for x in data)

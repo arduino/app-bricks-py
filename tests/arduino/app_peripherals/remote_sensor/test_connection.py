@@ -8,221 +8,194 @@ Connection and client management tests for RemoteSensor.
 Tests callback functionality, single client limitation, multiple messages, and welcome messages.
 """
 
-import time
+import pytest
 import json
 import asyncio
 import websockets
 
 from arduino.app_peripherals.remote_sensor import RemoteSensor
-from test_basic import assert_all_dict
+from arduino.app_internal.core.peripherals import BPPCodec
 
 
-def test_on_datapoint_callback():
+@pytest.fixture
+def codec() -> BPPCodec:
+    """Fixture to provide a BPPCodec instance."""
+    return BPPCodec()
+
+
+@pytest.mark.asyncio
+async def test_on_datapoint_callback(codec):
     """Test that the on_datapoint callback is called with received data."""
     received_data = []
+    loop = asyncio.get_running_loop()
+    test_done = asyncio.Event()
 
     def callback(data):
-        received_data.append(data)
+        assert isinstance(data, bytes)
+        payload = json.loads(data.decode())
+        received_data.append(payload)
+        loop.call_soon_threadsafe(test_done.set)
 
-    sensor = RemoteSensor(port=8771)
+    sensor = RemoteSensor(port=0)
     sensor.on_datapoint(callback)
     sensor.start()
-    time.sleep(0.5)  # Give server time to start
 
-    # Send data from a client
-    async def send_data():
-        uri = f"ws://127.0.0.1:8771"
-        async with websockets.connect(uri) as websocket:
-            # Receive welcome message
-            await websocket.recv()
+    async with websockets.connect(sensor.url) as ws:
+        # Receive welcome message
+        await ws.recv()
 
-            # Send telemetry data
-            test_data = {"temperature": 22.5, "humidity": 60.0}
-            await websocket.send(json.dumps(test_data))
+        # Send telemetry data
+        data = {"temperature": -5.0, "humidity": 60.0}
+        encoded = codec.encode(json.dumps(data).encode())
+        await ws.send(encoded)
 
-            # Give time for callback to be called
-            await asyncio.sleep(0.5)
-
-    try:
-        asyncio.run(send_data())
-
-        # Verify callback was called
-        assert_all_dict(received_data)
-        assert len(received_data) == 1
-        assert received_data[0]["temperature"] == 22.5
-        assert received_data[0]["humidity"] == 60.0
-    finally:
-        sensor.stop()
+    await asyncio.wait_for(test_done.wait(), timeout=2)
+    sensor.stop()
+    
+    # Verify callback was called
+    assert len(received_data) == 1
+    assert "temperature" in received_data[0]
+    assert received_data[0]["temperature"] == -5.0
+    assert "humidity" in received_data[0]
+    assert received_data[0]["humidity"] == 60.0
 
 
-def test_single_client_limitation():
+@pytest.mark.asyncio
+async def test_single_client_limitation(codec):
     """Test that only one client can connect at a time."""
-    sensor = RemoteSensor(port=8772)
+    sensor = RemoteSensor(port=0)
     sensor.start()
-    time.sleep(0.5)  # Give server time to start
 
-    async def test_connections():
-        uri = f"ws://127.0.0.1:8772"
+    # First client connects
+    async with websockets.connect(sensor.url) as ws1:
+        # Receive welcome message
+        welcome = await ws1.recv()
+        welcome_decoded = codec.decode(welcome)
+        welcome_data = json.loads(welcome_decoded)
+        assert welcome_data["status"] == "connected"
 
-        # First client connects
-        async with websockets.connect(uri) as ws1:
-            # Receive welcome message
-            welcome = await ws1.recv()
-            welcome_data = json.loads(welcome)
-            assert welcome_data["status"] == "connected"
+        # Second client tries to connect
+        try:
+            async with websockets.connect(sensor.url) as ws2:
+                # Should receive rejection message
+                rejection = await ws2.recv()
+                rejection_decoded = codec.decode(rejection)
+                rejection_data = json.loads(rejection_decoded)
+                assert "error" in rejection_data
 
-            # Second client tries to connect
-            try:
-                async with websockets.connect(uri) as ws2:
-                    # Should receive rejection message
-                    rejection = await ws2.recv()
-                    rejection_data = json.loads(rejection)
-                    assert rejection_data["error"] == "Server busy"
-
-                    # Connection should close
-                    await asyncio.sleep(0.1)
-            except websockets.exceptions.ConnectionClosedOK:
-                # Expected - server closed the connection
-                pass
-
-    try:
-        asyncio.run(test_connections())
-    finally:
-        sensor.stop()
+        except websockets.exceptions.ConnectionClosedOK:
+            # Expected - server closed the connection
+            pass
+    
+    sensor.stop()
 
 
-def test_multiple_messages():
+@pytest.mark.asyncio
+async def test_multiple_messages(codec):
     """Test that multiple messages from the same client are all received."""
+    n_messages = 5
     received_data = []
+    loop = asyncio.get_running_loop()
+    test_done = asyncio.Event()
 
     def callback(data):
-        received_data.append(data)
+        assert isinstance(data, bytes)
+        payload = json.loads(data.decode())
+        received_data.append(payload)
+        if len(received_data) == n_messages:
+            loop.call_soon_threadsafe(test_done.set)
 
-    sensor = RemoteSensor(port=8773)
+    sensor = RemoteSensor(port=0)
     sensor.on_datapoint(callback)
     sensor.start()
-    time.sleep(0.5)  # Give server time to start
 
-    async def send_multiple():
-        uri = f"ws://127.0.0.1:8773"
-        async with websockets.connect(uri) as websocket:
-            # Receive welcome message
-            await websocket.recv()
+    async with websockets.connect(sensor.url) as ws:
+        # Receive welcome message
+        await ws.recv()
 
-            # Send multiple messages
-            for i in range(5):
-                data = {"sensor_id": i, "value": i * 10}
-                await websocket.send(json.dumps(data))
-                await asyncio.sleep(0.1)
+        # Send multiple messages
+        for i in range(n_messages):
+            data = {"sensor_id": i, "value": i * 10}
+            encoded = codec.encode(json.dumps(data).encode())
+            await ws.send(encoded)
 
-            # Give time for callbacks to be processed
-            await asyncio.sleep(0.5)
+    await asyncio.wait_for(test_done.wait(), timeout=2)
 
-    try:
-        asyncio.run(send_multiple())
+    sensor.stop()
 
-        # Verify all messages were received
-        assert_all_dict(received_data)
-        assert len(received_data) == 5
-        for i in range(5):
-            assert received_data[i]["sensor_id"] == i
-            assert received_data[i]["value"] == i * 10
-    finally:
-        sensor.stop()
+    # Verify all messages were received
+    assert len(received_data) == n_messages
+    for i in range(n_messages):
+        assert "sensor_id" in received_data[i]
+        assert received_data[i]["sensor_id"] == i
+        assert "value" in received_data[i]
+        assert received_data[i]["value"] == i * 10
 
 
-def test_callback_without_start():
-    """Test that setting callback before start works."""
-    received_data = []
-
-    def callback(data):
-        received_data.append(data)
-
-    sensor = RemoteSensor(port=8774)
-
-    # Set callback before starting
-    sensor.on_datapoint(callback)
-    sensor.start()
-    time.sleep(0.5)
-
-    async def send_data():
-        uri = "ws://127.0.0.1:8774"
-        async with websockets.connect(uri) as websocket:
-            await websocket.recv()
-            await websocket.send(json.dumps({"test": "data"}))
-            await asyncio.sleep(0.5)
-
-    try:
-        asyncio.run(send_data())
-
-        assert_all_dict(received_data)
-        assert len(received_data) == 1
-        assert received_data[0]["test"] == "data"
-    finally:
-        sensor.stop()
-
-
-def test_welcome_message_content():
+@pytest.mark.asyncio
+async def test_welcome_message_content(codec):
     """Test that welcome message contains expected fields."""
     received_welcome = []
+    test_done = asyncio.Event()
 
-    sensor = RemoteSensor(port=8775, data_format="json")
+    sensor = RemoteSensor(port=0)
     sensor.start()
-    time.sleep(0.5)
 
-    async def check_welcome():
-        uri = "ws://127.0.0.1:8775"
-        async with websockets.connect(uri) as websocket:
-            welcome = await websocket.recv()
-            received_welcome.append(json.loads(welcome))
+    async with websockets.connect(sensor.url) as ws:
+        welcome = await ws.recv()
+        welcome_decoded = codec.decode(welcome)
+        received_welcome.append(json.loads(welcome_decoded))
+        test_done.set()
 
-    try:
-        asyncio.run(check_welcome())
+    await asyncio.wait_for(test_done.wait(), timeout=2)
+    sensor.stop()
 
-        assert len(received_welcome) == 1
-        assert received_welcome[0]["status"] == "connected"
-        assert received_welcome[0]["data_format"] == "json"
-        assert "message" in received_welcome[0]
-    finally:
-        sensor.stop()
+    assert len(received_welcome) == 1
+    assert "status" in received_welcome[0]
+    assert received_welcome[0]["status"] == "connected"
+    assert "security_mode" in received_welcome[0]
+    assert received_welcome[0]["security_mode"] == "none"
+    assert "message" in received_welcome[0]
 
 
-def test_client_reconnection():
+@pytest.mark.asyncio
+async def test_client_reconnection(codec):
     """Test that a client can reconnect after disconnecting."""
     received_data = []
+    loop = asyncio.get_running_loop()
+    task_done = asyncio.Event()
 
     def callback(data):
-        received_data.append(data)
+        assert isinstance(data, bytes)
+        payload = json.loads(data.decode())
+        received_data.append(payload)
+        if len(received_data) == 2:
+            loop.call_soon_threadsafe(task_done.set)
 
-    sensor = RemoteSensor(port=8776)
+    sensor = RemoteSensor(port=0)
     sensor.on_datapoint(callback)
     sensor.start()
-    time.sleep(0.5)
 
-    async def connect_disconnect_reconnect():
-        uri = "ws://127.0.0.1:8776"
+    # First connection
+    async with websockets.connect(sensor.url) as ws:
+        await ws.recv()  # Welcome
+        encoded = codec.encode(json.dumps({"msg": 1}).encode())
+        await ws.send(encoded)
 
-        # First connection
-        async with websockets.connect(uri) as ws:
-            await ws.recv()  # Welcome
-            await ws.send(json.dumps({"msg": 1}))
-            await asyncio.sleep(0.3)
+    # Give server time to clean up
+    await asyncio.sleep(0.1)
 
-        # Give server time to clean up
-        await asyncio.sleep(0.5)
+    # Second connection (reconnect)
+    async with websockets.connect(sensor.url) as ws:
+        await ws.recv()  # Welcome
+        encoded = codec.encode(json.dumps({"msg": 2}).encode())
+        await ws.send(encoded)
 
-        # Second connection (reconnect)
-        async with websockets.connect(uri) as ws:
-            await ws.recv()  # Welcome
-            await ws.send(json.dumps({"msg": 2}))
-            await asyncio.sleep(0.3)
+    await asyncio.wait_for(task_done.wait(), timeout=2)
+    sensor.stop()
 
-    try:
-        asyncio.run(connect_disconnect_reconnect())
-
-        assert_all_dict(received_data)
-        assert len(received_data) == 2
-        assert received_data[0]["msg"] == 1
-        assert received_data[1]["msg"] == 2
-    finally:
-        sensor.stop()
+    assert len(received_data) == 2
+    assert "msg" in received_data[0]
+    assert received_data[0]["msg"] == 1
+    assert "msg" in received_data[1]
+    assert received_data[1]["msg"] == 2
