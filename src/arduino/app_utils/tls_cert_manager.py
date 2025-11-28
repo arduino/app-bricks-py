@@ -116,7 +116,8 @@ class TLSCertificateManager:
         Returns:
             tuple[str, str]: Paths to certificate_file and private_key_file
         """
-        return cls.get_certificate_path(certs_dir), cls.get_private_key_path(certs_dir)
+        target_dir = certs_dir or DEFAULT_CERTS_DIR
+        return cls.get_certificate_path(target_dir), cls.get_private_key_path(target_dir)
 
     @classmethod
     def get_certificate_path(cls, certs_dir: str = DEFAULT_CERTS_DIR) -> str:
