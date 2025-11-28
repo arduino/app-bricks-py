@@ -18,11 +18,15 @@ def webui_server():
             f.write("<html><body>Hello</body></html>")
 
         ui = WebUI(port=0, assets_dir_path=tmp_assets)
+
         def get_hello():
             return {"msg": "hello"}
+
         ui.expose_api("GET", "/api/hello", get_hello)
+
         def post_echo(data: dict):
             return {"echo": data.get("value")}
+
         ui.expose_api("POST", "/api/echo", post_echo)
         ui.start()
 
