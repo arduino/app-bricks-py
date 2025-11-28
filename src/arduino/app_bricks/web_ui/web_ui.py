@@ -132,7 +132,6 @@ class WebUI:
                 config.ssl_certfile = cert_path
                 config.ssl_keyfile = key_path
             except Exception as e:
-                logger.exception(f"Failed to configure SSL certificate: {e}")
                 raise RuntimeError("Failed to configure TLS certificate. Please check the certs directory.") from e
 
         self._server = uvicorn.Server(config)
