@@ -5,6 +5,7 @@
 import os
 import asyncio
 import threading
+from contextlib import asynccontextmanager
 from typing import Any
 from collections.abc import Callable
 
@@ -54,7 +55,13 @@ class WebUI:
         if use_ssl is not None:
             logger.warning("'use_ssl' parameter is deprecated. Use 'use_tls' instead.")
             use_tls = use_ssl
-        self.app = FastAPI(title=__name__, openapi_url=None, on_startup=[self._on_startup])
+
+        @asynccontextmanager
+        async def lifespan(app):
+            await self._on_startup()
+            yield
+        
+        self.app = FastAPI(title=__name__, openapi_url=None, lifespan=lifespan)
         self.sio = SocketManager(app=self.app, mount_location="/socket.io", socketio_path="", max_http_buffer_size=10 * 1024 * 1024)
 
         self._addr = addr
