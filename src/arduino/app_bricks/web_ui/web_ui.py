@@ -58,7 +58,12 @@ class WebUI:
         self.sio = SocketManager(app=self.app, mount_location="/socket.io", socketio_path="", max_http_buffer_size=10 * 1024 * 1024)
 
         self._addr = addr
-        self._port = port
+        def pick_free_port():
+            import socket
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(('', 0))
+                return s.getsockname()[1]
+        self._port = port if port != 0 else pick_free_port()
         self._ui_path_prefix = ui_path_prefix
         self._api_path_prefix = api_path_prefix
         self._assets_dir_path = os.path.abspath(assets_dir_path)
@@ -71,6 +76,24 @@ class WebUI:
         self._on_disconnect_cb: Callable[[str], None] | None = None
         self._on_message_cbs = {}
         self._on_message_cbs_lock = threading.Lock()
+    
+    @property
+    def local_url(self) -> str:
+        """Get the locally addressable URL of the web server.
+
+        Returns:
+            str: The server's URL (including protocol, address, and port).
+        """
+        return f"{self._protocol}://localhost:{self._port}"
+
+    @property
+    def url(self) -> str:
+        """Get the externally addressable URL of the web server.
+
+        Returns:
+            str: The server's URL (including protocol, address, and port).
+        """
+        return f"{self._protocol}://{os.getenv('HOST_IP') or self._addr}:{self._port}"
 
     def start(self):
         """Start the web server asynchronously.
@@ -123,11 +146,9 @@ class WebUI:
         logger.debug("Starting server...")
 
         startup_log = "The application interface is available here:\n"
-        startup_log += f"  - Local URL:   {self._protocol}://localhost:{self._port}"
-        host_ip = os.getenv("HOST_IP")
-        if host_ip:
-            network_url = f"{self._protocol}://{host_ip}:{self._port}"
-            startup_log += f"\n  - Network URL: {network_url}"
+        startup_log += f"  - Local URL:   {self.local_url}"
+        if os.getenv("HOST_IP"):
+            startup_log += f"\n  - Network URL: {self.url}"
         logger.info(startup_log)
 
         try:
@@ -209,7 +230,8 @@ class WebUI:
             logger.exception(f"Failed to send WebSocket message '{message_type}': {e}")
 
     async def _on_startup(self):
-        """This function is called by uvicorn when the server starts up, it is necessary to capture the running
+        """
+        This function is called by uvicorn when the server starts up, it is necessary to capture the running
         asyncio event loop and reuse it later for emitting socket.io events as it requires an asyncio context.
         """
         self._server_loop = asyncio.get_running_loop()
