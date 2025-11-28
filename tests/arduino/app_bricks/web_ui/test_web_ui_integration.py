@@ -18,6 +18,12 @@ def webui_server():
             f.write("<html><body>Hello</body></html>")
 
         ui = WebUI(port=0, assets_dir_path=tmp_assets)
+        def get_hello():
+            return {"msg": "hello"}
+        ui.expose_api("GET", "/api/hello", get_hello)
+        def post_echo(data: dict):
+            return {"echo": data.get("value")}
+        ui.expose_api("POST", "/api/echo", post_echo)
         ui.start()
 
         thread = threading.Thread(target=ui.execute, daemon=True)
@@ -38,16 +44,6 @@ def test_http_index(webui_server):
 
 
 def test_expose_api_rest(webui_server):
-    def get_hello():
-        return {"msg": "hello"}
-
-    webui_server.expose_api("GET", "/api/hello", get_hello)
-
-    def post_echo(data: dict):
-        return {"echo": data.get("value")}
-
-    webui_server.expose_api("POST", "/api/echo", post_echo)
-
     resp = requests.get(f"{webui_server.url}/api/hello")
     assert resp.status_code == 200
     assert resp.json() == {"msg": "hello"}
