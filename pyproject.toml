@@ -31,6 +31,7 @@ dev = [
     "setuptools",
     "build",
     "pytest",
+    "websocket-client",
     "ruff",
     "docstring_parser>=0.16",
     "arduino_app_bricks[all]",
