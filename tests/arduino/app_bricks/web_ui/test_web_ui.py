@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: Copyright (C) ARDUINO SRL (http://www.arduino.cc)
+#
+# SPDX-License-Identifier: MPL-2.0
+
 from fastapi.testclient import TestClient
 from arduino.app_bricks.web_ui.web_ui import WebUI
 
