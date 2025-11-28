@@ -60,16 +60,19 @@ class WebUI:
         async def lifespan(app):
             await self._on_startup()
             yield
-        
+
         self.app = FastAPI(title=__name__, openapi_url=None, lifespan=lifespan)
         self.sio = SocketManager(app=self.app, mount_location="/socket.io", socketio_path="", max_http_buffer_size=10 * 1024 * 1024)
 
         self._addr = addr
+
         def pick_free_port():
             import socket
+
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.bind(('', 0))
+                s.bind(("", 0))
                 return s.getsockname()[1]
+
         self._port = port if port != 0 else pick_free_port()
         self._ui_path_prefix = ui_path_prefix
         self._api_path_prefix = api_path_prefix
@@ -83,7 +86,7 @@ class WebUI:
         self._on_disconnect_cb: Callable[[str], None] | None = None
         self._on_message_cbs = {}
         self._on_message_cbs_lock = threading.Lock()
-    
+
     @property
     def local_url(self) -> str:
         """Get the locally addressable URL of the web server.
@@ -123,11 +126,9 @@ class WebUI:
         config = uvicorn.Config(self.app, host=self._addr, port=self._port, log_level="warning")
         if self._use_tls:
             from arduino.app_utils.tls_cert_manager import TLSCertificateManager
+
             try:
-                cert_path, key_path = TLSCertificateManager.get_or_create_certificates(
-                    certs_dir=self._certs_dir_path,
-                    common_name=self._addr
-                )
+                cert_path, key_path = TLSCertificateManager.get_or_create_certificates(certs_dir=self._certs_dir_path, common_name=self._addr)
                 config.ssl_certfile = cert_path
                 config.ssl_keyfile = key_path
             except Exception as e:
