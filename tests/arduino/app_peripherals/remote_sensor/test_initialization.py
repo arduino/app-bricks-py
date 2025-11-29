@@ -20,7 +20,7 @@ def test_remote_sensor_initialization():
     assert sensor.port == 8080
     assert sensor.timeout == 3
     assert sensor.secret == ""
-    assert sensor.enable_encryption is False
+    assert sensor.encrypt is False
     assert sensor.auto_reconnect is True
     assert "none" in sensor.security_mode
     assert not sensor.is_started()
@@ -28,12 +28,12 @@ def test_remote_sensor_initialization():
 
 def test_remote_sensor_custom_parameters():
     """Test RemoteSensor can be initialized with custom parameters."""
-    sensor = RemoteSensor(port=9000, timeout=5, secret="yolo", enable_encryption=True, auto_reconnect=False)
+    sensor = RemoteSensor(port=9000, timeout=5, secret="yolo", encrypt=True, auto_reconnect=False)
     assert sensor.url == "ws://0.0.0.0:9000"
     assert sensor.port == 9000
     assert sensor.timeout == 5
     assert sensor.secret == "yolo"
-    assert sensor.enable_encryption is True
+    assert sensor.encrypt is True
     assert sensor.auto_reconnect is False
     assert "encrypted" in sensor.security_mode
 

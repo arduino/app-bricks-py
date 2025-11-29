@@ -37,8 +37,10 @@ class RemoteSensor:
         self,
         port: int = 8080,
         timeout: int = 3,
+        certs_dir_path: str = "/app/certs",
+        use_tls: bool = False,
         secret: str = "",
-        enable_encryption: bool = False,
+        encrypt: bool = False,
         auto_reconnect: bool = True,
     ):
         """
@@ -47,20 +49,24 @@ class RemoteSensor:
         Args:
             port (int): Port to bind the server to
             timeout (int): Connection timeout in seconds
+            certs_dir_path (str): Path to the directory containing TLS certificates
+            use_tls (bool): Enable TLS for secure connections. If True, 'encrypt' will
+                be ignored. Use this for transport-level security with clients that can
+                accept self-signed certificates or when supplying your own certificates.
             secret (str): Secret key for authentication/encryption (empty = security disabled)
-            enable_encryption (bool): Enable encryption (only effective if secret is provided)
+            encrypt (bool): Enable encryption (requires 'secret').
             auto_reconnect (bool): Enable automatic reconnection on failure
         """
-        self.protocol = "ws"
-        if port < 0 or port > 65535:
-            raise RemoteSensorConfigError(f"Invalid port number: {port}")
-        self.port = port
+        if use_tls and encrypt:
+            logger.warning("Encryption is redundant over TLS connections, disabling encryption.")
+            encrypt = False
+
         if timeout <= 0:
             raise RemoteSensorConfigError(f"Invalid timeout value: {timeout}")
         self.timeout = timeout
-        self.codec = BPPCodec(secret, enable_encryption)
+        self.codec = BPPCodec(secret, encrypt)
         self.secret = secret
-        self.enable_encryption = enable_encryption
+        self.encrypt = encrypt
         self.logger = logger
         self.name = self.__class__.__name__
 
@@ -69,16 +75,34 @@ class RemoteSensor:
         self.auto_reconnect_delay = 1.0
         self.first_connection_max_retries = 10
 
-        host_ip = os.getenv("HOST_IP")
+        # Address and port configuration
+        self.use_tls = use_tls
+        self.protocol = "wss" if use_tls else "ws"
         self._bind_ip = "0.0.0.0"
+        host_ip = os.getenv("HOST_IP")
         self.ip = host_ip if host_ip is not None else self._bind_ip
+        if port < 0 or port > 65535:
+            raise RemoteSensorConfigError(f"Invalid port number: {port}")
+        self.port = port
 
+        # TLS configuration
+        if self.use_tls:
+            import ssl
+            from arduino.app_utils.tls_cert_manager import TLSCertificateManager
+
+            try:
+                cert_path, key_path = TLSCertificateManager.get_or_create_certificates(certs_dir=certs_dir_path)
+                self._ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+                self._ssl_context.load_cert_chain(cert_path, key_path)
+                logger.info(f"SSL context created with certificate: {cert_path}")
+            except Exception as e:
+                raise RuntimeError("Failed to configure TLS certificate. Please check certificates and the certs directory.") from e
+        
         self._status: Literal["disconnected", "connected", "streaming", "paused"] = "disconnected"
         self._is_started = False
         self._server = None
         self._loop = None
         self._server_thread = None
-        self._stop_event = asyncio.Event()
         self._client: websockets.ServerConnection | None = None
         self._client_lock = asyncio.Lock()
 
@@ -89,21 +113,21 @@ class RemoteSensor:
         self._event_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="RemoteSensorCallbackRunner")
 
     @property
-    def status(self) -> Literal["disconnected", "connected", "streaming", "paused"]:
-        """Read-only property for camera status."""
-        return self._status
-
-    @property
     def url(self) -> str:
         """Return the WebSocket server address."""
         return f"{self.protocol}://{self.ip}:{self.port}"
+
+    @property
+    def status(self) -> Literal["disconnected", "connected", "streaming", "paused"]:
+        """Read-only property for camera status."""
+        return self._status
 
     @property
     def security_mode(self) -> str:
         """Return current security mode for logging/debugging."""
         if not self.secret:
             return "none"
-        elif self.enable_encryption:
+        elif self.encrypt:
             return "encrypted (ChaCha20-Poly1305)"
         else:
             return "authenticated (HMAC-SHA256)"
@@ -231,12 +255,11 @@ class RemoteSensor:
         finally:
             if self._loop and not self._loop.is_closed():
                 self._loop.close()
+                self._loop = None
 
     async def _start_server(self) -> None:
         """Start the WebSocket server."""
         try:
-            self._stop_event.clear()
-
             self._server = await asyncio.wait_for(
                 websockets.serve(
                     self._ws_handler,
@@ -246,7 +269,8 @@ class RemoteSensor:
                     ping_timeout=self.timeout,
                     close_timeout=self.timeout,
                     ping_interval=20,
-                    max_size=1 * 1024 * 1024,  # Limit max message size for security
+                    max_size=5 * 1024 * 1024,  # Limit max message size for security
+                    ssl=self._ssl_context if self.use_tls else None,
                 ),
                 timeout=self.timeout,
             )
@@ -256,7 +280,7 @@ class RemoteSensor:
                 server_socket = list(self._server.sockets)[0]
                 self.port = server_socket.getsockname()[1]
 
-            await self._stop_event.wait()
+            await self._server.wait_closed()
 
         except TimeoutError as e:
             self.logger.error(f"Failed to start WebSocket server within {self.timeout}s: {e}")
@@ -265,10 +289,7 @@ class RemoteSensor:
             self.logger.error(f"Failed to start WebSocket server: {e}")
             raise
         finally:
-            if self._server:
-                self._server.close()
-                await self._server.wait_closed()
-                self._server = None
+            self._server = None
 
     async def _ws_handler(self, conn: websockets.ServerConnection) -> None:
         """Handle a connected WebSocket client. Only one client allowed at a time."""
@@ -389,7 +410,7 @@ class RemoteSensor:
         """Stop the WebSocket server."""
         if self._loop and not self._loop.is_closed() and self._loop.is_running():
             try:
-                future = asyncio.run_coroutine_threadsafe(self._stop_and_disconnect_client(), self._loop)
+                future = asyncio.run_coroutine_threadsafe(self._disconnect_and_stop(), self._loop)
                 future.result(1.0)
             except CancelledError:
                 self.logger.debug(f"Error stopping WebSocket server: CancelledError")
@@ -402,12 +423,9 @@ class RemoteSensor:
         if self._server_thread and self._server_thread.is_alive():
             self._server_thread.join(timeout=10.0)
 
-        # Reset state
-        self._server = None
-        self._loop = None
         self._client = None
 
-    async def _stop_and_disconnect_client(self):
+    async def _disconnect_and_stop(self):
         """Set the async stop event and close the client connection."""
         if self._client:
             try:
@@ -420,8 +438,9 @@ class RemoteSensor:
                 if self._client:
                     await self._client.close()
                     self.logger.debug("Client connection closed")
-
-        self._stop_event.set()
+        
+        if self._server:
+            self._server.close()
 
     async def _send_to_client(self, message: bytes | str, client: websockets.ServerConnection | None = None):
         """Send a message to the connected client."""
