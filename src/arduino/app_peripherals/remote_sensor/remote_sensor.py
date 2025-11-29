@@ -424,7 +424,7 @@ class RemoteSensor:
             self._server_thread.join(timeout=10.0)
 
     async def _disconnect_and_stop(self):
-        """Set the async stop event and close the client connection."""
+        """Cleanly disconnect client with goodbye message and stop the server."""
         async with self._client_lock:
             if self._client:
                 try:
