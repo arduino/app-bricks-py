@@ -61,9 +61,6 @@ class RemoteSensor:
             logger.warning("Encryption is redundant over TLS connections, disabling encryption.")
             encrypt = False
 
-        if timeout <= 0:
-            raise RemoteSensorConfigError(f"Invalid timeout value: {timeout}")
-        self.timeout = timeout
         self.codec = BPPCodec(secret, encrypt)
         self.secret = secret
         self.encrypt = encrypt
@@ -84,7 +81,10 @@ class RemoteSensor:
         if port < 0 or port > 65535:
             raise RemoteSensorConfigError(f"Invalid port number: {port}")
         self.port = port
-
+        if timeout <= 0:
+            raise RemoteSensorConfigError(f"Invalid timeout value: {timeout}")
+        self.timeout = timeout
+        
         # TLS configuration
         if self.use_tls:
             import ssl
@@ -269,7 +269,7 @@ class RemoteSensor:
                     ping_timeout=self.timeout,
                     close_timeout=self.timeout,
                     ping_interval=20,
-                    max_size=5 * 1024 * 1024,  # Limit max message size for security
+                    max_size=1 * 1024 * 1024,  # Limit max message size for security
                     ssl=self._ssl_context if self.use_tls else None,
                 ),
                 timeout=self.timeout,
@@ -316,12 +316,12 @@ class RemoteSensor:
         try:
             # Send welcome message
             try:
-                welcome = json.dumps({
+                welcome = {
                     "status": "connected",
                     "message": "You are now connected to the remote sensor server",
                     "security_mode": self.security_mode,
-                })
-                await self._send_to_client(welcome)
+                }
+                await self._send_to_client(json.dumps(welcome))
             except Exception as e:
                 self.logger.warning(f"Failed to send welcome message: {e}")
 
