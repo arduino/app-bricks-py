@@ -41,7 +41,7 @@ async def test_plaintext_connectivity():
     sensor = RemoteSensor(port=0)
     sensor.on_status_changed(status_callback)
     sensor.start()
-    
+
     async with websockets.connect(sensor.url) as ws:
         await ws.recv()  # Welcome
 
@@ -70,6 +70,7 @@ async def test_tls_connectivity():
             assert info.get("client_address") is not None
 
     import tempfile
+
     with tempfile.TemporaryDirectory() as tmp_dir:
         sensor = RemoteSensor(port=0, use_tls=True, certs_dir_path=tmp_dir)
         sensor.on_status_changed(status_callback)
@@ -77,6 +78,7 @@ async def test_tls_connectivity():
 
         # Disable cert verification as we're using a self-signed one
         import ssl
+
         ssl_context = ssl.create_default_context()
         ssl_context.check_hostname = False
         ssl_context.verify_mode = ssl.CERT_NONE
@@ -183,8 +185,9 @@ async def test_welcome_goodbye_message_content(codec):
         assert welcome["security_mode"] == "none"
 
         import threading
+
         threading.Thread(target=sensor.stop, daemon=True).start()
-        
+
         goodbye_msg = await ws.recv()  # Goodbye message
         goodbye_decoded = codec.decode(goodbye_msg)
         goodbye = json.loads(goodbye_decoded)
@@ -192,7 +195,7 @@ async def test_welcome_goodbye_message_content(codec):
         assert "status" in goodbye
         assert goodbye["status"] == "disconnecting"
         assert "message" in goodbye
-    
+
 
 @pytest.mark.asyncio
 async def test_on_single_message(codec):

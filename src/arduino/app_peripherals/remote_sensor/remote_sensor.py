@@ -97,7 +97,7 @@ class RemoteSensor:
                 logger.info(f"SSL context created with certificate: {cert_path}")
             except Exception as e:
                 raise RuntimeError("Failed to configure TLS certificate. Please check certificates and the certs directory.") from e
-        
+
         self._status: Literal["disconnected", "connected", "streaming", "paused"] = "disconnected"
         self._is_started = False
         self._server = None
@@ -423,22 +423,21 @@ class RemoteSensor:
         if self._server_thread and self._server_thread.is_alive():
             self._server_thread.join(timeout=10.0)
 
-        self._client = None
-
     async def _disconnect_and_stop(self):
         """Set the async stop event and close the client connection."""
-        if self._client:
-            try:
-                self.logger.debug("Disconnecting client...")
-                goodbye = json.dumps({"status": "disconnecting", "message": "Server is shutting down"})
-                await self._send_to_client(goodbye)
-            except Exception as e:
-                self.logger.warning(f"Failed to send goodbye message: {e}")
-            finally:
-                if self._client:
-                    await self._client.close()
-                    self.logger.debug("Client connection closed")
-        
+        async with self._client_lock:
+            if self._client:
+                try:
+                    self.logger.debug("Disconnecting client...")
+                    goodbye = json.dumps({"status": "disconnecting", "message": "Server is shutting down"})
+                    await self._send_to_client(goodbye)
+                except Exception as e:
+                    self.logger.warning(f"Failed to send goodbye message: {e}")
+                finally:
+                    if self._client:
+                        await self._client.close()
+                        self.logger.debug("Client connection closed")
+
         if self._server:
             self._server.close()
 
