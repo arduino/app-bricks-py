@@ -85,7 +85,7 @@ class WebSocketMicrophone(BaseMicrophone):
         self._dtype = self._resolve_dtype(format)
         if self._dtype is None:
             raise MicrophoneConfigError(f"Unsupported format: {format}")
-        
+
         self.codec = BPPCodec(secret, encrypt)
         self.secret = secret
         self.encrypt = encrypt
@@ -104,7 +104,7 @@ class WebSocketMicrophone(BaseMicrophone):
         if timeout <= 0:
             raise MicrophoneConfigError(f"Invalid timeout value: {timeout}")
         self.timeout = timeout
-        
+
         # TLS configuration
         if self.use_tls:
             import ssl
