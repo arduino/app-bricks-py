@@ -84,7 +84,7 @@ class RemoteSensor:
         if timeout <= 0:
             raise RemoteSensorConfigError(f"Invalid timeout value: {timeout}")
         self.timeout = timeout
-        
+
         # TLS configuration
         if self.use_tls:
             import ssl
