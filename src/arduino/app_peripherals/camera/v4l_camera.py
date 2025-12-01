@@ -152,12 +152,12 @@ class V4LCamera(BaseCamera):
         self._close_camera()
 
         if not os.path.exists(self.v4l_path):
-            raise CameraOpenError(f"No device found at {self.v4l_path}")
+            raise RuntimeError(f"No device found at {self.v4l_path}")
 
         try:
             self._cap = cv2.VideoCapture(self.v4l_path)
             if not self._cap.isOpened():
-                raise CameraOpenError(f"Failed to open camera {self.name}")
+                raise RuntimeError(f"Failed to open camera {self.name}")
 
             self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer to minimize latency
 
@@ -186,15 +186,10 @@ class V4LCamera(BaseCamera):
             # Verify camera with a test read
             ret, frame = self._cap.read()
             if not ret and frame is None:
-                raise CameraOpenError(f"Read test failed for camera {self.name}")
+                raise RuntimeError(f"Read test failed for camera {self.name}")
 
             self._set_status("connected", {"camera_name": self.name, "camera_path": self.v4l_path})
 
-        except CameraOpenError:
-            if self._cap is not None:
-                self._cap.release()
-                self._cap = None
-            raise
         except Exception as e:
             logger.error(f"Unexpected error opening camera {self.name}: {e}")
             if self._cap is not None:

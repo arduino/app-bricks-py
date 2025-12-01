@@ -95,6 +95,9 @@ class BaseCamera(ABC):
                     self._is_started = True
                     self._last_capture_time = time.monotonic()
                     self.logger.info(f"Successfully started {self.name}")
+                except CameraOpenError as e:  # We consider this a fatal error so we don't retry
+                    self.logger.error(f"Fatal error while starting {self.name}: {e}")
+                    raise
                 except Exception as e:
                     if not self.auto_reconnect:
                         raise
@@ -106,7 +109,8 @@ class BaseCamera(ABC):
 
                     delay = min(self.auto_reconnect_delay * (2 ** (attempt - 1)), 60)  # Exponential backoff
                     self.logger.warning(
-                        f"Failed to start camera {self.name} (attempt {attempt}/{self.first_connection_max_retries}). Retrying in {delay:.1f}s..."
+                        f"Failed attempt {attempt}/{self.first_connection_max_retries} at starting camera {self.name}: {e}. "
+                        f"Retrying in {delay:.1f}s..."
                     )
                     time.sleep(delay)
 

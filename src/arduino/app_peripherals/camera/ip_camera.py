@@ -82,22 +82,17 @@ class IPCamera(BaseCamera):
         try:
             self._cap = cv2.VideoCapture(url)
             if not self._cap.isOpened():
-                raise CameraOpenError(f"Failed to open IP camera at {self.url}")
+                raise RuntimeError(f"Failed to open IP camera at {self.url}")
 
             self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer to minimize latency
 
             # Test by reading one frame
             ret, frame = self._cap.read()
             if not ret and frame is None:
-                raise CameraOpenError(f"Read test failed for IP camera at {self.url}")
+                raise RuntimeError(f"Read test failed for IP camera at {self.url}")
 
             self._set_status("connected", {"camera_url": self.url})
 
-        except CameraOpenError:
-            if self._cap is not None:
-                self._cap.release()
-                self._cap = None
-            raise
         except Exception as e:
             logger.error(f"Unexpected error opening IP camera at {self.url}: {e}")
             if self._cap is not None:
@@ -130,10 +125,10 @@ class IPCamera(BaseCamera):
             response = requests.head(self.url, auth=auth, timeout=self.timeout, allow_redirects=True)
 
             if response.status_code not in [200, 206]:  # 206 for partial content
-                raise CameraOpenError(f"HTTP camera returned status {response.status_code}: {self.url}")
+                raise RuntimeError(f"HTTP camera returned status {response.status_code}: {self.url}")
 
         except requests.RequestException as e:
-            raise CameraOpenError(f"Cannot connect to HTTP camera {self.url}: {e}")
+            raise RuntimeError(f"Cannot connect to HTTP camera {self.url}: {e}")
 
     def _close_camera(self) -> None:
         """Close the IP camera connection."""
