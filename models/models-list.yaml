@@ -1131,7 +1131,7 @@ models:
       source-model-url: "https://studio.edgeimpulse.com/studio/757509/live"
       private: true
     bricks:
-      - arduino:keyword_spotter
+      - arduino:keyword_spotting
  - updown-wave-motion-detection:
     runner: brick
     name : "Continuous motion detection"
@@ -1182,4 +1182,4 @@ models:
       source-model-url: "https://studio.edgeimpulse.com/public/749446/live"
       private: true
     bricks:
-      - arduino:audio_classifier
+      - arduino:audio_classification
