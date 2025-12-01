@@ -178,10 +178,6 @@ _version.py
 TODO.*
 docs/
 
-# Examples
-*.db
-*.pem
-
 # Taskfile
 .keys/
 .task/
@@ -195,5 +191,5 @@ Taskfile.yml
 
 *.exe
 
-# Audio files
-*.wav
+# Other
+design/
