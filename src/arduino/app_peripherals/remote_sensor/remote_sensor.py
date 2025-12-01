@@ -10,7 +10,7 @@ import time
 import websockets
 import asyncio
 from typing import Callable, Literal
-from concurrent.futures import CancelledError, ThreadPoolExecutor, TimeoutError
+from concurrent.futures import CancelledError, ThreadPoolExecutor, Future
 
 from arduino.app_internal.core.peripherals.bpp_codec import BPPCodec
 from arduino.app_utils import Logger
@@ -142,6 +142,9 @@ class RemoteSensor:
                 self._open_sensor()
                 self._is_started = True
                 self.logger.info(f"Successfully started {self.name}")
+            except RemoteSensorOpenError as e:  # We consider this a fatal error so we don't retry
+                self.logger.error(f"Fatal error while starting {self.name}: {e}")
+                raise
             except Exception as e:
                 if not self.auto_reconnect:
                     raise
@@ -153,7 +156,8 @@ class RemoteSensor:
 
                 delay = min(self.auto_reconnect_delay * (2 ** (attempt - 1)), 60)  # Exponential backoff
                 self.logger.warning(
-                    f"Failed to start remote sensor (attempt {attempt}/{self.first_connection_max_retries}). Retrying in {delay:.1f}s..."
+                    f"Failed attempt {attempt}/{self.first_connection_max_retries} at starting remote sensor {self.name}: {e}. "
+                    f"Retrying in {delay:.1f}s..."
                 )
                 time.sleep(delay)
 
@@ -227,37 +231,33 @@ class RemoteSensor:
 
     def _open_sensor(self) -> None:
         """Start the WebSocket server."""
-        self._server_thread = threading.Thread(target=self._start_server_thread, daemon=True)
+        server_future = Future()
+
+        self._server_thread = threading.Thread(target=self._start_server_thread, args=(server_future,), daemon=True)
         self._server_thread.start()
 
-        # Wait for server to start
-        start_time = time.time()
-        while time.time() - start_time < self.timeout:
-            if self._server is not None:
-                self.logger.info(f"WebSocket remote sensor server started on {self.url}, security: {self.security_mode}")
-                return
-            time.sleep(0.1)
+        try:
+            server_future.result(timeout=self.timeout)
+            self.logger.info(f"WebSocket remote sensor server available on {self.url}, security: {self.security_mode}")
+        except (PermissionError, Exception) as e:
+            if self._server_thread.is_alive():
+                self._server_thread.join(timeout=1.0)
+            if isinstance(e, PermissionError):
+                raise RemoteSensorOpenError(f"Permission denied when attempting to bind WebSocket server on {self.url}")
+            raise
 
-        # Cleanup server thread if it failed to start in time
-        if self._server_thread.is_alive():
-            self._server_thread.join(timeout=1.0)
-
-        raise RemoteSensorOpenError(f"Failed to start WebSocket server on {self.url}")
-
-    def _start_server_thread(self) -> None:
+    def _start_server_thread(self, future: Future) -> None:
         """Run WebSocket server in its own thread with event loop."""
         try:
             self._loop = asyncio.new_event_loop()
             asyncio.set_event_loop(self._loop)
-            self._loop.run_until_complete(self._start_server())
-        except Exception as e:
-            self.logger.error(f"WebSocket server thread error: {e}")
+            self._loop.run_until_complete(self._start_server(future))
         finally:
             if self._loop and not self._loop.is_closed():
                 self._loop.close()
                 self._loop = None
 
-    async def _start_server(self) -> None:
+    async def _start_server(self, future: Future) -> None:
         """Start the WebSocket server."""
         try:
             self._server = await asyncio.wait_for(
@@ -280,14 +280,12 @@ class RemoteSensor:
                 server_socket = list(self._server.sockets)[0]
                 self.port = server_socket.getsockname()[1]
 
+            future.set_result(True)
+
             await self._server.wait_closed()
 
-        except TimeoutError as e:
-            self.logger.error(f"Failed to start WebSocket server within {self.timeout}s: {e}")
-            raise
         except Exception as e:
-            self.logger.error(f"Failed to start WebSocket server: {e}")
-            raise
+            future.set_exception(e)
         finally:
             self._server = None
 
