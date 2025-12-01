@@ -230,7 +230,7 @@ class WebSocketMicrophone(BaseMicrophone):
                 raise MicrophoneOpenError(f"Permission denied when attempting to bind WebSocket server on {self.url}")
             raise
 
-    def _start_server_thread(self, future) -> None:
+    def _start_server_thread(self, future: Future) -> None:
         """Run WebSocket server in its own thread with event loop."""
         try:
             self._loop = asyncio.new_event_loop()
@@ -241,7 +241,7 @@ class WebSocketMicrophone(BaseMicrophone):
                 self._loop.close()
                 self._loop = None
 
-    async def _start_server(self, future) -> None:
+    async def _start_server(self, future: Future) -> None:
         """Start the WebSocket server."""
         try:
             self._server = await asyncio.wait_for(

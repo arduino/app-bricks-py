@@ -190,10 +190,10 @@ class ALSAMicrophone(BaseMicrophone):
             if "Device or resource busy" in str(e):
                 raise MicrophoneOpenError(f"Microphone is busy. Close other audio applications and try again. ({self.device})")
             else:
-                raise MicrophoneOpenError(f"ALSA error opening microphone: {e}")
+                raise RuntimeError(f"ALSA error opening microphone: {e}")
 
         except Exception as e:
-            raise MicrophoneOpenError(f"Unexpected error opening microphone: {e}")
+            raise RuntimeError(f"Unexpected error opening microphone: {e}")
 
         self._mixer = self._load_mixer()  # Load mixer for volume control
         self._reconnect_attempts = 0
