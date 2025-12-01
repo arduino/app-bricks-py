@@ -6,7 +6,6 @@ import json
 import base64
 import os
 import threading
-import time
 import queue
 import numpy as np
 import cv2
@@ -152,7 +151,7 @@ class WebSocketCamera(BaseCamera):
             if isinstance(e, PermissionError):
                 raise CameraOpenError(f"Permission denied when attempting to bind WebSocket server on {self.url}")
             raise
-            
+
     def _start_server_thread(self, future: Future) -> None:
         """Run WebSocket server in its own thread with event loop."""
         try:
