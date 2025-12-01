@@ -313,20 +313,35 @@ class TestWebSocketClientDisconnection:
     @pytest.mark.asyncio
     async def test_client_disconnect_handled_gracefully(self):
         """Test that client disconnection is handled gracefully."""
+        connected = asyncio.Event()
+        disconnected = asyncio.Event()
+        loop = asyncio.get_running_loop()
+
+        def callback(status, status_info):
+            if status == "connected":
+                assert mic.is_started()
+                assert mic._server is not None
+                assert mic._client is not None
+                loop.call_soon_threadsafe(connected.set)
+            if status == "disconnected":
+                assert mic.is_started()
+                assert mic._server is not None
+                assert mic._client is None
+                loop.call_soon_threadsafe(disconnected.set)
+
         mic = WebSocketMicrophone(port=0)
+        mic.on_status_changed(callback)
 
         mic.start()
 
         # Connect and disconnect
         async with websockets.connect(mic.url) as ws:
+            await asyncio.wait_for(connected.wait(), timeout=2)
             await ws.recv()
-            assert mic.is_started()
-            assert mic._server is not None
-            assert mic._client is not None
 
+        await asyncio.wait_for(disconnected.wait(), timeout=2)
         mic.stop()
 
-        # Server should still be running
         assert not mic.is_started()
         assert mic._server is None
         assert mic._client is None
@@ -385,13 +400,10 @@ class TestWebSocketServerErrors:
     async def test_start_on_privileged_port_fails(self):
         """Test that starting on privileged port fails gracefully."""
         mic = WebSocketMicrophone(port=1)
+        mic._bind_ip = "127.0.0.1"  # Workaround for MacOS
 
-        try:
+        with pytest.raises(MicrophoneOpenError):
             mic.start()
-            await asyncio.sleep(0.1)
-        except MicrophoneOpenError:
-            # This is the expected behavior
-            pass
 
 
 class TestConfigurationErrors:

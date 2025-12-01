@@ -6,12 +6,11 @@ import json
 import base64
 import os
 import threading
-import time
 import queue
 import numpy as np
 import websockets
 import asyncio
-from concurrent.futures import CancelledError, TimeoutError
+from concurrent.futures import CancelledError, TimeoutError, Future
 
 from arduino.app_internal.core.peripherals import BPPCodec
 from arduino.app_utils import Logger
@@ -216,37 +215,33 @@ class WebSocketMicrophone(BaseMicrophone):
 
     def _open_microphone(self) -> None:
         """Start the WebSocket server."""
-        self._server_thread = threading.Thread(target=self._start_server_thread, daemon=True)
+        server_future = Future()
+
+        self._server_thread = threading.Thread(target=self._start_server_thread, args=(server_future,), daemon=True)
         self._server_thread.start()
 
-        # Wait for server to start
-        start_time = time.time()
-        while time.time() - start_time < self.timeout:
-            if self._server is not None:
-                self.logger.info(f"WebSocket microphone server started on {self.url}, security: {self.security_mode}")
-                return
-            time.sleep(0.1)
+        try:
+            server_future.result(timeout=self.timeout)
+            self.logger.info(f"WebSocket microphone server available on {self.url}, security: {self.security_mode}")
+        except (PermissionError, Exception) as e:
+            if self._server_thread.is_alive():
+                self._server_thread.join(timeout=1.0)
+            if isinstance(e, PermissionError):
+                raise MicrophoneOpenError(f"Permission denied when attempting to bind WebSocket server on {self.url}")
+            raise
 
-        # Cleanup server thread if it failed to start in time
-        if self._server_thread.is_alive():
-            self._server_thread.join(timeout=1.0)
-
-        raise MicrophoneOpenError(f"Failed to start WebSocket server on {self.url}")
-
-    def _start_server_thread(self) -> None:
+    def _start_server_thread(self, future) -> None:
         """Run WebSocket server in its own thread with event loop."""
         try:
             self._loop = asyncio.new_event_loop()
             asyncio.set_event_loop(self._loop)
-            self._loop.run_until_complete(self._start_server())
-        except Exception as e:
-            self.logger.error(f"WebSocket server thread error: {e}")
+            self._loop.run_until_complete(self._start_server(future))
         finally:
             if self._loop and not self._loop.is_closed():
                 self._loop.close()
                 self._loop = None
 
-    async def _start_server(self) -> None:
+    async def _start_server(self, future) -> None:
         """Start the WebSocket server."""
         try:
             self._server = await asyncio.wait_for(
@@ -269,14 +264,12 @@ class WebSocketMicrophone(BaseMicrophone):
                 server_socket = list(self._server.sockets)[0]
                 self.port = server_socket.getsockname()[1]
 
+            future.set_result(True)
+
             await self._server.wait_closed()
 
-        except TimeoutError as e:
-            self.logger.error(f"Failed to start WebSocket server within {self.timeout}s: {e}")
-            raise
         except Exception as e:
-            self.logger.error(f"Failed to start WebSocket server: {e}")
-            raise
+            future.set_exception(e)
         finally:
             self._server = None
 
