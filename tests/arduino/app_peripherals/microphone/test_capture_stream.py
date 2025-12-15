@@ -40,8 +40,8 @@ class MockMicrophone(BaseMicrophone):
         self._max_chunks = count
 
 
-MOCK_USB_CARDS = ["SomeCard"]
-MOCK_USB_PCM_DEVICES = ["plughw:CARD=SomeCard,DEV=0"]
+MOCK_CARDS = ["SomeCard"]
+MOCK_PCMS = ["plughw:CARD=SomeCard,DEV=0"]
 
 
 class TestAudioCapture:
@@ -241,15 +241,17 @@ class TestAudioStreaming:
 class TestStreamingWithRealMicrophone:
     """Test streaming with real microphone implementations (mocked hardware)."""
 
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.cards", return_value=MOCK_USB_CARDS)
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.cards", return_value=MOCK_CARDS)
     @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_indexes", return_value=[0])
     @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_name")
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.pcms", return_value=MOCK_USB_PCM_DEVICES)
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.pcms", return_value=MOCK_PCMS)
     @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.PCM")
     @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.mixers", return_value=[])
-    def test_alsa_microphone_capture(self, mock_mixers, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.Path.exists", return_value=True)
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.Path.resolve", return_value="/sys/devices/platform/soc@0/4ef8800.usb/4e00000.usb/xhci-hcd.2.auto/usb1/1-1/1-1.3/1-1.3:1.0/sound/card0/pcmC0D0c")
+    def test_alsa_microphone_capture(self, mock_resolve, mock_exists, mock_mixers, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
         """Test capture with ALSA microphone."""
-        mock_card_name.side_effect = lambda idx: (MOCK_USB_CARDS[idx], f"USB Audio Device {idx}")
+        mock_card_name.side_effect = lambda idx: [MOCK_CARDS[idx], f"USB Audio Device {idx}"]
 
         pcm_instance = MagicMock()
         # Mock audio data
@@ -266,15 +268,17 @@ class TestStreamingWithRealMicrophone:
         assert isinstance(chunk, np.ndarray)
         assert len(chunk) == 1024
 
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.cards", return_value=MOCK_USB_CARDS)
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.cards", return_value=MOCK_CARDS)
     @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_indexes", return_value=[0])
     @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_name")
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.pcms", return_value=MOCK_USB_PCM_DEVICES)
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.pcms", return_value=MOCK_PCMS)
     @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.PCM")
     @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.mixers", return_value=[])
-    def test_alsa_microphone_stream(self, mock_mixers, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.Path.exists", return_value=True)
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.Path.resolve", return_value="/sys/devices/platform/soc@0/4ef8800.usb/4e00000.usb/xhci-hcd.2.auto/usb1/1-1/1-1.3/1-1.3:1.0/sound/card0/pcmC0D0c")
+    def test_alsa_microphone_stream(self, mock_resolve, mock_exists, mock_mixers, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
         """Test streaming with ALSA microphone."""
-        mock_card_name.side_effect = lambda idx: (MOCK_USB_CARDS[idx], f"USB Audio Device {idx}")
+        mock_card_name.side_effect = lambda idx: [MOCK_CARDS[idx], f"USB Audio Device {idx}"]
 
         pcm_instance = MagicMock()
         mock_pcm.return_value = pcm_instance

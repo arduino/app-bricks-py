@@ -13,7 +13,7 @@ import sys
 from unittest.mock import MagicMock
 
 
-# Define a proper exception class for ALSAAudioError
+# Define a proper exception class for ALSAAudioError that we can use in our mocks
 class ALSAAudioError(Exception):
     """Mock ALSA audio error exception."""
 

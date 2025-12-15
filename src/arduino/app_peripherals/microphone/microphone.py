@@ -27,9 +27,14 @@ class Microphone:
     Refer to the documentation of each microphone type for available parameters.
     """
 
+    USB_MIC_1 = ALSAMicrophone.USB_MIC_1
+    """Shorthand for the first USB microphone available."""
+    USB_MIC_2 = ALSAMicrophone.USB_MIC_2
+    """Shorthand for the second USB microphone available."""
+
     def __new__(
         cls,
-        device: str | int = 0,
+        device: str | int = USB_MIC_1,
         sample_rate: int = RATE_16K,
         channels: int = CHANNELS_MONO,
         format: str = FORMAT_S16_LE,
@@ -84,17 +89,7 @@ class Microphone:
             microphone = Microphone("ws://192.168.1.100:8080", sample_rate=48000)
             ```
         """
-        if isinstance(device, int) or (isinstance(device, str) and device.isdigit()):
-            # ALSA Microphone with index
-            return ALSAMicrophone(
-                device=device,
-                sample_rate=sample_rate,
-                channels=channels,
-                format=format,
-                chunk_size=chunk_size,
-                **kwargs,
-            )
-        elif isinstance(device, str):
+        if isinstance(device, str):
             parsed = urlparse(device)
             if parsed.scheme in ["ws", "wss"]:
                 # WebSocket Microphone
@@ -120,5 +115,15 @@ class Microphone:
                     chunk_size=chunk_size,
                     **kwargs,
                 )
+        elif isinstance(device, int):
+            # ALSA Microphone with index
+            return ALSAMicrophone(
+                device=device,
+                sample_rate=sample_rate,
+                channels=channels,
+                format=format,
+                chunk_size=chunk_size,
+                **kwargs,
+            )
         else:
             raise MicrophoneConfigError(f"Invalid device type: {type(device)}")
