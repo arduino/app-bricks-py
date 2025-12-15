@@ -69,25 +69,23 @@ class V4LCamera(BaseCamera):
             CameraOpenError: If camera cannot be resolved
         """
         if isinstance(device, str) and device.startswith("/dev/v4l/by-id"):
-            # Already a stable link
-            return device
+            # Already a stable link, resolve video device
+            device_path = os.path.realpath(device)
         elif isinstance(device, str) and device.startswith("/dev/v4l/by-path"):
-            # A stable link, but not the one we want, resolve to by-id
+            # A stable link, but not the one we want, resolve video device
             if not os.path.exists(device):
                 raise CameraOpenError(f"Device path {device} does not exist")
-            resolved_path = os.path.realpath(device)
-            video_path = resolved_path
+            device_path = os.path.realpath(device)
         elif isinstance(device, int) or (isinstance(device, str) and device.isdigit()):
-            # Treat as /dev/video<device>
-            dev_num = int(device)
-            video_path = f"/dev/video{dev_num}"
+            # Resolve video device as /dev/video<device>
+            device_path = f"/dev/video{int(device)}"
         elif isinstance(device, str) and device.startswith("/dev/video"):
-            # A device node path
-            video_path = device
+            # Already a video device
+            device_path = device
         else:
             raise CameraOpenError(f"Unrecognized device identifier: {device}")
 
-        # Now map /dev/videoX to a stable link in /dev/v4l/by-id
+        # Now map /dev/videoX to a stable link under /dev/v4l/by-id
         by_id_dir = "/dev/v4l/by-id/"
         if not os.path.exists(by_id_dir):
             raise CameraOpenError(f"Directory '{by_id_dir}' not found.")
@@ -97,12 +95,12 @@ class V4LCamera(BaseCamera):
                 full_path = os.path.join(by_id_dir, entry)
                 if os.path.islink(full_path):
                     target = os.path.realpath(full_path)
-                    if target == video_path:
+                    if target == device_path:
                         return full_path
         except Exception as e:
             raise CameraOpenError(f"Error resolving stable link: {e}")
 
-        raise CameraOpenError(f"No stable link found for device {device} (resolved as {video_path})")
+        raise CameraOpenError(f"No stable link found for device {device} (resolved as {device_path})")
 
     def _resolve_name(self, stable_path: str) -> str:
         """
