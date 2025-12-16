@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=77,<81", "wheel", "setuptools_scm>=8", "docstring_parser>=0.16", "msgpack>=1.0.0", "watchdog", "requests", "Pillow", "numpy"]
+requires = ["setuptools>=77,<81", "wheel", "setuptools_scm>=8", "docstring_parser>=0.16", "msgpack>=1.0.0", "watchdog", "requests", "Pillow", "numpy", "pyyaml"]
 build-backend = "builder"
 backend-path = ["src/arduino/app_tools"]
 

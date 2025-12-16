@@ -8,8 +8,19 @@ from docs_generator.extractor import extract_docstrings_with_types
 from docs_generator.markdown_writer import generate_markdown
 import logging
 import ast
+import yaml
 
 logger = logging.getLogger(__name__)
+
+def get_brick_id_from_yaml(yaml_path):
+    try:
+        with open(yaml_path+"/brick_config.yaml", "r", encoding="utf-8") as f:
+            config = yaml.safe_load(f)
+        id = config.get("id", None)
+        return id.split(":")[1] if id and ":" in id else None
+    except Exception:
+        logger.warning("unable to get brick id")
+        return None
 
 
 def process_app_bricks(src_root: str, output_dir: str):
@@ -107,6 +118,9 @@ def process_app_bricks(src_root: str, output_dir: str):
             else:
                 all_docstrings = list(docstrings_by_name.values())
             # Create output folder for this brick
+            brick_id = get_brick_id_from_yaml(folder_path)
+            if brick_id:
+                folder = brick_id
             brick_output_dir = os.path.join(output_dir, "arduino", "app_bricks", folder)
             os.makedirs(brick_output_dir, exist_ok=True)
             if all_docstrings:
