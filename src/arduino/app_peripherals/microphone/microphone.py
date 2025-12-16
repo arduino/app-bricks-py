@@ -76,10 +76,13 @@ class Microphone:
             ALSA Microphone:
 
             ```python
-            microphone = Microphone(0, sample_rate=16000, channels=1)  # First USB microphone
-            microphone = Microphone(1)  # Second USB microphone
-            microphone = Microphone("plughw:CARD=USB,DEV=0", format="S16_LE")
+            microphone = Microphone(sample_rate=16000, channels=1)  # First USB microphone
+            microphone = Microphone(USB_MIC_1, sample_rate=16000, channels=1)  # Equivalent to above
+            microphone = Microphone(1)  # Second microphone
+            microphone = Microphone("CARD=USB,DEV=0", format="S16_LE")
+            microphone = Microphone("plughw:CARD=USB,DEV=0")
             microphone = Microphone("hw:0,0")
+            microphone = Microphone("/dev/snd/by-id/usb-My-Device-00")  # Using device file path
             ```
 
             WebSocket Microphone:
