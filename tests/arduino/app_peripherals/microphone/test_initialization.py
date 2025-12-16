@@ -153,7 +153,7 @@ class TestALSAMicrophoneDeviceResolution:
         "arduino.app_peripherals.microphone.alsa_microphone.Path.resolve",
         return_value="/sys/devices/platform/soc@0/4ef8800.usb/4e00000.usb/xhci-hcd.2.auto/usb1/1-1/1-1.3/1-1.3:1.0/sound/card0/pcmC0D0c",
     )
-    def test_resolve_by_shorthand(self, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
+    def test_resolve_by_shorthand(self, mock_resolve, mock_exists, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
         """Test resolving device by integer index."""
         mock_card_name.side_effect = lambda idx: [MOCK_CARDS[idx], f"USB Audio Device {idx}"]
 
