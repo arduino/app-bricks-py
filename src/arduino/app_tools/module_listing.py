@@ -14,8 +14,6 @@ import time
 from urllib.parse import urlparse
 from typing import List, Dict, Optional
 from arduino.app_internal.core.module import (
-    load_module_supported_variables,
-    ModuleVariable,
     _update_compose_release_version,
     EnvVariable,
 )
