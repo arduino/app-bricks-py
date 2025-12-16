@@ -12,9 +12,10 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
+
 def get_brick_id_from_yaml(yaml_path):
     try:
-        with open(yaml_path+"/brick_config.yaml", "r", encoding="utf-8") as f:
+        with open(yaml_path + "/brick_config.yaml", "r", encoding="utf-8") as f:
             config = yaml.safe_load(f)
         id = config.get("id", None)
         return id.split(":")[1] if id and ":" in id else None
