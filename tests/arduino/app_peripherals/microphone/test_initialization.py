@@ -148,20 +148,23 @@ class TestALSAMicrophoneDeviceResolution:
     @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_indexes", return_value=[0, 1])
     @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_name")
     @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.pcms", return_value=MOCK_PCMS)
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.Path.exists", return_value=True)
+    @patch(
+        "arduino.app_peripherals.microphone.alsa_microphone.Path.resolve",
+        return_value="/sys/devices/platform/soc@0/4ef8800.usb/4e00000.usb/xhci-hcd.2.auto/usb1/1-1/1-1.3/1-1.3:1.0/sound/card0/pcmC0D0c",
+    )
     def test_resolve_by_shorthand(self, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
         """Test resolving device by integer index."""
         mock_card_name.side_effect = lambda idx: [MOCK_CARDS[idx], f"USB Audio Device {idx}"]
 
-        with patch("arduino.app_peripherals.microphone.alsa_microphone.Path.exists", return_value=True):
-            with patch("arduino.app_peripherals.microphone.alsa_microphone.Path.resolve", return_value="/sys/devices/platform/soc@0/4ef8800.usb/4e00000.usb/xhci-hcd.2.auto/usb1/1-1/1-1.3/1-1.3:1.0/sound/card0/pcmC0D0c"):
-                mic = ALSAMicrophone()
-                assert mic.device_stable_ref == "plughw:CARD=SomeCard,DEV=0"
+        mic = ALSAMicrophone()
+        assert mic.device_stable_ref == "plughw:CARD=SomeCard,DEV=0"
 
-                mic = ALSAMicrophone(device=Microphone.USB_MIC_1)
-                assert mic.device_stable_ref == "plughw:CARD=SomeCard,DEV=0"
+        mic = ALSAMicrophone(device=Microphone.USB_MIC_1)
+        assert mic.device_stable_ref == "plughw:CARD=SomeCard,DEV=0"
 
-                mic = ALSAMicrophone(device=Microphone.USB_MIC_2)
-                assert mic.device_stable_ref == "plughw:CARD=AnotherCard,DEV=0"
+        mic = ALSAMicrophone(device=Microphone.USB_MIC_2)
+        assert mic.device_stable_ref == "plughw:CARD=AnotherCard,DEV=0"
 
     @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.cards", return_value=MOCK_CARDS)
     @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_indexes", return_value=[0, 1])

@@ -100,7 +100,7 @@ class ALSAMicrophone(BaseMicrophone):
         }
         af, nf = format_map.get(format, (None, None))
         return (af, np.dtype(nf)) if nf is not None else (None, None)
-    
+
     def _resolve_stable_ref(self, identifier: str | int) -> str:
         """
         Resolve a microphone identifier to coordinates that are stable across
@@ -118,7 +118,7 @@ class ALSAMicrophone(BaseMicrophone):
         all_devices = self.list_devices()
         if not all_devices:
             raise RuntimeError("No ALSA microphones found")
-        
+
         resolved_device = ""
         if isinstance(identifier, str) and not identifier.isdigit():
             from arduino.app_peripherals.microphone import Microphone  # Avoid circular import
@@ -132,7 +132,7 @@ class ALSAMicrophone(BaseMicrophone):
                 if usb_index < 0 or usb_index >= len(usb_devices):
                     raise RuntimeError(f"USB microphone index {usb_index + 1} out of range. Available: 1-{len(usb_devices)}")
                 resolved_device = usb_devices[usb_index]
-            
+
             elif identifier.startswith("/dev/snd/by-id"):
                 # Already a stable link, resolve audio device following the symlink
                 if not os.path.exists(identifier):
@@ -145,7 +145,7 @@ class ALSAMicrophone(BaseMicrophone):
                     if not isinstance(card_name, list) or len(card_name) == 0:
                         raise RuntimeError(f"Failed to resolve card name for card number {card_idx}")
                     resolved_device = f"plughw:CARD={card_name[0]},DEV=0"
-            
+
             else:
                 numeric_format_match = re.match(r"^(.+:)?(\d+),(\d+)$", identifier)
                 if numeric_format_match:
@@ -159,12 +159,12 @@ class ALSAMicrophone(BaseMicrophone):
                         resolved_device = f"{prefix if prefix else ''}CARD={card_name[0]},DEV={device_index}"
                     except Exception as e:
                         raise RuntimeError(f"Failed to resolve card name for hw/plughw identifier {identifier}: {e}")
-                
+
                 card_name_format_match = re.match(r"^(.+:)?CARD=([^,]+),DEV=(\d+)$", identifier)
                 if card_name_format_match:
                     # Already in stable name format
                     resolved_device = identifier if identifier.startswith("plughw:") or identifier.startswith("hw:") else f"plughw:{identifier}"
-        
+
         elif isinstance(identifier, int) or (isinstance(identifier, str) and identifier.isdigit()):
             # Treat as /dev/controlC<card_idx>, resolve audio device by card number
             card_idx = int(identifier)
@@ -172,10 +172,10 @@ class ALSAMicrophone(BaseMicrophone):
             if not isinstance(card_name, list) or len(card_name) == 0:
                 raise RuntimeError(f"Failed to resolve card name for card number {card_idx}")
             resolved_device = f"plughw:CARD={card_name[0]},DEV=0"
-        
+
         if resolved_device not in all_devices:
             raise RuntimeError(f"Resolved device '{resolved_device}' not found among available ALSA devices")
-        
+
         if resolved_device:
             return resolved_device
 
@@ -185,16 +185,16 @@ class ALSAMicrophone(BaseMicrophone):
         """
         Resolve an ALSA device name to runtime prefix, card and device indexes
         that depend on current running system state.
-        
+
         Args:
             device_stable_ref: ALSA device name
-        
+
         Returns:
             tuple: (prefix, card_index, device_index)
                 - prefix (str | None): Optional prefix (e.g., "plughw")
                 - card_index (int): ALSA card index
                 - device_index (int): ALSA device index
-        
+
         Raises:
             RuntimeError: If microphone can't be resolved
         """
@@ -232,7 +232,7 @@ class ALSAMicrophone(BaseMicrophone):
 
         Raises:
             RuntimeError: If device name can't be resolved
-        """ 
+        """
         # Match stable refs like "plughw:CARD=MyDevice,DEV=0" or "CARD=MyDevice,DEV=0"
         match = re.match(r"^(.+:)?CARD=([^,]+),DEV=(\d+)$", device_stable_ref)
         if match:
@@ -241,7 +241,7 @@ class ALSAMicrophone(BaseMicrophone):
                 return card_name
             except Exception as e:
                 raise RuntimeError(f"Failed to resolve microphone name from stable ref {device_stable_ref}: {e}")
-        
+
         raise RuntimeError(f"Invalid device reference for name resolution: {device_stable_ref} (type:{type(device_stable_ref)})")
 
     def _open_microphone(self) -> None:
@@ -258,12 +258,12 @@ class ALSAMicrophone(BaseMicrophone):
             self._pcm.setrate(self.sample_rate)
             self._pcm.setformat(getattr(alsaaudio, self._alsa_format))
             self._pcm.setperiodsize(self.chunk_size)
-            
+
             _, card_idx, device_idx = self._resolve_runtime_ref(self.device_stable_ref)
             if self._mixer is not None:
                 self._mixer.close()
             self._mixer = alsaaudio.Mixer(f"card_{card_idx}_{device_idx}_mic_wr")  # Load mixer for volume control
-        
+
         except alsaaudio.ALSAAudioError as e:
             if "busy" in str(e):
                 raise MicrophoneOpenError(f"Microphone is busy. Close other audio applications and try again. ({self.device_stable_ref})")
@@ -275,9 +275,7 @@ class ALSAMicrophone(BaseMicrophone):
         except Exception as e:
             raise RuntimeError(f"Unexpected error opening microphone: {e}")
 
-        logger.debug(
-            f"PCM opened with params: {self.device_stable_ref}, {self.sample_rate}Hz, {self.channels}ch, {self.format}"
-        )
+        logger.debug(f"PCM opened with params: {self.device_stable_ref}, {self.sample_rate}Hz, {self.channels}ch, {self.format}")
 
     def _close_microphone(self) -> None:
         """Close the ALSA PCM device."""
@@ -350,7 +348,7 @@ class ALSAMicrophone(BaseMicrophone):
         if self._mixer is None:
             logger.warning("No mixer available for volume control")
             return None
-        
+
         try:
             return self._mixer.getvolume(pcmtype=alsaaudio.PCM_CAPTURE)[0]
         except alsaaudio.ALSAAudioError as e:
@@ -394,7 +392,7 @@ class ALSAMicrophone(BaseMicrophone):
         except Exception as e:
             logger.error(f"Error retrieving ALSA devices: {e}")
             return []
-        
+
         return devices
 
     @staticmethod
@@ -410,21 +408,21 @@ class ALSAMicrophone(BaseMicrophone):
             card_indexes = alsaaudio.card_indexes()
             card_map = {name: idx for idx, name in zip(card_indexes, cards)}
             for card_name, card_index in card_map.items():
-                device_path = Path(f'/sys/class/sound/card{card_index}/device')
+                device_path = Path(f"/sys/class/sound/card{card_index}/device")
                 if not device_path.exists():
                     continue
 
                 try:
                     real_path = device_path.resolve()
-                    if 'usb' in str(real_path).lower():
+                    if "usb" in str(real_path).lower():
                         # Find all plughw devices for this card
                         for dev in alsaaudio.pcms(alsaaudio.PCM_CAPTURE):
                             if dev.startswith("plughw:CARD=") and f"CARD={card_name}" in dev:
                                 usb_devices.append(dev)
-                
+
                 except Exception as e:
                     logger.error(f"Error parsing card info for {card_name}: {e}")
-        
+
         except Exception as e:
             logger.error(f"Error listing USB microphones: {e}")
 
