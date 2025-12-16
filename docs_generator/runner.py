@@ -18,8 +18,8 @@ def get_brick_id_from_yaml(yaml_path):
             config = yaml.safe_load(f)
         id = config.get("id", None)
         return id.split(":")[1] if id and ":" in id else None
-    except Exception:
-        logger.warning("unable to get brick id")
+    except Exception as e:
+        logger.warning("unable to get brick id from yaml: %s", e)
         return None
 
 
