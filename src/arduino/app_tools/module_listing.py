@@ -54,9 +54,6 @@ class ArduinoBrick:
         self.compose_file: Optional[str] = self.get_compose_file()
         self.readme_file: Optional[str] = self.get_readme_file()
         self.require_container: bool = self.compose_file is not None
-        self.docker_compose_variables: Optional[List[ModuleVariable]] = (
-            load_module_supported_variables(self.compose_file) if self.require_container else None
-        )
         self.model_name: str = model_name
         self.require_model: bool = model_name != ""
         self.category = category
@@ -82,14 +79,6 @@ class ArduinoBrick:
             out_dict["requires_display"] = self.requires_display
         if self.required_device_classes:
             out_dict["required_devices"] = self.required_device_classes
-
-        if self.require_container:
-            var_to_add: List[ModuleVariable] = []
-            for var in self.docker_compose_variables:
-                if var.name != "APPSLAB_VERSION" and var.name != "DOCKER_REGISTRY_BASE" and var.name != "BIND_ADDRESS":
-                    var_to_add.append(var)
-            vars_list: List[Dict] = [var.to_dict() for var in var_to_add]
-            out_dict["variables"] = vars_list
 
         if self.env_variables and len(self.env_variables) > 0:
             additional_vars: List[EnvVariable] = []
