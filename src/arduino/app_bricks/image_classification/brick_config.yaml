@@ -13,7 +13,7 @@ variables:
 - name: EI_CLASSIFICATION_MODEL
   description: Path to the model file
   hidden: true
-  default_value: /models/ootb/ei/mobilenet_v2_1.0_224_image_classification.eim
+  default_value: /models/ootb/ei/mobilenet-v2-224px.eim
 - name: CUSTOM_MODEL_PATH
   description: Path to the custom model directory
   hidden: true
