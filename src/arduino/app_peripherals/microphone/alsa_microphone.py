@@ -240,7 +240,7 @@ class ALSAMicrophone(BaseMicrophone):
             # This is a card index like 0, 1, ...
             cards = alsaaudio.cards()
             if device_ref < 0 or device_ref >= len(cards):
-                raise RuntimeError(f"Card index {device_ref} out of range. Available: 0-{len(cards)-1}")
+                raise RuntimeError(f"Card index {device_ref} out of range. Available: 0-{len(cards) - 1}")
             card_name = cards[device_ref]
             return card_name
 
