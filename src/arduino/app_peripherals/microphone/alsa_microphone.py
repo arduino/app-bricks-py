@@ -202,10 +202,9 @@ class ALSAMicrophone(BaseMicrophone):
                 prefix = match.group(1)  # Returns None if no prefix
                 card_name = match.group(2)
                 device_index = int(match.group(3))
-                for card_index in card_indexes:
-                    names = alsaaudio.card_name(card_index)
-                    if card_name in names:
-                        return prefix.replace(":", "") if prefix else None, card_index, device_index
+                for card_idx, curr_card_name in enumerate(alsaaudio.cards()):  # Look for the card index
+                    if curr_card_name == card_name:
+                        return prefix.replace(":", "") if prefix else None, card_idx, device_index
 
             except Exception as e:
                 raise RuntimeError(f"Failed to resolve microphone runtime ref from stable ref {device_stable_ref}: {e}")

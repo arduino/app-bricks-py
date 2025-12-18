@@ -258,11 +258,12 @@ class TestALSAOpenErrors:
 class TestALSAMixerErrors:
     """Test volume control error handling."""
 
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.cards", return_value=MOCK_CARDS)
     @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_indexes", return_value=[0])
     @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_name")
     @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.pcms", return_value=MOCK_PCMS)
     @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.Mixer")
-    def test_mixer_closed_error(self, mock_mixer, mock_pcms, mock_card_name, mock_card_indexes):
+    def test_mixer_closed_error(self, mock_mixer, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
         """Test that set_volume validates range."""
         mock_card_name.side_effect = lambda idx: [MOCK_CARDS[idx], f"USB Audio Device {idx}"]
 
@@ -278,11 +279,12 @@ class TestALSAMixerErrors:
 
         mic.set_volume(100)  # Should not raise
 
+    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.cards", return_value=MOCK_CARDS)
     @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_indexes", return_value=[0])
     @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_name")
     @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.pcms", return_value=MOCK_PCMS)
     @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.Mixer")
-    def test_set_volume_out_of_range(self, mock_mixer, mock_pcms, mock_card_name, mock_card_indexes):
+    def test_set_volume_out_of_range(self, mock_mixer, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
         """Test that set_volume validates range."""
         mock_card_name.side_effect = lambda idx: [MOCK_CARDS[idx], f"USB Audio Device {idx}"]
 
