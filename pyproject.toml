@@ -77,6 +77,10 @@ cloud_llm = [
     "langchain-openai >=0.3.0, <0.4.0",
     "langchain-google-genai >=2.1.0, <2.2.0",
 ]
+cloud_asr = [
+    "websocket-client",
+    "google-cloud-speech>=2.27.0",
+]
 
 all = [
     "arduino_app_bricks[dbstorage_influx]",
@@ -90,6 +94,7 @@ all = [
     "arduino_app_bricks[stream]",
     "arduino_app_bricks[arduino_cloud]",
     "arduino_app_bricks[cloud_llm]",
+    "arduino_app_bricks[cloud_asr]",
 ]
 
 [project.urls]
