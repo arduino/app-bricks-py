@@ -4,7 +4,7 @@
 
 from .telegram_bot import TelegramBot
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 
-__all__ = ["TelegramBot", "Update", "Application", "CommandHandler", "MessageHandler", "filters"]
+__all__ = ["TelegramBot", "Update", "Application", "CommandHandler", "MessageHandler", "filters", "ContextTypes"]
