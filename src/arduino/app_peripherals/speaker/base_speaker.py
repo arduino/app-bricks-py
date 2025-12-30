@@ -298,6 +298,8 @@ def _create_volume_func(dtype: np.dtype) -> Callable[[np.ndarray, float], np.nda
     if np.issubdtype(dtype, np.floating):
 
         def apply_volume_float(audio_chunk: np.ndarray, volume: float) -> np.ndarray:
+            if volume == 0.0:
+                return np.zeros_like(audio_chunk)
             return audio_chunk * volume
 
         return apply_volume_float
@@ -309,6 +311,8 @@ def _create_volume_func(dtype: np.dtype) -> Callable[[np.ndarray, float], np.nda
         min_val = float(info.min)
 
         def apply_volume_signed(audio_chunk: np.ndarray, volume: float) -> np.ndarray:
+            if volume == 0.0:
+                return np.zeros_like(audio_chunk)
             audio_float = audio_chunk.astype(np.float64) * volume
             return np.clip(audio_float, min_val, max_val).astype(dtype)
 
@@ -321,6 +325,8 @@ def _create_volume_func(dtype: np.dtype) -> Callable[[np.ndarray, float], np.nda
         midpoint = max_val / 2.0
 
         def apply_volume_unsigned(audio_chunk: np.ndarray, volume: float) -> np.ndarray:
+            if volume == 0.0:
+                return np.zeros_like(audio_chunk)
             audio_centered = audio_chunk.astype(np.float64) - midpoint
             audio_scaled = audio_centered * volume + midpoint
             return np.clip(audio_scaled, 0, max_val).astype(dtype)
