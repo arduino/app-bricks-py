@@ -66,7 +66,7 @@ class ALSASpeaker(BaseSpeaker):
                 Default: "exclusive".
             auto_reconnect (bool): Enable automatic reconnection on failure.
                 Default: True.
-            
+
             Note: When shared=True, only higher buffer size values are supported due to
                 ALSA limitations (~2000).
 
@@ -306,37 +306,27 @@ class ALSASpeaker(BaseSpeaker):
             )
 
             info = self._pcm.info()
-            
-            actual_rate = info['rate']
+
+            actual_rate = info["rate"]
             if self.sample_rate != actual_rate:
-                logger.warning(
-                    f"Requested sample rate {self.sample_rate}Hz not supported by {device}. "
-                    f"Using {actual_rate}Hz instead."
-                )
+                logger.warning(f"Requested sample rate {self.sample_rate}Hz not supported by {device}. Using {actual_rate}Hz instead.")
                 self.sample_rate = actual_rate
-            
-            actual_channels = info['channels']
+
+            actual_channels = info["channels"]
             if self.channels != actual_channels:
-                logger.warning(
-                    f"Requested channels {self.channels} not supported by {device}. "
-                    f"Using {actual_channels} instead."
-                )
+                logger.warning(f"Requested channels {self.channels} not supported by {device}. Using {actual_channels} instead.")
                 self.channels = actual_channels
 
-            actual_format = info['format_name']
-            if format_idx != info['format']:
+            actual_format = info["format_name"]
+            if format_idx != info["format"]:
                 logger.warning(
-                    f"Requested format {self._alsa_format.removeprefix('PCM_FORMAT_')} not supported by {device}. "
-                    f"Using {actual_format} instead."
+                    f"Requested format {self._alsa_format.removeprefix('PCM_FORMAT_')} not supported by {device}. Using {actual_format} instead."
                 )
                 self.format = _alsa_format_to_dtype("PCM_FORMAT_" + actual_format)
 
-            actual_buffer_size = info['period_size']
+            actual_buffer_size = info["period_size"]
             if self.buffer_size != actual_buffer_size:
-                logger.warning(
-                    f"Requested buffer_size {self.buffer_size} not supported by {device}. "
-                    f"Using {actual_buffer_size} instead."
-                )
+                logger.warning(f"Requested buffer_size {self.buffer_size} not supported by {device}. Using {actual_buffer_size} instead.")
                 self.buffer_size = actual_buffer_size
 
         except SpeakerOpenError:
@@ -418,10 +408,10 @@ class ALSASpeaker(BaseSpeaker):
 def _dtype_to_alsa_format(dtype: np.dtype) -> str:
     """
     Map numpy dtype to ALSA PCM format string.
-    
+
     Args:
         dtype: Numpy dtype
-        
+
     Returns:
         ALSA PCM_FORMAT_* constant name
 
@@ -431,74 +421,75 @@ def _dtype_to_alsa_format(dtype: np.dtype) -> str:
     kind = dtype.kind
     size = dtype.itemsize
     byteorder = dtype.byteorder
-    
+
     # Determine endianness: '<' = little, '>' = big, '=' = native, '|' = not applicable
-    if byteorder == '=' or byteorder == '|':
+    if byteorder == "=" or byteorder == "|":
         # Native byte order or not applicable (single byte)
         import sys
-        byteorder = '<' if sys.byteorder == 'little' else '>'
-    
+
+        byteorder = "<" if sys.byteorder == "little" else ">"
+
     # Signed integers
-    if kind == 'i':
+    if kind == "i":
         if size == 1:
-            return 'PCM_FORMAT_S8'
+            return "PCM_FORMAT_S8"
         elif size == 2:
-            return 'PCM_FORMAT_S16_LE' if byteorder == '<' else 'PCM_FORMAT_S16_BE'
+            return "PCM_FORMAT_S16_LE" if byteorder == "<" else "PCM_FORMAT_S16_BE"
         elif size == 4:
             # Note: Could be S24_LE/BE or S32_LE/BE, assume S32 for int32
-            return 'PCM_FORMAT_S32_LE' if byteorder == '<' else 'PCM_FORMAT_S32_BE'
-    
+            return "PCM_FORMAT_S32_LE" if byteorder == "<" else "PCM_FORMAT_S32_BE"
+
     # Unsigned integers
-    elif kind == 'u':
+    elif kind == "u":
         if size == 1:
-            return 'PCM_FORMAT_U8'
+            return "PCM_FORMAT_U8"
         elif size == 2:
-            return 'PCM_FORMAT_U16_LE' if byteorder == '<' else 'PCM_FORMAT_U16_BE'
+            return "PCM_FORMAT_U16_LE" if byteorder == "<" else "PCM_FORMAT_U16_BE"
         elif size == 4:
-            return 'PCM_FORMAT_U32_LE' if byteorder == '<' else 'PCM_FORMAT_U32_BE'
-    
+            return "PCM_FORMAT_U32_LE" if byteorder == "<" else "PCM_FORMAT_U32_BE"
+
     # Floating point
-    elif kind == 'f':
+    elif kind == "f":
         if size == 4:
-            return 'PCM_FORMAT_FLOAT_LE' if byteorder == '<' else 'PCM_FORMAT_FLOAT_BE'
+            return "PCM_FORMAT_FLOAT_LE" if byteorder == "<" else "PCM_FORMAT_FLOAT_BE"
         elif size == 8:
-            return 'PCM_FORMAT_FLOAT64_LE' if byteorder == '<' else 'PCM_FORMAT_FLOAT64_BE'
-    
+            return "PCM_FORMAT_FLOAT64_LE" if byteorder == "<" else "PCM_FORMAT_FLOAT64_BE"
+
     raise SpeakerConfigError(f"Unsupported numpy dtype for ALSA: {dtype}")
 
 
 def _alsa_format_to_dtype(alsa_format: str) -> np.dtype:
     """
     Map ALSA PCM format string to numpy dtype.
-    
+
     Args:
         alsa_format: ALSA PCM_FORMAT_* constant name (e.g., 'PCM_FORMAT_S16_LE')
-        
+
     Returns:
         Numpy dtype object, or None if unsupported
     """
     # Direct mapping from ALSA format to numpy dtype string
     format_map = {
-        'PCM_FORMAT_S8': 'int8',
-        'PCM_FORMAT_U8': 'uint8',
-        'PCM_FORMAT_S16_LE': '<i2',
-        'PCM_FORMAT_S16_BE': '>i2',
-        'PCM_FORMAT_U16_LE': '<u2',
-        'PCM_FORMAT_U16_BE': '>u2',
-        'PCM_FORMAT_S24_LE': '<i4',  # 24-bit packed in 32-bit container
-        'PCM_FORMAT_S24_BE': '>i4',  # 24-bit packed in 32-bit container
-        'PCM_FORMAT_S32_LE': '<i4',
-        'PCM_FORMAT_S32_BE': '>i4',
-        'PCM_FORMAT_U32_LE': '<u4',
-        'PCM_FORMAT_U32_BE': '>u4',
-        'PCM_FORMAT_FLOAT_LE': '<f4',
-        'PCM_FORMAT_FLOAT_BE': '>f4',
-        'PCM_FORMAT_FLOAT64_LE': '<f8',
-        'PCM_FORMAT_FLOAT64_BE': '>f8',
+        "PCM_FORMAT_S8": "int8",
+        "PCM_FORMAT_U8": "uint8",
+        "PCM_FORMAT_S16_LE": "<i2",
+        "PCM_FORMAT_S16_BE": ">i2",
+        "PCM_FORMAT_U16_LE": "<u2",
+        "PCM_FORMAT_U16_BE": ">u2",
+        "PCM_FORMAT_S24_LE": "<i4",  # 24-bit packed in 32-bit container
+        "PCM_FORMAT_S24_BE": ">i4",  # 24-bit packed in 32-bit container
+        "PCM_FORMAT_S32_LE": "<i4",
+        "PCM_FORMAT_S32_BE": ">i4",
+        "PCM_FORMAT_U32_LE": "<u4",
+        "PCM_FORMAT_U32_BE": ">u4",
+        "PCM_FORMAT_FLOAT_LE": "<f4",
+        "PCM_FORMAT_FLOAT_BE": ">f4",
+        "PCM_FORMAT_FLOAT64_LE": "<f8",
+        "PCM_FORMAT_FLOAT64_BE": ">f8",
     }
-    
+
     dtype_str = format_map.get(alsa_format)
     if dtype_str is None:
         raise SpeakerOpenError(f"Unsupported conversion for ALSA format to numpy dtype: {alsa_format}")
-    
+
     return np.dtype(dtype_str)

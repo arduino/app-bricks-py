@@ -144,7 +144,7 @@ class BaseSpeaker(ABC):
 
         Args:
             volume (int): Hardware volume level (0-100).
-        
+
         Returns:
             int: Current volume level (0-100).
 
@@ -181,7 +181,7 @@ class BaseSpeaker(ABC):
             # Apply software volume control
             if self._volume != 1.0:
                 audio_chunk = self._apply_volume_func(audio_chunk, self._volume)
-            
+
             self._write_audio(audio_chunk)
 
     # TODO: add play_pcm method
@@ -297,8 +297,10 @@ def _create_volume_func(dtype: np.dtype) -> Callable[[np.ndarray, float], np.nda
     """
     # For floats, just multiply
     if np.issubdtype(dtype, np.floating):
+
         def apply_volume_float(audio_chunk: np.ndarray, volume: float) -> np.ndarray:
             return audio_chunk * volume
+
         return apply_volume_float
 
     # For integers, convert to float, apply volume, convert back with clipping
@@ -306,10 +308,11 @@ def _create_volume_func(dtype: np.dtype) -> Callable[[np.ndarray, float], np.nda
         info = np.iinfo(dtype)
         max_val = float(info.max)
         min_val = float(info.min)
-        
+
         def apply_volume_signed(audio_chunk: np.ndarray, volume: float) -> np.ndarray:
             audio_float = audio_chunk.astype(np.float64) * volume
             return np.clip(audio_float, min_val, max_val).astype(dtype)
+
         return apply_volume_signed
 
     # For unsigned integers, center around midpoint before applying volume
@@ -317,14 +320,16 @@ def _create_volume_func(dtype: np.dtype) -> Callable[[np.ndarray, float], np.nda
         info = np.iinfo(dtype)
         max_val = float(info.max)
         midpoint = max_val / 2.0
-        
+
         def apply_volume_unsigned(audio_chunk: np.ndarray, volume: float) -> np.ndarray:
             audio_centered = audio_chunk.astype(np.float64) - midpoint
             audio_scaled = audio_centered * volume + midpoint
             return np.clip(audio_scaled, 0, max_val).astype(dtype)
+
         return apply_volume_unsigned
 
     # Fallback: no volume adjustment
     def apply_volume_passthrough(audio_chunk: np.ndarray, volume: float) -> np.ndarray:
         return audio_chunk
+
     return apply_volume_passthrough
