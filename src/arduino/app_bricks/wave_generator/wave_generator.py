@@ -61,26 +61,6 @@ class WaveGenerator:
         Raises:
             SpeakerException: If no USB speaker is found or device is busy.
         """
-        # Target state (handled by user)
-        self._wave_type: WaveType = wave_type
-        self._frequency = 440.0
-        self._amplitude = 0.0
-        self._attack = float(attack)
-        self._release = float(release)
-        self._glide = float(glide)
-
-        # Internal audio state (handled by audio thread)
-        self._prev_frequency = self._frequency
-        self._prev_amplitude = self._amplitude
-        self._prev_phase = 0.0
-        self._amp_ramp_start = self._amplitude  # Amplitude at start of current ramp
-        self._amp_ramp_target = self._amplitude  # Target amplitude for current ramp
-        self._amp_ramp_duration = 0.0  # Total duration of current ramp
-        self._amp_ramp_elapsed = 0.0  # Time elapsed in current ramp
-        self._freq_glide_start = self._frequency  # Frequency at start of current glide
-        self._freq_glide_target = self._frequency  # Target frequency for current glide
-        self._freq_glide_elapsed = 0.0  # Time elapsed in current glide
-
         if speaker is None:
             # Create internal Speaker instance optimized for real-time synthesis
             self._speaker = ALSASpeaker(
@@ -92,8 +72,31 @@ class WaveGenerator:
                 shared=False,
             )
         else:
+            if speaker.format != np.float32:
+                raise ValueError("Provided Speaker must use np.float32 format for real-time synthesis")
             self._speaker = speaker
+
         self.volume = 100  # Set default volume to max
+
+        # Target state (set by user)
+        self._wave_type: WaveType = wave_type
+        self._frequency = 440.0
+        self._amplitude = 0.0
+        self._attack = float(attack)
+        self._release = float(release)
+        self._glide = float(glide)
+
+        # Internal audio state (set by audio thread)
+        self._prev_frequency = self._frequency
+        self._prev_amplitude = self._amplitude
+        self._prev_phase = 0.0
+        self._amp_ramp_start = self._amplitude  # Amplitude at start of current ramp
+        self._amp_ramp_target = self._amplitude  # Target amplitude for current ramp
+        self._amp_ramp_duration = 0.0  # Total duration of current ramp
+        self._amp_ramp_elapsed = 0.0  # Time elapsed in current ramp
+        self._freq_glide_start = self._frequency  # Frequency at start of current glide
+        self._freq_glide_target = self._frequency  # Target frequency for current glide
+        self._freq_glide_elapsed = 0.0  # Time elapsed in current glide
 
         # Number of ALSA frames to generate for each audio block produced
         self._block_frame_count = max(32, min(self._speaker.buffer_size, self._speaker.buffer_size // 4))
