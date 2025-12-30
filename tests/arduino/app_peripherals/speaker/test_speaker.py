@@ -4,8 +4,7 @@
 
 import pytest
 from unittest.mock import patch, MagicMock
-from arduino.app_peripherals.speaker import Speaker, ALSASpeaker, SpeakerError
-from unittest.mock import MagicMock as MagicMockType
+from arduino.app_peripherals.speaker import Speaker, ALSASpeaker
 
 from arduino.app_peripherals.speaker.errors import SpeakerConfigError
 

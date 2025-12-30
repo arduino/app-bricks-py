@@ -2,7 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-from typing import Literal
 
 import numpy as np
 
@@ -116,8 +115,7 @@ class Speaker:
                 - str: Speaker.USB_SPEAKER_x macros
             sample_rate (int): Sample rate in Hz. Default: 16000.
             channels (int): Number of audio channels. Default: 1.
-            format (type | np.dtype | str): Audio format as numpy dtype, type, or string.
-                Examples:
+            format (type | np.dtype | str): Audio format as numpy dtype, type, or string:
                 - Type classes: np.int16, np.float32, np.uint8
                 - Dtype objects: np.dtype('<i2'), np.dtype('>f4')
                 - Strings: 'int16', '<i2', '>f4', 'float32'

@@ -41,8 +41,7 @@ class BaseSpeaker(ABC):
         Args:
             sample_rate (int): Sample rate in Hz.
             channels (int): Number of audio channels.
-            format (type | np.dtype | str): Audio format as numpy dtype, type, or string.
-                Examples:
+            format (type | np.dtype | str): Audio format as numpy dtype, type, or string:
                 - Type classes: np.int16, np.float32, np.uint8
                 - Dtype objects: np.dtype('<i2'), np.dtype('>f4')
                 - Strings: 'int16', '<i2', '>f4', 'float32'
