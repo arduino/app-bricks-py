@@ -325,10 +325,12 @@ class ALSASpeaker(BaseSpeaker):
                 logger.warning(f"Requested channels {self.channels} not supported by {device}. Using {actual_channels} instead.")
                 self.channels = actual_channels
 
-            actual_format_name = info["format_name"]
-            if self.alsa_format_idx != info["format"]:
-                logger.warning(f"Requested format {self.alsa_format_name} not supported by {device}. Using {actual_format_name} instead.")
-                self.format = _alsa_format_name_to_dtype(actual_format_name)
+            actual_format = info["format_name"]
+            if format_idx != info["format"]:
+                logger.warning(
+                    f"Requested format {self._alsa_format.removeprefix('PCM_FORMAT_')} not supported by {device}. Using {actual_format} instead."
+                )
+                self.format = _alsa_format_to_dtype("PCM_FORMAT_" + actual_format)
 
             actual_buffer_size = info["period_size"]
             if self.buffer_size != actual_buffer_size:
@@ -414,7 +416,6 @@ def _dtype_to_alsa_format_name(dtype: np.dtype, is_packed: bool = False) -> str:
 
     Args:
         dtype: Numpy dtype
-        is_packed: Whether the format is packed (e.g., 24-bit audio)
 
     Returns:
         ALSA PCM_FORMAT_* constant name
@@ -436,29 +437,28 @@ def _dtype_to_alsa_format_name(dtype: np.dtype, is_packed: bool = False) -> str:
     # Signed integers
     if kind == "i":
         if size == 1:
-            return "S8"
+            return "PCM_FORMAT_S8"
         elif size == 2:
-            return "S16_LE" if byteorder == "<" else "S16_BE"
+            return "PCM_FORMAT_S16_LE" if byteorder == "<" else "PCM_FORMAT_S16_BE"
         elif size == 4:
-            if is_packed:
-                return "S24_LE" if byteorder == "<" else "S24_BE"
-            return "S32_LE" if byteorder == "<" else "S32_BE"
+            # Note: Could be S24_LE/BE or S32_LE/BE, assume S32 for int32
+            return "PCM_FORMAT_S32_LE" if byteorder == "<" else "PCM_FORMAT_S32_BE"
 
     # Unsigned integers
     elif kind == "u":
         if size == 1:
-            return "U8"
+            return "PCM_FORMAT_U8"
         elif size == 2:
-            return "U16_LE" if byteorder == "<" else "U16_BE"
+            return "PCM_FORMAT_U16_LE" if byteorder == "<" else "PCM_FORMAT_U16_BE"
         elif size == 4:
-            return "U32_LE" if byteorder == "<" else "U32_BE"
+            return "PCM_FORMAT_U32_LE" if byteorder == "<" else "PCM_FORMAT_U32_BE"
 
     # Floating point
     elif kind == "f":
         if size == 4:
-            return "FLOAT_LE" if byteorder == "<" else "FLOAT_BE"
+            return "PCM_FORMAT_FLOAT_LE" if byteorder == "<" else "PCM_FORMAT_FLOAT_BE"
         elif size == 8:
-            return "FLOAT64_LE" if byteorder == "<" else "FLOAT64_BE"
+            return "PCM_FORMAT_FLOAT64_LE" if byteorder == "<" else "PCM_FORMAT_FLOAT64_BE"
 
     raise SpeakerConfigError(f"Unsupported numpy dtype for ALSA: {dtype}")
 
@@ -468,7 +468,7 @@ def _alsa_format_name_to_dtype(alsa_format: str) -> np.dtype:
     Map ALSA PCM format string to numpy dtype.
 
     Args:
-        alsa_format: ALSA format name (e.g., 'S16_LE')
+        alsa_format: ALSA PCM_FORMAT_* constant name (e.g., 'PCM_FORMAT_S16_LE')
 
     Returns:
         Numpy dtype object, or None if unsupported
@@ -478,22 +478,22 @@ def _alsa_format_name_to_dtype(alsa_format: str) -> np.dtype:
     """
     # Direct mapping from ALSA format to numpy dtype string
     format_map = {
-        "S8": "int8",
-        "U8": "uint8",
-        "S16_LE": "<i2",
-        "S16_BE": ">i2",
-        "U16_LE": "<u2",
-        "U16_BE": ">u2",
-        "S24_LE": "<i4",  # 24-bit packed in 32-bit container
-        "S24_BE": ">i4",  # 24-bit packed in 32-bit container
-        "S32_LE": "<i4",
-        "S32_BE": ">i4",
-        "U32_LE": "<u4",
-        "U32_BE": ">u4",
-        "FLOAT_LE": "<f4",
-        "FLOAT_BE": ">f4",
-        "FLOAT64_LE": "<f8",
-        "FLOAT64_BE": ">f8",
+        "PCM_FORMAT_S8": "int8",
+        "PCM_FORMAT_U8": "uint8",
+        "PCM_FORMAT_S16_LE": "<i2",
+        "PCM_FORMAT_S16_BE": ">i2",
+        "PCM_FORMAT_U16_LE": "<u2",
+        "PCM_FORMAT_U16_BE": ">u2",
+        "PCM_FORMAT_S24_LE": "<i4",  # 24-bit packed in 32-bit container
+        "PCM_FORMAT_S24_BE": ">i4",  # 24-bit packed in 32-bit container
+        "PCM_FORMAT_S32_LE": "<i4",
+        "PCM_FORMAT_S32_BE": ">i4",
+        "PCM_FORMAT_U32_LE": "<u4",
+        "PCM_FORMAT_U32_BE": ">u4",
+        "PCM_FORMAT_FLOAT_LE": "<f4",
+        "PCM_FORMAT_FLOAT_BE": ">f4",
+        "PCM_FORMAT_FLOAT64_LE": "<f8",
+        "PCM_FORMAT_FLOAT64_BE": ">f8",
     }
 
     dtype_str = format_map.get(alsa_format)

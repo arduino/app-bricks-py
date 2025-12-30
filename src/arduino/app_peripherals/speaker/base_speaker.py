@@ -177,6 +177,31 @@ class BaseSpeaker(ABC):
             except Exception as e:
                 self.logger.warning(f"Failed to stop speaker: {e}")
 
+    @property
+    def volume(self) -> int:
+        """
+        Get or set the speaker volume level.
+
+        This controls the hardware volume of the speaker device.
+
+        Args:
+            volume (int): Hardware volume level (0-100).
+
+        Returns:
+            int: Current volume level (0-100).
+
+        Raises:
+            ValueError: If the volume is not valid.
+        """
+        return int(self._volume * 100)
+
+    @volume.setter
+    def volume(self, volume: int):
+        if not (0 <= volume <= 100):
+            raise ValueError("Volume must be between 0 and 100.")
+
+        self._volume = volume / 100.0
+
     def play(self, audio_chunk: np.ndarray):
         """
         Play an audio chunk on the speaker.

@@ -20,6 +20,7 @@ MOCK_CARDS = ["SomeCard"]
 MOCK_CARD_INDEXES = [i for i in range(len(MOCK_CARDS))]
 MOCK_PCMS = ["plughw:CARD=SomeCard,DEV=0"]
 
+
 @pytest.fixture
 def app_instance(monkeypatch):
     """Provides a fresh AppController instance for each test."""
@@ -94,7 +95,9 @@ class TestWaveGeneratorInit:
         assert wave_gen.glide == 0.03
         assert wave_gen._speaker.sample_rate == 48000
 
-    def test_init_with_custom_speaker(self, mock_resolve, mock_exists, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards, mock_speaker):
+    def test_init_with_custom_speaker(
+        self, mock_resolve, mock_exists, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards, mock_speaker
+    ):
         """Test WaveGenerator with externally provided Speaker."""
         speaker = mock_speaker
         wave_gen = WaveGenerator(speaker=speaker)
@@ -250,7 +253,6 @@ class TestWaveGeneratorGetterSetters:
             wave_gen.frequency = -100.0
         assert wave_gen.frequency == 880.0
 
-
     def test_get_set_amplitude(self, mock_resolve, mock_exists, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
         """Test setting amplitude."""
         wave_gen = WaveGenerator()
@@ -290,8 +292,7 @@ class TestWaveGeneratorGetterSetters:
 
         # Test invalid wave type
         with pytest.raises(ValueError):
-            wave_gen.wave_type = "invalid" # type: ignore
-
+            wave_gen.wave_type = "invalid"  # type: ignore
 
     def test_get_set_volume(self, mock_resolve, mock_exists, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
         """Test setting hardware volume."""
@@ -353,6 +354,7 @@ class TestWaveGeneratorGetterSetters:
         assert "volume" in state
         assert state["volume"] == 90
 
+
 class TestWaveGeneratorAudioGeneration:
     """Test suite for WaveGenerator's audio generation features."""
 
@@ -401,13 +403,13 @@ class TestWaveGeneratorAudioGeneration:
         # Each block generated will have a duration of 32ms @ 16kHz
         wave_gen = WaveGenerator(speaker=mock_speaker, glide=0.064)
         wave_gen.amplitude = 0.5
-        
+
         wave_gen.frequency = 220.0  # Start at 220 Hz
         wave_gen._generate_audio_block()
         assert wave_gen._prev_frequency == 330.0
         wave_gen._generate_audio_block()
         assert wave_gen._prev_frequency == 220.0
-        
+
         wave_gen.frequency = 880.0  # Jump to 880 Hz
         wave_gen._generate_audio_block()
         assert wave_gen._prev_frequency == 550.0
@@ -418,7 +420,7 @@ class TestWaveGeneratorAudioGeneration:
         """Test amplitude envelope attack."""
         # Each block generated will have a duration of 32ms @ 16kHz
         wave_gen = WaveGenerator(speaker=mock_speaker, attack=0.064, release=0.0)
-        
+
         wave_gen.amplitude = 0.0  # Initial amplitude
         block = wave_gen._generate_audio_block()
         assert np.allclose(block, 0.0, atol=1e-6)
@@ -426,7 +428,7 @@ class TestWaveGeneratorAudioGeneration:
         wave_gen.amplitude = 1.0  # Target amplitude, reached after 2 blocks
         block = wave_gen._generate_audio_block()  # First block: 0.0 -> 0.5
         assert np.all(-0.5 <= block) and np.all(block <= 0.5)
-        
+
         block = wave_gen._generate_audio_block()  # Second block: 0.5 -> 1.0
         assert np.all(-1 <= block) and np.all(block <= 1)
         block = wave_gen._generate_audio_block()  # Third block: 1.0
@@ -446,7 +448,7 @@ class TestWaveGeneratorAudioGeneration:
         assert np.all(-1 <= block) and np.all(block <= 1)
         block = wave_gen._generate_audio_block()  # Second block: 0.5 -> 0.0
         assert np.all(-0.5 <= block) and np.all(block <= 0.5)
-        
+
         block = wave_gen._generate_audio_block()  # Third block: 0.0
         assert np.allclose(block, 0.0, atol=1e-6)
 
@@ -484,7 +486,7 @@ class TestWaveGeneratorAudioGeneration:
 
         wave_gen = WaveGenerator(speaker=speaker)
         wave_gen.amplitude = 0.5
-        
+
         app_instance.start_brick(wave_gen)
 
         # Asynchronously stop after a short delay
