@@ -57,7 +57,7 @@ class BaseSpeaker(ABC):
         if channels <= 0:
             raise SpeakerConfigError("Number of channels must be positive")
         self.channels = channels
-        if format == "":
+        if format is None or (isinstance(format, str) and format.strip() == ""):
             raise SpeakerConfigError("Format must be a non-empty string")
         self.format: np.dtype = np.dtype(format)
         if buffer_size <= 0:
