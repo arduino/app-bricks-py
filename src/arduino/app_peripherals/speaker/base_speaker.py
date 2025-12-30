@@ -62,22 +62,9 @@ class BaseSpeaker(ABC):
         if channels <= 0:
             raise SpeakerConfigError("Number of channels must be positive")
         self.channels = channels
-
-        if format is None:
-            raise SpeakerConfigError("Format must be specified")
-        if isinstance(format, tuple):
-            if len(format) != 2:
-                raise SpeakerConfigError("Format tuple must be of the form (format: FormatPlain, is_packed: bool)")
-            format, self.format_is_packed = format
-        else:
-            self.format_is_packed = False
-        if isinstance(format, str) and format.strip() == "":
-            raise SpeakerConfigError("Format must be a non-empty string or a valid numpy dtype/type or a tuple")
-        try:
-            self.format: np.dtype = np.dtype(format)
-        except TypeError as e:
-            raise SpeakerConfigError(f"Invalid format: {format}") from e
-
+        if format is None or (isinstance(format, str) and format.strip() == ""):
+            raise SpeakerConfigError("Format must be a non-empty string")
+        self.format: np.dtype = np.dtype(format)
         if buffer_size <= 0:
             raise SpeakerConfigError("Buffer size must be positive")
         self.buffer_size = buffer_size

@@ -350,15 +350,13 @@ class WaveGenerator:
         logger.debug(f"Generator loop started. Block frame size: {self._block_frame_count}, Rate: {self.sample_rate}.")
 
         while self._running.is_set():
-            buf_samples = self._generate_audio_block()
-
-            # Stream to hardware. We rely on speaker.play() to block if the
-            # hardware buffer is full. This maintains synchronization with the
-            # audio device.
             try:
+                buf_samples = self._generate_audio_block()
+                # We rely on speaker.play() to block if the hardware buffer is full.
+                # This maintains synchronization with the audio device.
                 self._speaker.play(buf_samples)
             except Exception as e:
-                logger.error(f"Speaker playback error: {e}")
+                logger.error(f"Failed to generate audio block: {e}")
 
     def _generate_audio_block(self) -> np.ndarray:
         """
