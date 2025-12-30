@@ -452,6 +452,47 @@ class WaveGenerator:
         # avoid accumulating floating point errors over time
         np.mod(buf_phases, two_pi, out=buf_phases)
 
+        # AMPLITUDE ENVELOPE CALCULATION
+        prev_amp = self._prev_amplitude
+        if prev_amp == amplitude:
+            # Already at target amplitude
+            amp_start = amplitude
+            amp_end = amplitude
+        else:
+            # Check if this is a new ramp (target changed)
+            if amplitude != self._amp_ramp_target:
+                # Start a new ramp
+                self._amp_ramp_start = prev_amp
+                self._amp_ramp_target = amplitude
+                self._amp_ramp_elapsed = 0.0
+                self._amp_ramp_duration = attack if amplitude > prev_amp else release
+
+            ramp_duration = self._amp_ramp_duration
+            if ramp_duration <= 0.0:
+                # Ramp disabled, instant change
+                amp_start = amplitude
+                amp_end = amplitude
+                self._amp_ramp_elapsed = 0.0
+            else:
+                # Ramp enabled, calculate progress
+                ramp_start = self._amp_ramp_start
+                ramp_target = self._amp_ramp_target
+                elapsed = self._amp_ramp_elapsed
+
+                # Linear interpolation based on time
+                progress_start = min(elapsed / ramp_duration, 1.0)
+                progress_end = min((elapsed + block_duration) / ramp_duration, 1.0)
+
+                amp_start = ramp_start + (ramp_target - ramp_start) * progress_start
+                amp_end = ramp_start + (ramp_target - ramp_start) * progress_end
+                self._amp_ramp_elapsed += block_duration
+
+        if amp_start == 0.0 and amp_end == 0.0:
+            # Entire block is silent, skip waveform generation
+            buf_samples.fill(0.0)
+            self._prev_amplitude = amp_end
+            return buf_samples
+
         # WAVEFORM GENERATION
         if wave_type == "sine":
             np.sin(buf_phases, out=buf_samples)
@@ -475,51 +516,18 @@ class WaveGenerator:
         else:
             np.sin(buf_phases, out=buf_samples)
 
-        # AMPLITUDE ENVELOPE
-        prev_amp = self._prev_amplitude
-        if prev_amp == amplitude:
-            # Already at target amplitude
-            if amplitude >= 0.0:
-                np.multiply(buf_samples, amplitude, out=buf_samples)
+        # APPLY AMPLITUDE ENVELOPE
+        if amp_start == amp_end:
+            # Constant amplitude
+            if amp_start != 1.0:
+                np.multiply(buf_samples, amp_start, out=buf_samples)
         else:
-            # Check if this is a new ramp (target changed)
-            if amplitude != self._amp_ramp_target:
-                # Start a new ramp
-                self._amp_ramp_start = prev_amp
-                self._amp_ramp_target = amplitude
-                self._amp_ramp_elapsed = 0.0
-                self._amp_ramp_duration = attack if amplitude > prev_amp else release
+            # Variable amplitude
+            np.subtract(amp_end, amp_start, out=buf_envelope)
+            np.multiply(buf_envelope, ramp_vec, out=buf_envelope)
+            np.add(buf_envelope, amp_start, out=buf_envelope)
+            np.multiply(buf_samples, buf_envelope, out=buf_samples)
 
-            ramp_duration = self._amp_ramp_duration
-            if ramp_duration <= 0.0:
-                # Ramp disabled, instant change
-                prev_amp = amplitude
-                np.multiply(buf_samples, amplitude, out=buf_samples)
-                self._amp_ramp_elapsed = 0.0
-            else:
-                # Ramp enabled, calculate progress
-                ramp_start = self._amp_ramp_start
-                ramp_target = self._amp_ramp_target
-                elapsed = self._amp_ramp_elapsed
-
-                # Linear interpolation based on time
-                progress_start = min(elapsed / ramp_duration, 1.0)
-                progress_end = min((elapsed + block_duration) / ramp_duration, 1.0)
-
-                amp_start = ramp_start + (ramp_target - ramp_start) * progress_start
-                amp_end = ramp_start + (ramp_target - ramp_start) * progress_end
-
-                # Create amplitude envelope for this block [amp_start ... amp_end]
-                np.subtract(amp_end, amp_start, out=buf_envelope)
-                np.multiply(buf_envelope, ramp_vec, out=buf_envelope)
-                np.add(buf_envelope, amp_start, out=buf_envelope)
-
-                # Apply envelope
-                np.multiply(buf_samples, buf_envelope, out=buf_samples)
-
-                prev_amp = amp_end
-                self._amp_ramp_elapsed += block_duration
-
-            self._prev_amplitude = prev_amp
+        self._prev_amplitude = amp_end
 
         return buf_samples
