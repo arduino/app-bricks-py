@@ -4,7 +4,7 @@
 
 import os
 import threading
-from typing import Iterator, Optional, Union
+from typing import Iterator, List, Optional, Union, Any, Callable
 
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_core.prompts import ChatPromptTemplate, HumanMessagePromptTemplate, MessagesPlaceholder
@@ -16,7 +16,7 @@ from langsmith import uuid7
 
 from arduino.app_utils import Logger, brick
 
-from .models import CloudModel
+from .models import CloudModel, CloudModelProvider
 from .memory import WindowedChatMessageHistory
 
 logger = Logger("CloudLLM")
@@ -42,9 +42,11 @@ class CloudLLM:
         self,
         api_key: str = os.getenv("API_KEY", ""),
         model: Union[str, CloudModel] = CloudModel.ANTHROPIC_CLAUDE,
+        model_provider: str = None,
         system_prompt: str = "",
         temperature: Optional[float] = 0.7,
         timeout: int = 30,
+        tools: List[Callable[..., Any]] = None,
     ):
         """Initializes the CloudLLM brick with the specified provider and configuration.
 
@@ -54,6 +56,8 @@ class CloudLLM:
             model (Union[str, CloudModel]): The model identifier. Accepts a `CloudModel`
                 enum member (e.g., `CloudModel.OPENAI_GPT`) or its corresponding raw string
                 value (e.g., `'gpt-4o-mini'`). Defaults to `CloudModel.ANTHROPIC_CLAUDE`.
+            model_provider (str): The name of the model provider (e.g., 'openai', 'anthropic', 'google'). If not provided,
+                it will be inferred from the `model` parameter.
             system_prompt (str): A system-level instruction that defines the AI's persona
                 and constraints (e.g., "You are a helpful assistant"). Defaults to empty.
             temperature (Optional[float]): The sampling temperature between 0.0 and 1.0.
@@ -61,6 +65,7 @@ class CloudLLM:
                 deterministic. Defaults to 0.7.
             timeout (int): The maximum duration in seconds to wait for a response before
                 timing out. Defaults to 30.
+            tools (List[Callable[..., Any]]): A list of callable tool functions to register. Defaults to None.
 
         Raises:
             ValueError: If `api_key` is not provided (empty string).
@@ -71,22 +76,34 @@ class CloudLLM:
         self._api_key = api_key
 
         # Model configuration
+        self._model_provider = model_provider
+        self._model = model
         self._system_prompt = system_prompt
         self._temperature = temperature
         self._timeout = timeout
 
+        # Registered tools
+        self._tools = tools
+
+        initial_messages = []
+        if self._system_prompt and self._system_prompt != "":
+            initial_messages.append(SystemMessage(content=self._system_prompt))
+        initial_messages.append(MessagesPlaceholder(variable_name="history"))
+        initial_messages.append(HumanMessagePromptTemplate.from_template("{input}"))
+
         # LangChain components
-        self._prompt = ChatPromptTemplate.from_messages([
-            SystemMessage(content=self._system_prompt),
-            MessagesPlaceholder(variable_name="history"),
-            HumanMessagePromptTemplate.from_template("{input}"),
-        ])
+        self._prompt = ChatPromptTemplate.from_messages(initial_messages)
         self._model = model_factory(
             model,
+            model_provider=self._model_provider,
             api_key=self._api_key,
             temperature=self._temperature,
             timeout=self._timeout,
         )
+
+        if self._tools and len(self._tools) > 0:
+            self._model.bind_tools(self._tools)
+
         self._parser = StrOutputParser()
         self._history_cfg = {"configurable": {"session_id": uuid7()}}
 
@@ -211,7 +228,7 @@ class CloudLLM:
         return self._history
 
 
-def model_factory(model_name: CloudModel, **kwargs) -> BaseChatModel:
+def model_factory(model_name: CloudModel, model_provider: str = None, **kwargs) -> BaseChatModel:
     """Factory function to instantiate the specific LangChain chat model.
 
     This function maps the supported `CloudModel` enum values to their respective
@@ -219,6 +236,8 @@ def model_factory(model_name: CloudModel, **kwargs) -> BaseChatModel:
 
     Args:
         model_name (CloudModel): The enum or string identifier for the model.
+        model_provider (str): The name of the model provider (e.g., 'openai', 'anthropic', 'google'). If not provided,
+            it will be inferred from the `model_name` parameter.
         **kwargs: Additional arguments passed to the model constructor (e.g., api_key, temperature).
 
     Returns:
@@ -227,15 +246,15 @@ def model_factory(model_name: CloudModel, **kwargs) -> BaseChatModel:
     Raises:
         ValueError: If `model_name` does not match one of the supported `CloudModel` options.
     """
-    if model_name == CloudModel.ANTHROPIC_CLAUDE:
+    if model_name == CloudModel.ANTHROPIC_CLAUDE or model_provider == CloudModelProvider.ANTHROPIC:
         from langchain_anthropic import ChatAnthropic
 
         return ChatAnthropic(model=model_name, **kwargs)
-    elif model_name == CloudModel.OPENAI_GPT:
+    elif model_name == CloudModel.OPENAI_GPT or model_provider == CloudModelProvider.OPENAI:
         from langchain_openai import ChatOpenAI
 
         return ChatOpenAI(model=model_name, **kwargs)
-    elif model_name == CloudModel.GOOGLE_GEMINI:
+    elif model_name == CloudModel.GOOGLE_GEMINI or model_provider == CloudModelProvider.GOOGLE:
         from langchain_google_genai import ChatGoogleGenerativeAI
 
         return ChatGoogleGenerativeAI(model=model_name, **kwargs)
