@@ -152,16 +152,16 @@ class CloudLLM:
             return input_messages
 
         for tool_call in tool_calls:
-            logger.info(f"Calling tool: {tool_call['name']} with args: {tool_call['args']} with id: {tool_call['id']}")
+            logger.debug(f"Calling tool: {tool_call['name']} with args: {tool_call['args']} with id: {tool_call['id']}")
             tool_name = tool_call["name"]
             tool_args = tool_call["args"]
             tool_id = tool_call["id"]
 
             if tool_name in self._tools_map:
-                logger.info(f"Invoking tool function for: {tool_name}")
+                logger.debug(f"Invoking tool function for: {tool_name}")
                 tool_func = self._tools_map[tool_name]
                 tool_output = tool_func.invoke(tool_args)
-                logger.info(f"Tool '{tool_name}' returned: {tool_output}")
+                logger.debug(f"Tool '{tool_name}' returned: {tool_output}")
 
                 # Append tool output message to current message scope
                 input_messages.append(

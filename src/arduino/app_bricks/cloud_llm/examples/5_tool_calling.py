@@ -5,9 +5,8 @@
 # EXAMPLE_NAME = "Chat with an LLM using Tool Calling"
 # EXAMPLE_REQUIRES = "Requires a valid API key to a cloud LLM service."
 
-from arduino.app_bricks.cloud_llm import CloudLLM, CloudModelProvider
+from arduino.app_bricks.cloud_llm import CloudLLM, CloudModelProvider, tool
 from arduino.app_utils import App
-from langchain_core.tools import tool
 
 
 @tool

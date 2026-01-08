@@ -4,5 +4,6 @@
 
 from .cloud_llm import CloudLLM
 from .models import CloudModel, CloudModelProvider
+from langchain_core.tools import tool
 
-__all__ = ["CloudLLM", "CloudModel", "CloudModelProvider"]
+__all__ = ["CloudLLM", "CloudModel", "CloudModelProvider", "tool"]
