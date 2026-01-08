@@ -196,18 +196,10 @@ def list_installed_packages_pkg_resources() -> Dict[str, List[ArduinoBrick]]:
         checked_paths[local_path] = local_installed_modules
 
     # Check application python home directory
-    app_home: Optional[str] = os.getenv("APP_HOME", "/app/python")
-    if app_home and app_home != "":
-        local_installed_modules: List[ArduinoBrick] = find_config_yaml(app_home)
-        if local_installed_modules and len(local_installed_modules) > 0:
-            checked_paths[app_home] = local_installed_modules
-    else:
-        main_module = sys.modules["__main__"]
-        if hasattr(main_module, "__file__"):
-            app_home = os.path.dirname(os.path.abspath(main_module.__file__))
-            local_installed_modules = find_config_yaml(app_home)
-            if local_installed_modules and len(local_installed_modules) > 0:
-                checked_paths[app_home] = local_installed_modules
+    app_home = "/app/python"
+    local_installed_modules: List[ArduinoBrick] = find_config_yaml(app_home)
+    if local_installed_modules and len(local_installed_modules) > 0:
+        checked_paths[app_home] = local_installed_modules
 
     end = time.time() * 1000
     logger.info(f"Module discovery took {end - start} ms")
