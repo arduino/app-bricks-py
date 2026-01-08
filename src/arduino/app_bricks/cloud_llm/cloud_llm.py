@@ -153,9 +153,9 @@ class CloudLLM:
 
         for tool_call in tool_calls:
             logger.info(f"Calling tool: {tool_call['name']} with args: {tool_call['args']} with id: {tool_call['id']}")
-            tool_name = tool_call['name']
-            tool_args = tool_call['args']
-            tool_id = tool_call['id']
+            tool_name = tool_call["name"]
+            tool_args = tool_call["args"]
+            tool_id = tool_call["id"]
 
             if tool_name in self._tools_map:
                 logger.info(f"Invoking tool function for: {tool_name}")
@@ -164,10 +164,12 @@ class CloudLLM:
                 logger.info(f"Tool '{tool_name}' returned: {tool_output}")
 
                 # Append tool output message to current message scope
-                input_messages.append(ToolMessage(
-                    tool_call_id=tool_id,
-                    content=tool_output,
-                ))
+                input_messages.append(
+                    ToolMessage(
+                        tool_call_id=tool_id,
+                        content=tool_output,
+                    )
+                )
 
         # Return updated message scope for further processing
         return input_messages
@@ -194,7 +196,7 @@ class CloudLLM:
             message = self._model.invoke(input_messages)
             if message is None:
                 raise RuntimeError("Received empty response from the LLM.")
-            
+
             logger.debug(f"Model invoked. Full response: {message}")
             if message.tool_calls and len(message.tool_calls) > 0:
                 input_messages.append(message)  # Add the previous AI message to scoped history
@@ -204,7 +206,7 @@ class CloudLLM:
             # Add the AI message to long term history
             self._history.add_messages([message])
             return message.content
-            
+
         except Exception as e:
             raise RuntimeError(f"Response generation failed: {e}")
 
@@ -232,7 +234,7 @@ class CloudLLM:
         try:
             self._keep_streaming.set()
             input_messages = self._get_message_with_history(message)
-            
+
             tool_calls = []
             for token in self._model.stream(input_messages):
                 if not self._keep_streaming.is_set():
@@ -275,6 +277,7 @@ class CloudLLM:
         if self._history:
             self._history.clear()
 
+
 def model_factory(model_name: CloudModel, model_provider: str = None, **kwargs) -> BaseChatModel:
     """Factory function to instantiate the specific LangChain chat model.
 
@@ -299,7 +302,7 @@ def model_factory(model_name: CloudModel, model_provider: str = None, **kwargs) 
         return ChatAnthropic(model=model_name, **kwargs)
     elif model_name == CloudModel.OPENAI_GPT or model_provider == CloudModelProvider.OPENAI:
         from langchain_openai import ChatOpenAI
-        
+
         return ChatOpenAI(model=model_name, **kwargs)
     elif model_name == CloudModel.GOOGLE_GEMINI or model_provider == CloudModelProvider.GOOGLE:
         from langchain_google_genai import ChatGoogleGenerativeAI

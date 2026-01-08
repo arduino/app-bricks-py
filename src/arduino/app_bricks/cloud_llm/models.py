@@ -10,6 +10,7 @@ class CloudModel(str, Enum):
     OPENAI_GPT = "gpt-4o-mini"
     GOOGLE_GEMINI = "gemini-2.5-flash"
 
+
 class CloudModelProvider(str, Enum):
     ANTHROPIC = "anthropic"
     OPENAI = "openai"

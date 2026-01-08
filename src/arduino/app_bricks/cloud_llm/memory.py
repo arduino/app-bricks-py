@@ -23,10 +23,10 @@ class WindowedChatMessageHistory:
         if self.k == 0:
             # No memory
             return
-        
+
         for message in messages:
             self.messages.append(message)
-            
+
         if len(self.messages) > self.k:
             self.messages = self.messages[-self.k :]
 
@@ -38,7 +38,7 @@ class WindowedChatMessageHistory:
                 return [self._system_message]
             else:
                 return []
-            
+
         if self._system_message:
             return [self._system_message] + self.messages
         else:
