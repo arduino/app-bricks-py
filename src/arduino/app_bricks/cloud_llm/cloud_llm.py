@@ -7,7 +7,7 @@ import threading
 from typing import Iterator, List, Optional, Union, Any, Callable
 
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage
+from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage, ToolCall
 
 from arduino.app_utils import Logger, brick
 
@@ -42,6 +42,7 @@ class CloudLLM:
         temperature: Optional[float] = 0.7,
         timeout: int = 30,
         tools: List[Callable[..., Any]] = None,
+        **kwargs,
     ):
         """Initializes the CloudLLM brick with the specified provider and configuration.
 
@@ -61,6 +62,7 @@ class CloudLLM:
             timeout (int): The maximum duration in seconds to wait for a response before
                 timing out. Defaults to 30.
             tools (List[Callable[..., Any]]): A list of callable tool functions to register. Defaults to None.
+            **kwargs: Additional arguments passed to the model constructor
 
         Raises:
             ValueError: If `api_key` is not provided (empty string).
@@ -93,6 +95,7 @@ class CloudLLM:
             api_key=self._api_key,
             temperature=self._temperature,
             timeout=self._timeout,
+            **kwargs,
         )
 
         if self._tools and len(self._tools) > 0:
@@ -134,6 +137,41 @@ class CloudLLM:
         messages.append(HumanMessage(content=user_input))
         return messages
 
+    def _process_tool_calls(self, tool_calls: list[ToolCall], input_messages: List[BaseMessage]) -> List[BaseMessage]:
+        """Processes any tool calls requested by the model in its response.
+
+        Args:
+            message (BaseMessage): The AI message that may contain tool calls.
+            input_messages (List[BaseMessage]): The current message scope including history.
+
+        Returns:
+            List[BaseMessage]: Updated message scope after processing tool calls.
+        """
+
+        if len(tool_calls) == 0:
+            return input_messages
+
+        for tool_call in tool_calls:
+            logger.info(f"Calling tool: {tool_call['name']} with args: {tool_call['args']} with id: {tool_call['id']}")
+            tool_name = tool_call['name']
+            tool_args = tool_call['args']
+            tool_id = tool_call['id']
+
+            if tool_name in self._tools_map:
+                logger.info(f"Invoking tool function for: {tool_name}")
+                tool_func = self._tools_map[tool_name]
+                tool_output = tool_func.invoke(tool_args)
+                logger.info(f"Tool '{tool_name}' returned: {tool_output}")
+
+                # Append tool output message to current message scope
+                input_messages.append(ToolMessage(
+                    tool_call_id=tool_id,
+                    content=tool_output,
+                ))
+
+        # Return updated message scope for further processing
+        return input_messages
+
     def chat(self, message: str) -> str:
         """Sends a message to the AI and blocks until the complete response is received.
 
@@ -158,28 +196,9 @@ class CloudLLM:
                 raise RuntimeError("Received empty response from the LLM.")
             
             logger.debug(f"Model invoked. Full response: {message}")
-            if message.tool_calls:
+            if message.tool_calls and len(message.tool_calls) > 0:
                 input_messages.append(message)  # Add the previous AI message to scoped history
-
-                for tool_call in message.tool_calls:
-                    logger.info(f"Calling tool: {tool_call['name']} with args: {tool_call['args']} with id: {tool_call['id']}")
-                    tool_name = tool_call['name']
-                    tool_args = tool_call['args']
-                    tool_id = tool_call['id']
-
-                    if tool_name in self._tools_map:
-                        logger.info(f"Invoking tool function for: {tool_name}")
-                        tool_func = self._tools_map[tool_name]
-                        tool_output = tool_func.invoke(tool_args)
-                        logger.info(f"Tool '{tool_name}' returned: {tool_output}")
-
-                        # Append tool output message to current message scope
-                        input_messages.append(ToolMessage(
-                            tool_call_id=tool_id,
-                            content=tool_output,
-                        ))
-
-                # Re-invoke the model with updated message scope
+                input_messages = self._process_tool_calls(message.tool_calls, input_messages.copy())
                 message = self._model.invoke(input_messages)
 
             # Add the AI message to long term history
@@ -213,11 +232,27 @@ class CloudLLM:
         try:
             self._keep_streaming.set()
             input_messages = self._get_message_with_history(message)
+            
+            tool_calls = []
             for token in self._model.stream(input_messages):
                 if not self._keep_streaming.is_set():
                     break  # This stops the iteration and halts further token generation
-                if token.content:
-                    yield token.content
+                if token.tool_calls and len(token.tool_calls) > 0:
+                    tool_calls.extend(token.tool_calls)
+                else:
+                    if token.content:
+                        yield token.content
+
+            # If there were tool calls, process them
+            if len(tool_calls) > 0:
+                # TODO : Handle multiple tool calls and aggregate results properly
+                input_messages = self._process_tool_calls(tool_calls, input_messages.copy())
+                for token in self._model.stream(input_messages):
+                    if not self._keep_streaming.is_set():
+                        break
+                    if token.content:
+                        yield token.content
+
         except Exception as e:
             raise RuntimeError(f"Response generation failed: {e}")
         finally:
