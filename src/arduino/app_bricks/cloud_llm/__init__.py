@@ -3,6 +3,6 @@
 # SPDX-License-Identifier: MPL-2.0
 
 from .cloud_llm import CloudLLM
-from .models import CloudModel
+from .models import CloudModel, CloudModelProvider
 
-__all__ = ["CloudLLM", "CloudModel"]
+__all__ = ["CloudLLM", "CloudModel", "CloudModelProvider"]
