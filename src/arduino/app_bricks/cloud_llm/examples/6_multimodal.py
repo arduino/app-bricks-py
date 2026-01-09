@@ -17,7 +17,10 @@ llm = CloudLLM(
 
 
 def ask_prompt():
-    print(llm.chat(message = "Describe the following image. Provide a bullet-point summary of the discovered objects", images = ["path/to/your/image.jpg"]))
+    print(
+        llm.chat(message="Describe the following image. Provide a bullet-point summary of the discovered objects", images=["path/to/your/image.jpg"])
+    )
     time.sleep(60)
+
 
 App.run(ask_prompt)
