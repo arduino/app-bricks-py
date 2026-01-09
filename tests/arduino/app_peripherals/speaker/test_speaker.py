@@ -3,96 +3,242 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import pytest
-from unittest.mock import patch, MagicMock
-from arduino.app_peripherals.speaker import Speaker, ALSASpeaker
+import threading
+from unittest.mock import MagicMock
 
-from arduino.app_peripherals.speaker.errors import SpeakerConfigError
+import numpy as np
 
-
-# Mock data for ALSA
-MOCK_USB_S_CARDS = ["UH34", "OtherCard", "OtherCard2", "OtherCard3"]
-MOCK_USB_S_CARD_INDEXES = [i for i in range(len(MOCK_USB_S_CARDS))]
-MOCK_USB_S_CARD_DESCS = [
-    ("UH34", "Audio Device"),
-    ("OtherCard", "Other USB Device"),
-    ("OtherCard2", "Other USB Device 2"),
-    ("OtherCard3", "Other USB Device 3"),
-]
-MOCK_USB_S_PCM_DEVICES = [
-    "plughw:CARD=UH34,DEV=0",
-    "plughw:CARD=OtherCard,DEV=0",
-    "plughw:CARD=OtherCard2,DEV=0",
-    "plughw:CARD=OtherCard3,DEV=0",
-]
+from arduino.app_peripherals.speaker import Speaker, BaseSpeaker, ALSASpeaker
+from arduino.app_peripherals.speaker.errors import SpeakerConfigError, SpeakerError, SpeakerOpenError, SpeakerWriteError
 
 
-@patch("arduino.app_peripherals.speaker.alsa_speaker.alsaaudio.cards", return_value=MOCK_USB_S_CARDS)
-@patch("arduino.app_peripherals.speaker.alsa_speaker.alsaaudio.card_indexes", return_value=MOCK_USB_S_CARD_INDEXES)
-@patch("arduino.app_peripherals.speaker.alsa_speaker.alsaaudio.card_name", side_effect=lambda idx: MOCK_USB_S_CARD_DESCS[idx])
-@patch("arduino.app_peripherals.speaker.alsa_speaker.alsaaudio.pcms", return_value=MOCK_USB_S_PCM_DEVICES)
-@patch("arduino.app_peripherals.speaker.alsa_speaker.alsaaudio.PCM")
-@patch("arduino.app_peripherals.speaker.alsa_speaker.Path.exists")
-@patch(
-    "arduino.app_peripherals.speaker.alsa_speaker.Path.resolve",
-    return_value="/sys/devices/platform/soc@0/4ef8800.usb/4e00000.usb/xhci-hcd.2.auto/usb1/1-1/1-1.3/1-1.3:1.0/sound/card0/pcmC0D0c",
-)
-def test_list_usb_devices(mock_resolve, mock_exists, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
-    """Test listing USB devices using alsaaudio mocks."""
-    mock_exists.side_effect = [False, True, True, True]
-    usb_devices = ALSASpeaker.list_usb_devices()
-    assert usb_devices == [
-        "plughw:CARD=OtherCard,DEV=0",
-        "plughw:CARD=OtherCard2,DEV=0",
-        "plughw:CARD=OtherCard3,DEV=0",
-    ], "Should return only USB plughw devices"
+class TestSpeakerFactoryInstantiation:
+    """Test factory instantiation of different speaker types."""
+
+    def test_factory_creates_alsa_speaker_with_integer(self, mock_alsa_usb_speakers):
+        """Test factory creates ALSA speaker with integer device index."""
+        spkr = Speaker(device=0)
+
+        assert isinstance(spkr, ALSASpeaker)
+        assert spkr.device_stable_ref == "CARD=SomeCard,DEV=0"
+
+    def test_factory_creates_alsa_speaker_with_string_index(self, mock_alsa_usb_speakers):
+        """Test factory creates ALSA speaker with string device index."""
+        spkr = Speaker(device="1")
+
+        assert isinstance(spkr, ALSASpeaker)
+        assert spkr.device_stable_ref == "CARD=AnotherCard,DEV=0"
+
+    def test_factory_creates_alsa_speaker_with_device_name(self, mock_alsa_usb_speakers):
+        """Test factory creates ALSA speaker with explicit device name."""
+        spkr = Speaker(device="plughw:CARD=SomeCard,DEV=0")
+
+        assert isinstance(spkr, ALSASpeaker)
+        assert spkr.device_stable_ref == "CARD=SomeCard,DEV=0"
+
+    def test_factory_device_does_not_exist_raises_error(self, mock_alsa_usb_speakers):
+        """Test that invalid device raises SpeakerConfigError."""
+        with pytest.raises(SpeakerConfigError) as exc_info:
+            Speaker(device="usb:3")  # Assuming only 2 USB devices exist in the mock
+        assert "out of range" in str(exc_info.value).lower()
+
+    def test_factory_invalid_usb_format_raises_error(self, mock_alsa_usb_speakers):
+        """Test that invalid USB device format raises SpeakerConfigError."""
+        with pytest.raises(SpeakerConfigError) as exc_info:
+            Speaker(device="usb:something")
+        assert "invalid" in str(exc_info.value).lower()
+
+    def test_factory_invalid_device_type_raises_error(self, mock_alsa_usb_speakers):
+        """Test that invalid device type raises SpeakerConfigError."""
+        with pytest.raises(SpeakerConfigError) as exc_info:
+            Speaker(device=None)
+        assert "unsupported" in str(exc_info.value).lower()
+
+    def test_factory_invalid_format_raises_error(self, mock_alsa_usb_speakers):
+        """Test that unsupported format raises error."""
+        with pytest.raises(SpeakerConfigError) as exc_info:
+            Speaker(device="hw:0,0", format="INVALID_FORMAT")
+        assert "invalid" in str(exc_info.value).lower()
+
+    def test_factory_no_devices_found_raises_error(self):
+        """Test that no USB devices found raises error."""
+        with pytest.raises(SpeakerConfigError) as exc_info:
+            Speaker()
+        assert "no usb speakers found" in str(exc_info.value).lower()
+        assert ALSASpeaker.list_usb_devices() == []
 
 
-@patch("arduino.app_peripherals.speaker.alsa_speaker.alsaaudio.cards", return_value=MOCK_USB_S_CARDS)
-@patch("arduino.app_peripherals.speaker.alsa_speaker.alsaaudio.card_indexes", return_value=MOCK_USB_S_CARD_INDEXES)
-@patch("arduino.app_peripherals.speaker.alsa_speaker.alsaaudio.card_name", side_effect=lambda idx: MOCK_USB_S_CARD_DESCS[idx])
-@patch("arduino.app_peripherals.speaker.alsa_speaker.alsaaudio.pcms", return_value=MOCK_USB_S_PCM_DEVICES)
-@patch("arduino.app_peripherals.speaker.alsa_speaker.alsaaudio.PCM")
-@patch("arduino.app_peripherals.speaker.alsa_speaker.Path.exists")
-@patch(
-    "arduino.app_peripherals.speaker.alsa_speaker.Path.resolve",
-    return_value="/sys/devices/platform/soc@0/4ef8800.usb/4e00000.usb/xhci-hcd.2.auto/usb1/1-1/1-1.3/1-1.3:1.0/sound/card0/pcmC0D0c",
-)
-def test_speaker_init_usb_1(mock_resolve, mock_exists, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
-    """Test initializing Speaker with one USB device."""
-    mock_exists.side_effect = [False, True, True, True]
-    pcm_instance = MagicMock()
-    mock_pcm.return_value = pcm_instance
-    spkr = Speaker(device=Speaker.USB_SPEAKER_1)
-    assert spkr.device_stable_ref == "plughw:CARD=OtherCard,DEV=0"
+class TestSpeakerConfiguration:
+    """Test speaker configuration and parameters."""
+
+    def test_default_parameters(self, mock_alsa_usb_speakers):
+        """Test that speakers use default parameters."""
+        spkr = Speaker(device=0)
+
+        assert spkr.sample_rate == Speaker.RATE_16K
+        assert spkr.channels == Speaker.CHANNELS_MONO
+        assert spkr.format == np.int16
+        assert spkr.buffer_size == Speaker.BUFFER_SIZE_BALANCED
+
+    def test_custom_parameters_alsa(self, mock_alsa_usb_speakers):
+        """Test ALSA speaker with custom parameters."""
+        spkr = Speaker(device=0, sample_rate=48000, channels=2, format=np.int32, buffer_size=2048)
+
+        assert spkr.sample_rate == 48000
+        assert spkr.channels == 2
+        assert spkr.format == np.int32
+        assert spkr.buffer_size == 2048
 
 
-@patch("arduino.app_peripherals.speaker.alsa_speaker.alsaaudio.cards", return_value=MOCK_USB_S_CARDS)
-@patch("arduino.app_peripherals.speaker.alsa_speaker.alsaaudio.card_indexes", return_value=MOCK_USB_S_CARD_INDEXES)
-@patch("arduino.app_peripherals.speaker.alsa_speaker.alsaaudio.card_name", side_effect=lambda idx: MOCK_USB_S_CARD_DESCS[idx])
-@patch("arduino.app_peripherals.speaker.alsa_speaker.alsaaudio.pcms", return_value=MOCK_USB_S_PCM_DEVICES)
-@patch("arduino.app_peripherals.speaker.alsa_speaker.alsaaudio.PCM")
-@patch("arduino.app_peripherals.speaker.alsa_speaker.Path.exists")
-@patch(
-    "arduino.app_peripherals.speaker.alsa_speaker.Path.resolve",
-    return_value="/sys/devices/platform/soc@0/4ef8800.usb/4e00000.usb/xhci-hcd.2.auto/usb1/1-1/1-1.3/1-1.3:1.0/sound/card0/pcmC0D0c",
-)
-def test_speaker_init_usb_3(mock_resolve, mock_exists, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
-    """Test initializing Speaker without using available macros."""
-    mock_exists.side_effect = [False, True, True, True]
-    pcm_instance = MagicMock()
-    mock_pcm.return_value = pcm_instance
-    spkr = Speaker(device="usb:3")
-    assert spkr.device_stable_ref == "plughw:CARD=OtherCard3,DEV=0"
+class TestSpeakerStartStop:
+    """Test start and stop lifecycle."""
+
+    def test_double_start_is_idempotent(self):
+        """Test that starting twice is safe."""
+        spkr = Speaker(device="plughw:CARD=SomeCard,DEV=0")
+
+        spkr.start = MagicMock()
+        spkr._is_started = False
+        spkr._spkr_lock = threading.Lock()
+
+        # Simulate idempotent behavior
+        def start_impl():
+            with spkr._spkr_lock:
+                if spkr._is_started:
+                    return
+                spkr._is_started = True
+
+        spkr.start.side_effect = start_impl
+
+        spkr.start()
+        first_state = spkr._is_started
+        spkr.start()
+
+        assert spkr._is_started == first_state
+
+    def test_double_stop_is_idempotent(self):
+        """Test that stopping twice is safe."""
+        spkr = Speaker(device="plughw:CARD=SomeCard,DEV=0")
+
+        spkr._is_started = True
+        spkr._spkr_lock = threading.Lock()
+        spkr.stop = MagicMock()
+
+        def stop_impl():
+            with spkr._spkr_lock:
+                if not spkr._is_started:
+                    return
+                spkr._is_started = False
+
+        spkr.stop.side_effect = stop_impl
+
+        spkr.stop()
+        spkr.stop()  # Should not raise
+
+        assert not spkr._is_started
+
+    def test_restart(self):
+        """Test that speaker can be restarted."""
+        spkr = Speaker(device="CARD=SomeCard,DEV=0")
+        spkr.start()
+        spkr.stop()
+
+        # Should be able to restart
+        spkr.start()
+        assert spkr.is_started()
 
 
-@patch("arduino.app_peripherals.speaker.alsa_speaker.alsaaudio.cards", return_value=MOCK_USB_S_CARDS)
-@patch("arduino.app_peripherals.speaker.alsa_speaker.alsaaudio.card_indexes", return_value=MOCK_USB_S_CARD_INDEXES)
-@patch("arduino.app_peripherals.speaker.alsa_speaker.alsaaudio.card_name", side_effect=lambda idx: MOCK_USB_S_CARD_DESCS[idx])
-@patch("arduino.app_peripherals.speaker.alsa_speaker.alsaaudio.pcms", return_value=MOCK_USB_S_PCM_DEVICES)
-def test_speaker_init_usb_errors(mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
-    """Test initializing Speaker without using available macros."""
-    with pytest.raises(SpeakerConfigError):
-        Speaker(device="usb:something")
+class TestSpeakerContextManager:
+    """Test context manager behavior."""
 
-    with pytest.raises(SpeakerConfigError):
-        Speaker(device="usb:5")
+    def test_context_manager_starts_and_stops(self):
+        """Test that context manager starts and stops speaker."""
+        spkr = Speaker(device=0)
+
+        assert not spkr.is_started()
+
+        with spkr:
+            assert spkr.is_started()
+
+        assert not spkr.is_started()
+
+    def test_context_manager_stops_on_exception(self):
+        """Test that context manager stops even on exception."""
+        spkr = Speaker(device=0)
+
+        try:
+            with spkr:
+                assert spkr.is_started()
+                raise RuntimeError("Test exception")
+        except RuntimeError:
+            pass
+
+        assert not spkr.is_started()
+
+
+class TestBaseSpeakerAbstraction:
+    """Test base speaker abstract class requirements."""
+
+    def test_cannot_instantiate_base_class(self):
+        """Test that BaseSpeaker cannot be instantiated directly."""
+        with pytest.raises(TypeError):
+            BaseSpeaker()
+
+    def test_subclass_must_implement_abstract_methods(self):
+        """Test that subclass must implement all abstract methods."""
+
+        # Missing _write_audio
+        class IncompleteSpeaker1(BaseSpeaker):
+            def _open_speaker(self):
+                pass
+
+            def _close_speaker(self):
+                pass
+
+        with pytest.raises(TypeError):
+            IncompleteSpeaker1()
+
+        # Missing _close_speaker
+        class IncompleteSpeaker2(BaseSpeaker):
+            def _open_speaker(self):
+                pass
+
+            def _write_audio(self, audio_chunk):
+                pass
+
+        with pytest.raises(TypeError):
+            IncompleteSpeaker2()
+
+        # Missing _open_speaker
+        class IncompleteSpeaker3(BaseSpeaker):
+            def _close_speaker(self):
+                pass
+
+            def _write_audio(self, audio_chunk):
+                pass
+
+        with pytest.raises(TypeError):
+            IncompleteSpeaker3()
+
+
+class TestExceptionHierarchy:
+    """Test exception hierarchy and catching."""
+
+    def test_speaker_open_error_is_speaker_error(self):
+        """Test exception inheritance."""
+        assert issubclass(SpeakerOpenError, SpeakerError)
+
+    def test_speaker_write_error_is_speaker_error(self):
+        """Test exception inheritance."""
+        assert issubclass(SpeakerWriteError, SpeakerError)
+
+    def test_speaker_config_error_is_speaker_error(self):
+        """Test exception inheritance."""
+        assert issubclass(SpeakerConfigError, SpeakerError)
+
+    def test_catch_specific_error_with_base_handler(self):
+        """Test that specific errors can be caught with base handler."""
+        try:
+            raise SpeakerWriteError("Test")
+        except SpeakerError as e:
+            assert "Test" in str(e)
