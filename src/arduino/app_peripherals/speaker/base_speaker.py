@@ -62,9 +62,22 @@ class BaseSpeaker(ABC):
         if channels <= 0:
             raise SpeakerConfigError("Number of channels must be positive")
         self.channels = channels
-        if format is None or (isinstance(format, str) and format.strip() == ""):
-            raise SpeakerConfigError("Format must be a non-empty string")
-        self.format: np.dtype = np.dtype(format)
+
+        if format is None:
+            raise SpeakerConfigError("Format must be specified")
+        if isinstance(format, tuple):
+            if len(format) != 2:
+                raise SpeakerConfigError("Format tuple must be of the form (format: FormatPlain, is_packed: bool)")
+            format, self.format_is_packed = format
+        else:
+            self.format_is_packed = False
+        if isinstance(format, str) and format.strip() == "":
+            raise SpeakerConfigError("Format must be a non-empty string or a valid numpy dtype/type or a tuple")
+        try:
+            self.format: np.dtype = np.dtype(format)
+        except TypeError as e:
+            raise SpeakerConfigError(f"Invalid format: {format}") from e
+
         if buffer_size <= 0:
             raise SpeakerConfigError("Buffer size must be positive")
         self.buffer_size = buffer_size
@@ -163,31 +176,6 @@ class BaseSpeaker(ABC):
                 self.logger.info(f"Successfully stopped {self.name}")
             except Exception as e:
                 self.logger.warning(f"Failed to stop speaker: {e}")
-
-    @property
-    def volume(self) -> int:
-        """
-        Get or set the speaker volume level.
-
-        This controls the hardware volume of the speaker device.
-
-        Args:
-            volume (int): Hardware volume level (0-100).
-
-        Returns:
-            int: Current volume level (0-100).
-
-        Raises:
-            ValueError: If the volume is not valid.
-        """
-        return int(self._volume * 100)
-
-    @volume.setter
-    def volume(self, volume: int):
-        if not (0 <= volume <= 100):
-            raise ValueError("Volume must be between 0 and 100.")
-
-        self._volume = volume / 100.0
 
     def play(self, audio_chunk: np.ndarray):
         """
