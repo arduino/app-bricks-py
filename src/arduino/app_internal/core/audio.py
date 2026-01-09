@@ -10,7 +10,7 @@ import threading
 from typing import Callable
 
 from arduino.app_internal.core import EdgeImpulseRunnerFacade
-from arduino.app_peripherals.microphone import Microphone
+from arduino.app_peripherals.microphone import Microphone, BaseMicrophone
 from arduino.app_utils import Logger, SlidingWindowBuffer, brick
 
 logger = Logger("AudioDetector")
@@ -19,13 +19,16 @@ logger = Logger("AudioDetector")
 class AudioDetector(EdgeImpulseRunnerFacade):
     """AudioDetector module for detecting sounds and classifying audio using a specified model."""
 
-    def __init__(self, mic: Microphone = None, confidence: float = 0.8, debounce_sec: float = 2.0):
+    def __init__(self, mic: BaseMicrophone | None = None, confidence: float = 0.8, debounce_sec: float = 2.0):
         """Initialize the AudioDetector class.
 
         Args:
-            mic (Microphone): Microphone instance for audio input. If None, a default Microphone will be initialized.
-            confidence (float): Confidence level for detection. Default is 0.8 (80%).
-            debounce_sec (float): Minimum seconds between repeated detections of the same keyword. Default is 2.0 seconds.
+            mic (BaseMicrophone): Microphone instance for audio input.
+                If None, a default Microphone will be initialized.
+            confidence (float): Confidence level for detection between 0.0 and 1.0.
+                Default is 0.8 (80%). Higher values reduce false positives.
+            debounce_sec (float): Minimum seconds between repeated detections
+                of the same keyword. Default is 2.0 seconds.
 
         Raises:
             ValueError: If the model information cannot be retrieved or if the model parameters are incomplete.
