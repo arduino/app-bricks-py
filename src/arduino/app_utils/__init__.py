@@ -9,8 +9,8 @@ from .bridge import *
 from .folderwatch import *
 from .httprequest import *
 from .jsonparser import *
-from .logger import *
 from .ledmatrix import *
+from .logger import *
 from .slidingwindowbuffer import *
 from .leds import *
 
