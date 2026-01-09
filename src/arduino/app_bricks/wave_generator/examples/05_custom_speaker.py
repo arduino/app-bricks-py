@@ -20,19 +20,18 @@ from arduino.app_bricks.wave_generator import WaveGenerator
 from arduino.app_peripherals.speaker import Speaker
 from arduino.app_utils import App
 
-# Create and configure a Speaker with specific parameters
+# Create a Speaker with specific parameters
 speaker = Speaker(
     device=Speaker.USB_SPEAKER_1,
     sample_rate=Speaker.RATE_48K,
     channels=Speaker.CHANNELS_MONO,
     format=np.float32,
-    block_size=Speaker.BUFFER_SIZE_REALTIME,
+    buffer_size=Speaker.BUFFER_SIZE_REALTIME,
+    shared=False,  # Exclusive access for low latency
 )
 
 # Create WaveGenerator with the custom speaker
-wave_gen = WaveGenerator(
-    speaker=speaker,  # Pass pre-configured speaker
-)
+wave_gen = WaveGenerator(speaker)
 
 
 def play_sequence():

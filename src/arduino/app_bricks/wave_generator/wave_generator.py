@@ -66,7 +66,7 @@ class WaveGenerator:
             self._speaker = ALSASpeaker(
                 device=Speaker.USB_SPEAKER_1,
                 sample_rate=Speaker.RATE_48K,
-                channels=1,
+                channels=Speaker.CHANNELS_MONO,
                 format=np.float32,
                 buffer_size=Speaker.BUFFER_SIZE_REALTIME,
                 shared=False,
