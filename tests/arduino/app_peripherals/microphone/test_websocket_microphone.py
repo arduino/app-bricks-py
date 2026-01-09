@@ -10,13 +10,38 @@ import base64
 import numpy as np
 
 from arduino.app_internal.core.peripherals import BPPCodec
-from arduino.app_peripherals.microphone import WebSocketMicrophone
+from arduino.app_peripherals.microphone import WebSocketMicrophone, MicrophoneOpenError
 
 
 @pytest.fixture
 def codec() -> BPPCodec:
     """Fixture to provide a codec if needed in future tests."""
     return BPPCodec()
+
+
+class TestWebSocketMicrophoneInit:
+    """Test WebSocketMicrophone initialization and startup."""
+
+    @pytest.mark.asyncio
+    async def test_websocket_start_stop(self):
+        mic = WebSocketMicrophone(port=0)
+
+        mic.start()
+        assert mic.is_started()
+        assert mic._server is not None
+
+        mic.stop()
+        assert not mic.is_started()
+        assert mic._server is None
+
+    @pytest.mark.asyncio
+    async def test_start_on_privileged_port_fails(self):
+        """Test that starting on privileged port fails gracefully."""
+        mic = WebSocketMicrophone(port=1)
+        mic._bind_ip = "127.0.0.1"  # Workaround for MacOS
+
+        with pytest.raises(MicrophoneOpenError):
+            mic.start()
 
 
 class TestWebSocketPCMBinaryFormat:
@@ -54,7 +79,7 @@ class TestWebSocketPCMBinaryFormat:
     @pytest.mark.asyncio
     async def test_receive_binary_pcm_int32(self, codec):
         """Test receiving binary PCM data as int32."""
-        mic = WebSocketMicrophone(port=0, format="S32_LE")
+        mic = WebSocketMicrophone(port=0, format=np.int32)
 
         mic.start()
 
@@ -79,7 +104,7 @@ class TestWebSocketPCMBinaryFormat:
     @pytest.mark.asyncio
     async def test_receive_binary_pcm_float32(self, codec):
         """Test receiving binary PCM data as float32."""
-        mic = WebSocketMicrophone(port=0, format="FLOAT_LE")
+        mic = WebSocketMicrophone(port=0, format=np.float32)
 
         mic.start()
 
@@ -343,6 +368,92 @@ class TestWebSocketClientConnection:
         async with websockets.connect(mic.url) as ws:
             await ws.recv()
             await ws.send(encoded)
+
+        await asyncio.wait_for(test_done.wait(), timeout=2)
+        mic.stop()
+
+
+class TestWebSocketClientDisconnection:
+    """Test WebSocket client disconnection handling."""
+
+    @pytest.mark.asyncio
+    async def test_client_disconnect_handled_gracefully(self):
+        """Test that client disconnection is handled gracefully."""
+        connected = asyncio.Event()
+        disconnected = asyncio.Event()
+        loop = asyncio.get_running_loop()
+
+        def callback(status, status_info):
+            if status == "connected":
+                assert mic.is_started()
+                assert mic._server is not None
+                assert mic._client is not None
+                loop.call_soon_threadsafe(connected.set)
+            if status == "disconnected":
+                assert mic.is_started()
+                assert mic._server is not None
+                assert mic._client is None
+                loop.call_soon_threadsafe(disconnected.set)
+
+        mic = WebSocketMicrophone(port=0)
+        mic.on_status_changed(callback)
+
+        mic.start()
+
+        # Connect and disconnect
+        async with websockets.connect(mic.url) as ws:
+            await asyncio.wait_for(connected.wait(), timeout=2)
+            await ws.recv()
+
+        await asyncio.wait_for(disconnected.wait(), timeout=2)
+        mic.stop()
+
+        assert not mic.is_started()
+        assert mic._server is None
+        assert mic._client is None
+
+    @pytest.mark.asyncio
+    async def test_client_reconnect_after_disconnect(self, codec):
+        """Test that client can reconnect after disconnecting."""
+        mic = WebSocketMicrophone(port=0)
+
+        mic.start()
+
+        # First connection
+        async with websockets.connect(mic.url) as ws:
+            await ws.recv()
+
+        # Second connection should work
+        async with websockets.connect(mic.url) as ws:
+            welcome = await ws.recv()
+            decoded = codec.decode(welcome)
+            assert "connected" in decoded.decode()
+
+        mic.stop()
+
+    @pytest.mark.asyncio
+    async def test_client_abrupt_disconnect(self):
+        """Test handling of abrupt client disconnect."""
+        loop = asyncio.get_running_loop()
+        test_done = asyncio.Event()
+
+        def callback(status, status_info):
+            if status == "disconnected":
+                assert mic.is_started()
+                assert mic._server is not None
+                assert mic._client is None
+                loop.call_soon_threadsafe(test_done.set)
+
+        mic = WebSocketMicrophone(port=0)
+        mic.on_status_changed(callback)
+
+        mic.start()
+
+        ws = await websockets.connect(mic.url)
+        await ws.recv()
+
+        # Abruptly close without proper shutdown
+        await ws.close()
 
         await asyncio.wait_for(test_done.wait(), timeout=2)
         mic.stop()

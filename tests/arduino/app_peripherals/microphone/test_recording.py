@@ -8,17 +8,23 @@ import numpy as np
 import wave
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
-from arduino.app_peripherals.microphone import Microphone, BaseMicrophone
+from arduino.app_peripherals.microphone import Microphone, BaseMicrophone, FormatPlain, FormatPacked
 from arduino.app_peripherals.microphone.errors import MicrophoneReadError
 
 
 class MockMicrophone(BaseMicrophone):
     """Mock microphone for testing recording functionality."""
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(
+        self,
+        sample_rate: int = 16000,
+        channels: int = 1,
+        format: FormatPlain | FormatPacked = np.int16,
+        buffer_size: int = 1024,
+        auto_reconnect: bool = False,
+    ):
+        super().__init__(sample_rate=sample_rate, channels=channels, format=format, buffer_size=buffer_size, auto_reconnect=auto_reconnect)
         self._chunk_counter = 0
 
     def _open_microphone(self):
@@ -27,15 +33,10 @@ class MockMicrophone(BaseMicrophone):
     def _close_microphone(self):
         pass
 
-    def _read_audio(self):
+    def _read_audio(self) -> np.ndarray | None:
         self._chunk_counter += 1
         # Return incrementing values for verification
-        return np.full(self.chunk_size, self._chunk_counter, dtype=np.int16)
-
-
-# Mock ALSA for factory tests
-MOCK_CARDS = ["SomeCard"]
-MOCK_PCMS = ["plughw:CARD=SomeCard,DEV=0"]
+        return np.full(self.buffer_size, self._chunk_counter, dtype=np.int16)
 
 
 class TestRecordDuration:
@@ -43,10 +44,10 @@ class TestRecordDuration:
 
     def test_record_returns_numpy_array(self):
         """Test that record returns a numpy array (raw PCM)."""
-        mic = MockMicrophone(sample_rate=16000, chunk_size=1024)
+        mic = MockMicrophone(sample_rate=16000, buffer_size=1024)
         mic.start()
 
-        recording = mic.record(duration=0.1)
+        recording = mic.record_pcm(duration=0.1)
 
         assert isinstance(recording, np.ndarray)
         assert len(recording) > 0
@@ -55,7 +56,7 @@ class TestRecordDuration:
 
     def test_record_wav_returns_numpy_array(self):
         """Test that record_wav returns a numpy array (WAV format)."""
-        mic = MockMicrophone(sample_rate=16000, chunk_size=1024)
+        mic = MockMicrophone(sample_rate=16000, buffer_size=1024)
         mic.start()
 
         wav_data = mic.record_wav(duration=0.1)
@@ -68,13 +69,13 @@ class TestRecordDuration:
     def test_record_approximate_duration(self):
         """Test that record returns approximately correct number of samples."""
         sample_rate = 16000
-        chunk_size = 1024
+        buffer_size = 1024
         duration = 0.2
 
-        mic = MockMicrophone(sample_rate=sample_rate, chunk_size=chunk_size)
+        mic = MockMicrophone(sample_rate=sample_rate, buffer_size=buffer_size)
         mic.start()
 
-        recording = mic.record(duration=duration)
+        recording = mic.record_pcm(duration=duration)
 
         expected_samples = int(duration * sample_rate)
 
@@ -86,7 +87,7 @@ class TestRecordDuration:
         mic.start()
 
         duration = 0.15
-        recording = mic.record(duration=duration)
+        recording = mic.record_pcm(duration=duration)
 
         # Should return exactly the requested number of samples
         expected_samples = int(duration * 16000)
@@ -102,10 +103,10 @@ class TestRecordDuration:
         ]
 
         for sample_rate, duration in test_cases:
-            mic = MockMicrophone(sample_rate=sample_rate, chunk_size=512)
+            mic = MockMicrophone(sample_rate=sample_rate, buffer_size=512)
             mic.start()
 
-            recording = mic.record(duration=duration)
+            recording = mic.record_pcm(duration=duration)
 
             expected_samples = int(duration * sample_rate)
 
@@ -114,10 +115,10 @@ class TestRecordDuration:
     def test_record_short_duration(self):
         """Test recording very short duration."""
         cs = 1024
-        mic = MockMicrophone(sample_rate=16000, chunk_size=cs)
+        mic = MockMicrophone(sample_rate=16000, buffer_size=cs)
         mic.start()
 
-        recording = mic.record(duration=0.05)
+        recording = mic.record_pcm(duration=0.05)
 
         assert len(recording) > 0
         assert len(recording) < cs * 2  # Should be relatively short
@@ -128,9 +129,9 @@ class TestRecordDuration:
         mic.start()
 
         with pytest.raises(ValueError) as exc_info:
-            mic.record(duration=0)
+            mic.record_pcm(duration=0)
 
-        assert "positive" in str(exc_info.value).lower()
+        assert "> 0" in str(exc_info.value).lower()
 
     def test_record_negative_duration_raises_error(self):
         """Test that negative duration raises error."""
@@ -138,23 +139,23 @@ class TestRecordDuration:
         mic.start()
 
         with pytest.raises(ValueError):
-            mic.record(duration=-1)
+            mic.record_pcm(duration=-1)
 
     def test_record_requires_started_microphone(self):
         """Test that record requires microphone to be started."""
         mic = MockMicrophone()
 
         with pytest.raises(MicrophoneReadError) as exc_info:
-            mic.record(duration=1.0)
+            mic.record_pcm(duration=1.0)
 
         assert "start" in str(exc_info.value)
 
     def test_record_concatenates_chunks_correctly(self):
         """Test that record correctly concatenates audio chunks."""
-        mic = MockMicrophone(chunk_size=100)
+        mic = MockMicrophone(buffer_size=100)
         mic.start()
 
-        recording = mic.record(duration=0.05)
+        recording = mic.record_pcm(duration=0.05)
 
         # Each chunk has incrementing fill values (1, 2, 3, ...)
         # Verify we got multiple chunks
@@ -228,7 +229,7 @@ class TestWAVFileValidation:
 
     def test_wav_contains_valid_audio_data(self):
         """Test that WAV data contains valid audio data."""
-        mic = MockMicrophone(sample_rate=16000, chunk_size=100)
+        mic = MockMicrophone(sample_rate=16000, buffer_size=100)
         mic.start()
 
         wav_data = mic.record_wav(duration=0.05)
@@ -268,7 +269,7 @@ class TestWAVFileFormats:
         mic = MockMicrophone()
 
         audio = np.arange(1000, dtype=np.int16)
-        wav_data = mic._audio_to_wav(audio)
+        wav_data = mic._pcm_to_wav(audio)
 
         assert isinstance(wav_data, np.ndarray)
         assert wav_data.dtype == np.uint8
@@ -285,7 +286,7 @@ class TestWAVFileFormats:
         mic = MockMicrophone()
 
         audio = np.arange(1000, dtype=np.int32)
-        wav_data = mic._audio_to_wav(audio)
+        wav_data = mic._pcm_to_wav(audio)
 
         assert isinstance(wav_data, np.ndarray)
         assert wav_data.dtype == np.uint8
@@ -299,7 +300,7 @@ class TestWAVFileFormats:
 
         # Normalized float audio [-1, 1]
         audio = np.array([0.0, 0.5, -0.5, 1.0, -1.0], dtype=np.float32)
-        wav_data = mic._audio_to_wav(audio)
+        wav_data = mic._pcm_to_wav(audio)
 
         with wave.open(io.BytesIO(wav_data.tobytes()), "rb") as wav:
             # Should be converted to int16
@@ -310,7 +311,7 @@ class TestWAVFileFormats:
         mic = MockMicrophone()
 
         audio = np.arange(-128, 128, dtype=np.int8)
-        wav_data = mic._audio_to_wav(audio)
+        wav_data = mic._pcm_to_wav(audio)
 
         assert isinstance(wav_data, np.ndarray)
         assert wav_data.dtype == np.uint8
@@ -320,19 +321,19 @@ class TestWAVFileFormats:
         mic = MockMicrophone()
 
         audio = np.arange(0, 256, dtype=np.uint8)
-        wav_data = mic._audio_to_wav(audio)
+        wav_data = mic._pcm_to_wav(audio)
 
         assert isinstance(wav_data, np.ndarray)
         assert wav_data.dtype == np.uint8
 
     def test_audio_to_wav_s24_le_format(self):
         """Test converting S24_LE (24-bit little-endian) audio data to WAV."""
-        mic = MockMicrophone(format="S24_LE")
+        mic = MockMicrophone(format=("<i4", True))
 
         # Create 24-bit audio packed in 32-bit containers (LSB padding)
         # Values: 0x00123456, 0x00789ABC, 0x00FEDCBA (with LSB padding byte 0)
         audio = np.array([0x00123456, 0x00789ABC, 0x00FEDCBA], dtype="<i4")
-        wav_data = mic._audio_to_wav(audio)
+        wav_data = mic._pcm_to_wav(audio)
 
         assert isinstance(wav_data, np.ndarray)
         assert wav_data.dtype == np.uint8
@@ -347,12 +348,12 @@ class TestWAVFileFormats:
 
     def test_audio_to_wav_s24_be_format(self):
         """Test converting S24_BE (24-bit big-endian) audio data to WAV."""
-        mic = MockMicrophone(format="S24_BE")
+        mic = MockMicrophone(format=(">i4", True))
 
         # Create 24-bit audio packed in 32-bit big-endian containers (LSB padding)
         # Using valid signed int32 values
         audio = np.array([0x12345600, 0x0789AB00, -0x01234600], dtype=">i4")
-        wav_data = mic._audio_to_wav(audio)
+        wav_data = mic._pcm_to_wav(audio)
 
         assert isinstance(wav_data, np.ndarray)
         assert wav_data.dtype == np.uint8
@@ -367,19 +368,19 @@ class TestWAVFileFormats:
 
     def test_audio_to_wav_s24_le_preserves_values(self):
         """Test that S24_LE conversion preserves 24-bit audio values."""
-        mic = MockMicrophone(format="S24_LE")
+        mic = MockMicrophone(format=("<i4", True))
 
         # S24_LE format: 24-bit audio in the 3 MSB of 32-bit LE container, padding in LSB
         audio = np.array(
             [
-                0x11000000,  # Stored as: [0x00, 0x00, 0x00, 0x11] -> extract significant bytes 1-3: [0x00, 0x00, 0x11]
-                0x00110000,  # Stored as: [0x00, 0x00, 0x11, 0x00] -> extract significant bytes 1-3: [0x00, 0x11, 0x00]
-                0x00001100,  # Stored as: [0x00, 0x11, 0x00, 0x00] -> extract significant bytes 1-3: [0x11, 0x00, 0x00]
+                0x11000000,  # Stored in LE as: [0x00, 0x00, 0x00, 0x11] -> extract significant bytes 1-3: [0x00, 0x00, 0x11]
+                0x00110000,  # Stored in LE as: [0x00, 0x00, 0x11, 0x00] -> extract significant bytes 1-3: [0x00, 0x11, 0x00]
+                0x00001100,  # Stored in LE as: [0x00, 0x11, 0x00, 0x00] -> extract significant bytes 1-3: [0x11, 0x00, 0x00]
             ],
             dtype="<i4",
         )
 
-        wav_data = mic._audio_to_wav(audio)
+        wav_data = mic._pcm_to_wav(audio)
 
         with wave.open(io.BytesIO(wav_data.tobytes()), "rb") as wav:
             assert wav.getsampwidth() == 3
@@ -395,7 +396,7 @@ class TestWAVFileFormats:
 
     def test_audio_to_wav_s24_be_preserves_values(self):
         """Test that S24_BE conversion preserves 24-bit audio values."""
-        mic = MockMicrophone(format="S24_BE")
+        mic = MockMicrophone(format=(">i4", True))
 
         # S24_BE format: 24-bit audio in the 3 MSB of 32-bit BE container, padding in LSB
         audio = np.array(
@@ -407,7 +408,7 @@ class TestWAVFileFormats:
             dtype=">i4",
         )
 
-        wav_data = mic._audio_to_wav(audio)
+        wav_data = mic._pcm_to_wav(audio)
 
         with wave.open(io.BytesIO(wav_data.tobytes()), "rb") as wav:
             assert wav.getsampwidth() == 3
@@ -431,7 +432,7 @@ class TestWAVFileFloatConversion:
 
         # Test known values
         audio = np.array([0.0, 0.5, -0.5, 1.0, -1.0], dtype=np.float32)
-        wav_data = mic._audio_to_wav(audio)
+        wav_data = mic._pcm_to_wav(audio)
 
         with wave.open(io.BytesIO(wav_data.tobytes()), "rb") as wav:
             frames = wav.readframes(wav.getnframes())
@@ -447,7 +448,7 @@ class TestWAVFileFloatConversion:
 
         # Values outside valid range
         audio = np.array([-2.0, -1.5, 0.0, 1.5, 2.0], dtype=np.float32)
-        wav_data = mic._audio_to_wav(audio)
+        wav_data = mic._pcm_to_wav(audio)
 
         with wave.open(io.BytesIO(wav_data.tobytes()), "rb") as wav:
             frames = wav.readframes(wav.getnframes())
@@ -461,50 +462,31 @@ class TestWAVFileFloatConversion:
 class TestRecordingWithRealMicrophone:
     """Test recording with real microphone implementations (mocked hardware)."""
 
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.cards", return_value=MOCK_CARDS)
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_indexes", return_value=[0])
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_name")
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.pcms", return_value=MOCK_PCMS)
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.PCM")
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.mixers", return_value=[])
-    def test_alsa_microphone_record(self, mock_mixers, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
+    def test_alsa_microphone_record(self, pcm_registry):
         """Test recording with ALSA microphone (raw PCM)."""
-        mock_card_name.side_effect = lambda idx: [MOCK_CARDS[idx], f"USB Audio Device {idx}"]
-
-        pcm_instance = MagicMock()
-        mock_pcm.return_value = pcm_instance
-
-        # Mock audio data
-        test_data = np.arange(1024, dtype=np.int16)
-        pcm_instance.read.return_value = (1024, test_data.tobytes())
-
         mic = Microphone(device=0)
         mic.start()
 
-        recording = mic.record(duration=0.1)
+        # Mock audio data
+        test_data = np.arange(1024, dtype=np.int16)
+        pcm_instance = pcm_registry.get_last_instance()
+        pcm_instance.read.return_value = (test_data.shape[0], test_data.tobytes())
+
+        recording = mic.record_pcm(duration=0.1)
 
         assert isinstance(recording, np.ndarray)
         assert len(recording) > 0
         assert recording.dtype == np.int16
 
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.cards", return_value=MOCK_CARDS)
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_indexes", return_value=[0])
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.card_name")
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.pcms", return_value=MOCK_PCMS)
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.PCM")
-    @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.mixers", return_value=[])
-    def test_alsa_microphone_record_wav(self, mock_mixers, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
+    def test_alsa_microphone_record_wav(self, pcm_registry):
         """Test recording WAV format with ALSA microphone."""
-        mock_card_name.side_effect = lambda idx: [MOCK_CARDS[idx], f"USB Audio Device {idx}"]
-
-        pcm_instance = MagicMock()
-        mock_pcm.return_value = pcm_instance
-
-        test_data = np.arange(1024, dtype=np.int16)
-        pcm_instance.read.return_value = (1024, test_data.tobytes())
 
         mic = Microphone(device=0)
         mic.start()
+
+        test_data = np.arange(1024, dtype=np.int16)
+        pcm_instance = pcm_registry.get_last_instance()
+        pcm_instance.read.return_value = (test_data.shape[0], test_data.tobytes())
 
         wav_data = mic.record_wav(duration=0.1)
 
@@ -522,44 +504,21 @@ class TestRecordingBufferManagement:
 
     def test_record_preallocates_buffer(self):
         """Test that record preallocates buffer for efficiency."""
-        mic = MockMicrophone(sample_rate=16000, chunk_size=1024)
+        mic = MockMicrophone(sample_rate=16000, buffer_size=1024)
         mic.start()
 
-        recording = mic.record(duration=0.1)
+        recording = mic.record_pcm(duration=0.1)
 
         # Should complete without errors
         assert isinstance(recording, np.ndarray)
 
-    def test_record_timeout_when_insufficient_data(self):
-        """Test that record times out when microphone stops producing data."""
-
-        class LimitedMockMic(MockMicrophone):
-            def __init__(self, *args, **kwargs):
-                super().__init__(*args, **kwargs)
-                self.max_chunks = 2
-
-            def _read_audio(self):
-                if self._chunk_counter >= self.max_chunks:
-                    return None
-                return super()._read_audio()
-
-        mic = LimitedMockMic(sample_rate=16000, chunk_size=1024)
-        mic.start()
-
-        # Request longer duration than available - should timeout
-        with pytest.raises(TimeoutError) as exc_info:
-            mic.record(duration=1.0, timeout_factor=0.5)
-
-        # Error should mention the timeout
-        assert "timeout" in str(exc_info.value).lower()
-
     def test_record_handles_partial_chunks(self):
         """Test that record handles partial last chunk correctly."""
-        mic = MockMicrophone(sample_rate=16000, chunk_size=1000)
+        mic = MockMicrophone(sample_rate=16000, buffer_size=1000)
         mic.start()
 
         # Very short duration that won't align with chunk boundaries
-        recording = mic.record(duration=0.01)
+        recording = mic.record_pcm(duration=0.01)
 
         assert len(recording) > 0
 
@@ -570,13 +529,13 @@ class TestRecordingDataIntegrity:
     def test_recording_preserves_data_order(self):
         """Test that recording preserves chunk order."""
         sample_rate = 16000
-        chunk_size = 100
+        buffer_size = 100
         duration = 0.05  # 0.05s * 16000 Hz = 800 samples = 8 chunks of 100
 
-        mic = MockMicrophone(sample_rate=sample_rate, chunk_size=chunk_size)
+        mic = MockMicrophone(sample_rate=sample_rate, buffer_size=buffer_size)
         mic.start()
 
-        recording = mic.record(duration=duration)
+        recording = mic.record_pcm(duration=duration)
 
         # Should have exactly 800 samples
         expected_samples = int(duration * sample_rate)
@@ -599,7 +558,7 @@ class TestRecordingDataIntegrity:
 
         # Create test pattern
         original = np.array([0, 1000, -1000, 32000, -32000], dtype=np.int16)
-        wav_data = mic._audio_to_wav(original)
+        wav_data = mic._pcm_to_wav(original)
 
         # Load back
         with wave.open(io.BytesIO(wav_data.tobytes()), "rb") as wav:
@@ -609,213 +568,57 @@ class TestRecordingDataIntegrity:
         np.testing.assert_array_equal(original, loaded)
 
 
-class SparseMicrophone(BaseMicrophone):
-    """Mock microphone that returns None chunks intermittently to simulate sparse audio."""
-
-    def __init__(self, none_ratio=0.5, *args, **kwargs):
-        """
-        Args:
-            none_ratio: Ratio of None chunks to return (0.0 to 1.0).
-                0.5 means roughly 50% of capture() calls return None.
-            args: Passed to BaseMicrophone.
-            kwargs: Passed to BaseMicrophone.
-        """
-        super().__init__(*args, **kwargs)
-        self._chunk_counter = 0
-        self._none_ratio = none_ratio
-
-    def _open_microphone(self):
-        pass
-
-    def _close_microphone(self):
-        pass
-
-    def _read_audio(self):
-        self._chunk_counter += 1
-        # Return None roughly none_ratio% of the time
-        if self._none_ratio > 0:
-            freq = max(2, int(1 / self._none_ratio))
-            if (self._chunk_counter % freq) == 0:
-                return None
-        return np.full(self.chunk_size, 1, dtype=np.int16)
-
-
-class NeverProducingMicrophone(BaseMicrophone):
-    """Mock microphone that never produces audio."""
-
-    def _open_microphone(self):
-        pass
-
-    def _close_microphone(self):
-        pass
-
-    def _read_audio(self):
-        return None
-
-
 class TestRecordingRobustness:
     """Test recording robustness with sparse or missing audio."""
 
-    def test_record_with_sparse_audio_returns_correct_duration(self):
+    def test_record_with_sparse_audio_returns_correct_num_samples(self):
         """Test that record returns correct audio duration even with sparse chunks."""
+
+        class SparseMicrophone(MockMicrophone):
+            """
+            Mock microphone that returns None chunks with specified ratio
+            to simulate sparse audio generation.
+            """
+
+            def __init__(self, none_ratio=0.5, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self._none_ratio = none_ratio
+                self._chunk_counter = 0
+
+            def _read_audio(self) -> np.ndarray | None:
+                self._chunk_counter += 1
+                # Return None roughly none_ratio% of the time
+                if self._none_ratio > 0:
+                    freq = max(2, int(1 / self._none_ratio))
+                    if (self._chunk_counter % freq) == 0:
+                        return None
+                return np.full(self.buffer_size, 1, dtype=np.int16)
+
         sample_rate = 16000
-        chunk_size = 1024
+        buffer_size = 1024
         duration = 0.2
 
         # 50% of chunks are None
-        mic = SparseMicrophone(none_ratio=0.5, sample_rate=sample_rate, chunk_size=chunk_size)
+        mic = SparseMicrophone(none_ratio=0.5, sample_rate=sample_rate, buffer_size=buffer_size)
         mic.start()
 
-        recording = mic.record(duration=duration)
+        recording = mic.record_pcm(duration=duration)
 
         # Should still get the correct number of samples
         expected_samples = int(duration * sample_rate)
         assert len(recording) == expected_samples
 
-    def test_record_with_sparse_audio_takes_longer_wall_clock_time(self):
-        """Test that sparse audio takes longer wall-clock time but returns correct duration."""
-        sample_rate = 16000
-        duration = 0.1
+    def test_record_fails_when_no_initial_audio(self):
+        """Test that record fails when no initial audio is produced."""
 
-        # 80% of chunks are None
-        mic = SparseMicrophone(none_ratio=0.8, sample_rate=sample_rate, chunk_size=512)
-        mic.start()
+        class NeverProducingMicrophone(MockMicrophone):
+            """Mock microphone that never produces audio."""
 
-        recording = mic.record(duration=duration, timeout_factor=5.0)
+            def _read_audio(self):
+                return None
 
-        # Recording should still have correct number of samples
-        expected_samples = int(duration * sample_rate)
-        assert len(recording) == expected_samples
-
-    def test_record_timeout_when_no_initial_audio(self):
-        """Test that record times out when no initial audio is produced."""
         mic = NeverProducingMicrophone(sample_rate=16000)
         mic.start()
 
-        with pytest.raises(TimeoutError) as exc_info:
-            mic.record(duration=0.1, timeout_factor=0.5)
-
-        assert "No audio data received" in str(exc_info.value)
-
-    def test_record_timeout_when_audio_becomes_sparse(self):
-        """Test that record times out when audio stream becomes too sparse."""
-
-        class BecomesSparseMicrophone(BaseMicrophone):
-            """Produces audio initially, then stops."""
-
-            def __init__(self, *args, **kwargs):
-                super().__init__(*args, **kwargs)
-                self._chunk_counter = 0
-
-            def _open_microphone(self):
-                pass
-
-            def _close_microphone(self):
-                pass
-
-            def _read_audio(self):
-                self._chunk_counter += 1
-                # Return audio for first 5 chunks, then None forever
-                if self._chunk_counter <= 5:
-                    return np.full(self.chunk_size, 1, dtype=np.int16)
-                return None
-
-        mic = BecomesSparseMicrophone(sample_rate=16000, chunk_size=1024)
-        mic.start()
-
-        # Request long duration with tight timeout
-        with pytest.raises(TimeoutError) as exc_info:
-            mic.record(duration=1.0, timeout_factor=0.2)
-
-        error_msg = str(exc_info.value)
-        assert "Recording timeout" in error_msg
-        assert "collected" in error_msg
-        assert "target:" in error_msg
-
-    def test_record_timeout_includes_diagnostic_info(self):
-        """Test that timeout error includes useful diagnostic information."""
-        mic = NeverProducingMicrophone(sample_rate=16000)
-        mic.start()
-
-        duration = 0.5
-        timeout_factor = 0.2
-
-        with pytest.raises(TimeoutError) as exc_info:
-            mic.record(duration=duration, timeout_factor=timeout_factor)
-
-        error_msg = str(exc_info.value)
-        # Should mention the timeout value
-        assert str(duration * timeout_factor) in error_msg or f"{duration * timeout_factor:.2f}" in error_msg
-
-    def test_record_with_valid_timeout_factor(self):
-        """Test that record works with custom timeout_factor."""
-        # Very sparse audio (90% None)
-        mic = SparseMicrophone(none_ratio=0.9, sample_rate=16000, chunk_size=1024)
-        mic.start()
-
-        # With generous timeout, should succeed
-        recording = mic.record(duration=0.1, timeout_factor=5.0)
-
-        expected_samples = int(0.1 * 16000)
-        assert len(recording) == expected_samples
-
-    def test_record_no_busy_wait_on_none_chunks(self):
-        """Test that record doesn't busy-wait when receiving None chunks."""
-
-        class SlowSparseMicrophone(BaseMicrophone):
-            """Tracks how many times _read_audio is called."""
-
-            def __init__(self, *args, **kwargs):
-                super().__init__(*args, **kwargs)
-                self._read_count = 0
-
-            def _open_microphone(self):
-                pass
-
-            def _close_microphone(self):
-                pass
-
-            def _read_audio(self):
-                self._read_count += 1
-                # Return None 80% of the time
-                if self._read_count % 5 == 0:
-                    return np.full(self.chunk_size, 1, dtype=np.int16)
-                return None
-
-        mic = SlowSparseMicrophone(sample_rate=16000, chunk_size=1024)
-        mic.start()
-
-        mic.record(duration=0.05, timeout_factor=3.0)
-
-        # If there was busy-waiting, _read_audio would be called millions of times
-        # With sleep(0.001), it should be reasonable
-        # For 0.05s of audio at 16000Hz with chunk_size=1024, we need ~1 chunk
-        # With 80% None rate, we need ~5 calls per chunk, so maybe 10-50 calls total
-        assert mic._read_count < 10000, f"Too many read attempts: {mic._read_count} (possible busy-wait)"
-
-    def test_record_exact_sample_count_with_sparse_audio(self):
-        """Test that record returns exactly the requested number of samples."""
-        sample_rate = 22050
-        duration = 0.123
-        expected_samples = int(duration * sample_rate)
-
-        # Sparse audio
-        mic = SparseMicrophone(none_ratio=0.6, sample_rate=sample_rate, chunk_size=512)
-        mic.start()
-
-        recording = mic.record(duration=duration, timeout_factor=3.0)
-
-        # Should be exact
-        assert len(recording) == expected_samples
-
-    def test_record_default_timeout_factor(self):
-        """Test that default timeout_factor of 2.0 is reasonable."""
-        # Moderately sparse (40% None)
-        mic = SparseMicrophone(none_ratio=0.4, sample_rate=16000, chunk_size=1024)
-        mic.start()
-
-        # Should work with default timeout_factor
-        recording = mic.record(duration=0.1)  # Uses default timeout_factor=2.0
-
-        expected_samples = int(0.1 * 16000)
-        assert len(recording) == expected_samples
+        with pytest.raises(MicrophoneReadError):
+            mic.record_pcm(duration=0.1)
