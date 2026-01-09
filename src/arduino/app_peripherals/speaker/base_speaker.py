@@ -2,12 +2,12 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import time
+import threading
+from typing import Literal
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-import threading
-import time
-from typing import Literal
 
 import numpy as np
 
@@ -15,6 +15,9 @@ from .errors import SpeakerConfigError, SpeakerOpenError, SpeakerWriteError
 from arduino.app_utils import Logger
 
 logger = Logger("Speaker")
+
+type FormatPlain = type | np.dtype | str
+type FormatPacked = tuple[FormatPlain, bool]
 
 
 class BaseSpeaker(ABC):
@@ -24,14 +27,14 @@ class BaseSpeaker(ABC):
     This class defines the common interface that all speaker implementations must follow,
     providing a unified API regardless of the underlying audio playback protocol or type.
 
-    The input is always a NumPy array with the ALSA PCM format.
+    The input is always a NumPy array with the PCM format.
     """
 
     def __init__(
         self,
         sample_rate: int,
         channels: int,
-        format: type | np.dtype | str,
+        format: FormatPlain | FormatPacked,
         buffer_size: int,
         auto_reconnect: bool,
     ):
@@ -41,10 +44,11 @@ class BaseSpeaker(ABC):
         Args:
             sample_rate (int): Sample rate in Hz.
             channels (int): Number of audio channels.
-            format (type | np.dtype | str): Audio format as numpy dtype, type, or string:
+            format (FormatPlain | FormatPacked): Audio format as one of:
                 - Type classes: np.int16, np.float32, np.uint8
-                - Dtype objects: np.dtype('<i2'), np.dtype('>f4')
+                - dtype objects: np.dtype('<i2'), np.dtype('>f4')
                 - Strings: 'int16', '<i2', '>f4', 'float32'
+                - Tuple of (format, is_packed): to specify if the format is packed (e.g. 24-bit audio)
             buffer_size (int): Size of the audio buffer.
             auto_reconnect (bool, optional): Enable automatic reconnection on failure. Default: True.
 
@@ -54,12 +58,26 @@ class BaseSpeaker(ABC):
         if sample_rate <= 0:
             raise SpeakerConfigError("Sample rate must be positive")
         self.sample_rate = sample_rate
+
         if channels <= 0:
             raise SpeakerConfigError("Number of channels must be positive")
         self.channels = channels
-        if format is None or (isinstance(format, str) and format.strip() == ""):
-            raise SpeakerConfigError("Format must be a non-empty string")
-        self.format: np.dtype = np.dtype(format)
+
+        if format is None:
+            raise SpeakerConfigError("Format must be specified")
+        if isinstance(format, tuple):
+            if len(format) != 2:
+                raise SpeakerConfigError("Format tuple must be of the form (format: FormatPlain, is_packed: bool)")
+            format, self.format_is_packed = format
+        else:
+            self.format_is_packed = False
+        if isinstance(format, str) and format.strip() == "":
+            raise SpeakerConfigError("Format must be a non-empty string or a valid numpy dtype/type or a tuple")
+        try:
+            self.format: np.dtype = np.dtype(format)
+        except TypeError as e:
+            raise SpeakerConfigError(f"Invalid format: {format}") from e
+
         if buffer_size <= 0:
             raise SpeakerConfigError("Buffer size must be positive")
         self.buffer_size = buffer_size
@@ -82,6 +100,31 @@ class BaseSpeaker(ABC):
         self._status: Literal["disconnected", "connected"] = "disconnected"
         self._on_status_changed_cb: Callable[[str, dict], None] | None = None
         self._event_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="SpeakerCallbacksRunner")
+
+    @property
+    def volume(self) -> int:
+        """
+        Get or set the speaker volume level.
+
+        This controls the software volume of the speaker device.
+
+        Args:
+            volume (int): Software volume level (0-100).
+
+        Returns:
+            int: Current volume level (0-100).
+
+        Raises:
+            ValueError: If the volume is not valid.
+        """
+        return int(self._volume * 100)
+
+    @volume.setter
+    def volume(self, volume: int):
+        if not (0 <= volume <= 100):
+            raise ValueError("Volume must be between 0 and 100.")
+
+        self._volume = volume / 100.0
 
     @property
     def status(self) -> Literal["disconnected", "connected"]:
@@ -134,48 +177,27 @@ class BaseSpeaker(ABC):
             except Exception as e:
                 self.logger.warning(f"Failed to stop speaker: {e}")
 
-    @property
-    def volume(self) -> int:
-        """
-        Get or set the speaker volume level.
-
-        This controls the hardware volume of the speaker device.
-
-        Args:
-            volume (int): Hardware volume level (0-100).
-
-        Returns:
-            int: Current volume level (0-100).
-
-        Raises:
-            ValueError: If the volume is not valid.
-        """
-        return int(self._volume * 100)
-
-    @volume.setter
-    def volume(self, volume: int):
-        if not (0 <= volume <= 100):
-            raise ValueError("Volume must be between 0 and 100.")
-
-        self._volume = volume / 100.0
-
     def play(self, audio_chunk: np.ndarray):
         """
         Play an audio chunk on the speaker.
 
         Args:
-            audio_chunk (np.ndarray): NumPy array in ALSA PCM format.
+            audio_chunk (np.ndarray): NumPy array in PCM format.
 
         Raises:
             SpeakerWriteError: If the speaker is not started.
+            ValueError: If audio_chunk is empty or invalid.
             Exception: If the underlying implementation fails to write a frame.
         """
         with self._spkr_lock:
             if not self.is_started():
                 raise SpeakerWriteError(f"Attempted to write to {self.name} before starting it.")
 
+            if audio_chunk is None or len(audio_chunk) == 0:
+                raise ValueError("Audio data must not be empty.")
+
             if audio_chunk.dtype != self.format:
-                raise SpeakerWriteError(f"Audio chunk with dtype {audio_chunk.dtype} does not match expected {self.format}")
+                raise ValueError(f"Audio data with dtype {audio_chunk.dtype} does not match expected {self.format}.")
 
             # Apply software volume control
             if self._volume != 1.0:
@@ -183,8 +205,177 @@ class BaseSpeaker(ABC):
 
             self._write_audio(audio_chunk)
 
-    # TODO: add play_pcm method
-    # TODO: add play_wav method
+    def play_pcm(self, pcm_audio: np.ndarray) -> None:
+        """
+        Play raw PCM audio data.
+
+        Args:
+            pcm_audio (np.ndarray): Raw PCM audio data in PCM format.
+
+        Raises:
+            SpeakerOpenError: If speaker can't be opened or reopened.
+            SpeakerWriteError: If speaker is not started.
+            ValueError: If pcm_audio is empty or invalid.
+            Exception: If the underlying implementation fails to write a frame.
+        """
+        if pcm_audio is None or len(pcm_audio) == 0:
+            raise ValueError("Audio data cannot be empty")
+
+        if pcm_audio.dtype != self.format:
+            raise ValueError(f"Audio data with dtype {pcm_audio.dtype} does not match expected {self.format}")
+
+        offset = 0
+        total_samples = len(pcm_audio)
+        while offset < total_samples:
+            chunk_size = min(self.buffer_size * self.channels, total_samples - offset)
+            chunk = pcm_audio[offset : offset + chunk_size]
+
+            self.play(chunk)
+
+            offset += chunk_size
+
+    def play_wav(self, wav_audio: np.ndarray) -> None:
+        """
+        Play audio from WAV format data.
+        Note: Only uncompressed PCM WAV files are supported.
+
+        Args:
+            wav_audio (np.ndarray): WAV format audio data (including header).
+
+        Raises:
+            SpeakerOpenError: If speaker can't be opened or reopened.
+            SpeakerWriteError: If speaker is not started.
+            ValueError: If wav_audio is empty or invalid.
+            Exception: If the underlying implementation fails to write a frame.
+        """
+        pcm_audio = self._wav_to_pcm(wav_audio)
+        self.play_pcm(pcm_audio)
+
+    def _wav_to_pcm(self, wav_audio: np.ndarray) -> np.ndarray:
+        """
+        Convert WAV format data to raw PCM audio data.
+
+        This is the inverse of the _audio_to_wav method in the microphone class.
+
+        Args:
+            wav_audio (np.ndarray): WAV format audio data (including header).
+
+        Returns:
+            np.ndarray: Raw PCM audio data in ALSA PCM format.
+
+        Raises:
+            ValueError: If WAV data is invalid or format is unsupported.
+        """
+        import io
+        import wave
+
+        if wav_audio is None or len(wav_audio) == 0:
+            raise ValueError("WAV data cannot be empty")
+
+        # Read WAV from numpy array
+        buffer = io.BytesIO(wav_audio.tobytes())
+        try:
+            # By opening the wav file, wave will also validate the PCM format for us
+            with wave.open(buffer, "rb") as wav_file:
+                if wav_file.getcomptype() != "NONE":
+                    raise ValueError(f"Unsupported WAV compression type: {wav_file.getcomptype()}. Only uncompressed PCM format is supported.")
+
+                wav_channels = wav_file.getnchannels()
+                wav_sampwidth = wav_file.getsampwidth()
+                wav_framerate = wav_file.getframerate()
+                wav_frames = wav_file.readframes(wav_file.getnframes())
+
+                if wav_channels != self.channels:
+                    raise ValueError(f"WAV channels ({wav_channels}) do not match speaker channels ({self.channels})")
+                if wav_framerate != self.sample_rate:
+                    raise ValueError(f"WAV sample rate ({wav_framerate}Hz) does not match speaker sample rate ({self.sample_rate}Hz)")
+
+                spk_dtype_kind = self.format.kind
+                spk_dtype_size = self.format.itemsize
+
+                # Convert based on expected output format
+                if spk_dtype_kind == "i":  # Signed integer
+                    if spk_dtype_size == 1:  # int8
+                        if wav_sampwidth != 1:
+                            raise ValueError(f"WAV sample width ({wav_sampwidth}) incompatible with int8 format")
+                        # WAV stores 8-bit as unsigned - must convert
+                        wav_array = np.frombuffer(wav_frames, dtype=np.uint8)
+                        pcm_audio = (wav_array.astype(np.int16) - 128).astype(np.int8)
+                    elif spk_dtype_size == 2:  # int16
+                        if wav_sampwidth != 2:
+                            raise ValueError(f"WAV sample width ({wav_sampwidth}) incompatible with int16 format")
+                        pcm_audio = np.frombuffer(wav_frames, dtype="<i2")
+                    elif spk_dtype_size == 4:  # int32 or int24 in int32 container
+                        # Check if this is 24-bit audio
+                        if wav_sampwidth == 3:
+                            # Need to pack 24-bit samples into 32-bit containers (LSB padding per ALSA)
+                            import sys
+
+                            wav_bytes = np.frombuffer(wav_frames, dtype=np.uint8)
+                            num_samples = len(wav_bytes) // 3
+                            audio_bytes = np.zeros(num_samples * 4, dtype=np.uint8)
+
+                            if sys.byteorder == "little":
+                                # On LE system: LSB padding goes at byte 0, audio bytes at 1-3
+                                audio_bytes.reshape(-1, 4)[:, 1:4] = wav_bytes.reshape(-1, 3)
+                            else:
+                                # On BE system: LSB padding goes at byte 3, audio bytes at 0-2
+                                audio_bytes.reshape(-1, 4)[:, :3] = wav_bytes.reshape(-1, 3)
+
+                            pcm_audio = audio_bytes.view(np.int32)
+                        elif wav_sampwidth == 4:
+                            # True 32-bit audio
+                            pcm_audio = np.frombuffer(wav_frames, dtype="<i4")
+                        else:
+                            raise ValueError(f"WAV sample width ({wav_sampwidth}) incompatible with int32 format (expected 3 or 4)")
+                    else:
+                        raise ValueError(f"Unsupported signed integer size: {spk_dtype_size} bytes. Supported: 1, 2, 4.")
+
+                elif spk_dtype_kind == "u":  # Unsigned integer
+                    if spk_dtype_size == 1:  # uint8
+                        if wav_sampwidth != 1:
+                            raise ValueError(f"WAV sample width ({wav_sampwidth}) incompatible with uint8 format")
+                        pcm_audio = np.frombuffer(wav_frames, dtype=np.uint8)
+                    elif spk_dtype_size == 2:  # uint16
+                        if wav_sampwidth != 2:
+                            raise ValueError(f"WAV sample width ({wav_sampwidth}) incompatible with uint16 format")
+                        # WAV stores 16-bit as signed - must convert
+                        wav_array = np.frombuffer(wav_frames, dtype="<i2")
+                        pcm_audio = (wav_array.astype(np.int32) + 32768).astype(np.uint16)
+                    elif spk_dtype_size == 4:  # uint32
+                        if wav_sampwidth != 4:
+                            raise ValueError(f"WAV sample width ({wav_sampwidth}) incompatible with uint32 format")
+                        # WAV stores 32-bit as signed - must convert
+                        wav_array = np.frombuffer(wav_frames, dtype="<i4")
+                        pcm_audio = (wav_array.astype(np.int64) + 2147483648).astype(np.uint32)
+                    else:
+                        raise ValueError(f"Unsupported unsigned integer size: {spk_dtype_size} bytes. Supported: 1, 2, 4.")
+
+                elif spk_dtype_kind == "f":  # Float
+                    # WAV stores as int16 or int32, need to convert to normalized float [-1.0, 1.0]
+                    if wav_sampwidth == 2:
+                        wav_array = np.frombuffer(wav_frames, dtype="<i2")
+                        pcm_audio = (wav_array.astype(self.format) / 32767.0).astype(np.float32)
+                    elif wav_sampwidth == 4:
+                        wav_array = np.frombuffer(wav_frames, dtype="<i4")
+                        pcm_audio = (wav_array.astype(self.format) / 2147483647.0).astype(np.float64)
+                    else:
+                        raise ValueError(f"WAV sample width ({wav_sampwidth}) incompatible with float format (expected 2 or 4)")
+
+                else:
+                    raise ValueError(f"Unsupported audio data type: {self.format}. Supported: int8/16/32, uint8/16/32, float32/64.")
+
+                # Handle output byte order if needed
+                if self.format.byteorder not in ("=", "|"):
+                    pcm_audio = pcm_audio.astype(self.format.newbyteorder(self.format.byteorder))
+
+                return pcm_audio
+
+        except wave.Error as e:
+            raise ValueError(f"Invalid WAV data: {e}")
+
+        except Exception as e:
+            raise ValueError(f"Error converting WAV to audio: {e}")
 
     def is_started(self) -> bool:
         """Check if the speaker is started."""
