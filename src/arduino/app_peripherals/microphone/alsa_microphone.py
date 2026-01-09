@@ -6,15 +6,14 @@ import os
 import re
 import time
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional
 
 import alsaaudio
 import numpy as np
 
-from .base_microphone import BaseMicrophone
-from .config import RATE_16K, CHANNELS_MONO, FORMAT_S16_LE, CHUNK_BALANCED
+from .base_microphone import BaseMicrophone, FormatPlain, FormatPacked
 from .errors import MicrophoneOpenError, MicrophoneReadError, MicrophoneConfigError
-from arduino.app_utils import Logger
+from arduino.app_utils.logger import Logger
 
 logger = Logger("ALSAMicrophone")
 
@@ -24,21 +23,18 @@ class ALSAMicrophone(BaseMicrophone):
     ALSA (Advanced Linux Sound Architecture) microphone implementation.
 
     This class handles local audio capture devices on Linux systems using ALSA.
-    It supports explicit ALSA device names (e.g., "plughw:CARD=USB,DEV=0").
     """
 
-    USB_MIC_1 = "usb:1"
-    """Shorthand for the first USB microphone available."""
-    USB_MIC_2 = "usb:2"
-    """Shorthand for the second USB microphone available."""
+    from .microphone import Microphone
 
     def __init__(
         self,
-        device: str | int = 0,
-        sample_rate: int = RATE_16K,
-        channels: int = CHANNELS_MONO,
-        format: str = FORMAT_S16_LE,
-        chunk_size: int = CHUNK_BALANCED,
+        device: str | int = Microphone.USB_MIC_1,
+        sample_rate: int = Microphone.RATE_16K,
+        channels: int = Microphone.CHANNELS_MONO,
+        format: FormatPlain | FormatPacked = np.int16,
+        buffer_size: int = Microphone.BUFFER_SIZE_BALANCED,
+        shared: bool = True,
         auto_reconnect: bool = True,
     ):
         """
@@ -46,60 +42,112 @@ class ALSAMicrophone(BaseMicrophone):
 
         Args:
             device (Union[str, int]): ALSA device identifier. Can be:
-                - int: Microphone index (e.g., 0, 1) - uses USB microphones list
-                - str: Microphone index as string (e.g., "0", "1")
-                - str: ALSA device name (e.g., "plughw:CARD=USB,DEV=0")
+                - int | str: device ordinal index (e.g., 0, 1, "0", "1", ...)
+                - str: device name (e.g., "plughw:CARD=MyCard,DEV=0", "hw:0,0", "CARD=MyCard,DEV=0")
+                - str: device file path (e.g., "/dev/snd/by-id/usb-My-Device-00")
+                - str: Microphone.USB_MIC_x macros
+                Default: Microphone.USB_MIC_1 - First USB microphone.
             sample_rate (int): Sample rate in Hz (default: 16000).
             channels (int): Number of audio channels (default: 1).
-            format (str): Audio format (default: "S16_LE").
-            chunk_size (int): Number of frames per chunk (default: 1024).
-            auto_reconnect (bool, optional): Enable automatic reconnection on failure. Default: True.
+            format (FormatPlain | FormatPacked): Audio format as one of:
+                - Type classes: np.int16, np.float32, np.uint8
+                - dtype objects: np.dtype('<i2'), np.dtype('>f4')
+                - Strings: 'int16', '<i2', '>f4', 'float32'
+                - Tuple of (format, is_packed): to specify if the format is packed (e.g. 24-bit audio)
+                Default: np.int16 - 16-bit signed platform-endian.
+            buffer_size (int): Size of the audio buffer (default: 1024).
+            shared (bool): ALSA device sharing mode.
+                - False: Opens the device in exclusive mode to provide lowest latency
+                    but another application will fail when this instance is using the device.
+                - True: Opens the device in shared mode to allow other applications to use
+                    it at the same time but introduces higher latency. Will fail when another
+                    instance is already using the device in exclusive mode.
+                Default: True.
+            auto_reconnect (bool, optional): Enable automatic reconnection on failure.
+                Default: True.
+
+            Note: When shared=True, only higher buffer size values are supported due to
+                ALSA limitations (~2000).
 
         Raises:
             MicrophoneConfigError: If the format is not supported.
         """
-        super().__init__(sample_rate, channels, format, chunk_size, auto_reconnect)
-
-        # Determine ALSA format and numpy dtype based on format
-        self._alsa_format, self._dtype = self._resolve_format_and_dtype(format)
-        if self._alsa_format is None or self._dtype is None:
-            raise MicrophoneConfigError(f"Unsupported ALSA format: {format}")
+        super().__init__(sample_rate, channels, format, buffer_size, auto_reconnect)
 
         try:
             self.device_stable_ref = self._resolve_stable_ref(device)  # e.g., "plughw:CARD=MyMic,DEV=0"
             self.name = self._resolve_name(self.device_stable_ref)  # Override parent name with a human-readable name
         except Exception as e:
             raise MicrophoneConfigError(f"Failed to look for microphone device '{device}': {e}")
+        self.shared = shared
         self.logger = logger
 
         self._pcm: Optional[alsaaudio.PCM] = None
-        self._mixer: Optional[alsaaudio.Mixer] = None
 
-        self._last_reconnection_attempt = 0.0  # Used for auto-reconnection when _read_frame is called
+        self._last_reconnection_attempt = 0.0  # Used for auto-reconnection when _read_audio is called
 
-    def _resolve_format_and_dtype(self, format: str) -> Tuple[str | None, np.dtype | None]:
-        """Get numpy dtype for audio format."""
-        # Mapping format string -> (ALSA PCM_FORMAT_*, numpy dtype)
-        format_map = {
-            "S8": ("PCM_FORMAT_S8", np.int8),
-            "U8": ("PCM_FORMAT_U8", np.uint8),
-            "S16_LE": ("PCM_FORMAT_S16_LE", "<i2"),
-            "S16_BE": ("PCM_FORMAT_S16_BE", ">i2"),
-            "U16_LE": ("PCM_FORMAT_U16_LE", "<u2"),
-            "U16_BE": ("PCM_FORMAT_U16_BE", ">u2"),
-            "S24_LE": ("PCM_FORMAT_S24_LE", "<i4"),  # 24-bit packed in 32-bit container
-            "S24_BE": ("PCM_FORMAT_S24_BE", ">i4"),  # 24-bit packed in 32-bit container
-            "S32_LE": ("PCM_FORMAT_S32_LE", "<i4"),
-            "S32_BE": ("PCM_FORMAT_S32_BE", ">i4"),
-            "U32_LE": ("PCM_FORMAT_U32_LE", "<u4"),
-            "U32_BE": ("PCM_FORMAT_U32_BE", ">u4"),
-            "FLOAT_LE": ("PCM_FORMAT_FLOAT_LE", "<f4"),
-            "FLOAT_BE": ("PCM_FORMAT_FLOAT_BE", ">f4"),
-            "FLOAT64_LE": ("PCM_FORMAT_FLOAT64_LE", "<f8"),
-            "FLOAT64_BE": ("PCM_FORMAT_FLOAT64_BE", ">f8"),
-        }
-        af, nf = format_map.get(format, (None, None))
-        return (af, np.dtype(nf)) if nf is not None else (None, None)
+    @property
+    def alsa_format_idx(self) -> int:
+        """Get the ALSA format index corresponding to the current numpy dtype format."""
+        return getattr(alsaaudio, "PCM_FORMAT_" + self.alsa_format_name)
+
+    @property
+    def alsa_format_name(self) -> str:
+        """Get the ALSA format string corresponding to the current numpy dtype format."""
+        return _dtype_to_alsa_format_name(self.format, self.format_is_packed)
+
+    @staticmethod
+    def list_devices() -> list:
+        """
+        Return a list of available ALSA microphones (plughw only).
+
+        Returns:
+            list: List of speakers in ALSA device name format.
+        """
+        devices = []
+        try:
+            for dev in alsaaudio.pcms(alsaaudio.PCM_CAPTURE):
+                if dev.startswith("plughw:CARD="):
+                    devices.append(dev.removeprefix("plughw:"))
+        except Exception as e:
+            logger.error(f"Error retrieving ALSA devices: {e}")
+            return []
+
+        return devices
+
+    @staticmethod
+    def list_usb_devices() -> list:
+        """
+        Return a list of available USB ALSA microphones (plughw only).
+
+        Returns:
+            list: List of USB microphones in ALSA device name format.
+        """
+        usb_devices = []
+        try:
+            cards = alsaaudio.cards()
+            card_indexes = alsaaudio.card_indexes()
+            card_map = {name: idx for idx, name in zip(card_indexes, cards)}
+            for card_name, card_index in card_map.items():
+                device_path = Path(f"/sys/class/sound/card{card_index}/device")
+                if not device_path.exists():
+                    continue
+
+                try:
+                    real_path = device_path.resolve()
+                    if "usb" in str(real_path).lower():
+                        # Find all hw and plughw devices for this card
+                        for dev in alsaaudio.pcms(alsaaudio.PCM_CAPTURE):
+                            if dev.startswith("plughw:CARD=") and f"CARD={card_name}," in dev:
+                                usb_devices.append(dev.removeprefix("plughw:"))
+
+                except Exception as e:
+                    logger.error(f"Error parsing card info for {card_name}: {e}")
+
+        except Exception as e:
+            logger.error(f"Error listing USB microphones: {e}")
+
+        return usb_devices
 
     def _resolve_stable_ref(self, identifier: str | int) -> str:
         """
@@ -121,11 +169,9 @@ class ALSAMicrophone(BaseMicrophone):
 
         resolved_device = ""
         if isinstance(identifier, str) and not identifier.isdigit():
-            from arduino.app_peripherals.microphone import Microphone  # Avoid circular import
-
-            if identifier in (Microphone.USB_MIC_1, Microphone.USB_MIC_2):
+            if identifier.startswith("usb:"):
                 # Resolve USB microphone by ordinal index
-                usb_index = int(identifier.replace("usb:", "")) - 1
+                usb_index = int(identifier.removeprefix("usb:")) - 1
                 usb_devices = self.list_usb_devices()
                 if not usb_devices:
                     raise RuntimeError("No USB microphones found")
@@ -142,50 +188,51 @@ class ALSAMicrophone(BaseMicrophone):
                 if base_name.startswith("controlC") and base_name[8:].isdigit():
                     card_idx = int(base_name[8:])
                     card_name = self._resolve_name(card_idx)
-                    resolved_device = f"plughw:CARD={card_name},DEV=0"
+                    resolved_device = f"CARD={card_name},DEV=0"
 
             else:
                 numeric_format_match = re.match(r"^(.+:)?(\d+),(\d+)$", identifier)
                 if numeric_format_match:
                     try:
-                        prefix = numeric_format_match.group(1)  # Returns None if no prefix
                         card_idx = int(numeric_format_match.group(2))
                         device_index = int(numeric_format_match.group(3))
                         card_name = self._resolve_name(card_idx)
-                        resolved_device = f"{prefix if prefix else ''}CARD={card_name},DEV={device_index}"
+                        resolved_device = f"CARD={card_name},DEV={device_index}"
                     except Exception as e:
                         raise RuntimeError(f"Failed to resolve card name for hw/plughw identifier {identifier}: {e}")
 
                 card_name_format_match = re.match(r"^(.+:)?CARD=([^,]+),DEV=(\d+)$", identifier)
                 if card_name_format_match:
-                    # Already in stable name format
-                    resolved_device = identifier if identifier.startswith("plughw:") or identifier.startswith("hw:") else f"plughw:{identifier}"
+                    if card_name_format_match.group(1) is not None:
+                        # Remove prefix like "plughw:" or "hw:"
+                        resolved_device = identifier.split(":", 1)[-1]
+                    else:
+                        # Already in stable name format
+                        resolved_device = identifier
 
         elif isinstance(identifier, int) or (isinstance(identifier, str) and identifier.isdigit()):
             # Treat as /dev/controlC<card_idx>, resolve audio device by card number
             card_idx = int(identifier)
             card_name = self._resolve_name(card_idx)
-            resolved_device = f"plughw:CARD={card_name},DEV=0"
-
-        if resolved_device not in all_devices:
-            raise RuntimeError(f"Resolved device '{resolved_device}' not found among available ALSA devices")
+            resolved_device = f"CARD={card_name},DEV=0"
 
         if resolved_device:
+            if resolved_device not in all_devices:
+                raise RuntimeError(f"Resolved device '{resolved_device}' not found among available ALSA devices")
             return resolved_device
 
         raise RuntimeError(f"Unsupported device identifier: {identifier}")
 
-    def _resolve_runtime_ref(self, device_stable_ref: str) -> tuple[str | None, int, int]:
+    def _resolve_runtime_ref(self, device_stable_ref: str) -> tuple[int, int]:
         """
-        Resolve an ALSA device name to runtime prefix, card and device indexes
-        that depend on current running system state.
+        Resolve an ALSA device name to runtime card and device indexes that
+        depend on current running system state.
 
         Args:
             device_stable_ref: ALSA device name
 
         Returns:
-            tuple: (prefix, card_index, device_index)
-                - prefix (str | None): Optional prefix (e.g., "plughw")
+            tuple: (card_index, device_index)
                 - card_index (int): ALSA card index
                 - device_index (int): ALSA device index
 
@@ -199,12 +246,11 @@ class ALSAMicrophone(BaseMicrophone):
         match = re.match(r"^(.+:)?CARD=([^,]+),DEV=(\d+)$", device_stable_ref)
         if match:
             try:
-                prefix = match.group(1)  # Returns None if no prefix
                 card_name = match.group(2)
                 device_index = int(match.group(3))
                 for card_idx, curr_card_name in enumerate(alsaaudio.cards()):  # Look for the card index
                     if curr_card_name == card_name:
-                        return prefix.replace(":", "") if prefix else None, card_idx, device_index
+                        return card_idx, device_index
 
             except Exception as e:
                 raise RuntimeError(f"Failed to resolve microphone runtime ref from stable ref {device_stable_ref}: {e}")
@@ -250,34 +296,57 @@ class ALSAMicrophone(BaseMicrophone):
         logger.debug(f"Opening PCM device: {self.device_stable_ref}")
 
         try:
-            _, card_idx, device_idx = self._resolve_runtime_ref(self.device_stable_ref)
-            device = f"card_{card_idx}_{device_idx}_mic_wr"
+            card_idx, device_idx = self._resolve_runtime_ref(self.device_stable_ref)
+            if self.shared:
+                device = f"plug_card_{card_idx}_dev_{device_idx}_mic"
+            else:
+                device = f"plughw:CARD={card_idx},DEV={device_idx}"
+
             self._pcm = alsaaudio.PCM(
                 type=alsaaudio.PCM_CAPTURE,
                 mode=alsaaudio.PCM_NORMAL,
                 device=device,
+                rate=self.sample_rate,
+                channels=self.channels,
+                format=self.alsa_format_idx,
+                periodsize=self.buffer_size,
             )
-            self._pcm.setchannels(self.channels)
-            self._pcm.setrate(self.sample_rate)
-            self._pcm.setformat(getattr(alsaaudio, self._alsa_format))
-            self._pcm.setperiodsize(self.chunk_size)
 
-            if self._mixer is not None:
-                self._mixer.close()
-            self._mixer = alsaaudio.Mixer(device)  # Load mixer for volume control
+            info = self._pcm.info()
+
+            actual_rate = info["rate"]
+            if self.sample_rate != actual_rate:
+                logger.warning(f"Requested sample rate {self.sample_rate}Hz not supported by {device}. Using {actual_rate}Hz instead.")
+                self.sample_rate = actual_rate
+
+            actual_channels = info["channels"]
+            if self.channels != actual_channels:
+                logger.warning(f"Requested channels {self.channels} not supported by {device}. Using {actual_channels} instead.")
+                self.channels = actual_channels
+
+            actual_format_name = info["format_name"]
+            if self.alsa_format_idx != info["format"]:
+                logger.warning(f"Requested format {self.alsa_format_name} not supported by {device}. Using {actual_format_name} instead.")
+                self.format = _alsa_format_name_to_dtype(actual_format_name)
+
+            actual_buffer_size = info["period_size"]
+            if self.buffer_size != actual_buffer_size:
+                logger.warning(f"Requested buffer_size {self.buffer_size} not supported by {device}. Using {actual_buffer_size} instead.")
+                self.buffer_size = actual_buffer_size
+
+        except MicrophoneOpenError:
+            raise
 
         except alsaaudio.ALSAAudioError as e:
             if "busy" in str(e):
                 raise MicrophoneOpenError(f"Microphone is busy. Close other audio applications and try again. ({self.device_stable_ref})")
-            elif "mixer" in str(e):
-                raise MicrophoneOpenError(f"Failed to open mixer for device ({self.device_stable_ref})")
             else:
                 raise RuntimeError(f"ALSA error opening microphone: {e}")
 
         except Exception as e:
             raise RuntimeError(f"Unexpected error opening microphone: {e}")
 
-        logger.debug(f"PCM opened with params: {self.device_stable_ref}, {self.sample_rate}Hz, {self.channels}ch, {self.format}")
+        logger.debug(f"PCM opened with params: {device}, {self.sample_rate}Hz, {self.channels}ch, {self.format}, {self.buffer_size} frames/IO")
 
     def _close_microphone(self) -> None:
         """Close the ALSA PCM device."""
@@ -290,10 +359,11 @@ class ALSAMicrophone(BaseMicrophone):
                 self._pcm = None
 
     def _read_audio(self) -> np.ndarray | None:
-        """Read a single audio chunk from the ALSA microphone.
+        """
+        Read a single audio chunk from the ALSA microphone.
 
-        Automatically attempts to reconnect if the device is disconnected until the device is
-        available again.
+        Automatically attempts to reconnect if the device is disconnected
+        until the device is available again.
         """
         try:
             if self._pcm is None:
@@ -310,13 +380,13 @@ class ALSAMicrophone(BaseMicrophone):
                 self._open_microphone()
                 self.logger.info(f"Successfully reopened microphone {self.name}")
 
-            length, data = self._pcm.read()
+            length, audio_chunk = self._pcm.read()
             if length == 0:
                 self.logger.debug("No audio data read from PCM device.")
                 return None
 
             try:
-                return np.frombuffer(data, dtype=self._dtype)
+                return np.frombuffer(audio_chunk, dtype=self.format)
             except Exception as e:
                 raise MicrophoneReadError(f"Error converting PCM data to numpy array: {e}")
 
@@ -329,7 +399,7 @@ class ALSAMicrophone(BaseMicrophone):
                 self._close_microphone()
                 return None
 
-            self.logger.error(f"Unexpected error reading audio: {e}")
+            self.logger.error(f"Unexpected error reading audio chunk: {e}")
             return None
 
     def _is_device_disconnected(self) -> bool:
@@ -341,91 +411,97 @@ class ALSAMicrophone(BaseMicrophone):
             logger.debug(f"Error checking device status: {e}")
             return True  # Assume disconnected if we can't check
 
-    def get_volume(self) -> int | None:
-        """Get the current volume level of the microphone.
 
-        Returns:
-            int: Volume level (0-100). If no mixer is available, returns None.
-        """
-        if self._mixer is None:
-            logger.warning("No mixer available for volume control")
-            return None
+def _dtype_to_alsa_format_name(dtype: np.dtype, is_packed: bool = False) -> str:
+    """
+    Map numpy dtype to ALSA PCM format name.
 
-        try:
-            return self._mixer.getvolume(pcmtype=alsaaudio.PCM_CAPTURE)[0]
-        except alsaaudio.ALSAAudioError as e:
-            logger.error(f"Error getting volume: {e}")
-            return None
+    Args:
+        dtype: Numpy dtype
+        is_packed: Whether the format is packed (e.g., 24-bit audio)
 
-    def set_volume(self, volume: int):
-        """Set the volume level of the microphone.
+    Returns:
+        ALSA format name (e.g., 'S16_LE')
 
-        Args:
-            volume (int): Volume level (0-100).
+    Raises:
+        MicrophoneConfigError: If dtype is unsupported
+    """
+    kind = dtype.kind
+    size = dtype.itemsize
+    byteorder = dtype.byteorder
 
-        Raises:
-            ValueError: If the volume is not between 0 and 100.
-        """
-        if self._mixer is None:
-            logger.warning("No mixer available for volume control")
-            return
+    # Determine endianness: '<' = little, '>' = big, '=' = native, '|' = not applicable
+    if byteorder == "=" or byteorder == "|":
+        # Native byte order or not applicable (single byte)
+        import sys
 
-        if not (0 <= volume <= 100):
-            raise ValueError("Volume must be between 0 and 100.")
+        byteorder = "<" if sys.byteorder == "little" else ">"
 
-        try:
-            self._mixer.setvolume(volume, pcmtype=alsaaudio.PCM_CAPTURE)
-        except alsaaudio.ALSAAudioError as e:
-            logger.error(f"Error setting volume: {e}")
-            return
+    # Signed integers
+    if kind == "i":
+        if size == 1:
+            return "S8"
+        elif size == 2:
+            return "S16_LE" if byteorder == "<" else "S16_BE"
+        elif size == 4:
+            if is_packed:
+                return "S24_LE" if byteorder == "<" else "S24_BE"
+            return "S32_LE" if byteorder == "<" else "S32_BE"
 
-    @staticmethod
-    def list_devices() -> list:
-        """Return a list of available ALSA microphones (plughw only).
+    # Unsigned integers
+    elif kind == "u":
+        if size == 1:
+            return "U8"
+        elif size == 2:
+            return "U16_LE" if byteorder == "<" else "U16_BE"
+        elif size == 4:
+            return "U32_LE" if byteorder == "<" else "U32_BE"
 
-        Returns:
-            list: List of ALSA device names.
-        """
-        devices = []
-        try:
-            for dev in alsaaudio.pcms(alsaaudio.PCM_CAPTURE):
-                if dev.startswith("hw:CARD=") or dev.startswith("plughw:CARD="):
-                    devices.append(dev)
-        except Exception as e:
-            logger.error(f"Error retrieving ALSA devices: {e}")
-            return []
+    # Floating point
+    elif kind == "f":
+        if size == 4:
+            return "FLOAT_LE" if byteorder == "<" else "FLOAT_BE"
+        elif size == 8:
+            return "FLOAT64_LE" if byteorder == "<" else "FLOAT64_BE"
 
-        return devices
+    raise MicrophoneConfigError(f"Unsupported numpy dtype for ALSA: {dtype}")
 
-    @staticmethod
-    def list_usb_devices() -> list:
-        """Return an ordered list of ALSA device names for available USB microphones (plughw only).
 
-        Returns:
-            list: List of USB microphone device names.
-        """
-        usb_devices = []
-        try:
-            cards = alsaaudio.cards()
-            card_indexes = alsaaudio.card_indexes()
-            card_map = {name: idx for idx, name in zip(card_indexes, cards)}
-            for card_name, card_index in card_map.items():
-                device_path = Path(f"/sys/class/sound/card{card_index}/device")
-                if not device_path.exists():
-                    continue
+def _alsa_format_name_to_dtype(alsa_format: str) -> np.dtype:
+    """
+    Map ALSA PCM format name to numpy dtype.
 
-                try:
-                    real_path = device_path.resolve()
-                    if "usb" in str(real_path).lower():
-                        # Find all plughw devices for this card
-                        for dev in alsaaudio.pcms(alsaaudio.PCM_CAPTURE):
-                            if dev.startswith("plughw:CARD=") and f"CARD={card_name}" in dev:
-                                usb_devices.append(dev)
+    Args:
+        alsa_format: ALSA format name (e.g., 'S16_LE')
 
-                except Exception as e:
-                    logger.error(f"Error parsing card info for {card_name}: {e}")
+    Returns:
+        Numpy dtype object, or None if unsupported
 
-        except Exception as e:
-            logger.error(f"Error listing USB microphones: {e}")
+    Raises:
+        MicrophoneOpenError: If conversion is unsupported
+    """
+    # Direct mapping from ALSA format to numpy dtype string
+    format_map = {
+        "S8": "int8",
+        "U8": "uint8",
+        "S16_LE": "<i2",
+        "S16_BE": ">i2",
+        "U16_LE": "<u2",
+        "U16_BE": ">u2",
+        "S24_LE": "<i4",  # 24-bit packed in 32-bit container
+        "S24_BE": ">i4",  # 24-bit packed in 32-bit container
+        "S32_LE": "<i4",
+        "S32_BE": ">i4",
+        "U32_LE": "<u4",
+        "U32_BE": ">u4",
+        "FLOAT_LE": "<f4",
+        "FLOAT_BE": ">f4",
+        "FLOAT64_LE": "<f8",
+        "FLOAT64_BE": ">f8",
+    }
 
-        return usb_devices
+    dtype_str = format_map.get(alsa_format)
+    if dtype_str is None:
+        raise MicrophoneOpenError(f"Unsupported conversion for ALSA format to numpy dtype: {alsa_format}")
+
+    return np.dtype(dtype_str)

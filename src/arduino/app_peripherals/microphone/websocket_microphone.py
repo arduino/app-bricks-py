@@ -15,8 +15,7 @@ from concurrent.futures import CancelledError, TimeoutError, Future
 from arduino.app_internal.core.peripherals import BPPCodec
 from arduino.app_utils import Logger
 
-from .base_microphone import BaseMicrophone
-from .config import RATE_16K, CHANNELS_MONO, FORMAT_S16_LE, CHUNK_BALANCED
+from .base_microphone import BaseMicrophone, FormatPlain, FormatPacked
 from .errors import MicrophoneConfigError, MicrophoneOpenError
 
 logger = Logger("WebSocketMicrophone")
@@ -41,6 +40,8 @@ class WebSocketMicrophone(BaseMicrophone):
     size specified during initialization.
     """
 
+    from .microphone import Microphone
+
     def __init__(
         self,
         port: int = 8080,
@@ -49,41 +50,46 @@ class WebSocketMicrophone(BaseMicrophone):
         use_tls: bool = False,
         secret: str = "",
         encrypt: bool = False,
-        sample_rate: int = RATE_16K,
-        channels: int = CHANNELS_MONO,
-        format: str = FORMAT_S16_LE,
-        chunk_size: int = CHUNK_BALANCED,
+        sample_rate: int = Microphone.RATE_16K,
+        channels: int = Microphone.CHANNELS_MONO,
+        format: FormatPlain | FormatPacked = np.int16,
+        buffer_size: int = Microphone.BUFFER_SIZE_BALANCED,
         auto_reconnect: bool = True,
     ):
         """
         Initialize WebSocket microphone server.
 
         Args:
-            port (int): Port to bind the server to
-            timeout (int): Connection timeout in seconds
-            certs_dir_path (str): Path to the directory containing TLS certificates
+            port (int): Port to bind the server to. Default: 8080.
+            timeout (int): Connection timeout in seconds. Default: 3.
+            certs_dir_path (str): Path to the directory containing TLS certificates.
+                Default: "/app/certs".
             use_tls (bool): Enable TLS for secure connections. If True, 'encrypt' will
                 be ignored. Use this for transport-level security with clients that can
                 accept self-signed certificates or when supplying your own certificates.
-            secret (str): Secret key for authentication/encryption (empty = security disabled)
-            encrypt (bool): Enable encryption (only effective if secret is provided)
-            sample_rate (int): Sample rate in Hz (default: 16000)
-            channels (int): Number of audio channels (default: 1)
-            format (str): Audio format (default: "S16_LE")
-            chunk_size (int): Number of frames per chunk (default: 1024). This parameter is advisory,
-                it's sent to clients to suggest an optimal chunk size but clients may ignore it.
-            auto_reconnect (bool): Enable automatic reconnection on failure
+                Default: False.
+            secret (str): Secret key for authentication/encryption (empty = security disabled).
+                Default: empty.
+            encrypt (bool): Enable encryption (only effective if secret is provided).
+                Default: False.
+            sample_rate (int): Sample rate in Hz. Default: 16000.
+            channels (int): Number of audio channels. Default: Microphone.CHANNELS_MONO - 1.
+            format (FormatPlain | FormatPacked): Audio format as one of:
+                - Type classes: np.int16, np.float32, np.uint8
+                - dtype objects: np.dtype('<i2'), np.dtype('>f4')
+                - Strings: 'int16', '<i2', '>f4', 'float32'
+                - Tuple of (format, is_packed): to specify if the format is packed (e.g. 24-bit audio)
+                Default: np.int16 - 16-bit signed platform-endian.
+            buffer_size (int): Number of frames per buffer (default: 1024). This parameter is advisory,
+                it's sent to clients to suggest an optimal buffer size but clients may ignore it.
+                Default: Microphone.BUFFER_SIZE_BALANCED - 1024.
+            auto_reconnect (bool): Enable automatic reconnection on failure.
         """
-        super().__init__(sample_rate, channels, format, chunk_size, auto_reconnect)
+        super().__init__(sample_rate, channels, format, buffer_size, auto_reconnect)
 
         if use_tls and encrypt:
             logger.warning("Encryption is redundant over TLS connections, disabling encryption.")
             encrypt = False
-
-        # Determine numpy dtype based on format
-        self._dtype = self._resolve_dtype(format)
-        if self._dtype is None:
-            raise MicrophoneConfigError(f"Unsupported format: {format}")
 
         self.codec = BPPCodec(secret, encrypt)
         self.secret = secret
@@ -139,79 +145,6 @@ class WebSocketMicrophone(BaseMicrophone):
             return "encrypted (ChaCha20-Poly1305)"
         else:
             return "authenticated (HMAC-SHA256)"
-
-    def _resolve_dtype(self, format: str) -> np.dtype | None:
-        """Get numpy dtype for audio format."""
-        # Mapping format string -> numpy dtype
-        format_map = {
-            "S8": np.int8,
-            "U8": np.uint8,
-            "S16_LE": "<i2",
-            "S16_BE": ">i2",
-            "U16_LE": "<u2",
-            "U16_BE": ">u2",
-            "S24_LE": "<i4",  # 24-bit packed in 32-bit container
-            "S24_BE": ">i4",  # 24-bit packed in 32-bit container
-            "S32_LE": "<i4",
-            "S32_BE": ">i4",
-            "U32_LE": "<u4",
-            "U32_BE": ">u4",
-            "FLOAT_LE": "<f4",
-            "FLOAT_BE": ">f4",
-            "FLOAT64_LE": "<f8",
-            "FLOAT64_BE": ">f8",
-        }
-        nf = format_map.get(format)
-        return np.dtype(nf) if nf else None
-
-    def _get_format_details(self, format: str) -> dict | None:
-        """Get detailed format information for clients by introspecting the numpy dtype."""
-        dtype = self._resolve_dtype(format)
-        if dtype is None:
-            return None
-
-        # Ensure we have a dtype for introspection
-        dt = np.dtype(dtype)
-
-        # Determine bit depth
-        bit_depth_override = {  # Special cases where bit depth differs from dtype size
-            "S24_LE": 24,  # 24-bit packed in 32-bit container
-            "S24_BE": 24,  # 24-bit packed in 32-bit container
-        }
-        if format in bit_depth_override:
-            bit_depth = bit_depth_override[format]
-        else:
-            bit_depth = dt.itemsize * 8
-
-        # Determine sample format from dtype kind
-        if dt.kind == "i":  # signed integer
-            sample_format = "signed_integer"
-        elif dt.kind == "u":  # unsigned integer
-            sample_format = "unsigned_integer"
-        elif dt.kind == "f":  # floating point
-            sample_format = "float"
-        else:
-            sample_format = "unknown"
-
-        # Determine byte order
-        if dt.byteorder == "<":
-            byte_order = "little_endian"
-        elif dt.byteorder == ">":
-            byte_order = "big_endian"
-        elif dt.byteorder == "|":
-            # Not applicable (single byte types like int8, uint8)
-            byte_order = "n/a"
-        else:
-            # Native byte order ('=') or other - determine from system
-            import sys
-
-            byte_order = "little_endian" if sys.byteorder == "little" else "big_endian"
-
-        return {
-            "bit_depth": bit_depth,
-            "sample_format": sample_format,
-            "byte_order": byte_order,
-        }
 
     def _open_microphone(self) -> None:
         """Start the WebSocket server."""
@@ -304,12 +237,11 @@ class WebSocketMicrophone(BaseMicrophone):
                     "security_mode": self.security_mode,
                     "sample_rate": self.sample_rate,
                     "channels": self.channels,
-                    "format": self.format,
-                    "chunk_size": self.chunk_size,
+                    "buffer_size": self.buffer_size,
                 }
 
                 # Add universal format details if available
-                format_details = self._get_format_details(self.format)
+                format_details = _get_format_details(self.format, self.format_is_packed)
                 if format_details:
                     welcome.update(format_details)
 
@@ -360,7 +292,7 @@ class WebSocketMicrophone(BaseMicrophone):
             self.logger.warning("Failed to decode message")
             return None
 
-        return np.frombuffer(decoded, dtype=self._dtype)
+        return np.frombuffer(decoded, dtype=self.format)
 
     def _close_microphone(self) -> None:
         """Stop the WebSocket server."""
@@ -407,7 +339,7 @@ class WebSocketMicrophone(BaseMicrophone):
     def _read_audio(self) -> np.ndarray | None:
         """Read a single audio chunk from the queue."""
         try:
-            return self._audio_queue.get(timeout=0.1)
+            return self._audio_queue.get(timeout=0.01)
         except queue.Empty:
             return None
 
@@ -431,3 +363,39 @@ class WebSocketMicrophone(BaseMicrophone):
             self.logger.warning(f"Client has already closed the connection with error: {e}")
         except Exception:
             raise
+
+
+def _get_format_details(format: np.dtype, is_packed: bool = False) -> dict | None:
+    """Get detailed format information for clients by introspecting the numpy dtype."""
+    bit_depth = format.itemsize * 8
+
+    # Determine sample format from dtype kind
+    if format.kind == "i":  # signed integer
+        sample_format = "signed_integer"
+    elif format.kind == "u":  # unsigned integer
+        sample_format = "unsigned_integer"
+    elif format.kind == "f":  # floating point
+        sample_format = "float"
+    else:
+        sample_format = "unknown"
+
+    # Determine byte order
+    if format.byteorder == "<":
+        byte_order = "little_endian"
+    elif format.byteorder == ">":
+        byte_order = "big_endian"
+    elif format.byteorder == "|":
+        # Not applicable (single byte types like int8, uint8)
+        byte_order = "n/a"
+    else:
+        # Native byte order ('='), determine from system
+        import sys
+
+        byte_order = "little_endian" if sys.byteorder == "little" else "big_endian"
+
+    return {
+        "format_type": sample_format,
+        "format_bit_depth": bit_depth,
+        "format_is_packed": is_packed,
+        "format_byte_order": byte_order,
+    }

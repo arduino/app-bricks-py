@@ -15,69 +15,21 @@ cat > "$ASOUND_CONF" << 'EOF'
 # Auto-generated ALSA configurations for sound cards 0-9 each with devices 0-4
 EOF
 
-
 for CARD_NUM in $(seq 0 $((MAX_CARDS - 1))); do
   for DEV_NUM in $(seq 0 $((MAX_DEVICES - 1))); do
     cat >> "$ASOUND_CONF" << EOF
 
 # Configuration for card $CARD_NUM, device $DEV_NUM
-pcm.card_${CARD_NUM}_${DEV_NUM}_dmix {
-    type dmix
-    ipc_key $((1024 + CARD_NUM * 10 + DEV_NUM))
-    ipc_key_add_uid true
-    slave {
-        pcm "hw:${CARD_NUM},${DEV_NUM}"
-    }
-}
-
-pcm.card_${CARD_NUM}_${DEV_NUM}_plug_dmix {
-    type plug
-    slave.pcm "card_${CARD_NUM}_${DEV_NUM}_dmix"
-}
-
-pcm.card_${CARD_NUM}_${DEV_NUM}_spk_wr {
-    type softvol
-    slave {
-        pcm "card_${CARD_NUM}_${DEV_NUM}_plug_dmix"
-    }
-    control {
-        name "card_${CARD_NUM}_${DEV_NUM}_spk_wr"
-        card ${CARD_NUM}
-    }
-}
-EOF
-  done
-done
-
-
-for CARD_NUM in $(seq 0 $((MAX_CARDS - 1))); do
-  for DEV_NUM in $(seq 0 $((MAX_DEVICES - 1))); do
-    cat >> "$ASOUND_CONF" << EOF
-
-# Configuration for card $CARD_NUM, device $DEV_NUM
-pcm.card_${CARD_NUM}_${DEV_NUM}_dsnoop {
+pcm.dsnoop_card_${CARD_NUM}_dev_${DEV_NUM}_mic {
     type dsnoop
-    ipc_key $((1124 + CARD_NUM * 10 + DEV_NUM))
+    ipc_key $((1224 + CARD_NUM * 10 + DEV_NUM))
     ipc_key_add_uid true
-    slave {
-        pcm "hw:${CARD_NUM},${DEV_NUM}"
-    }
+    slave.pcm "hw:${CARD_NUM},${DEV_NUM}"
 }
 
-pcm.card_${CARD_NUM}_${DEV_NUM}_softvol_dsnoop {
-    type softvol
-    slave.pcm "card_${CARD_NUM}_${DEV_NUM}_dsnoop"
-    control {
-        name "card_${CARD_NUM}_${DEV_NUM}_mic_wr"
-        card ${CARD_NUM}
-    }
-}
-
-pcm.card_${CARD_NUM}_${DEV_NUM}_mic_wr {
+pcm.plug_card_${CARD_NUM}_dev_${DEV_NUM}_mic {
     type plug
-    slave {
-        pcm "card_${CARD_NUM}_${DEV_NUM}_softvol_dsnoop"
-    }
+    slave.pcm "dsnoop_card_${CARD_NUM}_dev_${DEV_NUM}_mic"
 }
 EOF
   done
