@@ -34,20 +34,13 @@ class TelegramBot:
         """Register a handler for photo messages."""
         self.application.add_handler(MessageHandler(filters.PHOTO & ~filters.COMMAND, callback))
 
-    def send_message(self, chat_id: int, message_text: str):
+    async def send_message(self, chat_id: int, message_text: str):
         """Send a message to a specific chat ID."""
-        logger.info(f"Sending message to chat_id={chat_id if chat_id != 0 else self.chat_id}")
-        url = f"https://api.telegram.org/bot{self.token}/sendMessage"
-        payload = {
-            "chat_id": chat_id,
-            "text": message_text
-        }
+        logger.info(f"Sending message to chat_id={chat_id}")
         try:
-            response = requests.post(url, data=payload)
-            response.raise_for_status()   
+            await self.application.bot.send_message(chat_id=chat_id, text=message_text)
             logger.info("Message sent successfully!")
-            return response
-        except requests.exceptions.RequestException as e:
+        except Exception as e:
             logger.error(f"An error occurred: {e}")
             return None
 
