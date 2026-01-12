@@ -307,8 +307,14 @@ async def test_websocket_camera_client_events():
     def event_listener(event_type, data):
         if event_type == "connected":
             main_loop.call_soon_threadsafe(connected.set)
+            assert "client_address" in data
+            assert "client_name" in data
+            assert data["client_name"] == "test_client"
         if event_type == "disconnected":
             main_loop.call_soon_threadsafe(disconnected.set)
+            assert "client_address" in data
+            assert "client_name" in data
+            assert data["client_name"] == "test_client"
         events.append((event_type, data))
 
     camera = WebSocketCamera(port=0)
@@ -317,7 +323,7 @@ async def test_websocket_camera_client_events():
 
     # This should emit connection and disconnection events
     async def client_task():
-        async with websockets.connect(camera.url):
+        async with websockets.connect(camera.url+"?client_name=test_client"):
             pass
 
     # Run client concurrently to properly test event handling

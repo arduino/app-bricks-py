@@ -11,6 +11,7 @@ import numpy as np
 import cv2
 import websockets
 import asyncio
+from urllib.parse import urlparse, parse_qs
 from collections.abc import Callable
 from concurrent.futures import CancelledError, TimeoutError, Future
 
@@ -42,6 +43,10 @@ class WebSocketCamera(BaseCamera):
     - Security disabled (empty secret)
     - Authenticated (secret + encrypt=False) - HMAC-SHA256
     - Authenticated + Encrypted (secret + encrypt=True) - ChaCha20-Poly1305
+
+    When connecting, clients can specify a "client_name" parameter in the URL query string
+    to identify themselves. This name will be sanitized to allow only alphanumeric chars,
+    hyphens, and underscores, and limit its length to 64 characters.
     """
 
     def __init__(
@@ -198,6 +203,21 @@ class WebSocketCamera(BaseCamera):
     async def _ws_handler(self, conn: websockets.ServerConnection) -> None:
         """Handle a connected WebSocket client. Only one client allowed at a time."""
         client_addr = f"{conn.remote_address[0]}:{conn.remote_address[1]}"
+        # Extract and sanitize client_name from URL parameters
+        client_name = "unknown"
+        if conn.request:
+            try:
+                parsed_path = urlparse(conn.request.path)
+                query_params = parse_qs(parsed_path.query)
+                if "client_name" in query_params:
+                    raw_name = query_params["client_name"][0]
+                    # Sanitize: only allow alphanumeric, hyphens, underscores, and limit length
+                    client_name = "".join(c for c in raw_name if c.isalnum() or c in "-_")[:64]
+                    if not client_name:
+                        client_name = "unknown"
+            except Exception as e:
+                self.logger.debug(f"Failed to extract client_name from URL parameters: {e}")
+                client_name = "unknown"
 
         async with self._client_lock:
             if self._client is not None:
@@ -214,7 +234,7 @@ class WebSocketCamera(BaseCamera):
             # Accept the client
             self._client = conn
 
-        self._set_status("connected", {"client_address": client_addr})
+        self._set_status("connected", {"client_address": client_addr, "client_name": client_name})
         self.logger.debug(f"Client connected: {client_addr}")
 
         try:
@@ -257,7 +277,7 @@ class WebSocketCamera(BaseCamera):
             async with self._client_lock:
                 if self._client == conn:
                     self._client = None
-                    self._set_status("disconnected", {"client_address": client_addr})
+                    self._set_status("disconnected", {"client_address": client_addr, "client_name": client_name})
                     self.logger.debug(f"Client removed: {client_addr}")
 
     def _parse_message(self, message: websockets.Data) -> np.ndarray | None:
