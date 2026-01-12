@@ -37,5 +37,5 @@ import sys
 import os
 
 # Load bricks from /app/bricks if it exists
-if os.path.exists('/app/bricks'):
-    sys.path.insert(0, '/app/bricks')
+if os.path.exists("/app/bricks"):
+    sys.path.insert(0, "/app/bricks")
