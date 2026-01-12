@@ -10,6 +10,7 @@ import requests
 
 logger = Logger("TelegramBot")
 
+
 @brick
 class TelegramBot:
     """A brick to manage Telegram Bot interactions."""
