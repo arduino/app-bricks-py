@@ -6,7 +6,6 @@ import os
 from arduino.app_utils import brick, Logger
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
-import requests
 
 logger = Logger("TelegramBot")
 
