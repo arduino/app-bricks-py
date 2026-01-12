@@ -323,7 +323,7 @@ async def test_websocket_camera_client_events():
 
     # This should emit connection and disconnection events
     async def client_task():
-        async with websockets.connect(camera.url+"?client_name=test_client"):
+        async with websockets.connect(camera.url + "?client_name=test_client"):
             pass
 
     # Run client concurrently to properly test event handling
