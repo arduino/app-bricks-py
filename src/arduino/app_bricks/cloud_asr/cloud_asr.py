@@ -7,7 +7,8 @@ from __future__ import annotations
 import os
 import queue
 import threading
-from typing import Iterator, Callable, Optional
+import time
+from typing import Generator, Optional, Union, cast
 
 import numpy as np
 
@@ -15,10 +16,20 @@ from arduino.app_peripherals.microphone import Microphone
 from arduino.app_utils import Logger, brick
 
 from .providers import ASRProvider, CloudProvider, DEFAULT_PROVIDER, provider_factory
+from .providers.types import ASRProviderEvent, ASRProviderError
+from .types import ASREvent, ASREventType, ASREventTypeValues
 
 logger = Logger(__name__)
 
 DEFAULT_LANGUAGE = "en"
+
+
+class TranscriptionTimeoutError(TimeoutError):
+    pass
+
+
+class TranscriptionStreamError(RuntimeError):
+    pass
 
 
 @brick
@@ -35,6 +46,7 @@ class CloudASR:
         provider: CloudProvider = DEFAULT_PROVIDER,
         mic: Optional[Microphone] = None,
         language: str = os.getenv("LANGUAGE", ""),
+        silence_timeout: float = 10.0,
     ):
         if mic:
             logger.info(f"[{self.__class__.__name__}] Using provided microphone: {mic}")
@@ -43,6 +55,7 @@ class CloudASR:
             self._mic = Microphone()
 
         self._language = language
+        self.silence_timeout = silence_timeout
         self._mic_lock = threading.Lock()
         self._provider: ASRProvider = provider_factory(
             api_key=api_key,
@@ -51,61 +64,11 @@ class CloudASR:
             sample_rate=self._mic.sample_rate,
         )
 
-        self.detect_handlers: list[Callable[[dict], None]] = []
-        self.detect_handlers_lock = threading.Lock()
-        self.partial_handlers: list[Callable[[dict], None]] = []
-        self.partial_handlers_lock = threading.Lock()
+    def transcribe_stream_detail(self, timeout: float = 30.0) -> Generator[ASREvent, None, None]:
+        """Perform continuous speech-to-text recognition with detailed events.
 
-    def start(self):
-        with self._mic_lock:
-            if not self._mic.is_recording.is_set():
-                self._mic.start()
-                logger.info(f"[{self.__class__.__name__}] Microphone started.")
-
-    def stop(self):
-        with self._mic_lock:
-            if self._mic.is_recording.is_set():
-                self._mic.stop()
-                logger.info(f"[{self.__class__.__name__}] Microphone stopped.")
-
-    def on_detect(self, handler):
-        """Register a callback to be invoked when speech is detected."""
-        with self.detect_handlers_lock:
-            self.detect_handlers.append(handler)
-
-    @brick.loop
-    def _detect_loop(self):
-        """Continuously listen for speech and invoke handlers when final text is detected."""
-        for resp in self.transcribe():
-            match resp["event"]:
-                case "error":
-                    logger.error(f"ASR error: {resp['data']}")
-                case "text":
-                    with self.detect_handlers_lock:
-                        for handler in self.detect_handlers:
-                            try:
-                                handler(resp["data"])
-                            except Exception as exc:
-                                logger.error(f"Error in speech detected handler: {exc}")
-
-    def on_update(self, handler):
-        """Register a callback to be invoked for each partial speech update."""
-        with self.partial_handlers_lock:
-            self.partial_handlers.append(handler)
-
-    @brick.loop
-    def _update_loop(self):
-        """Continuously listen for partial speech and invoke handlers."""
-        for resp in self.transcribe():
-            with self.partial_handlers_lock:
-                for handler in self.partial_handlers:
-                    try:
-                        handler(resp)
-                    except Exception as exc:
-                        logger.error(f"Error in partial speech handler: {exc}")
-
-    def transcribe(self) -> Iterator[dict]:
-        """Perform speech-to-text recognition.
+        Args:
+            timeout (float): Max seconds for the transcription session.
 
         Returns:
             Iterator[dict]: Generator yielding
@@ -114,8 +77,17 @@ class CloudASR:
         """
 
         provider = self._provider
-        messages: queue.Queue[dict] = queue.Queue()
+        messages: queue.Queue[Union[ASRProviderEvent, BaseException]] = queue.Queue()
         stop_event = threading.Event()
+        send_done = threading.Event()
+        overall_deadline = time.monotonic() + timeout
+        silence_deadline = time.monotonic() + self.silence_timeout
+
+        with self._mic_lock:
+            if self._mic.is_recording.is_set():
+                raise RuntimeError("Microphone is busy.")
+            self._mic.start()
+            logger.info(f"[{self.__class__.__name__}] Microphone started.")
 
         def _send():
             try:
@@ -130,9 +102,9 @@ class CloudASR:
                 logger.info("Recognition interrupted by user. Exiting...")
             except Exception as exc:
                 logger.error("Error while streaming microphone audio: %s", exc)
-                messages.put({"event": "error", "data": str(exc)})
+                raise ASRProviderError(f"Error while streaming microphone audio: {exc}") from exc
             finally:
-                stop_event.set()
+                send_done.set()
 
         partial_buffer = ""
 
@@ -142,38 +114,118 @@ class CloudASR:
                 while not stop_event.is_set():
                     result = provider.recv()
                     if result is None:
+                        time.sleep(0.005)  # Avoid busy waiting
                         continue
 
                     data = result.data
-                    if result.event == "partial_text":
+                    if result.type == "partial_text":
                         if self._provider.partial_mode == "replace":
                             partial_buffer = str(data)
                         else:
                             partial_buffer += str(data)
-                    elif result.event == "text":
-                        data = data or partial_buffer
+                    elif result.type == "text":
+                        final = (result.data or "") or partial_buffer
                         partial_buffer = ""
-                    messages.put({"event": result.event, "data": data})
+                        result = ASRProviderEvent(type="text", data=final)
+                    messages.put(result)
 
             except Exception as exc:
-                logger.error("Error receiving transcription events: %s", exc)
-                messages.put({"event": "error", "data": str(exc)})
+                messages.put(exc)
                 stop_event.set()
 
         send_thread = threading.Thread(target=_send, daemon=True)
         recv_thread = threading.Thread(target=_recv, daemon=True)
+        provider.start()
         send_thread.start()
         recv_thread.start()
 
         try:
-            while recv_thread.is_alive() or send_thread.is_alive() or not messages.empty():
+            while (
+                (recv_thread.is_alive() or send_thread.is_alive() or not messages.empty())
+                and time.monotonic() < overall_deadline
+                and time.monotonic() < silence_deadline
+            ):
                 try:
                     msg = messages.get(timeout=0.1)
-                    yield msg
                 except queue.Empty:
                     continue
+
+                if isinstance(msg, BaseException):
+                    raise msg
+
+                if msg.type in ("partial_text", "text"):
+                    silence_deadline = time.monotonic() + self.silence_timeout
+
+                api_event = self._to_api(msg)
+                if api_event is not None:
+                    yield api_event
+
+            # Drain any remaining messages
+            while True:
+                try:
+                    msg = messages.get_nowait()
+                    if isinstance(msg, BaseException):
+                        raise msg
+                except queue.Empty:
+                    break
+
+            if time.monotonic() >= overall_deadline:
+                raise TranscriptionTimeoutError(f"Maximum ASR time of {timeout}s exceeded")
+            if time.monotonic() >= silence_deadline:
+                raise TranscriptionTimeoutError(f"No speech detected for {self.silence_timeout}s, timing out.")
+
         finally:
             stop_event.set()
+            with self._mic_lock:
+                if self._mic.is_recording.is_set():
+                    self._mic.stop()
+                    logger.info(f"[{self.__class__.__name__}] Microphone stopped.")
             send_thread.join(timeout=1)
             recv_thread.join(timeout=1)
             provider.stop()
+
+    def _to_api(self, event: ASRProviderEvent) -> ASREvent | None:
+        if event.type in ASREventTypeValues:
+            return ASREvent(
+                type=cast(ASREventType, event.type),
+                data=event.data,
+            )
+        return None
+
+    def transcribe(self, timeout: float = 30.0) -> str:
+        """Returns the first utterance transcribed from speech to text.
+
+        Args:
+            timeout (float): Max seconds for the transcription session.
+        Returns:
+            str: The transcribed text.
+        """
+
+        gen = self.transcribe_stream_detail(timeout=timeout)
+
+        try:
+            for resp in gen:
+                if resp.type == "text":
+                    return resp.data or ""
+            raise TranscriptionStreamError("No transcription received.")
+        finally:
+            gen.close()
+
+    def transcribe_stream(self, timeout: float = 30.0) -> Generator[str, None, None]:
+        """Perform continuous speech-to-text recognition.
+
+        Args:
+            timeout (float): Max seconds for the transcription session.
+
+        Returns:
+            Iterator[str]: Generator yielding transcribed text utterances.
+        """
+
+        gen = self.transcribe_stream_detail(timeout=timeout)
+
+        try:
+            for resp in gen:
+                if resp.type == "text":
+                    yield resp.data or ""
+        finally:
+            gen.close()

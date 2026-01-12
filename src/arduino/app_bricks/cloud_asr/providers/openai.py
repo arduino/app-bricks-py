@@ -11,7 +11,7 @@ import websocket
 
 from arduino.app_utils import Logger
 
-from .types import ASREvent
+from .types import ASRProviderEvent, ASRProviderError
 
 logger = Logger(__name__)
 
@@ -59,9 +59,8 @@ class OpenAITranscribe:
             f"Authorization: Bearer {self._api_key}",
             "OpenAI-Beta: realtime=v1",
         ]
-
-        self._ws = self._connect()
         self._sample_rate = sample_rate
+        self._ws: websocket.WebSocket
 
     def _connect(self) -> websocket.WebSocket:
         logger.info("Connecting to realtime ASR endpoint: %s", self._url)
@@ -86,6 +85,10 @@ class OpenAITranscribe:
                 },
             })
         )
+
+    def start(self) -> None:
+        """Start the ASR session."""
+        self._ws = self._connect()
 
     def _decode_message(self, raw: object) -> object:
         if isinstance(raw, (str, bytes, bytearray)):
@@ -115,37 +118,38 @@ class OpenAITranscribe:
             return message.get("error")
         return message
 
-    def _format_event(self, message: dict) -> ASREvent | None:
+    def _format_event(self, message: dict) -> ASRProviderEvent | None:
         match message.get("type"):
-            case "input_audio_buffer.speech_start":
-                return ASREvent(event="speech_start", data=None)
-            case "input_audio_buffer.speech_stop":
-                return ASREvent(event="speech_stop", data=None)
+            case "input_audio_buffer.speech_started":
+                return ASRProviderEvent(type="speech_start", data=None)
+            case "input_audio_buffer.speech_stopped":
+                return ASRProviderEvent(type="speech_stop", data=None)
             case "conversation.item.input_audio_transcription.delta":
                 delta_text = message.get("delta", "")
                 if delta_text:
-                    return ASREvent(event="partial_text", data=delta_text)
+                    return ASRProviderEvent(type="partial_text", data=delta_text)
 
             case "conversation.item.input_audio_transcription.completed":
                 text = message.get("transcript", "")
                 if text:
-                    return ASREvent(event="text", data=text)
-                return ASREvent(event="error", data="Transcription completed with no text.")
+                    return ASRProviderEvent(type="text", data=text)
+                raise ASRProviderError("Transcription completed with no text.")
 
             case "error" | "invalid_request_error":
                 code = self._extract_error_code(message)
                 if code in self.IGNORED_COMMIT_CODES:
                     logger.debug("Ignoring empty commit warning from server.")
                     return None
-                return ASREvent(event="error", data=self._extract_error_payload(message))
+                payload = self._extract_error_payload(message)
+                raise ASRProviderError(f"OpenAI error: {payload}")
 
         return None
 
-    def recv(self) -> ASREvent | None:
+    def recv(self) -> ASRProviderEvent | None:
         try:
             raw = self._ws.recv()
         except Exception as exc:
-            return ASREvent(event="error", data=str(exc))
+            raise ASRProviderError(f"WebSocket receive error: {exc}") from exc
 
         message = self._decode_message(raw)
         if not isinstance(message, dict):
@@ -154,7 +158,7 @@ class OpenAITranscribe:
         try:
             return self._format_event(message)
         except Exception as exc:  # pragma: no cover
-            return ASREvent(event="error", data=str(exc))
+            raise ASRProviderError(f"Error processing message: {exc}") from exc
 
     def send_audio(self, pcm_chunk: bytes) -> None:
         if not pcm_chunk:
@@ -166,8 +170,8 @@ class OpenAITranscribe:
     def stop(self) -> None:
         try:
             self._ws.close()
-        except Exception:
-            pass
+        except Exception as exc:
+            raise ASRProviderError(f"WebSocket close error: {exc}") from exc
 
 
 __all__ = ["OpenAITranscribe"]

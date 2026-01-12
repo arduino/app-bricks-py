@@ -6,7 +6,7 @@ from enum import Enum
 
 from .openai import OpenAITranscribe
 from .google import GoogleSpeech
-from .types import ASREvent, ASRProvider
+from .types import ASRProviderEvent, ASRProvider
 
 
 class CloudProvider(str, Enum):
@@ -40,7 +40,7 @@ def provider_factory(
 
 
 __all__ = [
-    "ASREvent",
+    "ASRProviderEvent",
     "ASRProvider",
     "CloudProvider",
     "DEFAULT_PROVIDER",

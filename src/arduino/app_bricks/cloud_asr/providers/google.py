@@ -11,7 +11,7 @@ from arduino.app_utils import Logger
 from google.api_core.client_options import ClientOptions
 from google.cloud.speech import SpeechClient, StreamingRecognitionConfig, RecognitionConfig, StreamingRecognizeRequest, StreamingRecognizeResponse
 
-from .types import ASREvent
+from .types import ASRProviderEvent, ASRProviderError
 
 logger = Logger(__name__)
 
@@ -29,8 +29,8 @@ class GoogleSpeech:
     audio so callers keep a continuous feed of events.
     """
 
-    partial_mode = "replace"
     provider_name = "google-speech"
+    partial_mode = "replace"
 
     GOOGLE_LANG_MAP = {
         "en": "en-US",
@@ -62,13 +62,11 @@ class GoogleSpeech:
 
         self._stop_event = threading.Event()
         self._audio_q: queue.Queue[bytes | None] = queue.Queue()
-        self._resp_q: queue.Queue[ASREvent | None] = queue.Queue()
+        self._resp_q: queue.Queue[ASRProviderEvent | None] = queue.Queue()
 
         self._client = SpeechClient(client_options=ClientOptions(api_key=self._api_key))
         self._config = self._build_config()
-
-        self._thread = threading.Thread(target=self._asr_worker, daemon=True)
-        self._thread.start()
+        self._thread: threading.Thread
 
     def _resolve_google_language(self, language: str) -> str:
         if not language:
@@ -92,6 +90,12 @@ class GoogleSpeech:
             enable_voice_activity_events=True,
             single_utterance=self._use_short_model,
         )
+
+    def start(self) -> None:
+        """Start the ASR session."""
+        self._stop_event.clear()
+        self._thread = threading.Thread(target=self._asr_worker, daemon=True)
+        self._thread.start()
 
     def _request_loop(self, session_end: threading.Event):
         while not self._stop_event.is_set() and not session_end.is_set():
@@ -132,7 +136,7 @@ class GoogleSpeech:
                         ev = self._format_event(response)
                         if ev is None:
                             continue
-                        if ev.event == "utterance_end":
+                        if ev.type == "utterance_end":
                             session_end.set()
                             continue
 
@@ -140,21 +144,20 @@ class GoogleSpeech:
 
                 except Exception as exc:
                     if not self._stop_event.is_set():
-                        self._resp_q.put(ASREvent(event="error", data=str(exc)))
+                        raise ASRProviderError(f"Google Speech ASR error: {exc}") from exc
                     break
 
         finally:
             self._resp_q.put(None)
 
-    def _format_event(self, message: object) -> ASREvent | None:
+    def _format_event(self, message: object) -> ASRProviderEvent | None:
         match getattr(message, "speech_event_type", None):
             case StreamingRecognizeResponse.SpeechEventType.SPEECH_ACTIVITY_BEGIN:
-                return ASREvent(event="speech_start")
+                return ASRProviderEvent(type="speech_start")
             case StreamingRecognizeResponse.SpeechEventType.SPEECH_ACTIVITY_END:
-                return ASREvent(event="speech_stop")
+                return ASRProviderEvent(type="speech_stop")
             case StreamingRecognizeResponse.SpeechEventType.END_OF_SINGLE_UTTERANCE:
-                return ASREvent(event="utterance_end")
-
+                return ASRProviderEvent(type="utterance_end")
         results = getattr(message, "results", None)
         if not results:
             return None
@@ -182,15 +185,15 @@ class GoogleSpeech:
                     best_partial_text = transcript
 
         if final_text:
-            return ASREvent(event="text", data=final_text)
+            return ASRProviderEvent(type="text", data=final_text)
         if best_partial_text:
-            return ASREvent(event="partial_text", data=best_partial_text)
+            return ASRProviderEvent(type="partial_text", data=best_partial_text)
         return None
 
     def send_audio(self, pcm_chunk: bytes) -> None:
         self._audio_q.put(pcm_chunk)
 
-    def recv(self) -> ASREvent | None:
+    def recv(self) -> ASRProviderEvent | None:
         try:
             return self._resp_q.get(timeout=0.1)
         except queue.Empty:
@@ -201,8 +204,8 @@ class GoogleSpeech:
         self._audio_q.put(None)
         try:
             self._thread.join(timeout=1)
-        except Exception:
-            pass
+        except Exception as exc:
+            raise ASRProviderError(f"ASR worker thread join error: {exc}") from exc
 
 
 __all__ = ["GoogleSpeech"]
