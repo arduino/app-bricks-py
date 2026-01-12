@@ -18,7 +18,7 @@ class TelegramBot:
         """Initialize the bot with a token from arg or environment variable."""
         self.token = token or os.getenv("TELEGRAM_BOT_TOKEN")
         if not self.token:
-            raise ValueError("Telegram BOT_TOKEN must be provided or set as environment variable")
+            raise ValueError("Telegram TELEGRAM_BOT_TOKEN must be provided or set as environment variable")
 
         self.application = Application.builder().token(self.token).build()
 
