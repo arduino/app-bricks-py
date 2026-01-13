@@ -2,14 +2,20 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# EXAMPLE_NAME = "Sends audio from microphone and receives all the streaming events"
+# EXAMPLE_NAME = "Detect speech from microphone"
 # EXAMPLE_REQUIRES = "Requires an USB microphone connected to the Arduino board."
 from arduino.app_bricks.cloud_asr import CloudASR
-from arduino.app_utils import App
 
 cloud_asr = CloudASR(
     api_key="YOUR_API_KEY",  # Replace with your actual API key
 )
-cloud_asr.on_update(lambda resp: print(f"{resp['event']}: {resp['data']}"))
 
-App.run()
+with cloud_asr.transcribe_stream() as stream:
+    print("Say 'stop' to stop the transcription.")
+
+    for event in stream:
+        print(f"{event.type}: {event.data}")
+
+        if event.type == "text" and (event.data or "").strip().lower() == "stop":
+            print("Stopping transcription stream...")
+            break

@@ -8,7 +8,8 @@ import os
 import queue
 import threading
 import time
-from typing import Generator, Optional, Union, cast
+from contextlib import contextmanager
+from typing import Generator, Optional, Union, Iterator, Generator, cast
 
 import numpy as np
 
@@ -64,11 +65,11 @@ class CloudASR:
             sample_rate=self._mic.sample_rate,
         )
 
-    def transcribe_stream_detail(self, timeout: float = 30.0) -> Generator[ASREvent, None, None]:
+    def _transcribe_stream(self, duration: float = 60.0) -> Generator[ASREvent, None, None]:
         """Perform continuous speech-to-text recognition with detailed events.
 
         Args:
-            timeout (float): Max seconds for the transcription session.
+            duration (float): Max seconds for the transcription session.
 
         Returns:
             Iterator[dict]: Generator yielding
@@ -80,7 +81,7 @@ class CloudASR:
         messages: queue.Queue[Union[ASRProviderEvent, BaseException]] = queue.Queue()
         stop_event = threading.Event()
         send_done = threading.Event()
-        overall_deadline = time.monotonic() + timeout
+        overall_deadline = time.monotonic() + duration
         silence_deadline = time.monotonic() + self.silence_timeout
 
         with self._mic_lock:
@@ -170,11 +171,12 @@ class CloudASR:
                     break
 
             if time.monotonic() >= overall_deadline:
-                raise TranscriptionTimeoutError(f"Maximum ASR time of {timeout}s exceeded")
+                raise TranscriptionTimeoutError(f"Maximum ASR time of {duration}s exceeded")
             if time.monotonic() >= silence_deadline:
                 raise TranscriptionTimeoutError(f"No speech detected for {self.silence_timeout}s, timing out.")
 
         finally:
+            logger.info("Releasing ASR resources...")
             stop_event.set()
             with self._mic_lock:
                 if self._mic.is_recording.is_set():
@@ -192,16 +194,16 @@ class CloudASR:
             )
         return None
 
-    def transcribe(self, timeout: float = 30.0) -> str:
+    def transcribe(self, duration: float = 60.0) -> str:
         """Returns the first utterance transcribed from speech to text.
 
         Args:
-            timeout (float): Max seconds for the transcription session.
+            duration (float): Max seconds for the transcription session.
         Returns:
             str: The transcribed text.
         """
 
-        gen = self.transcribe_stream_detail(timeout=timeout)
+        gen = self._transcribe_stream(duration=duration)
 
         try:
             for resp in gen:
@@ -211,21 +213,20 @@ class CloudASR:
         finally:
             gen.close()
 
-    def transcribe_stream(self, timeout: float = 30.0) -> Generator[str, None, None]:
+    @contextmanager
+    def transcribe_stream(self, duration: float = 60.0) -> Iterator[Iterator[ASREvent]]:
         """Perform continuous speech-to-text recognition.
 
         Args:
-            timeout (float): Max seconds for the transcription session.
+            duration (float): Max seconds for the transcription session.
 
         Returns:
-            Iterator[str]: Generator yielding transcribed text utterances.
+            Iterator[ASREvent]: Generator yielding transcription events.
         """
 
-        gen = self.transcribe_stream_detail(timeout=timeout)
+        gen = self._transcribe_stream(duration=duration)
 
         try:
-            for resp in gen:
-                if resp.type == "text":
-                    yield resp.data or ""
+            yield gen
         finally:
             gen.close()

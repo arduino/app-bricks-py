@@ -8,7 +8,6 @@ import threading
 import time
 import types
 from typing import Iterable, List
-from contextlib import closing
 
 import numpy as np
 import pytest
@@ -144,13 +143,12 @@ def test_transcribe_stream_use_microphone_state(make_provider):
     asr = CloudASR(api_key="dummy", mic=mic, provider=CloudProvider.OPENAI_TRANSCRIBE)
 
     try:
-        gen = asr.transcribe_stream_detail()
-        next(gen)
-        assert mic.start_calls == 1
-        assert mic.is_recording.is_set()
-        assert provider.start_called is True
+        with asr.transcribe_stream() as stream:
+            next(stream)
+            assert mic.start_calls == 1
+            assert mic.is_recording.is_set()
+            assert provider.start_called is True
 
-        gen.close()
         assert mic.stop_calls == 1
         assert not mic.is_recording.is_set()
         assert provider.stop_called is True
@@ -173,9 +171,9 @@ def test_transcribe_stream_aggregates_partial_text_in_append_mode(make_provider)
     asr = CloudASR(api_key="dummy", mic=mic, provider=CloudProvider.OPENAI_TRANSCRIBE)
 
     try:
-        with closing(asr.transcribe_stream_detail()) as gen:
+        with asr.transcribe_stream() as stream:
             results = []
-            for ev in gen:
+            for ev in stream:
                 results.append(ev)
                 if ev.type == "text":
                     break
@@ -210,10 +208,10 @@ def test_transcribe_stream_resets_partial_buffer_in_replace_mode(make_provider):
     asr = CloudASR(api_key="dummy", mic=mic, provider=CloudProvider.GOOGLE_SPEECH)
 
     try:
-        with closing(asr.transcribe_stream_detail()) as gen:
+        with asr.transcribe_stream() as stream:
             results = []
             text_count = 0
-            for ev in gen:
+            for ev in stream:
                 results.append(ev)
                 if ev.type == "text":
                     text_count += 1
@@ -244,8 +242,8 @@ def test_transcribe_stream_surfaces_provider_errors(monkeypatch: pytest.MonkeyPa
     asr = CloudASR(api_key="dummy", mic=mic, provider=CloudProvider.OPENAI_TRANSCRIBE)
 
     try:
-        with closing(asr.transcribe_stream_detail()) as gen:
-            next(gen)
+        with asr.transcribe_stream() as stream:
+            next(stream)
     except Exception as exc:
         assert isinstance(exc, ASRProviderError)
         assert str(exc) == "boom"

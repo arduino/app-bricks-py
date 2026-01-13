@@ -125,12 +125,12 @@ class OpenAITranscribe:
             case "input_audio_buffer.speech_stopped":
                 return ASRProviderEvent(type="speech_stop", data=None)
             case "conversation.item.input_audio_transcription.delta":
-                delta_text = message.get("delta", "")
+                delta_text = message.get("delta", "").strip()
                 if delta_text:
                     return ASRProviderEvent(type="partial_text", data=delta_text)
 
             case "conversation.item.input_audio_transcription.completed":
-                text = message.get("transcript", "")
+                text = message.get("transcript", "").strip()
                 if text:
                     return ASRProviderEvent(type="text", data=text)
                 raise ASRProviderError("Transcription completed with no text.")
