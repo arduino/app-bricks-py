@@ -46,7 +46,7 @@ class WebSocketCamera(BaseCamera):
 
     When connecting, clients can specify a "client_name" parameter in the URL query string
     to identify themselves. This name will be sanitized to allow only alphanumeric chars,
-    hyphens, and underscores, and limit its length to 64 characters.
+    whitespace, hyphens, and underscores, and limit its length to 64 characters.
     """
 
     def __init__(
