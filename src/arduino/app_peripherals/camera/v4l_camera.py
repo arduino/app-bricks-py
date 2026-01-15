@@ -65,7 +65,7 @@ class V4LCamera(BaseCamera):
         """
         indices: list[int] = []
         try:
-            devices = [dev for dev in os.listdir("/dev/v4l/by-id")]
+            devices = [dev for dev in os.listdir("/dev/v4l/by-id/")]
             for dev in devices:
                 dev_path = os.path.join("/dev/v4l/by-id", dev)
                 target = os.path.realpath(dev_path)
@@ -75,7 +75,7 @@ class V4LCamera(BaseCamera):
                     indices.append(index)
 
         except Exception as e:
-            print(f"Error listing USB cameras: {e}")
+            logger.error(f"Error listing available cameras: {e}")
 
         indices.sort()
         return indices
@@ -106,7 +106,7 @@ class V4LCamera(BaseCamera):
             device_index = int(device)
             device_indices = V4LCamera.list_devices()
             if device_index < 0 or device_index >= len(device_indices):
-                raise RuntimeError(f"Camera index {device_index} out of range. Available: 1-{len(device_indices)-1}")
+                raise CameraOpenError(f"Camera index {device_index} out of range. Available: 0-{len(device_indices)}")
             device_path = f"/dev/video{device_indices[device_index]}"
         elif isinstance(device, str) and device.startswith("/dev/video"):
             # Already a video device
