@@ -55,6 +55,31 @@ class V4LCamera(BaseCamera):
 
         self._last_reconnection_attempt = 0.0  # Used for auto-reconnection when _read_frame is called
 
+    @staticmethod
+    def list_devices() -> list[int]:
+        """
+        Return a list of available USB cameras.
+
+        Returns:
+            list[int]: List of USB camera indices.
+        """
+        indices: list[int] = []
+        try:
+            devices = [dev for dev in os.listdir("/dev/v4l/by-id")]
+            for dev in devices:
+                dev_path = os.path.join("/dev/v4l/by-id", dev)
+                target = os.path.realpath(dev_path)
+                video_basename = os.path.basename(target)
+                if video_basename.startswith("video"):
+                    index = int(video_basename.removeprefix("video"))
+                    indices.append(index)
+
+        except Exception as e:
+            print(f"Error listing USB cameras: {e}")
+
+        indices.sort()
+        return indices
+
     def _resolve_stable_path(self, device: str | int) -> str:
         """
         Resolve a camera identifier to a link stable across reconnections.
@@ -78,7 +103,11 @@ class V4LCamera(BaseCamera):
             device_path = os.path.realpath(device)
         elif isinstance(device, int) or (isinstance(device, str) and device.isdigit()):
             # Resolve video device as /dev/video<device>
-            device_path = f"/dev/video{int(device)}"
+            device_index = int(device)
+            device_indices = V4LCamera.list_devices()
+            if device_index < 0 or device_index >= len(device_indices):
+                raise RuntimeError(f"Camera index {device_index} out of range. Available: 1-{len(device_indices)-1}")
+            device_path = f"/dev/video{device_indices[device_index]}"
         elif isinstance(device, str) and device.startswith("/dev/video"):
             # Already a video device
             device_path = device
