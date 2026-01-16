@@ -178,6 +178,132 @@ class LocalASR:
         
         self.mic.stop()
 
+    def transcribe(self, duration: int = 0, timeout: int = 30) -> str:
+        """
+        Transcribe audio data from the microphone and return the transcribed text.
+
+        Args:
+            duration (int): Duration in seconds to record audio. If 0, records until silence.
+            timeout (int): Maximum time in seconds to wait for a full transcription.
+
+        Returns:
+            str: The transcribed text.
+        
+        Raises:
+            TimeoutError: If transcription does not complete within the specified timeout.
+            RuntimeError: If already transcribing or other errors occur.
+        """
+        transcription = ""
+        with self.transcribe_stream(duration=duration, timeout=timeout) as stream:
+            for chunk in stream:
+                transcription = chunk.data
+        
+        if transcription:
+            return transcription
+        
+        raise RuntimeError("Transcription did not return any text")
+
+    def transcribe_stream(self, duration: int = 0, timeout: int = 30) -> TranscriptionStream[ASREvent]:
+        """
+        Transcribe audio data from the microphone and stream the results as soon
+        as they are available.
+
+        Partial results are yielded as they arrive, and the final text is yielded
+        when the transcription is complete. Partial chunks are of temporary nature
+        and may be updated by the final full text.
+
+        Args:
+            duration (int): Duration in seconds to record audio. If 0, records until silence.
+            timeout (int): Maximum time in seconds to wait for a full transcription.
+
+        Returns:
+            TranscriptionStream[ASREvent]: iterable context manager emitting ASREvent items.
+
+        Raises:
+            TimeoutError: If transcription does not complete within the specified timeout.
+            RuntimeError: If already transcribing or other errors occur.
+        """
+        return TranscriptionStream(self._transcribe_stream(duration=duration, timeout=timeout))
+
+    def _transcribe_stream(self, duration: int = 0, timeout: int = 30) -> Generator[ASREvent, None, None]:
+        # Acquire semaphore to limit concurrent transcriptions
+        if not self._session_semaphore.acquire(blocking=False):
+            raise RuntimeError(
+                f"Maximum concurrent transcriptions ({self.max_concurrent_transcriptions}) reached. "
+                "Wait for an existing transcription to complete."
+            )
+        
+        try:
+            # Create transcription session
+            url = f"{self.api_base_url}/transcriptions/create"
+            data = {
+                "model": self.model,
+                "stream": True,
+                "language": self.language
+            }
+            
+            logger.info(f"Creating streaming transcription session with model={self.model}, language={self.language}")
+            response = self._http_client.request_with_retry(
+                url=url,
+                method="POST",
+                json=data,
+                timeout=timeout
+            )
+            
+            if response is None:
+                raise RuntimeError("Failed to create transcription session")
+            
+            if response.status_code != 200:
+                error_msg = f"Failed to create transcription session: {response.status_code}"
+                try:
+                    error_data = response.json()
+                    if "error" in error_data:
+                        error_msg = error_data["error"].get("message", error_msg)
+                except:
+                    pass
+                raise RuntimeError(error_msg)
+            
+            result = response.json()
+            session_id = result.get("session_id")
+            if not session_id:
+                raise RuntimeError("No session ID returned from transcription API")
+            
+            # Create result queue for this session
+            result_queue = queue.Queue[ASREvent | Exception]()
+            
+            # Create session info and post to worker queue
+            session_info = SessionInfo(
+                session_id=session_id,
+                duration=duration,
+                timeout=timeout,
+                result_queue=result_queue
+            )
+            self._new_session_queue.put(session_info)
+            
+            # Yield results from the queue
+            while True:
+                try:
+                    event = result_queue.get(timeout=1.0)
+                    if isinstance(event, Exception):
+                        raise event
+
+                    yield event
+                    if event.type == "full_text":
+                        # Final text received, end of transcription
+                        break
+                    
+                except queue.Empty:
+                    # Timeout waiting for results, keep trying
+                    continue
+            
+        except TimeoutError:
+            raise
+        except Exception as e:
+            raise RuntimeError(f"Transcription failed: {e}")
+        finally:
+            # Release semaphore
+            self._session_semaphore.release()
+
     @brick.execute
     def _work_dispatcher(self):
         """
@@ -468,129 +594,3 @@ class LocalASR:
         except Exception as e:
             logger.error(f"Error sending audio chunks for session {session_id}: {e}")
             raise
-
-    def transcribe(self, duration: int = 0, timeout: int = 30) -> str:
-        """
-        Transcribe audio data from the microphone and return the transcribed text.
-
-        Args:
-            duration (int): Duration in seconds to record audio. If 0, records until silence.
-            timeout (int): Maximum time in seconds to wait for a full transcription.
-
-        Returns:
-            str: The transcribed text.
-        
-        Raises:
-            TimeoutError: If transcription does not complete within the specified timeout.
-            RuntimeError: If already transcribing or other errors occur.
-        """
-        transcription = ""
-        with self.transcribe_stream(duration=duration, timeout=timeout) as stream:
-            for chunk in stream:
-                transcription = chunk.data
-        
-        if transcription:
-            return transcription
-        
-        raise RuntimeError("Transcription did not return any text")
-
-    def transcribe_stream(self, duration: int = 0, timeout: int = 30) -> TranscriptionStream[ASREvent]:
-        """
-        Transcribe audio data from the microphone and stream the results as soon
-        as they are available.
-
-        Partial results are yielded as they arrive, and the final text is yielded
-        when the transcription is complete. Partial chunks are of temporary nature
-        and may be updated by the final full text.
-
-        Args:
-            duration (int): Duration in seconds to record audio. If 0, records until silence.
-            timeout (int): Maximum time in seconds to wait for a full transcription.
-
-        Returns:
-            TranscriptionStream[ASREvent]: iterable context manager emitting ASREvent items.
-
-        Raises:
-            TimeoutError: If transcription does not complete within the specified timeout.
-            RuntimeError: If already transcribing or other errors occur.
-        """
-        return TranscriptionStream(self._transcribe_stream(duration=duration, timeout=timeout))
-
-    def _transcribe_stream(self, duration: int = 0, timeout: int = 30) -> Generator[ASREvent, None, None]:
-        # Acquire semaphore to limit concurrent transcriptions
-        if not self._session_semaphore.acquire(blocking=False):
-            raise RuntimeError(
-                f"Maximum concurrent transcriptions ({self.max_concurrent_transcriptions}) reached. "
-                "Wait for an existing transcription to complete."
-            )
-        
-        try:
-            # Create transcription session
-            url = f"{self.api_base_url}/transcriptions/create"
-            data = {
-                "model": self.model,
-                "stream": True,
-                "language": self.language
-            }
-            
-            logger.info(f"Creating streaming transcription session with model={self.model}, language={self.language}")
-            response = self._http_client.request_with_retry(
-                url=url,
-                method="POST",
-                json=data,
-                timeout=timeout
-            )
-            
-            if response is None:
-                raise RuntimeError("Failed to create transcription session")
-            
-            if response.status_code != 200:
-                error_msg = f"Failed to create transcription session: {response.status_code}"
-                try:
-                    error_data = response.json()
-                    if "error" in error_data:
-                        error_msg = error_data["error"].get("message", error_msg)
-                except:
-                    pass
-                raise RuntimeError(error_msg)
-            
-            result = response.json()
-            session_id = result.get("session_id")
-            if not session_id:
-                raise RuntimeError("No session ID returned from transcription API")
-            
-            # Create result queue for this session
-            result_queue = queue.Queue[ASREvent | Exception]()
-            
-            # Create session info and post to worker queue
-            session_info = SessionInfo(
-                session_id=session_id,
-                duration=duration,
-                timeout=timeout,
-                result_queue=result_queue
-            )
-            self._new_session_queue.put(session_info)
-            
-            # Yield results from the queue
-            while True:
-                try:
-                    event = result_queue.get(timeout=1.0)
-                    if isinstance(event, Exception):
-                        raise event
-
-                    yield event
-                    if event.type == "full_text":
-                        # Final text received, end of transcription
-                        break
-                    
-                except queue.Empty:
-                    # Timeout waiting for results, keep trying
-                    continue
-            
-        except TimeoutError:
-            raise
-        except Exception as e:
-            raise RuntimeError(f"Transcription failed: {e}")
-        finally:
-            # Release semaphore
-            self._session_semaphore.release()
