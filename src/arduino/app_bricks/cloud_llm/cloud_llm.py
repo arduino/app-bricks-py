@@ -38,7 +38,6 @@ class CloudLLM:
         self,
         api_key: str = os.getenv("API_KEY", ""),
         model: Union[str, CloudModel] = CloudModel.ANTHROPIC_CLAUDE,
-        model_provider: str = None,
         system_prompt: str = "",
         temperature: Optional[float] = 0.7,
         timeout: int = 30,
@@ -52,9 +51,8 @@ class CloudLLM:
                 'API_KEY' environment variable.
             model (Union[str, CloudModel]): The model identifier. Accepts a `CloudModel`
                 enum member (e.g., `CloudModel.OPENAI_GPT`) or its corresponding raw string
-                value (e.g., `'gpt-4o-mini'`). Defaults to `CloudModel.ANTHROPIC_CLAUDE`.
-            model_provider (str): The name of the model provider (e.g., 'openai', 'anthropic', 'google'). If not provided,
-                it will be inferred from the `model` parameter.
+                value (e.g., `'openai:gpt-4o-mini'`). Defaults to `CloudModel.ANTHROPIC_CLAUDE`.
+                To identify the model provider, you need to use prefixes like 'openai:', 'anthropic:', or 'google:'.
             system_prompt (str): A system-level instruction that defines the AI's persona
                 and constraints (e.g., "You are a helpful assistant"). Defaults to empty.
             temperature (Optional[float]): The sampling temperature between 0.0 and 1.0.
@@ -74,7 +72,6 @@ class CloudLLM:
         self._api_key = api_key
 
         # Model configuration
-        self._model_provider = model_provider
         self._model = model
         self._system_prompt = system_prompt
         self._temperature = temperature
@@ -92,7 +89,6 @@ class CloudLLM:
         # LangChain components
         self._model = model_factory(
             model,
-            model_provider=self._model_provider,
             api_key=self._api_key,
             temperature=self._temperature,
             timeout=self._timeout,
@@ -312,16 +308,14 @@ class CloudLLM:
             self._history.clear()
 
 
-def model_factory(model_name: CloudModel, model_provider: str = None, **kwargs) -> BaseChatModel:
+def model_factory(model_name: CloudModel, **kwargs) -> BaseChatModel:
     """Factory function to instantiate the specific LangChain chat model.
 
     This function maps the supported `CloudModel` enum values to their respective
     LangChain implementations.
 
     Args:
-        model_name (CloudModel): The enum or string identifier for the model.
-        model_provider (str): The name of the model provider (e.g., 'openai', 'anthropic', 'google'). If not provided,
-            it will be inferred from the `model_name` parameter.
+        model_name (CloudModel): The enum or string identifier for the model. Model name can include provider prefixes like 'openai:', 'anthropic:', or 'google:' to specify the provider.
         **kwargs: Additional arguments passed to the model constructor (e.g., api_key, temperature).
 
     Returns:
@@ -330,16 +324,25 @@ def model_factory(model_name: CloudModel, model_provider: str = None, **kwargs) 
     Raises:
         ValueError: If `model_name` does not match one of the supported `CloudModel` options.
     """
-    if model_name == CloudModel.ANTHROPIC_CLAUDE or model_provider == CloudModelProvider.ANTHROPIC:
+    if model_name == CloudModel.ANTHROPIC_CLAUDE or model_name.startswith(f"{CloudModelProvider.ANTHROPIC}:"):
         from langchain_anthropic import ChatAnthropic
 
+        if model_name.startswith(f"{CloudModelProvider.ANTHROPIC}:"):
+            model_name = model_name.split(":", 1)[1]
+
         return ChatAnthropic(model=model_name, **kwargs)
-    elif model_name == CloudModel.OPENAI_GPT or model_provider == CloudModelProvider.OPENAI:
+    elif model_name == CloudModel.OPENAI_GPT or model_name.startswith(f"{CloudModelProvider.OPENAI}:"):
         from langchain_openai import ChatOpenAI
 
+        if model_name.startswith(f"{CloudModelProvider.OPENAI}:"):
+            model_name = model_name.split(":", 1)[1]
+
         return ChatOpenAI(model=model_name, **kwargs)
-    elif model_name == CloudModel.GOOGLE_GEMINI or model_provider == CloudModelProvider.GOOGLE:
+    elif model_name == CloudModel.GOOGLE_GEMINI or model_name.startswith(f"{CloudModelProvider.GOOGLE}:"):
         from langchain_google_genai import ChatGoogleGenerativeAI
+
+        if model_name.startswith(f"{CloudModelProvider.GOOGLE}:"):
+            model_name = model_name.split(":", 1)[1]
 
         return ChatGoogleGenerativeAI(model=model_name, **kwargs)
     else:
