@@ -315,7 +315,9 @@ def model_factory(model_name: CloudModel, **kwargs) -> BaseChatModel:
     LangChain implementations.
 
     Args:
-        model_name (CloudModel): The enum or string identifier for the model. Model name can include provider prefixes like 'openai:', 'anthropic:', or 'google:' to specify the provider.
+        model_name (CloudModel): The enum or string identifier for the model.
+            Model name can include provider prefixes like 'openai:', 'anthropic:', or 'google:'
+            to specify the provider.
         **kwargs: Additional arguments passed to the model constructor (e.g., api_key, temperature).
 
     Returns:
