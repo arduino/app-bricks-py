@@ -5,13 +5,12 @@
 # EXAMPLE_NAME = "Chat with an Multimodal LLM"
 # EXAMPLE_REQUIRES = "Requires a valid API key to a cloud LLM service."
 
-from arduino.app_bricks.cloud_llm import CloudLLM, CloudModelProvider
+from arduino.app_bricks.cloud_llm import CloudLLM, CloudModel
 from arduino.app_utils import App
 import time
 
 llm = CloudLLM(
-    model="gemini-2.5-flash",
-    model_provider=CloudModelProvider.GOOGLE,
+    model=CloudModel.GOOGLE_GEMINI,
     api_key="YOUR_API_KEY",  # Replace with your actual API key
 )
 
