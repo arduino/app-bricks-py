@@ -5,7 +5,7 @@
 from arduino.app_bricks.local_asr import LocalASR
 
 asr = LocalASR()
-with asr.transcribe_stream(duration=0, timeout=5) as stream:
+with asr.transcribe_stream(duration=5) as stream:
     for chunk in stream:
         match chunk.type:
             case "partial_text":

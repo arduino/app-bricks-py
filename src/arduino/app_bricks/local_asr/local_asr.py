@@ -32,6 +32,7 @@ class SessionInfo:
     duration: int
     start_time: float
     result_queue: queue.Queue[ASREvent]
+    cancelled: threading.Event
 
 
 T = TypeVar("T")
@@ -198,7 +199,7 @@ class LocalASR:
         Raises:
             RuntimeError: If transcription fails or other errors occur.
         """
-        return TranscriptionStream(self._transcribe_stream(duration=duration))
+        return TranscriptionStream(self._transcribe_stream(duration))
 
     def _transcribe_stream(self, duration: int = 0) -> Generator[ASREvent, None, None]:
         if self._worker_loop is None:
@@ -208,6 +209,10 @@ class LocalASR:
                 f"Maximum concurrent transcriptions ({self.max_concurrent_transcriptions}) reached. "
                 "Wait for an existing transcription to complete."
             )
+
+        session_id = None
+        cancelled = threading.Event()
+        future = None
 
         try:
             logger.info(f"Creating transcription session with model={self.model}, language={self.language}")
@@ -241,7 +246,6 @@ class LocalASR:
             if not session_id:
                 raise RuntimeError("No session ID returned from transcription API")
             
-            # Create result queue for this session
             result_queue = queue.Queue[ASREvent]()
             
             # Create session info
@@ -250,6 +254,7 @@ class LocalASR:
                 duration=duration,
                 start_time=time.time(),
                 result_queue=result_queue,
+                cancelled=cancelled,
             )
             
             future = asyncio.run_coroutine_threadsafe(
@@ -272,6 +277,17 @@ class LocalASR:
                     break
             
             future.result()  # Will raise if an exception occurred
+            
+        except GeneratorExit:
+            # User broke out of the generator loop, signal cancellation
+            logger.debug(f"Transcription interrupted by user for session {session_id}")
+            cancelled.set()
+            if future and not future.done():
+                try:
+                    future.result(timeout=2)
+                except Exception:
+                    pass  # Ignore any errors during cleanup
+            raise
             
         except TimeoutError:
             raise
@@ -365,7 +381,7 @@ class LocalASR:
                     except asyncio.CancelledError:
                         pass
     
-    async def _send_audio_chunks(self, websocket, session_id: str, session_info: SessionInfo):
+    async def _send_audio_chunks(self, websocket: websockets.ClientConnection, session_id: str, session_info: SessionInfo):
         """Sends audio chunks from queue to WebSocket"""
         duration = session_info.duration
         start_time = session_info.start_time
@@ -375,7 +391,7 @@ class LocalASR:
         self._audio_subscribers.subscribe(session_id, audio_queue)
         
         try:
-            while not self._stop_worker.is_set():
+            while not self._stop_worker.is_set() and not session_info.cancelled.is_set():
                 # Check duration limit (if duration > 0)
                 if duration > 0:
                     elapsed = time.time() - start_time
@@ -415,12 +431,12 @@ class LocalASR:
             self._audio_subscribers.unsubscribe(session_id)
             logger.debug(f"Session {session_id} unsubscribed from audio")
     
-    async def _receive_transcription(self, websocket, session_id: str, session_info: SessionInfo):
+    async def _receive_transcription(self, websocket: websockets.ClientConnection, session_id: str, session_info: SessionInfo):
         """Receives transcriptions and puts them in the result queue"""
         result_queue = session_info.result_queue
         
         try:
-            while not self._stop_worker.is_set():
+            while not self._stop_worker.is_set() and not session_info.cancelled.is_set():
                 try:
                     message = await asyncio.wait_for(websocket.recv(), timeout=1.0)
                 except asyncio.TimeoutError:
