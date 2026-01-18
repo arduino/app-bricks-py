@@ -30,8 +30,8 @@ class ASREvent:
 class SessionInfo:
     session_id: str
     duration: int
-    timeout: int
-    result_queue: queue.Queue[ASREvent | Exception]
+    start_time: float
+    result_queue: queue.Queue[ASREvent]
 
 
 T = TypeVar("T")
@@ -128,10 +128,11 @@ class LocalASR:
         self._http_client = HttpClient()
         
         # Worker thread management
-        self._worker_thread = None
         self._worker_loop = None
         self._stop_worker = threading.Event()
-        self._new_session_queue = queue.Queue()  # Queue for posting new sessions
+        
+        # Audio distribution
+        self._audio_subscribers = AudioSubscribers()
         
         # Session management - only for limiting concurrency
         self._session_semaphore = threading.Semaphore(self.max_concurrent_transcriptions)
@@ -144,16 +145,7 @@ class LocalASR:
         """
         self.mic.start()
         
-        # Start worker thread if not already running
-        if self._worker_thread is None or not self._worker_thread.is_alive():
-            self._stop_worker.clear()
-            self._worker_thread = threading.Thread(
-                target=self._work_dispatcher,
-                name="LocalASR-Worker",
-                daemon=True
-            )
-            self._worker_thread.start()
-            logger.info("Worker thread started")
+        self._stop_worker.clear()
     
     def stop(self):
         """
@@ -161,40 +153,25 @@ class LocalASR:
 
         This stops the microphone device too.
         """
-        # Signal worker thread to stop
         self._stop_worker.set()
-        
-        # Wake up worker by putting sentinel in queue
-        try:
-            self._new_session_queue.put_nowait(None)
-        except queue.Full:
-            pass
-        
-        # Wait for worker thread to finish
-        if self._worker_thread is not None and self._worker_thread.is_alive():
-            self._worker_thread.join(timeout=5)
-            if self._worker_thread.is_alive():
-                logger.warning("Worker thread did not stop gracefully")
         
         self.mic.stop()
 
-    def transcribe(self, duration: int = 0, timeout: int = 30) -> str:
+    def transcribe(self, duration: int = 0) -> str:
         """
         Transcribe audio data from the microphone and return the transcribed text.
 
         Args:
             duration (int): Duration in seconds to record audio. If 0, records until silence.
-            timeout (int): Maximum time in seconds to wait for a full transcription.
 
         Returns:
             str: The transcribed text.
         
         Raises:
-            TimeoutError: If transcription does not complete within the specified timeout.
-            RuntimeError: If already transcribing or other errors occur.
+            RuntimeError: If transcription fails or other errors occur.
         """
         transcription = ""
-        with self.transcribe_stream(duration=duration, timeout=timeout) as stream:
+        with self.transcribe_stream(duration=duration) as stream:
             for chunk in stream:
                 transcription = chunk.data
         
@@ -203,7 +180,7 @@ class LocalASR:
         
         raise RuntimeError("Transcription did not return any text")
 
-    def transcribe_stream(self, duration: int = 0, timeout: int = 30) -> TranscriptionStream[ASREvent]:
+    def transcribe_stream(self, duration: int = 0) -> TranscriptionStream[ASREvent]:
         """
         Transcribe audio data from the microphone and stream the results as soon
         as they are available.
@@ -214,26 +191,26 @@ class LocalASR:
 
         Args:
             duration (int): Duration in seconds to record audio. If 0, records until silence.
-            timeout (int): Maximum time in seconds to wait for a full transcription.
 
         Returns:
             TranscriptionStream[ASREvent]: iterable context manager emitting ASREvent items.
 
         Raises:
-            TimeoutError: If transcription does not complete within the specified timeout.
-            RuntimeError: If already transcribing or other errors occur.
+            RuntimeError: If transcription fails or other errors occur.
         """
-        return TranscriptionStream(self._transcribe_stream(duration=duration, timeout=timeout))
+        return TranscriptionStream(self._transcribe_stream(duration=duration))
 
-    def _transcribe_stream(self, duration: int = 0, timeout: int = 30) -> Generator[ASREvent, None, None]:
-        # Acquire semaphore to limit concurrent transcriptions
+    def _transcribe_stream(self, duration: int = 0) -> Generator[ASREvent, None, None]:
+        if self._worker_loop is None:
+            raise RuntimeError("Worker loop not initialized. Call start() first.")
         if not self._session_semaphore.acquire(blocking=False):
             raise RuntimeError(
                 f"Maximum concurrent transcriptions ({self.max_concurrent_transcriptions}) reached. "
                 "Wait for an existing transcription to complete."
             )
-        
+
         try:
+            logger.info(f"Creating transcription session with model={self.model}, language={self.language}")
             # Create transcription session
             url = f"{self.api_base_url}/transcriptions/create"
             data = {
@@ -241,18 +218,15 @@ class LocalASR:
                 "stream": True,
                 "language": self.language
             }
-            
-            logger.info(f"Creating streaming transcription session with model={self.model}, language={self.language}")
             response = self._http_client.request_with_retry(
                 url=url,
                 method="POST",
                 json=data,
-                timeout=timeout
+                timeout=3
             )
             
             if response is None:
                 raise RuntimeError("Failed to create transcription session")
-            
             if response.status_code != 200:
                 error_msg = f"Failed to create transcription session: {response.status_code}"
                 try:
@@ -262,278 +236,128 @@ class LocalASR:
                 except:
                     pass
                 raise RuntimeError(error_msg)
-            
             result = response.json()
             session_id = result.get("session_id")
             if not session_id:
                 raise RuntimeError("No session ID returned from transcription API")
             
             # Create result queue for this session
-            result_queue = queue.Queue[ASREvent | Exception]()
+            result_queue = queue.Queue[ASREvent]()
             
-            # Create session info and post to worker queue
+            # Create session info
             session_info = SessionInfo(
                 session_id=session_id,
                 duration=duration,
-                timeout=timeout,
-                result_queue=result_queue
+                start_time=time.time(),
+                result_queue=result_queue,
             )
-            self._new_session_queue.put(session_info)
             
-            # Yield results from the queue
+            future = asyncio.run_coroutine_threadsafe(
+                self._transcription_session_handler(session_info),
+                self._worker_loop
+            )
+            
+            # Yield results until the session is done
+            while not future.done():
+                try:
+                    yield result_queue.get(timeout=1.0)
+                except queue.Empty:
+                    continue
+            
+            # Drain queue
             while True:
                 try:
-                    event = result_queue.get(timeout=1.0)
-                    if isinstance(event, Exception):
-                        raise event
-
-                    yield event
-                    if event.type == "full_text":
-                        # Final text received, end of transcription
-                        break
-                    
+                    yield result_queue.get_nowait()
                 except queue.Empty:
-                    # Timeout waiting for results, keep trying
-                    continue
+                    break
+            
+            future.result()  # Will raise if an exception occurred
             
         except TimeoutError:
             raise
+
         except Exception as e:
             raise RuntimeError(f"Transcription failed: {e}")
+
         finally:
-            # Release semaphore
             self._session_semaphore.release()
 
     @brick.execute
-    def _work_dispatcher(self):
+    def _audio_loop(self):
         """
-        Waits for the transciption process to be requested and dispatches work to both the
-        consumer that reads from the microphone and the producers that send data to the ASR
-        service via sessions. Can dispatch work for up to max_concurrent_transcriptions
-        simultaneous transcriptions. The microphone consumer is always one (if a transcription
-        is requested), while the producers can be up to max_concurrent_transcriptions,
-        implementing a pub-sub pattern.
+        Dedicated thread for reading audio from the microphone and publishing
+        to subscribers.
         """
-        # Create a new event loop for this thread
-        self._worker_loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self._worker_loop)
-        
-        logger.info("Work dispatcher started")
-        
-        try:
-            # Run the main dispatcher loop
-            self._worker_loop.run_until_complete(self._async_work_dispatcher())
-        except Exception as e:
-            logger.error(f"Work dispatcher error: {e}")
-        finally:
-            # Clean up the event loop
-            self._worker_loop.close()
-            logger.info("Work dispatcher stopped")
-    
-    async def _async_work_dispatcher(self):
-        """
-        Async main loop for the work dispatcher.
-        Manages microphone reading and distributes audio to active sessions.
-        """
-        # Create audio subscribers registry
-        audio_subscribers = AudioSubscribers()
-        
-        audio_reader_task = None
+        logger.info("Audio reader thread starting")
         
         try:
             while not self._stop_worker.is_set():
-                # Check for new sessions from the queue (non-blocking in async)
-                try:
-                    # Run blocking queue.get in executor to not block event loop
-                    loop = asyncio.get_event_loop()
-                    session_info = await loop.run_in_executor(None, self._new_session_queue.get, True, 0.1)
-                    
-                    # Check for sentinel value (stop signal)
-                    if session_info is None:
-                        logger.info("Received stop signal")
-                        break
-                    
-                    logger.info(f"New session received: {session_info.session_id}")
-                    
-                    # Start session producer task (loop will track it)
-                    asyncio.create_task(
-                        self._session_producer(session_info, audio_subscribers)
-                    )
-                    logger.info(f"Session producer task started for {session_info.session_id}")
-                    
-                except queue.Empty:
-                    pass  # No new session, continue
-                
-                # Start audio reader if needed and not running
-                if audio_subscribers.has_subscribers():
-                    if audio_reader_task is None or audio_reader_task.done():
-                        audio_reader_task = asyncio.create_task(
-                            self._audio_reader(audio_subscribers)
-                        )
-                        logger.info("Audio reader task started")
+                # Only capture audio if there are active subscribers
+                if self._audio_subscribers.has_subscribers():
+                    audio_chunk = self.mic.capture()
+                    self._audio_subscribers.publish(audio_chunk)
                 else:
-                    # No subscribers, stop audio reader
-                    if audio_reader_task is not None and not audio_reader_task.done():
-                        audio_reader_task.cancel()
-                        try:
-                            await audio_reader_task
-                        except asyncio.CancelledError:
-                            pass
-                        audio_reader_task = None
-                        logger.info("Audio reader task stopped (no subscribers)")
-        
-        finally:
-            # Cancel all tasks in the loop except the current one (this dispatcher)
-            current = asyncio.current_task()
-            tasks = [t for t in asyncio.all_tasks() if t is not current and not t.done()]
-            
-            for task in tasks:
-                task.cancel()
-            
-            # Wait for all tasks to finish
-            if tasks:
-                await asyncio.gather(*tasks, return_exceptions=True)
-    
-    async def _audio_reader(self, audio_subscribers: AudioSubscribers):
-        """
-        Reads audio from the microphone and publishes to all subscribers.
-        Runs in the worker thread's event loop.
-        
-        Args:
-            audio_subscribers: The subscribers registry to publish to
-        """
-        logger.info("Audio reader starting")
-        
-        try:
-            # Run mic.stream() in a thread pool executor to avoid blocking
-            for audio_chunk in self.mic.stream():
-                if self._stop_worker.is_set():
-                    break
-                
-                # Check if there are still subscribers
-                if not audio_subscribers.has_subscribers():
-                    break
-                
-                # Publish to all subscribers
-                audio_subscribers.publish(audio_chunk)
-                
-                # Yield control to allow other tasks to run
-                await asyncio.sleep(0)
-        
+                    time.sleep(0.01)
         except Exception as e:
-            logger.error(f"Audio reader error: {e}")
+            logger.error(f"Audio reader thread error: {e}")
             raise
         finally:
-            logger.info("Audio reader stopped")
-    
-    async def _session_producer(self, session_info: SessionInfo, audio_subscribers: AudioSubscribers):
+            logger.info("Audio reader thread stopped")
+
+    @brick.execute
+    def _asyncio_loop(self):
         """
-        Producer task that manages audio subscription and transcription for a session.
-        
-        Args:
-            session_info: Information about the session
-            audio_subscribers: The subscribers registry to subscribe to
+        Dedicated thread for running the asyncio event loop.
+        Manages transcription sessions posted via run_coroutine_threadsafe.
         """
-        session_id = session_info.session_id
-        result_queue = session_info.result_queue
+        logger.info("Asyncio event loop starting")
         
-        logger.info(f"Session producer starting for {session_id}")
+        self._worker_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self._worker_loop)
         
-        # Create audio queue and subscribe
-        audio_queue = queue.Queue(maxsize=100)
-        audio_subscribers.subscribe(session_id, audio_queue)
+        async def keep_alive():
+            while not self._stop_worker.is_set():
+                await asyncio.sleep(0.1)
         
         try:
-            # Start transcription task (manages WebSocket and audio sending)
-            await self._receive_transcription_results(session_info, audio_queue)
-            
+            self._worker_loop.run_until_complete(keep_alive())
         except Exception as e:
-            logger.error(f"Session {session_id} producer error: {e}")
-            # Put error in result queue
-            result_queue.put(RuntimeError(str(e)))
+            logger.error(f"Event loop error: {e}")
         finally:
-            # Unsubscribe from audio
-            audio_subscribers.unsubscribe(session_id)
-            logger.info(f"Session producer stopped for {session_id}")
+            # Clean up the event loop
+            pending = asyncio.all_tasks(self._worker_loop)
+            for task in pending:
+                task.cancel()
+            if pending:
+                self._worker_loop.run_until_complete(
+                    asyncio.gather(*pending, return_exceptions=True)
+                )
+            self._worker_loop.close()
+            self._worker_loop = None
+            logger.info("Asyncio event loop stopped")
     
-    async def _receive_transcription_results(self, session_info: SessionInfo, audio_queue: queue.Queue):
+    async def _transcription_session_handler(self, session_info: SessionInfo):
         """
-        Manages WebSocket connection, sends audio chunks, and receives transcription results.
-        
-        Args:
-            session_info: Information about the session
-            audio_queue: Queue to get audio chunks from
+        Manages WebSocket connection, sends audio chunks, and receives
+        transcription results.
         """
         session_id = session_info.session_id
-        duration = session_info.duration
-        timeout = session_info.timeout
-        result_queue = session_info.result_queue
-        start_time = time.time()
         
         async with websockets.connect(self.ws_url) as websocket:
             logger.info(f"WebSocket connected for session {session_id}")
             
-            # Start audio sending task
+            # Start audio sending and transcription receiving tasks
             send_task = asyncio.create_task(
-                self._send_audio_chunks(websocket, session_id, audio_queue, duration, start_time)
+                self._send_audio_chunks(websocket, session_id, session_info)
+            )
+            receive_task = asyncio.create_task(
+                self._receive_transcription(websocket, session_id, session_info)
             )
             
             try:
-                while not self._stop_worker.is_set():
-                    # Check timeout
-                    elapsed = time.time() - start_time
-                    if elapsed > timeout:
-                        result_queue.put(TimeoutError(f"Transcription did not complete within {timeout} seconds"))
-                        break
-                    
-                    # Receive message with timeout
-                    remaining_timeout = timeout - elapsed
-                    try:
-                        message = await asyncio.wait_for(websocket.recv(), timeout=min(remaining_timeout, 1.0))
-                    except asyncio.TimeoutError:
-                        continue
-                    
-                    # Parse message
-                    try:
-                        data = json.loads(message)
-                    except json.JSONDecodeError:
-                        logger.warning(f"Failed to parse WebSocket message: {message}")
-                        continue
-                    
-                    # Handle different message types
-                    msg_type = data.get("type")
-                    
-                    if msg_type == "transcript.text.delta":
-                        # Partial transcription result
-                        text = data.get("text", "")
-                        result_queue.put(ASREvent("partial_text", text))
-                    
-                    elif msg_type == "transcript.text.done":
-                        # Final transcription result
-                        text = data.get("text", "")
-                        result_queue.put(ASREvent("full_text", text))
-                        break
-                    
-                    elif "error" in data:
-                        # Error message
-                        error_msg = data["error"].get("message", "Unknown error")
-                        logger.error(f"Transcription error for {session_id}: {error_msg}")
-                        result_queue.put(RuntimeError(error_msg))
-                        break
-
-                    else:
-                        logger.warning(f"Unknown message type received: {msg_type}")
-                        result_queue.put(RuntimeError(f"Unknown message type received: {msg_type}"))
-                        break
-            
-            except asyncio.CancelledError:
-                logger.debug(f"Receive task cancelled for session {session_id}")
-                raise
-            except Exception as e:
-                logger.error(f"Error receiving transcription results for {session_id}: {e}")
-                result_queue.put(RuntimeError(str(e)))
+                await receive_task
             finally:
-                # Cancel send task
+                # Cancel send task if still running
                 if not send_task.done():
                     send_task.cancel()
                     try:
@@ -541,17 +365,15 @@ class LocalASR:
                     except asyncio.CancelledError:
                         pass
     
-    async def _send_audio_chunks(self, websocket, session_id: str, audio_queue: queue.Queue, duration: int, start_time: float):
-        """
-        Sends audio chunks from queue to WebSocket.
+    async def _send_audio_chunks(self, websocket, session_id: str, session_info: SessionInfo):
+        """Sends audio chunks from queue to WebSocket"""
+        duration = session_info.duration
+        start_time = session_info.start_time
         
-        Args:
-            websocket: The WebSocket connection
-            session_id: The session ID
-            audio_queue: Queue to get audio chunks from
-            duration: Duration in seconds to record audio. If 0, records until silence (VAD).
-            start_time: The start time of recording
-        """
+        # Create audio queue and subscribe
+        audio_queue = queue.Queue(maxsize=100)
+        self._audio_subscribers.subscribe(session_id, audio_queue)
+        
         try:
             while not self._stop_worker.is_set():
                 # Check duration limit (if duration > 0)
@@ -561,7 +383,6 @@ class LocalASR:
                         logger.debug(f"Session {session_id} duration limit reached: {duration}s")
                         break
                 
-                # Get audio chunk from queue with timeout
                 try:
                     audio_chunk = await asyncio.wait_for(
                         asyncio.get_event_loop().run_in_executor(None, audio_queue.get, True, 0.1),
@@ -570,13 +391,9 @@ class LocalASR:
                 except (asyncio.TimeoutError, queue.Empty):
                     continue
                 
-                # Convert audio chunk to bytes
                 audio_bytes = audio_chunk.tobytes()
-                
-                # Encode as base64
                 audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
                 
-                # Create message
                 message = {
                     "message_type": "transcriptions_session_audio",
                     "message_source": "audio_analytics_api",
@@ -585,7 +402,6 @@ class LocalASR:
                     "data": audio_base64
                 }
                 
-                # Send message
                 await websocket.send(json.dumps(message))
             
         except asyncio.CancelledError:
@@ -593,4 +409,56 @@ class LocalASR:
             raise
         except Exception as e:
             logger.error(f"Error sending audio chunks for session {session_id}: {e}")
+            raise
+        finally:
+            # Unsubscribe from audio as soon as we're done sending
+            self._audio_subscribers.unsubscribe(session_id)
+            logger.debug(f"Session {session_id} unsubscribed from audio")
+    
+    async def _receive_transcription(self, websocket, session_id: str, session_info: SessionInfo):
+        """Receives transcriptions and puts them in the result queue"""
+        result_queue = session_info.result_queue
+        
+        try:
+            while not self._stop_worker.is_set():
+                try:
+                    message = await asyncio.wait_for(websocket.recv(), timeout=1.0)
+                except asyncio.TimeoutError:
+                    continue
+                
+                try:
+                    data = json.loads(message)
+                except json.JSONDecodeError:
+                    logger.warning(f"Failed to parse WebSocket message: {message}")
+                    continue
+                
+                # Handle different message types
+                msg_type = data.get("type")
+                
+                if msg_type == "transcript.text.delta":
+                    # Partial transcription result
+                    text = data.get("text", "")
+                    result_queue.put(ASREvent("partial_text", text))
+                
+                elif msg_type == "transcript.text.done":
+                    # Final transcription result
+                    text = data.get("text", "")
+                    result_queue.put(ASREvent("full_text", text))
+                    break
+                
+                elif "error" in data:
+                    # Error message from server
+                    error_msg = data["error"].get("message", "Unknown error")
+                    logger.error(f"Transcription error for {session_id}: {error_msg}")
+                    raise RuntimeError(error_msg)
+
+                else:
+                    logger.warning(f"Unknown message type received: {msg_type}")
+                    raise RuntimeError(f"Unknown message type received: {msg_type}")
+        
+        except asyncio.CancelledError:
+            logger.debug(f"Receive task cancelled for session {session_id}")
+            raise
+        except Exception as e:
+            logger.error(f"Error receiving transcription for {session_id}: {e}")
             raise
