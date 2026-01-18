@@ -370,16 +370,17 @@ class LocalASR:
                 self._receive_transcription(websocket, session_id, session_info)
             )
             
-            try:
-                await receive_task
-            finally:
-                # Cancel send task if still running
-                if not send_task.done():
-                    send_task.cancel()
-                    try:
-                        await send_task
-                    except asyncio.CancelledError:
-                        pass
+            await asyncio.gather(send_task, receive_task)
+            # try:
+            #     await receive_task
+            # finally:
+            #     # Cancel send task if still running
+            #     if not send_task.done():
+            #         send_task.cancel()
+            #         try:
+            #             await send_task
+            #         except asyncio.CancelledError:
+            #             pass
     
     async def _send_audio_chunks(self, websocket: websockets.ClientConnection, session_id: str, session_info: SessionInfo):
         """Sends audio chunks from queue to WebSocket"""
@@ -461,7 +462,10 @@ class LocalASR:
                     text = data.get("text", "")
                     result_queue.put(ASREvent("full_text", text))
                     break
-                
+
+                elif msg_type == "connection_established":
+                    continue
+
                 elif "error" in data:
                     # Error message from server
                     error_msg = data["error"].get("message", "Unknown error")
