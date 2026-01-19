@@ -12,6 +12,7 @@ from typing import ContextManager, Literal, TypeVar, Generic
 from collections.abc import Generator, Iterator
 from dataclasses import dataclass
 
+import numpy as np
 import websockets
 
 from arduino.app_peripherals.microphone import BaseMicrophone, ALSAMicrophone
@@ -27,13 +28,19 @@ class ASREvent:
 
 
 @dataclass(frozen=True)
-class SessionInfo:
+class MicSessionInfo:
     session_id: str
     duration: int
     start_time: float
     result_queue: queue.Queue[ASREvent]
     cancelled: threading.Event
 
+@dataclass(frozen=True)
+class WAVSessionInfo:
+    session_id: str
+    wav_audio: bytes
+    result_queue: queue.Queue[ASREvent]
+    cancelled: threading.Event
 
 T = TypeVar("T")
 
@@ -158,7 +165,7 @@ class LocalASR:
         
         self.mic.stop()
 
-    def transcribe(self, duration: int = 0) -> str:
+    def transcribe_mic(self, duration: int = 0) -> str:
         """
         Transcribe audio data from the microphone and return the transcribed text.
 
@@ -172,7 +179,7 @@ class LocalASR:
             RuntimeError: If transcription fails or other errors occur.
         """
         transcription = ""
-        with self.transcribe_stream(duration=duration) as stream:
+        with self.transcribe_mic_stream(duration=duration) as stream:
             for chunk in stream:
                 transcription = chunk.data
         
@@ -181,7 +188,7 @@ class LocalASR:
         
         raise RuntimeError("Transcription did not return any text")
 
-    def transcribe_stream(self, duration: int = 0) -> TranscriptionStream[ASREvent]:
+    def transcribe_mic_stream(self, duration: int = 0) -> TranscriptionStream[ASREvent]:
         """
         Transcribe audio data from the microphone and stream the results as soon
         as they are available.
@@ -201,7 +208,46 @@ class LocalASR:
         """
         return TranscriptionStream(self._transcribe_stream(duration))
 
-    def _transcribe_stream(self, duration: int = 0) -> Generator[ASREvent, None, None]:
+    def transcribe_wav(self, wav_data: np.ndarray | bytes) -> str:
+        """
+        Transcribe audio from WAV data and return the transcribed text.
+
+        Args:
+            wav_data (np.ndarray | bytes): WAV file data (including header) as numpy array or bytes.
+
+        Returns:
+            str: The transcribed text.
+        
+        Raises:
+            RuntimeError: If transcription fails or other errors occur.
+        """
+        transcription = ""
+        with self.transcribe_wav_stream(wav_data) as stream:
+            for chunk in stream:
+                transcription = chunk.data
+        
+        if transcription:
+            return transcription
+        
+        raise RuntimeError("Transcription did not return any text")
+
+    def transcribe_wav_stream(self, wav_data: np.ndarray | bytes) -> TranscriptionStream[ASREvent]:
+        """
+        Transcribe audio from WAV data and stream the results.
+
+        Args:
+            wav_data (np.ndarray | bytes): WAV file data (including header) as numpy array or bytes.
+
+        Returns:
+            TranscriptionStream[ASREvent]: iterable context manager emitting ASREvent items.
+
+        Raises:
+            RuntimeError: If transcription fails or other errors occur.
+        """
+        data = wav_data.tobytes() if isinstance(wav_data, np.ndarray) else wav_data
+        return TranscriptionStream(self._transcribe_stream(audio_source=data))
+
+    def _transcribe_stream(self, duration: int = 0, audio_source: bytes | None = None) -> Generator[ASREvent, None, None]:
         if self._worker_loop is None:
             raise RuntimeError("Worker loop not initialized. Call start() first.")
         if not self._session_semaphore.acquire(blocking=False):
@@ -249,13 +295,21 @@ class LocalASR:
             result_queue = queue.Queue[ASREvent]()
             
             # Create session info
-            session_info = SessionInfo(
-                session_id=session_id,
-                duration=duration,
-                start_time=time.time(),
-                result_queue=result_queue,
-                cancelled=cancelled,
-            )
+            if audio_source is None:
+                session_info = MicSessionInfo(
+                    session_id=session_id,
+                    duration=duration,
+                    start_time=time.time(),
+                    result_queue=result_queue,
+                    cancelled=cancelled,
+                )
+            else:
+                session_info = WAVSessionInfo(
+                    session_id=session_id,
+                    wav_audio=audio_source,
+                    result_queue=result_queue,
+                    cancelled=cancelled,
+                )
             
             future = asyncio.run_coroutine_threadsafe(
                 self._transcription_session_handler(session_info),
@@ -352,7 +406,7 @@ class LocalASR:
             self._worker_loop = None
             logger.info("Asyncio event loop stopped")
     
-    async def _transcription_session_handler(self, session_info: SessionInfo):
+    async def _transcription_session_handler(self, session_info: MicSessionInfo | WAVSessionInfo):
         """
         Manages WebSocket connection, sends audio chunks, and receives
         transcription results.
@@ -363,27 +417,23 @@ class LocalASR:
             logger.info(f"WebSocket connected for session {session_id}")
             
             # Start audio sending and transcription receiving tasks
-            send_task = asyncio.create_task(
-                self._send_audio_chunks(websocket, session_id, session_info)
-            )
+            if isinstance(session_info, MicSessionInfo):
+                send_task = asyncio.create_task(
+                    self._send_mic_audio(websocket, session_info)
+                )
+            else:
+                send_task = asyncio.create_task(
+                    self._send_wav_audio(websocket, session_info)
+                )
             receive_task = asyncio.create_task(
-                self._receive_transcription(websocket, session_id, session_info)
+                self._receive_transcription(websocket, session_info)
             )
             
             await asyncio.gather(send_task, receive_task)
-            # try:
-            #     await receive_task
-            # finally:
-            #     # Cancel send task if still running
-            #     if not send_task.done():
-            #         send_task.cancel()
-            #         try:
-            #             await send_task
-            #         except asyncio.CancelledError:
-            #             pass
     
-    async def _send_audio_chunks(self, websocket: websockets.ClientConnection, session_id: str, session_info: SessionInfo):
-        """Sends audio chunks from queue to WebSocket"""
+    async def _send_mic_audio(self, websocket: websockets.ClientConnection, session_info: MicSessionInfo):
+        """Sends audio chunks from mic queue to WebSocket"""
+        session_id = session_info.session_id
         duration = session_info.duration
         start_time = session_info.start_time
         
@@ -403,7 +453,7 @@ class LocalASR:
                 try:
                     audio_chunk = await asyncio.wait_for(
                         asyncio.get_event_loop().run_in_executor(None, audio_queue.get, True, 0.1),
-                        timeout=0.2
+                        timeout=0.1
                     )
                 except (asyncio.TimeoutError, queue.Empty):
                     continue
@@ -432,8 +482,59 @@ class LocalASR:
             self._audio_subscribers.unsubscribe(session_id)
             logger.debug(f"Session {session_id} unsubscribed from audio")
     
-    async def _receive_transcription(self, websocket: websockets.ClientConnection, session_id: str, session_info: SessionInfo):
+    async def _send_wav_audio(self, websocket: websockets.ClientConnection, session_info: WAVSessionInfo):
+        """Sends audio chunks from WAV numpy array to WebSocket"""
+        import wave
+        import io
+
+        session_id = session_info.session_id
+        wav_audio = session_info.wav_audio
+
+        with wave.open(io.BytesIO(wav_audio), 'rb') as wf:
+            sample_rate = wf.getframerate()
+            num_channels = wf.getnchannels()
+            sample_width = wf.getsampwidth()
+            frames = wf.readframes(wf.getnframes())
+
+        # Calculate chunk size for ~100ms of audio
+        chunk_duration = 0.1
+        chunk_size = int(chunk_duration * sample_rate * num_channels * sample_width)
+
+        try:
+            for i in range(0, len(frames), chunk_size):
+                iteration_start = time.perf_counter()
+
+                if self._stop_worker.is_set() or session_info.cancelled.is_set():
+                    break
+                    
+                audio_chunk = frames[i:i + chunk_size]
+                audio_base64 = base64.b64encode(audio_chunk).decode('utf-8')
+                
+                message = {
+                    "message_type": "transcriptions_session_audio",
+                    "message_source": "audio_analytics_api",
+                    "session_id": session_id,
+                    "type": "input_audio",
+                    "data": audio_base64
+                }
+                
+                await websocket.send(json.dumps(message))
+                
+                # Account for processing time to maintain real-time simulation
+                elapsed = time.perf_counter() - iteration_start
+                sleep_time = max(0, chunk_duration - elapsed)
+                await asyncio.sleep(sleep_time)
+            
+        except asyncio.CancelledError:
+            logger.debug(f"Array audio sending cancelled for session {session_id}")
+            raise
+        except Exception as e:
+            logger.error(f"Error sending array audio for session {session_id}: {e}")
+            raise
+    
+    async def _receive_transcription(self, websocket: websockets.ClientConnection, session_info: MicSessionInfo | WAVSessionInfo):
         """Receives transcriptions and puts them in the result queue"""
+        session_id = session_info.session_id
         result_queue = session_info.result_queue
         
         try:
