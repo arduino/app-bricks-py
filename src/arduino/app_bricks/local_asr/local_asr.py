@@ -13,10 +13,12 @@ from collections.abc import Generator, Iterator
 from dataclasses import dataclass
 
 import numpy as np
+import requests
 import websockets
 
-from arduino.app_peripherals.microphone import BaseMicrophone, ALSAMicrophone
-from arduino.app_utils import brick, Logger, HttpClient
+from arduino.app_internal.core import load_brick_compose_file, resolve_address
+from arduino.app_peripherals.microphone import BaseMicrophone
+from arduino.app_utils import brick, Logger
 
 logger = Logger("LocalASR")
 
@@ -30,6 +32,7 @@ class ASREvent:
 @dataclass(frozen=True)
 class MicSessionInfo:
     session_id: str
+    mic: BaseMicrophone
     duration: int
     start_time: float
     result_queue: queue.Queue[ASREvent]
@@ -67,119 +70,135 @@ class TranscriptionStream(Generic[T], ContextManager["TranscriptionStream[T]"], 
         self._generator.close()
 
 
-class AudioSubscribers:
-    """Manages pub-sub for audio distribution to multiple consumers."""
+class AudioStreamRouter:
+    """Routes audio streams from multiple microphones to grouped subscribers."""
     
     def __init__(self):
-        self._subscribers = {}  # subscriber_id -> queue
+        self._subscribers = {}  # mic_id -> {subscriber_id -> queue}
+        self._threads = {}  # mic_id -> thread
         self._lock = threading.Lock()
     
-    def subscribe(self, subscriber_id: str, audio_queue: queue.Queue):
-        """Register a subscriber to receive audio chunks."""
+    def subscribe(self, mic: BaseMicrophone, subscriber_id: str, audio_queue: queue.Queue):
+        """Register a subscriber to receive audio chunks from a specific microphone."""
+        mic_id = id(mic)
         with self._lock:
-            self._subscribers[subscriber_id] = audio_queue
-            logger.debug(f"Subscriber {subscriber_id} registered")
+            if mic_id not in self._subscribers:
+                self._subscribers[mic_id] = {}
+            self._subscribers[mic_id][subscriber_id] = audio_queue
+            logger.debug(f"Subscriber {subscriber_id} registered for mic {mic_id}")
     
-    def unsubscribe(self, subscriber_id: str):
-        """Unregister a subscriber."""
+    def unsubscribe(self, mic: BaseMicrophone, subscriber_id: str):
+        """Unregister a subscriber from a specific microphone."""
+        mic_id = id(mic)
         with self._lock:
-            if subscriber_id in self._subscribers:
-                del self._subscribers[subscriber_id]
-                logger.debug(f"Subscriber {subscriber_id} unregistered")
+            if mic_id in self._subscribers and subscriber_id in self._subscribers[mic_id]:
+                del self._subscribers[mic_id][subscriber_id]
+                logger.debug(f"Subscriber {subscriber_id} unregistered from mic {mic_id}")
+                # Clean up empty mic groups
+                if not self._subscribers[mic_id]:
+                    del self._subscribers[mic_id]
     
-    def publish(self, audio_chunk):
-        """Publish audio chunk to all subscribers."""
+    def publish(self, mic: BaseMicrophone, audio_chunk):
+        """Publish audio chunk to all subscribers of a specific microphone."""
+        mic_id = id(mic)
         with self._lock:
-            for subscriber_id, audio_queue in list(self._subscribers.items()):
+            if mic_id not in self._subscribers:
+                return
+            for subscriber_id, audio_queue in list(self._subscribers[mic_id].items()):
                 try:
                     audio_queue.put_nowait(audio_chunk)
                 except queue.Full:
                     logger.warning(f"Audio queue full for subscriber {subscriber_id}, dropping chunk")
     
-    def has_subscribers(self) -> bool:
-        """Check if there are any active subscribers."""
+    def has_subscribers(self, mic: BaseMicrophone) -> bool:
+        """Check if there are any active subscribers for a specific microphone."""
+        mic_id = id(mic)
         with self._lock:
-            return len(self._subscribers) > 0
+            return mic_id in self._subscribers and len(self._subscribers[mic_id]) > 0
+    
+    def register_thread(self, mic: BaseMicrophone, thread: threading.Thread):
+        """Register a reader thread for a microphone."""
+        mic_id = id(mic)
+        with self._lock:
+            self._threads[mic_id] = thread
+    
+    def unregister_thread(self, mic: BaseMicrophone):
+        """Unregister a reader thread for a microphone."""
+        mic_id = id(mic)
+        with self._lock:
+            if mic_id in self._threads:
+                del self._threads[mic_id]
+    
+    def get_thread(self, mic: BaseMicrophone) -> threading.Thread | None:
+        """Get the reader thread for a microphone."""
+        mic_id = id(mic)
+        with self._lock:
+            return self._threads.get(mic_id)
 
 
 @brick
 class LocalASR:
-    def __init__(
-        self,
-        mic: BaseMicrophone | None = None,
-        api_host: str = "localhost",
-        api_port: int = 8085,
-        model: str = "whisper-small",
-        language: str = "en"
-    ):
-        if mic is None:
-            mic = ALSAMicrophone()
-        self.mic: BaseMicrophone = mic
-
+    def __init__(self):
         self.max_concurrent_transcriptions = 3
         
         # API configuration
-        self.api_host = api_host
-        self.api_port = api_port
-        self.api_base_url = f"http://{api_host}:{api_port}/audio-analytics/v1/api"
-        self.ws_url = f"ws://{api_host}:{api_port}/stream"
+        self.api_host = "localhost"
+        infra = load_brick_compose_file(self.__class__) or {}
+        for k, _ in infra["services"].items():
+            self.api_host = k
+            break  # Only one service is expected
+        self.api_host = resolve_address(self.api_host)
+        if not self.api_host:
+            raise RuntimeError("Host address could not be resolved. Please check your configuration.")
+        self.api_port = 8085
+        self.api_base_url = f"http://{self.api_host}:{self.api_port}/audio-analytics/v1/api"
+        self.ws_url = f"ws://{self.api_host}:{self.api_port}/stream"
         
         # ASR configuration
-        self.model = model
-        self.language = language
-        
-        # State management
-        self._transcribing = False
-        self._state_lock = threading.Lock()
-        
-        # HTTP client for requests
-        self._http_client = HttpClient()
+        self.model = "whisper-small"
+        self.language = "en"
         
         # Worker thread management
         self._worker_loop = None
         self._stop_worker = threading.Event()
         
         # Audio distribution
-        self._audio_subscribers = AudioSubscribers()
+        self._audio_stream_router = AudioStreamRouter()
         
-        # Session management - only for limiting concurrency
+        # Limit concurrency
         self._session_semaphore = threading.Semaphore(self.max_concurrent_transcriptions)
     
     def start(self):
         """
         Prepare the ASR for transcription.
-
-        This starts the microphone device too.
         """
-        self.mic.start()
-        
         self._stop_worker.clear()
     
     def stop(self):
         """
-        Stop the ASR.
-
-        This stops the microphone device too.
+        Stop the ASR and clean up resources.
         """
         self._stop_worker.set()
-        
-        self.mic.stop()
 
-    def transcribe_mic(self, duration: int = 0) -> str:
+    def transcribe_mic(self, mic: BaseMicrophone, duration: int = 0) -> str:
         """
         Transcribe audio data from the microphone and return the transcribed text.
 
         Args:
+            mic (BaseMicrophone): The microphone instance to capture audio from.
             duration (int): Duration in seconds to record audio. If 0, records until silence.
 
         Returns:
             str: The transcribed text.
         
         Raises:
-            RuntimeError: If transcription fails or other errors occur.
+            RuntimeError: If transcription fails, microphone not started, or other errors occur.
         """
+        if not mic.is_started():
+            raise RuntimeError("Microphone must be started before transcription. Call mic.start() first.")
+        
         transcription = ""
-        with self.transcribe_mic_stream(duration=duration) as stream:
+        with self.transcribe_mic_stream(mic=mic, duration=duration) as stream:
             for chunk in stream:
                 transcription = chunk.data
         
@@ -188,7 +207,7 @@ class LocalASR:
         
         raise RuntimeError("Transcription did not return any text")
 
-    def transcribe_mic_stream(self, duration: int = 0) -> TranscriptionStream[ASREvent]:
+    def transcribe_mic_stream(self, mic: BaseMicrophone, duration: int = 0) -> TranscriptionStream[ASREvent]:
         """
         Transcribe audio data from the microphone and stream the results as soon
         as they are available.
@@ -198,15 +217,19 @@ class LocalASR:
         and may be updated by the final full text.
 
         Args:
+            mic (BaseMicrophone): The microphone instance to capture audio from.
             duration (int): Duration in seconds to record audio. If 0, records until silence.
 
         Returns:
             TranscriptionStream[ASREvent]: iterable context manager emitting ASREvent items.
 
         Raises:
-            RuntimeError: If transcription fails or other errors occur.
+            RuntimeError: If transcription fails, microphone not started, or other errors occur.
         """
-        return TranscriptionStream(self._transcribe_stream(duration))
+        if not mic.is_started():
+            raise RuntimeError("Microphone must be started before transcription. Call mic.start() first.")
+        
+        return TranscriptionStream(self._transcribe_stream(duration=duration, audio_source=mic))
 
     def transcribe_wav(self, wav_data: np.ndarray | bytes) -> str:
         """
@@ -247,7 +270,7 @@ class LocalASR:
         data = wav_data.tobytes() if isinstance(wav_data, np.ndarray) else wav_data
         return TranscriptionStream(self._transcribe_stream(audio_source=data))
 
-    def _transcribe_stream(self, duration: int = 0, audio_source: bytes | None = None) -> Generator[ASREvent, None, None]:
+    def _transcribe_stream(self, duration: int = 0, audio_source: BaseMicrophone | bytes | None = None) -> Generator[ASREvent, None, None]:
         if self._worker_loop is None:
             raise RuntimeError("Worker loop not initialized. Call start() first.")
         if not self._session_semaphore.acquire(blocking=False):
@@ -269,15 +292,11 @@ class LocalASR:
                 "stream": True,
                 "language": self.language
             }
-            response = self._http_client.request_with_retry(
+            response = requests.post(
                 url=url,
-                method="POST",
                 json=data,
                 timeout=3
             )
-            
-            if response is None:
-                raise RuntimeError("Failed to create transcription session")
             if response.status_code != 200:
                 error_msg = f"Failed to create transcription session: {response.status_code}"
                 try:
@@ -295,21 +314,24 @@ class LocalASR:
             result_queue = queue.Queue[ASREvent]()
             
             # Create session info
-            if audio_source is None:
+            if isinstance(audio_source, BaseMicrophone):
                 session_info = MicSessionInfo(
                     session_id=session_id,
+                    mic=audio_source,
                     duration=duration,
                     start_time=time.time(),
                     result_queue=result_queue,
                     cancelled=cancelled,
                 )
-            else:
+            elif isinstance(audio_source, bytes):
                 session_info = WAVSessionInfo(
                     session_id=session_id,
                     wav_audio=audio_source,
                     result_queue=result_queue,
                     cancelled=cancelled,
                 )
+            else:
+                raise RuntimeError("audio_source must be either a BaseMicrophone or bytes")
             
             future = asyncio.run_coroutine_threadsafe(
                 self._transcription_session_handler(session_info),
@@ -351,28 +373,6 @@ class LocalASR:
 
         finally:
             self._session_semaphore.release()
-
-    @brick.execute
-    def _audio_loop(self):
-        """
-        Dedicated thread for reading audio from the microphone and publishing
-        to subscribers.
-        """
-        logger.info("Audio reader thread starting")
-        
-        try:
-            while not self._stop_worker.is_set():
-                # Only capture audio if there are active subscribers
-                if self._audio_subscribers.has_subscribers():
-                    audio_chunk = self.mic.capture()
-                    self._audio_subscribers.publish(audio_chunk)
-                else:
-                    time.sleep(0.01)
-        except Exception as e:
-            logger.error(f"Audio reader thread error: {e}")
-            raise
-        finally:
-            logger.info("Audio reader thread stopped")
 
     @brick.execute
     def _asyncio_loop(self):
@@ -434,12 +434,25 @@ class LocalASR:
     async def _send_mic_audio(self, websocket: websockets.ClientConnection, session_info: MicSessionInfo):
         """Sends audio chunks from mic queue to WebSocket"""
         session_id = session_info.session_id
+        mic = session_info.mic
         duration = session_info.duration
         start_time = session_info.start_time
         
+        # Start reader thread for this mic if not already running
+        existing_thread = self._audio_stream_router.get_thread(mic)
+        if existing_thread is None or not existing_thread.is_alive():
+            reader_thread = threading.Thread(
+                target=self._mic_reader_loop,
+                args=(mic,),
+                daemon=True,
+                name=f"AudioReader-{id(mic)}"
+            )
+            self._audio_stream_router.register_thread(mic, reader_thread)
+            reader_thread.start()
+        
         # Create audio queue and subscribe
         audio_queue = queue.Queue(maxsize=100)
-        self._audio_subscribers.subscribe(session_id, audio_queue)
+        self._audio_stream_router.subscribe(mic, session_id, audio_queue)
         
         try:
             while not self._stop_worker.is_set() and not session_info.cancelled.is_set():
@@ -479,8 +492,34 @@ class LocalASR:
             raise
         finally:
             # Unsubscribe from audio as soon as we're done sending
-            self._audio_subscribers.unsubscribe(session_id)
+            self._audio_stream_router.unsubscribe(mic, session_id)
             logger.debug(f"Session {session_id} unsubscribed from audio")
+
+    def _mic_reader_loop(self, mic: BaseMicrophone):
+        """
+        Reader thread function for capturing audio from a specific microphone
+        and publishing to its subscribers.
+        """
+        mic_id = id(mic)
+        logger.info(f"Audio reader thread starting for mic {mic_id}")
+        
+        try:
+            while not self._stop_worker.is_set():
+                # Only capture audio if there are active subscribers for this mic
+                if self._audio_stream_router.has_subscribers(mic):
+                    audio_chunk = mic.capture()
+                    self._audio_stream_router.publish(mic, audio_chunk)
+                else:
+                    # No subscribers left, exit the thread
+                    logger.info(f"No more subscribers for mic {mic_id}, stopping reader thread")
+                    break
+                    
+        except Exception as e:
+            logger.error(f"Audio reader thread error for mic {mic_id}: {e}")
+            raise
+        finally:
+            self._audio_stream_router.unregister_thread(mic)
+            logger.info(f"Audio reader thread stopped for mic {mic_id}")
     
     async def _send_wav_audio(self, websocket: websockets.ClientConnection, session_info: WAVSessionInfo):
         """Sends audio chunks from WAV numpy array to WebSocket"""

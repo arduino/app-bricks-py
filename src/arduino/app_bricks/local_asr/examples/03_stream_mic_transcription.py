@@ -5,9 +5,14 @@
 # EXAMPLE_NAME = "Transcribe audio from microphone and stream the results"
 # EXAMPLE_REQUIRES = "Requires a microphone device"
 from arduino.app_bricks.local_asr import LocalASR
+from arduino.app_peripherals.microphone import Microphone
+
+
+mic = Microphone()
+mic.start()
 
 asr = LocalASR()
-with asr.transcribe_mic_stream(duration=5) as stream:
+with asr.transcribe_mic_stream(mic, duration=5) as stream:
     for chunk in stream:
         match chunk.type:
             case "partial_text":
@@ -15,3 +20,5 @@ with asr.transcribe_mic_stream(duration=5) as stream:
             case "full_text":
                 print(f"Final: {chunk.data}")
                 break
+
+mic.stop()
