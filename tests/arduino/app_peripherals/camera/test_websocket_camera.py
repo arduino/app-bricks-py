@@ -304,20 +304,23 @@ async def test_websocket_camera_client_events():
     connected = asyncio.Event()
     disconnected = asyncio.Event()
 
+    camera = WebSocketCamera(port=0)
+
     def event_listener(event_type, data):
         if event_type == "connected":
             main_loop.call_soon_threadsafe(connected.set)
             assert "client_address" in data
             assert "client_name" in data
             assert data["client_name"] == "test_client"
+            assert camera.name == "test_client"
         if event_type == "disconnected":
             main_loop.call_soon_threadsafe(disconnected.set)
             assert "client_address" in data
             assert "client_name" in data
             assert data["client_name"] == "test_client"
+            assert camera.name == "test_client"
         events.append((event_type, data))
 
-    camera = WebSocketCamera(port=0)
     camera.on_status_changed(event_listener)
     camera.start()
 

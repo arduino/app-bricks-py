@@ -202,23 +202,24 @@ class WebSocketCamera(BaseCamera):
 
     async def _ws_handler(self, conn: websockets.ServerConnection) -> None:
         """Handle a connected WebSocket client. Only one client allowed at a time."""
-        client_addr = f"{conn.remote_address[0]}:{conn.remote_address[1]}"
         # Extract and sanitize client_name from URL parameters
-        client_name = "unknown"
+        client_name = "Unknown"
         if conn.request:
             try:
                 parsed_path = urlparse(conn.request.path)
                 query_params = parse_qs(parsed_path.query)
                 if "client_name" in query_params:
                     raw_name = query_params["client_name"][0]
-                    # Sanitize: only allow alphanumeric, hyphens, underscores, and limit length
-                    client_name = "".join(c for c in raw_name if c.isalnum() or c in " -_")[:64]
-                    if not client_name:
-                        client_name = "unknown"
+                    # Sanitize: only allow alphanumeric, spaces, hyphens, underscores, and limit length
+                    sanitized = "".join(c for c in raw_name if c.isalnum() or c in " -_")[:64]
+                    if sanitized:
+                        client_name = sanitized
             except Exception as e:
                 self.logger.debug(f"Failed to extract client_name from URL parameters: {e}")
-                client_name = "unknown"
+            finally:
+                self.name = client_name
 
+        client_addr = f"{conn.remote_address[0]}:{conn.remote_address[1]}"
         async with self._client_lock:
             if self._client is not None:
                 # Reject the new client
