@@ -5,9 +5,10 @@
 import os
 import asyncio
 import threading
+import inspect
 from arduino.app_utils import brick, Logger
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 logger = Logger("TelegramBot")
 
@@ -27,17 +28,33 @@ class TelegramBot:
         self._loop_thread = None
         self._running = False
 
+    def _make_async_handler(self, callback):
+        """Convert a synchronous callback to async handler if needed."""
+        if inspect.iscoroutinefunction(callback):
+            # Already async, use as-is
+            return callback
+
+        # Sync callback, wrap it
+        async def async_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, callback, update, context)
+
+        return async_wrapper
+
     def add_command(self, command: str, callback):
-        """Register a slash command (e.g., /start)."""
-        self.application.add_handler(CommandHandler(command, callback))
+        """Register a slash command (e.g., /start). Callback can be sync or async."""
+        async_callback = self._make_async_handler(callback)
+        self.application.add_handler(CommandHandler(command, async_callback))
 
     def on_text(self, callback):
-        """Register a handler for text messages."""
-        self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, callback))
+        """Register a handler for text messages. Callback can be sync or async."""
+        async_callback = self._make_async_handler(callback)
+        self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, async_callback))
 
     def on_photo(self, callback):
-        """Register a handler for photo messages."""
-        self.application.add_handler(MessageHandler(filters.PHOTO & ~filters.COMMAND, callback))
+        """Register a handler for photo messages. Callback can be sync or async."""
+        async_callback = self._make_async_handler(callback)
+        self.application.add_handler(MessageHandler(filters.PHOTO & ~filters.COMMAND, async_callback))
 
     def send_message(self, chat_id: int, message_text: str):
         """Send a message to a specific chat ID (synchronous method)."""
@@ -60,6 +77,55 @@ class TelegramBot:
             logger.info("Message sent successfully!")
         except Exception as e:
             logger.error(f"An error occurred: {e}")
+            raise
+
+    def send_photo(self, chat_id: int, photo, caption: str = None):
+        """Send a photo to a specific chat ID (synchronous method)."""
+        if not self._running or not self._loop:
+            logger.error("Bot not started, cannot send photo")
+            return
+
+        future = asyncio.run_coroutine_threadsafe(self._send_photo_async(chat_id, photo, caption), self._loop)
+
+        try:
+            future.result(timeout=10)
+        except Exception as e:
+            logger.error(f"Failed to send photo: {e}")
+
+    async def _send_photo_async(self, chat_id: int, photo, caption: str = None):
+        """Internal async method to send a photo."""
+        logger.info(f"Sending photo to chat_id={chat_id}")
+        try:
+            await self.application.bot.send_photo(chat_id=chat_id, photo=photo, caption=caption)
+            logger.info("Photo sent successfully!")
+        except Exception as e:
+            logger.error(f"An error occurred: {e}")
+            raise
+
+    def get_photo(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Get photo bytes from an update (synchronous method)."""
+        if not self._running or not self._loop:
+            logger.error("Bot not started, cannot get photo")
+            return None
+
+        future = asyncio.run_coroutine_threadsafe(self._get_photo_async(update, context), self._loop)
+
+        try:
+            return future.result(timeout=30)
+        except Exception as e:
+            logger.error(f"Failed to get photo: {e}")
+            return None
+
+    async def _get_photo_async(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Internal async method to download a photo."""
+        logger.info("Downloading photo from Telegram...")
+        try:
+            photo_file = await update.message.photo[-1].get_file()
+            photo_bytes = await photo_file.download_as_bytearray()
+            logger.info("Photo downloaded successfully!")
+            return photo_bytes
+        except Exception as e:
+            logger.error(f"An error occurred while downloading photo: {e}")
             raise
 
     def start(self):
