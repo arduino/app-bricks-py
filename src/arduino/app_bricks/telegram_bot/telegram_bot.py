@@ -9,7 +9,7 @@ import inspect
 import time
 from typing import Callable, Optional
 from arduino.app_utils import brick, Logger
-from telegram import Update
+from telegram import Update, BotCommand
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram.error import NetworkError, TimedOut
 
@@ -32,6 +32,7 @@ class TelegramBot:
         message_timeout: int = 30,
         photo_timeout: int = 60,
         max_retries: int = 3,
+        auto_set_commands: bool = True,
     ) -> None:
         """Initialize the Telegram bot with configurable timeouts and retry settings.
 
@@ -41,6 +42,9 @@ class TelegramBot:
             message_timeout: Timeout in seconds for sending messages (default: 30).
             photo_timeout: Timeout in seconds for sending/downloading photos (default: 60).
             max_retries: Maximum number of retries for network operations (default: 3).
+            auto_set_commands: Automatically sync registered commands with Telegram's
+                command menu (default: True). When enabled, commands with descriptions
+                will appear when users type '/' in the chat.
 
         Raises:
             ValueError: If token is not provided and TELEGRAM_BOT_TOKEN env var is not set.
@@ -52,6 +56,7 @@ class TelegramBot:
         self.message_timeout = message_timeout
         self.photo_timeout = photo_timeout
         self.max_retries = max_retries
+        self.auto_set_commands = auto_set_commands
 
         self.application = Application.builder().token(self.token).build()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
@@ -59,6 +64,7 @@ class TelegramBot:
         self._running: bool = False
         self._initialized: bool = False
         self._scheduled_tasks: dict[str, threading.Timer] = {}
+        self._commands_registry: dict[str, str] = {}
 
     def _make_async_handler(self, callback: Callable) -> Callable:
         """Convert a synchronous callback to an async handler if needed.
@@ -80,15 +86,33 @@ class TelegramBot:
 
         return async_wrapper
 
-    def add_command(self, command: str, callback: Callable) -> None:
-        """Register a slash command handler.
+    def add_command(self, command: str, callback: Callable, description: str = "") -> None:
+        """Register a slash command handler with optional description.
+
+        The callback can be either synchronous or asynchronous. If synchronous,
+        it will be automatically converted to async. If a description is provided
+        and auto_set_commands is enabled, the command will appear in Telegram's
+        command menu when users type '/'.
 
         Args:
             command: Command name (without the leading slash, e.g., "start" for /start).
             callback: Handler function (can be sync or async). Receives Update and ContextTypes.
+            description: Optional description shown in Telegram's command menu. If empty,
+                the command will still work but won't appear in the '/' menu.
+
+        Example:
+            >>> bot.add_command("start", start_handler, "Start the bot")
+            >>> bot.add_command("help", help_handler, "Show available commands")
         """
         async_callback = self._make_async_handler(callback)
         self.application.add_handler(CommandHandler(command, async_callback))
+        
+        # Track command for auto-sync with Telegram
+        if description:
+            self._commands_registry[command] = description
+            logger.info(f"Registered command /{command}: {description}")
+        else:
+            logger.info(f"Registered command /{command}")
 
     def on_text(self, callback: Callable) -> None:
         """Register a handler for text messages.
@@ -289,6 +313,29 @@ class TelegramBot:
             logger.error(f"An error occurred while downloading photo: {e}")
             raise
 
+    async def _set_bot_commands(self) -> None:
+        """Internal method to sync registered commands with Telegram.
+
+        This updates the bot's command menu that appears when users type '/'.
+        Only commands with descriptions are registered.
+
+        Raises:
+            Exception: If setting commands fails (logged but not raised).
+        """
+        if not self._commands_registry:
+            logger.info("No commands with descriptions to register with Telegram")
+            return
+
+        try:
+            bot_commands = [
+                BotCommand(command=cmd, description=desc)
+                for cmd, desc in self._commands_registry.items()
+            ]
+            await self.application.bot.set_my_commands(bot_commands)
+            logger.info(f"Successfully registered {len(bot_commands)} command(s) with Telegram's menu")
+        except Exception as e:
+            logger.error(f"Failed to set bot commands: {e}")
+
     def schedule_message(
         self,
         chat_id: int,
@@ -444,6 +491,10 @@ class TelegramBot:
             self._loop.run_until_complete(self.application.initialize())
             self._loop.run_until_complete(self.application.start())
             self._loop.run_until_complete(self.application.updater.start_polling(allowed_updates=Update.ALL_TYPES))
+
+            # Auto-register commands with Telegram after polling starts
+            if self.auto_set_commands:
+                self._loop.run_until_complete(self._set_bot_commands())
 
             self._initialized = True  # Signal successful initialization
             logger.info("Bot polling started successfully")
