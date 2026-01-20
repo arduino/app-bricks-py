@@ -58,6 +58,7 @@ class TelegramBot:
         self._loop_thread: Optional[threading.Thread] = None
         self._running: bool = False
         self._initialized: bool = False
+        self._scheduled_tasks: dict[str, threading.Timer] = {}
 
     def _make_async_handler(self, callback: Callable) -> Callable:
         """Convert a synchronous callback to an async handler if needed.
@@ -288,6 +289,84 @@ class TelegramBot:
             logger.error(f"An error occurred while downloading photo: {e}")
             raise
 
+    def schedule_message(
+        self,
+        chat_id: int,
+        message_text: str,
+        interval_seconds: int,
+        task_id: Optional[str] = None,
+    ) -> str:
+        """Schedule a recurring message to be sent at regular intervals.
+
+        Args:
+            chat_id: Telegram chat ID to send messages to.
+            message_text: Text content of the scheduled message.
+            interval_seconds: Time interval in seconds between messages.
+            task_id: Optional unique identifier for this task. If not provided,
+                one will be generated automatically.
+
+        Returns:
+            Task ID that can be used to cancel the scheduled message.
+
+        Example:
+            >>> task_id = bot.schedule_message(123456, "Hello!", 60)
+            >>> # Cancel later:
+            >>> bot.cancel_scheduled_message(task_id)
+        """
+        if not self._running or not self._initialized:
+            logger.error("Bot not properly initialized, cannot schedule message")
+            return ""
+
+        # Generate task_id if not provided
+        if task_id is None:
+            task_id = f"schedule_{chat_id}_{int(time.time())}"
+
+        def send_and_reschedule():
+            """Send message and schedule next occurrence."""
+            if not self._running:
+                return
+
+            # Send the message
+            success = self.send_message(chat_id, message_text)
+            if success:
+                logger.info(f"Scheduled message sent to chat_id={chat_id}")
+            else:
+                logger.warning(f"Failed to send scheduled message to chat_id={chat_id}")
+
+            # Reschedule if still running
+            if self._running and task_id in self._scheduled_tasks:
+                timer = threading.Timer(interval_seconds, send_and_reschedule)
+                timer.daemon = True
+                self._scheduled_tasks[task_id] = timer
+                timer.start()
+
+        # Start the first timer
+        timer = threading.Timer(interval_seconds, send_and_reschedule)
+        timer.daemon = True
+        self._scheduled_tasks[task_id] = timer
+        timer.start()
+
+        logger.info(f"Scheduled message task '{task_id}' created (interval: {interval_seconds}s)")
+        return task_id
+
+    def cancel_scheduled_message(self, task_id: str) -> bool:
+        """Cancel a scheduled message task.
+
+        Args:
+            task_id: ID of the task to cancel (returned by schedule_message).
+
+        Returns:
+            True if task was found and cancelled, False otherwise.
+        """
+        if task_id in self._scheduled_tasks:
+            timer = self._scheduled_tasks.pop(task_id)
+            timer.cancel()
+            logger.info(f"Cancelled scheduled message task '{task_id}'")
+            return True
+
+        logger.warning(f"Scheduled message task '{task_id}' not found")
+        return False
+
     def start(self) -> None:
         """Start the Telegram bot in a background thread with initialization check.
 
@@ -334,6 +413,10 @@ class TelegramBot:
 
         logger.info("Stopping Telegram Bot...")
         self._running = False
+
+        # Cancel all scheduled messages
+        for task_id in list(self._scheduled_tasks.keys()):
+            self.cancel_scheduled_message(task_id)
 
         if self._loop:
             try:
