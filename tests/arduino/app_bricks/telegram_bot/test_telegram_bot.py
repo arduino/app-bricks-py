@@ -6,6 +6,7 @@ import pytest
 import inspect
 from unittest.mock import MagicMock, AsyncMock, patch
 from arduino.app_bricks.telegram_bot import TelegramBot
+from telegram.error import NetworkError, TimedOut
 
 
 @pytest.fixture
@@ -29,12 +30,24 @@ def mock_telegram_app(monkeypatch):
 
 
 def test_telegram_bot_init_with_token(mock_telegram_app):
-    """Test bot initialization with explicit token."""
+    """Test bot initialization with explicit token and default settings."""
     bot = TelegramBot(token="test_token_123")
     assert bot.token == "test_token_123"
     assert bot._running is False
+    assert bot._initialized is False
     assert bot._loop is None
     assert bot._loop_thread is None
+    assert bot.message_timeout == 30
+    assert bot.photo_timeout == 60
+    assert bot.max_retries == 3
+
+
+def test_telegram_bot_init_with_custom_settings(mock_telegram_app):
+    """Test bot initialization with custom timeout and retry settings."""
+    bot = TelegramBot(token="test_token", message_timeout=45, photo_timeout=90, max_retries=5)
+    assert bot.message_timeout == 45
+    assert bot.photo_timeout == 90
+    assert bot.max_retries == 5
 
 
 def test_telegram_bot_init_with_env_token(mock_telegram_app, monkeypatch):
@@ -118,19 +131,41 @@ def test_make_async_handler_with_async_function(mock_telegram_app):
 
 
 @pytest.mark.asyncio
-async def test_send_message_async(mock_telegram_app):
-    """Test internal async send_message method."""
+async def test_send_message_async_success(mock_telegram_app):
+    """Test internal async send_message method with timeouts."""
     bot = TelegramBot(token="test_token")
     await bot._send_message_async(12345, "Hello, World!")
-    mock_telegram_app.bot.send_message.assert_called_once_with(chat_id=12345, text="Hello, World!")
+    mock_telegram_app.bot.send_message.assert_called_once_with(chat_id=12345, text="Hello, World!", read_timeout=30, write_timeout=30)
 
 
 @pytest.mark.asyncio
-async def test_send_photo_async(mock_telegram_app):
-    """Test internal async send_photo method."""
+async def test_send_message_async_network_error(mock_telegram_app):
+    """Test that network errors are properly raised."""
+    bot = TelegramBot(token="test_token")
+    mock_telegram_app.bot.send_message.side_effect = NetworkError("Connection failed")
+
+    with pytest.raises(NetworkError):
+        await bot._send_message_async(12345, "Test")
+
+
+@pytest.mark.asyncio
+async def test_send_photo_async_success(mock_telegram_app):
+    """Test internal async send_photo method with timeouts."""
     bot = TelegramBot(token="test_token")
     await bot._send_photo_async(12345, photo="photo.jpg", caption="Test caption")
-    mock_telegram_app.bot.send_photo.assert_called_once_with(chat_id=12345, photo="photo.jpg", caption="Test caption")
+    mock_telegram_app.bot.send_photo.assert_called_once_with(
+        chat_id=12345, photo="photo.jpg", caption="Test caption", read_timeout=60, write_timeout=60
+    )
+
+
+@pytest.mark.asyncio
+async def test_send_photo_async_timeout(mock_telegram_app):
+    """Test that timeout errors are properly raised."""
+    bot = TelegramBot(token="test_token")
+    mock_telegram_app.bot.send_photo.side_effect = TimedOut("Request timed out")
+
+    with pytest.raises(TimedOut):
+        await bot._send_photo_async(12345, "photo.jpg")
 
 
 @pytest.mark.asyncio
@@ -152,24 +187,22 @@ async def test_get_photo_async(mock_telegram_app):
     assert photo_bytes == b"photo_bytes"
 
 
-def test_send_message_bot_not_started(mock_telegram_app):
-    """Test that send_message logs error when bot is not started."""
+def test_send_message_bot_not_initialized(mock_telegram_app):
+    """Test that send_message returns False when bot is not initialized."""
     bot = TelegramBot(token="test_token")
-    # Bot not started, should log error and return
-    bot.send_message(12345, "Test message")
-    # Should not raise, just log error
+    result = bot.send_message(12345, "Test message")
+    assert result is False
 
 
-def test_send_photo_bot_not_started(mock_telegram_app):
-    """Test that send_photo logs error when bot is not started."""
+def test_send_photo_bot_not_initialized(mock_telegram_app):
+    """Test that send_photo returns False when bot is not initialized."""
     bot = TelegramBot(token="test_token")
-    # Bot not started, should log error and return
-    bot.send_photo(12345, "photo.jpg")
-    # Should not raise, just log error
+    result = bot.send_photo(12345, "photo.jpg")
+    assert result is False
 
 
-def test_get_photo_bot_not_started(mock_telegram_app):
-    """Test that get_photo returns None when bot is not started."""
+def test_get_photo_bot_not_initialized(mock_telegram_app):
+    """Test that get_photo returns None when bot is not initialized."""
     bot = TelegramBot(token="test_token")
     mock_update = MagicMock()
     mock_context = MagicMock()
@@ -178,6 +211,17 @@ def test_get_photo_bot_not_started(mock_telegram_app):
 
 
 def test_bot_lifecycle_not_running_initially(mock_telegram_app):
+    """Test that bot is not running after initialization."""
+    bot = TelegramBot(token="test_token")
+    assert bot._running is False
+    assert bot._initialized is False
+
+
+def test_stop_when_not_running(mock_telegram_app):
+    """Test that stop() does nothing when bot is not running."""
+    bot = TelegramBot(token="test_token")
+    bot.stop()  # Should not raise
+    assert bot._running is False
     """Test that bot is not running after initialization."""
     bot = TelegramBot(token="test_token")
     assert bot._running is False

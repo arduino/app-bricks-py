@@ -6,10 +6,12 @@ import os
 import asyncio
 import threading
 import inspect
+import time
 from typing import Callable, Optional
 from arduino.app_utils import brick, Logger
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.error import NetworkError, TimedOut
 
 logger = Logger("TelegramBot")
 
@@ -21,14 +23,24 @@ class TelegramBot:
     This brick provides a simplified interface to create Telegram bots using
     synchronous methods. It handles the async event loop internally, allowing
     users to write clean, synchronous code while maintaining full bot functionality.
+    Includes automatic retry logic and configurable timeouts for network resilience.
     """
 
-    def __init__(self, token: Optional[str] = None) -> None:
-        """Initialize the Telegram bot.
+    def __init__(
+        self,
+        token: Optional[str] = None,
+        message_timeout: int = 30,
+        photo_timeout: int = 60,
+        max_retries: int = 3,
+    ) -> None:
+        """Initialize the Telegram bot with configurable timeouts and retry settings.
 
         Args:
             token: Telegram bot token. If not provided, reads from TELEGRAM_BOT_TOKEN
                 environment variable.
+            message_timeout: Timeout in seconds for sending messages (default: 30).
+            photo_timeout: Timeout in seconds for sending/downloading photos (default: 60).
+            max_retries: Maximum number of retries for network operations (default: 3).
 
         Raises:
             ValueError: If token is not provided and TELEGRAM_BOT_TOKEN env var is not set.
@@ -37,10 +49,15 @@ class TelegramBot:
         if not self.token:
             raise ValueError("Telegram TELEGRAM_BOT_TOKEN must be provided or set as environment variable")
 
+        self.message_timeout = message_timeout
+        self.photo_timeout = photo_timeout
+        self.max_retries = max_retries
+
         self.application = Application.builder().token(self.token).build()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._loop_thread: Optional[threading.Thread] = None
         self._running: bool = False
+        self._initialized: bool = False
 
     def _make_async_handler(self, callback: Callable) -> Callable:
         """Convert a synchronous callback to an async handler if needed.
@@ -92,63 +109,99 @@ class TelegramBot:
         async_callback = self._make_async_handler(callback)
         self.application.add_handler(MessageHandler(filters.PHOTO & ~filters.COMMAND, async_callback))
 
-    def send_message(self, chat_id: int, message_text: str) -> None:
-        """Send a text message to a specific chat (synchronous).
+    def send_message(self, chat_id: int, message_text: str) -> bool:
+        """Send a text message to a specific chat (synchronous with automatic retry).
 
         Args:
             chat_id: Telegram chat ID to send the message to.
             message_text: Text content of the message.
+
+        Returns:
+            True if message was sent successfully, False otherwise.
         """
-        if not self._running or not self._loop:
-            logger.error("Bot not started, cannot send message")
-            return
+        if not self._running or not self._loop or not self._initialized:
+            logger.error("Bot not properly initialized, cannot send message")
+            return False
 
-        future = asyncio.run_coroutine_threadsafe(self._send_message_async(chat_id, message_text), self._loop)
+        for attempt in range(self.max_retries):
+            try:
+                future = asyncio.run_coroutine_threadsafe(self._send_message_async(chat_id, message_text), self._loop)
+                future.result(timeout=self.message_timeout)
+                return True
+            except TimeoutError:
+                logger.warning(f"Message send timeout (attempt {attempt + 1}/{self.max_retries})")
+                if attempt < self.max_retries - 1:
+                    time.sleep(1 * (attempt + 1))  # Simple backoff
+                    continue
+            except Exception as e:
+                logger.error(f"Failed to send message: {e}")
+                return False
 
-        try:
-            future.result(timeout=10)
-        except Exception as e:
-            logger.error(f"Failed to send message: {e}")
+        logger.error(f"Failed to send message after {self.max_retries} attempts")
+        return False
 
     async def _send_message_async(self, chat_id: int, message_text: str) -> None:
-        """Internal async method to send a message.
+        """Internal async method to send a message with network error handling.
 
         Args:
             chat_id: Telegram chat ID.
             message_text: Message text.
 
         Raises:
-            Exception: If message sending fails.
+            NetworkError: If network issues occur.
+            TimedOut: If request times out.
+            Exception: If message sending fails for other reasons.
         """
         logger.info(f"Sending message to chat_id={chat_id}")
         try:
-            await self.application.bot.send_message(chat_id=chat_id, text=message_text)
+            await self.application.bot.send_message(
+                chat_id=chat_id,
+                text=message_text,
+                read_timeout=self.message_timeout,
+                write_timeout=self.message_timeout,
+            )
             logger.info("Message sent successfully!")
+        except (NetworkError, TimedOut) as e:
+            logger.warning(f"Network issue while sending message: {e}")
+            raise
         except Exception as e:
             logger.error(f"An error occurred: {e}")
             raise
 
-    def send_photo(self, chat_id: int, photo, caption: Optional[str] = None) -> None:
-        """Send a photo to a specific chat (synchronous).
+    def send_photo(self, chat_id: int, photo, caption: Optional[str] = None) -> bool:
+        """Send a photo to a specific chat (synchronous with automatic retry).
 
         Args:
             chat_id: Telegram chat ID to send the photo to.
             photo: Photo to send (file path, URL, or file-like object).
             caption: Optional caption for the photo.
+
+        Returns:
+            True if photo was sent successfully, False otherwise.
         """
-        if not self._running or not self._loop:
-            logger.error("Bot not started, cannot send photo")
-            return
+        if not self._running or not self._loop or not self._initialized:
+            logger.error("Bot not properly initialized, cannot send photo")
+            return False
 
-        future = asyncio.run_coroutine_threadsafe(self._send_photo_async(chat_id, photo, caption), self._loop)
+        for attempt in range(self.max_retries):
+            try:
+                future = asyncio.run_coroutine_threadsafe(self._send_photo_async(chat_id, photo, caption), self._loop)
+                future.result(timeout=self.photo_timeout)
+                return True
+            except TimeoutError:
+                logger.warning(f"Photo send timeout (attempt {attempt + 1}/{self.max_retries})")
+                if attempt < self.max_retries - 1:
+                    time.sleep(2 * (attempt + 1))  # Longer backoff for photos
+                    continue
+            except Exception as e:
+                logger.error(f"Failed to send photo: {e}")
+                return False
 
-        try:
-            future.result(timeout=10)
-        except Exception as e:
-            logger.error(f"Failed to send photo: {e}")
+        logger.error(f"Failed to send photo after {self.max_retries} attempts")
+        return False
 
     async def _send_photo_async(self, chat_id: int, photo, caption: Optional[str] = None) -> None:
-        """Internal async method to send a photo.
+        """Internal async method to send a photo with network error handling.
 
         Args:
             chat_id: Telegram chat ID.
@@ -156,40 +209,59 @@ class TelegramBot:
             caption: Optional caption.
 
         Raises:
-            Exception: If photo sending fails.
+            NetworkError: If network issues occur.
+            TimedOut: If request times out.
+            Exception: If photo sending fails for other reasons.
         """
         logger.info(f"Sending photo to chat_id={chat_id}")
         try:
-            await self.application.bot.send_photo(chat_id=chat_id, photo=photo, caption=caption)
+            await self.application.bot.send_photo(
+                chat_id=chat_id,
+                photo=photo,
+                caption=caption,
+                read_timeout=self.photo_timeout,
+                write_timeout=self.photo_timeout,
+            )
             logger.info("Photo sent successfully!")
+        except (NetworkError, TimedOut) as e:
+            logger.warning(f"Network issue while sending photo: {e}")
+            raise
         except Exception as e:
             logger.error(f"An error occurred: {e}")
             raise
 
     def get_photo(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> Optional[bytearray]:
-        """Download photo from an update (synchronous).
+        """Download photo from an update (synchronous with automatic retry).
 
         Args:
             update: Telegram update object containing the photo.
             context: Telegram context object.
 
         Returns:
-            Photo bytes as bytearray, or None if download fails.
+            Photo bytes as bytearray, or None if download fails after all retries.
         """
-        if not self._running or not self._loop:
-            logger.error("Bot not started, cannot get photo")
+        if not self._running or not self._loop or not self._initialized:
+            logger.error("Bot not properly initialized, cannot get photo")
             return None
 
-        future = asyncio.run_coroutine_threadsafe(self._get_photo_async(update, context), self._loop)
+        for attempt in range(self.max_retries):
+            try:
+                future = asyncio.run_coroutine_threadsafe(self._get_photo_async(update, context), self._loop)
+                return future.result(timeout=self.photo_timeout)
+            except TimeoutError:
+                logger.warning(f"Photo download timeout (attempt {attempt + 1}/{self.max_retries})")
+                if attempt < self.max_retries - 1:
+                    time.sleep(2 * (attempt + 1))  # Backoff for downloads
+                    continue
+            except Exception as e:
+                logger.error(f"Failed to get photo: {e}")
+                return None
 
-        try:
-            return future.result(timeout=30)
-        except Exception as e:
-            logger.error(f"Failed to get photo: {e}")
-            return None
+        logger.error(f"Failed to download photo after {self.max_retries} attempts")
+        return None
 
     async def _get_photo_async(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bytearray:
-        """Internal async method to download a photo.
+        """Internal async method to download a photo with network error handling.
 
         Args:
             update: Telegram update object.
@@ -199,7 +271,9 @@ class TelegramBot:
             Photo bytes as bytearray.
 
         Raises:
-            Exception: If photo download fails.
+            NetworkError: If network issues occur.
+            TimedOut: If request times out.
+            Exception: If photo download fails for other reasons.
         """
         logger.info("Downloading photo from Telegram...")
         try:
@@ -207,15 +281,22 @@ class TelegramBot:
             photo_bytes = await photo_file.download_as_bytearray()
             logger.info("Photo downloaded successfully!")
             return photo_bytes
+        except (NetworkError, TimedOut) as e:
+            logger.warning(f"Network issue while downloading photo: {e}")
+            raise
         except Exception as e:
             logger.error(f"An error occurred while downloading photo: {e}")
             raise
 
     def start(self) -> None:
-        """Start the Telegram bot in a background thread.
+        """Start the Telegram bot in a background thread with initialization check.
 
         This method initializes the bot and starts polling for updates in a
         separate thread, allowing the main application to continue running.
+        Waits for successful initialization before returning.
+
+        Raises:
+            RuntimeError: If bot fails to initialize within timeout (30 seconds).
         """
         if self._running:
             logger.warning("Bot is already running")
@@ -223,19 +304,24 @@ class TelegramBot:
 
         logger.info("Starting Telegram Bot...")
         self._running = True
+        self._initialized = False
         self._loop_thread = threading.Thread(target=self._run_bot, daemon=True)
         self._loop_thread.start()
 
         # Wait for the bot to be fully initialized
-        timeout = 10
-        start_time = asyncio.get_event_loop().time() if asyncio.get_event_loop().is_running() else 0
-        while not self._loop and self._running:
-            import time
-
-            time.sleep(0.1)
-            if asyncio.get_event_loop().is_running() and asyncio.get_event_loop().time() - start_time > timeout:
+        timeout = 30
+        start = time.time()
+        while not self._initialized and self._running:
+            time.sleep(0.2)
+            if time.time() - start > timeout:
+                self._running = False
                 logger.error("Bot initialization timeout")
-                break
+                raise RuntimeError("Telegram bot failed to initialize within timeout")
+
+        if not self._initialized:
+            raise RuntimeError("Telegram bot initialization failed")
+
+        logger.info("Telegram bot initialized successfully")
 
     def stop(self) -> None:
         """Stop the Telegram bot gracefully.
@@ -276,12 +362,17 @@ class TelegramBot:
             self._loop.run_until_complete(self.application.start())
             self._loop.run_until_complete(self.application.updater.start_polling(allowed_updates=Update.ALL_TYPES))
 
+            self._initialized = True  # Signal successful initialization
+            logger.info("Bot polling started successfully")
+
             # Keep the loop running
             while self._running:
                 self._loop.run_until_complete(asyncio.sleep(0.1))
 
         except Exception as e:
             logger.exception(f"Error in bot event loop: {e}")
+            self._running = False
+            self._initialized = False
         finally:
             try:
                 self._loop.close()
