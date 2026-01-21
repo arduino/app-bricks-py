@@ -3,9 +3,8 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import pytest
-import inspect
 from unittest.mock import MagicMock, AsyncMock, patch
-from arduino.app_bricks.telegram_bot import TelegramBot
+from arduino.app_bricks.telegram_bot import TelegramBot, Message
 from telegram.error import NetworkError, TimedOut
 
 
@@ -16,6 +15,7 @@ def mock_telegram_app(monkeypatch):
     mock_app.bot = MagicMock()
     mock_app.bot.send_message = AsyncMock()
     mock_app.bot.send_photo = AsyncMock()
+    mock_app.bot.set_my_commands = AsyncMock()
     mock_app.initialize = AsyncMock()
     mock_app.start = AsyncMock()
     mock_app.stop = AsyncMock()
@@ -40,14 +40,22 @@ def test_telegram_bot_init_with_token(mock_telegram_app):
     assert bot.message_timeout == 30
     assert bot.photo_timeout == 60
     assert bot.max_retries == 3
+    assert bot.auto_set_commands is True
 
 
 def test_telegram_bot_init_with_custom_settings(mock_telegram_app):
     """Test bot initialization with custom timeout and retry settings."""
-    bot = TelegramBot(token="test_token", message_timeout=45, photo_timeout=90, max_retries=5)
+    bot = TelegramBot(
+        token="test_token",
+        message_timeout=45,
+        photo_timeout=90,
+        max_retries=5,
+        auto_set_commands=False,
+    )
     assert bot.message_timeout == 45
     assert bot.photo_timeout == 90
     assert bot.max_retries == 5
+    assert bot.auto_set_commands is False
 
 
 def test_telegram_bot_init_with_env_token(mock_telegram_app, monkeypatch):
@@ -64,33 +72,36 @@ def test_telegram_bot_init_without_token(mock_telegram_app, monkeypatch):
         TelegramBot()
 
 
-def test_add_command_sync_callback(mock_telegram_app):
-    """Test registering a synchronous command handler."""
+def test_add_command_with_description(mock_telegram_app):
+    """Test registering a command handler with description."""
     bot = TelegramBot(token="test_token")
 
-    def sync_handler(update, context):
+    def handler(msg: Message):
         pass
 
-    bot.add_command("start", sync_handler)
+    bot.add_command("start", handler, "Start the bot")
     mock_telegram_app.add_handler.assert_called_once()
+    assert "start" in bot._commands_registry
+    assert bot._commands_registry["start"] == "Start the bot"
 
 
-def test_add_command_async_callback(mock_telegram_app):
-    """Test registering an async command handler."""
+def test_add_command_without_description(mock_telegram_app):
+    """Test registering a command handler without description."""
     bot = TelegramBot(token="test_token")
 
-    async def async_handler(update, context):
+    def handler(msg: Message):
         pass
 
-    bot.add_command("help", async_handler)
+    bot.add_command("help", handler)
     mock_telegram_app.add_handler.assert_called_once()
+    assert "help" not in bot._commands_registry
 
 
 def test_on_text_handler(mock_telegram_app):
     """Test registering a text message handler."""
     bot = TelegramBot(token="test_token")
 
-    def text_handler(update, context):
+    def text_handler(msg: Message):
         pass
 
     bot.on_text(text_handler)
@@ -101,33 +112,85 @@ def test_on_photo_handler(mock_telegram_app):
     """Test registering a photo message handler."""
     bot = TelegramBot(token="test_token")
 
-    def photo_handler(update, context):
+    def photo_handler(msg: Message):
         pass
 
     bot.on_photo(photo_handler)
     mock_telegram_app.add_handler.assert_called_once()
 
 
-def test_make_async_handler_with_sync_function(mock_telegram_app):
-    """Test that synchronous callbacks are wrapped correctly."""
+@pytest.mark.asyncio
+async def test_create_message_handler_extracts_message_data():
+    """Test that _create_message_handler properly extracts data into Message object."""
     bot = TelegramBot(token="test_token")
 
-    def sync_callback(update, context):
-        return "sync_result"
+    received_message = None
 
-    wrapped = bot._make_async_handler(sync_callback)
-    assert inspect.iscoroutinefunction(wrapped)
+    def handler(msg: Message):
+        nonlocal received_message
+        received_message = msg
+
+    # Create mock Update
+    mock_update = MagicMock()
+    mock_update.message.chat_id = 12345
+    mock_update.message.text = "Hello World"
+    mock_update.message.photo = None
+    mock_update.effective_user.id = 67890
+    mock_update.effective_user.first_name = "John"
+    mock_update.effective_user.username = "johndoe"
+
+    # Create wrapped handler
+    wrapped = bot._create_message_handler(handler)
+
+    # Execute handler
+    await wrapped(mock_update, MagicMock())
+
+    # Verify Message object was created correctly
+    assert received_message is not None
+    assert received_message.chat_id == 12345
+    assert received_message.text == "Hello World"
+    assert received_message.user_id == 67890
+    assert received_message.user_name == "John"
+    assert received_message.username == "johndoe"
+    assert received_message.photo_bytes is None
 
 
-def test_make_async_handler_with_async_function(mock_telegram_app):
-    """Test that async callbacks are not double-wrapped."""
+@pytest.mark.asyncio
+async def test_create_message_handler_downloads_photo():
+    """Test that _create_message_handler downloads photos automatically."""
     bot = TelegramBot(token="test_token")
 
-    async def async_callback(update, context):
-        return "async_result"
+    received_message = None
 
-    wrapped = bot._make_async_handler(async_callback)
-    assert wrapped is async_callback
+    def handler(msg: Message):
+        nonlocal received_message
+        received_message = msg
+
+    # Create mock Update with photo
+    mock_update = MagicMock()
+    mock_update.message.chat_id = 12345
+    mock_update.message.text = None
+    mock_update.effective_user.id = 67890
+    mock_update.effective_user.first_name = "Jane"
+    mock_update.effective_user.username = "janedoe"
+
+    # Mock photo download
+    mock_photo = MagicMock()
+    mock_file = AsyncMock()
+    mock_file.download_as_bytearray = AsyncMock(return_value=b"photo_data_123")
+    mock_photo.get_file = AsyncMock(return_value=mock_file)
+    mock_update.message.photo = [mock_photo]
+
+    # Create wrapped handler
+    wrapped = bot._create_message_handler(handler)
+
+    # Execute handler
+    await wrapped(mock_update, MagicMock())
+
+    # Verify photo was downloaded
+    assert received_message is not None
+    assert received_message.photo_bytes == b"photo_data_123"
+    assert received_message.text is None
 
 
 @pytest.mark.asyncio
@@ -152,9 +215,9 @@ async def test_send_message_async_network_error(mock_telegram_app):
 async def test_send_photo_async_success(mock_telegram_app):
     """Test internal async send_photo method with timeouts."""
     bot = TelegramBot(token="test_token")
-    await bot._send_photo_async(12345, photo="photo.jpg", caption="Test caption")
+    await bot._send_photo_async(12345, photo_bytes=b"photo_data", caption="Test caption")
     mock_telegram_app.bot.send_photo.assert_called_once_with(
-        chat_id=12345, photo="photo.jpg", caption="Test caption", read_timeout=60, write_timeout=60
+        chat_id=12345, photo=b"photo_data", caption="Test caption", read_timeout=60, write_timeout=60
     )
 
 
@@ -165,26 +228,7 @@ async def test_send_photo_async_timeout(mock_telegram_app):
     mock_telegram_app.bot.send_photo.side_effect = TimedOut("Request timed out")
 
     with pytest.raises(TimedOut):
-        await bot._send_photo_async(12345, "photo.jpg")
-
-
-@pytest.mark.asyncio
-async def test_get_photo_async(mock_telegram_app):
-    """Test internal async get_photo method."""
-    bot = TelegramBot(token="test_token")
-
-    # Mock update with photo
-    mock_update = MagicMock()
-    mock_photo = MagicMock()
-    mock_file = AsyncMock()
-    mock_file.download_as_bytearray = AsyncMock(return_value=b"photo_bytes")
-    mock_photo.get_file = AsyncMock(return_value=mock_file)
-    mock_update.message.photo = [mock_photo]
-
-    mock_context = MagicMock()
-
-    photo_bytes = await bot._get_photo_async(mock_update, mock_context)
-    assert photo_bytes == b"photo_bytes"
+        await bot._send_photo_async(12345, b"photo_data", "")
 
 
 def test_send_message_bot_not_initialized(mock_telegram_app):
@@ -194,20 +238,18 @@ def test_send_message_bot_not_initialized(mock_telegram_app):
     assert result is False
 
 
-def test_send_photo_bot_not_initialized(mock_telegram_app):
-    """Test that send_photo returns False when bot is not initialized."""
+def test_send_bot_not_initialized(mock_telegram_app):
+    """Test that send() returns False when bot is not initialized."""
     bot = TelegramBot(token="test_token")
-    result = bot.send_photo(12345, "photo.jpg")
+    result = bot.send(12345, "Test message")
     assert result is False
 
 
-def test_get_photo_bot_not_initialized(mock_telegram_app):
-    """Test that get_photo returns None when bot is not initialized."""
+def test_send_photo_bot_not_initialized(mock_telegram_app):
+    """Test that send_photo returns False when bot is not initialized."""
     bot = TelegramBot(token="test_token")
-    mock_update = MagicMock()
-    mock_context = MagicMock()
-    result = bot.get_photo(mock_update, mock_context)
-    assert result is None
+    result = bot.send_photo(12345, b"photo_data")
+    assert result is False
 
 
 def test_bot_lifecycle_not_running_initially(mock_telegram_app):
@@ -222,13 +264,73 @@ def test_stop_when_not_running(mock_telegram_app):
     bot = TelegramBot(token="test_token")
     bot.stop()  # Should not raise
     assert bot._running is False
-    """Test that bot is not running after initialization."""
-    bot = TelegramBot(token="test_token")
-    assert bot._running is False
 
 
-def test_stop_when_not_running(mock_telegram_app):
-    """Test that stop() does nothing when bot is not running."""
+def test_schedule_message_aliases(mock_telegram_app):
+    """Test that schedule() is an alias for schedule_message()."""
     bot = TelegramBot(token="test_token")
-    bot.stop()  # Should not raise
-    assert bot._running is False
+    # Both methods should exist
+    assert hasattr(bot, "schedule")
+    assert hasattr(bot, "schedule_message")
+
+
+def test_cancel_schedule_aliases(mock_telegram_app):
+    """Test that cancel_schedule() is an alias for cancel_scheduled_message()."""
+    bot = TelegramBot(token="test_token")
+    # Both methods should exist
+    assert hasattr(bot, "cancel_schedule")
+    assert hasattr(bot, "cancel_scheduled_message")
+
+
+def test_message_dataclass_creation():
+    """Test that Message dataclass can be created with required fields."""
+    msg = Message(chat_id=12345)
+    assert msg.chat_id == 12345
+    assert msg.text is None
+    assert msg.user_id is None
+    assert msg.user_name is None
+    assert msg.username is None
+    assert msg.photo_bytes is None
+
+
+def test_message_dataclass_with_all_fields():
+    """Test Message dataclass with all fields populated."""
+    msg = Message(
+        chat_id=12345,
+        text="Hello",
+        user_id=67890,
+        user_name="John",
+        username="johndoe",
+        photo_bytes=b"photo_data",
+    )
+    assert msg.chat_id == 12345
+    assert msg.text == "Hello"
+    assert msg.user_id == 67890
+    assert msg.user_name == "John"
+    assert msg.username == "johndoe"
+    assert msg.photo_bytes == b"photo_data"
+
+
+@pytest.mark.asyncio
+async def test_set_bot_commands_with_descriptions(mock_telegram_app):
+    """Test that commands with descriptions are registered with Telegram."""
+    bot = TelegramBot(token="test_token")
+    bot._commands_registry = {"start": "Start the bot", "help": "Show help"}
+
+    await bot._set_bot_commands()
+
+    mock_telegram_app.bot.set_my_commands.assert_called_once()
+    # Verify the commands were set
+    call_args = mock_telegram_app.bot.set_my_commands.call_args[0][0]
+    assert len(call_args) == 2
+
+
+@pytest.mark.asyncio
+async def test_set_bot_commands_empty_registry(mock_telegram_app):
+    """Test that _set_bot_commands does nothing when registry is empty."""
+    bot = TelegramBot(token="test_token")
+    bot._commands_registry = {}
+
+    await bot._set_bot_commands()
+
+    mock_telegram_app.bot.set_my_commands.assert_not_called()
