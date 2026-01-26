@@ -627,11 +627,7 @@ class ClientServer(metaclass=SingletonMeta):
         try:
             packed_data = msgpack.packb(msg)
             if len(packed_data) > _max_message_size:
-                logger.error(
-                    f"Response for msgid {msgid} exceeds maximum message size "
-                    f"({len(packed_data)} > {_max_message_size} bytes). Sending error response instead."
-                )
-                # Send a minimal error response instead
+                logger.error(f"Response for msgid {msgid} exceeds maximum message size ({len(packed_data)} > {_max_message_size} bytes).")
                 error_msg = [1, msgid, [GENERIC_ERR, "Response too large"], None]
                 packed_data = msgpack.packb(error_msg)
             self._send_bytes(packed_data)
