@@ -12,9 +12,9 @@ required_devices:
   - camera
 model: yolox-object-detection
 model_configuration_variables:
-  - EI_OBJ_DETECTION_MODEL
+  - EI_V_OBJ_DETECTION_MODEL
 variables:
-- name: EI_OBJ_DETECTION_MODEL
+- name: EI_V_OBJ_DETECTION_MODEL
   description: Path to the model file
   hidden: true
   default_value: /models/ootb/ei/yolo-x-nano.eim

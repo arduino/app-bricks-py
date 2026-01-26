@@ -3,7 +3,7 @@ models:
     runner: brick
     name : "Lightweight-Face-Detection"
     description: "A small and accurate model for detecting bounding boxes for faces in images."
-    model_labels: 
+    model_labels:
       - face
     bricks:
       - arduino:object_detection:
@@ -11,7 +11,7 @@ models:
             "EI_OBJ_DETECTION_MODEL": "/models/ootb/ei/lw-face-det.eim"
       - arduino:video_object_detection:
           model_configuration:
-            "EI_OBJ_DETECTION_MODEL": "/models/ootb/ei/lw-face-det.eim"
+            "EI_V_OBJ_DETECTION_MODEL": "/models/ootb/ei/lw-face-det.eim"
     metadata:
       source: "qualcomm-ai-hub"
       ei-gpu-mode: false
@@ -111,12 +111,12 @@ models:
       source-model-id: "YOLOX-Nano"
       source-model-url: "https://github.com/Megvii-BaseDetection/YOLOX"
     bricks:
-      - arduino:video_object_detection:
+      - arduino:object_detection:
           model_configuration:
             "EI_OBJ_DETECTION_MODEL": "/models/ootb/ei/yolo-x-nano.eim"
       - arduino:video_object_detection:
           model_configuration:
-            "EI_OBJ_DETECTION_MODEL": "/models/ootb/ei/yolo-x-nano.eim"
+            "EI_V_OBJ_DETECTION_MODEL": "/models/ootb/ei/yolo-x-nano.eim"
  - mobilenet-image-classification:
     runner: brick
     name : "General purpose image classification"
