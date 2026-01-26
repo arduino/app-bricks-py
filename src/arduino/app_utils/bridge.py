@@ -17,6 +17,7 @@ logger = Logger("Bridge")
 
 
 _reconnect_delay = 3.0  # seconds
+_max_message_size = 256  # Maximum message size supported by Arduino router (bytes)
 
 # Error codes for RPC messages received from the RPC router. These are defined in the RPC router itself.
 ROUTE_ALREADY_EXISTS_ERR = 0x05
@@ -303,7 +304,13 @@ class ClientServer(metaclass=SingletonMeta):
         """Sends a notification to the server without waiting for a response."""
         request = [2, method_name, params]
         try:
-            self._send_bytes(msgpack.packb(request))
+            packed_data = msgpack.packb(request)
+            if len(packed_data) > _max_message_size:
+                logger.error(
+                    f"Notification '{method_name}' exceeds maximum message size ({len(packed_data)} > {_max_message_size} bytes). Message dropped."
+                )
+                return
+            self._send_bytes(packed_data)
         except ConnectionError:
             # Fire-and-forget semantics
             pass
@@ -327,7 +334,14 @@ class ClientServer(metaclass=SingletonMeta):
             self.callbacks[msgid] = (on_result, on_error)
 
         try:
-            self._send_bytes(msgpack.packb(request))
+            packed_data = msgpack.packb(request)
+            if len(packed_data) > _max_message_size:
+                with self.callbacks_lock:
+                    self.callbacks.pop(msgid, None)
+                raise ValueError(
+                    f"Request '{method_name}' exceeds maximum message size ({len(packed_data)} > {_max_message_size} bytes). Call aborted."
+                )
+            self._send_bytes(packed_data)
         except Exception as e:
             with self.callbacks_lock:
                 self.callbacks.pop(msgid, None)
@@ -611,7 +625,16 @@ class ClientServer(metaclass=SingletonMeta):
 
         msg = [1, msgid, err, response]
         try:
-            self._send_bytes(msgpack.packb(msg))
+            packed_data = msgpack.packb(msg)
+            if len(packed_data) > _max_message_size:
+                logger.error(
+                    f"Response for msgid {msgid} exceeds maximum message size "
+                    f"({len(packed_data)} > {_max_message_size} bytes). Sending error response instead."
+                )
+                # Send a minimal error response instead
+                error_msg = [1, msgid, [GENERIC_ERR, "Response too large"], None]
+                packed_data = msgpack.packb(error_msg)
+            self._send_bytes(packed_data)
         except ConnectionError:
             pass  # Response sending is best-effort if connection drops while handling request.
         except Exception as e:  # e.g., msgpack encoding error
