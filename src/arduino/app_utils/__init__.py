@@ -31,11 +31,3 @@ __all__ = [
     "SlidingWindowBuffer",
     "Leds",
 ]
-
-# Dynamically load additional bricks from /app/bricks
-import sys
-import os
-
-# Load bricks from /app/bricks if it exists
-if os.path.exists("/app/bricks"):
-    sys.path.insert(0, "/app/bricks")

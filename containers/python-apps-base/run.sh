@@ -69,6 +69,15 @@ if [ -f "$REQUIREMENTS_FILE" ]; then
   cp "$REQUIREMENTS_FILE" "$INSTALLED_REQUIREMENTS_FILE"
 fi
 
+# Load custom bricks if present
+if [ -d "/app/bricks" ]; then
+    if [ -z "$PYTHONPATH" ]; then
+        export PYTHONPATH="/app/bricks"
+    else
+        export PYTHONPATH="$PYTHONPATH:/app/bricks"
+    fi
+fi
+
 if [ "$1" = "provision" ]; then
   arduino-bricks-list-modules --provision-compose
 else
