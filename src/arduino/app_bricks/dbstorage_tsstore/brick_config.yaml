@@ -7,12 +7,15 @@ variables:
 - name: DB_USERNAME
   description: Database username
   default_value: admin
+  secret: true
 - name: DB_PASSWORD
   description: Database password
   default_value: Arduino15
+  secret: true
 - name: INFLUXDB_ADMIN_TOKEN
   description: InfluxDB admin token
   default_value: 392edbf2-b8a2-481f-979d-3f188b2c05f0  
+  secret: true
 - name: BIND_ADDRESS
   description: External container address
   hidden: true

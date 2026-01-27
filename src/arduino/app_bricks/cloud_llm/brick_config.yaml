@@ -4,3 +4,4 @@ description: "Cloud LLM Brick enables seamless integration with cloud-based Larg
 variables:
   - name: API_KEY
     description: API Key for the cloud-based LLM service
+    secret: true
