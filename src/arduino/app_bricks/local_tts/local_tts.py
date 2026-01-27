@@ -65,12 +65,13 @@ class LocalTTS:
         # Limit concurrency
         self._session_semaphore = threading.Semaphore(self.max_concurrent_syntheses)
 
-    def speak(self, text: str, speaker: BaseSpeaker = Speaker(sample_rate=Speaker.RATE_44K)) -> None:
+    def speak(self, text: str, language: Literal["en", "es", "zh"] = "en", speaker: BaseSpeaker = Speaker(sample_rate=Speaker.RATE_44K)):
         """
         Synthesize speech from text and play it through the provided speaker.
 
         Args:
             text (str): The text to be synthesized into speech.
+            language (Literal["en", "es", "zh"]): The language of the text.
             speaker (BaseSpeaker): The speaker instance to play the synthesized audio.
                 If None, a default Speaker will be used.
 
@@ -78,7 +79,7 @@ class LocalTTS:
             ValueError: If the specified language is not supported.
             RuntimeError: If the synthesis fails or maximum concurrency is reached.
         """
-        audio_bytes = self.synthesize_pcm(text)
+        audio_bytes = self.synthesize_pcm(text, language=language)
         audio_array = np.frombuffer(audio_bytes, dtype=np.int16)  # melo-tts uses 16-bit PCM
         speaker.play_pcm(audio_array)
 
