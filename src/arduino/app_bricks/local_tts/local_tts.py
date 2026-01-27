@@ -49,7 +49,7 @@ class LocalTTS:
                     pass
                 raise RuntimeError(error_msg)
 
-            models = response.json().get("models", [])
+            models = response.json() or []
             for model in models:
                 for voice in model.get("voices", []):
                     lang = voice.get("language")
