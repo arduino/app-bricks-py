@@ -162,7 +162,13 @@ class EnvVariable:
 
     def to_dict(self) -> dict:
         """Converts the EnvVariable object to a dictionary."""
-        dict_out = {"name": self.name, "default_value": self.default_value, "description": self.description, "hidden": self.hidden, "secret": self.secret}
+        dict_out = {
+            "name": self.name,
+            "default_value": self.default_value,
+            "description": self.description,
+            "hidden": self.hidden,
+            "secret": self.secret,
+        }
         if self.default_value is None or self.default_value == "":
             del dict_out["default_value"]
         if self.description is None or self.description == "":
