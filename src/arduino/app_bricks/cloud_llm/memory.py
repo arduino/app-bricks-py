@@ -43,3 +43,7 @@ class WindowedChatMessageHistory:
             return [self._system_message] + self.messages
         else:
             return self.messages
+
+    def clear(self) -> None:
+        """Clear the message history."""
+        self.messages = []
