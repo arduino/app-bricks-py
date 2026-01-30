@@ -13,10 +13,10 @@ from typing import Callable
 from websockets.sync.client import connect, ClientConnection
 from websockets.exceptions import ConnectionClosedOK, ConnectionClosedError
 
-from arduino.app_peripherals.camera import Camera, BaseCamera
+from arduino.app_peripherals.camera import Camera, BaseCamera, WebSocketCamera
 from arduino.app_internal.core import load_brick_compose_file, resolve_address
 from arduino.app_internal.core import EdgeImpulseRunnerFacade
-from arduino.app_utils.image import compress_to_jpeg
+from arduino.app_utils.image.adjustments import compress_to_jpeg
 from arduino.app_utils import brick, Logger
 
 logger = Logger("VideoImageClassification")
@@ -180,10 +180,11 @@ class VideoImageClassification:
                     tcp_socket.connect((self._host, 5050))
                     logger.info(f"TCP connection established to {self._host}:5050")
 
-                    # Send a priming frame to initialize the EI pipeline and its web server
-                    frame = np.zeros((320, 320, 3), dtype=np.uint8)
-                    jpeg_frame = compress_to_jpeg(frame)
-                    tcp_socket.sendall(jpeg_frame.tobytes())
+                    if isinstance(self._camera, WebSocketCamera):
+                        # Send a priming frame to initialize the EI pipeline and its web server
+                        frame = np.zeros((640, 480, 3), dtype=np.uint8)
+                        jpeg_frame = compress_to_jpeg(frame)
+                        tcp_socket.sendall(jpeg_frame.tobytes())
 
                     while self._is_running.is_set():
                         try:
