@@ -2,6 +2,8 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+# EXAMPLE_NAME = "Basic usage of the Video Image Classification Brick"
+
 from arduino.app_utils import App
 from arduino.app_bricks.video_imageclassification import VideoImageClassification
 

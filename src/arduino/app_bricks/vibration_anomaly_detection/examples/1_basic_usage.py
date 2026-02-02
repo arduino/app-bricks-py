@@ -2,6 +2,8 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+# EXAMPLE_NAME = "Basic usage of the Vibration Anomaly Detection Brick"
+
 from arduino.app_bricks.vibration_anomaly_detection import VibrationAnomalyDetection
 from arduino.app_utils import *
 

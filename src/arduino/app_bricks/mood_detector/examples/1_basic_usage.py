@@ -2,6 +2,8 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+# EXAMPLE_NAME = "Basic usage of the Mood Detector"
+
 from arduino.app_bricks.mood_detector import MoodDetector
 
 
