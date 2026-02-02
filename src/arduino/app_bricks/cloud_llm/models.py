@@ -7,7 +7,7 @@ from enum import Enum
 
 class CloudModel(str, Enum):
     ANTHROPIC_CLAUDE = "claude-3-7-sonnet-latest"
-    OPENAI_GPT = "gpt-4o-mini"
+    OPENAI_GPT = "gpt-5-mini"  # https://platform.openai.com/docs/models
     GOOGLE_GEMINI = "gemini-2.5-flash"
 
 
