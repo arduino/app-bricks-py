@@ -15,7 +15,7 @@ def main():
         "This is really frustrating and disappointing.",
         "The weather is nice.",
         "I love spending time with my family. It brings me so much joy!",
-        "I'm feeling anxious about the upcoming presentation."
+        "I'm feeling anxious about the upcoming presentation.",
     ]
 
     # Analyze each text

@@ -13,6 +13,7 @@ video_detector = VideoObjectDetection(confidence=0.4, debounce_sec=1.5)
 def on_person_detected():
     print("🚨 Person detected in the video stream!")
 
+
 video_detector.on_detect("person", on_person_detected)
 
 
@@ -20,6 +21,7 @@ video_detector.on_detect("person", on_person_detected)
 def on_all_detections(detections: dict):
     # Example: {"person": 0.87, "bicycle": 0.66}
     print("All detections:", detections)
+
 
 video_detector.on_detect_all(on_all_detections)
 

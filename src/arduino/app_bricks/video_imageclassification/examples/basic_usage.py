@@ -13,12 +13,14 @@ classification_stream = VideoImageClassification()
 def sunglass_detected():
     print("Detected sunglasses!")
 
+
 classification_stream.on_detect("sunglasses", sunglass_detected)
 
 
 # Example: callback for all classifications
 def all_detected(results):
     print("Classifications:", results)
+
 
 classification_stream.on_detect_all(all_detected)
 

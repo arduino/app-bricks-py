@@ -27,6 +27,7 @@ def record_sensor_movement(x_g: float, y_g: float, z_g: float):
     # Push a triple (x, y, z) into the sliding window
     vibration.accumulate_samples((x, y, z))
 
+
 vibration.on_anomaly(on_detected_anomaly)
 
 Bridge.provide("record_sensor_movement", record_sensor_movement)
