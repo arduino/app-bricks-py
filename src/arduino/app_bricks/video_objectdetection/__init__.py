@@ -144,7 +144,7 @@ class VideoObjectDetection:
                             if not message:
                                 continue
                             if isinstance(message, (bytes, bytearray, memoryview)):
-                                message = bytes(message).decode('utf-8')
+                                message = bytes(message).decode("utf-8")
                             self._process_message(ws, message)
                         except ConnectionClosedOK:
                             raise
