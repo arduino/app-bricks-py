@@ -10,7 +10,8 @@ import socket
 import numpy as np
 from typing import Callable
 
-from websockets.sync.client import connect, ClientConnection
+from websockets.sync.client import connect
+from websockets.sync.connection import Connection
 from websockets.exceptions import ConnectionClosedOK, ConnectionClosedError
 
 from arduino.app_peripherals.camera import Camera, BaseCamera, WebSocketCamera
@@ -31,7 +32,7 @@ class VideoImageClassification:
 
     ALL_HANDLERS_KEY = "__ALL"
 
-    def __init__(self, camera: BaseCamera = None, confidence: float = 0.3, debounce_sec: float = 0.0):
+    def __init__(self, camera: BaseCamera | None = None, confidence: float = 0.3, debounce_sec: float = 0.0):
         """Initialize the VideoImageClassification class.
 
         Args:
@@ -55,6 +56,8 @@ class VideoImageClassification:
         self._is_running = threading.Event()
 
         infra = load_brick_compose_file(self.__class__)
+        if infra is None or "services" not in infra:
+            raise RuntimeError("Infrastructure configuration could not be loaded.")
         for k, v in infra["services"].items():
             self._host = k
             break  # Only one service is expected
@@ -148,6 +151,8 @@ class VideoImageClassification:
                             message = ws.recv()
                             if not message:
                                 continue
+                            if isinstance(message, (bytes, bytearray, memoryview)):
+                                message = bytes(message).decode('utf-8')
                             self._process_message(ws, message)
                         except ConnectionClosedOK:
                             raise
@@ -184,7 +189,8 @@ class VideoImageClassification:
                         # Send a priming frame to initialize the EI pipeline and its web server
                         frame = np.zeros((480, 640, 3), dtype=np.uint8)
                         jpeg_frame = compress_to_jpeg(frame)
-                        tcp_socket.sendall(jpeg_frame.tobytes())
+                        if jpeg_frame is not None:
+                            tcp_socket.sendall(jpeg_frame.tobytes())
 
                     while self._is_running.is_set():
                         try:
@@ -194,7 +200,8 @@ class VideoImageClassification:
                                 continue
 
                             jpeg_frame = compress_to_jpeg(frame)
-                            tcp_socket.sendall(jpeg_frame.tobytes())
+                            if jpeg_frame is not None:
+                                tcp_socket.sendall(jpeg_frame.tobytes())
 
                         except (BrokenPipeError, ConnectionResetError, OSError) as e:
                             logger.warning(f"TCP connection lost: {e}. Retrying...")
@@ -209,7 +216,7 @@ class VideoImageClassification:
                 logger.exception(f"Unexpected error in TCP loop: {e}")
                 time.sleep(2)
 
-    def _process_message(self, ws: ClientConnection, message: str):
+    def _process_message(self, ws: Connection, message: str):
         jmsg = json.loads(message)
         if jmsg.get("type") == "hello":
             # Parse hello message to extract model info if needed
@@ -250,7 +257,7 @@ class VideoImageClassification:
             # Leave logging for unknown message types for debugging purposes
             logger.warning(f"Unknown message type: {jmsg.get('type')}")
 
-    def _execute_handler(self, classification: str, classifications: dict = None):
+    def _execute_handler(self, classification: str, classifications: dict | None = None):
         """Execute the handler for the detected object if it exists.
 
         Args:
@@ -283,7 +290,7 @@ class VideoImageClassification:
         with connect(self._uri) as ws:
             self._override_threshold(ws, value)
 
-    def _override_threshold(self, ws: ClientConnection, value: float):
+    def _override_threshold(self, ws: Connection, value: float):
         """Override the threshold for image classification model.
 
         Args:
