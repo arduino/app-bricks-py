@@ -179,7 +179,8 @@ class VideoObjectDetection:
 
                     if isinstance(self._camera, WebSocketCamera):
                         # Send a priming frame to initialize the EI pipeline and its web server
-                        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+                        res = (self._camera.resolution[1], self._camera.resolution[0], 3)
+                        frame = np.zeros(res, dtype=np.uint8)
                         jpeg_frame = compress_to_jpeg(frame)
                         if jpeg_frame is not None:
                             tcp_socket.sendall(jpeg_frame.tobytes())
