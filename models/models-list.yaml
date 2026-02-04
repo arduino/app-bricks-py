@@ -1086,7 +1086,7 @@ models:
           "EI_CLASSIFICATION_MODEL": "/models/ootb/ei/mobilenet-v2-224px.eim"
       - id: "arduino:video_image_classification"
         model_configuration:
-          "EI_CLASSIFICATION_MODEL": "/models/ootb/ei/mobilenet-v2-224px.eim"
+          "EI_V_CLASSIFICATION_MODEL": "/models/ootb/ei/mobilenet-v2-224px.eim"
  - person-classification:
     runner: brick
     name : "Person classification"
@@ -1102,12 +1102,12 @@ models:
       source-model-id: "person-classification-wakevision"
       source-model-url: "https://studio.edgeimpulse.com/public/755016/live"
     bricks:
-      - id: "arduino:video_image_classification"
+      - id: "arduino:image_classification"
         model_configuration:
           "EI_CLASSIFICATION_MODEL": "/models/ootb/ei/person-classification.eim"
       - id: "arduino:video_image_classification"
         model_configuration:
-          "EI_CLASSIFICATION_MODEL": "/models/ootb/ei/person-classification.eim"   
+          "EI_V_CLASSIFICATION_MODEL": "/models/ootb/ei/person-classification.eim"   
  - concreate-crack-anomaly-detection:
     runner: brick
     name : "Concrete crack anomaly detection"

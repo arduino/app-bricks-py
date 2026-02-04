@@ -13,9 +13,9 @@ required_devices:
   - camera
 model: mobilenet-image-classification
 model_configuration_variables:
-  - EI_CLASSIFICATION_MODEL
+  - EI_V_CLASSIFICATION_MODEL
 variables:
-- name: EI_CLASSIFICATION_MODEL
+- name: EI_V_CLASSIFICATION_MODEL
   description: Path to the model file
   hidden: true
   default_value: /models/ootb/ei/mobilenet-v2-224px.eim
