@@ -11,12 +11,12 @@ from typing import Iterator, List, Optional, Union, Any, Callable
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage, AIMessage, ToolCall
 
-from arduino.app_utils import Logger, brick
+from arduino.app_utils import brick
 
+from .utils import logger
 from .models import CloudModel, CloudModelProvider
 from .memory import WindowedChatMessageHistory
 
-logger = Logger("CloudLLM")
 DEFAULT_MEMORY = 10
 
 
@@ -215,6 +215,21 @@ class CloudLLM:
             with open(path, "rb") as f:
                 return base64.b64encode(f.read()).decode()
 
+    def _content_to_text(self, content: Any) -> str:
+        if isinstance(content, str):
+            return content
+
+        if isinstance(content, list):
+            parts: list[str] = []
+            for p in content:
+                if isinstance(p, dict) and p.get("type") == "text":
+                    parts.append(p.get("text", ""))
+                elif isinstance(p, str):
+                    parts.append(p)
+            return "".join(parts)
+
+        return str(content)
+
     def chat(self, message: str, images: List[str | bytes] = None) -> str:
         """Sends a message to the AI and blocks until the complete response is received.
 
@@ -257,7 +272,7 @@ class CloudLLM:
 
             # Add the AI message to long term history
             self._history.add_messages([message])
-            return message.content
+            return self._content_to_text(message.content)
 
         except Exception as e:
             raise RuntimeError(f"Response generation failed: {e}")
