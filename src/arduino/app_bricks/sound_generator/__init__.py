@@ -8,7 +8,6 @@ import threading
 from typing import Iterable
 import numpy as np
 import time
-import logging
 from pathlib import Path
 from collections import OrderedDict
 
@@ -17,7 +16,7 @@ from .effects import *
 from .loaders import ABCNotationLoader
 from .composition import MusicComposition as MusicComposition
 
-logger = Logger("SoundGenerator", logging.DEBUG)
+logger = Logger("SoundGenerator")
 
 
 class LRUDict(OrderedDict):
@@ -597,24 +596,14 @@ class SoundGenerator(SoundGeneratorStreamer):
         Play a MusicComposition object.
 
         This method configures the SoundGenerator with the composition's settings
-        and plays the polyphonic sequence.
+        and plays the sequence using play_step_sequence for proper queue management.
+
+        The composition format is interpreted as a list of steps, where each step
+        is a list of (note, duration) tuples to play simultaneously.
 
         Args:
             composition (MusicComposition): The composition to play.
             block (bool): If True, block until the entire composition has been played.
-
-        Example:
-            ```python
-            from arduino.app_bricks.sound_generator import MusicComposition, SoundGenerator, SoundEffect
-
-            comp = MusicComposition(
-                composition=[[("C4", 0.25), ("E4", 0.25)], [("G4", 0.5)]], bpm=120, waveform="square", volume=0.8, effects=[SoundEffect.adsr()]
-            )
-
-            gen = SoundGenerator()
-            gen.start()
-            gen.play_composition(comp, block=True)
-            ```
         """
         # Configure the generator with composition settings
         self.set_bpm(composition.bpm)
@@ -622,8 +611,42 @@ class SoundGenerator(SoundGeneratorStreamer):
         self.set_master_volume(composition.volume)
         self.set_effects(composition.effects)
 
-        # Play the composition
-        self.play_polyphonic(composition.composition, volume=composition.volume, block=block)
+        sequence = []
+        step_duration = None
+
+        for step_data in composition.composition:
+            step_notes = []
+            for note, duration in step_data:
+                if step_duration is None:
+                    step_duration = duration  # Use first note's duration as step duration
+                if note.upper() != "REST":
+                    step_notes.append(note)
+            sequence.append(step_notes)
+
+        if step_duration is None:
+            step_duration = 1 / 16  # Default fallback
+
+        if block:
+            # Use threading to wait for completion
+            playback_done = threading.Event()
+
+            def on_complete():
+                playback_done.set()
+
+            self.play_step_sequence(
+                sequence=sequence,
+                note_duration=step_duration,
+                bpm=composition.bpm,
+                loop=False,
+                on_complete_callback=on_complete,
+                volume=composition.volume,
+            )
+
+            playback_done.wait()
+            # Buffer time for audio queue to drain
+            time.sleep(2.0)
+        else:
+            self.play_step_sequence(sequence=sequence, note_duration=step_duration, bpm=composition.bpm, loop=False, volume=composition.volume)
 
     def play_chord(self, notes: list[str], note_duration: float | str = 1 / 4, volume: float = None, block: bool = False):
         """
@@ -714,7 +737,7 @@ class SoundGenerator(SoundGeneratorStreamer):
     def play_step_sequence(
         self,
         sequence: list[list[str]],
-        note_duration: float | str = 1 / 8,
+        note_duration: float | str = 1 / 16,
         bpm: int = None,
         loop: bool = False,
         on_step_callback: callable = None,
@@ -730,7 +753,7 @@ class SoundGenerator(SoundGeneratorStreamer):
             sequence (list[list[str]]): List of steps, where each step is a list of notes.
                 Empty list or None means REST (silence) for that step.
                 Example: [['C4'], ['E4', 'G4'], [], ['C5']]
-            note_duration (float | str): Duration of each step as a float (like 1/8) or symbol ('E', 'Q', etc.).
+            note_duration (float | str): Duration of each step as a float (like 1/16) or symbol ('E', 'Q', etc.).
             bpm (int, optional): Tempo in beats per minute. If None, uses instance BPM.
             loop (bool): If True, the sequence will loop indefinitely until stop_sequence() is called.
             on_step_callback (callable, optional): Callback function called for each step.
@@ -751,7 +774,7 @@ class SoundGenerator(SoundGeneratorStreamer):
                 [],  # Step 2: REST
                 ["C5"],  # Step 3: High note
             ]
-            sound_gen.play_step_sequence(sequence, note_duration=1 / 8, bpm=120)
+            sound_gen.play_step_sequence(sequence, note_duration=1 / , bpm=120)
             ```
         """
         # Stop any existing sequence

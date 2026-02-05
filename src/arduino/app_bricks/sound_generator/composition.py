@@ -11,7 +11,7 @@ class MusicComposition:
     """
     A structured representation of a musical composition for SoundGenerator.
 
-    This class encapsulates all the parameters needed to play a polyphonic composition,
+    This class encapsulates all the parameters needed to play a polifonic step sequence,
     making it easy to save, load, and share musical sequences.
 
     Attributes:
@@ -31,8 +31,11 @@ class MusicComposition:
         # Create a composition
         comp = MusicComposition(
             composition=[
-                [("C4", 0.25), ("E4", 0.25), ("G4", 0.25)],  # Track 1
-                [("REST", 0.25), ("C5", 0.5)],  # Track 2
+                [("B4", 1 / 16), ("A4", 1 / 16), ("G4", 1 / 16)],  # Step 0
+                [("A#4", 1 / 16), ("G#4", 1 / 16)],  # Step 1
+                [("A4", 1 / 16)],  # Step 2
+                [],  # Step 3 - REST
+                [("A4", 1 / 16)],  # Step 4
             ],
             bpm=120,
             waveform="square",
