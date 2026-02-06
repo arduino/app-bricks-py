@@ -143,6 +143,7 @@ class CloudLLM:
                 including system prompt if set.
         """
         messages = self._history.get_messages()
+        message = None
         if images is not None and len(images) > 0:
             content = []
             content.append({"type": "text", "text": user_input})
@@ -150,9 +151,13 @@ class CloudLLM:
                 image_b64 = self._image_to_base64(img)
                 content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}})
 
-            messages.append(HumanMessage(content=content))
+            message = HumanMessage(content=content)
         else:
-            messages.append(HumanMessage(content=user_input))
+            message = HumanMessage(content=user_input)
+        
+        if message is not None:
+            messages.append(message)
+            self._history.add_messages([message])
 
         return messages
 
@@ -298,12 +303,12 @@ class CloudLLM:
             raise RuntimeError("CloudLLM brick is not started. Please call start() before generating text.")
         if self._keep_streaming.is_set():
             raise AlreadyGenerating("A streaming response is already in progress. Please stop it before starting a new one.")
+        assistant_chunks: list[str] = []
 
         try:
             self._keep_streaming.set()
             input_messages = self._get_message_with_history(message, images)
 
-            assistant_chunks: list[str] = []
             tool_calls = []
             for token in self._model.stream(input_messages):
                 if not self._keep_streaming.is_set():
