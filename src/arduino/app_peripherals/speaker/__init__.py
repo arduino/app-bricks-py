@@ -271,7 +271,7 @@ class Speaker:
                 raise SpeakerException(f"ALSA error opening speaker: {e}")
         except Exception as e:
             logger.error(f"Unexpected error opening PCM device {self.device}: {e}")
-            raise SpeakerException(f"Unexpected error opening spaker: {e}")
+            raise SpeakerException(f"Unexpected error opening speaker: {e}")
 
     def _load_mixer(self) -> alsaaudio.Mixer:
         try:
@@ -354,18 +354,18 @@ class Speaker:
         logger.debug("Playback queue cleared.")
 
     def start(self, notify_if_started: bool = True):
-        """Start the spaker stream by opening the PCM device."""
+        """Start the speaker stream by opening the PCM device."""
         if self._is_reproducing.is_set():
             if notify_if_started:
-                raise RuntimeError("Spaker is already reproducing audio, cannot start again.")
+                raise RuntimeError("Speaker is already reproducing audio, cannot start again.")
             else:
-                logger.debug("Spaker is already reproducing audio, start() call ignored.")
+                logger.debug("Speaker is already reproducing audio, start() call ignored.")
                 return
 
         self._clear_queue()
         self._open_pcm()
         self._is_reproducing.set()
-        logger.debug(f"Spaker stream event is set: {self._is_reproducing}, starting playback thread.")
+        logger.debug(f"Speaker stream event is set: {self._is_reproducing}, starting playback thread.")
         with self._pcm_lock:
             self._playback_thread = threading.Thread(target=self._playback_loop, daemon=True)
             self._playback_thread.start()
@@ -373,7 +373,7 @@ class Speaker:
     def stop(self):
         """Close the PCM device if open."""
         if not self._is_reproducing.is_set():
-            logger.debug("Spaker is not recording, nothing to stop.")
+            logger.debug("Speaker is not recording, nothing to stop.")
             return
 
         # Stop the playback thread
@@ -401,13 +401,13 @@ class Speaker:
         try:
             self.stop()
         except Exception as e:
-            logger.warning(f"Spaker __del__: stop() failed or already closed: {e}")
+            logger.warning(f"Speaker __del__: stop() failed or already closed: {e}")
 
     def __enter__(self):
         """Context manager entry method to start the speaker stream."""
-        logger.debug("Entering Spaker context manager.")
+        logger.debug("Entering Speaker context manager.")
         if self._is_reproducing.is_set():
-            raise RuntimeError("Spaker is already reproducing, cannot enter context again.")
+            raise RuntimeError("Speaker is already reproducing, cannot enter context again.")
         self.start()
         return self
 
@@ -417,12 +417,12 @@ class Speaker:
         exc_value: BaseException | None,
         traceback: object | None,
     ) -> bool:
-        """Context manager exit method to stop the spaker stream."""
-        logger.debug("Exiting Spaker context manager.")
+        """Context manager exit method to stop the speaker stream."""
+        logger.debug("Exiting Speaker context manager.")
         try:
             self.stop()
         except Exception:
-            logger.warning("Spaker is not reproducing, cannot exit context.")
+            logger.warning("Speaker is not reproducing, cannot exit context.")
         return False  # Do not suppress exceptions
 
     def _playback_loop(self):
@@ -494,7 +494,7 @@ class Speaker:
             SpeakerException: If the speaker is not started or if playback fails.
         """
         if not self._is_reproducing.is_set():
-            raise SpeakerException("Spaker is not started, cannot play audio.")
+            raise SpeakerException("Speaker is not started, cannot play audio.")
 
         try:
             if isinstance(data, bytes):

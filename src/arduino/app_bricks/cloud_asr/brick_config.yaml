@@ -11,6 +11,7 @@ requires_container: false
 requires_model: false
 variables:
   - name: API_KEY
-    description: API Key for the cloud-based Speech to Text service
+    description: "API Key for the cloud-based Speech to Text service"
   - name: LANGUAGE
-    description: Language code for transcription (e.g., en, it). Default: en
+    description: "Language code for transcription (e.g., en, it). Default: en"
+disabled: true
