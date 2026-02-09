@@ -154,7 +154,7 @@ class CloudLLM:
             message = HumanMessage(content=content)
         else:
             message = HumanMessage(content=user_input)
-        
+
         if message is not None:
             messages.append(message)
             self._history.add_messages([message])
