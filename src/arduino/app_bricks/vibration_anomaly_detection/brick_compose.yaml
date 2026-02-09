@@ -2,7 +2,7 @@
 # CUSTOM_MODEL_PATH = path to the custom model directory
 services:
   ei-anomaly-detection-runner:
-    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/ei-models-runner:0.7.0
+    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/ei-models-runner:0.7.1
     logging:
       driver: "json-file"
       options:
