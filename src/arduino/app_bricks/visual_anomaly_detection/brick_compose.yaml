@@ -1,6 +1,6 @@
 services:
   ei-obj-video-anomalies-det-runner:
-    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/ei-models-runner:0.7.0
+    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/ei-models-runner:0.7.1
     logging:
       driver: "json-file"
       options:
