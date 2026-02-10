@@ -197,18 +197,10 @@ def list_installed_packages_pkg_resources() -> Dict[str, List[ArduinoBrick]]:
         checked_paths[local_path] = local_installed_modules
 
     # Check application python home directory
-    app_home: Optional[str] = os.getenv("APP_HOME", "/app/python")
-    if app_home and app_home != "":
-        local_installed_modules: List[ArduinoBrick] = find_config_yaml(app_home)
-        if local_installed_modules and len(local_installed_modules) > 0:
-            checked_paths[app_home] = local_installed_modules
-    else:
-        main_module = sys.modules["__main__"]
-        if hasattr(main_module, "__file__"):
-            app_home = os.path.dirname(os.path.abspath(main_module.__file__))
-            local_installed_modules = find_config_yaml(app_home)
-            if local_installed_modules and len(local_installed_modules) > 0:
-                checked_paths[app_home] = local_installed_modules
+    app_home = "/app/python"
+    local_installed_modules: List[ArduinoBrick] = find_config_yaml(app_home)
+    if local_installed_modules and len(local_installed_modules) > 0:
+        checked_paths[app_home] = local_installed_modules
 
     end = time.time() * 1000
     logger.info(f"Module discovery took {end - start} ms")
@@ -331,11 +323,11 @@ def release():
         registry = args.registry
 
     arduino_bricks_version = args.version
-    update_ei_containers = False
+    update_ai_containers = False
     if args.dev is not None and args.dev:
         logger.warning("Development mode enabled. Using 'dev-latest' as the version.")
         arduino_bricks_version = "dev-latest"
-        update_ei_containers = True
+        update_ai_containers = True
 
     modules = []
     for path, module_list in discovered_modules.items():
@@ -348,7 +340,7 @@ def release():
                     compose_file_path=module.compose_file,
                     release_version=arduino_bricks_version,
                     append_suffix=False,
-                    only_ei_containers=update_ei_containers,
+                    only_ai_containers=update_ai_containers,
                     registry=registry,
                 )
 
@@ -395,7 +387,7 @@ def update_ai_container_references():
                     compose_file_path=module.compose_file,
                     release_version=arduino_bricks_version,
                     append_suffix=False,
-                    only_ei_containers=True,
+                    only_ai_containers=True,
                     registry=registry,
                 )
 

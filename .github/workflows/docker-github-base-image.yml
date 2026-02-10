@@ -8,7 +8,6 @@ on:
 
 env:
   GHCR_REGISTRY: ghcr.io
-  REPO: app-bricks/python-base
 
 permissions:
   contents: write
@@ -17,14 +16,17 @@ permissions:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-        - dockerfile: ./containers/python-base/Dockerfile
-          context: ./containers/python-base          
+          - dockerfile: ./containers/python-base/Dockerfile
+            image: ghcr.io/${{ github.repository_owner }}/app-bricks/python-base
+            context: ./containers/python-base
+          - dockerfile: ./containers/base/Dockerfile
+            image: ghcr.io/${{ github.repository_owner }}/app-bricks/base
+            context: ./containers/base
       max-parallel: 2
 
     steps:
@@ -55,8 +57,7 @@ jobs:
           tags: |
             type=raw,value=latest,enable=true
             type=match,pattern=base\/(.*),group=1
-          images: |
-            ${{ env.GHCR_REGISTRY }}/${{ github.repository_owner }}/${{ env.REPO }}
+          images: ${{ matrix.image }}
 
       # Build and push Docker image with Buildx (don't push on PR)
       - name: Build and push Docker image

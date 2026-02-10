@@ -1,6 +1,84 @@
-name: DEV - AI CONTAINERS build & publish Arduino dev-latest containers
+name: DEV - AI CONTAINERS build & publish
 
 on:
   workflow_dispatch:
 
+env:
+  REGISTRY: ghcr.io
+  DEV_REGISTRY_PATH: ghcr.io/${{ github.repository_owner }}/
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
 jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      PYTHON_VERSION: "3.13"
+      TASKFILE_VERSION: "3.45.4"
+      TASKFILE_PATH: "/home/runner/go/bin"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - dockerfile: ./containers/ei-models-runner/Dockerfile
+            context: ./containers/ei-models-runner
+            image: ghcr.io/${{ github.repository_owner }}/app-bricks/ei-models-runner
+            build_python_package: false
+          - dockerfile: ./containers/llamacpp-runner/Dockerfile
+            context: ./containers/llamacpp-runner
+            image: ghcr.io/${{ github.repository_owner }}/app-bricks/llamacpp-models-runner
+            build_python_package: false
+          - dockerfile: ./containers/ollama-runner/Dockerfile
+            context: ./containers/ollama-runner
+            image: ghcr.io/${{ github.repository_owner }}/app-bricks/ollama-models-runner
+            build_python_package: false            
+      max-parallel: 4
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      #Add support for more platforms with QEMU
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: linux/arm64
+
+      - name: Setup Docker buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log into registry ${{ env.REGISTRY }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Extract metadata from the GitHub context
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          tags: |
+            type=raw,value=dev-latest,enable=true
+          images: ${{ matrix.image }}
+
+      # Build and push Docker image with Buildx (don't push on PR)
+      - name: Build and push Docker image
+        id: build-and-push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+          build-args: |
+            REGISTRY=${{ env.DEV_REGISTRY_PATH }}
