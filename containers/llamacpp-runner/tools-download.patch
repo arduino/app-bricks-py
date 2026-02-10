@@ -1,0 +1,161 @@
+diff --git a/common/arg.cpp b/common/arg.cpp
+index 5fbc9022c..c50cc84c1 100644
+--- a/common/arg.cpp
++++ b/common/arg.cpp
+@@ -570,6 +570,10 @@ static bool common_params_parse_ex(int argc, char ** argv, common_params_context
+         throw std::invalid_argument("error: --prompt-cache-all not supported in interactive mode yet\n");
+     }
+ 
++    if (!params.model.hf_repo.empty() && !params.model.docker_repo.empty()) {
++        throw std::invalid_argument("error: cannot specify both -hf and -dr options\n");
++    }
++
+     // handle model and download
+     {
+         auto res = common_params_handle_model(params.model, params.hf_token, params.offline);
+diff --git a/tools/CMakeLists.txt b/tools/CMakeLists.txt
+index 518f8b9ae..3f591e61c 100644
+--- a/tools/CMakeLists.txt
++++ b/tools/CMakeLists.txt
+@@ -37,4 +37,5 @@ else()
+         add_subdirectory(export-lora)
+     endif()
+     add_subdirectory(fit-params)
++    add_subdirectory(pull)
+ endif()
+diff --git a/tools/pull/CMakeLists.txt b/tools/pull/CMakeLists.txt
+new file mode 100644
+index 000000000..64f5bb597
+--- /dev/null
++++ b/tools/pull/CMakeLists.txt
+@@ -0,0 +1,8 @@
++set(TARGET llama-pull)
++add_executable(${TARGET} pull.cpp)
++target_link_libraries(${TARGET} PRIVATE common llama ${CMAKE_THREAD_LIBS_INIT})
++target_compile_features(${TARGET} PRIVATE cxx_std_17)
++
++if(LLAMA_TOOLS_INSTALL)
++    install(TARGETS ${TARGET} RUNTIME)
++endif()
+\ No newline at end of file
+diff --git a/tools/pull/README.md b/tools/pull/README.md
+new file mode 100644
+index 000000000..de10eccc2
+--- /dev/null
++++ b/tools/pull/README.md
+@@ -0,0 +1,43 @@
++# llama-pull - Model Download Tool
++
++A command-line tool for downloading AI models from HuggingFace and [Docker Hub](https://hub.docker.com/u/ai) for use with llama.cpp.
++
++## Usage
++
++```bash
++# Download from HuggingFace
++llama-pull -hf <user>/<model>[:<quant>]
++
++# Download from Docker Hub
++llama-pull -dr [<repo>/]<model>[:<quant>]
++```
++
++## Options
++
++- `-hf, --hf-repo REPO` - Download model from HuggingFace repository
++- `-dr, --docker-repo REPO` - Download model from Docker Hub
++- `--hf-token TOKEN` - HuggingFace token for private repositories
++- `-h, --help` - Show help message
++
++## Examples
++
++```bash
++# Download a HuggingFace model
++llama-pull -hf microsoft/DialoGPT-medium
++
++# Download a Docker model (ai/ repo is default)
++llama-pull -dr gemma3
++
++# Download with specific quantization
++llama-pull -hf bartowski/Llama-3.2-1B-Instruct-GGUF:Q4_K_M
++```
++
++## Model Storage
++
++Downloaded models are stored in the standard llama.cpp cache directory:
++- Linux: `~/.cache/llama.cpp/`, macOS: `~/Library/Caches/llama.cpp`
++- The models can then be used with other llama.cpp tools
++
++## Requirements
++
++- Built with `LLAMA_USE_CURL=ON` (default) for download functionality
+\ No newline at end of file
+diff --git a/tools/pull/pull.cpp b/tools/pull/pull.cpp
+new file mode 100644
+index 000000000..1525a0240
+--- /dev/null
++++ b/tools/pull/pull.cpp
+@@ -0,0 +1,65 @@
++#include "arg.h"
++#include "common.h"
++#include "log.h"
++
++#include <cstdio>
++#include <string>
++
++static void print_usage(int, char ** argv) {
++    LOG("Usage: %s [options]\n", argv[0]);
++    LOG("\n");
++    LOG("Download models from HuggingFace or Docker Hub\n");
++    LOG("\n");
++    LOG("Options:\n");
++    LOG("  -h, --help                show this help message and exit\n");
++    LOG("  -hf, -hfr, --hf-repo REPO download model from HuggingFace repo\n");
++    LOG("                            format: <user>/<model>[:<quant>]\n");
++    LOG("                            example: microsoft/DialoGPT-medium\n");
++    LOG("  -dr, --docker-repo REPO   download model from Docker Hub\n");
++    LOG("                            format: [<repo>/]<model>[:<quant>]\n");
++    LOG("                            example: gemma3\n");
++    LOG("  --hf-token TOKEN          HuggingFace token for private repos\n");
++    LOG("\n");
++    LOG("Examples:\n");
++    LOG("  %s -hf microsoft/DialoGPT-medium\n", argv[0]);
++    LOG("  %s -dr gemma3\n", argv[0]);
++    LOG("  %s -hf microsoft/DialoGPT-medium\n", argv[0]);
++    LOG("\n");
++}
++
++int main(int argc, char ** argv) {
++    common_params params;
++
++    // Parse command line arguments
++    if (!common_params_parse(argc, argv, params, LLAMA_EXAMPLE_COMMON, print_usage)) {
++        print_usage(argc, argv);
++        return 1;
++    }
++
++    // Check if help was requested or no download option provided
++    if (params.model.hf_repo.empty() && params.model.docker_repo.empty()) {
++        LOG_ERR("error: must specify either -hf <repo> or -dr <repo>\n");
++        print_usage(argc, argv);
++        return 1;
++    }
++
++    LOG_INF("llama-pull: downloading model...\n");
++    try {
++        // Use the existing model handling logic which downloads the model
++        auto llama_init = common_init_from_params(params);
++        if (llama_init && llama_init->model() != nullptr) {
++            LOG_INF("Model downloaded and loaded successfully to: %s\n", params.model.path.c_str());
++
++            // We only want to download, not keep the model loaded
++            // The download happens during common_init_from_params
++        } else {
++            LOG_ERR("Failed to download or load model\n");
++            return 1;
++        }
++    } catch (const std::exception & e) {
++        LOG_ERR("Error: %s\n", e.what());
++        return 1;
++    }
++
++    return 0;
++}
