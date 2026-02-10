@@ -7,6 +7,7 @@ import json
 import inspect
 import threading
 import socket
+import numpy as np
 from typing import Callable
 
 from websockets.sync.client import connect
@@ -183,6 +184,13 @@ class VideoImageClassification:
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as tcp_socket:
                     tcp_socket.connect((self._host, 5050))
                     logger.info(f"TCP connection established to {self._host}:5050")
+
+                    # Send a priming frame to initialize the EI pipeline and its web server
+                    res = (self._camera.resolution[1], self._camera.resolution[0], 3)
+                    frame = np.zeros(res, dtype=np.uint8)
+                    jpeg_frame = compress_to_jpeg(frame)
+                    if jpeg_frame is not None:
+                        tcp_socket.sendall(jpeg_frame.tobytes())
 
                     while self._is_running.is_set():
                         try:
