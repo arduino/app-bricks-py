@@ -7,7 +7,6 @@ services:
         max-size: "5m"
         max-file: "2"     
     ports:
-      - ${BIND_ADDRESS:-0.0.0.0}:5050:5050  # TCP input for video frames
       - ${BIND_ADDRESS:-0.0.0.0}:4912:4912  # Embedded UI port
     volumes:
       - "${CUSTOM_MODEL_PATH:-/home/arduino/.arduino-bricks}:${CUSTOM_MODEL_PATH:-/home/arduino/.arduino-bricks}"
