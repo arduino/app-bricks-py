@@ -3,11 +3,10 @@
 # SPDX-License-Identifier: MPL-2.0
 
 ARG REGISTRY
-ARG BASE_IMAGE_VERSION=latest
 
 FROM debian:trixie AS llamacpp-builder
 
-ENV LLAMA_CPP_VERSION=b8407
+ENV LLAMA_CPP_VERSION=b7921
 
 # Install Dependencies
 RUN export DEBIAN_FRONTEND=noninteractive; \
@@ -54,14 +53,16 @@ RUN cd ~/dev/llm/llama.cpp/build/; \
     cp bin-full/llama-pull bin/; \
     cp bin-full/lib* bin/
 
-FROM ${REGISTRY}app-bricks/base:${BASE_IMAGE_VERSION} AS production
+FROM ${REGISTRY}app-bricks/base:latest AS production
 
 COPY --from=llamacpp-builder /root/dev/llm/llama.cpp/build/bin /usr/local/bin/
 COPY ./scripts/*.sh /
 
 RUN set -ex; \
-    mkdir -p /models; \
-    chown arduino:arduino /models; \
+    groupadd -g 44 video || true; \
+    groupadd -g 993 render || true; \
+    usermod -aG video ubuntu || true; \
+    usermod -aG render ubuntu || true; \
     chmod +x /usr/local/bin/*; \
     chmod +x /*.sh
 

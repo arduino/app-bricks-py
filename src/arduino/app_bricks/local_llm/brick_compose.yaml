@@ -1,0 +1,82 @@
+services:
+  genie-models-runner:
+    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/genie-models-runner:dev-latest
+    # Currently, genie-models-runner requires to run as root
+    user: 0:0
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+    working_dir: /mnt/work/models
+    ports:
+      - ${BIND_ADDRESS:-127.0.0.1}:9001:9001
+    environment:
+      - GENAI_MODEL_NAME=${GENAI_VLM_MODEL_NAME:-QWEN2_5_VL_3B}
+      - GENAI_PORT=${GENAI_PORT:-9001}
+      - VLM_LIBRARY_PATH=${VLM_LIBRARY_PATH:-/root/app/site-packages/libvlmservice.so}
+      - LLM_LIBRARY_PATH=${LLM_LIBRARY_PATH:-/root/app/site-packages/libllmservice.so}
+      - GENAI_INTERFACE_FILE=${GENAI_INTERFACE_FILE:-/usr/include/genai_interface.h}
+      - GENAI_MODELS_CONFIG_PATH=${GENAI_MODELS_CONFIG_PATH:-/mnt/work/models/models_config.json}
+      - ADHOC_MODE=${ADHOC_MODE:-true}
+    mem_limit: 12g
+    oom_kill_disable: false
+    shm_size: 2g
+    devices:
+      - /dev/dma_heap/system
+      - /dev/dma_heap/qcom,system
+      - /dev/fastrpc-cdsp
+    volumes:
+      - /usr/lib/aarch64-linux-gnu/libdmabufheap.so.0:/usr/lib/libdmabufheap.so.0
+      - /usr/lib/aarch64-linux-gnu/libcdsprpc.so:/usr/lib/libcdsprpc.so
+      - /usr/lib/aarch64-linux-gnu/libatomic.so.1.2.0:/usr/lib/libatomic.so.1
+      - ${APPLAB_DOWNLOADED_GENIE_MODELS:-${HOME}/models/}:/mnt/work/models/
+    command: >
+      sh -c "hypercorn openapi_server.main:app --bind 0.0.0.0:${GENAI_PORT:-9001}
+      --reload --access-log - --error-log - --log-level error"
+  llamacpp-models-runner:
+    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/llamacpp-models-runner:dev-latest
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+    environment:
+      - LLAMA_LOG_LEVEL=error
+      - LLAMA_ARG_CTX_SIZE=${LLAMA_ARG_CTX_SIZE:-8192}
+      - LLAMA_ARG_CACHE_TYPE_K=${LLAMA_ARG_CACHE_TYPE_K:-q4_0}
+      - LLAMA_ARG_CACHE_TYPE_V=${LLAMA_ARG_CACHE_TYPE_V:-q4_0}
+      - LLAMA_ARG_HOST=${LLAMA_ARG_HOST:-0.0.0.0}
+      - LLAMA_ARG_PORT=${LLAMA_ARG_PORT:-9999}
+      - LLAMA_ARG_MODELS_DIR=${LLAMA_ARG_MODELS_DIR:-/models}
+      - LLAMA_ARG_MODELS_MAX=${LLAMA_ARG_MODELS_MAX:-4}
+      - LLAMA_ARG_BATCH=${LLAMA_ARG_BATCH:-256}
+      - LLAMA_ARG_UBATCH=${LLAMA_ARG_UBATCH:-128}
+      - LLAMA_ARG_MLOCK=${LLAMA_ARG_MLOCK:-1}
+      - LLAMA_ARG_N_PREDICT=${LLAMA_ARG_N_PREDICT:-2048}
+      - XDG_CACHE_HOME=/models
+      #- LLAMA_ARG_THREADS=${LLAMA_ARG_THREADS:-4}
+      #- LLAMA_API_KEY=${LLAMA_API_KEY:-key}
+    working_dir: /models
+    ports:
+      - ${BIND_ADDRESS:-127.0.0.1}:9999:9999
+    mem_limit: 10g
+    oom_kill_disable: false
+    shm_size: 2g
+    volumes:
+      - ${APPLAB_DOWNLOADED_LLAMA_CPP_MODELS:-${HOME}/ArduinoAppsSharedData/llamacpp/}:/models/
+  ollama-models-runner:
+    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/ollama-models-runner:dev-latest
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+    working_dir: /models
+    ports:
+      - ${BIND_ADDRESS:-127.0.0.1}:11434:11434
+    mem_limit: 10g
+    oom_kill_disable: false
+    shm_size: 2g
+    volumes:
+      - ${APPLAB_DOWNLOADED_OLLAMA_MODELS:-${HOME}/ArduinoAppsSharedData/ollama/}:/models/
