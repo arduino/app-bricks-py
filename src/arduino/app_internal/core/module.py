@@ -251,7 +251,7 @@ def _update_compose_release_version(
     compose_file_path: str,
     release_version: str,
     append_suffix: bool = False,
-    only_ei_containers: bool = False,
+    only_ai_containers: bool = False,
     registry: str = None,
 ) -> str:
     """Updates the release version in the Docker Compose file."""
@@ -259,16 +259,16 @@ def _update_compose_release_version(
         content = file.read()
 
     print("Updating compose file:", compose_file_path)
-    if only_ei_containers and "ei-models-runner" not in content:
+    if only_ai_containers and "models-runner" not in content:
         return compose_file_path
 
     # Replace the release version in the content
 
     updated_content = content
 
-    if only_ei_containers:
-        substitution = "ei-models-runner:" + release_version
-        updated_content = re.sub(r"ei-models-runner:[0-9]+\.[0-9]+\.[0-9]+", substitution, updated_content)
+    if only_ai_containers:
+        substitution = "models-runner:" + release_version
+        updated_content = re.sub(r"models-runner:[0-9]+\.[0-9]+\.[0-9]+", substitution, updated_content)
 
     substitution = release_version
     updated_content = re.sub(r"\${APPSLAB_VERSION:\-([^}]+)?}", substitution, updated_content)
