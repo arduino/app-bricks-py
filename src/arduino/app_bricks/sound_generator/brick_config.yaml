@@ -4,4 +4,3 @@ description: Generate sounds like notes, tones, or melodies using waveforms.
 category: audio
 required_devices:
   - speaker
-disabled: true
