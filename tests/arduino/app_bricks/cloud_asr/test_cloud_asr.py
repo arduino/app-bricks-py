@@ -3,66 +3,15 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import queue
-import sys
 import threading
 import time
-import types
 from typing import Iterable, List
 
 import numpy as np
 import pytest
 
-# Provide a minimal alsaaudio stub so tests can import CloudASR without the native alsaaudio dependency.
-dummy_pcm = types.SimpleNamespace(
-    read=lambda *args, **kwargs: (0, b""),
-    setchannels=lambda *args, **kwargs: None,
-    setrate=lambda *args, **kwargs: None,
-    setformat=lambda *args, **kwargs: None,
-    setperiodsize=lambda *args, **kwargs: None,
-    rate=lambda *args, **kwargs: 16000,
-    close=lambda *args, **kwargs: None,
-)
-sys.modules["alsaaudio"] = types.SimpleNamespace(
-    ALSAAudioError=Exception,
-    PCM=lambda *args, **kwargs: dummy_pcm,
-    PCM_CAPTURE=0,
-    PCM_NORMAL=0,
-    PCM_NONBLOCK=0,
-    PCM_PLAYBACK=0,
-    Mixer=lambda *args, **kwargs: types.SimpleNamespace(getvolume=lambda: [0], getrange=lambda: (0, 100)),
-    mixers=lambda *args, **kwargs: [],
-    cards=lambda: [],
-    card_indexes=lambda: [],
-    card_name=lambda idx: "",
-    pcms=lambda *args, **kwargs: [],
-    PCM_FORMAT_S8=0,
-    PCM_FORMAT_U8=0,
-    PCM_FORMAT_S16_LE=0,
-    PCM_FORMAT_S16_BE=0,
-    PCM_FORMAT_U16_LE=0,
-    PCM_FORMAT_U16_BE=0,
-    PCM_FORMAT_S24_LE=0,
-    PCM_FORMAT_S24_BE=0,
-    PCM_FORMAT_S24_3LE=0,
-    PCM_FORMAT_S24_3BE=0,
-    PCM_FORMAT_S32_LE=0,
-    PCM_FORMAT_S32_BE=0,
-    PCM_FORMAT_U32_LE=0,
-    PCM_FORMAT_U32_BE=0,
-    PCM_FORMAT_FLOAT_LE=0,
-    PCM_FORMAT_FLOAT_BE=0,
-    PCM_FORMAT_FLOAT64_LE=0,
-    PCM_FORMAT_FLOAT64_BE=0,
-    PCM_FORMAT_MU_LAW=0,
-    PCM_FORMAT_A_LAW=0,
-    PCM_FORMAT_IMA_ADPCM=0,
-    PCM_FORMAT_MPEG=0,
-    PCM_FORMAT_GSM=0,
-)
-
-from arduino.app_bricks.cloud_asr.cloud_asr import CloudASR
-from arduino.app_bricks.cloud_asr.providers import CloudProvider
-from arduino.app_bricks.cloud_asr.providers.types import ASRProviderEvent, ASRProviderError
+from arduino.app_bricks.cloud_asr import CloudASR, CloudProvider
+from arduino.app_bricks.cloud_asr.providers import ASRProviderEvent, ASRProviderError
 from arduino.app_utils.app import App
 
 

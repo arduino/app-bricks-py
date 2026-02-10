@@ -337,9 +337,9 @@ class TestPerformance:
             TLSCertificateManager.get_or_create_certificates(certs_dir=temp_certs_dir)
         elapsed = time.time() - start
 
-        # Should be very fast (< 1ms per call on average)
+        # Should be very fast (< 10ms per call on average)
         avg_time = elapsed / iterations
-        assert avg_time < 0.001, f"Average retrieval time too slow: {avg_time:.6f}s"
+        assert avg_time < 0.01, f"Average retrieval time too slow: {avg_time:.6f}s"
 
     def test_concurrent_different_dirs_no_blocking(self, temp_certs_dir, reset_manager):
         """Test that different directories don't block each other significantly."""

@@ -2,207 +2,342 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-import logging
-import math
 import threading
-import time
-import numpy as np
 from typing import Literal
+
+import numpy as np
+
 from arduino.app_utils import Logger, brick
-from arduino.app_peripherals.speaker import Speaker
+from arduino.app_peripherals.speaker import Speaker, BaseSpeaker, ALSASpeaker
 
-logger = Logger("WaveGenerator", logging.INFO)
+logger = Logger("WaveGenerator")
 
-
-WaveType = Literal["sine", "square", "sawtooth", "triangle"]
+type WaveType = Literal["sine", "square", "sawtooth", "triangle"]
 
 
 @brick
 class WaveGenerator:
-    """Continuous wave generator brick for audio synthesis.
+    """
+    Continuous wave generator brick for audio synthesis.
 
     This brick generates continuous audio waveforms (sine, square, sawtooth, triangle)
-    and streams them to a USB speaker in real-time. It provides smooth transitions
+    and streams them to a Speaker in real-time. It provides smooth transitions
     between frequency and amplitude changes using configurable envelope parameters.
 
     The generator runs continuously in a background thread, producing audio blocks
-    at a steady rate with minimal latency.
-
-    Attributes:
-        sample_rate (int): Audio sample rate in Hz (default: 16000).
-        wave_type (WaveType): Type of waveform to generate.
-        frequency (float): Current output frequency in Hz.
-        amplitude (float): Current output amplitude (0.0-1.0).
+    with minimal latency.
     """
 
     def __init__(
         self,
-        sample_rate: int = 16000,
+        speaker: BaseSpeaker | None = None,
         wave_type: WaveType = "sine",
-        block_duration: float = 0.01,
         attack: float = 0.01,
         release: float = 0.03,
         glide: float = 0.02,
-        speaker: Speaker = None,
     ):
-        """Initialize the WaveGenerator brick.
+        """
+        Initialize the WaveGenerator brick.
 
         Args:
-            sample_rate (int): Audio sample rate in Hz (default: 16000).
+            speaker (BaseSpeaker): Pre-configured Speaker instance. If None, WaveGenerator
+                will create an internal Speaker optimized for real-time synthesis. If provided,
+                ensure it uses np.float32 format and appropriate latency settings.
             wave_type (WaveType): Initial waveform type (default: "sine").
-            block_duration (float): Duration of each audio block in seconds (default: 0.01).
             attack (float): Attack time for amplitude envelope in seconds (default: 0.01).
             release (float): Release time for amplitude envelope in seconds (default: 0.03).
             glide (float): Frequency glide time (portamento) in seconds (default: 0.02).
-            speaker (Speaker, optional): Pre-configured Speaker instance. If None, WaveGenerator
-                will create an internal Speaker optimized for real-time synthesis with:
-                - periodsize aligned to block_duration (eliminates buffer mismatch)
-                - queue_maxsize=8 (low latency: ~80ms max buffer)
-                - format=FLOAT_LE, channels=1
 
-                If providing an external Speaker, ensure:
-                - sample_rate matches WaveGenerator's sample_rate
-                - periodsize = int(sample_rate × block_duration) for optimal alignment
-                - Speaker is started/stopped manually (WaveGenerator won't manage its lifecycle)
-
-                Example external Speaker configuration:
-                    speaker = Speaker(
-                        device="plughw:CARD=UH34",
-                        sample_rate=16000,
-                        format="FLOAT_LE",
-                        periodsize=160,  # 16000 × 0.01 = 160 frames
-                        queue_maxsize=8
-                    )
+            Example external Speaker configuration:
+            ```python
+            speaker = Speaker(
+                device="plughw:CARD=MyCard,DEV=0",
+                sample_rate=Speaker.RATE_48K,
+                channels=2,
+                format=np.float32,
+            )
+            ```
 
         Raises:
             SpeakerException: If no USB speaker is found or device is busy.
         """
-        self.sample_rate = int(sample_rate)
-        self.block_duration = float(block_duration)
-        self.wave_type = wave_type
-
-        # Envelope parameters
-        self.attack = float(attack)
-        self.release = float(release)
-        self.glide = float(glide)
-
-        # Target state (updated by user)
-        self._target_freq = 440.0
-        self._target_amp = 0.0
-
-        # Current state (internal, smoothed)
-        self._current_freq = 440.0
-        self._current_amp = 0.0
-        self._phase = 0.0
-
-        # Pre-allocated buffers
-        self._buf_N = 0
-        self._buf_phase_incs = None
-        self._buf_phases = None
-        self._buf_envelope = None
-        self._buf_samples = None
-
-        # Speaker setup
-        if speaker is not None:
-            # Use externally provided Speaker instance
-            self._speaker = speaker
-            self._owns_speaker = False
-
-            # Validate external speaker configuration
-            if self._speaker.sample_rate != sample_rate:
-                logger.warning(
-                    f"External Speaker sample_rate ({self._speaker.sample_rate}Hz) differs from "
-                    f"WaveGenerator sample_rate ({sample_rate}Hz). This may cause issues."
-                )
-
-            # Check if periodsize is aligned with block_duration
-            expected_periodsize = int(sample_rate * block_duration)
-            if self._speaker._periodsize is not None and self._speaker._periodsize != expected_periodsize:
-                logger.warning(
-                    f"External Speaker periodsize ({self._speaker._periodsize} frames) does not match "
-                    f"WaveGenerator block size ({expected_periodsize} frames @ {sample_rate}Hz). "
-                    f"This may cause audio glitches. Consider using periodsize={expected_periodsize} "
-                    f"or omitting the speaker parameter to use auto-configured internal Speaker."
-                )
-            elif self._speaker._periodsize is None:
-                logger.warning(
-                    f"External Speaker has periodsize=None (hardware default). For optimal real-time "
-                    f"synthesis, consider setting periodsize={expected_periodsize} frames to match "
-                    f"WaveGenerator block size."
-                )
-
-            logger.info("Using externally provided Speaker instance (not managed by WaveGenerator)")
-        else:
+        if speaker is None:
             # Create internal Speaker instance optimized for real-time synthesis
-            # WaveGenerator requires low-latency configuration:
-            # - periodsize matches block_duration for aligned I/O
-            # - queue_maxsize reduced for responsive audio
-            block_size_frames = int(sample_rate * block_duration)
-            self._speaker = Speaker(
-                device=Speaker.USB_SPEAKER_1,  # Auto-detect first available USB speaker
-                sample_rate=sample_rate,
-                channels=1,
-                format="FLOAT_LE",
-                periodsize=block_size_frames,  # Align with generation block
-                queue_maxsize=8,  # Extreme low latency: 8 blocks = 80ms @ 10ms/block
+            self._speaker = ALSASpeaker(
+                device=Speaker.USB_SPEAKER_1,
+                sample_rate=Speaker.RATE_48K,
+                channels=Speaker.CHANNELS_MONO,
+                format=np.float32,
+                buffer_size=Speaker.BUFFER_SIZE_REALTIME,
+                shared=False,
             )
-            self._owns_speaker = True
-            logger.info(
-                "Created internal Speaker: device=auto-detect, sample_rate=%d, format=FLOAT_LE, periodsize=%d frames",
-                sample_rate,
-                block_size_frames,
-            )
+        else:
+            if speaker.format != np.float32:
+                raise ValueError("Provided Speaker must use np.float32 format for real-time synthesis")
+            self._speaker = speaker
 
-        # Producer thread control
+        self.volume = 100  # Set default volume to max
+
+        # Target state (set by user)
+        self._wave_type: WaveType = wave_type
+        self._frequency = 440.0
+        self._amplitude = 0.0
+        self._attack = float(attack)
+        self._release = float(release)
+        self._glide = float(glide)
+
+        # Internal audio state (set by audio thread)
+        self._prev_frequency = self._frequency
+        self._prev_amplitude = self._amplitude
+        self._prev_phase = 0.0
+        self._amp_ramp_start = self._amplitude  # Amplitude at start of current ramp
+        self._amp_ramp_target = self._amplitude  # Target amplitude for current ramp
+        self._amp_ramp_duration = 0.0  # Total duration of current ramp
+        self._amp_ramp_elapsed = 0.0  # Time elapsed in current ramp
+        self._freq_glide_start = self._frequency  # Frequency at start of current glide
+        self._freq_glide_target = self._frequency  # Target frequency for current glide
+        self._freq_glide_elapsed = 0.0  # Time elapsed in current glide
+
+        # Number of ALSA frames to generate for each audio block produced
+        self._block_frame_count = max(32, min(self._speaker.buffer_size, self._speaker.buffer_size // 4))
+        self._block_duration = self._block_frame_count / float(self.sample_rate)
+
+        # Pre-allocate buffers during instance initialization
+        # Holds the static ramp vector (0.0 to 1.0) for interpolation
+        self._ramp_vec = np.linspace(0.0, 1.0, self._block_frame_count, dtype=np.float32)
+        # Holds the phase angle (rad) for every sample in the current block
+        self._buf_phases = np.zeros(self._block_frame_count, dtype=np.float32)
+        # Holds the volume multiplier for every sample in the current block used in attack/release
+        self._buf_envelope = np.zeros(self._block_frame_count, dtype=np.float32)
+        # Holds the output samples for the current block
+        self._buf_samples = np.zeros(self._block_frame_count, dtype=np.float32)
+
+        self._two_pi = np.float32(2.0 * np.pi)
+
         self._running = threading.Event()
-        self._producer_thread = None
-        self._state_lock = threading.Lock()
 
-        logger.info(
-            "WaveGenerator initialized: sample_rate=%d, wave_type=%s, block_dur=%.3fs",
-            sample_rate,
-            wave_type,
-            block_duration,
-        )
+    @property
+    def wave_type(self) -> WaveType:
+        """
+        Get or set the current waveform type.
+
+        Args:
+            wave_type (WaveType): One of "sine", "square", "sawtooth", "triangle".
+
+        Returns:
+            WaveType: Current waveform type ("sine", "square", "sawtooth", "triangle").
+        """
+        return self._wave_type
+
+    @wave_type.setter
+    def wave_type(self, wave_type: WaveType):
+        valid_types = ("sine", "square", "sawtooth", "triangle")
+        if wave_type not in valid_types:
+            raise ValueError(f"Invalid wave_type '{wave_type}'. Must be one of {valid_types}")
+
+        self._wave_type = wave_type
+
+    @property
+    def sample_rate(self) -> int:
+        """
+        Get the audio sample rate in Hz.
+
+        Returns:
+            int: Sample rate in Hz.
+
+        Raises:
+            RuntimeError: If no speaker is configured.
+        """
+        if self._speaker is None:
+            raise RuntimeError("Speaker is not configured")
+
+        return self._speaker.sample_rate
+
+    @property
+    def frequency(self) -> float:
+        """
+        Get or set the current output frequency in Hz.
+
+        The frequency will smoothly transition to the new value over the
+        configured glide time.
+
+        Args:
+            frequency (float): Target frequency in Hz (typically 20-8000 Hz).
+
+        Returns:
+            float: Current output frequency in Hz.
+
+        Raises:
+            ValueError: If the frequency is negative.
+        """
+        return self._frequency
+
+    @frequency.setter
+    def frequency(self, freq: float):
+        if freq < 0.0:
+            raise ValueError(f"Invalid frequency '{freq}'. Must be non-negative")
+
+        self._frequency = freq
+
+    @property
+    def amplitude(self) -> float:
+        """
+        Get or set the current output amplitude.
+
+        The amplitude will smoothly transition to the new value over the
+        configured attack/release time.
+
+        Args:
+            amplitude (float): Target amplitude in range [0.0, 1.0].
+
+        Returns:
+            float: Current output amplitude (0.0-1.0).
+
+        Raises:
+            ValueError: If the amplitude is not in range [0.0, 1.0].
+        """
+        return self._amplitude
+
+    @amplitude.setter
+    def amplitude(self, amp: float):
+        if amp < 0.0 or amp > 1.0:
+            raise ValueError(f"Invalid amplitude '{amp}'. Must be in range [0.0, 1.0]")
+
+        self._amplitude = amp
+
+    @property
+    def attack(self) -> float:
+        """
+        Get or set the current attack time in seconds.
+
+        Attack time controls how quickly the amplitude rises to the target value.
+
+        Args:
+            attack (float): Attack time in seconds.
+
+        Returns:
+            float: Current attack time in seconds.
+
+        Raises:
+            ValueError: If the attack time is negative.
+        """
+        return self._attack
+
+    @attack.setter
+    def attack(self, attack: float):
+        if attack < 0.0:
+            raise ValueError(f"Invalid attack time '{attack}'. Must be non-negative")
+
+        self._attack = attack
+
+    @property
+    def release(self) -> float:
+        """
+        Get or set the current release time in seconds.
+
+        Release time controls how quickly the amplitude falls to the target value.
+
+        Args:
+            release (float): Release time in seconds.
+
+        Returns:
+            float: Current release time in seconds.
+
+        Raises:
+            ValueError: If the release time is negative.
+        """
+        return self._release
+
+    @release.setter
+    def release(self, release: float):
+        if release < 0.0:
+            raise ValueError(f"Invalid release time '{release}'. Must be non-negative")
+
+        self._release = release
+
+    @property
+    def glide(self) -> float:
+        """
+        Get the current frequency glide time in seconds (portamento).
+
+        Glide time controls how quickly the frequency transitions to the target value.
+
+        Args:
+            glide (float): Frequency glide time in seconds.
+
+        Returns:
+            float: Current frequency glide time in seconds.
+
+        Raises:
+            ValueError: If the glide time is negative.
+        """
+        return self._glide
+
+    @glide.setter
+    def glide(self, glide: float):
+        if glide < 0.0:
+            raise ValueError(f"Invalid glide time '{glide}'. Must be non-negative")
+
+        self._glide = glide
+
+    @property
+    def volume(self) -> int | None:
+        """
+        Get or set the wave generator volume level.
+
+        Args:
+            volume (int): Hardware volume level (0-100).
+
+        Returns:
+            int: Current volume level (0-100).
+
+        Raises:
+            ValueError: If the volume is not in range [0, 100].
+        """
+        return self._speaker.volume
+
+    @volume.setter
+    def volume(self, volume: int):
+        self._speaker.volume = volume
+
+    @property
+    def state(self) -> dict:
+        """
+        Get current generator state.
+
+        Returns:
+            dict: Dictionary containing current frequency, amplitude, wave type, etc.
+        """
+        return {
+            "amplitude": self._amplitude,
+            "frequency": self._frequency,
+            "wave_type": self._wave_type,
+            "attack": self._attack,
+            "release": self._release,
+            "glide": self._glide,
+            "volume": self.volume,
+        }
 
     def start(self):
-        """Start the wave generator and audio output.
+        """
+        Start the wave generator and audio output.
 
-        This starts the speaker device (if internally owned) and launches the producer thread
-        that continuously generates and streams audio blocks.
+        This starts the speaker device too.
         """
         if self._running.is_set():
             logger.warning("WaveGenerator is already running")
             return
 
         logger.info("Starting WaveGenerator...")
-
-        if self._owns_speaker:
-            self._speaker.start()
-
-            # Set hardware speaker volume to maximum (100%)
-            try:
-                self._speaker.set_volume(100)
-                logger.info("Speaker hardware volume set to 100%")
-            except Exception as e:
-                logger.warning(f"Could not set speaker volume: {e}")
-        else:
-            logger.info("Using external Speaker (lifecycle not managed by WaveGenerator)")
-            # Verify external speaker is started
-            if not self._speaker._is_reproducing.is_set():
-                logger.warning("External Speaker is not started! Call speaker.start() before starting WaveGenerator, or audio playback will fail.")
-
+        self._speaker.start()
         self._running.set()
-
-        self._producer_thread = threading.Thread(target=self._producer_loop, daemon=True, name="WaveGenerator-Producer")
-        self._producer_thread.start()
-
         logger.info("WaveGenerator started")
 
     def stop(self):
-        """Stop the wave generator and audio output.
+        """
+        Stop the wave generator and audio output.
 
-        This stops the producer thread and closes the speaker device (if internally owned).
+        This stops the speaker device too.
         """
         if not self._running.is_set():
             logger.warning("WaveGenerator is not running")
@@ -210,253 +345,189 @@ class WaveGenerator:
 
         logger.info("Stopping WaveGenerator...")
         self._running.clear()
+        self._speaker.stop()
+        logger.info("WaveGenerator stopped")
 
-        if self._producer_thread:
-            self._producer_thread.join(timeout=5)
-            if self._producer_thread.is_alive():
-                logger.warning("Producer thread did not terminate in time")
-            self._producer_thread = None
-
-        # Only stop speaker if we own it (internal instance)
-        if self._owns_speaker:
-            self._speaker.stop()
-            logger.info("WaveGenerator stopped (internal Speaker closed)")
-        else:
-            logger.info("WaveGenerator stopped (external Speaker not closed)")
-
-    def set_frequency(self, frequency: float):
-        """Set the target output frequency.
-
-        The frequency will smoothly transition to the new value over the
-        configured glide time.
-
-        Args:
-            frequency (float): Target frequency in Hz (typically 20-8000 Hz).
-        """
-        with self._state_lock:
-            self._target_freq = float(max(0.0, frequency))
-
-    def set_amplitude(self, amplitude: float):
-        """Set the target output amplitude.
-
-        The amplitude will smoothly transition to the new value over the
-        configured attack/release time.
-
-        Args:
-            amplitude (float): Target amplitude in range [0.0, 1.0].
-        """
-        with self._state_lock:
-            self._target_amp = float(max(0.0, min(1.0, amplitude)))
-
-    def set_wave_type(self, wave_type: WaveType):
-        """Change the waveform type.
-
-        Args:
-            wave_type (WaveType): One of "sine", "square", "sawtooth", "triangle".
-
-        Raises:
-            ValueError: If wave_type is not valid.
-        """
-        valid_types = ["sine", "square", "sawtooth", "triangle"]
-        if wave_type not in valid_types:
-            raise ValueError(f"Invalid wave_type '{wave_type}'. Must be one of {valid_types}")
-
-        with self._state_lock:
-            self.wave_type = wave_type
-        logger.info(f"Wave type changed to: {wave_type}")
-
-    def set_volume(self, volume: int):
-        """Set the speaker volume level.
-
-        This is a wrapper that controls the hardware volume of the USB speaker device.
-
-        Args:
-            volume (int): Hardware volume level (0-100).
-
-        Raises:
-            SpeakerException: If the mixer is not available or if volume cannot be set.
-        """
-        self._speaker.set_volume(volume)
-        logger.info(f"Speaker volume set to {volume}%")
-
-    def get_volume(self) -> int:
-        """Get the current speaker volume level.
-
-        Returns:
-            int: Current hardware volume level (0-100).
-        """
-        try:
-            return self._speaker._mixer.getvolume()[0] if self._speaker._mixer else 100
-        except Exception:
-            return 100
-
-    def set_envelope_params(self, attack: float = None, release: float = None, glide: float = None):
-        """Update envelope parameters.
-
-        Args:
-            attack (float, optional): Attack time in seconds.
-            release (float, optional): Release time in seconds.
-            glide (float, optional): Frequency glide time in seconds.
-        """
-        with self._state_lock:
-            if attack is not None:
-                self.attack = float(max(0.0, attack))
-            if release is not None:
-                self.release = float(max(0.0, release))
-            if glide is not None:
-                self.glide = float(max(0.0, glide))
-
-    def get_state(self) -> dict:
-        """Get current generator state.
-
-        Returns:
-            dict: Dictionary containing current frequency, amplitude, wave type, etc.
-        """
-        with self._state_lock:
-            return {
-                "frequency": self._current_freq,
-                "amplitude": self._current_amp,
-                "wave_type": self.wave_type,
-                "volume": self.get_volume(),
-                "phase": self._phase,
-            }
-
-    def _producer_loop(self):
-        """Main producer loop running in background thread.
-
-        Continuously generates audio blocks at a steady cadence and streams
-        them to the speaker device. Uses adaptive generation: when queue is low,
-        generates extra blocks to prevent underruns and glitches.
-        """
-        logger.debug("Producer loop started")
-        next_time = time.perf_counter()
-        block_count = 0
-        emergency_refill_threshold = 2  # Generate extra blocks if queue below this (~20ms @ 10ms/block)
+    @brick.execute
+    def _wave_generator_loop(self):
+        logger.debug(f"Generator loop started. Block frame size: {self._block_frame_count}, Rate: {self.sample_rate}.")
 
         while self._running.is_set():
-            next_time += self.block_duration
-
-            # Read target state
-            with self._state_lock:
-                target_freq = self._target_freq
-                target_amp = self._target_amp
-                wave_type = self.wave_type
-
-            # Log every 100 blocks or when amplitude changes
-            block_count += 1
-            if block_count % 100 == 0 or (block_count < 5):
-                logger.debug(f"Producer: block={block_count}, freq={target_freq:.1f}Hz, amp={target_amp:.3f}")
-
-            # Check queue depth and generate extra blocks if needed
-            queue_depth = self._speaker._playing_queue.qsize()
-            blocks_to_generate = 1
-            if queue_depth < emergency_refill_threshold:
-                # Emergency: generate 2-3 blocks at once to quickly refill
-                blocks_to_generate = min(3, emergency_refill_threshold - queue_depth)
-                if blocks_to_generate > 1:
-                    logger.debug(f"Emergency refill: queue={queue_depth}, generating {blocks_to_generate} blocks")
-
-            # Generate audio block(s)
             try:
-                for _ in range(blocks_to_generate):
-                    audio_block = self._generate_block(target_freq, target_amp, wave_type)
-                    self._speaker.play(audio_block, block_on_queue=False)
+                buf_samples = self._generate_audio_block()
+                # We rely on speaker.play() to block if the hardware buffer is full.
+                # This maintains synchronization with the audio device.
+                self._speaker.play(buf_samples)
             except Exception as e:
-                logger.error(f"Error generating audio block: {e}")
+                logger.error(f"Failed to generate audio block: {e}")
 
-            # Wait until next scheduled time
-            now = time.perf_counter()
-            sleep_time = next_time - now
-            if sleep_time > 0:
-                time.sleep(sleep_time)
-            else:
-                # We're falling behind, reset timing
-                next_time = now
-
-        logger.debug("Producer loop terminated")
-
-    def _generate_block(self, freq_target: float, amp_target: float, wave_type: str) -> np.ndarray:
-        """Generate a single audio block.
-
-        Args:
-            freq_target (float): Target frequency in Hz.
-            amp_target (float): Target amplitude (0.0-1.0).
-            wave_type (str): Waveform type.
+    def _generate_audio_block(self) -> np.ndarray:
+        """
+        Generate a single audio block.
 
         Returns:
-            np.ndarray: Audio samples as float32 array.
+            numpy.ndarray: The generated audio block
         """
-        N = max(1, int(self.sample_rate * self.block_duration))
+        # INITIALIZATION
+        # Localize variables to stack for speed
+        block_frame_count = self._block_frame_count
+        block_duration = self._block_duration
+        sample_rate = float(self.sample_rate)
+        two_pi = self._two_pi
+        ramp_vec = self._ramp_vec
 
-        # Ensure buffers are allocated
-        if N > self._buf_N:
-            self._buf_N = N
-            self._buf_phase_incs = np.empty(self._buf_N, dtype=np.float32)
-            self._buf_phases = np.empty(self._buf_N, dtype=np.float32)
-            self._buf_envelope = np.empty(self._buf_N, dtype=np.float32)
-            self._buf_samples = np.empty(self._buf_N, dtype=np.float32)
+        # Local buffers
+        buf_phases = self._buf_phases
+        buf_samples = self._buf_samples
+        buf_envelope = self._buf_envelope
 
-        phases = self._buf_phases[:N]
-        envelope = self._buf_envelope[:N]
-        samples = self._buf_samples[:N]
+        # Target parameters
+        frequency = self._frequency
+        amplitude = self._amplitude
+        wave_type = self._wave_type
+        glide = self._glide
+        attack = self._attack
+        release = self._release
 
-        # === AMPLITUDE SMOOTHING ===
-        amp_current = self._current_amp
-        if amp_target == amp_current or (self.attack <= 0.0 and self.release <= 0.0):
-            envelope.fill(amp_target)
+        # FREQUENCY & PHASE CALCULATION
+        current_freq = self._prev_frequency
+        if current_freq == frequency:
+            # Frequency is constant
+            # phases = (arange * inc) + start_phase
+            inc = (frequency * two_pi) / sample_rate
+            np.multiply(np.arange(1, block_frame_count + 1, dtype=np.float32), inc, out=buf_phases)
+            np.add(buf_phases, self._prev_phase, out=buf_phases)
+
+            # Update state for next block
+            self._prev_phase = buf_phases[-1] % two_pi
         else:
-            ramp = self.attack if amp_target > amp_current else self.release
-            if ramp <= 0.0:
-                envelope.fill(amp_target)
+            # Frequency is changing
+            # Check if this is a new glide (target changed)
+            if frequency != self._freq_glide_target:
+                # Start a new glide
+                self._freq_glide_start = current_freq
+                self._freq_glide_target = frequency
+                self._freq_glide_elapsed = 0.0
+
+            if glide <= 0.0:
+                # Gliding is disabled, jump immediately
+                inc = (frequency * two_pi) / sample_rate
+                np.multiply(np.arange(1, block_frame_count + 1, dtype=np.float32), inc, out=buf_phases)
+                np.add(buf_phases, self._prev_phase, out=buf_phases)
+                current_freq = frequency
+                self._freq_glide_elapsed = 0.0
             else:
-                frac = min(1.0, self.block_duration / ramp)
-                next_amp = amp_current + (amp_target - amp_current) * frac
-                envelope[:] = np.linspace(amp_current, next_amp, N, dtype=np.float32)
-                amp_current = float(envelope[-1])
+                # Gliding is enabled, linear interpolation based on time
+                glide_start = self._freq_glide_start
+                glide_target = self._freq_glide_target
+                elapsed = self._freq_glide_elapsed
 
-        # === FREQUENCY GLIDE (PORTAMENTO) ===
-        freq_current = self._current_freq
-        phase_incs = self._buf_phase_incs[:N]
+                # Calculate progress through the glide
+                progress_start = min(elapsed / glide, 1.0)
+                progress_end = min((elapsed + block_duration) / glide, 1.0)
 
-        if self.glide > 0.0 and freq_current != freq_target:
-            # Apply glide smoothing over time
-            frac = min(1.0, self.block_duration / self.glide)
-            next_freq = freq_current + (freq_target - freq_current) * frac
+                freq_start = glide_start + (glide_target - glide_start) * progress_start
+                freq_end = glide_start + (glide_target - glide_start) * progress_end
 
-            # Linear interpolation within block
-            freq_ramp = np.linspace(freq_current, next_freq, N, dtype=np.float32)
-            phase_incs[:] = 2.0 * math.pi * freq_ramp / float(self.sample_rate)
+                # buf_phases temporarily holds the frequencies
+                # freq[i] = freq_start + (freq_end - freq_start) * ramp[i]
+                np.subtract(freq_end, freq_start, out=buf_phases)  # delta
+                np.multiply(buf_phases, ramp_vec, out=buf_phases)  # delta * ramp
+                np.add(buf_phases, freq_start, out=buf_phases)  # start + delta*ramp
 
-            freq_current = float(next_freq)
+                # Convert Freq to Phase Increment: inc = freq * 2pi / rate
+                np.multiply(buf_phases, two_pi / sample_rate, out=buf_phases)
+
+                # Accumulate Phase
+                np.cumsum(buf_phases, out=buf_phases)
+                np.add(buf_phases, self._prev_phase, out=buf_phases)
+
+                current_freq = freq_end
+                self._freq_glide_elapsed += block_duration
+
+            self._prev_frequency = current_freq
+            self._prev_phase = buf_phases[-1] % two_pi
+
+        # Wrap phases to [0, 2pi) to maintain floating point alignment
+        # avoid accumulating floating point errors over time
+        np.mod(buf_phases, two_pi, out=buf_phases)
+
+        # AMPLITUDE ENVELOPE CALCULATION
+        prev_amp = self._prev_amplitude
+        if prev_amp == amplitude:
+            # Already at target amplitude
+            amp_start = amplitude
+            amp_end = amplitude
         else:
-            # No glide or already at target
-            phase_incr = 2.0 * math.pi * freq_target / float(self.sample_rate)
-            phase_incs.fill(phase_incr)
-            freq_current = freq_target
+            # Check if this is a new ramp (target changed)
+            if amplitude != self._amp_ramp_target:
+                # Start a new ramp
+                self._amp_ramp_start = prev_amp
+                self._amp_ramp_target = amplitude
+                self._amp_ramp_elapsed = 0.0
+                self._amp_ramp_duration = attack if amplitude > prev_amp else release
 
-        # === PHASE ACCUMULATION ===
-        np.cumsum(phase_incs, dtype=np.float32, out=phases)
-        phases += self._phase
-        self._phase = float(phases[-1] % (2.0 * math.pi))
+            ramp_duration = self._amp_ramp_duration
+            if ramp_duration <= 0.0:
+                # Ramp disabled, instant change
+                amp_start = amplitude
+                amp_end = amplitude
+                self._amp_ramp_elapsed = 0.0
+            else:
+                # Ramp enabled, calculate progress
+                ramp_start = self._amp_ramp_start
+                ramp_target = self._amp_ramp_target
+                elapsed = self._amp_ramp_elapsed
 
-        # === WAVEFORM GENERATION ===
+                # Linear interpolation based on time
+                progress_start = min(elapsed / ramp_duration, 1.0)
+                progress_end = min((elapsed + block_duration) / ramp_duration, 1.0)
+
+                amp_start = ramp_start + (ramp_target - ramp_start) * progress_start
+                amp_end = ramp_start + (ramp_target - ramp_start) * progress_end
+                self._amp_ramp_elapsed += block_duration
+
+        if amp_start == 0.0 and amp_end == 0.0:
+            # Entire block is silent, skip waveform generation
+            buf_samples.fill(0.0)
+            self._prev_amplitude = amp_end
+            return buf_samples
+
+        # WAVEFORM GENERATION
         if wave_type == "sine":
-            np.sin(phases, out=samples)
+            np.sin(buf_phases, out=buf_samples)
         elif wave_type == "square":
-            samples[:] = np.where(np.sin(phases) >= 0, 1.0, -1.0)
+            # np.sign(sin(x)) gives -1 or 1
+            np.sin(buf_phases, out=buf_samples)
+            np.sign(buf_samples, out=buf_samples)
         elif wave_type == "sawtooth":
-            samples[:] = 2.0 * (phases / (2.0 * math.pi) % 1.0) - 1.0
+            # (phase / 2pi) * 2 - 1
+            np.multiply(buf_phases, 1.0 / two_pi, out=buf_samples)  # 0..1
+            np.multiply(buf_samples, 2.0, out=buf_samples)  # 0..2
+            np.subtract(buf_samples, 1.0, out=buf_samples)  # -1..1
         elif wave_type == "triangle":
-            samples[:] = 2.0 * np.abs(2.0 * (phases / (2.0 * math.pi) % 1.0) - 1.0) - 1.0
+            # 2 * abs(2 * (phase/2pi - 0.5)) - 1  ... approx
+            # Let's use the saw based approach: abs(saw) * 2 - 1
+            np.multiply(buf_phases, 1.0 / two_pi, out=buf_samples)  # 0..1
+            np.subtract(buf_samples, 0.5, out=buf_samples)  # -0.5..0.5
+            np.abs(buf_samples, out=buf_samples)  # 0..0.5
+            np.multiply(buf_samples, 4.0, out=buf_samples)  # 0..2
+            np.subtract(buf_samples, 1.0, out=buf_samples)  # -1..1
         else:
-            # Fallback to sine
-            np.sin(phases, out=samples)
+            np.sin(buf_phases, out=buf_samples)
 
-        # === APPLY ENVELOPE AND GAIN ===
-        np.multiply(samples, envelope, out=samples)
+        # APPLY AMPLITUDE ENVELOPE
+        if amp_start == amp_end:
+            # Constant amplitude
+            if amp_start != 1.0:
+                np.multiply(buf_samples, amp_start, out=buf_samples)
+        else:
+            # Variable amplitude
+            np.subtract(amp_end, amp_start, out=buf_envelope)
+            np.multiply(buf_envelope, ramp_vec, out=buf_envelope)
+            np.add(buf_envelope, amp_start, out=buf_envelope)
+            np.multiply(buf_samples, buf_envelope, out=buf_samples)
 
-        # Update internal state
-        self._current_amp = amp_current
-        self._current_freq = freq_current
+        self._prev_amplitude = amp_end
 
-        return samples
+        return buf_samples

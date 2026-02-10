@@ -58,7 +58,6 @@ def test_available_notes():
 
     generator = SoundGeneratorStreamer()
     for note, duration in note_sequence:
-        print(f"Testing note: {note}")
         frequency = generator._get_note(note)
         if "REST" != note:
             assert frequency is not None and frequency > 0.0
