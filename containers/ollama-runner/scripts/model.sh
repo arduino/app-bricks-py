@@ -7,15 +7,11 @@
 set -e
 
 CMD="$1"
-if [ "$CMD" = "pull" ]; then
-  ARG="$3"
-else
-  ARG="$2"
-fi
+ARG="$2"
 
 usage() {
   echo "Usage:"
-  echo "  $0 pull ollama <model>"
+  echo "  $0 pull <model>"
   echo "  $0 rm <model>"
   echo "  $0 ls"
   echo "  $0 ps"
@@ -27,12 +23,7 @@ if [ -z "$CMD" ]; then
 fi
 
 case "$CMD" in
-  pull)
-    if [ "$2" != "ollama" ] || [ -z "$ARG" ]; then
-      usage
-    fi
-    ;;
-  rm)
+  pull|rm)
     if [ -z "$ARG" ]; then
       usage
     fi
