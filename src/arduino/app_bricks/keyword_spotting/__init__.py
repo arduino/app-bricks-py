@@ -4,7 +4,7 @@
 
 from typing import Callable
 from arduino.app_internal.core.audio import AudioDetector
-from arduino.app_peripherals.microphone import Microphone
+from arduino.app_peripherals.microphone import BaseMicrophone
 from arduino.app_utils import brick, Logger
 
 logger = Logger("KeywordSpotting")
@@ -19,16 +19,16 @@ class KeywordSpotting(AudioDetector):
     trained on Edge Impulse platform.
     """
 
-    def __init__(self, mic: Microphone = None, confidence: float = 0.8, debounce_sec: float = 2.0):
+    def __init__(self, mic: BaseMicrophone | None = None, confidence: float = 0.8, debounce_sec: float = 2.0):
         """Initialize the KeywordSpotting class.
 
         Args:
-            mic (Microphone, optional): Microphone instance for audio input.
+            mic (BaseMicrophone): Microphone instance for audio input.
                 If None, a default Microphone will be initialized.
-            confidence (float, optional): Confidence level for detection between 0.0 and 1.0.
-                Defaults to 0.8 (80%). Higher values reduce false positives.
-            debounce_sec (float, optional): Minimum seconds between repeated detections
-                of the same keyword. Defaults to 2.0 seconds.
+            confidence (float): Confidence level for detection between 0.0 and 1.0.
+                Default is 0.8 (80%). Higher values reduce false positives.
+            debounce_sec (float): Minimum seconds between repeated detections
+                of the same keyword. Default is 2.0 seconds.
 
         Raises:
             ValueError: If the model information cannot be retrieved or if the model parameters are incomplete.
