@@ -59,25 +59,32 @@ class LocalLLM(CloudLLM):
         host = "localhost"
         port = 0
 
-        if model.startswith(self.GENIE_MODEL):
-            port = 9001
-            host = "genie-models-runner"
-        elif model.startswith(self.LLAMACPP_MODEL):
-            port = 9999
-            host = "llamacpp-models-runner"
-        elif model.startswith(self.OLLAMA_MODEL):
-            port = 11434
-            host = "ollama-models-runner"
-        else:
-            raise ValueError(f"Unsupported local model type: {model}")
-
         host = resolve_address(host)
         if not host:
             raise RuntimeError("Host address resolution failed for local LLM runner.")
 
-        model = model.split(":", 1)[-1].strip()  # Remove prefix if any
+        if "base_url" in kwargs:
+            logger.warning("Overriding provided 'base_url' argument with resolved local address.")
+            base_url = kwargs.pop("base_url")
 
-        base_url = f"http://{host}:{port}/v1"
+            if base_url is None or base_url.strip() == "":
+                raise ValueError("Empty or wrongly configured 'base_url")
+
+        else:
+            if model.startswith(self.GENIE_MODEL):
+                port = 9001
+                host = "genie-models-runner"
+            elif model.startswith(self.LLAMACPP_MODEL):
+                port = 9999
+                host = "llamacpp-models-runner"
+            elif model.startswith(self.OLLAMA_MODEL):
+                port = 11434
+                host = "ollama-models-runner"
+            else:
+                raise ValueError(f"Unsupported local model type: {model}")
+
+            model = model.split(":", 1)[-1].strip()  # Remove prefix if any
+            base_url = f"http://{host}:{port}/v1"
 
         logger.info(f"Initializing LocalLLM with model '{model}' at {base_url}")
 
