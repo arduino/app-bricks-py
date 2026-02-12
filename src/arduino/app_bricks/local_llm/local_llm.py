@@ -102,6 +102,29 @@ class LocalLLM(CloudLLM):
             **kwargs,
         )
 
+        self._list_supported_models()
+
+    def _list_supported_models(self) -> List[str]:
+        """Returns a list of supported local model identifiers.
+
+        Note: LocalLLM supports OpenAI-compatible API. This methos uses the OpenAI client to query available models from the local server.
+        LangChain's OpenAI wrapper does not provide a direct method to list models, so we need to use the underlying OpenAI client directly.
+
+        Returns:
+            List[str]: A list of supported model names (e.g., ["qwen2.5-7b", "vicuna-13b"]).
+        """
+        try:
+            from openai import OpenAI
+
+            with OpenAI(base_url=self._model.openai_api_base, api_key=self._model.openai_api_key) as openai_client:
+                models_response = openai_client.models.list()
+                model_list = [model.id for model in models_response.data]
+
+                return model_list
+        except Exception as e:
+            logger.warning(f"Failed to list models: {e}")
+            return []
+
     def with_memory(self, max_messages: int = DEFAULT_MEMORY) -> "CloudLLM":
         """Enables conversational memory for this instance.
 
