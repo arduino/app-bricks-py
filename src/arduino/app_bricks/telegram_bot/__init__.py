@@ -2,6 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-from .telegram_bot import TelegramBot, Message
+from .telegram_bot import TelegramBot, Sender
 
-__all__ = ["TelegramBot", "Message"]
+__all__ = ["TelegramBot", "Sender"]
