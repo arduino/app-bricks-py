@@ -6,10 +6,13 @@
 # EXAMPLE_REQUIRES = "Requires a connected camera"
 
 from arduino.app_bricks.hand_gesture_detection import HandGestureTracking
+from arduino.app_peripherals.camera.websocket_camera import WebSocketCamera
 from arduino.app_utils.app import App
 
-pd = HandGestureTracking()
-pd.on_gesture("Thumb_Up", lambda: print("Operation confirmed!"))
-pd.on_gesture("Thumb_Down", lambda: print("Operation denied!"))
+camera = WebSocketCamera()
+camera.start()
+pd = HandGestureTracking(camera)
+pd.on_gesture("Thumb_Up", lambda meta: print("Operation confirmed!"))
+pd.on_gesture("Thumb_Down", lambda meta: print("Operation denied!"))
 
 App.run()
