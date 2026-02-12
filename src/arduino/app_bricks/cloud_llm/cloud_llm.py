@@ -317,7 +317,7 @@ class CloudLLM:
                 if token.tool_calls and len(token.tool_calls) > 0:
                     tool_calls.extend(token.tool_calls)
                 else:
-                    if token.content:
+                    if token.content and len(token.content) > 0:
                         assistant_chunks.append(token.content)
                         yield token.content
 
@@ -327,7 +327,7 @@ class CloudLLM:
                 for token in self._model.stream(input=input_messages, config={"callbacks": self._callbacks}):
                     if not self._keep_streaming.is_set():
                         break
-                    if token.content:
+                    if token.content and len(token.content) > 0:
                         assistant_chunks.append(token.content)
                         yield token.content
 
