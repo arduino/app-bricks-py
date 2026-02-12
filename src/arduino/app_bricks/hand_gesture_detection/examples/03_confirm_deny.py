@@ -10,5 +10,6 @@ from arduino.app_utils.app import App
 
 pd = HandGestureTracking()
 pd.on_gesture("Thumb_Up", lambda: print("Operation confirmed!"))
+pd.on_gesture("Thumb_Down", lambda: print("Operation denied!"))
 
 App.run()
