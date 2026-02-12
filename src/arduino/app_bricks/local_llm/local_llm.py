@@ -32,6 +32,7 @@ class LocalLLM(CloudLLM):
         model: str = "genie:qwen2.5-7b",
         system_prompt: str = "",
         temperature: Optional[float] = 0.7,
+        max_tokens: int = 512,
         timeout: int = 30,
         tools: List[Callable[..., Any]] = None,
         **kwargs,
@@ -47,6 +48,8 @@ class LocalLLM(CloudLLM):
             temperature (Optional[float]): The sampling temperature between 0.0 and 1.0.
                 Higher values make output more random/creative; lower values make it more
                 deterministic. Defaults to 0.7.
+            max_tokens (int): The maximum number of tokens to generate in the response.
+                Defaults to 512.
             timeout (int): The maximum duration in seconds to wait for a response before
                 timing out. Defaults to 30.
             tools (List[Callable[..., Any]]): A list of callable tool functions to register. Defaults to None.
@@ -89,6 +92,7 @@ class LocalLLM(CloudLLM):
         logger.info(f"Initializing LocalLLM with model '{model}' at {base_url}")
 
         # Force OpenAI provider for local LLMs to force ChatCompletion APIs
+        plain_model_name = model
         model = f"{CloudModelProvider.OPENAI}:{model}"
 
         super().__init__(
@@ -99,12 +103,15 @@ class LocalLLM(CloudLLM):
             timeout=timeout,
             tools=tools,
             base_url=base_url,
+            max_tokens=max_tokens,
             **kwargs,
         )
 
-        self._list_supported_models()
+        available_models = self.list_models()
+        if plain_model_name not in available_models:
+            logger.warning(f"Specified model '{plain_model_name}' not found in locally available models: {available_models}")
 
-    def _list_supported_models(self) -> List[str]:
+    def list_models(self) -> List[str]:
         """Returns a list of supported local model identifiers.
 
         Note: LocalLLM supports OpenAI-compatible API. This methos uses the OpenAI client to query available models from the local server.
