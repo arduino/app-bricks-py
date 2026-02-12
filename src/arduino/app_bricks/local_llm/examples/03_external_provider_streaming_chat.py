@@ -8,14 +8,15 @@
 from arduino.app_bricks.local_llm import LocalLLM
 from arduino.app_utils import App
 
-llm = LocalLLM()
+llm = LocalLLM(model="qwen3:4b", base_url="http://localhost:11434/v1", max_tokens=512)
 
 
 def ask_prompt():
     prompt = input("Enter your prompt (or type 'exit' to quit): ")
     if prompt.lower() == "exit":
         raise StopIteration()
-    print(llm.chat(prompt))
+    for chunk in llm.stream_chat(prompt):
+        print(chunk, end="", flush=True)
     print()
 
 
