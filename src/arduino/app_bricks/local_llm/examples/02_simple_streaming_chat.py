@@ -15,7 +15,7 @@ def ask_prompt():
     prompt = input("Enter your prompt (or type 'exit' to quit): ")
     if prompt.lower() == "exit":
         raise StopIteration()
-    for chunk in llm.stream_chat(prompt):
+    for chunk in llm.chat_stream(prompt):
         print(chunk, end="", flush=True)
     print()
 
