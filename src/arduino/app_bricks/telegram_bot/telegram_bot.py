@@ -6,7 +6,7 @@ import os
 import asyncio
 import threading
 import time
-from typing import Callable, Optional
+from typing import Callable, Optional, List, Tuple
 from dataclasses import dataclass
 from arduino.app_utils import brick, Logger
 from telegram import Update, BotCommand, InputFile
@@ -169,6 +169,7 @@ class TelegramBot:
         max_retries: int = 3,
         auto_set_commands: bool = True,
         auto_download_limit_mb: int = 50,
+        whitelist: Optional[List[Tuple[int, Optional[str]]]] = None,
     ) -> None:
         """Initialize the Telegram bot with configurable timeouts and retry settings.
 
@@ -185,6 +186,10 @@ class TelegramBot:
                 audio/video/documents (default: 50). Files larger than this will not be
                 auto-downloaded, but file size info will be available in Sender object.
                 Files are downloaded to RAM only - no disk storage used.
+            whitelist: Optional list of authorized users as (user_id, username) tuples.
+                If provided and not empty, only users in this list can interact with the bot.
+                Either user_id or username can be None in each tuple. The filter is applied
+                to all handlers (commands, messages, media) in a centralized way.
 
         Note:
             All media files (photos, audio, video, documents) are handled in RAM only.
@@ -208,6 +213,27 @@ class TelegramBot:
         self.max_retries = max_retries
         self.auto_set_commands = auto_set_commands
         self.auto_download_limit_bytes = auto_download_limit_mb * 1024 * 1024
+        self.whitelist = whitelist
+
+        # Create authorization filter from whitelist if provided
+        if self.whitelist and len(self.whitelist) > 0:
+            user_ids = [uid for uid, _ in self.whitelist if uid is not None]
+            usernames = [uname for _, uname in self.whitelist if uname is not None]
+
+            # Build filters.User with collected IDs and usernames
+            if user_ids and usernames:
+                self._auth_filter = filters.User(user_id=user_ids, username=usernames)
+            elif user_ids:
+                self._auth_filter = filters.User(user_id=user_ids)
+            elif usernames:
+                self._auth_filter = filters.User(username=usernames)
+            else:
+                self._auth_filter = None  # Empty whitelist, no valid entries
+
+            if self._auth_filter:
+                logger.info(f"Authorization filter enabled: {len(user_ids)} user IDs, {len(usernames)} usernames")
+        else:
+            self._auth_filter = None
 
         self.application = Application.builder().token(self.token).build()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
@@ -332,7 +358,12 @@ class TelegramBot:
             >>> bot.add_command("hello", greet, "Greet the user")
         """
         handler = self._create_message_handler(callback)
-        self.application.add_handler(CommandHandler(command, handler))
+
+        # Apply authorization filter if whitelist is configured
+        if self._auth_filter:
+            self.application.add_handler(CommandHandler(command, handler, filters=self._auth_filter))
+        else:
+            self.application.add_handler(CommandHandler(command, handler))
 
         if description:
             self._commands_registry[command] = description
@@ -354,7 +385,12 @@ class TelegramBot:
             >>> bot.on_text(echo)
         """
         handler = self._create_message_handler(callback)
-        self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handler))
+
+        # Build filter with authorization if whitelist is configured
+        base_filter = filters.TEXT & ~filters.COMMAND
+        final_filter = base_filter & self._auth_filter if self._auth_filter else base_filter
+
+        self.application.add_handler(MessageHandler(final_filter, handler))
         logger.info("Registered text message handler")
 
     def on_photo(self, callback: Callable[[Sender], None]) -> None:
@@ -373,7 +409,11 @@ class TelegramBot:
             >>> bot.on_photo(handle_photo)
         """
         handler = self._create_message_handler(callback)
-        self.application.add_handler(MessageHandler(filters.PHOTO, handler))
+
+        # Build filter with authorization if whitelist is configured
+        final_filter = filters.PHOTO & self._auth_filter if self._auth_filter else filters.PHOTO
+
+        self.application.add_handler(MessageHandler(final_filter, handler))
         logger.info("Registered photo message handler")
 
     def on_audio(self, callback: Callable[[Sender], None]) -> None:
@@ -392,7 +432,11 @@ class TelegramBot:
             >>> bot.on_audio(handle_audio)
         """
         handler = self._create_message_handler(callback)
-        self.application.add_handler(MessageHandler(filters.AUDIO, handler))
+
+        # Build filter with authorization if whitelist is configured
+        final_filter = filters.AUDIO & self._auth_filter if self._auth_filter else filters.AUDIO
+
+        self.application.add_handler(MessageHandler(final_filter, handler))
         logger.info("Registered audio message handler")
 
     def on_video(self, callback: Callable[[Sender], None]) -> None:
@@ -411,7 +455,11 @@ class TelegramBot:
             >>> bot.on_video(handle_video)
         """
         handler = self._create_message_handler(callback)
-        self.application.add_handler(MessageHandler(filters.VIDEO, handler))
+
+        # Build filter with authorization if whitelist is configured
+        final_filter = filters.VIDEO & self._auth_filter if self._auth_filter else filters.VIDEO
+
+        self.application.add_handler(MessageHandler(final_filter, handler))
         logger.info("Registered video message handler")
 
     def on_document(self, callback: Callable[[Sender], None]) -> None:
@@ -430,7 +478,11 @@ class TelegramBot:
             >>> bot.on_document(handle_document)
         """
         handler = self._create_message_handler(callback)
-        self.application.add_handler(MessageHandler(filters.Document.ALL, handler))
+
+        # Build filter with authorization if whitelist is configured
+        final_filter = filters.Document.ALL & self._auth_filter if self._auth_filter else filters.Document.ALL
+
+        self.application.add_handler(MessageHandler(final_filter, handler))
         logger.info("Registered document message handler")
 
     def send(self, chat_id: int, text: str) -> bool:
