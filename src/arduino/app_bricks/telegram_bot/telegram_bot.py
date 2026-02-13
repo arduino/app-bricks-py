@@ -9,7 +9,7 @@ import time
 from typing import Callable, Optional
 from dataclasses import dataclass
 from arduino.app_utils import brick, Logger
-from telegram import Update, BotCommand
+from telegram import Update, BotCommand, InputFile
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram.error import NetworkError, TimedOut
 
@@ -24,18 +24,22 @@ class Sender:
     needed to process a message and respond to it. Includes helper methods
     for easy replies without repeating chat_id.
 
+    Note:
+        A Telegram message contains at most ONE type of media (photo, audio, video, or document).
+        The media_type attribute is automatically set based on the message content.
+
     Attributes:
         chat_id: Telegram chat ID (used to send responses).
         user_id: ID of the user who sent the message.
         user_name: First name of the user.
         username: Username of the user (None if not set).
-        text: Text content of the message (None for media).
-        image: Photo data as bytearray (None for non-photo messages).
-        audio: Audio data as bytearray (None for non-audio messages).
-        video: Video data as bytearray (None for non-video messages).
-        document: Document data as bytearray (None for non-document messages).
+        text: Text content of the message (None for media-only messages).
+        media: Media data as bytearray (photo/audio/video/document, None if text-only).
+        media_type: Type of media: "photo", "audio", "video", "document" (None if no media).
         caption: Media caption text (None if not present).
         message_id: Original message ID (useful for replies).
+        media_name: Original filename of media file (None if no media).
+        media_size: Size in bytes of media file (None if no media).
     """
 
     # Identification
@@ -46,14 +50,14 @@ class Sender:
 
     # Message content
     text: Optional[str] = None
-    image: Optional[bytearray] = None
-    audio: Optional[bytearray] = None
-    video: Optional[bytearray] = None
-    document: Optional[bytearray] = None
+    media: Optional[bytearray] = None
+    media_type: Optional[str] = None  # "photo", "audio", "video", "document"
     caption: Optional[str] = None
 
-    # Metadata
+    # Media metadata
     message_id: Optional[int] = None
+    media_name: Optional[str] = None
+    media_size: Optional[int] = None
 
     # Internal reference for helper methods
     _bot: Optional["TelegramBot"] = None
@@ -91,12 +95,13 @@ class Sender:
             return False
         return self._bot.send_photo(self.chat_id, photo_bytes, caption)
 
-    def reply_audio(self, audio_bytes: bytes, caption: str = "") -> bool:
+    def reply_audio(self, audio_bytes: bytes, caption: str = "", filename: str = "audio.mp3") -> bool:
         """Reply to this message with audio.
 
         Args:
             audio_bytes: Audio data as bytes.
             caption: Optional caption text.
+            filename: Filename with extension (default: "audio.mp3").
 
         Returns:
             True if successful, False otherwise.
@@ -104,22 +109,30 @@ class Sender:
         if not self._bot:
             logger.error("Sender not properly initialized with bot reference")
             return False
-        return self._bot.send_audio(self.chat_id, audio_bytes, caption)
+        return self._bot.send_audio(self.chat_id, audio_bytes, caption, filename)
 
-    def reply_video(self, video_bytes: bytes, caption: str = "") -> bool:
+    def reply_video(self, video_bytes: bytes, caption: str = "", filename: str = "video.mp4", supports_streaming: bool = True) -> bool:
         """Reply to this message with video.
 
         Args:
             video_bytes: Video data as bytes.
             caption: Optional caption text.
+            filename: Filename with extension (default: "video.mp4").
+            supports_streaming: Pass True to enable progressive download for MP4/H.264 videos
+                (allows playback to start before download completes). Ignored for other formats.
+                Default: True.
 
         Returns:
             True if successful, False otherwise.
+
+        Note:
+            Telegram shows MP4/H.264 videos as inline playable media.
+            Other formats (AVI, MKV, etc.) are shown as downloadable documents.
         """
         if not self._bot:
             logger.error("Sender not properly initialized with bot reference")
             return False
-        return self._bot.send_video(self.chat_id, video_bytes, caption)
+        return self._bot.send_video(self.chat_id, video_bytes, caption, filename, supports_streaming)
 
     def reply_document(self, document_bytes: bytes, filename: str = "document", caption: str = "") -> bool:
         """Reply to this message with a document.
@@ -155,6 +168,7 @@ class TelegramBot:
         photo_timeout: int = 60,
         max_retries: int = 3,
         auto_set_commands: bool = True,
+        auto_download_limit_mb: int = 50,
     ) -> None:
         """Initialize the Telegram bot with configurable timeouts and retry settings.
 
@@ -167,6 +181,20 @@ class TelegramBot:
             auto_set_commands: Automatically sync registered commands with Telegram's
                 command menu (default: True). When enabled, commands with descriptions
                 will appear when users type '/' in the chat.
+            auto_download_limit_mb: Maximum file size in MB for automatic download of
+                audio/video/documents (default: 50). Files larger than this will not be
+                auto-downloaded, but file size info will be available in Sender object.
+                Files are downloaded to RAM only - no disk storage used.
+
+        Note:
+            All media files (photos, audio, video, documents) are handled in RAM only.
+            No temporary files are written to disk. Keep auto_download_limit_mb conservative
+            to avoid memory exhaustion (recommended: 50 MB max).
+
+            Telegram Bot API limits:
+            - Photos: 10 MB max (multipart/form-data)
+            - Audio/Video/Documents: 50 MB max (multipart/form-data)
+            - Download: 50 MB max (via python-telegram-bot)
 
         Raises:
             ValueError: If token is not provided and TELEGRAM_BOT_TOKEN env var is not set.
@@ -179,6 +207,7 @@ class TelegramBot:
         self.photo_timeout = photo_timeout
         self.max_retries = max_retries
         self.auto_set_commands = auto_set_commands
+        self.auto_download_limit_bytes = auto_download_limit_mb * 1024 * 1024
 
         self.application = Application.builder().token(self.token).build()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
@@ -218,37 +247,67 @@ class TelegramBot:
                 _bot=self,
             )
 
-            # Download photo if present
+            # Automatically determine media type from Telegram Message object
+            if update.message.photo:
+                sender.media_type = "photo"
+            elif update.message.audio:
+                sender.media_type = "audio"
+            elif update.message.video:
+                sender.media_type = "video"
+            elif update.message.document:
+                sender.media_type = "document"
+
+            # Download photo if present (always download photos, they're usually small)
             if update.message.photo:
                 try:
                     photo_file = await update.message.photo[-1].get_file()
-                    sender.image = await photo_file.download_as_bytearray()
+                    sender.media = await photo_file.download_as_bytearray()
+                    sender.media_size = update.message.photo[-1].file_size
+                    sender.media_name = "photo.jpg"  # Photos don't have original filenames in Telegram
                 except Exception as e:
                     logger.error(f"Failed to download photo: {e}")
 
-            # Download audio if present
+            # Download audio if present and within size limit
             if update.message.audio:
-                try:
-                    audio_file = await update.message.audio.get_file()
-                    sender.audio = await audio_file.download_as_bytearray()
-                except Exception as e:
-                    logger.error(f"Failed to download audio: {e}")
+                sender.media_size = update.message.audio.file_size
+                sender.media_name = update.message.audio.file_name or "audio.mp3"
+                if sender.media_size and sender.media_size <= self.auto_download_limit_bytes:
+                    try:
+                        audio_file = await update.message.audio.get_file()
+                        sender.media = await audio_file.download_as_bytearray()
+                        logger.info(f"Downloaded audio '{sender.media_name}': {sender.media_size / 1024:.1f} KB")
+                    except Exception as e:
+                        logger.error(f"Failed to download audio: {e}")
+                else:
+                    logger.info(f"Audio '{sender.media_name}' too large for auto-download: {sender.media_size / (1024 * 1024):.1f} MB")
 
-            # Download video if present
+            # Download video if present and within size limit
             if update.message.video:
-                try:
-                    video_file = await update.message.video.get_file()
-                    sender.video = await video_file.download_as_bytearray()
-                except Exception as e:
-                    logger.error(f"Failed to download video: {e}")
+                sender.media_size = update.message.video.file_size
+                sender.media_name = update.message.video.file_name or "video.mp4"
+                if sender.media_size and sender.media_size <= self.auto_download_limit_bytes:
+                    try:
+                        video_file = await update.message.video.get_file()
+                        sender.media = await video_file.download_as_bytearray()
+                        logger.info(f"Downloaded video '{sender.media_name}': {sender.media_size / 1024:.1f} KB")
+                    except Exception as e:
+                        logger.error(f"Failed to download video: {e}")
+                else:
+                    logger.info(f"Video '{sender.media_name}' too large for auto-download: {sender.media_size / (1024 * 1024):.1f} MB")
 
-            # Download document if present
+            # Download document if present and within size limit
             if update.message.document:
-                try:
-                    doc_file = await update.message.document.get_file()
-                    sender.document = await doc_file.download_as_bytearray()
-                except Exception as e:
-                    logger.error(f"Failed to download document: {e}")
+                sender.media_size = update.message.document.file_size
+                sender.media_name = update.message.document.file_name or "document"
+                if sender.media_size and sender.media_size <= self.auto_download_limit_bytes:
+                    try:
+                        doc_file = await update.message.document.get_file()
+                        sender.media = await doc_file.download_as_bytearray()
+                        logger.info(f"Downloaded document '{sender.media_name}': {sender.media_size / 1024:.1f} KB")
+                    except Exception as e:
+                        logger.error(f"Failed to download document: {e}")
+                else:
+                    logger.info(f"Document '{sender.media_name}' too large for auto-download: {sender.media_size / (1024 * 1024):.1f} MB")
 
             # Run user's callback in executor (sync)
             loop = asyncio.get_event_loop()
@@ -302,14 +361,14 @@ class TelegramBot:
         """Register a handler for photo messages.
 
         The callback function receives a simplified Sender object with the
-        photo already downloaded as image (bytearray).
+        photo already downloaded as media (bytearray).
 
         Args:
-            callback: Function that receives a Sender object with image data.
+            callback: Function that receives a Sender object with photo data.
 
         Example:
             >>> def handle_photo(sender: Sender):
-            ...     if sender.image:
+            ...     if sender.media:
             ...         sender.reply("Got your photo!")
             >>> bot.on_photo(handle_photo)
         """
@@ -321,14 +380,14 @@ class TelegramBot:
         """Register a handler for audio messages.
 
         The callback function receives a simplified Sender object with the
-        audio already downloaded as audio (bytearray).
+        audio already downloaded as media (bytearray) if within size limit.
 
         Args:
             callback: Function that receives a Sender object with audio data.
 
         Example:
             >>> def handle_audio(sender: Sender):
-            ...     if sender.audio:
+            ...     if sender.media:
             ...         sender.reply("Got your audio!")
             >>> bot.on_audio(handle_audio)
         """
@@ -340,14 +399,14 @@ class TelegramBot:
         """Register a handler for video messages.
 
         The callback function receives a simplified Sender object with the
-        video already downloaded as video (bytearray).
+        video already downloaded as media (bytearray) if within size limit.
 
         Args:
             callback: Function that receives a Sender object with video data.
 
         Example:
             >>> def handle_video(sender: Sender):
-            ...     if sender.video:
+            ...     if sender.media:
             ...         sender.reply("Got your video!")
             >>> bot.on_video(handle_video)
         """
@@ -359,14 +418,14 @@ class TelegramBot:
         """Register a handler for document messages.
 
         The callback function receives a simplified Sender object with the
-        document already downloaded as document (bytearray).
+        document already downloaded as media (bytearray) if within size limit.
 
         Args:
             callback: Function that receives a Sender object with document data.
 
         Example:
             >>> def handle_document(sender: Sender):
-            ...     if sender.document:
+            ...     if sender.media:
             ...         sender.reply("Got your document!")
             >>> bot.on_document(handle_document)
         """
@@ -499,9 +558,16 @@ class TelegramBot:
         """
         logger.info(f"Sending photo to chat_id={chat_id}")
         try:
+            # Convert bytearray to bytes if needed
+            if isinstance(photo_bytes, bytearray):
+                photo_bytes = bytes(photo_bytes)
+
+            # Use InputFile to send from memory
+            photo = InputFile(photo_bytes)
+
             await self.application.bot.send_photo(
                 chat_id=chat_id,
-                photo=photo_bytes,
+                photo=photo,
                 caption=caption,
                 read_timeout=self.photo_timeout,
                 write_timeout=self.photo_timeout,
@@ -514,20 +580,26 @@ class TelegramBot:
             logger.error(f"An error occurred: {e}")
             raise
 
-    def send_audio(self, chat_id: int, audio_bytes: bytes, caption: str = "") -> bool:
+    def send_audio(self, chat_id: int, audio_bytes: bytes, caption: str = "", filename: str = "audio.mp3") -> bool:
         """Send an audio file to a chat.
 
         Args:
             chat_id: Telegram chat ID.
             audio_bytes: Audio as bytes.
             caption: Optional caption text.
+            filename: Filename with extension (default: "audio.mp3"). Extension helps Telegram
+                determine MIME type. Supported: .mp3, .m4a, .ogg, etc.
 
         Returns:
             True if successful, False otherwise.
 
+        Note:
+            Telegram Bot API upload limit: 50 MB for audio files via multipart/form-data.
+            Files in RAM only - no disk storage used.
+
         Example:
             >>> with open("audio.mp3", "rb") as f:
-            ...     bot.send_audio(123456, f.read(), "Listen to this!")
+            ...     bot.send_audio(123456, f.read(), "Listen to this!", "song.mp3")
         """
         if not self._running or not self._loop or not self._initialized:
             logger.error("Bot not properly initialized, cannot send audio")
@@ -535,7 +607,7 @@ class TelegramBot:
 
         for attempt in range(self.max_retries):
             try:
-                future = asyncio.run_coroutine_threadsafe(self._send_audio_async(chat_id, audio_bytes, caption), self._loop)
+                future = asyncio.run_coroutine_threadsafe(self._send_audio_async(chat_id, audio_bytes, caption, filename), self._loop)
                 future.result(timeout=self.photo_timeout)
                 return True
             except TimeoutError:
@@ -550,24 +622,32 @@ class TelegramBot:
         logger.error(f"Failed to send audio after {self.max_retries} attempts")
         return False
 
-    async def _send_audio_async(self, chat_id: int, audio_bytes: bytes, caption: str) -> None:
+    async def _send_audio_async(self, chat_id: int, audio_bytes: bytes, caption: str, filename: str) -> None:
         """Internal async method to send audio with network error handling.
 
         Args:
             chat_id: Telegram chat ID.
             audio_bytes: Audio bytes to send.
             caption: Audio caption.
+            filename: Filename with extension for MIME type detection.
 
         Raises:
             NetworkError: If network issues occur.
             TimedOut: If request times out.
             Exception: If audio sending fails for other reasons.
         """
-        logger.info(f"Sending audio to chat_id={chat_id}")
+        logger.info(f"Sending audio '{filename}' to chat_id={chat_id}")
         try:
+            # Convert bytearray to bytes if needed
+            if isinstance(audio_bytes, bytearray):
+                audio_bytes = bytes(audio_bytes)
+
+            # Use InputFile to send from memory with filename
+            audio = InputFile(audio_bytes, filename=filename)
+
             await self.application.bot.send_audio(
                 chat_id=chat_id,
-                audio=audio_bytes,
+                audio=audio,
                 caption=caption,
                 read_timeout=self.photo_timeout,
                 write_timeout=self.photo_timeout,
@@ -580,20 +660,31 @@ class TelegramBot:
             logger.error(f"An error occurred: {e}")
             raise
 
-    def send_video(self, chat_id: int, video_bytes: bytes, caption: str = "") -> bool:
+    def send_video(self, chat_id: int, video_bytes: bytes, caption: str = "", filename: str = "video.mp4", supports_streaming: bool = True) -> bool:
         """Send a video to a chat.
 
         Args:
             chat_id: Telegram chat ID.
             video_bytes: Video as bytes.
             caption: Optional caption text.
+            filename: Filename with extension (default: "video.mp4"). Extension helps Telegram
+                determine MIME type. Use .mp4 for best compatibility.
+            supports_streaming: Pass True to enable progressive download for MP4/H.264 videos
+                (allows playback to start before download completes). Only effective for
+                supported video formats (MPEG4). Default: True.
 
         Returns:
             True if successful, False otherwise.
 
+        Note:
+            Telegram Bot API upload limit: 50 MB for video files via multipart/form-data.
+            Recommended format: MP4 (H.264 video, AAC audio) for inline video playback.
+            Other formats (AVI, MKV, etc.) are sent as documents (downloadable files).
+            Files in RAM only - no disk storage used.
+
         Example:
             >>> with open("video.mp4", "rb") as f:
-            ...     bot.send_video(123456, f.read(), "Check out this video!")
+            ...     bot.send_video(123456, f.read(), "Check out this video!", "myvideo.mp4")
         """
         if not self._running or not self._loop or not self._initialized:
             logger.error("Bot not properly initialized, cannot send video")
@@ -601,7 +692,9 @@ class TelegramBot:
 
         for attempt in range(self.max_retries):
             try:
-                future = asyncio.run_coroutine_threadsafe(self._send_video_async(chat_id, video_bytes, caption), self._loop)
+                future = asyncio.run_coroutine_threadsafe(
+                    self._send_video_async(chat_id, video_bytes, caption, filename, supports_streaming), self._loop
+                )
                 future.result(timeout=self.photo_timeout)
                 return True
             except TimeoutError:
@@ -616,25 +709,35 @@ class TelegramBot:
         logger.error(f"Failed to send video after {self.max_retries} attempts")
         return False
 
-    async def _send_video_async(self, chat_id: int, video_bytes: bytes, caption: str) -> None:
+    async def _send_video_async(self, chat_id: int, video_bytes: bytes, caption: str, filename: str, supports_streaming: bool) -> None:
         """Internal async method to send video with network error handling.
 
         Args:
             chat_id: Telegram chat ID.
             video_bytes: Video bytes to send.
             caption: Video caption.
+            filename: Filename with extension for MIME type detection.
+            supports_streaming: Whether video should support streaming.
 
         Raises:
             NetworkError: If network issues occur.
             TimedOut: If request times out.
             Exception: If video sending fails for other reasons.
         """
-        logger.info(f"Sending video to chat_id={chat_id}")
+        logger.info(f"Sending video '{filename}' to chat_id={chat_id}")
         try:
+            # Convert bytearray to bytes if needed
+            if isinstance(video_bytes, bytearray):
+                video_bytes = bytes(video_bytes)
+
+            # Use InputFile to send from memory with filename
+            video = InputFile(video_bytes, filename=filename)
+
             await self.application.bot.send_video(
                 chat_id=chat_id,
-                video=video_bytes,
+                video=video,
                 caption=caption,
+                supports_streaming=supports_streaming,
                 read_timeout=self.photo_timeout,
                 write_timeout=self.photo_timeout,
             )
@@ -652,11 +755,15 @@ class TelegramBot:
         Args:
             chat_id: Telegram chat ID.
             document_bytes: Document as bytes.
-            filename: Name for the document file.
+            filename: Name for the document file (include extension for proper MIME type).
             caption: Optional caption text.
 
         Returns:
             True if successful, False otherwise.
+
+        Note:
+            Telegram Bot API upload limit: 50 MB for documents via multipart/form-data.
+            Files in RAM only - no disk storage used.
 
         Example:
             >>> with open("report.pdf", "rb") as f:
@@ -697,12 +804,18 @@ class TelegramBot:
             TimedOut: If request times out.
             Exception: If document sending fails for other reasons.
         """
-        logger.info(f"Sending document to chat_id={chat_id}")
+        logger.info(f"Sending document '{filename}' to chat_id={chat_id}")
         try:
+            # Convert bytearray to bytes if needed
+            if isinstance(document_bytes, bytearray):
+                document_bytes = bytes(document_bytes)
+
+            # Use InputFile to send from memory with filename
+            document = InputFile(document_bytes, filename=filename)
+
             await self.application.bot.send_document(
                 chat_id=chat_id,
-                document=document_bytes,
-                filename=filename,
+                document=document,
                 caption=caption,
                 read_timeout=self.photo_timeout,
                 write_timeout=self.photo_timeout,
