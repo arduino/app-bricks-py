@@ -51,16 +51,18 @@ class HandGestureTracking:
         if not self._host:
             raise RuntimeError("Host address could not be resolved. Please check your configuration.")
 
-        self._ws_send_url = f"ws://{self._host}:5050"
-        self._ws_recv_url = f"ws://{self._host}:5051"
+        self._ws_send_url = f"ws://{self._host}:5000"
+        self._ws_recv_url = f"ws://{self._host}:5001"
 
     def start(self):
         """Start the capture thread and asyncio event loop."""
         self._running = True
+        self.camera.start()
 
     def stop(self):
         """Stop all tracking and close connections."""
         self._running = False
+        self.camera.stop()
 
     def on_gesture(self, gesture: str, callback: Callable[[dict], None], hand: Literal["left", "right", "both"] = "both"):
         """
