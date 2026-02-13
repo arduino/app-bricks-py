@@ -65,7 +65,7 @@ class TextToSpeech:
         # Limit concurrency
         self._session_semaphore = threading.Semaphore(self.max_concurrent_syntheses)
 
-    def speak(self, text: str, language: Literal["en", "es", "zh"] = "en", speaker: BaseSpeaker = Speaker(sample_rate=Speaker.RATE_44K)):
+    def speak(self, text: str, language: Literal["en", "es", "zh"] = "en", speaker: BaseSpeaker | None = None):
         """
         Synthesize speech from text and play it through the provided speaker.
 
@@ -81,6 +81,8 @@ class TextToSpeech:
         """
         audio_bytes = self.synthesize_pcm(text, language=language)
         audio_array = np.frombuffer(audio_bytes, dtype=np.int16)  # melo-tts uses 16-bit PCM
+        if speaker is None:
+            speaker = Speaker(sample_rate=Speaker.RATE_44K)
         speaker.play_pcm(audio_array)
 
     def synthesize_wav(self, text: str, language: Literal["en", "es", "zh"] = "en") -> bytes:
