@@ -6,7 +6,7 @@ import os
 import asyncio
 import threading
 import time
-from typing import Callable, Optional, List, Tuple
+from typing import Callable, Optional
 from dataclasses import dataclass
 from arduino.app_utils import brick, Logger
 from telegram import Update, BotCommand, InputFile
@@ -18,77 +18,51 @@ logger = Logger("TelegramBot")
 
 @dataclass
 class Sender:
-    """Simplified sender and message object with essential attributes.
+    """Represents the sender of a Telegram message.
 
-    This object is passed to user callbacks, containing all the information
-    needed to process a message and respond to it. Includes helper methods
-    for easy replies without repeating chat_id.
-
-    Note:
-        A Telegram message contains at most ONE type of media (photo, audio, video, or document).
-        The media_type attribute is automatically set based on the message content.
+    Contains user identification and provides convenient methods for replying
+    to messages without manually specifying the chat ID.
 
     Attributes:
-        chat_id: Telegram chat ID (used to send responses).
-        user_id: ID of the user who sent the message.
-        user_name: First name of the user.
-        username: Username of the user (None if not set).
-        text: Text content of the message (None for media-only messages).
-        media: Media data as bytearray (photo/audio/video/document, None if text-only).
-        media_type: Type of media: "photo", "audio", "video", "document" (None if no media).
-        caption: Media caption text (None if not present).
-        message_id: Original message ID (useful for replies).
-        media_name: Original filename of media file (None if no media).
-        media_size: Size in bytes of media file (None if no media).
+        chat_id: Telegram chat ID for sending responses.
+        user_id: Unique Telegram user identifier.
+        first_name: User's first name.
+        last_name: User's last name, None if not set.
+        username: User's Telegram username (without @), None if not set.
     """
 
-    # Identification
     chat_id: int
     user_id: int
-    user_name: str
+    first_name: str
+    last_name: Optional[str] = None
     username: Optional[str] = None
-
-    # Message content
-    text: Optional[str] = None
-    media: Optional[bytearray] = None
-    media_type: Optional[str] = None  # "photo", "audio", "video", "document"
-    caption: Optional[str] = None
-
-    # Media metadata
-    message_id: Optional[int] = None
-    media_name: Optional[str] = None
-    media_size: Optional[int] = None
 
     # Internal reference for helper methods
     _bot: Optional["TelegramBot"] = None
 
     def reply(self, text: str) -> bool:
-        """Reply to this message with text.
+        """Send a text reply to the sender.
 
         Args:
-            text: Message text to send.
+            text: Text content to send.
 
         Returns:
-            True if successful, False otherwise.
-
-        Example:
-            >>> def handle_text(sender: Sender):
-            ...     sender.reply(f"You said: {sender.text}")
+            True if message was sent successfully, False otherwise.
         """
         if not self._bot:
             logger.error("Sender not properly initialized with bot reference")
             return False
-        return self._bot.send(self.chat_id, text)
+        return self._bot.send_message(self.chat_id, text)
 
     def reply_photo(self, photo_bytes: bytes, caption: str = "") -> bool:
-        """Reply to this message with a photo.
+        """Send a photo reply to the sender.
 
         Args:
             photo_bytes: Photo data as bytes.
-            caption: Optional caption text.
+            caption: Optional text caption for the photo.
 
         Returns:
-            True if successful, False otherwise.
+            True if photo was sent successfully, False otherwise.
         """
         if not self._bot:
             logger.error("Sender not properly initialized with bot reference")
@@ -96,15 +70,15 @@ class Sender:
         return self._bot.send_photo(self.chat_id, photo_bytes, caption)
 
     def reply_audio(self, audio_bytes: bytes, caption: str = "", filename: str = "audio.mp3") -> bool:
-        """Reply to this message with audio.
+        """Send an audio file reply to the sender.
 
         Args:
-            audio_bytes: Audio data as bytes.
-            caption: Optional caption text.
-            filename: Filename with extension (default: "audio.mp3").
+            audio_bytes: Audio file data as bytes.
+            caption: Optional text caption for the audio.
+            filename: Filename with extension, defaults to "audio.mp3".
 
         Returns:
-            True if successful, False otherwise.
+            True if audio was sent successfully, False otherwise.
         """
         if not self._bot:
             logger.error("Sender not properly initialized with bot reference")
@@ -112,22 +86,20 @@ class Sender:
         return self._bot.send_audio(self.chat_id, audio_bytes, caption, filename)
 
     def reply_video(self, video_bytes: bytes, caption: str = "", filename: str = "video.mp4", supports_streaming: bool = True) -> bool:
-        """Reply to this message with video.
+        """Send a video file reply to the sender.
 
         Args:
-            video_bytes: Video data as bytes.
-            caption: Optional caption text.
-            filename: Filename with extension (default: "video.mp4").
-            supports_streaming: Pass True to enable progressive download for MP4/H.264 videos
-                (allows playback to start before download completes). Ignored for other formats.
-                Default: True.
+            video_bytes: Video file data as bytes.
+            caption: Optional text caption for the video.
+            filename: Filename with extension, defaults to "video.mp4".
+            supports_streaming: Enable progressive playback for MP4/H.264 videos.
+                Allows playback before full download. Ignored for other formats.
 
         Returns:
-            True if successful, False otherwise.
+            True if video was sent successfully, False otherwise.
 
         Note:
-            Telegram shows MP4/H.264 videos as inline playable media.
-            Other formats (AVI, MKV, etc.) are shown as downloadable documents.
+            MP4/H.264 videos display inline. Other formats appear as downloadable files.
         """
         if not self._bot:
             logger.error("Sender not properly initialized with bot reference")
@@ -135,15 +107,15 @@ class Sender:
         return self._bot.send_video(self.chat_id, video_bytes, caption, filename, supports_streaming)
 
     def reply_document(self, document_bytes: bytes, filename: str = "document", caption: str = "") -> bool:
-        """Reply to this message with a document.
+        """Send a document file reply to the sender.
 
         Args:
-            document_bytes: Document data as bytes.
-            filename: Name for the document file.
-            caption: Optional caption text.
+            document_bytes: Document file data as bytes.
+            filename: Filename for the document.
+            caption: Optional text caption for the document.
 
         Returns:
-            True if successful, False otherwise.
+            True if document was sent successfully, False otherwise.
         """
         if not self._bot:
             logger.error("Sender not properly initialized with bot reference")
@@ -151,87 +123,79 @@ class Sender:
         return self._bot.send_document(self.chat_id, document_bytes, filename, caption)
 
 
+@dataclass
+class Message:
+    """Represents a Telegram message content and metadata.
+
+    Attributes:
+        message_id: Unique message identifier.
+        text: Text content, None if message has no text.
+        caption: Media caption text, None if no caption present.
+    """
+
+    message_id: int
+    text: Optional[str] = None
+    caption: Optional[str] = None
+
+
 @brick
 class TelegramBot:
     """A brick to manage Telegram Bot interactions with synchronous API.
 
-    This brick provides a simplified interface to create Telegram bots using
-    synchronous methods. It handles the async event loop internally, allowing
-    users to write clean, synchronous code while maintaining full bot functionality.
-    Includes automatic retry logic and configurable timeouts for network resilience.
+    Provides a user-friendly interface for creating Telegram bots using synchronous
+    methods while handling async operations internally. Includes automatic retries,
+    configurable timeouts, and built-in authorization via user ID whitelist.
     """
 
     def __init__(
         self,
         token: Optional[str] = None,
         message_timeout: int = 30,
-        photo_timeout: int = 60,
+        media_timeout: int = 60,
         max_retries: int = 3,
         auto_set_commands: bool = True,
-        auto_download_limit_mb: int = 50,
-        whitelist: Optional[List[Tuple[int, Optional[str]]]] = None,
+        whitelist_user_ids: Optional[list[int]] = None,
     ) -> None:
-        """Initialize the Telegram bot with configurable timeouts and retry settings.
+        """Initialize the Telegram bot brick.
 
         Args:
-            token: Telegram bot token. If not provided, reads from TELEGRAM_BOT_TOKEN
-                environment variable.
-            message_timeout: Timeout in seconds for sending messages (default: 30).
-            photo_timeout: Timeout in seconds for sending/downloading photos (default: 60).
-            max_retries: Maximum number of retries for network operations (default: 3).
-            auto_set_commands: Automatically sync registered commands with Telegram's
-                command menu (default: True). When enabled, commands with descriptions
-                will appear when users type '/' in the chat.
-            auto_download_limit_mb: Maximum file size in MB for automatic download of
-                audio/video/documents (default: 50). Files larger than this will not be
-                auto-downloaded, but file size info will be available in Sender object.
-                Files are downloaded to RAM only - no disk storage used.
-            whitelist: Optional list of authorized users as (user_id, username) tuples.
-                If provided and not empty, only users in this list can interact with the bot.
-                Either user_id or username can be None in each tuple. The filter is applied
-                to all handlers (commands, messages, media) in a centralized way.
-
-        Note:
-            All media files (photos, audio, video, documents) are handled in RAM only.
-            No temporary files are written to disk. Keep auto_download_limit_mb conservative
-            to avoid memory exhaustion (recommended: 50 MB max).
-
-            Telegram Bot API limits:
-            - Photos: 10 MB max (multipart/form-data)
-            - Audio/Video/Documents: 50 MB max (multipart/form-data)
-            - Download: 50 MB max (via python-telegram-bot)
+            token: Telegram bot API token. Reads from TELEGRAM_BOT_TOKEN environment
+                variable if not provided.
+            message_timeout: Timeout in seconds for text messages, defaults to 30.
+            media_timeout: Timeout in seconds for media operations, defaults to 60.
+            max_retries: Maximum retry attempts for failed operations, defaults to 3.
+            auto_set_commands: Automatically sync command menu with Telegram,
+                defaults to True.
+            whitelist_user_ids: Optional list of authorized Telegram user IDs.
+                If provided, only these users can interact with the bot.
+                Use @userinfobot on Telegram to get your user ID.
 
         Raises:
-            ValueError: If token is not provided and TELEGRAM_BOT_TOKEN env var is not set.
+            ValueError: If token not provided and TELEGRAM_BOT_TOKEN not set.
+
+        Note:
+            All media files are handled in RAM only. No temporary files written to disk.
+
+            Telegram Bot API limits:
+            - Photos: 10 MB max (upload and download)
+            - Audio/Video/Documents: 20 MB max (download), 50 MB max (upload)
+
+            Download failures are handled automatically with error messages to users.
         """
         self.token = token or os.getenv("TELEGRAM_BOT_TOKEN")
         if not self.token:
             raise ValueError("Telegram TELEGRAM_BOT_TOKEN must be provided or set as environment variable")
 
         self.message_timeout = message_timeout
-        self.photo_timeout = photo_timeout
+        self.media_timeout = media_timeout
         self.max_retries = max_retries
         self.auto_set_commands = auto_set_commands
-        self.auto_download_limit_bytes = auto_download_limit_mb * 1024 * 1024
-        self.whitelist = whitelist
+        self.whitelist_user_ids = whitelist_user_ids
 
         # Create authorization filter from whitelist if provided
-        if self.whitelist and len(self.whitelist) > 0:
-            user_ids = [uid for uid, _ in self.whitelist if uid is not None]
-            usernames = [uname for _, uname in self.whitelist if uname is not None]
-
-            # Build filters.User with collected IDs and usernames
-            if user_ids and usernames:
-                self._auth_filter = filters.User(user_id=user_ids, username=usernames)
-            elif user_ids:
-                self._auth_filter = filters.User(user_id=user_ids)
-            elif usernames:
-                self._auth_filter = filters.User(username=usernames)
-            else:
-                self._auth_filter = None  # Empty whitelist, no valid entries
-
-            if self._auth_filter:
-                logger.info(f"Authorization filter enabled: {len(user_ids)} user IDs, {len(usernames)} usernames")
+        if self.whitelist_user_ids:
+            self._auth_filter = filters.User(user_id=self.whitelist_user_ids)
+            logger.info(f"Authorization filter enabled for {len(self.whitelist_user_ids)} user IDs")
         else:
             self._auth_filter = None
 
@@ -243,121 +207,118 @@ class TelegramBot:
         self._scheduled_tasks: dict[str, threading.Timer] = {}
         self._commands_registry: dict[str, str] = {}
 
-    def _create_message_handler(self, callback: Callable) -> Callable:
-        """Create a Telegram handler from user's simple callback.
-
-        This method extracts essential information from Telegram's Update object,
-        creates a simplified Sender object, and handles async-to-sync conversion
-        automatically. Media files (photo/audio/video/document) are downloaded
-        automatically if present.
-
-        User's callback receives only a simplified Sender object, not Update/Context.
+    def _create_text_handler(self, callback: Callable[[Sender, Message], None]) -> Callable:
+        """Create a Telegram handler for text messages.
 
         Args:
-            callback: User's synchronous callback(sender: Sender) -> None
+            callback: User's callback(sender: Sender, message: Message) -> None
 
         Returns:
             Async handler compatible with python-telegram-bot
         """
 
         async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
-            # Extract essential info from Update into simplified Sender object
             sender = Sender(
                 chat_id=update.message.chat_id,
                 user_id=update.effective_user.id,
-                user_name=update.effective_user.first_name,
+                first_name=update.effective_user.first_name,
+                last_name=update.effective_user.last_name,
                 username=update.effective_user.username,
-                text=update.message.text if update.message.text else None,
-                caption=update.message.caption if update.message.caption else None,
-                message_id=update.message.message_id,
                 _bot=self,
             )
 
-            # Automatically determine media type from Telegram Message object
-            if update.message.photo:
-                sender.media_type = "photo"
-            elif update.message.audio:
-                sender.media_type = "audio"
-            elif update.message.video:
-                sender.media_type = "video"
-            elif update.message.document:
-                sender.media_type = "document"
-
-            # Download photo if present (always download photos, they're usually small)
-            if update.message.photo:
-                try:
-                    photo_file = await update.message.photo[-1].get_file()
-                    sender.media = await photo_file.download_as_bytearray()
-                    sender.media_size = update.message.photo[-1].file_size
-                    sender.media_name = "photo.jpg"  # Photos don't have original filenames in Telegram
-                except Exception as e:
-                    logger.error(f"Failed to download photo: {e}")
-
-            # Download audio if present and within size limit
-            if update.message.audio:
-                sender.media_size = update.message.audio.file_size
-                sender.media_name = update.message.audio.file_name or "audio.mp3"
-                if sender.media_size and sender.media_size <= self.auto_download_limit_bytes:
-                    try:
-                        audio_file = await update.message.audio.get_file()
-                        sender.media = await audio_file.download_as_bytearray()
-                        logger.info(f"Downloaded audio '{sender.media_name}': {sender.media_size / 1024:.1f} KB")
-                    except Exception as e:
-                        logger.error(f"Failed to download audio: {e}")
-                else:
-                    logger.info(f"Audio '{sender.media_name}' too large for auto-download: {sender.media_size / (1024 * 1024):.1f} MB")
-
-            # Download video if present and within size limit
-            if update.message.video:
-                sender.media_size = update.message.video.file_size
-                sender.media_name = update.message.video.file_name or "video.mp4"
-                if sender.media_size and sender.media_size <= self.auto_download_limit_bytes:
-                    try:
-                        video_file = await update.message.video.get_file()
-                        sender.media = await video_file.download_as_bytearray()
-                        logger.info(f"Downloaded video '{sender.media_name}': {sender.media_size / 1024:.1f} KB")
-                    except Exception as e:
-                        logger.error(f"Failed to download video: {e}")
-                else:
-                    logger.info(f"Video '{sender.media_name}' too large for auto-download: {sender.media_size / (1024 * 1024):.1f} MB")
-
-            # Download document if present and within size limit
-            if update.message.document:
-                sender.media_size = update.message.document.file_size
-                sender.media_name = update.message.document.file_name or "document"
-                if sender.media_size and sender.media_size <= self.auto_download_limit_bytes:
-                    try:
-                        doc_file = await update.message.document.get_file()
-                        sender.media = await doc_file.download_as_bytearray()
-                        logger.info(f"Downloaded document '{sender.media_name}': {sender.media_size / 1024:.1f} KB")
-                    except Exception as e:
-                        logger.error(f"Failed to download document: {e}")
-                else:
-                    logger.info(f"Document '{sender.media_name}' too large for auto-download: {sender.media_size / (1024 * 1024):.1f} MB")
+            message = Message(
+                message_id=update.message.message_id,
+                text=update.message.text,
+                caption=None,
+            )
 
             # Run user's callback in executor (sync)
             loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, callback, sender)
+            await loop.run_in_executor(None, callback, sender, message)
 
         return wrapper
 
-    def add_command(self, command: str, callback: Callable[[Sender], None], description: str = "") -> None:
-        """Register a command handler (e.g., /start).
+    def _create_media_handler(self, callback: Callable[[Sender, Message, bytes, str, int], None], media_type: str) -> Callable:
+        """Create a unified Telegram handler for media messages (photo/audio/video/document).
 
-        The callback function receives a simplified Sender object containing
-        all essential information about the message and user.
+        All media types share the same signature and similar download logic,
+        differing only in size checks and Telegram API accessors.
 
         Args:
-            command: Command name without '/' (e.g., "start", "hello").
-            callback: Function that receives a Sender object.
-            description: Optional description shown in Telegram's command menu.
+            callback: User's callback(sender, message, media_bytes, filename, size) -> None
+            media_type: Type of media: "photo", "audio", "video", or "document"
 
-        Example:
-            >>> def greet(sender: Sender):
-            ...     sender.reply(f"Hello {sender.user_name}!")
-            >>> bot.add_command("hello", greet, "Greet the user")
+        Returns:
+            Async handler compatible with python-telegram-bot
         """
-        handler = self._create_message_handler(callback)
+
+        async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
+            sender = Sender(
+                chat_id=update.message.chat_id,
+                user_id=update.effective_user.id,
+                first_name=update.effective_user.first_name,
+                last_name=update.effective_user.last_name,
+                username=update.effective_user.username,
+                _bot=self,
+            )
+
+            message = Message(
+                message_id=update.message.message_id,
+                text=None,
+                caption=update.message.caption,
+            )
+
+            # Get media-specific attributes from update
+            if media_type == "photo":
+                media_obj = update.message.photo[-1]
+                filename = "photo.jpg"  # Telegram doesn't provide original photo names
+                size = media_obj.file_size
+            elif media_type == "audio":
+                media_obj = update.message.audio
+                filename = media_obj.file_name or "audio.mp3"
+                size = media_obj.file_size
+            elif media_type == "video":
+                media_obj = update.message.video
+                filename = media_obj.file_name or "video.mp4"
+                size = media_obj.file_size
+            elif media_type == "document":
+                media_obj = update.message.document
+                filename = media_obj.file_name or "document"
+                size = media_obj.file_size
+            else:
+                logger.error(f"Unknown media type: {media_type}")
+                return
+
+            # Download media (Telegram enforces size limits automatically)
+            try:
+                media_file = await media_obj.get_file()
+                media_bytes = await media_file.download_as_bytearray()
+                if size and size > 1024:  # Log only if > 1 KB
+                    logger.info(f"Downloaded {media_type} '{filename}': {size / 1024:.1f} KB")
+            except Exception as e:
+                error_msg = f"❌ Errore download '{filename}': {str(e)}"
+                await update.message.reply_text(error_msg)
+                logger.error(f"Failed to download {media_type}: {e}")
+                return
+
+            # Success - call user's callback
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, callback, sender, message, media_bytes, filename, size)
+
+        return wrapper
+
+    def add_command(self, command: str, callback: Callable[[Sender, Message], None], description: str = "") -> None:
+        """Register a command handler.
+
+        Args:
+            command: Command name without leading '/', e.g., 'start'.
+            callback: Function to call when command is received. Receives
+                Sender and Message objects.
+            description: Optional description shown in Telegram's command menu.
+                If provided and auto_set_commands is True, appears when user types '/'.
+        """
+        handler = self._create_text_handler(callback)
 
         # Apply authorization filter if whitelist is configured
         if self._auth_filter:
@@ -370,21 +331,14 @@ class TelegramBot:
 
         logger.info(f"Registered command: /{command}" + (f" - {description}" if description else ""))
 
-    def on_text(self, callback: Callable[[Sender], None]) -> None:
-        """Register a handler for text messages.
-
-        The callback function receives a simplified Sender object containing
-        the text and user information.
+    def on_text(self, callback: Callable[[Sender, Message], None]) -> None:
+        """Register a handler for all non-command text messages.
 
         Args:
-            callback: Function that receives a Sender object.
-
-        Example:
-            >>> def echo(sender: Sender):
-            ...     sender.reply(f"You said: {sender.text}")
-            >>> bot.on_text(echo)
+            callback: Function to call for each text message. Receives
+                Sender and Message objects. Does not trigger for commands.
         """
-        handler = self._create_message_handler(callback)
+        handler = self._create_text_handler(callback)
 
         # Build filter with authorization if whitelist is configured
         base_filter = filters.TEXT & ~filters.COMMAND
@@ -393,22 +347,22 @@ class TelegramBot:
         self.application.add_handler(MessageHandler(final_filter, handler))
         logger.info("Registered text message handler")
 
-    def on_photo(self, callback: Callable[[Sender], None]) -> None:
-        """Register a handler for photo messages.
-
-        The callback function receives a simplified Sender object with the
-        photo already downloaded as media (bytearray).
+    def on_photo(self, callback: Callable[[Sender, Message, bytes, str, int], None]) -> None:
+        """Register a handler for photo messages with automatic download.
 
         Args:
-            callback: Function that receives a Sender object with photo data.
+            callback: Function to call when photo is received. Receives:
+                - sender: Sender information
+                - message: Message metadata
+                - photo_bytes: Downloaded photo data
+                - filename: Fixed name 'photo.jpg'
+                - size: Photo size in bytes
 
-        Example:
-            >>> def handle_photo(sender: Sender):
-            ...     if sender.media:
-            ...         sender.reply("Got your photo!")
-            >>> bot.on_photo(handle_photo)
+        Note:
+            Telegram limit: 10 MB max.
+            If download fails, callback is not invoked and error message is sent to user.
         """
-        handler = self._create_message_handler(callback)
+        handler = self._create_media_handler(callback, "photo")
 
         # Build filter with authorization if whitelist is configured
         final_filter = filters.PHOTO & self._auth_filter if self._auth_filter else filters.PHOTO
@@ -416,22 +370,23 @@ class TelegramBot:
         self.application.add_handler(MessageHandler(final_filter, handler))
         logger.info("Registered photo message handler")
 
-    def on_audio(self, callback: Callable[[Sender], None]) -> None:
-        """Register a handler for audio messages.
-
-        The callback function receives a simplified Sender object with the
-        audio already downloaded as media (bytearray) if within size limit.
+    def on_audio(self, callback: Callable[[Sender, Message, bytes, str, int], None]) -> None:
+        """Register a handler for audio messages with size-checked download.
 
         Args:
-            callback: Function that receives a Sender object with audio data.
+            callback: Function to call when audio is received. Receives:
+                - sender: Sender information
+                - message: Message metadata
+                - audio_bytes: Downloaded audio data
+                - filename: Original filename or 'audio.mp3'
+                - size: Audio size in bytes
 
-        Example:
-            >>> def handle_audio(sender: Sender):
-            ...     if sender.media:
-            ...         sender.reply("Got your audio!")
-            >>> bot.on_audio(handle_audio)
+        Note:
+            Telegram limit: 20 MB max (download).
+            If download fails (size limit or errors), callback is not invoked
+            and error message is sent to user.
         """
-        handler = self._create_message_handler(callback)
+        handler = self._create_media_handler(callback, "audio")
 
         # Build filter with authorization if whitelist is configured
         final_filter = filters.AUDIO & self._auth_filter if self._auth_filter else filters.AUDIO
@@ -439,22 +394,23 @@ class TelegramBot:
         self.application.add_handler(MessageHandler(final_filter, handler))
         logger.info("Registered audio message handler")
 
-    def on_video(self, callback: Callable[[Sender], None]) -> None:
-        """Register a handler for video messages.
-
-        The callback function receives a simplified Sender object with the
-        video already downloaded as media (bytearray) if within size limit.
+    def on_video(self, callback: Callable[[Sender, Message, bytes, str, int], None]) -> None:
+        """Register a handler for video messages with size-checked download.
 
         Args:
-            callback: Function that receives a Sender object with video data.
+            callback: Function to call when video is received. Receives:
+                - sender: Sender information
+                - message: Message metadata
+                - video_bytes: Downloaded video data
+                - filename: Original filename or 'video.mp4'
+                - size: Video size in bytes
 
-        Example:
-            >>> def handle_video(sender: Sender):
-            ...     if sender.media:
-            ...         sender.reply("Got your video!")
-            >>> bot.on_video(handle_video)
+        Note:
+            Telegram limit: 20 MB max (download).
+            If download fails (size limit or errors), callback is not invoked
+            and error message is sent to user.
         """
-        handler = self._create_message_handler(callback)
+        handler = self._create_media_handler(callback, "video")
 
         # Build filter with authorization if whitelist is configured
         final_filter = filters.VIDEO & self._auth_filter if self._auth_filter else filters.VIDEO
@@ -462,22 +418,23 @@ class TelegramBot:
         self.application.add_handler(MessageHandler(final_filter, handler))
         logger.info("Registered video message handler")
 
-    def on_document(self, callback: Callable[[Sender], None]) -> None:
-        """Register a handler for document messages.
-
-        The callback function receives a simplified Sender object with the
-        document already downloaded as media (bytearray) if within size limit.
+    def on_document(self, callback: Callable[[Sender, Message, bytes, str, int], None]) -> None:
+        """Register a handler for document messages with size-checked download.
 
         Args:
-            callback: Function that receives a Sender object with document data.
+            callback: Function to call when document is received. Receives:
+                - sender: Sender information
+                - message: Message metadata
+                - document_bytes: Downloaded document data
+                - filename: Original filename or 'document'
+                - size: Document size in bytes
 
-        Example:
-            >>> def handle_document(sender: Sender):
-            ...     if sender.media:
-            ...         sender.reply("Got your document!")
-            >>> bot.on_document(handle_document)
+        Note:
+            Telegram limit: 20 MB max (download).
+            If download fails (size limit or errors), callback is not invoked
+            and error message is sent to user.
         """
-        handler = self._create_message_handler(callback)
+        handler = self._create_media_handler(callback, "document")
 
         # Build filter with authorization if whitelist is configured
         final_filter = filters.Document.ALL & self._auth_filter if self._auth_filter else filters.Document.ALL
@@ -485,23 +442,8 @@ class TelegramBot:
         self.application.add_handler(MessageHandler(final_filter, handler))
         logger.info("Registered document message handler")
 
-    def send(self, chat_id: int, text: str) -> bool:
-        """Send a text message to a chat (simplified method).
-
-        Args:
-            chat_id: Telegram chat ID.
-            text: Message text.
-
-        Returns:
-            True if message was sent successfully, False otherwise.
-
-        Example:
-            >>> bot.send(123456, "Hello from Arduino!")
-        """
-        return self.send_message(chat_id, text)
-
     def send_message(self, chat_id: int, message_text: str) -> bool:
-        """Send a text message to a specific chat (synchronous with automatic retry).
+        """Send a text message with automatic retry.
 
         Args:
             chat_id: Telegram chat ID to send the message to.
@@ -564,15 +506,14 @@ class TelegramBot:
 
         Args:
             chat_id: Telegram chat ID.
-            photo_bytes: Photo as bytes.
+            photo_bytes: Photo data as bytes.
             caption: Optional caption text.
 
         Returns:
             True if successful, False otherwise.
 
-        Example:
-            >>> with open("image.jpg", "rb") as f:
-            ...     bot.send_photo(123456, f.read(), "Check this out!")
+        Note:
+            Telegram limit: 10 MB max (upload). Files handled in RAM only, no disk storage.
         """
         if not self._running or not self._loop or not self._initialized:
             logger.error("Bot not properly initialized, cannot send photo")
@@ -581,7 +522,7 @@ class TelegramBot:
         for attempt in range(self.max_retries):
             try:
                 future = asyncio.run_coroutine_threadsafe(self._send_photo_async(chat_id, photo_bytes, caption), self._loop)
-                future.result(timeout=self.photo_timeout)
+                future.result(timeout=self.media_timeout)
                 return True
             except TimeoutError:
                 logger.warning(f"Photo send timeout (attempt {attempt + 1}/{self.max_retries})")
@@ -621,8 +562,8 @@ class TelegramBot:
                 chat_id=chat_id,
                 photo=photo,
                 caption=caption,
-                read_timeout=self.photo_timeout,
-                write_timeout=self.photo_timeout,
+                read_timeout=self.media_timeout,
+                write_timeout=self.media_timeout,
             )
             logger.info("Photo sent successfully!")
         except (NetworkError, TimedOut) as e:
@@ -637,21 +578,17 @@ class TelegramBot:
 
         Args:
             chat_id: Telegram chat ID.
-            audio_bytes: Audio as bytes.
+            audio_bytes: Audio data as bytes.
             caption: Optional caption text.
-            filename: Filename with extension (default: "audio.mp3"). Extension helps Telegram
-                determine MIME type. Supported: .mp3, .m4a, .ogg, etc.
+            filename: Filename with extension, defaults to 'audio.mp3'.
+                Extension helps Telegram determine MIME type.
+                Supported: .mp3, .m4a, .ogg, etc.
 
         Returns:
             True if successful, False otherwise.
 
         Note:
-            Telegram Bot API upload limit: 50 MB for audio files via multipart/form-data.
-            Files in RAM only - no disk storage used.
-
-        Example:
-            >>> with open("audio.mp3", "rb") as f:
-            ...     bot.send_audio(123456, f.read(), "Listen to this!", "song.mp3")
+            Telegram limit: 50 MB max (upload). Files handled in RAM only, no disk storage.
         """
         if not self._running or not self._loop or not self._initialized:
             logger.error("Bot not properly initialized, cannot send audio")
@@ -660,7 +597,7 @@ class TelegramBot:
         for attempt in range(self.max_retries):
             try:
                 future = asyncio.run_coroutine_threadsafe(self._send_audio_async(chat_id, audio_bytes, caption, filename), self._loop)
-                future.result(timeout=self.photo_timeout)
+                future.result(timeout=self.media_timeout)
                 return True
             except TimeoutError:
                 logger.warning(f"Audio send timeout (attempt {attempt + 1}/{self.max_retries})")
@@ -701,8 +638,8 @@ class TelegramBot:
                 chat_id=chat_id,
                 audio=audio,
                 caption=caption,
-                read_timeout=self.photo_timeout,
-                write_timeout=self.photo_timeout,
+                read_timeout=self.media_timeout,
+                write_timeout=self.media_timeout,
             )
             logger.info("Audio sent successfully!")
         except (NetworkError, TimedOut) as e:
@@ -717,26 +654,22 @@ class TelegramBot:
 
         Args:
             chat_id: Telegram chat ID.
-            video_bytes: Video as bytes.
+            video_bytes: Video data as bytes.
             caption: Optional caption text.
-            filename: Filename with extension (default: "video.mp4"). Extension helps Telegram
-                determine MIME type. Use .mp4 for best compatibility.
-            supports_streaming: Pass True to enable progressive download for MP4/H.264 videos
-                (allows playback to start before download completes). Only effective for
-                supported video formats (MPEG4). Default: True.
+            filename: Filename with extension, defaults to 'video.mp4'.
+                Extension helps Telegram determine MIME type. Use .mp4 for best compatibility.
+            supports_streaming: Enable progressive download for MP4/H.264 videos,
+                allowing playback before download completes. Only effective for
+                MPEG4 format. Defaults to True.
 
         Returns:
             True if successful, False otherwise.
 
         Note:
-            Telegram Bot API upload limit: 50 MB for video files via multipart/form-data.
-            Recommended format: MP4 (H.264 video, AAC audio) for inline video playback.
-            Other formats (AVI, MKV, etc.) are sent as documents (downloadable files).
-            Files in RAM only - no disk storage used.
-
-        Example:
-            >>> with open("video.mp4", "rb") as f:
-            ...     bot.send_video(123456, f.read(), "Check out this video!", "myvideo.mp4")
+            Telegram limit: 50 MB max (upload) via multipart/form-data.
+            Recommended: MP4 (H.264 video, AAC audio) for inline playback.
+            Other formats (AVI, MKV, etc.) sent as downloadable documents.
+            Files handled in RAM only, no disk storage.
         """
         if not self._running or not self._loop or not self._initialized:
             logger.error("Bot not properly initialized, cannot send video")
@@ -747,7 +680,7 @@ class TelegramBot:
                 future = asyncio.run_coroutine_threadsafe(
                     self._send_video_async(chat_id, video_bytes, caption, filename, supports_streaming), self._loop
                 )
-                future.result(timeout=self.photo_timeout)
+                future.result(timeout=self.media_timeout)
                 return True
             except TimeoutError:
                 logger.warning(f"Video send timeout (attempt {attempt + 1}/{self.max_retries})")
@@ -790,8 +723,8 @@ class TelegramBot:
                 video=video,
                 caption=caption,
                 supports_streaming=supports_streaming,
-                read_timeout=self.photo_timeout,
-                write_timeout=self.photo_timeout,
+                read_timeout=self.media_timeout,
+                write_timeout=self.media_timeout,
             )
             logger.info("Video sent successfully!")
         except (NetworkError, TimedOut) as e:
@@ -806,20 +739,15 @@ class TelegramBot:
 
         Args:
             chat_id: Telegram chat ID.
-            document_bytes: Document as bytes.
-            filename: Name for the document file (include extension for proper MIME type).
+            document_bytes: Document data as bytes.
+            filename: Document filename. Include extension for proper MIME type detection.
             caption: Optional caption text.
 
         Returns:
             True if successful, False otherwise.
 
         Note:
-            Telegram Bot API upload limit: 50 MB for documents via multipart/form-data.
-            Files in RAM only - no disk storage used.
-
-        Example:
-            >>> with open("report.pdf", "rb") as f:
-            ...     bot.send_document(123456, f.read(), "report.pdf", "Monthly report")
+            Telegram limit: 50 MB max (upload). Files handled in RAM only, no disk storage.
         """
         if not self._running or not self._loop or not self._initialized:
             logger.error("Bot not properly initialized, cannot send document")
@@ -828,7 +756,7 @@ class TelegramBot:
         for attempt in range(self.max_retries):
             try:
                 future = asyncio.run_coroutine_threadsafe(self._send_document_async(chat_id, document_bytes, filename, caption), self._loop)
-                future.result(timeout=self.photo_timeout)
+                future.result(timeout=self.media_timeout)
                 return True
             except TimeoutError:
                 logger.warning(f"Document send timeout (attempt {attempt + 1}/{self.max_retries})")
@@ -869,8 +797,8 @@ class TelegramBot:
                 chat_id=chat_id,
                 document=document,
                 caption=caption,
-                read_timeout=self.photo_timeout,
-                write_timeout=self.photo_timeout,
+                read_timeout=self.media_timeout,
+                write_timeout=self.media_timeout,
             )
             logger.info("Document sent successfully!")
         except (NetworkError, TimedOut) as e:
@@ -879,34 +807,6 @@ class TelegramBot:
         except Exception as e:
             logger.error(f"An error occurred: {e}")
             raise
-
-    def schedule(self, chat_id: int, text: str, interval_seconds: int) -> str:
-        """Schedule recurring messages to a chat.
-
-        Args:
-            chat_id: Telegram chat ID.
-            text: Message text to send.
-            interval_seconds: Interval between messages in seconds.
-
-        Returns:
-            Task ID that can be used to cancel the scheduled message.
-
-        Example:
-            >>> task_id = bot.schedule(123456, "Reminder!", 60)  # Every minute
-            >>> # Later: bot.cancel_schedule(task_id)
-        """
-        return self.schedule_message(chat_id, text, interval_seconds)
-
-    def cancel_schedule(self, task_id: str) -> bool:
-        """Cancel a scheduled message.
-
-        Args:
-            task_id: Task ID returned by schedule().
-
-        Returns:
-            True if task was cancelled, False if task_id not found.
-        """
-        return self.cancel_scheduled_message(task_id)
 
     async def _set_bot_commands(self) -> None:
         """Internal method to sync registered commands with Telegram.
@@ -935,22 +835,18 @@ class TelegramBot:
         interval_seconds: int,
         task_id: Optional[str] = None,
     ) -> str:
-        """Schedule a recurring message to be sent at regular intervals.
+        """Schedule a recurring message at regular intervals.
 
         Args:
             chat_id: Telegram chat ID to send messages to.
             message_text: Text content of the scheduled message.
             interval_seconds: Time interval in seconds between messages.
-            task_id: Optional unique identifier for this task. If not provided,
-                one will be generated automatically.
+            task_id: Optional unique identifier for this task.
+                If not provided, one is generated automatically.
 
         Returns:
-            Task ID that can be used to cancel the scheduled message.
-
-        Example:
-            >>> task_id = bot.schedule_message(123456, "Hello!", 60)
-            >>> # Cancel later:
-            >>> bot.cancel_scheduled_message(task_id)
+            Task ID string that can be used to cancel the scheduled message.
+            Returns empty string if bot is not initialized.
         """
         if not self._running or not self._initialized:
             logger.error("Bot not properly initialized, cannot schedule message")
@@ -992,7 +888,7 @@ class TelegramBot:
         """Cancel a scheduled message task.
 
         Args:
-            task_id: ID of the task to cancel (returned by schedule_message).
+            task_id: ID of the task to cancel, as returned by schedule_message().
 
         Returns:
             True if task was found and cancelled, False otherwise.
@@ -1007,14 +903,14 @@ class TelegramBot:
         return False
 
     def start(self) -> None:
-        """Start the Telegram bot in a background thread with initialization check.
+        """Start the Telegram bot in a background thread.
 
-        This method initializes the bot and starts polling for updates in a
-        separate thread, allowing the main application to continue running.
-        Waits for successful initialization before returning.
+        Initializes the bot and starts polling for updates in a separate thread,
+        allowing the main application to continue running. Waits for successful
+        initialization before returning.
 
         Raises:
-            RuntimeError: If bot fails to initialize within timeout (30 seconds).
+            RuntimeError: If bot fails to initialize within 30 seconds timeout.
         """
         if self._running:
             logger.warning("Bot is already running")
@@ -1044,8 +940,8 @@ class TelegramBot:
     def stop(self) -> None:
         """Stop the Telegram bot gracefully.
 
-        This method stops the bot polling, shuts down the application, and
-        waits for the background thread to terminate.
+        Stops polling, cancels all scheduled messages, shuts down the application,
+        and waits for the background thread to terminate.
         """
         if not self._running:
             return
