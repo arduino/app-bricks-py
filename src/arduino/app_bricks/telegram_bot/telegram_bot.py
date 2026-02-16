@@ -12,6 +12,7 @@ from arduino.app_utils import brick, Logger
 from telegram import Update, BotCommand, InputFile
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram.error import NetworkError, TimedOut
+from .logger_adapter import TelegramLoggerAdapter
 
 logger = Logger("TelegramBot")
 
@@ -291,15 +292,16 @@ class TelegramBot:
                 return
 
             # Download media (Telegram enforces size limits automatically)
+            log = TelegramLoggerAdapter(logger, user_id=sender.user_id, message_id=message.message_id)
             try:
                 media_file = await media_obj.get_file()
                 media_bytes = await media_file.download_as_bytearray()
                 if size and size > 1024:  # Log only if > 1 KB
-                    logger.info(f"Downloaded {media_type} '{filename}': {size / 1024:.1f} KB")
+                    log.info(f"Downloaded {media_type} '{filename}': {size / 1024:.1f} KB")
             except Exception as e:
                 error_msg = f"❌ Errore download '{filename}': {str(e)}"
                 await update.message.reply_text(error_msg)
-                logger.error(f"Failed to download {media_type}: {e}")
+                log.error(f"Failed to download {media_type}: {e}")
                 return
 
             # Success - call user's callback
@@ -485,7 +487,8 @@ class TelegramBot:
             TimedOut: If request times out.
             Exception: If message sending fails for other reasons.
         """
-        logger.info(f"Sending message to chat_id={chat_id}")
+        log = TelegramLoggerAdapter(logger, chat_id=chat_id)
+        log.info("Sending message")
         try:
             await self.application.bot.send_message(
                 chat_id=chat_id,
@@ -493,12 +496,12 @@ class TelegramBot:
                 read_timeout=self.message_timeout,
                 write_timeout=self.message_timeout,
             )
-            logger.info("Message sent successfully!")
+            log.info("Message sent successfully")
         except (NetworkError, TimedOut) as e:
-            logger.warning(f"Network issue while sending message: {e}")
+            log.warning(f"Network issue while sending message: {e}")
             raise
         except Exception as e:
-            logger.error(f"An error occurred: {e}")
+            log.error(f"An error occurred: {e}")
             raise
 
     def send_photo(self, chat_id: int, photo_bytes: bytes, caption: str = "") -> bool:
@@ -549,7 +552,8 @@ class TelegramBot:
             TimedOut: If request times out.
             Exception: If photo sending fails for other reasons.
         """
-        logger.info(f"Sending photo to chat_id={chat_id}")
+        log = TelegramLoggerAdapter(logger, chat_id=chat_id)
+        log.info("Sending photo")
         try:
             # Convert bytearray to bytes if needed
             if isinstance(photo_bytes, bytearray):
@@ -565,12 +569,12 @@ class TelegramBot:
                 read_timeout=self.media_timeout,
                 write_timeout=self.media_timeout,
             )
-            logger.info("Photo sent successfully!")
+            log.info("Photo sent successfully")
         except (NetworkError, TimedOut) as e:
-            logger.warning(f"Network issue while sending photo: {e}")
+            log.warning(f"Network issue while sending photo: {e}")
             raise
         except Exception as e:
-            logger.error(f"An error occurred: {e}")
+            log.error(f"An error occurred: {e}")
             raise
 
     def send_audio(self, chat_id: int, audio_bytes: bytes, caption: str = "", filename: str = "audio.mp3") -> bool:
@@ -625,7 +629,8 @@ class TelegramBot:
             TimedOut: If request times out.
             Exception: If audio sending fails for other reasons.
         """
-        logger.info(f"Sending audio '{filename}' to chat_id={chat_id}")
+        log = TelegramLoggerAdapter(logger, chat_id=chat_id)
+        log.info(f"Sending audio '{filename}'")
         try:
             # Convert bytearray to bytes if needed
             if isinstance(audio_bytes, bytearray):
@@ -641,12 +646,12 @@ class TelegramBot:
                 read_timeout=self.media_timeout,
                 write_timeout=self.media_timeout,
             )
-            logger.info("Audio sent successfully!")
+            log.info("Audio sent successfully")
         except (NetworkError, TimedOut) as e:
-            logger.warning(f"Network issue while sending audio: {e}")
+            log.warning(f"Network issue while sending audio: {e}")
             raise
         except Exception as e:
-            logger.error(f"An error occurred: {e}")
+            log.error(f"An error occurred: {e}")
             raise
 
     def send_video(self, chat_id: int, video_bytes: bytes, caption: str = "", filename: str = "video.mp4", supports_streaming: bool = True) -> bool:
@@ -709,7 +714,8 @@ class TelegramBot:
             TimedOut: If request times out.
             Exception: If video sending fails for other reasons.
         """
-        logger.info(f"Sending video '{filename}' to chat_id={chat_id}")
+        log = TelegramLoggerAdapter(logger, chat_id=chat_id)
+        log.info(f"Sending video '{filename}'")
         try:
             # Convert bytearray to bytes if needed
             if isinstance(video_bytes, bytearray):
@@ -726,12 +732,12 @@ class TelegramBot:
                 read_timeout=self.media_timeout,
                 write_timeout=self.media_timeout,
             )
-            logger.info("Video sent successfully!")
+            log.info("Video sent successfully")
         except (NetworkError, TimedOut) as e:
-            logger.warning(f"Network issue while sending video: {e}")
+            log.warning(f"Network issue while sending video: {e}")
             raise
         except Exception as e:
-            logger.error(f"An error occurred: {e}")
+            log.error(f"An error occurred: {e}")
             raise
 
     def send_document(self, chat_id: int, document_bytes: bytes, filename: str = "document", caption: str = "") -> bool:
@@ -784,7 +790,8 @@ class TelegramBot:
             TimedOut: If request times out.
             Exception: If document sending fails for other reasons.
         """
-        logger.info(f"Sending document '{filename}' to chat_id={chat_id}")
+        log = TelegramLoggerAdapter(logger, chat_id=chat_id)
+        log.info(f"Sending document '{filename}'")
         try:
             # Convert bytearray to bytes if needed
             if isinstance(document_bytes, bytearray):
@@ -800,12 +807,12 @@ class TelegramBot:
                 read_timeout=self.media_timeout,
                 write_timeout=self.media_timeout,
             )
-            logger.info("Document sent successfully!")
+            log.info("Document sent successfully")
         except (NetworkError, TimedOut) as e:
-            logger.warning(f"Network issue while sending document: {e}")
+            log.warning(f"Network issue while sending document: {e}")
             raise
         except Exception as e:
-            logger.error(f"An error occurred: {e}")
+            log.error(f"An error occurred: {e}")
             raise
 
     async def _set_bot_commands(self) -> None:
