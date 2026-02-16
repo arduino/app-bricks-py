@@ -4,3 +4,4 @@ description: A brick to interact with Telegram Bot API
 variables:
 - name: TELEGRAM_BOT_TOKEN
   description: Telegram Bot Token
+  secret: true
