@@ -10,7 +10,7 @@ from typing import Callable, Optional
 from dataclasses import dataclass
 from arduino.app_utils import brick, Logger
 from telegram import Update, BotCommand, InputFile
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import Application, CommandHandler, MessageHandler, ChatMemberHandler, filters, ContextTypes
 from telegram.error import NetworkError, TimedOut
 from .logger_adapter import TelegramLoggerAdapter
 
@@ -155,6 +155,7 @@ class TelegramBot:
         media_timeout: int = 60,
         max_retries: int = 3,
         auto_set_commands: bool = True,
+        enable_builtin_welcome: bool = False,
         whitelist_user_ids: Optional[list[int]] = None,
     ) -> None:
         """Initialize the Telegram bot brick.
@@ -167,6 +168,10 @@ class TelegramBot:
             max_retries: Maximum retry attempts for failed operations, defaults to 3.
             auto_set_commands: Automatically sync command menu with Telegram,
                 defaults to True.
+            enable_builtin_welcome: Automatically register /start command and
+                my_chat_member handler to welcome users. Shows user_id, chat_id,
+                and first_name. Disabled if user registers custom /start handler.
+                Defaults to False.
             whitelist_user_ids: Optional list of authorized Telegram user IDs.
                 If provided, only these users can interact with the bot.
                 Use @userinfobot on Telegram to get your user ID.
@@ -191,6 +196,7 @@ class TelegramBot:
         self.media_timeout = media_timeout
         self.max_retries = max_retries
         self.auto_set_commands = auto_set_commands
+        self.enable_builtin_welcome = enable_builtin_welcome
         self.whitelist_user_ids = whitelist_user_ids
 
         # Create authorization filter from whitelist if provided
@@ -207,6 +213,7 @@ class TelegramBot:
         self._initialized: bool = False
         self._scheduled_tasks: dict[str, threading.Timer] = {}
         self._commands_registry: dict[str, str] = {}
+        self._welcome_cooldown: dict[int, float] = {}  # Track last welcome message timestamp per user_id
 
     def _create_text_handler(self, callback: Callable[[Sender, Message], None]) -> Callable:
         """Create a Telegram handler for text messages.
@@ -909,6 +916,87 @@ class TelegramBot:
         logger.warning(f"Scheduled message task '{task_id}' not found")
         return False
 
+    def _register_builtin_handlers(self) -> None:
+        """Register built-in handlers for /start command and my_chat_member updates.
+
+        Only registers /start if user hasn't already registered a custom handler.
+        Always registers my_chat_member to detect when users unblock the bot.
+        """
+        # Only register /start if user hasn't defined custom handler
+        if "start" not in self._commands_registry:
+
+            async def builtin_start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+                """Built-in handler for /start command."""
+                user = update.effective_user
+                chat_id = update.message.chat_id
+
+                log = TelegramLoggerAdapter(logger, user_id=user.id, chat_id=chat_id)
+
+                # Check cooldown to avoid duplicate messages (e.g., when unblocking triggers both my_chat_member and /start)
+                current_time = time.time()
+                last_welcome_time = self._welcome_cooldown.get(user.id, 0)
+                cooldown_seconds = 3
+
+                if current_time - last_welcome_time < cooldown_seconds:
+                    log.info(f"Skipping /start welcome message (cooldown: {current_time - last_welcome_time:.1f}s ago)")
+                    return
+
+                welcome_msg = f"👋 Hi {user.first_name}!\n\nThis is your user_id: {user.id}\nThis is your chat_id: {chat_id}"
+
+                log.info("Built-in /start command triggered")
+                await update.message.reply_text(welcome_msg)
+
+                # Update cooldown timestamp
+                self._welcome_cooldown[user.id] = current_time
+
+            # Apply authorization filter if whitelist configured
+            if self._auth_filter:
+                self.application.add_handler(CommandHandler("start", builtin_start_handler, filters=self._auth_filter))
+            else:
+                self.application.add_handler(CommandHandler("start", builtin_start_handler))
+
+            self._commands_registry["start"] = "Get your user ID and chat ID"
+            logger.info("Registered built-in /start command handler")
+
+        # Always register my_chat_member handler to detect unblock events
+        async def my_chat_member_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+            """Handler for my_chat_member updates (bot blocked/unblocked)."""
+            chat_member_update = update.my_chat_member
+
+            # Check if user unblocked the bot (status changed from 'kicked' to 'member')
+            old_status = chat_member_update.old_chat_member.status
+            new_status = chat_member_update.new_chat_member.status
+
+            if old_status == "kicked" and new_status == "member":
+                # User unblocked the bot - send welcome message
+                user = chat_member_update.from_user
+                chat_id = chat_member_update.chat.id
+
+                log = TelegramLoggerAdapter(logger, user_id=user.id, chat_id=chat_id)
+
+                # Check cooldown to avoid duplicate messages (e.g., when user clicks Start after unblocking)
+                current_time = time.time()
+                last_welcome_time = self._welcome_cooldown.get(user.id, 0)
+                cooldown_seconds = 3
+
+                if current_time - last_welcome_time < cooldown_seconds:
+                    log.debug(f"Skipping unblock welcome message (cooldown: {current_time - last_welcome_time:.1f}s ago)")
+                    return
+
+                welcome_msg = f"Welcome back {user.first_name}!\nThis is your user_id: {user.id}\nThis is your chat_id: {chat_id}"
+
+                log.info("User unblocked bot - sending welcome message")
+
+                try:
+                    await context.bot.send_message(chat_id=chat_id, text=welcome_msg)
+                    # Update cooldown timestamp only after successful send
+                    self._welcome_cooldown[user.id] = current_time
+                except Exception as e:
+                    log.error(f"Failed to send welcome message after unblock: {e}")
+
+        self.application.add_handler(ChatMemberHandler(my_chat_member_handler, ChatMemberHandler.MY_CHAT_MEMBER))
+        logger.info("Registered built-in my_chat_member handler for unblock detection")
+
     def start(self) -> None:
         """Start the Telegram bot in a background thread.
 
@@ -922,6 +1010,10 @@ class TelegramBot:
         if self._running:
             logger.warning("Bot is already running")
             return
+
+        # Register built-in welcome handlers if enabled
+        if self.enable_builtin_welcome:
+            self._register_builtin_handlers()
 
         logger.info("Starting Telegram Bot...")
         self._running = True
