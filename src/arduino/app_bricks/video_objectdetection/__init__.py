@@ -45,7 +45,8 @@ class VideoObjectDetection:
             camera (BaseCamera): The camera instance to use for capturing video. If None, a default camera will be initialized.
             confidence (float): Confidence level for detection. Default is 0.3 (30%).
             debounce_sec (float): Minimum seconds between repeated detections of the same object. Default is 0 seconds.
-            camera_preview (bool): Receive current camera frame on callback invocation. Default is False.
+            camera_preview (bool): Receive current camera frame on callback invocation.
+                Frame is a raw jpeg-encoded image without bounding boxes applied on it. Default is False.
 
         Raises:
             RuntimeError: If the host address could not be resolved.
@@ -275,7 +276,7 @@ class VideoObjectDetection:
 
         elif jmsg.get("type") == "camera-preview":
             # Keep last camera preview frame if needed for callbacks
-            img_base64 = jmsg.get("type")
+            img_base64 = jmsg.get("image")
             if img_base64 and self._camera_preview and isinstance(img_base64, str) and img_base64 != "":
                 with self._camera_preview_lock:
                     # Image data is base64-encoded string (i.e. data:image/jpeg;base64,...)
@@ -303,9 +304,13 @@ class VideoObjectDetection:
             if self._last_camera_frame is not None:
                 last_frame = self._last_camera_frame
 
-        if last_frame is not None:
+        if last_frame is not None and last_frame != "":
             try:
-                return base64.b64decode(self._last_camera_frame.split(",")[1])
+                split_frame = last_frame.split(",")
+                if len(split_frame) != 2:
+                    logger.debug(f"Unexpected format for camera preview frame: {last_frame[:50]}...")
+                    return None
+                return base64.b64decode(split_frame[1])
             except Exception as e:
                 logger.error(f"Failed to decode camera preview frame: {e}")
                 return None
@@ -317,6 +322,7 @@ class VideoObjectDetection:
             detection (str): The label of the detected object.
             detection_details (dict): Dictionary containing 'confidence' (the detection confidence)
                 and 'bounding_box_xyxy' (the detection bounding box coordinates).
+            frame (bytes): The raw jpeg-encoded camera frame associated with the detection, if available.
         """
         now = time.time()
         with self._handlers_lock:
@@ -340,6 +346,7 @@ class VideoObjectDetection:
 
         Args:
             detections (dict): The dictionary of detected objects and their details (e.g., confidence, bounding box).
+            frame (bytes): The raw jpeg-encoded camera frame associated with the detections, if available.
         """
         now = time.time()
         with self._handlers_lock:
