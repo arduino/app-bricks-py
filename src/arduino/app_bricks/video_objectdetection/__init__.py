@@ -273,14 +273,15 @@ class VideoObjectDetection:
                     # If there are detections, invoke the all-detection handler
                     self._execute_global_handler(detections=detections, frame=frame)
 
-            elif jmsg.get("type") == "camera-preview":
-                # Keep last camera preview frame if needed for callbacks
-                img_base64 = jmsg.get("type")
-                if img_base64 and self._camera_preview and isinstance(img_base64, str) and img_base64 != "":
-                    with self._camera_preview_lock:
-                        # Image data is base64-encoded string (i.e. data:image/jpeg;base64,...)
-                        self._last_camera_frame = img_base64
-                return
+        elif jmsg.get("type") == "camera-preview":
+            # Keep last camera preview frame if needed for callbacks
+            img_base64 = jmsg.get("type")
+            if img_base64 and self._camera_preview and isinstance(img_base64, str) and img_base64 != "":
+                with self._camera_preview_lock:
+                    # Image data is base64-encoded string (i.e. data:image/jpeg;base64,...)
+                    self._last_camera_frame = img_base64
+            return
+
         else:
             # Leave logging for unknown message types for debugging purposes
             logger.warning(f"Unknown message type: {jmsg.get('type')}")
