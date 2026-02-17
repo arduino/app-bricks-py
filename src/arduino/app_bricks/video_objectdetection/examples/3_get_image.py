@@ -5,7 +5,7 @@
 # EXAMPLE_NAME = "Get camera preview frame and design bounding boxes on it"
 
 from arduino.app_utils import App
-from arduino.app_utils.image import draw_bounding_boxes
+from arduino.app_utils.image import draw_bounding_boxes, get_image_bytes
 from arduino.app_bricks.video_objectdetection import VideoObjectDetection
 
 # Initialize detector with custom confidence and debounce settings
@@ -18,9 +18,9 @@ def on_all_detections(detections: dict, frame: bytes):
     if frame is None:
         return
     image_with_bb = draw_bounding_boxes(frame, detections)
-    # Do something with the image with bounding boxes (e.g., save it, display it, etc.)
+    # Do something with the image with bounding boxes (e.g., save it, etc.)
     with open("/app/latest_frame_with_detections.jpg", "wb") as f:
-        f.write(image_with_bb)
+        f.write(get_image_bytes(image_with_bb))
 
 
 video_detector.on_detect_all(on_all_detections)
