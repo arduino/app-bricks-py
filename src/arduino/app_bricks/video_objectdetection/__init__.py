@@ -91,9 +91,6 @@ class VideoObjectDetection:
         """
         if not inspect.isfunction(callback):
             raise TypeError("Callback must be a callable function.")
-        sig_args = inspect.signature(callback).parameters
-        if len(sig_args) > 1:
-            raise ValueError("Callback must accept 0 or 1 dictionary argument")
 
         with self._handlers_lock:
             if object in self._handlers:
@@ -115,9 +112,6 @@ class VideoObjectDetection:
         """
         if not inspect.isfunction(callback):
             raise TypeError("Callback must be a callable function.")
-        sig_args = inspect.signature(callback).parameters
-        if len(sig_args) != 1:
-            raise ValueError("Callback must accept exactly one argument: the detected object.")
 
         with self._handlers_lock:
             self._handlers[self.ALL_HANDLERS_KEY] = callback
