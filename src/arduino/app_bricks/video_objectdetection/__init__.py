@@ -8,6 +8,7 @@ import inspect
 import threading
 import socket
 import numpy as np
+import base64
 from typing import Callable
 
 from websockets.sync.client import connect
@@ -37,13 +38,14 @@ class VideoObjectDetection:
 
     ALL_HANDLERS_KEY = "__ALL"
 
-    def __init__(self, camera: BaseCamera | None = None, confidence: float = 0.3, debounce_sec: float = 0.0):
+    def __init__(self, camera: BaseCamera | None = None, confidence: float = 0.3, debounce_sec: float = 0.0, camera_preview: bool = False):
         """Initialize the VideoObjectDetection class.
 
         Args:
             camera (BaseCamera): The camera instance to use for capturing video. If None, a default camera will be initialized.
             confidence (float): Confidence level for detection. Default is 0.3 (30%).
             debounce_sec (float): Minimum seconds between repeated detections of the same object. Default is 0 seconds.
+            camera_preview (bool): Receive current camera frame on callback invocation. Default is False.
 
         Raises:
             RuntimeError: If the host address could not be resolved.
@@ -53,6 +55,9 @@ class VideoObjectDetection:
         self._confidence = confidence
         self._debounce_sec = debounce_sec
         self._last_detected: dict[str, float] = {}
+        self._camera_preview = camera_preview
+        self._last_camera_frame: str | None = None
+        self._camera_preview_lock = threading.Lock()
 
         self._handlers = {}  # Dictionary to hold handlers for different actions
         self._handlers_lock = threading.Lock()
@@ -212,11 +217,15 @@ class VideoObjectDetection:
         jmsg = json.loads(message)
         if jmsg.get("type") == "hello":
             # Parse hello message to extract model info if needed
-            logger.debug(f"Connected to model runner: {jmsg}")
+            logger.debug(
+                f"Connected to model runner: {jmsg}. Configure confidence threshold: {self._confidence}, camera preview: {self._camera_preview}"
+            )
             try:
                 self._model_info = EdgeImpulseRunnerFacade.parse_model_info_message(jmsg)
                 if self._model_info and self._model_info.thresholds is not None:
                     self._override_threshold(ws, self._confidence)
+                if self._camera_preview:
+                    self._toogle_camera_preview(ws, True)
 
             except Exception as e:
                 logger.error(f"Error parsing WS hello message: {e}")
@@ -235,6 +244,9 @@ class VideoObjectDetection:
             if bounding_boxes:
                 if len(bounding_boxes) == 0:
                     return
+
+                # If camera preview is enabled, decode the last received frame to pass to handlers
+                frame = self._decode_preview_frame()
 
                 # Process each bounding box
                 detections = {}
@@ -261,17 +273,49 @@ class VideoObjectDetection:
                     detections[detected_object].append(detection_details)
 
                     # Check if the class_id matches any registered handlers
-                    self._execute_handler(detection=detected_object, detection_details=detection_details)
+                    self._execute_handler(detection=detected_object, detection_details=detection_details, frame=frame)
 
                 if len(detections) > 0:
                     # If there are detections, invoke the all-detection handler
-                    self._execute_global_handler(detections=detections)
+                    self._execute_global_handler(detections=detections, frame=frame)
 
+            elif jmsg.get("type") == "camera-preview":
+                # Keep last camera preview frame if needed for callbacks
+                img_base64 = jmsg.get("type")
+                if img_base64 and self._camera_preview and isinstance(img_base64, str) and img_base64 != "":
+                    with self._camera_preview_lock:
+                        # Image data is base64-encoded string (i.e. data:image/jpeg;base64,...)
+                        self._last_camera_frame = img_base64
+                return
         else:
             # Leave logging for unknown message types for debugging purposes
             logger.warning(f"Unknown message type: {jmsg.get('type')}")
 
-    def _execute_handler(self, detection: str, detection_details: dict):
+    def _decode_preview_frame(self) -> bytes | None:
+        """Decode the last received camera preview frame from base64 to a NumPy array.
+
+        Returns:
+            bytes: The decoded image data as bytes, or None if no valid preview frame is available.
+                Image is jpeg encoded.
+
+        """
+
+        if self._camera_preview is False:
+            return None
+
+        last_frame = None
+        with self._camera_preview_lock:
+            if self._last_camera_frame is not None:
+                last_frame = self._last_camera_frame
+
+        if last_frame is not None:
+            try:
+                return base64.b64decode(self._last_camera_frame.split(",")[1])
+            except Exception as e:
+                logger.error(f"Failed to decode camera preview frame: {e}")
+                return None
+
+    def _execute_handler(self, detection: str, detection_details: dict, frame: bytes | None = None):
         """Execute the handler for the detected object if it exists.
 
         Args:
@@ -291,9 +335,12 @@ class VideoObjectDetection:
                     if len(sig_args) == 0:
                         handler()
                     else:
-                        handler(detection_details)
+                        if sig_args.get("frame") is not None:
+                            handler(detection_details, frame=frame)
+                        else:
+                            handler(detection_details)
 
-    def _execute_global_handler(self, detections: dict | None = None):
+    def _execute_global_handler(self, detections: dict | None = None, frame: bytes | None = None):
         """Execute the global handler for the detected object if it exists.
 
         Args:
@@ -311,7 +358,10 @@ class VideoObjectDetection:
                     if len(sig_args) == 0:
                         handler()
                     else:
-                        handler(detections)
+                        if sig_args.get("frame") is not None:
+                            handler(detections, frame=frame)
+                        else:
+                            handler(detections)
 
     def _send_ws_message(self, ws: Connection, message: dict):
         try:
@@ -358,3 +408,20 @@ class VideoObjectDetection:
         ws.send(json.dumps(message))
         # Update local confidence value
         self._confidence = value
+
+    def _toogle_camera_preview(self, ws: Connection, enabled: bool):
+        """Toggle the camera preview on the model runner's web server.
+
+        Args:
+            ws (ClientConnection): The WebSocket connection to send the message through.
+            enabled (bool): Whether to enable or disable the camera preview.
+
+        Raises:
+            TypeError: If `enabled` is not a boolean.
+        """
+        if not isinstance(enabled, bool):
+            raise TypeError("Enabled must be a boolean value.")
+
+        message = {"type": "toggle-camera-preview", "enabled": enabled}
+        logger.info(f"Toggling camera preview to {'enabled' if enabled else 'disabled'}.")
+        ws.send(json.dumps(message))
