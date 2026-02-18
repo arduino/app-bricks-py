@@ -6,7 +6,7 @@ ARG REGISTRY
 
 FROM debian:trixie AS llamacpp-builder
 
-ENV LLAMA_CPP_VERSION=b7921
+ENV LLAMA_CPP_VERSION=b8089
 
 # Install Dependencies
 RUN export DEBIAN_FRONTEND=noninteractive; \
@@ -59,10 +59,8 @@ COPY --from=llamacpp-builder /root/dev/llm/llama.cpp/build/bin /usr/local/bin/
 COPY ./scripts/*.sh /
 
 RUN set -ex; \
-    groupadd -g 44 video || true; \
-    groupadd -g 993 render || true; \
-    usermod -aG video ubuntu || true; \
-    usermod -aG render ubuntu || true; \
+    mkdir -p /models; \
+    chown arduino:arduino /models; \
     chmod +x /usr/local/bin/*; \
     chmod +x /*.sh
 

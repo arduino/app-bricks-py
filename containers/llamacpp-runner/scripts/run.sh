@@ -17,7 +17,7 @@ trap cleanup SIGTERM SIGINT
 
 echo "Starting Llama server..."
 # Add your specific flags here (model path, port, etc.)
-LD_LIBRARY_PATH=/usr/local/bin/ /usr/local/bin/llama-server --models-dir /models --log-disable &
+LD_LIBRARY_PATH=/usr/local/bin/ /usr/local/bin/llama-server --log-disable &
 LLAMA_PID=$!
 
 echo "Processes started (Llama: $LLAMA_PID). Waiting..."
