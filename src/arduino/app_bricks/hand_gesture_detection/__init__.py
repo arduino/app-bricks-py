@@ -24,7 +24,7 @@ class HandGestureTracking:
     def __init__(self, camera: BaseCamera | None = None):
         if camera is None:
             camera = Camera(fps=30)
-        self.camera = camera
+        self._camera = camera
 
         # Callbacks
         self._gesture_callbacks = {}  # {(gesture, hand): callback}
@@ -35,7 +35,7 @@ class HandGestureTracking:
 
         # State tracking
         self._had_hands = False
-        self._running = False
+        self._is_running = False
 
         self._camera_frame_queue = queue.Queue(maxsize=2)
 
@@ -56,13 +56,13 @@ class HandGestureTracking:
 
     def start(self):
         """Start the capture thread and asyncio event loop."""
-        self._running = True
-        self.camera.start()
+        self._camera.start()
+        self._is_running = True
 
     def stop(self):
         """Stop all tracking and close connections."""
-        self._running = False
-        self.camera.stop()
+        self._is_running = False
+        self._camera.stop()
 
     def on_gesture(self, gesture: str, callback: Callable[[dict], None], hand: Literal["left", "right", "both"] = "both"):
         """
@@ -128,7 +128,7 @@ class HandGestureTracking:
     def _capture_loop(self):
         """Continuously capture frames from camera (runs in dedicated thread)."""
         try:
-            frame = self.camera.capture()
+            frame = self._camera.capture()
             if frame is None:
                 time.sleep(0.01)
                 return
@@ -157,7 +157,7 @@ class HandGestureTracking:
                     pass
 
         except Exception as e:
-            if self._running:
+            if self._is_running:
                 print(f"Error capturing frame: {e}")
 
     @brick.execute
@@ -177,10 +177,10 @@ class HandGestureTracking:
 
     async def _send_frames_task(self):
         """Send frames to the processing container via WebSocket."""
-        while self._running:
+        while self._is_running:
             try:
                 async with websockets.connect(self._ws_send_url) as ws:
-                    while self._running:
+                    while self._is_running:
                         try:
                             frame = await asyncio.get_event_loop().run_in_executor(None, self._camera_frame_queue.get, True, 0.1)
                         except queue.Empty:
@@ -192,23 +192,23 @@ class HandGestureTracking:
                         await ws.send(json.dumps(payload))
 
             except Exception as e:
-                if self._running:
+                if self._is_running:
                     print(f"Error in send frames task: {e}. Reconnecting...")
                     await asyncio.sleep(3)
 
     async def _receive_detections_task(self):
         """Receive detection results and dispatch events."""
-        while self._running:
+        while self._is_running:
             try:
                 async with websockets.connect(self._ws_recv_url) as ws:
-                    while self._running:
+                    while self._is_running:
                         data = await ws.recv()
                         detection = json.loads(data)
 
                         self._process_detection(detection.get("metadata", {}))
 
             except Exception as e:
-                if self._running:
+                if self._is_running:
                     print(f"Error in receive detections task: {e}. Reconnecting...")
                     await asyncio.sleep(3)
 
