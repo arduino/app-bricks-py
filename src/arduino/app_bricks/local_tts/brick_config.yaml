@@ -1,0 +1,10 @@
+id: arduino:local_tts
+name: Local Text-to-Speech
+description: Text-to-Speech brick for offline speech synthesis
+category: audio
+requires_model: true
+requires_container: true
+# mount_devices_into_container: true
+# required_devices:
+#   - ?
+model: melo-tts-en
