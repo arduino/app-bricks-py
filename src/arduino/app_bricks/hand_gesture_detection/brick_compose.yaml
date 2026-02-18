@@ -1,0 +1,12 @@
+services:
+  hand-gesture-tracker:
+    image: hand-gesture-tracker
+    privileged: true
+    ports:
+      - ${BIND_ADDRESS:-0.0.0.0}:5002:5002
+    user: 0:0
+    healthcheck:
+      test: [ "CMD-SHELL", "nc -zv hand-gesture-tracker 5002 || exit 1" ]
+      interval: 1s
+      timeout: 2s
+      retries: 30
