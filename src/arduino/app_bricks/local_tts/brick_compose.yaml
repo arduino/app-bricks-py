@@ -1,6 +1,6 @@
 services:
   audio-analytics-runner:
-    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/audio-analytics-models-runner:dev-latest
+    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/audio-analytics-models-runner:dev-next
     user: 0:0
     devices:
       - /dev/dma_heap/system
