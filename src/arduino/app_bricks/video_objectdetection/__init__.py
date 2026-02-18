@@ -256,7 +256,9 @@ class VideoObjectDetection:
                     )
 
                     detection_details = {"confidence": confidence, "bounding_box_xyxy": xyxy_bbox}
-                    detections[detected_object] = detection_details
+                    if detected_object not in detections:
+                        detections[detected_object] = []
+                    detections[detected_object].append(detection_details)
 
                     # Check if the class_id matches any registered handlers
                     self._execute_handler(detection=detected_object, detection_details=detection_details)
