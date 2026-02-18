@@ -36,6 +36,7 @@ tasks:
   install:deps:
     desc: Install project dependencies
     cmds:
+      - sudo apt update
       - sudo apt install libasound2-dev
       - pip install build
       - pip install -e ".[dev]"
