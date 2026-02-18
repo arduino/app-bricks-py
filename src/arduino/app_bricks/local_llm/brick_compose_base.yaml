@@ -1,6 +1,6 @@
 services:
   llamacpp-models-runner:
-    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/llamacpp-models-runner:dev-latest
+    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/llamacpp-models-runner:dev-next
     logging:
       driver: "json-file"
       options:
@@ -30,7 +30,7 @@ services:
     volumes:
       - ${APPLAB_DOWNLOADED_LLAMA_CPP_MODELS:-${HOME}/ArduinoAppsSharedData/llamacpp/}:/models/
   ollama-models-runner:
-    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/ollama-models-runner:dev-latest
+    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/ollama-models-runner:dev-next
     logging:
       driver: "json-file"
       options:
