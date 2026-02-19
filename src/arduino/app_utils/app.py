@@ -2,12 +2,14 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import signal
 import threading
 from collections import deque
 import time
 
-from .utils import _has_callable_method, _brick_name
-from .logger import Logger
+from arduino.app_utils.utils import _has_callable_method, _brick_name
+from arduino.app_utils.logger import Logger
+from arduino.app_utils.leds import Leds
 
 logger = Logger("App")
 
@@ -30,6 +32,7 @@ class AppController:
         self._running_queue = deque()
         self._brick_states: dict[any, list[tuple[threading.Thread, threading.Event]]] = {}
         self._app_lock = threading.Lock()
+        self._shutdown_requested = False
 
     def register(self, brick):
         """Registers a brick for being managed automatically by the AppController.
@@ -95,13 +98,25 @@ class AppController:
         Args:
             user_loop (callable, optional): A user-defined function to run instead of the default infinite loop.
         """
+
+        # Register signal handlers for clean shutdown
+        def signal_handler(signum, frame):
+            logger.debug(f"Signal {signum} received")
+            self._shutdown_requested = True
+
+        signal.signal(signal.SIGTERM, signal_handler)
+        signal.signal(signal.SIGINT, signal_handler)
+
         print("======== App is starting ============================", flush=True)
         self._start_managed_bricks()
         logger.info("App started")
-        self.loop(user_loop)
-        logger.info("App is shutting down")
-        self._stop_all_bricks()
-        print("======== App shutdown completed =====================", flush=True)
+        try:
+            self.loop(user_loop)
+        finally:
+            logger.info("App is shutting down")
+            self._stop_all_bricks()
+            self._cleanup_system_resources()
+            print("======== App shutdown completed =====================", flush=True)
 
     def loop(self, user_loop: callable = None):
         """This method keeps the application running, blocking until a KeyboardInterrupt (Ctrl+C) occurs.
@@ -114,11 +129,11 @@ class AppController:
         """
         try:
             if user_loop:
-                while True:
+                while not self._shutdown_requested:
                     user_loop()
             else:
-                while True:
-                    time.sleep(10)
+                while not self._shutdown_requested:
+                    time.sleep(0.5)  # Shorter sleep to be more responsive to signals
         except StopIteration:
             logger.debug("StopIteration received from user loop")
         except KeyboardInterrupt:
@@ -137,6 +152,20 @@ class AppController:
             for brick in reversed(bricks_to_stop):
                 self._stop(brick)
         logger.debug("All bricks stopped")
+
+    def _cleanup_system_resources(self):
+        """Cleanup system resources when app shuts down.
+
+        This method restores OS control of system LEDs (LED1 and LED2) by
+        restoring their original triggers, allowing the OS to resume automatic
+        control (e.g., LED flashing).
+        LED3 and LED4 are controlled by the MCU and are reset automatically.
+        """
+        try:
+            Leds.restore_system_control()
+            logger.debug("System resources cleaned up")
+        except Exception as e:
+            logger.warning(f"Failed to cleanup system resources: {e}")
 
     def _discover_runnable_methods(self, brick):
         """Discovers and validates all methods marked with @loop/@execute or named loop/execute."""
