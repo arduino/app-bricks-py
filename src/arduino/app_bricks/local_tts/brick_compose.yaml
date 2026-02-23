@@ -46,11 +46,6 @@ services:
       bash -c "chmod 666 /dev/fastrpc* 2>/dev/null || true;
                chmod 666 /dev/dma_heap/* 2>/dev/null || true;
                exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf"
-    healthcheck:
-      test: [ "CMD-SHELL", "wget -q --spider http://audio-analytics-runner:8085/health || exit 1" ]
-      interval: 2s
-      timeout: 2s
-      retries: 25
     logging:
       driver: "json-file"
       options:
