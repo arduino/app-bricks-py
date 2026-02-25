@@ -70,12 +70,11 @@ class WebUI:
 
         # Configure CORS if origins are specified
         if cors_origins:
-            is_wildcard = cors_origins == "*"
-            origins_list = ["*"] if is_wildcard else [origin.strip() for origin in cors_origins.split(",")]
+            origins_list = [origin.strip() for origin in cors_origins.split(",")] if cors_origins != "*" else ["*"]
             self.app.add_middleware(
                 CORSMiddleware,
                 allow_origins=origins_list,
-                allow_credentials=not is_wildcard,
+                allow_credentials=True,
                 allow_methods=["*"],
                 allow_headers=["*"],
             )
