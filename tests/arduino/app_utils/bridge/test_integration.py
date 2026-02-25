@@ -14,6 +14,7 @@ import queue
 from unittest.mock import MagicMock, patch
 
 from arduino.app_utils.bridge import ClientServer
+from arduino.app_utils.bridge import BUFFER_LIMIT_EXCEEDED_ERR
 
 
 class TestIntegration(unittest.TestCase):
@@ -221,3 +222,38 @@ class TestIntegration(unittest.TestCase):
                 time_waited += 0.1
 
             self.assertEqual(len(connections), 2, "Client did not reconnect in time")
+
+    def test_router_returns_buffer_limit_error(self):
+        """Simulate router rejecting a request due to buffer limit and verify ClientServer propagates the error."""
+        server_ready = threading.Event()
+
+        def server_logic():
+            server_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            server_sock.bind(self.socket_path)
+            server_sock.listen(1)
+            server_ready.set()
+            conn, _ = server_sock.accept()
+            unpacker = msgpack.Unpacker(raw=False)
+            data = conn.recv(4096)
+            unpacker.feed(data)
+            req = next(unpacker)
+
+            # Send a response containing the buffer-limit error
+            resp = [1, req[1], [BUFFER_LIMIT_EXCEEDED_ERR, f"message size exceeds the limit of {128} bytes"], None]
+            conn.sendall(msgpack.packb(resp))
+
+            self.stop_server.wait()
+            conn.close()
+            server_sock.close()
+
+        self.server_thread = threading.Thread(target=server_logic, daemon=True)
+        self.server_thread.start()
+        self.assertTrue(server_ready.wait(timeout=2), "Server did not become ready")
+
+        client = ClientServer(address=f"unix://{self.socket_path}")
+        client._is_connected_flag.wait(timeout=2)
+
+        with self.assertRaises(ValueError) as cm:
+            client.call("some_method")
+
+        self.assertIn("message size exceeds the limit", str(cm.exception))

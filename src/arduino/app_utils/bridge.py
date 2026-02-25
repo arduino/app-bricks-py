@@ -20,6 +20,7 @@ _reconnect_delay = 3.0  # seconds
 
 # Error codes for RPC messages received from the RPC router. These are defined in the RPC router itself.
 ROUTE_ALREADY_EXISTS_ERR = 0x05
+BUFFER_LIMIT_EXCEEDED_ERR = 0x06
 
 # Error codes for RPC messages sent to Arduino_RPClite. These are defined in the lib itself.
 MALFORMED_CALL_ERR = 0xFD

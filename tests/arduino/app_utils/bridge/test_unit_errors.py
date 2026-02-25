@@ -4,7 +4,7 @@
 
 from unittest.mock import MagicMock
 
-from arduino.app_utils.bridge import ClientServer, GENERIC_ERR
+from arduino.app_utils.bridge import ClientServer, GENERIC_ERR, BUFFER_LIMIT_EXCEEDED_ERR
 from test_unit_common import UnitTest
 
 
@@ -76,3 +76,23 @@ class TestErrors(UnitTest):
         on_error_1.assert_called_once_with(reason)
         on_error_2.assert_called_once_with(reason)
         self.assertEqual(len(client.callbacks), 0)
+
+    def test_buffer_limit_error_propagates(self):
+        """Test that a BUFFER_LIMIT_EXCEEDED_ERR response is propagated to the registered callback."""
+        client = ClientServer()
+        client._send_bytes = MagicMock()
+
+        method_name = "test_buffer_limit"
+        error_response = [BUFFER_LIMIT_EXCEEDED_ERR, "message size exceeds limit of 128 bytes"]
+        msgid = client.next_msgid + 1
+
+        def side_effect(*args, **kwargs):
+            _, on_error = client.callbacks[msgid]
+            on_error(error_response)
+
+        client._send_bytes.side_effect = side_effect
+
+        with self.assertRaises(ValueError) as cm:
+            client.call(method_name)
+
+        self.assertIn("message size exceeds limit", str(cm.exception))
