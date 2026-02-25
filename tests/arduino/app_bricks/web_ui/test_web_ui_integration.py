@@ -94,3 +94,11 @@ def test_websocket_exchange(webui_server):
     assert received.get("connect") is True
     assert received.get("ping_response") == "pong"
     assert received.get("disconnect") is True
+
+
+def test_cors_default_allows_any_origin(webui_server):
+    """Test that default CORS configuration allows requests from any origin."""
+    resp = requests.get(f"{webui_server.url}/api/hello", headers={"Origin": "http://example.com"})
+    assert resp.status_code == 200
+    assert resp.json() == {"msg": "hello"}
+    assert resp.headers["access-control-allow-origin"] == "*"

@@ -11,6 +11,7 @@ from collections.abc import Callable
 
 import uvicorn
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi_socketio import SocketManager
 
@@ -38,6 +39,7 @@ class WebUI:
         certs_dir_path: str = "/app/certs",
         use_tls: bool = False,
         use_ssl: bool | None = None,  # Deprecated alias for use_tls
+        cors_origins: str = "*",
     ):
         """Initialize the web server.
 
@@ -50,6 +52,8 @@ class WebUI:
             certs_dir_path (str, optional): Path to TLS certificates directory. Defaults to "/app/certs".
             use_tls (bool, optional): Enable TLS/HTTPS. Defaults to False.
             use_ssl (bool, optional): Deprecated. Use use_tls instead. Defaults to None.
+            cors_origins (str, optional): CORS allowed origins. Can be "*" for all origins, a
+                comma-separated list of origins, or an empty string to disable CORS. Defaults to "*".
         """
         # Handle deprecated use_ssl parameter
         if use_ssl is not None:
@@ -63,6 +67,17 @@ class WebUI:
 
         self.app = FastAPI(title=__name__, openapi_url=None, lifespan=lifespan)
         self.sio = SocketManager(app=self.app, mount_location="/socket.io", socketio_path="", max_http_buffer_size=10 * 1024 * 1024)
+
+        # Configure CORS if origins are specified
+        if cors_origins:
+            origins_list = [origin.strip() for origin in cors_origins.split(",")] if cors_origins != "*" else ["*"]
+            self.app.add_middleware(
+                CORSMiddleware,
+                allow_origins=origins_list,
+                allow_credentials=True,
+                allow_methods=["*"],
+                allow_headers=["*"],
+            )
 
         self._addr = addr
 
