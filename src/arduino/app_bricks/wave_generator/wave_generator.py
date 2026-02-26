@@ -154,6 +154,16 @@ class WaveGenerator:
         return self._speaker.sample_rate
 
     @property
+    def block_duration(self) -> float:
+        """
+        Get the duration of each audio block in seconds.
+
+        Returns:
+            float: Block duration in seconds.
+        """
+        return self._block_duration
+
+    @property
     def frequency(self) -> float:
         """
         Get or set the current output frequency in Hz.
