@@ -51,6 +51,8 @@ class Camera:
             **kwargs: Camera-specific configuration parameters grouped by type:
                 V4L Camera Parameters:
                     device (int, optional): V4L device index override. Default: 0.
+                    codec (str, optional): Video codec to use. Options: "YUVY", "MJPG", "H264".
+                        Default: "" (auto).
                 IP Camera Parameters:
                     url (str): Camera stream URL
                     username (str, optional): Authentication username
