@@ -115,7 +115,7 @@ For hosting a WebSocket server that receives frames from a single client at a ti
 
 ```python
 camera = Camera("ws://0.0.0.0:8080", timeout=5)
-camera = WebSocketCamera("0.0.0.0", 8080, timeout=5)
+camera = WebSocketCamera(8080, timeout=5)
 ```
 
 Client implementation example:
