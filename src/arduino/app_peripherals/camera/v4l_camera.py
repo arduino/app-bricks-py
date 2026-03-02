@@ -45,7 +45,7 @@ class V4LCamera(BaseCamera):
             adjustments (callable, optional): Function or function pipeline to adjust frames that takes
                 a numpy array and returns a numpy array. Default: None
             auto_reconnect (bool, optional): Enable automatic reconnection on failure. Default: True.
-            codec (str, optional): Video codec to use. Options: "YUVY", "MJPG", "H264".
+            codec (str, optional): Video codec to use (FourCC). Options: "YUVY", "MJPG", "H264".
                 Default: "" (auto).
         """
         super().__init__(resolution, fps, adjustments, auto_reconnect)
