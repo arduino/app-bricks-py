@@ -131,12 +131,12 @@ class SoundGeneratorStreamer:
     def _init_wave_generator(self, wave_form: str, sample_rate: int | None = None):
         """Initialize the WaveSamplesBuilder with the given sample rate.
 
-        If `sample_rate` is None, uses `self._sample_rate` or falls back to `Speaker.RATE_16K`.
+        If `sample_rate` is None, uses `self._sample_rate`.
         This allows the SoundGenerator subclass to reinitialize the generator after
         creating the actual output `Speaker` so both sides agree on sample rate.
         """
         with self._cfg_lock:
-            sr = int(sample_rate) if sample_rate is not None else getattr(self, "_sample_rate", Speaker.RATE_16K)
+            sr = int(sample_rate) if sample_rate is not None else self._sample_rate
             self._wave_gen = WaveSamplesBuilder(sample_rate=sr, wave_form=wave_form)
             self._sample_rate = int(sr)
 
@@ -423,11 +423,10 @@ class SoundGeneratorStreamer:
         # return a zero-filled float32 buffer for the requested duration so that
         # the playback loop can enqueue it and maintain proper timing.
         if frequency is not None and float(frequency) == 0.0:
-            sample_rate = getattr(self._wave_gen, "sample_rate", getattr(self, "_sample_rate", Speaker.RATE_16K))
-            frames = int(duration * float(sample_rate))
+            frames = int(duration * self._sample_rate)
             silent = np.zeros(frames, dtype=np.float32)
             silent = self._apply_sound_effects(silent, float(frequency))
-            logger.debug(f"  Generated silence: {len(silent)} samples (expected {frames} @ {sample_rate}Hz, duration={duration}s)")
+            logger.debug(f"  Generated silence: {len(silent)} samples (expected {frames} @ {self._sample_rate}Hz, duration={duration}s)")
             return silent
 
         if frequency is not None and frequency >= 0.0:
@@ -436,9 +435,8 @@ class SoundGeneratorStreamer:
             data = self._wave_gen.generate_block(float(frequency), duration, volume)
             data = self._apply_sound_effects(data, frequency)
             # diagnostic: log expected frames and actual length
-            gen_sr = getattr(self._wave_gen, "sample_rate", getattr(self, "_sample_rate", Speaker.RATE_16K))
-            expected_frames = int(duration * float(gen_sr))
-            logger.debug(f"  Generated audio: {len(data)} samples (expected {expected_frames} @ {gen_sr}Hz, duration={duration}s)")
+            expected_frames = int(duration * self._sample_rate)
+            logger.debug(f"  Generated audio: {len(data)} samples (expected {expected_frames} @ {self._sample_rate}Hz, duration={duration}s)")
             return data
 
     def play_tone(self, note: str, duration: float = 0.25, volume: float = None) -> bytes:
@@ -546,24 +544,17 @@ class SoundGenerator(SoundGeneratorStreamer):
         self._started = threading.Event()
         if output_device is None:
             self.external_speaker = False
-            # Configure buffer size and queue for very responsive stop operations
-            # Use 62.5ms periods (1000 frames @ 16kHz) for quick response to stop commands
-            # Very small queue (maxsize=3) = ~190ms total buffer for ultra-responsive stop
-            # Request 16 kHz to keep block sizes small and reduce CPU load.
+            # Request 16 kHz, float32, small buffer for low-latency playback.
             self._output_device = Speaker(sample_rate=Speaker.RATE_16K, format=np.float32, buffer_size=Speaker.BUFFER_SIZE_REALTIME, shared=False)
         else:
             self.external_speaker = True
             self._output_device = output_device
 
         # Ensure wave generator sample rate matches the actual output device
-        try:
-            dev_sr = int(getattr(self._output_device, "sample_rate", None))
-            if dev_sr:
-                self._sample_rate = dev_sr
-                self._init_wave_generator(wave_form, sample_rate=dev_sr)
-        except Exception:
-            # keep whatever sample rate was already configured
-            pass
+        dev_sr = self._output_device.sample_rate
+        if dev_sr and dev_sr != self._sample_rate:
+            self._sample_rate = dev_sr
+            self._init_wave_generator(wave_form, sample_rate=dev_sr)
 
         # Step sequencer state
         self._sequence_thread = None
@@ -592,15 +583,11 @@ class SoundGenerator(SoundGeneratorStreamer):
 
     def _sync_sample_rate(self):
         """Synchronize the wave generator sample rate with the actual output device."""
-        try:
-            actual_sr = int(getattr(self._output_device, "sample_rate", 0))
-            if actual_sr and getattr(self, "_sample_rate", None) != actual_sr:
-                self._sample_rate = actual_sr
-                current_wf = getattr(getattr(self, "_wave_gen", None), "wave_form", None) or "sine"
-                self._init_wave_generator(current_wf, sample_rate=actual_sr)
-                logger.debug(f"Synced wave_gen sample_rate to {actual_sr}")
-        except Exception:
-            pass
+        actual_sr = self._output_device.sample_rate
+        if actual_sr and actual_sr != self._sample_rate:
+            self._sample_rate = actual_sr
+            self._init_wave_generator(self._wave_gen.wave_form, sample_rate=actual_sr)
+            logger.debug(f"Synced wave_gen sample_rate to {actual_sr}")
 
     def _ensure_speaker_ready(self):
         """Restart the internal speaker if it was stopped (e.g., by stop_sequence).
