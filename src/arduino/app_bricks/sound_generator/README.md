@@ -39,13 +39,13 @@ for note, duration in fur_elise:
 App.run()
 ```
 
-waveform can be customized to change effect. For example, for a retro-gaming sound, you can configure "square" wave form.
+Waveform can be customized to change the sound character. For example, for a retro-gaming sound, you can configure "square" wave form.
 
 ```python
 player = SoundGenerator(wave_form="square")
 ```
 
-instead, to have a more "rock" like sound, you can add effects like:
+Instead, to have a more "rock" like sound, you can add effects like:
 
 ```python
 player = SoundGenerator(sound_effects=[SoundEffect.adsr(), SoundEffect.overdrive(drive=180.0), SoundEffect.chorus(depth_ms=15, rate_hz=0.2, mix=0.4)])
