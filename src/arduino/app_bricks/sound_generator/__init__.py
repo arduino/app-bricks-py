@@ -177,9 +177,13 @@ class SoundGeneratorStreamer:
             self._sound_effects = effects
 
     def _fill_node_frequencies(self, octave: int) -> dict:
-        """
-        Given a sequence of notes with their names and octaves, fill in their frequencies.
+        """Generate note-name-to-frequency mappings for a given octave.
 
+        Args:
+            octave (int): The octave number to generate frequencies for.
+
+        Returns:
+            dict: Mapping of note names (e.g., 'C4', 'A#3') to frequencies in Hz.
         """
         notes = {}
 
@@ -255,11 +259,13 @@ class SoundGeneratorStreamer:
         return self._compute_time_duration(1 / 4)  # Default to quarter note
 
     def _compute_time_duration(self, note_fraction: float) -> float:
-        """
-        Compute the time duration in seconds for a given note fraction and time signature.
+        """Compute the time duration in seconds for a given note fraction.
+
+        Uses the instance's time_signature and bpm to calculate the result.
+
         Args:
             note_fraction (float): The fraction of the note (e.g., 1.0 for whole, 0.5 for half).
-            time_signature (tuple): The time signature as (numerator, denominator).
+
         Returns:
             float: Duration in seconds.
         """
@@ -306,17 +312,18 @@ class SoundGeneratorStreamer:
         return self._notes.get(note.strip().upper())
 
     def play_polyphonic(self, notes: list[list[tuple[str, float]]], as_tone: bool = False, volume: float = None) -> tuple[bytes, float]:
-        """
-        Play multiple sequences of musical notes simultaneously (poliphony).
-        It is possible to play multi track music by providing a list of sequences,
-        where each sequence is a list of tuples (note, duration).
-        Duration is in notes fractions (e.g., 1/4 for quarter note).
+        """Generate audio for multiple note sequences mixed together (polyphony).
+
+        Produces multi-track audio by mixing a list of sequences, where each
+        sequence is a list of (note, duration) tuples.
+
         Args:
-            notes (list[list[tuple[str, float]]]): List of sequences, each sequence is a list of tuples (note, duration).
-            as_tone (bool): If True, play as tones, considering duration in seconds
+            notes (list[list[tuple[str, float]]]): List of sequences, each a list of (note, duration) tuples.
+            as_tone (bool): If True, interpret duration values as seconds instead of note fractions.
             volume (float, optional): Volume level (0.0 to 1.0). If None, uses master volume.
+
         Returns:
-            tuple[bytes, float]: The audio block of the mixed sequences (float32) and its duration in seconds.
+            tuple[np.ndarray, float]: The mixed audio block (float32) and its duration in seconds.
         """
         if volume is None:
             volume = self._master_volume
@@ -367,14 +374,15 @@ class SoundGeneratorStreamer:
         return (blk, max_duration)
 
     def play_chord(self, notes: list[str], note_duration: float | str = 1 / 4, volume: float = None) -> bytes:
-        """
-        Play a chord consisting of multiple musical notes simultaneously for a specified duration and volume.
+        """Generate audio for a chord of simultaneous notes.
+
         Args:
-            notes (list[str]): List of musical notes to play (e.g., ['A4', 'C#5', 'E5']).
-            note_duration (float | str): Duration of the chord as a float (like 1/4, 1/8) or a symbol ('W', 'H', 'Q', etc.).
+            notes (list[str]): List of musical notes (e.g., ['A4', 'C#5', 'E5']).
+            note_duration (float | str): Duration as a note fraction (like 1/4, 1/8) or symbol ('W', 'H', 'Q', etc.).
             volume (float, optional): Volume level (0.0 to 1.0). If None, uses master volume.
+
         Returns:
-            bytes: The audio block of the mixed sequences (float32).
+            np.ndarray: The audio block of the chord (float32).
         """
         duration = self._note_duration(note_duration)
         logger.debug(f"play_chord: notes={notes}, note_duration={note_duration}, duration={duration}s, volume={volume}")
@@ -406,14 +414,15 @@ class SoundGeneratorStreamer:
         return blk
 
     def play(self, note: str, note_duration: float | str = 1 / 4, volume: float = None) -> bytes:
-        """
-        Play a musical note for a specified duration and volume.
+        """Generate audio samples for a single musical note.
+
         Args:
-            note (str): The musical note to play (e.g., 'A4', 'C#5', 'REST').
-            note_duration (float | str): Duration of the note as a float (like 1/4, 1/8) or a symbol ('W', 'H', 'Q', etc.).
+            note (str): The musical note to generate (e.g., 'A4', 'C#5', 'REST').
+            note_duration (float | str): Duration as a note fraction (like 1/4, 1/8) or symbol ('W', 'H', 'Q', etc.).
             volume (float, optional): Volume level (0.0 to 1.0). If None, uses master volume.
+
         Returns:
-            bytes: The audio block of the played note (float32).
+            np.ndarray: The audio block (float32), or None if the note is invalid.
         """
         duration = self._note_duration(note_duration)
         frequency = self._get_note(note)
@@ -440,14 +449,18 @@ class SoundGeneratorStreamer:
             return data
 
     def play_tone(self, note: str, duration: float = 0.25, volume: float = None) -> bytes:
-        """
-        Play a musical note for a specified duration and volume.
+        """Generate audio samples for a note with duration in seconds.
+
+        Unlike ``play()`` which interprets duration as a musical note fraction,
+        this method takes the duration directly in seconds.
+
         Args:
-            note (str): The musical note to play (e.g., 'A4', 'C#5', 'REST').
-            duration (float): Duration of the note as a float in seconds.
+            note (str): The musical note to generate (e.g., 'A4', 'C#5', 'REST').
+            duration (float): Duration in seconds (default 0.25).
             volume (float, optional): Volume level (0.0 to 1.0). If None, uses master volume.
+
         Returns:
-            bytes: The audio block of the played note (float32).
+            np.ndarray: The audio block (float32), or None if the note is invalid.
         """
         frequency = self._get_note(note)
         if frequency is not None and frequency >= 0.0 and duration > 0.0:
@@ -458,13 +471,16 @@ class SoundGeneratorStreamer:
             return data
 
     def play_abc(self, abc_string: str, volume: float = None) -> Iterable[tuple[bytes, float]]:
-        """
-        Play a sequence of musical notes defined in ABC notation.
+        """Generate audio samples from an ABC notation string.
+
+        Yields one audio block per note in the parsed ABC sequence.
+
         Args:
             abc_string (str): ABC notation string defining the sequence of notes.
             volume (float, optional): Volume level (0.0 to 1.0). If None, uses master volume.
-        Returns:
-            Iterable[tuple[bytes, float]]: An iterable yielding the audio blocks of the played notes (float32) and its duration.
+
+        Yields:
+            tuple[np.ndarray, float]: Audio block (float32) and its duration in seconds.
         """
         if not abc_string or abc_string.strip() == "":
             return
@@ -479,12 +495,15 @@ class SoundGeneratorStreamer:
                 yield (data, duration)
 
     def play_wav(self, wav_file: str) -> tuple[bytes, float]:
-        """
-        Play a WAV audio data block.
+        """Load a WAV file and return its raw PCM data.
+
+        Results are cached (up to 250 KB total) for repeated playback.
+
         Args:
             wav_file (str): The WAV audio file path.
+
         Returns:
-            tuple[bytes, float]: The audio block of the WAV file (float32) and its duration in seconds.
+            tuple[bytes, float]: Raw PCM audio data and its duration in seconds.
         """
         import wave
 
@@ -519,17 +538,18 @@ class SoundGenerator(SoundGeneratorStreamer):
         sound_effects: list = None,
     ):
         """Initialize the SoundGenerator.
+
         Args:
             output_device (Speaker, optional): The output device to play sound through.
-            wave_form (str): The type of wave form to generate. Supported values
-                are "sine" (default), "square", "triangle" and "sawtooth".
             bpm (int): The tempo in beats per minute for note duration calculations.
-            master_volume (float): The master volume level (0.0 to 1.0).
+            time_signature (tuple): The time signature as (numerator, denominator).
             octaves (int): Number of octaves to generate notes for (starting from octave
                 0 up to octaves-1).
+            wave_form (str): The type of wave form to generate. Supported values
+                are "sine" (default), "square", "triangle" and "sawtooth".
+            master_volume (float): The master volume level (0.0 to 1.0).
             sound_effects (list, optional): List of sound effect instances to apply to the audio
                 signal (e.g., [SoundEffect.adsr()]). See SoundEffect class for available effects.
-            time_signature (tuple): The time signature as (numerator, denominator).
         """
 
         super().__init__(
@@ -563,6 +583,7 @@ class SoundGenerator(SoundGeneratorStreamer):
         self._playback_session_id = 0  # Incremented each playback to invalidate stale threads
 
     def start(self):
+        """Start the sound generator and its internal speaker (if not external)."""
         if self._started.is_set():
             return
         if not self.external_speaker:
@@ -576,6 +597,7 @@ class SoundGenerator(SoundGeneratorStreamer):
         self._started.set()
 
     def stop(self):
+        """Stop playback, halt any running sequence, and close the internal speaker."""
         self.stop_sequence()
         if not self.external_speaker:
             self._output_device.stop()
@@ -639,8 +661,8 @@ class SoundGenerator(SoundGeneratorStreamer):
         """
         Play a MusicComposition object.
 
-        This method configures the SoundGenerator with the composition's settings
-        and plays the sequence using play_step_sequence for proper queue management.
+        Configures the SoundGenerator with the composition's settings and plays
+        the sequence using play_step_sequence.
 
         The composition format is interpreted as a list of steps, where each step
         is a list of (note, duration) tuples to play simultaneously.
@@ -729,11 +751,14 @@ class SoundGenerator(SoundGeneratorStreamer):
                 time.sleep(duration)
 
     def play_tone(self, note: str, duration: float = 0.25, volume: float = None, block: bool = False):
-        """
-        Play a musical note for a specified duration and volume.
+        """Play a musical note with duration specified in seconds.
+
+        Unlike ``play()`` which interprets duration as a musical note fraction,
+        this method takes the duration directly in seconds.
+
         Args:
             note (str): The musical note to play (e.g., 'A4', 'C#5', 'REST').
-            duration (float): Duration of the note as a float in seconds.
+            duration (float): Duration in seconds (default 0.25).
             volume (float, optional): Volume level (0.0 to 1.0). If None, uses master volume.
             block (bool): If True, block until the entire note has been played.
         """
@@ -763,8 +788,8 @@ class SoundGenerator(SoundGeneratorStreamer):
             time.sleep(overall_duration)
 
     def play_wav(self, wav_file: str, block: bool = False):
-        """
-        Play a WAV audio data block.
+        """Play a WAV audio file through the output device.
+
         Args:
             wav_file (str): The WAV audio file path.
             block (bool): If True, block until the entire WAV file has been played.
