@@ -8,8 +8,6 @@ services:
         max-file: "2"     
     devices:
       - "/dev/dri:/dev/dri"
-    group_add:
-      - "render"
     ports:
       - ${BIND_ADDRESS:-127.0.0.1}:1338:1337
     volumes:
