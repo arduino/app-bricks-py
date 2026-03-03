@@ -615,14 +615,16 @@ class SoundGenerator(SoundGeneratorStreamer):
             logger.debug(f"Synced wave_gen sample_rate to {actual_sr}")
 
     def _ensure_speaker_ready(self):
-        """Restart the internal speaker if it was stopped (e.g., by stop_sequence).
+        """Ensure the internal speaker is started and ready for playback.
 
-        When stop_sequence() halts playback it closes the speaker to immediately
-        drop all pending ALSA audio.  This helper transparently reopens it so
-        subsequent play calls work without requiring the user to call start()
-        again.
+        Auto-starts the speaker on the first play call so users don't need to
+        call ``start()`` explicitly.  Also transparently reopens it after
+        ``stop_sequence()`` which closes the speaker to drop pending audio.
         """
-        if not self.external_speaker and self._started.is_set() and not self._output_device.is_started():
+        if not self._started.is_set():
+            self.start()
+            return
+        if not self.external_speaker and not self._output_device.is_started():
             self._output_device.start()
             self._sync_sample_rate()
 
