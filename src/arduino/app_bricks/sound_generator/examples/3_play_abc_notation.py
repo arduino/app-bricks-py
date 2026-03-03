@@ -25,7 +25,7 @@ def play_melody():
     |"D"D D A A|"G"B B "D"A2
     |"G"G G "D"F F|"A"E E "D"D2|
     """
-    player.play_abc(abc_music, wait_completion=True)
+    player.play_abc(abc_music, block=True)
 
 
 App.run(user_loop=play_melody)

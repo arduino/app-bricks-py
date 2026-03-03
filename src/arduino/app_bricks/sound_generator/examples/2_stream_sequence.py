@@ -3,6 +3,10 @@
 # SPDX-License-Identifier: MPL-2.0
 
 # EXAMPLE_NAME: Stream a sequence of notes over websocket via WebUI
+
+# NOTE: This example requires a frontend (HTML/JS) served by WebUI
+# to receive and play the audio frames sent via WebSocket.
+# See the WebUI brick documentation for how to set up the frontend files.
 import time
 from arduino.app_utils import *
 from arduino.app_bricks.web_ui import WebUI
