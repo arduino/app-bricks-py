@@ -473,7 +473,10 @@ class SoundGeneratorStreamer:
     def play_abc(self, abc_string: str, volume: float = None) -> Iterable[tuple[bytes, float]]:
         """Generate audio samples from an ABC notation string.
 
-        Yields one audio block per note in the parsed ABC sequence.
+        Yields one audio block per note in the parsed ABC sequence.  The parser
+        is ABC 2.1 standard compliant (key signatures, accidentals, tuplets,
+        broken rhythm, multimeasure rests, etc.).  See
+        :class:`ABCNotationLoader` for the full feature list and limitations.
 
         Args:
             abc_string (str): ABC notation string defining the sequence of notes.
@@ -769,8 +772,12 @@ class SoundGenerator(SoundGeneratorStreamer):
             time.sleep(duration)
 
     def play_abc(self, abc_string: str, volume: float = None, block: bool = False):
-        """
-        Play a sequence of musical notes defined in ABC notation.
+        """Play a sequence of musical notes defined in ABC notation.
+
+        The parser is ABC 2.1 standard compliant (key signatures, accidentals,
+        tuplets, broken rhythm, multimeasure rests, etc.).  See
+        :class:`ABCNotationLoader` for the full feature list and limitations.
+
         Args:
             abc_string (str): ABC notation string defining the sequence of notes.
             volume (float, optional): Volume level (0.0 to 1.0). If None, uses master volume.
