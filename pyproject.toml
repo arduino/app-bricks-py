@@ -122,7 +122,7 @@ include = ["*"]
 
 
 [tool.setuptools_scm]
-tag_regex = "^(?:ai|release)/(?P<version>v?\d+(?:\.\d+)*(?:rc\d+)?)$"
+tag_regex = '^(?:ai|release)/(?P<version>v?\d+(?:\.\d+)*(?:rc\d+)?)$'
 write_to = "src/arduino/_version.py"
 root = "."
 version_scheme = "only-version"
