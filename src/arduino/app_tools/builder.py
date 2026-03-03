@@ -18,9 +18,7 @@ def run_preprocessing(dev_mode: bool = False) -> None:
         version = "dev-latest"
     else:
         version = get_version(
-            version_scheme="only-version",
-            local_scheme="no-local-version",
-            tag_regex="^(ai|release)/(?P<version>[0-9.]+)$",
+            version_scheme="only-version", local_scheme="no-local-version", tag_regex="^(ai|release)/(?P<version>[0-9.]+(?:rc[0-9]+)?)$"
         )
 
     cache_folder_path = "src/arduino/app_bricks/static"
