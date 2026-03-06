@@ -33,7 +33,7 @@ dev = [
     "pytest",
     "pytest-asyncio",
     "websocket-client",
-    "ruff",
+    "ruff==0.14.2",
     "docstring_parser>=0.16",
     "arduino_app_bricks[all]",
     "deepeval",
