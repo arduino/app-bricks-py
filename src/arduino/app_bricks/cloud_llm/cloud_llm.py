@@ -280,6 +280,7 @@ class CloudLLM:
             return self._content_to_text(message.content)
 
         except Exception as e:
+            logger.error(f"Response generation failed: {e}")
             raise RuntimeError(f"Response generation failed: {e}")
 
     def chat_stream(self, message: str, images: List[str | bytes] = None) -> Iterator[str]:
@@ -331,6 +332,7 @@ class CloudLLM:
                         yield token.content
 
         except Exception as e:
+            logger.error(f"Response generation failed: {e}")
             raise RuntimeError(f"Response generation failed: {e}")
         finally:
             self._keep_streaming.clear()
