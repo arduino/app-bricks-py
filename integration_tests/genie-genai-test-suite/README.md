@@ -59,9 +59,9 @@ run_tests.bat test_3_vlm_llm.py
    
    **Windows:**
    ```batch
-   set BASE_URL=http://192.168.1.140:11434/v1
+   set BASE_URL=http://127.0.0.1:9001/v1
    set TEMPERATURE=0.7
-   set VLM_MODEL=moondream:latest
+   set VLM_MODEL=qwen3-vl-4b
    set LLM_MODEL=qwen2.5-7b
    set VLM_IMAGES_DIR=VLM-IMAGES
    set OPENAI_API_KEY=xxxx
@@ -69,9 +69,9 @@ run_tests.bat test_3_vlm_llm.py
    
    **Linux/Mac:**
    ```bash
-   export BASE_URL=http://192.168.1.140:11434/v1
+   export BASE_URL=http://127.0.0.1:9001/v1
    export TEMPERATURE=0.7
-   export VLM_MODEL=moondream:latest
+   export VLM_MODEL=qwen3-vl-4b
    export LLM_MODEL=qwen2.5-7b
    export VLM_IMAGES_DIR=VLM-IMAGES
    export OPENAI_API_KEY=xxxx
@@ -88,9 +88,9 @@ All configuration is done via environment variables. The test runner scripts (`r
 
 ### Main Configuration Variables
 
-- `BASE_URL` - Base URL for both LLM and VLM APIs (default: `http://192.168.1.140:11434/v1`)
+- `BASE_URL` - Base URL for both LLM and VLM APIs (default: `http://127.0.0.1:9001/v1`)
 - `TEMPERATURE` - Temperature setting for both LLM and VLM (default: `0.7`)
-- `VLM_MODEL` - Vision Language Model name (default: `moondream:latest`)
+- `VLM_MODEL` - Vision Language Model name (default: `qwen3-vl-4b`)
 - `LLM_MODEL` - Large Language Model name (default: `qwen2.5-7b`)
 - `VLM_IMAGES_DIR` - Directory containing test images (default: `VLM-IMAGES`)
 - `OPENAI_API_KEY` - API key for LangChain OpenAI client (default: `xxxx`)
