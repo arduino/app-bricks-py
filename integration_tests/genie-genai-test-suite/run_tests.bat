@@ -14,10 +14,10 @@ REM ============================================================================
 REM ENVIRONMENT VARIABLES - Modify these for your setup
 REM ============================================================================
 
-set BASE_URL=http://192.168.1.140:11434/v1
+set BASE_URL=http://127.0.0.1:9001/v1
 set TEMPERATURE=0.7
-set VLM_MODEL=moondream:latest
-set LLM_MODEL=qwen3:4b
+set VLM_MODEL=qwen3-vl-4b
+set LLM_MODEL=qwen2.5-7b
 
 REM Images directory for VLM tests
 set VLM_IMAGES_DIR=VLM-IMAGES

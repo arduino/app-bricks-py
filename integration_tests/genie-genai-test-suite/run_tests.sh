@@ -14,10 +14,10 @@ echo ""
 # ENVIRONMENT VARIABLES - Modify these for your setup
 # ============================================================================
 
-export BASE_URL=http://192.168.1.140:11434/v1
+export BASE_URL=http://127.0.0.1:9001/v1
 export TEMPERATURE=0.7
-export VLM_MODEL=moondream:latest
-export LLM_MODEL=qwen3:4b
+export VLM_MODEL=qwen3-vl-4b
+export LLM_MODEL=qwen2.5-7b
 
 # Images directory for VLM tests
 export VLM_IMAGES_DIR=VLM-IMAGES
