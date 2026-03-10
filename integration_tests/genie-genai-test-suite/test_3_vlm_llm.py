@@ -12,7 +12,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 # ============================================================================
 BASE_URL = os.environ.get("BASE_URL", "http://127.0.0.1:9001/v1")
 VLM_MODEL_NAME = os.environ.get("VLM_MODEL", "qwen3-vl-4b")
-LLM_MODEL_NAME = os.environ.get("LLM_MODEL", "qwen2.5-7b")
+LLM_MODEL_NAME = os.environ.get("LLM_MODEL", "qwen2.5-3b")
 TEMPERATURE = float(os.environ.get("TEMPERATURE", "0.7"))
 API_KEY = os.environ.get("OPENAI_API_KEY", "xxxx")
 IMAGES_DIR = os.environ.get("VLM_IMAGES_DIR", "VLM-IMAGES")

@@ -17,24 +17,13 @@ REM ============================================================================
 set BASE_URL=http://127.0.0.1:9001/v1
 set TEMPERATURE=0.7
 set VLM_MODEL=qwen3-vl-4b
-set LLM_MODEL=qwen2.5-7b
+set LLM_MODEL=qwen2.5-3b
 
 REM Images directory for VLM tests
 set VLM_IMAGES_DIR=VLM-IMAGES
 
 REM API Key (required by LangChain OpenAI client)
 set OPENAI_API_KEY=xxxx
-
-REM ============================================================================
-REM Set derived environment variables for the test suite
-REM ============================================================================
-
-set OLLAMA_BASE_URL=%BASE_URL%
-set OLLAMA_MODEL=%LLM_MODEL%
-set OLLAMA_TEMPERATURE=%TEMPERATURE%
-
-set VLM_BASE_URL=%BASE_URL%
-set VLM_TEMPERATURE=%TEMPERATURE%
 
 REM ============================================================================
 REM Display Configuration

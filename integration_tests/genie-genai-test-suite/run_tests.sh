@@ -17,24 +17,13 @@ echo ""
 export BASE_URL=http://127.0.0.1:9001/v1
 export TEMPERATURE=0.7
 export VLM_MODEL=qwen3-vl-4b
-export LLM_MODEL=qwen2.5-7b
+export LLM_MODEL=qwen2.5-3b
 
 # Images directory for VLM tests
 export VLM_IMAGES_DIR=VLM-IMAGES
 
 # API Key (required by LangChain OpenAI client)
 export OPENAI_API_KEY=xxxx
-
-# ============================================================================
-# Set derived environment variables for the test suite
-# ============================================================================
-
-export OLLAMA_BASE_URL=$BASE_URL
-export OLLAMA_MODEL=$LLM_MODEL
-export OLLAMA_TEMPERATURE=$TEMPERATURE
-
-export VLM_BASE_URL=$BASE_URL
-export VLM_TEMPERATURE=$TEMPERATURE
 
 # ============================================================================
 # Display Configuration

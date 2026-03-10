@@ -95,15 +95,6 @@ All configuration is done via environment variables. The test runner scripts (`r
 - `VLM_IMAGES_DIR` - Directory containing test images (default: `VLM-IMAGES`)
 - `OPENAI_API_KEY` - API key for LangChain OpenAI client (default: `xxxx`)
 
-### Derived Variables (set automatically)
-
-The test runner scripts automatically set these for compatibility with the test files:
-- `OLLAMA_BASE_URL` = `BASE_URL`
-- `OLLAMA_MODEL` = `LLM_MODEL`
-- `OLLAMA_TEMPERATURE` = `TEMPERATURE`
-- `VLM_BASE_URL` = `BASE_URL`
-- `VLM_TEMPERATURE` = `TEMPERATURE`
-
 ## Test Images
 
 For VLM tests to run properly, ensure you have test images in the `VLM-IMAGES` directory (or the directory specified by `VLM_IMAGES_DIR`).
