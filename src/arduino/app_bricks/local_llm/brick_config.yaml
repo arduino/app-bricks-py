@@ -4,6 +4,7 @@ description: "Local LLM Brick enables seamless integration with locally hosted L
 requires_container: true
 requires_model: true
 model: genie:qwen2.5-7b
+supported_boards: ["unoq", "ventunoq"]
 variables:
   - name: LOCAL_LLM_API_KEY
     description: API Key for the local LLM service

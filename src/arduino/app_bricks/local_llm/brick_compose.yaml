@@ -50,7 +50,7 @@ services:
         max-file: "2"
     environment:
       - LLAMA_LOG_LEVEL=error
-      - LLAMA_ARG_CTX_SIZE=${LLAMA_ARG_CTX_SIZE:-8192}
+      - LLAMA_ARG_CTX_SIZE=${LLAMA_ARG_CTX_SIZE:-2048}
       - LLAMA_ARG_CACHE_TYPE_K=${LLAMA_ARG_CACHE_TYPE_K:-q4_0}
       - LLAMA_ARG_CACHE_TYPE_V=${LLAMA_ARG_CACHE_TYPE_V:-q4_0}
       - LLAMA_ARG_HOST=${LLAMA_ARG_HOST:-0.0.0.0}
