@@ -13,15 +13,22 @@ services:
     ports:
       - ${BIND_ADDRESS:-127.0.0.1}:9001:9001
     environment:
-      - GENAI_MODEL_NAME=${GENAI_VLM_MODEL_NAME:-QWEN2_5_VL_3B}
-      - GENAI_PORT=${GENAI_PORT:-9001}
-      - VLM_LIBRARY_PATH=${VLM_LIBRARY_PATH:-/root/app/site-packages/libvlmservice.so}
-      - LLM_LIBRARY_PATH=${LLM_LIBRARY_PATH:-/root/app/site-packages/libllmservice.so}
-      - GENAI_INTERFACE_FILE=${GENAI_INTERFACE_FILE:-/usr/include/genai_interface.h}
-      - GENAI_MODELS_CONFIG_PATH=${GENAI_MODELS_CONFIG_PATH:-/mnt/work/models/models_config.json}
+      - LOG_LEVEL=ERROR
       - ADHOC_MODE=${ADHOC_MODE:-true}
-    mem_limit: 12g
-    oom_kill_disable: false
+      - GENAI_PORT=${GENAI_PORT:-9001}
+      - VLM_LIBRARY_PATH=${VLM_LIBRARY_PATH:-/iot-user/app/site-packages/libvlmservice.so}
+      - LLM_LIBRARY_PATH=${LLM_LIBRARY_PATH:-/iot-user/app/site-packages/libllmservice.so}
+      - GENAI_INTERFACE_FILE=${GENAI_INTERFACE_FILE:-/usr/include/genai_interface.h}
+    # Memory and resource limits for VLM model loading
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    oom_score_adj: -500
+    mem_limit: 10g
     shm_size: 2g
     devices:
       - /dev/dma_heap/system
@@ -30,11 +37,10 @@ services:
     volumes:
       - /usr/lib/aarch64-linux-gnu/libdmabufheap.so.0:/usr/lib/libdmabufheap.so.0
       - /usr/lib/aarch64-linux-gnu/libcdsprpc.so:/usr/lib/libcdsprpc.so
-      - /usr/lib/aarch64-linux-gnu/libatomic.so.1.2.0:/usr/lib/libatomic.so.1
       - ${APPLAB_DOWNLOADED_GENIE_MODELS:-${HOME}/models/}:/mnt/work/models/
-    command: >
-      sh -c "hypercorn openapi_server.main:app --bind 0.0.0.0:${GENAI_PORT:-9001}
-      --reload --access-log - --error-log - --log-level error"
+    stop_signal: SIGTERM
+    stop_grace_period: 10s
+    command: ["hypercorn", "openapi_server.main:app", "--bind", "0.0.0.0:${GENAI_PORT:-9001}", "--log-level", "info"]
   llamacpp-models-runner:
     image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/llamacpp-models-runner:dev-next
     logging:
@@ -54,7 +60,7 @@ services:
       - LLAMA_ARG_BATCH=${LLAMA_ARG_BATCH:-256}
       - LLAMA_ARG_UBATCH=${LLAMA_ARG_UBATCH:-128}
       - LLAMA_ARG_MLOCK=${LLAMA_ARG_MLOCK:-1}
-      - LLAMA_ARG_N_PREDICT=${LLAMA_ARG_N_PREDICT:-2048}
+      - LLAMA_ARG_N_PREDICT=${LLAMA_ARG_N_PREDICT:-256}
       - XDG_CACHE_HOME=/models
       #- LLAMA_ARG_THREADS=${LLAMA_ARG_THREADS:-4}
       #- LLAMA_API_KEY=${LLAMA_API_KEY:-key}
