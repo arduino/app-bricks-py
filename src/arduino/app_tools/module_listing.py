@@ -43,6 +43,7 @@ class ArduinoBrick:
         requires_display: str = None,
         required_device_classes: List[str] = None,
         env_variables: Dict[str, str] = None,
+        supported_boards: List[str] = None,
     ):
         self.id = id
         self.name = name
@@ -59,6 +60,7 @@ class ArduinoBrick:
         self.requires_display: Optional[str] = requires_display
         self.required_device_classes: Optional[List[str]] = required_device_classes
         self.env_variables: Optional[Dict[str, str]] = env_variables
+        self.supported_boards: Optional[List[str]] = supported_boards
 
     def to_dict(self) -> dict:
         out_dict: dict = {
@@ -77,6 +79,8 @@ class ArduinoBrick:
             out_dict["requires_display"] = self.requires_display
         if self.required_device_classes:
             out_dict["required_devices"] = self.required_device_classes
+        if self.supported_boards:
+            out_dict["supported_boards"] = self.supported_boards
 
         if self.env_variables and len(self.env_variables) > 0:
             additional_vars: List[EnvVariable] = []
@@ -150,6 +154,7 @@ def find_config_yaml(root_path: str) -> List[ArduinoBrick]:
                         config.get("requires_display", None),
                         required_device_classes=config.get("required_devices", None),
                         env_variables=config.get("variables", None),
+                        supported_boards=config.get("supported_boards", None),
                     )
                     discovered_modules.append(mod)
                 except yaml.YAMLError:
