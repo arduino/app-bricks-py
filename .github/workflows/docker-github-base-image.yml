@@ -55,7 +55,7 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           tags: |
-            type=raw,value=latest,enable=true
+            type=raw,value=dev-next,enable=true
             type=match,pattern=base\/(.*),group=1
           images: ${{ matrix.image }}
 
