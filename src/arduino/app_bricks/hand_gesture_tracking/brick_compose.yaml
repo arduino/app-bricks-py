@@ -1,12 +1,16 @@
 services:
-  hand-gesture-tracker:
-    image: hand-gesture-tracker
-    privileged: true
+  hand-gesture-tracking:
+    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/hand-gesture-tracking:dev-next
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
     ports:
       - ${BIND_ADDRESS:-0.0.0.0}:5002:5002
     user: 0:0
     healthcheck:
-      test: [ "CMD-SHELL", "nc -zv hand-gesture-tracker 5002 || exit 1" ]
+      test: [ "CMD-SHELL", "nc -zv hand-gesture-tracking 5002 || exit 1" ]
       interval: 1s
       timeout: 2s
       retries: 30
