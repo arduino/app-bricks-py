@@ -139,3 +139,4 @@ jobs:
           provenance: false
           build-args: |
             REGISTRY=${{ env.DEV_REGISTRY_PATH }}
+            BASE_IMAGE_VERSION=dev-next
