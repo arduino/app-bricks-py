@@ -7,11 +7,11 @@ ARG DEBIAN_FRONTEND=noninteractive
 FROM ubuntu:24.04
 
 # Install system dependencies
-RUN apt update \
-    && apt install -y --no-install-recommends --no-install-suggests software-properties-common \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends --no-install-suggests software-properties-common \
     && apt-add-repository -y ppa:ubuntu-qcom-iot/qcom-ppa \
-    && apt update \
-    && apt install -y --no-install-recommends --no-install-suggests \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends --no-install-suggests \
     netcat-openbsd \
     python3 \
     python3-pip \
@@ -27,10 +27,10 @@ RUN pip install --no-cache-dir -r requirements.txt \
     && python -m compileall /usr/local/lib
 
 # Clean up
-RUN apt remove -y \
+RUN apt-get remove -y \
     software-properties-common \
-    && apt autoremove -y \
-    && apt dist-clean \
+    && apt-get autoremove -y \
+    && apt-get dist-clean \
     && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd -g 1000 arduino \
