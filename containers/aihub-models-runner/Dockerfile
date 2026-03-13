@@ -23,7 +23,8 @@ RUN apt-get update \
 # Install Python dependencies and precompile to speed up startup time
 ENV PYTHONUNBUFFERED=1
 COPY requirements.txt .
-RUN python -m pip install --no-cache-dir --break-system-packages -r requirements.txt \
+RUN apt-get remove -y python3-blinker \
+    && python -m pip install --no-cache-dir --break-system-packages -r requirements.txt \
     && python -m compileall /usr/local/bin \
     && python -m compileall /usr/local/lib
 
@@ -36,6 +37,11 @@ RUN apt-get remove -y \
 
 RUN groupadd -g 1000 arduino \
     && useradd -u 1000 -g arduino -ms /bin/bash arduino
+
+# Make the venv the default for child images
+RUN python -m venv --system-site-packages /opt/venv
+ENV PATH="/opt/venv/bin:${PATH}" \
+    VIRTUAL_ENV="/opt/venv"
 
 ENV PYTHONPATH="/opt/aihub"
 COPY aihub/ /opt/aihub/
