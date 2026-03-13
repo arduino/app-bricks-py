@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (C) ARDUINO SRL (http://www.arduino.cc)
+# SPDX-FileCopyrightText: Copyright (C) Arduino s.r.l. and/or its affiliated companies
 #
 # SPDX-License-Identifier: MPL-2.0
 
@@ -9,8 +9,8 @@ COPY ./requirements-base.txt /app/requirements.txt
 RUN set -ex; \
     apt-get update -y; \
     apt-get upgrade -y; \
-    apt-get install build-essential libasound2-dev libalsaplayer-dev libzbar0 binutils portaudio19-dev -y; \
-    pip install --no-cache-dir -r /app/requirements.txt && rm /app/requirements.txt && pip cache purge; \
+    apt-get install -y --no-install-recommends --no-install-suggests build-essential libasound2-dev libalsaplayer-dev libzbar0 binutils portaudio19-dev; \
+    pip install --no-cache-dir -r /app/requirements.txt && rm /app/requirements.txt; \
     # remove debug symbols from shared objects and reduce size
     find /usr/local/lib/python3.13/site-packages -type f -name "*.so" -exec strip -s {} +; \
     find /usr/local/lib/python3.13/site-packages -type f -name "*.so.*" -exec strip -s {} +; \
@@ -33,8 +33,7 @@ RUN set -ex; \
     useradd -u 1000 -g arduino -ms /bin/bash arduino; \
     apt-get update -y; \
     apt-get upgrade -y; \
-    apt-get install --no-install-recommends -y libglib2.0-0 alsa-utils inotify-tools wget libzbar0 portaudio19-dev; \
-    pip cache purge; \
+    apt-get install -y --no-install-recommends --no-install-suggests libglib2.0-0 alsa-utils inotify-tools wget libzbar0 portaudio19-dev; \
     apt-get dist-clean; \
     apt-get autoclean -y; \
     apt-get autoremove -y; \
