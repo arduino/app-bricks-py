@@ -23,7 +23,7 @@ RUN apt-get update \
 # Install Python dependencies and precompile to speed up startup time
 ENV PYTHONUNBUFFERED=1
 COPY requirements.txt .
-RUN python -m pip install --no-cache-dir -r requirements.txt \
+RUN python -m pip install --no-cache-dir --break-system-packages -r requirements.txt \
     && python -m compileall /usr/local/bin \
     && python -m compileall /usr/local/lib
 
