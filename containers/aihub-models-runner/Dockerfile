@@ -16,6 +16,7 @@ RUN apt-get update \
     python3 \
     python3-pip \
     python3-venv \
+    python-is-python3 \
     libqnn1 \
     qcom-fastrpc1
     
