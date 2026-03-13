@@ -72,6 +72,7 @@ jobs:
             REGISTRY=${{ env.DEV_REGISTRY_PATH }}
 
   build:
+    needs: build-base
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
