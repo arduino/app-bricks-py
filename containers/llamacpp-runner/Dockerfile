@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 ARG REGISTRY
+ARG BASE_IMAGE_VERSION=latest
 
 FROM debian:trixie AS llamacpp-builder
 
@@ -53,7 +54,7 @@ RUN cd ~/dev/llm/llama.cpp/build/; \
     cp bin-full/llama-pull bin/; \
     cp bin-full/lib* bin/
 
-FROM ${REGISTRY}app-bricks/base:latest AS production
+FROM ${REGISTRY}app-bricks/base:${BASE_IMAGE_VERSION} AS production
 
 COPY --from=llamacpp-builder /root/dev/llm/llama.cpp/build/bin /usr/local/bin/
 COPY ./scripts/*.sh /
