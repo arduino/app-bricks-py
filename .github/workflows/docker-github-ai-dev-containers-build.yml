@@ -20,6 +20,9 @@ jobs:
     strategy:
       matrix:
         include:
+          - dockerfile: ./containers/base/Dockerfile
+            context: ./containers/base
+            image: ghcr.io/${{ github.repository_owner }}/app-bricks/base
           - dockerfile: ./containers/aihub-models-runner/Dockerfile
             context: ./containers/aihub-models-runner
             image: ghcr.io/${{ github.repository_owner }}/app-bricks/aihub-models-runner
