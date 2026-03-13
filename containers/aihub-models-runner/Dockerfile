@@ -36,8 +36,8 @@ RUN apt remove -y \
 RUN groupadd -g 1000 arduino \
     && useradd -u 1000 -g arduino -ms /bin/bash arduino
 
-ENV PYTHONPATH="/opt/framework"
-COPY framework/ /opt/framework/
+ENV PYTHONPATH="/opt/aihub"
+COPY aihub/ /opt/aihub/
 
 USER arduino
 
