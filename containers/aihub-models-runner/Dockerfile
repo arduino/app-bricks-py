@@ -43,7 +43,7 @@ RUN python -m venv --system-site-packages /opt/venv
 ENV PATH="/opt/venv/bin:${PATH}" \
     VIRTUAL_ENV="/opt/venv"
 
-ENV PYTHONPATH="/opt/aihub"
+ENV PYTHONPATH="/opt"
 COPY aihub/ /opt/aihub/
 
 # USER arduino
