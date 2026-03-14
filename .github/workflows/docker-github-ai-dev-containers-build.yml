@@ -68,8 +68,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/arm64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=registry,ref=${{ matrix.image }}:buildcache
+          cache-to: type=registry,ref=${{ matrix.image }}:buildcache,mode=max
           provenance: false
           build-args: |
             REGISTRY=${{ env.DEV_REGISTRY_PATH }}
@@ -93,7 +93,6 @@ jobs:
           - dockerfile: ./containers/hand-gesture-tracking/Dockerfile
             context: ./containers/hand-gesture-tracking
             image: ghcr.io/${{ github.repository_owner }}/app-bricks/hand-gesture-tracking
-      max-parallel: 4
 
     steps:
       - name: Checkout repository
@@ -137,8 +136,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/arm64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=registry,ref=${{ matrix.image }}:buildcache
+          cache-to: type=registry,ref=${{ matrix.image }}:buildcache,mode=max
           provenance: false
           build-args: |
             REGISTRY=${{ env.DEV_REGISTRY_PATH }}
