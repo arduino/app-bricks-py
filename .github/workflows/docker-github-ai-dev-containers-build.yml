@@ -2,6 +2,12 @@ name: DEV - AI CONTAINERS build & publish
 
 on:
   workflow_dispatch:
+    inputs:
+      skip_cache:
+        description: 'Rebuild without cache'
+        required: false
+        type: boolean
+        default: false
 
 env:
   REGISTRY: ghcr.io
@@ -68,8 +74,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/arm64
-          cache-from: type=registry,ref=${{ matrix.image }}:buildcache
-          cache-to: type=registry,ref=${{ matrix.image }}:buildcache,mode=max
+          cache-from: ${{ github.event.inputs.skip_cache == 'false' && format('type=registry,ref={0}:buildcache', matrix.image) || '' }}
+          cache-to: ${{ github.event.inputs.skip_cache == 'false' && format('type=registry,ref={0}:buildcache,mode=max', matrix.image) || '' }}
           provenance: false
           build-args: |
             REGISTRY=${{ env.DEV_REGISTRY_PATH }}
@@ -136,8 +142,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/arm64
-          cache-from: type=registry,ref=${{ matrix.image }}:buildcache
-          cache-to: type=registry,ref=${{ matrix.image }}:buildcache,mode=max
+          cache-from: ${{ github.event.inputs.skip_cache == 'false' && format('type=registry,ref={0}:buildcache', matrix.image) || '' }}
+          cache-to: ${{ github.event.inputs.skip_cache == 'false' && format('type=registry,ref={0}:buildcache,mode=max', matrix.image) || '' }}
           provenance: false
           build-args: |
             REGISTRY=${{ env.DEV_REGISTRY_PATH }}
