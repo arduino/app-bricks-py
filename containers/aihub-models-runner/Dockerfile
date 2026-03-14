@@ -35,8 +35,8 @@ RUN apt-get remove -y \
     && apt-get dist-clean \
     && rm -rf /var/lib/apt/lists/*
 
-RUN groupadd -g 1000 arduino \
-    && useradd -u 1000 -g arduino -ms /bin/bash arduino
+# RUN groupadd -g 1000 arduino \
+#     && useradd -u 1000 -g arduino -ms /bin/bash arduino
 
 # Make the venv the default for child images
 RUN python -m venv --system-site-packages /opt/venv
@@ -46,6 +46,6 @@ ENV PATH="/opt/venv/bin:${PATH}" \
 ENV PYTHONPATH="/opt/aihub"
 COPY aihub/ /opt/aihub/
 
-USER arduino
+# USER arduino
 
 CMD ["python", "main.py", "--verbose", "--input", "websocket", "--output", "mjpeg", "websocket"]
