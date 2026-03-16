@@ -34,7 +34,7 @@ jobs:
           - dockerfile: ./containers/ollama-runner/Dockerfile
             context: ./containers/ollama-runner
             image: ghcr.io/${{ github.repository_owner }}/app-bricks/ollama-models-runner
-            build_python_package: false            
+            build_python_package: false
       max-parallel: 4
 
     steps:
