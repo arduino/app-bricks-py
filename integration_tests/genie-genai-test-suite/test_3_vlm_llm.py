@@ -16,6 +16,7 @@ LLM_MODEL_NAME = os.environ.get("LLM_MODEL", "qwen2.5-3b")
 TEMPERATURE = float(os.environ.get("TEMPERATURE", "0.7"))
 API_KEY = os.environ.get("OPENAI_API_KEY", "xxxx")
 IMAGES_DIR = os.environ.get("VLM_IMAGES_DIR", "VLM-IMAGES")
+TIMEOUT = int(os.environ.get("TIMEOUT", "30"))
 
 # Set API key for tests
 os.environ["OPENAI_API_KEY"] = API_KEY
@@ -30,13 +31,13 @@ def image_to_base64(path):
 @pytest.fixture(scope="session")
 def vlm_client():
     """Create a shared VLM chat client for all tests"""
-    return ChatOpenAI(base_url=BASE_URL, model=VLM_MODEL_NAME, temperature=TEMPERATURE)
+    return ChatOpenAI(base_url=BASE_URL, model=VLM_MODEL_NAME, temperature=TEMPERATURE, timeout=TIMEOUT)
 
 
 @pytest.fixture(scope="session")
 def llm_client():
     """Create a shared LLM chat client for all tests"""
-    return ChatOpenAI(base_url=BASE_URL, model=LLM_MODEL_NAME, temperature=TEMPERATURE)
+    return ChatOpenAI(base_url=BASE_URL, model=LLM_MODEL_NAME, temperature=TEMPERATURE, timeout=TIMEOUT)
 
 
 @pytest.fixture(scope="session")

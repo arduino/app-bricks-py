@@ -19,6 +19,7 @@ BASE_URL = os.environ.get("BASE_URL", "http://127.0.0.1:9001/v1")
 MODEL_NAME = os.environ.get("VLM_MODEL", "qwen3-vl-4b")
 IMAGES_DIR = os.environ.get("VLM_IMAGES_DIR", "VLM-IMAGES")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "xxxx")
+TIMEOUT = int(os.environ.get("TIMEOUT", "30"))
 
 # Set API key for tests
 os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
@@ -92,6 +93,7 @@ def openai_client():
     return OpenAI(
         api_key=OPENAI_API_KEY,
         base_url=BASE_URL,
+        timeout=TIMEOUT,
     )
 
 
