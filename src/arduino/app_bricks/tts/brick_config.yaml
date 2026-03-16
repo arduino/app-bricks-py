@@ -5,4 +5,5 @@ category: audio
 requires_model: true
 requires_container: true
 supported_boards: ["ventunoq"]
+requires_services: ["arduino:genie_audio"]
 model: melo-tts-en
