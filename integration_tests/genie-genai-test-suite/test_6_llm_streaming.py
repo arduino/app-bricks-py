@@ -45,7 +45,9 @@ class TestInterruptionsInStreaming:
         # For example, a process that dies and restarts due to an update or crash
         print("\n--- Reinitializing client ----")
         new_story_content = ""
-        new_chat_client = ChatOpenAI(base_url=BASE_URL, model=MODEL_NAME, temperature=TEMPERATURE, timeout=10) # Use a shorter timeout for the test to fail faster if the client isn't properly reinitialized
+        new_chat_client = ChatOpenAI(
+            base_url=BASE_URL, model=MODEL_NAME, temperature=TEMPERATURE, timeout=10
+        )  # Use a shorter timeout for the test to fail faster if the client isn't properly reinitialized
 
         # Collect streamed content
         print("\n--- Starting second streaming session ----")
