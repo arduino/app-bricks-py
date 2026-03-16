@@ -10,6 +10,7 @@ BASE_URL = os.environ.get("BASE_URL", "http://127.0.0.1:9001/v1")
 MODEL_NAME = os.environ.get("LLM_MODEL", "qwen2.5-7b")
 TEMPERATURE = float(os.environ.get("TEMPERATURE", "0.7"))
 API_KEY = os.environ.get("OPENAI_API_KEY", "xxxx")
+TIMEOUT = int(os.environ.get("TIMEOUT", "30"))
 
 # Set API key for tests
 os.environ["OPENAI_API_KEY"] = API_KEY
@@ -37,7 +38,7 @@ def get_current_weather(location: str) -> str:
 @pytest.fixture(scope="session")
 def chat_client():
     """Create a shared chat client for all tests"""
-    return ChatOpenAI(base_url=BASE_URL, model=MODEL_NAME, temperature=TEMPERATURE)
+    return ChatOpenAI(base_url=BASE_URL, model=MODEL_NAME, temperature=TEMPERATURE, timeout=TIMEOUT)
 
 
 @pytest.fixture

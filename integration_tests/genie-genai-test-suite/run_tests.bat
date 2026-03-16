@@ -18,6 +18,7 @@ set BASE_URL=http://127.0.0.1:9001/v1
 set TEMPERATURE=0.7
 set VLM_MODEL=qwen3-vl-4b
 set LLM_MODEL=qwen2.5-3b
+set TIMEOUT=30
 
 REM Images directory for VLM tests
 set VLM_IMAGES_DIR=VLM-IMAGES
@@ -35,6 +36,7 @@ echo   VLM_MODEL           = %VLM_MODEL%
 echo   LLM_MODEL           = %LLM_MODEL%
 echo   VLM_IMAGES_DIR      = %VLM_IMAGES_DIR%
 echo   OPENAI_API_KEY      = %OPENAI_API_KEY%
+echo   TIMEOUT             = %TIMEOUT%
 echo.
 echo ========================================
 
