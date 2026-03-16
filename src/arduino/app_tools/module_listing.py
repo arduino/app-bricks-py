@@ -258,6 +258,9 @@ def save_api_docs_files(output_dir: str):
     """Save the API docs files to the specified output directory."""
     shutil.copytree("docs/", output_dir, dirs_exist_ok=True)
 
+def save_services_files(output_dir: str):
+    """Save the services files to the specified output directory."""
+    shutil.copytree("src/arduino/app_services/", output_dir, dirs_exist_ok=True)
 
 def save_examples_files(module: ArduinoBrick, output_dir: str):
     """Save the examples files to the specified output directory."""
@@ -282,10 +285,12 @@ def library_provisioning(out_path: str = None, modules: Dict[str, List[ArduinoBr
         sys.exit(1)
 
     compose_output_dir = f"{out_path}/compose"
+    services_output_dir = f"{out_path}/services/arduino"
     docs_output_dir = f"{out_path}/docs"
     api_docs_output_dir = f"{out_path}/api-docs"
     examples_output_dir = f"{out_path}/examples"
     os.makedirs(compose_output_dir, exist_ok=True)
+    os.makedirs(services_output_dir, exist_ok=True)
     os.makedirs(docs_output_dir, exist_ok=True)
     os.makedirs(api_docs_output_dir, exist_ok=True)
     os.makedirs(examples_output_dir, exist_ok=True)
@@ -295,6 +300,7 @@ def library_provisioning(out_path: str = None, modules: Dict[str, List[ArduinoBr
             save_compose_file(module, compose_output_dir, arduino_bricks_version)
             save_readme_file(module, docs_output_dir)
             save_examples_files(module, examples_output_dir)
+            save_services_files(services_output_dir)
 
     # Save API docs files
     if buildtime:
