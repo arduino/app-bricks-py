@@ -257,11 +257,7 @@ class TestVLMParameterGrid:
                     clearly_different_pairs.append(pair_info)
 
         avg_similarity = mean(pairwise_similarities) if pairwise_similarities else 1.0
-        near_duplicate_ratio = (
-            len(near_duplicate_pairs) / len(pairwise_similarities)
-            if pairwise_similarities
-            else 1.0
-        )
+        near_duplicate_ratio = len(near_duplicate_pairs) / len(pairwise_similarities) if pairwise_similarities else 1.0
 
         print(f"Average pairwise similarity: {avg_similarity:.4f}")
         print(f"Near-duplicate pairs (>= 0.97): {len(near_duplicate_pairs)}")
@@ -280,28 +276,18 @@ class TestVLMParameterGrid:
         # 1) outputs must not all be identical
         # 2) outputs must not be almost all identical
 
-        assert unique_raw_count > 1, (
-            "All raw outputs are identical across all parameter combinations."
-        )
+        assert unique_raw_count > 1, "All raw outputs are identical across all parameter combinations."
 
         assert unique_normalized_count >= 3, (
-            "Too few distinct outputs after normalization. "
-            "Parameter combinations are not producing enough variation."
+            "Too few distinct outputs after normalization. Parameter combinations are not producing enough variation."
         )
 
-        assert distinct_rate >= 0.10, (
-            "Distinct output rate is too low. "
-            "Outputs are too similar across parameter combinations."
-        )
+        assert distinct_rate >= 0.10, "Distinct output rate is too low. Outputs are too similar across parameter combinations."
 
-        assert clearly_different_pairs, (
-            "No clearly different output pair found. "
-            "All outputs look too similar."
-        )
+        assert clearly_different_pairs, "No clearly different output pair found. All outputs look too similar."
 
         assert near_duplicate_ratio < 0.90, (
-            "Too many outputs are identical or almost identical. "
-            "The model is not reacting enough to parameter changes."
+            "Too many outputs are identical or almost identical. The model is not reacting enough to parameter changes."
         )
 
 

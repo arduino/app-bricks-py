@@ -145,9 +145,7 @@ def test_phrases():
 class TestTTSBasic:
     def test_test_phrases_exist(self, test_phrases):
         assert test_phrases, "The test phrase list must not be empty"
-        assert all(isinstance(text, str) and text.strip() for text in test_phrases), (
-            "All test phrases must be non-empty strings"
-        )
+        assert all(isinstance(text, str) and text.strip() for text in test_phrases), "All test phrases must be non-empty strings"
 
 
 class TestTTSPerPhrase:
