@@ -1,3 +1,7 @@
+REM SPDX-FileCopyrightText: Copyright (C) ARDUINO SRL (http://www.arduino.cc)
+REM
+REM SPDX-License-Identifier: MPL-2.0
+
 @echo off
 REM ============================================================================
 REM Test Runner Script for Genie GenAI Test Suite
