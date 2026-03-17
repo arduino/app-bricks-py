@@ -25,7 +25,7 @@ Before using the Cloud ASR brick, ensure you have the following components:
 
 Tips:
 - Use a USB-C® Hub with USB-A connectors to support commercial USB cameras with microphone.
-- Microphones included in USB camera/webcams are generally supported
+- Microphones included in USB cameras/webcams are generally supported
 
 ## Features
 
