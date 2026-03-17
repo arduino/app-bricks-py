@@ -30,7 +30,7 @@ Tips:
 ## Features
 
 - Pick between two different transcription services, either `CloudProvider.OPENAI_TRANSCRIBE` or `CloudProvider.GOOGLE_SPEECH`.
-- Control the microphone steam with different events sucha as `speech_start`, `partial_text`, `speech_stop`, `text`.
+- Control the microphone stream with different events such as `speech_start`, `partial_text`, `speech_stop`, `text`.
 - Set the language of the transcription with the use of language codes (e.g., `en`, `it`)
 - Configure silence timout or overall timout of the audio capture and transcription
 
