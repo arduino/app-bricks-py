@@ -53,4 +53,6 @@ RUN mkdir -p /home/app
 WORKDIR /home/app
 COPY main.py inference.py requirements.txt run.sh ./
 
+RUN chmod +x run.sh
+
 ENTRYPOINT [ "run.sh" ]
