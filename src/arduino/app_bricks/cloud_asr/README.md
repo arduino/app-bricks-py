@@ -24,7 +24,7 @@ Before using the Cloud ASR brick, ensure you have the following components:
 - Optional deps: `arduino_app_bricks[cloud_asr]`.
 
 Tips:
-- Use a USB-C® Hub with USB-A connectors to support commercial USB cameras with microphone.
+- Use a USB-C® Hub with USB-A connectors to support commercial USB cameras with microphone. Note that the USB-C® Hub must have Power Delivery Support (PD).
 - Microphones included in USB cameras/webcams are generally supported
 
 ## Features
