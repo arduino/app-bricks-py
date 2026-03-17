@@ -19,7 +19,7 @@ This Brick streams audio from a `Microphone` to a selected provider and gives yo
 Before using the Cloud ASR brick, ensure you have the following components:
 
 - USB microphone
-- internet connection.
+- Internet connection.
 - Provider API key (set via App Lab Brick Configuration as `API_KEY`).
 - Optional deps: `arduino_app_bricks[cloud_asr]`.
 
