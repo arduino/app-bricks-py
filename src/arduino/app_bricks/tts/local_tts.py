@@ -12,11 +12,11 @@ from arduino.app_peripherals.speaker import Speaker, BaseSpeaker
 from arduino.app_internal.core import load_brick_compose_file, resolve_address
 from arduino.app_utils import brick, Logger
 
-logger = Logger("LocalTTS")
+logger = Logger("TextToSpeech")
 
 
 @brick
-class LocalTTS:
+class TextToSpeech:
     """Text-to-Speech brick for offline speech synthesis using local TTS service."""
 
     def __init__(self):
@@ -34,7 +34,7 @@ class LocalTTS:
             raise RuntimeError("Host address could not be resolved. Please check your configuration.")
         self.api_base_url = f"http://{self.api_host}:{self.api_port}/audio-analytics/v1/api"
 
-        # ASR configuration
+        # TTS configuration
         self._language_to_voice = {}
         try:
             url = f"{self.api_base_url}/tts/models"

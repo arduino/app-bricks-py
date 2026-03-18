@@ -1,6 +1,6 @@
-# Local TTS Brick Overview
+# Text To Speech (TTS) Brick
 
-The `LocalTTS` brick provides a completely offline text-to-speech (TTS) solution for Arduino Apps. It's designed to convert text input into spoken audio using locally available TTS engines, ensuring privacy and low-latency performance without reliance on cloud services.
+The `TextToSpeech` brick provides a completely offline text-to-speech (TTS) solution for Arduino Apps. It's designed to convert text input into spoken audio using locally available TTS engines, ensuring privacy and low-latency performance without reliance on cloud services.
 
 ## Key Features
 
