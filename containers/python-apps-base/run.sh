@@ -35,7 +35,6 @@ if [ ! -d "$CACHE_DIR/.venv" ]; then
   fi  
 fi
 
-echo "Activating python virtual environment"
 . "$CACHE_DIR/.venv/bin/activate"
 
 if [ -d "$PYTHON_LIBS_DIR" ]; then
@@ -78,6 +77,7 @@ else
   if grep -q "arduino:streamlit_ui" "$APP_YAML"; then
     exec streamlit run --server.port 7000 "$PYTHON_SCRIPT"
   else
+    echo "======== App is starting ============================"
     cd $BASE_DIR # Change to the base directory
     exec python "$PYTHON_SCRIPT"
   fi
