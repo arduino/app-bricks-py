@@ -1216,3 +1216,58 @@ models:
       ei-model-url: "https://studio.edgeimpulse.com/public/842271/live"      
       source-model-id: "hand-gestures"
       source-model-url: "https://studio.edgeimpulse.com/public/842271/live"
+ - "genie:qwen2.5-7b":
+    runner: genie
+    name : "Qwen 2.5-7B Instruct"
+    description: >-
+      The Qwen2.5-7B-Instruct is a state-of-the-art multilingual language model with 7
+      billion parameters, excelling in language understanding, generation, coding, and
+      mathematics.
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:local_llm"
+    metadata:
+      source: "qualcomm-ai-hub"
+      source-model-id: "qwen2_5_7b_instruct"
+      source-model-url: "https://aihub.qualcomm.com/models/qwen2_5_7b_instruct"
+ - "genie:qwen2.5-3b":
+    runner: genie
+    name : "Qwen 2.5-3B Instruct"
+    description: >-
+      The Qwen2.5-3B-Instruct is a state-of-the-art multilingual language model with 3
+      billion parameters, excelling in language understanding, generation, coding, and
+      mathematics.
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:local_llm"
+    metadata:
+      source: "qualcomm-ai-hub"
+      source-model-id: "qwen2_5_3b_instruct"
+      source-model-url: "https://aihub.qualcomm.com/models/qwen2_5_3b_instruct"
+ - "genie:qwen3-4b":
+    runner: genie
+    name : "Qwen 3-4B Instruct"
+    description: >-
+      The Qwen3-4B is a state-of-the-art multilingual base language model with 4 billion
+      parameters, excelling in language understanding, generation, coding, and mathematics.
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:local_llm"
+    metadata:
+      source: "qualcomm-ai-hub"
+      source-model-id: "qwen3_4b"
+      source-model-url: "https://aihub.qualcomm.com/models/qwen3_4b"      
+ - "genie:qwen3-vl-4b":
+    runner: genie
+    name : "Qwen 3-VL-4B VLM"
+    description: >-
+      The Qwen3 4B VLM is a state-of-the-art multilingual vision-language model with 4
+      billion parameters, excelling in language understanding, generation, coding, and
+      mathematics.
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:local_llm"
+    metadata:
+      source: "qualcomm-ai-hub"
+      source-model-id: "qwen3_vl_4b"
+      source-model-url: "https://aihub.qualcomm.com/models/qwen3_vl_4b"        
