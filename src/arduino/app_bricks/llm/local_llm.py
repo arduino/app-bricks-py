@@ -5,7 +5,7 @@
 from arduino.app_bricks.cloud_llm import CloudLLM, CloudModelProvider
 from arduino.app_bricks.cloud_llm.cloud_llm import DEFAULT_MEMORY
 from arduino.app_utils import Logger, brick
-from arduino.app_internal.core import resolve_address
+from arduino.app_internal.core import resolve_address, get_app_config, get_brick_config
 
 import os
 from typing import Iterator, List, Optional, Any, Callable
@@ -29,7 +29,7 @@ class LargeLanguageModel(CloudLLM):
     def __init__(
         self,
         api_key: str = os.getenv("LOCAL_LLM_API_KEY", "api_key"),
-        model: str = "genie:qwen2.5-7b",
+        model: str = "genie:qwen2.5-3b",
         system_prompt: str = "",
         temperature: Optional[float] = 0.7,
         max_tokens: int = 512,
@@ -42,7 +42,7 @@ class LargeLanguageModel(CloudLLM):
         Args:
             api_key (str): The API access key for the target LLM service. Defaults to the
                 'LOCAL_LLM_API_KEY' environment variable.
-            model (str): The specific model name or identifier to use (e.g., "genie:qwen2.5-7b").
+            model (str): The specific model name or identifier to use (e.g., "genie:qwen2.5-3b").
             system_prompt (str): A system-level instruction that defines the AI's persona
                 and constraints (e.g., "You are a helpful assistant"). Defaults to empty.
             temperature (Optional[float]): The sampling temperature between 0.0 and 1.0.
@@ -65,6 +65,11 @@ class LargeLanguageModel(CloudLLM):
         host = resolve_address(host)
         if not host:
             raise RuntimeError("Host address resolution failed for local LLM runner.")
+
+        app_configured_model = self._extract_app_configured_model()
+        if app_configured_model:
+            logger.info(f"Using model '{app_configured_model}' from app configuration.")
+            model = app_configured_model
 
         if "base_url" in kwargs:
             logger.warning("Overriding provided 'base_url' argument with resolved local address.")
@@ -89,7 +94,7 @@ class LargeLanguageModel(CloudLLM):
             model = model.split(":", 1)[-1].strip()  # Remove prefix if any
             base_url = f"http://{host}:{port}/v1"
 
-        logger.info(f"Initializing LocalLLM with model '{model}' at {base_url}")
+        logger.info(f"Initializing model '{model}' at {base_url}")
 
         # Force OpenAI provider for local LLMs to force ChatCompletion APIs
         plain_model_name = model
@@ -109,16 +114,32 @@ class LargeLanguageModel(CloudLLM):
 
         available_models = self.list_models()
         if plain_model_name not in available_models:
-            logger.warning(f"Specified model '{plain_model_name}' not found in locally available models: {available_models}")
+            logger.error(
+                f"Configured model '{plain_model_name}' not found among locally available models: {available_models}."
+                + " Please download the model or configure it correctly."
+            )
+
+    def _extract_app_configured_model(self) -> Optional[str]:
+        brick_config = get_brick_config(self.__class__)
+        app_cfg = get_app_config()
+        if brick_config and "id" in brick_config:
+            brick_id = brick_config["id"]
+            if app_cfg and "bricks" in app_cfg:
+                bricks_list = app_cfg["bricks"]
+                for brick_entry in bricks_list:
+                    if brick_id in brick_entry:
+                        if "model" in brick_entry[brick_id]:
+                            return brick_entry[brick_id]["model"]
+        return None
 
     def list_models(self) -> List[str]:
         """Returns a list of supported local model identifiers.
 
-        Note: LocalLLM supports OpenAI-compatible API. This methos uses the OpenAI client to query available models from the local server.
+        Note: LargeLanguageModel supports OpenAI-compatible API. This method uses the OpenAI client to query available models from the local server.
         LangChain's OpenAI wrapper does not provide a direct method to list models, so we need to use the underlying OpenAI client directly.
 
         Returns:
-            List[str]: A list of supported model names (e.g., ["qwen2.5-7b", "vicuna-13b"]).
+            List[str]: A list of supported model names (e.g., ["qwen2.5-7b"]).
         """
         try:
             from openai import OpenAI

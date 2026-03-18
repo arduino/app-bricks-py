@@ -1225,7 +1225,7 @@ models:
       mathematics.
     supported_boards: ["ventunoq"]
     bricks:
-      - id: "arduino:large_language_model"
+      - id: "arduino:llm"
     metadata:
       source: "qualcomm-ai-hub"
       source-model-id: "qwen2_5_7b_instruct"
@@ -1239,7 +1239,7 @@ models:
       mathematics.
     supported_boards: ["ventunoq"]
     bricks:
-      - id: "arduino:large_language_model"
+      - id: "arduino:llm"
     metadata:
       source: "qualcomm-ai-hub"
       source-model-id: "qwen2_5_3b_instruct"
@@ -1252,7 +1252,7 @@ models:
       parameters, excelling in language understanding, generation, coding, and mathematics.
     supported_boards: ["ventunoq"]
     bricks:
-      - id: "arduino:large_language_model"
+      - id: "arduino:llm"
     metadata:
       source: "qualcomm-ai-hub"
       source-model-id: "qwen3_4b"
@@ -1266,7 +1266,7 @@ models:
       mathematics.
     supported_boards: ["ventunoq"]
     bricks:
-      - id: "arduino:large_language_model"
+      - id: "arduino:llm"
     metadata:
       source: "qualcomm-ai-hub"
       source-model-id: "qwen3_vl_4b"
