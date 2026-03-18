@@ -1,0 +1,3 @@
+# This file contains model-specific dependencies and can be overridden in two ways:
+# - When running a generic AIHub model, a requirements.txt can be mounted over this file;
+# - When running a child container, it can override this file by providing its own.
