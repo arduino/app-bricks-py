@@ -3,6 +3,6 @@
 # SPDX-License-Identifier: MPL-2.0
 
 from langchain_core.tools import tool
-from .local_llm import LocalLLM
+from .local_llm import LargeLanguageModel
 
-__all__ = ["LocalLLM", "tool"]
+__all__ = ["LargeLanguageModel", "tool"]

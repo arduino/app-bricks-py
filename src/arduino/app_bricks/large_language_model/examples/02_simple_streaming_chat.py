@@ -5,10 +5,10 @@
 # EXAMPLE_NAME = "Chat with a Local LLM"
 # EXAMPLE_REQUIRES = "Models must be downloaded and available locally."
 
-from arduino.app_bricks.local_llm import LocalLLM
+from arduino.app_bricks.large_language_model import LargeLanguageModel
 from arduino.app_utils import App
 
-llm = LocalLLM(model="qwen3:4b", base_url="http://localhost:11434/v1", max_tokens=512)
+llm = LargeLanguageModel(max_tokens=512)
 
 
 def ask_prompt():
