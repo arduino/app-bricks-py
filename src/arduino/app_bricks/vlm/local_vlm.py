@@ -4,9 +4,10 @@
 
 from arduino.app_bricks.llm import LargeLanguageModel
 from arduino.app_utils import Logger, brick
-from arduino.app_internal.core import get_brick_config
+from arduino.app_internal.core import get_brick_config, get_brick_configured_model
 
 import os
+import openai
 from typing import Iterator, List, Optional, Any, Callable
 
 logger = Logger("VisionLanguageModel")
@@ -26,7 +27,7 @@ class VisionLanguageModel(LargeLanguageModel):
         api_key: str = os.getenv("LOCAL_LLM_API_KEY", "api_key"),
         system_prompt: str = "",
         temperature: Optional[float] = 0.7,
-        max_tokens: int = 512,
+        max_tokens: int = 256,
         timeout: int = 30,
         tools: List[Callable[..., Any]] = None,
         model: str = None,
@@ -45,7 +46,7 @@ class VisionLanguageModel(LargeLanguageModel):
                 Higher values make output more random/creative; lower values make it more
                 deterministic. Defaults to 0.7.
             max_tokens (int): The maximum number of tokens to generate in the response.
-                Defaults to 512.
+                Defaults to 256.
             timeout (int): The maximum duration in seconds to wait for a response before
                 timing out. Defaults to 30.
             tools (List[Callable[..., Any]]): A list of callable tool functions to register. Defaults to None.
@@ -57,7 +58,7 @@ class VisionLanguageModel(LargeLanguageModel):
 
         if model is None:
             brick_config = get_brick_config(self.__class__)
-            app_configured_model = self._extract_app_configured_model(brick_config)
+            app_configured_model = get_brick_configured_model(brick_config.get("id") if brick_config else None)
             if app_configured_model:
                 logger.info(f"Using model '{app_configured_model}' from app configuration.")
                 model = app_configured_model
@@ -77,7 +78,7 @@ class VisionLanguageModel(LargeLanguageModel):
         )
         super().with_memory(0)  # Initialize without memory enabled (0 means no history)
 
-    def chat(self, message: str, images: List[str | bytes]) -> str:
+    def chat(self, message: str, images: List[str | bytes] = None) -> str:
         """Sends a message to the AI and blocks until the complete response is received.
 
         This method automatically manages conversation history if memory is enabled.
@@ -92,9 +93,20 @@ class VisionLanguageModel(LargeLanguageModel):
         Raises:
             RuntimeError: If the internal chain is not initialized or if the API request fails.
         """
-        return super().chat(message=message, images=images)
+        try:
+            return super()._chat_invoke(message=message, images=images)
+        except openai.BadRequestError as e:
+            error_msg = f"Bad request: {e.message if hasattr(e, 'message') else str(e)}"
+            logger.error(error_msg)
+            if hasattr(e, "response") and hasattr(e.response, "json"):
+                try:
+                    error_detail = e.response.json()
+                    logger.error(f"Error details: {error_detail}")
+                except Exception:
+                    pass
+            raise RuntimeError(error_msg) from e
 
-    def chat_stream(self, message: str, images: List[str | bytes]) -> Iterator[str]:
+    def chat_stream(self, message: str, images: List[str | bytes] = None) -> Iterator[str]:
         """Sends a message to the AI and yields response tokens as they are generated.
 
         This allows for processing or displaying the response in real-time (streaming).
@@ -111,7 +123,18 @@ class VisionLanguageModel(LargeLanguageModel):
             RuntimeError: If the internal chain is not initialized or if the API request fails.
             AlreadyGenerating: If a streaming session is already active.
         """
-        return super().chat_stream(message=message, images=images)
+        try:
+            return super()._chat_stream_invoke(message=message, images=images)
+        except openai.BadRequestError as e:
+            error_msg = f"Bad request: {e.message if hasattr(e, 'message') else str(e)}"
+            logger.error(error_msg)
+            if hasattr(e, "response") and hasattr(e.response, "json"):
+                try:
+                    error_detail = e.response.json()
+                    logger.error(f"Error details: {error_detail}")
+                except Exception:
+                    pass
+            raise RuntimeError(error_msg) from e
 
     def stop_stream(self) -> None:
         """Signals the active streaming generation to stop.
