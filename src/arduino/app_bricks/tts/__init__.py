@@ -2,6 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-from .local_tts import LocalTTS
+from .local_tts import TextToSpeech
 
-__all__ = ["LocalTTS"]
+__all__ = ["TextToSpeech"]

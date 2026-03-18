@@ -1,5 +1,5 @@
-id: arduino:local_tts
-name: Local Text-to-Speech
+id: arduino:tts
+name: Text-to-Speech (TTS)
 description: Text-to-Speech brick for offline speech synthesis
 category: audio
 requires_model: true

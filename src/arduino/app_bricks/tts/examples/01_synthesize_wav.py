@@ -4,9 +4,9 @@
 
 # EXAMPLE_NAME = "Synthesize speech audio from text and save as WAV file"
 
-from arduino.app_bricks.local_tts import LocalTTS
+from arduino.app_bricks.tts import TextToSpeech
 
-tts = LocalTTS()
+tts = TextToSpeech()
 
 wav = tts.synthesize_wav("Hello, Arduino world!")
 with open("synthesized_speech.wav", "wb") as f:
