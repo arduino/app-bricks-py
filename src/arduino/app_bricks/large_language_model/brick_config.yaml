@@ -1,6 +1,6 @@
-id: arduino:local_llm
-name: Local LLM
-description: "Local LLM Brick enables seamless integration with locally hosted Large Language Models (LLMs) for advanced AI capabilities in your Arduino projects."
+id: arduino:large_language_model
+name: Large Language Model (LLM)
+description: "Large Language Model (LLM) Brick enables seamless integration with locally hosted LLMs for advanced AI capabilities in your Arduino projects."
 requires_container: true
 requires_model: true
 model: genie:qwen2.5-7b
