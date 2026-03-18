@@ -75,7 +75,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/arm64
           cache-from: ${{ github.event.inputs.skip_cache == 'false' && format('type=registry,ref={0}:buildcache', matrix.image) || '' }}
-          cache-to: ${{ github.event.inputs.skip_cache == 'false' && format('type=registry,ref={0}:buildcache,mode=max', matrix.image) || '' }}
+          cache-to: type=registry,ref=${{ matrix.image }}:buildcache,mode=max
           provenance: false
           build-args: |
             REGISTRY=${{ env.DEV_REGISTRY_PATH }}
@@ -143,7 +143,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/arm64
           cache-from: ${{ github.event.inputs.skip_cache == 'false' && format('type=registry,ref={0}:buildcache', matrix.image) || '' }}
-          cache-to: ${{ github.event.inputs.skip_cache == 'false' && format('type=registry,ref={0}:buildcache,mode=max', matrix.image) || '' }}
+          cache-to: type=registry,ref=${{ matrix.image }}:buildcache,mode=max
           provenance: false
           build-args: |
             REGISTRY=${{ env.DEV_REGISTRY_PATH }}
