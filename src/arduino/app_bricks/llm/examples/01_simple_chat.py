@@ -5,7 +5,7 @@
 # EXAMPLE_NAME = "Chat with a Local LLM"
 # EXAMPLE_REQUIRES = "Models must be downloaded and available locally."
 
-from arduino.app_bricks.large_language_model import LargeLanguageModel
+from arduino.app_bricks.llm import LargeLanguageModel
 from arduino.app_utils import App
 
 llm = LargeLanguageModel()

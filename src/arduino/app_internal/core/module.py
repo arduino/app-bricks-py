@@ -23,6 +23,12 @@ def get_app_config() -> Optional[Dict]:
             config_path = None
 
     if config_path is None:
+        app_root_dir = "/app"
+        config_path = os.path.join(app_root_dir, application_config_file_name)
+        if not os.path.exists(config_path):
+            config_path = None
+
+    if config_path is None:
         main_module = sys.modules["__main__"]
         if hasattr(main_module, "__file__"):
             main_path = os.path.abspath(main_module.__file__)
@@ -32,10 +38,20 @@ def get_app_config() -> Optional[Dict]:
                 return None
 
     if config_path and os.path.exists(config_path):
-        with open(config_path) as f:
+        with open(config_path, encoding="utf-8") as f:
             config_content = yaml.safe_load(f)
             return config_content
 
+    return None
+
+
+def get_brick_config(cls) -> Optional[Dict]:
+    """Gets resolved brick_config.yaml file."""
+    config_file = get_brick_linked_resource_file(cls, config_file_name)
+    if config_file and os.path.exists(config_file):
+        with open(config_file, encoding="utf-8") as f:
+            config_content = yaml.safe_load(f)
+            return config_content
     return None
 
 
@@ -53,7 +69,7 @@ def load_brick_compose_file(cls) -> Optional[Dict]:
     """Loads the brick_compose.yaml file and returns its content."""
     pathfile = get_brick_compose_file(cls)
     if pathfile:
-        with open(pathfile) as f:
+        with open(pathfile, encoding="utf-8") as f:
             compose_content = yaml.safe_load(f)
             return compose_content
     else:
