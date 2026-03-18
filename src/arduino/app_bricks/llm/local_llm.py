@@ -29,12 +29,12 @@ class LargeLanguageModel(CloudLLM):
     def __init__(
         self,
         api_key: str = os.getenv("LOCAL_LLM_API_KEY", "api_key"),
-        model: str = "genie:qwen2.5-3b",
         system_prompt: str = "",
         temperature: Optional[float] = 0.7,
         max_tokens: int = 512,
         timeout: int = 30,
         tools: List[Callable[..., Any]] = None,
+        model: str = None,
         **kwargs,
     ):
         """Initializes the LargeLanguageModel brick with the specified provider and configuration.
@@ -43,6 +43,7 @@ class LargeLanguageModel(CloudLLM):
             api_key (str): The API access key for the target LLM service. Defaults to the
                 'LOCAL_LLM_API_KEY' environment variable.
             model (str): The specific model name or identifier to use (e.g., "genie:qwen2.5-3b").
+                If not provided, model will be determined from app configuration or default brick configuration.
             system_prompt (str): A system-level instruction that defines the AI's persona
                 and constraints (e.g., "You are a helpful assistant"). Defaults to empty.
             temperature (Optional[float]): The sampling temperature between 0.0 and 1.0.
@@ -66,10 +67,17 @@ class LargeLanguageModel(CloudLLM):
         if not host:
             raise RuntimeError("Host address resolution failed for local LLM runner.")
 
-        app_configured_model = self._extract_app_configured_model()
-        if app_configured_model:
-            logger.info(f"Using model '{app_configured_model}' from app configuration.")
-            model = app_configured_model
+        if model is None:
+            brick_config = get_brick_config(self.__class__)
+            app_configured_model = self._extract_app_configured_model(brick_config)
+            if app_configured_model:
+                logger.info(f"Using model '{app_configured_model}' from app configuration.")
+                model = app_configured_model
+            else:
+                model = brick_config.get("model", None)
+                logger.debug(f"No model specified in app configuration. Using default model '{model}' from brick configuration.")
+        else:
+            logger.info(f"Using model '{model}' configured from brick initialization.")
 
         if "base_url" in kwargs:
             logger.warning("Overriding provided 'base_url' argument with resolved local address.")
@@ -119,8 +127,7 @@ class LargeLanguageModel(CloudLLM):
                 + " Please download the model or configure it correctly."
             )
 
-    def _extract_app_configured_model(self) -> Optional[str]:
-        brick_config = get_brick_config(self.__class__)
+    def _extract_app_configured_model(self, brick_config: dict) -> Optional[str]:
         app_cfg = get_app_config()
         if brick_config and "id" in brick_config:
             brick_id = brick_config["id"]
@@ -153,7 +160,7 @@ class LargeLanguageModel(CloudLLM):
             logger.warning(f"Failed to list models: {e}")
             return []
 
-    def with_memory(self, max_messages: int = DEFAULT_MEMORY) -> "CloudLLM":
+    def with_memory(self, max_messages: int = DEFAULT_MEMORY) -> "LargeLanguageModel":
         """Enables conversational memory for this instance.
 
         Configures the Brick to retain a window of previous messages, allowing the
@@ -165,7 +172,7 @@ class LargeLanguageModel(CloudLLM):
                 Defaults to 10.
 
         Returns:
-            CloudLLM: The current instance, allowing for method chaining.
+            LargeLanguageModel: The current instance, allowing for method chaining.
         """
         return super().with_memory(max_messages=max_messages)
 
