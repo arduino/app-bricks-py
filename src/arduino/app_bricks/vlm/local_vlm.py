@@ -60,11 +60,11 @@ class VisionLanguageModel(LargeLanguageModel):
             brick_config = get_brick_config(self.__class__)
             app_configured_model = get_brick_configured_model(brick_config.get("id") if brick_config else None)
             if app_configured_model:
-                logger.info(f"Using model '{app_configured_model}' from app configuration.")
+                logger.debug(f"Using model: '{app_configured_model}'.")
                 model = app_configured_model
             else:
                 model = brick_config.get("model", None)
-                logger.debug(f"No model specified in app configuration. Using default model '{model}' from brick configuration.")
+                logger.debug(f"Using default model: '{model}'.")
 
         super().__init__(
             model=model,
@@ -95,16 +95,8 @@ class VisionLanguageModel(LargeLanguageModel):
         """
         try:
             return super()._chat_invoke(message=message, images=images)
-        except openai.BadRequestError as e:
-            error_msg = f"Bad request: {e.message if hasattr(e, 'message') else str(e)}"
-            logger.error(error_msg)
-            if hasattr(e, "response") and hasattr(e.response, "json"):
-                try:
-                    error_detail = e.response.json()
-                    logger.error(f"Error details: {error_detail}")
-                except Exception:
-                    pass
-            raise RuntimeError(error_msg) from e
+        except (openai.BadRequestError, openai.APIError) as e:
+            self._handle_api_error(e)
 
     def chat_stream(self, message: str, images: List[str | bytes] = None) -> Iterator[str]:
         """Sends a message to the AI and yields response tokens as they are generated.
@@ -125,16 +117,8 @@ class VisionLanguageModel(LargeLanguageModel):
         """
         try:
             return super()._chat_stream_invoke(message=message, images=images)
-        except openai.BadRequestError as e:
-            error_msg = f"Bad request: {e.message if hasattr(e, 'message') else str(e)}"
-            logger.error(error_msg)
-            if hasattr(e, "response") and hasattr(e.response, "json"):
-                try:
-                    error_detail = e.response.json()
-                    logger.error(f"Error details: {error_detail}")
-                except Exception:
-                    pass
-            raise RuntimeError(error_msg) from e
+        except (openai.BadRequestError, openai.APIError) as e:
+            self._handle_api_error(e)
 
     def stop_stream(self) -> None:
         """Signals the active streaming generation to stop.

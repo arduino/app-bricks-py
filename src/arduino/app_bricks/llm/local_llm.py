@@ -8,8 +8,7 @@ from arduino.app_utils import Logger, brick
 from arduino.app_internal.core import resolve_address, get_brick_config, get_brick_configured_model
 
 import os
-import openai
-from openai import OpenAI
+from openai import OpenAI, APIError, BadRequestError
 from typing import Iterator, List, Optional, Any, Callable
 
 logger = Logger("LargeLanguageModel")
@@ -73,13 +72,13 @@ class LargeLanguageModel(CloudLLM):
             brick_config = get_brick_config(self.__class__)
             app_configured_model = get_brick_configured_model(brick_config.get("id") if brick_config else None)
             if app_configured_model:
-                logger.info(f"Using model '{app_configured_model}' from app configuration.")
+                logger.debug(f"Using model: '{app_configured_model}'.")
                 model = app_configured_model
             else:
                 model = brick_config.get("model", None)
-                logger.debug(f"No model specified in app configuration. Using default model '{model}' from brick configuration.")
+                logger.debug(f"Using default model: '{model}'.")
         else:
-            logger.info(f"Using model '{model}' configured from brick initialization.")
+            logger.debug(f"Forcing use of model: '{model}'.")
 
         if "base_url" in kwargs:
             base_url = kwargs.pop("base_url")
@@ -105,7 +104,7 @@ class LargeLanguageModel(CloudLLM):
         if model.startswith(self.GENIE_MODEL) or model.startswith(self.LLAMACPP_MODEL) or model.startswith(self.OLLAMA_MODEL):
             model = model.split(":")[-1]  # Extract model name without provider prefix
 
-        logger.info(f"Initializing model '{model}' at {base_url}")
+        logger.info(f"Initializing brick with model '{model}' at {base_url}")
 
         # Force OpenAI provider for local LLMs to force ChatCompletion APIs
         plain_model_name = model
@@ -126,7 +125,7 @@ class LargeLanguageModel(CloudLLM):
         available_models = self.list_models()
         if plain_model_name not in available_models:
             logger.error(
-                f"Configured model '{plain_model_name}' not found among locally available models: {available_models}."
+                f"Model '{plain_model_name}' not found among locally available models: {available_models}."
                 + " Please download the model or configure it correctly."
             )
 
@@ -165,6 +164,36 @@ class LargeLanguageModel(CloudLLM):
         """
         return super().with_memory(max_messages=max_messages)
 
+    def _handle_api_error(self, ilogger: Logger, e: Exception) -> None:
+        """Handles OpenAI API errors by logging details and raising RuntimeError.
+
+        Args:
+            ilogger (Logger): The logger instance to use for logging errors.
+            e: The exception to handle (BadRequestError or APIError)
+
+        Raises:
+            RuntimeError: Always raises with detailed error message and chained original exception
+        """
+        if isinstance(e, BadRequestError):
+            error_msg = f"Bad request: {e.message if hasattr(e, 'message') else str(e)}"
+            ilogger.error(error_msg)
+            if hasattr(e, "response") and hasattr(e.response, "json"):
+                try:
+                    error_detail = e.response.json()
+                    ilogger.error(f"Error details: {error_detail}")
+                except Exception:
+                    pass
+            raise RuntimeError(error_msg) from e
+        elif isinstance(e, APIError):
+            if e.code == 503:
+                error_msg = f"Cannot load model due to a potential memory exhaustion. message={e.message if hasattr(e, 'message') else str(e)}"
+            else:
+                error_msg = f"Error: status_code={e.code}, message={e.message if hasattr(e, 'message') else str(e)}"
+            ilogger.error(error_msg)
+            raise RuntimeError(error_msg) from e
+        else:
+            raise
+
     def chat(self, message: str, images: List[str | bytes] = None) -> str:
         """Sends a message to the AI and blocks until the complete response is received.
 
@@ -182,16 +211,8 @@ class LargeLanguageModel(CloudLLM):
         """
         try:
             return super()._chat_invoke(message=message, images=images)
-        except openai.BadRequestError as e:
-            error_msg = f"Bad request: {e.message if hasattr(e, 'message') else str(e)}"
-            logger.error(error_msg)
-            if hasattr(e, "response") and hasattr(e.response, "json"):
-                try:
-                    error_detail = e.response.json()
-                    logger.error(f"Error details: {error_detail}")
-                except Exception:
-                    pass
-            raise RuntimeError(error_msg) from e
+        except (BadRequestError, APIError) as e:
+            self._handle_api_error(logger, e)
 
     def chat_stream(self, message: str, images: List[str | bytes] = None) -> Iterator[str]:
         """Sends a message to the AI and yields response tokens as they are generated.
@@ -212,16 +233,8 @@ class LargeLanguageModel(CloudLLM):
         """
         try:
             return super()._chat_stream_invoke(message=message, images=images)
-        except openai.BadRequestError as e:
-            error_msg = f"Bad request: {e.message if hasattr(e, 'message') else str(e)}"
-            logger.error(error_msg)
-            if hasattr(e, "response") and hasattr(e.response, "json"):
-                try:
-                    error_detail = e.response.json()
-                    logger.error(f"Error details: {error_detail}")
-                except Exception:
-                    pass
-            raise RuntimeError(error_msg) from e
+        except (BadRequestError, APIError) as e:
+            self._handle_api_error(logger, e)
 
     def stop_stream(self) -> None:
         """Signals the active streaming generation to stop.
