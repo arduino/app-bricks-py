@@ -1266,7 +1266,7 @@ models:
       mathematics.
     supported_boards: ["ventunoq"]
     bricks:
-      - id: "arduino:llm"
+      - id: "arduino:vlm"
     metadata:
       source: "qualcomm-ai-hub"
       source-model-id: "qwen3_vl_4b"
