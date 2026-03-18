@@ -7,7 +7,7 @@ from typing import List
 import numpy as np
 
 from utils.constants import *
-from utils.bbox_processing import box_xyxy_to_xywh, apply_directional_box_offset, compute_box_corners_with_rotation 
+from utils.bbox_processing import box_xyxy_to_xywh, apply_directional_box_offset, compute_box_corners_with_rotation
 from utils.image_processing import compute_vector_rotation
 
 
@@ -78,8 +78,8 @@ def compute_object_roi(
         # Copy to ensure we can safely mutate without affecting any shared backing arrays
         xc = selected_boxes_cwh[..., 0, 0].copy()
         yc = selected_boxes_cwh[..., 0, 1].copy()
-        w  = selected_boxes_cwh[..., 1, 0].copy()
-        h  = selected_boxes_cwh[..., 1, 1].copy()
+        w = selected_boxes_cwh[..., 1, 0].copy()
+        h = selected_boxes_cwh[..., 1, 1].copy()
 
         # Move the box to better center the object (in-place update of xc, yc expected)
         apply_directional_box_offset(
@@ -100,11 +100,8 @@ def compute_object_roi(
 
     return batched_selected_roi
 
-def preprocess_hand_x64(
-    pts: np.ndarray, 
-    handedness: np.ndarray, 
-    mirror: bool = False
-) -> np.ndarray:
+
+def preprocess_hand_x64(pts: np.ndarray, handedness: np.ndarray, mirror: bool = False) -> np.ndarray:
     """
     Normalize hand landmarks, flatten (63), and concatenate handedness (1) → x64.
 
@@ -159,13 +156,14 @@ def preprocess_hand_x64(
     x64 = np.concatenate([flat, handedness.reshape(-1, 1).astype(np.float32)], axis=1)
     return x64
 
+
 def split_into_singleton_arrays(arr):
     """
     Takes a numpy array of shape (n, x, y) and returns a list of n arrays,
     each with shape (1, x, y).
     """
     n = arr.shape[0]
-    return [arr[i:i+1] for i in range(n)]
+    return [arr[i : i + 1] for i in range(n)]
 
 
 def dequantize(values, zero_points, scales):

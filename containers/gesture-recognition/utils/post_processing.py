@@ -9,11 +9,7 @@ import numpy as np
 from utils.constants import *
 
 
-def decode_preds_from_anchors(
-    box_coords: np.ndarray, 
-    img_size: Tuple[int, int], 
-    anchors: np.ndarray
-) -> None:
+def decode_preds_from_anchors(box_coords: np.ndarray, img_size: Tuple[int, int], anchors: np.ndarray) -> None:
     """
     Decode predictions using the provided anchors.
 
@@ -48,11 +44,9 @@ def decode_preds_from_anchors(
         Values are in the same normalized space used by `box_coords` before decoding.
     """
     # Basic shape checks to mirror the PyTorch asserts
-    assert box_coords.shape[-1] == anchors.shape[-1] == 2, \
-        f"Last dim must be 2 for (x, y); got {box_coords.shape[-1]} and {anchors.shape[-1]}"
+    assert box_coords.shape[-1] == anchors.shape[-1] == 2, f"Last dim must be 2 for (x, y); got {box_coords.shape[-1]} and {anchors.shape[-1]}"
     # The coord axis is the second-to-last; must match for at least first two rows
-    assert box_coords.shape[-2] >= 2 and anchors.shape[-2] >= 2, \
-        "Need at least 2 rows (center and size) in both box_coords and anchors."
+    assert box_coords.shape[-2] >= 2 and anchors.shape[-2] >= 2, "Need at least 2 rows (center and size) in both box_coords and anchors."
 
     w_size, h_size = img_size
 

@@ -10,6 +10,7 @@ from typing import Callable
 import numpy as np
 
 import gi
+
 gi.require_version("Gst", "1.0")
 from gi.repository import Gst
 
@@ -84,10 +85,7 @@ class GStreamerInput(InputSource):
 
         self._appsink = self._pipeline.get_by_name("appsink")
         if not self._appsink:
-            raise RuntimeError(
-                "Could not find appsink element named 'appsink'. "
-                "Ensure your pipeline includes 'appsink name=appsink'."
-            )
+            raise RuntimeError("Could not find appsink element named 'appsink'. Ensure your pipeline includes 'appsink name=appsink'.")
         self._appsink.connect("new-sample", self._on_new_sample)
 
         logger.info("Starting GStreamer pipeline...")
@@ -135,19 +133,13 @@ class GStreamerInput(InputSource):
 
             if self._has_padding:
                 # The buffer has padding bytes at the end of each row
-                arr = np.frombuffer(
-                    mapinfo.data, dtype=np.uint8, count=h * self._rowstride
-                )
-                arr = np.lib.stride_tricks.as_strided(
-                    arr, shape=(h, w, 3), strides=(self._rowstride, 3, 1)
-                )
+                arr = np.frombuffer(mapinfo.data, dtype=np.uint8, count=h * self._rowstride)
+                arr = np.lib.stride_tricks.as_strided(arr, shape=(h, w, 3), strides=(self._rowstride, 3, 1))
             else:
                 # No padding, reshape directly
-                arr = np.frombuffer(
-                    mapinfo.data, dtype=np.uint8, count=h * w * 3
-                )
+                arr = np.frombuffer(mapinfo.data, dtype=np.uint8, count=h * w * 3)
                 arr = arr.reshape((h, w, 3))
-            
+
             arr = arr.copy()  # Ensure data is owned by numpy as it will be unmapped
         finally:
             buf.unmap(mapinfo)

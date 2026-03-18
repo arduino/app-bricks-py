@@ -103,9 +103,9 @@ jobs:
           - dockerfile: ./containers/ollama-runner/Dockerfile
             context: ./containers/ollama-runner
             image: ghcr.io/${{ github.repository_owner }}/app-bricks/ollama-models-runner
-          - dockerfile: ./containers/hand-gesture-tracking/Dockerfile
-            context: ./containers/hand-gesture-tracking
-            image: ghcr.io/${{ github.repository_owner }}/app-bricks/hand-gesture-tracking
+          - dockerfile: ./containers/gesture-recognition/Dockerfile
+            context: ./containers/gesture-recognition
+            image: ghcr.io/${{ github.repository_owner }}/app-bricks/gesture-recognition
 
     steps:
       - name: Checkout repository

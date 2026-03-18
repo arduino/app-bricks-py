@@ -95,8 +95,8 @@ class WebSocketOutput(OutputSink):
     async def _run_server(self):
         import logging
 
-        logging.getLogger('websockets').setLevel(logging.ERROR)
-        
+        logging.getLogger("websockets").setLevel(logging.ERROR)
+
         self._server = await websockets.serve(
             self._handler,
             self._host,
@@ -162,11 +162,9 @@ class WebSocketOutput(OutputSink):
 
         frame_b64 = base64.b64encode(jpeg.tobytes()).decode("ascii")
 
-        return json.dumps(
-            {
-                "frame": frame_b64,
-                "width": width,
-                "height": height,
-                "metadata": metadata,
-            }
-        )
+        return json.dumps({
+            "frame": frame_b64,
+            "width": width,
+            "height": height,
+            "metadata": metadata,
+        })

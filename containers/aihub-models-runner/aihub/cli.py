@@ -122,7 +122,8 @@ Examples:
     # Logging Options
     logging_group = parser.add_argument_group("Logging Options")
     logging_group.add_argument(
-        "--verbose", "-v",
+        "--verbose",
+        "-v",
         action="store_true",
         help="Enable verbose output (FPS tracking, connection events)",
     )

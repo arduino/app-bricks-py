@@ -97,8 +97,8 @@ class WebSocketInput(InputSource):
 
     async def _run_server(self):
         import logging
-        
-        logging.getLogger('websockets').setLevel(logging.ERROR)
+
+        logging.getLogger("websockets").setLevel(logging.ERROR)
 
         self._server = await websockets.serve(
             self._handler,

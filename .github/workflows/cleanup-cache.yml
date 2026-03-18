@@ -23,7 +23,7 @@ jobs:
           - ghcr.io/${{ github.repository_owner }}/app-bricks/ei-models-runner
           - ghcr.io/${{ github.repository_owner }}/app-bricks/llamacpp-models-runner
           - ghcr.io/${{ github.repository_owner }}/app-bricks/ollama-models-runner
-          - ghcr.io/${{ github.repository_owner }}/app-bricks/hand-gesture-tracking
+          - ghcr.io/${{ github.repository_owner }}/app-bricks/gesture-recognition
 
     steps:
       - name: Delete buildcache for branch ${{ github.event.ref }}

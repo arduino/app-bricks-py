@@ -88,8 +88,9 @@ class MJPEGOutput(OutputSink):
     def _run_server(self) -> None:
         """Run the Waitress server (called in background daemon thread)."""
         import logging
-        logging.getLogger('waitress').setLevel(logging.ERROR)
-        
+
+        logging.getLogger("waitress").setLevel(logging.ERROR)
+
         self._setup_routes()
 
         serve(

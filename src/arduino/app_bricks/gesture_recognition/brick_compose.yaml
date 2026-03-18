@@ -1,6 +1,6 @@
 services:
-  hand-gesture-tracking:
-    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/hand-gesture-tracking:dev-next
+  gesture_recognition:
+    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/gesture-recognition:dev-next
     privileged: true # TEMP: can't use uid 1000 on ubuntu, it's already taken
     logging:
       driver: "json-file"
@@ -11,7 +11,7 @@ services:
       - ${BIND_ADDRESS:-0.0.0.0}:5002:5002
     user: 0:0 # TEMP: prevent uid 1000 from being forced
     healthcheck:
-      test: [ "CMD-SHELL", "nc -zv hand-gesture-tracking 5002 || exit 1" ]
+      test: [ "CMD-SHELL", "nc -zv gesture_recognition 5002 || exit 1" ]
       interval: 1s
       timeout: 2s
       retries: 30

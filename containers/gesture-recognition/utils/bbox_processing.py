@@ -37,6 +37,7 @@ def _compute_iou(box: np.ndarray, boxes: np.ndarray) -> np.ndarray:
 
     return intersection / np.maximum(union, 1e-10)
 
+
 def _nms(boxes: np.ndarray, scores: np.ndarray, iou_threshold: float) -> np.ndarray:
     """
     Standard NMS on a single set of boxes.
@@ -73,6 +74,7 @@ def _nms(boxes: np.ndarray, scores: np.ndarray, iou_threshold: float) -> np.ndar
         order = remaining[mask]
 
     return np.array(keep, dtype=np.int64)
+
 
 def _batched_nms_numpy(
     boxes: np.ndarray,
@@ -168,29 +170,21 @@ def batched_nms(
     scores_out: list[np.ndarray] = []
     boxes_out: list[np.ndarray] = []
     class_indices_out: list[np.ndarray] = []
-    args_out: list[list[np.ndarray]] = (
-        [[] for _ in gather_additional_args] if gather_additional_args else []
-    )
+    args_out: list[list[np.ndarray]] = [[] for _ in gather_additional_args] if gather_additional_args else []
 
     for batch_idx in range(boxes.shape[0]):
         # Index to current batch
         batch_scores = scores[batch_idx]
         batch_boxes = boxes[batch_idx]
         batch_args = [arg[batch_idx] for arg in gather_additional_args or []]
-        batch_class_indices = (
-            class_indices[batch_idx] if class_indices is not None else None
-        )
+        batch_class_indices = class_indices[batch_idx] if class_indices is not None else None
 
         # Clip outputs to valid scores
         if score_threshold is not None:
             scores_idx = np.where(scores[batch_idx] >= score_threshold)[0]
             batch_scores = batch_scores[scores_idx]
             batch_boxes = batch_boxes[scores_idx]
-            batch_class_indices = (
-                batch_class_indices[scores_idx]
-                if batch_class_indices is not None
-                else None
-            )
+            batch_class_indices = batch_class_indices[scores_idx] if batch_class_indices is not None else None
             batch_args = [arg[scores_idx] for arg in batch_args or []]
 
         if len(batch_scores) > 0:
@@ -210,11 +204,7 @@ def batched_nms(
             # Apply NMS indices
             batch_boxes = batch_boxes[nms_indices]
             batch_scores = batch_scores[nms_indices]
-            batch_class_indices = (
-                batch_class_indices[nms_indices]
-                if batch_class_indices is not None
-                else None
-            )
+            batch_class_indices = batch_class_indices[nms_indices] if batch_class_indices is not None else None
             batch_args = [arg[nms_indices] for arg in batch_args]
 
         # Append to outputs
@@ -282,6 +272,7 @@ def box_xywh_to_xyxy(box_cwh: np.ndarray, flat_boxes: bool = False) -> np.ndarra
 
     return out
 
+
 def box_xyxy_to_xywh(box_xy: np.ndarray) -> np.ndarray:
     """
     Converts bounding box coordinates from (x0, y0, x1, y1)
@@ -303,7 +294,7 @@ def box_xyxy_to_xywh(box_xy: np.ndarray) -> np.ndarray:
             [1, :] = (w, h)
     """
     box_xy = np.asarray(box_xy)
-    out = box_xy.copy()   # Equivalent to torch.clone
+    out = box_xy.copy()  # Equivalent to torch.clone
 
     x0 = box_xy[..., 0, 0]
     y0 = box_xy[..., 0, 1]
@@ -372,6 +363,7 @@ def apply_directional_box_offset(
     xc += dx
     yc += dy
 
+
 def compute_box_corners_with_rotation(
     xc: np.ndarray,
     yc: np.ndarray,
@@ -405,16 +397,15 @@ def compute_box_corners_with_rotation(
     # Ensure arrays
     xc = np.asarray(xc)
     yc = np.asarray(yc)
-    w  = np.asarray(w)
-    h  = np.asarray(h)
+    w = np.asarray(w)
+    h = np.asarray(h)
     theta = np.asarray(theta)
 
     batch_size = xc.shape[0]
 
     # Construct unit square in a fixed corner order: TL, BL, TR, BR
     # Shape before repeat: [2, 4], where rows are (x; y)
-    base = np.array([[-1, -1,  1,  1],
-                     [-1,  1, -1,  1]], dtype=np.float32)
+    base = np.array([[-1, -1, 1, 1], [-1, 1, -1, 1]], dtype=np.float32)
 
     # Repeat across batch -> [B, 2, 4]
     points = np.broadcast_to(base, (batch_size, *base.shape)).copy()
@@ -429,7 +420,7 @@ def compute_box_corners_with_rotation(
     R = np.stack(
         (
             np.stack((cos_t, -sin_t), axis=1),
-            np.stack((sin_t,  cos_t), axis=1),
+            np.stack((sin_t, cos_t), axis=1),
         ),
         axis=1,
     )  # [B, 2, 2]
@@ -444,13 +435,11 @@ def compute_box_corners_with_rotation(
     # Return as [B, 4, 2] with last dim = (x, y)
     return np.swapaxes(points, -1, -2)  # [B, 4, 2]
 
-def compute_box_affine_crop_resize_matrix(
-    box_corners: np.ndarray, 
-    output_image_size: Tuple[int, int]
-) -> List[np.ndarray]:
+
+def compute_box_affine_crop_resize_matrix(box_corners: np.ndarray, output_image_size: Tuple[int, int]) -> List[np.ndarray]:
     """
     Compute the affine transform matrices required to crop, rescale, and pad the
-    rotated box defined by the input corners to fit into an output image size 
+    rotated box defined by the input corners to fit into an output image size
     without warping.
 
     Parameters
@@ -463,7 +452,7 @@ def compute_box_affine_crop_resize_matrix(
         If K > 3, only the first 3 corners are used (TL, BL, TR), matching the original logic.
 
     output_image_size : Tuple[int, int]
-        Output (width, height) to which the box is mapped. 
+        Output (width, height) to which the box is mapped.
         Note: This function expects a tuple in the order (W, H).
 
     Returns
@@ -478,25 +467,16 @@ def compute_box_affine_crop_resize_matrix(
     # top-left -> (0, 0)
     # bottom-left -> (0, H-1)
     # top-right -> (W-1, 0)
-    network_input_points = np.array(
-        [[0, 0],
-         [0, out_h - 1],
-         [out_w - 1, 0]],
-        dtype=np.float32
-    )
+    network_input_points = np.array([[0, 0], [0, out_h - 1], [out_w - 1, 0]], dtype=np.float32)
 
     # Ensure numpy array
     box_corners = np.asarray(box_corners)
 
     # Validate minimal shape
     if box_corners.ndim != 3 or box_corners.shape[-1] != 2:
-        raise ValueError(
-            f"`box_corners` must have shape [B, K, 2]; got {box_corners.shape}"
-        )
+        raise ValueError(f"`box_corners` must have shape [B, K, 2]; got {box_corners.shape}")
     if box_corners.shape[1] < 3:
-        raise ValueError(
-            f"`box_corners` must provide at least 3 corners per item; got K={box_corners.shape[1]}"
-        )
+        raise ValueError(f"`box_corners` must provide at least 3 corners per item; got K={box_corners.shape[1]}")
 
     affines: List[np.ndarray] = []
     B = box_corners.shape[0]

@@ -24,11 +24,7 @@ from utils.image_processing import (
     apply_affine_to_coordinates,
     apply_batched_affines_to_frame,
 )
-from utils.bbox_processing import (
-    box_xywh_to_xyxy,
-    batched_nms,
-    compute_box_affine_crop_resize_matrix
-)
+from utils.bbox_processing import box_xywh_to_xyxy, batched_nms, compute_box_affine_crop_resize_matrix
 from utils.post_processing import decode_preds_from_anchors
 from utils.model_io_processing import (
     compute_object_roi,
@@ -48,13 +44,9 @@ landmark_detector = Interpreter(
     "models/mediapipe_hand_gesture_w8a8_HandLandmarkDetector.tflite",
     experimental_delegates=load_qnn_delegate(),
 )
-gesture_classifier = Interpreter(
-    "models/mediapipe_hand_gesture_float_CannedGestureClassifier.tflite"
-)
+gesture_classifier = Interpreter("models/mediapipe_hand_gesture_float_CannedGestureClassifier.tflite")
 anchor_detector = np.load("models/anchors_palm.npy").astype(np.float32)
-anchor_detector = anchor_detector.reshape(
-    [*list(anchor_detector.shape)[:-1], -1, 2]
-)
+anchor_detector = anchor_detector.reshape([*list(anchor_detector.shape)[:-1], -1, 2])
 
 hand_detector.allocate_tensors()
 landmark_detector.allocate_tensors()
@@ -120,9 +112,7 @@ def inference_callback(rgb_frame: np.ndarray) -> tuple[np.ndarray, dict]:
     decode_preds_from_anchors(box_coords, (256, 256), anchor_detector)
     box_coords = box_xywh_to_xyxy(box_coords)
 
-    flattened_box_coords = box_coords.reshape(
-        [*list(box_coords.shape)[:-2], -1]
-    )
+    flattened_box_coords = box_coords.reshape([*list(box_coords.shape)[:-2], -1])
 
     # Run non maximum suppression
     batched_selected_coords, _ = batched_nms(
@@ -141,13 +131,9 @@ def inference_callback(rgb_frame: np.ndarray) -> tuple[np.ndarray, dict]:
             boxes_list = []
             kps_list = []
             for j in range(len(selected_coords)):
-                selected_coords_ = selected_coords[j : j + 1].reshape(
-                    [*list(selected_coords[j : j + 1].shape)[:-1], -1, 2]
-                )
+                selected_coords_ = selected_coords[j : j + 1].reshape([*list(selected_coords[j : j + 1].shape)[:-1], -1, 2])
 
-                denormalize_coordinates(
-                    selected_coords_, (INPUT_WIDTH, INPUT_HEIGHT), scale, pad
-                )
+                denormalize_coordinates(selected_coords_, (INPUT_WIDTH, INPUT_HEIGHT), scale, pad)
 
                 boxes_list.append(selected_coords_[:, :2])
                 kps_list.append(selected_coords_[:, 2:])
@@ -176,40 +162,28 @@ def inference_callback(rgb_frame: np.ndarray) -> tuple[np.ndarray, dict]:
         if roi_4corners.size == 0:
             continue
 
-        affines = compute_box_affine_crop_resize_matrix(
-            roi_4corners[:, :3], (224, 224)
-        )
+        affines = compute_box_affine_crop_resize_matrix(roi_4corners[:, :3], (224, 224))
         # Create input images by applying the affine transforms
-        keypoint_net_inputs = apply_batched_affines_to_frame(
-            rgb_frame, affines, (224, 224)
-        ).astype(np.uint8, copy=False)
+        keypoint_net_inputs = apply_batched_affines_to_frame(rgb_frame, affines, (224, 224)).astype(np.uint8, copy=False)
 
-        landmark_detector.set_tensor(
-            landmark_input[0]["index"], keypoint_net_inputs
-        )
+        landmark_detector.set_tensor(landmark_input[0]["index"], keypoint_net_inputs)
 
         # Compute landmarks
         landmark_detector.invoke()
 
         landmarks = dequantize(
             landmark_detector.get_tensor(landmark_output[0]["index"]),
-            zero_points=landmark_output[0]["quantization_parameters"][
-                "zero_points"
-            ],
+            zero_points=landmark_output[0]["quantization_parameters"]["zero_points"],
             scales=landmark_output[0]["quantization_parameters"]["scales"],
         ).reshape(1, 21, 3)
         ld_scores = dequantize(
             landmark_detector.get_tensor(landmark_output[1]["index"]),
-            zero_points=landmark_output[1]["quantization_parameters"][
-                "zero_points"
-            ],
+            zero_points=landmark_output[1]["quantization_parameters"]["zero_points"],
             scales=landmark_output[1]["quantization_parameters"]["scales"],
         )
         lr = dequantize(
             landmark_detector.get_tensor(landmark_output[2]["index"]),
-            zero_points=landmark_output[2]["quantization_parameters"][
-                "zero_points"
-            ],
+            zero_points=landmark_output[2]["quantization_parameters"]["zero_points"],
             scales=landmark_output[2]["quantization_parameters"]["scales"],
         )
 
@@ -221,12 +195,8 @@ def inference_callback(rgb_frame: np.ndarray) -> tuple[np.ndarray, dict]:
             # Exclude landmarks that don't meet the appropriate score threshold
             if ld_scores[ld_batch_idx] >= MIN_LANDMARK_SCORE:
                 # Apply the inverse of affine transform to landmark coordinates
-                inverted_affine = cv2.invertAffineTransform(
-                    affines[ld_batch_idx]
-                ).astype(np.float32)
-                landmarks[ld_batch_idx][:, :2] = apply_affine_to_coordinates(
-                    landmarks[ld_batch_idx][:, :2], inverted_affine
-                )
+                inverted_affine = cv2.invertAffineTransform(affines[ld_batch_idx]).astype(np.float32)
+                landmarks[ld_batch_idx][:, :2] = apply_affine_to_coordinates(landmarks[ld_batch_idx][:, :2], inverted_affine)
 
                 # Add the predicted landmarks to our list
                 all_landmarks.append(landmarks[ld_batch_idx])
@@ -243,19 +213,13 @@ def inference_callback(rgb_frame: np.ndarray) -> tuple[np.ndarray, dict]:
 
                 gesture_classifier.invoke()
 
-                score = gesture_classifier.get_tensor(
-                    classifier_output[0]["index"]
-                )
+                score = gesture_classifier.get_tensor(classifier_output[0]["index"])
                 gesture_id = np.argmax(score.flatten())
                 gesture_label.append(GESTURE_LABELS[gesture_id])
                 gesture_confidence.append(float(np.max(score.flatten())))
 
         # Add this batch of landmarks to the output list
-        batched_selected_landmarks.append(
-            np.stack(all_landmarks, axis=0)
-            if all_landmarks
-            else np.empty(0, dtype=np.float32)
-        )
+        batched_selected_landmarks.append(np.stack(all_landmarks, axis=0) if all_landmarks else np.empty(0, dtype=np.float32))
         batched_is_right_hand.append(all_lr)
         batched_gesture_labels.append(gesture_label)
         batched_gesture_confidences.append(gesture_confidence)

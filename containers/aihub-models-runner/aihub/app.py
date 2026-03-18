@@ -140,9 +140,11 @@ class AIHubApp:
         """Lazily load and return the input class for the given type."""
         if input_type == "gstreamer":
             from aihub.gstreamer.input import GStreamerInput
+
             return GStreamerInput
         elif input_type == "websocket":
             from aihub.websocket.input import WebSocketInput
+
             return WebSocketInput
         else:
             raise ValueError(f"Unknown input type: {input_type}")
@@ -151,9 +153,11 @@ class AIHubApp:
         """Lazily load and return the output class for the given type."""
         if output_type == "mjpeg":
             from aihub.mjpeg.output import MJPEGOutput
+
             return MJPEGOutput
         elif output_type == "websocket":
             from aihub.websocket.output import WebSocketOutput
+
             return WebSocketOutput
         else:
             raise ValueError(f"Unknown output type: {output_type}")

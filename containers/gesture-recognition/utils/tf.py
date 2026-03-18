@@ -7,10 +7,7 @@ import ctypes
 from ctypes.util import find_library
 
 
-def load_qnn_delegate(
-        delegate_lib_path: str = "libQnnTFLiteDelegate.so",
-        delegate_options: dict | None = None
-    ) -> list[Delegate] | None:
+def load_qnn_delegate(delegate_lib_path: str = "libQnnTFLiteDelegate.so", delegate_options: dict | None = None) -> list[Delegate] | None:
     """
     Attempt to load the specified delegate library.
     If this fails, instruct to use CPU.
@@ -25,6 +22,7 @@ def load_qnn_delegate(
     else:
         print(f"Delegate library '{delegate_lib_path}' not found. Falling back to CPU delegate.")
         return None
+
 
 def _has_library(name: str) -> bool:
     # Step 1 — Try to locate a platform-specific filename

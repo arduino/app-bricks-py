@@ -48,9 +48,8 @@ def denormalize_coordinates(
     coordinates[..., 0] = ((coordinates[..., 0] * img_0 - pad_0) / scale).astype(np.int32)
     coordinates[..., 1] = ((coordinates[..., 1] * img_1 - pad_1) / scale).astype(np.int32)
 
-def apply_batched_affines_to_frame(
-    frame: np.ndarray, affines: list[np.ndarray], output_image_size: tuple[int, int]
-) -> np.ndarray:
+
+def apply_batched_affines_to_frame(frame: np.ndarray, affines: list[np.ndarray], output_image_size: tuple[int, int]) -> np.ndarray:
     """
     Generate one image per affine applied to the given frame.
     I/O is numpy since this uses cv2 APIs under the hood.
@@ -77,9 +76,8 @@ def apply_batched_affines_to_frame(
         imgs.append(img)
     return np.stack(imgs)
 
-def apply_affine_to_coordinates(
-    coordinates: np.ndarray, affine: np.ndarray
-) -> np.ndarray:
+
+def apply_affine_to_coordinates(coordinates: np.ndarray, affine: np.ndarray) -> np.ndarray:
     """
     Apply the given affine matrix to the given coordinates.
 
@@ -93,6 +91,7 @@ def apply_affine_to_coordinates(
         Transformed coordinates. Shape is [ ..., 2 ], where 2 == [X, Y]
     """
     return (affine[:, :2] @ coordinates.T + affine[:, 2:]).T
+
 
 def compute_vector_rotation(
     vec_start: np.ndarray,
@@ -124,6 +123,7 @@ def compute_vector_rotation(
     # atan2(dy, dx)
     theta = np.arctan2(dy, dx) - offset_rads
     return theta
+
 
 def resize_pad(
     image: np.ndarray,
@@ -172,8 +172,6 @@ def resize_pad(
     pad_top, pad_bottom = (pad_total_h // 2, pad_total_h - pad_total_h // 2)
     pad_left, pad_right = (pad_total_w // 2, pad_total_w - pad_total_w // 2)
 
-    padded = cv2.copyMakeBorder(
-        resized, pad_top, pad_bottom, pad_left, pad_right, borderType=cv2.BORDER_CONSTANT, value=0.0
-    )
+    padded = cv2.copyMakeBorder(resized, pad_top, pad_bottom, pad_left, pad_right, borderType=cv2.BORDER_CONSTANT, value=0.0)
 
     return padded, scale, (pad_left, pad_top)
