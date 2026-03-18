@@ -51,6 +51,13 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Sanitize branch name for cache tag
+        id: sanitize
+        run: |
+          BRANCH_NAME="${{ github.ref_name }}"
+          SAFE_BRANCH_NAME="${BRANCH_NAME//\//-}"
+          echo "cache_tag=${SAFE_BRANCH_NAME}-buildcache" >> $GITHUB_OUTPUT
+
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -71,8 +78,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/arm64
-          cache-from: ${{ github.event.inputs.skip_cache == 'false' && format('type=registry,ref={0}:{1}-buildcache', matrix.image, github.ref_name) || '' }}
-          cache-to: type=registry,ref=${{ matrix.image }}:${{ github.ref_name }}-buildcache,mode=max
+          cache-from: ${{ github.event.inputs.skip_cache != 'true' && format('type=registry,ref={0}:{1}', matrix.image, steps.sanitize.outputs.cache_tag) || '' }}
+          cache-to: type=registry,ref=${{ matrix.image }}:${{ steps.sanitize.outputs.cache_tag }},mode=max
           provenance: false
 
   build:
@@ -127,6 +134,13 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Sanitize branch name for cache tag
+        id: sanitize
+        run: |
+          BRANCH_NAME="${{ github.ref_name }}"
+          SAFE_BRANCH_NAME="${BRANCH_NAME//\//-}"
+          echo "cache_tag=${SAFE_BRANCH_NAME}-buildcache" >> $GITHUB_OUTPUT
+
       # Extract metadata from the GitHub context
       - name: Extract Docker metadata
         id: meta
@@ -148,8 +162,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/arm64
-          cache-from: ${{ github.event.inputs.skip_cache == 'false' && format('type=registry,ref={0}:{1}-buildcache', matrix.image, github.ref_name) || '' }}
-          cache-to: type=registry,ref=${{ matrix.image }}:${{ github.ref_name }}-buildcache,mode=max
+          cache-from: ${{ github.event.inputs.skip_cache != 'true' && format('type=registry,ref={0}:{1}', matrix.image, steps.sanitize.outputs.cache_tag) || '' }}
+          cache-to: type=registry,ref=${{ matrix.image }}:${{ steps.sanitize.outputs.cache_tag }},mode=max
           provenance: false
           build-args: |
             REGISTRY=${{ env.DEV_REGISTRY_PATH }}
