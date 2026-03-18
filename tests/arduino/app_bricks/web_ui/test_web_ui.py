@@ -79,3 +79,49 @@ def test_stop_sets_should_exit():
     ui._server = dummy_server
     ui.stop()
     assert dummy_server.should_exit is True
+
+
+def test_cors_default():
+    """Test that CORS defaults to wildcard allowing any origin."""
+    ui = WebUI()
+    client = TestClient(ui.app)
+
+    def dummy():
+        return {"ok": True}
+
+    ui.expose_api("GET", "/dummy", dummy)
+    response = client.get("/dummy", headers={"Origin": "http://example.com"})
+    assert response.status_code == 200
+    assert response.headers.get("access-control-allow-origin") == "*"
+
+
+def test_cors_single_origin():
+    """Test that CORS works with a single specific origin."""
+    ui = WebUI(cors_origins="http://localhost:3000")
+    client = TestClient(ui.app)
+
+    def dummy():
+        return {"ok": True}
+
+    ui.expose_api("GET", "/dummy", dummy)
+    response = client.get("/dummy", headers={"Origin": "http://localhost:3000"})
+    assert response.status_code == 200
+    assert response.headers.get("access-control-allow-origin") == "http://localhost:3000"
+
+
+def test_cors_multiple_origins():
+    """Test that CORS works with multiple comma-separated origins."""
+    ui = WebUI(cors_origins="http://localhost:3000,https://example.com")
+    client = TestClient(ui.app)
+
+    def dummy():
+        return {"ok": True}
+
+    ui.expose_api("GET", "/dummy", dummy)
+    response = client.get("/dummy", headers={"Origin": "http://localhost:3000"})
+    assert response.status_code == 200
+    assert response.headers.get("access-control-allow-origin") == "http://localhost:3000"
+
+    response = client.get("/dummy", headers={"Origin": "https://example.com"})
+    assert response.status_code == 200
+    assert response.headers.get("access-control-allow-origin") == "https://example.com"

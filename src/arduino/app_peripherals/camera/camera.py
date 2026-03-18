@@ -47,21 +47,23 @@ class Camera:
                 Default: (640, 480)
             fps (int, optional): Target frames per second. Default: 10
             adjustments (callable, optional): Function pipeline to adjust frames that takes a
-                numpy array and returns a numpy array. Default: None
+                numpy array and returns a numpy array. Default: None.
             **kwargs: Camera-specific configuration parameters grouped by type:
                 V4L Camera Parameters:
                     device (int, optional): V4L device index override. Default: 0.
+                    codec (str, optional): Video codec to use (FourCC). Options: "YUVY",
+                        "MJPG", "H264". Default: "" (auto).
                 IP Camera Parameters:
                     url (str): Camera stream URL
-                    username (str, optional): Authentication username
-                    password (str, optional): Authentication password
-                    timeout (float, optional): Connection timeout in seconds. Default: 10.0
+                    username (str, optional): Authentication username.
+                    password (str, optional): Authentication password.
+                    timeout (float, optional): Connection timeout in seconds. Default: 10.0.
                 WebSocket Camera Parameters:
-                    host (str, optional): WebSocket server host. Default: "0.0.0.0"
-                    port (int, optional): WebSocket server port. Default: 8080
-                    timeout (float, optional): Connection timeout in seconds. Default: 10.0
+                    host (str, optional): WebSocket server host. Default: "0.0.0.0".
+                    port (int, optional): WebSocket server port. Default: 8080.
+                    timeout (float, optional): Connection timeout in seconds. Default: 10.0.
                     frame_format (str, optional): Expected frame format ("base64", "binary",
-                        "json"). Default: "base64"
+                        "json"). Default: "base64".
 
         Returns:
             BaseCamera: Appropriate camera implementation instance

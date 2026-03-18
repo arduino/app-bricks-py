@@ -9,8 +9,8 @@ COPY ./requirements-base.txt /app/requirements.txt
 RUN set -ex; \
     apt-get update -y; \
     apt-get upgrade -y; \
-    apt-get install build-essential libasound2-dev libalsaplayer-dev libzbar0 binutils portaudio19-dev -y; \
-    pip install --no-cache-dir -r /app/requirements.txt && rm /app/requirements.txt && pip cache purge; \
+    apt-get install -y --no-install-recommends --no-install-suggests build-essential libasound2-dev libalsaplayer-dev libzbar0 binutils portaudio19-dev; \
+    pip install --no-cache-dir -r /app/requirements.txt && rm /app/requirements.txt; \
     # remove debug symbols from shared objects and reduce size
     find /usr/local/lib/python3.13/site-packages -type f -name "*.so" -exec strip -s {} +; \
     find /usr/local/lib/python3.13/site-packages -type f -name "*.so.*" -exec strip -s {} +; \
@@ -29,17 +29,11 @@ COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/pytho
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 RUN set -ex; \
-    groupadd -g 44 video || true; \
-    groupadd -g 29 audio || true; \
-    groupadd -g 20 dialout || true; \
-    groupadd -g 991 render || true; \
     groupadd -g 1000 arduino || true; \
-    groupadd -g 1001 gpiod || true; \
-    useradd -u 1000 -g arduino -G audio,video,dialout,render,gpiod -ms /bin/bash arduino; \
+    useradd -u 1000 -g arduino -ms /bin/bash arduino; \
     apt-get update -y; \
     apt-get upgrade -y; \
-    apt-get install --no-install-recommends -y libglib2.0-0 alsa-utils inotify-tools wget libzbar0 portaudio19-dev; \
-    pip cache purge; \
+    apt-get install -y --no-install-recommends --no-install-suggests libglib2.0-0 alsa-utils inotify-tools wget libzbar0 portaudio19-dev; \
     apt-get dist-clean; \
     apt-get autoclean -y; \
     apt-get autoremove -y; \

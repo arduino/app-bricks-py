@@ -110,14 +110,27 @@ def draw_bounding_boxes(
     if draw is None:
         draw = ImageDraw.Draw(image_box)
 
-    if not detection or "detection" not in detection:
-        return None
+    if not detection:
+        return image_box
+
+    if "detection" not in detection:
+        # Convert simple dictionary to expected format if needed
+        detection_object = []
+        for label, details in detection.items():
+            for detail in details:
+                detection_object.append({
+                    "class_name": label,
+                    "bounding_box_xyxy": detail.get("bounding_box_xyxy", [0, 0, 0, 0]),
+                    "confidence": detail.get("confidence", 0),
+                })
+
+        detection = detection_object
+    else:
+        detection = detection["detection"]
 
     if shape not in (Shape.RECTANGLE, Shape.CIRCLE):
         logger.warning(f"Unsupported shape '{shape}'. Defaulting to rectangle.")
         shape = Shape.RECTANGLE
-
-    detection = detection["detection"]
 
     # Scale font size and box thickness based on image size and number of detections
     ref_dim = max(image_box.size)

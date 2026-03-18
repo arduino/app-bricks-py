@@ -1,6 +1,7 @@
 id: arduino:cloud_llm
 name: Cloud LLM
 description: "Cloud LLM Brick enables seamless integration with cloud-based Large Language Models (LLMs) for advanced AI capabilities in your Arduino projects."
+category: text
 variables:
   - name: API_KEY
     description: API Key for the cloud-based LLM service

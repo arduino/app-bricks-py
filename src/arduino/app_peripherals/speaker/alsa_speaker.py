@@ -249,7 +249,7 @@ class ALSASpeaker(BaseSpeaker):
             try:
                 card_name = match.group(2)
                 device_index = int(match.group(3))
-                for card_idx, curr_card_name in enumerate(alsaaudio.cards()):  # Look for the card index
+                for card_idx, curr_card_name in zip(card_indexes, alsaaudio.cards()):
                     if curr_card_name == card_name:
                         return card_idx, device_index
 

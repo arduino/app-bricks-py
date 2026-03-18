@@ -7,6 +7,10 @@ import sys
 from setuptools.build_meta import build_wheel as _orig_build_wheel
 from setuptools.build_meta import build_sdist as _orig_build_sdist
 from setuptools.build_meta import build_editable as _orig_build_editable
+from setuptools.build_meta import (
+    get_requires_for_build_editable as _orig_get_requires_for_build_editable,
+    prepare_metadata_for_build_editable as _orig_prepare_metadata_for_build_editable,
+)
 from setuptools_scm import get_version
 import subprocess
 import shutil
@@ -15,12 +19,10 @@ import shutil
 def run_preprocessing(dev_mode: bool = False) -> None:
     registry = os.getenv("PUBLIC_IMAGE_REGISTRY_BASE", None)
     if dev_mode:
-        version = "dev-latest"
+        version = "dev-next"
     else:
         version = get_version(
-            version_scheme="only-version",
-            local_scheme="no-local-version",
-            tag_regex="^(ai|release)/(?P<version>[0-9.]+)$",
+            version_scheme="only-version", local_scheme="no-local-version", tag_regex=r"^(?:ai|release)/(?P<version>v?\d+(?:\.\d+)*(?:rc\d+)?)$"
         )
 
     cache_folder_path = "src/arduino/app_bricks/static"
@@ -89,3 +91,11 @@ def build_sdist(sdist_directory, config_settings=None):
 
 def build_editable(editable_build_directory, config_settings=None, metadata_directory=None):
     return _orig_build_editable(editable_build_directory, config_settings, metadata_directory)
+
+
+def get_requires_for_build_editable(config_settings=None):
+    return _orig_get_requires_for_build_editable(config_settings)
+
+
+def prepare_metadata_for_build_editable(metadata_directory, config_settings=None):
+    return _orig_prepare_metadata_for_build_editable(metadata_directory, config_settings)

@@ -53,7 +53,7 @@ def handle_detected_code(frame, detection):
     ...
 
 # Select the camera you want to use, its resolution and the max fps
-camera = Camera(camera="rtsp://...", resolution=(640, 360), fps=10)
+camera = Camera(source="rtsp://...", resolution=(640, 360), fps=10)
 detection = CameraCodeDetection(camera)
 detection.on_detection(handle_detected_code)
 

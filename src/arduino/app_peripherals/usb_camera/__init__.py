@@ -48,7 +48,7 @@ class USBCamera:
         if letterbox:
             pipe = pipe | letterboxed() if pipe else letterboxed()
 
-        self._wrapped_camera = V4LCamera(camera, resolution, fps, pipe)
+        self._wrapped_camera = V4LCamera(camera, resolution=resolution, fps=fps, adjustments=pipe)
 
     def capture(self) -> Image.Image | None:
         """Captures a frame from the camera, blocking to respect the configured FPS.
