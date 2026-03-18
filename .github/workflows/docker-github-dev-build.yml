@@ -96,7 +96,6 @@ jobs:
           - dockerfile: ./containers/python-apps-base/Dockerfile
             context: ./containers/python-apps-base
             image: ghcr.io/${{ github.repository_owner }}/app-bricks/python-apps-base
-            parent_image: ghcr.io/${{ github.repository_owner }}/app-bricks/python-base
             build_python_package: true           
 
     steps:
@@ -146,26 +145,13 @@ jobs:
       - name: Build cache configuration
         id: cache
         run: |
+          CACHE_TAG="${{ steps.sanitize.outputs.cache_tag }}"
           if [ "${{ github.event.inputs.skip_cache }}" != "true" ]; then
-            CACHE_LIST=""
-            # Add parent image cache if parent exists
-            if [ -n "${{ matrix.parent_image }}" ]; then
-              CACHE_LIST="type=registry,ref=${{ matrix.parent_image }}:${{ steps.sanitize.outputs.cache_tag }}"
-            fi
-            # Add child image cache
-            if [ -n "$CACHE_LIST" ]; then
-              CACHE_LIST="${CACHE_LIST}\ntype=registry,ref=${{ matrix.image }}:${{ steps.sanitize.outputs.cache_tag }}"
-            else
-              CACHE_LIST="type=registry,ref=${{ matrix.image }}:${{ steps.sanitize.outputs.cache_tag }}"
-            fi
-            echo "cache_from<<EOF" >> $GITHUB_OUTPUT
-            echo -e "$CACHE_LIST" >> $GITHUB_OUTPUT
-            echo "EOF" >> $GITHUB_OUTPUT
+            echo "cache_from=type=registry,ref=${{ matrix.image }}:${CACHE_TAG}" >> $GITHUB_OUTPUT
           else
             echo "cache_from=" >> $GITHUB_OUTPUT
           fi
-          # Always save cache to child image
-          echo "cache_to=type=registry,ref=${{ matrix.image }}:${{ steps.sanitize.outputs.cache_tag }},mode=max" >> $GITHUB_OUTPUT
+          echo "cache_to=type=registry,ref=${{ matrix.image }}:${CACHE_TAG},mode=max" >> $GITHUB_OUTPUT
 
       # Extract metadata from the GitHub context
       - name: Extract Docker metadata
