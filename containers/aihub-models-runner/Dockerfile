@@ -51,6 +51,6 @@ COPY aihub/ /opt/aihub/
 # Prepare the app directory for child images
 RUN mkdir -p /app
 WORKDIR /app
-COPY main.py inference.py requirements.txt run.sh ./
+COPY main.py inference.py requirements.txt ./
 
 ENTRYPOINT [ "python", "main.py", "--verbose", "--input", "websocket", "--output", "mjpeg", "websocket" ]
