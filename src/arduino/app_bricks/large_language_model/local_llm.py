@@ -10,11 +10,11 @@ from arduino.app_internal.core import resolve_address
 import os
 from typing import Iterator, List, Optional, Any, Callable
 
-logger = Logger("LocalLLM")
+logger = Logger("LargeLanguageModel")
 
 
 @brick
-class LocalLLM(CloudLLM):
+class LargeLanguageModel(CloudLLM):
     """A Brick for interacting with locally-based Large Language Models (LLMs).
 
     This class wraps LangChain functionality to provide a simplified, unified interface
@@ -37,7 +37,7 @@ class LocalLLM(CloudLLM):
         tools: List[Callable[..., Any]] = None,
         **kwargs,
     ):
-        """Initializes the CloudLLM brick with the specified provider and configuration.
+        """Initializes the LargeLanguageModel brick with the specified provider and configuration.
 
         Args:
             api_key (str): The API access key for the target LLM service. Defaults to the
