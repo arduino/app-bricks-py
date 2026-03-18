@@ -30,9 +30,6 @@ jobs:
           - dockerfile: ./containers/python-base/Dockerfile
             image: ghcr.io/${{ github.repository_owner }}/app-bricks/python-base
             context: ./containers/python-base
-          - dockerfile: ./containers/base/Dockerfile
-            image: ghcr.io/${{ github.repository_owner }}/app-bricks/base
-            context: ./containers/base
 
     steps:
       - name: Checkout repository
