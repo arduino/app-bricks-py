@@ -1,0 +1,58 @@
+name: Cleanup - Delete branch buildcache
+
+on:
+  delete:
+
+permissions:
+  packages: write
+
+jobs:
+  cleanup-buildcache:
+    if: github.event.ref_type == 'branch'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          # Base images
+          - ghcr.io/${{ github.repository_owner }}/app-bricks/base
+          - ghcr.io/${{ github.repository_owner }}/app-bricks/python-base
+          - ghcr.io/${{ github.repository_owner }}/app-bricks/python-apps-base
+          # AI Hub models
+          - ghcr.io/${{ github.repository_owner }}/app-bricks/aihub-models-runner
+          - ghcr.io/${{ github.repository_owner }}/app-bricks/ei-models-runner
+          - ghcr.io/${{ github.repository_owner }}/app-bricks/llamacpp-models-runner
+          - ghcr.io/${{ github.repository_owner }}/app-bricks/ollama-models-runner
+          - ghcr.io/${{ github.repository_owner }}/app-bricks/gesture-recognition
+
+    steps:
+      - name: Delete buildcache for branch ${{ github.event.ref }}
+        run: |
+          # Extract branch name (remove refs/heads/ prefix if present)
+          BRANCH_NAME="${{ github.event.ref }}"
+          BRANCH_NAME="${BRANCH_NAME#refs/heads/}"
+          
+          # Convert branch name to safe tag format (replace / with -)
+          CACHE_TAG="${BRANCH_NAME//\//-}-buildcache"
+          
+          echo "Attempting to delete cache tag: $CACHE_TAG for image: ${{ matrix.image }}"
+          
+          # Use GitHub API to delete the package version
+          PACKAGE_NAME=$(echo "${{ matrix.image }}" | cut -d'/' -f3-)
+          
+          # Get the package version ID for the cache tag
+          VERSION_ID=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/orgs/${{ github.repository_owner }}/packages/container/${PACKAGE_NAME}/versions" \
+            | jq -r ".[] | select(.metadata.container.tags[] == \"${CACHE_TAG}\") | .id")
+          
+          if [ -n "$VERSION_ID" ] && [ "$VERSION_ID" != "null" ]; then
+            echo "Found cache version ID: $VERSION_ID. Deleting..."
+            curl -X DELETE \
+              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Accept: application/vnd.github.v3+json" \
+              "https://api.github.com/orgs/${{ github.repository_owner }}/packages/container/${PACKAGE_NAME}/versions/${VERSION_ID}"
+            echo "Deleted cache tag: $CACHE_TAG"
+          else
+            echo "No cache found for tag: $CACHE_TAG (this is normal if the branch never built)"
+          fi
