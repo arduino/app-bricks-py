@@ -94,8 +94,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/arm64
-          cache-from: ${{ github.event.inputs.skip_cache == 'false' && format('type=registry,ref={0}:buildcache', matrix.image) || '' }}
-          cache-to: type=registry,ref=${{ matrix.image }}:buildcache,mode=max
+          cache-from: ${{ github.event.inputs.skip_cache == 'false' && format('type=registry,ref={0}:{1}-buildcache', matrix.image, github.ref_name) || '' }}
+          cache-to: type=registry,ref=${{ matrix.image }}:${{ github.ref_name }}-buildcache,mode=max
           provenance: false
           build-args: |
             REGISTRY=${{ env.DEV_REGISTRY_PATH }}
