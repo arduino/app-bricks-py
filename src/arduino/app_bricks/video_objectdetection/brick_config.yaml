@@ -5,6 +5,7 @@ description: |
   It identifies objects, returning their predicted class labels, bounding boxes, and confidence scores.
   The output is a video stream featuring bounding boxes around detected objects, with the added capability to trigger actions based on these detections.
   It supports pre-trained models provided by the framework and custom object detection models trained on the Edge Impulse platform.
+category: video
 requires_model: true
 requires_container: true
 mount_devices_into_container: true
