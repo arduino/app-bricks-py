@@ -49,10 +49,8 @@ ENV PYTHONPATH="/opt"
 COPY aihub/ /opt/aihub/
 
 # Prepare the app directory for child images
-RUN mkdir -p /home/app
-WORKDIR /home/app
+RUN mkdir -p /app
+WORKDIR /app
 COPY main.py inference.py requirements.txt run.sh ./
 
-RUN chmod +x run.sh
-
-ENTRYPOINT [ "run.sh" ]
+ENTRYPOINT [ "python", "main.py", "--verbose", "--input", "websocket", "--output", "mjpeg", "websocket" ]
