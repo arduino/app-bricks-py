@@ -1,25 +1,20 @@
 services:
   audio-analytics-runner:
-    image: audio-analytics
+    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/audio-analytics-models-runner:dev-next
+    user: 0:0
     devices:
       - /dev/dma_heap/system
       - /dev/dma_heap/qcom,system
       - /dev/fastrpc-cdsp
-      # - /dev/fastrpc-cdsp1
       - /dev/fastrpc-adsp-secure
       - /dev/fastrpc-cdsp-secure
-      # - /dev/fastrpc-cdsp1-secure
-      - /dev/fastrpc-gdsp0
-      - /dev/fastrpc-gdsp0-secure
-      - /dev/fastrpc-gdsp1
-      - /dev/fastrpc-gdsp1-secure
     environment:
       - LOG_LEVEL=${LOG_LEVEL:-20}
       - NODE_ENV=production
       - BLACKBOX_CONTAINER=true
       - DEV_MODE=false
-      - MODELS_DIR=${MODELS_DIR:-/home/ubuntu/AUDIO-CONTAINER/audio-analytics-release-v1.0.0/opt/audio/models}
-      - MODELS_CONFIG=${MODELS_CONFIG:-/home/ubuntu/AUDIO-CONTAINER/audio-analytics-release-v1.0.0/opt/audio/models/models.json}
+      - MODELS_DIR=${MODELS_DIR:-${HOME}/audio-models}
+      - MODELS_CONFIG=${MODELS_CONFIG:-${HOME}/audio-models/models.json}
       - SOCKET_PATH=/tmp/audio-sockets/audio-analytics.sock
       # VAD_LEN_HANGOVER: Voice Activity Detection length hangover (in units of 10ms)
       # Example: 120 = 1.2s, 200 = 2.0s, 50 = 0.5s
@@ -51,11 +46,6 @@ services:
       bash -c "chmod 666 /dev/fastrpc* 2>/dev/null || true;
                chmod 666 /dev/dma_heap/* 2>/dev/null || true;
                exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf"
-    healthcheck:
-      test: [ "CMD-SHELL", "wget -q --spider http://audio-analytics-runner:8085/health || exit 1" ]
-      interval: 2s
-      timeout: 2s
-      retries: 25
     logging:
       driver: "json-file"
       options:

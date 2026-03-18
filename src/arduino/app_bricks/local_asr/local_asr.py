@@ -288,7 +288,16 @@ class LocalASR:
             logger.debug(f"Creating transcription session with model={self.model}, language={self.language}")
             # Create transcription session
             url = f"{self.api_base_url}/transcriptions/create"
-            data = {"model": self.model, "stream": True, "language": self.language}
+            data = {
+                "model": self.model,
+                "stream": True,
+                "language": self.language,
+                "parameters": json.dumps([
+                    {"key": "sampling_rate", "value": "16000"},
+                    {"key": "channels", "value": "1"},
+                    {"key": "format", "value": "pcm_s16le"},
+                ]),
+            }
             response = requests.post(url=url, json=data, timeout=3)
             if response.status_code != 200:
                 error_msg = f"Failed to create transcription session: {response.status_code}"
@@ -477,6 +486,10 @@ class LocalASR:
         mic_id = id(mic)
         logger.debug(f"Audio reader thread starting for mic {mic_id}")
 
+        # Wait until someone subscribes
+        while not self._audio_stream_router.has_subscribers(mic):
+            time.sleep(0.01)
+
         try:
             while not self._stop_worker.is_set():
                 # Only capture audio if there are active subscribers for this mic
@@ -500,6 +513,8 @@ class LocalASR:
         import wave
         import io
 
+        logger.info(f"Starting to send WAV audio for session {session_info.session_id}")
+
         session_id = session_info.session_id
         wav_audio = session_info.wav_audio
 
@@ -508,6 +523,7 @@ class LocalASR:
             with wave.open(io.BytesIO(wav_audio), "rb") as wf:
                 sample_rate = wf.getframerate()
                 num_channels = wf.getnchannels()
+                logger.info(f"WAV format - Sample Rate: {sample_rate}, Channels: {num_channels}")
                 sample_width = wf.getsampwidth()
                 num_frames = wf.getnframes()
 
@@ -525,20 +541,28 @@ class LocalASR:
                 "type": "input_audio",
                 "data": header_base64,
             }
+
+            await asyncio.sleep(0.5)
+            logger.info(f"Header Audio base 64: {header_base64[:50]}...")
             await websocket.send(json.dumps(header_message))
 
-            # Calculate chunk size for ~100ms of audio
-            chunk_duration = 0.1
+            # Calculate chunk size for ~500ms of audio
+            chunk_duration = 0.5
             chunk_size = int(chunk_duration * sample_rate * num_channels * sample_width)
 
+            logger.info(f"Num frames: {len(frames)}, Chunk size: {chunk_size} bytes")
+
+            counter = 0
             for i in range(0, len(frames), chunk_size):
-                iteration_start = time.perf_counter()
+                counter += 1
+                # iteration_start = time.perf_counter()
 
                 if self._stop_worker.is_set() or session_info.cancelled.is_set():
                     break
 
                 audio_chunk = frames[i : i + chunk_size]
                 audio_base64 = base64.b64encode(audio_chunk).decode("utf-8")
+                logger.info(f"Audio base 64: {audio_base64[:50]}... (chunk {counter})")
                 chunk_message = {
                     "message_type": "transcriptions_session_audio",
                     "message_source": "audio_analytics_api",
@@ -549,9 +573,11 @@ class LocalASR:
                 await websocket.send(json.dumps(chunk_message))
 
                 # Account for processing time to maintain real-time simulation
-                elapsed = time.perf_counter() - iteration_start
-                sleep_time = max(0, chunk_duration - elapsed)
-                await asyncio.sleep(sleep_time)
+                # elapsed = time.perf_counter() - iteration_start
+                # sleep_time = max(0, chunk_duration - elapsed)
+                # await asyncio.sleep(sleep_time)
+
+            logger.info(f"Finished sending WAV audio for session {session_id}, total chunks sent: {counter}")
 
         except asyncio.CancelledError:
             logger.debug(f"Array audio sending cancelled for session {session_id}")
@@ -575,17 +601,21 @@ class LocalASR:
 
                 try:
                     data = json.loads(message)
+                    logger.info(f"Received WebSocket message for session {session_id}: {data}")
                 except json.JSONDecodeError:
                     logger.warning(f"Failed to parse WebSocket message: {message}")
                     continue
 
                 # Handle different message types
-                msg_type = data.get("type")
+                msg_type = data.get("message_type") or data.get("type")
 
                 if msg_type == "transcript.text.delta":
                     # Partial transcription result
                     text = data.get("text", "")
                     result_queue.put(ASREvent("partial_text", text))
+
+                elif msg_type == "transcript.event":
+                    continue
 
                 elif msg_type == "transcript.text.done":
                     # Final transcription result
@@ -595,6 +625,10 @@ class LocalASR:
 
                 elif msg_type == "connection_established":
                     continue
+
+                elif msg_type == "connection_close":
+                    logger.warning(f"WebSocket connection closed for session {session_id}")
+                    break
 
                 elif "error" in data:
                     # Error message from server
