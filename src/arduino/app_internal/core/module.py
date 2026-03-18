@@ -99,6 +99,37 @@ def get_brick_linked_resource_file(cls, resource_file_name) -> Optional[str]:
         return None
 
 
+def get_brick_configured_model(brick_id: str) -> Optional[str]:
+    """Helper method to extract the model name from the app configuration for this brick.
+    This allows dynamic configuration of the model via the app's config file, overriding defaults.
+
+    Model is part of the brick configuration in the app config file, under the specific brick's entry. The structure is:
+
+    bricks:
+    - arduino:llm:
+        model: genie:qwen2.5-3b
+
+    Args:
+        brick_id (str): The identifier of the brick for which to retrieve the model configuration.
+    Returns:
+        Optional[str]: The model name if found in the app configuration, otherwise None.
+    Raises:
+        ValueError: If `brick_id` is not provided (empty string).
+    """
+
+    if brick_id is None or brick_id.strip() == "":
+        raise ValueError("Invalid brick_id provided to get_brick_configured_model")
+
+    app_cfg = get_app_config()
+    if app_cfg and "bricks" in app_cfg:
+        bricks_list = app_cfg["bricks"]
+        for brick_entry in bricks_list:
+            if brick_id in brick_entry:
+                if "model" in brick_entry[brick_id]:
+                    return brick_entry[brick_id]["model"]
+    return None
+
+
 def parse_docker_compose_variable(variable_string) -> List[tuple[str, str]] | str:
     """Parses a Docker Compose-style environment variable string, including nested variables.
 
