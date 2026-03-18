@@ -2,8 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-from langchain_core.language_models import BaseChatModel
-
 from arduino.app_bricks.llm import LargeLanguageModel
 from arduino.app_utils import Logger, brick
 from arduino.app_internal.core import get_brick_config, get_brick_configured_model
@@ -40,7 +38,7 @@ class VisionLanguageModel(LargeLanguageModel):
         Args:
             api_key (str): The API access key for the target VLM service. Defaults to the
                 'LOCAL_LLM_API_KEY' environment variable.
-            model (str): The specific model name or identifier to use (e.g., "genie:qwen3-4b").
+            model (str): The specific model name or identifier to use (e.g., "genie:qwen2.5-3b").
                 If not provided, model will be determined from app configuration or default brick configuration.
             system_prompt (str): A system-level instruction that defines the AI's persona
                 and constraints (e.g., "You are a helpful assistant"). Defaults to empty.
@@ -80,17 +78,6 @@ class VisionLanguageModel(LargeLanguageModel):
         )
         super().with_memory(0)  # Initialize without memory enabled (0 means no history)
 
-    def get_client(self) -> BaseChatModel:
-        """Returns the underlying LangChain model instance.
-
-        This allows for advanced users to access the full capabilities of the model
-        directly, such as calling `generate()` or `stream()` with custom message formats.
-
-        Returns:
-            BaseChatModel: The LangChain chat model instance used internally.
-        """
-        return self._model
-
     def chat(self, message: str, images: List[str | bytes] = None) -> str:
         """Sends a message to the AI and blocks until the complete response is received.
 
@@ -109,7 +96,7 @@ class VisionLanguageModel(LargeLanguageModel):
         try:
             return super()._chat_invoke(message=message, images=images)
         except (openai.BadRequestError, openai.APIError) as e:
-            self._handle_api_error(logger, e)
+            self._handle_api_error(e)
 
     def chat_stream(self, message: str, images: List[str | bytes] = None) -> Iterator[str]:
         """Sends a message to the AI and yields response tokens as they are generated.
@@ -131,7 +118,7 @@ class VisionLanguageModel(LargeLanguageModel):
         try:
             return super()._chat_stream_invoke(message=message, images=images)
         except (openai.BadRequestError, openai.APIError) as e:
-            self._handle_api_error(logger, e)
+            self._handle_api_error(e)
 
     def stop_stream(self) -> None:
         """Signals the active streaming generation to stop.

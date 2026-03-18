@@ -107,7 +107,7 @@ def get_brick_configured_model(brick_id: str) -> Optional[str]:
 
     bricks:
     - arduino:llm:
-        model: genie:qwen3-4b
+        model: genie:qwen2.5-3b
 
     Args:
         brick_id (str): The identifier of the brick for which to retrieve the model configuration.

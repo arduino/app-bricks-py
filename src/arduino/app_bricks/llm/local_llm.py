@@ -5,9 +5,10 @@
 from arduino.app_bricks.cloud_llm import CloudLLM, CloudModelProvider
 from arduino.app_bricks.cloud_llm.cloud_llm import DEFAULT_MEMORY
 from arduino.app_utils import Logger, brick
-from arduino.app_internal.core import resolve_address, get_app_config, get_brick_config
+from arduino.app_internal.core import resolve_address, get_brick_config, get_brick_configured_model
 
 import os
+from openai import OpenAI, APIError, BadRequestError
 from typing import Iterator, List, Optional, Any, Callable
 
 logger = Logger("LargeLanguageModel")
@@ -29,12 +30,12 @@ class LargeLanguageModel(CloudLLM):
     def __init__(
         self,
         api_key: str = os.getenv("LOCAL_LLM_API_KEY", "api_key"),
-        model: str = "genie:qwen2.5-3b",
         system_prompt: str = "",
         temperature: Optional[float] = 0.7,
-        max_tokens: int = 512,
+        max_tokens: int = 256,
         timeout: int = 30,
         tools: List[Callable[..., Any]] = None,
+        model: str = None,
         **kwargs,
     ):
         """Initializes the LargeLanguageModel brick with the specified provider and configuration.
@@ -43,13 +44,14 @@ class LargeLanguageModel(CloudLLM):
             api_key (str): The API access key for the target LLM service. Defaults to the
                 'LOCAL_LLM_API_KEY' environment variable.
             model (str): The specific model name or identifier to use (e.g., "genie:qwen2.5-3b").
+                If not provided, model will be determined from app configuration or default brick configuration.
             system_prompt (str): A system-level instruction that defines the AI's persona
                 and constraints (e.g., "You are a helpful assistant"). Defaults to empty.
             temperature (Optional[float]): The sampling temperature between 0.0 and 1.0.
                 Higher values make output more random/creative; lower values make it more
                 deterministic. Defaults to 0.7.
             max_tokens (int): The maximum number of tokens to generate in the response.
-                Defaults to 512.
+                Defaults to 256.
             timeout (int): The maximum duration in seconds to wait for a response before
                 timing out. Defaults to 30.
             tools (List[Callable[..., Any]]): A list of callable tool functions to register. Defaults to None.
@@ -66,17 +68,23 @@ class LargeLanguageModel(CloudLLM):
         if not host:
             raise RuntimeError("Host address resolution failed for local LLM runner.")
 
-        app_configured_model = self._extract_app_configured_model()
-        if app_configured_model:
-            logger.info(f"Using model '{app_configured_model}' from app configuration.")
-            model = app_configured_model
+        if model is None:
+            brick_config = get_brick_config(self.__class__)
+            app_configured_model = get_brick_configured_model(brick_config.get("id") if brick_config else None)
+            if app_configured_model:
+                logger.debug(f"Using model: '{app_configured_model}'.")
+                model = app_configured_model
+            else:
+                model = brick_config.get("model", None)
+                logger.debug(f"Using default model: '{model}'.")
+        else:
+            logger.debug(f"Forcing use of model: '{model}'.")
 
         if "base_url" in kwargs:
-            logger.warning("Overriding provided 'base_url' argument with resolved local address.")
             base_url = kwargs.pop("base_url")
 
             if base_url is None or base_url.strip() == "":
-                raise ValueError("Empty or wrongly configured 'base_url")
+                raise ValueError("Empty or wrongly configured 'base_url'")
 
         else:
             if model.startswith(self.GENIE_MODEL):
@@ -91,10 +99,12 @@ class LargeLanguageModel(CloudLLM):
             else:
                 raise ValueError(f"Unsupported local model type: {model}")
 
-            model = model.split(":", 1)[-1].strip()  # Remove prefix if any
             base_url = f"http://{host}:{port}/v1"
 
-        logger.info(f"Initializing model '{model}' at {base_url}")
+        if model.startswith(self.GENIE_MODEL) or model.startswith(self.LLAMACPP_MODEL) or model.startswith(self.OLLAMA_MODEL):
+            model = model.split(":")[-1]  # Extract model name without provider prefix
+
+        logger.info(f"Initializing brick with model '{model}' at {base_url}")
 
         # Force OpenAI provider for local LLMs to force ChatCompletion APIs
         plain_model_name = model
@@ -115,22 +125,9 @@ class LargeLanguageModel(CloudLLM):
         available_models = self.list_models()
         if plain_model_name not in available_models:
             logger.error(
-                f"Configured model '{plain_model_name}' not found among locally available models: {available_models}."
+                f"Model '{plain_model_name}' not found among locally available models: {available_models}."
                 + " Please download the model or configure it correctly."
             )
-
-    def _extract_app_configured_model(self) -> Optional[str]:
-        brick_config = get_brick_config(self.__class__)
-        app_cfg = get_app_config()
-        if brick_config and "id" in brick_config:
-            brick_id = brick_config["id"]
-            if app_cfg and "bricks" in app_cfg:
-                bricks_list = app_cfg["bricks"]
-                for brick_entry in bricks_list:
-                    if brick_id in brick_entry:
-                        if "model" in brick_entry[brick_id]:
-                            return brick_entry[brick_id]["model"]
-        return None
 
     def list_models(self) -> List[str]:
         """Returns a list of supported local model identifiers.
@@ -142,8 +139,6 @@ class LargeLanguageModel(CloudLLM):
             List[str]: A list of supported model names (e.g., ["qwen2.5-7b"]).
         """
         try:
-            from openai import OpenAI
-
             with OpenAI(base_url=self._model.openai_api_base, api_key=self._model.openai_api_key) as openai_client:
                 models_response = openai_client.models.list()
                 model_list = [model.id for model in models_response.data]
@@ -153,7 +148,7 @@ class LargeLanguageModel(CloudLLM):
             logger.warning(f"Failed to list models: {e}")
             return []
 
-    def with_memory(self, max_messages: int = DEFAULT_MEMORY) -> "CloudLLM":
+    def with_memory(self, max_messages: int = DEFAULT_MEMORY) -> "LargeLanguageModel":
         """Enables conversational memory for this instance.
 
         Configures the Brick to retain a window of previous messages, allowing the
@@ -165,9 +160,39 @@ class LargeLanguageModel(CloudLLM):
                 Defaults to 10.
 
         Returns:
-            CloudLLM: The current instance, allowing for method chaining.
+            LargeLanguageModel: The current instance, allowing for method chaining.
         """
         return super().with_memory(max_messages=max_messages)
+
+    def _handle_api_error(self, ilogger: Logger, e: Exception) -> None:
+        """Handles OpenAI API errors by logging details and raising RuntimeError.
+
+        Args:
+            ilogger (Logger): The logger instance to use for logging errors.
+            e: The exception to handle (BadRequestError or APIError)
+
+        Raises:
+            RuntimeError: Always raises with detailed error message and chained original exception
+        """
+        if isinstance(e, BadRequestError):
+            error_msg = f"Bad request: {e.message if hasattr(e, 'message') else str(e)}"
+            ilogger.error(error_msg)
+            if hasattr(e, "response") and hasattr(e.response, "json"):
+                try:
+                    error_detail = e.response.json()
+                    ilogger.error(f"Error details: {error_detail}")
+                except Exception:
+                    pass
+            raise RuntimeError(error_msg) from e
+        elif isinstance(e, APIError):
+            if e.code == 503:
+                error_msg = f"Cannot load model due to a potential memory exhaustion. message={e.message if hasattr(e, 'message') else str(e)}"
+            else:
+                error_msg = f"Error: status_code={e.code}, message={e.message if hasattr(e, 'message') else str(e)}"
+            ilogger.error(error_msg)
+            raise RuntimeError(error_msg) from e
+        else:
+            raise
 
     def chat(self, message: str, images: List[str | bytes] = None) -> str:
         """Sends a message to the AI and blocks until the complete response is received.
@@ -184,7 +209,10 @@ class LargeLanguageModel(CloudLLM):
         Raises:
             RuntimeError: If the internal chain is not initialized or if the API request fails.
         """
-        return super().chat(message=message, images=images)
+        try:
+            return super()._chat_invoke(message=message, images=images)
+        except (BadRequestError, APIError) as e:
+            self._handle_api_error(logger, e)
 
     def chat_stream(self, message: str, images: List[str | bytes] = None) -> Iterator[str]:
         """Sends a message to the AI and yields response tokens as they are generated.
@@ -203,7 +231,10 @@ class LargeLanguageModel(CloudLLM):
             RuntimeError: If the internal chain is not initialized or if the API request fails.
             AlreadyGenerating: If a streaming session is already active.
         """
-        return super().chat_stream(message=message, images=images)
+        try:
+            return super()._chat_stream_invoke(message=message, images=images)
+        except (BadRequestError, APIError) as e:
+            self._handle_api_error(logger, e)
 
     def stop_stream(self) -> None:
         """Signals the active streaming generation to stop.
