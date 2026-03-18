@@ -7,7 +7,7 @@ ARG BASE_IMAGE_VERSION=latest
 
 FROM debian:trixie AS llamacpp-builder
 
-ENV LLAMA_CPP_VERSION=b8089
+ENV LLAMA_CPP_VERSION=b8407
 
 # Install Dependencies
 RUN export DEBIAN_FRONTEND=noninteractive; \
