@@ -1,4 +1,4 @@
-id: arduino:large_language_model
+id: arduino:llm
 name: Large Language Model (LLM)
 description: "Large Language Model (LLM) Brick enables seamless integration with locally hosted LLMs for advanced AI capabilities in your Arduino projects."
 requires_container: true
