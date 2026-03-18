@@ -97,15 +97,19 @@ jobs:
           - dockerfile: ./containers/ei-models-runner/Dockerfile
             context: ./containers/ei-models-runner
             image: ghcr.io/${{ github.repository_owner }}/app-bricks/ei-models-runner
+            parent_image: ""
           - dockerfile: ./containers/llamacpp-runner/Dockerfile
             context: ./containers/llamacpp-runner
             image: ghcr.io/${{ github.repository_owner }}/app-bricks/llamacpp-models-runner
+            parent_image: ghcr.io/${{ github.repository_owner }}/app-bricks/base
           - dockerfile: ./containers/ollama-runner/Dockerfile
             context: ./containers/ollama-runner
             image: ghcr.io/${{ github.repository_owner }}/app-bricks/ollama-models-runner
+            parent_image: ghcr.io/${{ github.repository_owner }}/app-bricks/base
           - dockerfile: ./containers/hand-gesture-tracking/Dockerfile
             context: ./containers/hand-gesture-tracking
             image: ghcr.io/${{ github.repository_owner }}/app-bricks/hand-gesture-tracking
+            parent_image: ghcr.io/${{ github.repository_owner }}/app-bricks/aihub-models-runner
 
     steps:
       - name: Checkout repository
@@ -134,6 +138,30 @@ jobs:
           SAFE_BRANCH_NAME="${BRANCH_NAME//\//-}"
           echo "cache_tag=${SAFE_BRANCH_NAME}-buildcache" >> $GITHUB_OUTPUT
 
+      - name: Build cache configuration
+        id: cache
+        run: |
+          if [ "${{ github.event.inputs.skip_cache }}" != "true" ]; then
+            CACHE_LIST=""
+            # Add parent image cache if parent exists
+            if [ -n "${{ matrix.parent_image }}" ]; then
+              CACHE_LIST="type=registry,ref=${{ matrix.parent_image }}:${{ steps.sanitize.outputs.cache_tag }}"
+            fi
+            # Add child image cache
+            if [ -n "$CACHE_LIST" ]; then
+              CACHE_LIST="${CACHE_LIST}\ntype=registry,ref=${{ matrix.image }}:${{ steps.sanitize.outputs.cache_tag }}"
+            else
+              CACHE_LIST="type=registry,ref=${{ matrix.image }}:${{ steps.sanitize.outputs.cache_tag }}"
+            fi
+            echo "cache_from<<EOF" >> $GITHUB_OUTPUT
+            echo -e "$CACHE_LIST" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "cache_from=" >> $GITHUB_OUTPUT
+          fi
+          # Always save cache to child image
+          echo "cache_to=type=registry,ref=${{ matrix.image }}:${{ steps.sanitize.outputs.cache_tag }},mode=max" >> $GITHUB_OUTPUT
+
       # Extract metadata from the GitHub context
       - name: Extract Docker metadata
         id: meta
@@ -156,8 +184,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/arm64
-          cache-from: ${{ github.event.inputs.skip_cache != 'true' && format('type=registry,ref={0}:{1}', matrix.image, steps.sanitize.outputs.cache_tag) || '' }}
-          cache-to: type=registry,ref=${{ matrix.image }}:${{ steps.sanitize.outputs.cache_tag }},mode=max
+          cache-from: ${{ steps.cache.outputs.cache_from }}
+          cache-to: ${{ steps.cache.outputs.cache_to }}
           provenance: false
           build-args: |
             REGISTRY=${{ env.DEV_REGISTRY_PATH }}
