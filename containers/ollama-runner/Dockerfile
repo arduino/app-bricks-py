@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 ARG REGISTRY
-ARG OLLAMA_VERSION=0.15.4
+ARG OLLAMA_VERSION=0.18.1
 ARG BASE_IMAGE_VERSION=latest
 
 FROM ollama/ollama:${OLLAMA_VERSION} AS ollama-builder
