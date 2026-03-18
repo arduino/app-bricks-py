@@ -102,8 +102,6 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/arm64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
           provenance: false
           build-args: |
             # Set the base image registry. This is used to build the image only.
