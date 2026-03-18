@@ -1270,4 +1270,23 @@ models:
     metadata:
       source: "qualcomm-ai-hub"
       source-model-id: "qwen3_vl_4b"
-      source-model-url: "https://aihub.qualcomm.com/models/qwen3_vl_4b"        
+      source-model-url: "https://aihub.qualcomm.com/models/qwen3_vl_4b"
+ - gesture-recognition:
+    runner: brick
+    name : "MediaPipe Hand-Gesture Recognition"
+    description: >-
+      The MediaPipe Gesture Recognizer is a real-time machine learning pipeline that detects hands, predicts 21 hand landmarks, determines handedness (left/right),
+      and classifies gestures from a predefined set.
+    model_labels:
+      - Thumb_Up
+      - Thumb_Down
+      - Victory
+      - Pointing_Up
+      - Open_Palm
+      - ILoveYou
+    bricks:
+      - id: "arduino:gesture_recognition"
+    metadata:
+      source: "qualcomm-ai-hub"  
+      source-model-id: "mediapipe_hand_gesture"
+      source-model-url: "https://aihub.qualcomm.com/models/mediapipe_hand_gesture"      
