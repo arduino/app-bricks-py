@@ -37,6 +37,7 @@ class MJPEGOutput(OutputSink):
         Args:
             host: Host to bind to.
             port: HTTP server port.
+            kwargs: Additional keyword arguments.
         """
         self._host = host
         self._port = port

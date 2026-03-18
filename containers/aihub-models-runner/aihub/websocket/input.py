@@ -41,6 +41,7 @@ class WebSocketInput(InputSource):
             on_frame_cb: Callback for each received frame.
             host: Host to bind the server to.
             port: Port for the WebSocket server.
+            kwargs: Additional keyword arguments.
         """
         self._on_frame_cb = on_frame_cb
         self._frame_queue: queue.Queue = queue.Queue(maxsize=4)

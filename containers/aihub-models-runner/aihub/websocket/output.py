@@ -37,6 +37,7 @@ class WebSocketOutput(OutputSink):
         Args:
             host: Host to bind to.
             port: Server port.
+            kwargs: Additional keyword arguments.
         """
         self._host = host
         self._port = port

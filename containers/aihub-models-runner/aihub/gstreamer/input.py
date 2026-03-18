@@ -57,6 +57,7 @@ class GStreamerInput(InputSource):
             source: GStreamer source element string (e.g., "v4l2src device=/dev/video0").
             width: Video width.
             height: Video height.
+            kwargs: Additional keyword arguments.
         """
         self._on_frame_cb = on_frame_cb
 
