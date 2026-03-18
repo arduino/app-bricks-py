@@ -20,7 +20,7 @@ from arduino.app_internal.core.module import load_brick_compose_file, resolve_ad
 
 
 @brick
-class HandGestureTracking:
+class GestureRecognition:
     def __init__(self, camera: BaseCamera | None = None):
         if camera is None:
             camera = Camera(fps=30)
