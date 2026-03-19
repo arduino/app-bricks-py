@@ -95,7 +95,6 @@ class AppController:
         Args:
             user_loop (callable, optional): A user-defined function to run instead of the default infinite loop.
         """
-        print("======== App is starting ============================", flush=True)
         self._start_managed_bricks()
         logger.info("App started")
         self.loop(user_loop)
