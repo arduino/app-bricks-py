@@ -23,13 +23,16 @@ RUN set -ex; \
     git fetch --depth 1 origin 4ddfc013fd1f13d9b9e379dbebf2cdbeb052e7f8; \
     git checkout 4ddfc013fd1f13d9b9e379dbebf2cdbeb052e7f8; \
     git submodule update --init --recursive --depth 1; \
-    cd ..; \
     export OPENCV_VERSION=4.13.0; \
     export ENABLE_CONTRIB=0; \
     export ENABLE_HEADLESS=1; \
     export CMAKE_ARGS="-DWITH_GSTREAMER=ON -DWITH_FFMPEG=ON -DWITH_CAROTENE=ON -DWITH_LAPACK=ON -DBUILD_opencv_python3=ON -DWITH_GTK=OFF -DWITH_QT=OFF -DWITH_CUDA=OFF -DBUILD_opencv_java=OFF -DWITH_VTK=OFF -DBUILD_opencv_dnn=OFF -DBUILD_opencv_dnn_modern=OFF"; \
-    pip wheel opencv-python --verbose --no-deps; \
-    mv opencv_python_headless*.whl opencv_python_headless.whl; \
+    pip wheel . --verbose --no-deps; \
+    mv opencv_python_headless*.whl /opencv_python_headless.whl; \
+    cd ..; \
+    echo "============================================================"; \
+    ls -al; \
+    echo "============================================================"; \
     # Install Python dependencies
     pip install --no-cache-dir -r /app/requirements.txt && rm /app/requirements.txt; \
     # Strip debug symbols, tests and remove unneeded packages to reduce size
