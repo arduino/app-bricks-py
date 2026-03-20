@@ -75,23 +75,21 @@ jobs:
       - name: Create or update release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          TAG="opencv/$VERSION"
+        run: |          
+          # Rename wheel to fixed name for easier consumption
+          cd opencv-python
+          mv opencv_python_headless*.whl opencv_python_headless.whl
           
-          # Check if release exists and delete it
+          # Delete release if it already exists
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Release $TAG already exists. Deleting..."
             gh release delete "$TAG" --yes
           fi
-          
-          # Rename wheel to fixed name for easier consumption
-          cd opencv-python
-          mv opencv_python_headless*.whl opencv_python_headless.whl
-          cd ..
-          
-          # Create release with wheels
+
+          # Create release
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="opencv/$VERSION"
           gh release create "$TAG" \
-            opencv-python/opencv_python_headless.whl \
+            opencv_python_headless.whl \
             --title "OpenCV Python Wheels $VERSION" \
             --notes "OpenCV Python wheels version $VERSION optimized for ARM64 architecture with GStreamer and FFmpeg support."
