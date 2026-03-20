@@ -13,19 +13,19 @@ RUN set -ex; \
     apt-get update -y; \
     apt-get upgrade -y; \
     # Install build dependencies
-    apt-get install -y --no-install-recommends --no-install-suggests build-essential ca-certificates binutils wget; \
+    apt-get install -y --no-install-recommends --no-install-suggests build-essential ca-certificates binutils; \
     # Install dependencies for building ALSA
     apt-get install -y --no-install-recommends --no-install-suggests libasound2-dev libalsaplayer-dev portaudio19-dev libzbar0; \
-    # Download pre-built OpenCV wheel from GitHub releases
-    wget -O /app/opencv-python-headless.whl "https://github.com/${OPENCV_REPO_OWNER}/app-bricks-py/releases/download/opencv/${OPENCV_VERSION}/opencv_python_headless.whl"; \
+    # Replace placeholder with actual OpenCV wheel URL
+    sed -i "s|OPENCV_WHEEL_URL_PLACEHOLDER|https://github.com/${OPENCV_REPO_OWNER}/app-bricks-py/releases/download/opencv/${OPENCV_VERSION}/opencv_python_headless.whl|g" /app/requirements.txt; \
     # Install Python dependencies
-    pip install --no-cache-dir -r /app/requirements.txt && rm /app/requirements.txt && rm /app/opencv-python-headless.whl; \
+    pip install --no-cache-dir -r /app/requirements.txt && rm /app/requirements.txt; \
     python -c "import cv2; print(cv2.getBuildInformation());"; \
     # Strip debug symbols, tests and remove unneeded packages to reduce size
     find /usr/local/lib/python3.13/site-packages -type f -name "*.so" -exec strip -s {} +; \
     find /usr/local/lib/python3.13/site-packages -type f -name "*.so.*" -exec strip -s {} +; \
     find /usr/local/lib/python3.13/site-packages -type d -name "tests" -exec rm -r {} +; \
-    apt remove -y build-essential ca-certificates binutils wget libasound2-dev libalsaplayer-dev portaudio19-dev; \
+    apt remove -y build-essential ca-certificates binutils libasound2-dev libalsaplayer-dev portaudio19-dev; \
     apt-get clean; \
     apt-get autoclean -y; \
     apt-get autoremove -y
