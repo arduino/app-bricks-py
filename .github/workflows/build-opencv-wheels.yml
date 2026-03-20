@@ -1,9 +1,12 @@
 name: Build OpenCV Python Wheels
 
 on:
-  workflow_dispatch:
   push:
-    branches: [main]
+    tags:
+      - 'opencv/*'
+
+permissions:
+  contents: write
 
 jobs:
   build-wheels:
@@ -40,7 +43,11 @@ jobs:
 
       - name: Clone opencv-python repo
         run: |
-          git clone --recursive https://github.com/opencv/opencv-python.git
+          git clone --depth 1 https://github.com/opencv/opencv-python.git
+          cd opencv-python
+          git fetch --depth 1 origin 4ddfc013fd1f13d9b9e379dbebf2cdbeb052e7f8
+          git checkout 4ddfc013fd1f13d9b9e379dbebf2cdbeb052e7f8
+          git submodule update --init --recursive --depth 1
 
       - name: Build OpenCV Python wheels
         run: |
@@ -56,3 +63,30 @@ jobs:
         with:
           name: opencv-python-wheels
           path: opencv-python/*.whl
+
+      - name: Determine version
+        id: version
+        run: |
+          # Extract version from tag (opencv/4.13.0 -> 4.13.0)
+          VERSION="${GITHUB_REF#refs/tags/opencv/}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Release version: $VERSION"
+
+      - name: Create or update release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="opencv/$VERSION"
+          
+          # Check if release exists and delete it
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists. Deleting..."
+            gh release delete "$TAG" --yes
+          fi
+          
+          # Create release with wheels
+          gh release create "$TAG" \
+            opencv-python/*.whl \
+            --title "OpenCV Python Wheels $VERSION" \
+            --notes "OpenCV Python wheels version $VERSION optimized for ARM64 architecture with GStreamer and FFmpeg support."
