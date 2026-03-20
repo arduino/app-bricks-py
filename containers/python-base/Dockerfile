@@ -4,8 +4,8 @@
 
 FROM python:3.13-slim AS builder
 
-ARG OPENCV_REPO_OWNER=arduino
-ARG OPENCV_VERSION=4.13.0
+ARG OPENCV_REPO_OWNER
+ARG OPENCV_VERSION
 
 COPY ./requirements-base.txt /app/requirements.txt
 
