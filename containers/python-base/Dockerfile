@@ -4,8 +4,10 @@
 
 FROM python:3.13-slim AS builder
 
-ARG OPENCV_REPO_OWNER
-ARG OPENCV_VERSION
+ARG OPENCV_REPO_OWNER=arduino
+ARG OPENCV_VERSION=4.13.0
+ARG OPENCV_WHEEL_VERSION=4.13.0.90
+ARG PYTHON_VERSION=cp313
 
 COPY ./requirements-base.txt /app/requirements.txt
 
@@ -13,21 +15,18 @@ RUN set -ex; \
     apt-get update -y; \
     apt-get upgrade -y; \
     # Install build dependencies
-    apt-get install -y --no-install-recommends --no-install-suggests build-essential ca-certificates binutils curl jq; \
+    apt-get install -y --no-install-recommends --no-install-suggests build-essential ca-certificates binutils; \
     # Install dependencies for building ALSA
     apt-get install -y --no-install-recommends --no-install-suggests libasound2-dev libalsaplayer-dev portaudio19-dev libzbar0; \
-    # Fetch the actual wheel URL from GitHub release (gets whatever wheel is attached)
-    WHEEL_URL=$(curl -s "https://api.github.com/repos/${OPENCV_REPO_OWNER}/app-bricks-py/releases/tags/opencv/${OPENCV_VERSION}" \
-        | jq -r '.assets[] | select(.name | startswith("opencv_python_headless")) | .browser_download_url'); \
-    sed -i "s|OPENCV_WHEEL_URL_PLACEHOLDER|${WHEEL_URL}|g" /app/requirements.txt; \
+    # Replace placeholder with actual OpenCV wheel URL (full wheel name with platform details)
+    sed -i "s|OPENCV_WHEEL_URL_PLACEHOLDER|https://github.com/${OPENCV_REPO_OWNER}/app-bricks-py/releases/download/opencv/${OPENCV_VERSION}/opencv_python_headless-${OPENCV_WHEEL_VERSION}-${PYTHON_VERSION}-${PYTHON_VERSION}-linux_aarch64.whl|g" /app/requirements.txt; \
     # Install Python dependencies
     pip install --no-cache-dir -r /app/requirements.txt && rm /app/requirements.txt; \
-    python -c "import cv2; print(cv2.getBuildInformation());"; \
     # Strip debug symbols, tests and remove unneeded packages to reduce size
     find /usr/local/lib/python3.13/site-packages -type f -name "*.so" -exec strip -s {} +; \
     find /usr/local/lib/python3.13/site-packages -type f -name "*.so.*" -exec strip -s {} +; \
     find /usr/local/lib/python3.13/site-packages -type d -name "tests" -exec rm -r {} +; \
-    apt remove -y build-essential ca-certificates binutils curl jq libasound2-dev libalsaplayer-dev portaudio19-dev; \
+    apt remove -y build-essential ca-certificates binutils libasound2-dev libalsaplayer-dev portaudio19-dev; \
     apt-get clean; \
     apt-get autoclean -y; \
     apt-get autoremove -y
