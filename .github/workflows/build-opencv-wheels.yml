@@ -85,8 +85,13 @@ jobs:
             gh release delete "$TAG" --yes
           fi
           
+          # Rename wheel to fixed name for easier consumption
+          cd opencv-python
+          mv opencv_python_headless*.whl opencv_python_headless.whl
+          cd ..
+          
           # Create release with wheels
           gh release create "$TAG" \
-            opencv-python/*.whl \
+            opencv-python/opencv_python_headless.whl \
             --title "OpenCV Python Wheels $VERSION" \
             --notes "OpenCV Python wheels version $VERSION optimized for ARM64 architecture with GStreamer and FFmpeg support."
