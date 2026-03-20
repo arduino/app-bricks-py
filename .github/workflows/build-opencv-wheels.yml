@@ -23,7 +23,7 @@ jobs:
       - name: Install prerequisites
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends git ca-certificates build-essential pkg-config
+          apt-get install -y --no-install-recommends gh git ca-certificates build-essential pkg-config ninja-build
 
       - name: Install Python
         run: |
