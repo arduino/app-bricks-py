@@ -30,15 +30,13 @@ RUN set -ex; \
     pip wheel . --verbose --no-deps; \
     mv opencv_python_headless*.whl /opencv_python_headless.whl; \
     cd ..; \
-    echo "============================================================"; \
-    ls -al; \
-    echo "============================================================"; \
     # Install Python dependencies
     pip install --no-cache-dir -r /app/requirements.txt && rm /app/requirements.txt; \
+    python -c "import cv2; print(cv2.getBuildInformation());"; \
     # Strip debug symbols, tests and remove unneeded packages to reduce size
     find /usr/local/lib/python3.13/site-packages -type f -name "*.so" -exec strip -s {} +; \
     find /usr/local/lib/python3.13/site-packages -type f -name "*.so.*" -exec strip -s {} +; \
-    find /usr/local/lib/python3.13/site-packages -type d -name "tests" -exec rm -r {} + \
+    find /usr/local/lib/python3.13/site-packages -type d -name "tests" -exec rm -r {} +; \
     apt remove -y git pkg-config build-essential ca-certificates binutils libasound2-dev libalsaplayer-dev portaudio19-dev libjpeg62-turbo-dev libpng-dev libtiff-dev libwebp-dev libavif-dev libopenblas-dev liblapacke-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev; \
     apt-get clean; \
     apt-get autoclean -y; \
