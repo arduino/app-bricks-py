@@ -1,0 +1,58 @@
+name: Build OpenCV Python Wheels
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build-wheels:
+    runs-on: ubuntu-24.04-arm
+    container:
+      image: debian:trixie
+      options: --user root
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install prerequisites
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git ca-certificates build-essential pkg-config
+
+      - name: Install Python
+        run: |
+          apt-get install -y --no-install-recommends python3 python3-dev python3-pip
+
+      - name: Install FFmpeg dependencies
+        run: |
+          apt-get install -y --no-install-recommends libavcodec-dev libavformat-dev libavutil-dev libswscale-dev
+
+      - name: Install Media I/O dependencies
+        run: |
+          apt-get install -y --no-install-recommends libjpeg62-turbo-dev libpng-dev libtiff-dev libwebp-dev libavif-dev libopenblas-dev liblapacke-dev
+
+      - name: Install GStreamer dependencies
+        run: |
+          apt-get install -y --no-install-recommends libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
+
+      - name: Clone opencv-python repo
+        run: |
+          git clone --recursive https://github.com/opencv/opencv-python.git
+
+      - name: Build OpenCV Python wheels
+        run: |
+          cd opencv-python
+          export OPENCV_VERSION=4.13.0
+          export ENABLE_CONTRIB=0
+          export ENABLE_HEADLESS=1
+          export CMAKE_ARGS="-DWITH_GSTREAMER=ON -DWITH_FFMPEG=ON -DWITH_CAROTENE=ON -DWITH_LAPACK=ON -DBUILD_opencv_python3=ON -DWITH_GTK=OFF -DWITH_QT=OFF -DWITH_CUDA=OFF -DBUILD_opencv_java=OFF -DWITH_VTK=OFF -DBUILD_opencv_dnn=OFF -DBUILD_opencv_dnn_modern=OFF"
+          pip3 wheel . --verbose --no-deps
+
+      - name: Upload wheel files
+        uses: actions/upload-artifact@v4
+        with:
+          name: opencv-python-wheels
+          path: opencv-python/*.whl
