@@ -17,9 +17,9 @@ RUN set -ex; \
     # Install dependencies for building ALSA
     apt-get install -y --no-install-recommends --no-install-suggests libasound2-dev libalsaplayer-dev portaudio19-dev libzbar0; \
     # Download pre-built OpenCV wheel from GitHub releases
-    wget -O /opencv-python-headless.whl "https://github.com/${OPENCV_REPO_OWNER}/app-bricks-py/releases/download/opencv/${OPENCV_VERSION}/opencv_python_headless.whl"; \
+    wget -O /app/opencv-python-headless.whl "https://github.com/${OPENCV_REPO_OWNER}/app-bricks-py/releases/download/opencv/${OPENCV_VERSION}/opencv_python_headless.whl"; \
     # Install Python dependencies
-    pip install --no-cache-dir -r /app/requirements.txt && rm /app/requirements.txt; \
+    pip install --no-cache-dir -r /app/requirements.txt && rm /app/requirements.txt && rm /app/opencv-python-headless.whl; \
     python -c "import cv2; print(cv2.getBuildInformation());"; \
     # Strip debug symbols, tests and remove unneeded packages to reduce size
     find /usr/local/lib/python3.13/site-packages -type f -name "*.so" -exec strip -s {} +; \
