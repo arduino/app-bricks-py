@@ -13,11 +13,13 @@ RUN set -ex; \
     apt-get update -y; \
     apt-get upgrade -y; \
     # Install build dependencies
-    apt-get install -y --no-install-recommends --no-install-suggests build-essential ca-certificates binutils; \
+    apt-get install -y --no-install-recommends --no-install-suggests build-essential ca-certificates binutils curl jq; \
     # Install dependencies for building ALSA
     apt-get install -y --no-install-recommends --no-install-suggests libasound2-dev libalsaplayer-dev portaudio19-dev libzbar0; \
-    # Replace placeholder with actual OpenCV wheel URL
-    sed -i "s|OPENCV_WHEEL_URL_PLACEHOLDER|https://github.com/${OPENCV_REPO_OWNER}/app-bricks-py/releases/download/opencv/${OPENCV_VERSION}/opencv_python_headless.whl|g" /app/requirements.txt; \
+    # Fetch the actual wheel URL from GitHub release (gets whatever wheel is attached)
+    WHEEL_URL=$(curl -s "https://api.github.com/repos/${OPENCV_REPO_OWNER}/app-bricks-py/releases/tags/opencv/${OPENCV_VERSION}" \
+        | jq -r '.assets[] | select(.name | startswith("opencv_python_headless")) | .browser_download_url'); \
+    sed -i "s|OPENCV_WHEEL_URL_PLACEHOLDER|${WHEEL_URL}|g" /app/requirements.txt; \
     # Install Python dependencies
     pip install --no-cache-dir -r /app/requirements.txt && rm /app/requirements.txt; \
     python -c "import cv2; print(cv2.getBuildInformation());"; \
@@ -25,7 +27,7 @@ RUN set -ex; \
     find /usr/local/lib/python3.13/site-packages -type f -name "*.so" -exec strip -s {} +; \
     find /usr/local/lib/python3.13/site-packages -type f -name "*.so.*" -exec strip -s {} +; \
     find /usr/local/lib/python3.13/site-packages -type d -name "tests" -exec rm -r {} +; \
-    apt remove -y build-essential ca-certificates binutils libasound2-dev libalsaplayer-dev portaudio19-dev; \
+    apt remove -y build-essential ca-certificates binutils curl jq libasound2-dev libalsaplayer-dev portaudio19-dev; \
     apt-get clean; \
     apt-get autoclean -y; \
     apt-get autoremove -y
