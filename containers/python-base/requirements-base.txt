@@ -1,7 +1,7 @@
 uv
 pandas==2.3.2
 pillow
-opencv_python_headless.whl
+./opencv-python-headless.whl
 pyyaml
 requests
 pyalsaaudio==0.11.0
