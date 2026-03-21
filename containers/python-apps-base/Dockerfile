@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir -r /app/requirements.txt && rm /app/requirements.
 
 COPY ./*.sh /
 COPY ./arduino*.whl /app/
-RUN bash -c 'WHL_FILES=(/app/*.whl) && pip install --no-cache-dir "${WHL_FILES[@]}"[all] && pip cache purge'; \
+RUN bash -c 'WHL_FILES=(/app/*.whl) && pip install --no-cache-dir "${WHL_FILES[@]}"[all]'; \
     rm /app/*.whl; \
     # fix permissions for /home/app
     chown arduino:arduino -R /home/app; \
