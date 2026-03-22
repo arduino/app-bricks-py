@@ -74,6 +74,12 @@ jobs:
           cd opencv-python
           auditwheel repair opencv_python_headless*.whl --plat manylinux_2_39_aarch64 -w wheelhouse/
 
+      - name: Print OpenCV build info
+        run: |
+          cd opencv-python
+          pip install wheelhouse/opencv_python_headless*.whl
+          python -c "import cv2; print(cv2.getBuildInformation())"
+
       - name: Upload wheel files
         uses: actions/upload-artifact@v4
         with:
