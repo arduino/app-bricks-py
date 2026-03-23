@@ -46,7 +46,7 @@ RUN set -ex; \
     # Install dependencies for running OpenCV with Gstreamer backend
     apt-get install -y --no-install-recommends --no-install-suggests libavcodec61 libavformat61 libavutil59 libswscale8; \
     apt-get install -y --no-install-recommends --no-install-suggests libjpeg62-turbo libtiff6 libpng16-16t64 libwebp7 libwebpdecoder3 libwebpdemux2 libwebpmux3 libavif16 libopenblas0 liblapacke; \
-    apt-get install -y --no-install-recommends --no-install-suggests libgstreamer1.0-0 libgstreamer-plugins-base1.0-0 gstreamer1.0-plugins-good gstreamer1.0-libav gstreamer1.0-libcamera libcamera0.4 libcamera-ipa libcamera-tools; \
+    apt-get install -y --no-install-recommends --no-install-suggests libgstreamer1.0-0 libgstreamer-plugins-base1.0-0 gstreamer1.0-plugins-good gstreamer1.0-libav gstreamer1.0-libcamera libcamera0.4 libcamera-ipa libcamera-tools v4l-utils; \
     # Install other runtime dependencies
     apt-get install -y --no-install-recommends --no-install-suggests libglib2.0-0 inotify-tools wget libzbar0; \
     apt-get dist-clean; \
