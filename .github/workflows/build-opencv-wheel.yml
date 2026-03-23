@@ -77,8 +77,9 @@ jobs:
       - name: Print OpenCV build info
         run: |
           cd opencv-python
-          pip install wheelhouse/opencv_python_headless*.whl
-          python -c "import cv2; print(cv2.getBuildInformation())"
+          python -m venv /tmp/opencv-test
+          /tmp/opencv-test/bin/pip install wheelhouse/opencv_python_headless*.whl
+          /tmp/opencv-test/bin/python -c "import cv2; print(cv2.getBuildInformation())"
 
       - name: Upload wheel files
         uses: actions/upload-artifact@v4
@@ -89,7 +90,7 @@ jobs:
       - name: Determine version
         id: version
         run: |
-          # Extract version from tag (opencv/4.13.0 -> 4.13.0)
+          # Extract version from tag (opencv/4.13.0.92 -> 4.13.0.92)
           VERSION="${GITHUB_REF#refs/tags/opencv/}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Release version: $VERSION"
