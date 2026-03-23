@@ -78,7 +78,6 @@ class CloudLLM:
         self._api_key = api_key
 
         # Model configuration
-        self._model = model
         self._system_prompt = system_prompt
         self._temperature = temperature
         self._max_tool_loops = max_tool_loops
@@ -234,6 +233,17 @@ class CloudLLM:
             return "".join(parts)
 
         return str(content)
+
+    def get_client(self) -> BaseChatModel:
+        """Returns the underlying LangChain model instance.
+
+        This allows for advanced users to access the full capabilities of the model
+        directly, such as calling `generate()` or `stream()` with custom message formats.
+
+        Returns:
+            BaseChatModel: The LangChain chat model instance used internally.
+        """
+        return self._model
 
     def chat(self, message: str, images: List[str | bytes] = None) -> str:
         """Sends a message to the AI and blocks until the complete response is received.

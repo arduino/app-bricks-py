@@ -2,6 +2,8 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+from langchain_core.language_models import BaseChatModel
+
 from arduino.app_bricks.llm import LargeLanguageModel
 from arduino.app_utils import Logger, brick
 from arduino.app_internal.core import get_brick_config, get_brick_configured_model
@@ -77,6 +79,17 @@ class VisionLanguageModel(LargeLanguageModel):
             **kwargs,
         )
         super().with_memory(0)  # Initialize without memory enabled (0 means no history)
+
+    def get_client(self) -> BaseChatModel:
+        """Returns the underlying LangChain model instance.
+
+        This allows for advanced users to access the full capabilities of the model
+        directly, such as calling `generate()` or `stream()` with custom message formats.
+
+        Returns:
+            BaseChatModel: The LangChain chat model instance used internally.
+        """
+        return self._model
 
     def chat(self, message: str, images: List[str | bytes] = None) -> str:
         """Sends a message to the AI and blocks until the complete response is received.
