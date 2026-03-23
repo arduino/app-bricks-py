@@ -1,0 +1,287 @@
+name: DEV - build & publish branch containers
+
+on:
+  push:
+    branches-ignore:
+      - main
+  workflow_dispatch:
+    inputs:
+      containers:
+        description: "Comma-separated container names to build, or 'all' for all containers"
+        type: string
+        default: "all"
+      tag:
+        description: "Custom image tag (optional, defaults to sanitized branch name)"
+        type: string
+        default: ""
+
+env:
+  REGISTRY: ghcr.io
+  DEV_REGISTRY_PATH: ghcr.io/${{ github.repository_owner }}/
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      containers: ${{ steps.detect.outputs.containers }}
+      downstream_containers: ${{ steps.detect.outputs.downstream_containers }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect containers to build
+        id: detect
+        run: |
+          CHANGED=()
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            INPUT="${{ inputs.containers }}"
+            if [[ "$INPUT" == "all" ]]; then
+              while IFS= read -r CONTAINER; do
+                CHANGED+=("$CONTAINER")
+              done < <(ls -d containers/*/ | xargs -I{} basename {})
+            else
+              while IFS= read -r CONTAINER; do
+                CHANGED+=("$CONTAINER")
+              done < <(echo "$INPUT" | tr ',' '\n' | sed 's/^ *//;s/ *$//')
+            fi
+          else
+            BEFORE="${{ github.event.before }}"
+            ZERO_SHA="0000000000000000000000000000000000000000"
+
+            # Fall back to origin/main if BEFORE is the zero SHA (new branch)
+            # or if the commit no longer exists (e.g. after a force-push/amend)
+            if [[ "$BEFORE" == "$ZERO_SHA" ]] || ! git cat-file -e "$BEFORE" 2>/dev/null; then
+              echo "Before SHA not available, falling back to origin/main"
+              BEFORE=$(git rev-parse origin/main 2>/dev/null || echo "")
+              if [[ -z "$BEFORE" ]]; then
+                echo "No base commit found, skipping builds"
+                echo "containers=[]" >> $GITHUB_OUTPUT
+                echo "downstream_containers=[]" >> $GITHUB_OUTPUT
+                exit 0
+              fi
+            fi
+
+            for CI_JSON in containers/*/ci.json; do
+              CONTAINER=$(basename "$(dirname "$CI_JSON")")
+              WATCH_PATHS=$(jq -r '.watch_paths | join(" ")' "$CI_JSON")
+              if git diff --name-only "$BEFORE" HEAD -- $WATCH_PATHS | grep -q .; then
+                CHANGED+=("$CONTAINER")
+              fi
+            done
+
+            # Cascade: add downstream containers for each changed container
+            for CONTAINER in "${CHANGED[@]}"; do
+              DOWNSTREAM=$(jq -r '.downstream // [] | .[]' "containers/$CONTAINER/ci.json")
+              for DS in $DOWNSTREAM; do
+                if [[ ! " ${CHANGED[*]} " =~ " $DS " ]]; then
+                  echo "Cascading: $DS depends on $CONTAINER"
+                  CHANGED+=("$DS")
+                fi
+              done
+            done
+          fi
+
+          if [[ ${#CHANGED[@]} -eq 0 ]]; then
+            echo "No container sources changed"
+            echo "containers=[]" >> $GITHUB_OUTPUT
+            echo "downstream_containers=[]" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Split CHANGED into base containers and downstream containers.
+          # A container is downstream if it appears in the downstream list of another container being built.
+          DOWNSTREAM_IN_BUILD=()
+          for CONTAINER in "${CHANGED[@]}"; do
+            DS_LIST=$(jq -r '.downstream // [] | .[]' "containers/$CONTAINER/ci.json" 2>/dev/null)
+            for DS in $DS_LIST; do
+              if [[ " ${CHANGED[*]} " =~ " $DS " ]] && [[ ! " ${DOWNSTREAM_IN_BUILD[*]} " =~ " $DS " ]]; then
+                DOWNSTREAM_IN_BUILD+=("$DS")
+              fi
+            done
+          done
+
+          BASE_CONTAINERS=()
+          for CONTAINER in "${CHANGED[@]}"; do
+            if [[ ! " ${DOWNSTREAM_IN_BUILD[*]} " =~ " $CONTAINER " ]]; then
+              BASE_CONTAINERS+=("$CONTAINER")
+            fi
+          done
+
+          echo "Base containers: ${BASE_CONTAINERS[*]}"
+          echo "Downstream containers: ${DOWNSTREAM_IN_BUILD[*]}"
+
+          if [[ ${#BASE_CONTAINERS[@]} -eq 0 ]]; then
+            echo "containers=[]" >> $GITHUB_OUTPUT
+          else
+            echo "containers=$(printf '%s\n' "${BASE_CONTAINERS[@]}" | jq -R . | jq -sc .)" >> $GITHUB_OUTPUT
+          fi
+
+          if [[ ${#DOWNSTREAM_IN_BUILD[@]} -eq 0 ]]; then
+            echo "downstream_containers=[]" >> $GITHUB_OUTPUT
+          else
+            echo "downstream_containers=$(printf '%s\n' "${DOWNSTREAM_IN_BUILD[@]}" | jq -R . | jq -sc .)" >> $GITHUB_OUTPUT
+          fi
+
+  build:
+    needs: [detect-changes]
+    if: needs.detect-changes.outputs.containers != '[]'
+    runs-on: ubuntu-latest
+    env:
+      PYTHON_VERSION: "3.13"
+      TASKFILE_VERSION: "3.45.4"
+    strategy:
+      fail-fast: false
+      matrix:
+        container: ${{ fromJson(needs.detect-changes.outputs.containers) }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        if: matrix.container == 'python-apps-base'
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install and build library
+        if: matrix.container == 'python-apps-base'
+        env:
+          PUBLIC_IMAGE_REGISTRY_BASE: ${{ env.DEV_REGISTRY_PATH }}
+        run: |
+          pip install go-task-bin==${{ env.TASKFILE_VERSION }}
+          task init:ci
+          task build-dev
+          cp ./dist/arduino*.whl ./containers/python-apps-base/
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: linux/arm64
+
+      - name: Setup Docker buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log into registry ${{ env.REGISTRY }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          tags: |
+            type=ref,event=branch
+            type=ref,event=branch,suffix=-${{ github.run_number }}
+            type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
+          images: ghcr.io/${{ github.repository_owner }}/app-bricks/${{ matrix.container }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./containers/${{ matrix.container }}
+          file: ./containers/${{ matrix.container }}/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+          build-args: |
+            REGISTRY=${{ env.DEV_REGISTRY_PATH }}
+          # BASE_IMAGE_VERSION=latest # currently not used, defaults to value used in Dockerfile
+
+  build-downstream:
+    needs: [detect-changes, build]
+    if: needs.detect-changes.outputs.downstream_containers != '[]'
+    runs-on: ubuntu-latest
+    env:
+      PYTHON_VERSION: "3.13"
+      TASKFILE_VERSION: "3.45.4"
+    strategy:
+      fail-fast: false
+      matrix:
+        container: ${{ fromJson(needs.detect-changes.outputs.downstream_containers) }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Compute upstream image tag
+        id: upstream_tag
+        run: |
+          if [[ -n "${{ inputs.tag }}" ]]; then
+            echo "value=${{ inputs.tag }}" >> $GITHUB_OUTPUT
+          else
+            TAG=$(echo "${{ github.ref_name }}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-zA-Z0-9._-]/-/g')
+            echo "value=$TAG" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set up Python
+        if: matrix.container == 'python-apps-base'
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install and build library
+        if: matrix.container == 'python-apps-base'
+        env:
+          PUBLIC_IMAGE_REGISTRY_BASE: ${{ env.DEV_REGISTRY_PATH }}
+        run: |
+          pip install go-task-bin==${{ env.TASKFILE_VERSION }}
+          task init:ci
+          task build-dev
+          cp ./dist/arduino*.whl ./containers/python-apps-base/
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: linux/arm64
+
+      - name: Setup Docker buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log into registry ${{ env.REGISTRY }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          tags: |
+            type=ref,event=branch
+            type=ref,event=branch,suffix=-${{ github.run_number }}
+            type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
+          images: ghcr.io/${{ github.repository_owner }}/app-bricks/${{ matrix.container }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./containers/${{ matrix.container }}
+          file: ./containers/${{ matrix.container }}/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+          build-args: |
+            REGISTRY=${{ env.DEV_REGISTRY_PATH }}
+            BASE_IMAGE_VERSION=${{ steps.upstream_tag.outputs.value }}
