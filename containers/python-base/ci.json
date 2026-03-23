@@ -1,0 +1,9 @@
+{
+  "tag_prefix": "base",
+  "watch_paths": ["containers/python-base/"],
+  "tag_latest": true,
+  "build_whl": false,
+  "update_compose": false,
+  "build_args": {},
+  "downstream": ["python-apps-base"]
+}

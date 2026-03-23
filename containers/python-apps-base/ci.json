@@ -1,0 +1,15 @@
+{
+  "tag_prefix": "release",
+  "watch_paths": [
+    "containers/python-apps-base/",
+    "src/",
+    "pyproject.toml",
+    "Taskfile.dist.yml"
+  ],
+  "tag_latest": false,
+  "build_whl": true,
+  "update_compose": false,
+  "build_args": {
+    "REGISTRY": "ghcr.io/arduino/"
+  }
+}
