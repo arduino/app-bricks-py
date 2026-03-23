@@ -2,6 +2,8 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+from langchain_core.language_models import BaseChatModel
+
 from arduino.app_bricks.cloud_llm import CloudLLM, CloudModelProvider
 from arduino.app_bricks.cloud_llm.cloud_llm import DEFAULT_MEMORY
 from arduino.app_utils import Logger, brick
@@ -163,6 +165,17 @@ class LargeLanguageModel(CloudLLM):
             LargeLanguageModel: The current instance, allowing for method chaining.
         """
         return super().with_memory(max_messages=max_messages)
+
+    def get_client(self) -> BaseChatModel:
+        """Returns the underlying LangChain model instance.
+
+        This allows for advanced users to access the full capabilities of the model
+        directly, such as calling `generate()` or `stream()` with custom message formats.
+
+        Returns:
+            BaseChatModel: The LangChain chat model instance used internally.
+        """
+        return self._model
 
     def _handle_api_error(self, ilogger: Logger, e: Exception) -> None:
         """Handles OpenAI API errors by logging details and raising RuntimeError.
