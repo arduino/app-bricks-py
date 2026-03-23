@@ -1077,7 +1077,7 @@ models:
       source: "edgeimpulse"
       ei-project-id: 708500
       ei-model-url: "https://studio.edgeimpulse.com/public/708500/live"
-      ei-gpu-mode: true
+      ei-gpu-mode: false
       source-model-id: "MobileNetV2"
       source-model-url: "https://www.tensorflow.org/api_docs/python/tf/keras/applications/MobileNetV2"
     bricks:
@@ -1098,7 +1098,7 @@ models:
       source: "edgeimpulse"
       ei-project-id: 755016
       ei-model-url: "https://studio.edgeimpulse.com/public/755016/live"
-      ei-gpu-mode: true
+      ei-gpu-mode: false
       source-model-id: "person-classification-wakevision"
       source-model-url: "https://studio.edgeimpulse.com/public/755016/live"
     bricks:
