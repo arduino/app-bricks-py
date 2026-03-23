@@ -1,0 +1,57 @@
+name: Cleanup branch containers from GHCR
+
+on:
+  delete:
+
+permissions:
+  packages: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    if: github.event.ref_type == 'branch'
+    steps:
+      - name: Sanitize branch name
+        id: branch
+        run: |
+          # Apply the same transform as docker/metadata-action type=ref,event=branch:
+          # lowercase, replace non-alphanumeric (except dash) with dash, strip leading/trailing dashes
+          RAW="${{ github.event.ref }}"
+          SANITIZED=$(echo "$RAW" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g' | sed 's/^-//;s/-$//')
+          echo "tag=$SANITIZED" >> $GITHUB_OUTPUT
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Delete branch-tagged images from GHCR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.branch.outputs.tag }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          # Discover packages from containers/ directory
+          mapfile -t PACKAGES < <(ls -d containers/*/ | xargs -I{} basename {} | sed 's|^|app-bricks/|' | jq -Rr @uri)
+
+          for PKG in "${PACKAGES[@]}"; do
+            echo "Processing package: $PKG (tag: $TAG)"
+
+            API_PATH="/orgs/$OWNER/packages/container/$PKG/versions"
+            DELETE_PATH="/orgs/$OWNER/packages/container/$PKG/versions"
+
+            # List all versions and find ones that match our branch tag
+            VERSIONS=$(gh api \
+              "$API_PATH" \
+              --paginate \
+              --jq ".[] | select(.metadata.container.tags[] | . == \"$TAG\") | .id" 2>/dev/null || true)
+
+            if [[ -z "$VERSIONS" ]]; then
+              echo "  No versions found with tag '$TAG' for $PKG"
+              continue
+            fi
+
+            while IFS= read -r VERSION_ID; do
+              echo "  Deleting version $VERSION_ID from $PKG"
+              gh api --method DELETE "$DELETE_PATH/$VERSION_ID" || \
+                echo "  Warning: failed to delete version $VERSION_ID (may require delete:packages scope)"
+            done <<< "$VERSIONS"
+          done
