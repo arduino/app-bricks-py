@@ -6,7 +6,6 @@ FROM python:3.13-slim AS builder
 
 ARG OPENCV_REPO_OWNER=arduino
 ARG OPENCV_VERSION=4.13.0.92
-ARG OPENCV_WHEEL_VERSION=4.13.0.92
 ARG PYTHON_VERSION=cp313
 
 COPY ./requirements-base.txt /app/requirements.txt
@@ -19,7 +18,7 @@ RUN set -ex; \
     # Install dependencies for building ALSA
     apt-get install -y --no-install-recommends --no-install-suggests libasound2-dev libalsaplayer-dev portaudio19-dev libzbar0; \
     # Replace placeholder with actual OpenCV wheel URL (full wheel name with platform details)
-    sed -i "s|OPENCV_WHEEL_URL_PLACEHOLDER|https://github.com/${OPENCV_REPO_OWNER}/app-bricks-py/releases/download/opencv/${OPENCV_VERSION}/opencv_python_headless-${OPENCV_WHEEL_VERSION}-${PYTHON_VERSION}-${PYTHON_VERSION}-manylinux_2_39_aarch64.whl|g" /app/requirements.txt; \
+    sed -i "s|OPENCV_WHEEL_URL_PLACEHOLDER|https://github.com/${OPENCV_REPO_OWNER}/app-bricks-py/releases/download/opencv/${OPENCV_VERSION}/opencv_python_headless-${OPENCV_VERSION}-${PYTHON_VERSION}-${PYTHON_VERSION}-manylinux_2_39_aarch64.whl|g" /app/requirements.txt; \
     # Install Python dependencies
     pip install --no-cache-dir -r /app/requirements.txt && rm /app/requirements.txt; \
     # Strip debug symbols, tests and remove unneeded packages to reduce size
