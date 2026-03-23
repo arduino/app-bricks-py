@@ -76,24 +76,9 @@ jobs:
 
       - name: Print OpenCV build info
         run: |
-          cd opencv-python
           python -m venv /tmp/opencv-test
-          /tmp/opencv-test/bin/pip install wheelhouse/opencv_python_headless*.whl
-          /tmp/opencv-test/bin/python -c "
-          import cv2, os, importlib
-          print('cv2 location:', cv2.__file__)
-          print('cv2 dir:', [x for x in dir(cv2) if not x.startswith('_')])
-          # Try loading the binary extension directly
-          pkgdir = os.path.dirname(cv2.__file__)
-          for f in sorted(os.listdir(pkgdir)):
-              print(' ', f)
-          try:
-              from cv2 import cv2 as _cv2
-              print('cv2.cv2 loaded')
-          except ImportError as e:
-              print('cv2.cv2 import failed:', e)
-          print(cv2.getBuildInformation())
-          "
+          /tmp/opencv-test/bin/pip install opencv-python/wheelhouse/opencv_python_headless*.whl
+          /tmp/opencv-test/bin/python -c "import cv2; print(cv2.getBuildInformation())"
 
       - name: Upload wheel files
         uses: actions/upload-artifact@v4
