@@ -147,30 +147,33 @@ If it is needed to use a different version, override it via 'APPSLAB_VERSION' en
 
 ## Release
 
-Release is based on tag. After tagging main branch with desired version number (e.g. release/1.0.0), build will be triggered.
-Build will start:
-* docker containers build
-* containers upload to public registry with specified tag version
-* release of python library as 'wheel' file
+Release is based on tags pushed to `main`. A single workflow (`docker-github-publish.yml`) handles all container releases and detects which container to build from the tag prefix defined in each container's `ci.json`.
 
-Release is split in 2 main actions.
-* Tag "ai/{version}" to release AI containers
-* Tag "release/{version}" to release Bricks library and containers
+| Tag | What it releases |
+|---|---|
+| `base/X.Y.Z` | `python-base` base image |
+| `release/X.Y.Z` | `python-apps-base` container + Python `.whl` uploaded to GitHub Release |
+| `ai/X.Y.Z` | `ei-models-runner` AI container |
 
-This is done because release cycle for AI containers and Bricks is different. So release is independent.
-After releasing a new version of AI containers, compose files that use AI containers must be updated.
+Release cycles for AI containers and Bricks are independent — they use separate tag prefixes and can be released at any time without affecting each other.
 
-To perform development, it is possible to use Dev build pipeline, suited to rebuild a full dev stack with containers updated to 'dev-latest' tag.
+After releasing a new version of AI containers, compose files that use AI containers are updated automatically via a generated PR.
+
+**Downstream cascade**: when `python-base` is released, the workflow automatically triggers a rebuild of `python-apps-base` (and any other container declared as a downstream dependency). No manual step required.
+
+For development, the dev build pipeline (`docker-github-build.yml`) rebuilds only the containers whose source files changed on the branch. Dependent containers are built in the correct order — downstream containers wait for their upstream to finish and use the freshly built image.
+
+See [`.github/README.md`](.github/README.md) for full CI documentation.
 
 ### Container layers
 
 Library containers are based on a set of pre-defined Python base images that are updated with a different frequency wrt library release.
-Base images are built by "BASE - build base images" flow. This flow should be triggered only in case of base images update needs.
+Base images are built by tagging `base/X.Y.Z`. This should be done only when base image dependencies or infrastructure change.
 
 Base images are required to:
 * reduce the amount of updated layers during a single library update
-* promote reuse of existing layers in multiple build
-* cache pre-compiled python library as much as possible
+* promote reuse of existing layers in multiple builds
+* cache pre-compiled python libraries as much as possible
 
 Non-base images should start from common base images for performance and disk usage needs.
 
