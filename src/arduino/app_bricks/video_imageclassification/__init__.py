@@ -32,7 +32,7 @@ class VideoImageClassification:
 
     ALL_HANDLERS_KEY = "__ALL"
 
-    def __init__(self, camera: BaseCamera | None = None, confidence: float = 0.3, debounce_sec: float = 0.0):
+    def __init__(self, camera: BaseCamera | None = None, confidence: float = 0.3, debounce_sec: float = 0.0, detection_locks_timeout: float = 1.0):
         """Initialize the VideoImageClassification class.
 
         Args:
@@ -40,6 +40,8 @@ class VideoImageClassification:
             confidence (float): The minimum confidence level for a classification to be considered valid. Default is 0.3.
             debounce_sec (float): The minimum time in seconds between consecutive detections of the same object
                 to avoid multiple triggers. Default is 0 seconds.
+            detection_locks_timeout (float): Maximum seconds to wait in case of already running handler before discarding
+                the detection signal. Default is 1.0 seconds.
 
         Raises:
              RuntimeError: If the host address could not be resolved.
@@ -48,10 +50,13 @@ class VideoImageClassification:
 
         self._confidence = confidence
         self._debounce_sec = debounce_sec
+        self._detection_locks_timeout = detection_locks_timeout
         self._last_detected = {}
 
         self._handlers = {}  # Dictionary to hold handlers for different actions
         self._handlers_lock = threading.Lock()
+        self._detection_locks = {}  # Per-detection locks for fine-grained concurrency control
+        self._detection_locks_lock = threading.Lock()  # Lock to protect _detection_locks dict
 
         self._is_running = threading.Event()
 
@@ -257,6 +262,20 @@ class VideoImageClassification:
             # Leave logging for unknown message types for debugging purposes
             logger.warning(f"Unknown message type: {jmsg.get('type')}")
 
+    def _get_detection_lock(self, classification: str) -> threading.Lock:
+        """Get or create a lock for a specific classification label.
+
+        Args:
+            classification (str): The classification label to get a lock for.
+
+        Returns:
+            threading.Lock: The lock for the specified classification.
+        """
+        with self._detection_locks_lock:
+            if classification not in self._detection_locks:
+                self._detection_locks[classification] = threading.Lock()
+            return self._detection_locks[classification]
+
     def _execute_handler(self, classification: str, classifications: dict | None = None):
         """Execute the handler for the detected object if it exists.
 
@@ -264,18 +283,32 @@ class VideoImageClassification:
             classification (str): The classified object to check for in the registered handlers.
             classifications (dict, optional): The full dictionary of classifications if invoking the all-detection handler.
         """
-        now = time.time()
+        # Get the handler from the dictionary (short critical section)
         with self._handlers_lock:
             handler = self._handlers.get(classification)
-            if handler:
-                last_time = self._last_detected.get(classification, 0)
-                if now - last_time >= self._debounce_sec:
-                    self._last_detected[classification] = now
-                    logger.debug(f"Classification: {classification}, invoking handler.")
-                    if classifications is None:
-                        handler()
-                    else:
-                        handler(classifications)
+
+        if not handler:
+            return
+
+        # Try to acquire per-classification lock with timeout
+        classification_lock = self._get_detection_lock(classification)
+        if not classification_lock.acquire(timeout=self._detection_locks_timeout):
+            # Lock is already taken and cannot be acquired within the timeout, skip this classification
+            logger.debug(f"Handler for classification '{classification}' is already running, skipping.")
+            return
+
+        try:
+            now = time.time()
+            last_time = self._last_detected.get(classification, 0)
+            if now - last_time >= self._debounce_sec:
+                self._last_detected[classification] = now
+                logger.debug(f"Classification: {classification}, invoking handler.")
+                if classifications is None:
+                    handler()
+                else:
+                    handler(classifications)
+        finally:
+            classification_lock.release()
 
     def override_threshold(self, value: float):
         """Override the threshold for image classification model.
