@@ -38,7 +38,14 @@ class VideoObjectDetection:
 
     ALL_HANDLERS_KEY = "__ALL"
 
-    def __init__(self, camera: BaseCamera | None = None, confidence: float = 0.3, debounce_sec: float = 0.0, camera_preview: bool = False):
+    def __init__(
+        self,
+        camera: BaseCamera | None = None,
+        confidence: float = 0.3,
+        debounce_sec: float = 0.0,
+        camera_preview: bool = False,
+        detection_locks_timeout: float = 1.0,
+    ):
         """Initialize the VideoObjectDetection class.
 
         Args:
@@ -47,6 +54,8 @@ class VideoObjectDetection:
             debounce_sec (float): Minimum seconds between repeated detections of the same object. Default is 0 seconds.
             camera_preview (bool): Receive current camera frame on callback invocation.
                 Frame is a raw jpeg-encoded image without bounding boxes applied on it. Default is False.
+            detection_locks_timeout (float): Maximum seconds to wait in case of already running handler before discarding
+                the detection signal. Default is 1.0 seconds.
 
         Raises:
             RuntimeError: If the host address could not be resolved.
@@ -63,7 +72,7 @@ class VideoObjectDetection:
         self._handlers_lock = threading.Lock()
         self._handlers = {}  # Dictionary to hold handlers for different actions
 
-        self._detection_locks_timeout = 1.0  # Timeout for acquiring detection locks, in seconds
+        self._detection_locks_timeout = detection_locks_timeout  # Timeout for acquiring detection locks, in seconds
         self._detection_locks = {}  # Per-detection locks for fine-grained concurrency control
         self._detection_locks_lock = threading.Lock()  # Lock to protect _detection_locks dict
 
