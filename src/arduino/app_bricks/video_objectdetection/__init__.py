@@ -7,6 +7,7 @@ import json
 import inspect
 import threading
 import socket
+from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import base64
 from typing import Callable
@@ -44,7 +45,7 @@ class VideoObjectDetection:
         confidence: float = 0.3,
         debounce_sec: float = 0.0,
         camera_preview: bool = False,
-        detection_locks_timeout: float = 1.0,
+        detection_locks_timeout: float = 0.5,
     ):
         """Initialize the VideoObjectDetection class.
 
@@ -55,7 +56,7 @@ class VideoObjectDetection:
             camera_preview (bool): Receive current camera frame on callback invocation.
                 Frame is a raw jpeg-encoded image without bounding boxes applied on it. Default is False.
             detection_locks_timeout (float): Maximum seconds to wait in case of already running handler before discarding
-                the detection signal. Default is 1.0 seconds.
+                the detection signal. Default is 0.5 seconds.
 
         Raises:
             RuntimeError: If the host address could not be resolved.
@@ -75,6 +76,8 @@ class VideoObjectDetection:
         self._detection_locks_timeout = detection_locks_timeout  # Timeout for acquiring detection locks, in seconds
         self._detection_locks = {}  # Per-detection locks for fine-grained concurrency control
         self._detection_locks_lock = threading.Lock()  # Lock to protect _detection_locks dict
+
+        self._executor = ThreadPoolExecutor(max_workers=5, thread_name_prefix="VideoObjectDetectionHandler")
 
         self._is_running = threading.Event()
 
@@ -139,6 +142,7 @@ class VideoObjectDetection:
         """Stop the video object detection process and release resources."""
         self._is_running.clear()
         self._camera.stop()
+        self._executor.shutdown(wait=False)
 
     @brick.execute
     def object_detection_loop(self):
@@ -358,28 +362,34 @@ class VideoObjectDetection:
         if not handler:
             return
 
-        # Try to acquire per-detection lock (non-blocking)
         detection_lock = self._get_detection_lock(detection)
         if not detection_lock.acquire(timeout=self._detection_locks_timeout):
-            # Lock is already taken and cannot be acquired within the timeout, skip this detection
+            # Lock is already held by a running handler — discard this detection
             logger.debug(f"Handler for {detection} is already running, skipping.")
             return
 
-        try:
-            now = time.time()
-            last_time = self._last_detected.get(detection, 0)
-            if now - last_time >= self._debounce_sec:
-                self._last_detected[detection] = now
-                logger.debug(f"Detected object: {detection}, invoking handler.")
-                sig_args = inspect.signature(handler).parameters
-                if len(sig_args) == 0:
-                    handler()
-                else:
-                    if sig_args.get("frame") is not None:
-                        handler(detection_details, frame=frame)
+        def _run():
+            try:
+                now = time.time()
+                last_time = self._last_detected.get(detection, 0)
+                if now - last_time >= self._debounce_sec:
+                    self._last_detected[detection] = now
+                    logger.debug(f"Detected object: {detection}, invoking handler.")
+                    sig_args = inspect.signature(handler).parameters
+                    if len(sig_args) == 0:
+                        handler()
                     else:
-                        handler(detection_details)
-        finally:
+                        if sig_args.get("frame") is not None:
+                            handler(detection_details, frame=frame)
+                        else:
+                            handler(detection_details)
+            finally:
+                detection_lock.release()
+
+        try:
+            self._executor.submit(_run)
+        except RuntimeError:
+            # Executor was shut down before the task could be submitted
             detection_lock.release()
 
     def _execute_global_handler(self, detections: dict | None = None, frame: bytes | None = None):
@@ -396,28 +406,34 @@ class VideoObjectDetection:
         if not handler:
             return
 
-        # Try to acquire per-detection lock (non-blocking)
         detection_lock = self._get_detection_lock(self.ALL_HANDLERS_KEY)
         if not detection_lock.acquire(timeout=self._detection_locks_timeout):
-            # Lock is already taken and cannot be acquired within the timeout, skip this detection
+            # Lock is already held by a running handler — discard this detection
             logger.debug("Global handler (__ALL) is already running, skipping.")
             return
 
-        try:
-            now = time.time()
-            last_time = self._last_detected.get(self.ALL_HANDLERS_KEY, 0)
-            if now - last_time >= self._debounce_sec:
-                self._last_detected[self.ALL_HANDLERS_KEY] = now
-                logger.debug("Detected object: __ALL, invoking handler.")
-                sig_args = inspect.signature(handler).parameters
-                if len(sig_args) == 0:
-                    handler()
-                else:
-                    if sig_args.get("frame") is not None:
-                        handler(detections, frame=frame)
+        def _run():
+            try:
+                now = time.time()
+                last_time = self._last_detected.get(self.ALL_HANDLERS_KEY, 0)
+                if now - last_time >= self._debounce_sec:
+                    self._last_detected[self.ALL_HANDLERS_KEY] = now
+                    logger.debug("Detected object: __ALL, invoking handler.")
+                    sig_args = inspect.signature(handler).parameters
+                    if len(sig_args) == 0:
+                        handler()
                     else:
-                        handler(detections)
-        finally:
+                        if sig_args.get("frame") is not None:
+                            handler(detections, frame=frame)
+                        else:
+                            handler(detections)
+            finally:
+                detection_lock.release()
+
+        try:
+            self._executor.submit(_run)
+        except RuntimeError:
+            # Executor was shut down before the task could be submitted
             detection_lock.release()
 
     def _send_ws_message(self, ws: Connection, message: dict):
