@@ -7,6 +7,7 @@ import json
 import inspect
 import threading
 import socket
+from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 from typing import Callable
 
@@ -32,7 +33,7 @@ class VideoImageClassification:
 
     ALL_HANDLERS_KEY = "__ALL"
 
-    def __init__(self, camera: BaseCamera | None = None, confidence: float = 0.3, debounce_sec: float = 0.0, detection_locks_timeout: float = 1.0):
+    def __init__(self, camera: BaseCamera | None = None, confidence: float = 0.3, debounce_sec: float = 0.0, detection_locks_timeout: float = 0.5):
         """Initialize the VideoImageClassification class.
 
         Args:
@@ -41,7 +42,7 @@ class VideoImageClassification:
             debounce_sec (float): The minimum time in seconds between consecutive detections of the same object
                 to avoid multiple triggers. Default is 0 seconds.
             detection_locks_timeout (float): Maximum seconds to wait in case of already running handler before discarding
-                the detection signal. Default is 1.0 seconds.
+                the detection signal. Default is 0.5 seconds.
 
         Raises:
              RuntimeError: If the host address could not be resolved.
@@ -57,6 +58,8 @@ class VideoImageClassification:
         self._handlers_lock = threading.Lock()
         self._detection_locks = {}  # Per-detection locks for fine-grained concurrency control
         self._detection_locks_lock = threading.Lock()  # Lock to protect _detection_locks dict
+
+        self._executor = ThreadPoolExecutor(max_workers=5, thread_name_prefix="VideoImageClassificationHandler")
 
         self._is_running = threading.Event()
 
@@ -139,6 +142,7 @@ class VideoImageClassification:
         """Stop the classification and release resources."""
         self._is_running.clear()
         self._camera.stop()
+        self._executor.shutdown(wait=False)
 
     @brick.execute
     def classification_loop(self):
@@ -297,17 +301,24 @@ class VideoImageClassification:
             logger.debug(f"Handler for classification '{classification}' is already running, skipping.")
             return
 
+        def _run():
+            try:
+                now = time.time()
+                last_time = self._last_detected.get(classification, 0)
+                if now - last_time >= self._debounce_sec:
+                    self._last_detected[classification] = now
+                    logger.debug(f"Classification: {classification}, invoking handler.")
+                    if classifications is None:
+                        handler()
+                    else:
+                        handler(classifications)
+            finally:
+                classification_lock.release()
+
         try:
-            now = time.time()
-            last_time = self._last_detected.get(classification, 0)
-            if now - last_time >= self._debounce_sec:
-                self._last_detected[classification] = now
-                logger.debug(f"Classification: {classification}, invoking handler.")
-                if classifications is None:
-                    handler()
-                else:
-                    handler(classifications)
-        finally:
+            self._executor.submit(_run)
+        except RuntimeError:
+            # Executor was shut down before the task could be submitted
             classification_lock.release()
 
     def override_threshold(self, value: float):
