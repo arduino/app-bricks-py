@@ -41,19 +41,27 @@ RUN set -ex; \
     useradd -u 1000 -g arduino -ms /bin/bash arduino; \
     apt-get update -y; \
     apt-get upgrade -y; \
+    apt-get install -y --no-install-recommends --no-install-suggests wget; \
     # Install dependencies for running ALSA
     apt-get install -y --no-install-recommends --no-install-suggests alsa-utils libportaudiocpp0; \
     # Install dependencies for running OpenCV with Gstreamer backend
     apt-get install -y --no-install-recommends --no-install-suggests libavcodec61 libavformat61 libavutil59 libswscale8; \
     apt-get install -y --no-install-recommends --no-install-suggests libjpeg62-turbo libtiff6 libpng16-16t64 libwebp7 libwebpdecoder3 libwebpdemux2 libwebpmux3 libavif16 libopenblas0 liblapacke; \
-    apt-get install -y --no-install-recommends --no-install-suggests libgstreamer1.0-0 libgstreamer-plugins-base1.0-0 gstreamer1.0-plugins-good gstreamer1.0-libav gstreamer1.0-libcamera libcamera0.4 libcamera-ipa libcamera-tools v4l-utils; \
+    apt-get install -y --no-install-recommends --no-install-suggests libgstreamer1.0-0 libgstreamer-plugins-base1.0-0 gstreamer1.0-plugins-good gstreamer1.0-plugins-base-apps gstreamer1.0-libav; \
+    # Install dependencies for running libcamera
+    apt-get install -y libpisp-common libboost-filesystem1.83.0 libboost-log1.83.0 libboost-thread1.83.0 libpisp1 libegl1 libgles2 libyaml-0-2 liblttng-ust1 libdw1t64; \
+    wget -O libcamera0.7_0.7.0-3_arm64.deb https://github.com/robgee86/app-bricks-py/releases/download/libcamera%2F0.7/libcamera0.7_0.7.0-3_arm64.deb; \
+    wget -O libcamera-ipa_0.7.0-3_arm64.deb https://github.com/robgee86/app-bricks-py/releases/download/libcamera%2F0.7/libcamera-ipa_0.7.0-3_arm64.deb; \
+    wget -O gstreamer1.0-libcamera_0.7.0-3_arm64.deb https://github.com/robgee86/app-bricks-py/releases/download/libcamera%2F0.7/gstreamer1.0-libcamera_0.7.0-3_arm64.deb; \
+    dpkg -i libcamera0.7_0.7.0-3_arm64.deb libcamera-ipa_0.7.0-3_arm64.deb gstreamer1.0-libcamera_0.7.0-3_arm64.deb; \
     # Install other runtime dependencies
-    apt-get install -y --no-install-recommends --no-install-suggests libglib2.0-0 inotify-tools wget libzbar0; \
+    apt-get install -y --no-install-recommends --no-install-suggests libglib2.0-0 inotify-tools libzbar0; \
+    mkdir -p /home/app/.fonts; \
+    wget -O /home/app/.fonts/OpenSans.ttf https://raw.githubusercontent.com/googlefonts/opensans/main/fonts/ttf/OpenSans-Regular.ttf; \
+    apt-get remove -y wget; \
     apt-get dist-clean; \
     apt-get autoclean -y; \
     apt-get autoremove -y; \
-    mkdir -p /home/app/.fonts; \
-    wget -O /home/app/.fonts/OpenSans.ttf https://raw.githubusercontent.com/googlefonts/opensans/main/fonts/ttf/OpenSans-Regular.ttf; \
     # cleanup unnecessary files to reduce image size
     rm -rf /tmp/* /var/tmp/*; \
     rm -rf /var/lib/apt/lists/*; \
