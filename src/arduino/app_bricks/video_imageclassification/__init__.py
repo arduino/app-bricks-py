@@ -33,7 +33,9 @@ class VideoImageClassification:
 
     ALL_HANDLERS_KEY = "__ALL"
 
-    def __init__(self, camera: BaseCamera | None = None, confidence: float = 0.3, debounce_sec: float = 0.0, detection_locks_timeout: float = 0.5):
+    _DETECTION_LOCK_TO = 0.5  # Seconds to wait for a detection lock before discarding the detection signal
+
+    def __init__(self, camera: BaseCamera | None = None, confidence: float = 0.3, debounce_sec: float = 0.0):
         """Initialize the VideoImageClassification class.
 
         Args:
@@ -41,8 +43,6 @@ class VideoImageClassification:
             confidence (float): The minimum confidence level for a classification to be considered valid. Default is 0.3.
             debounce_sec (float): The minimum time in seconds between consecutive detections of the same object
                 to avoid multiple triggers. Default is 0 seconds.
-            detection_locks_timeout (float): Maximum seconds to wait in case of already running handler before discarding
-                the detection signal. Default is 0.5 seconds.
 
         Raises:
              RuntimeError: If the host address could not be resolved.
@@ -51,7 +51,6 @@ class VideoImageClassification:
 
         self._confidence = confidence
         self._debounce_sec = debounce_sec
-        self._detection_locks_timeout = detection_locks_timeout
         self._last_detected = {}
 
         self._handlers = {}  # Dictionary to hold handlers for different actions
@@ -296,22 +295,27 @@ class VideoImageClassification:
 
         # Try to acquire per-classification lock with timeout
         classification_lock = self._get_detection_lock(classification)
-        if not classification_lock.acquire(timeout=self._detection_locks_timeout):
+        if not classification_lock.acquire(timeout=self._DETECTION_LOCK_TO):
             # Lock is already taken and cannot be acquired within the timeout, skip this classification
             logger.debug(f"Handler for classification '{classification}' is already running, skipping.")
             return
 
+        # Debounce logic: check if enough time has passed since the last detection before invoking the handler
+        now = time.time()
+        last_time = self._last_detected.get(classification, 0)
+        if now - last_time >= self._debounce_sec:
+            self._last_detected[classification] = now
+        else:
+            classification_lock.release()
+            return
+
         def _run():
             try:
-                now = time.time()
-                last_time = self._last_detected.get(classification, 0)
-                if now - last_time >= self._debounce_sec:
-                    self._last_detected[classification] = now
-                    logger.debug(f"Classification: {classification}, invoking handler.")
-                    if classifications is None:
-                        handler()
-                    else:
-                        handler(classifications)
+                logger.debug(f"Classification: {classification}, invoking handler.")
+                if classifications is None:
+                    handler()
+                else:
+                    handler(classifications)
             finally:
                 classification_lock.release()
 
