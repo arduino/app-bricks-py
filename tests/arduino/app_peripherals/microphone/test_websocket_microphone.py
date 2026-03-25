@@ -35,10 +35,11 @@ class TestWebSocketMicrophoneInit:
         with pytest.raises(RuntimeError, match="Encryption requires a secret key"):
             WebSocketMicrophone(encrypt=True)
 
-    def test_empty_string_secret_fails(self):
-        """Test that secret="" raises RuntimeError."""
-        with pytest.raises(RuntimeError, match="Secret must be a non-empty string or None"):
-            WebSocketMicrophone(secret="")
+    def test_empty_string_secret_enables_bpp(self):
+        """Test that secret="" is valid and enables BPP authentication."""
+        mic = WebSocketMicrophone(port=0, secret="")
+        assert mic.codec is not None
+        assert mic.secret == ""
 
     @pytest.mark.asyncio
     async def test_start_on_unavailable_port_fails(self):

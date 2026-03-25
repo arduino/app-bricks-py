@@ -138,7 +138,7 @@ class Microphone:
                         be ignored. Use this for transport-level security with clients that can
                         accept self-signed certificates or when supplying your own certificates.
                     secret (str | None): Pre-shared secret key. None disables security.
-                        An empty string raises RuntimeError. Default: None.
+                        Default: None.
                     encrypt (bool): Enable encryption. Requires a secret, raises
                         RuntimeError otherwise. Default: False.
                     auto_reconnect (bool): Whether to automatically attempt to reconnect

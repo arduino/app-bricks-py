@@ -62,10 +62,11 @@ def test_websocket_camera_encrypt_without_secret_fails():
         WebSocketCamera(encrypt=True)
 
 
-def test_websocket_camera_empty_string_secret_fails():
-    """Test that secret="" raises RuntimeError."""
-    with pytest.raises(RuntimeError, match="Secret must be a non-empty string or None"):
-        WebSocketCamera(secret="")
+def test_websocket_camera_empty_string_secret_enables_bpp():
+    """Test that secret="" is valid and enables BPP authentication."""
+    camera = WebSocketCamera(port=0, secret="")
+    assert camera.codec is not None
+    assert camera.secret == ""
 
 
 def test_websocket_camera_start_stop():

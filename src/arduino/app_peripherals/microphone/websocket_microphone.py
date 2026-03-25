@@ -68,12 +68,10 @@ class WebSocketMicrophone(BaseMicrophone):
                 be ignored. Use this for transport-level security with clients that can
                 accept self-signed certificates or when supplying your own certificates.
                 Default: False.
-            secret (str | None): Pre-shared secret key. When None (default), security
-                is disabled and clients send raw PCM bytes without BPP wrapping. When
-                set to a non-empty string, enables HMAC-SHA256 authentication via BPP.
-                An empty string is not a valid secret and raises RuntimeError.
-            encrypt (bool): Enable ChaCha20-Poly1305 encryption via BPP. Requires a
-                secret; raises RuntimeError otherwise. Default: False.
+            secret (str | None): Pre-shared secret key. None disables security.
+                Default: None.
+            encrypt (bool): Enable encryption. Requires a secret, raises
+                RuntimeError otherwise. Default: False.
             sample_rate (int): Sample rate in Hz. Default: 16000.
             channels (int): Number of audio channels. Default: Microphone.CHANNELS_MONO - 1.
             format (FormatPlain | FormatPacked): Audio format as one of:
@@ -89,17 +87,14 @@ class WebSocketMicrophone(BaseMicrophone):
         """
         super().__init__(sample_rate, channels, format, buffer_size, auto_reconnect)
 
-        if secret is not None and not secret:
-            raise RuntimeError("Secret must be a non-empty string or None.")
-
-        if encrypt and not secret:
+        if encrypt and secret is None:
             raise RuntimeError("Encryption requires a secret key.")
 
         if use_tls and encrypt:
             logger.warning("Encryption is redundant over TLS connections, disabling encryption.")
             encrypt = False
 
-        self.codec = BPPCodec(secret, encrypt) if secret else None
+        self.codec = BPPCodec(secret, encrypt) if secret is not None else None
         self.secret = secret
         self.encrypt = encrypt
         self.logger = logger
@@ -147,7 +142,7 @@ class WebSocketMicrophone(BaseMicrophone):
     @property
     def security_mode(self) -> str:
         """Return current security mode for logging/debugging."""
-        if not self.secret:
+        if self.secret is None:
             return "none"
         elif self.encrypt:
             return "encrypted (ChaCha20-Poly1305)"
