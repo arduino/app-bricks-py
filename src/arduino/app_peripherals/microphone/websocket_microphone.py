@@ -25,19 +25,19 @@ class WebSocketMicrophone(BaseMicrophone):
     """
     WebSocket Microphone implementation that hosts a WebSocket server.
 
-    This microphone exposes a WebSocket server that receives audio chunks from connected
-    clients. Only one client can be connected at a time.
+    This microphone exposes a WebSocket server that receives audio chunks from
+    a connected client. Only one client can be connected at a time.
 
-    Clients must encode the audio data in PCM format and serialize the content in the
-    binary format supported by BPPCodec.
+    The client must encode the audio data in PCM format and must respect the
+    sample rate, channels, format, and chunk size specified during initialization.
 
-    Secure communication with the WebSocket server is supported in three security modes:
+    Communication with the WebSocket server is supported in three security modes:
     - Security disabled (empty secret)
     - Authenticated (secret + encrypt=False) - HMAC-SHA256
     - Authenticated + Encrypted (secret + encrypt=True) - ChaCha20-Poly1305
 
-    Also, clients are expected to respect the sample rate, channels, format, and chunk
-    size specified during initialization.
+    In security-disabled mode, clients must send raw PCM bytes directly.
+    In other security modes, data must be serialized using the BPP protocol.
     """
 
     from .microphone import Microphone
@@ -91,7 +91,7 @@ class WebSocketMicrophone(BaseMicrophone):
             logger.warning("Encryption is redundant over TLS connections, disabling encryption.")
             encrypt = False
 
-        self.codec = BPPCodec(secret, encrypt)
+        self.codec = BPPCodec(secret, encrypt) if secret else None
         self.secret = secret
         self.encrypt = encrypt
         self.logger = logger
@@ -287,12 +287,14 @@ class WebSocketMicrophone(BaseMicrophone):
                 self.logger.warning(f"Failed to decode string message using base64: {e}")
                 return None
 
-        decoded = self.codec.decode(message)
-        if decoded is None:
-            self.logger.warning("Failed to decode message")
-            return None
+        if self.codec:
+            decoded = self.codec.decode(message)
+            if decoded is None:
+                self.logger.warning("Failed to decode message")
+                return None
+            message = decoded
 
-        return np.frombuffer(decoded, dtype=self.format)
+        return np.frombuffer(message, dtype=self.format)
 
     def _close_microphone(self) -> None:
         """Stop the WebSocket server."""
@@ -348,7 +350,7 @@ class WebSocketMicrophone(BaseMicrophone):
         if isinstance(message, str):
             message = message.encode()
 
-        encoded = self.codec.encode(message)
+        data = self.codec.encode(message) if self.codec else message
 
         # Keep a ref to current client to avoid locking
         client = client or self._client
@@ -356,7 +358,7 @@ class WebSocketMicrophone(BaseMicrophone):
             raise ConnectionError("No client connected")
 
         try:
-            await client.send(encoded)
+            await client.send(data)
         except websockets.ConnectionClosedOK:
             self.logger.warning("Client has already closed the connection")
         except websockets.ConnectionClosedError as e:

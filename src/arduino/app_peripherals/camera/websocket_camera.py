@@ -28,21 +28,23 @@ class WebSocketCamera(BaseCamera):
     """
     WebSocket Camera implementation that hosts a WebSocket server.
 
-    This camera acts as a WebSocket server that receives frames from connected clients.
-    Only one client can be connected at a time.
+    This camera acts as a WebSocket server that receives frames from a connected
+    client. Only one client can be connected at a time.
 
-    Clients must encode video frames in one of these formats:
+    The client must encode video frames in one of these formats:
     - JPEG
     - PNG
     - WebP
     - BMP
     - TIFF
-    The video frames must then be serialized in the binary format supported by BPPCodec.
 
-    Secure communication with the WebSocket server is supported in three security modes:
+    Communication with the WebSocket server is supported in three security modes:
     - Security disabled (empty secret)
     - Authenticated (secret + encrypt=False) - HMAC-SHA256
     - Authenticated + Encrypted (secret + encrypt=True) - ChaCha20-Poly1305
+
+    In security-disabled mode, clients must send raw image bytes directly.
+    In other security modes, data must be serialized using the BPP protocol.
 
     When connecting, clients can specify a "client_name" parameter in the URL query string
     to identify themselves. This name will be sanitized to allow only alphanumeric chars,
@@ -85,7 +87,7 @@ class WebSocketCamera(BaseCamera):
             logger.warning("Encryption is redundant over TLS connections, disabling encryption.")
             encrypt = False
 
-        self.codec = BPPCodec(secret, encrypt)
+        self.codec = BPPCodec(secret, encrypt) if secret else None
         self.secret = secret
         self.encrypt = encrypt
         self.logger = logger
@@ -290,12 +292,14 @@ class WebSocketCamera(BaseCamera):
                 self.logger.warning(f"Failed to decode string message using base64: {e}")
                 return None
 
-        decoded = self.codec.decode(message)
-        if decoded is None:
-            self.logger.warning("Failed to decode message")
-            return None
+        if self.codec:
+            decoded = self.codec.decode(message)
+            if decoded is None:
+                self.logger.warning("Failed to decode message")
+                return None
+            message = decoded
 
-        nparr = np.frombuffer(decoded, np.uint8)
+        nparr = np.frombuffer(message, np.uint8)
         frame = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
         return frame
 
@@ -353,7 +357,7 @@ class WebSocketCamera(BaseCamera):
         if isinstance(message, str):
             message = message.encode()
 
-        encoded = self.codec.encode(message)
+        data = self.codec.encode(message) if self.codec else message
 
         # Keep a ref to current client to avoid locking
         client = client or self._client
@@ -361,7 +365,7 @@ class WebSocketCamera(BaseCamera):
             raise ConnectionError("No client connected")
 
         try:
-            await client.send(encoded)
+            await client.send(data)
         except websockets.ConnectionClosedOK:
             self.logger.warning("Client has already closed the connection")
         except websockets.ConnectionClosedError as e:
