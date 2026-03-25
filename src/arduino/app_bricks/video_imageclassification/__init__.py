@@ -33,7 +33,7 @@ class VideoImageClassification:
 
     ALL_HANDLERS_KEY = "__ALL"
 
-    _DETECTION_LOCK_TO = 0.5  # Seconds to wait for a detection lock before discarding the detection signal
+    _DETECTION_LOCK_TO = 0.01  # Seconds to wait for a detection lock before discarding the detection signal
 
     def __init__(self, camera: BaseCamera | None = None, confidence: float = 0.3, debounce_sec: float = 0.0):
         """Initialize the VideoImageClassification class.
