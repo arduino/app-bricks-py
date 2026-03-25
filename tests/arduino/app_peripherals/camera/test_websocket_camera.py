@@ -10,6 +10,7 @@ import numpy as np
 import cv2
 import websockets
 
+from arduino.app_internal.core.peripherals.bpp_codec import BPPCodec
 from arduino.app_peripherals.camera import WebSocketCamera
 
 
@@ -415,3 +416,116 @@ async def test_websocket_camera_stop_event():
     assert len(events) == 2
     assert "connected" in events[0][0]
     assert "disconnected" in events[1][0]
+
+
+TEST_SECRET = "test-secret-key"
+
+
+@pytest.mark.asyncio
+async def test_websocket_camera_authenticated_mode():
+    """Test sending and receiving frames with HMAC-SHA256 authentication (secret, no encryption)."""
+    codec = BPPCodec(TEST_SECRET, enable_encryption=False)
+    camera = WebSocketCamera(port=0, secret=TEST_SECRET, encrypt=False)
+    camera.start()
+
+    try:
+        async with websockets.connect(camera.url) as ws:
+            # Welcome message should be BPP-encoded
+            welcome_raw = await ws.recv()
+            welcome_payload = codec.decode(welcome_raw)
+            assert welcome_payload is not None
+            welcome = json.loads(welcome_payload)
+            assert welcome["status"] == "connected"
+            assert "authenticated" in welcome["security_mode"]
+
+            # Send a BPP-encoded frame
+            frame = np.ones((480, 640, 3), dtype=np.uint8) * 42
+            _, buffer = cv2.imencode(".jpg", frame)
+            await ws.send(codec.encode(buffer.tobytes()))
+
+            await asyncio.sleep(0.2)
+
+            captured = camera.capture()
+            assert captured is not None
+            assert isinstance(captured, np.ndarray)
+            assert np.mean(captured) == pytest.approx(42, abs=1)
+    finally:
+        camera.stop()
+
+
+@pytest.mark.asyncio
+async def test_websocket_camera_authenticated_rejects_raw():
+    """Test that authenticated mode rejects raw (non-BPP) messages."""
+    camera = WebSocketCamera(port=0, secret=TEST_SECRET, encrypt=False)
+    camera.start()
+
+    try:
+        async with websockets.connect(camera.url) as ws:
+            await ws.recv()  # Skip welcome
+
+            # Send raw bytes (not BPP-encoded) — should be rejected
+            frame = np.ones((480, 640, 3), dtype=np.uint8) * 42
+            _, buffer = cv2.imencode(".jpg", frame)
+            await ws.send(buffer.tobytes())
+
+            await asyncio.sleep(0.2)
+
+            captured = camera.capture()
+            assert captured is None
+    finally:
+        camera.stop()
+
+
+@pytest.mark.asyncio
+async def test_websocket_camera_encrypted_mode():
+    """Test sending and receiving frames with ChaCha20-Poly1305 encryption."""
+    codec = BPPCodec(TEST_SECRET, enable_encryption=True)
+    camera = WebSocketCamera(port=0, secret=TEST_SECRET, encrypt=True)
+    camera.start()
+
+    try:
+        async with websockets.connect(camera.url) as ws:
+            # Welcome message should be BPP-encoded with encryption
+            welcome_raw = await ws.recv()
+            welcome_payload = codec.decode(welcome_raw)
+            assert welcome_payload is not None
+            welcome = json.loads(welcome_payload)
+            assert welcome["status"] == "connected"
+            assert "encrypted" in welcome["security_mode"]
+
+            # Send a BPP-encrypted frame
+            frame = np.ones((480, 640, 3), dtype=np.uint8) * 99
+            _, buffer = cv2.imencode(".jpg", frame)
+            await ws.send(codec.encode(buffer.tobytes()))
+
+            await asyncio.sleep(0.2)
+
+            captured = camera.capture()
+            assert captured is not None
+            assert isinstance(captured, np.ndarray)
+            assert np.mean(captured) == pytest.approx(99, abs=1)
+    finally:
+        camera.stop()
+
+
+@pytest.mark.asyncio
+async def test_websocket_camera_encrypted_rejects_raw():
+    """Test that encrypted mode rejects raw (non-BPP) messages."""
+    camera = WebSocketCamera(port=0, secret=TEST_SECRET, encrypt=True)
+    camera.start()
+
+    try:
+        async with websockets.connect(camera.url) as ws:
+            await ws.recv()  # Skip welcome
+
+            # Send raw bytes — should be rejected
+            frame = np.ones((480, 640, 3), dtype=np.uint8) * 42
+            _, buffer = cv2.imencode(".jpg", frame)
+            await ws.send(buffer.tobytes())
+
+            await asyncio.sleep(0.2)
+
+            captured = camera.capture()
+            assert captured is None
+    finally:
+        camera.stop()

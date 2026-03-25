@@ -11,6 +11,7 @@ import json
 import base64
 import numpy as np
 
+from arduino.app_internal.core.peripherals.bpp_codec import BPPCodec
 from arduino.app_peripherals.microphone import WebSocketMicrophone, MicrophoneOpenError
 
 
@@ -512,5 +513,112 @@ class TestWebSocketPCMStreaming:
         for chunk in chunks:
             assert isinstance(chunk, np.ndarray)
             assert chunk.dtype == np.int16
+
+        mic.stop()
+
+
+TEST_SECRET = "test-secret-key"
+
+
+class TestWebSocketMicrophoneAuthenticated:
+    """Test WebSocket microphone with HMAC-SHA256 authentication (secret, no encryption)."""
+
+    @pytest.mark.asyncio
+    async def test_receive_authenticated_pcm(self):
+        """Test receiving BPP-authenticated PCM data."""
+        codec = BPPCodec(TEST_SECRET, enable_encryption=False)
+        mic = WebSocketMicrophone(port=0, secret=TEST_SECRET, encrypt=False)
+        mic.start()
+
+        test_audio = np.arange(512, dtype=np.int16)
+
+        async with websockets.connect(mic.url) as ws:
+            # Welcome should be BPP-encoded
+            welcome_raw = await ws.recv()
+            welcome_payload = codec.decode(welcome_raw)
+            assert welcome_payload is not None
+            welcome = json.loads(welcome_payload)
+            assert welcome["status"] == "connected"
+            assert "authenticated" in welcome["security_mode"]
+
+            # Send BPP-encoded audio
+            await ws.send(codec.encode(test_audio.tobytes()))
+
+            received = mic.capture()
+            assert received is not None
+            np.testing.assert_array_equal(received, test_audio)
+
+        mic.stop()
+
+    @pytest.mark.asyncio
+    async def test_authenticated_rejects_raw(self):
+        """Test that authenticated mode rejects raw (non-BPP) messages."""
+        mic = WebSocketMicrophone(port=0, secret=TEST_SECRET, encrypt=False)
+        mic.start()
+
+        test_audio = np.arange(512, dtype=np.int16)
+
+        async with websockets.connect(mic.url) as ws:
+            await ws.recv()  # Skip welcome
+
+            # Send raw bytes — should be rejected
+            await ws.send(test_audio.tobytes())
+
+            await asyncio.sleep(0.1)
+
+            received = mic.capture()
+            assert received is None
+
+        mic.stop()
+
+
+class TestWebSocketMicrophoneEncrypted:
+    """Test WebSocket microphone with ChaCha20-Poly1305 encryption."""
+
+    @pytest.mark.asyncio
+    async def test_receive_encrypted_pcm(self):
+        """Test receiving BPP-encrypted PCM data."""
+        codec = BPPCodec(TEST_SECRET, enable_encryption=True)
+        mic = WebSocketMicrophone(port=0, secret=TEST_SECRET, encrypt=True)
+        mic.start()
+
+        test_audio = np.arange(256, dtype=np.int16)
+
+        async with websockets.connect(mic.url) as ws:
+            # Welcome should be BPP-encoded with encryption
+            welcome_raw = await ws.recv()
+            welcome_payload = codec.decode(welcome_raw)
+            assert welcome_payload is not None
+            welcome = json.loads(welcome_payload)
+            assert welcome["status"] == "connected"
+            assert "encrypted" in welcome["security_mode"]
+
+            # Send BPP-encrypted audio
+            await ws.send(codec.encode(test_audio.tobytes()))
+
+            received = mic.capture()
+            assert received is not None
+            np.testing.assert_array_equal(received, test_audio)
+
+        mic.stop()
+
+    @pytest.mark.asyncio
+    async def test_encrypted_rejects_raw(self):
+        """Test that encrypted mode rejects raw (non-BPP) messages."""
+        mic = WebSocketMicrophone(port=0, secret=TEST_SECRET, encrypt=True)
+        mic.start()
+
+        test_audio = np.arange(256, dtype=np.int16)
+
+        async with websockets.connect(mic.url) as ws:
+            await ws.recv()  # Skip welcome
+
+            # Send raw bytes — should be rejected
+            await ws.send(test_audio.tobytes())
+
+            await asyncio.sleep(0.1)
+
+            received = mic.capture()
+            assert received is None
 
         mic.stop()
