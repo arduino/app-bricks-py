@@ -21,6 +21,8 @@ from arduino.app_internal.core.module import load_brick_compose_file, resolve_ad
 
 logger = Logger("GestureRecognition")
 
+_CALLBACK_LOCK_TIMEOUT = 0.01  # seconds to wait for a per-callback lock before discarding the event
+
 
 @brick
 class GestureRecognition:
@@ -44,9 +46,7 @@ class GestureRecognition:
 
         # Callback executor and per-callback in-progress locks
         self._executor: ThreadPoolExecutor | None = None
-        self._enter_lock = threading.Lock()
-        self._exit_lock = threading.Lock()
-        self._gesture_locks: dict[tuple, threading.Lock] = {}  # {(gesture, hand): Lock}
+        self._callback_locks: dict[str | tuple, threading.Lock] = {}  # keyed by "enter", "exit", or (gesture, hand)
 
         # WebSocket endpoints
         infra = load_brick_compose_file(self.__class__)
@@ -74,7 +74,7 @@ class GestureRecognition:
         self._is_running = False
         self._camera.stop()
         if self._executor is not None:
-            self._executor.shutdown(wait=False)
+            self._executor.shutdown(wait=False, cancel_futures=True)
             self._executor = None
 
     def on_gesture(self, gesture: str, callback: Callable[[dict], None], hand: Literal["left", "right", "both"] = "both"):
@@ -104,11 +104,11 @@ class GestureRecognition:
             if callback is None:
                 if key in self._gesture_callbacks:
                     del self._gesture_callbacks[key]
-                    self._gesture_locks.pop(key, None)
+                    self._callback_locks.pop(key, None)
             else:
                 self._gesture_callbacks[key] = callback
-                if key not in self._gesture_locks:
-                    self._gesture_locks[key] = threading.Lock()
+                if key not in self._callback_locks:
+                    self._callback_locks[key] = threading.Lock()
 
     def on_enter(self, callback: Callable[[], None]):
         """
@@ -119,6 +119,10 @@ class GestureRecognition:
         """
         with self._callbacks_lock:
             self._enter_callback = callback
+            if callback is not None:
+                self._callback_locks["enter"] = threading.Lock()
+            else:
+                self._callback_locks.pop("enter", None)
 
     def on_exit(self, callback: Callable[[], None]):
         """
@@ -129,6 +133,10 @@ class GestureRecognition:
         """
         with self._callbacks_lock:
             self._exit_callback = callback
+            if callback is not None:
+                self._callback_locks["exit"] = threading.Lock()
+            else:
+                self._callback_locks.pop("exit", None)
 
     def on_frame(self, callback: Callable[[np.ndarray], None]):
         """
@@ -256,71 +264,46 @@ class GestureRecognition:
         with self._callbacks_lock:
             callback = self._enter_callback
 
-        if callback and self._executor is not None:
-            if not self._enter_lock.acquire(blocking=False):
-                logger.debug("Discarding enter event: callback still running")
-                return
-
-            def _run(cb=callback):
-                try:
-                    cb()
-                except Exception as e:
-                    logger.error(f"Error in enter callback: {e}")
-                finally:
-                    self._enter_lock.release()
-
-            self._executor.submit(_run)
+        if callback and not self._submit_callback("enter", callback):
+            logger.debug("Discarding enter event: callback still running")
 
     def _dispatch_exit(self):
         """Dispatch hand exit event."""
         with self._callbacks_lock:
             callback = self._exit_callback
 
-        if callback and self._executor is not None:
-            if not self._exit_lock.acquire(blocking=False):
-                logger.debug("Discarding exit event: callback still running")
-                return
-
-            def _run(cb=callback):
-                try:
-                    cb()
-                except Exception as e:
-                    logger.error(f"Error in exit callback: {e}")
-                finally:
-                    self._exit_lock.release()
-
-            self._executor.submit(_run)
+        if callback and not self._submit_callback("exit", callback):
+            logger.debug("Discarding exit event: callback still running")
 
     def _dispatch_gesture(self, gesture: str, hand: Literal["left", "right"], metadata: dict):
         """Dispatch gesture event to registered callbacks."""
-        if self._executor is None:
-            return
-
-        keys_and_callbacks: list[tuple] = []
-
         with self._callbacks_lock:
-            # Check for exact hand match
             exact_key = (gesture, hand)
-            if exact_key in self._gesture_callbacks:
-                keys_and_callbacks.append((exact_key, self._gesture_callbacks[exact_key]))
-
-            # Check for "both" wildcard
             both_key = (gesture, "both")
-            if both_key in self._gesture_callbacks:
-                keys_and_callbacks.append((both_key, self._gesture_callbacks[both_key]))
+            keys_and_callbacks = [(k, self._gesture_callbacks[k]) for k in (exact_key, both_key) if k in self._gesture_callbacks]
 
         for key, callback in keys_and_callbacks:
-            lock = self._gesture_locks.get(key)
-            if lock is None or not lock.acquire(blocking=False):
+            if not self._submit_callback(key, callback, metadata):
                 logger.debug(f"Discarding gesture '{gesture}' ({key[1]}): callback still running")
-                continue
-            self._executor.submit(self._run_gesture_callback, lock, callback, metadata)
 
-    def _run_gesture_callback(self, lock: threading.Lock, callback: Callable, metadata: dict):
-        """Run a gesture callback and release its lock when done."""
+    def _submit_callback(self, key: str | tuple, callback: Callable, *args) -> bool:
+        """Acquire the per-callback lock and submit callback to the executor.
+
+        Returns True if submitted, False if discarded (executor stopped or lock busy).
+        """
+        if self._executor is None:
+            return False
+        lock = self._callback_locks.get(key)
+        if lock is None or not lock.acquire(timeout=_CALLBACK_LOCK_TIMEOUT):
+            return False
+        self._executor.submit(self._run_callback, lock, callback, *args)
+        return True
+
+    def _run_callback(self, lock: threading.Lock, callback: Callable, *args):
+        """Run a callback and release its lock when done."""
         try:
-            callback(metadata)
+            callback(*args)
         except Exception as e:
-            logger.error(f"Error in gesture callback: {e}")
+            logger.error(f"Error in callback: {e}")
         finally:
             lock.release()
