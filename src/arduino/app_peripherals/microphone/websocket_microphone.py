@@ -48,7 +48,7 @@ class WebSocketMicrophone(BaseMicrophone):
         timeout: int = 3,
         certs_dir_path: str = "/app/certs",
         use_tls: bool = False,
-        secret: str = "",
+        secret: str | None = None,
         encrypt: bool = False,
         sample_rate: int = Microphone.RATE_16K,
         channels: int = Microphone.CHANNELS_MONO,
@@ -68,11 +68,12 @@ class WebSocketMicrophone(BaseMicrophone):
                 be ignored. Use this for transport-level security with clients that can
                 accept self-signed certificates or when supplying your own certificates.
                 Default: False.
-            secret (str): Pre-shared secret key. When empty (default), security is
-                disabled and clients send raw PCM bytes without BPP wrapping. When
-                set, enables HMAC-SHA256 authentication via BPP.
+            secret (str | None): Pre-shared secret key. When None (default), security
+                is disabled and clients send raw PCM bytes without BPP wrapping. When
+                set to a non-empty string, enables HMAC-SHA256 authentication via BPP.
+                An empty string is not a valid secret and raises RuntimeError.
             encrypt (bool): Enable ChaCha20-Poly1305 encryption via BPP. Requires a
-                non-empty secret; raises RuntimeError otherwise. Default: False.
+                secret; raises RuntimeError otherwise. Default: False.
             sample_rate (int): Sample rate in Hz. Default: 16000.
             channels (int): Number of audio channels. Default: Microphone.CHANNELS_MONO - 1.
             format (FormatPlain | FormatPacked): Audio format as one of:
@@ -87,6 +88,9 @@ class WebSocketMicrophone(BaseMicrophone):
             auto_reconnect (bool): Enable automatic reconnection on failure.
         """
         super().__init__(sample_rate, channels, format, buffer_size, auto_reconnect)
+
+        if secret is not None and not secret:
+            raise RuntimeError("Secret must be a non-empty string or None.")
 
         if encrypt and not secret:
             raise RuntimeError("Encryption requires a secret key.")

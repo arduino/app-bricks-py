@@ -57,7 +57,7 @@ class WebSocketCamera(BaseCamera):
         timeout: int = 3,
         certs_dir_path: str = "/app/certs",
         use_tls: bool = False,
-        secret: str = "",
+        secret: str | None = None,
         encrypt: bool = False,
         resolution: tuple[int, int] = (640, 480),
         fps: int = 10,
@@ -74,17 +74,21 @@ class WebSocketCamera(BaseCamera):
             use_tls (bool): Enable TLS for secure connections. If True, 'encrypt' will
                 be ignored. Use this for transport-level security with clients that can
                 accept self-signed certificates or when supplying your own certificates.
-            secret (str): Pre-shared secret key. When empty (default), security is
-                disabled and clients send raw bytes without BPP wrapping. When set,
-                enables HMAC-SHA256 authentication via BPP.
+            secret (str | None): Pre-shared secret key. When None (default), security
+                is disabled and clients send raw bytes directly. When set to a
+                non-empty string, enables HMAC-SHA256 authentication via BPP protocol.
+                An empty string is not a valid secret and raises RuntimeError.
             encrypt (bool): Enable ChaCha20-Poly1305 encryption via BPP. Requires a
-                non-empty secret; raises RuntimeError otherwise.
+                secret, raises RuntimeError otherwise.
             resolution (tuple[int, int]): Resolution as (width, height)
             fps (int): Frames per second to capture
             adjustments (Callable[[np.ndarray], np.ndarray] | None): Function to adjust frames
             auto_reconnect (bool): Enable automatic reconnection on failure
         """
         super().__init__(resolution, fps, adjustments, auto_reconnect)
+
+        if secret is not None and not secret:
+            raise RuntimeError("Secret must be a non-empty string or None.")
 
         if encrypt and not secret:
             raise RuntimeError("Encryption requires a secret key.")
