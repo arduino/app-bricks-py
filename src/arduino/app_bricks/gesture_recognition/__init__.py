@@ -8,15 +8,18 @@ import json
 import queue
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Literal
 
 import numpy as np
 import websockets
 
 from arduino.app_peripherals.camera import BaseCamera, Camera
-from arduino.app_utils import brick
+from arduino.app_utils import brick, Logger
 from arduino.app_utils.image.adjustments import compress_to_jpeg
 from arduino.app_internal.core.module import load_brick_compose_file, resolve_address
+
+logger = Logger("GestureRecognition")
 
 
 @brick
@@ -39,6 +42,12 @@ class GestureRecognition:
 
         self._camera_frame_queue = queue.Queue(maxsize=2)
 
+        # Callback executor and per-callback in-progress locks
+        self._executor: ThreadPoolExecutor | None = None
+        self._enter_lock = threading.Lock()
+        self._exit_lock = threading.Lock()
+        self._gesture_locks: dict[tuple, threading.Lock] = {}  # {(gesture, hand): Lock}
+
         # WebSocket endpoints
         infra = load_brick_compose_file(self.__class__)
         if infra is None or "services" not in infra:
@@ -56,6 +65,7 @@ class GestureRecognition:
 
     def start(self):
         """Start the capture thread and asyncio event loop."""
+        self._executor = ThreadPoolExecutor()
         self._camera.start()
         self._is_running = True
 
@@ -63,6 +73,9 @@ class GestureRecognition:
         """Stop all tracking and close connections."""
         self._is_running = False
         self._camera.stop()
+        if self._executor is not None:
+            self._executor.shutdown(wait=False)
+            self._executor = None
 
     def on_gesture(self, gesture: str, callback: Callable[[dict], None], hand: Literal["left", "right", "both"] = "both"):
         """
@@ -91,8 +104,11 @@ class GestureRecognition:
             if callback is None:
                 if key in self._gesture_callbacks:
                     del self._gesture_callbacks[key]
+                    self._gesture_locks.pop(key, None)
             else:
                 self._gesture_callbacks[key] = callback
+                if key not in self._gesture_locks:
+                    self._gesture_locks[key] = threading.Lock()
 
     def on_enter(self, callback: Callable[[], None]):
         """
@@ -139,7 +155,7 @@ class GestureRecognition:
                 try:
                     frame_cb(frame)
                 except Exception as e:
-                    print(f"Error in frame callback: {e}")
+                    logger.error(f"Error in frame callback: {e}")
 
             jpeg_frame = compress_to_jpeg(frame)
             if jpeg_frame is None:
@@ -158,7 +174,7 @@ class GestureRecognition:
 
         except Exception as e:
             if self._is_running:
-                print(f"Error capturing frame: {e}")
+                logger.error(f"Error capturing frame: {e}")
 
     @brick.execute
     def _send_receive_loop(self):
@@ -171,7 +187,7 @@ class GestureRecognition:
             loop.run_until_complete(tasks)
 
         except Exception as e:
-            print(f"Error in asyncio loop: {e}")
+            logger.error(f"Error in asyncio loop: {e}")
         finally:
             loop.close()
 
@@ -187,13 +203,13 @@ class GestureRecognition:
                             continue
 
                         b64_frame = base64.b64encode(frame.tobytes()).decode("utf-8")
-                        payload = {"frame": b64_frame, "width": 640, "height": 480}
+                        payload = {"frame": b64_frame}
 
                         await ws.send(json.dumps(payload))
 
             except Exception as e:
                 if self._is_running:
-                    print(f"Error in send frames task: {e}. Reconnecting...")
+                    logger.error(f"Error in send frames task: {e}. Reconnecting...")
                     await asyncio.sleep(3)
 
     async def _receive_detections_task(self):
@@ -207,9 +223,12 @@ class GestureRecognition:
 
                         self._process_detection(detection.get("metadata", {}))
 
+            except json.JSONDecodeError as e:
+                logger.error(f"Received invalid JSON data: {e}")
+                pass
             except Exception as e:
                 if self._is_running:
-                    print(f"Error in receive detections task: {e}. Reconnecting...")
+                    logger.error(f"Error in receive detections task: {e}. Reconnecting...")
                     await asyncio.sleep(3)
 
     def _process_detection(self, metadata: dict):
@@ -237,40 +256,71 @@ class GestureRecognition:
         with self._callbacks_lock:
             callback = self._enter_callback
 
-        if callback:
-            try:
-                callback()
-            except Exception as e:
-                print(f"Error in enter callback: {e}")
+        if callback and self._executor is not None:
+            if not self._enter_lock.acquire(blocking=False):
+                logger.debug("Discarding enter event: callback still running")
+                return
+
+            def _run(cb=callback):
+                try:
+                    cb()
+                except Exception as e:
+                    logger.error(f"Error in enter callback: {e}")
+                finally:
+                    self._enter_lock.release()
+
+            self._executor.submit(_run)
 
     def _dispatch_exit(self):
         """Dispatch hand exit event."""
         with self._callbacks_lock:
             callback = self._exit_callback
 
-        if callback:
-            try:
-                callback()
-            except Exception as e:
-                print(f"Error in exit callback: {e}")
+        if callback and self._executor is not None:
+            if not self._exit_lock.acquire(blocking=False):
+                logger.debug("Discarding exit event: callback still running")
+                return
+
+            def _run(cb=callback):
+                try:
+                    cb()
+                except Exception as e:
+                    logger.error(f"Error in exit callback: {e}")
+                finally:
+                    self._exit_lock.release()
+
+            self._executor.submit(_run)
 
     def _dispatch_gesture(self, gesture: str, hand: Literal["left", "right"], metadata: dict):
         """Dispatch gesture event to registered callbacks."""
-        callbacks_to_call = []
+        if self._executor is None:
+            return
+
+        keys_and_callbacks: list[tuple] = []
 
         with self._callbacks_lock:
             # Check for exact hand match
             exact_key = (gesture, hand)
             if exact_key in self._gesture_callbacks:
-                callbacks_to_call.append(self._gesture_callbacks[exact_key])
+                keys_and_callbacks.append((exact_key, self._gesture_callbacks[exact_key]))
 
             # Check for "both" wildcard
             both_key = (gesture, "both")
             if both_key in self._gesture_callbacks:
-                callbacks_to_call.append(self._gesture_callbacks[both_key])
+                keys_and_callbacks.append((both_key, self._gesture_callbacks[both_key]))
 
-        for callback in callbacks_to_call:
-            try:
-                callback(metadata)
-            except Exception as e:
-                print(f"Error in gesture callback: {e}")
+        for key, callback in keys_and_callbacks:
+            lock = self._gesture_locks.get(key)
+            if lock is None or not lock.acquire(blocking=False):
+                logger.debug(f"Discarding gesture '{gesture}' ({key[1]}): callback still running")
+                continue
+            self._executor.submit(self._run_gesture_callback, lock, callback, metadata)
+
+    def _run_gesture_callback(self, lock: threading.Lock, callback: Callable, metadata: dict):
+        """Run a gesture callback and release its lock when done."""
+        try:
+            callback(metadata)
+        except Exception as e:
+            logger.error(f"Error in gesture callback: {e}")
+        finally:
+            lock.release()
