@@ -141,7 +141,7 @@ class VideoImageClassification:
         """Stop the classification and release resources."""
         self._is_running.clear()
         self._camera.stop()
-        self._executor.shutdown(wait=False)
+        self._executor.shutdown(wait=False, cancel_futures=True)
 
     @brick.execute
     def classification_loop(self):
