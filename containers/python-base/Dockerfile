@@ -50,10 +50,10 @@ RUN set -ex; \
     apt-get install -y --no-install-recommends --no-install-suggests libgstreamer1.0-0 libgstreamer-plugins-base1.0-0 gstreamer1.0-plugins-good gstreamer1.0-plugins-base-apps gstreamer1.0-libav; \
     # Install dependencies for running libcamera
     apt-get install -y libpisp-common libboost-filesystem1.83.0 libboost-log1.83.0 libboost-thread1.83.0 libpisp1 libegl1 libgles2 libyaml-0-2 liblttng-ust1 libdw1t64; \
-    wget -O libcamera0.7_0.7.0-3_arm64.deb https://github.com/robgee86/app-bricks-py/releases/download/libcamera%2F0.7/libcamera0.7_0.7.0-3_arm64.deb; \
-    wget -O libcamera-ipa_0.7.0-3_arm64.deb https://github.com/robgee86/app-bricks-py/releases/download/libcamera%2F0.7/libcamera-ipa_0.7.0-3_arm64.deb; \
-    wget -O gstreamer1.0-libcamera_0.7.0-3_arm64.deb https://github.com/robgee86/app-bricks-py/releases/download/libcamera%2F0.7/gstreamer1.0-libcamera_0.7.0-3_arm64.deb; \
-    dpkg -i libcamera0.7_0.7.0-3_arm64.deb libcamera-ipa_0.7.0-3_arm64.deb gstreamer1.0-libcamera_0.7.0-3_arm64.deb; \
+    wget -O libcamera0.7_0.7.0-4_arm64.deb https://github.com/robgee86/app-bricks-py/releases/download/libcamera%2F0.7.0-4/libcamera0.7_0.7.0-4_arm64.deb; \
+    wget -O libcamera-ipa_0.7.0-4_arm64.deb https://github.com/robgee86/app-bricks-py/releases/download/libcamera%2F0.7.0-4/libcamera-ipa_0.7.0-4_arm64.deb; \
+    wget -O gstreamer1.0-libcamera_0.7.0-4_arm64.deb https://github.com/robgee86/app-bricks-py/releases/download/libcamera%2F0.7.0-4/gstreamer1.0-libcamera_0.7.0-4_arm64.deb; \
+    dpkg -i libcamera0.7_0.7.0-4_arm64.deb libcamera-ipa_0.7.0-4_arm64.deb gstreamer1.0-libcamera_0.7.0-4_arm64.deb; \
     # Install other runtime dependencies
     apt-get install -y --no-install-recommends --no-install-suggests libglib2.0-0 inotify-tools libzbar0; \
     mkdir -p /home/app/.fonts; \
