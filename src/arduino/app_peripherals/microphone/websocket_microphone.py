@@ -68,10 +68,11 @@ class WebSocketMicrophone(BaseMicrophone):
                 be ignored. Use this for transport-level security with clients that can
                 accept self-signed certificates or when supplying your own certificates.
                 Default: False.
-            secret (str): Secret key for authentication/encryption (empty = security disabled).
-                Default: empty.
-            encrypt (bool): Enable encryption (only effective if secret is provided).
-                Default: False.
+            secret (str): Pre-shared secret key. When empty (default), security is
+                disabled and clients send raw PCM bytes without BPP wrapping. When
+                set, enables HMAC-SHA256 authentication via BPP.
+            encrypt (bool): Enable ChaCha20-Poly1305 encryption via BPP. Requires a
+                non-empty secret; raises RuntimeError otherwise. Default: False.
             sample_rate (int): Sample rate in Hz. Default: 16000.
             channels (int): Number of audio channels. Default: Microphone.CHANNELS_MONO - 1.
             format (FormatPlain | FormatPacked): Audio format as one of:
@@ -86,6 +87,9 @@ class WebSocketMicrophone(BaseMicrophone):
             auto_reconnect (bool): Enable automatic reconnection on failure.
         """
         super().__init__(sample_rate, channels, format, buffer_size, auto_reconnect)
+
+        if encrypt and not secret:
+            raise RuntimeError("Encryption requires a secret key.")
 
         if use_tls and encrypt:
             logger.warning("Encryption is redundant over TLS connections, disabling encryption.")

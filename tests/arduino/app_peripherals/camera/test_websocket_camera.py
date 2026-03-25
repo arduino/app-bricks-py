@@ -56,6 +56,18 @@ def test_websocket_camera_init_custom():
     assert camera.status == "disconnected"
 
 
+def test_websocket_camera_encrypt_without_secret_fails():
+    """Test that encrypt=True without a secret raises RuntimeError."""
+    with pytest.raises(RuntimeError, match="Encryption requires a secret key"):
+        WebSocketCamera(encrypt=True)
+
+
+def test_websocket_camera_empty_string_secret_fails():
+    """Test that secret="" raises RuntimeError."""
+    with pytest.raises(RuntimeError, match="Secret must be a non-empty string or None"):
+        WebSocketCamera(secret="")
+
+
 def test_websocket_camera_start_stop():
     """Test start/stop WebSocket camera server."""
     camera = WebSocketCamera(port=0)

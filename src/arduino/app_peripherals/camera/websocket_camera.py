@@ -74,14 +74,20 @@ class WebSocketCamera(BaseCamera):
             use_tls (bool): Enable TLS for secure connections. If True, 'encrypt' will
                 be ignored. Use this for transport-level security with clients that can
                 accept self-signed certificates or when supplying your own certificates.
-            secret (str): Secret key for authentication/encryption (empty = security disabled)
-            encrypt (bool): Enable encryption (only effective if secret is provided)
+            secret (str): Pre-shared secret key. When empty (default), security is
+                disabled and clients send raw bytes without BPP wrapping. When set,
+                enables HMAC-SHA256 authentication via BPP.
+            encrypt (bool): Enable ChaCha20-Poly1305 encryption via BPP. Requires a
+                non-empty secret; raises RuntimeError otherwise.
             resolution (tuple[int, int]): Resolution as (width, height)
             fps (int): Frames per second to capture
             adjustments (Callable[[np.ndarray], np.ndarray] | None): Function to adjust frames
             auto_reconnect (bool): Enable automatic reconnection on failure
         """
         super().__init__(resolution, fps, adjustments, auto_reconnect)
+
+        if encrypt and not secret:
+            raise RuntimeError("Encryption requires a secret key.")
 
         if use_tls and encrypt:
             logger.warning("Encryption is redundant over TLS connections, disabling encryption.")

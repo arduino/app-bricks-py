@@ -30,6 +30,16 @@ class TestWebSocketMicrophoneInit:
         assert not mic.is_started()
         assert mic._server is None
 
+    def test_encrypt_without_secret_fails(self):
+        """Test that encrypt=True without a secret raises RuntimeError."""
+        with pytest.raises(RuntimeError, match="Encryption requires a secret key"):
+            WebSocketMicrophone(encrypt=True)
+
+    def test_empty_string_secret_fails(self):
+        """Test that secret="" raises RuntimeError."""
+        with pytest.raises(RuntimeError, match="Secret must be a non-empty string or None"):
+            WebSocketMicrophone(secret="")
+
     @pytest.mark.asyncio
     async def test_start_on_unavailable_port_fails(self):
         """Test that starting on an unavailable port fails gracefully."""
