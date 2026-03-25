@@ -68,10 +68,11 @@ class WebSocketMicrophone(BaseMicrophone):
                 be ignored. Use this for transport-level security with clients that can
                 accept self-signed certificates or when supplying your own certificates.
                 Default: False.
-            secret (str | None): Pre-shared secret key. None disables security.
-                Default: None.
-            encrypt (bool): Enable encryption. Requires a secret, raises
-                RuntimeError otherwise. Default: False.
+            secret (str | None): Pre-shared secret key used for HMAC-SHA256
+                authentication, or to derive the ChaCha20-Poly1305 key when
+                encrypt is True. None disables security. Default: None.
+            encrypt (bool): Enable ChaCha20-Poly1305 encryption. Requires a
+                non-None secret; raises RuntimeError otherwise. Default: False.
             sample_rate (int): Sample rate in Hz. Default: 16000.
             channels (int): Number of audio channels. Default: Microphone.CHANNELS_MONO - 1.
             format (FormatPlain | FormatPacked): Audio format as one of:
