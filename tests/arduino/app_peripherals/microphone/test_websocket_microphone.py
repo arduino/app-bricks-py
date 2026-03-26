@@ -376,6 +376,78 @@ class TestWebSocketClientConnection:
         mic.stop()
 
 
+class TestWebSocketClientEvents:
+    """Test WebSocket client event emission with client_name."""
+
+    @pytest.mark.asyncio
+    async def test_client_events(self):
+        """
+        Test that WebSocket microphone emits connection and disconnection events
+        with client_name extracted from URL query parameters.
+        """
+        events = []
+        main_loop = asyncio.get_running_loop()
+
+        connected = asyncio.Event()
+        disconnected = asyncio.Event()
+
+        mic = WebSocketMicrophone(port=0)
+
+        def event_listener(event_type, data):
+            if event_type == "connected":
+                main_loop.call_soon_threadsafe(connected.set)
+                assert "client_address" in data
+                assert "client_name" in data
+                assert data["client_name"] == "test_client"
+                assert mic.name == "test_client"
+            if event_type == "disconnected":
+                main_loop.call_soon_threadsafe(disconnected.set)
+                assert "client_address" in data
+                assert "client_name" in data
+                assert data["client_name"] == "test_client"
+                assert mic.name == "test_client"
+            events.append((event_type, data))
+
+        mic.on_status_changed(event_listener)
+        mic.start()
+
+        # This should emit connection and disconnection events
+        async def client_task():
+            async with websockets.connect(mic.url + "?client_name=test_client"):
+                pass
+
+        # Run client concurrently to properly test event handling
+        client = asyncio.create_task(client_task())
+
+        try:
+            await asyncio.wait_for(connected.wait(), timeout=5.0)
+        except asyncio.TimeoutError:
+            pytest.fail("Connection event was not emitted within timeout")
+        try:
+            await asyncio.wait_for(disconnected.wait(), timeout=5.0)
+        except asyncio.TimeoutError:
+            pytest.fail("Disconnection event was not emitted within timeout")
+
+        await client  # Ensure client task is finished and check for errors
+
+        # The events list is modified from another thread, so a brief sleep
+        # helps ensure the main thread sees the appended items before asserting.
+        await asyncio.sleep(0.1)
+
+        assert len(events) == 2
+        assert "connected" in events[0][0]
+        assert "disconnected" in events[1][0]
+
+        mic.stop()  # This should not emit a disconnection
+
+        await asyncio.sleep(0.1)
+
+        # Check that stop() didn't emit additional events
+        assert len(events) == 2
+        assert "connected" in events[0][0]
+        assert "disconnected" in events[1][0]
+
+
 class TestWebSocketClientDisconnection:
     """Test WebSocket client disconnection handling."""
 
