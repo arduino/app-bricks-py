@@ -66,6 +66,7 @@ class TestWebSocketPCMBinaryFormat:
     @pytest.mark.asyncio
     async def test_receive_binary_pcm_int16(self):
         """Test receiving binary PCM data as int16."""
+        codec = BPPCodec("", enable_encryption=False)
         mic = WebSocketMicrophone()
 
         mic.start()
@@ -77,8 +78,8 @@ class TestWebSocketPCMBinaryFormat:
         async with websockets.connect(mic.url) as ws:
             await ws.recv()  # Welcome message
 
-            # Send raw PCM bytes directly (no BPP in plain mode)
-            await ws.send(pcm_bytes)
+            # Send BPP-encoded PCM bytes
+            await ws.send(codec.encode(pcm_bytes))
 
             # Capture and validate
             received = mic.capture()
@@ -94,6 +95,7 @@ class TestWebSocketPCMBinaryFormat:
     @pytest.mark.asyncio
     async def test_receive_binary_pcm_int32(self):
         """Test receiving binary PCM data as int32."""
+        codec = BPPCodec("", enable_encryption=False)
         mic = WebSocketMicrophone(port=0, format=np.int32)
 
         mic.start()
@@ -104,7 +106,7 @@ class TestWebSocketPCMBinaryFormat:
         async with websockets.connect(mic.url) as ws:
             await ws.recv()
 
-            await ws.send(pcm_bytes)
+            await ws.send(codec.encode(pcm_bytes))
 
             received = mic.capture()
 
@@ -118,6 +120,7 @@ class TestWebSocketPCMBinaryFormat:
     @pytest.mark.asyncio
     async def test_receive_binary_pcm_float32(self):
         """Test receiving binary PCM data as float32."""
+        codec = BPPCodec("", enable_encryption=False)
         mic = WebSocketMicrophone(port=0, format=np.float32)
 
         mic.start()
@@ -128,7 +131,7 @@ class TestWebSocketPCMBinaryFormat:
         async with websockets.connect(mic.url) as ws:
             await ws.recv()
 
-            await ws.send(pcm_bytes)
+            await ws.send(codec.encode(pcm_bytes))
 
             received = mic.capture()
 
@@ -145,15 +148,16 @@ class TestWebSocketPCMBase64Format:
 
     @pytest.mark.asyncio
     async def test_receive_base64_encoded_pcm(self):
-        """Test receiving base64-encoded PCM data."""
+        """Test receiving base64-encoded BPP data."""
+        codec = BPPCodec("", enable_encryption=False)
         mic = WebSocketMicrophone(port=0)
 
         mic.start()
 
-        # Create and encode test PCM data
+        # Create test PCM data, wrap in BPP, then base64-encode
         test_audio = np.arange(512, dtype=np.int16)
-        pcm_bytes = test_audio.tobytes()
-        base64_encoded = base64.b64encode(pcm_bytes).decode()
+        bpp_encoded = codec.encode(test_audio.tobytes())
+        base64_encoded = base64.b64encode(bpp_encoded).decode()
 
         async with websockets.connect(mic.url) as ws:
             await ws.recv()
@@ -172,15 +176,16 @@ class TestWebSocketPCMBase64Format:
 
     @pytest.mark.asyncio
     async def test_receive_base64_with_padding(self):
-        """Test receiving base64 data with padding."""
+        """Test receiving base64-encoded BPP data with padding."""
+        codec = BPPCodec("", enable_encryption=False)
         mic = WebSocketMicrophone(port=0)
 
         mic.start()
 
         # Use size that requires padding in base64
         test_audio = np.arange(100, dtype=np.int16)
-        pcm_bytes = test_audio.tobytes()
-        base64_encoded = base64.b64encode(pcm_bytes).decode()
+        bpp_encoded = codec.encode(test_audio.tobytes())
+        base64_encoded = base64.b64encode(bpp_encoded).decode()
 
         # Verify it has padding
         assert "=" in base64_encoded or len(base64_encoded) % 4 == 0
@@ -204,6 +209,7 @@ class TestWebSocketMultipleChunks:
     @pytest.mark.asyncio
     async def test_receive_multiple_sequential_chunks(self):
         """Test receiving correctly multiple PCM chunks in sequence."""
+        codec = BPPCodec("", enable_encryption=False)
         mic = WebSocketMicrophone(port=0)
 
         mic.start()
@@ -216,7 +222,7 @@ class TestWebSocketMultipleChunks:
             for i in range(5):  # Internal queue holds up to 10 chunks
                 chunk = np.full(128, i, dtype=np.int16)
                 sent_chunks.append(chunk)
-                await ws.send(chunk.tobytes())
+                await ws.send(codec.encode(chunk.tobytes()))
 
             received_chunks = []
             for _ in range(5):
@@ -235,6 +241,7 @@ class TestWebSocketMultipleChunks:
     @pytest.mark.asyncio
     async def test_receive_rapid_fire_chunks(self):
         """Test receiving chunks sent in rapid succession."""
+        codec = BPPCodec("", enable_encryption=False)
         mic = WebSocketMicrophone(port=0)
 
         mic.start()
@@ -245,7 +252,7 @@ class TestWebSocketMultipleChunks:
             # Send chunks rapidly without delay
             for i in range(10):  # Internal queue holds up to 10 chunks
                 chunk = np.full(64, i, dtype=np.int16)
-                await ws.send(chunk.tobytes())
+                await ws.send(codec.encode(chunk.tobytes()))
 
             # Should handle rapid chunks
             for i in range(10):
@@ -261,6 +268,7 @@ class TestWebSocketPCMDataIntegrity:
     @pytest.mark.asyncio
     async def test_pcm_values_preserved_exactly(self):
         """Test that PCM values are preserved exactly through transmission."""
+        codec = BPPCodec("", enable_encryption=False)
         mic = WebSocketMicrophone(port=0)
 
         mic.start()
@@ -271,7 +279,7 @@ class TestWebSocketPCMDataIntegrity:
         async with websockets.connect(mic.url) as ws:
             await ws.recv()
 
-            await ws.send(test_audio.tobytes())
+            await ws.send(codec.encode(test_audio.tobytes()))
 
             received = mic.capture()
 
@@ -283,6 +291,7 @@ class TestWebSocketPCMDataIntegrity:
     @pytest.mark.asyncio
     async def test_pcm_byte_order_preserved(self):
         """Test that byte order is preserved in PCM transmission."""
+        codec = BPPCodec("", enable_encryption=False)
         mic = WebSocketMicrophone(port=0)
 
         mic.start()
@@ -293,7 +302,7 @@ class TestWebSocketPCMDataIntegrity:
         async with websockets.connect(mic.url) as ws:
             await ws.recv()
 
-            await ws.send(test_audio.tobytes())
+            await ws.send(codec.encode(test_audio.tobytes()))
 
             received = mic.capture()
 
@@ -308,14 +317,15 @@ class TestWebSocketClientConnection:
     @pytest.mark.asyncio
     async def test_client_receives_welcome_message(self):
         """Test that client receives welcome message on connection."""
+        codec = BPPCodec("", enable_encryption=False)
         mic = WebSocketMicrophone(port=0)
 
         mic.start()
 
         async with websockets.connect(mic.url) as ws:
-            welcome = await ws.recv()
+            welcome_raw = await ws.recv()
 
-            welcome_data = json.loads(welcome)
+            welcome_data = json.loads(codec.decode(welcome_raw))
 
             assert "status" in welcome_data
             assert welcome_data["status"] == "connected"
@@ -327,22 +337,23 @@ class TestWebSocketClientConnection:
     @pytest.mark.asyncio
     async def test_single_client_enforcement(self):
         """Test that only one client can connect at a time."""
+        codec = BPPCodec("", enable_encryption=False)
         mic = WebSocketMicrophone(port=0)
 
         mic.start()
 
         # Connect first client
         async with websockets.connect(mic.url) as client1:
-            welcome = await client1.recv()  # Welcome
-            welcome_data = json.loads(welcome)
+            welcome_raw = await client1.recv()  # Welcome
+            welcome_data = json.loads(codec.decode(welcome_raw))
             assert "status" in welcome_data
             assert welcome_data["status"] == "connected"
 
             # Try to connect second client
             async with websockets.connect(mic.url) as client2:
                 # Should receive rejection
-                rejection = await client2.recv()
-                rejection_data = json.loads(rejection)
+                rejection_raw = await client2.recv()
+                rejection_data = json.loads(codec.decode(rejection_raw))
                 assert "error" in rejection_data
 
         mic.stop()
@@ -350,6 +361,7 @@ class TestWebSocketClientConnection:
     @pytest.mark.asyncio
     async def test_client_disconnection_handled(self):
         """Test that client disconnection is handled gracefully."""
+        codec = BPPCodec("", enable_encryption=False)
         loop = asyncio.get_running_loop()
         test_done = asyncio.Event()
 
@@ -370,7 +382,7 @@ class TestWebSocketClientConnection:
         # Connect and disconnect
         async with websockets.connect(mic.url) as ws:
             await ws.recv()
-            await ws.send(test_audio)
+            await ws.send(codec.encode(test_audio))
 
         await asyncio.wait_for(test_done.wait(), timeout=2)
         mic.stop()
@@ -490,6 +502,7 @@ class TestWebSocketClientDisconnection:
     @pytest.mark.asyncio
     async def test_client_reconnect_after_disconnect(self):
         """Test that client can reconnect after disconnecting."""
+        codec = BPPCodec("", enable_encryption=False)
         mic = WebSocketMicrophone(port=0)
 
         mic.start()
@@ -500,8 +513,8 @@ class TestWebSocketClientDisconnection:
 
         # Second connection should work
         async with websockets.connect(mic.url) as ws:
-            welcome = await ws.recv()
-            assert "connected" in welcome.decode()
+            welcome_raw = await ws.recv()
+            assert b"connected" in codec.decode(welcome_raw)
 
         mic.stop()
 
@@ -562,6 +575,7 @@ class TestWebSocketPCMStreaming:
     @pytest.mark.asyncio
     async def test_continuous_pcm_stream(self):
         """Test continuous PCM streaming from client."""
+        codec = BPPCodec("", enable_encryption=False)
         mic = WebSocketMicrophone(port=0)
 
         mic.start()
@@ -573,7 +587,7 @@ class TestWebSocketPCMStreaming:
                 # Stream 10 chunks then stop
                 for i in range(10):
                     chunk = np.full(128, i, dtype=np.int16)
-                    await ws.send(chunk.tobytes())
+                    await ws.send(codec.encode(chunk.tobytes()))
 
         # Start streaming
         stream_task = asyncio.create_task(stream_audio())
@@ -596,6 +610,58 @@ class TestWebSocketPCMStreaming:
         for chunk in chunks:
             assert isinstance(chunk, np.ndarray)
             assert chunk.dtype == np.int16
+
+        mic.stop()
+
+
+class TestWebSocketRawMode:
+    """Test raw mode that bypasses BPP framing."""
+
+    @pytest.mark.asyncio
+    async def test_raw_mode_bypasses_bpp(self):
+        """Test that ?raw=true allows sending raw PCM bytes without BPP wrapping."""
+        mic = WebSocketMicrophone(port=0)
+
+        mic.start()
+
+        test_audio = np.arange(256, dtype=np.int16)
+        pcm_bytes = test_audio.tobytes()
+
+        async with websockets.connect(mic.url + "?raw=true") as ws:
+            await ws.recv()  # Welcome message
+
+            # Send raw PCM bytes directly (no BPP wrapping)
+            await ws.send(pcm_bytes)
+
+            received = mic.capture()
+
+            assert received is not None
+            assert isinstance(received, np.ndarray)
+            assert received.dtype == np.int16
+            assert len(received) == 256
+            np.testing.assert_array_equal(received, test_audio)
+
+        mic.stop()
+
+    @pytest.mark.asyncio
+    async def test_raw_mode_ignored_with_secret(self):
+        """Test that ?raw=true is ignored when a secret is set (BPP still enforced)."""
+        mic = WebSocketMicrophone(port=0, secret="my-secret", encrypt=False)
+
+        mic.start()
+
+        test_audio = np.arange(256, dtype=np.int16)
+
+        async with websockets.connect(mic.url + "?raw=true") as ws:
+            await ws.recv()  # Welcome message
+
+            # Send raw PCM bytes — should be rejected because BPP is enforced
+            await ws.send(test_audio.tobytes())
+
+            await asyncio.sleep(0.1)
+
+            received = mic.capture()
+            assert received is None
 
         mic.stop()
 

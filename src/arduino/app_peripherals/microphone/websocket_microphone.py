@@ -32,13 +32,15 @@ class WebSocketMicrophone(BaseMicrophone):
     The client must encode the audio data in PCM format and must respect the
     sample rate, channels, format, and chunk size specified during initialization.
 
-    Communication with the WebSocket server is supported in three security modes:
-    - Security disabled (empty secret)
-    - Authenticated (secret + encrypt=False) - HMAC-SHA256
-    - Authenticated + Encrypted (secret + encrypt=True) - ChaCha20-Poly1305
+    Communication uses the BPP (Binary Peripheral Protocol) in three security modes:
+    - Security disabled (secret=None) - BPP with no authentication
+    - Authenticated (secret + encrypt=False) - BPP with HMAC-SHA256
+    - Authenticated + Encrypted (secret + encrypt=True) - BPP with ChaCha20-Poly1305
 
-    In security-disabled mode, clients must send raw PCM bytes directly.
-    In other security modes, data must be serialized using the BPP protocol.
+    By default, all modes use BPP framing. When security is disabled (secret=None),
+    clients can opt out of BPP by connecting with the "raw=true" URL query parameter,
+    allowing them to send raw PCM bytes directly without BPP wrapping. This parameter
+    is silently ignored when security is enabled.
 
     When connecting, clients can specify a "client_name" parameter in the URL query string
     to identify themselves. This name will be sanitized to allow only alphanumeric chars,
@@ -100,9 +102,10 @@ class WebSocketMicrophone(BaseMicrophone):
             logger.warning("Encryption is redundant over TLS connections, disabling encryption.")
             encrypt = False
 
-        self.codec = BPPCodec(secret, encrypt) if secret is not None else None
+        self.codec = BPPCodec(secret or "", encrypt)
         self.secret = secret
         self.encrypt = encrypt
+        self._client_raw = False
         self.logger = logger
         self.name = self.__class__.__name__
 
@@ -217,8 +220,9 @@ class WebSocketMicrophone(BaseMicrophone):
 
     async def _ws_handler(self, conn: websockets.ServerConnection) -> None:
         """Handle a connected WebSocket client. Only one client allowed at a time."""
-        # Extract and sanitize client_name from URL parameters
+        # Extract URL parameters: client_name and raw mode opt-in
         client_name = "Unknown"
+        client_raw = False
         if conn.request:
             try:
                 parsed_path = urlparse(conn.request.path)
@@ -229,10 +233,17 @@ class WebSocketMicrophone(BaseMicrophone):
                     sanitized = "".join(c for c in raw_name if c.isalnum() or c in " -_")[:64]
                     if sanitized:
                         client_name = sanitized
+                # Allow raw (no BPP) mode only when security is disabled
+                if "raw" in query_params and query_params["raw"][0].lower() == "true":
+                    if self.secret is None:
+                        client_raw = True
+                    else:
+                        self.logger.warning("Client requested raw mode but security is enabled, ignoring.")
             except Exception as e:
-                self.logger.debug(f"Failed to extract client_name from URL parameters: {e}")
+                self.logger.debug(f"Failed to extract URL parameters: {e}")
             finally:
                 self.name = client_name
+                self._client_raw = client_raw
 
         client_addr = f"{conn.remote_address[0]}:{conn.remote_address[1]}"
 
@@ -301,6 +312,7 @@ class WebSocketMicrophone(BaseMicrophone):
             async with self._client_lock:
                 if self._client == conn:
                     self._client = None
+                    self._client_raw = False
                     self._set_status("disconnected", {"client_address": client_addr, "client_name": client_name})
                     self.logger.debug(f"Client removed: {client_addr}")
 
@@ -313,7 +325,7 @@ class WebSocketMicrophone(BaseMicrophone):
                 self.logger.warning(f"Failed to decode string message using base64: {e}")
                 return None
 
-        if self.codec:
+        if not self._client_raw:
             decoded = self.codec.decode(message)
             if decoded is None:
                 self.logger.warning("Failed to decode message")
@@ -376,7 +388,7 @@ class WebSocketMicrophone(BaseMicrophone):
         if isinstance(message, str):
             message = message.encode()
 
-        data = self.codec.encode(message) if self.codec else message
+        data = message if self._client_raw else self.codec.encode(message)
 
         # Keep a ref to current client to avoid locking
         client = client or self._client
