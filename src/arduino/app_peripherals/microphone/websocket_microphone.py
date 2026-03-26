@@ -11,6 +11,7 @@ import numpy as np
 import websockets
 import asyncio
 from concurrent.futures import CancelledError, TimeoutError, Future
+from urllib.parse import urlparse, parse_qs
 
 from arduino.app_internal.core.peripherals import BPPCodec
 from arduino.app_utils import Logger
@@ -38,6 +39,10 @@ class WebSocketMicrophone(BaseMicrophone):
 
     In security-disabled mode, clients must send raw PCM bytes directly.
     In other security modes, data must be serialized using the BPP protocol.
+
+    When connecting, clients can specify a "client_name" parameter in the URL query string
+    to identify themselves. This name will be sanitized to allow only alphanumeric chars,
+    whitespace, hyphens, and underscores, and limit its length to 64 characters.
     """
 
     from .microphone import Microphone
@@ -212,6 +217,23 @@ class WebSocketMicrophone(BaseMicrophone):
 
     async def _ws_handler(self, conn: websockets.ServerConnection) -> None:
         """Handle a connected WebSocket client. Only one client allowed at a time."""
+        # Extract and sanitize client_name from URL parameters
+        client_name = "Unknown"
+        if conn.request:
+            try:
+                parsed_path = urlparse(conn.request.path)
+                query_params = parse_qs(parsed_path.query)
+                if "client_name" in query_params:
+                    raw_name = query_params["client_name"][0]
+                    # Sanitize: only allow alphanumeric, spaces, hyphens, underscores, and limit length
+                    sanitized = "".join(c for c in raw_name if c.isalnum() or c in " -_")[:64]
+                    if sanitized:
+                        client_name = sanitized
+            except Exception as e:
+                self.logger.debug(f"Failed to extract client_name from URL parameters: {e}")
+            finally:
+                self.name = client_name
+
         client_addr = f"{conn.remote_address[0]}:{conn.remote_address[1]}"
 
         async with self._client_lock:
@@ -229,7 +251,7 @@ class WebSocketMicrophone(BaseMicrophone):
             # Accept the client
             self._client = conn
 
-        self._set_status("connected", {"client_address": client_addr})
+        self._set_status("connected", {"client_address": client_addr, "client_name": client_name})
         self.logger.debug(f"Client connected: {client_addr}")
 
         try:
@@ -279,7 +301,7 @@ class WebSocketMicrophone(BaseMicrophone):
             async with self._client_lock:
                 if self._client == conn:
                     self._client = None
-                    self._set_status("disconnected", {"client_address": client_addr})
+                    self._set_status("disconnected", {"client_address": client_addr, "client_name": client_name})
                     self.logger.debug(f"Client removed: {client_addr}")
 
     def _parse_message(self, message: str | bytes) -> np.ndarray | None:

@@ -228,6 +228,7 @@ class WebSocketCamera(BaseCamera):
                 self.name = client_name
 
         client_addr = f"{conn.remote_address[0]}:{conn.remote_address[1]}"
+
         async with self._client_lock:
             if self._client is not None:
                 # Reject the new client
