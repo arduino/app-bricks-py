@@ -21,8 +21,6 @@ from arduino.app_internal.core.module import load_brick_compose_file, resolve_ad
 
 logger = Logger("GestureRecognition")
 
-_CALLBACK_LOCK_TIMEOUT = 0.01  # seconds to wait for a per-callback lock before discarding the event
-
 
 @brick
 class GestureRecognition:
@@ -264,16 +262,16 @@ class GestureRecognition:
         with self._callbacks_lock:
             callback = self._enter_callback
 
-        if callback and not self._submit_callback("enter", callback):
-            logger.debug("Discarding enter event: callback still running")
+        if callback:
+            self._submit_callback("enter", callback)
 
     def _dispatch_exit(self):
         """Dispatch hand exit event."""
         with self._callbacks_lock:
             callback = self._exit_callback
 
-        if callback and not self._submit_callback("exit", callback):
-            logger.debug("Discarding exit event: callback still running")
+        if callback:
+            self._submit_callback("exit", callback)
 
     def _dispatch_gesture(self, gesture: str, hand: Literal["left", "right"], metadata: dict):
         """Dispatch gesture event to registered callbacks."""
@@ -283,21 +281,19 @@ class GestureRecognition:
             keys_and_callbacks = [(k, self._gesture_callbacks[k]) for k in (exact_key, both_key) if k in self._gesture_callbacks]
 
         for key, callback in keys_and_callbacks:
-            if not self._submit_callback(key, callback, metadata):
-                logger.debug(f"Discarding gesture '{gesture}' ({key[1]}): callback still running")
+            self._submit_callback(key, callback, metadata)
 
-    def _submit_callback(self, key: str | tuple, callback: Callable, *args) -> bool:
+    def _submit_callback(self, key: str | tuple, callback: Callable, *args):
         """Acquire the per-callback lock and submit callback to the executor.
 
-        Returns True if submitted, False if discarded (executor stopped or lock busy).
+        If the lock is already held (callback still running), the event is discarded.
         """
         if self._executor is None:
-            return False
+            return
         lock = self._callback_locks.get(key)
-        if lock is None or not lock.acquire(timeout=_CALLBACK_LOCK_TIMEOUT):
-            return False
+        if lock is None or not lock.acquire(blocking=False):
+            return
         self._executor.submit(self._run_callback, lock, callback, *args)
-        return True
 
     def _run_callback(self, lock: threading.Lock, callback: Callable, *args):
         """Run a callback and release its lock when done."""

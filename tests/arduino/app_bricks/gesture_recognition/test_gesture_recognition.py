@@ -362,8 +362,15 @@ class TestDiscardWhileRunning:
         assert open_count[0] == 1
         assert closed_count[0] == 1
 
+
+# ---------------------------------------------------------------------------
+# Exception-safety tests
+# ---------------------------------------------------------------------------
+
+
+class TestExceptionSafety:
     def test_callback_exception_releases_lock(self, gr: GestureRecognition):
-        """A failing callback must release its lock so the next event is accepted."""
+        """A failing callback must release its lock so subsequent events are not blocked."""
         call_count = [0]
         second_done = threading.Event()
 
