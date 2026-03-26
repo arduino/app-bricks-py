@@ -76,3 +76,5 @@ RUN set -ex; \
     # precompile python files to .pyc to speed up startup time
     python -m compileall /usr/local/bin; \
     python -m compileall /usr/local/lib
+
+COPY libcamera.yaml /etc/libcamera/configuration.yaml
