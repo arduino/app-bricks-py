@@ -628,6 +628,52 @@ class SoundGenerator(SoundGeneratorStreamer):
             self._output_device.start()
             self._sync_sample_rate()
 
+    def _estimate_output_drain_time(self) -> float:
+        """Estimate a small drain time so blocking playback does not cut the tail."""
+        sample_rate = getattr(self._output_device, "sample_rate", 0)
+        buffer_size = getattr(self._output_device, "buffer_size", 0)
+        if not sample_rate or not buffer_size:
+            return 0.0
+        return min((float(buffer_size) / float(sample_rate)) * 2.0, 0.25)
+
+    def _wait_for_playback_session_end(self, session_id: int):
+        """Wait until the given playback session is no longer active."""
+        while True:
+            with self._sequence_lock:
+                current_session_id = self._playback_session_id
+                current_thread = self._sequence_thread
+            if current_session_id != session_id or current_thread is None or not current_thread.is_alive():
+                return
+            time.sleep(0.01)
+
+    def _schedule_sequence_stop(self, session_id: int, delay: float) -> threading.Event:
+        """Schedule a timed stop for the currently running playback session."""
+        stop_done = threading.Event()
+
+        def stop_after_delay():
+            deadline = time.monotonic() + delay
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0.0:
+                    break
+                time.sleep(min(0.1, remaining))
+                with self._sequence_lock:
+                    current_session_id = self._playback_session_id
+                    current_thread = self._sequence_thread
+                if current_session_id != session_id or current_thread is None or not current_thread.is_alive():
+                    stop_done.set()
+                    return
+
+            with self._sequence_lock:
+                current_session_id = self._playback_session_id
+                current_thread = self._sequence_thread
+            if current_session_id == session_id and current_thread is not None and current_thread.is_alive():
+                self.stop_sequence()
+            stop_done.set()
+
+        threading.Thread(target=stop_after_delay, daemon=True, name="SoundGen-CompStopTimer").start()
+        return stop_done
+
     def set_master_volume(self, volume: float):
         """
         Set the master volume level.
@@ -662,7 +708,13 @@ class SoundGenerator(SoundGeneratorStreamer):
         if block and duration > 0.0:
             time.sleep(duration)
 
-    def play_composition(self, composition: "MusicComposition", block: bool = False):
+    def play_composition(
+        self,
+        composition: "MusicComposition",
+        loop: bool = False,
+        play_for: float | None = None,
+        block: bool | None = None,
+    ):
         """
         Play a MusicComposition object.
 
@@ -674,8 +726,32 @@ class SoundGenerator(SoundGeneratorStreamer):
 
         Args:
             composition (MusicComposition): The composition to play.
-            block (bool): If True, block until the entire composition has been played.
+            loop (bool): If True, loop the composition until ``stop_sequence()``
+                is called or until ``play_for`` expires.
+            play_for (float | None): When looping, stop automatically after the
+                given number of seconds. Requires ``loop=True``.
+            block (bool | None): Controls whether this call waits for playback.
+                - True: wait until the current playback session ends. When
+                  ``loop=True`` and ``play_for`` is not set, this may block
+                  indefinitely until ``stop_sequence()`` or ``stop()`` is called
+                  from another thread.
+                - False: start playback and return immediately.
+                - None: choose automatically based on the playback mode. Finite
+                  playback blocks, infinite looping returns immediately, and
+                  timed looping (``loop=True`` with ``play_for`` set) blocks
+                  until the timed stop completes. This is the recommended
+                  default for most scripts and examples.
         """
+        if play_for is not None:
+            play_for = float(play_for)
+            if play_for <= 0.0:
+                raise ValueError("play_for must be greater than 0.")
+            if not loop:
+                raise ValueError("play_for requires loop=True.")
+
+        if block is None:
+            block = (not loop) or (play_for is not None)
+
         # Configure the generator with composition settings
         self.set_bpm(composition.bpm)
         self.set_wave_form(composition.waveform)
@@ -697,27 +773,45 @@ class SoundGenerator(SoundGeneratorStreamer):
         if step_duration is None:
             step_duration = 1 / 16  # Default fallback
 
-        if block:
-            # Use threading to wait for completion
-            playback_done = threading.Event()
+        playback_done = threading.Event()
+        on_complete_callback = None
+        if not loop:
 
             def on_complete():
                 playback_done.set()
 
-            self.play_step_sequence(
-                sequence=sequence,
-                note_duration=step_duration,
-                bpm=composition.bpm,
-                loop=False,
-                on_complete_callback=on_complete,
-                volume=composition.volume,
-            )
+            on_complete_callback = on_complete
 
+        self.play_step_sequence(
+            sequence=sequence,
+            note_duration=step_duration,
+            bpm=composition.bpm,
+            loop=loop,
+            on_complete_callback=on_complete_callback,
+            volume=composition.volume,
+        )
+
+        with self._sequence_lock:
+            session_id = self._playback_session_id
+
+        timed_stop_done = None
+        if loop and play_for is not None:
+            timed_stop_done = self._schedule_sequence_stop(session_id, play_for)
+
+        if not block:
+            return
+
+        if not loop:
             playback_done.wait()
-            # Buffer time for audio queue to drain
-            time.sleep(2.0)
-        else:
-            self.play_step_sequence(sequence=sequence, note_duration=step_duration, bpm=composition.bpm, loop=False, volume=composition.volume)
+            self._wait_for_playback_session_end(session_id)
+            drain_time = self._estimate_output_drain_time()
+            if drain_time > 0.0:
+                time.sleep(drain_time)
+            return
+
+        if timed_stop_done is not None:
+            timed_stop_done.wait()
+        self._wait_for_playback_session_end(session_id)
 
     def play_chord(self, notes: list[str], note_duration: float | str = 1 / 4, volume: float = None, block: bool = False):
         """
@@ -867,14 +961,15 @@ class SoundGenerator(SoundGeneratorStreamer):
         # Ensure speaker is ready before starting the sequence thread
         self._ensure_speaker_ready()
 
-        # Start playback thread with new session ID
+        # Start a non-daemon thread so queued playback can keep the process
+        # alive until the sequence finishes or is explicitly stopped.
         self._sequence_stop_event.clear()
         self._playback_session_id += 1
         session_id = self._playback_session_id
         self._sequence_thread = threading.Thread(
             target=self._playback_sequence_thread,
             args=(sequence, note_duration, bpm, loop, on_step_callback, on_complete_callback, volume, session_id),
-            daemon=True,
+            daemon=False,
             name="SoundGen-StepSeq",
         )
         self._sequence_thread.start()
