@@ -6,19 +6,20 @@ import asyncio
 import base64
 import json
 import queue
-import time
 import threading
-from typing import ContextManager, Literal, TypeVar, Generic
-from collections.abc import Generator, Iterator
+import time
+from collections.abc import AsyncGenerator, Generator, Iterator
 from dataclasses import dataclass
+from typing import ContextManager, Generic, Literal, TypeVar
 
 import numpy as np
 import requests
 import websockets
+from websockets.exceptions import ConnectionClosedOK
 
 from arduino.app_internal.core import load_brick_compose_file, resolve_address
 from arduino.app_peripherals.microphone import BaseMicrophone
-from arduino.app_utils import brick, Logger
+from arduino.app_utils import Logger, brick
 
 logger = Logger("LocalASR")
 
@@ -37,6 +38,7 @@ class MicSessionInfo:
     start_time: float
     result_queue: queue.Queue[ASREvent]
     cancelled: threading.Event
+    session_closed: threading.Event
 
 
 @dataclass(frozen=True)
@@ -45,6 +47,7 @@ class WAVSessionInfo:
     wav_audio: bytes
     result_queue: queue.Queue[ASREvent]
     cancelled: threading.Event
+    session_closed: threading.Event
 
 
 T = TypeVar("T")
@@ -73,69 +76,65 @@ class TranscriptionStream(Generic[T], ContextManager["TranscriptionStream[T]"], 
 
 
 class AudioStreamRouter:
-    """Routes audio streams from multiple microphones to grouped subscribers."""
+    """Routes audio streams from microphones to per-session subscribers."""
 
     def __init__(self):
-        self._subscribers = {}  # mic_id -> {subscriber_id -> queue}
-        self._threads = {}  # mic_id -> thread
+        self._subscribers: dict[int, dict[str, queue.Queue]] = {}
+        self._threads: dict[int, threading.Thread] = {}
         self._lock = threading.Lock()
 
-    def subscribe(self, mic: BaseMicrophone, subscriber_id: str, audio_queue: queue.Queue):
-        """Register a subscriber to receive audio chunks from a specific microphone."""
+    def subscribe(self, mic: BaseMicrophone, subscriber_id: str, audio_queue: queue.Queue) -> None:
         mic_id = id(mic)
         with self._lock:
-            if mic_id not in self._subscribers:
-                self._subscribers[mic_id] = {}
-            self._subscribers[mic_id][subscriber_id] = audio_queue
+            self._subscribers.setdefault(mic_id, {})[subscriber_id] = audio_queue
             logger.debug(f"Subscriber {subscriber_id} registered for mic {mic_id}")
 
-    def unsubscribe(self, mic: BaseMicrophone, subscriber_id: str):
-        """Unregister a subscriber from a specific microphone."""
+    def unsubscribe(self, mic: BaseMicrophone, subscriber_id: str) -> None:
         mic_id = id(mic)
         with self._lock:
-            if mic_id in self._subscribers and subscriber_id in self._subscribers[mic_id]:
-                del self._subscribers[mic_id][subscriber_id]
-                logger.debug(f"Subscriber {subscriber_id} unregistered from mic {mic_id}")
-                # Clean up empty mic groups
-                if not self._subscribers[mic_id]:
-                    del self._subscribers[mic_id]
-
-    def publish(self, mic: BaseMicrophone, audio_chunk):
-        """Publish audio chunk to all subscribers of a specific microphone."""
-        mic_id = id(mic)
-        with self._lock:
-            if mic_id not in self._subscribers:
+            subscribers = self._subscribers.get(mic_id)
+            if not subscribers:
                 return
-            for subscriber_id, audio_queue in list(self._subscribers[mic_id].items()):
-                try:
-                    audio_queue.put_nowait(audio_chunk)
-                except queue.Full:
-                    logger.warning(f"Audio queue full for subscriber {subscriber_id}, dropping chunk")
+
+            if subscriber_id in subscribers:
+                del subscribers[subscriber_id]
+                logger.debug(f"Subscriber {subscriber_id} unregistered from mic {mic_id}")
+
+            if not subscribers:
+                del self._subscribers[mic_id]
+
+    def publish(self, mic: BaseMicrophone, audio_chunk) -> None:
+        mic_id = id(mic)
+        with self._lock:
+            subscribers = dict(self._subscribers.get(mic_id, {}))
+
+        for subscriber_id, audio_queue in subscribers.items():
+            try:
+                audio_queue.put_nowait(audio_chunk)
+            except queue.Full:
+                logger.warning(f"Audio queue full for subscriber {subscriber_id}, dropping chunk")
 
     def has_subscribers(self, mic: BaseMicrophone) -> bool:
-        """Check if there are any active subscribers for a specific microphone."""
         mic_id = id(mic)
         with self._lock:
-            return mic_id in self._subscribers and len(self._subscribers[mic_id]) > 0
+            return bool(self._subscribers.get(mic_id))
 
-    def register_thread(self, mic: BaseMicrophone, thread: threading.Thread):
-        """Register a reader thread for a microphone."""
+    def unregister_thread(self, mic: BaseMicrophone) -> None:
         mic_id = id(mic)
         with self._lock:
+            self._threads.pop(mic_id, None)
+
+    def ensure_thread(self, mic: BaseMicrophone, thread_factory) -> threading.Thread:
+        mic_id = id(mic)
+        with self._lock:
+            thread = self._threads.get(mic_id)
+            if thread is not None and thread.is_alive():
+                return thread
+
+            thread = thread_factory()
             self._threads[mic_id] = thread
-
-    def unregister_thread(self, mic: BaseMicrophone):
-        """Unregister a reader thread for a microphone."""
-        mic_id = id(mic)
-        with self._lock:
-            if mic_id in self._threads:
-                del self._threads[mic_id]
-
-    def get_thread(self, mic: BaseMicrophone) -> threading.Thread | None:
-        """Get the reader thread for a microphone."""
-        mic_id = id(mic)
-        with self._lock:
-            return self._threads.get(mic_id)
+            thread.start()
+            return thread
 
 
 @brick
@@ -143,90 +142,80 @@ class LocalASR:
     def __init__(self):
         self.max_concurrent_transcriptions = 3
 
-        # API configuration
         self.api_host = "localhost"
         infra = load_brick_compose_file(self.__class__) or {}
         for k, _ in infra["services"].items():
             self.api_host = k
-            break  # Only one service is expected
+            break
         self.api_host = resolve_address(self.api_host)
         if not self.api_host:
             raise RuntimeError("Host address could not be resolved. Please check your configuration.")
+
         self.api_port = 8085
         self.api_base_url = f"http://{self.api_host}:{self.api_port}/audio-analytics/v1/api"
         self.ws_url = f"ws://{self.api_host}:{self.api_port}/stream"
 
-        # ASR configuration
         self.model = "whisper-small"
-        self.language = "en"
+        self.language = "it"
 
-        # Worker thread management
         self._worker_loop = None
         self._stop_worker = threading.Event()
-
-        # Audio distribution
         self._audio_stream_router = AudioStreamRouter()
-
-        # Limit concurrency
         self._session_semaphore = threading.Semaphore(self.max_concurrent_transcriptions)
 
     def start(self):
-        """
-        Prepare the ASR for transcription.
-        """
+        """Prepare the ASR for transcription."""
         self._stop_worker.clear()
 
     def stop(self):
-        """
-        Stop the ASR and clean up resources.
-        """
+        """Stop the ASR and clean up resources."""
         self._stop_worker.set()
+
+    def _close_transcription_session(self, session_id: str) -> None:
+        url = f"{self.api_base_url}/transcriptions/close"
+        payload = {"session_id": session_id}
+
+        try:
+            response = requests.post(url, json=payload, timeout=5)
+            if response.status_code == 200:
+                logger.debug(f"Session {session_id} closed successfully")
+            else:
+                logger.warning(
+                    f"Session close returned status {response.status_code} for session {session_id}: {response.text}"
+                )
+        except Exception as e:
+            logger.warning(f"Failed to close session {session_id}: {e}")
 
     def transcribe_mic(self, mic: BaseMicrophone, duration: int = 0) -> str:
         """
         Transcribe audio data from the microphone and return the transcribed text.
-
-        Args:
-            mic (BaseMicrophone): The microphone instance to capture audio from.
-            duration (int): Duration in seconds to record audio. If 0, records until silence.
-
-        Returns:
-            str: The transcribed text.
-
-        Raises:
-            RuntimeError: If transcription fails, microphone not started, or other errors occur.
         """
         if not mic.is_started():
             raise RuntimeError("Microphone must be started before transcription. Call mic.start() first.")
 
-        transcription = ""
+        last_partial = ""
+        final_text = ""
+
         with self.transcribe_mic_stream(mic=mic, duration=duration) as stream:
             for chunk in stream:
-                transcription = chunk.data
+                if chunk.type == "partial_text" and chunk.data.strip():
+                    last_partial = chunk.data
+                elif chunk.type == "full_text":
+                    final_text = chunk.data
 
-        if transcription:
-            return transcription
+        if final_text.strip():
+            return final_text
 
-        raise RuntimeError("Transcription did not return any text")
+        if last_partial.strip():
+            logger.warning("ASR returned empty full_text, falling back to last partial_text")
+            return last_partial
+
+        logger.info("ASR returned no speech / empty transcription")
+        return ""
 
     def transcribe_mic_stream(self, mic: BaseMicrophone, duration: int = 0) -> TranscriptionStream[ASREvent]:
         """
-        Transcribe audio data from the microphone and stream the results as soon
-        as they are available.
-
-        Partial results are yielded as they arrive, and the final text is yielded
-        when the transcription is complete. Partial chunks are of temporary nature
-        and may be updated by the final full text.
-
-        Args:
-            mic (BaseMicrophone): The microphone instance to capture audio from.
-            duration (int): Duration in seconds to record audio. If 0, records until silence.
-
-        Returns:
-            TranscriptionStream[ASREvent]: iterable context manager emitting ASREvent items.
-
-        Raises:
-            RuntimeError: If transcription fails, microphone not started, or other errors occur.
+        Transcribe audio data from the microphone and stream the results as soon as they are available.
         """
         if not mic.is_started():
             raise RuntimeError("Microphone must be started before transcription. Call mic.start() first.")
@@ -236,78 +225,82 @@ class LocalASR:
     def transcribe_wav(self, wav_data: np.ndarray | bytes) -> str:
         """
         Transcribe audio from WAV data and return the transcribed text.
-
-        Args:
-            wav_data (np.ndarray | bytes): WAV file data (including header) as numpy array or bytes.
-
-        Returns:
-            str: The transcribed text.
-
-        Raises:
-            RuntimeError: If transcription fails or other errors occur.
         """
-        transcription = ""
+        last_partial = ""
+        final_text = ""
+
         with self.transcribe_wav_stream(wav_data) as stream:
             for chunk in stream:
-                transcription = chunk.data
+                if chunk.type == "partial_text" and chunk.data.strip():
+                    last_partial = chunk.data
+                elif chunk.type == "full_text":
+                    final_text = chunk.data
 
-        if transcription:
-            return transcription
+        if final_text.strip():
+            return final_text
 
-        raise RuntimeError("Transcription did not return any text")
+        if last_partial.strip():
+            logger.warning("ASR returned empty full_text, falling back to last partial_text")
+            return last_partial
+
+        logger.info("ASR returned no speech / empty transcription")
+        return ""
 
     def transcribe_wav_stream(self, wav_data: np.ndarray | bytes) -> TranscriptionStream[ASREvent]:
         """
         Transcribe audio from WAV data and stream the results.
-
-        Args:
-            wav_data (np.ndarray | bytes): WAV file data (including header) as numpy array or bytes.
-
-        Returns:
-            TranscriptionStream[ASREvent]: iterable context manager emitting ASREvent items.
-
-        Raises:
-            RuntimeError: If transcription fails or other errors occur.
         """
         data = wav_data.tobytes() if isinstance(wav_data, np.ndarray) else wav_data
         return TranscriptionStream(self._transcribe_stream(audio_source=data))
 
-    def _transcribe_stream(self, duration: int = 0, audio_source: BaseMicrophone | bytes | None = None) -> Generator[ASREvent, None, None]:
+    def _transcribe_stream(
+        self,
+        duration: int = 0,
+        audio_source: BaseMicrophone | bytes | None = None,
+    ) -> Generator[ASREvent, None, None]:
         if self._worker_loop is None:
             raise RuntimeError("Worker loop not initialized. Call start() first.")
+
         if not self._session_semaphore.acquire(blocking=False):
             raise RuntimeError(
-                f"Maximum concurrent transcriptions ({self.max_concurrent_transcriptions}) reached. Wait for an existing transcription to complete."
+                f"Maximum concurrent transcriptions ({self.max_concurrent_transcriptions}) reached. "
+                "Wait for an existing transcription to complete."
             )
 
         session_id = None
         cancelled = threading.Event()
+        session_closed = threading.Event()
         future = None
 
         try:
             logger.debug(f"Creating transcription session with model={self.model}, language={self.language}")
-            # Create transcription session
-            url = f"{self.api_base_url}/transcriptions/create"
-            data = {
+
+            create_url = f"{self.api_base_url}/transcriptions/create"
+            create_data = {
                 "model": self.model,
                 "stream": True,
                 "language": self.language,
-                "parameters": json.dumps([
-                    {"key": "sampling_rate", "value": "16000"},
-                    {"key": "channels", "value": "1"},
-                    {"key": "format", "value": "pcm_s16le"},
-                ]),
+                "parameters": json.dumps(
+                    [
+                        {"key": "sampling_rate", "value": "16000"},
+                        {"key": "channels", "value": "1"},
+                        {"key": "format", "value": "pcm_s16le"},
+                        {"key": "vad", "value": "700"},
+                    ]
+                ),
             }
-            response = requests.post(url=url, json=data, timeout=3)
+
+            response = requests.post(url=create_url, json=create_data, timeout=3)
             if response.status_code != 200:
                 error_msg = f"Failed to create transcription session: {response.status_code}"
                 try:
                     error_data = response.json()
                     if "error" in error_data:
                         error_msg = error_data["error"].get("message", error_msg)
-                except:
+                except Exception:
                     pass
                 raise RuntimeError(error_msg)
+
             result = response.json()
             session_id = result.get("session_id")
             if not session_id:
@@ -315,15 +308,15 @@ class LocalASR:
 
             result_queue = queue.Queue[ASREvent]()
 
-            # Create session info
             if isinstance(audio_source, BaseMicrophone):
-                session_info = MicSessionInfo(
+                session_info: MicSessionInfo | WAVSessionInfo = MicSessionInfo(
                     session_id=session_id,
                     mic=audio_source,
                     duration=duration,
                     start_time=time.time(),
                     result_queue=result_queue,
                     cancelled=cancelled,
+                    session_closed=session_closed,
                 )
             elif isinstance(audio_source, bytes):
                 session_info = WAVSessionInfo(
@@ -331,37 +324,39 @@ class LocalASR:
                     wav_audio=audio_source,
                     result_queue=result_queue,
                     cancelled=cancelled,
+                    session_closed=session_closed,
                 )
             else:
                 raise RuntimeError("audio_source must be either a BaseMicrophone or bytes")
 
-            future = asyncio.run_coroutine_threadsafe(self._transcription_session_handler(session_info), self._worker_loop)
+            future = asyncio.run_coroutine_threadsafe(
+                self._transcription_session_handler(session_info),
+                self._worker_loop,
+            )
 
-            # Yield results until the session is done
             while not future.done():
                 try:
-                    yield result_queue.get(timeout=1.0)
+                    yield result_queue.get(timeout=0.2)
                 except queue.Empty:
                     continue
 
-            # Drain queue
             while True:
                 try:
                     yield result_queue.get_nowait()
                 except queue.Empty:
                     break
 
-            future.result()  # Will raise if an exception occurred
+            future.result()
 
         except GeneratorExit:
-            # User broke out of the generator loop, signal cancellation
             logger.debug(f"Transcription interrupted by user for session {session_id}")
             cancelled.set()
             if future and not future.done():
+                future.cancel()
                 try:
                     future.result(timeout=2)
                 except Exception:
-                    pass  # Ignore any errors during cleanup
+                    pass
             raise
 
         except (TimeoutError, asyncio.TimeoutError):
@@ -371,6 +366,10 @@ class LocalASR:
             raise RuntimeError(f"Transcription failed: {e}")
 
         finally:
+            cancelled.set()
+            if session_id and not session_closed.is_set():
+                self._close_transcription_session(session_id)
+                session_closed.set()
             self._session_semaphore.release()
 
     @brick.execute
@@ -380,7 +379,6 @@ class LocalASR:
         Manages transcription sessions posted via run_coroutine_threadsafe.
         """
         logger.debug("Asyncio event loop starting")
-
         self._worker_loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._worker_loop)
 
@@ -393,7 +391,6 @@ class LocalASR:
         except Exception as e:
             logger.error(f"Event loop error: {e}")
         finally:
-            # Clean up the event loop
             pending = asyncio.all_tasks(self._worker_loop)
             for task in pending:
                 task.cancel()
@@ -405,190 +402,206 @@ class LocalASR:
 
     async def _transcription_session_handler(self, session_info: MicSessionInfo | WAVSessionInfo):
         """
-        Manages WebSocket connection, sends audio chunks, and receives
-        transcription results.
+        One websocket per transcription session.
+        Audio is streamed while results are received on the same websocket.
+        When transcript.text.done arrives, close the server-side session and then
+        exit the websocket context so the connection is closed too.
         """
         session_id = session_info.session_id
+        send_task: asyncio.Task | None = None
+        receive_task: asyncio.Task | None = None
 
         async with websockets.connect(self.ws_url) as websocket:
             logger.debug(f"WebSocket connected for session {session_id}")
 
-            # Start audio sending and transcription receiving tasks
             if isinstance(session_info, MicSessionInfo):
-                send_task = asyncio.create_task(self._send_mic_audio(websocket, session_info))
+                pcm_chunks = self._iter_mic_pcm_chunks(session_info)
             else:
-                send_task = asyncio.create_task(self._send_wav_audio(websocket, session_info))
-            receive_task = asyncio.create_task(self._receive_transcription(websocket, session_info))
+                pcm_chunks = self._iter_wav_pcm_chunks(session_info)
 
-            await asyncio.gather(send_task, receive_task)
+            send_task = asyncio.create_task(
+                self._send_pcm_stream(websocket, session_id, pcm_chunks)
+            )
+            receive_task = asyncio.create_task(
+                self._receive_transcription(websocket, session_info)
+            )
 
-    async def _send_mic_audio(self, websocket: websockets.ClientConnection, session_info: MicSessionInfo):
-        """Sends audio chunks from mic queue to WebSocket"""
-        session_id = session_info.session_id
-        mic = session_info.mic
-        duration = session_info.duration
-        start_time = session_info.start_time
+            tasks = {send_task, receive_task}
 
-        # Start reader thread for this mic if not already running
-        existing_thread = self._audio_stream_router.get_thread(mic)
-        if existing_thread is None or not existing_thread.is_alive():
-            reader_thread = threading.Thread(target=self._mic_reader_loop, args=(mic,), daemon=True, name=f"AudioReader-{id(mic)}")
-            self._audio_stream_router.register_thread(mic, reader_thread)
-            reader_thread.start()
+            try:
+                while True:
+                    done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
 
-        # Create audio queue and subscribe
-        audio_queue = queue.Queue(maxsize=100)
-        self._audio_stream_router.subscribe(mic, session_id, audio_queue)
+                    if send_task in done:
+                        send_exc = send_task.exception()
+                        if send_exc is not None:
+                            raise send_exc
+                        tasks.discard(send_task)
 
-        try:
-            while not self._stop_worker.is_set() and not session_info.cancelled.is_set():
-                # Check duration limit (if duration > 0)
-                if duration > 0:
-                    elapsed = time.time() - start_time
-                    if elapsed >= duration:
-                        logger.debug(f"Session {session_id} duration limit reached: {duration}s")
+                    if receive_task in done:
+                        receive_exc = receive_task.exception()
+                        if receive_exc is not None:
+                            raise receive_exc
                         break
 
-                try:
-                    audio_chunk = await asyncio.wait_for(asyncio.get_event_loop().run_in_executor(None, audio_queue.get, True, 0.1), timeout=0.1)
-                except (asyncio.TimeoutError, queue.Empty):
-                    continue
+                    if not pending and receive_task not in tasks:
+                        break
 
-                audio_bytes = audio_chunk.tobytes()
-                audio_base64 = base64.b64encode(audio_bytes).decode("utf-8")
+                session_info.cancelled.set()
+
+            finally:
+                session_info.cancelled.set()
+
+                if send_task is not None and not send_task.done():
+                    send_task.cancel()
+
+                if receive_task is not None and not receive_task.done():
+                    receive_task.cancel()
+
+                await asyncio.gather(
+                    *(task for task in (send_task, receive_task) if task is not None),
+                    return_exceptions=True,
+                )
+
+                if not session_info.session_closed.is_set():
+                    await asyncio.to_thread(self._close_transcription_session, session_id)
+                    session_info.session_closed.set()
+
+    async def _send_pcm_stream(
+        self,
+        websocket: websockets.ClientConnection,
+        session_id: str,
+        pcm_chunks: AsyncGenerator[bytes, None],
+    ) -> int:
+        chunks_sent = 0
+        try:
+            async for audio_bytes in pcm_chunks:
+                if self._stop_worker.is_set():
+                    break
 
                 message = {
                     "message_type": "transcriptions_session_audio",
                     "message_source": "audio_analytics_api",
                     "session_id": session_id,
                     "type": "input_audio",
-                    "data": audio_base64,
+                    "data": base64.b64encode(audio_bytes).decode("utf-8"),
                 }
 
                 await websocket.send(json.dumps(message))
+                chunks_sent += 1
+
+            logger.debug(f"Finished sending PCM stream for session {session_id}, chunks_sent={chunks_sent}")
+            return chunks_sent
 
         except asyncio.CancelledError:
-            logger.debug(f"Audio sending cancelled for session {session_id}")
+            logger.debug(f"PCM stream sending cancelled for session {session_id}")
             raise
-        except Exception as e:
-            logger.error(f"Error sending audio chunks for session {session_id}: {e}")
-            raise
+
+        except ConnectionClosedOK:
+            logger.debug(f"WebSocket closed as expected while sending PCM stream for session {session_id}")
+            return chunks_sent
+
+    async def _iter_mic_pcm_chunks(self, session_info: MicSessionInfo) -> AsyncGenerator[bytes, None]:
+        session_id = session_info.session_id
+        mic = session_info.mic
+        duration = session_info.duration
+        start_time = session_info.start_time
+        audio_queue: queue.Queue = queue.Queue(maxsize=100)
+
+        self._audio_stream_router.subscribe(mic, session_id, audio_queue)
+
+        def make_reader_thread() -> threading.Thread:
+            return threading.Thread(
+                target=self._mic_reader_loop,
+                args=(mic,),
+                daemon=True,
+                name=f"AudioReader-{id(mic)}",
+            )
+
+        self._audio_stream_router.ensure_thread(mic, make_reader_thread)
+
+        try:
+            while not self._stop_worker.is_set() and not session_info.cancelled.is_set():
+                if duration > 0 and (time.time() - start_time) >= duration:
+                    logger.debug(f"Session {session_id} duration limit reached: {duration}s")
+                    break
+
+                try:
+                    loop = asyncio.get_running_loop()
+                    audio_chunk = await asyncio.wait_for(
+                        loop.run_in_executor(None, audio_queue.get, True, 0.1),
+                        timeout=0.2,
+                    )
+                except (asyncio.TimeoutError, queue.Empty):
+                    continue
+
+                yield audio_chunk.tobytes()
+
         finally:
-            # Unsubscribe from audio as soon as we're done sending
             self._audio_stream_router.unsubscribe(mic, session_id)
-            logger.debug(f"Session {session_id} unsubscribed from audio")
+            logger.debug(f"Session {session_id} mic chunk iterator cleanup completed")
 
     def _mic_reader_loop(self, mic: BaseMicrophone):
         """
-        Reader thread function for capturing audio from a specific microphone
-        and publishing to its subscribers.
+        Single reader thread per microphone.
+        It continuously captures audio and fans it out to active subscribers.
         """
         mic_id = id(mic)
         logger.debug(f"Audio reader thread starting for mic {mic_id}")
 
-        # Wait until someone subscribes
-        while not self._audio_stream_router.has_subscribers(mic):
-            time.sleep(0.01)
-
         try:
             while not self._stop_worker.is_set():
-                # Only capture audio if there are active subscribers for this mic
-                if self._audio_stream_router.has_subscribers(mic):
-                    audio_chunk = mic.capture()
-                    self._audio_stream_router.publish(mic, audio_chunk)
-                else:
-                    # No subscribers left, exit the thread
+                if not self._audio_stream_router.has_subscribers(mic):
                     logger.debug(f"No more subscribers for mic {mic_id}, stopping reader thread")
                     break
 
+                audio_chunk = mic.capture()
+
+                if self._audio_stream_router.has_subscribers(mic):
+                    self._audio_stream_router.publish(mic, audio_chunk)
+
         except Exception as e:
             logger.error(f"Audio reader thread error for mic {mic_id}: {e}")
-            raise
+
         finally:
             self._audio_stream_router.unregister_thread(mic)
             logger.debug(f"Audio reader thread stopped for mic {mic_id}")
 
-    async def _send_wav_audio(self, websocket: websockets.ClientConnection, session_info: WAVSessionInfo):
-        """Sends audio chunks from WAV numpy array to WebSocket"""
-        import wave
+    async def _iter_wav_pcm_chunks(self, session_info: WAVSessionInfo) -> AsyncGenerator[bytes, None]:
         import io
-
-        logger.info(f"Starting to send WAV audio for session {session_info.session_id}")
+        import wave
 
         session_id = session_info.session_id
         wav_audio = session_info.wav_audio
 
-        try:
-            # Parse WAV file to get format information and calculate header size
-            with wave.open(io.BytesIO(wav_audio), "rb") as wf:
-                sample_rate = wf.getframerate()
-                num_channels = wf.getnchannels()
-                logger.info(f"WAV format - Sample Rate: {sample_rate}, Channels: {num_channels}")
-                sample_width = wf.getsampwidth()
-                num_frames = wf.getnframes()
+        with wave.open(io.BytesIO(wav_audio), "rb") as wf:
+            sample_rate = wf.getframerate()
+            num_channels = wf.getnchannels()
+            sample_width = wf.getsampwidth()
+            frames = wf.readframes(wf.getnframes())
 
-            frames_size = num_frames * num_channels * sample_width
-            header_size = len(wav_audio) - frames_size
+        logger.info(
+            f"WAV format for session {session_id} - "
+            f"Sample Rate: {sample_rate}, Channels: {num_channels}, Sample Width: {sample_width}"
+        )
 
-            header = wav_audio[:header_size]
-            frames = wav_audio[header_size:]
+        chunk_duration = 0.5
+        chunk_size = int(chunk_duration * sample_rate * num_channels * sample_width)
 
-            header_base64 = base64.b64encode(header).decode("utf-8")
-            header_message = {
-                "message_type": "transcriptions_session_audio",
-                "message_source": "audio_analytics_api",
-                "session_id": session_id,
-                "type": "input_audio",
-                "data": header_base64,
-            }
+        for i in range(0, len(frames), chunk_size):
+            if self._stop_worker.is_set() or session_info.cancelled.is_set():
+                break
+            yield frames[i : i + chunk_size]
 
-            await asyncio.sleep(0.5)
-            logger.info(f"Header Audio base 64: {header_base64[:50]}...")
-            await websocket.send(json.dumps(header_message))
-
-            # Calculate chunk size for ~500ms of audio
-            chunk_duration = 0.5
-            chunk_size = int(chunk_duration * sample_rate * num_channels * sample_width)
-
-            logger.info(f"Num frames: {len(frames)}, Chunk size: {chunk_size} bytes")
-
-            counter = 0
-            for i in range(0, len(frames), chunk_size):
-                counter += 1
-                # iteration_start = time.perf_counter()
-
-                if self._stop_worker.is_set() or session_info.cancelled.is_set():
-                    break
-
-                audio_chunk = frames[i : i + chunk_size]
-                audio_base64 = base64.b64encode(audio_chunk).decode("utf-8")
-                logger.info(f"Audio base 64: {audio_base64[:50]}... (chunk {counter})")
-                chunk_message = {
-                    "message_type": "transcriptions_session_audio",
-                    "message_source": "audio_analytics_api",
-                    "session_id": session_id,
-                    "type": "input_audio",
-                    "data": audio_base64,
-                }
-                await websocket.send(json.dumps(chunk_message))
-
-                # Account for processing time to maintain real-time simulation
-                # elapsed = time.perf_counter() - iteration_start
-                # sleep_time = max(0, chunk_duration - elapsed)
-                # await asyncio.sleep(sleep_time)
-
-            logger.info(f"Finished sending WAV audio for session {session_id}, total chunks sent: {counter}")
-
-        except asyncio.CancelledError:
-            logger.debug(f"Array audio sending cancelled for session {session_id}")
-            raise
-
-        except Exception as e:
-            logger.error(f"Error sending array audio for session {session_id}: {e}")
-            raise
-
-    async def _receive_transcription(self, websocket: websockets.ClientConnection, session_info: MicSessionInfo | WAVSessionInfo):
-        """Receives transcriptions and puts them in the result queue"""
+    async def _receive_transcription(
+        self,
+        websocket: websockets.ClientConnection,
+        session_info: MicSessionInfo | WAVSessionInfo,
+    ) -> None:
+        """
+        Receive transcription events for one session over its dedicated websocket.
+        The session ends only when transcript.text.done arrives, or on error/close.
+        """
         session_id = session_info.session_id
         result_queue = session_info.result_queue
 
@@ -601,27 +614,31 @@ class LocalASR:
 
                 try:
                     data = json.loads(message)
-                    logger.info(f"Received WebSocket message for session {session_id}: {data}")
                 except json.JSONDecodeError:
                     logger.warning(f"Failed to parse WebSocket message: {message}")
                     continue
 
-                # Handle different message types
+                message_session_id = data.get("session_id")
+                if message_session_id is not None and message_session_id != session_id:
+                    logger.warning(
+                        f"Ignoring WebSocket message for session {message_session_id}; "
+                        f"current session is {session_id}. Message: {data}"
+                    )
+                    continue
+
+                logger.info(f"Received WebSocket message for session {session_id}. Message: {data}")
+
                 msg_type = data.get("message_type") or data.get("type")
 
                 if msg_type == "transcript.text.delta":
-                    # Partial transcription result
-                    text = data.get("text", "")
-                    result_queue.put(ASREvent("partial_text", text))
+                    result_queue.put(ASREvent("partial_text", data.get("text", "")))
+
+                elif msg_type == "transcript.text.done":
+                    result_queue.put(ASREvent("full_text", data.get("text", "")))
+                    break
 
                 elif msg_type == "transcript.event":
                     continue
-
-                elif msg_type == "transcript.text.done":
-                    # Final transcription result
-                    text = data.get("text", "")
-                    result_queue.put(ASREvent("full_text", text))
-                    break
 
                 elif msg_type == "connection_established":
                     continue
@@ -631,7 +648,6 @@ class LocalASR:
                     break
 
                 elif "error" in data:
-                    # Error message from server
                     error_msg = data["error"].get("message", "Unknown error")
                     logger.error(f"Transcription error for {session_id}: {error_msg}")
                     raise RuntimeError(error_msg)
@@ -643,6 +659,10 @@ class LocalASR:
         except asyncio.CancelledError:
             logger.debug(f"Receive task cancelled for session {session_id}")
             raise
+
+        except ConnectionClosedOK:
+            logger.debug(f"WebSocket closed as expected while receiving transcription for session {session_id}")
+            return
 
         except Exception as e:
             logger.error(f"Error receiving transcription for {session_id}: {e}")
