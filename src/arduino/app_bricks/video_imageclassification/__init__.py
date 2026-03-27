@@ -7,6 +7,7 @@ import json
 import inspect
 import threading
 import socket
+from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 from typing import Callable
 
@@ -32,6 +33,8 @@ class VideoImageClassification:
 
     ALL_HANDLERS_KEY = "__ALL"
 
+    _DETECTION_LOCK_TO = 0.01  # Seconds to wait for a detection lock before discarding the detection signal
+
     def __init__(self, camera: BaseCamera | None = None, confidence: float = 0.3, debounce_sec: float = 0.0):
         """Initialize the VideoImageClassification class.
 
@@ -52,6 +55,10 @@ class VideoImageClassification:
 
         self._handlers = {}  # Dictionary to hold handlers for different actions
         self._handlers_lock = threading.Lock()
+        self._detection_locks = {}  # Per-detection locks for fine-grained concurrency control
+        self._detection_locks_lock = threading.Lock()  # Lock to protect _detection_locks dict
+
+        self._executor = ThreadPoolExecutor(max_workers=5, thread_name_prefix="VideoImageClassificationHandler")
 
         self._is_running = threading.Event()
 
@@ -134,6 +141,7 @@ class VideoImageClassification:
         """Stop the classification and release resources."""
         self._is_running.clear()
         self._camera.stop()
+        self._executor.shutdown(wait=False, cancel_futures=True)
 
     @brick.execute
     def classification_loop(self):
@@ -257,6 +265,20 @@ class VideoImageClassification:
             # Leave logging for unknown message types for debugging purposes
             logger.warning(f"Unknown message type: {jmsg.get('type')}")
 
+    def _get_detection_lock(self, classification: str) -> threading.Lock:
+        """Get or create a lock for a specific classification label.
+
+        Args:
+            classification (str): The classification label to get a lock for.
+
+        Returns:
+            threading.Lock: The lock for the specified classification.
+        """
+        with self._detection_locks_lock:
+            if classification not in self._detection_locks:
+                self._detection_locks[classification] = threading.Lock()
+            return self._detection_locks[classification]
+
     def _execute_handler(self, classification: str, classifications: dict | None = None):
         """Execute the handler for the detected object if it exists.
 
@@ -264,18 +286,44 @@ class VideoImageClassification:
             classification (str): The classified object to check for in the registered handlers.
             classifications (dict, optional): The full dictionary of classifications if invoking the all-detection handler.
         """
-        now = time.time()
+        # Get the handler from the dictionary (short critical section)
         with self._handlers_lock:
             handler = self._handlers.get(classification)
-            if handler:
-                last_time = self._last_detected.get(classification, 0)
-                if now - last_time >= self._debounce_sec:
-                    self._last_detected[classification] = now
-                    logger.debug(f"Classification: {classification}, invoking handler.")
-                    if classifications is None:
-                        handler()
-                    else:
-                        handler(classifications)
+
+        if not handler:
+            return
+
+        # Try to acquire per-classification lock with timeout
+        classification_lock = self._get_detection_lock(classification)
+        if not classification_lock.acquire(timeout=self._DETECTION_LOCK_TO):
+            # Lock is already taken and cannot be acquired within the timeout, skip this classification
+            logger.debug(f"Handler for classification '{classification}' is already running, skipping.")
+            return
+
+        # Debounce logic: check if enough time has passed since the last detection before invoking the handler
+        now = time.time()
+        last_time = self._last_detected.get(classification, 0)
+        if now - last_time >= self._debounce_sec:
+            self._last_detected[classification] = now
+        else:
+            classification_lock.release()
+            return
+
+        def _run():
+            try:
+                logger.debug(f"Classification: {classification}, invoking handler.")
+                if classifications is None:
+                    handler()
+                else:
+                    handler(classifications)
+            finally:
+                classification_lock.release()
+
+        try:
+            self._executor.submit(_run)
+        except RuntimeError:
+            # Executor was shut down before the task could be submitted
+            classification_lock.release()
 
     def override_threshold(self, value: float):
         """Override the threshold for image classification model.

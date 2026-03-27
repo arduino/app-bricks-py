@@ -7,6 +7,7 @@ import json
 import inspect
 import threading
 import socket
+from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import base64
 from typing import Callable
@@ -38,7 +39,15 @@ class VideoObjectDetection:
 
     ALL_HANDLERS_KEY = "__ALL"
 
-    def __init__(self, camera: BaseCamera | None = None, confidence: float = 0.3, debounce_sec: float = 0.0, camera_preview: bool = False):
+    _DETECTION_LOCK_TO = 0.01  # Seconds to wait for a detection lock before discarding the detection signal
+
+    def __init__(
+        self,
+        camera: BaseCamera | None = None,
+        confidence: float = 0.3,
+        debounce_sec: float = 0.0,
+        camera_preview: bool = False,
+    ):
         """Initialize the VideoObjectDetection class.
 
         Args:
@@ -60,8 +69,13 @@ class VideoObjectDetection:
         self._last_camera_frame: str | None = None
         self._camera_preview_lock = threading.Lock()
 
-        self._handlers = {}  # Dictionary to hold handlers for different actions
         self._handlers_lock = threading.Lock()
+        self._handlers = {}  # Dictionary to hold handlers for different actions
+
+        self._detection_locks = {}  # Per-detection locks for fine-grained concurrency control
+        self._detection_locks_lock = threading.Lock()  # Lock to protect _detection_locks dict
+
+        self._executor = ThreadPoolExecutor(max_workers=5, thread_name_prefix="VideoObjectDetectionHandler")
 
         self._is_running = threading.Event()
 
@@ -126,6 +140,7 @@ class VideoObjectDetection:
         """Stop the video object detection process and release resources."""
         self._is_running.clear()
         self._camera.stop()
+        self._executor.shutdown(wait=False, cancel_futures=True)
 
     @brick.execute
     def object_detection_loop(self):
@@ -268,11 +283,11 @@ class VideoObjectDetection:
                     detections[detected_object].append(detection_details)
 
                     # Check if the class_id matches any registered handlers
-                    self._execute_handler(detection=detected_object, detection_details=detection_details, frame=frame)
+                    self._execute_handler(key=detected_object, payload=detection_details, frame=frame)
 
                 if len(detections) > 0:
                     # If there are detections, invoke the all-detection handler
-                    self._execute_global_handler(detections=detections, frame=frame)
+                    self._execute_handler(key=self.ALL_HANDLERS_KEY, payload=detections, frame=frame)
 
         elif jmsg.get("type") == "camera-preview":
             # Keep last camera preview frame if needed for callbacks
@@ -315,55 +330,68 @@ class VideoObjectDetection:
                 logger.error(f"Failed to decode camera preview frame: {e}")
                 return None
 
-    def _execute_handler(self, detection: str, detection_details: dict, frame: bytes | None = None):
-        """Execute the handler for the detected object if it exists.
+    def _get_detection_lock(self, detection: str) -> threading.Lock:
+        """Get or create a lock for a specific detection label.
 
         Args:
-            detection (str): The label of the detected object.
-            detection_details (dict): Dictionary containing 'confidence' (the detection confidence)
-                and 'bounding_box_xyxy' (the detection bounding box coordinates).
-            frame (bytes): The raw jpeg-encoded camera frame associated with the detection, if available.
-        """
-        now = time.time()
-        with self._handlers_lock:
-            handler = self._handlers.get(detection)
-            if handler:
-                last_time = self._last_detected.get(detection, 0)
-                if now - last_time >= self._debounce_sec:
-                    self._last_detected[detection] = now
-                    logger.debug(f"Detected object: {detection}, invoking handler.")
-                    sig_args = inspect.signature(handler).parameters
-                    if len(sig_args) == 0:
-                        handler()
-                    else:
-                        if sig_args.get("frame") is not None:
-                            handler(detection_details, frame=frame)
-                        else:
-                            handler(detection_details)
+            detection (str): The detection label to get a lock for.
 
-    def _execute_global_handler(self, detections: dict | None = None, frame: bytes | None = None):
-        """Execute the global handler for the detected object if it exists.
+        Returns:
+            threading.Lock: The lock for the specified detection.
+        """
+        with self._detection_locks_lock:
+            if detection not in self._detection_locks:
+                self._detection_locks[detection] = threading.Lock()
+            return self._detection_locks[detection]
+
+    def _execute_handler(self, key: str, payload: dict | None = None, frame: bytes | None = None):
+        """Execute the handler registered for the given key.
 
         Args:
-            detections (dict): The dictionary of detected objects and their details (e.g., confidence, bounding box).
-            frame (bytes): The raw jpeg-encoded camera frame associated with the detections, if available.
+            key (str): The handler key — either a detection label or ``ALL_HANDLERS_KEY``.
+            payload (dict): The data to pass to the handler (detection details or full detections dict).
+            frame (bytes): The raw jpeg-encoded camera frame, if available.
         """
-        now = time.time()
         with self._handlers_lock:
-            handler = self._handlers.get(self.ALL_HANDLERS_KEY)
-            if handler:
-                last_time = self._last_detected.get(self.ALL_HANDLERS_KEY, 0)
-                if now - last_time >= self._debounce_sec:
-                    self._last_detected[self.ALL_HANDLERS_KEY] = now
-                    logger.debug("Detected object: __ALL, invoking handler.")
-                    sig_args = inspect.signature(handler).parameters
-                    if len(sig_args) == 0:
-                        handler()
+            handler = self._handlers.get(key)
+
+        if not handler:
+            return
+
+        detection_lock = self._get_detection_lock(key)
+        if not detection_lock.acquire(timeout=self._DETECTION_LOCK_TO):
+            # Lock is already held by a running handler — discard this detection
+            logger.debug(f"Handler for '{key}' is already running, skipping.")
+            return
+
+        # Debounce logic: check if enough time has passed since the last detection before invoking the handler
+        now = time.time()
+        last_time = self._last_detected.get(key, 0)
+        if now - last_time >= self._debounce_sec:
+            self._last_detected[key] = now
+        else:
+            detection_lock.release()
+            return
+
+        def _run():
+            try:
+                logger.debug(f"Detected: {key}, invoking handler.")
+                sig_args = inspect.signature(handler).parameters
+                if len(sig_args) == 0:
+                    handler()
+                else:
+                    if sig_args.get("frame") is not None:
+                        handler(payload, frame=frame)
                     else:
-                        if sig_args.get("frame") is not None:
-                            handler(detections, frame=frame)
-                        else:
-                            handler(detections)
+                        handler(payload)
+            finally:
+                detection_lock.release()
+
+        try:
+            self._executor.submit(_run)
+        except RuntimeError:
+            # Executor was shut down before the task could be submitted
+            detection_lock.release()
 
     def _send_ws_message(self, ws: Connection, message: dict):
         try:
