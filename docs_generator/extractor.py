@@ -49,8 +49,6 @@ def _extract_all_exports(tree: ast.AST) -> list[str] | None:
                         for elt in node.value.elts:
                             if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
                                 all_exports.append(elt.value)
-                            elif isinstance(elt, ast.Str):
-                                all_exports.append(elt.s)
                     except Exception:
                         pass
     return all_exports
