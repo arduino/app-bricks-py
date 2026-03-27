@@ -13,6 +13,19 @@ import yaml
 logger = logging.getLogger(__name__)
 
 
+def _extract_all_exports(tree: ast.AST) -> list[str] | None:
+    all_exports = None
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == "__all__":
+                    try:
+                        all_exports = [elt.value for elt in node.value.elts if isinstance(elt, ast.Constant) and isinstance(elt.value, str)]
+                    except Exception:
+                        pass
+    return all_exports
+
+
 def get_brick_id_from_yaml(yaml_path):
     try:
         with open(yaml_path + "/brick_config.yaml", "r", encoding="utf-8") as f:
@@ -20,7 +33,7 @@ def get_brick_id_from_yaml(yaml_path):
         id = config.get("id", None)
         return id.split(":")[1] if id and ":" in id else None
     except Exception as e:
-        logger.warning("unable to get brick id from yaml: %s", e)
+        logger.warning("Unable to resolve a brick id from '%s/brick_config.yaml'; falling back to the folder name. Error: %s", yaml_path, e)
         return None
 
 
@@ -39,6 +52,13 @@ def process_app_bricks(src_root: str, output_dir: str):
         folder_path = os.path.join(app_bricks_dir, folder)
         logger.debug(f"Checking folder: {folder_path}")
         if os.path.isdir(folder_path):
+            brick_config_path = os.path.join(folder_path, "brick_config.yaml")
+            if not os.path.isfile(brick_config_path):
+                logger.warning(
+                    "Skipping app brick directory '%s': missing brick_config.yaml; it does not appear to contain a configured brick.",
+                    folder_path,
+                )
+                continue
             all_docstrings = []
             py_files = [f for f in sorted(os.listdir(folder_path)) if f.endswith(".py")]
             logger.debug(f"Python files found: {py_files}")
@@ -52,14 +72,7 @@ def process_app_bricks(src_root: str, output_dir: str):
                         source = f.read()
                     tree = ast.parse(source)
                     init_tree = tree
-                    for node in ast.walk(tree):
-                        if isinstance(node, ast.Assign):
-                            for target in node.targets:
-                                if isinstance(target, ast.Name) and target.id == "__all__":
-                                    try:
-                                        all_exports = [elt.value for elt in node.value.elts if isinstance(elt, ast.Constant)]
-                                    except Exception:
-                                        pass
+                    all_exports = _extract_all_exports(tree)
                 except Exception as e:
                     logger.error(f"Error parsing __init__.py for __all__: {e}")
             # --- END NEW LOGIC ---
@@ -158,14 +171,7 @@ def process_app_peripherals(src_root: str, output_dir: str):
                     with open(init_path, "r", encoding="utf-8") as f:
                         source = f.read()
                     tree = ast.parse(source)
-                    for node in ast.walk(tree):
-                        if isinstance(node, ast.Assign):
-                            for target in node.targets:
-                                if isinstance(target, ast.Name) and target.id == "__all__":
-                                    try:
-                                        all_exports = [elt.s for elt in node.value.elts if isinstance(elt, ast.Str)]
-                                    except Exception:
-                                        pass
+                    all_exports = _extract_all_exports(tree)
                 except Exception as e:
                     logging.error(f"Error parsing __init__.py for __all__: {e}")
             # --- END NEW LOGIC ---
@@ -220,3 +226,4 @@ def run_docs_generator():
 
 if __name__ == "__main__":
     run_docs_generator()
+    logger.info("Documentation generation completed.")
