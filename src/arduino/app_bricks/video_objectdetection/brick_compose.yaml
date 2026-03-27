@@ -13,7 +13,7 @@ services:
       - "/run/udev:/run/udev"
     command: ["--model-file", "${EI_V_OBJ_DETECTION_MODEL:-/models/ootb/ei/yolo-x-nano.eim}", "--gst-source", "tcpserversrc host=0.0.0.0 port=5050 ! jpegdec", "--dont-print-predictions", "--preview-original-resolution"]
     healthcheck:
-      test: [ "CMD-SHELL", "netstat -tuln | grep :5050 || exit 1" ]
+      test: [ "CMD-SHELL", "grep -i ':13BA' /proc/net/tcp | grep ' 0A ' || exit 1" ] # Hex encoding of port 5050
       interval: 2s
       timeout: 2s
       retries: 25
