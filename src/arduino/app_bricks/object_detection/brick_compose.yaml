@@ -6,8 +6,6 @@ services:
       options:
         max-size: "5m"
         max-file: "2"     
-    devices:
-      - "/dev/dri:/dev/dri"
     ports:
       - ${BIND_ADDRESS:-127.0.0.1}:1337:1337
     volumes:
