@@ -58,7 +58,7 @@ microphone = [
     "numpy",
 ]
 web_ui = [
-    "fastapi",
+    "fastapi>=0.121.0",
     "fastapi_socketio",
     "uvicorn[standard]",
     "cryptography",
