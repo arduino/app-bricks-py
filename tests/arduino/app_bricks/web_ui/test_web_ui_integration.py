@@ -46,17 +46,17 @@ def webui_server():
 
 
 def test_http_index(webui_server):
-    resp = requests.get(f"{webui_server.url}/")
+    resp = requests.get(f"{webui_server.local_url}/")
     assert resp.status_code == 200
     assert "Hello" in resp.text
 
 
 def test_expose_api_rest(webui_server):
-    resp = requests.get(f"{webui_server.url}/api/hello")
+    resp = requests.get(f"{webui_server.local_url}/api/hello")
     assert resp.status_code == 200
     assert resp.json() == {"msg": "hello"}
 
-    resp = requests.post(f"{webui_server.url}/api/echo", json={"value": "test123"})
+    resp = requests.post(f"{webui_server.local_url}/api/echo", json={"value": "test123"})
     assert resp.status_code == 200
     assert resp.json() == {"echo": "test123"}
 
@@ -86,7 +86,7 @@ def test_websocket_exchange(webui_server):
 
     webui_server.on_message("ping", ping_cb)
 
-    sio.connect(f"{webui_server.url}", socketio_path="/socket.io")
+    sio.connect(f"{webui_server.local_url}", socketio_path="/socket.io")
     sio.emit("ping", {"msg": "hi"})
     test_done.wait(timeout=2)
     sio.disconnect()
@@ -98,7 +98,7 @@ def test_websocket_exchange(webui_server):
 
 def test_cors_default_allows_any_origin(webui_server):
     """Test that default CORS configuration allows requests from any origin."""
-    resp = requests.get(f"{webui_server.url}/api/hello", headers={"Origin": "http://example.com"})
+    resp = requests.get(f"{webui_server.local_url}/api/hello", headers={"Origin": "http://example.com"})
     assert resp.status_code == 200
     assert resp.json() == {"msg": "hello"}
     assert resp.headers["access-control-allow-origin"] == "*"

@@ -2,6 +2,8 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import os
+
 from fastapi.testclient import TestClient
 from arduino.app_bricks.web_ui.web_ui import WebUI
 
@@ -12,8 +14,8 @@ def test_webui_init_defaults():
     assert ui._port == 7000
     assert ui._ui_path_prefix == ""
     assert ui._api_path_prefix == ""
-    assert ui._assets_dir_path.endswith("/app/assets")
-    assert ui._certs_dir_path.endswith("/app/certs")
+    assert ui._assets_dir_path.endswith(os.path.join("app", "assets"))
+    assert ui._certs_dir_path.endswith(os.path.join("app", "certs"))
     assert ui._use_tls is False
     assert ui._protocol == "http"
     assert ui._server is None
