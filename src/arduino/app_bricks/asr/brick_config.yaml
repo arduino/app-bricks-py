@@ -1,12 +1,9 @@
-id: arduino:local_asr
-name: Local Automatic Speech Recognition
+id: arduino:asr
+name: Automatic Speech Recognition (ASR)
 description: Automatic Speech Recognition brick for offline speech-to-text processing
 category: audio
 requires_model: true
 requires_container: true
-# mount_devices_into_container: true
-# required_devices:
-#   - ?
 model: whisper-small
 model_configuration_variables:
   - VAD_LEN_HANGOVER

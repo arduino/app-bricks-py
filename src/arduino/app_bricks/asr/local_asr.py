@@ -138,8 +138,14 @@ class AudioStreamRouter:
 
 
 @brick
-class LocalASR:
-    def __init__(self):
+class AutomaticSpeechRecognition:
+    def __init__(self, language: str = "en"):
+        """ASR implementation that uses a local audio analytics service to decode audio streams.
+
+        Arguments:
+            language: The language code for the ASR model (e.g., "en" for English).
+
+        """
         self.max_concurrent_transcriptions = 3
 
         self.api_host = "localhost"
@@ -180,9 +186,7 @@ class LocalASR:
             if response.status_code == 200:
                 logger.debug(f"Session {session_id} closed successfully")
             else:
-                logger.warning(
-                    f"Session close returned status {response.status_code} for session {session_id}: {response.text}"
-                )
+                logger.warning(f"Session close returned status {response.status_code} for session {session_id}: {response.text}")
         except Exception as e:
             logger.warning(f"Failed to close session {session_id}: {e}")
 
@@ -263,8 +267,7 @@ class LocalASR:
 
         if not self._session_semaphore.acquire(blocking=False):
             raise RuntimeError(
-                f"Maximum concurrent transcriptions ({self.max_concurrent_transcriptions}) reached. "
-                "Wait for an existing transcription to complete."
+                f"Maximum concurrent transcriptions ({self.max_concurrent_transcriptions}) reached. Wait for an existing transcription to complete."
             )
 
         session_id = None
@@ -280,14 +283,12 @@ class LocalASR:
                 "model": self.model,
                 "stream": True,
                 "language": self.language,
-                "parameters": json.dumps(
-                    [
-                        {"key": "sampling_rate", "value": "16000"},
-                        {"key": "channels", "value": "1"},
-                        {"key": "format", "value": "pcm_s16le"},
-                        {"key": "vad", "value": "700"},
-                    ]
-                ),
+                "parameters": json.dumps([
+                    {"key": "sampling_rate", "value": "16000"},
+                    {"key": "channels", "value": "1"},
+                    {"key": "format", "value": "pcm_s16le"},
+                    {"key": "vad", "value": "700"},
+                ]),
             }
 
             response = requests.post(url=create_url, json=create_data, timeout=3)
@@ -419,12 +420,8 @@ class LocalASR:
             else:
                 pcm_chunks = self._iter_wav_pcm_chunks(session_info)
 
-            send_task = asyncio.create_task(
-                self._send_pcm_stream(websocket, session_id, pcm_chunks)
-            )
-            receive_task = asyncio.create_task(
-                self._receive_transcription(websocket, session_info)
-            )
+            send_task = asyncio.create_task(self._send_pcm_stream(websocket, session_id, pcm_chunks))
+            receive_task = asyncio.create_task(self._receive_transcription(websocket, session_info))
 
             tasks = {send_task, receive_task}
 
@@ -580,10 +577,7 @@ class LocalASR:
             sample_width = wf.getsampwidth()
             frames = wf.readframes(wf.getnframes())
 
-        logger.info(
-            f"WAV format for session {session_id} - "
-            f"Sample Rate: {sample_rate}, Channels: {num_channels}, Sample Width: {sample_width}"
-        )
+        logger.info(f"WAV format for session {session_id} - Sample Rate: {sample_rate}, Channels: {num_channels}, Sample Width: {sample_width}")
 
         chunk_duration = 0.5
         chunk_size = int(chunk_duration * sample_rate * num_channels * sample_width)
@@ -620,10 +614,7 @@ class LocalASR:
 
                 message_session_id = data.get("session_id")
                 if message_session_id is not None and message_session_id != session_id:
-                    logger.warning(
-                        f"Ignoring WebSocket message for session {message_session_id}; "
-                        f"current session is {session_id}. Message: {data}"
-                    )
+                    logger.warning(f"Ignoring WebSocket message for session {message_session_id}; current session is {session_id}. Message: {data}")
                     continue
 
                 logger.info(f"Received WebSocket message for session {session_id}. Message: {data}")

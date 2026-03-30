@@ -4,10 +4,10 @@
 
 # EXAMPLE_NAME = "Transcribe a wav file and stream the results"
 # EXAMPLE_REQUIRES = "Requires a WAV file with a voice recording"
-from arduino.app_bricks.local_asr import LocalASR
+from arduino.app_bricks.asr import AutomaticSpeechRecognition
 
 
-asr = LocalASR()
+asr = AutomaticSpeechRecognition()
 with open("recording_01.wav", "rb") as wav_file:
     with asr.transcribe_wav_stream(wav_file.read()) as stream:
         for chunk in stream:
