@@ -8,7 +8,7 @@
 from arduino.app_bricks.llm import LargeLanguageModel
 from arduino.app_utils import App
 
-llm = LargeLanguageModel(max_tokens=512)
+llm = LargeLanguageModel()
 
 
 def ask_prompt():
