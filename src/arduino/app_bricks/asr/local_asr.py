@@ -162,7 +162,7 @@ class AutomaticSpeechRecognition:
         self.ws_url = f"ws://{self.api_host}:{self.api_port}/stream"
 
         self.model = "whisper-small"
-        self.language = "it"
+        self.language = language
 
         self._worker_loop = None
         self._stop_worker = threading.Event()
