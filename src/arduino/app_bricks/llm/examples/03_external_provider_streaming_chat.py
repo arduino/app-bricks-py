@@ -8,7 +8,7 @@
 from arduino.app_bricks.llm import LargeLanguageModel
 from arduino.app_utils import App
 
-llm = LargeLanguageModel(model="qwen3:4b", base_url="http://localhost:11434/v1", max_tokens=512)
+llm = LargeLanguageModel(model="genie:qwen3:4b")
 
 
 def ask_prompt():

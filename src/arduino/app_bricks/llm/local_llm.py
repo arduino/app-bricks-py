@@ -34,7 +34,7 @@ class LargeLanguageModel(CloudLLM):
         api_key: str = os.getenv("LOCAL_LLM_API_KEY", "api_key"),
         system_prompt: str = "",
         temperature: Optional[float] = 0.7,
-        max_tokens: int = 256,
+        max_tokens: int = 512,
         timeout: int = 30,
         tools: List[Callable[..., Any]] = None,
         model: str = None,
@@ -53,7 +53,7 @@ class LargeLanguageModel(CloudLLM):
                 Higher values make output more random/creative; lower values make it more
                 deterministic. Defaults to 0.7.
             max_tokens (int): The maximum number of tokens to generate in the response.
-                Defaults to 256.
+                Defaults to 512.
             timeout (int): The maximum duration in seconds to wait for a response before
                 timing out. Defaults to 30.
             tools (List[Callable[..., Any]]): A list of callable tool functions to register. Defaults to None.
@@ -223,7 +223,15 @@ class LargeLanguageModel(CloudLLM):
             RuntimeError: If the internal chain is not initialized or if the API request fails.
         """
         try:
-            return super()._chat_invoke(message=message, images=images)
+            message = super()._chat_invoke(message=message, images=images)
+            if "<think>" in message and "</think>" in message:
+                splitted_message = message.split("<think>")[1].split("</think>")
+                if len(splitted_message) > 1:
+                    return splitted_message[1]  # Extract actual content
+                else:
+                    return message  # Fallback to full message if tags are not properly closed
+            return message
+
         except (BadRequestError, APIError) as e:
             self._handle_api_error(logger, e)
 
@@ -245,7 +253,21 @@ class LargeLanguageModel(CloudLLM):
             AlreadyGenerating: If a streaming session is already active.
         """
         try:
-            return super()._chat_stream_invoke(message=message, images=images)
+            in_thininkg = False
+            for chunk in super()._chat_stream_invoke(message=message, images=images):
+                if in_thininkg:
+                    if "</think>" in chunk:
+                        in_thininkg = False
+                        chunk = chunk.split("</think>")[-1]  # Take content after </think>
+                        if chunk is not None and chunk.strip() != "":
+                            yield chunk
+                    continue
+
+                if "<think>" in chunk:
+                    in_thininkg = True
+                    continue  # Skip the <think> tag itself
+                else:
+                    yield chunk
         except (BadRequestError, APIError) as e:
             self._handle_api_error(logger, e)
 
