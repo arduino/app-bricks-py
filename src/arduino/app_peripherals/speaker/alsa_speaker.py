@@ -170,6 +170,10 @@ class ALSASpeaker(BaseSpeaker):
 
         resolved_device = ""
         if isinstance(identifier, str) and not identifier.isdigit():
+            raw_hw_match = re.match(r"^(plughw:|hw:)[^,]+,\d+,\d+$", identifier)
+            if raw_hw_match:
+                return identifier
+
             if identifier.startswith("usb:"):
                 # Resolve USB speaker by ordinal index
                 usb_index = int(identifier.removeprefix("usb:")) - 1
@@ -273,6 +277,9 @@ class ALSASpeaker(BaseSpeaker):
             RuntimeError: If device name can't be resolved
         """
         if isinstance(device_ref, str):
+            match = re.match(r"^(?:plughw:|hw:)([^,]+),\d+,\d+$", device_ref)
+            if match:
+                return match.group(1)
             # This is a card stable refs like "plughw:CARD=MyDevice,DEV=0" or "CARD=MyDevice,DEV=0"
             match = re.match(r"^(.+:)?CARD=([^,]+),DEV=(\d+)$", device_ref)
             if match:
@@ -297,11 +304,17 @@ class ALSASpeaker(BaseSpeaker):
         logger.debug(f"Opening PCM device: {self.device_stable_ref}")
 
         try:
-            card_idx, device_idx = self._resolve_runtime_ref(self.device_stable_ref)
+            raw_hw_match = re.match(r"^(plughw:|hw:)[^,]+,\d+,\d+$", self.device_stable_ref)
+
             if self.shared:
+                card_idx, device_idx = self._resolve_runtime_ref(self.device_stable_ref)
                 device = f"plug_card_{card_idx}_dev_{device_idx}_spk"
             else:
-                device = f"plughw:CARD={card_idx},DEV={device_idx}"
+                if raw_hw_match:
+                    device = self.device_stable_ref
+                else:
+                    card_idx, device_idx = self._resolve_runtime_ref(self.device_stable_ref)
+                    device = f"plughw:CARD={card_idx},DEV={device_idx}"
 
             self._pcm = alsaaudio.PCM(
                 type=alsaaudio.PCM_PLAYBACK,
