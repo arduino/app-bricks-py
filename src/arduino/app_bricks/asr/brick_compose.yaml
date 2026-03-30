@@ -13,13 +13,14 @@ services:
       - NODE_ENV=production
       - BLACKBOX_CONTAINER=true
       - DEV_MODE=false
-      - MODELS_DIR=${MODELS_DIR:-${HOME}/audio-models}
-      - MODELS_CONFIG=${MODELS_CONFIG:-${HOME}/audio-models/models.json}
+      - MODELS_DIR=${MODELS_DIR:-/mnt/work/models}
+      - ASR_MODELS_DIR=${ASR_MODELS_DIR:-/mnt/work/models/asr}
+      - TRANSLATION_MODELS_DIR=${TRANSLATION_MODELS_DIR:-/mnt/work/models/translation}
+      - TTS_MODELS_DIR=${TTS_MODELS_DIR:-/mnt/work/models/tts}
       - SOCKET_PATH=/tmp/audio-sockets/audio-analytics.sock
-      # VAD_LEN_HANGOVER: Voice Activity Detection length hangover (in units of 10ms)
+      # VAD_LEN_HANGOVER: Voice Activity Detection length hangover (in units of 10ms)      
       # Example: 120 = 1.2s, 200 = 2.0s, 50 = 0.5s
-#      - VAD_LEN_HANGOVER=${VAD_LEN_HANGOVER:-70}
-      - VAD_LEN_HANGOVER=${VAD_LEN_HANGOVER:-200}
+      - VAD_LEN_HANGOVER=${VAD_LEN_HANGOVER:-70}
       - ASR_TRANSCRIPTION_IN=asr.transcription.in
       - ASR_TRANSCRIPTION_OUT=asr.transcription.out
       - ASR_MODELS=asr.models
@@ -29,10 +30,11 @@ services:
       - TTS_TEXT_IN=tts.text.in
       - TTS_AUDIO_OUT=tts.audio.out
       - TTS_MODELS=tts.models
+      - SD_ENABLE_PULSE=1
     ports:
       - ${BIND_ADDRESS:-0.0.0.0}:8085:8085
     volumes:
-      - /opt/audio/models:/opt/audio/models:ro
+      - /var/lib/arduino-app-cli/models/audio-analytics:/opt/audio/models:ro
       # Mount system libraries from host for DSP access
       - /usr/lib/aarch64-linux-gnu/libdmabufheap.so.0:/usr/lib/libdmabufheap.so.0:ro
       - /usr/lib/aarch64-linux-gnu/libcdsprpc.so:/usr/lib/libcdsprpc.so:ro
@@ -51,3 +53,9 @@ services:
       options:
         max-size: "5m"
         max-file: "2"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8085/audio-analytics/v1/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

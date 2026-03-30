@@ -1226,6 +1226,7 @@ models:
     supported_boards: ["ventunoq"]
     bricks:
       - id: "arduino:llm"
+    download_location: /var/lib/arduino-app-cli/models/genai
     metadata:
       source: "qualcomm-ai-hub"
       source-model-id: "qwen2_5_7b_instruct"
@@ -1240,6 +1241,7 @@ models:
     supported_boards: ["ventunoq"]
     bricks:
       - id: "arduino:llm"
+    download_location: /var/lib/arduino-app-cli/models/genai
     metadata:
       source: "qualcomm-ai-hub"
       source-model-id: "qwen2_5_3b_instruct"
@@ -1253,6 +1255,7 @@ models:
     supported_boards: ["ventunoq"]
     bricks:
       - id: "arduino:llm"
+    download_location: /var/lib/arduino-app-cli/models/genai
     metadata:
       source: "qualcomm-ai-hub"
       source-model-id: "qwen3_4b"
@@ -1267,6 +1270,7 @@ models:
     supported_boards: ["ventunoq"]
     bricks:
       - id: "arduino:vlm"
+    download_location: /var/lib/arduino-app-cli/models/genai  
     metadata:
       source: "qualcomm-ai-hub"
       source-model-id: "qwen3_vl_4b"
@@ -1286,7 +1290,38 @@ models:
       - ILoveYou
     bricks:
       - id: "arduino:gesture_recognition"
+    download_location: /var/lib/arduino-app-cli/models/genai
     metadata:
       source: "qualcomm-ai-hub"  
       source-model-id: "mediapipe_hand_gesture"
-      source-model-url: "https://aihub.qualcomm.com/models/mediapipe_hand_gesture"      
+      source-model-url: "https://aihub.qualcomm.com/models/mediapipe_hand_gesture"
+ - whisper-small:
+    runner: audio-analytics
+    name : "Whisper Small"
+    description: >-
+      Whisper-Small ASR (Automatic Speech Recognition) model is a state-of-the-art system designed for transcribing spoken language into written text.
+      This model is based on the transformer architecture and has been optimized for edge inference by replacing Multi-Head Attention (MHA)
+      with Single-Head Attention (SHA) and linear layers with convolutional (conv) layers. It exhibits robust performance in realistic, noisy environments,
+      making it highly reliable for real-world applications.
+      Specifically, it excels in long-form transcription, capable of accurately transcribing audio clips up to 30 seconds long.
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:asr"
+    download_location: /var/lib/arduino-app-cli/models/audio-analytics 
+    metadata:
+      source: "qualcomm-ai-hub"
+      source-model-id: "whisper_small"
+      source-model-url: "https://aihub.qualcomm.com/models/whisper_small"
+ - melo-tts:
+    runner: audio-analytics
+    name : "Melo TTS"
+    description: >-
+      MeloTTS is a high-quality multi-lingual text-to-speech library.
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:asr"
+    download_location: /var/lib/arduino-app-cli/models/audio-analytics 
+    metadata:
+      source: "qualcomm-ai-hub"
+      source-model-id: "melo_tts"
+      source-model-url: "https://aihub.qualcomm.com/models/melo_tts"      
