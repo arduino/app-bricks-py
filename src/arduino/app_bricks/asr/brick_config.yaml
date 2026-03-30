@@ -1,0 +1,14 @@
+id: arduino:asr
+name: Automatic Speech Recognition (ASR)
+description: Automatic Speech Recognition brick for offline speech-to-text processing
+category: audio
+requires_model: true
+requires_container: true
+model: whisper-small
+model_configuration_variables:
+  - VAD_LEN_HANGOVER
+variables:
+- name: VAD_LEN_HANGOVER
+  description: Length of hangover for Voice Activity Detection (in number of frames of 10ms duration)
+  hidden: true
+  default_value: 70
