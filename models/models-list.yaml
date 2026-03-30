@@ -1307,7 +1307,7 @@ models:
     supported_boards: ["ventunoq"]
     bricks:
       - id: "arduino:asr"
-    download_location: /var/lib/arduino-app-cli/models/audio-analytics 
+    download_location: /var/lib/arduino-app-cli/models/audio-analytics/asr 
     metadata:
       source: "qualcomm-ai-hub"
       source-model-id: "whisper_small"
@@ -1319,8 +1319,8 @@ models:
       MeloTTS is a high-quality multi-lingual text-to-speech library.
     supported_boards: ["ventunoq"]
     bricks:
-      - id: "arduino:asr"
-    download_location: /var/lib/arduino-app-cli/models/audio-analytics 
+      - id: "arduino:tts"
+    download_location: /var/lib/arduino-app-cli/models/audio-analytics/tts 
     metadata:
       source: "qualcomm-ai-hub"
       source-model-id: "melo_tts"
