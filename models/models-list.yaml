@@ -1312,11 +1312,11 @@ models:
       source: "qualcomm-ai-hub"
       source-model-id: "whisper_small"
       source-model-url: "https://aihub.qualcomm.com/models/whisper_small"
- - melo-tts:
+ - melo-tts-en:
     runner: audio-analytics
-    name : "Melo TTS"
+    name : "Melo TTS (English)"
     description: >-
-      MeloTTS is a high-quality multi-lingual text-to-speech library.
+      MeloTTS is a high-quality multi-lingual text-to-speech library - English version.
     supported_boards: ["ventunoq"]
     bricks:
       - id: "arduino:tts"
