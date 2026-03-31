@@ -3,7 +3,7 @@ name: Automatic Speech Recognition (ASR)
 description: Automatic Speech Recognition brick for offline speech-to-text processing
 category: audio
 requires_model: true
-requires_container: true
+requires_services: ["arduino:genie_audio"]
 model: whisper-small
 model_configuration_variables:
   - VAD_LEN_HANGOVER
