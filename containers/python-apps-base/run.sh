@@ -71,6 +71,15 @@ fi
 # Pre-provision ALSA wrapped devices
 bash /provision-alsa-devices.sh
 
+# Load custom bricks if present
+if [ -d "/app/bricks" ]; then
+    if [ -z "$PYTHONPATH" ]; then
+        export PYTHONPATH="/app/bricks"
+    else
+        export PYTHONPATH="$PYTHONPATH:/app/bricks"
+    fi
+fi
+
 if [ "$1" = "provision" ]; then
   arduino-bricks-list-modules --provision-compose
 else
