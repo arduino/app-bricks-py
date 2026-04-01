@@ -10,6 +10,7 @@ import numpy as np
 import time
 from pathlib import Path
 from collections import OrderedDict
+import math
 
 from .generator import WaveSamplesBuilder
 from .effects import *
@@ -544,6 +545,8 @@ class SoundGenerator(SoundGeneratorStreamer):
 
         Args:
             output_device (Speaker, optional): The output device to play sound through.
+                When omitted, SoundGenerator creates an internal shared speaker so
+                multiple instances can overlap playback on the same device.
             bpm (int): The tempo in beats per minute for note duration calculations.
             time_signature (tuple): The time signature as (numerator, denominator).
             octaves (int): Number of octaves to generate notes for (starting from octave
@@ -567,8 +570,9 @@ class SoundGenerator(SoundGeneratorStreamer):
         self._started = threading.Event()
         if output_device is None:
             self.external_speaker = False
-            # Request 16 kHz, float32, small buffer for low-latency playback.
-            self._output_device = Speaker(sample_rate=Speaker.RATE_16K, format=np.float32, buffer_size=Speaker.BUFFER_SIZE_REALTIME, shared=False)
+            # Use shared mode by default so multiple SoundGenerator instances can
+            # overlap playback on the same speaker.
+            self._output_device = Speaker(sample_rate=Speaker.RATE_32K, format=np.float32, buffer_size=Speaker.BUFFER_SIZE_SAFE, shared=True)
         else:
             self.external_speaker = True
             self._output_device = output_device
@@ -630,8 +634,8 @@ class SoundGenerator(SoundGeneratorStreamer):
 
     def _estimate_output_drain_time(self) -> float:
         """Estimate a small drain time so blocking playback does not cut the tail."""
-        sample_rate = getattr(self._output_device, "sample_rate", 0)
-        buffer_size = getattr(self._output_device, "buffer_size", 0)
+        sample_rate = self._output_device.sample_rate
+        buffer_size = self._output_device.buffer_size
         if not sample_rate or not buffer_size:
             return 0.0
         return min((float(buffer_size) / float(sample_rate)) * 2.0, 0.25)
@@ -1012,6 +1016,14 @@ class SoundGenerator(SoundGeneratorStreamer):
         with self._sequence_lock:
             return self._sequence_thread is not None and self._sequence_thread.is_alive()
 
+    def _render_sequence_step(self, notes: list[str], note_duration: float | str, volume: float):
+        """Render a single sequence step to a float32 audio buffer."""
+        if notes and len(notes) > 0:
+            if len(notes) == 1:
+                return super(SoundGenerator, self).play(notes[0], note_duration, volume)
+            return super(SoundGenerator, self).play_chord(notes, note_duration, volume)
+        return super(SoundGenerator, self).play("REST", note_duration, volume)
+
     def _playback_sequence_thread(
         self,
         sequence: list[list[str]],
@@ -1040,30 +1052,36 @@ class SoundGenerator(SoundGeneratorStreamer):
             total_steps = len(sequence)
 
             logger.info(f"Starting sequence: {total_steps} steps at {bpm} BPM")
+            speaker_buffer = float(self._output_device.buffer_size or 0)
+            speaker_rate = float(self._sample_rate or self._output_device.sample_rate or 0)
+            shared_prequeue_lead = (
+                (speaker_buffer / speaker_rate) if self._output_device.shared and speaker_buffer > 0.0 and speaker_rate > 0.0 else 0.0
+            )
+            prequeue_future_steps = max(1, int(math.ceil(shared_prequeue_lead / duration))) if shared_prequeue_lead > 0.0 and duration > 0.0 else 0
+            render_ahead_steps = max(1, prequeue_future_steps)
 
             step_iterator = cycle(enumerate(sequence)) if loop else enumerate(sequence)
+            current_step = next(step_iterator, None)
+            if current_step is None:
+                return
 
-            step_count = 0
-            for step_index, notes in step_iterator:
+            current_step_index, current_notes = current_step
+            current_data = self._render_sequence_step(current_notes, note_duration, volume)
+            current_data_prequeued = False
+            future_steps = []
+
+            processed_steps = 0
+            while current_step is not None:
                 step_start = time.monotonic()
 
                 if self._sequence_stop_event.is_set():
-                    logger.debug(f"Sequence stopped at step {step_index}")
+                    logger.debug(f"Sequence stopped at step {current_step_index}")
                     break
 
-                # --- Generate audio for this step ---
-                if notes and len(notes) > 0:
-                    if len(notes) == 1:
-                        data = super(SoundGenerator, self).play(notes[0], note_duration, volume)
-                    else:
-                        data = super(SoundGenerator, self).play_chord(notes, note_duration, volume)
-                else:
-                    data = super(SoundGenerator, self).play("REST", note_duration, volume)
-
                 # --- Send audio to speaker ---
-                if data is not None:
+                if current_data is not None and not current_data_prequeued:
                     try:
-                        self._output_device.play(data)
+                        self._output_device.play(current_data)
                     except Exception:
                         # Speaker was closed by stop_sequence() — exit gracefully
                         if self._sequence_stop_event.is_set():
@@ -1073,14 +1091,34 @@ class SoundGenerator(SoundGeneratorStreamer):
                 # --- Step callback ---
                 if on_step_callback:
                     try:
-                        on_step_callback(step_index, total_steps)
+                        on_step_callback(current_step_index, total_steps)
                     except Exception as e:
                         logger.error(f"Error in step callback: {e}")
 
+                processed_steps += 1
+
+                while not self._sequence_stop_event.is_set() and len(future_steps) < render_ahead_steps:
+                    if not loop and processed_steps + len(future_steps) >= total_steps:
+                        break
+                    next_step = next(step_iterator, None)
+                    if next_step is None:
+                        break
+
+                    next_step_index, next_notes = next_step
+                    next_data = self._render_sequence_step(next_notes, note_duration, volume)
+                    next_data_prequeued = len(future_steps) < prequeue_future_steps
+                    if next_data is not None and next_data_prequeued:
+                        try:
+                            self._output_device.play(next_data)
+                        except Exception:
+                            if self._sequence_stop_event.is_set():
+                                break
+                            raise
+                    future_steps.append((next_step_index, next_notes, next_data, next_data_prequeued))
+
                 # --- Wait for the remaining step duration ----
-                # speaker.play() may have already consumed part of the step time
-                # via ALSA back-pressure; sleep only the remainder so timing is
-                # correct regardless of the speaker's buffer size.
+                # Rendering the next step happens before this sleep so the next
+                # write can be issued immediately at the step boundary.
                 elapsed = time.monotonic() - step_start
                 remaining = duration - elapsed
                 if remaining > 0.0:
@@ -1093,10 +1131,10 @@ class SoundGenerator(SoundGeneratorStreamer):
                             break
                         time.sleep(min(0.01, left))
 
-                step_count += 1
-                if not loop and step_count >= total_steps:
+                if not future_steps:
                     break
 
+                current_step_index, current_notes, current_data, current_data_prequeued = future_steps.pop(0)
             logger.info("Sequence playback ended")
 
             if not self._sequence_stop_event.is_set() and not loop and on_complete_callback:

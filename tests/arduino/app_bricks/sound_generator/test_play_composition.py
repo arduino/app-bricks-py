@@ -4,6 +4,7 @@
 
 import threading
 
+import numpy as np
 import pytest
 
 from arduino.app_bricks.sound_generator import MusicComposition, SoundGenerator
@@ -11,7 +12,86 @@ import arduino.app_bricks.sound_generator as sound_generator_module
 
 
 class DummySpeaker:
-    sample_rate = 16000
+    sample_rate = 32000
+    buffer_size = 4096
+    shared = True
+
+
+def test_playback_sequence_thread_prequeues_enough_future_steps_to_cover_speaker_period(monkeypatch):
+    events = []
+    current_time = {"value": 0.0}
+
+    class SequencerSpeaker:
+        sample_rate = 10
+        buffer_size = 1
+        shared = True
+
+        def play(self, data):
+            events.append(("play", round(current_time["value"], 3), len(data)))
+
+    generator = SoundGenerator(output_device=SequencerSpeaker(), bpm=180)
+
+    def fake_render(notes, note_duration, volume):
+        events.append(("render", round(current_time["value"], 3), tuple(notes)))
+        current_time["value"] += 0.01
+        return np.ones(8, dtype=np.float32)
+
+    def fake_sleep(delay):
+        events.append(("sleep", round(current_time["value"], 3), round(delay, 3)))
+        current_time["value"] += delay
+
+    monkeypatch.setattr(generator, "_render_sequence_step", fake_render)
+    monkeypatch.setattr(sound_generator_module.time, "monotonic", lambda: current_time["value"])
+    monkeypatch.setattr(sound_generator_module.time, "sleep", fake_sleep)
+
+    generator._playback_sequence_thread(
+        sequence=[["C4"], ["D4"], ["E4"]],
+        note_duration=1 / 16,
+        bpm=180,
+        loop=False,
+        on_step_callback=None,
+        on_complete_callback=None,
+        volume=None,
+        session_id=1,
+    )
+
+    non_sleep_events = [event for event in events if event[0] != "sleep"]
+    assert non_sleep_events[:6] == [
+        ("render", 0.0, ("C4",)),
+        ("play", 0.01, 8),
+        ("render", 0.01, ("D4",)),
+        ("play", 0.02, 8),
+        ("render", 0.02, ("E4",)),
+        ("play", 0.03, 8),
+    ]
+
+
+def test_sound_generator_default_speaker_is_shared(monkeypatch):
+    captured = {}
+
+    class FakeInternalSpeaker:
+        sample_rate = 32000
+
+    class FakeSpeakerFactory:
+        RATE_32K = 32000
+        BUFFER_SIZE_SAFE = 4096
+
+        def __new__(cls, **kwargs):
+            captured.update(kwargs)
+            return FakeInternalSpeaker()
+
+    monkeypatch.setattr(sound_generator_module, "Speaker", FakeSpeakerFactory)
+
+    generator = SoundGenerator()
+
+    assert generator.external_speaker is False
+    assert isinstance(generator._output_device, FakeInternalSpeaker)
+    assert captured == {
+        "sample_rate": 32000,
+        "format": np.float32,
+        "buffer_size": 4096,
+        "shared": True,
+    }
 
 
 def test_play_composition_passes_loop_to_step_sequence():
