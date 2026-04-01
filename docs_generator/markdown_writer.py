@@ -133,6 +133,13 @@ def generate_markdown(folder_name: str, docstrings: list[DocstringInfo], output_
                     f.write(f"{item.doc.long_description}\n\n")
                 # Attributes (from params with 'attribute' in args)
                 attrs = [p for p in getattr(item.doc, "params", []) if "attribute" in getattr(p, "args", [])]
+                init_method = None
+                other_methods = []
+                for m in item.methods:
+                    if m.name == "__init__":
+                        init_method = m
+                    else:
+                        other_methods.append(m)
                 # For dataclass: show only attributes
                 if is_dataclass:
                     if attrs:
@@ -143,14 +150,6 @@ def generate_markdown(folder_name: str, docstrings: list[DocstringInfo], output_
                         f.write("\n")
                 else:
                     # For normal classes: show Parameters (all params that are not attributes)
-                    # Find __init__ method in item.methods
-                    init_method = None
-                    other_methods = []
-                    for m in item.methods:
-                        if m.name == "__init__":
-                            init_method = m
-                        else:
-                            other_methods.append(m)
                     if init_method and getattr(init_method.doc, "params", None):
                         f.write(_format_parameters(init_method.doc.params, heading_level=3))
                         f.write(_format_returns(init_method.doc.returns, heading_level=3))
@@ -162,22 +161,24 @@ def generate_markdown(folder_name: str, docstrings: list[DocstringInfo], output_
                             type_str = f" (*{attr.type_name}*)" if attr.type_name else ""
                             f.write(f"- **{attr.arg_name}**{type_str}: {attr.description}\n")
                         f.write("\n")
+                if item.properties:
+                    f.write("### Properties\n\n")
+                    for p in item.properties:
+                        f.write(f"#### `{p.signature}`\n\n")
+                        access = "read-only" if p.is_readonly else "read/write"
+                        f.write(f"Access: {access}\n\n")
+                        if p.doc.short_description:
+                            f.write(f"{p.doc.short_description}\n\n")
+                        if p.doc.long_description:
+                            f.write(f"{p.doc.long_description}\n\n")
+                        f.write(_format_parameters(p.doc.params, heading_level=5))
+                        f.write(_format_returns(p.doc.returns, heading_level=5))
+                        f.write(_format_raises(p.doc.raises, heading_level=5))
+                        f.write(_format_examples(p.doc.examples, heading_level=5))
                 # Methods (skip __init__)
-                if not is_dataclass and other_methods:
+                if other_methods:
                     f.write("### Methods\n\n")
                     for m in other_methods:
-                        f.write(f"#### `{m.signature}`\n\n")
-                        if m.doc.short_description:
-                            f.write(f"{m.doc.short_description}\n\n")
-                        if m.doc.long_description:
-                            f.write(f"{m.doc.long_description}\n\n")
-                        f.write(_format_parameters(m.doc.params, heading_level=5))
-                        f.write(_format_returns(m.doc.returns, heading_level=5))
-                        f.write(_format_raises(m.doc.raises, heading_level=5))
-                        f.write(_format_examples(m.doc.examples, heading_level=5))
-                elif is_dataclass and item.methods:
-                    f.write("### Methods\n\n")
-                    for m in item.methods:
                         f.write(f"#### `{m.signature}`\n\n")
                         if m.doc.short_description:
                             f.write(f"{m.doc.short_description}\n\n")
