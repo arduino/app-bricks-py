@@ -2,3 +2,5 @@
 websockets
 flask
 waitress
+opencv-python-headless
+ai-edge-litert==1.3.0
