@@ -16,8 +16,8 @@ services:
     cap_add:
       - SYS_RESOURCE
     environment:
-      - ADHOC_MODE=true
-      - LOG_LEVEL=INFO
+      - ADHOC_MODE=${ADHOC_MODE:-true}
+      - LOG_LEVEL=${LOG_LEVEL:-ERROR}
       - GENAI_PORT=${GENAI_PORT:-9001}
       - TOOL_RESPONSE_TIMEOUT_SECONDS=${TOOL_RESPONSE_TIMEOUT_SECONDS:-30}
       - VLM_LIBRARY_PATH=${VLM_LIBRARY_PATH:-/iot-user/app/site-packages/libvlmservice.so}
