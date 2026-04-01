@@ -59,9 +59,10 @@ RUN set -ex; \
     mkdir -p /home/app/.fonts; \
     wget -O /home/app/.fonts/OpenSans.ttf https://raw.githubusercontent.com/googlefonts/opensans/main/fonts/ttf/OpenSans-Regular.ttf; \
     apt-get remove -y wget; \
-    apt-get dist-clean; \
     apt-get autoclean -y; \
     apt-get autoremove -y; \
+    dpkg -r --force-depends libegl-mesa0 mesa-libgallium libllvm19; \
+    apt-get dist-clean; \
     # cleanup unnecessary files to reduce image size
     rm -rf /tmp/* /var/tmp/*; \
     rm -rf /var/lib/apt/lists/*; \
