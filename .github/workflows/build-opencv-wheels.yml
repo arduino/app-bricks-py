@@ -35,7 +35,7 @@ jobs:
 
       - name: Install Media I/O dependencies
         run: |
-          apt-get install -y --no-install-recommends libjpeg62-turbo-dev libpng-dev libtiff-dev libwebp-dev libavif-dev libopenblas-dev liblapacke-dev
+          apt-get install -y --no-install-recommends libjpeg62-turbo-dev libpng-dev libtiff-dev libwebp-dev libopenblas-dev liblapacke-dev
 
       - name: Install GStreamer dependencies
         run: |
@@ -55,7 +55,7 @@ jobs:
           export OPENCV_VERSION=4.13.0
           export ENABLE_CONTRIB=0
           export ENABLE_HEADLESS=1
-          export CMAKE_ARGS="-DWITH_GSTREAMER=ON -DWITH_FFMPEG=ON -DWITH_CAROTENE=ON -DWITH_LAPACK=ON -DBUILD_opencv_python3=ON -DWITH_GTK=OFF -DWITH_QT=OFF -DWITH_CUDA=OFF -DBUILD_opencv_java=OFF -DWITH_VTK=OFF -DBUILD_opencv_dnn=OFF -DBUILD_opencv_dnn_modern=OFF"
+          export CMAKE_ARGS="-DWITH_GSTREAMER=ON -DWITH_FFMPEG=ON -DWITH_CAROTENE=ON -DWITH_LAPACK=ON -DBUILD_opencv_python3=ON -DWITH_AVIF=OFF -DWITH_GTK=OFF -DWITH_QT=OFF -DWITH_CUDA=OFF -DBUILD_opencv_java=OFF -DWITH_VTK=OFF -DBUILD_opencv_dnn=OFF -DBUILD_opencv_dnn_modern=OFF"
           pip3 wheel . --verbose --no-deps
 
       - name: Upload wheel files

@@ -41,7 +41,7 @@ tasks:
       - apt-get install -y --no-install-recommends --no-install-suggests libasound2-dev portaudio19-dev libzbar0
       - apt-get install -y --no-install-recommends --no-install-suggests git ca-certificates build-essential pkg-config python3-dev python3-pip python-is-python3
       - apt-get install -y --no-install-recommends --no-install-suggests libavcodec-dev libavformat-dev libavutil-dev libswscale-dev
-      - apt-get install -y --no-install-recommends --no-install-suggests libjpeg62-turbo-dev libpng-dev libtiff-dev libwebp-dev libavif-dev libopenblas-dev liblapacke-dev
+      - apt-get install -y --no-install-recommends --no-install-suggests libjpeg62-turbo-dev libpng-dev libtiff-dev libwebp-dev libopenblas-dev liblapacke-dev
       - apt-get install -y --no-install-recommends --no-install-suggests libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
       - pip install build
       - pip install -e ".[dev]"
