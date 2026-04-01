@@ -12,13 +12,19 @@ services:
     working_dir: /mnt/work/models
     ports:
       - ${BIND_ADDRESS:-127.0.0.1}:9001:9001
+    # Add capability to allow process to modify resource limits
+    cap_add:
+      - SYS_RESOURCE
     environment:
-      - LOG_LEVEL=ERROR
-      - ADHOC_MODE=${ADHOC_MODE:-true}
+      - ADHOC_MODE=true
+      - LOG_LEVEL=INFO
       - GENAI_PORT=${GENAI_PORT:-9001}
+      - TOOL_RESPONSE_TIMEOUT_SECONDS=${TOOL_RESPONSE_TIMEOUT_SECONDS:-30}
       - VLM_LIBRARY_PATH=${VLM_LIBRARY_PATH:-/iot-user/app/site-packages/libvlmservice.so}
       - LLM_LIBRARY_PATH=${LLM_LIBRARY_PATH:-/iot-user/app/site-packages/libllmservice.so}
       - GENAI_INTERFACE_FILE=${GENAI_INTERFACE_FILE:-/usr/include/genai_interface.h}
+      - GENAI_CONTEXT_CAPPING=${GENAI_CONTEXT_CAPPING:-1024}
+      - MAX_ACTIVE_MODELS=${MAX_ACTIVE_MODELS:-3}      
     # Memory and resource limits for VLM model loading
     ulimits:
       memlock:
