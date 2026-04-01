@@ -189,7 +189,7 @@ def find_config_yaml(root_path: str) -> List[ArduinoBrick]:
     return discovered_modules
 
 
-def list_installed_packages_pkg_resources() -> Dict[str, List[ArduinoBrick]]:
+def list_installed_packages_pkg_resources() -> tuple[Dict[str, List[ArduinoBrick]], str]:
     """List all installed packages and find those containing 'brick_config.yaml'.
     Returns a dictionary where keys are package paths and values are lists of ArduinoBrick instances.
     """
@@ -206,6 +206,28 @@ def list_installed_packages_pkg_resources() -> Dict[str, List[ArduinoBrick]]:
         local_installed_modules = find_config_yaml(local_path)
         checked_paths[local_path] = local_installed_modules
 
+    # Search for app_services folder (nested inside an 'arduino' subfolder)
+    services_folder = None
+    for local_path in paths:
+        if local_path is None or local_path == "":
+            continue
+        local_path_obj = pathlib.Path(local_path)
+        if not local_path_obj.is_dir():
+            continue
+        for inner_path in local_path_obj.iterdir():
+            if not inner_path.is_dir() or inner_path.name != "arduino":
+                continue
+            candidate = inner_path / "app_services"
+            if candidate.is_dir():
+                logger.debug(f"Found app_services folder at: {candidate}")
+                services_folder = str(candidate)
+                break
+        if services_folder:
+            break
+
+    if services_folder is None:
+        logger.error("ERROR: app_services folder not found in site-packages directories.")
+
     # Check application python home directory
     app_home = "/app/python"
     local_installed_modules: List[ArduinoBrick] = find_config_yaml(app_home)
@@ -214,7 +236,7 @@ def list_installed_packages_pkg_resources() -> Dict[str, List[ArduinoBrick]]:
 
     end = time.time() * 1000
     logger.info(f"Module discovery took {end - start} ms")
-    return checked_paths
+    return checked_paths, services_folder
 
 
 def save_compose_file(module: ArduinoBrick, output_dir: str, appslab_version: str):
@@ -263,9 +285,12 @@ def save_api_docs_files(output_dir: str):
     """Save the API docs files to the specified output directory."""
     shutil.copytree("docs/", output_dir, dirs_exist_ok=True)
 
-def save_services_files(output_dir: str):
+def save_services_files(services_folder: str, output_dir: str):
     """Save the services files to the specified output directory."""
-    shutil.copytree("src/arduino/app_services/", output_dir, dirs_exist_ok=True)
+    print(f"Saving services files from {services_folder} to {output_dir}...")
+    if not services_folder:
+        return
+    shutil.copytree(services_folder, output_dir, dirs_exist_ok=True)
 
 def save_examples_files(module: ArduinoBrick, output_dir: str):
     """Save the examples files to the specified output directory."""
@@ -281,7 +306,7 @@ def save_examples_files(module: ArduinoBrick, output_dir: str):
         shutil.copytree(input_folder, output_folder, dirs_exist_ok=True)
 
 
-def library_provisioning(out_path: str = None, modules: Dict[str, List[ArduinoBrick]] = None, buildtime: bool = False):
+def library_provisioning(out_path: str = None, modules: Dict[str, List[ArduinoBrick]] = None, services_folder: str = None, buildtime: bool = False):
     print(f"Provisioning compose files for app execution and bricks documentation. File: {out_path}")
     try:
         from arduino._version import __version__ as arduino_bricks_version
@@ -305,7 +330,9 @@ def library_provisioning(out_path: str = None, modules: Dict[str, List[ArduinoBr
             save_compose_file(module, compose_output_dir, arduino_bricks_version)
             save_readme_file(module, docs_output_dir)
             save_examples_files(module, examples_output_dir)
-            save_services_files(services_output_dir)
+
+    # Save services files        
+    save_services_files(services_folder, services_output_dir)
 
     # Save API docs files
     if buildtime:
@@ -314,7 +341,7 @@ def library_provisioning(out_path: str = None, modules: Dict[str, List[ArduinoBr
 
 
 def release():
-    discovered_modules = list_installed_packages_pkg_resources()
+    discovered_modules, services_folder = list_installed_packages_pkg_resources()
 
     parser = argparse.ArgumentParser(description="Process AppLab modules release.")
     parser.add_argument(
@@ -374,7 +401,7 @@ def release():
 
 
 def update_ai_container_references():
-    discovered_modules = list_installed_packages_pkg_resources()
+    discovered_modules, services_folder = list_installed_packages_pkg_resources()
 
     parser = argparse.ArgumentParser(description="Update AI container references.")
     parser.add_argument("-v", "--version", type=str, default=None, help="Release version.")
@@ -429,7 +456,7 @@ def main():
 
     args = parser.parse_args()
 
-    discovered_modules = list_installed_packages_pkg_resources()
+    discovered_modules, services_folder = list_installed_packages_pkg_resources()
 
     modules = []
     imported_modules = []
@@ -445,7 +472,7 @@ def main():
         if args.compose_output is not None and args.compose_output != "":
             composeout = args.compose_output
         # Provision compose files for app execution and bricks documentation
-        library_provisioning(composeout, discovered_modules, args.buildtime)
+        library_provisioning(composeout, discovered_modules, services_folder, args.buildtime)
         if args.buildtime or len(args.output) > 0:
             print("Compose provisioning completed.")
             sys.exit(0)
