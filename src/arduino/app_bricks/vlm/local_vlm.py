@@ -29,8 +29,7 @@ class VisionLanguageModel(LargeLanguageModel):
         api_key: str = os.getenv("LOCAL_LLM_API_KEY", "api_key"),
         system_prompt: str = "",
         temperature: Optional[float] = 0.7,
-        max_tokens: int = 256,
-        timeout: int = 30,
+        timeout: Optional[int] = None,
         tools: List[Callable[..., Any]] = None,
         model: str = None,
         **kwargs,
@@ -47,10 +46,8 @@ class VisionLanguageModel(LargeLanguageModel):
             temperature (Optional[float]): The sampling temperature between 0.0 and 1.0.
                 Higher values make output more random/creative; lower values make it more
                 deterministic. Defaults to 0.7.
-            max_tokens (int): The maximum number of tokens to generate in the response.
-                Defaults to 256.
-            timeout (int): The maximum duration in seconds to wait for a response before
-                timing out. Defaults to 30.
+            timeout (Optional[int]): The maximum duration in seconds to wait for a response before
+                timing out. Defaults to None.
             tools (List[Callable[..., Any]]): A list of callable tool functions to register. Defaults to None.
             **kwargs: Additional arguments passed to the model constructor
 
@@ -73,7 +70,6 @@ class VisionLanguageModel(LargeLanguageModel):
             api_key=api_key,
             system_prompt=system_prompt,
             temperature=temperature,
-            max_tokens=max_tokens,
             timeout=timeout,
             tools=tools,
             **kwargs,
@@ -109,7 +105,7 @@ class VisionLanguageModel(LargeLanguageModel):
         try:
             return super()._chat_invoke(message=message, images=images)
         except (openai.BadRequestError, openai.APIError) as e:
-            self._handle_api_error(e)
+            self._handle_api_error(logger, e)
 
     def chat_stream(self, message: str, images: List[str | bytes] = None) -> Iterator[str]:
         """Sends a message to the AI and yields response tokens as they are generated.
@@ -129,9 +125,9 @@ class VisionLanguageModel(LargeLanguageModel):
             AlreadyGenerating: If a streaming session is already active.
         """
         try:
-            return super()._chat_stream_invoke(message=message, images=images)
+            yield from super()._chat_stream_invoke(message=message, images=images)
         except (openai.BadRequestError, openai.APIError) as e:
-            self._handle_api_error(e)
+            self._handle_api_error(logger, e)
 
     def stop_stream(self) -> None:
         """Signals the active streaming generation to stop.
