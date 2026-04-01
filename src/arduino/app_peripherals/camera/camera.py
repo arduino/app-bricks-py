@@ -9,6 +9,7 @@ import numpy as np
 
 from .base_camera import BaseCamera
 from .errors import CameraConfigError
+from .utils import first_plugged_camera
 
 
 class Camera:
@@ -29,13 +30,14 @@ class Camera:
 
     def __new__(
         cls,
-        source: str | int = 0,
+        source: str | int = first_plugged_camera(),
         resolution: tuple[int, int] = (640, 480),
         fps: int = 10,
         adjustments: Callable[[np.ndarray], np.ndarray] | None = None,
         **kwargs,
     ) -> BaseCamera:
-        """Create a camera instance based on the source type.
+        """
+        Create a camera instance based on the source type.
 
         Args:
             source (Union[str, int]): Camera source identifier. Supports:
@@ -43,6 +45,7 @@ class Camera:
                 - str: V4L camera index (e.g., "0", "1") or device path (i.e., "/dev/video0", "/dev/v4l/by-id/...", "/dev/v4l/by-path/...")
                 - str: URL for IP cameras (e.g., "rtsp://...", "http://...")
                 - str: WebSocket URL for input streams (e.g., "ws://0.0.0.0:8080")
+                Default: first available physically connected camera.
             resolution (tuple, optional): Frame resolution as (width, height).
                 Default: (640, 480)
             fps (int, optional): Target frames per second. Default: 10
