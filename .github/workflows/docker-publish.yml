@@ -1,4 +1,4 @@
-name: Container Release - Build and Publish
+name: RELEASE - Build & Publish Release
 
 run-name: "Release ${{ inputs.tag || github.ref_name }}"
 
