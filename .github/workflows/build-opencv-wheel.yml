@@ -1,4 +1,4 @@
-name: Build OpenCV Python Wheels
+name: Build OpenCV Python wheel
 
 on:
   push:
