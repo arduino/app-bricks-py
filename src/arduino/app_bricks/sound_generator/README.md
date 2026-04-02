@@ -8,9 +8,9 @@ Sound Generator is a lightweight and expressive audio generation brick that lets
 
 - Generate tones and melodies from notes or frequencies
 - Choose your waveform — sine, square, triangle, sawtooth
-- Add sound effects such as chorus, overdrive, delay, vibrato, or distortion
+- Add sound effects such as ADSR, bitcrusher, chorus, tremolo, vibrato, or overdrive
 - Compose procedural music directly from code
-- Real-time playback over speaker
+- Playback over speaker
 
 ## Code example and usage
 
