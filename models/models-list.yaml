@@ -1324,4 +1324,30 @@ models:
     metadata:
       source: "qualcomm-ai-hub"
       source-model-id: "melo_tts"
-      source-model-url: "https://aihub.qualcomm.com/models/melo_tts"      
+      source-model-url: "https://aihub.qualcomm.com/models/melo_tts"
+ - melo-tts-es:
+    runner: audio-analytics
+    name : "Melo TTS (Spanish)"
+    description: >-
+      MeloTTS is a high-quality multi-lingual text-to-speech library - Spanish version.
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:tts"
+    download_location: /var/lib/arduino-app-cli/models/audio-analytics/tts 
+    metadata:
+      source: "qualcomm-ai-hub"
+      source-model-id: "melo_tts"
+      source-model-url: "https://aihub.qualcomm.com/models/melo_tts"
+ - melo-tts-zn:
+    runner: audio-analytics
+    name : "Melo TTS (Chinese)"
+    description: >-
+      MeloTTS is a high-quality multi-lingual text-to-speech library - Chinese version.
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:tts"
+    download_location: /var/lib/arduino-app-cli/models/audio-analytics/tts 
+    metadata:
+      source: "qualcomm-ai-hub"
+      source-model-id: "melo_tts"
+      source-model-url: "https://aihub.qualcomm.com/models/melo_tts"       
