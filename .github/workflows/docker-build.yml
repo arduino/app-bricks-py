@@ -71,6 +71,10 @@ jobs:
           for CONTAINER in "${CHANGED[@]}"; do
             DOWNSTREAM=$(jq -r '.downstream // [] | .[]' "containers/$CONTAINER/ci.json")
             for DS in $DOWNSTREAM; do
+              if [[ ! -f "containers/$DS/ci.json" ]]; then
+                echo "Skipping cascade to $DS: no ci.json (disabled)"
+                continue
+              fi
               if [[ ! " ${CHANGED[*]} " =~ " $DS " ]]; then
                 echo "Cascading: $DS depends on $CONTAINER"
                 CHANGED+=("$DS")
