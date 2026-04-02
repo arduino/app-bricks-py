@@ -33,7 +33,7 @@ permissions:
 
 jobs:
   setup:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     outputs:
       branch: ${{ steps.resolve.outputs.branch }}
       containers: ${{ steps.detect.outputs.containers }}

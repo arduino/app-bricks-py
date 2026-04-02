@@ -28,7 +28,7 @@ permissions:
 
 jobs:
   detect:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     outputs:
       tag_ref: ${{ steps.detect.outputs.tag_ref }}
       version: ${{ steps.detect.outputs.version }}
@@ -175,6 +175,17 @@ jobs:
             fi
           fi
 
+  upload-whl:
+    runs-on: ubuntu-24.04-arm
+    needs: [detect]
+    if: needs.detect.outputs.no_match == 'false' && needs.detect.outputs.build_whl == 'true'
+    env:
+      PYTHON_VERSION: "3.13"
+      TASKFILE_VERSION: "3.45.4"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Set up Python
         if: steps.config.outputs.build_whl == 'true'
         uses: actions/setup-python@v5
@@ -227,6 +238,26 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build:
+    runs-on: ubuntu-24.04-arm
+    needs: [detect, upload-whl]
+    if: |
+      always() &&
+      needs.detect.outputs.no_match == 'false' &&
+      needs.detect.outputs.needs_build == 'true' &&
+      (needs.upload-whl.result == 'success' || needs.upload-whl.result == 'skipped')
+    steps:
+      - name: Log into registry ${{ env.GHCR_REGISTRY }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.GHCR_REGISTRY }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install crane
+        if: steps.rebuild_check.outputs.needs_build == 'false'
+        uses: imjasonh/setup-crane@v0.4
 
       - name: Re-tag image
         if: steps.rebuild_check.outputs.needs_build == 'false'
@@ -419,3 +450,95 @@ jobs:
           branch: "container-release-${{ matrix.container }}-${{ needs.detect.outputs.version }}"
           base: main
           draft: true
+
+  retag:
+    runs-on: ubuntu-24.04-arm
+    needs: [detect]
+    if: needs.detect.outputs.no_match == 'false' && needs.detect.outputs.needs_build == 'false'
+    steps:
+      - name: Log into registry ${{ env.GHCR_REGISTRY }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.GHCR_REGISTRY }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install crane
+        uses: imjasonh/setup-crane@v0.4
+
+      - name: Re-tag existing image to new version
+        run: |
+          echo "Re-tagging ${{ needs.detect.outputs.container }} from ${{ needs.detect.outputs.prev_version }} to ${{ needs.detect.outputs.new_version }}"
+          crane copy \
+            ${{ env.GHCR_DESTINATION_ORG }}/app-bricks/${{ needs.detect.outputs.container }}:${{ needs.detect.outputs.prev_version }} \
+            ${{ env.GHCR_DESTINATION_ORG }}/app-bricks/${{ needs.detect.outputs.container }}:${{ needs.detect.outputs.new_version }}
+
+      - name: Checkout repository
+        if: needs.detect.outputs.update_compose == 'true'
+        uses: actions/checkout@v4
+
+      - name: Update compose file references
+        if: needs.detect.outputs.update_compose == 'true'
+        env:
+          CONTAINER: ${{ needs.detect.outputs.container }}
+          VERSION: ${{ needs.detect.outputs.new_version }}
+        run: |
+          find src -name "brick_compose.yaml" | while read f; do
+            if grep -q "$CONTAINER" "$f"; then
+              echo "  Updating: $f"
+              sed -i -E "s|${CONTAINER}:[0-9]+\.[0-9]+\.[0-9]+|${CONTAINER}:${VERSION}|g" "$f"
+            fi
+          done
+
+      - name: Configure Git
+        if: needs.detect.outputs.update_compose == 'true'
+        run: |
+          git config user.name "AppLab Actions Bot"
+          git config user.email "bot@arduino.cc"
+
+      - name: Create Pull Request
+        if: needs.detect.outputs.update_compose == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "feat: update ${{ needs.detect.outputs.container }} image references"
+          title: "[RELEASE BOT] Update ${{ needs.detect.outputs.container }} image references"
+          body: |
+            Use `${{ needs.detect.outputs.container }}:${{ needs.detect.outputs.new_version }}` (no rebuild).
+          branch: "container-release-${{ needs.detect.outputs.container }}-${{ needs.detect.outputs.new_version }}"
+          base: main
+          draft: true
+
+  trigger-downstream:
+    runs-on: ubuntu-24.04-arm
+    needs: [detect, build, retag]
+    if: |
+      always() &&
+      needs.detect.outputs.no_match == 'false' &&
+      needs.detect.outputs.has_downstream == 'true' &&
+      (needs.build.result == 'success' || needs.retag.result == 'success')
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Trigger downstream container rebuilds
+        run: |
+          git fetch --tags
+          CI_JSON="containers/${{ needs.detect.outputs.container }}/ci.json"
+          DOWNSTREAM=$(jq -r '.downstream[]' "$CI_JSON")
+          for DS in $DOWNSTREAM; do
+            DS_PREFIX=$(jq -r '.tag_prefix' "containers/$DS/ci.json")
+            LATEST_TAG=$(git tag --sort=-version:refname | grep -E "^${DS_PREFIX}/" | head -1)
+            if [[ -z "$LATEST_TAG" ]]; then
+              echo "No tag found for downstream '$DS' (prefix: $DS_PREFIX), skipping"
+              continue
+            fi
+            echo "Triggering rebuild of $DS for tag $LATEST_TAG"
+            gh workflow run docker-github-publish.yml \
+              --ref main \
+              --field tag="$LATEST_TAG"
+          done
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
