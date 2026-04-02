@@ -389,6 +389,24 @@ def release():
                     registry=registry,
                 )
 
+    # check if there are services files to update with the new version
+    if services_folder and os.path.isdir(services_folder):
+        print(f"Processing services files in {services_folder} for arduino bricks version {arduino_bricks_version}")
+        for entry in os.scandir(services_folder):
+            if not entry.is_dir():
+                continue
+            for sub_entry in os.scandir(entry.path):
+                if sub_entry.is_dir():
+                    file_path = os.path.join(sub_entry.path, "service_compose.yaml")
+                    if os.path.isfile(file_path):
+                        _update_compose_release_version(
+                            compose_file_path=file_path,
+                            release_version=arduino_bricks_version,
+                            append_suffix=False,
+                            only_ai_containers=update_ai_containers,
+                            registry=registry,
+                        )
+
     mod_structure = {
         "bricks": modules,
     }
