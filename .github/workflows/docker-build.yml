@@ -235,6 +235,7 @@ jobs:
           cache-to: ${{ steps.cache.outputs.cache_to }}
           provenance: false
           build-args: |
+            OPENCV_REPO_OWNER=${{ github.repository_owner }}
             REGISTRY=${{ env.DEV_REGISTRY_PATH }}
 
   build-downstream:
