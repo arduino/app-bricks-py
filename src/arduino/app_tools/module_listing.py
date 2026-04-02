@@ -285,12 +285,14 @@ def save_api_docs_files(output_dir: str):
     """Save the API docs files to the specified output directory."""
     shutil.copytree("docs/", output_dir, dirs_exist_ok=True)
 
+
 def save_services_files(services_folder: str, output_dir: str):
     """Save the services files to the specified output directory."""
     print(f"Saving services files from {services_folder} to {output_dir}...")
     if not services_folder:
         return
     shutil.copytree(services_folder, output_dir, dirs_exist_ok=True)
+
 
 def save_examples_files(module: ArduinoBrick, output_dir: str):
     """Save the examples files to the specified output directory."""
@@ -331,7 +333,7 @@ def library_provisioning(out_path: str = None, modules: Dict[str, List[ArduinoBr
             save_readme_file(module, docs_output_dir)
             save_examples_files(module, examples_output_dir)
 
-    # Save services files        
+    # Save services files
     save_services_files(services_folder, services_output_dir)
 
     # Save API docs files

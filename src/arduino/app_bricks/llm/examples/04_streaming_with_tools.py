@@ -8,6 +8,7 @@
 from arduino.app_bricks.llm import LargeLanguageModel, tool
 from arduino.app_utils import App
 
+
 # Tool definition - simulates a simple weather API - please replace with actual API calls in a real application
 @tool
 def get_current_weather(location: str) -> str:
@@ -17,7 +18,7 @@ def get_current_weather(location: str) -> str:
 
     Args:
         location (str): The location to get the weather for.
-        
+
     Returns:
         str: A summary of the current weather in the specified location.
 
@@ -31,7 +32,9 @@ def get_current_weather(location: str) -> str:
     else:
         return f"Sorry, I do not have real-time weather data for {location}. Assuming it's a sunny day!"
 
+
 llm = LargeLanguageModel(max_tokens=512, tools=[get_current_weather])
+
 
 def ask_prompt():
     prompt = input("Enter your prompt (or type 'exit' to quit): ")
