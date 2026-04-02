@@ -67,8 +67,8 @@ class ALSASpeaker(BaseSpeaker):
             auto_reconnect (bool): Enable automatic reconnection on failure.
                 Default: True.
 
-            Note: When shared=True, only higher buffer size values are supported due to
-                ALSA limitations (~2000).
+            Note: When shared=True, buffer size is auto-negotiated due to
+                ALSA limitations to reach 125ms of latency.
 
         Raises:
             SpeakerConfigError: If the format is not supported.
