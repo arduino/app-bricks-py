@@ -34,7 +34,7 @@ services:
     ports:
       - ${BIND_ADDRESS:-0.0.0.0}:8085:8085
     volumes:
-      - /var/lib/arduino-app-cli/models/audio-analytics:/opt/audio/models:ro
+      - /var/lib/arduino-app-cli/models/audio-analytics:/mnt/work/models:ro
       # Mount system libraries from host for DSP access
       - /usr/lib/aarch64-linux-gnu/libdmabufheap.so.0:/usr/lib/libdmabufheap.so.0:ro
       - /usr/lib/aarch64-linux-gnu/libcdsprpc.so:/usr/lib/libcdsprpc.so:ro
