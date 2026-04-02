@@ -19,12 +19,14 @@ logger = Logger("TextToSpeech")
 class TextToSpeech:
     """Text-to-Speech brick for offline speech synthesis using local TTS service."""
 
-    def __init__(self, language: str | None = None):
+    def __init__(self, language: str | None = None, speaker: BaseSpeaker | None = None):
         """Initialize the TextToSpeech brick.
         Args:
             language (str, optional): Preferred language for TTS. If not specified, it follow App configuration.
+            speaker (BaseSpeaker, optional): Speaker instance to use for audio output. If not provided, a default Speaker will be used.
         """
         self.max_concurrent_syntheses = 3
+        self._speaker = speaker or Speaker(sample_rate=Speaker.RATE_44K, shared=True)
 
         # API configuration
         self.api_port = 8085
@@ -94,14 +96,20 @@ class TextToSpeech:
         # Limit concurrency
         self._session_semaphore = threading.Semaphore(self.max_concurrent_syntheses)
 
-    def speak(self, text: str, speaker: BaseSpeaker | None = None):
+    def start(self):
+        """Start the TextToSpeech brick by initializing the speaker."""
+        self._speaker.start()
+
+    def stop(self):
+        """Stop the TextToSpeech brick by stopping the speaker."""
+        self._speaker.stop()
+
+    def speak(self, text: str):
         """
         Synthesize speech from text and play it through the provided speaker.
 
         Args:
             text (str): The text to be synthesized into speech.
-            speaker (BaseSpeaker): The speaker instance to play the synthesized audio.
-                If None, a default Speaker will be used.
 
         Raises:
             ValueError: If the specified language is not supported.
@@ -109,9 +117,7 @@ class TextToSpeech:
         """
         audio_bytes = self.synthesize_pcm(text, language=self._selected_language)
         audio_array = np.frombuffer(audio_bytes, dtype=np.int16)  # melo-tts uses 16-bit PCM
-        if speaker is None:
-            speaker = Speaker(sample_rate=Speaker.RATE_44K)
-        speaker.play_pcm(audio_array)
+        self._speaker.play_pcm(audio_array)
 
     def synthesize_wav(self, text: str) -> bytes:
         """
