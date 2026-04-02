@@ -19,7 +19,11 @@ logger = Logger("TextToSpeech")
 class TextToSpeech:
     """Text-to-Speech brick for offline speech synthesis using local TTS service."""
 
-    def __init__(self):
+    def __init__(self, language: str | None = None):
+        """Initialize the TextToSpeech brick.
+        Args:
+            language (str, optional): Preferred language for TTS. If not specified, it follow App configuration.
+        """
         self.max_concurrent_syntheses = 3
 
         # API configuration
@@ -41,11 +45,10 @@ class TextToSpeech:
             model = app_configured_model
         else:
             model = brick_config.get("model", None)
-        
-        logger.info(f"Configured TTS model: '{model}'.")      
 
         # TTS configuration
         self._language_to_voice = {}
+        self._model_to_language = {}
         try:
             url = f"{self.api_base_url}/tts/models"
             response = requests.get(url)
@@ -61,27 +64,42 @@ class TextToSpeech:
 
             models = response.json() or []
             for model in models:
+                model_name = model.get("name")
                 for voice in model.get("voices", []):
                     lang = voice.get("language")
                     if lang and lang not in self._language_to_voice:
                         self._language_to_voice[lang] = {
                             "voice": voice.get("name", "default"),
-                            "model": model.get("name"),
+                            "model": model_name,
                             "sample_rate": voice.get("sample_rate", 44100),
                         }
+                        self._model_to_language[model_name] = lang
         except Exception as e:
             raise RuntimeError(f"Failed to initialize TTS models: {e}.")
+
+        self._selected_language = None
+        if language:
+            if language in self._language_to_voice:
+                self._selected_language = language
+            else:
+                logger.warning(f"Configured language '{language}' not found in available TTS models. Defaulting to en.")
+                self._selected_language = "en"
+        if model:
+            if model in self._model_to_language:
+                self._selected_language = self._model_to_language[model]
+            else:
+                logger.warning(f"Configured model '{model}' not found in available TTS models. Defaulting to en.")
+                self._selected_language = "en"
 
         # Limit concurrency
         self._session_semaphore = threading.Semaphore(self.max_concurrent_syntheses)
 
-    def speak(self, text: str, language: Literal["en", "es", "zh"] = "en", speaker: BaseSpeaker | None = None):
+    def speak(self, text: str, speaker: BaseSpeaker | None = None):
         """
         Synthesize speech from text and play it through the provided speaker.
 
         Args:
             text (str): The text to be synthesized into speech.
-            language (Literal["en", "es", "zh"]): The language of the text.
             speaker (BaseSpeaker): The speaker instance to play the synthesized audio.
                 If None, a default Speaker will be used.
 
@@ -89,19 +107,18 @@ class TextToSpeech:
             ValueError: If the specified language is not supported.
             RuntimeError: If the synthesis fails or maximum concurrency is reached.
         """
-        audio_bytes = self.synthesize_pcm(text, language=language)
+        audio_bytes = self.synthesize_pcm(text, language=self._selected_language)
         audio_array = np.frombuffer(audio_bytes, dtype=np.int16)  # melo-tts uses 16-bit PCM
         if speaker is None:
             speaker = Speaker(sample_rate=Speaker.RATE_44K)
         speaker.play_pcm(audio_array)
 
-    def synthesize_wav(self, text: str, language: Literal["en", "es", "zh"] = "en") -> bytes:
+    def synthesize_wav(self, text: str) -> bytes:
         """
         Synthesize speech from text and return the audio in WAV format.
 
         Args:
             text (str): The text to be synthesized into speech.
-            language (Literal["en", "es", "zh"]): The language of the text.
 
         Returns:
             bytes: The synthesized audio in WAV format.
@@ -110,7 +127,7 @@ class TextToSpeech:
             ValueError: If the specified language is not supported.
             RuntimeError: If the synthesis fails or maximum concurrency is reached.
         """
-        pcm_audio = self.synthesize_pcm(text, language=language)
+        pcm_audio = self.synthesize_pcm(text, language=self._selected_language)
 
         import io
         import wave
