@@ -715,9 +715,9 @@ class SoundGenerator(SoundGeneratorStreamer):
     def play_composition(
         self,
         composition: "MusicComposition",
+        block: bool | None = None,
         loop: bool = False,
         play_for: float | None = None,
-        block: bool | None = None,
     ):
         """
         Play a MusicComposition object.
@@ -730,10 +730,6 @@ class SoundGenerator(SoundGeneratorStreamer):
 
         Args:
             composition (MusicComposition): The composition to play.
-            loop (bool): If True, loop the composition until ``stop_sequence()``
-                is called or until ``play_for`` expires.
-            play_for (float | None): When looping, stop automatically after the
-                given number of seconds. Requires ``loop=True``.
             block (bool | None): Controls whether this call waits for playback.
                 - True: wait until the current playback session ends. When
                   ``loop=True`` and ``play_for`` is not set, this may block
@@ -745,6 +741,10 @@ class SoundGenerator(SoundGeneratorStreamer):
                   timed looping (``loop=True`` with ``play_for`` set) blocks
                   until the timed stop completes. This is the recommended
                   default for most scripts and examples.
+            loop (bool): If True, loop the composition until ``stop_sequence()``
+                is called or until ``play_for`` expires.
+            play_for (float | None): When looping, stop automatically after the
+                given number of seconds. Requires ``loop=True``.
         """
         if play_for is not None:
             play_for = float(play_for)
