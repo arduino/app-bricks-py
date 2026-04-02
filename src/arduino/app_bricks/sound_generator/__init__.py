@@ -987,7 +987,7 @@ class SoundGenerator(SoundGeneratorStreamer):
         immediately drop any pending audio in the ALSA buffer.  The speaker is
         transparently restarted on the next play call via _ensure_speaker_ready.
         """
-        logger.info("stop_sequence() called")
+        logger.debug("stop_sequence() called")
         should_stop_speaker = False
         with self._sequence_lock:
             if self._sequence_thread and self._sequence_thread.is_alive():
