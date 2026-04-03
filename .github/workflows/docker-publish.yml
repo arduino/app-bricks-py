@@ -5,7 +5,8 @@ run-name: "Release ${{ inputs.tag || github.ref_name }}"
 on:
   push:
     tags:
-      - "*/*"
+      - 'release/*'
+      - 'ai/*'
   workflow_dispatch:
     inputs:
       tag:
