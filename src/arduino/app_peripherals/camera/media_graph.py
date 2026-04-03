@@ -127,7 +127,8 @@ def scan_sensor_i2c_addresses(media_dev):
 
 def find_sensor_i2c_addr(media_dev, csiphy_index):
     """
-    Traverse the media graph to find CSIPHY a sensor with an immutable link to the provided CSIPHY.
+    Traverse the media graph to find a sensor with an immutable link to the
+    specified CSIPHY index.
     Return the I2C address of the found sensor.
     """
     csiphy_name = f"msm_csiphy{csiphy_index}"

@@ -38,14 +38,17 @@ class V4LCamera(BaseCamera):
         Initialize V4L camera.
 
         Args:
-            device: Camera identifier - can be:
-                   - int: Camera index (e.g., 0, 1)
-                   - str: Camera index as string or device path
-            resolution (tuple, optional): Resolution as (width, height). None uses default resolution.
-            fps (int, optional): Frames per second to capture from the camera. Default: 10.
+            device: Camera identifier in the form of either:
+                - int: Camera ordinal index (e.g., 0, 1)
+                - str: Camera ordinal index as string
+                - str: Camera device path (e.g., "/dev/video0", "/dev/v4l/by-id/...",
+                    "/dev/v4l/by-path/...")
+                Default: 0 (first available USB camera).
+            resolution (tuple[int, int]): Resolution as (width, height). None uses default resolution.
+            fps (int): Frames per second to capture from the camera. Default: 10.
             adjustments (callable, optional): Function or function pipeline to adjust frames that takes
                 a numpy array and returns a numpy array. Default: None
-            auto_reconnect (bool, optional): Enable automatic reconnection on failure. Default: True.
+            auto_reconnect (bool): Enable automatic reconnection on failure. Default: True.
             codec (str, optional): Video codec to use (FourCC). Options: "YUVY", "MJPG", "H264".
                 Default: "" (auto).
         """

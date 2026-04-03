@@ -9,6 +9,7 @@ import numpy as np
 
 from .base_camera import BaseCamera
 from .errors import CameraConfigError
+from .utils import nth_plugged_camera
 
 
 class Camera:
@@ -19,7 +20,8 @@ class Camera:
     the appropriate camera implementation based on the provided configuration.
 
     Supports:
-        - V4L Cameras (local cameras connected to the system), the default
+        - CSI Cameras (local cameras connected using MIPI CSI-2 interface)
+        - USB Cameras (local cameras connected using USB interface)
         - IP Cameras (network-based cameras via RTSP, HLS)
         - WebSocket Cameras (input video streams via WebSocket client)
 
@@ -40,37 +42,36 @@ class Camera:
 
         Args:
             source (Union[str, int]): Camera source identifier. Supports:
-                - int: V4L camera index (e.g., 0, 1)
-                - str: V4L camera index (e.g., "0", "1") or device path (i.e., "/dev/video0", "/dev/v4l/by-id/...", "/dev/v4l/by-path/...")
-                - str: CSI camera identifier "CSI:<index>" or "CSI:<name>" (e.g., "CSI:0", "CSI:1", "CSI:CAMERA0", "CSI:CAMERA1")
+                - int: Auto-select the n-th available physically connected camera
+                - str: CSI camera identifier "csi:<ordinal index>" or "csi:<name>"
+                    (e.g., "csi:0", "csi:CAMERA1")
+                - str: V4L camera ordinal index (e.g., "usb:0", "usb:1")
+                - str: V4L camera device path (e.g., "/dev/video0", "/dev/v4l/by-id/...",
+                    "/dev/v4l/by-path/...")
                 - str: URL for IP cameras (e.g., "rtsp://...", "http://...")
                 - str: WebSocket URL for input streams (e.g., "ws://0.0.0.0:8080")
-                Default: first available physically connected camera.
-            resolution (tuple, optional): Frame resolution as (width, height).
-                Default: (640, 480)
-            fps (int, optional): Target frames per second. Default: 10
+                Default: 0.
+            resolution (tuple[int, int]): Frame resolution as (width, height).
+                Default: (640, 480).
+            fps (int): Target frames per second. Default: 10.
             adjustments (callable, optional): Function pipeline to adjust frames that takes a
                 numpy array and returns a numpy array. Default: None.
             **kwargs: Camera-specific configuration parameters grouped by type:
+                CSI Camera Parameters:
+                    device (int | str): CSI device identifier. Default: 0.
                 V4L Camera Parameters:
-                    device (int, optional): V4L device index override. Default: 0.
+                    device (int | str): V4L device identifier. Default: 0.
                     codec (str, optional): Video codec to use (FourCC). Options: "YUVY",
                         "MJPG", "H264". Default: "" (auto).
-                CSI Camera Parameters:
-                    device (str or int, optional): CSI camera identifier - can be:
-                        - int: Camera index (e.g., 0, 1)
-                        - str: Camera name (e.g., "CAMERA0", "CAMERA1")
                 IP Camera Parameters:
                     url (str): Camera stream URL
                     username (str, optional): Authentication username.
                     password (str, optional): Authentication password.
-                    timeout (float, optional): Connection timeout in seconds. Default: 10.0.
+                    timeout (float): Connection timeout in seconds. Default: 10.0.
                 WebSocket Camera Parameters:
-                    host (str, optional): WebSocket server host. Default: "0.0.0.0".
-                    port (int, optional): WebSocket server port. Default: 8080.
-                    timeout (float, optional): Connection timeout in seconds. Default: 10.0.
-                    frame_format (str, optional): Expected frame format ("base64", "binary",
-                        "json"). Default: "base64".
+                    host (str): WebSocket server host. Default: "0.0.0.0".
+                    port (int): WebSocket server port. Default: 8080.
+                    timeout (float): Connection timeout in seconds. Default: 10.0.
 
         Returns:
             BaseCamera: Appropriate camera implementation instance
@@ -80,10 +81,17 @@ class Camera:
             CameraOpenError: If the camera cannot be opened
 
         Examples:
+            CSI Camera:
+
+            ```python
+            camera = Camera("csi:0", resolution=(640, 480), fps=30)
+            camera = Camera("csi:CAMERA1", fps=15)
+            ```
+
             V4L Camera:
 
             ```python
-            camera = Camera(0, resolution=(640, 480), fps=30)
+            camera = Camera("usb:0", resolution=(640, 480), fps=30)
             camera = Camera("/dev/video1", fps=15)
             ```
 
@@ -101,12 +109,28 @@ class Camera:
             camera = Camera("ws://192.168.1.100:8080", timeout=5)
             ```
         """
+        if not isinstance(source, (str, int)):
+            raise CameraConfigError(f"Invalid source type: {type(source)}. Must be str or int.")
+
         if isinstance(source, int) or (isinstance(source, str) and source.isdigit()):
-            # V4L Camera
+            # Select the n-th available camera
+            idx = int(source) if isinstance(source, str) else source
+            source = nth_plugged_camera(idx)
+
+        if source.startswith("csi:"):
+            from .csi_camera import CSICamera
+
+            csi_source = source[4:]  # Remove "csi:" prefix
+            return CSICamera(csi_source, resolution=resolution, fps=fps, adjustments=adjustments, **kwargs)
+
+        elif source.startswith("usb:"):
             from .v4l_camera import V4LCamera
 
-            return V4LCamera(source, resolution=resolution, fps=fps, adjustments=adjustments, **kwargs)
-        elif isinstance(source, str):
+            v4l_source = source[4:]  # Remove "usb:" prefix
+            return V4LCamera(v4l_source, resolution=resolution, fps=fps, adjustments=adjustments, **kwargs)
+        
+        # All other cases are handled by URL parsing
+        else:
             parsed = urlparse(source)
             if parsed.scheme in ["http", "https", "rtsp"]:
                 # IP Camera
@@ -124,14 +148,5 @@ class Camera:
                 from .v4l_camera import V4LCamera
 
                 return V4LCamera(source, resolution=resolution, fps=fps, adjustments=adjustments, **kwargs)
-            elif source.upper().startswith("CSI:"):
-                # CSI Camera
-                from .csi_camera import CSICamera
-
-                device = source[4:]
-                # Extract the part after "CSI:"
-                return CSICamera(device, resolution=resolution, fps=fps, adjustments=adjustments, **kwargs)
             else:
                 raise CameraConfigError(f"Unsupported camera source: {source}")
-        else:
-            raise CameraConfigError(f"Invalid source type: {type(source)}")

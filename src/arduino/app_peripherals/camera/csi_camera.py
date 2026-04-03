@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import re
 import time
 from typing import Optional
 import cv2
@@ -12,7 +13,7 @@ from arduino.app_utils import Logger
 
 from .camera import BaseCamera
 from .errors import CameraOpenError, CameraReadError
-from .media_graph import find_sensor_i2c_addr, scan_sensor_i2c_addresses, resolve_camera_name
+from .media_graph import scan_sensor_i2c_addresses, find_sensor_i2c_addr, resolve_camera_name
 
 
 logger = Logger("CSICamera")
@@ -37,13 +38,14 @@ class CSICamera(BaseCamera):
         Initialize CSI camera.
 
         Args:
-            device: Camera identifier - can be:
-                   - int: Camera index (e.g., 0, 1)
-                   - str: Camera name (e.g., "CAMERA0", "CAMERA1")
+            device: Camera identifier in the form of either:
+                - int: Camera ordinal index (e.g., 0, 1)
+                - str: Camera name (e.g., "CAMERA0", "CAMERA1")
+                Default: 0 (first available CSI camera).
             resolution (tuple, optional): Resolution as (width, height). None uses default resolution.
             fps (int, optional): Frames per second to capture from the camera. Default: 10.
             adjustments (callable, optional): Function or function pipeline to adjust frames that takes
-                a numpy array and returns a numpy array. Default: None
+                a numpy array and returns a numpy array. Default: None.
             auto_reconnect (bool, optional): Enable automatic reconnection on failure. Default: True.
         """
         super().__init__(resolution, fps, adjustments, auto_reconnect)
@@ -61,7 +63,25 @@ class CSICamera(BaseCamera):
         self._last_reconnection_attempt = 0.0  # Used for auto-reconnection when _read_frame is called
 
     @staticmethod
-    def list_devices() -> list[str]:
+    def list_devices() -> list[int]:
+        """
+        Return a sorted list of available CSI cameras.
+
+        Returns:
+            list[int]: List of CSI camera indices.
+        """
+        entries = scan_sensor_i2c_addresses("/dev/media0")
+        indices = []
+        for csiphy_name, _ in entries:
+            m = re.search(r"msm_csiphy(\d+)", csiphy_name)
+            if m:
+                indices.append(int(m.group(1)))
+        indices.sort()
+
+        return indices
+
+    @staticmethod
+    def list_device_names() -> list[str]:
         """
         Return a list of available CSI cameras.
 
@@ -93,24 +113,40 @@ class CSICamera(BaseCamera):
         Get the camera path for a given device identifier.
 
         Args:
-            device: Camera identifier
+            device: Camera identifier in the form of either:
+                - int: Camera ordinal index into available devices (e.g., 0, 1)
+                - str: Camera name (e.g., "CAMERA0", "CAMERA1")
+
         Returns:
             str: Camera device path
+
         Raises:
             CameraOpenError: If camera index is out of range or device cannot be found
         """
         device_indices = self.list_devices()
-        index = 0
-        if isinstance(device, str):
-            if device.upper() == "CAMERA0":
-                index = 0
-            elif device.upper() == "CAMERA1":
-                index = 1
 
-        if index < 0:
-            raise CameraOpenError(f"Camera index {index} out of range. Available: 0-{len(device_indices) - 1}")
+        if isinstance(device, int):
+            if device < 0 or device >= len(device_indices):
+                raise CameraOpenError(f"Camera index {device} out of range. Available: 0-{len(device_indices) - 1}")
 
-        return self._get_camera_name(index)
+            csiphy_index = device_indices[device]
+
+        elif isinstance(device, str):
+            if not "CAMERA" in device.upper():
+                raise CameraOpenError(f"Invalid camera name: {device}. Expected format like 'CAMERA0'")
+
+            m = re.search(r"(\d+)", device)
+            if not m:
+                raise CameraOpenError(f"Invalid camera device string: {device}")
+            requested = int(m.group(1))
+            if requested not in device_indices:
+                raise CameraOpenError(f"Camera csiphy index {requested} not available. Available: {device_indices}")
+            csiphy_index = requested
+
+        else:
+            raise CameraOpenError(f"Invalid device identifier: {device}")
+
+        return self._get_camera_name(csiphy_index)
 
     def _open_camera(self) -> None:
         """
@@ -124,11 +160,9 @@ class CSICamera(BaseCamera):
         if self.resolution and self.resolution[0] and self.resolution[1]:
             width, height = self.resolution
 
-        fps = self.fps if self.fps else 30  # Default to 30 FPS if not specified
-
         gstreamer_pipeline = (
             f"libcamerasrc camera-name={camera_name} ! "
-            f"video/x-raw,width={width},height={height},framerate={fps}/1 ! "
+            f"video/x-raw,width={width},height={height},framerate={self.fps}/1 ! "
             "videoconvert ! "
             "video/x-raw,format=BGR ! "
             "appsink drop=true max-buffers=1"
@@ -139,29 +173,20 @@ class CSICamera(BaseCamera):
             if not self._cap.isOpened():
                 raise RuntimeError(f"Failed to open camera {self.name}")
 
-            self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer to minimize latency
+            # Verify camera with a test read
+            ret, frame = self._cap.read()
+            if not ret or frame is None:
+                raise RuntimeError(f"Read test failed for camera {self.name}")
 
             if self.resolution and self.resolution[0] and self.resolution[1]:
                 # Verify resolution setting
-                actual_width = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                actual_height = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                actual_height, actual_width = frame.shape[:2]
                 if actual_width != self.resolution[0] or actual_height != self.resolution[1]:
                     logger.warning(
                         f"Camera {self.name} resolution set to {actual_width}x{actual_height} "
                         f"instead of requested {self.resolution[0]}x{self.resolution[1]}"
                     )
                     self.resolution = (actual_width, actual_height)
-
-            if self.fps:
-                actual_fps = int(self._cap.get(cv2.CAP_PROP_FPS))
-                if actual_fps != self.fps:
-                    logger.warning(f"Camera {self.name} FPS set to {actual_fps} instead of requested {self.fps}")
-                    self.fps = actual_fps
-
-            # Verify camera with a test read
-            ret, frame = self._cap.read()
-            if not ret and frame is None:
-                raise RuntimeError(f"Read test failed for camera {self.name}")
 
             self._set_status("connected", {"camera_name": self.name, "camera_path": self.csi_path})
 
