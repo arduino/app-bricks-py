@@ -90,5 +90,6 @@ jobs:
           gh release create "$TAG" \
             opencv-python/opencv_python_headless*.whl \
             --repo "$REPO" \
+            --latest=false \
             --title "opencv-python-headless $VERSION" \
             --notes "OpenCV Python headless wheel version $VERSION optimized for ARM64 architecture with GStreamer and FFmpeg support."
