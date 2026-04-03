@@ -9,7 +9,6 @@ import numpy as np
 
 from .base_camera import BaseCamera
 from .errors import CameraConfigError
-from .utils import first_plugged_camera
 
 
 class Camera:
@@ -30,7 +29,7 @@ class Camera:
 
     def __new__(
         cls,
-        source: str | int = first_plugged_camera(),
+        source: str | int = 0,
         resolution: tuple[int, int] = (640, 480),
         fps: int = 10,
         adjustments: Callable[[np.ndarray], np.ndarray] | None = None,
@@ -43,6 +42,7 @@ class Camera:
             source (Union[str, int]): Camera source identifier. Supports:
                 - int: V4L camera index (e.g., 0, 1)
                 - str: V4L camera index (e.g., "0", "1") or device path (i.e., "/dev/video0", "/dev/v4l/by-id/...", "/dev/v4l/by-path/...")
+                - str: CSI camera identifier "CSI:<index>" or "CSI:<name>" (e.g., "CSI:0", "CSI:1", "CSI:CAMERA0", "CSI:CAMERA1")
                 - str: URL for IP cameras (e.g., "rtsp://...", "http://...")
                 - str: WebSocket URL for input streams (e.g., "ws://0.0.0.0:8080")
                 Default: first available physically connected camera.
@@ -56,6 +56,10 @@ class Camera:
                     device (int, optional): V4L device index override. Default: 0.
                     codec (str, optional): Video codec to use (FourCC). Options: "YUVY",
                         "MJPG", "H264". Default: "" (auto).
+                CSI Camera Parameters:
+                    device (str or int, optional): CSI camera identifier - can be:
+                        - int: Camera index (e.g., 0, 1)
+                        - str: Camera name (e.g., "CAMERA0", "CAMERA1")
                 IP Camera Parameters:
                     url (str): Camera stream URL
                     username (str, optional): Authentication username.
@@ -120,6 +124,13 @@ class Camera:
                 from .v4l_camera import V4LCamera
 
                 return V4LCamera(source, resolution=resolution, fps=fps, adjustments=adjustments, **kwargs)
+            elif source.upper().startswith("CSI:"):
+                # CSI Camera
+                from .csi_camera import CSICamera
+
+                device = source[4:]
+                # Extract the part after "CSI:"
+                return CSICamera(device, resolution=resolution, fps=fps, adjustments=adjustments, **kwargs)
             else:
                 raise CameraConfigError(f"Unsupported camera source: {source}")
         else:
