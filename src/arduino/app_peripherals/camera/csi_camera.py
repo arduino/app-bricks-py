@@ -40,6 +40,7 @@ class CSICamera(BaseCamera):
         Args:
             device: Camera identifier in the form of either:
                 - int: Camera ordinal index (e.g., 0, 1)
+                - str: Camera ordinal index as string (e.g., "0", "1")
                 - str: Camera name (e.g., "CAMERA0", "CAMERA1")
                 Default: 0 (first available CSI camera).
             resolution (tuple, optional): Resolution as (width, height). None uses default resolution.
@@ -114,7 +115,8 @@ class CSICamera(BaseCamera):
 
         Args:
             device: Camera identifier in the form of either:
-                - int: Camera ordinal index into available devices (e.g., 0, 1)
+                - int: Camera ordinal index (e.g., 0, 1)
+                - str: Camera ordinal index as string (e.g., "0", "1")
                 - str: Camera name (e.g., "CAMERA0", "CAMERA1")
 
         Returns:
@@ -125,14 +127,15 @@ class CSICamera(BaseCamera):
         """
         device_indices = self.list_devices()
 
-        if isinstance(device, int):
-            if device < 0 or device >= len(device_indices):
-                raise CameraOpenError(f"Camera index {device} out of range. Available: 0-{len(device_indices) - 1}")
+        if isinstance(device, int) or (isinstance(device, str) and device.isdigit()):
+            device_index = int(device)
+            if device_index < 0 or device_index >= len(device_indices):
+                raise CameraOpenError(f"Camera index {device_index} out of range. Available: 0-{len(device_indices) - 1}")
 
-            csiphy_index = device_indices[device]
+            csiphy_index = device_indices[device_index]
 
         elif isinstance(device, str):
-            if not "CAMERA" in device.upper():
+            if "CAMERA" not in device.upper():
                 raise CameraOpenError(f"Invalid camera name: {device}. Expected format like 'CAMERA0'")
 
             m = re.search(r"(\d+)", device)

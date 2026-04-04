@@ -40,7 +40,7 @@ class V4LCamera(BaseCamera):
         Args:
             device: Camera identifier in the form of either:
                 - int: Camera ordinal index (e.g., 0, 1)
-                - str: Camera ordinal index as string
+                - str: Camera ordinal index as string (e.g., "0", "1")
                 - str: Camera device path (e.g., "/dev/video0", "/dev/v4l/by-id/...",
                     "/dev/v4l/by-path/...")
                 Default: 0 (first available USB camera).

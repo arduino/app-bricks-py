@@ -128,7 +128,7 @@ class Camera:
 
             v4l_source = source[4:]  # Remove "usb:" prefix
             return V4LCamera(v4l_source, resolution=resolution, fps=fps, adjustments=adjustments, **kwargs)
-        
+
         # All other cases are handled by URL parsing
         else:
             parsed = urlparse(source)

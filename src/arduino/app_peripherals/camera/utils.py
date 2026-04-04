@@ -32,5 +32,5 @@ def nth_plugged_camera(idx: int) -> str:
     if len(usb_cameras) > 0:
         if idx < len(usb_cameras):
             return "usb:" + str(usb_cameras[idx])
-    
+
     raise CameraOpenError("No available cameras found")
