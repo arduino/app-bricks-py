@@ -306,6 +306,7 @@ class TestV4LCameraRecovery:
         # Setup reconnection success
         mock_cap_reconnect = MagicMock()
         mock_cap_reconnect.isOpened.return_value = True
+        mock_cap_reconnect.get.return_value = 640
         mock_cap_reconnect.read.return_value = (True, np.zeros((480, 640, 3), dtype=np.uint8))
 
         mock_videocapture.side_effect = [
@@ -345,6 +346,7 @@ class TestV4LCameraRecovery:
         # Setup reconnection success
         mock_cap_reconnect = MagicMock()
         mock_cap_reconnect.isOpened.return_value = True
+        mock_cap_reconnect.get.return_value = 640
         mock_cap_reconnect.read.return_value = (True, np.zeros((480, 640, 3), dtype=np.uint8))
 
         mock_videocapture.side_effect = [
