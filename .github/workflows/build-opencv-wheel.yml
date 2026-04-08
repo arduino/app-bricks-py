@@ -1,0 +1,6 @@
+name: Build OpenCV Python wheel
+
+on:
+  workflow_dispatch:
+
+jobs:

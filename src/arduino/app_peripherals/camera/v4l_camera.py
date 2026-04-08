@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import math
 import os
 import time
 from typing import Literal, Optional
@@ -221,10 +222,14 @@ class V4LCamera(BaseCamera):
             if self.fps:
                 self._cap.set(cv2.CAP_PROP_FPS, self.fps)
 
-                actual_fps = int(self._cap.get(cv2.CAP_PROP_FPS))
-                if actual_fps != self.fps:
-                    logger.warning(f"Camera {self.name} FPS set to {actual_fps} instead of requested {self.fps}")
-                    self.fps = actual_fps
+                configured_fps = self._cap.get(cv2.CAP_PROP_FPS)
+                if math.isnan(configured_fps) or configured_fps <= 0:
+                    logger.warning(f"Camera {self.name} returned invalid FPS value: {configured_fps}. Cannot verify FPS setting.")
+                else:
+                    actual_fps = int(configured_fps)
+                    if actual_fps != self.fps:
+                        logger.warning(f"Camera {self.name} FPS set to {actual_fps} instead of requested {self.fps}")
+                        self.fps = actual_fps
 
             # Verify camera with a test read
             ret, frame = self._cap.read()
