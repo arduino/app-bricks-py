@@ -13,7 +13,8 @@ from arduino.app_utils import Logger
 
 from .camera import BaseCamera
 from .errors import CameraOpenError, CameraReadError
-from .media_graph import scan_sensor_i2c_addresses, find_sensor_i2c_addr, resolve_camera_name
+from .media_graph import find_camss_media_device, scan_sensor_i2c_addresses, find_sensor_i2c_addr
+from .utils import resolve_camera_name
 
 
 logger = Logger("CSICamera")
@@ -51,7 +52,7 @@ class CSICamera(BaseCamera):
         """
         super().__init__(resolution, fps, adjustments, auto_reconnect)
 
-        self.media_dev = "/dev/media0"
+        self.media_dev = find_camss_media_device()
 
         self.csi_path = self._get_camera(device)
 
@@ -71,9 +72,9 @@ class CSICamera(BaseCamera):
         Returns:
             list[int]: List of CSI camera indices.
         """
-        entries = scan_sensor_i2c_addresses("/dev/media0")
+        entities = scan_sensor_i2c_addresses(find_camss_media_device())
         indices = []
-        for csiphy_name, _ in entries:
+        for csiphy_name, _ in entities:
             m = re.search(r"msm_csiphy(\d+)", csiphy_name)
             if m:
                 indices.append(int(m.group(1)))
@@ -91,9 +92,9 @@ class CSICamera(BaseCamera):
         """
         paths: list[str] = []
         try:
-            entities = scan_sensor_i2c_addresses("/dev/media0")
-            for entity in entities:
-                camera_name = resolve_camera_name(entity[1])
+            entities = scan_sensor_i2c_addresses(find_camss_media_device())
+            for _, i2c_addr in entities:
+                camera_name = resolve_camera_name(i2c_addr)
                 paths.append(camera_name)
 
         except Exception as e:
