@@ -109,7 +109,7 @@ class VisionLanguageModel(LargeLanguageModel):
         try:
             return super()._chat_invoke(message=message, images=images)
         except (openai.BadRequestError, openai.APIError) as e:
-            self._handle_api_error(e, logger)
+            self._handle_api_error(logger, e)
 
     def chat_stream(self, message: str, images: List[str | bytes] = None) -> Iterator[str]:
         """Sends a message to the AI and yields response tokens as they are generated.
@@ -131,7 +131,7 @@ class VisionLanguageModel(LargeLanguageModel):
         try:
             return super()._chat_stream_invoke(message=message, images=images)
         except (openai.BadRequestError, openai.APIError) as e:
-            self._handle_api_error(e)
+            self._handle_api_error(logger, e)
 
     def stop_stream(self) -> None:
         """Signals the active streaming generation to stop.
