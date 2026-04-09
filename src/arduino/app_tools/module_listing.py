@@ -466,6 +466,16 @@ def main():
         exists = os.path.exists(model_path)
         if exists:
             shutil.copy(model_path, args.model_output)
+            # Copy api-docs as well
+            api_docs_source = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(logger_file_path))),
+                "app_bricks",
+                "static",
+                "api-docs",
+            )
+            api_docs_destination = os.path.join(os.path.dirname(args.model_output), "api-docs")
+            if os.path.exists(api_docs_source):
+                shutil.copytree(api_docs_source, api_docs_destination, dirs_exist_ok=True)
         else:
             print(f"Model path: {model_path} does not exist. Skipping model copy.")
 
