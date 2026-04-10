@@ -1216,3 +1216,82 @@ models:
       ei-model-url: "https://studio.edgeimpulse.com/public/842271/live"      
       source-model-id: "hand-gestures"
       source-model-url: "https://studio.edgeimpulse.com/public/842271/live"
+ - "genie:qwen3-4b":
+    runner: genie
+    name : "Qwen 3-4B Instruct"
+    description: >-
+      The Qwen3-4B is a state-of-the-art multilingual base language model with 4 billion
+      parameters, excelling in language understanding, generation, coding, and mathematics.
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:llm"
+    download_location: /var/lib/arduino-app-cli/models/genai
+    metadata:
+      source: "qualcomm-ai-hub"
+      source-model-id: "qwen3_4b_instruct_2507"
+      source-model-url: "https://aihub.qualcomm.com/models/qwen3_4b_instruct_2507"      
+ - "genie:qwen3-vl-4b":
+    runner: genie
+    name : "Qwen 3-VL-4B VLM"
+    description: >-
+      The Qwen3 4B VLM is a state-of-the-art multilingual vision-language model with 4
+      billion parameters, excelling in language understanding, generation, coding, and
+      mathematics.
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:vlm"
+    download_location: /var/lib/arduino-app-cli/models/genai  
+    metadata:
+      source: "qualcomm-ai-hub"
+      source-model-id: "qwen3_vl_4b"
+      source-model-url: "https://aihub.qualcomm.com/models/qwen3_vl_4b"
+ - gesture-recognition:
+    runner: brick
+    name : "MediaPipe Hand-Gesture Recognition"
+    description: >-
+      The MediaPipe Gesture Recognizer is a real-time machine learning pipeline that detects hands, predicts 21 hand landmarks, determines handedness (left/right),
+      and classifies gestures from a predefined set.
+    model_labels:
+      - Thumb_Up
+      - Thumb_Down
+      - Victory
+      - Pointing_Up
+      - Open_Palm
+      - ILoveYou
+    bricks:
+      - id: "arduino:gesture_recognition"
+    download_location: /var/lib/arduino-app-cli/models/genai
+    metadata:
+      source: "qualcomm-ai-hub"  
+      source-model-id: "mediapipe_hand_gesture"
+      source-model-url: "https://aihub.qualcomm.com/models/mediapipe_hand_gesture"
+ - whisper-small:
+    runner: audio-analytics
+    name : "Whisper Small"
+    description: >-
+      Whisper-Small ASR (Automatic Speech Recognition) model is a state-of-the-art system designed for transcribing spoken language into written text.
+      This model is based on the transformer architecture and has been optimized for edge inference by replacing Multi-Head Attention (MHA)
+      with Single-Head Attention (SHA) and linear layers with convolutional (conv) layers. It exhibits robust performance in realistic, noisy environments,
+      making it highly reliable for real-world applications.
+      Specifically, it excels in long-form transcription, capable of accurately transcribing audio clips up to 30 seconds long.
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:asr"
+    download_location: /var/lib/arduino-app-cli/models/audio-analytics/asr 
+    metadata:
+      source: "qualcomm-ai-hub"
+      source-model-id: "whisper_small"
+      source-model-url: "https://aihub.qualcomm.com/models/whisper_small"
+ - melo-tts-en:
+    runner: audio-analytics
+    name : "Melo TTS (English)"
+    description: >-
+      MeloTTS is a high-quality multi-lingual text-to-speech library - English version.
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:tts"
+    download_location: /var/lib/arduino-app-cli/models/audio-analytics/tts 
+    metadata:
+      source: "qualcomm-ai-hub"
+      source-model-id: "melo_tts"
+      source-model-url: "https://aihub.qualcomm.com/models/melo_tts"      

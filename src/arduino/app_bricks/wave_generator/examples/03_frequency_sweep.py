@@ -32,7 +32,6 @@ def frequency_sweep():
     for freq in range(880, 219, -20):
         wave_gen.frequency = float(freq)
         time.sleep(0.1)
-
     wave_gen.amplitude = 0.0  # Fade out
     time.sleep(2)
 

@@ -1,0 +1,9 @@
+id: arduino:tts
+name: Text-to-Speech (TTS)
+description: Text-to-Speech brick for offline speech synthesis
+category: audio
+requires_model: true
+requires_container: true
+supported_boards: ["ventunoq"]
+disabled: true
+model: melo-tts-en

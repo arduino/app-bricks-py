@@ -45,8 +45,10 @@ class MusicComposition:
 
         # Configure and play with SoundGenerator
         gen = SoundGenerator()
-        gen.start()
-        gen.play_composition(comp, block=True)
+        gen.play_composition(comp)  # Plays once and waits for completion
+
+        # Loop for a fixed time
+        gen.play_composition(comp, loop=True, play_for=10.0)
 
         # Alternatively, set parameters manually and play
         gen = SoundGenerator()

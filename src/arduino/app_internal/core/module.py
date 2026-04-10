@@ -23,6 +23,12 @@ def get_app_config() -> Optional[Dict]:
             config_path = None
 
     if config_path is None:
+        app_root_dir = "/app"
+        config_path = os.path.join(app_root_dir, application_config_file_name)
+        if not os.path.exists(config_path):
+            config_path = None
+
+    if config_path is None:
         main_module = sys.modules["__main__"]
         if hasattr(main_module, "__file__"):
             main_path = os.path.abspath(main_module.__file__)
@@ -32,10 +38,20 @@ def get_app_config() -> Optional[Dict]:
                 return None
 
     if config_path and os.path.exists(config_path):
-        with open(config_path) as f:
+        with open(config_path, encoding="utf-8") as f:
             config_content = yaml.safe_load(f)
             return config_content
 
+    return None
+
+
+def get_brick_config(cls) -> Optional[Dict]:
+    """Gets resolved brick_config.yaml file."""
+    config_file = get_brick_linked_resource_file(cls, config_file_name)
+    if config_file and os.path.exists(config_file):
+        with open(config_file, encoding="utf-8") as f:
+            config_content = yaml.safe_load(f)
+            return config_content
     return None
 
 
@@ -53,7 +69,7 @@ def load_brick_compose_file(cls) -> Optional[Dict]:
     """Loads the brick_compose.yaml file and returns its content."""
     pathfile = get_brick_compose_file(cls)
     if pathfile:
-        with open(pathfile) as f:
+        with open(pathfile, encoding="utf-8") as f:
             compose_content = yaml.safe_load(f)
             return compose_content
     else:
@@ -81,6 +97,37 @@ def get_brick_linked_resource_file(cls, resource_file_name) -> Optional[str]:
         return None
     except ModuleNotFoundError:
         return None
+
+
+def get_brick_configured_model(brick_id: str) -> Optional[str]:
+    """Helper method to extract the model name from the app configuration for this brick.
+    This allows dynamic configuration of the model via the app's config file, overriding defaults.
+
+    Model is part of the brick configuration in the app config file, under the specific brick's entry. The structure is:
+
+    bricks:
+    - arduino:llm:
+        model: genie:qwen3-4b
+
+    Args:
+        brick_id (str): The identifier of the brick for which to retrieve the model configuration.
+    Returns:
+        Optional[str]: The model name if found in the app configuration, otherwise None.
+    Raises:
+        ValueError: If `brick_id` is not provided (empty string).
+    """
+
+    if brick_id is None or brick_id.strip() == "":
+        raise ValueError("Invalid brick_id provided to get_brick_configured_model")
+
+    app_cfg = get_app_config()
+    if app_cfg and "bricks" in app_cfg:
+        bricks_list = app_cfg["bricks"]
+        for brick_entry in bricks_list:
+            if brick_id in brick_entry:
+                if "model" in brick_entry[brick_id]:
+                    return brick_entry[brick_id]["model"]
+    return None
 
 
 def parse_docker_compose_variable(variable_string) -> List[tuple[str, str]] | str:
@@ -251,7 +298,7 @@ def _update_compose_release_version(
     compose_file_path: str,
     release_version: str,
     append_suffix: bool = False,
-    only_ei_containers: bool = False,
+    only_ai_containers: bool = False,
     registry: str = None,
 ) -> str:
     """Updates the release version in the Docker Compose file."""
@@ -259,16 +306,16 @@ def _update_compose_release_version(
         content = file.read()
 
     print("Updating compose file:", compose_file_path)
-    if only_ei_containers and "ei-models-runner" not in content:
+    if only_ai_containers and "models-runner" not in content:
         return compose_file_path
 
     # Replace the release version in the content
 
     updated_content = content
 
-    if only_ei_containers:
-        substitution = "ei-models-runner:" + release_version
-        updated_content = re.sub(r"ei-models-runner:[0-9]+\.[0-9]+\.[0-9]+", substitution, updated_content)
+    if only_ai_containers:
+        substitution = "models-runner:" + release_version
+        updated_content = re.sub(r"models-runner:[0-9]+\.[0-9]+\.[0-9]+", substitution, updated_content)
 
     substitution = release_version
     updated_content = re.sub(r"\${APPSLAB_VERSION:\-([^}]+)?}", substitution, updated_content)

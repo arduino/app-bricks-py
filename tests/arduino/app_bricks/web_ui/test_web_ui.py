@@ -2,6 +2,8 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import os
+
 from fastapi.testclient import TestClient
 from arduino.app_bricks.web_ui.web_ui import WebUI
 
@@ -12,8 +14,8 @@ def test_webui_init_defaults():
     assert ui._port == 7000
     assert ui._ui_path_prefix == ""
     assert ui._api_path_prefix == ""
-    assert ui._assets_dir_path.endswith("/app/assets")
-    assert ui._certs_dir_path.endswith("/app/certs")
+    assert ui._assets_dir_path.endswith(os.path.join("app", "assets"))
+    assert ui._certs_dir_path.endswith(os.path.join("app", "certs"))
     assert ui._use_tls is False
     assert ui._protocol == "http"
     assert ui._server is None
@@ -79,3 +81,49 @@ def test_stop_sets_should_exit():
     ui._server = dummy_server
     ui.stop()
     assert dummy_server.should_exit is True
+
+
+def test_cors_default():
+    """Test that CORS defaults to wildcard allowing any origin."""
+    ui = WebUI()
+    client = TestClient(ui.app)
+
+    def dummy():
+        return {"ok": True}
+
+    ui.expose_api("GET", "/dummy", dummy)
+    response = client.get("/dummy", headers={"Origin": "http://example.com"})
+    assert response.status_code == 200
+    assert response.headers.get("access-control-allow-origin") == "*"
+
+
+def test_cors_single_origin():
+    """Test that CORS works with a single specific origin."""
+    ui = WebUI(cors_origins="http://localhost:3000")
+    client = TestClient(ui.app)
+
+    def dummy():
+        return {"ok": True}
+
+    ui.expose_api("GET", "/dummy", dummy)
+    response = client.get("/dummy", headers={"Origin": "http://localhost:3000"})
+    assert response.status_code == 200
+    assert response.headers.get("access-control-allow-origin") == "http://localhost:3000"
+
+
+def test_cors_multiple_origins():
+    """Test that CORS works with multiple comma-separated origins."""
+    ui = WebUI(cors_origins="http://localhost:3000,https://example.com")
+    client = TestClient(ui.app)
+
+    def dummy():
+        return {"ok": True}
+
+    ui.expose_api("GET", "/dummy", dummy)
+    response = client.get("/dummy", headers={"Origin": "http://localhost:3000"})
+    assert response.status_code == 200
+    assert response.headers.get("access-control-allow-origin") == "http://localhost:3000"
+
+    response = client.get("/dummy", headers={"Origin": "https://example.com"})
+    assert response.status_code == 200
+    assert response.headers.get("access-control-allow-origin") == "https://example.com"

@@ -29,6 +29,21 @@ comp = MusicComposition(
 )
 
 player = SoundGenerator()
-player.play_composition(comp, block=True)
+
+# Choose how to play the composition:
+# - "once": play it once and wait automatically until it finishes
+# - "timed_loop": loop it for a fixed duration and wait automatically
+# - "loop": loop forever until the app is stopped
+PLAY_MODE = "timed_loop"
+LOOP_DURATION_SECONDS = 10.0
+
+if PLAY_MODE == "once":
+    player.play_composition(comp)
+elif PLAY_MODE == "timed_loop":
+    player.play_composition(comp, loop=True, play_for=LOOP_DURATION_SECONDS)
+elif PLAY_MODE == "loop":
+    player.play_composition(comp, loop=True)
+else:
+    raise ValueError(f"Unsupported PLAY_MODE: {PLAY_MODE}")
 
 App.run()

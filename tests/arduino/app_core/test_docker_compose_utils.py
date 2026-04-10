@@ -80,7 +80,7 @@ def test_release_devlatest_ai():
         compose_file_path=compose_file_path,
         release_version=release_version,
         append_suffix=True,
-        only_ei_containers=True,
+        only_ai_containers=True,
     )
     with open(new_path, "r") as file:
         content = file.read()
@@ -122,7 +122,7 @@ def test_release_upgrade_ai():
         compose_file_path=compose_file_path,
         release_version=release_version,
         append_suffix=True,
-        only_ei_containers=True,
+        only_ai_containers=True,
     )
     with open(new_path, "r") as file:
         content = file.read()

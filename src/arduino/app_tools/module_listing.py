@@ -43,6 +43,7 @@ class ArduinoBrick:
         requires_display: str = None,
         required_device_classes: List[str] = None,
         env_variables: Dict[str, str] = None,
+        supported_boards: List[str] = None,
     ):
         self.id = id
         self.name = name
@@ -59,6 +60,7 @@ class ArduinoBrick:
         self.requires_display: Optional[str] = requires_display
         self.required_device_classes: Optional[List[str]] = required_device_classes
         self.env_variables: Optional[Dict[str, str]] = env_variables
+        self.supported_boards: Optional[List[str]] = supported_boards
 
     def to_dict(self) -> dict:
         out_dict: dict = {
@@ -77,6 +79,8 @@ class ArduinoBrick:
             out_dict["requires_display"] = self.requires_display
         if self.required_device_classes:
             out_dict["required_devices"] = self.required_device_classes
+        if self.supported_boards:
+            out_dict["supported_boards"] = self.supported_boards
 
         if self.env_variables and len(self.env_variables) > 0:
             additional_vars: List[EnvVariable] = []
@@ -150,6 +154,7 @@ def find_config_yaml(root_path: str) -> List[ArduinoBrick]:
                         config.get("requires_display", None),
                         required_device_classes=config.get("required_devices", None),
                         env_variables=config.get("variables", None),
+                        supported_boards=config.get("supported_boards", None),
                     )
                     discovered_modules.append(mod)
                 except yaml.YAMLError:
@@ -197,18 +202,10 @@ def list_installed_packages_pkg_resources() -> Dict[str, List[ArduinoBrick]]:
         checked_paths[local_path] = local_installed_modules
 
     # Check application python home directory
-    app_home: Optional[str] = os.getenv("APP_HOME", "/app/python")
-    if app_home and app_home != "":
-        local_installed_modules: List[ArduinoBrick] = find_config_yaml(app_home)
-        if local_installed_modules and len(local_installed_modules) > 0:
-            checked_paths[app_home] = local_installed_modules
-    else:
-        main_module = sys.modules["__main__"]
-        if hasattr(main_module, "__file__"):
-            app_home = os.path.dirname(os.path.abspath(main_module.__file__))
-            local_installed_modules = find_config_yaml(app_home)
-            if local_installed_modules and len(local_installed_modules) > 0:
-                checked_paths[app_home] = local_installed_modules
+    app_home = "/app/python"
+    local_installed_modules: List[ArduinoBrick] = find_config_yaml(app_home)
+    if local_installed_modules and len(local_installed_modules) > 0:
+        checked_paths[app_home] = local_installed_modules
 
     end = time.time() * 1000
     logger.info(f"Module discovery took {end - start} ms")
@@ -331,11 +328,11 @@ def release():
         registry = args.registry
 
     arduino_bricks_version = args.version
-    update_ei_containers = False
+    update_ai_containers = False
     if args.dev is not None and args.dev:
-        logger.warning("Development mode enabled. Using 'dev-latest' as the version.")
-        arduino_bricks_version = "dev-latest"
-        update_ei_containers = True
+        logger.warning("Development mode enabled. Using 'dev-next' as the version.")
+        arduino_bricks_version = "dev-next"
+        update_ai_containers = True
 
     modules = []
     for path, module_list in discovered_modules.items():
@@ -348,7 +345,7 @@ def release():
                     compose_file_path=module.compose_file,
                     release_version=arduino_bricks_version,
                     append_suffix=False,
-                    only_ei_containers=update_ei_containers,
+                    only_ai_containers=update_ai_containers,
                     registry=registry,
                 )
 
@@ -395,7 +392,7 @@ def update_ai_container_references():
                     compose_file_path=module.compose_file,
                     release_version=arduino_bricks_version,
                     append_suffix=False,
-                    only_ei_containers=True,
+                    only_ai_containers=True,
                     registry=registry,
                 )
 
@@ -469,6 +466,16 @@ def main():
         exists = os.path.exists(model_path)
         if exists:
             shutil.copy(model_path, args.model_output)
+            # Copy api-docs as well
+            api_docs_source = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(logger_file_path))),
+                "app_bricks",
+                "static",
+                "api-docs",
+            )
+            api_docs_destination = os.path.join(os.path.dirname(args.model_output), "api-docs")
+            if os.path.exists(api_docs_source):
+                shutil.copytree(api_docs_source, api_docs_destination, dirs_exist_ok=True)
         else:
             print(f"Model path: {model_path} does not exist. Skipping model copy.")
 

@@ -19,7 +19,7 @@ import shutil
 def run_preprocessing(dev_mode: bool = False) -> None:
     registry = os.getenv("PUBLIC_IMAGE_REGISTRY_BASE", None)
     if dev_mode:
-        version = "dev-latest"
+        version = "dev-next"
     else:
         version = get_version(
             version_scheme="only-version", local_scheme="no-local-version", tag_regex=r"^(?:ai|release)/(?P<version>v?\d+(?:\.\d+)*(?:rc\d+)?)$"
