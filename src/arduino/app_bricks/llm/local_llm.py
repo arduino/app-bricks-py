@@ -45,7 +45,7 @@ class LargeLanguageModel(CloudLLM):
         Args:
             api_key (str): The API access key for the target LLM service. Defaults to the
                 'LOCAL_LLM_API_KEY' environment variable.
-            model (str): The specific model name or identifier to use (e.g., "genie:qwen2.5-3b").
+            model (str): The specific model name or identifier to use (e.g., "genie:qwen3-4b").
                 If not provided, model will be determined from app configuration or default brick configuration.
             system_prompt (str): A system-level instruction that defines the AI's persona
                 and constraints (e.g., "You are a helpful assistant"). Defaults to empty.
