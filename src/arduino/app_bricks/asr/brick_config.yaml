@@ -5,6 +5,7 @@ category: audio
 requires_model: true
 requires_services: ["arduino:genie_audio"]
 model: whisper-small
+supported_boards: ["ventunoq"]
 model_configuration_variables:
   - VAD_LEN_HANGOVER
 variables:
