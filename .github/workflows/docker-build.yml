@@ -44,9 +44,9 @@ jobs:
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             INPUT="${{ inputs.containers }}"
             if [[ "$INPUT" == "all" ]]; then
-              while IFS= read -r CONTAINER; do
-                CHANGED+=("$CONTAINER")
-              done < <(ls -d containers/*/ | xargs -I{} basename {})
+              for CI_JSON in containers/*/ci.json; do
+                CHANGED+=("$(basename "$(dirname "$CI_JSON")")") 
+              done
             else
               while IFS= read -r CONTAINER; do
                 CHANGED+=("$CONTAINER")
@@ -100,7 +100,7 @@ jobs:
           # A container is downstream if it appears in the downstream list of another container being built.
           DOWNSTREAM_IN_BUILD=()
           for CONTAINER in "${CHANGED[@]}"; do
-            DS_LIST=$(jq -r '.downstream // [] | .[]' "containers/$CONTAINER/ci.json" 2>/dev/null)
+            DS_LIST=$(jq -r '.downstream // [] | .[]' "containers/$CONTAINER/ci.json" 2>/dev/null || true)
             for DS in $DS_LIST; do
               if [[ " ${CHANGED[*]} " =~ " $DS " ]] && [[ ! " ${DOWNSTREAM_IN_BUILD[*]} " =~ " $DS " ]]; then
                 DOWNSTREAM_IN_BUILD+=("$DS")
