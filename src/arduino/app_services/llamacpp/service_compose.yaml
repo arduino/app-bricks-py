@@ -28,5 +28,9 @@ services:
     mem_limit: 10g
     oom_kill_disable: false
     shm_size: 2g
+    devices:
+      - /dev/dma_heap/system
+      - /dev/dma_heap/qcom,system
+      - /dev/fastrpc-cdsp    
     volumes:
-      - ${APPLAB_DOWNLOADED_LLAMA_CPP_MODELS:-${HOME}/ArduinoAppsSharedData/llamacpp/}:/models/
+      - /var/lib/arduino-app-cli/models/llamacpp/:/models/
