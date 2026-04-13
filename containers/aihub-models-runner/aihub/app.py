@@ -178,9 +178,9 @@ class AIHubApp:
         self._fps_frame_count += 1
         cur_time = time.perf_counter()
         elapsed = cur_time - self._fps_start_time
-        if elapsed >= 1.0:
+        if elapsed >= 15.0:
             fps = self._fps_frame_count / elapsed
-            logger.debug(f"FPS: {fps:.1f}")
+            logger.info(f"Average FPS: {fps:.1f}")
             self._fps_start_time = cur_time
             self._fps_frame_count = 0
 
