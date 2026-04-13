@@ -5,6 +5,7 @@
 ARG REGISTRY
 ARG BASE_IMAGE_VERSION=latest
 
+# Official build steps: https://github.com/ggml-org/llama.cpp/blob/master/docs/backend/snapdragon/linux.md
 FROM --platform=linux/amd64 ghcr.io/snapdragon-toolchain/arm64-linux:v0.1
 
 ENV LLAMA_CPP_VERSION=b8778
