@@ -19,6 +19,7 @@ echo "Starting Llama server..."
 # Add your specific flags here (model path, port, etc.)
 export LD_LIBRARY_PATH=/opt/pkg-snapdragon/lib
 export ADSP_LIBRARY_PATH=/opt/pkg-snapdragon/lib
+# --reasoning off
 /opt/pkg-snapdragon/bin/llama-server --log-disable &
 LLAMA_PID=$!
 

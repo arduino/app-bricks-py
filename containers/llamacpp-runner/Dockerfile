@@ -5,7 +5,7 @@
 ARG REGISTRY
 ARG BASE_IMAGE_VERSION=latest
 
-FROM ${REGISTRY}app-bricks/base:${BASE_IMAGE_VERSION} AS production
+FROM ${REGISTRY}app-bricks/aihub-models-runner:${BASE_IMAGE_VERSION}
 
 ENV LLAMA_CPP_VERSION=b8777
 
