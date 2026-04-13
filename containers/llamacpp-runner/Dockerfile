@@ -15,18 +15,18 @@ COPY ./scripts/*.sh /
 RUN set -ex; \
     tar -xzf /tmp/llamacpp-hexagon.tgz -C /opt; \
     rm /tmp/llamacpp-hexagon.tgz; \
-    chown -R arduino:arduino /opt/pkg-snapdragon; \
+    chown -R ubuntu:ubuntu /opt/pkg-snapdragon; \
     chmod +x /opt/pkg-snapdragon/bin/*; \
     mkdir -p /models; \
-    chown arduino:arduino /models; \
+    chown ubuntu:ubuntu /models; \
     chmod +x /*.sh
 
 EXPOSE 9999
 
-USER arduino
+USER ubuntu
 
-ENV HOME=/home/arduino
-ENV USER=arduino
+ENV HOME=/home/ubuntu
+ENV USER=ubuntu
 
 ENV LD_LIBRARY_PATH=/opt/pkg-snapdragon/lib
 ENV ADSP_LIBRARY_PATH=/opt/pkg-snapdragon/lib
