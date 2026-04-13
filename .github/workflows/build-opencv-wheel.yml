@@ -4,3 +4,9 @@ on:
   workflow_dispatch:
 
 jobs:
+
+  placeholder:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Stub build step
+        run: echo "Actual build steps are defined in another branch."
