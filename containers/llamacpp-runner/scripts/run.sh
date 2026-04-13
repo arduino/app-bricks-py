@@ -17,7 +17,9 @@ trap cleanup SIGTERM SIGINT
 
 echo "Starting Llama server..."
 # Add your specific flags here (model path, port, etc.)
-LD_LIBRARY_PATH=/usr/local/bin/ /usr/local/bin/llama-server --log-disable &
+export LD_LIBRARY_PATH=/opt/pkg-snapdragon/lib
+export ADSP_LIBRARY_PATH=/opt/pkg-snapdragon/lib
+/opt/pkg-snapdragon/bin/llama-server --log-disable &
 LLAMA_PID=$!
 
 echo "Processes started (Llama: $LLAMA_PID). Waiting..."

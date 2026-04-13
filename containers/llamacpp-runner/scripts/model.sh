@@ -7,6 +7,8 @@
 set -e
 
 export XDG_CACHE_HOME=/models
+export LD_LIBRARY_PATH=/opt/pkg-snapdragon/lib
+export ADSP_LIBRARY_PATH=/opt/pkg-snapdragon/lib
 
 CMD="$1"
 SOURCE="$2"
@@ -29,7 +31,7 @@ pull_model() {
   MODEL="$2"
 
   echo "Pulling model with llama-pull $FLAG $MODEL"
-  LD_LIBRARY_PATH=/usr/local/bin/ /usr/local/bin/llama-pull "$FLAG" "$MODEL"
+  /opt/pkg-snapdragon/bin/llama-pull "$FLAG" "$MODEL"
 
   # Move model files to /models root
   if [ -d /models/llama.cpp ]; then
