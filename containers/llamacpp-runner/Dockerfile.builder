@@ -5,71 +5,23 @@
 ARG REGISTRY
 ARG BASE_IMAGE_VERSION=latest
 
-FROM debian:trixie AS llamacpp-builder
+FROM --platform=linux/amd64 ghcr.io/snapdragon-toolchain/arm64-linux:v0.1
 
-ENV LLAMA_CPP_VERSION=b8407
-
-# Install Dependencies
-RUN export DEBIAN_FRONTEND=noninteractive; \
-    apt update; \
-    mkdir -p ~/dev/llm; \
-    apt-get install -y \
-    build-essential \
-    cmake \
-    git \
-    curl \
-    ninja-build \
-    ca-certificates \
-    libgomp1 \
-    libssl-dev:arm64 \
-    && update-ca-certificates
+ENV LLAMA_CPP_VERSION=b8778
 
 COPY ./tools-download.patch /tmp/tools-download.patch
 
-RUN cd ~/dev/llm; \
+RUN mkdir /workspace; \
+    cd /workspace; \
     git clone https://github.com/ggml-org/llama.cpp; \
     cd llama.cpp; \
     git checkout ${LLAMA_CPP_VERSION}; \
     git apply /tmp/tools-download.patch; \
-    mkdir -p build; \
-    cd build; \
-    cmake .. -G Ninja \
-		-DCMAKE_SYSTEM_NAME=Linux \
-		-DCMAKE_SYSTEM_PROCESSOR=aarch64 \
-		-DCMAKE_BUILD_TYPE=Release \
-		-DCMAKE_BUILD_TYPE=Release \
-		-DLLAMA_OPENSSL=ON \
-		-DGGML_NATIVE=OFF \
-		-DLLAMA_BUILD_TESTS=OFF \
-		-DGGML_BACKEND_DL=ON \
-		-DGGML_USE_CPU_REPACK=ON \
-		-DGGML_CPU_ALL_VARIANTS=ON; \
-    ninja -j`nproc`
+    cp docs/backend/snapdragon/CMakeUserPresets.json . ; \
+    cmake --preset arm64-linux-snapdragon-release -B build-snapdragon; \
+    cmake --build build-snapdragon -j $(nproc); \
+    cmake --install build-snapdragon --prefix pkg-snapdragon; \
+    rm -fr pkg-snapdragon/bin/test*; \
+    tar -czvf llama-cpp-snapdragon.tar.gz pkg-snapdragon
 
-RUN cd ~/dev/llm/llama.cpp/build/; \
-    mv bin bin-full; \
-    mkdir -p bin; \
-    cp bin-full/llama-cli bin/; \
-    cp bin-full/llama-server bin/; \
-    cp bin-full/llama-pull bin/; \
-    cp bin-full/lib* bin/
-
-FROM ${REGISTRY}app-bricks/base:${BASE_IMAGE_VERSION} AS production
-
-COPY --from=llamacpp-builder /root/dev/llm/llama.cpp/build/bin /usr/local/bin/
-COPY ./scripts/*.sh /
-
-RUN set -ex; \
-    mkdir -p /models; \
-    chown arduino:arduino /models; \
-    chmod +x /usr/local/bin/*; \
-    chmod +x /*.sh
-
-EXPOSE 9999
-
-USER arduino
-
-ENV HOME=/home/arduino
-ENV USER=arduino
-
-ENTRYPOINT ["/run.sh"]
+# TODO: save output to extenal volume
