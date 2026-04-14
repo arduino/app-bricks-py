@@ -105,7 +105,7 @@ class Camera:
             WebSocket Camera:
 
             ```python
-            camera = Camera("ws://0.0.0.0:8080", frame_format="json")
+            camera = Camera("ws://0.0.0.0:8080")
             camera = Camera("ws://192.168.1.100:8080", timeout=5)
             ```
         """
