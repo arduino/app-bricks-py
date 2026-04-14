@@ -72,7 +72,13 @@ class CSICamera(BaseCamera):
         Returns:
             list[int]: List of CSI camera indices.
         """
-        entities = scan_sensor_i2c_addresses(find_camss_media_device())
+        try:
+            media_dev = find_camss_media_device()
+        except Exception:
+            # If media device is not found or an error occurs
+            return []
+        
+        entities = scan_sensor_i2c_addresses(media_dev)
         indices = []
         for csiphy_name, _ in entities:
             m = re.search(r"msm_csiphy(\d+)", csiphy_name)
