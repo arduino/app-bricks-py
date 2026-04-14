@@ -24,14 +24,14 @@ def nth_plugged_camera(idx: int) -> str:
     csi_cameras = CSICamera.list_devices()
     if len(csi_cameras) > 0:
         if idx < len(csi_cameras):
-            return "csi:" + str(csi_cameras[idx])
+            return "csi:" + str(idx)
 
     from .v4l_camera import V4LCamera
 
     usb_cameras = V4LCamera.list_devices()
     if len(usb_cameras) > 0:
         if idx < len(usb_cameras):
-            return "usb:" + str(usb_cameras[idx])
+            return "usb:" + str(idx)
 
     raise CameraOpenError("No available cameras found")
 
