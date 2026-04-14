@@ -30,7 +30,7 @@ class TextToSpeech:
 
         # API configuration
         self.api_port = 8085
-        self.api_host = "audio-analytics-runner" # Default hostname for the TTS service in the compose network
+        self.api_host = "audio-analytics-runner"  # Default hostname for the TTS service in the compose network
         self.api_host = resolve_address(self.api_host)
         if not self.api_host:
             raise RuntimeError("Host address could not be resolved. Please check your configuration.")

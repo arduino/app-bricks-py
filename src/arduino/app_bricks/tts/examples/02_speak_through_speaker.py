@@ -10,8 +10,10 @@ import time
 
 tts = TextToSpeech()
 
+
 def runner():
     tts.speak("Hello world, Arduino!")
     time.sleep(5)  # Wait for the speech to finish before ending the app
+
 
 App.run(loop=runner)
