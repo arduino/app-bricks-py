@@ -44,10 +44,23 @@ services:
     tmpfs:
       - /app/uploads:rw,size=500m,mode=777
     # Override default command to fix device permissions
-    command: >
-      bash -c "chmod 666 /dev/fastrpc* 2>/dev/null || true;
-               chmod 666 /dev/dma_heap/* 2>/dev/null || true;
-               exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf"
+    command:
+      - /bin/bash
+      - -lc
+      - |
+          cp /etc/supervisor/conf.d/supervisord.conf /tmp/supervisord.conf
+
+          sed -i 's|pidfile=/var/run/supervisord.pid|pidfile=/tmp/supervisord.pid|g' /tmp/supervisord.conf
+          sed -i 's|^stdout_logfile=.*|stdout_logfile=/tmp/supervisord.out.log|g' /tmp/supervisord.conf
+          sed -i 's|^stderr_logfile=.*|stderr_logfile=/tmp/supervisord.err.log|g' /tmp/supervisord.conf
+
+          touch /tmp/supervisord.out.log /tmp/supervisord.err.log
+          chmod 666 /tmp/supervisord.out.log /tmp/supervisord.err.log
+
+          chmod 666 /dev/fastrpc* 2>/dev/null || true
+          chmod 666 /dev/dma_heap/* 2>/dev/null || true
+
+          exec /usr/bin/supervisord -c /tmp/supervisord.conf
     logging:
       driver: "json-file"
       options:
