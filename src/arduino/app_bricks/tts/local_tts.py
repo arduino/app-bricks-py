@@ -63,9 +63,9 @@ class TextToSpeech:
                 raise RuntimeError(error_msg)
 
             models = response.json() or []
-            for model in models:
-                model_name = model.get("name")
-                for voice in model.get("voices", []):
+            for model_entry in models:
+                model_name = model_entry.get("name")
+                for voice in model_entry.get("voices", []):
                     lang = voice.get("language")
                     if lang and lang not in self._language_to_voice:
                         self._language_to_voice[lang] = {
