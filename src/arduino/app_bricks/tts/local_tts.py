@@ -9,7 +9,7 @@ import numpy as np
 import requests
 
 from arduino.app_peripherals.speaker import Speaker, BaseSpeaker
-from arduino.app_internal.core import load_brick_compose_file, resolve_address, get_brick_config, get_brick_configured_model
+from arduino.app_internal.core import resolve_address, get_brick_config, get_brick_configured_model
 from arduino.app_utils import brick, Logger
 
 logger = Logger("TextToSpeech")
@@ -30,15 +30,13 @@ class TextToSpeech:
 
         # API configuration
         self.api_port = 8085
-        self.api_host = "localhost"
-        infra = load_brick_compose_file(self.__class__) or {}
-        for k, _ in infra["services"].items():
-            self.api_host = k
-            break  # Only one service is expected
+        self.api_host = "audio-analytics-runner" # Default hostname for the TTS service in the compose network
         self.api_host = resolve_address(self.api_host)
         if not self.api_host:
             raise RuntimeError("Host address could not be resolved. Please check your configuration.")
         self.api_base_url = f"http://{self.api_host}:{self.api_port}/audio-analytics/v1/api"
+
+        logger.info(f"Initialized TextToSpeech with API base URL: {self.api_base_url}")
 
         # Load the model configured at bricks level
         brick_config = get_brick_config(self.__class__)
