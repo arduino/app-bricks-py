@@ -40,7 +40,7 @@ class VisionLanguageModel(LargeLanguageModel):
         Args:
             api_key (str): The API access key for the target VLM service. Defaults to the
                 'LOCAL_LLM_API_KEY' environment variable.
-            model (str): The specific model name or identifier to use (e.g., "genie:qwen2.5-3b").
+            model (str): The specific model name or identifier to use (e.g., "genie:qwen3-4b").
                 If not provided, model will be determined from app configuration or default brick configuration.
             system_prompt (str): A system-level instruction that defines the AI's persona
                 and constraints (e.g., "You are a helpful assistant"). Defaults to empty.
@@ -109,7 +109,7 @@ class VisionLanguageModel(LargeLanguageModel):
         try:
             return super()._chat_invoke(message=message, images=images)
         except (openai.BadRequestError, openai.APIError) as e:
-            self._handle_api_error(e)
+            self._handle_api_error(logger, e)
 
     def chat_stream(self, message: str, images: List[str | bytes] = None) -> Iterator[str]:
         """Sends a message to the AI and yields response tokens as they are generated.
@@ -131,7 +131,7 @@ class VisionLanguageModel(LargeLanguageModel):
         try:
             return super()._chat_stream_invoke(message=message, images=images)
         except (openai.BadRequestError, openai.APIError) as e:
-            self._handle_api_error(e)
+            self._handle_api_error(logger, e)
 
     def stop_stream(self) -> None:
         """Signals the active streaming generation to stop.
