@@ -3,4 +3,13 @@ name: Build OpenCV Python wheel
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
+
+  placeholder:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Stub build step
+        run: echo "Actual build steps are defined in another branch."
