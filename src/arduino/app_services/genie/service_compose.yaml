@@ -1,6 +1,6 @@
 services:
   genie-models-runner:
-    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/genie-models-runner:dev-next
+    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/genie-models-runner:add-csi-cameras-support
     # Currently, genie-models-runner requires to run as root
     user: 0:0
     restart: on-failure

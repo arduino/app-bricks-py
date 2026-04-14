@@ -1,6 +1,6 @@
 services:
   ei-audio-classifier-runner:
-    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/ei-models-runner:0.9.4
+    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/ei-models-runner:add-csi-cameras-support
     logging:
       driver: "json-file"
       options:
