@@ -77,7 +77,7 @@ class CSICamera(BaseCamera):
         except Exception:
             # If media device is not found or an error occurs
             return []
-        
+
         entities = scan_sensor_i2c_addresses(media_dev)
         indices = []
         for csiphy_name, _ in entities:
