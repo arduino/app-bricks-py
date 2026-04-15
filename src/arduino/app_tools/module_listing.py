@@ -118,6 +118,7 @@ class ArduinoBrick:
     def __str__(self):
         return f"Name: {self.name}\nDescription: {self.brick_description}\nPath: {self.path}\nCompose file: {self.get_compose_file()}\n"
 
+
 class ArduinoService:
     def __init__(
         self,
@@ -176,6 +177,7 @@ class ArduinoService:
 
     def __str__(self):
         return f"Name: {self.name}\nDescription: {self.brick_description}\nPath: {self.path}\nCompose file: {self.get_compose_file()}\n"
+
 
 def find_config_yaml(root_path: str) -> tuple[List[ArduinoBrick], List[ArduinoService]]:
     """Scans all subfolders within the given root_path to find 'config.yaml'.
@@ -248,7 +250,7 @@ def find_config_yaml(root_path: str) -> tuple[List[ArduinoBrick], List[ArduinoSe
                     )
                     discovered_services.append(mod)
                 except yaml.YAMLError:
-                    logger.error(f"Error: {service_config_file} is not a valid YAML file.")                
+                    logger.error(f"Error: {service_config_file} is not a valid YAML file.")
             elif editable_module.is_file():
                 try:
                     with open(editable_module, "r") as editable_module_cfg:
