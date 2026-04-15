@@ -201,7 +201,6 @@ jobs:
           provenance: false
           build-args: |
             REGISTRY=${{ env.DEV_REGISTRY_PATH }}
-          # BASE_IMAGE_VERSION=latest # currently not used, defaults to value used in Dockerfile
 
   build-downstream:
     needs: [detect-changes, build]

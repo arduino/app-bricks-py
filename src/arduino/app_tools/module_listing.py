@@ -372,7 +372,7 @@ def release():
     if args.dev is not None and args.dev:
         arduino_bricks_version = os.getenv("DEV_TAG_VERSION", "dev-latest")
         logger.warning(f"Development mode enabled. Using '{arduino_bricks_version}' as the version.")
-        update_ei_containers = True
+        update_ai_containers = True
 
     modules = []
     for path, module_list in discovered_modules.items():
