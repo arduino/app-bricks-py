@@ -4,8 +4,6 @@
   "tag_latest": false,
   "build_whl": false,
   "update_compose": false,
-  "build_args": {
-    "REGISTRY": "ghcr.io/arduino/"
-  },
+  "build_args": { },
   "downstream": []
 }

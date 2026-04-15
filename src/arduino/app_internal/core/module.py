@@ -315,6 +315,9 @@ def _update_compose_release_version(
 
     if only_ai_containers:
         substitution = "models-runner:" + release_version
+        # First replace branch-name style tags (e.g. dev-next, feature-foo); branch names start with a letter
+        updated_content = re.sub(r"models-runner:[a-zA-Z][a-zA-Z0-9._/-]*", substitution, updated_content)
+        # Then replace semver style tags (e.g. 1.2.3)
         updated_content = re.sub(r"models-runner:[0-9]+\.[0-9]+\.[0-9]+", substitution, updated_content)
 
     substitution = release_version
