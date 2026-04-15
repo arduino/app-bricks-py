@@ -223,9 +223,11 @@ jobs:
         run: |
           if [[ -n "${{ inputs.tag }}" ]]; then
             echo "value=${{ inputs.tag }}" >> $GITHUB_OUTPUT
+            echo "DEV_TAG_VERSION=${{ inputs.tag }}" >> $GITHUB_ENV
           else
             TAG=$(echo "${{ github.ref_name }}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-zA-Z0-9._-]/-/g')
             echo "value=$TAG" >> $GITHUB_OUTPUT
+            echo "DEV_TAG_VERSION=${TAG}-${{ github.run_number }}" >> $GITHUB_ENV
           fi
 
       - name: Set up Python
