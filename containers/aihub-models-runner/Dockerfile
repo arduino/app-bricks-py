@@ -18,11 +18,6 @@ RUN apt-get update \
     && apt-add-repository -y ppa:ubuntu-qcom-iot/qcom-ppa \
     && apt-get update; \
     apt-get install -y --no-install-recommends --no-install-suggests libqnn1 qcom-fastrpc1; \
-    # Install Python dependencies
-    python -m pip install --no-cache-dir --break-system-packages -r requirements-base.txt \
-    && python -m compileall /usr/local/bin \
-    && python -m compileall /usr/local/lib \
-    && rm requirements-base.txt; \
     # Clean up
     apt-get remove -y software-properties-common python3-blinker \
     # Remove packages that are no longer needed
@@ -30,7 +25,11 @@ RUN apt-get update \
     && apt-get dist-clean \
     && rm -rf /var/lib/apt/lists/*; \
     # Make the venv the default for child images
-    python -m venv --system-site-packages /opt/venv
+    python -m venv --system-site-packages /opt/venv; \
+    # Install Python dependencies into the venv
+    /opt/venv/bin/pip install --no-cache-dir -r requirements-base.txt \
+    && /opt/venv/bin/python -m compileall /opt/venv/lib \
+    && rm requirements-base.txt
 
 # Prepare the user
 # RUN groupadd -g 1000 arduino && useradd -u 1000 -g arduino -ms /bin/bash arduino
