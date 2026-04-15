@@ -16,8 +16,8 @@ RUN apt-get update \
     # Install Qualcomm AI Engine dependencies
     apt-get install -y --no-install-recommends --no-install-suggests software-properties-common \
     && apt-add-repository -y ppa:ubuntu-qcom-iot/qcom-ppa \
-    && apt-get update; \
-    apt-get install -y --no-install-recommends --no-install-suggests libqnn1 qcom-fastrpc1; \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends --no-install-suggests libqnn1 qcom-fastrpc1; \
     # Clean up
     apt-get remove -y software-properties-common \
     && apt-get autoremove -y \
@@ -26,9 +26,9 @@ RUN apt-get update \
     # Make the venv the default for child images
     python -m venv --system-site-packages /opt/venv; \
     # Install Python dependencies into the venv
-    /opt/venv/bin/pip install --no-cache-dir -r requirements-base.txt \
-    && /opt/venv/bin/python -m compileall /opt/venv/lib \
-    && rm requirements-base.txt
+    /opt/venv/bin/pip install --no-cache-dir -r requirements-base.txt; \
+    /opt/venv/bin/python -m compileall /opt/venv/lib; \
+    rm requirements-base.txt
 
 ENV PATH="/opt/venv/bin:${PATH}"
 ENV VIRTUAL_ENV="/opt/venv"
