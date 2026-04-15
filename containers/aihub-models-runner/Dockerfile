@@ -30,10 +30,6 @@ RUN apt-get update \
     && /opt/venv/bin/python -m compileall /opt/venv/lib \
     && rm requirements-base.txt
 
-# Prepare the user
-# RUN groupadd -g 1000 arduino && useradd -u 1000 -g arduino -ms /bin/bash arduino
-# USER arduino
-
 ENV PATH="/opt/venv/bin:${PATH}"
 ENV VIRTUAL_ENV="/opt/venv"
 
