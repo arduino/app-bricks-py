@@ -112,10 +112,13 @@ class AppController:
         Args:
             user_loop (callable, optional): A user-defined function to run inside an infinite loop.
         """
+
         class SigtermReceived(BaseException):
             pass
+
         def handle_sigterm(signum, frame):
             raise SigtermReceived
+
         signal.signal(signal.SIGTERM, handle_sigterm)
 
         try:
