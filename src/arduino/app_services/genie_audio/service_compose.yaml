@@ -44,36 +44,21 @@ services:
     tmpfs:
       - /app/uploads:rw,size=500m,mode=777
     # Override default command to fix device permissions
-    command:
-      - /bin/bash
-      - -lc
-      - |
-          cp /etc/supervisor/conf.d/supervisord.conf /tmp/supervisord.conf
-
-          sed -i 's|pidfile=/var/run/supervisord.pid|pidfile=/tmp/supervisord.pid|g' /tmp/supervisord.conf
-          sed -i 's|^stdout_logfile=.*|stdout_logfile=/tmp/supervisord.out.log|g' /tmp/supervisord.conf
-          sed -i 's|^stderr_logfile=.*|stderr_logfile=/tmp/supervisord.err.log|g' /tmp/supervisord.conf
-
-          touch /tmp/supervisord.out.log /tmp/supervisord.err.log
-          chmod 666 /tmp/supervisord.out.log /tmp/supervisord.err.log
-
-          chmod 666 /dev/fastrpc* 2>/dev/null || true
-          chmod 666 /dev/dma_heap/* 2>/dev/null || true
-
-          exec /usr/bin/supervisord -c /tmp/supervisord.conf
+    command: >
+      bash -c "chmod 666 /dev/fastrpc* 2>/dev/null || true;
+               chmod 666 /dev/dma_heap/* 2>/dev/null || true;
+               chmod 666 /dev/snd/* 2>/dev/null || true;
+               chmod 644 /root/.config/pulse/cookie 2>/dev/null || true;
+               chmod -R 777 /var/log/supervisor;
+               chmod 666 /proc/1/fd/1 /proc/1/fd/2 2>/dev/null || true;
+               exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf"
     logging:
       driver: "json-file"
       options:
         max-size: "5m"
         max-file: "2"
     healthcheck:
-      test:
-        - CMD
-        - python3
-        - -c
-        - |
-          import sys
-          import urllib.request
-
-          r = urllib.request.urlopen("http://localhost:8085/audio-analytics/v1/api/health")
-          sys.exit(0 if r.getcode() == 200 else 1)
+      test: ["CMD", "curl", "-f", "http://localhost:8085/audio-analytics/v1/api/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
