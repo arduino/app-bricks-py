@@ -28,7 +28,9 @@ RUN apt-get update \
     # Install Python dependencies into the venv
     /opt/venv/bin/pip install --no-cache-dir -r requirements-base.txt; \
     /opt/venv/bin/python -m compileall /opt/venv/lib; \
-    rm requirements-base.txt
+    rm requirements-base.txt; \
+    # Remove unneeded linux firmware
+    dpkg -r --force-depends linux-firmware-dragonwing qcom-video-firmware tc9564-firmware firmware-qcm6490-msl firmware-qcom-hlosfw linux-firmware 
 
 ENV PATH="/opt/venv/bin:${PATH}"
 ENV VIRTUAL_ENV="/opt/venv"
