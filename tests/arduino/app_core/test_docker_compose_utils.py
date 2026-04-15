@@ -151,3 +151,64 @@ def test_release_upgrade_to_dev_latest():
     import os
 
     os.remove(new_path)
+
+
+def test_release_branch_tag_to_semver_ai():
+    """Test updating from a branch-name tag (e.g. dev-next) to a semver in an AI compose file."""
+    compose_file_path = "tests/arduino/app_core/brick_compose_ai_branch.yaml"
+    release_version = "2.1.0"
+    with open(compose_file_path, "r") as file:
+        content = file.read()
+        assert "ei-models-runner:dev-next" in content
+    new_path = _update_compose_release_version(
+        compose_file_path=compose_file_path,
+        release_version=release_version,
+        append_suffix=True,
+        only_ai_containers=True,
+    )
+    with open(new_path, "r") as file:
+        content = file.read()
+        assert "ei-models-runner:2.1.0" in content
+        assert "dev-next" not in content
+    import os
+
+    os.remove(new_path)
+
+
+def test_release_branch_tag_to_branch_tag_ai():
+    """Test updating from one branch-name tag (e.g. dev-next) to another (e.g. dev-latest) in an AI compose file."""
+    compose_file_path = "tests/arduino/app_core/brick_compose_ai_branch.yaml"
+    release_version = "dev-latest"
+    with open(compose_file_path, "r") as file:
+        content = file.read()
+        assert "ei-models-runner:dev-next" in content
+    new_path = _update_compose_release_version(
+        compose_file_path=compose_file_path,
+        release_version=release_version,
+        append_suffix=True,
+        only_ai_containers=True,
+    )
+    with open(new_path, "r") as file:
+        content = file.read()
+        assert "ei-models-runner:dev-latest" in content
+        assert "dev-next" not in content
+    import os
+
+    os.remove(new_path)
+
+
+def test_release_no_runner_skipped():
+    """Test that a compose file without any -runner image is left untouched when only_ai_containers=True."""
+    compose_file_path = "tests/arduino/app_core/brick_compose_test_data.yaml"
+    release_version = "3.0.0"
+    with open(compose_file_path, "r") as file:
+        original_content = file.read()
+        assert "-runner" not in original_content
+    new_path = _update_compose_release_version(
+        compose_file_path=compose_file_path,
+        release_version=release_version,
+        append_suffix=True,
+        only_ai_containers=True,
+    )
+    # Should return the original path unchanged (no .new file written)
+    assert new_path == compose_file_path
