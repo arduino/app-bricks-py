@@ -191,7 +191,7 @@ class V4LCamera(BaseCamera):
             raise RuntimeError(f"No device found at {self.v4l_path}")
 
         try:
-            self._cap = cv2.VideoCapture(self.v4l_path)
+            self._cap = cv2.VideoCapture(self.v4l_path, cv2.CAP_FFMPEG)
             if not self._cap.isOpened():
                 raise RuntimeError(f"Failed to open camera {self.name}")
 
