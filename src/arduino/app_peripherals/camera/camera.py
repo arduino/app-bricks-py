@@ -66,14 +66,21 @@ class Camera:
                 CSI Camera Parameters:
                     device (int | str): CSI device. Default: 0.
                 IP Camera Parameters:
-                    url (str): Camera stream URL
+                    url (str): Camera stream URL.
                     username (str, optional): Authentication username.
                     password (str, optional): Authentication password.
                     timeout (float): Connection timeout in seconds. Default: 10.0.
                 WebSocket Camera Parameters:
-                    host (str): WebSocket server host. Default: "0.0.0.0".
-                    port (int): WebSocket server port. Default: 8080.
-                    timeout (float): Connection timeout in seconds. Default: 10.0.
+                    port (int): Port to bind the server to. Default: 8080.
+                    timeout (int): Connection timeout in seconds. Default: 3.
+                    certs_dir_path (str): Path to directory containing TLS certificates.
+                        Default: "/app/certs".
+                    use_tls (bool): Enable TLS for secure connections. If True, 'encrypt'
+                        will be ignored. Default: False.
+                    secret (str): Secret key for authentication/encryption. Empty string
+                        disables security. Default: "".
+                    encrypt (bool): Enable encryption (only effective if secret is provided).
+                        Default: False.
 
         Returns:
             BaseCamera: Appropriate camera implementation instance
@@ -108,7 +115,8 @@ class Camera:
 
             ```python
             camera = Camera("ws://0.0.0.0:8080")
-            camera = Camera("ws://192.168.1.100:8080", timeout=5)
+            camera = Camera("ws://0.0.0.0:8080", secret="my_secret", encrypt=True)
+            camera = Camera("ws://0.0.0.0:8080", use_tls=True, certs_dir_path="/path/to/certs")
             ```
         """
         if not isinstance(source, (str, int)):
