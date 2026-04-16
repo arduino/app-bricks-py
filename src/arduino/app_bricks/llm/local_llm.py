@@ -35,7 +35,7 @@ class LargeLanguageModel(CloudLLM):
         system_prompt: str = "",
         temperature: Optional[float] = 0.7,
         max_tokens: int = 512,
-        timeout: int = 30,
+        timeout: Optional[int] = None,
         tools: List[Callable[..., Any]] = None,
         model: str = None,
         **kwargs,
@@ -54,8 +54,8 @@ class LargeLanguageModel(CloudLLM):
                 deterministic. Defaults to 0.7.
             max_tokens (int): The maximum number of tokens to generate in the response.
                 Defaults to 512.
-            timeout (int): The maximum duration in seconds to wait for a response before
-                timing out. Defaults to 30.
+            timeout (Optional[int]): The maximum duration in seconds to wait for a response before
+                timing out. Defaults to None.
             tools (List[Callable[..., Any]]): A list of callable tool functions to register. Defaults to None.
             **kwargs: Additional arguments passed to the model constructor
 

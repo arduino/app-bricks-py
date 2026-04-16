@@ -32,7 +32,7 @@ services:
       - TTS_MODELS=tts.models
       - SD_ENABLE_PULSE=1
     ports:
-      - ${BIND_ADDRESS:-0.0.0.0}:8085:8085
+      - ${BIND_ADDRESS:-127.0.0.1}:8085:8085
     volumes:
       - /var/lib/arduino-app-cli/models/audio-analytics:/mnt/work/models:ro
       # Mount system libraries from host for DSP access
@@ -47,6 +47,9 @@ services:
     command: >
       bash -c "chmod 666 /dev/fastrpc* 2>/dev/null || true;
                chmod 666 /dev/dma_heap/* 2>/dev/null || true;
+               chmod 666 /dev/snd/* 2>/dev/null || true;
+               chmod -R 777 /var/log/supervisor;
+               chmod 666 /proc/1/fd/1 /proc/1/fd/2 2>/dev/null || true;
                exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf"
     logging:
       driver: "json-file"
@@ -55,7 +58,6 @@ services:
         max-file: "2"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8085/audio-analytics/v1/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+      interval: 5s
+      timeout: 5s
+      retries: 5
