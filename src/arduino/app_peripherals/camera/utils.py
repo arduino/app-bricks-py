@@ -8,7 +8,8 @@ from .errors import CameraOpenError
 def nth_plugged_camera(idx: int) -> str:
     """
     Find the n-th available physically connected camera.
-    The precedence is CSI cameras first, then USB cameras.
+    The precedence is USB cameras first, then CSI cameras, if supported
+    by the current platform.
 
     Args:
         idx (int): Index of the camera to select (0-based).
@@ -19,19 +20,19 @@ def nth_plugged_camera(idx: int) -> str:
     Raises:
         CameraOpenError: If no cameras are found or index is out of range
     """
-    from .csi_camera import CSICamera
-
-    csi_cameras = CSICamera.list_devices()
-    if len(csi_cameras) > 0:
-        if idx < len(csi_cameras):
-            return "csi:" + str(idx)
-
     from .v4l_camera import V4LCamera
 
     usb_cameras = V4LCamera.list_devices()
     if len(usb_cameras) > 0:
         if idx < len(usb_cameras):
             return "usb:" + str(idx)
+
+    from .csi_camera import CSICamera
+
+    csi_cameras = CSICamera.list_devices()
+    if len(csi_cameras) > 0:
+        if idx < len(csi_cameras):
+            return "csi:" + str(idx)
 
     raise CameraOpenError("No available cameras found")
 

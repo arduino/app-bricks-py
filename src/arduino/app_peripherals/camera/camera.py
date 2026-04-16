@@ -20,8 +20,8 @@ class Camera:
     the appropriate camera implementation based on the provided configuration.
 
     Supports:
-        - CSI Cameras (local cameras connected using MIPI CSI-2 interface)
         - USB Cameras (local cameras connected using USB interface)
+        - CSI Cameras (local cameras connected using MIPI CSI-2 interface)
         - IP Cameras (network-based cameras via RTSP, HLS)
         - WebSocket Cameras (input video streams via WebSocket client)
 
@@ -43,26 +43,28 @@ class Camera:
         Args:
             source (Union[str, int]): Camera source identifier. Supports:
                 - int: Auto-select the n-th available physically connected camera
-                - str: CSI camera identifier "csi:<ordinal index>" or "csi:<name>"
-                    (e.g., "csi:0", "csi:CAMERA1")
+                    giving priority to USB cameras, then CSI cameras if supported
+                    by the platform
                 - str: V4L camera ordinal index (e.g., "usb:0", "usb:1")
-                - str: V4L camera device path (e.g., "/dev/video0", "/dev/v4l/by-id/...",
-                    "/dev/v4l/by-path/...")
+                - str: V4L camera device path (e.g., "usb:/dev/video0",
+                    "usb:/dev/v4l/by-id/...", "usb:/dev/v4l/by-path/...")
+                - str: CSI camera ordinal index (e.g., "csi:0", "csi:1")
+                - str: CSI camera name (e.g., "csi:CAMERA0", "csi:CAMERA1")
                 - str: URL for IP cameras (e.g., "rtsp://...", "http://...")
                 - str: WebSocket URL for input streams (e.g., "ws://0.0.0.0:8080")
                 Default: 0.
             resolution (tuple[int, int]): Frame resolution as (width, height).
                 Default: (640, 480).
             fps (int): Target frames per second. Default: 10.
-            adjustments (callable, optional): Function pipeline to adjust frames that takes a
-                numpy array and returns a numpy array. Default: None.
+            adjustments (callable, optional): Function pipeline to adjust frames
+                that takes a numpy array and returns a numpy array. Default: None.
             **kwargs: Camera-specific configuration parameters grouped by type:
-                CSI Camera Parameters:
-                    device (int | str): CSI device identifier. Default: 0.
                 V4L Camera Parameters:
-                    device (int | str): V4L device identifier. Default: 0.
+                    device (int | str): V4L device. Default: 0.
                     codec (str, optional): Video codec to use (FourCC). Options: "YUVY",
-                        "MJPG", "H264". Default: "" (auto).
+                            "MJPG", "H264". Default: "" (auto).
+                CSI Camera Parameters:
+                    device (int | str): CSI device. Default: 0.
                 IP Camera Parameters:
                     url (str): Camera stream URL
                     username (str, optional): Authentication username.
@@ -81,18 +83,18 @@ class Camera:
             CameraOpenError: If the camera cannot be opened
 
         Examples:
+            V4L Camera:
+
+            ```python
+            camera = Camera("usb:0", resolution=(640, 480), fps=30)
+            camera = Camera("usb:/dev/video1", fps=15)
+            ```
+
             CSI Camera:
 
             ```python
             camera = Camera("csi:0", resolution=(640, 480), fps=30)
             camera = Camera("csi:CAMERA1", fps=15)
-            ```
-
-            V4L Camera:
-
-            ```python
-            camera = Camera("usb:0", resolution=(640, 480), fps=30)
-            camera = Camera("/dev/video1", fps=15)
             ```
 
             IP Camera:
