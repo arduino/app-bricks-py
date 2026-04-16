@@ -42,7 +42,7 @@ class CloudLLM:
         system_prompt: str = "",
         temperature: Optional[float] = 0.7,
         max_tool_loops: int = 8,
-        timeout: int = 30,
+        timeout: Optional[int] = None,
         tools: List[Callable[..., Any]] = None,
         callbacks: Any = None,
         **kwargs,
@@ -63,8 +63,8 @@ class CloudLLM:
                 deterministic. Defaults to 0.7.
             max_tool_loops (int): The maximum number of consecutive tool-call loops
                 allowed during a single chat interaction. Defaults to 8.
-            timeout (int): The maximum duration in seconds to wait for a response before
-                timing out. Defaults to 30.
+            timeout (Optional[int]): The maximum duration in seconds to wait for a response before
+                timing out. Defaults to None.
             callbacks (Any): Optional callbacks for monitoring generation events.
             tools (List[Callable[..., Any]]): A list of callable tool functions to register. Defaults to None.
             **kwargs: Additional arguments passed to the model constructor

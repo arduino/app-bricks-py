@@ -5,8 +5,3 @@ requires_services: ["arduino:genie"]
 requires_model: true
 model: genie:qwen3-4b
 supported_boards: ["ventunoq"]
-variables:
-  - name: LOCAL_LLM_API_KEY
-    description: API Key for the local LLM service
-    default_value: api_key
-    secret: true

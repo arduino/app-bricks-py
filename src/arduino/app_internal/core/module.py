@@ -124,9 +124,10 @@ def get_brick_configured_model(brick_id: str) -> Optional[str]:
     if app_cfg and "bricks" in app_cfg:
         bricks_list = app_cfg["bricks"]
         for brick_entry in bricks_list:
-            if brick_id in brick_entry:
-                if "model" in brick_entry[brick_id]:
-                    return brick_entry[brick_id]["model"]
+            if isinstance(brick_entry, dict) and brick_id in brick_entry:
+                brick_config = brick_entry[brick_id]
+                if isinstance(brick_config, dict) and "model" in brick_config:
+                    return brick_config["model"]
     return None
 
 

@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import signal
 import threading
 from collections import deque
 import time
@@ -111,6 +112,15 @@ class AppController:
         Args:
             user_loop (callable, optional): A user-defined function to run inside an infinite loop.
         """
+
+        class SigtermReceived(BaseException):
+            pass
+
+        def handle_sigterm(signum, frame):
+            raise SigtermReceived
+
+        signal.signal(signal.SIGTERM, handle_sigterm)
+
         try:
             if user_loop:
                 while True:
@@ -122,6 +132,8 @@ class AppController:
             logger.debug("StopIteration received from user loop")
         except KeyboardInterrupt:
             logger.debug("KeyboardInterrupt received")
+        except SigtermReceived:
+            logger.debug("SIGTERM received")
 
     def _start_managed_bricks(self):
         with self._app_lock:
