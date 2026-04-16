@@ -192,7 +192,7 @@ class WebUI:
         """
         self.app.add_api_route(self._api_path_prefix + path, function, methods=[method])
 
-    def expose_camera(self, path: str, camera: BaseCamera, quality: int = 80):
+    def expose_camera(self, path: str, camera: BaseCamera, jpeg_quality: int = 80):
         """
         Expose a camera stream at the specified URL path in MJPEG format.
 
@@ -201,7 +201,7 @@ class WebUI:
         Args:
             path (str): URL path for the MJPEG stream endpoint.
             camera (BaseCamera): A camera instance, will be started if not already running.
-            quality (int, optional): JPEG compression quality (0-100). Default: 80.
+            jpeg_quality (int, optional): JPEG compression quality (0-100). Default: 80.
         """
         from fastapi.responses import StreamingResponse
         from arduino.app_utils.image import compress_to_jpeg
@@ -215,7 +215,7 @@ class WebUI:
                     frame = camera.capture()
                     if frame is None:
                         continue
-                    jpeg = compress_to_jpeg(frame, quality=quality)
+                    jpeg = compress_to_jpeg(frame, quality=jpeg_quality)
                     if jpeg is None:
                         continue
                     yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg.tobytes() + b"\r\n"

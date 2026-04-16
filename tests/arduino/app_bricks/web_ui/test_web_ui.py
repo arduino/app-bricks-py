@@ -179,7 +179,7 @@ def test_expose_camera_passes_quality_to_compress():
     mock_camera.capture = Mock(side_effect=[fake_frame, RuntimeError("end")])
 
     with patch("arduino.app_utils.image.compress_to_jpeg", return_value=np.array([0], dtype=np.uint8)) as mock_compress:
-        ui.expose_camera("/stream", mock_camera, quality=95)
+        ui.expose_camera("/stream", mock_camera, jpeg_quality=95)
         TestClient(ui.app).get("/stream")
 
     mock_compress.assert_called_with(fake_frame, quality=95)
