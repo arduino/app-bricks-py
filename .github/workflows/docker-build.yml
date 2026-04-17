@@ -130,7 +130,12 @@ jobs:
           echo "Base containers: ${BASE_CONTAINERS[*]}"
           echo "Downstream containers: ${DOWNSTREAM_IN_BUILD[*]}"
 
-          echo "containers=$(printf '%s\n' "${BASE_CONTAINERS[@]}" | jq -R . | jq -sc .)" >> $GITHUB_OUTPUT
+          if [[ ${#BASE_CONTAINERS[@]} -eq 0 ]]; then
+            echo "containers=[]" >> $GITHUB_OUTPUT
+          else
+            echo "containers=$(printf '%s\n' "${BASE_CONTAINERS[@]}" | jq -R . | jq -sc .)" >> $GITHUB_OUTPUT
+          fi
+
           if [[ ${#DOWNSTREAM_IN_BUILD[@]} -eq 0 ]]; then
             echo "downstream_containers=[]" >> $GITHUB_OUTPUT
           else
