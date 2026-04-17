@@ -9,11 +9,12 @@ import queue
 import threading
 import time
 from contextlib import contextmanager
-from typing import Generator, Optional, Union, Iterator, Generator, cast
+from typing import Generator, Union, Iterator, Generator, cast
 
 import numpy as np
 
 from arduino.app_peripherals.microphone import Microphone
+from arduino.app_peripherals.microphone.base_microphone import BaseMicrophone
 from arduino.app_utils import Logger, brick
 
 from .providers import ASRProvider, CloudProvider, DEFAULT_PROVIDER, provider_factory
@@ -45,25 +46,36 @@ class CloudASR:
         self,
         api_key: str = os.getenv("API_KEY", ""),
         provider: CloudProvider = DEFAULT_PROVIDER,
-        mic: Optional[Microphone] = None,
+        mic: BaseMicrophone | None = None,
         language: str = os.getenv("LANGUAGE", ""),
         silence_timeout: float = 10.0,
     ):
-        if mic:
+        if mic is not None:
             logger.info(f"[{self.__class__.__name__}] Using provided microphone: {mic}")
             self._mic = mic
+            self._owns_mic = False
         else:
             self._mic = Microphone()
+            self._owns_mic = True
 
         self._language = language
         self.silence_timeout = silence_timeout
-        self._mic_lock = threading.Lock()
         self._provider: ASRProvider = provider_factory(
             api_key=api_key,
             name=provider,
             language=self._language,
             sample_rate=self._mic.sample_rate,
         )
+    
+    def start(self):
+        """Start the ASR service by initializing the microphone."""
+        if self._owns_mic:
+            self._mic.start()
+
+    def stop(self):
+        """Stop the ASR service by releasing the microphone."""
+        if self._owns_mic:
+            self._mic.stop()
 
     def _transcribe_stream(self, duration: float = 60.0) -> Generator[ASREvent, None, None]:
         """Perform continuous speech-to-text recognition with detailed events.
@@ -83,12 +95,6 @@ class CloudASR:
         send_done = threading.Event()
         overall_deadline = time.monotonic() + duration
         silence_deadline = time.monotonic() + self.silence_timeout
-
-        with self._mic_lock:
-            if self._mic.is_recording.is_set():
-                raise RuntimeError("Microphone is busy.")
-            self._mic.start()
-            logger.info(f"[{self.__class__.__name__}] Microphone started.")
 
         def _send():
             try:
@@ -178,10 +184,6 @@ class CloudASR:
         finally:
             logger.info("Releasing ASR resources...")
             stop_event.set()
-            with self._mic_lock:
-                if self._mic.is_recording.is_set():
-                    self._mic.stop()
-                    logger.info(f"[{self.__class__.__name__}] Microphone stopped.")
             send_thread.join(timeout=1)
             recv_thread.join(timeout=1)
             provider.stop()
