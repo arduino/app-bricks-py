@@ -1,6 +1,6 @@
 services:
   ollama-models-runner:
-    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/ollama-models-runner:dev-next
+    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/ollama-models-runner:asr-backpressure-and-buffering
     logging:
       driver: "json-file"
       options:
