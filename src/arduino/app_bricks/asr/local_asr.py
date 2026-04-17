@@ -115,15 +115,26 @@ class TranscriptionStream(Generic[T], ContextManager["TranscriptionStream[T]"], 
 class AudioStreamRouter:
     """Routes audio streams from microphones to per-session subscribers."""
 
+    # Per-publish backpressure window scales with the mic's period so the reader
+    # thread never blocks long enough to overflow ALSA's kernel ring buffer (xrun).
+    _MAX_PUBLISH_BACKPRESSURE_SECONDS = 0.1
+
     def __init__(self):
         self._subscribers: dict[int, dict[str, queue.Queue]] = {}
         self._threads: dict[int, threading.Thread] = {}
+        self._mic_backpressure_seconds: dict[int, float] = {}
         self._lock = threading.Lock()
 
     def subscribe(self, mic: BaseMicrophone, subscriber_id: str, audio_queue: queue.Queue) -> None:
         mic_id = id(mic)
         with self._lock:
             self._subscribers.setdefault(mic_id, {})[subscriber_id] = audio_queue
+            if mic_id not in self._mic_backpressure_seconds:
+                period_seconds = mic.buffer_size / mic.sample_rate
+                self._mic_backpressure_seconds[mic_id] = min(
+                    period_seconds * 0.75,
+                    self._MAX_PUBLISH_BACKPRESSURE_SECONDS,
+                )
             logger.debug(f"Subscriber {subscriber_id} registered for mic {mic_id}")
 
     def unsubscribe(self, mic: BaseMicrophone, subscriber_id: str) -> None:
@@ -139,15 +150,17 @@ class AudioStreamRouter:
 
             if not subscribers:
                 del self._subscribers[mic_id]
+                self._mic_backpressure_seconds.pop(mic_id, None)
 
     def publish(self, mic: BaseMicrophone, audio_chunk) -> None:
         mic_id = id(mic)
         with self._lock:
             subscribers = dict(self._subscribers.get(mic_id, {}))
+            timeout = self._mic_backpressure_seconds.get(mic_id, self._MAX_PUBLISH_BACKPRESSURE_SECONDS)
 
         for subscriber_id, audio_queue in subscribers.items():
             try:
-                audio_queue.put_nowait(audio_chunk)
+                audio_queue.put(audio_chunk, timeout=timeout)
             except queue.Full:
                 logger.warning(f"Audio queue full for subscriber {subscriber_id}, dropping chunk")
 
@@ -178,6 +191,7 @@ class AudioStreamRouter:
 class AutomaticSpeechRecognition:
     _APP_SERVICE_NAME = "audio-analytics-runner"
     _FLUSH_INTERVAL_SECONDS = 5
+    _MIC_CHUNK_SECONDS = 0.5
 
     def __init__(self, language: str | None = None):
         """ASR implementation that uses a local audio analytics service to decode audio streams.
@@ -645,6 +659,9 @@ class AutomaticSpeechRecognition:
 
         self._audio_stream_router.ensure_thread(mic, make_reader_thread)
 
+        target_chunk_bytes = max(1, int(self._MIC_CHUNK_SECONDS * mic.sample_rate * mic.channels * mic.format.itemsize))
+        pending = bytearray()
+
         try:
             while not self._stop_worker.is_set() and not session_info.cancelled.is_set():
                 if duration > 0 and (time.time() - start_time) >= duration:
@@ -653,14 +670,18 @@ class AutomaticSpeechRecognition:
 
                 try:
                     loop = asyncio.get_running_loop()
-                    audio_chunk = await asyncio.wait_for(
-                        loop.run_in_executor(None, audio_queue.get, True, 0.1),
-                        timeout=0.2,
-                    )
-                except (asyncio.TimeoutError, queue.Empty):
+                    audio_chunk = await loop.run_in_executor(None, audio_queue.get, True, 0.1)
+                except queue.Empty:
                     continue
 
-                yield audio_chunk.tobytes()
+                pending.extend(audio_chunk.tobytes())
+                if len(pending) >= target_chunk_bytes:
+                    yield bytes(pending)
+                    pending.clear()
+
+            if pending and not session_info.cancelled.is_set():
+                yield bytes(pending)
+                pending.clear()
 
         finally:
             self._audio_stream_router.unsubscribe(mic, session_id)
