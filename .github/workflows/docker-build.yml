@@ -77,14 +77,29 @@ jobs:
               fi
             done
 
-            # Cascade: add downstream containers for each changed container
+            # Forward cascade: if a base container changed, add its downstream containers
             for CONTAINER in "${CHANGED[@]}"; do
               DOWNSTREAM=$(jq -r '.downstream // [] | .[]' "containers/$CONTAINER/ci.json")
               for DS in $DOWNSTREAM; do
                 if [[ ! " ${CHANGED[*]} " =~ " $DS " ]]; then
-                  echo "Cascading: $DS depends on $CONTAINER"
+                  echo "Cascading downstream: $DS depends on $CONTAINER"
                   CHANGED+=("$DS")
                 fi
+              done
+            done
+
+            # Reverse cascade: if a downstream container changed, add its parent so the
+            # base image is always built fresh before the downstream container
+            for CONTAINER in "${CHANGED[@]}"; do
+              for CI_JSON in containers/*/ci.json; do
+                PARENT=$(basename "$(dirname "$CI_JSON")")
+                DS_LIST=$(jq -r '.downstream // [] | .[]' "$CI_JSON" 2>/dev/null)
+                for DS in $DS_LIST; do
+                  if [[ "$DS" == "$CONTAINER" ]] && [[ ! " ${CHANGED[*]} " =~ " $PARENT " ]]; then
+                    echo "Cascading upstream: $PARENT required by $CONTAINER"
+                    CHANGED+=("$PARENT")
+                  fi
+                done
               done
             done
           fi
