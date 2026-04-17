@@ -227,7 +227,7 @@ class WebSocketCamera(BaseCamera):
                     if sanitized:
                         client_name = sanitized
                 # Allow raw (no BPP) mode only when security is disabled
-                if "raw" in query_params and query_params["raw"][0].lower() == "true":
+                if "raw" in query_params and (not query_params["raw"] or query_params["raw"][0].lower() != "false"):
                     if self.secret is None:
                         client_raw = True
                     else:
