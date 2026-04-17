@@ -27,6 +27,7 @@ permissions:
 jobs:
   detect-changes:
     runs-on: ubuntu-latest
+    if: github.ref_name != 'main'
     outputs:
       containers: ${{ steps.detect.outputs.containers }}
       downstream_containers: ${{ steps.detect.outputs.downstream_containers }}
