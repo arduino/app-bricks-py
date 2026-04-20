@@ -17,6 +17,7 @@ tasks:
     cmds:
       - pip install uv
       - uv pip install --system reuse
+      - uv cache clean
 
   check:python:version:
     desc: Check if Python version is at least {{.PYTHON_VERSION_MIN}}
@@ -42,6 +43,7 @@ tasks:
       - pip install uv
       - uv pip install --system build
       - uv pip install --system -e ".[dev]"
+      - uv cache clean
 
   doc:
     desc: Generate documentation

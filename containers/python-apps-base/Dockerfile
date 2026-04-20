@@ -10,11 +10,11 @@ FROM ${REGISTRY}app-bricks/python-base:${BASE_IMAGE_VERSION}
 COPY ./streamlit/config.toml /home/app/.streamlit/config.toml
 
 COPY ./requirements-base.txt /app/requirements.txt
-RUN uv pip install --system --no-cache-dir -r /app/requirements.txt && rm /app/requirements.txt
+RUN uv pip install --system --no-cache-dir -r /app/requirements.txt && rm /app/requirements.txt && uv cache clean
 
 COPY ./*.sh /
 COPY ./arduino*.whl /app/
-RUN bash -c 'WHL_FILES=(/app/*.whl) && uv pip install --system --no-cache-dir "${WHL_FILES[@]}"[all] && pip cache purge'; \
+RUN bash -c 'WHL_FILES=(/app/*.whl) && uv pip install --system --no-cache-dir "${WHL_FILES[@]}"[all] && pip cache purge && uv cache clean'; \
     rm /app/*.whl; \
     # fix permissions for /home/app
     chown arduino:arduino -R /home/app; \
