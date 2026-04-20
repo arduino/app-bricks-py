@@ -25,6 +25,7 @@ editable_module_config = "direct_url.json"
 
 config_file_name: str = "brick_config.yaml"
 compose_config_file_name: str = "brick_compose.yaml"
+compose_config_file_name_prefix: str = "brick_compose"
 main_readme_file_name: str = "README.md"
 examples_folder_name: str = "examples"
 
@@ -249,16 +250,27 @@ def save_compose_file(module: ArduinoBrick, output_dir: str, appslab_version: st
     module_name = "/".join(module.id.split(":"))
     output_folder: pathlib.Path = pathlib.Path(output_dir) / module_name
     output_folder.mkdir(parents=True, exist_ok=True)
-    output_file_name: pathlib.Path = output_folder / compose_config_file_name
 
-    with open(module.compose_file, "rb") as f_source, open(output_file_name, "wb") as f_dest:
-        while True:
-            chunk = f_source.read(2048)
-            if not chunk:
-                break
-            f_dest.write(chunk)
+    # Search for all brick_compose*.yaml files in the module path and find the one with the latest modification time,
+    # in case there are multiple ones (e.g. brick_compose.yaml and brick_compose.ventunoq.yaml)
+    compose_files = list(pathlib.Path(module.path).glob(f"{compose_config_file_name_prefix}*.yaml"))
+    if not compose_files:
+        logger.warning(f"No compose file found for module {module.id} in path {module.path}")
+        return
 
-    _update_compose_release_version(compose_file_path=output_file_name, release_version=appslab_version)
+    for compose_file in compose_files:
+        logger.info(f"Found compose file {compose_file} for module {module.id}")
+
+        output_file_name: pathlib.Path = output_folder / compose_file.name
+
+        with open(compose_file, "rb") as f_source, open(output_file_name, "wb") as f_dest:
+            while True:
+                chunk = f_source.read(2048)
+                if not chunk:
+                    break
+                f_dest.write(chunk)
+
+        _update_compose_release_version(compose_file_path=output_file_name, release_version=appslab_version)
 
 
 def save_readme_file(module: ArduinoBrick, output_dir: str):
