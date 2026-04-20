@@ -8,7 +8,7 @@ import json
 import queue
 import threading
 import time
-from collections.abc import AsyncGenerator, Generator, Iterator
+from collections.abc import Generator, Iterator
 from dataclasses import dataclass
 from typing import ContextManager, Generic, Literal, TypeVar
 
@@ -115,26 +115,15 @@ class TranscriptionStream(Generic[T], ContextManager["TranscriptionStream[T]"], 
 class AudioStreamRouter:
     """Routes audio streams from microphones to per-session subscribers."""
 
-    # Per-publish backpressure window scales with the mic's period so the reader
-    # thread never blocks long enough to overflow ALSA's kernel ring buffer (xrun).
-    _MAX_PUBLISH_BACKPRESSURE_SECONDS = 0.1
-
     def __init__(self):
         self._subscribers: dict[int, dict[str, queue.Queue]] = {}
         self._threads: dict[int, threading.Thread] = {}
-        self._mic_backpressure_seconds: dict[int, float] = {}
         self._lock = threading.Lock()
 
     def subscribe(self, mic: BaseMicrophone, subscriber_id: str, audio_queue: queue.Queue) -> None:
         mic_id = id(mic)
         with self._lock:
             self._subscribers.setdefault(mic_id, {})[subscriber_id] = audio_queue
-            if mic_id not in self._mic_backpressure_seconds:
-                period_seconds = mic.buffer_size / mic.sample_rate
-                self._mic_backpressure_seconds[mic_id] = min(
-                    period_seconds * 0.75,
-                    self._MAX_PUBLISH_BACKPRESSURE_SECONDS,
-                )
             logger.debug(f"Subscriber {subscriber_id} registered for mic {mic_id}")
 
     def unsubscribe(self, mic: BaseMicrophone, subscriber_id: str) -> None:
@@ -150,17 +139,15 @@ class AudioStreamRouter:
 
             if not subscribers:
                 del self._subscribers[mic_id]
-                self._mic_backpressure_seconds.pop(mic_id, None)
 
     def publish(self, mic: BaseMicrophone, audio_chunk) -> None:
         mic_id = id(mic)
         with self._lock:
             subscribers = dict(self._subscribers.get(mic_id, {}))
-            timeout = self._mic_backpressure_seconds.get(mic_id, self._MAX_PUBLISH_BACKPRESSURE_SECONDS)
 
         for subscriber_id, audio_queue in subscribers.items():
             try:
-                audio_queue.put(audio_chunk, timeout=timeout)
+                audio_queue.put_nowait(audio_chunk)
             except queue.Full:
                 logger.warning(f"Audio queue full for subscriber {subscriber_id}, dropping chunk")
 
@@ -547,17 +534,22 @@ class AutomaticSpeechRecognition:
             await self._await_connection_established(write_ws, "write_ws")
             await self._await_connection_established(read_ws, "read_ws")
 
-            # Source
+            # Outbound queue decouples the ALSA reader from the WS sender so that
+            # a slow ws.send never blocks audio_queue consumption causing xruns.
+            outbound: asyncio.Queue[bytes] = asyncio.Queue(maxsize=5)
+            pcm_done = asyncio.Event()
+
             if isinstance(session_info, MicSessionInfo):
-                pcm_chunks = self._iter_mic_pcm_chunks(session_info)
+                pcm_task = asyncio.create_task(self._iter_mic_pcm_chunks(session_info, outbound, pcm_done))
             else:
-                pcm_chunks = self._iter_wav_pcm_chunks(session_info)
+                pcm_task = asyncio.create_task(self._iter_wav_pcm_chunks(session_info, outbound, pcm_done))
 
             send_task = asyncio.create_task(
                 self._send_pcm_stream(
                     websocket=write_ws,
                     session_id=session_id,
-                    pcm_chunks=pcm_chunks,
+                    pcm_queue=outbound,
+                    pcm_done=pcm_done,
                 )
             )
 
@@ -573,7 +565,7 @@ class AutomaticSpeechRecognition:
             try:
                 while not self._stop_worker.is_set() and not session_info.cancelled.is_set():
                     done, _ = await asyncio.wait(
-                        {send_task, receive_task},
+                        {pcm_task, send_task, receive_task},
                         timeout=0.1,
                         return_when=asyncio.FIRST_COMPLETED,
                     )
@@ -582,11 +574,15 @@ class AutomaticSpeechRecognition:
                         continue
 
                     for task in done:
-                        exc = task.exception()
-                        if exc:
-                            raise exc
+                        if not task.cancelled():
+                            exc = task.exception()
+                            if exc:
+                                raise exc
 
-                    break
+                    # pcm_task finishing normally just means no more audio;
+                    # let send_task drain the outbound queue before stopping.
+                    if send_task in done or receive_task in done:
+                        break
 
             finally:
                 if flush_task and not flush_task.done():
@@ -598,23 +594,28 @@ class AutomaticSpeechRecognition:
 
                 session_info.cancelled.set()
 
-                for task in (send_task, receive_task):
+                for task in (pcm_task, send_task, receive_task):
                     if task and not task.done():
                         task.cancel()
 
-                await asyncio.gather(send_task, receive_task, return_exceptions=True)
+                await asyncio.gather(pcm_task, send_task, receive_task, return_exceptions=True)
 
     async def _send_pcm_stream(
         self,
         websocket: websockets.ClientConnection,
         session_id: str,
-        pcm_chunks: AsyncGenerator[bytes, None],
+        pcm_queue: asyncio.Queue,
+        pcm_done: asyncio.Event,
     ) -> int:
         chunks_sent = 0
         try:
-            async for audio_bytes in pcm_chunks:
-                if self._stop_worker.is_set():
-                    break
+            while not self._stop_worker.is_set():
+                try:
+                    audio_bytes = await asyncio.wait_for(pcm_queue.get(), timeout=0.1)
+                except asyncio.TimeoutError:
+                    if pcm_done.is_set():
+                        break
+                    continue
 
                 message = {
                     "message_type": "transcriptions_session_audio",
@@ -640,7 +641,7 @@ class AutomaticSpeechRecognition:
             logger.debug(f"WebSocket closed as expected while sending PCM stream for session {session_id}")
             return chunks_sent
 
-    async def _iter_mic_pcm_chunks(self, session_info: MicSessionInfo) -> AsyncGenerator[bytes, None]:
+    async def _iter_mic_pcm_chunks(self, session_info: MicSessionInfo, outbound: asyncio.Queue, pcm_done: asyncio.Event) -> None:
         session_id = session_info.session_id
         mic = session_info.mic
         duration = session_info.duration
@@ -676,16 +677,22 @@ class AutomaticSpeechRecognition:
 
                 pending.extend(audio_chunk.tobytes())
                 if len(pending) >= target_chunk_bytes:
-                    yield bytes(pending)
+                    try:
+                        outbound.put_nowait(bytes(pending))
+                    except asyncio.QueueFull:
+                        logger.warning(f"Outbound queue full for session {session_id}, dropping audio chunk")
                     pending.clear()
 
             if pending and not session_info.cancelled.is_set():
-                yield bytes(pending)
-                pending.clear()
+                try:
+                    outbound.put_nowait(bytes(pending))
+                except asyncio.QueueFull:
+                    pass
 
         finally:
             self._audio_stream_router.unsubscribe(mic, session_id)
-            logger.debug(f"Session {session_id} mic chunk iterator cleanup completed")
+            pcm_done.set()
+            logger.debug(f"Session {session_id} mic chunk aggregator cleanup completed")
 
     def _mic_reader_loop(self, mic: BaseMicrophone):
         """
@@ -713,7 +720,7 @@ class AutomaticSpeechRecognition:
             self._audio_stream_router.unregister_thread(mic)
             logger.debug(f"Audio reader thread stopped for mic {mic_id}")
 
-    async def _iter_wav_pcm_chunks(self, session_info: WAVSessionInfo) -> AsyncGenerator[bytes, None]:
+    async def _iter_wav_pcm_chunks(self, session_info: WAVSessionInfo, outbound: asyncio.Queue, pcm_done: asyncio.Event) -> None:
         import io
         import wave
 
@@ -731,10 +738,13 @@ class AutomaticSpeechRecognition:
         chunk_duration = 0.5
         chunk_size = int(chunk_duration * sample_rate * num_channels * sample_width)
 
-        for i in range(0, len(frames), chunk_size):
-            if self._stop_worker.is_set() or session_info.cancelled.is_set():
-                break
-            yield frames[i : i + chunk_size]
+        try:
+            for i in range(0, len(frames), chunk_size):
+                if self._stop_worker.is_set() or session_info.cancelled.is_set():
+                    break
+                await outbound.put(frames[i : i + chunk_size])
+        finally:
+            pcm_done.set()
 
     async def _receive_transcription(self, websocket: websockets.ClientConnection, session_info: MicSessionInfo | WAVSessionInfo) -> None:
         """
