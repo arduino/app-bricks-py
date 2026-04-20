@@ -27,6 +27,7 @@ permissions:
 jobs:
   detect-changes:
     runs-on: ubuntu-latest
+    if: github.ref_name != 'main'
     outputs:
       containers: ${{ steps.detect.outputs.containers }}
       downstream_containers: ${{ steps.detect.outputs.downstream_containers }}
@@ -77,14 +78,29 @@ jobs:
               fi
             done
 
-            # Cascade: add downstream containers for each changed container
+            # Forward cascade: if a base container changed, add its downstream containers
             for CONTAINER in "${CHANGED[@]}"; do
               DOWNSTREAM=$(jq -r '.downstream // [] | .[]' "containers/$CONTAINER/ci.json")
               for DS in $DOWNSTREAM; do
                 if [[ ! " ${CHANGED[*]} " =~ " $DS " ]]; then
-                  echo "Cascading: $DS depends on $CONTAINER"
+                  echo "Cascading downstream: $DS depends on $CONTAINER"
                   CHANGED+=("$DS")
                 fi
+              done
+            done
+
+            # Reverse cascade: if a downstream container changed, add its parent so the
+            # base image is always built fresh before the downstream container
+            for CONTAINER in "${CHANGED[@]}"; do
+              for CI_JSON in containers/*/ci.json; do
+                PARENT=$(basename "$(dirname "$CI_JSON")")
+                DS_LIST=$(jq -r '.downstream // [] | .[]' "$CI_JSON" 2>/dev/null)
+                for DS in $DS_LIST; do
+                  if [[ "$DS" == "$CONTAINER" ]] && [[ ! " ${CHANGED[*]} " =~ " $PARENT " ]]; then
+                    echo "Cascading upstream: $PARENT required by $CONTAINER"
+                    CHANGED+=("$PARENT")
+                  fi
+                done
               done
             done
           fi
@@ -152,7 +168,8 @@ jobs:
             echo "DEV_TAG_VERSION=${{ inputs.tag }}" >> $GITHUB_ENV
           else
             TAG=$(echo "${{ github.ref_name }}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-zA-Z0-9._-]/-/g')
-            echo "DEV_TAG_VERSION=${TAG}-${{ github.run_number }}" >> $GITHUB_ENV
+            echo "value=dev-$TAG" >> $GITHUB_OUTPUT
+            echo "DEV_TAG_VERSION=dev-${TAG}-${{ github.run_number }}" >> $GITHUB_ENV
           fi
 
       - name: Set up Python
@@ -191,8 +208,8 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           tags: |
-            type=ref,event=branch
-            type=ref,event=branch,suffix=-${{ github.run_number }}
+            type=ref,event=branch,prefix=dev-
+            type=ref,event=branch,prefix=dev-,suffix=-${{ github.run_number }}
             type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
           images: ghcr.io/${{ github.repository_owner }}/app-bricks/${{ matrix.container }}
 
@@ -235,8 +252,8 @@ jobs:
             echo "DEV_TAG_VERSION=${{ inputs.tag }}" >> $GITHUB_ENV
           else
             TAG=$(echo "${{ github.ref_name }}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-zA-Z0-9._-]/-/g')
-            echo "value=$TAG" >> $GITHUB_OUTPUT
-            echo "DEV_TAG_VERSION=${TAG}-${{ github.run_number }}" >> $GITHUB_ENV
+            echo "value=dev-$TAG" >> $GITHUB_OUTPUT
+            echo "DEV_TAG_VERSION=dev-${TAG}-${{ github.run_number }}" >> $GITHUB_ENV
           fi
 
       - name: Set up Python
@@ -275,8 +292,8 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           tags: |
-            type=ref,event=branch
-            type=ref,event=branch,suffix=-${{ github.run_number }}
+            type=ref,event=branch,prefix=dev-
+            type=ref,event=branch,prefix=dev-,suffix=-${{ github.run_number }}
             type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
           images: ghcr.io/${{ github.repository_owner }}/app-bricks/${{ matrix.container }}
 

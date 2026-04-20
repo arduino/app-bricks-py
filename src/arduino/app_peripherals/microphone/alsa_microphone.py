@@ -299,7 +299,6 @@ class ALSAMicrophone(BaseMicrophone):
         raise RuntimeError(f"Invalid device reference for name resolution: {device_ref} (type:{type(device_ref)})")
 
     def _open_microphone(self) -> None:
-        print("ENTER _open_microphone", flush=True)
         """Open the ALSA PCM device."""
         logger.debug(f"Opening PCM device: {self.device_stable_ref}")
 

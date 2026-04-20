@@ -127,3 +127,59 @@ def test_cors_multiple_origins():
     response = client.get("/dummy", headers={"Origin": "https://example.com"})
     assert response.status_code == 200
     assert response.headers.get("access-control-allow-origin") == "https://example.com"
+
+
+def test_expose_camera_starts_camera_if_not_started():
+    from unittest.mock import Mock, patch
+    import numpy as np
+
+    ui = WebUI()
+    mock_camera = Mock()
+    mock_camera.is_started = False
+    mock_camera.capture = Mock(side_effect=[np.zeros((2, 2, 3), dtype=np.uint8), RuntimeError("end")])
+
+    with patch("arduino.app_utils.image.compress_to_jpeg", return_value=np.array([0], dtype=np.uint8)):
+        ui.expose_camera("/stream", mock_camera)
+        TestClient(ui.app, raise_server_exceptions=False).get("/stream")
+
+    mock_camera.start.assert_called_once()
+
+
+def test_expose_camera_streams_mjpeg_response():
+    from unittest.mock import Mock, patch
+    import numpy as np
+
+    ui = WebUI()
+    mock_camera = Mock()
+    mock_camera.is_started = True
+
+    fake_frame = np.zeros((2, 2, 3), dtype=np.uint8)
+    mock_camera.capture = Mock(side_effect=[fake_frame, RuntimeError("end")])
+
+    fake_jpeg = b"\xff\xd8jpeg"
+
+    with patch("arduino.app_utils.image.compress_to_jpeg", return_value=np.frombuffer(fake_jpeg, dtype=np.uint8)):
+        ui.expose_camera("/stream", mock_camera)
+        response = TestClient(ui.app).get("/stream")
+
+    assert response.status_code == 200
+    assert "multipart/x-mixed-replace" in response.headers["content-type"]
+    assert fake_jpeg in response.content
+
+
+def test_expose_camera_passes_quality_to_compress():
+    from unittest.mock import Mock, patch
+    import numpy as np
+
+    ui = WebUI()
+    mock_camera = Mock()
+    mock_camera.is_started = True
+
+    fake_frame = np.zeros((2, 2, 3), dtype=np.uint8)
+    mock_camera.capture = Mock(side_effect=[fake_frame, RuntimeError("end")])
+
+    with patch("arduino.app_utils.image.compress_to_jpeg", return_value=np.array([0], dtype=np.uint8)) as mock_compress:
+        ui.expose_camera("/stream", mock_camera, jpeg_quality=95)
+        TestClient(ui.app).get("/stream")
+
+    mock_compress.assert_called_with(fake_frame, quality=95)
