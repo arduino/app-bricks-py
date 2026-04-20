@@ -540,9 +540,9 @@ class AutomaticSpeechRecognition:
             pcm_done = asyncio.Event()
 
             if isinstance(session_info, MicSessionInfo):
-                pcm_task = asyncio.create_task(self._iter_mic_pcm_chunks(session_info, outbound, pcm_done))
+                pcm_task = asyncio.create_task(self._feed_mic_audio(session_info, outbound, pcm_done))
             else:
-                pcm_task = asyncio.create_task(self._iter_wav_pcm_chunks(session_info, outbound, pcm_done))
+                pcm_task = asyncio.create_task(self._feed_wav_audio(session_info, outbound, pcm_done))
 
             send_task = asyncio.create_task(
                 self._send_pcm_stream(
@@ -641,7 +641,7 @@ class AutomaticSpeechRecognition:
             logger.debug(f"WebSocket closed as expected while sending PCM stream for session {session_id}")
             return chunks_sent
 
-    async def _iter_mic_pcm_chunks(self, session_info: MicSessionInfo, outbound: asyncio.Queue, pcm_done: asyncio.Event) -> None:
+    async def _feed_mic_audio(self, session_info: MicSessionInfo, outbound: asyncio.Queue, pcm_done: asyncio.Event) -> None:
         session_id = session_info.session_id
         mic = session_info.mic
         duration = session_info.duration
@@ -720,7 +720,7 @@ class AutomaticSpeechRecognition:
             self._audio_stream_router.unregister_thread(mic)
             logger.debug(f"Audio reader thread stopped for mic {mic_id}")
 
-    async def _iter_wav_pcm_chunks(self, session_info: WAVSessionInfo, outbound: asyncio.Queue, pcm_done: asyncio.Event) -> None:
+    async def _feed_wav_audio(self, session_info: WAVSessionInfo, outbound: asyncio.Queue, pcm_done: asyncio.Event) -> None:
         import io
         import wave
 
