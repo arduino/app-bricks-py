@@ -147,9 +147,9 @@ jobs:
           fi
 
   build:
-    needs: [detect-changes]
+    needs: [ detect-changes ]
     if: needs.detect-changes.outputs.containers != '[]'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     env:
       PYTHON_VERSION: "3.13"
       TASKFILE_VERSION: "3.45.4"
@@ -177,11 +177,6 @@ jobs:
           task init:ci
           task build-dev
           cp ./dist/arduino*.whl ./containers/python-apps-base/
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: linux/arm64
 
       - name: Setup Docker buildx
         uses: docker/setup-buildx-action@v3
@@ -211,7 +206,6 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          platforms: linux/arm64
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false
@@ -220,9 +214,9 @@ jobs:
           # BASE_IMAGE_VERSION=latest # currently not used, defaults to value used in Dockerfile
 
   build-downstream:
-    needs: [detect-changes, build]
+    needs: [ detect-changes, build ]
     if: needs.detect-changes.outputs.downstream_containers != '[]'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     env:
       PYTHON_VERSION: "3.13"
       TASKFILE_VERSION: "3.45.4"
@@ -261,11 +255,6 @@ jobs:
           task build-dev
           cp ./dist/arduino*.whl ./containers/python-apps-base/
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: linux/arm64
-
       - name: Setup Docker buildx
         uses: docker/setup-buildx-action@v3
 
@@ -294,7 +283,6 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          platforms: linux/arm64
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false

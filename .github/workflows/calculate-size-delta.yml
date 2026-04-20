@@ -6,14 +6,14 @@ on:
 permissions:
   contents: read
   pull-requests: read
-  
+
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     env:
-      PYTHON_VERSION: '3.13'
-      TASKFILE_VERSION: 'v3.44.0'
-      TASKFILE_PATH: '/home/runner/go/bin'
+      PYTHON_VERSION: "3.13"
+      TASKFILE_VERSION: "v3.44.0"
+      TASKFILE_PATH: "/home/runner/go/bin"
 
     services:
       registry:
@@ -24,7 +24,7 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
-      
+
       - name: Get PR Information
         id: pr_info
         env:
@@ -48,8 +48,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
-          cache-dependency-path: 'pyproject.toml'
+          cache: "pip"
+          cache-dependency-path: "pyproject.toml"
 
       - name: Install and build library
         run: |
@@ -58,9 +58,6 @@ jobs:
           task init:ci
           task build-dev
           cp ./dist/arduino*.whl ./containers/python-apps-base/
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
 
       - name: Setup Docker buildx
         uses: docker/setup-buildx-action@v3
@@ -73,7 +70,6 @@ jobs:
           context: ./containers/python-base
           file: ./containers/python-base/Dockerfile
           tags: localhost:5000/app-bricks/python-base:latest
-          platforms: linux/arm64
           push: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -84,17 +80,16 @@ jobs:
           context: ./containers/python-apps-base
           file: ./containers/python-apps-base/Dockerfile
           tags: localhost:5000/app-bricks/python-apps-base:latest
-          platforms: linux/arm64
           push: true
           build-args: |
             REGISTRY=localhost:5000/
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      
+
       - name: Pull images for inspection
         run: |
-          docker image pull --platform linux/arm64 localhost:5000/app-bricks/python-base:latest
-          docker image pull --platform linux/arm64 localhost:5000/app-bricks/python-apps-base:latest
+          docker image pull localhost:5000/app-bricks/python-base:latest
+          docker image pull localhost:5000/app-bricks/python-apps-base:latest
 
       - name: Calculate image sizes
         id: sizes
@@ -140,7 +135,7 @@ jobs:
     needs: build
     if: needs.build.outputs.pr_number == ''
     permissions: {}
-    
+
     steps:
       - name: Notify to check Job Summary
         run: |
