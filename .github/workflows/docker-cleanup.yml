@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   cleanup:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     if: github.event.ref_type == 'branch'
     steps:
       - name: Sanitize branch name

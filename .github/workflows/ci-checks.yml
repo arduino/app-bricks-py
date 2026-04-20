@@ -8,11 +8,11 @@ permissions:
 
 jobs:
   ci-checks:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     env:
-      PYTHON_VERSION: '3.13'
-      TASKFILE_VERSION: 'v3.44.0'
-      TASKFILE_PATH: '/home/runner/go/bin'
+      PYTHON_VERSION: "3.13"
+      TASKFILE_VERSION: "v3.44.0"
+      TASKFILE_PATH: "/home/runner/go/bin"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
