@@ -21,10 +21,8 @@ jobs:
           # AI Hub models
           - ghcr.io/${{ github.repository_owner }}/app-bricks/aihub-models-runner
           - ghcr.io/${{ github.repository_owner }}/app-bricks/ei-models-runner
-          - ghcr.io/${{ github.repository_owner
-            }}/app-bricks/llamacpp-models-runner
-          - ghcr.io/${{ github.repository_owner
-            }}/app-bricks/ollama-models-runner
+          - ghcr.io/${{ github.repository_owner }}/app-bricks/llamacpp-models-runner
+          - ghcr.io/${{ github.repository_owner }}/app-bricks/ollama-models-runner
           - ghcr.io/${{ github.repository_owner }}/app-bricks/gesture-recognition
 
     steps:
