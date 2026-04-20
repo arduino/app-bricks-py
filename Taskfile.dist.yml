@@ -15,7 +15,8 @@ tasks:
     deps:
       - init
     cmds:
-      - pip install reuse
+      - pip install uv
+      - uv pip install --system reuse
 
   check:python:version:
     desc: Check if Python version is at least {{.PYTHON_VERSION_MIN}}
@@ -38,8 +39,9 @@ tasks:
     cmds:
       - sudo apt update
       - sudo apt install libasound2-dev
-      - pip install build
-      - pip install -e ".[dev]"
+      - pip install uv
+      - uv pip install --system build
+      - uv pip install --system -e ".[dev]"
 
   doc:
     desc: Generate documentation
