@@ -14,11 +14,11 @@ jobs:
       - name: Sanitize branch name
         id: branch
         run: |
-          # Apply the same transform as docker/metadata-action type=ref,event=branch:
+          # Apply the same transform as docker/metadata-action type=ref,event=branch with prefix=dev-:
           # lowercase, replace non-alphanumeric (except dot, underscore, dash) with dash, strip leading/trailing dashes
           RAW="${{ github.event.ref }}"
           SANITIZED=$(echo "$RAW" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/-/g' | sed 's/^-//;s/-$//')
-          echo "tag=$SANITIZED" >> $GITHUB_OUTPUT
+          echo "tag=dev-$SANITIZED" >> $GITHUB_OUTPUT
 
       - name: Checkout repository
         uses: actions/checkout@v4

@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi_socketio import SocketManager
 
+from arduino.app_peripherals.camera.base_camera import BaseCamera
 from arduino.app_utils import brick, Logger
 
 logger = Logger("WebUI")
@@ -190,6 +191,44 @@ class WebUI:
             function (Callable): Function to execute when the route is accessed.
         """
         self.app.add_api_route(self._api_path_prefix + path, function, methods=[method])
+
+    def expose_camera(self, path: str, camera: BaseCamera, jpeg_quality: int = 80):
+        """
+        Expose a camera stream at the specified URL path in MJPEG format.
+
+        This can be consumed for example using `<img>` tags in a web application.
+
+        Args:
+            path (str): URL path for the MJPEG stream endpoint.
+            camera (BaseCamera): A camera instance, will be started if not already running.
+            jpeg_quality (int, optional): JPEG compression quality (0-100). Default: 80.
+        """
+        from fastapi.responses import StreamingResponse
+        from arduino.app_utils.image import compress_to_jpeg
+
+        if not camera.is_started:
+            camera.start()
+
+        def generate_frames():
+            try:
+                while True:
+                    frame = camera.capture()
+                    if frame is None:
+                        continue
+                    jpeg = compress_to_jpeg(frame, quality=jpeg_quality)
+                    if jpeg is None:
+                        continue
+                    yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg.tobytes() + b"\r\n"
+            except Exception as e:
+                logger.error(f"Terminating stream on camera error: {e}")
+
+        def stream_route():
+            return StreamingResponse(
+                generate_frames(),
+                media_type="multipart/x-mixed-replace; boundary=frame",
+            )
+
+        self.expose_api("GET", path, stream_route)
 
     def on_connect(self, callback: Callable[[str], None]):
         """Register a callback for WebSocket connection events.

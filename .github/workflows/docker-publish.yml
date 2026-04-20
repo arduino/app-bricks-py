@@ -13,8 +13,8 @@ on:
 
 env:
   GHCR_REGISTRY: ghcr.io
-  GHCR_DESTINATION_ORG: ghcr.io/arduino
-  GH_DESTINATION_REPO: https://github.com/arduino/app-bricks-py
+  GHCR_DESTINATION_ORG: ghcr.io/${{ github.repository_owner }}
+  GH_DESTINATION_REPO: https://github.com/${{ github.repository }}
 
 permissions:
   contents: write
