@@ -196,8 +196,7 @@ jobs:
             type=ref,event=branch,prefix=dev-
             type=ref,event=branch,prefix=dev-,suffix=-${{ github.run_number }}
             type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
-          images: ghcr.io/${{ github.repository_owner }}/app-bricks/${{ matrix.container
-            }}
+          images: ghcr.io/${{ github.repository_owner }}/app-bricks/${{ matrix.container }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
@@ -274,8 +273,7 @@ jobs:
             type=ref,event=branch,prefix=dev-
             type=ref,event=branch,prefix=dev-,suffix=-${{ github.run_number }}
             type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
-          images: ghcr.io/${{ github.repository_owner }}/app-bricks/${{ matrix.container
-            }}
+          images: ghcr.io/${{ github.repository_owner }}/app-bricks/${{ matrix.container }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
