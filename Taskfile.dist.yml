@@ -78,14 +78,14 @@ tasks:
     cmds:
       - rm -rf dist
       - task doc
-      - python -m build --config-setting "build_type=dev" .
+      - python -m build --wheel --config-setting "build_type=dev" .
 
   build:
     desc: Build a production package
     cmds:
       - rm -rf dist
       - task doc
-      - python -m build .
+      - python -m build --wheel .
 
   license:
     desc: Update license headers and files
