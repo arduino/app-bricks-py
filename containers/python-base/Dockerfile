@@ -13,6 +13,8 @@ RUN set -ex; \
     pip install --no-cache-dir uv; \
     # Now use UV to install the dependencies
     uv pip install --system --no-cache-dir -r /app/requirements.txt && rm /app/requirements.txt; \
+    # Remove pyarrow from base image
+    uv pip uninstall --system -y pyarrow; \
     # remove debug symbols from shared objects and reduce size
     find /usr/local/lib/python3.13/site-packages -type f -name "*.so" -exec strip -s {} +; \
     find /usr/local/lib/python3.13/site-packages -type f -name "*.so.*" -exec strip -s {} +; \
