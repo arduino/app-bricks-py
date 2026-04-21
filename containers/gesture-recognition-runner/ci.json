@@ -1,6 +1,6 @@
 {
   "tag_prefix": "gesture",
-  "watch_paths": ["containers/gesture-recognition/"],
+  "watch_paths": ["containers/gesture-recognition-runner/"],
   "tag_latest": false,
   "build_whl": false,
   "update_compose": true,

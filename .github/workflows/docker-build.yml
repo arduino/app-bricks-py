@@ -153,6 +153,7 @@ jobs:
     env:
       PYTHON_VERSION: "3.13"
       TASKFILE_VERSION: "3.45.4"
+      DEV_TAG_VERSION: ""
     strategy:
       fail-fast: false
       matrix:
@@ -234,10 +235,10 @@ jobs:
         id: upstream_tag
         run: |
           if [[ -n "${{ inputs.tag }}" ]]; then
-            echo "value=${{ inputs.tag }}" >> $GITHUB_OUTPUT
+            echo "DEV_TAG_VERSION=${{ inputs.tag }}" >> $GITHUB_ENV
           else
             TAG=$(echo "${{ github.ref_name }}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-zA-Z0-9._-]/-/g')
-            echo "value=dev-$TAG" >> $GITHUB_OUTPUT
+            echo "DEV_TAG_VERSION=dev-${TAG}-${{ github.run_number }}" >> $GITHUB_ENV
           fi
 
       - name: Set up Python
@@ -290,4 +291,81 @@ jobs:
           provenance: false
           build-args: |
             REGISTRY=${{ env.DEV_REGISTRY_PATH }}
-            BASE_IMAGE_VERSION=${{ steps.upstream_tag.outputs.value }}
+
+  build-downstream:
+    needs: [ detect-changes, build ]
+    if: needs.detect-changes.outputs.downstream_containers != '[]'
+    runs-on: ubuntu-24.04-arm
+    env:
+      PYTHON_VERSION: "3.13"
+      TASKFILE_VERSION: "3.45.4"
+      DEV_TAG_VERSION: ""
+    strategy:
+      fail-fast: false
+      matrix:
+        container: ${{ fromJson(needs.detect-changes.outputs.downstream_containers) }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Compute upstream image tag
+        id: upstream_tag
+        run: |
+          if [[ -n "${{ inputs.tag }}" ]]; then
+            echo "DEV_TAG_VERSION=${{ inputs.tag }}" >> $GITHUB_ENV
+          else
+            TAG=$(echo "${{ github.ref_name }}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-zA-Z0-9._-]/-/g')
+            echo "DEV_TAG_VERSION=dev-${TAG}-${{ github.run_number }}" >> $GITHUB_ENV
+          fi
+
+      - name: Set up Python
+        if: matrix.container == 'python-apps-base'
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install and build library
+        if: matrix.container == 'python-apps-base'
+        env:
+          PUBLIC_IMAGE_REGISTRY_BASE: ${{ env.DEV_REGISTRY_PATH }}
+        run: |
+          pip install go-task-bin==${{ env.TASKFILE_VERSION }}
+          task init:ci
+          task build-dev
+          cp ./dist/arduino*.whl ./containers/python-apps-base/
+
+      - name: Setup Docker buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log into registry ${{ env.REGISTRY }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          tags: |
+            type=ref,event=branch,prefix=dev-
+            type=ref,event=branch,prefix=dev-,suffix=-${{ github.run_number }}
+            type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
+          images: ghcr.io/${{ github.repository_owner }}/app-bricks/${{ matrix.container }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./containers/${{ matrix.container }}
+          file: ./containers/${{ matrix.container }}/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+          build-args: |
+            REGISTRY=${{ env.DEV_REGISTRY_PATH }}
+            BASE_IMAGE_VERSION=${{ env.DEV_TAG_VERSION }}
