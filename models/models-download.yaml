@@ -1,4 +1,10 @@
 runners:
   - edge-impulse-runner-runner:
   - genie-models-runner:
+      docker:
+        image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/genie-models-runner:dev-next
+        command: ["qai_hub_models", "fetch", "${model_name}", "-r", "${model_type}", "-p", "${quantization}", "-c", "${chipset}"]
   - audio-analytics-models-runner:
+      docker:
+        image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/audio-analytics-models-runner:dev-next
+        command: ["qai_hub_models", "fetch", "${model_name}", "-r", "${model_type}", "-p", "${quantization}", "-c", "${chipset}"]  

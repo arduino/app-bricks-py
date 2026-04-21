@@ -1247,7 +1247,12 @@ models:
       - id: "arduino:llm"
     download:
       pre-loaded: true
-      download_location: /var/lib/arduino-app-cli/models/genai
+      variables:
+        model_type: "genie"
+        model_name: "qwen3_4b"
+        download_location: "/var/lib/arduino-app-cli/models/genai"
+        quantization: "w4a16"
+        chipset: "qualcomm-qcs8275"
     metadata:
       source: "qualcomm-ai-hub"
       source-model-id: "qwen3_4b_instruct_2507"
@@ -1260,10 +1265,16 @@ models:
       billion parameters, excelling in language understanding, generation, coding, and
       mathematics.
     supported_boards: ["ventunoq"]
-    pre-loaded: true
     bricks:
       - id: "arduino:vlm"
-    download_location: /var/lib/arduino-app-cli/models/genai  
+    download:
+      pre-loaded: true
+      variables:
+        model_type: "genie"
+        model_name: "qwen3_4b_vl"
+        download_location: "/var/lib/arduino-app-cli/models/genai"
+        quantization: "w4a16"
+        chipset: "qualcomm-qcs8275" 
     metadata:
       source: "qualcomm-ai-hub"
       source-model-id: "qwen3_vl_4b"
@@ -1302,7 +1313,13 @@ models:
     supported_boards: ["ventunoq"]
     download:
       pre-loaded: true
-      download_location: /var/lib/arduino-app-cli/models/audio-analytics/asr
+      variables:
+        model_type: "qnn_context_binary"
+        model_name: "whisper_small"
+        download_location: "/var/lib/arduino-app-cli/models/audio-analytics/asr"
+        quantization: "float"
+        # TODO: update me. As of now it not WORKING!
+        chipset: "qualcomm-qcs8450-proxy"
     bricks:
       - id: "arduino:asr"
     metadata:
@@ -1418,8 +1435,14 @@ models:
     bricks:
       - id: "arduino:tts"
     download:
-      download_location: /var/lib/arduino-app-cli/models/audio-analytics/tts
       pre-loaded: true
+      variables:
+        model_type: "qnn_context_binary"
+        model_name: "melotts_en"
+        download_location: "/var/lib/arduino-app-cli/models/audio-analytics/tts"
+        quantization: "float"
+        # TODO: update me. As of now it not WORKING!
+        chipset: "qualcomm-qcs8450-proxy"
     metadata:
       source: "qualcomm-ai-hub"
       source-model-id: "melotts_en"
@@ -1433,8 +1456,14 @@ models:
     bricks:
       - id: "arduino:tts"
     download:
-      download_location: /var/lib/arduino-app-cli/models/audio-analytics/tts
       pre-loaded: true
+      variables:
+        model_type: "qnn_context_binary"
+        model_name: "melotts_es"
+        download_location: "/var/lib/arduino-app-cli/models/audio-analytics/tts"
+        quantization: "float"
+        # TODO: update me. As of now it not WORKING!
+        chipset: "qualcomm-qcs8450-proxy"
     metadata:
       source: "qualcomm-ai-hub"
       source-model-id: "melotts_es"
@@ -1448,8 +1477,14 @@ models:
     bricks:
       - id: "arduino:tts"
     download:
-      download_location: /var/lib/arduino-app-cli/models/audio-analytics/tts
       pre-loaded: true
+      variables:
+        model_type: "qnn_context_binary"
+        model_name: "melotts_zh"
+        download_location: "/var/lib/arduino-app-cli/models/audio-analytics/tts"
+        quantization: "float"
+        # TODO: update me. As of now it not WORKING!
+        chipset: "qualcomm-qcs8450-proxy"
     metadata:
       source: "qualcomm-ai-hub"
       source-model-id: "melotts_zh"
