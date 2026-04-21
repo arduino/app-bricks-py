@@ -123,6 +123,10 @@ if [ "$1" = "provision" ]; then
   arduino-bricks-list-modules --provision-compose
 else
   if grep -q "arduino:streamlit_ui" "$APP_YAML"; then
+    if ! uv pip show pyarrow > /dev/null 2>&1; then
+      echo "pyarrow not found, installing..."
+      uv pip install --no-cache-dir pyarrow==20.0.0
+    fi
     exec streamlit run --server.port 7000 "$PYTHON_SCRIPT"
   else
     echo "======== App is starting ============================"
