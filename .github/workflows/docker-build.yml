@@ -153,6 +153,7 @@ jobs:
     env:
       PYTHON_VERSION: "3.13"
       TASKFILE_VERSION: "3.45.4"
+      DEV_TAG_VERSION: ""
     strategy:
       fail-fast: false
       matrix:
@@ -228,6 +229,7 @@ jobs:
     env:
       PYTHON_VERSION: "3.13"
       TASKFILE_VERSION: "3.45.4"
+      DEV_TAG_VERSION: ""
     strategy:
       fail-fast: false
       matrix:
@@ -296,4 +298,4 @@ jobs:
           provenance: false
           build-args: |
             REGISTRY=${{ env.DEV_REGISTRY_PATH }}
-            BASE_IMAGE_VERSION=${{ steps.upstream_tag.outputs.value }}
+            BASE_IMAGE_VERSION=${{ env.DEV_TAG_VERSION }}
