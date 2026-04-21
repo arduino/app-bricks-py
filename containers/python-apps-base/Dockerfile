@@ -16,6 +16,8 @@ COPY ./*.sh /
 COPY ./arduino*.whl /app/
 RUN bash -c 'WHL_FILES=(/app/*.whl) && uv pip install --system --no-cache-dir "${WHL_FILES[@]}"[all] && pip cache purge && uv cache clean'; \
     rm /app/*.whl; \
+    # Remove pyarrow from base image
+    uv pip uninstall --system pyarrow; \    
     # fix permissions for /home/app
     chown arduino:arduino -R /home/app; \
     chmod 777 -R /home/app; \
