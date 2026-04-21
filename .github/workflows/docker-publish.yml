@@ -192,7 +192,7 @@ jobs:
           crane copy \
             ${{ env.GHCR_DESTINATION_ORG }}/app-bricks/${{ matrix.container }}:${{ steps.rebuild_check.outputs.prev_version }} \
             ${{ env.GHCR_DESTINATION_ORG }}/app-bricks/${{ matrix.container }}:${{ needs.detect.outputs.version }}
-          if [[ "${{ steps.config.outputs.tag_latest }}" == "true" ]]; then
+          if [[ "${{ steps.config.outputs.tag_latest }}" == "true" ]] && [[ "${{ needs.detect.outputs.prerelease }}" == "false" ]]; then
             crane copy \
               ${{ env.GHCR_DESTINATION_ORG }}/app-bricks/${{ matrix.container }}:${{ steps.rebuild_check.outputs.prev_version }} \
               ${{ env.GHCR_DESTINATION_ORG }}/app-bricks/${{ matrix.container }}:latest
@@ -209,7 +209,7 @@ jobs:
         with:
           tags: |
             type=raw,value=${{ needs.detect.outputs.version }}
-            type=raw,value=latest,enable=${{ steps.config.outputs.tag_latest }}
+            type=raw,value=latest,enable=${{ steps.config.outputs.tag_latest == 'true' && needs.detect.outputs.prerelease == 'false' }}
           images: ${{ env.GHCR_DESTINATION_ORG }}/app-bricks/${{ matrix.container }}
           labels: |
             org.opencontainers.image.source=${{ env.GH_DESTINATION_REPO }}
@@ -334,7 +334,7 @@ jobs:
         with:
           tags: |
             type=raw,value=${{ needs.detect.outputs.version }}
-            type=raw,value=latest,enable=${{ steps.config.outputs.tag_latest }}
+            type=raw,value=latest,enable=${{ steps.config.outputs.tag_latest == 'true' && needs.detect.outputs.prerelease == 'false' }}
           images: ${{ env.GHCR_DESTINATION_ORG }}/app-bricks/${{ matrix.container }}
           labels: |
             org.opencontainers.image.source=${{ env.GH_DESTINATION_REPO }}
