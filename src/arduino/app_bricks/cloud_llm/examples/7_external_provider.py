@@ -9,15 +9,15 @@ from arduino.app_utils import App
 import time
 
 llm = CloudLLM(
-    model="qwen3.5:0.8b",  # Replace with the actual model name you want to use
+    model="qwen3.5:0.8b",  # Replace with the actual model name you want to use. Model must be available in your Ollama instance.
     base_url="http://localhost:11434/v1",
+    system_prompt="You are a helpful assistant that provides concise answers to questions about historical figures.",
 )
 
 
 def ask_prompt():
-    print(
-        llm.chat(message="Who was Giuseppe Verdi?")
-    )
+    for chunk in llm.chat_stream(message="Who was Giuseppe Verdi?"):
+        print(chunk, end="", flush=True)
     time.sleep(60)
 
 
