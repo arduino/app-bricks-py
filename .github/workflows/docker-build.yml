@@ -162,6 +162,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set DEV_TAG_VERSION
+        run: |
+          if [[ -n "${{ inputs.tag }}" ]]; then
+            echo "DEV_TAG_VERSION=${{ inputs.tag }}" >> $GITHUB_ENV
+          else
+            TAG=$(echo "${{ github.ref_name }}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-zA-Z0-9._-]/-/g')
+            echo "DEV_TAG_VERSION=dev-${TAG}-${{ github.run_number }}" >> $GITHUB_ENV
+          fi
+
       - name: Set up Python
         if: matrix.container == 'python-apps-base'
         uses: actions/setup-python@v5
@@ -211,7 +220,6 @@ jobs:
           provenance: false
           build-args: |
             REGISTRY=${{ env.DEV_REGISTRY_PATH }}
-          # BASE_IMAGE_VERSION=latest # currently not used, defaults to value used in Dockerfile
 
   build-downstream:
     needs: [ detect-changes, build ]
@@ -233,10 +241,10 @@ jobs:
         id: upstream_tag
         run: |
           if [[ -n "${{ inputs.tag }}" ]]; then
-            echo "value=${{ inputs.tag }}" >> $GITHUB_OUTPUT
+            echo "DEV_TAG_VERSION=${{ inputs.tag }}" >> $GITHUB_ENV
           else
             TAG=$(echo "${{ github.ref_name }}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-zA-Z0-9._-]/-/g')
-            echo "value=dev-$TAG" >> $GITHUB_OUTPUT
+            echo "DEV_TAG_VERSION=dev-${TAG}-${{ github.run_number }}" >> $GITHUB_ENV
           fi
 
       - name: Set up Python
