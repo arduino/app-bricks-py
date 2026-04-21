@@ -16,8 +16,10 @@ llm = CloudLLM(
 
 
 def ask_prompt():
+    print("\n----- Sending prompt to the model -----")
     for chunk in llm.chat_stream(message="Who was Giuseppe Verdi?"):
         print(chunk, end="", flush=True)
+    print("\n----- Response complete -----")
     time.sleep(60)
 
 

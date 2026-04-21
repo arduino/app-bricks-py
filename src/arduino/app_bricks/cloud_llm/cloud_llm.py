@@ -88,6 +88,8 @@ class CloudLLM:
         self._max_tool_loops = max_tool_loops
         self._timeout = timeout
         self._callbacks = callbacks
+        self._model_loaded = False
+        self._model_name = model
 
         # Registered tools
         self._tools_map = {}
@@ -146,6 +148,11 @@ class CloudLLM:
             List[BaseMessage]: The list of messages in the conversation history,
                 including system prompt if set.
         """
+
+        if self._model_loaded is False:
+            logger.info(f"Initializing model {self._model_name}...")
+            self._model_loaded = True
+
         messages = self._history.get_messages()
         message = None
         if images is not None and len(images) > 0:
