@@ -3,6 +3,8 @@ models:
     runner: edge-impulse-runner-runner
     name : "Lightweight-Face-Detection"
     description: "A small and accurate model for detecting bounding boxes for faces in images."
+    download:
+      pre-loaded: true
     model_labels:
       - face
     bricks:
@@ -23,6 +25,8 @@ models:
     runner: edge-impulse-runner
     name : "General purpose object detection - YoloX"
     description: "General purpose object detection model based on YoloX-Nano. This model is trained on the COCO dataset and can detect 80 different object classes."
+    download:
+      pre-loaded: true
     model_labels:
       - airplane
       - apple
@@ -121,6 +125,8 @@ models:
     runner: edge-impulse-runner
     name : "General purpose image classification"
     description: "General purpose image classification model based on MobileNetV2. This model is trained on the ImageNet dataset and can classify images into 1000 categories."
+    download:
+      pre-loaded: true
     model_labels:
       - abacus
       - abaya
@@ -1091,6 +1097,8 @@ models:
     runner: edge-impulse-runner
     name : "Person classification"
     description: "Person classification model based on WakeVision dataset. This model is trained to classify images into two categories: person and not-person."
+    download:
+      pre-loaded: true
     model_labels: 
       - "non person"
       - "person"
@@ -1112,6 +1120,8 @@ models:
     runner: edge-impulse-runner
     name : "Concrete crack anomaly detection"
     description: "Anomaly detection model to identify cracks in concrete structures."
+    download:
+      pre-loaded: true
     metadata:
       source: "edgeimpulse"
       ei-project-id: 800941
@@ -1126,6 +1136,8 @@ models:
     runner: edge-impulse-runner
     name : "Keyword spotting - Hey Arduino!"
     description: "A keyword-spotting model to detect the 'Hey Arduino!' in audio streams."
+    download:
+      pre-loaded: true
     model_labels: 
       - "background"
       - "hey_arduino"
@@ -1146,6 +1158,8 @@ models:
     runner: edge-impulse-runner
     name : "Continuous motion detection"
     description: "A motion detection model designed to identify up/down, wave, and snake movements evalauting accelerometer data."
+    download:
+      pre-loaded: true
     model_labels:
       - idle
       - snake
@@ -1165,6 +1179,8 @@ models:
     runner: edge-impulse-runner
     name : "Fan anomaly detection"
     description: "An anomaly detection model designed to identify anomalies in fan operation."
+    download:
+      pre-loaded: true
     metadata:
       source: "edgeimpulse"
       ei-project-id: 774707
@@ -1179,6 +1195,8 @@ models:
     runner: edge-impulse-runner
     name : "Glass breaking classifier"
     description: "A glass breaking classifier model to detect glass breaking sounds in audio recordings"
+    download:
+      pre-loaded: true
     model_labels:
       - "Background"
       - "Glass_Breaking"
@@ -1197,6 +1215,8 @@ models:
     runner: edge-impulse-runner
     name : "Hand gestures"
     description: "A lightweight vision model that detects four hand gestures: neutral fist, open hand (five), V-sign (peace), and thumbs-up (good)."
+    download:
+      pre-loaded: true
     model_labels:
       - five
       - good
@@ -1225,7 +1245,9 @@ models:
     supported_boards: ["ventunoq"]
     bricks:
       - id: "arduino:llm"
-    download_location: /var/lib/arduino-app-cli/models/genai
+    download:
+      pre-loaded: true
+      download_location: /var/lib/arduino-app-cli/models/genai
     metadata:
       source: "qualcomm-ai-hub"
       source-model-id: "qwen3_4b_instruct_2507"
@@ -1238,6 +1260,7 @@ models:
       billion parameters, excelling in language understanding, generation, coding, and
       mathematics.
     supported_boards: ["ventunoq"]
+    pre-loaded: true
     bricks:
       - id: "arduino:vlm"
     download_location: /var/lib/arduino-app-cli/models/genai  
@@ -1251,6 +1274,8 @@ models:
     description: >-
       The MediaPipe Gesture Recognizer is a real-time machine learning pipeline that detects hands, predicts 21 hand landmarks, determines handedness (left/right),
       and classifies gestures from a predefined set.
+    download:
+      pre-loaded: true
     model_labels:
       - Thumb_Up
       - Thumb_Down
@@ -1275,9 +1300,11 @@ models:
       making it highly reliable for real-world applications.
       Specifically, it excels in long-form transcription, capable of accurately transcribing audio clips up to 30 seconds long.
     supported_boards: ["ventunoq"]
+    download:
+      pre-loaded: true
+      download_location: /var/lib/arduino-app-cli/models/audio-analytics/asr
     bricks:
       - id: "arduino:asr"
-    download_location: /var/lib/arduino-app-cli/models/audio-analytics/asr 
     metadata:
       source: "qualcomm-ai-hub"
       source-model-id: "whisper_small"
@@ -1390,7 +1417,9 @@ models:
     supported_boards: ["ventunoq"]
     bricks:
       - id: "arduino:tts"
-    download_location: /var/lib/arduino-app-cli/models/audio-analytics/tts 
+    download:
+      download_location: /var/lib/arduino-app-cli/models/audio-analytics/tts
+      pre-loaded: true
     metadata:
       source: "qualcomm-ai-hub"
       source-model-id: "melotts_en"
@@ -1403,7 +1432,9 @@ models:
     supported_boards: ["ventunoq"]
     bricks:
       - id: "arduino:tts"
-    download_location: /var/lib/arduino-app-cli/models/audio-analytics/tts 
+    download:
+      download_location: /var/lib/arduino-app-cli/models/audio-analytics/tts
+      pre-loaded: true
     metadata:
       source: "qualcomm-ai-hub"
       source-model-id: "melotts_es"
@@ -1416,7 +1447,9 @@ models:
     supported_boards: ["ventunoq"]
     bricks:
       - id: "arduino:tts"
-    download_location: /var/lib/arduino-app-cli/models/audio-analytics/tts 
+    download:
+      download_location: /var/lib/arduino-app-cli/models/audio-analytics/tts
+      pre-loaded: true
     metadata:
       source: "qualcomm-ai-hub"
       source-model-id: "melotts_zh"

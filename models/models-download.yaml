@@ -1,0 +1,4 @@
+runners:
+  - edge-impulse-runner-runner:
+  - genie-models-runner:
+  - audio-analytics-models-runner:
