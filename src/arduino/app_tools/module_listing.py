@@ -25,6 +25,8 @@ editable_module_config = "direct_url.json"
 
 config_file_name: str = "brick_config.yaml"
 compose_config_file_name: str = "brick_compose.yaml"
+service_config_file_name: str = "service_config.yaml"
+service_compose_config_file_name: str = "service_compose.yaml"
 main_readme_file_name: str = "README.md"
 examples_folder_name: str = "examples"
 
@@ -117,7 +119,67 @@ class ArduinoBrick:
         return f"Name: {self.name}\nDescription: {self.brick_description}\nPath: {self.path}\nCompose file: {self.get_compose_file()}\n"
 
 
-def find_config_yaml(root_path: str) -> List[ArduinoBrick]:
+class ArduinoService:
+    def __init__(
+        self,
+        service_id: str,
+        name: str,
+        brick_description: str,
+        fs_path: str,
+        category: str = "miscellaneous",
+        env_variables: Dict[str, str] = None,
+        supported_boards: List[str] = None,
+        root_path: str = None,
+    ):
+        self.service_id = service_id
+        self.name = name
+        self.brick_description = brick_description
+        self.path = fs_path
+        self.compose_file: Optional[str] = self.get_compose_file()
+        self.require_container: bool = self.compose_file is not None
+        self.category = category
+        self.env_variables: Optional[Dict[str, str]] = env_variables
+        self.supported_boards: Optional[List[str]] = supported_boards
+        self.root_path = root_path
+
+    def to_dict(self) -> dict:
+        out_dict: dict = {
+            "service_id": self.service_id,
+            "name": self.name,
+            "description": self.brick_description,
+            "category": self.category,
+        }
+        if self.supported_boards:
+            out_dict["supported_boards"] = self.supported_boards
+        if self.root_path:
+            out_dict["root_path"] = self.root_path
+
+        if self.env_variables and len(self.env_variables) > 0:
+            additional_vars: List[EnvVariable] = []
+            for var in self.env_variables:
+                name = var.get("name")
+                description = var.get("description", "")
+                default = var.get("default_value", "")
+                hidden = var.get("hidden", False)
+                secret = var.get("secret", False)
+                additional_vars.append(EnvVariable(name, description, default, hidden, secret))
+            if "variables" in out_dict:
+                out_dict["variables"].extend([var.to_dict() for var in additional_vars])
+            else:
+                out_dict["variables"] = [var.to_dict() for var in additional_vars]
+        return out_dict
+
+    def get_compose_file(self) -> Optional[str]:
+        compose_file: pathlib.Path = pathlib.Path(self.path) / compose_config_file_name
+        if compose_file.is_file():
+            return str(compose_file)
+        return None
+
+    def __str__(self):
+        return f"Name: {self.name}\nDescription: {self.brick_description}\nPath: {self.path}\nCompose file: {self.get_compose_file()}\n"
+
+
+def find_config_yaml(root_path: str) -> tuple[List[ArduinoBrick], List[ArduinoService]]:
     """Scans all subfolders within the given root_path to find 'config.yaml'.
 
     Args:
@@ -127,14 +189,16 @@ def find_config_yaml(root_path: str) -> List[ArduinoBrick]:
         list: A list of paths to directories that contain 'config.yaml'.
     """
     discovered_modules: List[ArduinoBrick] = []
+    discovered_services: List[ArduinoService] = []
     root_path_obj: pathlib.Path = pathlib.Path(root_path)
 
     if not root_path_obj.is_dir():
-        return discovered_modules
+        return discovered_modules, discovered_services
 
     for item in root_path_obj.iterdir():
         if item.is_dir():
             config_file: pathlib.Path = item / config_file_name
+            service_config_file: pathlib.Path = item / service_config_file_name
             editable_module: pathlib.Path = item / editable_module_config
             if config_file.is_file():
                 try:
@@ -164,6 +228,29 @@ def find_config_yaml(root_path: str) -> List[ArduinoBrick]:
                     discovered_modules.append(mod)
                 except yaml.YAMLError:
                     logger.error(f"Error: {config_file} is not a valid YAML file.")
+            elif service_config_file.is_file():
+                try:
+                    config: dict = yaml.safe_load(service_config_file.read_text())
+                    if "service_id" not in config or "name" not in config or "description" not in config:
+                        continue
+
+                    if "disabled" in config and config["disabled"]:
+                        logger.debug(f"Module {config['service_id']} is disabled. Skipping it.")
+                        continue
+
+                    mod = ArduinoService(
+                        config["service_id"],
+                        config["name"],
+                        config["description"],
+                        str(service_config_file.parent),
+                        config.get("category", None),
+                        env_variables=config.get("variables", None),
+                        supported_boards=config.get("supported_boards", None),
+                        root_path=root_path,
+                    )
+                    discovered_services.append(mod)
+                except yaml.YAMLError:
+                    logger.error(f"Error: {service_config_file} is not a valid YAML file.")
             elif editable_module.is_file():
                 try:
                     with open(editable_module, "r") as editable_module_cfg:
@@ -179,14 +266,18 @@ def find_config_yaml(root_path: str) -> List[ArduinoBrick]:
                                     local_file_path = local_file_path[1:]
 
                                 local_file_path = pathlib.Path(local_file_path) / "src"
-                                discovered_modules.extend(find_config_yaml(local_file_path))
+                                sub_bricks, sub_services = find_config_yaml(local_file_path)
+                                discovered_modules.extend(sub_bricks)
+                                discovered_services.extend(sub_services)
 
                 except json.JSONDecodeError:
                     logger.error(f"Error: {editable_module} is not a valid JSON file.")
             else:
-                discovered_modules.extend(find_config_yaml(item))  # add any config.yaml files found in subdirectories.
+                sub_bricks, sub_services = find_config_yaml(item)  # add any config.yaml files found in subdirectories.
+                discovered_modules.extend(sub_bricks)
+                discovered_services.extend(sub_services)
 
-    return discovered_modules
+    return discovered_modules, discovered_services
 
 
 def list_installed_packages_pkg_resources() -> tuple[Dict[str, List[ArduinoBrick]], str]:
@@ -195,6 +286,7 @@ def list_installed_packages_pkg_resources() -> tuple[Dict[str, List[ArduinoBrick
     """
     start = time.time() * 1000
     checked_paths: Dict[str, List[ArduinoBrick]] = {}
+    checked_svc_paths: Dict[str, List[ArduinoService]] = {}
 
     # Check standard site-packages and user site-packages directories
     paths = set(site.getsitepackages())
@@ -203,25 +295,23 @@ def list_installed_packages_pkg_resources() -> tuple[Dict[str, List[ArduinoBrick
         if local_path is None or local_path == "":
             continue
         logger.debug(f"Checking local path: {local_path}")
-        local_installed_modules = find_config_yaml(local_path)
-        checked_paths[local_path] = local_installed_modules
+        local_bricks, local_svc = find_config_yaml(local_path)
+        checked_paths[local_path] = local_bricks
+        checked_svc_paths[local_path] = local_svc
 
     # Search for app_services folder (nested inside an 'arduino' subfolder)
     services_folder = None
-    for local_path in paths:
-        if local_path is None or local_path == "":
-            continue
-        local_path_obj = pathlib.Path(local_path)
-        if not local_path_obj.is_dir():
-            continue
-        for inner_path in local_path_obj.iterdir():
-            if not inner_path.is_dir() or inner_path.name != "arduino":
+    for key in checked_svc_paths.keys():
+        for svs in checked_svc_paths[key]:
+            local_path = svs.root_path
+            logger.info(f"Searching for app_services folder in root path: {local_path}")
+            if local_path is None or local_path == "":
                 continue
-            candidate = inner_path / "app_services"
-            if candidate.is_dir():
-                logger.debug(f"Found app_services folder at: {candidate}")
-                services_folder = str(candidate)
+            if "app_services" in str(local_path):
+                logger.info(f"Found app_services folder directly in: {local_path}")
+                services_folder = local_path
                 break
+
         if services_folder:
             break
 
@@ -230,9 +320,11 @@ def list_installed_packages_pkg_resources() -> tuple[Dict[str, List[ArduinoBrick
 
     # Check application python home directory
     app_home = "/app/python"
-    local_installed_modules: List[ArduinoBrick] = find_config_yaml(app_home)
-    if local_installed_modules and len(local_installed_modules) > 0:
-        checked_paths[app_home] = local_installed_modules
+    local_bricks, local_svc = find_config_yaml(app_home)
+    if local_bricks and len(local_bricks) > 0:
+        checked_paths[app_home] = local_bricks
+    if local_svc and len(local_svc) > 0:
+        checked_svc_paths[app_home] = local_svc
 
     end = time.time() * 1000
     logger.info(f"Module discovery took {end - start} ms")
@@ -370,8 +462,8 @@ def release():
     arduino_bricks_version = args.version
     update_ai_containers = False
     if args.dev is not None and args.dev:
-        logger.warning("Development mode enabled. Using 'dev-next' as the version.")
-        arduino_bricks_version = "dev-next"
+        arduino_bricks_version = os.getenv("DEV_TAG_VERSION", "dev-latest")
+        logger.warning(f"Development mode enabled. Using '{arduino_bricks_version}' as the version.")
         update_ai_containers = True
 
     modules = []
@@ -393,19 +485,19 @@ def release():
     if services_folder and os.path.isdir(services_folder):
         print(f"Processing services files in {services_folder} for arduino bricks version {arduino_bricks_version}")
         for entry in os.scandir(services_folder):
+            print(f"Checking {entry.path} for compose files to update...")
             if not entry.is_dir():
                 continue
             for sub_entry in os.scandir(entry.path):
-                if sub_entry.is_dir():
-                    file_path = os.path.join(sub_entry.path, "service_compose.yaml")
-                    if os.path.isfile(file_path):
-                        _update_compose_release_version(
-                            compose_file_path=file_path,
-                            release_version=arduino_bricks_version,
-                            append_suffix=False,
-                            only_ai_containers=update_ai_containers,
-                            registry=registry,
-                        )
+                if sub_entry.is_file() and sub_entry.name == service_compose_config_file_name:
+                    print(f"Found service compose file {sub_entry.path} | {sub_entry.name}. Updating...")
+                    _update_compose_release_version(
+                        compose_file_path=sub_entry.path,
+                        release_version=arduino_bricks_version,
+                        append_suffix=False,
+                        only_ai_containers=update_ai_containers,
+                        registry=registry,
+                    )
 
     mod_structure = {
         "bricks": modules,

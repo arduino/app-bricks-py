@@ -5,5 +5,5 @@
   "build_whl": false,
   "update_compose": false,
   "build_args": {},
-  "downstream": ["gesture-recognition"]
+  "downstream": ["gesture-recognition-runner"]
 }

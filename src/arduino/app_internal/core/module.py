@@ -307,16 +307,18 @@ def _update_compose_release_version(
         content = file.read()
 
     print("Updating compose file:", compose_file_path)
-    if only_ai_containers and "models-runner" not in content:
+    if only_ai_containers and "-runner" not in content:
         return compose_file_path
 
     # Replace the release version in the content
-
     updated_content = content
 
     if only_ai_containers:
-        substitution = "models-runner:" + release_version
-        updated_content = re.sub(r"models-runner:[0-9]+\.[0-9]+\.[0-9]+", substitution, updated_content)
+        substitution = "-runner:" + release_version
+        # First replace branch-name style tags (e.g. dev-next, feature-foo); branch names start with a letter
+        updated_content = re.sub(r"-runner:[a-zA-Z][a-zA-Z0-9._/-]*", substitution, updated_content)
+        # Then replace semver style tags (e.g. 1.2.3)
+        updated_content = re.sub(r"-runner:[0-9]+\.[0-9]+\.[0-9]+", substitution, updated_content)
 
     substitution = release_version
     updated_content = re.sub(r"\${APPSLAB_VERSION:\-([^}]+)?}", substitution, updated_content)
