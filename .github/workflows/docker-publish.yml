@@ -55,26 +55,39 @@ jobs:
             echo "prerelease=false" >> $GITHUB_OUTPUT
           fi
 
-          # Collect all containers with a ci.json
-          ALL_CONTAINERS=()
+          # Collect all known containers (for downstream existence check)
+          ALL_KNOWN=()
           for CI_JSON in containers/*/ci.json; do
             CONTAINER=$(basename "$(dirname "$CI_JSON")")
-            ALL_CONTAINERS+=("$CONTAINER")
+            ALL_KNOWN+=("$CONTAINER")
           done
 
-          # Split into base and downstream containers
+          # Filter to containers whose tag_prefix matches the pushed tag prefix
+          TAG_PREFIX_FILTER="${TAG_REF%%/*}"
+          MATCHING_CONTAINERS=()
+          for CONTAINER in "${ALL_KNOWN[@]}"; do
+            CONTAINER_TAG_PREFIX=$(jq -r '.tag_prefix' "containers/$CONTAINER/ci.json" 2>/dev/null)
+            if [[ "$CONTAINER_TAG_PREFIX" == "$TAG_PREFIX_FILTER" ]]; then
+              MATCHING_CONTAINERS+=("$CONTAINER")
+            fi
+          done
+
+          echo "Tag prefix filter: ${TAG_PREFIX_FILTER}"
+          echo "Matching containers: ${MATCHING_CONTAINERS[*]}"
+
+          # Collect downstreams from matching containers (regardless of downstream tag_prefix)
           DOWNSTREAM_IN_BUILD=()
-          for CONTAINER in "${ALL_CONTAINERS[@]}"; do
+          for CONTAINER in "${MATCHING_CONTAINERS[@]}"; do
             DS_LIST=$(jq -r '.downstream // [] | .[]' "containers/$CONTAINER/ci.json" 2>/dev/null)
             for DS in $DS_LIST; do
-              if [[ " ${ALL_CONTAINERS[*]} " =~ " $DS " ]] && [[ ! " ${DOWNSTREAM_IN_BUILD[*]} " =~ " $DS " ]]; then
+              if [[ " ${ALL_KNOWN[*]} " =~ " $DS " ]] && [[ ! " ${DOWNSTREAM_IN_BUILD[*]} " =~ " $DS " ]]; then
                 DOWNSTREAM_IN_BUILD+=("$DS")
               fi
             done
           done
 
           BASE_CONTAINERS=()
-          for CONTAINER in "${ALL_CONTAINERS[@]}"; do
+          for CONTAINER in "${MATCHING_CONTAINERS[@]}"; do
             if [[ ! " ${DOWNSTREAM_IN_BUILD[*]} " =~ " $CONTAINER " ]]; then
               BASE_CONTAINERS+=("$CONTAINER")
             fi
