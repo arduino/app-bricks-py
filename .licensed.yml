@@ -1,0 +1,54 @@
+cache_path: .licenses
+
+apps:
+  - name: arduino-app-bricks
+    source_path: .
+    sources:
+      pip: true
+    python:
+      virtual_env_dir: ".licensed-venv-lib"
+
+  - name: python-base
+    source_path: .
+    sources:
+      pip: true
+    python:
+      virtual_env_dir: ".licensed-venv-python-base"
+
+  - name: aihub-models-runner
+    source_path: .
+    sources:
+      pip: true
+    python:
+      virtual_env_dir: ".licensed-venv-aihub"
+
+  - name: python-apps-base
+    source_path: .
+    sources:
+      pip: true
+    python:
+      virtual_env_dir: ".licensed-venv-python-apps-base"
+
+stale_records_action: error
+
+ignored:
+  pip:
+    - pip
+    - setuptools
+    - wheel
+    - uv
+    - arduino-app-bricks
+    - arduino_app_bricks
+
+allowed:
+  - mpl-2.0
+  - apache-2.0
+  - mit
+  - mit-cmu
+  - bsd-2-clause
+  - bsd-3-clause
+  - cc0-1.0
+  - isc
+  - psf-2.0
+  - unlicense
+  - ofl-1.1

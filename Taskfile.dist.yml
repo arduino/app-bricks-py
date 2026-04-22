@@ -2,6 +2,7 @@ version: "3"
 
 vars:
   PYTHON_VERSION_MIN: "3.13"
+  LICENSED_VERSION: '5.0.6'
 
 tasks:
   init:
@@ -37,7 +38,7 @@ tasks:
     desc: Install project dependencies
     cmds:
       - sudo apt update
-      - sudo apt install libasound2-dev
+      - sudo apt install -y libasound2-dev portaudio19-dev libzbar0
       - pip install build
       - pip install -e ".[dev]"
 
@@ -85,8 +86,8 @@ tasks:
       - task doc
       - python -m build .
 
-  license:
-    desc: Update license headers and files
+  license:headers:
+    desc: Update SPDX license headers (REUSE)
     cmds:
       - |
         git ls-files |
@@ -115,6 +116,68 @@ tasks:
         # as `licensed`.  `sed -i` is POSIX-portable and available on
         # every GitHub Actions runner.
         find . -maxdepth 1 -name 'LICENSE*' -type f -exec sed -i 's/[[:space:]]*$//' {} +
+
+  license:init-venvs:
+    desc: Create virtual environments for licensed dependency scanning
+    internal: true
+    cmds:
+      - |
+        echo "Creating library venv (.licensed-venv-lib)..."
+        python -m venv .licensed-venv-lib
+        SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0 .licensed-venv-lib/bin/pip install -q ".[all]"
+      - |
+        echo "Creating python-base container venv (.licensed-venv-python-base)..."
+        python -m venv .licensed-venv-python-base
+        .licensed-venv-python-base/bin/pip install -q -r containers/python-base/requirements-base.txt
+      - |
+        echo "Creating aihub container venv (.licensed-venv-aihub)..."
+        python -m venv .licensed-venv-aihub
+        .licensed-venv-aihub/bin/pip install -q -r containers/aihub-models-runner/requirements-base.txt
+        .licensed-venv-aihub/bin/pip install -q -r containers/gesture-recognition/requirements.txt || echo "WARNING: Some gesture-recognition packages could not be installed (platform-specific). Skipping."
+      - |
+        echo "Creating python-apps-base container venv (.licensed-venv-python-apps-base)..."
+        python -m venv .licensed-venv-python-apps-base
+        .licensed-venv-python-apps-base/bin/pip install -q -r containers/python-base/requirements-base.txt
+        SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0 .licensed-venv-python-apps-base/bin/pip install -q ".[all]"
+
+  license:cleanup-venvs:
+    desc: Remove temporary licensed virtual environments
+    internal: true
+    cmds:
+      - rm -rf .licensed-venv-lib .licensed-venv-python-base .licensed-venv-aihub .licensed-venv-python-apps-base
+
+  install:licensed:
+    desc: Install or verify licensed Ruby gem
+    cmds:
+      - |
+        if command -v licensed &> /dev/null; then
+          INSTALLED=$(licensed version 2>/dev/null || echo "0")
+          if echo "$INSTALLED" | grep -q "{{.LICENSED_VERSION}}"; then
+            echo "licensed {{.LICENSED_VERSION}} already installed."
+            exit 0
+          fi
+        fi
+        if [[ "${CI:-}" == "true" ]]; then
+          gem install licensed -v {{.LICENSED_VERSION}}
+        else
+          echo "Please install licensed v{{.LICENSED_VERSION}} manually: gem install licensed -v {{.LICENSED_VERSION}}"
+          exit 1
+        fi
+
+  license:deps:
+    desc: Check and cache dependency licenses (licensed)
+    cmds:
+      - task: license:init-venvs
+      - task: install:licensed
+      - licensed cache
+      - licensed status || true
+      - task: license:cleanup-venvs
+
+  license:
+    desc: Update license headers, files, and dependency license caches
+    cmds:
+      - task: license:headers
+      - task: license:deps
 
   sbom:generate:internal:
     internal: true
