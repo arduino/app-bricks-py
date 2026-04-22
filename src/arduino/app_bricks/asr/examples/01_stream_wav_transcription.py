@@ -7,9 +7,9 @@
 from arduino.app_bricks.asr import AutomaticSpeechRecognition
 
 
-asr = AutomaticSpeechRecognition()
 with open("recording_01.wav", "rb") as wav_file:
-    with asr.transcribe_wav_stream(wav_file.read()) as stream:
+    asr = AutomaticSpeechRecognition(wav_file.read())
+    with asr.transcribe_stream() as stream:
         for chunk in stream:
             match chunk.type:
                 case "partial_text":

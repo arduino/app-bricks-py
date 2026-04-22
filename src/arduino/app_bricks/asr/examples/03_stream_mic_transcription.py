@@ -11,8 +11,8 @@ from arduino.app_peripherals.microphone import Microphone
 mic = Microphone()
 mic.start()
 
-asr = AutomaticSpeechRecognition()
-with asr.transcribe_mic_stream(mic, duration=5) as stream:
+asr = AutomaticSpeechRecognition(mic)
+with asr.transcribe_stream(duration=5) as stream:
     for chunk in stream:
         match chunk.type:
             case "partial_text":
