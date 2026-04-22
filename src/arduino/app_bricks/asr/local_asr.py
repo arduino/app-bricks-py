@@ -680,8 +680,8 @@ class AutomaticSpeechRecognition:
                     logger.warning(f"WebSocket connection closed for session {session_id}")
                     break
                 else:
-                    logger.warning(f"Unknown message type received: {evt_type}")
-                    raise RuntimeError(f"Unknown message type received: {evt_type}")
+                    logger.warning(f"Unknown message type received for session {session_id}: type={evt_type!r}, msg={data}")
+                    continue
 
         except asyncio.CancelledError:
             logger.debug(f"Receive task cancelled for session {session_id}")
