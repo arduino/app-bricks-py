@@ -139,8 +139,9 @@ jobs:
         id: rebuild_check
         run: |
           TAG_PREFIX="${{ steps.config.outputs.tag_prefix }}"
+          CURRENT_TAG="${TAG_PREFIX}/${{ needs.detect.outputs.version }}"
           git fetch --tags
-          PREV_TAG=$(git tag --sort=-version:refname | grep "^${TAG_PREFIX}/" | head -1)
+          PREV_TAG=$(git tag --sort=-version:refname | grep "^${TAG_PREFIX}/" | grep -v "^${CURRENT_TAG}$" | head -1)
 
           if [[ -z "$PREV_TAG" ]]; then
             echo "No previous tag found for ${{ matrix.container }} — full build required"
