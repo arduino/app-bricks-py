@@ -1,6 +1,6 @@
 models:
  - face-detection:
-    runner: edge-impulse-runner-runner
+    runner: ei-models-runner
     name : "Lightweight-Face-Detection"
     description: "A small and accurate model for detecting bounding boxes for faces in images."
     download:
@@ -22,7 +22,7 @@ models:
       source-model-id: "face-det-lite"
       source-model-url: "https://aihub.qualcomm.com/models/face_det_lite"
  - yolox-object-detection:
-    runner: edge-impulse-runner
+    runner: ei-models-runner
     name : "General purpose object detection - YoloX"
     description: "General purpose object detection model based on YoloX-Nano. This model is trained on the COCO dataset and can detect 80 different object classes."
     download:
@@ -122,7 +122,7 @@ models:
         model_configuration:
           "EI_V_OBJ_DETECTION_MODEL": "/models/ootb/ei/yolo-x-nano.eim"
  - mobilenet-image-classification:
-    runner: edge-impulse-runner
+    runner: ei-models-runner
     name : "General purpose image classification"
     description: "General purpose image classification model based on MobileNetV2. This model is trained on the ImageNet dataset and can classify images into 1000 categories."
     download:
@@ -1094,7 +1094,7 @@ models:
         model_configuration:
           "EI_V_CLASSIFICATION_MODEL": "/models/ootb/ei/mobilenet-v2-224px.eim"
  - person-classification:
-    runner: edge-impulse-runner
+    runner: ei-models-runner
     name : "Person classification"
     description: "Person classification model based on WakeVision dataset. This model is trained to classify images into two categories: person and not-person."
     download:
@@ -1117,7 +1117,7 @@ models:
         model_configuration:
           "EI_V_CLASSIFICATION_MODEL": "/models/ootb/ei/person-classification.eim"   
  - concreate-crack-anomaly-detection:
-    runner: edge-impulse-runner
+    runner: ei-models-runner
     name : "Concrete crack anomaly detection"
     description: "Anomaly detection model to identify cracks in concrete structures."
     download:
@@ -1133,7 +1133,7 @@ models:
         model_configuration:
           "EI_V_ANOMALY_DETECTION_MODEL": "/models/ootb/ei/concrete-crack-anomaly-detection.eim"
  - keyword-spotting-hey-arduino:
-    runner: edge-impulse-runner
+    runner: ei-models-runner
     name : "Keyword spotting - Hey Arduino!"
     description: "A keyword-spotting model to detect the 'Hey Arduino!' in audio streams."
     download:
@@ -1155,7 +1155,7 @@ models:
         model_configuration:
           "EI_KEYWORD_SPOTTING_MODEL": "/models/ootb/ei/keyword-spotting-hey-arduino.eim"
  - updown-wave-motion-detection:
-    runner: edge-impulse-runner
+    runner: ei-models-runner
     name : "Continuous motion detection"
     description: "A motion detection model designed to identify up/down, wave, and snake movements evalauting accelerometer data."
     download:
@@ -1176,7 +1176,7 @@ models:
         model_configuration:
           "EI_MOTION_DETECTION_MODEL": "/models/ootb/ei/updown-wave-motion-detection.eim"
  - fan-anomaly-detection:
-    runner: edge-impulse-runner
+    runner: ei-models-runner
     name : "Fan anomaly detection"
     description: "An anomaly detection model designed to identify anomalies in fan operation."
     download:
@@ -1192,7 +1192,7 @@ models:
         model_configuration:
           "EI_VIBRATION_ANOMALY_DETECTION_MODEL": "/models/ootb/ei/fan-anomaly-detection.eim" 
  - glass-breaking:
-    runner: edge-impulse-runner
+    runner: ei-models-runner
     name : "Glass breaking classifier"
     description: "A glass breaking classifier model to detect glass breaking sounds in audio recordings"
     download:
@@ -1212,7 +1212,7 @@ models:
         model_configuration:
           "EI_AUDIO_CLASSIFICATION_MODEL": "/models/ootb/ei/glass-breaking.eim"
  - hand-gestures:
-    runner: edge-impulse-runner
+    runner: ei-models-runner
     name : "Hand gestures"
     description: "A lightweight vision model that detects four hand gestures: neutral fist, open hand (five), V-sign (peace), and thumbs-up (good)."
     download:

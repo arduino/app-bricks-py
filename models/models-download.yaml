@@ -1,14 +1,31 @@
 runners:
-  #- edge-impulse-runner-runner:
+  - ei-models-runner:
+      platforms:
+        - ventunoq:
+            docker:
+              image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/ei-qnn-models-runner:dev-next
+              volumes:
+                - ${download_location}:/models
+              command: ["tbd"]
+        - unoq:
+            docker:
+              image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/ei-models-runner:dev-next
+              volumes:
+                - ${download_location}:/models
+              command: ["tbd"]              
   - genie-models-runner:
-      docker:
-        image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/genie-models-runner:dev-next
-        volumes:
-          - ${download_location}:/models
-        command: ["sh", "-c", "cd /models && qai_hub_models fetch ${model_name} -r ${model_type} -p ${quantization} -c ${chipset}"]
+      platforms:
+        - ventunoq:
+            docker:
+              image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/genie-models-runner:dev-next
+              volumes:
+                - ${download_location}:/models
+              command: ["sh", "-c", "cd /models && qai_hub_models fetch ${model_name} -r ${model_type} -p ${quantization} -c ${chipset}"]
   - audio-analytics-models-runner:
-      docker:
-        image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/audio-analytics-models-runner:dev-next
-        volumes:
-          - ${download_location}:/models
-        command: ["sh", "-c", "cd /models && qai_hub_models fetch ${model_name} -r ${model_type} -p ${quantization} -c ${chipset}"]
+      platforms:
+        - ventunoq:
+            docker:
+              image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/audio-analytics-models-runner:dev-next
+              volumes:
+                - ${download_location}:/models
+              command: ["sh", "-c", "cd /models && qai_hub_models fetch ${model_name} -r ${model_type} -p ${quantization} -c ${chipset}"]
