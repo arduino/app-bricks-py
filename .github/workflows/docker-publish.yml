@@ -1,5 +1,7 @@
 name: Container Release - Build and Publish
 
+run-name: "Release ${{ inputs.tag || github.ref_name }}"
+
 on:
   push:
     tags:
@@ -34,7 +36,7 @@ jobs:
       downstream_containers: ${{ steps.detect.outputs.downstream_containers }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Detect containers to release
         id: detect
@@ -115,7 +117,7 @@ jobs:
         container: ${{ fromJson(needs.detect.outputs.base_containers) }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -288,7 +290,7 @@ jobs:
         container: ${{ fromJson(needs.detect.outputs.downstream_containers) }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Read container config
         id: config
