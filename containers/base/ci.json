@@ -1,5 +1,5 @@
 {
-  "tag_prefix": "infra",
+  "tag_prefix": "release",
   "watch_paths": ["containers/base/"],
   "tag_latest": true,
   "build_whl": false,

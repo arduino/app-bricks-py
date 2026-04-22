@@ -109,6 +109,12 @@ tasks:
           fi
           rmdir "$licenses_dir"
         fi
+        # Strip trailing whitespace from license files.
+        # The upstream SPDX license texts (fetched by `reuse download`)
+        # contain stray trailing spaces that break license parsers such
+        # as `licensed`.  `sed -i` is POSIX-portable and available on
+        # every GitHub Actions runner.
+        find . -maxdepth 1 -name 'LICENSE*' -type f -exec sed -i 's/[[:space:]]*$//' {} +
 
   sbom:generate:internal:
     internal: true

@@ -1,5 +1,7 @@
 name: Container Release - Build and Publish
 
+run-name: "Release ${{ inputs.tag || github.ref_name }}"
+
 on:
   push:
     tags:
@@ -34,7 +36,7 @@ jobs:
       downstream_containers: ${{ steps.detect.outputs.downstream_containers }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Detect containers to release
         id: detect
@@ -55,26 +57,39 @@ jobs:
             echo "prerelease=false" >> $GITHUB_OUTPUT
           fi
 
-          # Collect all containers with a ci.json
-          ALL_CONTAINERS=()
+          # Collect all known containers (for downstream existence check)
+          ALL_KNOWN=()
           for CI_JSON in containers/*/ci.json; do
             CONTAINER=$(basename "$(dirname "$CI_JSON")")
-            ALL_CONTAINERS+=("$CONTAINER")
+            ALL_KNOWN+=("$CONTAINER")
           done
 
-          # Split into base and downstream containers
+          # Filter to containers whose tag_prefix matches the pushed tag prefix
+          TAG_PREFIX_FILTER="${TAG_REF%%/*}"
+          MATCHING_CONTAINERS=()
+          for CONTAINER in "${ALL_KNOWN[@]}"; do
+            CONTAINER_TAG_PREFIX=$(jq -r '.tag_prefix' "containers/$CONTAINER/ci.json" 2>/dev/null)
+            if [[ "$CONTAINER_TAG_PREFIX" == "$TAG_PREFIX_FILTER" ]]; then
+              MATCHING_CONTAINERS+=("$CONTAINER")
+            fi
+          done
+
+          echo "Tag prefix filter: ${TAG_PREFIX_FILTER}"
+          echo "Matching containers: ${MATCHING_CONTAINERS[*]}"
+
+          # Collect downstreams from matching containers (regardless of downstream tag_prefix)
           DOWNSTREAM_IN_BUILD=()
-          for CONTAINER in "${ALL_CONTAINERS[@]}"; do
+          for CONTAINER in "${MATCHING_CONTAINERS[@]}"; do
             DS_LIST=$(jq -r '.downstream // [] | .[]' "containers/$CONTAINER/ci.json" 2>/dev/null)
             for DS in $DS_LIST; do
-              if [[ " ${ALL_CONTAINERS[*]} " =~ " $DS " ]] && [[ ! " ${DOWNSTREAM_IN_BUILD[*]} " =~ " $DS " ]]; then
+              if [[ " ${ALL_KNOWN[*]} " =~ " $DS " ]] && [[ ! " ${DOWNSTREAM_IN_BUILD[*]} " =~ " $DS " ]]; then
                 DOWNSTREAM_IN_BUILD+=("$DS")
               fi
             done
           done
 
           BASE_CONTAINERS=()
-          for CONTAINER in "${ALL_CONTAINERS[@]}"; do
+          for CONTAINER in "${MATCHING_CONTAINERS[@]}"; do
             if [[ ! " ${DOWNSTREAM_IN_BUILD[*]} " =~ " $CONTAINER " ]]; then
               BASE_CONTAINERS+=("$CONTAINER")
             fi
@@ -102,7 +117,7 @@ jobs:
         container: ${{ fromJson(needs.detect.outputs.base_containers) }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -120,12 +135,23 @@ jobs:
           echo "$BUILD_ARGS" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
+      - name: Log into registry ${{ env.GHCR_REGISTRY }}
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.GHCR_REGISTRY }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install crane
+        uses: imjasonh/setup-crane@v0.4
+
       - name: Check if rebuild required
         id: rebuild_check
         run: |
           TAG_PREFIX="${{ steps.config.outputs.tag_prefix }}"
+          CURRENT_TAG="${TAG_PREFIX}/${{ needs.detect.outputs.version }}"
           git fetch --tags
-          PREV_TAG=$(git tag --sort=-version:refname | grep "^${TAG_PREFIX}/" | head -1)
+          PREV_TAG=$(git tag --sort=-version:refname | grep "^${TAG_PREFIX}/" | grep -v "^${CURRENT_TAG}$" | head -1)
 
           if [[ -z "$PREV_TAG" ]]; then
             echo "No previous tag found for ${{ matrix.container }} — full build required"
@@ -139,8 +165,11 @@ jobs:
               echo "Sources changed since $PREV_TAG — full build required"
               echo "$CHANGED"
               echo "needs_build=true" >> $GITHUB_OUTPUT
+            elif ! crane manifest ${{ env.GHCR_DESTINATION_ORG }}/app-bricks/${{ matrix.container }}:${PREV_VERSION} > /dev/null 2>&1; then
+              echo "Previous image ${PREV_VERSION} not found in registry — full build required"
+              echo "needs_build=true" >> $GITHUB_OUTPUT
             else
-              echo "No source changes since $PREV_TAG — will re-tag"
+              echo "No source changes and previous image exists — will re-tag from ${PREV_VERSION}"
               echo "needs_build=false" >> $GITHUB_OUTPUT
             fi
           fi
@@ -174,17 +203,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Log into registry ${{ env.GHCR_REGISTRY }}
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.GHCR_REGISTRY }}
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install crane
-        if: steps.rebuild_check.outputs.needs_build == 'false'
-        uses: imjasonh/setup-crane@v0.4
-
       - name: Re-tag image
         if: steps.rebuild_check.outputs.needs_build == 'false'
         run: |
@@ -200,12 +218,12 @@ jobs:
 
       - name: Setup Docker buildx
         if: steps.rebuild_check.outputs.needs_build == 'true'
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Extract Docker metadata
         if: steps.rebuild_check.outputs.needs_build == 'true'
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v4
         with:
           tags: |
             type=raw,value=${{ needs.detect.outputs.version }}
@@ -217,7 +235,7 @@ jobs:
 
       - name: Build and push Docker image
         if: steps.rebuild_check.outputs.needs_build == 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./containers/${{ matrix.container }}
           file: ./containers/${{ matrix.container }}/Dockerfile
@@ -250,7 +268,7 @@ jobs:
 
       - name: Create Pull Request
         if: steps.config.outputs.update_compose == 'true'
-        uses: peter-evans/create-pull-request@v6
+        uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: "feat: update ${{ matrix.container }} image references"
@@ -275,7 +293,7 @@ jobs:
         container: ${{ fromJson(needs.detect.outputs.downstream_containers) }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Read container config
         id: config
@@ -319,18 +337,18 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Log into registry ${{ env.GHCR_REGISTRY }}
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.GHCR_REGISTRY }}
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Docker buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Extract Docker metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v4
         with:
           tags: |
             type=raw,value=${{ needs.detect.outputs.version }}
@@ -341,7 +359,7 @@ jobs:
             org.opencontainers.image.url=${{ env.GH_DESTINATION_REPO }}
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./containers/${{ matrix.container }}
           file: ./containers/${{ matrix.container }}/Dockerfile
@@ -377,7 +395,7 @@ jobs:
 
       - name: Create Pull Request
         if: steps.config.outputs.update_compose == 'true'
-        uses: peter-evans/create-pull-request@v6
+        uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: "feat: update ${{ matrix.container }} image references"
