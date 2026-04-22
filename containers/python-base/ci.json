@@ -1,5 +1,5 @@
 {
-  "tag_prefix": "base",
+  "tag_prefix": "release",
   "watch_paths": ["containers/python-base/"],
   "tag_latest": true,
   "build_whl": false,
