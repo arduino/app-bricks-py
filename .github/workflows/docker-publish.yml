@@ -135,6 +135,16 @@ jobs:
           echo "$BUILD_ARGS" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
+      - name: Log into registry ${{ env.GHCR_REGISTRY }}
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.GHCR_REGISTRY }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install crane
+        uses: imjasonh/setup-crane@v0.4
+
       - name: Check if rebuild required
         id: rebuild_check
         run: |
@@ -155,8 +165,11 @@ jobs:
               echo "Sources changed since $PREV_TAG — full build required"
               echo "$CHANGED"
               echo "needs_build=true" >> $GITHUB_OUTPUT
+            elif ! crane manifest ${{ env.GHCR_DESTINATION_ORG }}/app-bricks/${{ matrix.container }}:${PREV_VERSION} > /dev/null 2>&1; then
+              echo "Previous image ${PREV_VERSION} not found in registry — full build required"
+              echo "needs_build=true" >> $GITHUB_OUTPUT
             else
-              echo "No source changes since $PREV_TAG — will re-tag"
+              echo "No source changes and previous image exists — will re-tag from ${PREV_VERSION}"
               echo "needs_build=false" >> $GITHUB_OUTPUT
             fi
           fi
@@ -189,17 +202,6 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Log into registry ${{ env.GHCR_REGISTRY }}
-        uses: docker/login-action@v4
-        with:
-          registry: ${{ env.GHCR_REGISTRY }}
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install crane
-        if: steps.rebuild_check.outputs.needs_build == 'false'
-        uses: imjasonh/setup-crane@v0.4
 
       - name: Re-tag image
         if: steps.rebuild_check.outputs.needs_build == 'false'
