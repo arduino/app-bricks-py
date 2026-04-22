@@ -10,7 +10,7 @@ import queue
 import threading
 import time
 import wave
-from collections.abc import AsyncGenerator, Generator, Iterator
+from collections.abc import Generator, Iterator
 from dataclasses import dataclass
 from typing import ContextManager, Generic, Literal, TypeVar
 
@@ -176,7 +176,7 @@ class _SessionInfo:
     duration: int
     start_time: float
     result_queue: queue.Queue  # queue[ASREvent]
-    chunk_queue: asyncio.Queue  # queue[bytes | object]  (_END_SENTINEL used for finite sources)
+    chunk_queue: queue.Queue  # queue[bytes | object]  (_END_SENTINEL used for finite sources)
     cancelled: threading.Event
     reader_thread: threading.Thread | None = None
 
@@ -251,7 +251,8 @@ class AutomaticSpeechRecognition:
         """Stop the ASR and clean up resources. Stops the owned mic if applicable."""
         logger.debug("Stopping ASR and cleaning up resources...")
         self._stop_worker.set()
-        active = self._active_session
+        with self._active_session_lock:
+            active = self._active_session
         if active is not None:
             active.cancelled.set()
         if self._owns_source:
@@ -259,7 +260,8 @@ class AutomaticSpeechRecognition:
 
     def cancel(self):
         """Cancel the active transcription session, if any."""
-        active = self._active_session
+        with self._active_session_lock:
+            active = self._active_session
         if active is None:
             logger.info("No active session to cancel")
             return
@@ -398,7 +400,7 @@ class AutomaticSpeechRecognition:
                 duration=duration,
                 start_time=time.time(),
                 result_queue=queue.Queue(),
-                chunk_queue=asyncio.Queue(maxsize=_CHUNK_QUEUE_MAXSIZE),
+                chunk_queue=queue.Queue(maxsize=_CHUNK_QUEUE_MAXSIZE),
                 cancelled=threading.Event(),
             )
             self._active_session = session_info
@@ -499,7 +501,7 @@ class AutomaticSpeechRecognition:
             logger.debug(f"Periodic flush cancelled for session {session_id}")
             raise
 
-    def _reader_thread_body(self, session_info: _SessionInfo, loop: asyncio.AbstractEventLoop) -> None:
+    def _reader_thread_body(self, session_info: _SessionInfo) -> None:
         session_id = session_info.session_id
         start_time = session_info.start_time
         duration = session_info.duration
@@ -519,24 +521,19 @@ class AutomaticSpeechRecognition:
                 if chunk is None:
                     continue  # transient (paused/underrun) — keep going
                 try:
-                    loop.call_soon_threadsafe(session_info.chunk_queue.put_nowait, chunk.tobytes())
-                except RuntimeError:
-                    # loop closed
-                    break
+                    session_info.chunk_queue.put_nowait(chunk.tobytes())
+                except queue.Full:
+                    logger.warning(f"Send queue full for session {session_id}, dropping chunk")
         finally:
-            try:
-                loop.call_soon_threadsafe(session_info.chunk_queue.put_nowait, _END_SENTINEL)
-            except RuntimeError:
-                pass
+            session_info.chunk_queue.put(_END_SENTINEL)
             logger.debug(f"Reader thread exited for session {session_id}")
 
     async def _transcription_session_handler(self, session_info: _SessionInfo):
         session_id = session_info.session_id
-        loop = asyncio.get_running_loop()
 
         reader = threading.Thread(
             target=self._reader_thread_body,
-            args=(session_info, loop),
+            args=(session_info,),
             daemon=True,
             name=f"ASRReader-{session_id}",
         )
@@ -576,7 +573,10 @@ class AutomaticSpeechRecognition:
                 await asyncio.gather(flush_task, return_exceptions=True)
 
                 # Server protocol: close session BEFORE tearing down WebSockets
-                await asyncio.to_thread(self._close_transcription_session, session_id)
+                try:
+                    await asyncio.to_thread(self._close_transcription_session, session_id)
+                except Exception as e:
+                    logger.error(f"Failed to close session {session_id} during teardown: {e}")
 
                 session_info.cancelled.set()
 
@@ -594,7 +594,10 @@ class AutomaticSpeechRecognition:
         chunks_sent = 0
         try:
             while not self._stop_worker.is_set() and not session_info.cancelled.is_set():
-                item = await session_info.chunk_queue.get()
+                try:
+                    item = await asyncio.to_thread(session_info.chunk_queue.get, True, 0.2)
+                except queue.Empty:
+                    continue
                 if item is _END_SENTINEL:
                     break
 
