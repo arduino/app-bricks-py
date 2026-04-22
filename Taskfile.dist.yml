@@ -98,17 +98,10 @@ tasks:
       - |
         licenses_dir="LICENSES"
         if [ -d "$licenses_dir" ]; then
-          count=$(find "$licenses_dir" -type f | wc -l)
-          if [ "$count" -gt 1 ]; then
-            for f in "$licenses_dir"/*; do
-              base=$(basename "$f")
-              mv "$f" "LICENSE-${base}"
-            done
-          elif [ "$count" -eq 1 ]; then
-            f=$(find "$licenses_dir" -type f | head -n1)
-            mv "$f" LICENSE.txt
+          if [ -f "$licenses_dir/MPL-2.0.txt" ]; then
+            mv "$licenses_dir/MPL-2.0.txt" LICENSE.txt
           fi
-          rmdir "$licenses_dir"
+          rm -rf "$licenses_dir"
         fi
         # Strip trailing whitespace from license files.
         # The upstream SPDX license texts (fetched by `reuse download`)
@@ -123,20 +116,20 @@ tasks:
     cmds:
       - |
         echo "Creating library venv (.licensed-venv-lib)..."
-        python -m venv .licensed-venv-lib
+        python3 -m venv .licensed-venv-lib
         SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0 .licensed-venv-lib/bin/pip install -q ".[all]"
       - |
         echo "Creating python-base container venv (.licensed-venv-python-base)..."
-        python -m venv .licensed-venv-python-base
+        python3 -m venv .licensed-venv-python-base
         .licensed-venv-python-base/bin/pip install -q -r containers/python-base/requirements-base.txt
       - |
         echo "Creating aihub container venv (.licensed-venv-aihub)..."
-        python -m venv .licensed-venv-aihub
+        python3 -m venv .licensed-venv-aihub
         .licensed-venv-aihub/bin/pip install -q -r containers/aihub-models-runner/requirements-base.txt
         .licensed-venv-aihub/bin/pip install -q -r containers/gesture-recognition/requirements.txt || echo "WARNING: Some gesture-recognition packages could not be installed (platform-specific). Skipping."
       - |
         echo "Creating python-apps-base container venv (.licensed-venv-python-apps-base)..."
-        python -m venv .licensed-venv-python-apps-base
+        python3 -m venv .licensed-venv-python-apps-base
         .licensed-venv-python-apps-base/bin/pip install -q -r containers/python-base/requirements-base.txt
         SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0 .licensed-venv-python-apps-base/bin/pip install -q ".[all]"
 
