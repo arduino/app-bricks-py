@@ -7,6 +7,7 @@ from .local_asr import (
     ASRBusyError,
     ASRError,
     ASRServiceBusyError,
+    ASRUnavailableError,
     AutomaticSpeechRecognition,
     TranscriptionStream,
 )
@@ -16,6 +17,7 @@ __all__ = [
     "ASRError",
     "ASRBusyError",
     "ASRServiceBusyError",
+    "ASRUnavailableError",
     "AutomaticSpeechRecognition",
     "TranscriptionStream",
 ]

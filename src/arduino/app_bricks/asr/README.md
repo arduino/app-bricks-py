@@ -13,7 +13,8 @@ The `AutomaticSpeechRecognition` brick provides on-device automatic speech recog
 
 - `ASRBusyError`: raised if you call `transcribe()` / `transcribe_stream()` while the instance already has an active session. Fix by awaiting the current session or using a separate instance.
 - `ASRServiceBusyError`: raised when the inference server rejects session creation because it is currently serving another client. The caller decides whether to retry.
-- `ASRError`: base class for both of the above.
+- `ASRUnavailableError`: raised when the inference service is unreachable (container down, network error) or the WebSocket connection drops mid-session. The caller decides whether to retry.
+- `ASRError`: base class for all of the above.
 
 ## Source Ownership
 

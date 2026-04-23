@@ -17,7 +17,7 @@ from typing import ContextManager, Generic, Literal, TypeVar
 import numpy as np
 import requests
 import websockets
-from websockets.exceptions import ConnectionClosedOK
+from websockets.exceptions import ConnectionClosed, ConnectionClosedOK
 
 from arduino.app_internal.core import resolve_address
 from arduino.app_peripherals.microphone import BaseMicrophone, Microphone
@@ -27,7 +27,7 @@ logger = Logger("LocalASR")
 
 _DEFAULT_SAMPLING_RATE = 16000
 _DEFAULT_CHANNELS = 1
-_DEFAULT_BUFFER_FRAMES = 1024
+_DEFAULT_BUFFER_SIZE = 1024
 _DEFAULT_VAD = "700"
 _REMOTE_BUSY_MARKER = "transcription session is already active"
 _READER_JOIN_TIMEOUT = 2.0
@@ -44,6 +44,10 @@ class ASRBusyError(ASRError):
 
 class ASRServiceBusyError(ASRError):
     """Raised when the inference server rejects session creation because it is serving another client."""
+
+
+class ASRUnavailableError(ASRError):
+    """Raised when the inference service is unreachable or the connection drops unexpectedly."""
 
 
 class AudioSourceExhausted(Exception):
@@ -123,7 +127,7 @@ class InMemoryAudioSource:
     Audio source wrapping WAV bytes or a raw PCM ndarray.
 
     Exposes only the subset of BaseMicrophone attributes/methods that ASR uses,
-    so it can be used uniformly. `capture()` raises `_AudioSourceExhausted`
+    so it can be used uniformly. `capture()` raises `AudioSourceExhausted`
     when the underlying buffer is drained.
     """
 
@@ -149,7 +153,7 @@ class InMemoryAudioSource:
             raise TypeError(f"Unsupported in-memory audio source type: {type(data)!r}")
 
         self.format_is_packed = False
-        self._buffer_frames = _DEFAULT_BUFFER_FRAMES
+        self.buffer_size = _DEFAULT_BUFFER_SIZE
         self._cursor = 0
         self._started = True  # always "started" — no real device lifecycle
 
@@ -163,7 +167,7 @@ class InMemoryAudioSource:
         self._started = False
 
     def capture(self) -> np.ndarray:
-        step = self._buffer_frames * self.channels
+        step = self.buffer_size * self.channels
         if self._cursor >= len(self._samples):
             raise AudioSourceExhausted()
         chunk = self._samples[self._cursor : self._cursor + step]
@@ -172,12 +176,12 @@ class InMemoryAudioSource:
 
 
 @dataclass
-class _SessionInfo:
+class SessionInfo:
     session_id: str
     duration: int
     start_time: float
-    result_queue: queue.Queue  # queue[ASREvent]
-    chunk_queue: queue.Queue  # queue[bytes | object]  (_END_SENTINEL used for finite sources)
+    result_queue: queue.Queue[ASREvent]
+    chunk_queue: queue.Queue[bytes | object]  # object is for _END_SENTINEL
     cancelled: threading.Event
     reader_thread: threading.Thread | None = None
 
@@ -242,7 +246,7 @@ class AutomaticSpeechRecognition:
         self._stop_worker = threading.Event()
 
         self._active_session_lock = threading.Lock()
-        self._active_session: _SessionInfo | None = None
+        self._active_session: SessionInfo | None = None
 
     def start(self):
         """Prepare the ASR for transcription. Starts the owned mic if applicable."""
@@ -282,10 +286,12 @@ class AutomaticSpeechRecognition:
 
         Returns:
             The transcribed text, or an empty string if no speech was detected.
-        
+
         Raises:
             ASRBusyError: If this instance already has an active session.
             ASRServiceBusyError: If no more concurrent sessions are available.
+            ASRUnavailableError: If the inference service is unreachable or the
+                connection drops mid-session.
             RuntimeError: If the audio source has not been started.
         """
         last_partial = ""
@@ -320,6 +326,8 @@ class AutomaticSpeechRecognition:
         Raises:
             ASRBusyError: If this instance already has an active session.
             ASRServiceBusyError: If no more concurrent sessions are available.
+            ASRUnavailableError: If the inference service is unreachable or the
+                connection drops mid-session.
             RuntimeError: If the audio source has not been started.
         """
         if not self._source.is_started():
@@ -369,7 +377,10 @@ class AutomaticSpeechRecognition:
         if self.language is not None:
             create_data["language"] = self.language
 
-        response = requests.post(url=create_url, json=create_data, timeout=5)
+        try:
+            response = requests.post(url=create_url, json=create_data, timeout=5)
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+            raise ASRUnavailableError(f"Inference service unreachable: {e}") from e
 
         if response.status_code == 400:
             try:
@@ -414,7 +425,7 @@ class AutomaticSpeechRecognition:
                 f"Create a separate AutomaticSpeechRecognition instance for concurrent transcriptions."
             )
 
-        session_info: _SessionInfo | None = None
+        session_info: SessionInfo | None = None
         future = None
 
         try:
@@ -422,7 +433,7 @@ class AutomaticSpeechRecognition:
 
             session_id = self._create_transcription_session()
 
-            session_info = _SessionInfo(
+            session_info = SessionInfo(
                 session_id=session_id,
                 duration=duration,
                 start_time=time.time(),
@@ -506,11 +517,15 @@ class AutomaticSpeechRecognition:
             logger.debug("Asyncio event loop stopped")
 
     async def _await_connection_established(self, websocket, label):
-        msg = json.loads(await asyncio.wait_for(websocket.recv(), timeout=5.0))
+        try:
+            raw = await asyncio.wait_for(websocket.recv(), timeout=5.0)
+        except (asyncio.TimeoutError, ConnectionClosed) as e:
+            raise ASRUnavailableError(f"{label} handshake failed: {e}") from e
+        msg = json.loads(raw)
         if msg.get("state") != "connection_established":
             raise RuntimeError(f"{label} expected connection_established, got {msg}")
 
-    async def _periodic_flush(self, session_info: _SessionInfo) -> None:
+    async def _periodic_flush(self, session_info: SessionInfo) -> None:
         session_id = session_info.session_id
         has_duration = session_info.duration > 0
         try:
@@ -528,7 +543,7 @@ class AutomaticSpeechRecognition:
             logger.debug(f"Periodic flush cancelled for session {session_id}")
             raise
 
-    def _reader_thread_body(self, session_info: _SessionInfo) -> None:
+    def _reader_thread_body(self, session_info: SessionInfo) -> None:
         session_id = session_info.session_id
         start_time = session_info.start_time
         duration = session_info.duration
@@ -555,7 +570,7 @@ class AutomaticSpeechRecognition:
             session_info.chunk_queue.put(_END_SENTINEL)
             logger.debug(f"Reader thread exited for session {session_id}")
 
-    async def _transcription_session_handler(self, session_info: _SessionInfo):
+    async def _transcription_session_handler(self, session_info: SessionInfo):
         session_id = session_info.session_id
 
         reader = threading.Thread(
@@ -567,56 +582,62 @@ class AutomaticSpeechRecognition:
         session_info.reader_thread = reader
         reader.start()
 
-        async with websockets.connect(self.ws_url) as write_ws, websockets.connect(self.ws_url) as read_ws:
-            await self._await_connection_established(write_ws, "write_ws")
-            await self._await_connection_established(read_ws, "read_ws")
-
-            send_task = asyncio.create_task(
-                self._send_pcm_stream(websocket=write_ws, session_info=session_info)
-            )
-            receive_task = asyncio.create_task(
-                self._receive_transcription(websocket=read_ws, session_info=session_info)
-            )
-            flush_task = asyncio.create_task(self._periodic_flush(session_info))
-
+        try:
             try:
-                while not self._stop_worker.is_set() and not session_info.cancelled.is_set():
-                    done, _ = await asyncio.wait(
-                        {send_task, receive_task},
-                        timeout=0.1,
-                        return_when=asyncio.FIRST_COMPLETED,
+                async with websockets.connect(self.ws_url) as write_ws, websockets.connect(self.ws_url) as read_ws:
+                    await self._await_connection_established(write_ws, "write_ws")
+                    await self._await_connection_established(read_ws, "read_ws")
+
+                    send_task = asyncio.create_task(
+                        self._send_pcm_stream(websocket=write_ws, session_info=session_info)
                     )
-                    if not done:
-                        continue
-                    for task in done:
-                        exc = task.exception()
-                        if exc:
-                            raise exc
-                    break
+                    receive_task = asyncio.create_task(
+                        self._receive_transcription(websocket=read_ws, session_info=session_info)
+                    )
+                    flush_task = asyncio.create_task(self._periodic_flush(session_info))
 
-            finally:
-                if flush_task and not flush_task.done():
-                    flush_task.cancel()
-                await asyncio.gather(flush_task, return_exceptions=True)
+                    try:
+                        while not self._stop_worker.is_set() and not session_info.cancelled.is_set():
+                            done, _ = await asyncio.wait(
+                                {send_task, receive_task},
+                                timeout=0.1,
+                                return_when=asyncio.FIRST_COMPLETED,
+                            )
+                            if not done:
+                                continue
+                            for task in done:
+                                exc = task.exception()
+                                if exc:
+                                    raise exc
+                            break
 
-                # Server protocol: close session BEFORE tearing down WebSockets
-                try:
-                    await asyncio.to_thread(self._close_transcription_session, session_id)
-                except Exception as e:
-                    logger.error(f"Failed to close session {session_id} during teardown: {e}")
+                    finally:
+                        if flush_task and not flush_task.done():
+                            flush_task.cancel()
+                        await asyncio.gather(flush_task, return_exceptions=True)
 
-                session_info.cancelled.set()
+                        # Server protocol: close session BEFORE tearing down WebSockets
+                        try:
+                            await asyncio.to_thread(self._close_transcription_session, session_id)
+                        except Exception as e:
+                            logger.error(f"Failed to close session {session_id} during teardown: {e}")
 
-                for task in (send_task, receive_task):
-                    if task and not task.done():
-                        task.cancel()
-                await asyncio.gather(send_task, receive_task, return_exceptions=True)
+                        session_info.cancelled.set()
 
-                await asyncio.to_thread(reader.join, _READER_JOIN_TIMEOUT)
-                if reader.is_alive():
-                    logger.warning(f"Reader thread for session {session_id} did not exit within {_READER_JOIN_TIMEOUT}s; leaking as daemon")
+                        for task in (send_task, receive_task):
+                            if task and not task.done():
+                                task.cancel()
+                        await asyncio.gather(send_task, receive_task, return_exceptions=True)
+            except OSError as e:
+                raise ASRUnavailableError(f"Failed to connect to inference service: {e}") from e
 
-    async def _send_pcm_stream(self, websocket: websockets.ClientConnection, session_info: _SessionInfo) -> int:
+        finally:
+            session_info.cancelled.set()
+            await asyncio.to_thread(reader.join, _READER_JOIN_TIMEOUT)
+            if reader.is_alive():
+                logger.warning(f"Reader thread for session {session_id} did not exit within {_READER_JOIN_TIMEOUT}s; leaking as daemon")
+
+    async def _send_pcm_stream(self, websocket: websockets.ClientConnection, session_info: SessionInfo) -> int:
         session_id = session_info.session_id
         chunks_sent = 0
         try:
@@ -628,6 +649,7 @@ class AutomaticSpeechRecognition:
                 if item is _END_SENTINEL:
                     break
 
+                assert isinstance(item, bytes), f"Expected bytes, got {type(item)}"
                 message = {
                     "message_type": "transcriptions_session_audio",
                     "message_source": "audio_analytics_api",
@@ -649,8 +671,10 @@ class AutomaticSpeechRecognition:
         except ConnectionClosedOK:
             logger.debug(f"WebSocket closed as expected while sending PCM stream for session {session_id}")
             return chunks_sent
+        except ConnectionClosed as e:
+            raise ASRUnavailableError(f"WebSocket connection lost while sending for session {session_id}: {e}") from e
 
-    async def _receive_transcription(self, websocket: websockets.ClientConnection, session_info: _SessionInfo) -> None:
+    async def _receive_transcription(self, websocket: websockets.ClientConnection, session_info: SessionInfo) -> None:
         session_id = session_info.session_id
         result_queue = session_info.result_queue
 
@@ -716,6 +740,8 @@ class AutomaticSpeechRecognition:
         except ConnectionClosedOK:
             logger.debug(f"WebSocket closed as expected while receiving transcription for session {session_id}")
             return
+        except ConnectionClosed as e:
+            raise ASRUnavailableError(f"WebSocket connection lost while receiving for session {session_id}: {e}") from e
         except Exception as e:
             logger.error(f"Error receiving transcription for {session_id}: {e}")
             raise
