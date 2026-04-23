@@ -593,7 +593,20 @@ class AutomaticSpeechRecognition:
 
         try:
             try:
-                async with websockets.connect(self.ws_url) as write_ws, websockets.connect(self.ws_url) as read_ws:
+                async with (
+                    websockets.connect(
+                        self.ws_url,
+                        ping_interval=3,
+                        ping_timeout=2,
+                        close_timeout=1,
+                    ) as write_ws,
+                    websockets.connect(
+                        self.ws_url,
+                        ping_interval=3,
+                        ping_timeout=2,
+                        close_timeout=1,
+                    ) as read_ws,
+                ):
                     await self._await_connection_established(write_ws, "write_ws")
                     await self._await_connection_established(read_ws, "read_ws")
 
