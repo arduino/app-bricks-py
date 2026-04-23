@@ -347,7 +347,7 @@ class AutomaticSpeechRecognition:
         logger.debug(f"Flushing transcription session {session_id}")
         url = f"{self.api_base_url}/transcriptions/flush"
         try:
-            response = requests.post(url, json={"session_id": session_id}, timeout=5)
+            response = requests.post(url, json={"session_id": session_id}, timeout=3)
         except Exception as e:
             logger.warning(f"Failed to flush session {session_id}: {e}")
             return
@@ -360,7 +360,7 @@ class AutomaticSpeechRecognition:
         logger.debug(f"Closing transcription session {session_id}")
         url = f"{self.api_base_url}/transcriptions/close"
         try:
-            response = requests.post(url, json={"session_id": session_id}, timeout=15)
+            response = requests.post(url, json={"session_id": session_id}, timeout=5)
         except Exception as e:
             raise RuntimeError(f"Failed to close session {session_id}: {e}") from e
         if response.status_code != 200:
@@ -576,7 +576,10 @@ class AutomaticSpeechRecognition:
                 except queue.Full:
                     logger.warning(f"Send queue full for session {session_id}, dropping chunk")
         finally:
-            session_info.chunk_queue.put(_END_SENTINEL)
+            try:
+                session_info.chunk_queue.put_nowait(_END_SENTINEL)
+            except queue.Full:
+                pass
             logger.debug(f"Reader thread exited for session {session_id}")
 
     async def _transcription_session_handler(self, session_info: SessionInfo):
@@ -630,6 +633,8 @@ class AutomaticSpeechRecognition:
                             break
 
                     finally:
+                        session_info.cancelled.set()
+
                         if flush_task and not flush_task.done():
                             flush_task.cancel()
                         await asyncio.gather(flush_task, return_exceptions=True)
@@ -639,8 +644,6 @@ class AutomaticSpeechRecognition:
                             await asyncio.to_thread(self._close_transcription_session, session_id)
                         except Exception as e:
                             logger.error(f"Failed to close session {session_id} during teardown: {e}")
-
-                        session_info.cancelled.set()
 
                         for task in (send_task, receive_task):
                             if task and not task.done():
