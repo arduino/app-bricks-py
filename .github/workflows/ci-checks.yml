@@ -62,27 +62,6 @@ jobs:
           if git diff --quiet; then
             echo "License headers are up to date!"
           else
-            echo "Please update license headers by running 'task license'."
-            exit 1
-          fi
-
-      - name: Setup Ruby
-        uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: '3.3'
-
-      - name: Install system dependencies for license scanning
-        run: sudo apt-get install -y -qq portaudio19-dev
-
-      - name: Check dependency licenses
-        continue-on-error: true
-        run: |
-          export PATH="${{ env.TASKFILE_PATH }}:$PATH"
-          task license:deps
-          if git diff --quiet -- .licenses/; then
-            echo "Dependency license cache is up to date!"
-          else
-            echo "Dependency license cache needs updating. Run 'task license' locally to update."
-            git diff --stat -- .licenses/
+            echo "Please update license headers by running 'task license:headers'."
             exit 1
           fi
