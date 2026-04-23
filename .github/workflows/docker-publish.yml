@@ -256,7 +256,7 @@ jobs:
           find src -name "brick_compose.yaml" | while read f; do
             if grep -q "$CONTAINER" "$f"; then
               echo "  Updating: $f"
-              sed -i -E "s|${CONTAINER}:[0-9]+\.[0-9]+\.[0-9]+|${CONTAINER}:${VERSION}|g" "$f"
+              sed -i -E "s|${CONTAINER}:[^ \"']+|${CONTAINER}:${VERSION}|g" "$f"
             fi
           done
 
@@ -383,7 +383,7 @@ jobs:
           find src -name "brick_compose.yaml" | while read f; do
             if grep -q "$CONTAINER" "$f"; then
               echo "  Updating: $f"
-              sed -i -E "s|${CONTAINER}:[0-9]+\.[0-9]+\.[0-9]+|${CONTAINER}:${VERSION}|g" "$f"
+              sed -i -E "s|${CONTAINER}:[^ \"']+|${CONTAINER}:${VERSION}|g" "$f"
             fi
           done
 
