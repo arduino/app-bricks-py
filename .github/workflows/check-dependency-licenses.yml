@@ -42,41 +42,53 @@ jobs:
 
           if git diff --quiet -- .licenses/; then
             echo "✅ Dependency license cache is up to date!" >> "$GITHUB_STEP_SUMMARY"
-          else
-            {
-              echo "## ⚠️ Dependency license cache is out of date"
-              echo ""
-              echo "Run \`task license:deps\` locally, then commit and push the updated files."
-              echo ""
-              echo "| Package | App | Changes |"
-              echo "|---------|-----|---------|"
-              while IFS=$'\t' read -r status file; do
-                app=$(echo "$file" | cut -d'/' -f2)
-                pkg=$(basename "$file" .dep.yml)
-                case "$status" in
-                  A) detail="New dependency" ;;
-                  D) detail="Removed" ;;
-                  M)
-                    diff_out=$(git diff -- "$file")
-                    parts=""
-                    old_ver=$(echo "$diff_out" | grep '^-version:' | head -1 | sed 's/^-version: *//;s/"//g')
-                    new_ver=$(echo "$diff_out" | grep '^+version:' | head -1 | sed 's/^+version: *//;s/"//g')
-                    [ -n "$old_ver" ] && [ -n "$new_ver" ] && parts="version ($old_ver → $new_ver)"
-                    old_lic=$(echo "$diff_out" | grep '^-license:' | head -1 | sed 's/^-license: *//')
-                    new_lic=$(echo "$diff_out" | grep '^+license:' | head -1 | sed 's/^+license: *//')
-                    if [ -n "$old_lic" ] && [ -n "$new_lic" ]; then
-                      [ -n "$parts" ] && parts="$parts, "
-                      parts="${parts}license type ($old_lic → $new_lic)"
-                    fi
-                    if echo "$diff_out" | grep -qE '^[-+]    '; then
-                      [ -n "$parts" ] && parts="$parts, "
-                      parts="${parts}license text"
-                    fi
-                    detail="${parts:-metadata}"
-                    ;;
-                esac
-                echo "| \`$pkg\` | \`$app\` | $detail |"
-              done < <(git diff --name-status -- .licenses/)
-            } >> "$GITHUB_STEP_SUMMARY"
-            exit 1
+            exit 0
           fi
+
+          {
+            echo "## ⚠️ Dependency license cache is out of date"
+            echo ""
+            echo "Run \`task license:deps\` locally, then commit and push the updated files."
+            echo ""
+            echo "| Package | App | Changes |"
+            echo "|---------|-----|---------|"
+
+            git diff --name-status -- .licenses/ | while IFS=$'\t' read -r status file; do
+              app=$(echo "$file" | cut -d'/' -f2)
+              pkg=$(basename "$file" .dep.yml)
+
+              case "$status" in
+                A) detail="New dependency" ;;
+                D) detail="Removed" ;;
+                M)
+                  diff_out=$(git diff -- "$file")
+                  parts=""
+
+                  old_ver=$(echo "$diff_out" | sed -n 's/^-version: *"\{0,1\}\(.*\)"\{0,1\}$/\1/p' | head -1)
+                  new_ver=$(echo "$diff_out" | sed -n 's/^+version: *"\{0,1\}\(.*\)"\{0,1\}$/\1/p' | head -1)
+                  if [ -n "$old_ver" ] && [ -n "$new_ver" ]; then
+                    parts="version ($old_ver → $new_ver)"
+                  fi
+
+                  old_lic=$(echo "$diff_out" | sed -n 's/^-license: *//p' | head -1)
+                  new_lic=$(echo "$diff_out" | sed -n 's/^+license: *//p' | head -1)
+                  if [ -n "$old_lic" ] && [ -n "$new_lic" ]; then
+                    [ -n "$parts" ] && parts="$parts, "
+                    parts="${parts}license type ($old_lic → $new_lic)"
+                  fi
+
+                  if echo "$diff_out" | sed -n '/^[-+]    /p' | head -1 | read -r _; then
+                    [ -n "$parts" ] && parts="$parts, "
+                    parts="${parts}license text"
+                  fi
+
+                  detail="${parts:-metadata}"
+                  ;;
+                *) detail="$status" ;;
+              esac
+
+              echo "| \`$pkg\` | \`$app\` | $detail |"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          exit 1
