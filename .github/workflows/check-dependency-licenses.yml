@@ -45,50 +45,49 @@ jobs:
             exit 0
           fi
 
-          {
-            echo "## ⚠️ Dependency license cache is out of date"
-            echo ""
-            echo "Run \`task license:deps\` locally, then commit and push the updated files."
-            echo ""
-            echo "| Package | App | Changes |"
-            echo "|---------|-----|---------|"
+          # Write header immediately so it's visible even if parsing fails
+          echo "## ⚠️ Dependency license cache is out of date" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Run \`task license:deps\` locally, then commit and push the updated files." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Package | App | Changes |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---------|-----|---------|" >> "$GITHUB_STEP_SUMMARY"
 
-            git diff --name-status -- .licenses/ | while IFS=$'\t' read -r status file; do
-              app=$(echo "$file" | cut -d'/' -f2)
-              pkg=$(basename "$file" .dep.yml)
+          # Disable errexit for diff parsing — grep/sed may return non-zero on no-match
+          set +eo pipefail
 
-              case "$status" in
-                A) detail="New dependency" ;;
-                D) detail="Removed" ;;
-                M)
-                  diff_out=$(git diff -- "$file")
-                  parts=""
+          while IFS=$'\t' read -r status file; do
+            app=$(echo "$file" | cut -d'/' -f2)
+            pkg=$(basename "$file" .dep.yml)
 
-                  old_ver=$(echo "$diff_out" | sed -n 's/^-version: *"\{0,1\}\(.*\)"\{0,1\}$/\1/p' | head -1)
-                  new_ver=$(echo "$diff_out" | sed -n 's/^+version: *"\{0,1\}\(.*\)"\{0,1\}$/\1/p' | head -1)
-                  if [ -n "$old_ver" ] && [ -n "$new_ver" ]; then
-                    parts="version ($old_ver → $new_ver)"
-                  fi
+            if [ "$status" = "A" ]; then
+              detail="New dependency"
+            elif [ "$status" = "D" ]; then
+              detail="Removed"
+            else
+              diff_out=$(git diff -- "$file")
+              parts=""
 
-                  old_lic=$(echo "$diff_out" | sed -n 's/^-license: *//p' | head -1)
-                  new_lic=$(echo "$diff_out" | sed -n 's/^+license: *//p' | head -1)
-                  if [ -n "$old_lic" ] && [ -n "$new_lic" ]; then
-                    [ -n "$parts" ] && parts="$parts, "
-                    parts="${parts}license type ($old_lic → $new_lic)"
-                  fi
+              old_ver=$(echo "$diff_out" | grep '^-version:' | head -1 | sed 's/^-version: *//;s/"//g')
+              new_ver=$(echo "$diff_out" | grep '^+version:' | head -1 | sed 's/^+version: *//;s/"//g')
+              [ -n "$old_ver" ] && [ -n "$new_ver" ] && parts="version ($old_ver → $new_ver)"
 
-                  if echo "$diff_out" | sed -n '/^[-+]    /p' | head -1 | read -r _; then
-                    [ -n "$parts" ] && parts="$parts, "
-                    parts="${parts}license text"
-                  fi
+              old_lic=$(echo "$diff_out" | grep '^-license:' | head -1 | sed 's/^-license: *//')
+              new_lic=$(echo "$diff_out" | grep '^+license:' | head -1 | sed 's/^+license: *//')
+              if [ -n "$old_lic" ] && [ -n "$new_lic" ]; then
+                [ -n "$parts" ] && parts="$parts, "
+                parts="${parts}license type ($old_lic → $new_lic)"
+              fi
 
-                  detail="${parts:-metadata}"
-                  ;;
-                *) detail="$status" ;;
-              esac
+              if echo "$diff_out" | grep -q '^[-+]    '; then
+                [ -n "$parts" ] && parts="$parts, "
+                parts="${parts}license text"
+              fi
 
-              echo "| \`$pkg\` | \`$app\` | $detail |"
-            done
-          } >> "$GITHUB_STEP_SUMMARY"
+              detail="${parts:-metadata}"
+            fi
+
+            echo "| \`$pkg\` | \`$app\` | $detail |" >> "$GITHUB_STEP_SUMMARY"
+          done < <(git diff --name-status -- .licenses/)
 
           exit 1
