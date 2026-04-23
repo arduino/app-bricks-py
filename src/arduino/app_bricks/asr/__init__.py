@@ -13,8 +13,8 @@ from .local_asr import (
 
 __all__ = [
     "ASREvent",
-    "ASRBusyError",
     "ASRError",
+    "ASRBusyError",
     "ASRServiceBusyError",
     "AutomaticSpeechRecognition",
     "TranscriptionStream",

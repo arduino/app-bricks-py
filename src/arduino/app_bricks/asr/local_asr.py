@@ -46,8 +46,9 @@ class ASRServiceBusyError(ASRError):
     """Raised when the inference server rejects session creation because it is serving another client."""
 
 
-class _AudioSourceExhausted(Exception):
-    """Raised by finite-source adapters (WAV/ndarray) to signal end-of-data.
+class AudioSourceExhausted(Exception):
+    """
+    Raised by finite-source adapters (WAV/ndarray) to signal end-of-data.
     Never raised by real BaseMicrophone implementations.
     """
 
@@ -117,12 +118,12 @@ class TranscriptionStream(Generic[T], ContextManager["TranscriptionStream[T]"], 
         self._generator.close()
 
 
-class _InMemoryAudioSource:
-    """Duck-typed audio source wrapping WAV bytes or a raw PCM ndarray.
+class InMemoryAudioSource:
+    """
+    Audio source wrapping WAV bytes or a raw PCM ndarray.
 
     Exposes only the subset of BaseMicrophone attributes/methods that ASR uses,
-    so the session pipeline treats all sources uniformly. `capture()` returns
-    ndarray slices of `buffer_size` frames and raises `_AudioSourceExhausted`
+    so it can be used uniformly. `capture()` raises `_AudioSourceExhausted`
     when the underlying buffer is drained.
     """
 
@@ -164,7 +165,7 @@ class _InMemoryAudioSource:
     def capture(self) -> np.ndarray:
         step = self._buffer_frames * self.channels
         if self._cursor >= len(self._samples):
-            raise _AudioSourceExhausted()
+            raise AudioSourceExhausted()
         chunk = self._samples[self._cursor : self._cursor + step]
         self._cursor += step
         return chunk
@@ -196,20 +197,22 @@ class AutomaticSpeechRecognition:
     ):
         """ASR brick that uses a local audio analytics service to decode audio streams.
 
-        Arguments:
+        Args:
             source: Audio source for transcription. One of:
-                - `None`: ASR constructs a default `Microphone()` and owns its lifecycle
-                  (started on `start()`, stopped on `stop()`).
-                - `BaseMicrophone` instance: used as-is; the caller owns its lifecycle
-                  (ASR never calls `start()`/`stop()` on it).
-                - `bytes`: treated as a WAV container and wrapped internally.
-                - `np.ndarray`: treated as raw PCM samples at default sample rate
-                  (16 kHz mono, dtype inferred) and wrapped internally.
-            language: The language code for the ASR model (e.g., "en" for English).
+
+                - ``None``: ASR constructs a default ``Microphone()`` and owns its
+                  lifecycle (started on ``start()``, stopped on ``stop()``).
+                - ``BaseMicrophone`` instance: used as-is; the caller owns its
+                  lifecycle (ASR never calls ``start()``/``stop()`` on it).
+                - ``bytes``: treated as a WAV container and wrapped internally.
+                - ``np.ndarray``: treated as raw PCM samples at 16 kHz mono
+                  (dtype inferred) and wrapped internally.
+            language: Language code for the ASR model (e.g. ``"en"`` for English).
 
         Note:
-            Only one transcription can be active per instance at a time. For concurrent
-            transcriptions on different mics, create multiple ASR instances.
+            Only one transcription can be active per instance at a time. For
+            concurrent transcriptions on different mics, create multiple ASR
+            instances.
         """
         self.api_host = resolve_address(self._APP_SERVICE_NAME)
         if not self.api_host:
@@ -229,7 +232,7 @@ class AutomaticSpeechRecognition:
             self._source = source
             self._owns_source = False
         elif isinstance(source, (bytes, bytearray, np.ndarray)):
-            self._source = _InMemoryAudioSource(source)
+            self._source = InMemoryAudioSource(source)
             self._owns_source = False
         else:
             raise TypeError(f"Unsupported source type: {type(source)!r}")
@@ -269,11 +272,21 @@ class AutomaticSpeechRecognition:
         active.cancelled.set()
 
     def transcribe(self, duration: int = 0) -> str:
-        """Transcribe audio from the configured source and return the final text.
+        """
+        Transcribe audio from the configured source and return the final text.
 
-        For unbounded sources (microphones), `duration` limits listening time in seconds.
-        For finite sources (WAV/ndarray), the source is consumed to completion and
-        `duration` is effectively ignored.
+        Args:
+            duration: Maximum recording time in seconds. `0` means unbounded.
+                Ignored for finite sources (WAV/ndarray), which are consumed
+                to completion regardless.
+
+        Returns:
+            The transcribed text, or an empty string if no speech was detected.
+        
+        Raises:
+            ASRBusyError: If this instance already has an active session.
+            ASRServiceBusyError: If no more concurrent sessions are available.
+            RuntimeError: If the audio source has not been started.
         """
         last_partial = ""
         final_text = ""
@@ -294,7 +307,21 @@ class AutomaticSpeechRecognition:
         return ""
 
     def transcribe_stream(self, duration: int = 0) -> TranscriptionStream[ASREvent]:
-        """Transcribe audio from the configured source and stream events."""
+        """
+        Transcribe audio from the configured source and stream events.
+
+        Args:
+            duration: Maximum recording time in seconds. `0` means unbounded.
+                Ignored for finite sources (WAV/ndarray).
+
+        Yields:
+            `ASREvent` objects.
+
+        Raises:
+            ASRBusyError: If this instance already has an active session.
+            ASRServiceBusyError: If no more concurrent sessions are available.
+            RuntimeError: If the audio source has not been started.
+        """
         if not self._source.is_started():
             raise RuntimeError("Audio source must be started before transcription.")
         return TranscriptionStream(self._transcribe_stream(duration=duration))
@@ -512,7 +539,7 @@ class AutomaticSpeechRecognition:
                     break
                 try:
                     chunk = self._source.capture()
-                except _AudioSourceExhausted:
+                except AudioSourceExhausted:
                     logger.debug(f"Session {session_id} audio source exhausted")
                     break
                 except Exception as e:
