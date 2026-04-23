@@ -22,6 +22,13 @@ apps:
     python:
       virtual_env_dir: ".licensed-venv-aihub"
 
+  - name: gesture-recognition-runner
+    source_path: .
+    sources:
+      pip: true
+    python:
+      virtual_env_dir: ".licensed-venv-gesture-recognition-runner"
+
   - name: python-apps-base
     source_path: .
     sources:
