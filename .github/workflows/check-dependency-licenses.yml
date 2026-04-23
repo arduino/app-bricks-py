@@ -36,11 +36,47 @@ jobs:
         run: |
           export PATH="${{ env.TASKFILE_PATH }}:$PATH"
           task license:deps
+
+          # Include new untracked dep files in the diff check
+          git add -N -- .licenses/
+
           if git diff --quiet -- .licenses/; then
-            echo "Dependency license cache is up to date!"
+            echo "✅ Dependency license cache is up to date!" >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "::error::Dependency license cache is out of date. Please run 'task license:deps' locally, then commit and push the updated .licenses/ files."
-            echo "Found the following differences:"
-            git diff --stat -- .licenses/
+            {
+              echo "## ⚠️ Dependency license cache is out of date"
+              echo ""
+              echo "Run \`task license:deps\` locally, then commit and push the updated files."
+              echo ""
+              echo "| Package | App | Changes |"
+              echo "|---------|-----|---------|"
+              while IFS=$'\t' read -r status file; do
+                app=$(echo "$file" | cut -d'/' -f2)
+                pkg=$(basename "$file" .dep.yml)
+                case "$status" in
+                  A) detail="New dependency" ;;
+                  D) detail="Removed" ;;
+                  M)
+                    diff_out=$(git diff -- "$file")
+                    parts=""
+                    old_ver=$(echo "$diff_out" | grep '^-version:' | head -1 | sed 's/^-version: *//;s/"//g')
+                    new_ver=$(echo "$diff_out" | grep '^+version:' | head -1 | sed 's/^+version: *//;s/"//g')
+                    [ -n "$old_ver" ] && [ -n "$new_ver" ] && parts="version ($old_ver → $new_ver)"
+                    old_lic=$(echo "$diff_out" | grep '^-license:' | head -1 | sed 's/^-license: *//')
+                    new_lic=$(echo "$diff_out" | grep '^+license:' | head -1 | sed 's/^+license: *//')
+                    if [ -n "$old_lic" ] && [ -n "$new_lic" ]; then
+                      [ -n "$parts" ] && parts="$parts, "
+                      parts="${parts}license type ($old_lic → $new_lic)"
+                    fi
+                    if echo "$diff_out" | grep -qE '^[-+]    '; then
+                      [ -n "$parts" ] && parts="$parts, "
+                      parts="${parts}license text"
+                    fi
+                    detail="${parts:-metadata}"
+                    ;;
+                esac
+                echo "| \`$pkg\` | \`$app\` | $detail |"
+              done < <(git diff --name-status -- .licenses/)
+            } >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
