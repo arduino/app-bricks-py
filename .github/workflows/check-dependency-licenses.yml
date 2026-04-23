@@ -90,4 +90,5 @@ jobs:
             echo "| \`$pkg\` | \`$app\` | $detail |" >> "$GITHUB_STEP_SUMMARY"
           done < <(git diff --name-status -- .licenses/)
 
+          echo "::error::Dependency license cache is out of date. Run 'task license:deps' locally, then commit and push the updated files."
           exit 1
