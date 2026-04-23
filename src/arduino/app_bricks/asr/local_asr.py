@@ -277,7 +277,7 @@ class AutomaticSpeechRecognition:
         if active is None:
             logger.debug("No active session to cancel")
             return
-        logger.info(f"Cancelling session {active.session_id}")
+        logger.debug(f"Cancelling session {active.session_id}")
         active.cancelled.set()
 
     def transcribe(self, duration: int = 0) -> str:
@@ -743,7 +743,6 @@ class AutomaticSpeechRecognition:
                         continue
                 elif evt_type == "error":
                     error_msg = data.get("message", "Unknown ASR error")
-                    logger.error(f"Transcription error for session {session_id}: {error_msg}")
                     raise RuntimeError(error_msg)
                 elif evt_type == "connection_close":
                     logger.warning(f"WebSocket connection closed for session {session_id}")
@@ -760,6 +759,3 @@ class AutomaticSpeechRecognition:
             return
         except ConnectionClosed as e:
             raise ASRUnavailableError(f"WebSocket connection lost while receiving for session {session_id}: {e}") from None
-        except Exception as e:
-            logger.error(f"Error receiving transcription for {session_id}: {e}")
-            raise
