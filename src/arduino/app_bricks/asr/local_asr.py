@@ -638,9 +638,10 @@ class AutomaticSpeechRecognition:
 
         finally:
             session_info.cancelled.set()
-            await asyncio.to_thread(reader.join, 2.0)
+            join_timeout = 2.0
+            await asyncio.to_thread(reader.join, join_timeout)
             if reader.is_alive():
-                logger.warning(f"Reader thread for session {session_id} did not exit within {_READER_JOIN_TIMEOUT}s; leaking as daemon")
+                logger.warning(f"Reader thread for session {session_id} did not exit within {join_timeout}s; leaking as daemon")
 
     async def _send_pcm_stream(self, websocket: websockets.ClientConnection, session_info: SessionInfo) -> int:
         session_id = session_info.session_id
