@@ -120,9 +120,6 @@ tasks:
         SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0 .licensed-venv-lib/bin/pip install -q ".[all]"
       - |
         for d in containers/*/; do
-          name=$(basename "$d" | sed 's/-runner$//;s/-models//;s/-apps//')
-          venv_name=".licensed-venv-$(basename "$d" | sed 's/-runner$//;s/-models//;s/-apps//')"
-          # Use original container name for venv to match .licensed.yml
           venv_name=".licensed-venv-$(basename "$d" | sed 's/\/$//')"
           reqs=()
           [ -f "$d/requirements-base.txt" ] && reqs+=("$d/requirements-base.txt")
@@ -130,9 +127,20 @@ tasks:
           if [ ${#reqs[@]} -gt 0 ]; then
             echo "Creating venv for $d ($venv_name)..."
             python3 -m venv "$venv_name"
+            failed_pkgs=()
             for req in "${reqs[@]}"; do
-              "$venv_name"/bin/pip install -q -r "$req"
+              while IFS= read -r line || [ -n "$line" ]; do
+                pkg=$(echo "$line" | sed 's/#.*//;s/^[[:space:]]*//;s/[[:space:]]*$//')
+                [ -z "$pkg" ] && continue
+                "$venv_name"/bin/pip install -q "$pkg" || failed_pkgs+=("$pkg")
+              done < "$req"
             done
+            if [ ${#failed_pkgs[@]} -gt 0 ]; then
+              echo "[WARNING] The following packages failed to install in $venv_name:" >&2
+              for pkg in "${failed_pkgs[@]}"; do
+                echo "  - $pkg" >&2
+              done
+            fi
           else
             echo "No requirements found for $d, skipping venv creation."
           fi
