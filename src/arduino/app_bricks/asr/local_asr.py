@@ -23,15 +23,7 @@ from arduino.app_internal.core import resolve_address
 from arduino.app_peripherals.microphone import BaseMicrophone, Microphone
 from arduino.app_utils import Logger, brick
 
-logger = Logger("LocalASR")
-
-_DEFAULT_SAMPLING_RATE = 16000
-_DEFAULT_CHANNELS = 1
-_DEFAULT_BUFFER_SIZE = 1024
-_DEFAULT_VAD = "700"
-_REMOTE_BUSY_MARKER = "transcription session is already active"
-_READER_JOIN_TIMEOUT = 2.0
-_CHUNK_QUEUE_MAXSIZE = 100
+logger = Logger("ASR")
 
 
 class ASRError(Exception):
@@ -127,13 +119,17 @@ class InMemoryAudioSource:
     Audio source wrapping WAV bytes or a raw PCM ndarray.
 
     Exposes only the subset of BaseMicrophone attributes/methods that ASR uses,
-    so it can be used uniformly. `capture()` raises `AudioSourceExhausted`
+    so it can be used uniformly. ``capture()`` raises ``AudioSourceExhausted``
     when the underlying buffer is drained.
     """
 
-    def __init__(self, data: bytes | np.ndarray):
-        if isinstance(data, (bytes, bytearray)):
-            with wave.open(io.BytesIO(bytes(data)), "rb") as wf:
+    _DEFAULT_SAMPLING_RATE = 16000
+    _DEFAULT_CHANNELS = 1
+    _DEFAULT_BUFFER_SIZE = 1024
+
+    def __init__(self, samples: bytes | np.ndarray):
+        if isinstance(samples, (bytes, bytearray)):
+            with wave.open(io.BytesIO(bytes(samples)), "rb") as wf:
                 self.sample_rate = wf.getframerate()
                 self.channels = wf.getnchannels()
                 sample_width = wf.getsampwidth()
@@ -144,18 +140,18 @@ class InMemoryAudioSource:
                 raise ValueError(f"Unsupported WAV sample width: {sample_width}")
             self.format = np.dtype(dtype_map[sample_width])
             self._samples = np.frombuffer(frames, dtype=self.format)
-        elif isinstance(data, np.ndarray):
-            self.sample_rate = _DEFAULT_SAMPLING_RATE
-            self.channels = _DEFAULT_CHANNELS
-            self.format = data.dtype
-            self._samples = data
+        elif isinstance(samples, np.ndarray):
+            self.sample_rate = self._DEFAULT_SAMPLING_RATE
+            self.channels = self._DEFAULT_CHANNELS
+            self.format = samples.dtype
+            self._samples = samples
         else:
-            raise TypeError(f"Unsupported in-memory audio source type: {type(data)!r}")
+            raise TypeError(f"Unsupported in-memory audio source type: {type(samples)!r}")
 
         self.format_is_packed = False
-        self.buffer_size = _DEFAULT_BUFFER_SIZE
+        self.buffer_size = self._DEFAULT_BUFFER_SIZE
+        self._started = True  # It's started by default, this is not a real device
         self._cursor = 0
-        self._started = True  # always "started" — no real device lifecycle
 
     def is_started(self) -> bool:
         return self._started
@@ -170,8 +166,10 @@ class InMemoryAudioSource:
         step = self.buffer_size * self.channels
         if self._cursor >= len(self._samples):
             raise AudioSourceExhausted()
+
         chunk = self._samples[self._cursor : self._cursor + step]
         self._cursor += step
+
         return chunk
 
 
@@ -186,32 +184,34 @@ class SessionInfo:
     reader_thread: threading.Thread | None = None
 
 
-_END_SENTINEL = object()
+_END_SENTINEL = object()  # Sentinel value to signal end of audio stream in the chunk queue
 
 
 @brick
 class AutomaticSpeechRecognition:
     _APP_SERVICE_NAME = "audio-analytics-runner"
     _FLUSH_INTERVAL_SECONDS = 5
+    _DEFAULT_VAD = "700"
 
     def __init__(
         self,
         source: BaseMicrophone | np.ndarray | bytes | None = None,
         language: str | None = None,
     ):
-        """ASR brick that uses a local audio analytics service to decode audio streams.
+        """
+        ASR brick that uses a local audio analytics service to decode audio streams.
 
         Args:
             source: Audio source for transcription. One of:
-
-                - ``None``: ASR constructs a default ``Microphone()`` and owns its
-                  lifecycle (started on ``start()``, stopped on ``stop()``).
-                - ``BaseMicrophone`` instance: used as-is; the caller owns its
-                  lifecycle (ASR never calls ``start()``/``stop()`` on it).
-                - ``bytes``: treated as a WAV container and wrapped internally.
-                - ``np.ndarray``: treated as raw PCM samples at 16 kHz mono
-                  (dtype inferred) and wrapped internally.
-            language: Language code for the ASR model (e.g. ``"en"`` for English).
+                BaseMicrophone: used as-is; the caller owns its
+                    lifecycle (ASR never calls start()/stop() on it).
+                bytes: treated as a WAV container and wrapped internally.
+                np.ndarray: treated as raw PCM samples at 16 kHz mono
+                    (dtype inferred) and wrapped internally.
+                None: ASR constructs a default Microphone() and owns its
+                    lifecycle (started on start(), stopped on stop()).
+                Default: None.
+            language (str): Language code for the ASR model (e.g. "en" for English).
 
         Note:
             Only one transcription can be active per instance at a time. For
@@ -250,6 +250,7 @@ class AutomaticSpeechRecognition:
 
     def start(self):
         """Prepare the ASR for transcription. Starts the owned mic if applicable."""
+        logger.debug("Starting ASR and preparing resources...")
         self._stop_worker.clear()
         if self._owns_source:
             self._source.start()
@@ -264,6 +265,7 @@ class AutomaticSpeechRecognition:
             active.cancelled.set()
         if self._owns_source:
             self._source.stop()
+        logger.debug("Stopped ASR and cleaned up resources.")
 
     def cancel(self):
         """Cancel the active transcription session, if any."""
@@ -280,12 +282,12 @@ class AutomaticSpeechRecognition:
         Transcribe audio from the configured source and return the final text.
 
         Args:
-            duration: Maximum recording time in seconds. `0` means unbounded.
+            duration (int): Maximum recording time in seconds. ``0`` means unbounded.
                 Ignored for finite sources (WAV/ndarray), which are consumed
-                to completion regardless.
+                to completion regardless. Default: ``0``.
 
         Returns:
-            The transcribed text, or an empty string if no speech was detected.
+            str: The transcribed text, or an empty string if no speech was detected.
 
         Raises:
             ASRBusyError: If this instance already has an active session.
@@ -317,11 +319,11 @@ class AutomaticSpeechRecognition:
         Transcribe audio from the configured source and stream events.
 
         Args:
-            duration: Maximum recording time in seconds. `0` means unbounded.
-                Ignored for finite sources (WAV/ndarray).
+            duration (int): Maximum recording time in seconds. ``0`` means unbounded.
+                Ignored for finite sources (WAV/ndarray). Default: ``0``.
 
         Yields:
-            `ASREvent` objects.
+            ASREvent: objects representing transcription events.
 
         Raises:
             ASRBusyError: If this instance already has an active session.
@@ -371,7 +373,7 @@ class AutomaticSpeechRecognition:
                 {"key": "sampling_rate", "value": sampling_rate},
                 {"key": "channels", "value": channels},
                 {"key": "format", "value": pcm_format},
-                {"key": "vad", "value": _DEFAULT_VAD},
+                {"key": "vad", "value": self._DEFAULT_VAD},
             ]),
         }
         if self.language is not None:
@@ -388,7 +390,7 @@ class AutomaticSpeechRecognition:
                 msg = err.get("message", "")
             except Exception:
                 msg = response.text or ""
-            if _REMOTE_BUSY_MARKER in msg:
+            if "transcription session is already active" in msg:
                 raise ASRServiceBusyError(msg or "Inference server is serving another client")
             raise ASRError(msg or f"Failed to create transcription session: 400")
 
@@ -438,7 +440,7 @@ class AutomaticSpeechRecognition:
                 duration=duration,
                 start_time=time.time(),
                 result_queue=queue.Queue(),
-                chunk_queue=queue.Queue(maxsize=_CHUNK_QUEUE_MAXSIZE),
+                chunk_queue=queue.Queue(maxsize=100),
                 cancelled=threading.Event(),
             )
             self._active_session = session_info
@@ -588,12 +590,8 @@ class AutomaticSpeechRecognition:
                     await self._await_connection_established(write_ws, "write_ws")
                     await self._await_connection_established(read_ws, "read_ws")
 
-                    send_task = asyncio.create_task(
-                        self._send_pcm_stream(websocket=write_ws, session_info=session_info)
-                    )
-                    receive_task = asyncio.create_task(
-                        self._receive_transcription(websocket=read_ws, session_info=session_info)
-                    )
+                    send_task = asyncio.create_task(self._send_pcm_stream(websocket=write_ws, session_info=session_info))
+                    receive_task = asyncio.create_task(self._receive_transcription(websocket=read_ws, session_info=session_info))
                     flush_task = asyncio.create_task(self._periodic_flush(session_info))
 
                     try:
@@ -633,7 +631,7 @@ class AutomaticSpeechRecognition:
 
         finally:
             session_info.cancelled.set()
-            await asyncio.to_thread(reader.join, _READER_JOIN_TIMEOUT)
+            await asyncio.to_thread(reader.join, 2.0)
             if reader.is_alive():
                 logger.warning(f"Reader thread for session {session_id} did not exit within {_READER_JOIN_TIMEOUT}s; leaking as daemon")
 
