@@ -136,9 +136,8 @@ tasks:
               done < "$req"
             done
             if [ ${#failed_pkgs[@]} -gt 0 ]; then
-              echo "[WARNING] The following packages failed to install in $venv_name:" >&2
               for pkg in "${failed_pkgs[@]}"; do
-                echo "  - $pkg" >&2
+                echo "::warning ::Failed to install $pkg in $venv_name" >&2
               done
             fi
           else
