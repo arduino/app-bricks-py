@@ -389,7 +389,7 @@ class AutomaticSpeechRecognition:
         try:
             response = requests.post(url=create_url, json=create_data, timeout=5)
         except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
-            raise ASRUnavailableError(f"Inference service unreachable: {e}") from e
+            raise ASRUnavailableError(f"Inference service unreachable: {e}") from None
 
         if response.status_code == 400:
             try:
@@ -529,7 +529,7 @@ class AutomaticSpeechRecognition:
         try:
             raw = await asyncio.wait_for(websocket.recv(), timeout=5.0)
         except (asyncio.TimeoutError, ConnectionClosed) as e:
-            raise ASRUnavailableError(f"{label} handshake failed: {e}") from e
+            raise ASRUnavailableError(f"{label} handshake failed: {e}") from None
         msg = json.loads(raw)
         if msg.get("state") != "connection_established":
             raise RuntimeError(f"{label} expected connection_established, got {msg}")
@@ -634,7 +634,7 @@ class AutomaticSpeechRecognition:
                                 task.cancel()
                         await asyncio.gather(send_task, receive_task, return_exceptions=True)
             except OSError as e:
-                raise ASRUnavailableError(f"Failed to connect to inference service: {e}") from e
+                raise ASRUnavailableError(f"Failed to connect to inference service: {e}") from None
 
         finally:
             session_info.cancelled.set()
@@ -678,7 +678,7 @@ class AutomaticSpeechRecognition:
             logger.debug(f"WebSocket closed as expected while sending PCM stream for session {session_id}")
             return chunks_sent
         except ConnectionClosed as e:
-            raise ASRUnavailableError(f"WebSocket connection lost while sending for session {session_id}: {e}") from e
+            raise ASRUnavailableError(f"WebSocket connection lost while sending for session {session_id}: {e}") from None
 
     async def _receive_transcription(self, websocket: websockets.ClientConnection, session_info: SessionInfo) -> None:
         session_id = session_info.session_id
@@ -747,7 +747,7 @@ class AutomaticSpeechRecognition:
             logger.debug(f"WebSocket closed as expected while receiving transcription for session {session_id}")
             return
         except ConnectionClosed as e:
-            raise ASRUnavailableError(f"WebSocket connection lost while receiving for session {session_id}: {e}") from e
+            raise ASRUnavailableError(f"WebSocket connection lost while receiving for session {session_id}: {e}") from None
         except Exception as e:
             logger.error(f"Error receiving transcription for {session_id}: {e}")
             raise
