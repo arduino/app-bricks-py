@@ -175,8 +175,7 @@ jobs:
           tags: |
             type=raw,value=${{ needs.detect-changes.outputs.image_tag }}
             type=raw,value=${{ needs.detect-changes.outputs.image_tag }}-${{ github.run_number }}
-          images: ghcr.io/${{ github.repository_owner }}/app-bricks/${{ matrix.container
-            }}
+          images: ghcr.io/${{ github.repository_owner }}/app-bricks/${{ matrix.container }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v7
@@ -244,8 +243,7 @@ jobs:
           tags: |
             type=raw,value=${{ needs.detect-changes.outputs.image_tag }}
             type=raw,value=${{ needs.detect-changes.outputs.image_tag }}-${{ github.run_number }}
-          images: ghcr.io/${{ github.repository_owner }}/app-bricks/${{ matrix.container
-            }}
+          images: ghcr.io/${{ github.repository_owner }}/app-bricks/${{ matrix.container }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v7
