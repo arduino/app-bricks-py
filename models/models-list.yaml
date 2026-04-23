@@ -1265,11 +1265,11 @@ models:
       source: "qualcomm-ai-hub"  
       source-model-id: "mediapipe_hand_gesture"
       source-model-url: "https://aihub.qualcomm.com/models/mediapipe_hand_gesture"
- - whisper-small:
+ - whisper-small-quantized:
     runner: audio-analytics
-    name : "Whisper Small"
+    name : "Whisper Small (quantized)"
     description: >-
-      Whisper-Small ASR (Automatic Speech Recognition) model is a state-of-the-art system designed for transcribing spoken language into written text.
+      Whisper ASR (Automatic Speech Recognition) model is a state-of-the-art system designed for transcribing spoken language into written text.
       This model is based on the transformer architecture and has been optimized for edge inference by replacing Multi-Head Attention (MHA)
       with Single-Head Attention (SHA) and linear layers with convolutional (conv) layers. It exhibits robust performance in realistic, noisy environments,
       making it highly reliable for real-world applications.

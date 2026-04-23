@@ -4,7 +4,7 @@ description: Automatic Speech Recognition brick for offline speech-to-text proce
 category: audio
 requires_model: true
 requires_services: ["arduino:genie_audio"]
-model: whisper-small
+model: whisper-small-quantized
 supported_boards: ["ventunoq"]
 model_configuration_variables:
   - VAD_LEN_HANGOVER
