@@ -266,22 +266,16 @@ class AutomaticSpeechRecognition:
         """Stop the ASR and clean up resources. Stops the owned mic if applicable."""
         logger.debug("Stopping ASR and cleaning up resources...")
         self._stop_worker.set()
-        # Read _active_session without the lock: the attribute read is atomic
-        # under the CPython GIL, and acquiring the lock here would deadlock
-        # when called from the same thread that holds it (the generator thread).
-        active = self._active_session
-        if active is not None:
-            active.cancelled.set()
+        self.cancel()
         if self._owns_source:
             self._source.stop()
         logger.debug("Stopped ASR and cleaned up resources.")
 
     def cancel(self):
         """Cancel the active transcription session, if any."""
-        # Read _active_session without the lock: see stop() comment.
         active = self._active_session
         if active is None:
-            logger.info("No active session to cancel")
+            logger.debug("No active session to cancel")
             return
         logger.info(f"Cancelling session {active.session_id}")
         active.cancelled.set()
