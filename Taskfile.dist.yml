@@ -117,6 +117,7 @@ tasks:
       - |
         echo "Creating library venv (.licensed-venv-lib)..."
         python3 -m venv .licensed-venv-lib
+        .licensed-venv-lib/bin/python -m pip install --upgrade pip -q
         SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0 .licensed-venv-lib/bin/pip install -q ".[all]"
       - |
         for d in containers/*/; do
@@ -127,6 +128,7 @@ tasks:
           if [ ${#reqs[@]} -gt 0 ]; then
             echo "Creating venv for $d ($venv_name)..."
             python3 -m venv "$venv_name"
+            "$venv_name"/bin/python -m pip install --upgrade pip -q
             failed_pkgs=()
             for req in "${reqs[@]}"; do
               while IFS= read -r line || [ -n "$line" ]; do
