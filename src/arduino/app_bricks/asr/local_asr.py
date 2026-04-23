@@ -20,6 +20,7 @@ import websockets
 from websockets.exceptions import ConnectionClosed, ConnectionClosedOK
 
 from arduino.app_internal.core import resolve_address
+from arduino.app_internal.core.module import get_brick_config, get_brick_configured_model
 from arduino.app_peripherals.microphone import BaseMicrophone, Microphone
 from arduino.app_utils import Logger, brick
 
@@ -226,7 +227,13 @@ class AutomaticSpeechRecognition:
         self.api_base_url = f"http://{self.api_host}:{self.api_port}/audio-analytics/v1/api"
         self.ws_url = f"ws://{self.api_host}:{self.api_port}/stream"
 
-        self.model = "whisper-small"
+        # Load the model configured at bricks level
+        brick_config = get_brick_config(self.__class__)
+        app_configured_model = get_brick_configured_model(brick_config.get("id") if brick_config else None)
+        if app_configured_model:
+            self.model = app_configured_model
+        else:
+            self.model = brick_config.get("model", None)
         self.language = language
 
         if source is None:
