@@ -20,7 +20,7 @@ echo "Starting Llama server..."
 export LD_LIBRARY_PATH=/opt/pkg-snapdragon/lib
 export ADSP_LIBRARY_PATH=/opt/pkg-snapdragon/lib
 # --reasoning off
-/opt/pkg-snapdragon/bin/llama-server --log-disable &
+/opt/pkg-snapdragon/bin/llama-server -c 1024 --log-disable &
 LLAMA_PID=$!
 
 echo "Processes started (Llama: $LLAMA_PID). Waiting..."

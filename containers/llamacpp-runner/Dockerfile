@@ -7,7 +7,7 @@ ARG BASE_IMAGE_VERSION=latest
 
 FROM ${REGISTRY}app-bricks/aihub-models-runner:${BASE_IMAGE_VERSION}
 
-ENV LLAMA_CPP_VERSION=b8777
+ENV LLAMA_CPP_VERSION=20260423
 
 COPY ./llamacpp-hexagon-${LLAMA_CPP_VERSION}.tgz /tmp/llamacpp-hexagon.tgz
 COPY ./scripts/*.sh /
