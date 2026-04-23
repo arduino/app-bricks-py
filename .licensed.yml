@@ -40,6 +40,9 @@ ignored:
     - arduino-app-bricks
     - arduino_app_bricks
 
+    # ai-edge-litert==1.3.0: licence MIT, excluded because there are no wheels for Python 3.13 (only up to 3.12) and it blocks the scanning of other dependencies in the gesture-recognition-runner container.
+    - ai-edge-litert
+
 allowed:
   - mpl-2.0
   - apache-2.0
