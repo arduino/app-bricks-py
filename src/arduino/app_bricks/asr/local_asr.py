@@ -266,8 +266,10 @@ class AutomaticSpeechRecognition:
         """Stop the ASR and clean up resources. Stops the owned mic if applicable."""
         logger.debug("Stopping ASR and cleaning up resources...")
         self._stop_worker.set()
-        with self._active_session_lock:
-            active = self._active_session
+        # Read _active_session without the lock: the attribute read is atomic
+        # under the CPython GIL, and acquiring the lock here would deadlock
+        # when called from the same thread that holds it (the generator thread).
+        active = self._active_session
         if active is not None:
             active.cancelled.set()
         if self._owns_source:
@@ -276,8 +278,8 @@ class AutomaticSpeechRecognition:
 
     def cancel(self):
         """Cancel the active transcription session, if any."""
-        with self._active_session_lock:
-            active = self._active_session
+        # Read _active_session without the lock: see stop() comment.
+        active = self._active_session
         if active is None:
             logger.info("No active session to cancel")
             return
@@ -361,10 +363,10 @@ class AutomaticSpeechRecognition:
         url = f"{self.api_base_url}/transcriptions/close"
         try:
             response = requests.post(url, json={"session_id": session_id}, timeout=5)
-        except Exception as e:
-            raise RuntimeError(f"Failed to close session {session_id}: {e}") from e
+        except Exception:
+            raise
         if response.status_code != 200:
-            raise RuntimeError(f"Failed to close session {session_id}: status {response.status_code}: {response.text}")
+            raise RuntimeError(f"HTTP status {response.status_code}: {response.text}")
         logger.debug(f"Session {session_id} closed successfully")
 
     def _create_transcription_session(self) -> str:
