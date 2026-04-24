@@ -49,13 +49,20 @@ jobs:
             awk '/Checking cached dependency records for/{app=$6} /error found|errors found/{print "| " app " | " $0 " |"}' licensed_status.log >> $GITHUB_STEP_SUMMARY
 
 
-            # Annotate each error block with all details
+            # Annotate each error block (multiline) as a single ::error::
             awk '
               /^Errors:/ {flag=1; next}
-              /^$/ {if(flag && err) {print "::error::" err; err=""} flag=0}
-              flag && /^[*]/ {if(err) {print "::error::" err}; err=$0; next}
-              flag && NF {if(err) err=err "\n" $0}
-              END {if(flag && err) print "::error::" err}
+              flag && /^[*]/ {
+                if(err) {print "::error::" err; err=""}
+                err=$0; next
+              }
+              flag && NF {
+                if(err) err=err "\n" $0
+              }
+              flag && /^$/ {
+                if(err) {print "::error::" err; err=""}
+              }
+              END {if(err) print "::error::" err}
             ' licensed_status.log
 
             exit 1
