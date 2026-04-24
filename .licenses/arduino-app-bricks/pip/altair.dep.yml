@@ -1,6 +1,6 @@
 ---
 name: altair
-version: 6.0.9
+version: 6.1.0
 type: pip
 summary: 'Vega-Altair: A declarative statistical visualization library for Python.'
 homepage: ''
