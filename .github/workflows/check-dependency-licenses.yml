@@ -49,20 +49,35 @@ jobs:
             awk '/Checking cached dependency records for/{app=$6} /error found|errors found/{print "| " app " | " $0 " |"}' licensed_status.log >> $GITHUB_STEP_SUMMARY
 
 
-            # Annotate each error block (multiline) as a single ::error::
+            # GitHub workflow commands need escaped newlines, otherwise only the
+            # first line is attached to the annotation and the rest is plain log output.
             awk '
-              /^Errors:/ {flag=1; next}
-              flag && /^[*]/ {
-                if(err) {print "::error::" err; err=""}
-                err=$0; next
+              function escape(text, escaped) {
+                escaped = text
+                gsub(/%/, "%25", escaped)
+                gsub(/\r/, "%0D", escaped)
+                gsub(/\n/, "%0A", escaped)
+                return escaped
               }
-              flag && NF {
-                if(err) err=err "\n" $0
+
+              function flush() {
+                if (block != "") {
+                  print "::error::" escape(block)
+                  block = ""
+                }
               }
-              flag && /^$/ {
-                if(err) {print "::error::" err; err=""}
+
+              /^Errors:$/ { in_errors = 1; next }
+              in_errors && /^\* / { flush(); block = $0; next }
+              in_errors && /^[[:space:]]+/ {
+                if (block != "") {
+                  block = block "\n" $0
+                }
+                next
               }
-              END {if(err) print "::error::" err}
+              in_errors && /^$/ { flush(); next }
+              in_errors { flush(); in_errors = 0 }
+              END { flush() }
             ' licensed_status.log
 
             exit 1
