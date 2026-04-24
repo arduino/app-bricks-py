@@ -44,9 +44,13 @@ jobs:
           if grep -q "error found" licensed_status.log || grep -q "errors found" licensed_status.log; then
             echo "::error::Dependency license cache is out of date. Run 'task license:deps' locally, then review the changes, commit, and push the updated files."
             echo "### Licensed Summary" >> $GITHUB_STEP_SUMMARY
-            echo '| App | Errors |' >> $GITHUB_STEP_SUMMARY
+            echo '| App | Overall Errors (licenses, version updates, ...) |' >> $GITHUB_STEP_SUMMARY
             echo '|-----|--------|' >> $GITHUB_STEP_SUMMARY
             awk '/Checking cached dependency records for/{app=$6} /error found|errors found/{print "| " app " | " $0 " |"}' licensed_status.log >> $GITHUB_STEP_SUMMARY
+
+            # Annotate actual license errors in the log
+            awk '/^Errors:/ {flag=1; next} /^$/ {flag=0} flag && /^[*]/ {gsub(/^\* /,""); split($1, arr, "."); app=arr[1]; dep=arr[3]; msg=$0; sub(/^[^ ]+ /, "", msg); print "::error file=" $4 ",title="app "." dep "::" msg }' licensed_status.log
+
             exit 1
           else
             echo "✅ Dependency license status: OK" >> $GITHUB_STEP_SUMMARY
