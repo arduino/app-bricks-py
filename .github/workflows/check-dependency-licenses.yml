@@ -42,6 +42,8 @@ jobs:
         if: always()
         run: |
           actual_errors_file=$(mktemp)
+          install_warnings_file=$(mktemp)
+          updated_records_file=$(mktemp)
 
           awk '
             function flush() {
@@ -65,18 +67,50 @@ jobs:
             END { flush() }
           ' output_file="$actual_errors_file" licensed_status.log
 
+          grep 'Failed to install ' licensed_status.log | \
+            sed -E 's/^.*Failed to install ([^ ]+) in (.+)$/- `\1` in `\2`/' | \
+            sort -u > "$install_warnings_file" || true
+
+          git diff --name-only -- .licenses | \
+            grep -E '\.dep\.ya?ml$' | \
+            sed -E 's#^\.licenses/##; s#\.dep\.ya?ml$##; s#/#.#g; s#^#- `#; s#$#`#' | \
+            sort -u > "$updated_records_file" || true
+
+          echo "### Licensed Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
           if [ -s "$actual_errors_file" ]; then
             echo "::error::Dependency license cache is out of date. Run 'task license:deps' locally, then review the changes, commit, and push the updated files."
-            echo "### Licensed Summary" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
             echo "The following dependency license issues require review:" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             awk '
               BEGIN { RS=""; ORS="\n\n" }
               NF { print "```text\n" $0 "\n```" }
             ' "$actual_errors_file" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ No blocking dependency license issues found." >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ -s "$install_warnings_file" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "#### Dependencies Not Installed In Licensed Venvs" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "These warnings are non-blocking, but they can make the license scan less complete for the affected environment." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            cat "$install_warnings_file" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ -s "$updated_records_file" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "#### Cached Dependency Records Updated" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "These records changed during \`licensed cache\`. They are non-blocking here, but usually mean the branch did not yet contain the latest cached dependency metadata." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            cat "$updated_records_file" >> $GITHUB_STEP_SUMMARY
+          fi
 
 
+          if [ -s "$actual_errors_file" ]; then
             # GitHub workflow commands need escaped newlines, otherwise only the
             # first line is attached to the annotation and the rest is plain log output.
             awk '
@@ -107,6 +141,4 @@ jobs:
             ' "$actual_errors_file"
 
             exit 1
-          else
-            echo "✅ Dependency license status: OK" >> $GITHUB_STEP_SUMMARY
           fi
