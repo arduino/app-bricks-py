@@ -11,7 +11,7 @@ The ASR Brick allows you to:
 - Transcribe using a local LLM
 - Use multiple languages
 
-This Brick streams audio from a `Microphone` or audio files and gives you the transcribed text.
+This Brick streams audio from a `Microphone` or `audio files` and gives you the transcribed text.
 
 ## Prerequisites
 
@@ -29,7 +29,7 @@ Tips:
 
 - All transcriptions are performed locally, ensuring data privacy and eliminating network dependencies.
 - Supports the transcription of multiple spoken languages.
-- Works with the Microphone peripheral, WAV and PCM audio.
+- Works with the Microphone peripheral as well as WAV and PCM audio files.
 - Limits the number of simultaneous transcription sessions to avoid resource exhaustion.
 
 ## Code Example and Usage
