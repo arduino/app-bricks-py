@@ -48,8 +48,15 @@ jobs:
             echo '|-----|--------|' >> $GITHUB_STEP_SUMMARY
             awk '/Checking cached dependency records for/{app=$6} /error found|errors found/{print "| " app " | " $0 " |"}' licensed_status.log >> $GITHUB_STEP_SUMMARY
 
-            # Annotate actual license errors in the log
-            awk '/^Errors:/ {flag=1; next} /^$/ {flag=0} flag && /^[*]/ {gsub(/^\* /,""); split($1, arr, "."); app=arr[1]; dep=arr[3]; msg=$0; sub(/^[^ ]+ /, "", msg); print "::error file=" $4 ",title="app "." dep "::" msg }' licensed_status.log
+
+            # Annotate each error block with all details
+            awk '
+              /^Errors:/ {flag=1; next}
+              /^$/ {if(flag && err) {print "::error::" err; err=""} flag=0}
+              flag && /^[*]/ {if(err) {print "::error::" err}; err=$0; next}
+              flag && NF {if(err) err=err "\n" $0}
+              END {if(flag && err) print "::error::" err}
+            ' licensed_status.log
 
             exit 1
           else
