@@ -41,12 +41,40 @@ jobs:
       - name: Annotate and summarize errors
         if: always()
         run: |
-          if grep -q "error found" licensed_status.log || grep -q "errors found" licensed_status.log; then
+          actual_errors_file=$(mktemp)
+
+          awk '
+            function flush() {
+              if (block != "") {
+                print block >> output_file
+                print "" >> output_file
+                block = ""
+              }
+            }
+
+            /^Errors:$/ { in_errors = 1; next }
+            in_errors && /^\* / { flush(); block = $0; next }
+            in_errors && /^[[:space:]]+/ {
+              if (block != "") {
+                block = block "\n" $0
+              }
+              next
+            }
+            in_errors && /^$/ { flush(); next }
+            in_errors { flush(); in_errors = 0 }
+            END { flush() }
+          ' output_file="$actual_errors_file" licensed_status.log
+
+          if [ -s "$actual_errors_file" ]; then
             echo "::error::Dependency license cache is out of date. Run 'task license:deps' locally, then review the changes, commit, and push the updated files."
             echo "### Licensed Summary" >> $GITHUB_STEP_SUMMARY
-            echo '| App | Overall Errors (licenses, version updates, ...) |' >> $GITHUB_STEP_SUMMARY
-            echo '|-----|--------|' >> $GITHUB_STEP_SUMMARY
-            awk '/Checking cached dependency records for/{app=$6} /error found|errors found/{print "| " app " | " $0 " |"}' licensed_status.log >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "The following dependency license issues require review:" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            awk '
+              BEGIN { RS=""; ORS="\n\n" }
+              NF { print "```text\n" $0 "\n```" }
+            ' "$actual_errors_file" >> $GITHUB_STEP_SUMMARY
 
 
             # GitHub workflow commands need escaped newlines, otherwise only the
@@ -67,18 +95,16 @@ jobs:
                 }
               }
 
-              /^Errors:$/ { in_errors = 1; next }
-              in_errors && /^\* / { flush(); block = $0; next }
-              in_errors && /^[[:space:]]+/ {
+              /^\* / { flush(); block = $0; next }
+              /^[[:space:]]+/ {
                 if (block != "") {
                   block = block "\n" $0
                 }
                 next
               }
-              in_errors && /^$/ { flush(); next }
-              in_errors { flush(); in_errors = 0 }
+              /^$/ { flush(); next }
               END { flush() }
-            ' licensed_status.log
+            ' "$actual_errors_file"
 
             exit 1
           else
