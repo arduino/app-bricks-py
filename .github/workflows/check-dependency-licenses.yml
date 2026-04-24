@@ -43,6 +43,7 @@ jobs:
         run: |
           actual_errors_file=$(mktemp)
           install_warnings_file=$(mktemp)
+          updated_records_raw_file=$(mktemp)
           updated_records_file=$(mktemp)
 
           awk '
@@ -73,8 +74,10 @@ jobs:
 
           git diff --name-only -- .licenses | \
             grep -E '\.dep\.ya?ml$' | \
-            sed -E 's#^\.licenses/##; s#\.dep\.ya?ml$##; s#/#.#g; s#^#- `#; s#$#`#' | \
-            sort -u > "$updated_records_file" || true
+            sed -E 's#^\.licenses/##; s#\.dep\.ya?ml$##; s#/#.#g' | \
+            sort -u > "$updated_records_raw_file" || true
+
+          sed -E 's#^#- `#; s#$#`#' "$updated_records_raw_file" > "$updated_records_file" || true
 
           echo "### Licensed Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -93,7 +96,7 @@ jobs:
 
           if [ -s "$install_warnings_file" ]; then
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "#### Errors installing dependencies" >> $GITHUB_STEP_SUMMARY
+            echo "### Errors installing dependencies" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "⚠️ These warnings are non-blocking, but they can make the license scan less complete for the affected environment." >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
@@ -102,11 +105,15 @@ jobs:
 
           if [ -s "$updated_records_file" ]; then
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "#### Outdated dependency versions" >> $GITHUB_STEP_SUMMARY
+            echo "### Outdated dependency records" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "⚠️ These records changed during \`licensed cache\`. They are non-blocking here, but usually mean the branch did not yet contain the latest cached dependency metadata." >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ These records changed during \`licensed cache\`. This can reflect dependency version updates, license text changes, or other cached metadata changes. They are non-blocking here, but usually mean the branch did not yet contain the latest cached dependency metadata. Please consider to run \`task license:deps\` locally, then review the changes, commit, and push the updated files." >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             cat "$updated_records_file" >> $GITHUB_STEP_SUMMARY
+            while IFS= read -r record; do
+              [ -n "$record" ] || continue
+              echo "::warning::Dependency record out-of-date: $record"
+            done < "$updated_records_raw_file"
           fi
 
 
