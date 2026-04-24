@@ -139,7 +139,7 @@ tasks:
             done
             if [ ${#failed_pkgs[@]} -gt 0 ]; then
               for pkg in "${failed_pkgs[@]}"; do
-                echo "::warning ::Failed to install $pkg in $venv_path" >&2
+                echo "::warning::Failed to install $pkg in $venv_path" >&2
               done
             fi
           else
