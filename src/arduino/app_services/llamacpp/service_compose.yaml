@@ -24,6 +24,8 @@ services:
       - LLAMA_ARG_THINK_BUDGET=${X_LLAMA_ARG_THINK_BUDGET:--1}
       - LLAMA_ARG_N_GPU_LAYERS=${X_LLAMA_ARG_N_GPU_LAYERS:-all}
       - LLAMA_ARG_N_PARALLEL=${X_LLAMA_ARG_N_PARALLEL:-1} # Force to 1 to avoid CPU fallback in Hexagon use case
+      - LLAMA_ARG_KV_UNIFIED=${X_LLAMA_ARG_KV_UNIFIED:-false} # Need to be false for Hexagon use case
+      - LLAMA_ARG_FLASH_ATTN=${X_LLAMA_ARG_FLASH_ATTN:-1} # Need to be 1 for Hexagon use case - FA ON
       #- LLAMA_API_KEY=${X_LLAMA_API_KEY:-key}
     working_dir: /models
     ports:
