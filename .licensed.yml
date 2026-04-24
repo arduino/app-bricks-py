@@ -8,33 +8,34 @@ apps:
     python:
       virtual_env_dir: ".licensed-venv-lib"
 
+
   - name: python-base
     source_path: .
     sources:
       pip: true
     python:
-      virtual_env_dir: ".licensed-venv-python-base"
+      virtual_env_dir: "containers/python-base/.licensed-venv"
 
   - name: aihub-models-runner
     source_path: .
     sources:
       pip: true
     python:
-      virtual_env_dir: ".licensed-venv-aihub"
+      virtual_env_dir: "containers/aihub-models-runner/.licensed-venv"
 
   - name: gesture-recognition-runner
     source_path: .
     sources:
       pip: true
     python:
-      virtual_env_dir: ".licensed-venv-gesture-recognition-runner"
+      virtual_env_dir: "containers/gesture-recognition-runner/.licensed-venv"
 
   - name: python-apps-base
     source_path: .
     sources:
       pip: true
     python:
-      virtual_env_dir: ".licensed-venv-python-apps-base"
+      virtual_env_dir: "containers/python-apps-base/.licensed-venv"
 
 stale_records_action: error
 

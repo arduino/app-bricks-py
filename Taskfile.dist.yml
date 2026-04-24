@@ -121,25 +121,25 @@ tasks:
         SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0 .licensed-venv-lib/bin/pip install -q ".[all]"
       - |
         for d in containers/*/; do
-          venv_name=".licensed-venv-$(basename "$d" | sed 's/\/$//')"
+          venv_path="$d.licensed-venv"
           reqs=()
           [ -f "$d/requirements-base.txt" ] && reqs+=("$d/requirements-base.txt")
           [ -f "$d/requirements.txt" ] && reqs+=("$d/requirements.txt")
           if [ ${#reqs[@]} -gt 0 ]; then
-            echo "Creating venv for $d ($venv_name)..."
-            python3 -m venv "$venv_name"
-            "$venv_name"/bin/python -m pip install --upgrade pip -q
+            echo "Creating venv for $d ($venv_path)..."
+            python3 -m venv "$venv_path"
+            "$venv_path"/bin/python -m pip install --upgrade pip -q
             failed_pkgs=()
             for req in "${reqs[@]}"; do
               while IFS= read -r line || [ -n "$line" ]; do
                 pkg=$(echo "$line" | sed 's/#.*//;s/^[[:space:]]*//;s/[[:space:]]*$//')
                 [ -z "$pkg" ] && continue
-                "$venv_name"/bin/pip install -q "$pkg" || failed_pkgs+=("$pkg")
+                "$venv_path"/bin/pip install -q "$pkg" || failed_pkgs+=("$pkg")
               done < "$req"
             done
             if [ ${#failed_pkgs[@]} -gt 0 ]; then
               for pkg in "${failed_pkgs[@]}"; do
-                echo "::warning ::Failed to install $pkg in $venv_name" >&2
+                echo "::warning ::Failed to install $pkg in $venv_path" >&2
               done
             fi
           else
@@ -148,10 +148,11 @@ tasks:
         done
 
   license:cleanup-venvs:
-    desc: Remove all temporary licensed virtual environments
+    desc: Remove all persistent licensed virtual environments (manual only)
     internal: true
     cmds:
-      - rm -rf .licensed-venv-*
+      - rm -rf .licensed-venv-lib
+      - rm -rf containers/*/.licensed-venv
 
   install:licensed:
     desc: Install or verify licensed Ruby gem
@@ -178,7 +179,6 @@ tasks:
       - task: install:licensed
       - licensed cache
       - licensed status || true
-      - task: license:cleanup-venvs
 
   license:
     desc: Update license headers, files, and dependency license caches
