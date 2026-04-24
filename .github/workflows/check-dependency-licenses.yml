@@ -36,14 +36,14 @@ jobs:
         id: licensed
         run: |
           export PATH="${{ env.TASKFILE_PATH }}:$PATH"
-          task license:deps > licensed_status.log 2>&1 || true
+          task license:deps 2>&1 | tee licensed_status.log || true
 
       - name: Annotate and summarize errors
         if: always()
         run: |
           if grep -q "error found" licensed_status.log || grep -q "errors found" licensed_status.log; then
             echo "::error::Dependency license cache is out of date. Run 'task license:deps' locally, then review the changes, commit, and push the updated files."
-            echo "### Licensed Errors" >> $GITHUB_STEP_SUMMARY
+            echo "### Licensed Summary" >> $GITHUB_STEP_SUMMARY
             echo '| App | Errors |' >> $GITHUB_STEP_SUMMARY
             echo '|-----|--------|' >> $GITHUB_STEP_SUMMARY
             awk '/Checking cached dependency records for/{app=$6} /error found|errors found/{print "| " app " | " $0 " |"}' licensed_status.log >> $GITHUB_STEP_SUMMARY
