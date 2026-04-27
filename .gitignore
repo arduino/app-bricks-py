@@ -130,7 +130,6 @@ celerybeat.pid
 # Environments
 .env
 .venv
-.licensed-venv-*
 containers/*/.licensed-venv/
 env/
 venv/

@@ -115,10 +115,10 @@ tasks:
     internal: true
     cmds:
       - |
-        echo "Creating library venv (.licensed-venv-lib)..."
-        python3 -m venv .licensed-venv-lib
-        .licensed-venv-lib/bin/python -m pip install --upgrade pip -q
-        SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0 .licensed-venv-lib/bin/pip install -q ".[all]"
+        echo "Creating library venv (.licensed-venv)..."
+        python3 -m venv .licensed-venv
+        .licensed-venv/bin/python -m pip install --upgrade pip -q
+        SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0 .licensed-venv/bin/pip install -q ".[all]"
       - |
         for d in containers/*/; do
           venv_path="$d.licensed-venv"
@@ -151,7 +151,7 @@ tasks:
     desc: Remove all persistent licensed virtual environments (manual only)
     internal: true
     cmds:
-      - rm -rf .licensed-venv-lib
+      - rm -rf .licensed-venv
       - rm -rf containers/*/.licensed-venv
 
   install:licensed:

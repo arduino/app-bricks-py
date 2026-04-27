@@ -6,7 +6,7 @@ apps:
     sources:
       pip: true
     python:
-      virtual_env_dir: ".licensed-venv-lib"
+      virtual_env_dir: ".licensed-venv"
 
 
   - name: python-base
