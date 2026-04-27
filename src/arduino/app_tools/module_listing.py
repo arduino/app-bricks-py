@@ -68,6 +68,7 @@ class ArduinoBrick:
         self.supported_boards: Optional[List[str]] = supported_boards
         self.requires_services: Optional[List[str]] = requires_services
         self.model_by_platform: Optional[List[Dict[str, str]]] = model_by_platform
+
     def to_dict(self) -> dict:
         out_dict: dict = {
             "id": self.id,
