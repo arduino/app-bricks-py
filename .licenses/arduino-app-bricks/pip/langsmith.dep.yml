@@ -1,6 +1,6 @@
 ---
 name: langsmith
-version: 0.7.35
+version: 0.7.37
 type: pip
 summary: Client library to connect to the LangSmith Observability and Evaluation Platform.
 homepage: https://smith.langchain.com/
@@ -32,3 +32,4 @@ licenses:
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
     SOFTWARE.
 notices: []
+

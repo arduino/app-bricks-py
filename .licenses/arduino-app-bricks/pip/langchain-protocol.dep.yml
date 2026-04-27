@@ -1,16 +1,16 @@
 ---
-name: langchain-openai
-version: 1.2.1
+name: langchain-protocol
+version: 0.0.12
 type: pip
-summary: An integration package connecting OpenAI and LangChain
-homepage: https://docs.langchain.com/oss/python/integrations/providers/openai
+summary: Python bindings for the LangChain agent streaming protocol
+homepage: ''
 license: mit
 licenses:
 - sources: LICENSE
   text: |
     MIT License
 
-    Copyright (c) 2023 LangChain, Inc.
+    Copyright (c) 2026 LangChain, Inc.
 
     Permission is hereby granted, free of charge, to any person obtaining a copy
     of this software and associated documentation files (the "Software"), to deal

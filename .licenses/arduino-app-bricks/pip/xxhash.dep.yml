@@ -1,6 +1,6 @@
 ---
 name: xxhash
-version: 3.6.0
+version: 3.7.0
 type: pip
 summary: Python binding for xxHash
 homepage: https://github.com/ifduyue/python-xxhash
