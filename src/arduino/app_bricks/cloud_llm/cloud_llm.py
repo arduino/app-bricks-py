@@ -54,8 +54,9 @@ class CloudLLM:
                 'API_KEY' environment variable.
             model (Union[str, CloudModel]): The model identifier. Accepts a `CloudModel`
                 enum member (e.g., `CloudModel.OPENAI_GPT`) or its corresponding raw string
-                value (e.g., `'openai:gpt-4o-mini'`). Defaults to `CloudModel.ANTHROPIC_CLAUDE`.
+                value (e.g., `'openai:gpt-5-mini'`). Defaults to `CloudModel.ANTHROPIC_CLAUDE`.
                 To identify the model provider, you need to use prefixes like 'openai:', 'anthropic:', or 'google:'.
+                If no prefix is provided, the model will be defaulted to an OpenAI compatible model.
             system_prompt (str): A system-level instruction that defines the AI's persona
                 and constraints (e.g., "You are a helpful assistant"). Defaults to empty.
             temperature (Optional[float]): The sampling temperature between 0.0 and 1.0.
@@ -72,7 +73,11 @@ class CloudLLM:
         Raises:
             ValueError: If `api_key` is not provided (empty string).
         """
-        if api_key == "":
+        if api_key == "" and (
+            model.startswith(f"{CloudModelProvider.OPENAI}:")
+            or model.startswith(f"{CloudModelProvider.ANTHROPIC}:")
+            or model.startswith(f"{CloudModelProvider.GOOGLE}:")
+        ):
             raise ValueError("API key is required to initialize CloudLLM brick.")
 
         self._api_key = api_key
@@ -83,6 +88,8 @@ class CloudLLM:
         self._max_tool_loops = max_tool_loops
         self._timeout = timeout
         self._callbacks = callbacks
+        self._model_loaded = False
+        self._model_name = model
 
         # Registered tools
         self._tools_map = {}
@@ -141,6 +148,11 @@ class CloudLLM:
             List[BaseMessage]: The list of messages in the conversation history,
                 including system prompt if set.
         """
+
+        if self._model_loaded is False:
+            logger.info(f"Initializing model {self._model_name}...")
+            self._model_loaded = True
+
         messages = self._history.get_messages()
         message = None
         if images is not None and len(images) > 0:
@@ -410,20 +422,31 @@ def model_factory(model_name: CloudModel, **kwargs) -> BaseChatModel:
     """Factory function to instantiate the specific LangChain chat model.
 
     This function maps the supported `CloudModel` enum values to their respective
-    LangChain implementations.
+    LangChain implementations. In case of prefix-based model identifiers (e.g., 'openai:gpt-5-mini'),
+    it extracts the provider and model name accordingly.
 
     Args:
         model_name (CloudModel): The enum or string identifier for the model.
             Model name can include provider prefixes like 'openai:', 'anthropic:', or 'google:'
-            to specify the provider.
+            to specify the provider. If no prefix is provided, the model will be defaulted to an OpenAI compatible model.
         **kwargs: Additional arguments passed to the model constructor (e.g., api_key, temperature).
 
     Returns:
         BaseChatModel: An instance of a LangChain chat model wrapper.
 
     Raises:
-        ValueError: If `model_name` does not match one of the supported `CloudModel` options.
+        ValueError: If `model_name` does not match one of the supported options.
     """
+
+    if (
+        "base_url" in kwargs
+        and not model_name.startswith(f"{CloudModelProvider.OPENAI}:")
+        and not model_name.startswith(f"{CloudModelProvider.ANTHROPIC}:")
+        and not model_name.startswith(f"{CloudModelProvider.GOOGLE}:")
+    ):
+        logger.debug(f"Model name '{model_name}' does not specify a provider prefix, but 'base_url' is provided. Defaulting to OpenAI provider.")
+        model_name = f"{CloudModelProvider.OPENAI}:{model_name}"
+
     if model_name == CloudModel.ANTHROPIC_CLAUDE or model_name.startswith(f"{CloudModelProvider.ANTHROPIC}:"):
         from langchain_anthropic import ChatAnthropic
 
