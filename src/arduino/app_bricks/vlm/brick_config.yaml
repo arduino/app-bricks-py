@@ -5,3 +5,5 @@ requires_services: ["arduino:genie"]
 requires_model: true
 model: genie:qwen3-vl-4b
 supported_boards: ["ventunoq"]
+ai_frameworks_compatibility:
+  - genie
