@@ -6,13 +6,13 @@ runners:
               image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/ei-qnn-models-runner:dev-next
               volumes:
                 - ${download_location}:/models
-              command: ["tbd"]
+              entrypoint: ["sh", "-c", "python download_ei_build.py --ei-project-id ${ei-project-id} --impulse-id ${ei-impulse-id} --output-name ${model_name} --output-dir /models"]
         - unoq:
             docker:
               image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/ei-models-runner:dev-next
               volumes:
                 - ${download_location}:/models
-              command: ["tbd"]              
+              entrypoint: ["sh", "-c", "python download_ei_build.py --ei-project-id ${ei-project-id} --impulse-id ${ei-impulse-id} --output-name ${model_name} --output-dir /models"]
   - genie-models-runner:
       platforms:
         - ventunoq:
@@ -20,7 +20,7 @@ runners:
               image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/genie-models-runner:dev-next
               volumes:
                 - ${download_location}:/models
-              command: ["sh", "-c", "cd /models && qai_hub_models fetch ${model_name} -r ${model_type} -p ${quantization} -c ${chipset}"]
+              entrypoint: ["sh", "-c", "cd /models && qai_hub_models fetch ${model_name} -r ${model_type} -p ${quantization} -c ${chipset}"]
   - audio-analytics-models-runner:
       platforms:
         - ventunoq:
@@ -28,4 +28,4 @@ runners:
               image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/audio-analytics-models-runner:dev-next
               volumes:
                 - ${download_location}:/models
-              command: ["sh", "-c", "cd /models && qai_hub_models fetch ${model_name} -r ${model_type} -p ${quantization} -c ${chipset}"]
+              entrypoint: ["sh", "-c", "cd /models && qai_hub_models fetch ${model_name} -r ${model_type} -p ${quantization} -c ${chipset}"]

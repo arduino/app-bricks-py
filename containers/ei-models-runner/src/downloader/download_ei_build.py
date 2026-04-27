@@ -5,10 +5,9 @@
 """Download an Edge Impulse deployment build artifact.
 
 Usage examples:
-    python download_ei_build.py --ei-project-id 948887 --impulse-id 11
-    python download_ei_build.py --ei-project-id 948887 --impulse-id 11 --output-dir ./downloads
-    python download_ei_build.py --ei-project-id 948887 --impulse-id 11 --json-progress
-    python download_ei_build.py --ei-project-id 948887 --impulse-id 11 --api-key <key>
+    python download_ei_build.py --ei-project-id 948887 --impulse-id 11 --output-name model.eim
+    python download_ei_build.py --ei-project-id 948887 --impulse-id 11 --output-name model.eim --output-dir ./downloads
+    python download_ei_build.py --ei-project-id 948887 --impulse-id 11 --output-name model.eim --json-progress
 """
 
 import argparse
