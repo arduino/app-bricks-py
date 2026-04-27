@@ -2,7 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-import os
 import yaml
 from arduino.app_internal.core.module import (
     parse_docker_compose_variable,
