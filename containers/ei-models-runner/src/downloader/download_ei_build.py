@@ -5,10 +5,10 @@
 """Download an Edge Impulse deployment build artifact.
 
 Usage examples:
-    python download_ei_build.py --ei-project-id 948887 --build-number 11
-    python download_ei_build.py --ei-project-id 948887 --build-number 11 --output-dir ./downloads
-    python download_ei_build.py --ei-project-id 948887 --build-number 11 --json-progress
-    python download_ei_build.py --ei-project-id 948887 --build-number 11 --api-key <key>
+    python download_ei_build.py --ei-project-id 948887 --impulse-id 11
+    python download_ei_build.py --ei-project-id 948887 --impulse-id 11 --output-dir ./downloads
+    python download_ei_build.py --ei-project-id 948887 --impulse-id 11 --json-progress
+    python download_ei_build.py --ei-project-id 948887 --impulse-id 11 --api-key <key>
 """
 
 import argparse
@@ -19,7 +19,7 @@ import sys
 import requests
 
 
-BASE_URL = "https://studio.edgeimpulse.com/v1/api/{project_id}/deployment/history/{build_number}/download"
+BASE_URL = "https://studio.edgeimpulse.com/v1/api/{project_id}/deployment/download?impulseId={impulse_id}&type=runner-linux-aarch64-qnn&engine=tflite"
 CHUNK_SIZE = 8192
 
 
@@ -39,15 +39,13 @@ def _simple_progress_bar(downloaded: int, total: int, width: int = 40) -> str:
     return f"[{bar}] {pct * 100:.1f}%  ({downloaded}/{total} B)"
 
 
-def download(url: str, output_dir: str, json_progress: bool, api_key: str | None):
-    headers = {}
-    if api_key:
-        headers["x-api-key"] = api_key
-
-    with requests.get(url, headers=headers, stream=True, timeout=60) as response:
+def download(url: str, output_dir: str, output_name: str | None, json_progress: bool):
+    with requests.get(url, stream=True, timeout=60) as response:
         response.raise_for_status()
 
-        filename = _filename_from_response(response, url.rstrip("/").split("/")[-1] or "download")
+        if output_name is not None and output_name == "":
+            output_name = None
+        filename = output_name or _filename_from_response(response, url.rstrip("/").split("/")[-1] or "download")
         os.makedirs(output_dir, exist_ok=True)
         output_path = os.path.join(output_dir, filename)
 
@@ -68,6 +66,7 @@ def download(url: str, output_dir: str, json_progress: bool, api_key: str | None
         else:
             try:
                 from tqdm import tqdm
+
                 with tqdm(total=total or None, unit="B", unit_scale=True, unit_divisor=1024, desc=filename) as pbar:
                     with open(output_path, "wb") as f:
                         for chunk in response.iter_content(chunk_size=CHUNK_SIZE):
@@ -93,9 +92,7 @@ def download(url: str, output_dir: str, json_progress: bool, api_key: str | None
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Download an Edge Impulse deployment build artifact via the EI REST API."
-    )
+    parser = argparse.ArgumentParser(description="Download an Edge Impulse deployment build artifact via the EI REST API.")
     parser.add_argument(
         "--ei-project-id",
         required=True,
@@ -104,11 +101,11 @@ def main():
         help="Edge Impulse project ID (e.g. 948887).",
     )
     parser.add_argument(
-        "--build-number",
+        "--impulse-id",
         required=True,
         type=int,
         metavar="N",
-        help="Deployment history build number (e.g. 11).",
+        help="Impulse ID (e.g. 11).",
     )
     parser.add_argument(
         "--output-dir",
@@ -117,23 +114,23 @@ def main():
         help="Directory to save the downloaded file (default: current directory).",
     )
     parser.add_argument(
+        "--output-name",
+        metavar="FILE",
+        help="Name of the downloaded file.",
+    )
+    parser.add_argument(
         "--json-progress",
         action="store_true",
         help='Report progress as JSON lines, e.g. {"progress": "42%%"}, instead of a progress bar.',
     )
-    parser.add_argument(
-        "--api-key",
-        default=None,
-        metavar="KEY",
-        help="Edge Impulse API key sent as the x-api-key header.",
-    )
 
     args = parser.parse_args()
 
-    url = BASE_URL.format(project_id=args.ei_project_id, build_number=args.build_number)
+    url = BASE_URL.format(project_id=args.ei_project_id, impulse_id=args.impulse_id)
 
     try:
-        download(url, args.output_dir, args.json_progress, args.api_key)
+        print(f"Downloading from: {url}")
+        download(url, args.output_dir, args.output_name, args.json_progress)
     except requests.HTTPError as exc:
         msg = f"HTTP error: {exc.response.status_code} {exc.response.reason}"
         if args.json_progress:
