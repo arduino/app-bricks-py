@@ -14,11 +14,33 @@ models:
           "EI_V_OBJ_DETECTION_MODEL": "/models/ootb/ei/lw-face-det.eim"
     metadata:
       source: "qualcomm-ai-hub"
-      ei-gpu-mode: false
+      image-resolution: "320x240"
       ei-project-id: 830703
+      ei-impulse-id: 3
       ei-model-url: "https://studio.edgeimpulse.com/public/830703/live"      
       source-model-id: "face-det-lite"
       source-model-url: "https://aihub.qualcomm.com/models/face_det_lite"
+ - face-detection-qnn:
+    runner: brick
+    name : "Lightweight-Face-Detection - NPU accelerated"
+    description: "A small and accurate model for detecting bounding boxes for faces in images. This version of the model is optimized for NPU acceleration on supported devices, providing faster inference times while maintaining accuracy."
+    model_labels:
+      - face
+    bricks:
+      - id: "arduino:object_detection"
+        model_configuration:
+          "EI_OBJ_DETECTION_MODEL": "/models/ootb/ei/lw-face-det-qnn-640.eim"
+      - id: "arduino:video_object_detection"
+        model_configuration:
+          "EI_V_OBJ_DETECTION_MODEL": "/models/ootb/ei/lw-face-det-qnn-640.eim"
+    metadata:
+      source: "qualcomm-ai-hub"
+      image-resolution: "640x480"
+      ei-project-id: 830703
+      ei-impulse-id: 2
+      ei-model-url: "https://studio.edgeimpulse.com/public/830703/live"      
+      source-model-id: "face-det-lite"
+      source-model-url: "https://aihub.qualcomm.com/models/face_det_lite"      
  - yolox-object-detection:
     runner: brick
     name : "General purpose object detection - YoloX nano"
@@ -106,7 +128,9 @@ models:
       - zebra
     metadata:
       source: "edgeimpulse"
+      image-resolution: "416x416"
       ei-project-id: 717280
+      ei-impulse-id: 1
       ei-model-url: "https://studio.edgeimpulse.com/public/717280/live"
       source-model-id: "YOLOX-Nano"
       source-model-url: "https://github.com/Megvii-BaseDetection/YOLOX"
@@ -204,7 +228,9 @@ models:
       - zebra
     metadata:
       source: "edgeimpulse"
+      image-resolution: "416x416"
       ei-project-id: 717280
+      ei-impulse-id: 1
       ei-model-url: "https://studio.edgeimpulse.com/public/717280/live"
       source-model-id: "YOLOX-Nano"
       source-model-url: "https://github.com/Megvii-BaseDetection/YOLOX"
@@ -1176,7 +1202,6 @@ models:
       source: "edgeimpulse"
       ei-project-id: 708500
       ei-model-url: "https://studio.edgeimpulse.com/public/708500/live"
-      ei-gpu-mode: false
       source-model-id: "MobileNetV2"
       source-model-url: "https://www.tensorflow.org/api_docs/python/tf/keras/applications/MobileNetV2"
     bricks:
@@ -1197,7 +1222,6 @@ models:
       source: "edgeimpulse"
       ei-project-id: 755016
       ei-model-url: "https://studio.edgeimpulse.com/public/755016/live"
-      ei-gpu-mode: false
       source-model-id: "person-classification-wakevision"
       source-model-url: "https://studio.edgeimpulse.com/public/755016/live"
     bricks:
@@ -1310,7 +1334,6 @@ models:
           "EI_V_OBJ_DETECTION_MODEL": "/models/ootb/ei/hand-gestures.eim"
     metadata:
       source: "edgeimpulse"
-      ei-gpu-mode: false
       ei-project-id: 842271
       ei-model-url: "https://studio.edgeimpulse.com/public/842271/live"      
       source-model-id: "hand-gestures"
