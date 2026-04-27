@@ -44,7 +44,7 @@ jobs:
           VERSION_ID=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" \
             "https://api.github.com/orgs/${{ github.repository_owner }}/packages/container/${PACKAGE_NAME}/versions" \
-            | jq -r ".[] | select(.metadata.container.tags[] == \"${CACHE_TAG}\") | .id")
+            | jq -r --arg tag "${CACHE_TAG}" '.[]? | select((.metadata.container.tags? // []) | index($tag) != null) | .id')
 
           if [ -n "$VERSION_ID" ] && [ "$VERSION_ID" != "null" ]; then
             echo "Found cache version ID: $VERSION_ID. Deleting..."

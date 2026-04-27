@@ -11,6 +11,8 @@ model_by_platform:
       model: concreate-crack-anomaly-detection-high-resolution
     - platform: unoq
       model: concrete-crack-anomaly-detection
+ai_frameworks_compatibility:
+  - edgeimpulse
 model_configuration_variables:
   - EI_V_ANOMALY_DETECTION_MODEL
 variables:

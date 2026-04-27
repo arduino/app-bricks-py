@@ -48,6 +48,7 @@ class ArduinoBrick:
         env_variables: Dict[str, str] = None,
         supported_boards: List[str] = None,
         requires_services: List[str] = None,
+        ai_frameworks_compatibility: List[str] = None,
         model_by_platform: List[Dict[str, str]] = None,
     ):
         self.id = id
@@ -67,6 +68,7 @@ class ArduinoBrick:
         self.env_variables: Optional[Dict[str, str]] = env_variables
         self.supported_boards: Optional[List[str]] = supported_boards
         self.requires_services: Optional[List[str]] = requires_services
+        self.ai_frameworks_compatibility: Optional[List[str]] = ai_frameworks_compatibility
         self.model_by_platform: Optional[List[Dict[str, str]]] = model_by_platform
 
     def to_dict(self) -> dict:
@@ -92,6 +94,8 @@ class ArduinoBrick:
             out_dict["requires_services"] = self.requires_services
         if self.model_by_platform:
             out_dict["model_by_platform"] = self.model_by_platform
+        if self.ai_frameworks_compatibility:
+            out_dict["ai_frameworks_compatibility"] = self.ai_frameworks_compatibility
         if self.env_variables and len(self.env_variables) > 0:
             additional_vars: List[EnvVariable] = []
             for var in self.env_variables:
@@ -228,6 +232,7 @@ def find_config_yaml(root_path: str) -> tuple[List[ArduinoBrick], List[ArduinoSe
                         env_variables=config.get("variables", None),
                         supported_boards=config.get("supported_boards", None),
                         requires_services=config.get("requires_services", None),
+                        ai_frameworks_compatibility=config.get("ai_frameworks_compatibility", None),
                         model_by_platform=config.get("model_by_platform", None),
                     )
                     discovered_modules.append(mod)

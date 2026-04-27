@@ -4,4 +4,4 @@
 
 from arduino.app_utils import Logger
 
-logger = Logger("CloudLLM")
+logger = Logger("LLM")
