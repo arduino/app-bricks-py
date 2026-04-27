@@ -1,0 +1,15 @@
+---
+name: paho-mqtt
+version: 2.1.0
+type: pip
+summary: MQTT version 5.0/3.1.1 client class
+homepage: http://eclipse.org/paho
+license: epl-2.0
+licenses:
+- sources: LICENSE.txt
+  text: |+
+    This project is dual licensed under the Eclipse Public License 2.0 and the
+    Eclipse Distribution License 1.0 as described in the epl-v20 and edl-v10 files.
+
+notices: []
+...
