@@ -1259,11 +1259,11 @@ models:
       source: "edgeimpulse"
       image-resolution: "512x512"
       hw_acceleration_backend: "qnn"
-      supported_boards: ["ventunoq"]
       ei-project-id: 906179
       ei-model-url: "https://studio.edgeimpulse.com/public/906179/live"
       source-model-id: "concrete-crack-anomaly-detection"
       source-model-url: "https://studio.edgeimpulse.com/public/906179/live"
+    supported_boards: ["ventunoq"]
     bricks:
       - id: "arduino:visual_anomaly_detection"
         model_configuration:
