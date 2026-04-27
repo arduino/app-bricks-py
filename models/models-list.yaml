@@ -1223,7 +1223,9 @@ models:
       - "person"
     metadata:
       source: "edgeimpulse"
+      image-resolution: "224x224"
       ei-project-id: 755016
+      ei-impulse-id: 1
       ei-model-url: "https://studio.edgeimpulse.com/public/755016/live"
       source-model-id: "person-classification-wakevision"
       source-model-url: "https://studio.edgeimpulse.com/public/755016/live"
