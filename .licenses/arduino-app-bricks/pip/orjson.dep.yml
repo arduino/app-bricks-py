@@ -5,7 +5,7 @@ type: pip
 summary: Fast, correct Python JSON library supporting dataclasses, datetimes, and
   numpy
 homepage: ''
-license: apache-2.0
+license: mpl-2.0
 licenses:
 - sources: LICENSE-APACHE
   text: "                              Apache License\n                        Version
