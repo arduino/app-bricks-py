@@ -14,7 +14,7 @@ import time
 from urllib.parse import urlparse
 from typing import List, Dict, Optional
 from arduino.app_internal.core.module import (
-    _update_compose_release_version,
+    _update_compose_release_version_by_platform,
     EnvVariable,
 )
 from arduino.app_utils import Logger
@@ -362,7 +362,7 @@ def save_compose_file(module: ArduinoBrick, output_dir: str, appslab_version: st
                     break
                 f_dest.write(chunk)
 
-        _update_compose_release_version(compose_file_path=output_file_name, release_version=appslab_version)
+        _update_compose_release_version_by_platform(compose_file_path=output_file_name, release_version=appslab_version)
 
 
 def save_readme_file(module: ArduinoBrick, output_dir: str):
@@ -485,7 +485,7 @@ def release():
             # Update the compose file with the release version
             if module.require_container:
                 print(f"Processing compose file {module.compose_file} for arduino bricks version {arduino_bricks_version}")
-                _update_compose_release_version(
+                _update_compose_release_version_by_platform(
                     compose_file_path=module.compose_file,
                     release_version=arduino_bricks_version,
                     append_suffix=False,
@@ -503,7 +503,7 @@ def release():
             for sub_entry in os.scandir(entry.path):
                 if sub_entry.is_file() and sub_entry.name == service_compose_config_file_name:
                     print(f"Found service compose file {sub_entry.path} | {sub_entry.name}. Updating...")
-                    _update_compose_release_version(
+                    _update_compose_release_version_by_platform(
                         compose_file_path=sub_entry.path,
                         release_version=arduino_bricks_version,
                         append_suffix=False,
@@ -550,7 +550,7 @@ def update_ai_container_references():
             modules.append(module.to_dict())
             # Update the compose file with the release version
             if module.require_container:
-                _update_compose_release_version(
+                _update_compose_release_version_by_platform(
                     compose_file_path=module.compose_file,
                     release_version=arduino_bricks_version,
                     append_suffix=False,

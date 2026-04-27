@@ -295,6 +295,26 @@ def resolve_address(host: str) -> str:
         return host
 
 
+def _update_compose_release_version_by_platform(
+    compose_file_path: str,
+    release_version: str,
+    append_suffix: bool = False,
+    only_ai_containers: bool = False,
+    registry: str = None,
+):
+    """Update all compose files that are present in the same directory of the provided compose_file_path.
+    For examples, alongside brick_compose.yaml, if there are brick_compose.ventunoq.yaml and brick_compose.unoq.yaml,
+    they will be updated as well with the same release version.
+    Same for service_compose.yaml files that might be present in the same directory and subdirectories.
+    """
+
+    directory = os.path.dirname(compose_file_path)
+    for filename in os.listdir(directory):
+        if (filename.startswith("brick_compose") or filename.startswith("service_compose")) and filename.endswith(".yaml"):
+            file_path = os.path.join(directory, filename)
+            _update_compose_release_version(file_path, release_version, append_suffix, only_ai_containers, registry)
+
+
 def _update_compose_release_version(
     compose_file_path: str,
     release_version: str,
