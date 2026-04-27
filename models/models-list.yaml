@@ -26,6 +26,7 @@ models:
     description: "A small and accurate model for detecting bounding boxes for faces in images. This version of the model is optimized for NPU acceleration on supported devices, providing faster inference times while maintaining accuracy."
     model_labels:
       - face
+    supported_boards: ["ventunoq"]
     bricks:
       - id: "arduino:object_detection"
         model_configuration:
@@ -1239,6 +1240,7 @@ models:
     description: "Anomaly detection model to identify cracks in concrete structures."
     metadata:
       source: "edgeimpulse"
+      image-resolution: "160x160"
       ei-project-id: 800941
       ei-model-url: "https://studio.edgeimpulse.com/public/800941/live"
       source-model-id: "concrete-crack-anomaly-detection"
@@ -1247,6 +1249,23 @@ models:
       - id: "arduino:visual_anomaly_detection"
         model_configuration:
           "EI_V_ANOMALY_DETECTION_MODEL": "/models/ootb/ei/concrete-crack-anomaly-detection.eim"
+ - concreate-crack-anomaly-detection-high-resolution:
+    runner: brick
+    name : "Concrete crack anomaly detection - High resolution"
+    description: "Anomaly detection model to identify cracks in concrete structures with higher resolution input images for improved accuracy."
+    metadata:
+      source: "edgeimpulse"
+      image-resolution: "512x512"
+      hw_acceleration_backend: "qnn"
+      supported_boards: ["ventunoq"]
+      ei-project-id: 906179
+      ei-model-url: "https://studio.edgeimpulse.com/public/906179/live"
+      source-model-id: "concrete-crack-anomaly-detection"
+      source-model-url: "https://studio.edgeimpulse.com/public/906179/live"
+    bricks:
+      - id: "arduino:visual_anomaly_detection"
+        model_configuration:
+          "EI_V_ANOMALY_DETECTION_MODEL": "/models/ootb/ei/concrete-crack-anomaly-detection-qnn.eim"          
  - keyword-spotting-hey-arduino:
     runner: brick
     name : "Keyword spotting - Hey Arduino!"
