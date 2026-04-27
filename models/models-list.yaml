@@ -35,6 +35,7 @@ models:
           "EI_V_OBJ_DETECTION_MODEL": "/models/ootb/ei/lw-face-det-qnn-640.eim"
     metadata:
       source: "qualcomm-ai-hub"
+      hw_acceleration_backend: "qnn"
       image-resolution: "640x480"
       ei-project-id: 830703
       ei-impulse-id: 2
@@ -229,6 +230,7 @@ models:
     metadata:
       source: "edgeimpulse"
       image-resolution: "416x416"
+      hw_acceleration_backend: "qnn"
       ei-project-id: 717280
       ei-impulse-id: 1
       ei-model-url: "https://studio.edgeimpulse.com/public/717280/live"
