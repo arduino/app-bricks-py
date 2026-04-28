@@ -89,7 +89,7 @@ class CloudASR:
 
         Args:
             duration (float): Max seconds for the transcription session.
-        
+
         Returns:
             str: The transcribed text.
         """
