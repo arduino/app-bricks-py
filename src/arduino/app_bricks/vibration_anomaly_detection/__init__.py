@@ -39,14 +39,16 @@ class VibrationAnomalyDetection(EdgeImpulseRunnerFacade):
         Args:
             anomaly_detection_threshold (float): Threshold applied to the model’s
                 anomaly score to decide whether to trigger the registered callback.
-                Typical starting point is 1.0; tune based on your dataset.
+                This is the raw anomaly score, not a normalized confidence value;
+                values above 1.0 are valid. Typical starting point is 1.0; tune
+                based on your dataset.
 
         Raises:
             ValueError: If the Edge Impulse runner is unreachable, or if the model
                 info is missing/invalid (e.g., non-positive `frequency` or
                 `input_features_count`).
         """
-        self._anomaly_detection_threshold = anomaly_detection_threshold
+        self._anomaly_detection_threshold = self._validate_anomaly_detection_threshold(anomaly_detection_threshold)
         super().__init__()
         model_info = self.get_model_info()
         if not model_info:
@@ -59,6 +61,33 @@ class VibrationAnomalyDetection(EdgeImpulseRunnerFacade):
         self._handler_lock = threading.Lock()
 
         self._buffer = SlidingWindowBuffer(window_size=model_info.input_features_count, slide_amount=int(model_info.input_features_count))
+
+    @property
+    def anomaly_detection_threshold(self) -> float:
+        """Raw anomaly score threshold used to decide when callbacks fire."""
+        return self._anomaly_detection_threshold
+
+    @anomaly_detection_threshold.setter
+    def anomaly_detection_threshold(self, value: float) -> None:
+        """Update the raw anomaly score threshold at runtime.
+
+        The value is intentionally not clamped to ``[0.0, 1.0]`` because Edge
+        Impulse anomaly scores are distances and can legitimately be greater
+        than 1.0.
+        """
+        self._anomaly_detection_threshold = self._validate_anomaly_detection_threshold(value)
+
+    @staticmethod
+    def _validate_anomaly_detection_threshold(value: float) -> float:
+        try:
+            threshold = float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Anomaly detection threshold must be a finite non-negative number.") from exc
+
+        if not np.isfinite(threshold) or threshold < 0.0:
+            raise ValueError("Anomaly detection threshold must be a finite non-negative number.")
+
+        return threshold
 
     def accumulate_samples(self, sensor_samples: Iterable[float]) -> None:
         """Append one or more accelerometer samples to the sliding window buffer.

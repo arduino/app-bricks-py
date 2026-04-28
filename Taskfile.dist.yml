@@ -2,6 +2,7 @@ version: "3"
 
 vars:
   PYTHON_VERSION_MIN: "3.13"
+  LICENSED_VERSION: '5.0.6'
 
 tasks:
   init:
@@ -37,7 +38,7 @@ tasks:
     desc: Install project dependencies
     cmds:
       - sudo apt update
-      - sudo apt install libasound2-dev
+      - sudo apt install -y libasound2-dev portaudio19-dev libzbar0
       - pip install build
       - pip install -e ".[dev]"
 
@@ -85,8 +86,8 @@ tasks:
       - task doc
       - python -m build .
 
-  license:
-    desc: Update license headers and files
+  license:headers:
+    desc: Update SPDX license headers (REUSE)
     cmds:
       - |
         git ls-files |
@@ -97,17 +98,10 @@ tasks:
       - |
         licenses_dir="LICENSES"
         if [ -d "$licenses_dir" ]; then
-          count=$(find "$licenses_dir" -type f | wc -l)
-          if [ "$count" -gt 1 ]; then
-            for f in "$licenses_dir"/*; do
-              base=$(basename "$f")
-              mv "$f" "LICENSE-${base}"
-            done
-          elif [ "$count" -eq 1 ]; then
-            f=$(find "$licenses_dir" -type f | head -n1)
-            mv "$f" LICENSE.txt
+          if [ -f "$licenses_dir/MPL-2.0.txt" ]; then
+            mv "$licenses_dir/MPL-2.0.txt" LICENSE.txt
           fi
-          rmdir "$licenses_dir"
+          rm -rf "$licenses_dir"
         fi
         # Strip trailing whitespace from license files.
         # The upstream SPDX license texts (fetched by `reuse download`)
@@ -115,6 +109,82 @@ tasks:
         # as `licensed`.  `sed -i` is POSIX-portable and available on
         # every GitHub Actions runner.
         find . -maxdepth 1 -name 'LICENSE*' -type f -exec sed -i 's/[[:space:]]*$//' {} +
+
+  license:init-venvs:
+    desc: Dynamically create virtual environments for licensed dependency scanning
+    internal: true
+    cmds:
+      - |
+        echo "Creating library venv (.licensed-venv)..."
+        python3 -m venv .licensed-venv
+        .licensed-venv/bin/python -m pip install --upgrade pip -q
+        SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0 .licensed-venv/bin/pip install -q ".[all]"
+      - |
+        for d in containers/*/; do
+          venv_path="$d.licensed-venv"
+          reqs=()
+          [ -f "$d/requirements-base.txt" ] && reqs+=("$d/requirements-base.txt")
+          [ -f "$d/requirements.txt" ] && reqs+=("$d/requirements.txt")
+          if [ ${#reqs[@]} -gt 0 ]; then
+            echo "Creating venv for $d ($venv_path)..."
+            python3 -m venv "$venv_path"
+            "$venv_path"/bin/python -m pip install --upgrade pip -q
+            failed_pkgs=()
+            for req in "${reqs[@]}"; do
+              while IFS= read -r line || [ -n "$line" ]; do
+                pkg=$(echo "$line" | sed 's/#.*//;s/^[[:space:]]*//;s/[[:space:]]*$//')
+                [ -z "$pkg" ] && continue
+                "$venv_path"/bin/pip install -q "$pkg" || failed_pkgs+=("$pkg")
+              done < "$req"
+            done
+            if [ ${#failed_pkgs[@]} -gt 0 ]; then
+              for pkg in "${failed_pkgs[@]}"; do
+                echo "::warning::Failed to install $pkg in $venv_path" >&2
+              done
+            fi
+          else
+            echo "No requirements found for $d, skipping venv creation."
+          fi
+        done
+
+  license:cleanup-venvs:
+    desc: Remove all persistent licensed virtual environments (manual only)
+    internal: true
+    cmds:
+      - rm -rf .licensed-venv
+      - rm -rf containers/*/.licensed-venv
+
+  install:licensed:
+    desc: Install or verify licensed Ruby gem
+    cmds:
+      - |
+        if command -v licensed &> /dev/null; then
+          INSTALLED=$(licensed version 2>/dev/null || echo "0")
+          if echo "$INSTALLED" | grep -q "{{.LICENSED_VERSION}}"; then
+            echo "licensed {{.LICENSED_VERSION}} already installed."
+            exit 0
+          fi
+        fi
+        if [[ "${CI:-}" == "true" ]]; then
+          gem install licensed -v {{.LICENSED_VERSION}}
+        else
+          echo "Please install licensed v{{.LICENSED_VERSION}} manually: gem install licensed -v {{.LICENSED_VERSION}}"
+          exit 1
+        fi
+
+  license:deps:
+    desc: Check and cache dependency licenses (licensed)
+    cmds:
+      - task: license:init-venvs
+      - task: install:licensed
+      - licensed cache
+      - licensed status || true
+
+  license:
+    desc: Update license headers, files, and dependency license caches
+    cmds:
+      - task: license:headers
+      - task: license:deps
 
   sbom:generate:internal:
     internal: true

@@ -6,6 +6,8 @@ description: |
 category: image
 requires_container: true
 requires_model: true
+ai_frameworks_compatibility:
+  - edgeimpulse
 model: concrete-crack-anomaly-detection
 model_configuration_variables:
   - EI_V_ANOMALY_DETECTION_MODEL

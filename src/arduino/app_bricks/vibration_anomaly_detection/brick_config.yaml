@@ -6,6 +6,8 @@ description: |
   You can use it with pre-trained models provided by the framework or with your own custom anomaly detections models trained on the Edge Impulse platform.
 requires_container: true
 requires_model: true
+ai_frameworks_compatibility:
+  - edgeimpulse
 model: fan-anomaly-detection
 model_configuration_variables:
   - EI_VIBRATION_ANOMALY_DETECTION_MODEL
