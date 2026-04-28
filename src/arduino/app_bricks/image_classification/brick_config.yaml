@@ -6,6 +6,8 @@ description: |
 category: video
 requires_container: true
 requires_model: true
+ai_frameworks_compatibility:
+  - edgeimpulse
 model: mobilenet-image-classification
 model_configuration_variables:
   - EI_CLASSIFICATION_MODEL

@@ -8,6 +8,8 @@ required_devices:
   - microphone
 requires_container: true
 requires_model: true
+ai_frameworks_compatibility:
+  - edgeimpulse
 model: keyword-spotting-hey-arduino
 model_configuration_variables:
   - EI_KEYWORD_SPOTTING_MODEL

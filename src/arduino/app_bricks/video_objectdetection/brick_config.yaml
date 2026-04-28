@@ -11,6 +11,8 @@ requires_container: true
 mount_devices_into_container: true
 required_devices:
   - camera
+ai_frameworks_compatibility:
+  - edgeimpulse
 model: yolox-object-detection
 model_configuration_variables:
   - EI_V_OBJ_DETECTION_MODEL
