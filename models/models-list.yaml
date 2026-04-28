@@ -1251,8 +1251,10 @@ models:
         model_type: "genie"
         model_name: "qwen3_4b"
         models_repository: "/var/lib/arduino-app-cli/models/genai"
+        model_directory: "qwen3_4b-genie-w4a16-qualcomm_qcs8275"
         quantization: "w4a16"
         chipset: "qualcomm-qcs8275"
+        version: "0.51.0"
     metadata:
       source: "qualcomm-ai-hub"
       source-model-id: "qwen3_4b_instruct_2507"
@@ -1274,7 +1276,8 @@ models:
         model_name: "qwen3_4b_vl"
         models_repository: "/var/lib/arduino-app-cli/models/genai"
         quantization: "w4a16"
-        chipset: "qualcomm-qcs8275" 
+        chipset: "qualcomm-qcs8275"
+        version: "0.51.0"
     metadata:
       source: "qualcomm-ai-hub"
       source-model-id: "qwen3_vl_4b"
