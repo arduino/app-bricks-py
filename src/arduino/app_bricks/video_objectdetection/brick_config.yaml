@@ -11,6 +11,8 @@ requires_container: true
 mount_devices_into_container: true
 required_devices:
   - camera
+# For backward compatibility
+model: yolox-object-detection
 model_by_platform:
     - platform: ventunoq
       model: yolox-qnn-object-detection

@@ -6,6 +6,8 @@ description: |
 category: image
 requires_container: true
 requires_model: true
+# For backward compatibility
+model: concrete-crack-anomaly-detection
 model_by_platform:
     - platform: ventunoq
       model: concreate-crack-anomaly-detection-high-resolution
