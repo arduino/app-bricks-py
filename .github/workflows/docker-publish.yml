@@ -5,7 +5,8 @@ run-name: "Release ${{ inputs.tag || github.ref_name }}"
 on:
   push:
     tags:
-      - "*/*"
+      - 'release/*'
+      - 'ai/*'
   workflow_dispatch:
     inputs:
       tag:
@@ -199,6 +200,7 @@ jobs:
           tag_name: ${{ needs.detect.outputs.tag_ref }}
           name: Release ${{ needs.detect.outputs.version }}
           prerelease: ${{ needs.detect.outputs.prerelease }}
+          make_latest: ${{ needs.detect.outputs.prerelease == 'false' }}
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

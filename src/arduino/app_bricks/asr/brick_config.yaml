@@ -4,12 +4,10 @@ description: Automatic Speech Recognition brick for offline speech-to-text proce
 category: audio
 requires_model: true
 requires_services: ["arduino:genie_audio"]
+model: whisper-small-quantized
 ai_frameworks_compatibility:
   - qnn
-model: whisper-small
 supported_boards: ["ventunoq"]
-model_configuration_variables:
-  - VAD_LEN_HANGOVER
 variables:
 - name: VAD_LEN_HANGOVER
   description: Length of hangover for Voice Activity Detection (in number of frames of 10ms duration)
