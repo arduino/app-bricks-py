@@ -3,8 +3,6 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import queue
-import threading
-import time
 from typing import Iterable, List
 
 import numpy as np
@@ -13,7 +11,6 @@ import pytest
 from arduino.app_bricks.cloud_asr import CloudASR, CloudProvider
 from arduino.app_bricks.cloud_asr.providers import ASRProviderEvent, ASRProviderError
 from arduino.app_peripherals.microphone.base_microphone import BaseMicrophone
-from arduino.app_utils.app import App
 
 
 class MockMicrophone(BaseMicrophone):
@@ -26,7 +23,7 @@ class MockMicrophone(BaseMicrophone):
         channels: int = 1,
         format: type | np.dtype | str = np.int16,
         buffer_size: int = 1024,
-        auto_reconnect: bool = True
+        auto_reconnect: bool = True,
     ):
         super().__init__(sample_rate=sample_rate, channels=channels, format=format, buffer_size=buffer_size, auto_reconnect=auto_reconnect)
         self._chunks: List = list(chunks)
@@ -127,7 +124,7 @@ def test_transcribe_stream_aggregates_partial_text_in_append_mode(make_provider)
     finally:
         asr.stop()
         mic.stop()
-    
+
     assert provider.start_called is True
     assert [msg.type for msg in results] == ["partial_text", "partial_text", "text"]
     assert [msg.data for msg in results[:2]] == ["Hel", "lo"]

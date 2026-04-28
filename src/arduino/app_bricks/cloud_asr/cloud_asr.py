@@ -66,7 +66,7 @@ class CloudASR:
             language=self._language,
             sample_rate=self._mic.sample_rate,
         )
-    
+
     def start(self):
         """Start the ASR service by initializing the microphone."""
         self._mic.start()
