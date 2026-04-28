@@ -18,7 +18,7 @@ import sys
 import requests
 
 
-BASE_URL = "https://studio.edgeimpulse.com/v1/api/{project_id}/deployment/download?impulseId={impulse_id}&type=runner-linux-aarch64-qnn&engine=tflite"
+BASE_URL = "https://studio.edgeimpulse.com/v1/api/{project_id}/deployment/download?type=runner-linux-aarch64-qnn&modelType=float32&impulseId={impulse_id}"
 CHUNK_SIZE = 8192
 
 
@@ -114,6 +114,7 @@ def main():
     )
     parser.add_argument(
         "--output-name",
+        required=True,
         metavar="FILE",
         help="Name of the downloaded file.",
     )
