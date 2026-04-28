@@ -6,6 +6,7 @@ import threading
 import pytest
 import random
 import time
+import numpy as np
 from arduino.app_bricks.vibration_anomaly_detection import VibrationAnomalyDetection
 from arduino.app_utils import HttpClient
 
@@ -309,3 +310,41 @@ def test_classify_success_with_more_arguments(app_instance: AppController, monke
         if key["class_name"] in ["nominal", "off"]:
             detected_classes += 1
     assert detected_classes == 2
+
+
+def test_threshold_property_update_controls_callback(app_instance: AppController, monkeypatch: pytest.MonkeyPatch):
+    classifier = VibrationAnomalyDetection(anomaly_detection_threshold=1.0)
+
+    monkeypatch.setattr(classifier._buffer, "pull", lambda: np.array([0.0] * 600))
+    monkeypatch.setattr(classifier, "infer_from_features", lambda features: {"result": {"anomaly": 2.5}})
+
+    anomaly_trigger_called = False
+
+    def callback_for_anomaly():
+        nonlocal anomaly_trigger_called
+        anomaly_trigger_called = True
+
+    classifier.on_anomaly(callback_for_anomaly)
+
+    classifier.anomaly_detection_threshold = 5.0
+    assert classifier.anomaly_detection_threshold == 5.0
+
+    classifier.loop()
+    assert not anomaly_trigger_called
+
+    classifier.anomaly_detection_threshold = 2.0
+    classifier.loop()
+    assert anomaly_trigger_called
+
+
+@pytest.mark.parametrize("threshold", [0, 0.1, 1.0, 5, "7.5"])
+def test_threshold_property_accepts_finite_non_negative_values(threshold):
+    classifier = VibrationAnomalyDetection(anomaly_detection_threshold=threshold)
+
+    assert classifier.anomaly_detection_threshold == float(threshold)
+
+
+@pytest.mark.parametrize("threshold", [-0.1, float("nan"), float("inf"), "not-a-number", None])
+def test_threshold_property_rejects_invalid_values(threshold):
+    with pytest.raises(ValueError, match="finite non-negative"):
+        VibrationAnomalyDetection(anomaly_detection_threshold=threshold)
