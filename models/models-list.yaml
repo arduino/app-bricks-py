@@ -1250,7 +1250,7 @@ models:
       variables:
         model_type: "genie"
         model_name: "qwen3_4b"
-        download_location: "/var/lib/arduino-app-cli/models/genai"
+        models_repository: "/var/lib/arduino-app-cli/models/genai"
         quantization: "w4a16"
         chipset: "qualcomm-qcs8275"
     metadata:
@@ -1272,7 +1272,7 @@ models:
       variables:
         model_type: "genie"
         model_name: "qwen3_4b_vl"
-        download_location: "/var/lib/arduino-app-cli/models/genai"
+        models_repository: "/var/lib/arduino-app-cli/models/genai"
         quantization: "w4a16"
         chipset: "qualcomm-qcs8275" 
     metadata:
@@ -1296,7 +1296,7 @@ models:
       - ILoveYou
     bricks:
       - id: "arduino:gesture_recognition"
-    download_location: /var/lib/arduino-app-cli/models/genai
+    models_repository: /var/lib/arduino-app-cli/models/genai
     metadata:
       source: "qualcomm-ai-hub"  
       source-model-id: "mediapipe_hand_gesture"
@@ -1314,12 +1314,13 @@ models:
     download:
       pre-loaded: true
       variables:
-        model_type: "qnn_context_binary"
-        model_name: "whisper_small"
-        download_location: "/var/lib/arduino-app-cli/models/audio-analytics/asr"
-        quantization: "float"
-        # TODO: update me. As of now it not WORKING!
-        chipset: "qualcomm-qcs8450-proxy"
+        model_type: "voice_ai"
+        model_name: "whisper_small_quantized"
+        models_repository: "/var/lib/arduino-app-cli/models/audio-analytics/asr"
+        model_directory: "whisper_small_quantized-voice_ai-w8a16-qualcomm_qcs8275"
+        quantization: "w8a16"
+        chipset: "qualcomm-qcs8275"
+        version: "0.51.0"
     bricks:
       - id: "arduino:asr"
     metadata:
@@ -1437,12 +1438,13 @@ models:
     download:
       pre-loaded: true
       variables:
-        model_type: "qnn_context_binary"
+        model_type: "voice_ai"
         model_name: "melotts_en"
-        download_location: "/var/lib/arduino-app-cli/models/audio-analytics/tts"
-        quantization: "float"
-        # TODO: update me. As of now it not WORKING!
-        chipset: "qualcomm-qcs8450-proxy"
+        models_repository: "/var/lib/arduino-app-cli/models/audio-analytics/tts"
+        model_directory: "melotts_en-voice_ai-mixed_with_float-qualcomm_qcs8275"
+        quantization: "mixed_with_float"
+        chipset: "qualcomm-qcs8275"
+        version: "0.51.0"
     metadata:
       source: "qualcomm-ai-hub"
       source-model-id: "melotts_en"
@@ -1458,12 +1460,13 @@ models:
     download:
       pre-loaded: true
       variables:
-        model_type: "qnn_context_binary"
+        model_type: "voice_ai"
         model_name: "melotts_es"
-        download_location: "/var/lib/arduino-app-cli/models/audio-analytics/tts"
-        quantization: "float"
-        # TODO: update me. As of now it not WORKING!
-        chipset: "qualcomm-qcs8450-proxy"
+        models_repository: "/var/lib/arduino-app-cli/models/audio-analytics/tts"
+        model_directory: "melotts_es-voice_ai-mixed_with_float-qualcomm_qcs8275"
+        quantization: "mixed_with_float"
+        chipset: "qualcomm-qcs8275"
+        version: "0.51.0"
     metadata:
       source: "qualcomm-ai-hub"
       source-model-id: "melotts_es"
@@ -1479,12 +1482,13 @@ models:
     download:
       pre-loaded: true
       variables:
-        model_type: "qnn_context_binary"
+        model_type: "voice_ai"
         model_name: "melotts_zh"
-        download_location: "/var/lib/arduino-app-cli/models/audio-analytics/tts"
-        quantization: "float"
-        # TODO: update me. As of now it not WORKING!
-        chipset: "qualcomm-qcs8450-proxy"
+        models_repository: "/var/lib/arduino-app-cli/models/audio-analytics/tts"
+        model_directory: "melotts_zh-voice_ai-mixed_with_float-qualcomm_qcs8275"
+        quantization: "mixed_with_float"
+        chipset: "qualcomm-qcs8275"
+        version: "0.51.0"
     metadata:
       source: "qualcomm-ai-hub"
       source-model-id: "melotts_zh"
