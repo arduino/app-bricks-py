@@ -2,8 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-from __future__ import annotations
-
 import os
 import queue
 import threading
@@ -75,6 +73,43 @@ class CloudASR:
         """Stop the ASR service by releasing the microphone."""
         if self._owns_mic:
             self._mic.stop()
+
+    def transcribe(self, duration: float = 60.0) -> str:
+        """Returns the first utterance transcribed from speech to text.
+
+        Args:
+            duration (float): Max seconds for the transcription session.
+        Returns:
+            str: The transcribed text.
+        """
+
+        gen = self._transcribe_stream(duration=duration)
+
+        try:
+            for resp in gen:
+                if resp.type == "text":
+                    return resp.data or ""
+            raise TranscriptionStreamError("No transcription received.")
+        finally:
+            gen.close()
+
+    @contextmanager
+    def transcribe_stream(self, duration: float = 60.0) -> Iterator[Iterator[ASREvent]]:
+        """Perform continuous speech-to-text recognition.
+
+        Args:
+            duration (float): Max seconds for the transcription session.
+
+        Returns:
+            Iterator[ASREvent]: Generator yielding transcription events.
+        """
+
+        gen = self._transcribe_stream(duration=duration)
+
+        try:
+            yield gen
+        finally:
+            gen.close()
 
     def _transcribe_stream(self, duration: float = 60.0) -> Generator[ASREvent, None, None]:
         """Perform continuous speech-to-text recognition with detailed events.
@@ -194,40 +229,3 @@ class CloudASR:
                 data=event.data,
             )
         return None
-
-    def transcribe(self, duration: float = 60.0) -> str:
-        """Returns the first utterance transcribed from speech to text.
-
-        Args:
-            duration (float): Max seconds for the transcription session.
-        Returns:
-            str: The transcribed text.
-        """
-
-        gen = self._transcribe_stream(duration=duration)
-
-        try:
-            for resp in gen:
-                if resp.type == "text":
-                    return resp.data or ""
-            raise TranscriptionStreamError("No transcription received.")
-        finally:
-            gen.close()
-
-    @contextmanager
-    def transcribe_stream(self, duration: float = 60.0) -> Iterator[Iterator[ASREvent]]:
-        """Perform continuous speech-to-text recognition.
-
-        Args:
-            duration (float): Max seconds for the transcription session.
-
-        Returns:
-            Iterator[ASREvent]: Generator yielding transcription events.
-        """
-
-        gen = self._transcribe_stream(duration=duration)
-
-        try:
-            yield gen
-        finally:
-            gen.close()
