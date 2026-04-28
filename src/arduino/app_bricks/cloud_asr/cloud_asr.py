@@ -69,8 +69,7 @@ class CloudASR:
     
     def start(self):
         """Start the ASR service by initializing the microphone."""
-        if self._owns_mic:
-            self._mic.start()
+        self._mic.start()
 
     def stop(self):
         """Stop the ASR service by releasing the microphone."""
