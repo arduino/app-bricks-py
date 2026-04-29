@@ -5,7 +5,7 @@
 """Download an Edge Impulse deployment build artifact.
 
 Usage examples:
-    python download_ei_build.py --ei-project-id 948887 --impulse-id 11 --output-name model.eim
+    python download_ei_build.py --ei-project-id 948887 --impulse-id 11 --output-name model.eim --output-dir ./downloads --quantization int8 --target runner-linux-aarch64-qnn
     python download_ei_build.py --ei-project-id 948887 --impulse-id 11 --output-name model.eim --output-dir ./downloads
     python download_ei_build.py --ei-project-id 948887 --impulse-id 11 --output-name model.eim --json-progress
 """
@@ -18,7 +18,7 @@ import sys
 import requests
 
 
-BASE_URL = "https://studio.edgeimpulse.com/v1/api/{project_id}/deployment/download?type=runner-linux-aarch64-qnn&modelType=float32&impulseId={impulse_id}"
+BASE_URL = "https://studio.edgeimpulse.com/v1/api/{project_id}/deployment/download?type={target}&modelType={quantization}&impulseId={impulse_id}"
 CHUNK_SIZE = 8192
 
 
@@ -119,6 +119,18 @@ def main():
         help="Name of the downloaded file.",
     )
     parser.add_argument(
+        "--quantization",
+        required=True,
+        default="float32",
+        help="Quantization type of the model (e.g. float32, int8).",
+    )
+    parser.add_argument(
+        "--target",
+        required=True,
+        default="runner-linux-aarch64",
+        help="Target type of the model (e.g. runner-linux-aarch64, runner-linux-aarch64-qnn).",
+    )
+    parser.add_argument(
         "--json-progress",
         action="store_true",
         help='Report progress as JSON lines, e.g. {"progress": "42%%"}, instead of a progress bar.',
@@ -126,7 +138,7 @@ def main():
 
     args = parser.parse_args()
 
-    url = BASE_URL.format(project_id=args.ei_project_id, impulse_id=args.impulse_id)
+    url = BASE_URL.format(project_id=args.ei_project_id, impulse_id=args.impulse_id, quantization=args.quantization, target=args.target)
 
     try:
         print(f"Downloading from: {url}")

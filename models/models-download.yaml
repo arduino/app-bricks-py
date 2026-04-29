@@ -6,13 +6,13 @@ runners:
               image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/models-downloader:dev-next
               volumes:
                 - ${download_location}:/models
-              entrypoint: ["sh", "-c", "python /app/ei_downloader/download_ei_build.py --ei-project-id ${ei-project-id} --impulse-id ${ei-impulse-id} --output-name ${model_name} --output-dir /models --output-name ${model_name}"]
+              entrypoint: ["sh", "-c", "python /app/ei_downloader/download_ei_build.py --ei-project-id ${ei-project-id} --impulse-id ${ei-impulse-id} --output-name ${model_name} --output-dir /models --output-name ${model_name} --quantization ${quantization} --target ${target}"]
         - unoq:
             docker:
               image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/models-downloader:dev-next
               volumes:
                 - ${download_location}:/models
-              entrypoint: ["sh", "-c", "python /app/ei_downloader/download_ei_build.py --ei-project-id ${ei-project-id} --impulse-id ${ei-impulse-id} --output-name ${model_name} --output-dir /models --output-name ${model_name}"]
+              entrypoint: ["sh", "-c", "python /app/ei_downloader/download_ei_build.py --ei-project-id ${ei-project-id} --impulse-id ${ei-impulse-id} --output-name ${model_name} --output-dir /models --output-name ${model_name} --quantization ${quantization} --target ${target}"]
   - genie-models-runner:
       platforms:
         - ventunoq:
