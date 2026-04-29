@@ -55,9 +55,7 @@ class CSICamera(BaseCamera):
         self.media_dev = find_camss_media_device()
 
         self.csi_path = self._get_camera(device)
-
-        self.name = f"CSI:{self.csi_path}"
-
+        self.name = f"csi:{self.csi_path}"  # Override parent name with a human-readable name
         self.logger = logger
 
         self._cap = None

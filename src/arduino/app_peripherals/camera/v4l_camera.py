@@ -57,7 +57,7 @@ class V4LCamera(BaseCamera):
         self.codec = codec
 
         self.v4l_path = self._resolve_stable_path(device)
-        self.name = self._resolve_name(self.v4l_path)  # Override parent name with a human-readable name
+        self.name = f"usb:{self._resolve_name(self.v4l_path)}"  # Override parent name with a human-readable name
         self.logger = logger
 
         self._cap = None
