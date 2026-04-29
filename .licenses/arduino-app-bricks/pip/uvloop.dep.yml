@@ -1,14 +1,14 @@
 ---
-name: tornado
-version: 6.5.5
+name: uvloop
+version: 0.22.1
 type: pip
-summary: Tornado is a Python web framework and asynchronous networking library, originally
-  developed at FriendFeed.
-homepage: http://www.tornadoweb.org/
-license: apache-2.0
+summary: Fast implementation of asyncio event loop on top of libuv
+homepage: ''
+license: other
 licenses:
-- sources: LICENSE
-  text: |2
+- sources: LICENSE-APACHE
+  text: |
+    Copyright (C) 2016-present the uvloop authors and contributors.
 
                                      Apache License
                                Version 2.0, January 2004
@@ -198,7 +198,7 @@ licenses:
           same "printed page" as the copyright notice for easier
           identification within third-party archives.
 
-       Copyright [yyyy] [name of copyright owner]
+       Copyright (c) 2015-present MagicStack Inc.  http://magic.io
 
        Licensed under the Apache License, Version 2.0 (the "License");
        you may not use this file except in compliance with the License.
@@ -211,4 +211,27 @@ licenses:
        WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
        See the License for the specific language governing permissions and
        limitations under the License.
+- sources: LICENSE-MIT
+  text: |
+    The MIT License
+
+    Copyright (C) 2016-present the uvloop authors and contributors.
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in
+    all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+    THE SOFTWARE.
 notices: []

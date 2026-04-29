@@ -80,7 +80,7 @@ class IPCamera(BaseCamera):
             self._test_http_connectivity()
 
         try:
-            self._cap = cv2.VideoCapture(url)
+            self._cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
             if not self._cap.isOpened():
                 raise RuntimeError(f"Failed to open IP camera at {self.url}")
 
