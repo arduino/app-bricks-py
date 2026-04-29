@@ -1,0 +1,2 @@
+qai-hub-models-cli
+requests

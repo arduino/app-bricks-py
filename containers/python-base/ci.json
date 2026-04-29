@@ -5,5 +5,5 @@
   "build_whl": false,
   "update_compose": false,
   "build_args": {},
-  "downstream": ["python-apps-base"]
+  "downstream": ["python-apps-base", "models-downloader"]
 }

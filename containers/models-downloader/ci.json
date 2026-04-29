@@ -1,0 +1,12 @@
+{
+  "tag_prefix": "ai",
+  "watch_paths": [
+    "containers/python-base/",
+    "containers/models-downloader/",
+    "src/"
+  ],
+  "tag_latest": false,
+  "build_whl": false,
+  "update_compose": false,
+  "build_args": { }
+}
