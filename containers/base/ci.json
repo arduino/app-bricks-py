@@ -1,9 +1,0 @@
-{
-  "tag_prefix": "release",
-  "watch_paths": ["containers/base/"],
-  "tag_latest": true,
-  "build_whl": false,
-  "update_compose": false,
-  "build_args": {},
-  "downstream": ["llamacpp-runner", "ollama-runner"]
-}

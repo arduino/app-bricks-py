@@ -42,7 +42,7 @@ jobs:
             VERSIONS=$(gh api \
               "$API_PATH" \
               --paginate \
-              --jq ".[] | select(.metadata.container.tags[] | . == \"$TAG\") | .id" 2>/dev/null || true)
+              --jq ".[] | select(any(.metadata.container.tags[]; test(\"^${TAG}(-buildcache|-[0-9]+)?$\"))) | .id" 2>/dev/null || true)
 
             if [[ -z "$VERSIONS" ]]; then
               echo "  No versions found with tag '$TAG' for $PKG"

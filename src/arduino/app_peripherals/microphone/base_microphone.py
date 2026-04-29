@@ -139,14 +139,14 @@ class BaseMicrophone(ABC):
     def start(self) -> None:
         """Start the microphone capture."""
         with self._mic_lock:
-            self.logger.info("Starting microphone...")
+            self.logger.debug("Starting microphone...")
 
             attempt = 0
             while not self.is_started():
                 try:
                     self._open_microphone()
                     self._is_started = True
-                    self.logger.info(f"Successfully started {self.name}")
+                    self.logger.debug(f"Successfully started {self.name}")
                 except MicrophoneOpenError as e:  # We consider this a fatal error so we don't retry
                     self.logger.error(f"Fatal error while starting {self.name}: {e}")
                     raise
@@ -172,13 +172,13 @@ class BaseMicrophone(ABC):
             if not self.is_started():
                 return
 
-            self.logger.info("Stopping microphone...")
+            self.logger.debug("Stopping microphone...")
 
             try:
                 self._close_microphone()
                 self._event_executor.shutdown()
                 self._is_started = False
-                self.logger.info(f"Successfully stopped {self.name}")
+                self.logger.debug(f"Successfully stopped {self.name}")
             except Exception as e:
                 self.logger.warning(f"Failed to stop microphone: {e}")
 

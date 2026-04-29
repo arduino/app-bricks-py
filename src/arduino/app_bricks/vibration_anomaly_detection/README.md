@@ -15,6 +15,7 @@ The Vibration Anomaly Detection Brick allows you to:
 - **Edge-Impulse powered**: runs your deployed model via `EdgeImpulseRunnerFacade`.
 - **Sliding window ingestion**: samples are buffered to the model’s exact input length.
 - **Threshold callbacks**: invoke your handler when `anomaly_score ≥ threshold`.
+- **Raw anomaly score threshold**: the threshold is not a 0-1 confidence value; anomaly scores can be greater than 1.0.
 - **Flexible callback signatures**:
   - `callback()`
   - `callback(anomaly_score: float)`

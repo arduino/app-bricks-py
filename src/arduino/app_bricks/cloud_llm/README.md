@@ -96,8 +96,8 @@ You can select a model using the `CloudModel` enum or by passing the correspondi
 
 | Enum Constant                 | Raw String ID              | Provider Documentation                                                      |
 | :---------------------------- | :------------------------- | :-------------------------------------------------------------------------- |
-| `CloudModel.ANTHROPIC_CLAUDE` | `claude-3-7-sonnet-latest` | [Anthropic Models](https://docs.anthropic.com/en/docs/about-claude/models)  |
-| `CloudModel.OPENAI_GPT`       | `gpt-4o-mini`              | [OpenAI Models](https://platform.openai.com/docs/models)                    |
+| `CloudModel.ANTHROPIC_CLAUDE` | `claude-sonnet-4.6`        | [Anthropic Models](https://docs.anthropic.com/en/docs/about-claude/models)  |
+| `CloudModel.OPENAI_GPT`       | `gpt-5.4-mini`             | [OpenAI Models](https://platform.openai.com/docs/models)                    |
 | `CloudModel.GOOGLE_GEMINI`    | `gemini-2.5-flash`         | [Google Gemini Models](https://ai.google.dev/gemini-api/docs/models/gemini) |
 
 ## Methods

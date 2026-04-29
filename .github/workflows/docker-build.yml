@@ -226,7 +226,7 @@ jobs:
         if: matrix.container == 'python-apps-base'
         env:
           PUBLIC_IMAGE_REGISTRY_BASE: ${{ env.DEV_REGISTRY_PATH }}
-          DEV_TAG_VERSION: ${{ needs.detect-changes.outputs.image_tag }}
+          DEV_TAG_VERSION: ${{ needs.setup.outputs.image_tag }}
         run: |
           pip install go-task-bin==${{ env.TASKFILE_VERSION }}
           task init:ci

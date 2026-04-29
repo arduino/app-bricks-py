@@ -2,6 +2,22 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-from .local_asr import AutomaticSpeechRecognition, ASREvent, TranscriptionStream
+from .local_asr import (
+    ASREvent,
+    ASRBusyError,
+    ASRError,
+    ASRServiceBusyError,
+    ASRUnavailableError,
+    AutomaticSpeechRecognition,
+    TranscriptionStream,
+)
 
-__all__ = ["AutomaticSpeechRecognition", "ASREvent", "TranscriptionStream"]
+__all__ = [
+    "ASREvent",
+    "ASRError",
+    "ASRBusyError",
+    "ASRServiceBusyError",
+    "ASRUnavailableError",
+    "AutomaticSpeechRecognition",
+    "TranscriptionStream",
+]

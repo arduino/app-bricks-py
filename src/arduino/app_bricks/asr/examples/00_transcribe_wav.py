@@ -7,7 +7,7 @@
 from arduino.app_bricks.asr import AutomaticSpeechRecognition
 
 
-asr = AutomaticSpeechRecognition()
 with open("recording_01.wav", "rb") as wav_file:
-    text = asr.transcribe_wav(wav_file.read())
+    asr = AutomaticSpeechRecognition(wav_file.read())
+    text = asr.transcribe()
     print(f"Transcription: {text}")
