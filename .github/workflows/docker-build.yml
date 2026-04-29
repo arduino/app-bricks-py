@@ -248,7 +248,7 @@ jobs:
               echo 'break-system-packages = true' >> /etc/pip.conf
               git config --global --add safe.directory '*'
               pip install go-task-bin==${{ env.TASKFILE_VERSION }}
-              pip install https://github.com/${{ github.repository }}/releases/download/opencv/4.13.0.92/opencv_python_headless-4.13.0.92-cp313-cp313-linux_aarch64.whl
+              pip install https://github.com/arduino/app-bricks-py/releases/download/opencv/4.13.0.92/opencv_python_headless-4.13.0.92-cp313-cp313-linux_aarch64.whl
               task init:ci
               task build-dev
               cp ./dist/arduino*.whl ./containers/python-apps-base/
