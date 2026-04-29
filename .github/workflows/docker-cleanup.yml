@@ -38,7 +38,7 @@ jobs:
             API_PATH="/orgs/$OWNER/packages/container/$PKG/versions"
             DELETE_PATH="/orgs/$OWNER/packages/container/$PKG/versions"
 
-            # List all versions and find ones that match our branch tag
+            # List all versions and find ones that match our branch tag or its buildcache
             VERSIONS=$(gh api \
               "$API_PATH" \
               --paginate \

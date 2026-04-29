@@ -1,6 +1,6 @@
 ---
 name: langchain-anthropic
-version: 1.4.1
+version: 1.4.2
 type: pip
 summary: Integration package connecting Claude (Anthropic) APIs and LangChain
 homepage: https://docs.langchain.com/oss/python/integrations/providers/anthropic

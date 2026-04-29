@@ -1,16 +1,16 @@
 ---
-name: cbor2
-version: 6.0.1
+name: anyio
+version: 4.13.0
 type: pip
-summary: CBOR (de)serializer with extensive tag support
+summary: High-level concurrency and networking framework on top of asyncio or Trio
 homepage: ''
 license: mit
 licenses:
-- sources: LICENSE.txt
+- sources: LICENSE
   text: |
     The MIT License (MIT)
 
-    Copyright (c) 2016 Alex Grönholm
+    Copyright (c) 2018 Alex Grönholm
 
     Permission is hereby granted, free of charge, to any person obtaining a copy of
     this software and associated documentation files (the "Software"), to deal in

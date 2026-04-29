@@ -9,27 +9,33 @@ permissions:
 jobs:
   ci-checks:
     runs-on: ubuntu-24.04-arm
+    container:
+      image: python:3.13-slim
+      options: --user root
     env:
-      PYTHON_VERSION: "3.13"
-      TASKFILE_VERSION: "v3.44.0"
-      TASKFILE_PATH: "/home/runner/go/bin"
+      TASKFILE_VERSION: 'v3.44.0'
+      TASKFILE_PATH: '/home/runner/go/bin'
     steps:
+      - name: Install git
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends --no-install-suggests git ca-certificates curl
+          git config --global --add safe.directory '*'
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
       - name: Install dependencies
         run: |
+          set -e
           which task || curl -sSfL https://taskfile.dev/install.sh | sh -s -- -b ${{ env.TASKFILE_PATH }} ${{ env.TASKFILE_VERSION }}
           export PATH="${{ env.TASKFILE_PATH }}:$PATH"
+          export SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0
           task init:ci
 
       - name: Check code formatting
         run: |
+          set -e
           export PATH="${{ env.TASKFILE_PATH }}:$PATH"
           task fmt > /dev/null 2>&1
           if git diff --quiet; then
@@ -41,8 +47,9 @@ jobs:
 
       - name: Check linting
         run: |
+          set -e
           export PATH="${{ env.TASKFILE_PATH }}:$PATH"
-          task lint  > /dev/null 2>&1
+          task lint > /dev/null 2>&1
           if git diff --quiet; then
             echo "Code is properly linted."
           else
@@ -50,13 +57,9 @@ jobs:
             exit 1
           fi
 
-      - name: Run tests
-        run: |
-          export PATH="${{ env.TASKFILE_PATH }}:$PATH"
-          task test
-
       - name: Check license headers and files
         run: |
+          set -e
           export PATH="${{ env.TASKFILE_PATH }}:$PATH"
           task license:headers > /dev/null 2>&1
           if git diff --quiet; then
@@ -65,3 +68,9 @@ jobs:
             echo "Please update license headers by running 'task license:headers'."
             exit 1
           fi
+
+      - name: Run tests
+        run: |
+          useradd -m testuser
+          chown -R testuser:testuser .
+          runuser -u testuser -- env PATH="${{ env.TASKFILE_PATH }}:$PATH" task test
