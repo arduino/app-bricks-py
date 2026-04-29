@@ -1,6 +1,6 @@
 ---
 name: tzdata
-version: '2026.1'
+version: '2026.2'
 type: pip
 summary: Provider of IANA time zone data
 homepage: https://github.com/python/tzdata

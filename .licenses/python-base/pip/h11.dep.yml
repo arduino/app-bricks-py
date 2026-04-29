@@ -1,14 +1,16 @@
 ---
-name: PyAudio
-version: 0.2.14
+name: h11
+version: 0.16.0
 type: pip
-summary: Cross-platform audio I/O with PortAudio
-homepage: https://people.csail.mit.edu/hubert/pyaudio/
+summary: A pure-Python, bring-your-own-I/O implementation of HTTP/1.1
+homepage: https://github.com/python-hyper/h11
 license: mit
 licenses:
 - sources: LICENSE.txt
   text: |
-    Copyright (c) 2006 Hubert Pham
+    The MIT License (MIT)
+
+    Copyright (c) 2016 Nathaniel J. Smith <njs@pobox.com> and other contributors
 
     Permission is hereby granted, free of charge, to any person obtaining
     a copy of this software and associated documentation files (the

@@ -1,13 +1,12 @@
 ---
-name: tornado
-version: 6.5.5
+name: python-multipart
+version: 0.0.27
 type: pip
-summary: Tornado is a Python web framework and asynchronous networking library, originally
-  developed at FriendFeed.
-homepage: http://www.tornadoweb.org/
+summary: A streaming multipart parser for Python
+homepage: https://github.com/Kludex/python-multipart
 license: apache-2.0
 licenses:
-- sources: LICENSE
+- sources: LICENSE.txt
   text: |2
 
                                      Apache License
