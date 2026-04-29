@@ -1,9 +1,9 @@
 ---
 name: langchain-protocol
-version: 0.0.12
+version: 0.0.13
 type: pip
 summary: Python bindings for the LangChain agent streaming protocol
-homepage: ''
+homepage: https://github.com/langchain-ai/agent-protocol/tree/main/streaming
 license: mit
 licenses:
 - sources: LICENSE

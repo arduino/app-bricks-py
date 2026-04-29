@@ -2,6 +2,8 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import socket
+
 import pytest
 import asyncio
 import websockets
@@ -35,13 +37,22 @@ class TestWebSocketMicrophoneInit:
         assert mic._server is None
 
     @pytest.mark.asyncio
-    async def test_start_on_privileged_port_fails(self):
-        """Test that starting on privileged port fails gracefully."""
-        mic = WebSocketMicrophone(port=1)
-        mic._bind_ip = "127.0.0.1"  # Workaround for MacOS
+    async def test_start_on_unavailable_port_fails(self):
+        """Test that starting on an unavailable port fails gracefully."""
+        # Occupy a port so the microphone server can't bind to it
+        blocker = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        blocker.bind(("127.0.0.1", 0))
+        blocker.listen(1)
+        occupied_port = blocker.getsockname()[1]
 
-        with pytest.raises(MicrophoneOpenError):
-            mic.start()
+        try:
+            mic = WebSocketMicrophone(port=occupied_port)
+            mic._bind_ip = "127.0.0.1"
+
+            with pytest.raises(MicrophoneOpenError):
+                mic.start()
+        finally:
+            blocker.close()
 
 
 class TestWebSocketPCMBinaryFormat:

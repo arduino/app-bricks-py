@@ -1,0 +1,7 @@
+%YAML 1.1
+---
+version: 1
+configuration:
+  software_isp:
+    threads: 3
+    mode: cpu

@@ -1,4 +1,4 @@
-name: Container Release - Build and Publish
+name: RELEASE - Build & Publish Release
 
 run-name: "Release ${{ inputs.tag || github.ref_name }}"
 
@@ -28,7 +28,7 @@ permissions:
 
 jobs:
   detect:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     outputs:
       tag_ref: ${{ steps.detect.outputs.tag_ref }}
       version: ${{ steps.detect.outputs.version }}
@@ -106,9 +106,53 @@ jobs:
             echo "downstream_containers=$(printf '%s\n' "${DOWNSTREAM_IN_BUILD[@]}" | jq -R . | jq -sc .)" >> $GITHUB_OUTPUT
           fi
 
+  upload-whl:
+    runs-on: ubuntu-24.04-arm
+    needs: [detect]
+    env:
+      PYTHON_VERSION: "3.13"
+      TASKFILE_VERSION: "3.45.4"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build wheel in debian:trixie
+        if: matrix.container == 'python-apps-base'
+        run: |
+          # Remove tags that setuptools_scm can't parse (only ai/* and release/* are valid)
+          git tag -l | grep -v -E '^(ai|release)/' | xargs -r git tag -d
+
+          # Explicitly set the version so setuptools_scm does not need the git tag to exist
+          # (handles workflow_dispatch runs where no tag has been pushed yet)
+          docker run --rm \
+            -v "${{ github.workspace }}:/${{ github.workspace }}" \
+            -w "${{ github.workspace }}" \
+            -e SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)" \
+            -e PUBLIC_IMAGE_REGISTRY_BASE="${{ env.GHCR_DESTINATION_ORG }}/" \
+            -e SETUPTOOLS_SCM_PRETEND_VERSION="${{ needs.detect.outputs.version }}" \
+            debian:trixie bash -c "
+              set -e
+              apt-get update
+              apt-get install -y --no-install-recommends --no-install-suggests sudo git ca-certificates python3-dev python3-pip build-essential pkg-config
+              echo '[global]' > /etc/pip.conf
+              echo 'break-system-packages = true' >> /etc/pip.conf
+              git config --global --add safe.directory '*'
+              pip install go-task-bin==${{ env.TASKFILE_VERSION }}
+              pip install https://github.com/${{ github.repository }}/releases/download/opencv/4.13.0.92/opencv_python_headless-4.13.0.92-cp313-cp313-linux_aarch64.whl
+              task init:ci
+              task build
+            "
+
+      - name: Share wheel with downstream jobs
+        uses: actions/upload-artifact@v4
+        with:
+          name: whl
+          path: dist/arduino*.whl
+          retention-days: 1
+
   build:
     runs-on: ubuntu-24.04-arm
-    needs: [ detect ]
+    needs: [detect, upload-whl]
     env:
       PYTHON_VERSION: "3.13"
       TASKFILE_VERSION: "3.45.4"
@@ -175,36 +219,6 @@ jobs:
             fi
           fi
 
-      - name: Set up Python
-        if: steps.config.outputs.build_whl == 'true'
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Build whl
-        if: steps.config.outputs.build_whl == 'true'
-        env:
-          PUBLIC_IMAGE_REGISTRY_BASE: ${{ env.GHCR_DESTINATION_ORG }}/
-          SETUPTOOLS_SCM_PRETEND_VERSION: ${{ needs.detect.outputs.version }}
-        run: |
-          pip install go-task-bin==${{ env.TASKFILE_VERSION }}
-          task init:ci
-          task build
-          cp ./dist/arduino*.whl ./containers/${{ matrix.container }}/
-
-      - name: Upload release asset
-        if: steps.config.outputs.build_whl == 'true'
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/arduino*.whl
-          tag_name: ${{ needs.detect.outputs.tag_ref }}
-          name: Release ${{ needs.detect.outputs.version }}
-          prerelease: ${{ needs.detect.outputs.prerelease }}
-          make_latest: ${{ needs.detect.outputs.prerelease == 'false' }}
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Re-tag image
         if: steps.rebuild_check.outputs.needs_build == 'false'
         run: |
@@ -225,7 +239,7 @@ jobs:
       - name: Extract Docker metadata
         if: steps.rebuild_check.outputs.needs_build == 'true'
         id: meta
-        uses: docker/metadata-action@v4
+        uses: docker/metadata-action@v5
         with:
           tags: |
             type=raw,value=${{ needs.detect.outputs.version }}
@@ -244,8 +258,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          platforms: linux/arm64
           provenance: false
           build-args: ${{ steps.config.outputs.build_args }}
 
@@ -277,8 +290,7 @@ jobs:
           title: "[RELEASE BOT] Update ${{ matrix.container }} image references"
           body: |
             This PR was automatically generated after releasing `${{ matrix.container }}:${{ needs.detect.outputs.version }}`.
-          branch: "container-release-${{ matrix.container }}-${{
-            needs.detect.outputs.version }}"
+          branch: "container-release-${{ matrix.container }}-${{ needs.detect.outputs.version }}"
           base: main
           draft: true
 
@@ -309,34 +321,11 @@ jobs:
           echo "$BUILD_ARGS" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Set up Python
-        if: steps.config.outputs.build_whl == 'true'
-        uses: actions/setup-python@v5
+      - name: Download wheel artifact
+        uses: actions/download-artifact@v4
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Build whl
-        if: steps.config.outputs.build_whl == 'true'
-        env:
-          PUBLIC_IMAGE_REGISTRY_BASE: ${{ env.GHCR_DESTINATION_ORG }}/
-          SETUPTOOLS_SCM_PRETEND_VERSION: ${{ needs.detect.outputs.version }}
-        run: |
-          pip install go-task-bin==${{ env.TASKFILE_VERSION }}
-          task init:ci
-          task build
-          cp ./dist/arduino*.whl ./containers/${{ matrix.container }}/
-
-      - name: Upload release asset
-        if: steps.config.outputs.build_whl == 'true'
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/arduino*.whl
-          tag_name: ${{ needs.detect.outputs.tag_ref }}
-          name: Release ${{ needs.detect.outputs.version }}
-          prerelease: ${{ needs.detect.outputs.prerelease }}
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: whl
+          path: ./containers/${{ matrix.container }}/
 
       - name: Log into registry ${{ env.GHCR_REGISTRY }}
         uses: docker/login-action@v4
@@ -368,8 +357,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          platforms: linux/arm64
           provenance: false
           build-args: |
             ${{ steps.config.outputs.build_args }}
@@ -407,3 +395,18 @@ jobs:
           branch: "container-release-${{ matrix.container }}-${{ needs.detect.outputs.version }}"
           base: main
           draft: true
+
+  upload-release:
+    runs-on: ubuntu-24.04-arm
+    needs: [detect, upload-whl, build, build-downstream]
+    steps:
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/arduino*.whl
+          tag_name: ${{ needs.detect.outputs.tag_ref }}
+          name: Release ${{ needs.detect.outputs.version }}
+          prerelease: ${{ needs.detect.outputs.prerelease }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

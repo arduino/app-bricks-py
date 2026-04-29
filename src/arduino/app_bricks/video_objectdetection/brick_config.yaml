@@ -11,16 +11,18 @@ requires_container: true
 mount_devices_into_container: true
 required_devices:
   - camera
+# For backward compatibility
+model: yolox-object-detection
+model_by_platform:
+    - platform: ventunoq
+      model: yolox-qnn-object-detection
+    - platform: unoq
+      model: yolox-object-detection
 ai_frameworks_compatibility:
   - edgeimpulse
-model: yolox-object-detection
 model_configuration_variables:
   - EI_V_OBJ_DETECTION_MODEL
 variables:
-- name: EI_V_OBJ_DETECTION_MODEL
-  description: Path to the model file
-  hidden: true
-  default_value: /models/ootb/ei/yolo-x-nano.eim
 - name: CUSTOM_MODEL_PATH
   description: Path to the custom model directory
   hidden: true

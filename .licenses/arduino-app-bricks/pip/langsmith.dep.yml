@@ -1,18 +1,14 @@
 ---
 name: langsmith
-version: 0.7.37
+version: 0.7.38
 type: pip
 summary: Client library to connect to the LangSmith Observability and Evaluation Platform.
 homepage: https://smith.langchain.com/
 license: mit
-licenses:
-- sources: LICENSE
-  text: |
+licenses: |
     MIT License
 
-    Copyright (c) LangChain, Inc.
-
-    The MIT License (MIT)
+    Copyright (c) 2023 LangChain
 
     Permission is hereby granted, free of charge, to any person obtaining a copy
     of this software and associated documentation files (the "Software"), to deal
@@ -32,4 +28,3 @@ licenses:
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
     SOFTWARE.
 notices: []
-
