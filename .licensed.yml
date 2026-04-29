@@ -1,0 +1,65 @@
+cache_path: .licenses
+
+apps:
+  - name: arduino-app-bricks
+    source_path: .
+    sources:
+      pip: true
+    python:
+      virtual_env_dir: ".licensed-venv"
+
+
+  - name: python-base
+    source_path: .
+    sources:
+      pip: true
+    python:
+      virtual_env_dir: "containers/python-base/.licensed-venv"
+
+  - name: aihub-models-runner
+    source_path: .
+    sources:
+      pip: true
+    python:
+      virtual_env_dir: "containers/aihub-models-runner/.licensed-venv"
+
+  - name: gesture-recognition-runner
+    source_path: .
+    sources:
+      pip: true
+    python:
+      virtual_env_dir: "containers/gesture-recognition-runner/.licensed-venv"
+
+  - name: python-apps-base
+    source_path: .
+    sources:
+      pip: true
+    python:
+      virtual_env_dir: "containers/python-apps-base/.licensed-venv"
+
+stale_records_action: error
+
+ignored:
+  pip:
+    - pip
+    - setuptools
+    - wheel
+    - uv
+    - arduino-app-bricks
+    - arduino_app_bricks
+
+allowed:
+  - mpl-2.0
+  - apache-2.0
+  - mit
+  - mit-cmu
+  - bsd-2-clause
+  - bsd-3-clause
+  - cc0-1.0
+  - isc
+  - psf-2.0
+  - unlicense
+  - ofl-1.1
+  - lgpl-3.0-only
+  - epl-2.0
+  - zpl-2.1

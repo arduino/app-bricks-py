@@ -6,6 +6,8 @@ description: |
 category: audio
 requires_container: true
 requires_model: true
+ai_frameworks_compatibility:
+  - edgeimpulse
 model: glass-breaking
 model_configuration_variables:
   - EI_AUDIO_CLASSIFICATION_MODEL

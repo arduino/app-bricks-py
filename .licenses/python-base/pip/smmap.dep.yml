@@ -1,0 +1,29 @@
+---
+name: smmap
+version: 5.0.3
+type: pip
+summary: A pure Python implementation of a sliding window memory map manager
+homepage: https://github.com/gitpython-developers/smmap
+license: bsd-3-clause
+licenses:
+- sources: LICENSE
+  text: "Copyright (C) 2010, 2011 Sebastian Thiel and contributors\nAll rights reserved.\n\nRedistribution
+    and use in source and binary forms, with or without \nmodification, are permitted
+    provided that the following conditions \nare met:\n\n* Redistributions of source
+    code must retain the above copyright \nnotice, this list of conditions and the
+    following disclaimer.\n\n* Redistributions in binary form must reproduce the above
+    copyright \nnotice, this list of conditions and the following disclaimer in the
+    \ndocumentation and/or other materials provided with the distribution.\n\n* Neither
+    the name of the async project nor the names of \nits contributors may be used
+    to endorse or promote products derived \nfrom this software without specific prior
+    written permission.\n\nTHIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
+    CONTRIBUTORS \n\"AS IS\" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT
+    NOT \nLIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR \nA
+    PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT \nOWNER OR
+    CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, \nSPECIAL, EXEMPLARY,
+    OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED \nTO, PROCUREMENT OF SUBSTITUTE
+    GOODS OR SERVICES; LOSS OF USE, DATA, OR \nPROFITS; OR BUSINESS INTERRUPTION)
+    HOWEVER CAUSED AND ON ANY THEORY OF \nLIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+    OR TORT (INCLUDING \nNEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+    OF THIS \nSOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.\n\n"
+notices: []

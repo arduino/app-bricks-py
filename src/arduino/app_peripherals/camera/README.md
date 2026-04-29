@@ -4,11 +4,11 @@ The `Camera` peripheral provides a unified abstraction for capturing images from
 
 ## Features
 
-- **Universal Interface**: Single API for V4L/USB, IP cameras, and WebSocket cameras
+- **Universal Interface**: Single API for CSI, USB, IP cameras, and WebSocket cameras
 - **Automatic Detection**: Selects appropriate camera implementation based on source
-- **Multiple Protocols**: Supports V4L, RTSP, HTTP/MJPEG, and WebSocket streams
-- **Thread-Safe**: Safe concurrent access with proper locking
-- **Context Manager**: Automatic resource management
+- **Multiple Protocols**: Supports CSI, V4L, RTSP, HTTP/MJPEG, and WebSocket streams
+- **Thread-Safe**: Safe for concurrent access
+- **Context Manager**: Automatic resource management with Python context support
 
 ## Quick Start
 
@@ -16,7 +16,7 @@ Instantiate the default camera:
 ```python
 from arduino.app_peripherals.camera import Camera
 
-# Default camera (V4L camera at index 0)
+# Default camera (first available plugged camera)
 camera = Camera()
 ```
 
@@ -57,12 +57,12 @@ def blurred():
     return PipeableFunction(apply_blur)
 
 # Using adjustments with Camera
-with Camera(0, adjustments=greyscaled) as camera:
+with Camera(adjustments=greyscaled) as camera:
     frame = camera.capture()
     # frame is now grayscale
 
 # Or with multiple transformations
-with Camera(0, adjustments=greyscaled | blurred) as camera:
+with Camera(adjustments=greyscaled | blurred) as camera:
     frame = camera.capture()
     # frame is now greyscaled and blurred
 ```
@@ -74,17 +74,30 @@ The Camera class provides automatic camera type detection based on the format of
 
 Note: Camera's constructor arguments (except those in its signature) must be provided in keyword format to forward them correctly to the specific camera implementations.
 
-The underlying camera implementations can also be instantiated explicitly (V4LCamera, IPCamera and WebSocketCamera), if needed.
+The underlying camera implementations can also be instantiated explicitly (CSICamera, V4LCamera, IPCamera and WebSocketCamera), if needed.
+
+### CSI Cameras
+For local MIPI CSI-2 cameras supported by libcamera.
+
+**Features:**
+- Supports cameras supported by libcamera.
+
+```python
+camera = Camera("csi:0")            # CSI camera ordinal index
+camera = Camera("csi:CAMERA0")      # CSI camera name
+camera = CSICamera(0)
+camera = CSICamera("CAMERA1")
+```
 
 ### V4L Cameras
 For local USB cameras and V4L-compatible devices.
 
 **Features:**
-- Supports cameras compatible with the Video4Linux2 drivers
+- Supports cameras compatible with the Video4Linux2 drivers.
 
 ```python
-camera = Camera(0)                    # Camera index
-camera = Camera("/dev/video0")        # Device path
+camera = Camera("usb:0")            # USB camera ordinal index
+camera = Camera("/dev/video0")      # USB camera device path
 camera = V4LCamera(0)
 ```
 
