@@ -1,7 +1,6 @@
 uv
 pandas==2.3.2
 pillow
-OPENCV_WHEEL_URL_PLACEHOLDER
 pyyaml
 requests
 pyalsaaudio==0.11.0

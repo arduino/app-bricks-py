@@ -20,8 +20,8 @@ RUN set -ex; \
     apt-get install -y --no-install-recommends --no-install-suggests build-essential ca-certificates binutils; \
     # Install dependencies for building ALSA
     apt-get install -y --no-install-recommends --no-install-suggests libasound2-dev libalsaplayer-dev portaudio19-dev libzbar0; \
-    # Replace placeholder with actual OpenCV wheel URL (full wheel name with platform details)
-    sed -i "s|OPENCV_WHEEL_URL_PLACEHOLDER|https://github.com/${OPENCV_REPO_OWNER}/app-bricks-py/releases/download/opencv/${OPENCV_VERSION}/opencv_python_headless-${OPENCV_VERSION}-${PYTHON_VERSION}-${PYTHON_VERSION}-linux_aarch64.whl|g" /app/requirements.txt; \
+    # Append OpenCV wheel URL (full wheel name with platform details)
+    echo "https://github.com/${OPENCV_REPO_OWNER}/app-bricks-py/releases/download/opencv/${OPENCV_VERSION}/opencv_python_headless-${OPENCV_VERSION}-${PYTHON_VERSION}-${PYTHON_VERSION}-linux_aarch64.whl" >> /app/requirements.txt; \
     # Install Python dependencies
     pip install --no-cache-dir -r /app/requirements.txt && rm /app/requirements.txt; \
     # Strip debug symbols, tests and remove unneeded packages to reduce size
