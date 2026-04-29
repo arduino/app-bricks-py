@@ -47,7 +47,8 @@ class Camera:
                     by the platform
                 - str: V4L camera ordinal index (e.g., "usb:0", "usb:1")
                 - str: V4L camera device path (e.g., "usb:/dev/video0",
-                    "usb:/dev/v4l/by-id/...", "usb:/dev/v4l/by-path/...")
+                    "usb:/dev/v4l/by-id/...", "usb:/dev/v4l/by-path/...
+                    the "usb:" prefix is optional)
                 - str: CSI camera ordinal index (e.g., "csi:0", "csi:1")
                 - str: CSI camera name (e.g., "csi:CAMERA0", "csi:CAMERA1")
                 - str: URL for IP cameras (e.g., "rtsp://...", "http://...")
@@ -127,17 +128,17 @@ class Camera:
             idx = int(source) if isinstance(source, str) else source
             source = nth_plugged_camera(idx)
 
-        if source.startswith("csi:"):
-            from .csi_camera import CSICamera
-
-            csi_source = source[4:]  # Remove "csi:" prefix
-            return CSICamera(csi_source, resolution=resolution, fps=fps, adjustments=adjustments, **kwargs)
-
-        elif source.startswith("usb:"):
+        if source.startswith("usb:"):
             from .v4l_camera import V4LCamera
 
             v4l_source = source[4:]  # Remove "usb:" prefix
             return V4LCamera(v4l_source, resolution=resolution, fps=fps, adjustments=adjustments, **kwargs)
+
+        elif source.startswith("csi:"):
+            from .csi_camera import CSICamera
+
+            csi_source = source[4:]  # Remove "csi:" prefix
+            return CSICamera(csi_source, resolution=resolution, fps=fps, adjustments=adjustments, **kwargs)
 
         # All other cases are handled by URL parsing
         else:
