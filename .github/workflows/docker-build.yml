@@ -207,7 +207,6 @@ jobs:
           cache-to: ${{ steps.cache.outputs.cache_to }}
           provenance: false
           build-args: |
-            OPENCV_REPO_OWNER=${{ github.repository_owner }}
             REGISTRY=${{ env.DEV_REGISTRY_PATH }}
             BASE_IMAGE_VERSION=${{ needs.setup.outputs.image_tag }}
 

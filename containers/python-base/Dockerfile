@@ -6,8 +6,6 @@
 ARG PYTHON_VERSION=cp313
 ARG OPENCV_REPO_OWNER=arduino
 ARG OPENCV_VERSION=4.13.0.92
-ARG LIBCAMERA_REPO_OWNER=arduino
-ARG LIBCAMERA_VERSION=0.7.0-4
 
 FROM python:3.13-slim AS builder
 
@@ -36,6 +34,9 @@ RUN set -ex; \
 
 
 FROM python:3.13-slim AS production
+
+ARG LIBCAMERA_REPO_OWNER=arduino
+ARG LIBCAMERA_VERSION=0.7.0-4
 
 # Copy the installed dependencies from the 'builder' stage
 COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
