@@ -6,16 +6,18 @@ description: |
 category: image
 requires_container: true
 requires_model: true
+# For backward compatibility
+model: concrete-crack-anomaly-detection
+model_by_platform:
+    - platform: ventunoq
+      model: concreate-crack-anomaly-detection-high-resolution
+    - platform: unoq
+      model: concrete-crack-anomaly-detection
 ai_frameworks_compatibility:
   - edgeimpulse
-model: concrete-crack-anomaly-detection
 model_configuration_variables:
   - EI_V_ANOMALY_DETECTION_MODEL
 variables:
-- name: EI_V_ANOMALY_DETECTION_MODEL
-  description: Path to the model file
-  hidden: true
-  default_value: /models/ootb/ei/concrete-crack-anomaly-detection.eim
 - name: CUSTOM_MODEL_PATH
   description: Path to the custom model directory
   hidden: true

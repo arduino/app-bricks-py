@@ -1,0 +1,8 @@
+{
+  "tag_prefix": "ai",
+  "watch_paths": ["containers/ei-qnn-models-runner/"],
+  "tag_latest": false,
+  "build_whl": false,
+  "update_compose": true,
+  "build_args": {}
+}

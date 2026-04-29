@@ -6,8 +6,6 @@
 ARG PYTHON_VERSION=cp313
 ARG OPENCV_REPO_OWNER=arduino
 ARG OPENCV_VERSION=4.13.0.92
-ARG LIBCAMERA_REPO_OWNER=arduino
-ARG LIBCAMERA_VERSION=0.7.0-4
 
 FROM python:3.13-slim AS builder
 
@@ -23,7 +21,8 @@ RUN set -ex; \
     # Append OpenCV wheel URL (full wheel name with platform details)
     echo "https://github.com/${OPENCV_REPO_OWNER}/app-bricks-py/releases/download/opencv/${OPENCV_VERSION}/opencv_python_headless-${OPENCV_VERSION}-${PYTHON_VERSION}-${PYTHON_VERSION}-linux_aarch64.whl" >> /app/requirements.txt; \
     # Install Python dependencies
-    pip install --no-cache-dir -r /app/requirements.txt && rm /app/requirements.txt; \
+    pip install --no-cache-dir uv; \
+    uv pip install --system --no-cache-dir -r /app/requirements.txt && rm /app/requirements.txt; \
     # Strip debug symbols, tests and remove unneeded packages to reduce size
     find /usr/local/lib/python3.13/site-packages -type f -name "*.so" -exec strip -s {} +; \
     find /usr/local/lib/python3.13/site-packages -type f -name "*.so.*" -exec strip -s {} +; \
@@ -35,6 +34,9 @@ RUN set -ex; \
 
 
 FROM python:3.13-slim AS production
+
+ARG LIBCAMERA_REPO_OWNER=arduino
+ARG LIBCAMERA_VERSION=0.7.0-4
 
 # Copy the installed dependencies from the 'builder' stage
 COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages

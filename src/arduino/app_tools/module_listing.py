@@ -14,7 +14,7 @@ import time
 from urllib.parse import urlparse
 from typing import List, Dict, Optional
 from arduino.app_internal.core.module import (
-    _update_compose_release_version,
+    _update_compose_release_version_by_platform,
     EnvVariable,
 )
 from arduino.app_utils import Logger
@@ -25,6 +25,7 @@ editable_module_config = "direct_url.json"
 
 config_file_name: str = "brick_config.yaml"
 compose_config_file_name: str = "brick_compose.yaml"
+compose_config_file_name_prefix: str = "brick_compose"
 service_config_file_name: str = "service_config.yaml"
 service_compose_config_file_name: str = "service_compose.yaml"
 main_readme_file_name: str = "README.md"
@@ -48,6 +49,7 @@ class ArduinoBrick:
         supported_boards: List[str] = None,
         requires_services: List[str] = None,
         ai_frameworks_compatibility: List[str] = None,
+        model_by_platform: List[Dict[str, str]] = None,
     ):
         self.id = id
         self.name = name
@@ -67,6 +69,7 @@ class ArduinoBrick:
         self.supported_boards: Optional[List[str]] = supported_boards
         self.requires_services: Optional[List[str]] = requires_services
         self.ai_frameworks_compatibility: Optional[List[str]] = ai_frameworks_compatibility
+        self.model_by_platform: Optional[List[Dict[str, str]]] = model_by_platform
 
     def to_dict(self) -> dict:
         out_dict: dict = {
@@ -89,6 +92,8 @@ class ArduinoBrick:
             out_dict["supported_boards"] = self.supported_boards
         if self.requires_services:
             out_dict["requires_services"] = self.requires_services
+        if self.model_by_platform:
+            out_dict["model_by_platform"] = self.model_by_platform
         if self.ai_frameworks_compatibility:
             out_dict["ai_frameworks_compatibility"] = self.ai_frameworks_compatibility
         if self.env_variables and len(self.env_variables) > 0:
@@ -227,6 +232,8 @@ def find_config_yaml(root_path: str) -> tuple[List[ArduinoBrick], List[ArduinoSe
                         env_variables=config.get("variables", None),
                         supported_boards=config.get("supported_boards", None),
                         requires_services=config.get("requires_services", None),
+                        ai_frameworks_compatibility=config.get("ai_frameworks_compatibility", None),
+                        model_by_platform=config.get("model_by_platform", None),
                     )
                     discovered_modules.append(mod)
                 except yaml.YAMLError:
@@ -344,16 +351,27 @@ def save_compose_file(module: ArduinoBrick, output_dir: str, appslab_version: st
     module_name = "/".join(module.id.split(":"))
     output_folder: pathlib.Path = pathlib.Path(output_dir) / module_name
     output_folder.mkdir(parents=True, exist_ok=True)
-    output_file_name: pathlib.Path = output_folder / compose_config_file_name
 
-    with open(module.compose_file, "rb") as f_source, open(output_file_name, "wb") as f_dest:
-        while True:
-            chunk = f_source.read(2048)
-            if not chunk:
-                break
-            f_dest.write(chunk)
+    # Search for all brick_compose*.yaml files in the module path and find the one with the latest modification time,
+    # in case there are multiple ones (e.g. brick_compose.yaml and brick_compose.ventunoq.yaml)
+    compose_files = list(pathlib.Path(module.path).glob(f"{compose_config_file_name_prefix}*.yaml"))
+    if not compose_files:
+        logger.warning(f"No compose file found for module {module.id} in path {module.path}")
+        return
 
-    _update_compose_release_version(compose_file_path=output_file_name, release_version=appslab_version)
+    for compose_file in compose_files:
+        logger.info(f"Found compose file {compose_file} for module {module.id}")
+
+        output_file_name: pathlib.Path = output_folder / compose_file.name
+
+        with open(compose_file, "rb") as f_source, open(output_file_name, "wb") as f_dest:
+            while True:
+                chunk = f_source.read(2048)
+                if not chunk:
+                    break
+                f_dest.write(chunk)
+
+        _update_compose_release_version_by_platform(compose_file_path=output_file_name, release_version=appslab_version)
 
 
 def save_readme_file(module: ArduinoBrick, output_dir: str):
@@ -476,7 +494,7 @@ def release():
             # Update the compose file with the release version
             if module.require_container:
                 print(f"Processing compose file {module.compose_file} for arduino bricks version {arduino_bricks_version}")
-                _update_compose_release_version(
+                _update_compose_release_version_by_platform(
                     compose_file_path=module.compose_file,
                     release_version=arduino_bricks_version,
                     append_suffix=False,
@@ -494,7 +512,7 @@ def release():
             for sub_entry in os.scandir(entry.path):
                 if sub_entry.is_file() and sub_entry.name == service_compose_config_file_name:
                     print(f"Found service compose file {sub_entry.path} | {sub_entry.name}. Updating...")
-                    _update_compose_release_version(
+                    _update_compose_release_version_by_platform(
                         compose_file_path=sub_entry.path,
                         release_version=arduino_bricks_version,
                         append_suffix=False,
@@ -541,7 +559,7 @@ def update_ai_container_references():
             modules.append(module.to_dict())
             # Update the compose file with the release version
             if module.require_container:
-                _update_compose_release_version(
+                _update_compose_release_version_by_platform(
                     compose_file_path=module.compose_file,
                     release_version=arduino_bricks_version,
                     append_suffix=False,

@@ -14,14 +14,38 @@ models:
           "EI_V_OBJ_DETECTION_MODEL": "/models/ootb/ei/lw-face-det.eim"
     metadata:
       source: "qualcomm-ai-hub"
-      ei-gpu-mode: false
+      image-resolution: "320x240"
       ei-project-id: 830703
+      ei-impulse-id: 3
       ei-model-url: "https://studio.edgeimpulse.com/public/830703/live"      
       source-model-id: "face-det-lite"
       source-model-url: "https://aihub.qualcomm.com/models/face_det_lite"
+ - face-detection-qnn:
+    runner: brick
+    name : "Lightweight-Face-Detection - NPU accelerated"
+    description: "A small and accurate model for detecting bounding boxes for faces in images. This version of the model is optimized for NPU acceleration on supported devices, providing faster inference times while maintaining accuracy."
+    model_labels:
+      - face
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:object_detection"
+        model_configuration:
+          "EI_OBJ_DETECTION_MODEL": "/models/ootb/ei/lw-face-det-qnn-640.eim"
+      - id: "arduino:video_object_detection"
+        model_configuration:
+          "EI_V_OBJ_DETECTION_MODEL": "/models/ootb/ei/lw-face-det-qnn-640.eim"
+    metadata:
+      source: "qualcomm-ai-hub"
+      hw_acceleration_backend: "qnn"
+      image-resolution: "640x480"
+      ei-project-id: 830703
+      ei-impulse-id: 2
+      ei-model-url: "https://studio.edgeimpulse.com/public/830703/live"      
+      source-model-id: "face-det-lite"
+      source-model-url: "https://aihub.qualcomm.com/models/face_det_lite"      
  - yolox-object-detection:
     runner: brick
-    name : "General purpose object detection - YoloX"
+    name : "General purpose object detection - YoloX nano"
     description: "General purpose object detection model based on YoloX-Nano. This model is trained on the COCO dataset and can detect 80 different object classes."
     model_labels:
       - airplane
@@ -106,7 +130,9 @@ models:
       - zebra
     metadata:
       source: "edgeimpulse"
+      image-resolution: "416x416"
       ei-project-id: 717280
+      ei-impulse-id: 1
       ei-model-url: "https://studio.edgeimpulse.com/public/717280/live"
       source-model-id: "YOLOX-Nano"
       source-model-url: "https://github.com/Megvii-BaseDetection/YOLOX"
@@ -117,6 +143,108 @@ models:
       - id: "arduino:video_object_detection"
         model_configuration:
           "EI_V_OBJ_DETECTION_MODEL": "/models/ootb/ei/yolo-x-nano.eim"
+ - yolox-qnn-object-detection:
+    runner: brick
+    name : "General purpose object detection - YoloX nano - NPU accelerated"
+    description: "General purpose object detection model based on YoloX-Nano. This model is trained on the COCO dataset and can detect 80 different object classes. This version of the model is optimized for NPU acceleration on supported devices, providing faster inference times while maintaining accuracy."
+    model_labels:
+      - airplane
+      - apple
+      - backpack
+      - banana
+      - baseball bat
+      - baseball glove
+      - bear
+      - bed
+      - bench
+      - bicycle
+      - bird
+      - boat
+      - book
+      - bottle
+      - bowl
+      - broccoli
+      - bus
+      - cake
+      - car
+      - carrot
+      - cat
+      - cell phone
+      - chair
+      - clock
+      - couch
+      - cow
+      - cup
+      - dining table
+      - dog
+      - donut
+      - elephant
+      - fire hydrant
+      - fork
+      - frisbee
+      - giraffe
+      - hair drier
+      - handbag
+      - hot dog
+      - horse
+      - keyboard
+      - kite
+      - knife
+      - laptop
+      - microwave
+      - motorcycle
+      - mouse
+      - orange
+      - oven
+      - parking meter
+      - person
+      - pizza
+      - potted plant
+      - refrigerator
+      - remote
+      - sandwich
+      - scissors
+      - sheep
+      - sink
+      - skateboard
+      - skis
+      - snowboard
+      - spoon
+      - sports ball
+      - stop sign
+      - suitcase
+      - surfboard
+      - teddy bear
+      - tennis racket
+      - tie
+      - toaster
+      - toilet
+      - toothbrush
+      - traffic light
+      - train
+      - truck
+      - tv
+      - umbrella
+      - vase
+      - wine glass
+      - zebra
+    metadata:
+      source: "edgeimpulse"
+      image-resolution: "416x416"
+      hw_acceleration_backend: "qnn"
+      ei-project-id: 717280
+      ei-impulse-id: 1
+      ei-model-url: "https://studio.edgeimpulse.com/public/717280/live"
+      source-model-id: "YOLOX-Nano"
+      source-model-url: "https://github.com/Megvii-BaseDetection/YOLOX"
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:object_detection"
+        model_configuration:
+          "EI_OBJ_DETECTION_MODEL": "/models/ootb/ei/yolo-x-nano-qnn.eim"
+      - id: "arduino:video_object_detection"
+        model_configuration:
+          "EI_V_OBJ_DETECTION_MODEL": "/models/ootb/ei/yolo-x-nano-qnn.eim"          
  - mobilenet-image-classification:
     runner: brick
     name : "General purpose image classification"
@@ -1077,7 +1205,6 @@ models:
       source: "edgeimpulse"
       ei-project-id: 708500
       ei-model-url: "https://studio.edgeimpulse.com/public/708500/live"
-      ei-gpu-mode: false
       source-model-id: "MobileNetV2"
       source-model-url: "https://www.tensorflow.org/api_docs/python/tf/keras/applications/MobileNetV2"
     bricks:
@@ -1096,9 +1223,10 @@ models:
       - "person"
     metadata:
       source: "edgeimpulse"
+      image-resolution: "224x224"
       ei-project-id: 755016
+      ei-impulse-id: 1
       ei-model-url: "https://studio.edgeimpulse.com/public/755016/live"
-      ei-gpu-mode: false
       source-model-id: "person-classification-wakevision"
       source-model-url: "https://studio.edgeimpulse.com/public/755016/live"
     bricks:
@@ -1114,6 +1242,7 @@ models:
     description: "Anomaly detection model to identify cracks in concrete structures."
     metadata:
       source: "edgeimpulse"
+      image-resolution: "160x160"
       ei-project-id: 800941
       ei-model-url: "https://studio.edgeimpulse.com/public/800941/live"
       source-model-id: "concrete-crack-anomaly-detection"
@@ -1122,6 +1251,23 @@ models:
       - id: "arduino:visual_anomaly_detection"
         model_configuration:
           "EI_V_ANOMALY_DETECTION_MODEL": "/models/ootb/ei/concrete-crack-anomaly-detection.eim"
+ - concreate-crack-anomaly-detection-high-resolution:
+    runner: brick
+    name : "Concrete crack anomaly detection - High resolution"
+    description: "Anomaly detection model to identify cracks in concrete structures with higher resolution input images for improved accuracy."
+    metadata:
+      source: "edgeimpulse"
+      image-resolution: "512x512"
+      hw_acceleration_backend: "qnn"
+      ei-project-id: 906179
+      ei-model-url: "https://studio.edgeimpulse.com/public/906179/live"
+      source-model-id: "concrete-crack-anomaly-detection"
+      source-model-url: "https://studio.edgeimpulse.com/public/906179/live"
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:visual_anomaly_detection"
+        model_configuration:
+          "EI_V_ANOMALY_DETECTION_MODEL": "/models/ootb/ei/concrete-crack-anomaly-detection-qnn.eim"          
  - keyword-spotting-hey-arduino:
     runner: brick
     name : "Keyword spotting - Hey Arduino!"
@@ -1211,12 +1357,11 @@ models:
           "EI_V_OBJ_DETECTION_MODEL": "/models/ootb/ei/hand-gestures.eim"
     metadata:
       source: "edgeimpulse"
-      ei-gpu-mode: false
       ei-project-id: 842271
       ei-model-url: "https://studio.edgeimpulse.com/public/842271/live"      
       source-model-id: "hand-gestures"
       source-model-url: "https://studio.edgeimpulse.com/public/842271/live"
- - "genie:qwen3-4b":
+ - "genie:qwen3_4b":
     runner: genie
     name : "Qwen 3-4B Instruct"
     description: >-

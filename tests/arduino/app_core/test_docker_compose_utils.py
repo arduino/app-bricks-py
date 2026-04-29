@@ -9,6 +9,7 @@ from arduino.app_internal.core.module import (
     get_brick_config_file,
     get_brick_compose_file,
     _update_compose_release_version,
+    _update_compose_release_version_by_platform,
 )
 from arduino.app_bricks.dbstorage_tsstore import _InfluxDBHandler
 
@@ -212,3 +213,194 @@ def test_release_no_runner_skipped():
     )
     # Should return the original path unchanged (no .new file written)
     assert new_path == compose_file_path
+
+
+# --- _update_compose_release_version_by_platform tests ---
+
+BRICK_COMPOSE_CONTENT = """\
+services:
+  models-runner:
+    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/ei-models-runner:${APPSLAB_VERSION:-dev-latest}
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${BIND_PORT:-8100}:8100"
+"""
+
+BRICK_COMPOSE_AI_CONTENT = """\
+services:
+  models-runner:
+    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/ei-models-runner:1.5.22
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${BIND_PORT:-8100}:8100"
+"""
+
+SERVICE_COMPOSE_CONTENT = """\
+services:
+  my-service:
+    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/my-service-runner:${APPSLAB_VERSION:-dev-latest}
+    ports:
+      - "8080:8080"
+"""
+
+NO_RUNNER_COMPOSE_CONTENT = """\
+services:
+  dbstorage-influx:
+    image: influxdb:2.7
+    ports:
+      - "8086:8086"
+"""
+
+
+def _write(path, content):
+    with open(path, "w") as f:
+        f.write(content)
+
+
+def _read(path):
+    with open(path, "r") as f:
+        return f.read()
+
+
+def test_by_platform_updates_all_brick_compose_variants(tmp_path):
+    """Test that _update_compose_release_version_by_platform updates all brick_compose*.yaml files."""
+    _write(tmp_path / "brick_compose.yaml", BRICK_COMPOSE_CONTENT)
+    _write(tmp_path / "brick_compose.ventunoq.yaml", BRICK_COMPOSE_CONTENT)
+    _write(tmp_path / "brick_compose.unoq.yaml", BRICK_COMPOSE_CONTENT)
+
+    _update_compose_release_version_by_platform(
+        compose_file_path=str(tmp_path / "brick_compose.yaml"),
+        release_version="1.0.0",
+    )
+
+    for name in ["brick_compose.yaml", "brick_compose.ventunoq.yaml", "brick_compose.unoq.yaml"]:
+        content = _read(tmp_path / name)
+        assert ":1.0.0" in content
+        assert "${APPSLAB_VERSION" not in content
+
+
+def test_by_platform_updates_service_compose_files(tmp_path):
+    """Test that _update_compose_release_version_by_platform updates service_compose*.yaml files."""
+    _write(tmp_path / "service_compose.yaml", SERVICE_COMPOSE_CONTENT)
+    _write(tmp_path / "service_compose.extra.yaml", SERVICE_COMPOSE_CONTENT)
+
+    _update_compose_release_version_by_platform(
+        compose_file_path=str(tmp_path / "service_compose.yaml"),
+        release_version="2.0.0",
+    )
+
+    for name in ["service_compose.yaml", "service_compose.extra.yaml"]:
+        content = _read(tmp_path / name)
+        assert ":2.0.0" in content
+        assert "${APPSLAB_VERSION" not in content
+
+
+def test_by_platform_updates_mixed_brick_and_service_compose(tmp_path):
+    """Test that both brick_compose and service_compose files are updated in the same directory."""
+    _write(tmp_path / "brick_compose.yaml", BRICK_COMPOSE_CONTENT)
+    _write(tmp_path / "brick_compose.ventunoq.yaml", BRICK_COMPOSE_CONTENT)
+    _write(tmp_path / "service_compose.yaml", SERVICE_COMPOSE_CONTENT)
+
+    _update_compose_release_version_by_platform(
+        compose_file_path=str(tmp_path / "brick_compose.yaml"),
+        release_version="3.0.0",
+    )
+
+    for name in ["brick_compose.yaml", "brick_compose.ventunoq.yaml", "service_compose.yaml"]:
+        content = _read(tmp_path / name)
+        assert ":3.0.0" in content
+
+
+def test_by_platform_only_ai_containers(tmp_path):
+    """Test only_ai_containers flag updates only -runner images across platform variants."""
+    _write(tmp_path / "brick_compose.yaml", BRICK_COMPOSE_AI_CONTENT)
+    _write(tmp_path / "brick_compose.ventunoq.yaml", BRICK_COMPOSE_AI_CONTENT)
+    # This file has no -runner image, should remain untouched
+    _write(tmp_path / "brick_compose.unoq.yaml", NO_RUNNER_COMPOSE_CONTENT)
+
+    _update_compose_release_version_by_platform(
+        compose_file_path=str(tmp_path / "brick_compose.yaml"),
+        release_version="dev-latest",
+        only_ai_containers=True,
+    )
+
+    for name in ["brick_compose.yaml", "brick_compose.ventunoq.yaml"]:
+        content = _read(tmp_path / name)
+        assert "ei-models-runner:dev-latest" in content
+        assert "1.5.22" not in content
+
+    # No runner file should be unchanged
+    content = _read(tmp_path / "brick_compose.unoq.yaml")
+    assert content == NO_RUNNER_COMPOSE_CONTENT
+
+
+def test_by_platform_with_registry_override(tmp_path):
+    """Test registry override is applied across all platform compose variants."""
+    _write(tmp_path / "brick_compose.yaml", BRICK_COMPOSE_CONTENT)
+    _write(tmp_path / "brick_compose.ventunoq.yaml", BRICK_COMPOSE_CONTENT)
+
+    _update_compose_release_version_by_platform(
+        compose_file_path=str(tmp_path / "brick_compose.yaml"),
+        release_version="1.2.3",
+        registry="arduino.io/",
+    )
+
+    for name in ["brick_compose.yaml", "brick_compose.ventunoq.yaml"]:
+        content = _read(tmp_path / name)
+        assert ":1.2.3" in content
+        assert "${DOCKER_REGISTRY_BASE:-arduino.io/}" in content
+
+
+def test_by_platform_ignores_non_compose_yaml_files(tmp_path):
+    """Test that non-compose yaml files in the same directory are not touched."""
+    _write(tmp_path / "brick_compose.yaml", BRICK_COMPOSE_CONTENT)
+    _write(tmp_path / "other_config.yaml", BRICK_COMPOSE_CONTENT)
+    _write(tmp_path / "brick_config.yaml", NO_RUNNER_COMPOSE_CONTENT)
+
+    original_other = _read(tmp_path / "other_config.yaml")
+    original_config = _read(tmp_path / "brick_config.yaml")
+
+    _update_compose_release_version_by_platform(
+        compose_file_path=str(tmp_path / "brick_compose.yaml"),
+        release_version="4.0.0",
+    )
+
+    # brick_compose.yaml should be updated
+    content = _read(tmp_path / "brick_compose.yaml")
+    assert ":4.0.0" in content
+
+    # other files should be untouched
+    assert _read(tmp_path / "other_config.yaml") == original_other
+    assert _read(tmp_path / "brick_config.yaml") == original_config
+
+
+def test_by_platform_service_compose_only_ai_containers(tmp_path):
+    """Test only_ai_containers flag with service_compose files containing -runner images."""
+    _write(tmp_path / "service_compose.yaml", SERVICE_COMPOSE_CONTENT)
+    _write(tmp_path / "service_compose.backup.yaml", NO_RUNNER_COMPOSE_CONTENT)
+
+    _update_compose_release_version_by_platform(
+        compose_file_path=str(tmp_path / "service_compose.yaml"),
+        release_version="5.0.0",
+        only_ai_containers=True,
+    )
+
+    # service_compose.yaml has a -runner image so it gets updated
+    content = _read(tmp_path / "service_compose.yaml")
+    assert "my-service-runner:5.0.0" in content
+
+    # service_compose.backup.yaml has no -runner, should be untouched
+    content = _read(tmp_path / "service_compose.backup.yaml")
+    assert content == NO_RUNNER_COMPOSE_CONTENT
+
+
+def test_by_platform_single_brick_compose_no_variants(tmp_path):
+    """Test with only a single brick_compose.yaml and no platform variants."""
+    _write(tmp_path / "brick_compose.yaml", BRICK_COMPOSE_CONTENT)
+
+    _update_compose_release_version_by_platform(
+        compose_file_path=str(tmp_path / "brick_compose.yaml"),
+        release_version="6.0.0",
+    )
+
+    content = _read(tmp_path / "brick_compose.yaml")
+    assert ":6.0.0" in content
+    assert "${APPSLAB_VERSION" not in content
