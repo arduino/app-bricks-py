@@ -3,11 +3,11 @@
 # SPDX-License-Identifier: MPL-2.0
 
 
+FROM python:3.13-slim AS builder
+
 ARG PYTHON_VERSION=cp313
 ARG OPENCV_REPO_OWNER=arduino
 ARG OPENCV_VERSION=4.13.0.92
-
-FROM python:3.13-slim AS builder
 
 COPY ./requirements-base.txt /app/requirements.txt
 
