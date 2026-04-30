@@ -21,7 +21,8 @@ RUN set -ex; \
     # Append OpenCV wheel URL (full wheel name with platform details)
     echo "https://github.com/${OPENCV_REPO_OWNER}/app-bricks-py/releases/download/opencv/${OPENCV_VERSION}/opencv_python_headless-${OPENCV_VERSION}-${PYTHON_VERSION}-${PYTHON_VERSION}-linux_aarch64.whl" >> /app/requirements.txt; \
     # Install Python dependencies
-    pip install --no-cache-dir -r /app/requirements.txt && rm /app/requirements.txt; \
+    pip install --no-cache-dir uv; \
+    uv pip install --system --no-cache-dir -r /app/requirements.txt && rm /app/requirements.txt; \
     # Strip debug symbols, tests and remove unneeded packages to reduce size
     find /usr/local/lib/python3.13/site-packages -type f -name "*.so" -exec strip -s {} +; \
     find /usr/local/lib/python3.13/site-packages -type f -name "*.so.*" -exec strip -s {} +; \
