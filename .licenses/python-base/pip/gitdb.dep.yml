@@ -1,0 +1,40 @@
+---
+name: gitdb
+version: 4.0.12
+type: pip
+summary: Git Object Database
+homepage: https://github.com/gitpython-developers/gitdb
+license: bsd-3-clause
+licenses:
+- sources: LICENSE
+  text: "Copyright (C) 2010, 2011 Sebastian Thiel and contributors\nAll rights reserved.\n\nRedistribution
+    and use in source and binary forms, with or without \nmodification, are permitted
+    provided that the following conditions \nare met:\n\n* Redistributions of source
+    code must retain the above copyright \nnotice, this list of conditions and the
+    following disclaimer.\n\n* Redistributions in binary form must reproduce the above
+    copyright \nnotice, this list of conditions and the following disclaimer in the
+    \ndocumentation and/or other materials provided with the distribution.\n\n* Neither
+    the name of the GitDB project nor the names of \nits contributors may be used
+    to endorse or promote products derived \nfrom this software without specific prior
+    written permission.\n\nTHIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
+    CONTRIBUTORS \n\"AS IS\" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT
+    NOT \nLIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR \nA
+    PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT \nOWNER OR
+    CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, \nSPECIAL, EXEMPLARY,
+    OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED \nTO, PROCUREMENT OF SUBSTITUTE
+    GOODS OR SERVICES; LOSS OF USE, DATA, OR \nPROFITS; OR BUSINESS INTERRUPTION)
+    HOWEVER CAUSED AND ON ANY THEORY OF \nLIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+    OR TORT (INCLUDING \nNEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+    OF THIS \nSOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.\n\n\nAdditional
+    Licenses\n-------------------\nThe files at \ngitdb/test/fixtures/packs/pack-11fdfa9e156ab73caae3b6da867192221f2089c2.idx\nand
+    \ngitdb/test/fixtures/packs/pack-11fdfa9e156ab73caae3b6da867192221f2089c2.pack
+    \nare licensed under GNU GPL as part of the git source repository, \nsee http://en.wikipedia.org/wiki/Git_%28software%29
+    for more information.\n\nThey are not required for the actual operation, which
+    is why they are not found \nin the distribution package.\n"
+notices:
+- sources: AUTHORS
+  text: |-
+    Creator: Sebastian Thiel
+
+    Contributors:
+      - Ram Rachum (@cool-RR)

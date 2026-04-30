@@ -38,11 +38,11 @@ class BaseCamera(ABC):
             resolution (tuple, optional): Resolution as (width, height). None uses default resolution.
             fps (int): Frames per second to capture from the camera.
             adjustments (callable, optional): Function or function pipeline to adjust frames that takes
-                a numpy array and returns a numpy array. Default: None
+                a numpy array and returns a numpy array. Default: None.
             auto_reconnect (bool, optional): Enable automatic reconnection on failure. Default: True.
         """
         self.resolution = resolution
-        if fps <= 0:
+        if not fps or fps <= 0:
             raise ValueError("FPS must be a positive integer")
         self.fps = fps
         self.adjustments = adjustments

@@ -130,6 +130,8 @@ celerybeat.pid
 # Environments
 .env
 .venv
+.licensed-venv/
+containers/*/.licensed-venv/
 env/
 venv/
 ENV/
@@ -168,9 +170,6 @@ cython_debug/
 
 # ASDF
 .tool-versions
-
-uv*
-uv*.*
 
 # Build
 src/arduino/app_bricks/static

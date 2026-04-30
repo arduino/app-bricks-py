@@ -1,6 +1,6 @@
 services:
   gesture_recognition:
-    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/gesture-recognition-runner:dev-next
+    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/gesture-recognition-runner:0.9.4
     logging:
       driver: "json-file"
       options:
