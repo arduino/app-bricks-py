@@ -16,9 +16,7 @@ tasks:
     deps:
       - init
     cmds:
-      - pip install uv
-      - uv pip install --system reuse
-      - uv cache clean
+      - pip install reuse
 
   check:python:version:
     desc: Check if Python version is at least {{.PYTHON_VERSION_MIN}}
