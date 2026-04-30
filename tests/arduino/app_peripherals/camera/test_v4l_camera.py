@@ -104,7 +104,7 @@ class TestV4LCameraStartStop:
         camera.start()
 
         assert camera.is_started()
-        mock_videocapture.assert_called_once_with("/dev/v4l/by-id/usb-Camera-video-index0", cv2.CAP_FFMPEG)
+        mock_videocapture.assert_called_once_with("/dev/v4l/by-id/usb-Camera-video-index0", cv2.CAP_V4L2)
 
         # Verify V4L camera setup calls
         assert mock_successful_connect.set.call_count == 4
