@@ -5,8 +5,8 @@ run-name: "Release ${{ inputs.tag || github.ref_name }}"
 on:
   push:
     tags:
-      - 'release/*'
-      - 'ai/*'
+      - "release/*"
+      - "ai/*"
   workflow_dispatch:
     inputs:
       tag:
@@ -108,7 +108,7 @@ jobs:
 
   upload-whl:
     runs-on: ubuntu-24.04-arm
-    needs: [detect]
+    needs: [ detect ]
     env:
       PYTHON_VERSION: "3.13"
       TASKFILE_VERSION: "3.45.4"
@@ -152,7 +152,7 @@ jobs:
 
   build:
     runs-on: ubuntu-24.04-arm
-    needs: [detect, upload-whl]
+    needs: [ detect, upload-whl ]
     env:
       PYTHON_VERSION: "3.13"
       TASKFILE_VERSION: "3.45.4"
@@ -322,6 +322,7 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Download wheel artifact
+        if: steps.config.outputs.build_whl == 'true'
         uses: actions/download-artifact@v4
         with:
           name: whl
@@ -392,13 +393,14 @@ jobs:
           title: "[RELEASE BOT] Update ${{ matrix.container }} image references"
           body: |
             This PR was automatically generated after releasing `${{ matrix.container }}:${{ needs.detect.outputs.version }}`.
-          branch: "container-release-${{ matrix.container }}-${{ needs.detect.outputs.version }}"
+          branch: "container-release-${{ matrix.container }}-${{
+            needs.detect.outputs.version }}"
           base: main
           draft: true
 
   upload-release:
     runs-on: ubuntu-24.04-arm
-    needs: [detect, upload-whl, build, build-downstream]
+    needs: [ detect, upload-whl, build, build-downstream ]
     steps:
       - name: Upload release asset
         uses: softprops/action-gh-release@v2
