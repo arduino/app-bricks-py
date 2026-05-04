@@ -28,21 +28,25 @@ class WebSocketCamera(BaseCamera):
     """
     WebSocket Camera implementation that hosts a WebSocket server.
 
-    This camera acts as a WebSocket server that receives frames from connected clients.
-    Only one client can be connected at a time.
+    This camera acts as a WebSocket server that receives frames from a connected
+    client. Only one client can be connected at a time.
 
-    Clients must encode video frames in one of these formats:
+    The client must encode video frames in one of these formats:
     - JPEG
     - PNG
     - WebP
     - BMP
     - TIFF
-    The video frames must then be serialized in the binary format supported by BPPCodec.
 
-    Secure communication with the WebSocket server is supported in three security modes:
-    - Security disabled (empty secret)
-    - Authenticated (secret + encrypt=False) - HMAC-SHA256
-    - Authenticated + Encrypted (secret + encrypt=True) - ChaCha20-Poly1305
+    Communication uses the BPP (Binary Peripheral Protocol) in three security modes:
+    - Security disabled (secret=None) - BPP with no authentication
+    - Authenticated (secret + encrypt=False) - BPP with HMAC-SHA256
+    - Authenticated + Encrypted (secret + encrypt=True) - BPP with ChaCha20-Poly1305
+
+    By default, all modes use BPP framing. When security is disabled (secret=None),
+    clients can opt out of BPP by connecting with the "raw=true" URL query parameter,
+    allowing them to send raw image bytes directly without BPP wrapping. This parameter
+    is silently ignored when security is enabled.
 
     When connecting, clients can specify a "client_name" parameter in the URL query string
     to identify themselves. This name will be sanitized to allow only alphanumeric chars,
@@ -55,7 +59,7 @@ class WebSocketCamera(BaseCamera):
         timeout: int = 3,
         certs_dir_path: str = "/app/certs",
         use_tls: bool = False,
-        secret: str = "",
+        secret: str | None = None,
         encrypt: bool = False,
         resolution: tuple[int, int] = (640, 480),
         fps: int = 10,
@@ -72,8 +76,11 @@ class WebSocketCamera(BaseCamera):
             use_tls (bool): Enable TLS for secure connections. If True, 'encrypt' will
                 be ignored. Use this for transport-level security with clients that can
                 accept self-signed certificates or when supplying your own certificates.
-            secret (str): Secret key for authentication/encryption (empty = security disabled)
-            encrypt (bool): Enable encryption (only effective if secret is provided)
+            secret (str | None): Pre-shared secret key used for HMAC-SHA256
+                authentication, or to derive the ChaCha20-Poly1305 key when
+                encrypt is True. None disables security. Default: None.
+            encrypt (bool): Enable ChaCha20-Poly1305 encryption. Requires a
+                non-None secret; raises RuntimeError otherwise. Default: False.
             resolution (tuple[int, int]): Resolution as (width, height)
             fps (int): Frames per second to capture
             adjustments (Callable[[np.ndarray], np.ndarray] | None): Function to adjust frames
@@ -81,13 +88,17 @@ class WebSocketCamera(BaseCamera):
         """
         super().__init__(resolution, fps, adjustments, auto_reconnect)
 
+        if encrypt and secret is None:
+            raise RuntimeError("Encryption requires a secret key.")
+
         if use_tls and encrypt:
             logger.warning("Encryption is redundant over TLS connections, disabling encryption.")
             encrypt = False
 
-        self.codec = BPPCodec(secret, encrypt)
+        self.codec = BPPCodec(secret or "", encrypt)
         self.secret = secret
         self.encrypt = encrypt
+        self._client_raw = False
         self.logger = logger
         self.name = self.__class__.__name__
 
@@ -133,7 +144,7 @@ class WebSocketCamera(BaseCamera):
     @property
     def security_mode(self) -> str:
         """Return current security mode for logging/debugging."""
-        if not self.secret:
+        if self.secret is None:
             return "none"
         elif self.encrypt:
             return "encrypted (ChaCha20-Poly1305)"
@@ -202,8 +213,9 @@ class WebSocketCamera(BaseCamera):
 
     async def _ws_handler(self, conn: websockets.ServerConnection) -> None:
         """Handle a connected WebSocket client. Only one client allowed at a time."""
-        # Extract and sanitize client_name from URL parameters
+        # Extract URL parameters: client_name and raw mode opt-in
         client_name = "Unknown"
+        client_raw = False
         if conn.request:
             try:
                 parsed_path = urlparse(conn.request.path)
@@ -214,12 +226,20 @@ class WebSocketCamera(BaseCamera):
                     sanitized = "".join(c for c in raw_name if c.isalnum() or c in " -_")[:64]
                     if sanitized:
                         client_name = sanitized
+                # Allow raw (no BPP) mode only when security is disabled
+                if "raw" in query_params and (not query_params["raw"] or query_params["raw"][0].lower() != "false"):
+                    if self.secret is None:
+                        client_raw = True
+                    else:
+                        self.logger.warning("Client requested raw mode but security is enabled, ignoring.")
             except Exception as e:
-                self.logger.debug(f"Failed to extract client_name from URL parameters: {e}")
+                self.logger.debug(f"Failed to extract URL parameters: {e}")
             finally:
                 self.name = client_name
+                self._client_raw = client_raw
 
         client_addr = f"{conn.remote_address[0]}:{conn.remote_address[1]}"
+
         async with self._client_lock:
             if self._client is not None:
                 # Reject the new client
@@ -278,6 +298,7 @@ class WebSocketCamera(BaseCamera):
             async with self._client_lock:
                 if self._client == conn:
                     self._client = None
+                    self._client_raw = False
                     self._set_status("disconnected", {"client_address": client_addr, "client_name": client_name})
                     self.logger.debug(f"Client removed: {client_addr}")
 
@@ -290,12 +311,14 @@ class WebSocketCamera(BaseCamera):
                 self.logger.warning(f"Failed to decode string message using base64: {e}")
                 return None
 
-        decoded = self.codec.decode(message)
-        if decoded is None:
-            self.logger.warning("Failed to decode message")
-            return None
+        if not self._client_raw:
+            decoded = self.codec.decode(message)
+            if decoded is None:
+                self.logger.warning("Failed to decode message")
+                return None
+            message = decoded
 
-        nparr = np.frombuffer(decoded, np.uint8)
+        nparr = np.frombuffer(message, np.uint8)
         frame = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
         return frame
 
@@ -353,7 +376,7 @@ class WebSocketCamera(BaseCamera):
         if isinstance(message, str):
             message = message.encode()
 
-        encoded = self.codec.encode(message)
+        data = message if self._client_raw else self.codec.encode(message)
 
         # Keep a ref to current client to avoid locking
         client = client or self._client
@@ -361,7 +384,7 @@ class WebSocketCamera(BaseCamera):
             raise ConnectionError("No client connected")
 
         try:
-            await client.send(encoded)
+            await client.send(data)
         except websockets.ConnectionClosedOK:
             self.logger.warning("Client has already closed the connection")
         except websockets.ConnectionClosedError as e:
