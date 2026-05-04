@@ -19,8 +19,9 @@ echo "Starting Llama server..."
 # Add your specific flags here (model path, port, etc.)
 export LD_LIBRARY_PATH=/opt/pkg-snapdragon/lib
 export ADSP_LIBRARY_PATH=/opt/pkg-snapdragon/lib
+
 # --reasoning off
-/opt/pkg-snapdragon/bin/llama-server --device HTP0 --log-disable &
+/opt/pkg-snapdragon/bin/llama-server --device HTP0 -ngl 100 -fa on --no-mmap -t 4 --cpu-mask 0x0f --poll 1000 --ubatch-size 256 --log-disable &
 LLAMA_PID=$!
 
 echo "Processes started (Llama: $LLAMA_PID). Waiting..."
