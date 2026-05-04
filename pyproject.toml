@@ -64,7 +64,7 @@ web_ui = [
     "cryptography",
 ]
 streamlit_ui = [
-    "streamlit",
+    # Deps are a pre-requirement
 ]
 mood_detector = [
     "nltk",
