@@ -117,7 +117,6 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build wheel in debian:trixie
-        if: matrix.container == 'python-apps-base'
         run: |
           # Remove tags that setuptools_scm can't parse (only ai/* and release/* are valid)
           git tag -l | grep -v -E '^(ai|release)/' | xargs -r git tag -d
@@ -400,6 +399,7 @@ jobs:
 
   upload-release:
     runs-on: ubuntu-24.04-arm
+    if: startsWith(needs.detect.outputs.tag_ref, 'release/')
     needs: [ detect, upload-whl, build, build-downstream ]
     steps:
       - name: Upload release asset
