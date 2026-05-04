@@ -5,5 +5,8 @@
   "build_whl": false,
   "update_compose": true,
   "build_args": {},
+  "sbom": {
+    "runtime_base": "${REGISTRY}app-bricks/aihub-models-runner:${BASE_IMAGE_VERSION}"
+  },
   "downstream": []
 }

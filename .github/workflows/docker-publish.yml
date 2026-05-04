@@ -261,6 +261,13 @@ jobs:
           provenance: false
           build-args: ${{ steps.config.outputs.build_args }}
 
+      - name: SBOM Delta
+        uses: ./.github/actions/sbom-delta
+        with:
+          container: ${{ matrix.container }}
+          version: ${{ needs.detect.outputs.version }}
+          registry: ${{ env.GHCR_DESTINATION_ORG }}
+
       - name: Update compose file references
         if: steps.config.outputs.update_compose == 'true'
         env:
@@ -363,6 +370,13 @@ jobs:
             ${{ steps.config.outputs.build_args }}
             BASE_IMAGE_VERSION=${{ needs.detect.outputs.version }}
             REGISTRY=${{ env.GHCR_DESTINATION_ORG }}/
+
+      - name: SBOM Delta
+        uses: ./.github/actions/sbom-delta
+        with:
+          container: ${{ matrix.container }}
+          version: ${{ needs.detect.outputs.version }}
+          registry: ${{ env.GHCR_DESTINATION_ORG }}
 
       - name: Update compose file references
         if: steps.config.outputs.update_compose == 'true'

@@ -22,7 +22,8 @@ RUN set -ex; \
     echo "https://github.com/${OPENCV_REPO_OWNER}/app-bricks-py/releases/download/opencv/${OPENCV_VERSION}/opencv_python_headless-${OPENCV_VERSION}-${PYTHON_VERSION}-${PYTHON_VERSION}-linux_aarch64.whl" >> /app/requirements.txt; \
     # Install Python dependencies
     pip install --no-cache-dir uv; \
-    uv pip install --system --no-cache-dir -r /app/requirements.txt && rm /app/requirements.txt; \
+    uv pip install --system --no-cache-dir -r /app/requirements.txt; \
+    rm /app/requirements.txt; \
     # Strip debug symbols, tests and remove unneeded packages to reduce size
     find /usr/local/lib/python3.13/site-packages -type f -name "*.so" -exec strip -s {} +; \
     find /usr/local/lib/python3.13/site-packages -type f -name "*.so.*" -exec strip -s {} +; \
@@ -74,12 +75,13 @@ RUN set -ex; \
     rm -rf /var/lib/apt/lists/*; \
     rm -fr /var/cache/apt/archives/*.deb \
         /var/cache/apt/archives/partial/*.deb \
-        /usr/share/doc/* \
         /usr/share/man/* \
         /usr/share/locale/* \
         /var/cache/debconf/* \
-        /var/lib/dpkg/info/* \      
+        /var/lib/dpkg/info/* \
         /var/cache/apt/*.bin; \
+    find /usr/share/doc -type f ! -name 'copyright' -delete; \
+    find /usr/share/doc -type d -empty -delete; \
     # precompile python files to .pyc to speed up startup time
     python -m compileall /usr/local/bin; \
     python -m compileall /usr/local/lib

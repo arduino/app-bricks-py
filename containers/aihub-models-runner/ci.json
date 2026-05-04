@@ -5,5 +5,8 @@
   "build_whl": false,
   "update_compose": false,
   "build_args": {},
+  "sbom": {
+    "runtime_base": "ubuntu:24.04"
+  },
   "downstream": ["gesture-recognition-runner"]
 }
