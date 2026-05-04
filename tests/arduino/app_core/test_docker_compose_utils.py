@@ -198,6 +198,28 @@ def test_release_branch_tag_to_branch_tag_ai():
     os.remove(new_path)
 
 
+def test_release_rc_semver_to_semver_ai():
+    """Test that an rc semver tag (e.g. 0.10.0rc1) is fully replaced, leaving no rc suffix behind."""
+    compose_file_path = "tests/arduino/app_core/brick_compose_ai_rc.yaml"
+    release_version = "1.0.0"
+    with open(compose_file_path, "r") as file:
+        content = file.read()
+        assert "ei-models-runner:0.10.0rc1" in content
+    new_path = _update_compose_release_version(
+        compose_file_path=compose_file_path,
+        release_version=release_version,
+        append_suffix=True,
+        only_ai_containers=True,
+    )
+    with open(new_path, "r") as file:
+        content = file.read()
+        assert "ei-models-runner:1.0.0" in content
+        assert "rc1" not in content
+    import os
+
+    os.remove(new_path)
+
+
 def test_release_no_runner_skipped():
     """Test that a compose file without any -runner image is left untouched when only_ai_containers=True."""
     compose_file_path = "tests/arduino/app_core/brick_compose_test_data.yaml"

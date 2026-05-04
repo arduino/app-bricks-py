@@ -123,6 +123,10 @@ if [ "$1" = "provision" ]; then
   arduino-bricks-list-modules --provision-compose
 else
   if grep -q "arduino:streamlit_ui" "$APP_YAML"; then
+    if ! uv pip show streamlit > /dev/null 2>&1; then
+      echo "streamlit not found, installing..."
+      uv pip install --no-cache-dir --link-mode=copy pyarrow==20.0.0 streamlit
+    fi
     exec streamlit run --server.port 7000 "$PYTHON_SCRIPT"
   else
     echo "======== App is starting ============================"

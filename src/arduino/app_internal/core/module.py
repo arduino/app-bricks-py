@@ -337,8 +337,8 @@ def _update_compose_release_version(
         substitution = "-runner:" + release_version
         # First replace branch-name style tags (e.g. dev-next, feature-foo); branch names start with a letter
         updated_content = re.sub(r"-runner:[a-zA-Z][a-zA-Z0-9._/-]*", substitution, updated_content)
-        # Then replace semver style tags (e.g. 1.2.3)
-        updated_content = re.sub(r"-runner:[0-9]+\.[0-9]+\.[0-9]+", substitution, updated_content)
+        # Then replace semver style tags (e.g. 1.2.3, 1.2.3rc1)
+        updated_content = re.sub(r"-runner:[0-9]+\.[0-9]+\.[0-9]+(rc[0-9]+)?", substitution, updated_content)
 
     substitution = release_version
     updated_content = re.sub(r"\${APPSLAB_VERSION:\-([^}]+)?}", substitution, updated_content)
