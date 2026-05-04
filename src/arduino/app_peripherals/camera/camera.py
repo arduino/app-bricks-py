@@ -82,6 +82,8 @@ class Camera:
                         disables security. Default: "".
                     encrypt (bool): Enable encryption (only effective if secret is provided).
                         Default: False.
+                    auto_reconnect (bool): Whether to automatically attempt to reconnect
+                        if the camera connection is lost. Default: True.
 
         Returns:
             BaseCamera: Appropriate camera implementation instance
@@ -108,8 +110,8 @@ class Camera:
             IP Camera:
 
             ```python
-            camera = Camera("rtsp://192.168.1.100:554/stream", username="admin", password="secret", timeout=15.0)
-            camera = Camera("http://192.168.1.100:8080/video.mp4")
+            camera = Camera("rtsp://192.168.1.100:554/stream")
+            camera = Camera("http://192.168.1.100:8080/video.mp4", username="admin", password="secret")
             ```
 
             WebSocket Camera:
