@@ -15,12 +15,6 @@ from arduino.app_peripherals.camera import WebSocketCamera
 
 
 @pytest.fixture
-def codec() -> BPPCodec:
-    """Create codec for encoding/decoding in tests."""
-    return BPPCodec()
-
-
-@pytest.fixture
 def sample_frame() -> np.ndarray:
     """Create a sample frame for testing."""
     frame = np.random.randint(0, 255, (480, 640, 3), dtype=np.uint8)
@@ -28,16 +22,22 @@ def sample_frame() -> np.ndarray:
 
 
 @pytest.fixture
-def encoded_frame_binary(codec, sample_frame) -> bytes:
-    """Encode frame as binary."""
-    _, buffer = cv2.imencode(".jpg", sample_frame)
-    return codec.encode(buffer.tobytes())
+def plain_codec() -> BPPCodec:
+    """BPPCodec for MODE_NONE (no secret, no encryption)."""
+    return BPPCodec("", enable_encryption=False)
 
 
 @pytest.fixture
-def encoded_frame_string(encoded_frame_binary) -> str:
-    """Encode frame as base64 string."""
-    return base64.b64encode(encoded_frame_binary).decode()
+def bpp_frame_binary(sample_frame, plain_codec) -> bytes:
+    """Encode frame as JPEG bytes wrapped in BPP MODE_NONE."""
+    _, buffer = cv2.imencode(".jpg", sample_frame)
+    return plain_codec.encode(buffer.tobytes())
+
+
+@pytest.fixture
+def bpp_frame_string(bpp_frame_binary) -> str:
+    """Encode BPP-wrapped frame as base64 string."""
+    return base64.b64encode(bpp_frame_binary).decode()
 
 
 def test_websocket_camera_init_default():
@@ -60,6 +60,19 @@ def test_websocket_camera_init_custom():
     assert camera.resolution == (1920, 1080)
     assert camera.fps == 30
     assert camera.status == "disconnected"
+
+
+def test_websocket_camera_encrypt_without_secret_fails():
+    """Test that encrypt=True without a secret raises RuntimeError."""
+    with pytest.raises(RuntimeError, match="Encryption requires a secret key"):
+        WebSocketCamera(encrypt=True)
+
+
+def test_websocket_camera_empty_string_secret_enables_bpp():
+    """Test that secret="" is valid and enables BPP authentication."""
+    camera = WebSocketCamera(port=0, secret="")
+    assert camera.codec is not None
+    assert camera.secret == ""
 
 
 def test_websocket_camera_start_stop():
@@ -86,22 +99,22 @@ def test_websocket_camera_start_stop():
     assert camera.status == "disconnected"
 
 
-def test_websocket_camera_handle_binary_message(sample_frame, encoded_frame_binary):
-    """Test parsing binary frame message."""
+def test_websocket_camera_handle_binary_message(sample_frame, bpp_frame_binary):
+    """Test parsing BPP-wrapped binary frame message."""
     camera = WebSocketCamera()
 
-    frame = camera._parse_message(encoded_frame_binary)
+    frame = camera._parse_message(bpp_frame_binary)
 
     assert frame is not None
     assert isinstance(frame, np.ndarray)
     assert frame.shape == sample_frame.shape
 
 
-def test_websocket_camera_handle_base64_message(sample_frame, encoded_frame_string):
-    """Test parsing binary message received as string using base64 encoding."""
+def test_websocket_camera_handle_base64_message(sample_frame, bpp_frame_string):
+    """Test parsing BPP-wrapped message received as base64 string."""
     camera = WebSocketCamera()
 
-    frame = camera._parse_message(encoded_frame_string)
+    frame = camera._parse_message(bpp_frame_string)
 
     assert frame is not None
     assert isinstance(frame, np.ndarray)
@@ -125,14 +138,14 @@ def test_websocket_camera_read_frame_empty_queue():
 
 
 @pytest.mark.asyncio
-async def test_websocket_camera_capture_frame(encoded_frame_binary):
-    """Test capturing frame from WebSocket camera."""
+async def test_websocket_camera_capture_frame(bpp_frame_binary):
+    """Test capturing frame from WebSocket camera (BPP MODE_NONE)."""
     with WebSocketCamera(port=0) as camera:
         async with websockets.connect(camera.url) as ws:
             # Skip welcome message
             await ws.recv()
 
-            await ws.send(encoded_frame_binary)
+            await ws.send(bpp_frame_binary)
 
             await asyncio.sleep(0.1)
 
@@ -143,27 +156,26 @@ async def test_websocket_camera_capture_frame(encoded_frame_binary):
 
 
 @pytest.mark.asyncio
-async def test_websocket_camera_single_client(codec):
+async def test_websocket_camera_single_client():
     """Test WebSocket server accepts only one client at a time."""
+    codec = BPPCodec("", enable_encryption=False)
     camera = WebSocketCamera(port=0)
     camera.start()
 
     try:
         # Connect first client
         async with websockets.connect(camera.url) as ws1:
-            # First client should receive welcome message
-            welcome = await ws1.recv()
-            decoded_welcome = codec.decode(welcome)
-            welcome_message = json.loads(decoded_welcome)
+            # First client should receive BPP-wrapped welcome message
+            welcome_raw = await ws1.recv()
+            welcome_message = json.loads(codec.decode(welcome_raw))
             assert welcome_message["status"] == "connected"
 
             # Try to connect second client while first is connected
             try:
                 async with websockets.connect(camera.url) as ws2:
-                    # Second client should receive rejection message
-                    rejection = await asyncio.wait_for(ws2.recv(), timeout=1.0)
-                    decoded_rejection = codec.decode(rejection)
-                    rejection_message = json.loads(decoded_rejection)
+                    # Second client should receive BPP-wrapped rejection message
+                    rejection_raw = await asyncio.wait_for(ws2.recv(), timeout=1.0)
+                    rejection_message = json.loads(codec.decode(rejection_raw))
                     assert "error" in rejection_message
             except websockets.exceptions.ConnectionClosed:
                 # Connection closed immediately - also acceptable
@@ -173,14 +185,16 @@ async def test_websocket_camera_single_client(codec):
 
 
 @pytest.mark.asyncio
-async def test_websocket_camera_welcome_message(codec):
-    """Test that welcome message is sent to connected client."""
+async def test_websocket_camera_welcome_message():
+    """Test that welcome message is sent to connected client (BPP-wrapped)."""
+    codec = BPPCodec("", enable_encryption=False)
     with WebSocketCamera(port=0) as camera:
         async with websockets.connect(camera.url) as ws:
-            # Should receive welcome message
-            welcome = await asyncio.wait_for(ws.recv(), timeout=1.0)
-            decoded_welcome = codec.decode(welcome)
-            welcome_message = json.loads(decoded_welcome)
+            # Should receive BPP-wrapped welcome message
+            welcome_raw = await asyncio.wait_for(ws.recv(), timeout=1.0)
+            welcome_payload = codec.decode(welcome_raw)
+            assert welcome_payload is not None
+            welcome_message = json.loads(welcome_payload)
             assert "message" in welcome_message
             assert welcome_message["status"] == "connected"
             assert tuple(welcome_message["resolution"]) == camera.resolution
@@ -189,15 +203,15 @@ async def test_websocket_camera_welcome_message(codec):
 
 
 @pytest.mark.asyncio
-async def test_websocket_camera_receives_frames(encoded_frame_binary):
-    """Test that server receives and queues frames from client."""
+async def test_websocket_camera_receives_frames(bpp_frame_binary):
+    """Test that server receives and queues BPP-wrapped frames from client."""
     with WebSocketCamera(port=0) as camera:
         async with websockets.connect(camera.url) as ws:
             # Skip welcome message
             await ws.recv()
 
-            # Send a frame
-            await ws.send(encoded_frame_binary)
+            # Send a BPP-wrapped frame
+            await ws.send(bpp_frame_binary)
 
             # Give time for frame to be processed
             await asyncio.sleep(0.2)
@@ -207,17 +221,17 @@ async def test_websocket_camera_receives_frames(encoded_frame_binary):
 
 
 @pytest.mark.asyncio
-async def test_websocket_camera_disconnects_client_on_stop(codec):
+async def test_websocket_camera_disconnects_client_on_stop():
     """Test that connected client is disconnected when camera stops."""
+    codec = BPPCodec("", enable_encryption=False)
     camera = WebSocketCamera(port=0)
     camera.start()
 
     try:
         async with websockets.connect(camera.url) as ws:
-            # Client connected, receive welcome message
-            welcome = await ws.recv()
-            decoded_welcome = codec.decode(welcome)
-            welcome_message = json.loads(decoded_welcome)
+            # Client connected, receive BPP-wrapped welcome message
+            welcome_raw = await ws.recv()
+            welcome_message = json.loads(codec.decode(welcome_raw))
             assert welcome_message["status"] == "connected"
 
             # Stop the camera (runs in background thread via to_thread)
@@ -226,9 +240,8 @@ async def test_websocket_camera_disconnects_client_on_stop(codec):
             with pytest.raises(websockets.exceptions.ConnectionClosed):
                 # Keep receiving until connection is closed
                 while True:
-                    goodbye = await asyncio.wait_for(ws.recv(), timeout=1.0)
-                    decoded_goodbye = codec.decode(goodbye)
-                    goodbye_message = json.loads(decoded_goodbye)
+                    goodbye_raw = await asyncio.wait_for(ws.recv(), timeout=1.0)
+                    goodbye_message = json.loads(codec.decode(goodbye_raw))
                     if goodbye_message.get("status") == "disconnecting":
                         # Got goodbye message, connection should close soon
                         continue
@@ -251,8 +264,9 @@ def test_websocket_camera_stop_without_client():
 
 
 @pytest.mark.asyncio
-async def test_websocket_camera_backpressure(codec):
+async def test_websocket_camera_backpressure():
     """Test that old frames are dropped when new frames arrive faster than they're consumed."""
+    codec = BPPCodec("", enable_encryption=False)
     with WebSocketCamera(port=0) as camera:
         async with websockets.connect(camera.url) as ws:
             await ws.recv()  # Skip welcome message
@@ -427,3 +441,174 @@ async def test_websocket_camera_stop_event():
     assert len(events) == 2
     assert "connected" in events[0][0]
     assert "disconnected" in events[1][0]
+
+
+TEST_SECRET = "test-secret-key"
+
+
+@pytest.mark.asyncio
+async def test_websocket_camera_authenticated_mode():
+    """Test sending and receiving frames with HMAC-SHA256 authentication (secret, no encryption)."""
+    codec = BPPCodec(TEST_SECRET, enable_encryption=False)
+    camera = WebSocketCamera(port=0, secret=TEST_SECRET, encrypt=False)
+    camera.start()
+
+    try:
+        async with websockets.connect(camera.url) as ws:
+            # Welcome message should be BPP-encoded
+            welcome_raw = await ws.recv()
+            welcome_payload = codec.decode(welcome_raw)
+            assert welcome_payload is not None
+            welcome = json.loads(welcome_payload)
+            assert welcome["status"] == "connected"
+            assert "authenticated" in welcome["security_mode"]
+
+            # Send a BPP-encoded frame
+            frame = np.ones((480, 640, 3), dtype=np.uint8) * 42
+            _, buffer = cv2.imencode(".jpg", frame)
+            await ws.send(codec.encode(buffer.tobytes()))
+
+            await asyncio.sleep(0.2)
+
+            captured = camera.capture()
+            assert captured is not None
+            assert isinstance(captured, np.ndarray)
+            assert np.mean(captured) == pytest.approx(42, abs=1)
+    finally:
+        camera.stop()
+
+
+@pytest.mark.asyncio
+async def test_websocket_camera_authenticated_rejects_raw():
+    """Test that authenticated mode rejects raw (non-BPP) messages."""
+    camera = WebSocketCamera(port=0, secret=TEST_SECRET, encrypt=False)
+    camera.start()
+
+    try:
+        async with websockets.connect(camera.url) as ws:
+            await ws.recv()  # Skip welcome
+
+            # Send raw bytes (not BPP-encoded) — should be rejected
+            frame = np.ones((480, 640, 3), dtype=np.uint8) * 42
+            _, buffer = cv2.imencode(".jpg", frame)
+            await ws.send(buffer.tobytes())
+
+            await asyncio.sleep(0.2)
+
+            captured = camera.capture()
+            assert captured is None
+    finally:
+        camera.stop()
+
+
+@pytest.mark.asyncio
+async def test_websocket_camera_encrypted_mode():
+    """Test sending and receiving frames with ChaCha20-Poly1305 encryption."""
+    codec = BPPCodec(TEST_SECRET, enable_encryption=True)
+    camera = WebSocketCamera(port=0, secret=TEST_SECRET, encrypt=True)
+    camera.start()
+
+    try:
+        async with websockets.connect(camera.url) as ws:
+            # Welcome message should be BPP-encoded with encryption
+            welcome_raw = await ws.recv()
+            welcome_payload = codec.decode(welcome_raw)
+            assert welcome_payload is not None
+            welcome = json.loads(welcome_payload)
+            assert welcome["status"] == "connected"
+            assert "encrypted" in welcome["security_mode"]
+
+            # Send a BPP-encrypted frame
+            frame = np.ones((480, 640, 3), dtype=np.uint8) * 99
+            _, buffer = cv2.imencode(".jpg", frame)
+            await ws.send(codec.encode(buffer.tobytes()))
+
+            await asyncio.sleep(0.2)
+
+            captured = camera.capture()
+            assert captured is not None
+            assert isinstance(captured, np.ndarray)
+            assert np.mean(captured) == pytest.approx(99, abs=1)
+    finally:
+        camera.stop()
+
+
+@pytest.mark.asyncio
+async def test_websocket_camera_encrypted_rejects_raw():
+    """Test that encrypted mode rejects raw (non-BPP) messages."""
+    camera = WebSocketCamera(port=0, secret=TEST_SECRET, encrypt=True)
+    camera.start()
+
+    try:
+        async with websockets.connect(camera.url) as ws:
+            await ws.recv()  # Skip welcome
+
+            # Send raw bytes — should be rejected
+            frame = np.ones((480, 640, 3), dtype=np.uint8) * 42
+            _, buffer = cv2.imencode(".jpg", frame)
+            await ws.send(buffer.tobytes())
+
+            await asyncio.sleep(0.2)
+
+            captured = camera.capture()
+            assert captured is None
+    finally:
+        camera.stop()
+
+
+@pytest.mark.asyncio
+async def test_websocket_camera_raw_mode():
+    """Test that clients can bypass BPP with ?raw=true when security is disabled."""
+    camera = WebSocketCamera(port=0)
+    camera.start()
+
+    try:
+        # Connect with raw=true query parameter
+        async with websockets.connect(camera.url + "?raw=true") as ws:
+            # Welcome should be plain JSON (not BPP-wrapped)
+            welcome = await asyncio.wait_for(ws.recv(), timeout=1.0)
+            welcome_message = json.loads(welcome)
+            assert welcome_message["status"] == "connected"
+
+            # Send raw JPEG bytes (no BPP wrapping)
+            frame = np.ones((480, 640, 3), dtype=np.uint8) * 77
+            _, buffer = cv2.imencode(".jpg", frame)
+            await ws.send(buffer.tobytes())
+
+            await asyncio.sleep(0.2)
+
+            captured = camera.capture()
+            assert captured is not None
+            assert np.mean(captured) == pytest.approx(77, abs=1)
+    finally:
+        camera.stop()
+
+
+@pytest.mark.asyncio
+async def test_websocket_camera_raw_mode_ignored_with_secret():
+    """Test that ?raw=true is ignored when security is enabled."""
+    codec = BPPCodec(TEST_SECRET, enable_encryption=False)
+    camera = WebSocketCamera(port=0, secret=TEST_SECRET)
+    camera.start()
+
+    try:
+        # Connect with raw=true — should be ignored since secret is set
+        async with websockets.connect(camera.url + "?raw=true") as ws:
+            # Welcome should still be BPP-wrapped
+            welcome_raw = await ws.recv()
+            welcome_payload = codec.decode(welcome_raw)
+            assert welcome_payload is not None
+            welcome = json.loads(welcome_payload)
+            assert welcome["status"] == "connected"
+
+            # Sending raw bytes should be rejected (BPP is enforced)
+            frame = np.ones((480, 640, 3), dtype=np.uint8) * 42
+            _, buffer = cv2.imencode(".jpg", frame)
+            await ws.send(buffer.tobytes())
+
+            await asyncio.sleep(0.2)
+
+            captured = camera.capture()
+            assert captured is None
+    finally:
+        camera.stop()

@@ -137,8 +137,10 @@ class Microphone:
                     use_tls (bool): Enable TLS for secure connections. If True, 'encrypt' will
                         be ignored. Use this for transport-level security with clients that can
                         accept self-signed certificates or when supplying your own certificates.
-                    secret (str): Secret key for authentication/encryption (empty = security disabled)
-                    encrypt (bool): Enable encryption (only effective if secret is provided)
+                    secret (str | None): Pre-shared secret key. None disables security.
+                        Default: None.
+                    encrypt (bool): Enable encryption. Requires a secret, raises
+                        RuntimeError otherwise. Default: False.
                     auto_reconnect (bool): Whether to automatically attempt to reconnect
                         if the microphone connection is lost. Default: True.
 
@@ -164,8 +166,8 @@ class Microphone:
             WebSocket Microphone:
 
             ```python
-            microphone = Microphone("ws://0.0.0.0:8080", audio_format="json")
-            microphone = Microphone("ws://192.168.1.100:8080", sample_rate=48000)
+            microphone = Microphone("ws://0.0.0.0:8080", sample_rate=48000)
+            microphone = Microphone("ws://0.0.0.0:8080", secret="topsecret", encrypt=True)
             ```
         """
         if isinstance(device, str):
