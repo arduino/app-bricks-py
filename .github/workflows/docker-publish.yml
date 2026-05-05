@@ -422,10 +422,21 @@ jobs:
           name: whl
           path: dist/
 
+      - name: Download all SBOM delta artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: sbom-delta-*
+          path: sbom-delta/
+
+      - name: Zip SBOM artifacts
+        run: zip -r dist/sboms.zip sbom-delta/
+
       - name: Upload release asset
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/arduino*.whl
+          files: |
+            dist/arduino*.whl
+            dist/sboms.zip
           tag_name: ${{ needs.detect.outputs.tag_ref }}
           name: Release ${{ needs.detect.outputs.version }}
           prerelease: ${{ needs.detect.outputs.prerelease }}
