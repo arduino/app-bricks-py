@@ -76,7 +76,7 @@ tasks:
     desc: Format code
     cmds:
       - ruff format
-  
+
   build-dev:
     desc: Build a development package
     cmds:
@@ -253,3 +253,8 @@ tasks:
           IMAGE: 'public.ecr.aws/arduino/app-bricks/ei-models-runner'
           TAG: '{{.EI_TAG}}'
           DIR: './containers/ei-models-runner'
+
+  sbom:delta:
+    desc: Generate delta SBOMs for containers (requires syft and registry access)
+    cmds:
+      - python3 ./scripts/sbom_delta.py {{.CLI_ARGS}}

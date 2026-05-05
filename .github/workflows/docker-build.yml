@@ -210,6 +210,13 @@ jobs:
             REGISTRY=${{ env.DEV_REGISTRY_PATH }}
             BASE_IMAGE_VERSION=${{ needs.setup.outputs.image_tag }}
 
+      - name: SBOM Delta
+        uses: ./.github/actions/sbom-delta
+        with:
+          container: ${{ matrix.container }}
+          version: ${{ needs.setup.outputs.image_tag }}
+          registry: ${{ env.DEV_REGISTRY_PATH }}
+
   build-downstream:
     needs: [ setup, build ]
     if: needs.setup.outputs.downstream_containers != '[]'
@@ -302,3 +309,10 @@ jobs:
           build-args: |
             REGISTRY=${{ env.DEV_REGISTRY_PATH }}
             BASE_IMAGE_VERSION=${{ needs.setup.outputs.image_tag }}
+
+      - name: SBOM Delta
+        uses: ./.github/actions/sbom-delta
+        with:
+          container: ${{ matrix.container }}
+          version: ${{ needs.setup.outputs.image_tag }}
+          registry: ${{ env.DEV_REGISTRY_PATH }}

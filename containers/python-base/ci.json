@@ -5,5 +5,8 @@
   "build_whl": false,
   "update_compose": false,
   "build_args": {},
+  "sbom": {
+    "runtime_base": "python:3.13-slim"
+  },
   "downstream": ["python-apps-base"]
 }
