@@ -1381,12 +1381,15 @@ models:
       ei-model-url: "https://studio.edgeimpulse.com/public/842271/live"      
       source-model-id: "hand-gestures"
       source-model-url: "https://studio.edgeimpulse.com/public/842271/live"
- - "genie:qwen3_4b":
+ - "genie:qwen3_4b_instruct_2507":
     runner: genie-models-runner
     name : "Qwen 3-4B Instruct"
     description: >-
       The Qwen3-4B is a state-of-the-art multilingual base language model with 4 billion
       parameters, excelling in language understanding, generation, coding, and mathematics.
+      This version of the model has been tuned as instruct model, optimized for following human
+      instructions and providing detailed responses.  It is ideal for applications such as chatbots,
+      virtual assistants, and any use case that benefits from a more conversational and responsive AI.
     supported_boards: ["ventunoq"]
     bricks:
       - id: "arduino:llm"
@@ -1394,9 +1397,9 @@ models:
       pre-loaded: true
       variables:
         model_type: "genie"
-        model_name: "qwen3_4b"
+        model_name: "qwen3_4b_instruct_2507"
         models_repository: "/var/lib/arduino-app-cli/models/genai"
-        model_directory: "qwen3_4b-genie-w4a16-qualcomm_qcs8275"
+        model_directory: "qwen3_4b_instruct_2507-genie-w4a16-qualcomm_qcs8275"
         quantization: "w4a16"
         chipset: "qualcomm-qcs8275"
         version: "0.51.0"
