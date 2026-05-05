@@ -8,7 +8,7 @@ The ASR Brick allows you to:
 
 - Stream audio from a microphone
 - Transcribe WAV and PCM audio files
-- Transcribe using a local LLM
+- Transcribe using a local model
 - Use multiple languages
 
 This Brick streams audio from a `Microphone` or `audio files` and gives you the transcribed text.
