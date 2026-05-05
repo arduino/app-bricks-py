@@ -290,21 +290,18 @@ def _pkg_to_spdx(
             }
         ]
 
+    delta_info: dict[str, str] = {"change": change_type}
+    if from_version is not None:
+        delta_info["previous-version"] = from_version
+
     annotations = [
         {
             "annotationType": "OTHER",
             "annotator": "Tool: arduino-sbom-delta",
             "annotationDate": now,
-            "comment": f"change-type: {change_type}",
+            "comment": json.dumps(delta_info),
         },
     ]
-    if from_version is not None:
-        annotations.append({
-            "annotationType": "OTHER",
-            "annotator": "Tool: arduino-sbom-delta",
-            "annotationDate": now,
-            "comment": f"previous-version: {from_version}",
-        })
     entry["annotations"] = annotations
 
     return entry, spdxid
@@ -473,6 +470,9 @@ def scan_image(image: str, output_path: Path) -> None:
     for cmd in commands:
         last_result = subprocess.run(cmd, capture_output=True, text=True, check=False)
         if last_result.returncode == 0:
+            # Re-write as pretty-printed JSON
+            raw = load_json(output_path)
+            output_path.write_text(json.dumps(raw, indent=2, sort_keys=True) + "\n", encoding="utf-8")
             return
 
     details = (last_result.stderr or last_result.stdout or "").strip() if last_result else ""
