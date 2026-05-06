@@ -2,7 +2,6 @@ version: "3"
 
 vars:
   PYTHON_VERSION_MIN: "3.13"
-  LICENSED_VERSION: '5.0.6'
 
 tasks:
   init:
@@ -130,75 +129,11 @@ tasks:
         # every GitHub Actions runner.
         find . -maxdepth 1 -name 'LICENSE*' -type f -exec sed -i 's/[[:space:]]*$//' {} +
 
-  license:init-venvs:
-    desc: Dynamically create virtual environments for licensed dependency scanning
-    internal: true
-    cmds:
-      - |
-        echo "Creating library venv (.licensed-venv)..."
-        python3 -m venv .licensed-venv
-        .licensed-venv/bin/python -m pip install --upgrade pip -q
-        SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0 .licensed-venv/bin/pip install -q ".[all]"
-      - |
-        for d in containers/*/*/; do
-          venv_path="$d.licensed-venv"
-          reqs=()
-          [ -f "$d/requirements-base.txt" ] && reqs+=("$d/requirements-base.txt")
-          [ -f "$d/requirements.txt" ] && reqs+=("$d/requirements.txt")
-          if [ ${#reqs[@]} -gt 0 ]; then
-            echo "Creating venv for $d ($venv_path)..."
-            python3 -m venv "$venv_path"
-            "$venv_path"/bin/python -m pip install --upgrade pip -q
-            failed_pkgs=()
-            for req in "${reqs[@]}"; do
-              while IFS= read -r line || [ -n "$line" ]; do
-                pkg=$(echo "$line" | sed 's/#.*//;s/^[[:space:]]*//;s/[[:space:]]*$//')
-                [ -z "$pkg" ] && continue
-                "$venv_path"/bin/pip install -q "$pkg" || failed_pkgs+=("$pkg")
-              done < "$req"
-            done
-            if [ ${#failed_pkgs[@]} -gt 0 ]; then
-              for pkg in "${failed_pkgs[@]}"; do
-                echo "::warning::Failed to install $pkg in $venv_path" >&2
-              done
-            fi
-          else
-            echo "No requirements found for $d, skipping venv creation."
-          fi
-        done
-
-  license:cleanup-venvs:
-    desc: Remove all persistent licensed virtual environments (manual only)
-    internal: true
-    cmds:
-      - rm -rf .licensed-venv
-      - rm -rf containers/*/*/.licensed-venv
-
-  install:licensed:
-    desc: Install or verify licensed Ruby gem
-    cmds:
-      - |
-        if command -v licensed &> /dev/null; then
-          INSTALLED=$(licensed version 2>/dev/null || echo "0")
-          if echo "$INSTALLED" | grep -q "{{.LICENSED_VERSION}}"; then
-            echo "licensed {{.LICENSED_VERSION}} already installed."
-            exit 0
-          fi
-        fi
-        if [[ "${CI:-}" == "true" ]]; then
-          gem install licensed -v {{.LICENSED_VERSION}}
-        else
-          echo "Please install licensed v{{.LICENSED_VERSION}} manually: gem install licensed -v {{.LICENSED_VERSION}}"
-          exit 1
-        fi
-
   license:deps:
-    desc: Check and cache dependency licenses (licensed)
+    desc: Check and cache dependency licenses (licensed, via Docker)
     cmds:
-      - task: license:init-venvs
-      - task: install:licensed
-      - licensed cache
-      - licensed status || true
+      - docker build -f containers/licensed/Dockerfile -t arduino-licensed .
+      - docker run --rm -v "$(pwd):/src" arduino-licensed
 
   license:
     desc: Update license headers, files, and dependency license caches
