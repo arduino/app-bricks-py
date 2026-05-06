@@ -6,42 +6,42 @@ apps:
     sources:
       pip: true
     python:
-      virtual_env_dir: ".licensed-venv"
+      virtual_env_dir: "/venvs/arduino-app-bricks"
 
   - name: python-base
     source_path: .
     sources:
       pip: true
     python:
-      virtual_env_dir: "containers/base/python-base/.licensed-venv"
+      virtual_env_dir: "/venvs/python-base"
 
   - name: aihub-models-runner
     source_path: .
     sources:
       pip: true
     python:
-      virtual_env_dir: "containers/ai/aihub-models-runner/.licensed-venv"
+      virtual_env_dir: "/venvs/aihub-models-runner"
 
   - name: gesture-recognition-runner
     source_path: .
     sources:
       pip: true
     python:
-      virtual_env_dir: "containers/ai/gesture-recognition-runner/.licensed-venv"
+      virtual_env_dir: "/venvs/gesture-recognition-runner"
 
   - name: pose-estimation-runner
     source_path: .
     sources:
       pip: true
     python:
-      virtual_env_dir: "containers/ai/pose-estimation-runner/.licensed-venv"
+      virtual_env_dir: "/venvs/pose-estimation-runner"
 
   - name: models-downloader
     source_path: .
     sources:
       pip: true
     python:
-      virtual_env_dir: "containers/bricks/models-downloader/.licensed-venv"
+      virtual_env_dir: "/venvs/models-downloader"
 
 stale_records_action: error
 

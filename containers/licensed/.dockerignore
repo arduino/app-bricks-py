@@ -1,0 +1,11 @@
+# Exclude everything by default; selectively include only what the licensed
+# Dockerfile needs.
+**
+
+!pyproject.toml
+!src/arduino/app_tools/
+!src/arduino/app_tools/**
+!containers/python-base/requirements-base.txt
+!containers/aihub-models-runner/requirements-base.txt
+!containers/gesture-recognition-runner/requirements.txt
+!containers/licensed/entrypoint.sh
