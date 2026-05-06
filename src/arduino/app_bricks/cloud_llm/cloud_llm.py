@@ -350,6 +350,11 @@ class CloudLLM:
             self._handle_stream_error(e)
 
     def _handle_stream_error(self, e: Exception) -> None:
+        """Handles stream errors and acts as an override hook for subclasses.
+
+        Args:
+            e (Exception): The exception that occurred during streaming.
+        """
         self._logger.error(f"Response generation failed: {e}")
         raise RuntimeError(f"Response generation failed: {e}") from e
 
