@@ -8,7 +8,7 @@ from arduino.app_bricks.keyword_spotting import KeywordSpotting
 from arduino.app_utils import App
 
 
-spotter = KeywordSpotting()
-spotter.on_detect("helloworld", lambda: print(f"Hello world detected!"))
+spotting = KeywordSpotting()
+spotting.on_detect("helloworld", lambda: print(f"Hello world detected!"))
 
 App.run()

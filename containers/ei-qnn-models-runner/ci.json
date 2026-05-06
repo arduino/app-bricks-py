@@ -4,5 +4,8 @@
   "tag_latest": false,
   "build_whl": false,
   "update_compose": true,
-  "build_args": {}
+  "build_args": {},
+  "sbom": {
+    "runtime_base": "public.ecr.aws/z9b3d4t5/inference-container-qnn:v1.92.19-test-f19ce2e7"
+  }
 }

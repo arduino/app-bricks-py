@@ -1,6 +1,6 @@
 ---
 name: pytz
-version: 2026.1.post1
+version: '2026.2'
 type: pip
 summary: World timezone definitions, modern and historical
 homepage: http://pythonhosted.org/pytz
