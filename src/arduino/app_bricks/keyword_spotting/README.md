@@ -1,10 +1,10 @@
-# Keyword Spotter Brick
+# Keyword Spotting Brick
 
 Brick for keyword spotting using a pre-trained model that processes a continuous audio stream to detect specific keywords or phrases.
 
 ## Overview
 
-The Keyword Spotter brick allows you to:
+The Keyword Spotting brick allows you to:
 
 - Detect specific keywords in real-time audio streams
 - Use pre-trained models provided by the framework  
@@ -16,7 +16,7 @@ It processes audio input through a microphone to classify and detect targeted ke
 
 ## Prerequisites
 
-Before using the Keyword Spotter brick, ensure you have the following components:
+Before using the Keyword Spotting brick, ensure you have the following components:
 
 - USB microphone
 
@@ -38,11 +38,11 @@ Tips:
 Here is a basic example for detecting the 'hello world' keyword:
 
 ```python
-from arduino.app_bricks.keyword_spotter import KeywordSpotter
+from arduino.app_bricks.keyword_spotting import KeywordSpotting
 from arduino.app_utils import App
 
-spotter = KeywordSpotter()
-spotter.on_detect("helloworld", lambda: print(f"Hello world detected!"))
+spotting = KeywordSpotting()
+spotting.on_detect("helloworld", lambda: print(f"Hello world detected!"))
 
 App.run()
 ```
@@ -50,13 +50,13 @@ App.run()
 You can customize the confidence level and debounce timing:
 
 ```python
-spotter = KeywordSpotter(confidence=0.9, debounce_sec=3.0)
+spotting = KeywordSpotting(confidence=0.9, debounce_sec=3.0)
 ```
 
 ## Understanding Detection Parameters
 
-The KeywordSpotter uses three key configuration parameters:
+The KeywordSpotting uses three key configuration parameters:
 
+- The `mic` parameter allows you to specify a custom Microphone instance. Otherwise, it defaults to a standard microphone.
 - The `confidence` parameter sets the minimum confidence level required for a detection, with higher values reducing false positives but potentially missing valid detections.
 - The `debounce_sec` parameter prevents repeated detection callbacks for the same keyword within the specified time window.
-- The `mic` parameter allows you to specify a custom Microphone instance. Otherwise, it defaults to a standard microphone.
