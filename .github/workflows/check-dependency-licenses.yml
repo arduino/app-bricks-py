@@ -9,25 +9,11 @@ jobs:
   check-dependency-licenses:
     runs-on: ubuntu-24.04-arm
     env:
-      PYTHON_VERSION: "3.13"
       TASKFILE_VERSION: "v3.44.0"
       TASKFILE_PATH: "/home/runner/go/bin"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Set up Ruby
-        uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: '3.3'
-
-      - name: Install system dependencies
-        run: sudo apt-get install -y -qq portaudio19-dev libzbar0
 
       - name: Install Taskfile
         run: which task || curl -sSfL https://taskfile.dev/install.sh | sh -s -- -b ${{ env.TASKFILE_PATH }} ${{ env.TASKFILE_VERSION }}
@@ -68,8 +54,8 @@ jobs:
             END { flush() }
           ' output_file="$actual_errors_file" licensed_status.log
 
-          grep '^::warning::Failed to install ' licensed_status.log | \
-            sed -E 's/^::warning::Failed to install ([^ ]+) in (.+)$/- `\1` in `\2`/' | \
+          grep '^::warning::Some packages from ' licensed_status.log | \
+            sed -E 's/^::warning::Some packages from (.+) failed to install$/- `\1`/' | \
             sort -u > "$install_warnings_file" || true
 
           git diff --name-only -- .licenses | \
