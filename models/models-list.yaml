@@ -1374,14 +1374,16 @@ models:
     bricks:
       - id: "arduino:llm"
     download:
-      variables:
-        model_type: "genie"
-        model_name: "qwen3_4b_instruct_2507"
-        models_repository: "/var/lib/arduino-app-cli/models/genai"
-        model_directory: "qwen3_4b_instruct_2507-genie-w4a16-qualcomm_qcs8275"
-        quantization: "w4a16"
-        chipset: "qualcomm-qcs8275"
-        version: "0.51.0"
+      platforms:
+        - ventunoq:
+            variables:
+              model_type: "genie"
+              model_name: "qwen3_4b_instruct_2507"
+              models_repository: "/var/lib/arduino-app-cli/models/genai"
+              model_directory: "qwen3_4b_instruct_2507-genie-w4a16-qualcomm_qcs8275"
+              quantization: "w4a16"
+              chipset: "qualcomm-qcs8275"
+              version: "0.51.0"
     metadata:
       source: "qualcomm-ai-hub"
       source-model-id: "qwen3_4b_instruct_2507"
@@ -1397,13 +1399,15 @@ models:
     bricks:
       - id: "arduino:vlm"
     download:
-      variables:
-        model_type: "genie"
-        model_name: "qwen3_4b_vl"
-        models_repository: "/var/lib/arduino-app-cli/models/genai"
-        quantization: "w4a16"
-        chipset: "qualcomm-qcs8275"
-        version: "0.51.0"
+      platforms:
+        - ventunoq:
+            variables:
+              model_type: "genie"
+              model_name: "qwen3_4b_vl"
+              models_repository: "/var/lib/arduino-app-cli/models/genai"
+              quantization: "w4a16"
+              chipset: "qualcomm-qcs8275"
+              version: "0.51.0"
     metadata:
       source: "qualcomm-ai-hub"
       source-model-id: "qwen3_vl_4b"
@@ -1423,7 +1427,6 @@ models:
       - ILoveYou
     bricks:
       - id: "arduino:gesture_recognition"
-    models_repository: /var/lib/arduino-app-cli/models/genai
     metadata:
       source: "qualcomm-ai-hub"  
       source-model-id: "mediapipe_hand_gesture"
@@ -1439,20 +1442,22 @@ models:
       Specifically, it excels in long-form transcription, capable of accurately transcribing audio clips up to 30 seconds long.
     supported_boards: ["ventunoq"]
     download:
-      variables:
-        model_type: "voice_ai"
-        model_name: "whisper_small_quantized"
-        models_repository: "/var/lib/arduino-app-cli/models/audio-analytics/asr"
-        model_directory: "whisper_small_quantized-voice_ai-w8a16-qualcomm_qcs8275"
-        quantization: "w8a16"
-        chipset: "qualcomm-qcs8275"
-        version: "0.51.0"
+      platforms:
+        - ventunoq:
+            variables:
+              model_type: "voice_ai"
+              model_name: "whisper_small_quantized"
+              models_repository: "/var/lib/arduino-app-cli/models/audio-analytics/asr"
+              model_directory: "whisper_small_quantized-voice_ai-w8a16-qualcomm_qcs8275"
+              quantization: "w8a16"
+              chipset: "qualcomm-qcs8275"
+              version: "0.51.0"
     bricks:
       - id: "arduino:asr"
     metadata:
       source: "qualcomm-ai-hub"
-      source-model-id: "whisper_small"
-      source-model-url: "https://aihub.qualcomm.com/models/whisper_small"
+      source-model-id: "whisper_small_quantized"
+      source-model-url: "https://aihub.qualcomm.com/models/whisper_small_quantized"
     supported_languages:
       - en
       - zh
@@ -1562,14 +1567,16 @@ models:
     bricks:
       - id: "arduino:tts"
     download:
-      variables:
-        model_type: "voice_ai"
-        model_name: "melotts_en"
-        models_repository: "/var/lib/arduino-app-cli/models/audio-analytics/tts"
-        model_directory: "melotts_en-voice_ai-mixed_with_float-qualcomm_qcs8275"
-        quantization: "mixed_with_float"
-        chipset: "qualcomm-qcs8275"
-        version: "0.51.0"
+      platforms:
+        - ventunoq:
+            variables:
+              model_type: "voice_ai"
+              model_name: "melotts_en"
+              models_repository: "/var/lib/arduino-app-cli/models/audio-analytics/tts"
+              model_directory: "melotts_en-voice_ai-mixed_with_float-qualcomm_qcs8275"
+              quantization: "mixed_with_float"
+              chipset: "qualcomm-qcs8275"
+              version: "0.51.0"
     metadata:
       source: "qualcomm-ai-hub"
       source-model-id: "melotts_en"
@@ -1583,14 +1590,16 @@ models:
     bricks:
       - id: "arduino:tts"
     download:
-      variables:
-        model_type: "voice_ai"
-        model_name: "melotts_es"
-        models_repository: "/var/lib/arduino-app-cli/models/audio-analytics/tts"
-        model_directory: "melotts_es-voice_ai-mixed_with_float-qualcomm_qcs8275"
-        quantization: "mixed_with_float"
-        chipset: "qualcomm-qcs8275"
-        version: "0.51.0"
+      platforms:
+        - ventunoq:
+            variables:
+              model_type: "voice_ai"
+              model_name: "melotts_es"
+              models_repository: "/var/lib/arduino-app-cli/models/audio-analytics/tts"
+              model_directory: "melotts_es-voice_ai-mixed_with_float-qualcomm_qcs8275"
+              quantization: "mixed_with_float"
+              chipset: "qualcomm-qcs8275"
+              version: "0.51.0"
     metadata:
       source: "qualcomm-ai-hub"
       source-model-id: "melotts_es"
@@ -1604,14 +1613,16 @@ models:
     bricks:
       - id: "arduino:tts"
     download:
-      variables:
-        model_type: "voice_ai"
-        model_name: "melotts_zh"
-        models_repository: "/var/lib/arduino-app-cli/models/audio-analytics/tts"
-        model_directory: "melotts_zh-voice_ai-mixed_with_float-qualcomm_qcs8275"
-        quantization: "mixed_with_float"
-        chipset: "qualcomm-qcs8275"
-        version: "0.51.0"
+      platforms:
+        - ventunoq:
+            variables:
+              model_type: "voice_ai"
+              model_name: "melotts_zh"
+              models_repository: "/var/lib/arduino-app-cli/models/audio-analytics/tts"
+              model_directory: "melotts_zh-voice_ai-mixed_with_float-qualcomm_qcs8275"
+              quantization: "mixed_with_float"
+              chipset: "qualcomm-qcs8275"
+              version: "0.51.0"
     metadata:
       source: "qualcomm-ai-hub"
       source-model-id: "melotts_zh"
