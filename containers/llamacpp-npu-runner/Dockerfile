@@ -10,7 +10,7 @@ FROM ${REGISTRY}app-bricks/aihub-models-runner:${BASE_IMAGE_VERSION}
 ENV LLAMA_CPP_VERSION=20260504
 
 COPY ./llamacpp-hexagon-${LLAMA_CPP_VERSION}.tgz /tmp/llamacpp-hexagon.tgz
-COPY ./scripts/*.sh /
+COPY ./scripts/* /
 
 RUN set -ex; \
     tar -xzf /tmp/llamacpp-hexagon.tgz -C /opt; \
@@ -31,4 +31,4 @@ ENV USER=ubuntu
 ENV LD_LIBRARY_PATH=/opt/pkg-snapdragon/lib
 ENV ADSP_LIBRARY_PATH=/opt/pkg-snapdragon/lib
 
-ENTRYPOINT ["/run.sh"]
+ENTRYPOINT ["/run-model-router.sh"]
