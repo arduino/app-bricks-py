@@ -6,6 +6,31 @@ import os
 
 from huggingface_hub import snapshot_download
 import argparse
+import configparser
+from pathlib import Path
+
+
+def generate_models_ini(models_dir: Path):
+    config = configparser.ConfigParser()
+
+    for gguf_file in sorted(models_dir.rglob("*.gguf")):
+        if gguf_file.name.startswith("mmproj"):
+            continue
+
+        section = gguf_file.stem
+        config[section] = {}
+        config[section]["model"] = str(gguf_file.as_posix())
+
+        # Look for mmproj file in the same directory
+        mmproj_files = list(gguf_file.parent.glob("mmproj*.gguf"))
+        if mmproj_files:
+            config[section]["mmproj"] = str(mmproj_files[0].as_posix())
+
+    output_path = models_dir / "models.ini"
+    with open(output_path, "w") as f:
+        config.write(f)
+
+    print(f"Generated {output_path} with {len(config.sections())} model(s)")
 
 
 def main():
@@ -66,6 +91,9 @@ def main():
 
     if mmproj_quantization and len(mmproj_quantization) != 0 and mmproj_quantization[0] != "":
         snapshot_download(repo_id=repo_id, allow_patterns=f"*mmproj*{mmproj_quantization[0]}*.gguf", local_dir=output_dir)
+
+    # Generate models.ini file
+    generate_models_ini(Path(args.output_dir))
 
 
 if __name__ == "__main__":
