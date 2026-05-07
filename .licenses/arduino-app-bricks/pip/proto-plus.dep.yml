@@ -1,6 +1,6 @@
 ---
 name: proto-plus
-version: 1.27.2
+version: 1.28.0
 type: pip
 summary: Beautiful, Pythonic protocol buffers
 homepage: https://github.com/googleapis/google-cloud-python/tree/main/packages/proto-plus

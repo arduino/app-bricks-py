@@ -18,10 +18,10 @@ class Leds:
 
     Attributes:
         _led_ids (list): List of supported LED IDs [1, 2].
-        _led1_brightness_files (list): System file paths for LED1 RGB channels
-            (red:user, green:user, blue:user).
-        _led2_brightness_files (list): System file paths for LED2 RGB channels
-            (red:panic, green:wlan, blue:bt).
+        _led1_brightness_files_legacy (list): Legacy file paths for LED1 brightness control.
+        _led2_brightness_files_legacy (list): Legacy file paths for LED2 brightness control.
+        _led1_brightness_file (list): Compatible file paths for LED1 brightness control.
+        _led2_brightness_file (list): Compatible file paths for LED2 brightness control.
 
     Methods:
         set_led1_color(r, g, b): Set the RGB color state for LED1.

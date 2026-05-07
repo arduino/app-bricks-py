@@ -1,6 +1,6 @@
 ---
 name: orjson
-version: 3.11.8
+version: 3.11.9
 type: pip
 summary: Fast, correct Python JSON library supporting dataclasses, datetimes, and
   numpy

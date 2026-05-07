@@ -1,6 +1,6 @@
 ---
 name: pydantic
-version: 2.13.3
+version: 2.13.4
 type: pip
 summary: Data validation using Python type hints
 homepage: https://github.com/pydantic/pydantic
