@@ -1626,4 +1626,73 @@ models:
     metadata:
       source: "qualcomm-ai-hub"
       source-model-id: "melotts_zh"
-      source-model-url: "https://aihub.qualcomm.com/models/melotts_zh"       
+      source-model-url: "https://aihub.qualcomm.com/models/melotts_zh"
+ - piper-tts-de:
+    runner: audio-analytics-models-runner
+    name : "Piper TTS (German)"
+    description: >-
+      Piper is a high-quality multi-lingual text-to-speech library - German version.
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:tts"
+    download:
+      platforms:
+        - ventunoq:
+            variables:
+              model_type: "voice_ai"
+              model_name: "piper_tts_de"
+              models_repository: "/var/lib/arduino-app-cli/models/audio-analytics/tts"
+              model_directory: "piper_tts_de-voice_ai-w8a16-qualcomm_qcs8275"
+              quantization: "w8a16"
+              chipset: "qualcomm-qcs8275"
+              version: "0.51.0"
+    metadata:
+      source: "qualcomm-ai-hub"
+      source-model-id: "piper_tts_de"
+      source-model-url: "https://aihub.qualcomm.com/models/piper_tts_de"
+ - piper-tts-it:
+    runner: audio-analytics-models-runner
+    name : "Piper TTS (Italian)"
+    description: >-
+      Piper is a high-quality multi-lingual text-to-speech library - Italian version.
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:tts"
+    download:
+      platforms:
+        - ventunoq:
+            variables:
+              model_type: "voice_ai"
+              model_name: "piper_tts_it"
+              models_repository: "/var/lib/arduino-app-cli/models/audio-analytics/tts"
+              model_directory: "piper_tts_it-voice_ai-w8a16-qualcomm_qcs8275"
+              quantization: "w8a16"
+              chipset: "qualcomm-qcs8275"
+              version: "0.51.0"
+    metadata:
+      source: "qualcomm-ai-hub"
+      source-model-id: "piper_tts_it"
+      source-model-url: "https://aihub.qualcomm.com/models/piper_tts_it"
+ - piper-tts-en:
+    runner: audio-analytics-models-runner
+    name : "Piper TTS (English)"
+    description: >-
+      Piper is a high-quality multi-lingual text-to-speech library - English version.
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:tts"
+    download:
+      platforms:
+        - ventunoq:
+            variables:
+              model_type: "voice_ai"
+              model_name: "piper_tts_en"
+              models_repository: "/var/lib/arduino-app-cli/models/audio-analytics/tts"
+              model_directory: "piper_tts_en-voice_ai-w8a16-qualcomm_qcs8275"
+              quantization: "w8a16"
+              chipset: "qualcomm-qcs8275"
+              version: "0.51.0"
+    metadata:
+      source: "qualcomm-ai-hub"
+      source-model-id: "piper_tts_en"
+      source-model-url: "https://aihub.qualcomm.com/models/piper_tts_en"             
