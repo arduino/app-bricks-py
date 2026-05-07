@@ -31,7 +31,6 @@ class TextToSpeech:
             language (str, optional): Preferred language for TTS. If not specified, it follow App configuration.
             speaker (BaseSpeaker, optional): Speaker instance to use for audio output. If not provided, a default Speaker will be used.
         """
-        self.max_concurrent_syntheses = 3
         self._speaker = speaker or Speaker(sample_rate=Speaker.RATE_44K, shared=True)
 
         # API configuration
@@ -97,8 +96,7 @@ class TextToSpeech:
                 logger.warning(f"Configured model '{model}' not found in available TTS models. Defaulting to en.")
                 self._selected_language = "en"
 
-        # Limit concurrency
-        self._session_semaphore = threading.Semaphore(self.max_concurrent_syntheses)
+        self._synthesis_lock = threading.Lock()
         self._active_sessions_lock = threading.Lock()
         self._active_sessions: set[_SpeechSession] = set()
         self._playback_lock = threading.Lock()
@@ -134,14 +132,16 @@ class TextToSpeech:
 
         Raises:
             ValueError: If the specified language is not supported.
-            RuntimeError: If the synthesis fails or maximum concurrency is reached.
+            RuntimeError: If the synthesis fails.
         """
         session = _SpeechSession(cancelled=threading.Event())
         with self._active_sessions_lock:
             self._active_sessions.add(session)
 
         try:
-            audio_bytes = self.synthesize_pcm(text, language=self._selected_language)
+            audio_bytes = self._synthesize_pcm(text, language=self._selected_language, cancelled=session.cancelled)
+            if audio_bytes is None:
+                return
             if session.cancelled.is_set():
                 logger.debug("Speech session cancelled before playback")
                 return
@@ -169,7 +169,7 @@ class TextToSpeech:
 
         Raises:
             ValueError: If the specified language is not supported.
-            RuntimeError: If the synthesis fails or maximum concurrency is reached.
+            RuntimeError: If the synthesis fails.
         """
         pcm_audio = self.synthesize_pcm(text, language=self._selected_language)
 
@@ -199,15 +199,22 @@ class TextToSpeech:
 
         Raises:
             ValueError: If the specified language is not supported.
-            RuntimeError: If the synthesis fails or maximum concurrency is reached.
+            RuntimeError: If the synthesis fails.
         """
+        audio_bytes = self._synthesize_pcm(text, language=language)
+        if audio_bytes is None:
+            raise RuntimeError("Synthesis was cancelled")
+        return audio_bytes
+
+    def _synthesize_pcm(self, text: str, language: Literal["en", "es", "zh"] = "en", cancelled: threading.Event | None = None) -> bytes | None:
         if language not in self._language_to_voice:
             raise ValueError(f"Unsupported language: {language}")
 
-        if not self._session_semaphore.acquire(blocking=False):
-            raise RuntimeError(f"Maximum concurrent syntheses ({self.max_concurrent_syntheses}) reached. Wait for an existing synthesis to complete.")
+        with self._synthesis_lock:
+            if cancelled is not None and cancelled.is_set():
+                logger.debug("Speech session cancelled before synthesis")
+                return None
 
-        try:
             model_params = self._language_to_voice[language]
             payload = {
                 "text": text,
@@ -231,11 +238,7 @@ class TextToSpeech:
             if not response.content:
                 raise RuntimeError("No audio data returned from synthesis API")
 
-            audio_bytes = response.content  # The API returns raw PCM audio data
-            return audio_bytes
-
-        finally:
-            self._session_semaphore.release()
+            return response.content  # The API returns raw PCM audio data
 
     def _play_pcm(self, pcm_audio: np.ndarray, cancelled: threading.Event) -> None:
         if pcm_audio is None or len(pcm_audio) == 0:

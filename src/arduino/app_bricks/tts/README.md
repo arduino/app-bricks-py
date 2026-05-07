@@ -8,4 +8,4 @@ The `TextToSpeech` brick provides a completely offline text-to-speech (TTS) solu
 - **Multiple Language Support:** Easily switch between different languages (en, es, zh).
 - **Audio Output Formats:** Directly output synthesized speech to a Speaker instance or to WAV or PCM audio.
 - **Cancellable Playback:** Use `cancel()` to stop the current spoken sequence without stopping the TTS brick or speaker.
-- **Concurrency Control:** Limits the number of simultaneous synthesis sessions to avoid resource exhaustion.
+- **Concurrency Control:** Serializes synthesis requests to avoid overlapping calls to the local TTS service.

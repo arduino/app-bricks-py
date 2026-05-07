@@ -128,3 +128,50 @@ def test_cancel_during_synthesis_skips_playback(monkeypatch):
     assert speaker.chunks_written == []
     assert speaker.is_started() is True
     assert speaker.close_called is False
+
+
+def test_synthesize_pcm_serializes_requests(monkeypatch):
+    speaker = BlockingSpeaker(buffer_size=4)
+    first_synthesis_started = threading.Event()
+    second_synthesis_started = threading.Event()
+    release_first_synthesis = threading.Event()
+    post_calls = []
+    results = []
+    errors = []
+
+    def post_response(url, json):
+        post_calls.append(json["text"])
+        if json["text"] == "first":
+            first_synthesis_started.set()
+            release_first_synthesis.wait(timeout=2)
+        else:
+            second_synthesis_started.set()
+        return FakeResponse(content=np.arange(4, dtype=np.int16).tobytes())
+
+    tts = make_tts(monkeypatch, speaker, post_response)
+
+    def synthesize(text):
+        try:
+            results.append(tts.synthesize_pcm(text))
+        except Exception as e:
+            errors.append(e)
+
+    first_thread = threading.Thread(target=synthesize, args=("first",), daemon=True)
+    second_thread = threading.Thread(target=synthesize, args=("second",), daemon=True)
+
+    first_thread.start()
+    assert first_synthesis_started.wait(timeout=2)
+    second_thread.start()
+
+    assert second_synthesis_started.wait(timeout=0.1) is False
+    assert post_calls == ["first"]
+
+    release_first_synthesis.set()
+    first_thread.join(timeout=2)
+    second_thread.join(timeout=2)
+
+    assert first_thread.is_alive() is False
+    assert second_thread.is_alive() is False
+    assert errors == []
+    assert len(results) == 2
+    assert post_calls == ["first", "second"]
