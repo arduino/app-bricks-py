@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import threading
+from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
@@ -13,6 +14,11 @@ from arduino.app_internal.core import resolve_address, get_brick_config, get_bri
 from arduino.app_utils import brick, Logger
 
 logger = Logger("TextToSpeech")
+
+
+@dataclass(eq=False)
+class _SpeechSession:
+    cancelled: threading.Event
 
 
 @brick
@@ -93,6 +99,9 @@ class TextToSpeech:
 
         # Limit concurrency
         self._session_semaphore = threading.Semaphore(self.max_concurrent_syntheses)
+        self._active_sessions_lock = threading.Lock()
+        self._active_sessions: set[_SpeechSession] = set()
+        self._playback_lock = threading.Lock()
 
     def start(self):
         """Start the TextToSpeech brick by initializing the speaker."""
@@ -100,7 +109,21 @@ class TextToSpeech:
 
     def stop(self):
         """Stop the TextToSpeech brick by stopping the speaker."""
+        self.cancel()
         self._speaker.stop()
+
+    def cancel(self):
+        """Cancel active speech playback, if any, without stopping the speaker."""
+        with self._active_sessions_lock:
+            active_sessions = tuple(self._active_sessions)
+
+        if not active_sessions:
+            logger.debug("No active speech session to cancel")
+            return
+
+        logger.debug(f"Cancelling {len(active_sessions)} speech session(s)")
+        for session in active_sessions:
+            session.cancelled.set()
 
     def speak(self, text: str):
         """
@@ -113,9 +136,26 @@ class TextToSpeech:
             ValueError: If the specified language is not supported.
             RuntimeError: If the synthesis fails or maximum concurrency is reached.
         """
-        audio_bytes = self.synthesize_pcm(text, language=self._selected_language)
-        audio_array = np.frombuffer(audio_bytes, dtype=np.int16)  # melo-tts uses 16-bit PCM
-        self._speaker.play_pcm(audio_array)
+        session = _SpeechSession(cancelled=threading.Event())
+        with self._active_sessions_lock:
+            self._active_sessions.add(session)
+
+        try:
+            audio_bytes = self.synthesize_pcm(text, language=self._selected_language)
+            if session.cancelled.is_set():
+                logger.debug("Speech session cancelled before playback")
+                return
+
+            audio_array = np.frombuffer(audio_bytes, dtype=np.int16)  # melo-tts uses 16-bit PCM
+            with self._playback_lock:
+                if session.cancelled.is_set():
+                    logger.debug("Speech session cancelled before playback")
+                    return
+                self._play_pcm(audio_array, session.cancelled)
+        finally:
+            session.cancelled.set()
+            with self._active_sessions_lock:
+                self._active_sessions.discard(session)
 
     def synthesize_wav(self, text: str) -> bytes:
         """
@@ -196,3 +236,22 @@ class TextToSpeech:
 
         finally:
             self._session_semaphore.release()
+
+    def _play_pcm(self, pcm_audio: np.ndarray, cancelled: threading.Event) -> None:
+        if pcm_audio is None or len(pcm_audio) == 0:
+            raise ValueError("Audio data cannot be empty")
+
+        if pcm_audio.dtype != self._speaker.format:
+            raise ValueError(f"Audio data with dtype {pcm_audio.dtype} does not match expected {self._speaker.format}")
+
+        offset = 0
+        total_samples = len(pcm_audio)
+        while offset < total_samples:
+            if cancelled.is_set():
+                logger.debug("Speech playback cancelled")
+                return
+
+            chunk_size = min(self._speaker.buffer_size * self._speaker.channels, total_samples - offset)
+            chunk = pcm_audio[offset : offset + chunk_size]
+            self._speaker.play(chunk)
+            offset += chunk_size
