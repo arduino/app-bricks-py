@@ -31,6 +31,7 @@ class Leds:
         >>> Leds.set_led1_color(True, False, True)  # LED1 shows magenta
         >>> Leds.set_led2_color(False, True, False)  # LED2 shows green
     """
+
     _led_ids = [1, 2]  # Supported LED IDs (Led 3 and 4 can't be controlled directly by MPU but only by MCU via Bridge)
 
     _led1_brightness_files_legacy = [
