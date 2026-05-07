@@ -37,11 +37,34 @@ def main():
     parser = argparse.ArgumentParser(description="Download an Hugging Face model via HF download API")
     parser.add_argument(
         "--model-key",
-        required=True,
         type=str,
         metavar="KEY",
         help="model key (e.g. llamacpp:unsloth/gemma-4-E4B-it-GGUF:Q4_0:BF16). "
         "The format is: <model_type>:<repo_id>:<quantization>:<optional mmproj quantization>.",
+    )
+    parser.add_argument(
+        "--model-repo-id",
+        type=str,
+        metavar="KEY",
+        help="model repository ID (e.g. llamacpp:unsloth/gemma-4-E4B-it-GGUF). Only used if --model-key is not provided.",
+    )
+    parser.add_argument(
+        "--model-repo-id",
+        type=str,
+        metavar="KEY",
+        help="model repository ID (e.g. llamacpp:unsloth/gemma-4-E4B-it-GGUF). Only used if --model-key is not provided.",
+    )
+    parser.add_argument(
+        "--model-name",
+        type=str,
+        metavar="KEY",
+        help="model name (e.g. gemma-4-E2B-it-Q4_0.gguf). Only used if --model-key is not provided.",
+    )
+    parser.add_argument(
+        "--model-mmproj-name",
+        type=str,
+        metavar="KEY",
+        help="model mmproj name (e.g. mmproj-F16.gguf). Only used if --model-key is not provided.",
     )
     parser.add_argument(
         "--output-dir",
@@ -62,21 +85,44 @@ def main():
     )
 
     args = parser.parse_args()
-    model_type, repo_id, quantization, *mmproj_quantization = args.model_key.split(":")
-    if repo_id == "":
-        raise ValueError("repo_id cannot be empty")
-    if quantization == "":
-        raise ValueError("quantization cannot be empty")
 
-    print(f"Starting download for model: {args.model_key}")
+    allow_pattern = None
+    mmproj_allow_pattern = None
+    if args.model_key and args.model_key != "":
+        model_type, repo_id, quantization, *mmproj_quantization = args.model_key.split(":")
+        if repo_id == "":
+            raise ValueError("repo_id cannot be empty")
+        if quantization == "":
+            raise ValueError("quantization cannot be empty")
 
-    if args.verbose:
-        print(f"Downloading model: {args.model_key}")
-        print(f"Model type: {model_type}")
-        print(f"Repository ID: {repo_id}")
-        print(f"Quantization: {quantization}")
-        if mmproj_quantization:
-            print(f"MMProj Quantization: {mmproj_quantization[0]}")
+        print(f"Starting download for model: {args.model_key}")
+
+        if args.verbose:
+            print(f"Downloading model: {args.model_key}")
+            print(f"Model type: {model_type}")
+            print(f"Repository ID: {repo_id}")
+            print(f"Quantization: {quantization}")
+            if mmproj_quantization:
+                print(f"MMProj Quantization: {mmproj_quantization[0]}")
+
+        allow_pattern = f"*{quantization}*.gguf"
+        mmproj_allow_pattern = f"*mmproj*{mmproj_quantization[0]}*.gguf" if mmproj_quantization else None
+    else:
+        if not args.model_repo_id or not args.model_name:
+            raise ValueError("If --model-key is not provided, both --model-repo-id and --model-name must be specified")
+
+        repo_id = args.model_repo_id
+
+        allow_pattern = args.model_name
+        if allow_pattern == "":
+            raise ValueError("model name cannot be empty")
+        if not allow_pattern.contains("*") and not allow_pattern.endswith(".gguf"):
+            allow_pattern = f"*{allow_pattern}*"
+
+        if args.model_mmproj_name and args.model_mmproj_name != "":
+            mmproj_allow_pattern = args.model_mmproj_name
+            if not mmproj_allow_pattern.contains("*") and not mmproj_allow_pattern.endswith(".gguf"):
+                mmproj_allow_pattern = f"*{mmproj_allow_pattern}*"
 
     if args.hf_token and args.hf_token != "":
         os.environ["HF_HUB_TOKEN"] = args.hf_token
@@ -86,11 +132,11 @@ def main():
     os.makedirs(output_dir, exist_ok=True)
 
     # Download the model using Hugging Face API
-    print(f"Downloading model from Hugging Face repository: {repo_id} with quantization: {quantization}")
-    snapshot_download(repo_id=repo_id, allow_patterns=f"*{quantization}*.gguf", ignore_patterns=["*mmproj*"], local_dir=output_dir)
+    print(f"Downloading model from Hugging Face repository: {repo_id} with allow pattern: {allow_pattern}")
+    snapshot_download(repo_id=repo_id, allow_patterns=[allow_pattern], ignore_patterns=["*mmproj*"], local_dir=output_dir)
 
-    if mmproj_quantization and len(mmproj_quantization) != 0 and mmproj_quantization[0] != "":
-        snapshot_download(repo_id=repo_id, allow_patterns=f"*mmproj*{mmproj_quantization[0]}*.gguf", local_dir=output_dir)
+    if mmproj_allow_pattern:
+        snapshot_download(repo_id=repo_id, allow_patterns=[mmproj_allow_pattern], local_dir=output_dir)
 
     # Generate models.ini file
     generate_models_ini(Path(args.output_dir))
