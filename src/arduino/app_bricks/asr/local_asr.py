@@ -663,22 +663,25 @@ class AutomaticSpeechRecognition:
                             break
 
                     finally:
-                        session_info.cancelled.set()
+                        for task in (flush_task, send_task):
+                            if task and not task.done():
+                                task.cancel()
 
-                        if flush_task and not flush_task.done():
-                            flush_task.cancel()
-                        await asyncio.gather(flush_task, return_exceptions=True)
+                        await asyncio.gather(flush_task, send_task, return_exceptions=True)
 
-                        # Server protocol: close session BEFORE tearing down WebSockets
                         try:
                             await asyncio.to_thread(self._close_transcription_session, session_id)
                         except Exception as e:
                             logger.error(f"Failed to close session {session_id} during teardown: {e}")
 
-                        for task in (send_task, receive_task):
+                        session_info.cancelled.set()
+
+                        for task in (receive_task, drain_write_ws_task):
                             if task and not task.done():
                                 task.cancel()
-                        await asyncio.gather(send_task, receive_task, return_exceptions=True)
+
+                        await asyncio.gather(receive_task, drain_write_ws_task, return_exceptions=True)
+
             except OSError as e:
                 raise ASRUnavailableError(f"Failed to connect to inference service: {e}") from None
 
