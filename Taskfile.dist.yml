@@ -110,7 +110,7 @@ tasks:
     cmds:
       - |
         git ls-files |
-        grep -Ev "(^|/)(docs|examples-internal|tools)/|\.(md|txt|json|yml|yaml|toml|gitignore|gitmodules|in|ini|eim)$" |
+        grep -Ev "(^|/)(docs|examples-internal|tools)/|\.(md|txt|json|yml|yaml|toml|gitignore|dockerignore|gitmodules|in|ini|eim|lock)$" |
         sed 's/ /\\ /g' |
         xargs reuse annotate -r --skip-unrecognized --copyright-prefix 'spdx-string-c' --copyright 'Arduino s.r.l. and/or its affiliated companies' --exclude-year --license 'MPL-2.0'
       - reuse download --all
@@ -122,12 +122,14 @@ tasks:
           fi
           rm -rf "$licenses_dir"
         fi
-        # Strip trailing whitespace from license files.
-        # The upstream SPDX license texts (fetched by `reuse download`)
-        # contain stray trailing spaces that break license parsers such
-        # as `licensed`.  `sed -i` is POSIX-portable and available on
-        # every GitHub Actions runner.
-        find . -maxdepth 1 -name 'LICENSE*' -type f -exec sed -i 's/[[:space:]]*$//' {} +
+      # Strip trailing whitespace from license files.
+      # The upstream SPDX license texts (fetched by `reuse download`)
+      # contain stray trailing spaces that break license parsers such
+      # as `licensed`.
+      - cmd: find . -maxdepth 1 -name 'LICENSE*' -type f -exec sed -i '' 's/[[:space:]]*$//' {} +
+        platforms: [darwin]
+      - cmd: find . -maxdepth 1 -name 'LICENSE*' -type f -exec sed -i 's/[[:space:]]*$//' {} +
+        platforms: [linux, windows]
 
   license:deps:
     desc: Check and cache dependency licenses (licensed, via Docker)
