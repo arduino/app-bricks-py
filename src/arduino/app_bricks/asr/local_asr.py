@@ -356,7 +356,7 @@ class AutomaticSpeechRecognition:
         logger.debug(f"Closing transcription session {session_id}")
         url = f"{self.api_base_url}/transcriptions/close"
         try:
-            response = requests.post(url, json={"session_id": session_id}, timeout=5)
+            response = requests.post(url, json={"session_id": session_id}, timeout=20)
         except Exception:
             raise
         if response.status_code != 200:
@@ -628,15 +628,17 @@ class AutomaticSpeechRecognition:
                 async with (
                     websockets.connect(
                         self.ws_url,
-                        ping_interval=3,
-                        ping_timeout=2,
-                        close_timeout=1,
+                        ping_interval=20,
+                        ping_timeout=20,
+                        close_timeout=3,
+                        max_queue=None,
                     ) as write_ws,
                     websockets.connect(
                         self.ws_url,
-                        ping_interval=3,
-                        ping_timeout=2,
-                        close_timeout=1,
+                        ping_interval=20,
+                        ping_timeout=20,
+                        close_timeout=3,
+                        max_queue=None,
                     ) as read_ws,
                 ):
                     await self._await_connection_established(write_ws, "write_ws")
