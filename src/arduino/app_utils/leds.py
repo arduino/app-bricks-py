@@ -45,12 +45,12 @@ class Leds:
         "/sys/class/leds/blue:bt/brightness",
     ]
 
-    _led1_brightness_file = [
+    _led1_brightness_files = [
         "/dev/leds/builtin/led1_r/brightness",
         "/dev/leds/builtin/led1_g/brightness",
         "/dev/leds/builtin/led1_b/brightness",
     ]
-    _led2_brightness_file = [
+    _led2_brightness_files = [
         "/dev/leds/builtin/led2_r/brightness",
         "/dev/leds/builtin/led2_g/brightness",
         "/dev/leds/builtin/led2_b/brightness",
@@ -62,16 +62,16 @@ class Leds:
             with open(led_file, "w") as f:
                 f.write(f"{int(value)}\n")
         except Exception as e:
-            logger.error(f"Error writing to {led_file}: {e}")
+            logger.exception(f"Error writing to {led_file}: {e}")
 
     @staticmethod
     def set_led1_color(r: bool, g: bool, b: bool):
         # check if /dev/leds/builtin/led1_r exists, if yes use compatible files, otherwise use legacy files
-        if all([os.path.exists(f) for f in Leds._led1_brightness_file]):
-            Leds._write_led_file(Leds._led1_brightness_file[0], r)
-            Leds._write_led_file(Leds._led1_brightness_file[1], g)
-            Leds._write_led_file(Leds._led1_brightness_file[2], b)
-        elif all([os.path.exists(f) for f in Leds._led1_brightness_files_legacy]):
+        if all(os.path.exists(f) for f in Leds._led1_brightness_files):
+            Leds._write_led_file(Leds._led1_brightness_files[0], r)
+            Leds._write_led_file(Leds._led1_brightness_files[1], g)
+            Leds._write_led_file(Leds._led1_brightness_files[2], b)
+        elif all(os.path.exists(f) for f in Leds._led1_brightness_files_legacy):
             Leds._write_led_file(Leds._led1_brightness_files_legacy[0], r)
             Leds._write_led_file(Leds._led1_brightness_files_legacy[1], g)
             Leds._write_led_file(Leds._led1_brightness_files_legacy[2], b)
@@ -81,11 +81,11 @@ class Leds:
     @staticmethod
     def set_led2_color(r: bool, g: bool, b: bool):
         # check if /dev/leds/builtin/led2_r exists, if yes use compatible files, otherwise use legacy files
-        if all([os.path.exists(f) for f in Leds._led2_brightness_file]):
-            Leds._write_led_file(Leds._led2_brightness_file[0], r)
-            Leds._write_led_file(Leds._led2_brightness_file[1], g)
-            Leds._write_led_file(Leds._led2_brightness_file[2], b)
-        elif all([os.path.exists(f) for f in Leds._led2_brightness_files_legacy]):
+        if all(os.path.exists(f) for f in Leds._led2_brightness_files):
+            Leds._write_led_file(Leds._led2_brightness_files[0], r)
+            Leds._write_led_file(Leds._led2_brightness_files[1], g)
+            Leds._write_led_file(Leds._led2_brightness_files[2], b)
+        elif all(os.path.exists(f) for f in Leds._led2_brightness_files_legacy):
             Leds._write_led_file(Leds._led2_brightness_files_legacy[0], r)
             Leds._write_led_file(Leds._led2_brightness_files_legacy[1], g)
             Leds._write_led_file(Leds._led2_brightness_files_legacy[2], b)
