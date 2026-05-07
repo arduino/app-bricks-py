@@ -578,6 +578,39 @@ class AutomaticSpeechRecognition:
                 pass
             logger.debug(f"Reader thread exited for session {session_id}")
 
+    async def _drain_websocket(self, websocket: websockets.ClientConnection, session_info: SessionInfo, label: str) -> None:
+        session_id = session_info.session_id
+
+        try:
+            while not self._stop_worker.is_set() and not session_info.cancelled.is_set():
+                try:
+                    message = await asyncio.wait_for(websocket.recv(), timeout=1.0)
+                except asyncio.TimeoutError:
+                    continue
+
+                try:
+                    data = json.loads(message)
+                except json.JSONDecodeError:
+                    logger.debug(f"Drained non-JSON WebSocket message from {label}: {message}")
+                    continue
+
+                message_session_id = data.get("session_id")
+                if message_session_id is not None and message_session_id != session_id:
+                    logger.debug(
+                        f"Drained WebSocket message from {label} for session {message_session_id}; current session is {session_id}. Message: {data}"
+                    )
+                    continue
+
+                logger.debug(f"Drained WebSocket message from {label} for session {session_id}: {data}")
+
+        except asyncio.CancelledError:
+            logger.debug(f"Drain task cancelled for {label}, session {session_id}")
+            raise
+        except ConnectionClosedOK:
+            logger.debug(f"WebSocket {label} closed as expected while draining for session {session_id}")
+        except ConnectionClosed as e:
+            logger.debug(f"WebSocket {label} closed while draining for session {session_id}: {e}")
+
     async def _transcription_session_handler(self, session_info: SessionInfo):
         session_id = session_info.session_id
 
@@ -611,12 +644,13 @@ class AutomaticSpeechRecognition:
 
                     send_task = asyncio.create_task(self._send_pcm_stream(websocket=write_ws, session_info=session_info))
                     receive_task = asyncio.create_task(self._receive_transcription(websocket=read_ws, session_info=session_info))
+                    drain_write_ws_task = asyncio.create_task(self._drain_websocket(write_ws, session_info, "write_ws"))
                     flush_task = asyncio.create_task(self._periodic_flush(session_info))
 
                     try:
                         while not self._stop_worker.is_set() and not session_info.cancelled.is_set():
                             done, _ = await asyncio.wait(
-                                {send_task, receive_task},
+                                {send_task, receive_task, drain_write_ws_task},
                                 timeout=0.1,
                                 return_when=asyncio.FIRST_COMPLETED,
                             )
