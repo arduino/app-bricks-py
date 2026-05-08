@@ -9,6 +9,7 @@ import threading
 import time
 import websockets
 import asyncio
+from urllib.parse import urlparse, parse_qs
 from typing import Callable, Literal
 from concurrent.futures import CancelledError, ThreadPoolExecutor, Future
 
@@ -24,11 +25,22 @@ class RemoteSensor:
     """
     RemoteSensor implementation that hosts a WebSocket server.
 
-    This sensor acts as a WebSocket server that receives telemetry data from connected
-    clients. Only one client can be connected at a time.
+    This sensor acts as a WebSocket server that receives telemetry data from a
+    connected client. Only one client can be connected at a time.
 
-    Clients can send data in any format, provided it's serialized in the binary format
-    supported by BPPCodec.
+    Communication uses the BPP (Binary Peripheral Protocol) in three security modes:
+    - Security disabled (secret=None) - BPP with no authentication
+    - Authenticated (secret + encrypt=False) - BPP with HMAC-SHA256
+    - Authenticated + Encrypted (secret + encrypt=True) - BPP with ChaCha20-Poly1305
+
+    By default, all modes use BPP framing. When security is disabled (secret=None),
+    clients can opt out of BPP by connecting with the "raw=true" URL query parameter,
+    allowing them to send raw bytes directly without BPP wrapping. This parameter
+    is silently ignored when security is enabled.
+
+    When connecting, clients can specify a "client_name" parameter in the URL query string
+    to identify themselves. This name will be sanitized to allow only alphanumeric chars,
+    whitespace, hyphens, and underscores, and limit its length to 64 characters.
 
     Each message is handed to the registered callback via the on_datapoint method.
     """
@@ -39,7 +51,7 @@ class RemoteSensor:
         timeout: int = 3,
         certs_dir_path: str = "/app/certs",
         use_tls: bool = False,
-        secret: str = "",
+        secret: str | None = None,
         encrypt: bool = False,
         auto_reconnect: bool = True,
     ):
@@ -53,17 +65,24 @@ class RemoteSensor:
             use_tls (bool): Enable TLS for secure connections. If True, 'encrypt' will
                 be ignored. Use this for transport-level security with clients that can
                 accept self-signed certificates or when supplying your own certificates.
-            secret (str): Secret key for authentication/encryption (empty = security disabled)
-            encrypt (bool): Enable encryption (requires 'secret').
+            secret (str | None): Pre-shared secret key used for HMAC-SHA256
+                authentication, or to derive the ChaCha20-Poly1305 key when
+                encrypt is True. None disables security. Default: None.
+            encrypt (bool): Enable ChaCha20-Poly1305 encryption. Requires a
+                non-None secret; raises RuntimeError otherwise. Default: False.
             auto_reconnect (bool): Enable automatic reconnection on failure
         """
+        if encrypt and secret is None:
+            raise RuntimeError("Encryption requires a secret key.")
+
         if use_tls and encrypt:
             logger.warning("Encryption is redundant over TLS connections, disabling encryption.")
             encrypt = False
 
-        self.codec = BPPCodec(secret, encrypt)
+        self.codec = BPPCodec(secret or "", encrypt)
         self.secret = secret
         self.encrypt = encrypt
+        self._client_raw = False
         self.logger = logger
         self.name = self.__class__.__name__
 
@@ -100,6 +119,7 @@ class RemoteSensor:
 
         self._status: Literal["disconnected", "connected", "streaming", "paused"] = "disconnected"
         self._is_started = False
+        self._sensor_lock = threading.Lock()
         self._server = None
         self._loop = None
         self._server_thread = None
@@ -113,19 +133,19 @@ class RemoteSensor:
         self._event_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="RemoteSensorCallbackRunner")
 
     @property
-    def url(self) -> str:
-        """Return the WebSocket server address."""
-        return f"{self.protocol}://{self.ip}:{self.port}"
-
-    @property
     def status(self) -> Literal["disconnected", "connected", "streaming", "paused"]:
         """Read-only property for camera status."""
         return self._status
 
     @property
+    def url(self) -> str:
+        """Return the WebSocket server address."""
+        return f"{self.protocol}://{self.ip}:{self.port}"
+
+    @property
     def security_mode(self) -> str:
         """Return current security mode for logging/debugging."""
-        if not self.secret:
+        if self.secret is None:
             return "none"
         elif self.encrypt:
             return "encrypted (ChaCha20-Poly1305)"
@@ -134,32 +154,33 @@ class RemoteSensor:
 
     def start(self) -> None:
         """Start the WebSocket server."""
-        self.logger.info("Starting remote sensor...")
+        with self._sensor_lock:
+            self.logger.info("Starting remote sensor...")
 
-        attempt = 0
-        while not self.is_started():
-            try:
-                self._open_sensor()
-                self._is_started = True
-                self.logger.info(f"Successfully started {self.name}")
-            except RemoteSensorOpenError as e:  # We consider this a fatal error so we don't retry
-                self.logger.error(f"Fatal error while starting {self.name}: {e}")
-                raise
-            except Exception as e:
-                if not self.auto_reconnect:
+            attempt = 0
+            while not self.is_started():
+                try:
+                    self._open_sensor()
+                    self._is_started = True
+                    self.logger.info(f"Successfully started {self.name}")
+                except RemoteSensorOpenError as e:  # We consider this a fatal error so we don't retry
+                    self.logger.error(f"Fatal error while starting {self.name}: {e}")
                     raise
-                attempt += 1
-                if attempt >= self.first_connection_max_retries:
-                    raise RemoteSensorOpenError(
-                        f"Failed to start remote sensor after {self.first_connection_max_retries} attempts, last error is: {e}"
-                    )
+                except Exception as e:
+                    if not self.auto_reconnect:
+                        raise
+                    attempt += 1
+                    if attempt >= self.first_connection_max_retries:
+                        raise RemoteSensorOpenError(
+                            f"Failed to start remote sensor {self.name} after {self.first_connection_max_retries} attempts, last error is: {e}"
+                        )
 
-                delay = min(self.auto_reconnect_delay * (2 ** (attempt - 1)), 60)  # Exponential backoff
-                self.logger.warning(
-                    f"Failed attempt {attempt}/{self.first_connection_max_retries} at starting remote sensor {self.name}: {e}. "
-                    f"Retrying in {delay:.1f}s..."
-                )
-                time.sleep(delay)
+                    delay = min(self.auto_reconnect_delay * (2 ** (attempt - 1)), 60)  # Exponential backoff
+                    self.logger.warning(
+                        f"Failed attempt {attempt}/{self.first_connection_max_retries} at starting remote sensor {self.name}: {e}. "
+                        f"Retrying in {delay:.1f}s..."
+                    )
+                    time.sleep(delay)
 
     def on_datapoint(self, callback: Callable[[bytes], None]) -> None:
         """
@@ -216,18 +237,19 @@ class RemoteSensor:
 
     def stop(self) -> None:
         """Stop the WebSocket server."""
-        if not self.is_started():
-            return
+        with self._sensor_lock:
+            if not self.is_started():
+                return
 
-        self.logger.info("Stopping remote sensor...")
+            self.logger.info("Stopping remote sensor...")
 
-        try:
-            self._close_sensor()
-            self._event_executor.shutdown()
-            self._is_started = False
-            self.logger.info(f"Successfully stopped {self.name}")
-        except Exception as e:
-            self.logger.warning(f"Failed to stop remote sensor: {e}")
+            try:
+                self._close_sensor()
+                self._event_executor.shutdown()
+                self._is_started = False
+                self.logger.info(f"Successfully stopped {self.name}")
+            except Exception as e:
+                self.logger.warning(f"Failed to stop remote sensor: {e}")
 
     def _open_sensor(self) -> None:
         """Start the WebSocket server."""
@@ -291,6 +313,31 @@ class RemoteSensor:
 
     async def _ws_handler(self, conn: websockets.ServerConnection) -> None:
         """Handle a connected WebSocket client. Only one client allowed at a time."""
+        # Extract URL parameters: client_name and raw mode opt-in
+        client_name = "Unknown"
+        client_raw = False
+        if conn.request:
+            try:
+                parsed_path = urlparse(conn.request.path)
+                query_params = parse_qs(parsed_path.query)
+                if "client_name" in query_params:
+                    raw_name = query_params["client_name"][0]
+                    # Sanitize: only allow alphanumeric, spaces, hyphens, underscores, and limit length
+                    sanitized = "".join(c for c in raw_name if c.isalnum() or c in " -_")[:64]
+                    if sanitized:
+                        client_name = sanitized
+                # Allow raw (no BPP) mode only when security is disabled
+                if "raw" in query_params and (not query_params["raw"] or query_params["raw"][0].lower() != "false"):
+                    if self.secret is None:
+                        client_raw = True
+                    else:
+                        self.logger.warning("Client requested raw mode but security is enabled, ignoring.")
+            except Exception as e:
+                self.logger.debug(f"Failed to extract URL parameters: {e}")
+            finally:
+                self.name = client_name
+                self._client_raw = client_raw
+
         client_addr = f"{conn.remote_address[0]}:{conn.remote_address[1]}"
 
         async with self._client_lock:
@@ -308,7 +355,7 @@ class RemoteSensor:
             # Accept the client
             self._client = conn
 
-        self._set_status("connected", {"client_address": client_addr})
+        self._set_status("connected", {"client_address": client_addr, "client_name": client_name})
         self.logger.debug(f"Client connected: {client_addr}")
 
         try:
@@ -342,7 +389,8 @@ class RemoteSensor:
             async with self._client_lock:
                 if self._client == conn:
                     self._client = None
-                    self._set_status("disconnected", {"client_address": client_addr})
+                    self._client_raw = False
+                    self._set_status("disconnected", {"client_address": client_addr, "client_name": client_name})
                     self.logger.debug(f"Client removed: {client_addr}")
 
     def _set_status(self, new_status: Literal["disconnected", "connected", "streaming", "paused"], data: dict | None = None) -> None:
@@ -382,14 +430,8 @@ class RemoteSensor:
             if self._on_status_changed_cb is not None:
                 self._event_executor.submit(self._on_status_changed_cb, new_status, data if data is not None else {})
 
-    def _parse_message(self, message: str | bytes) -> bytes | None:
-        """
-        Parse WebSocket message to extract datapoint(s) based on configured format.
-
-        Returns:
-            For json/binary: Single dict or None
-            For csv: Single dict, list of dicts (if multiple lines), or None
-        """
+    def _parse_message(self, message: websockets.Data) -> bytes | None:
+        """Parse WebSocket message to extract a datapoint."""
         if isinstance(message, str):
             try:
                 message = base64.b64decode(message)
@@ -397,12 +439,14 @@ class RemoteSensor:
                 self.logger.warning(f"Failed to decode string message using base64: {e}")
                 return None
 
-        decoded = self.codec.decode(message)
-        if decoded is None:
-            self.logger.warning("Failed to decode message")
-            return None
+        if not self._client_raw:
+            decoded = self.codec.decode(message)
+            if decoded is None:
+                self.logger.warning("Failed to decode message")
+                return None
+            message = decoded
 
-        return decoded
+        return message
 
     def _close_sensor(self) -> None:
         """Stop the WebSocket server."""
@@ -444,7 +488,7 @@ class RemoteSensor:
         if isinstance(message, str):
             message = message.encode()
 
-        encoded = self.codec.encode(message)
+        data = message if self._client_raw else self.codec.encode(message)
 
         # Keep a ref to current client to avoid locking
         client = client or self._client
@@ -452,7 +496,7 @@ class RemoteSensor:
             raise ConnectionError("No client connected")
 
         try:
-            await client.send(encoded)
+            await client.send(data)
         except websockets.ConnectionClosedOK:
             self.logger.warning("Client has already closed the connection")
         except websockets.ConnectionClosedError as e:

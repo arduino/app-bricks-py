@@ -19,7 +19,7 @@ def test_remote_sensor_initialization():
     assert sensor.url == "ws://0.0.0.0:8080"
     assert sensor.port == 8080
     assert sensor.timeout == 3
-    assert sensor.secret == ""
+    assert sensor.secret is None
     assert sensor.encrypt is False
     assert sensor.auto_reconnect is True
     assert "none" in sensor.security_mode

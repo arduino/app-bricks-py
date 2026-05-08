@@ -15,19 +15,7 @@ class RemoteSensorOpenError(RemoteSensorError):
     pass
 
 
-class RemoteSensorReadError(RemoteSensorError):
-    """Exception raised when reading from remote sensor fails."""
-
-    pass
-
-
 class RemoteSensorConfigError(RemoteSensorError):
     """Exception raised when remote sensor configuration is invalid."""
-
-    pass
-
-
-class RemoteSensorDisconnectedError(RemoteSensorError):
-    """Exception raised when the remote sensor client is disconnected."""
 
     pass
