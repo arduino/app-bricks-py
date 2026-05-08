@@ -39,6 +39,19 @@ def _simple_progress_bar(downloaded: int, total: int, width: int = 40) -> str:
     return f"[{bar}] {pct * 100:.1f}%  ({downloaded}/{total} B)"
 
 
+def emit_json_progress(event_type: str, description: str, current: int, total: int, unit: str):
+    pct = round((current / total) * 100, 2) if total else 0
+    data = {
+        "event": event_type,
+        "description": description,
+        "current": current,
+        "total": total,
+        "unit": unit,
+        "percentage": f"{pct}%",
+    }
+    print(json.dumps(data), flush=True)
+
+
 def download(url: str, output_dir: str, output_name: str | None, json_progress: bool):
     with requests.get(url, stream=True, timeout=60) as response:
         response.raise_for_status()
@@ -53,6 +66,7 @@ def download(url: str, output_dir: str, output_name: str | None, json_progress: 
         downloaded = 0
 
         if json_progress:
+            emit_json_progress("start", filename, downloaded, total, "B")
             with open(output_path, "wb") as f:
                 for chunk in response.iter_content(chunk_size=CHUNK_SIZE):
                     if not chunk:
@@ -60,9 +74,11 @@ def download(url: str, output_dir: str, output_name: str | None, json_progress: 
                     f.write(chunk)
                     downloaded += len(chunk)
                     pct = int(downloaded / total * 100) if total > 0 else -1
-                    record = {"progress": f"{pct}%"} if pct >= 0 else {"downloaded_bytes": downloaded}
-                    print(json.dumps(record), flush=True)
-            print(json.dumps({"progress": "100%", "file": output_path}), flush=True)
+                    if pct >= 0:
+                        emit_json_progress("update", filename, downloaded, total, "B")
+                    else:
+                        emit_json_progress("update", filename, downloaded, total, "B")
+            emit_json_progress("complete", filename, downloaded, total, "B")
         else:
             try:
                 from tqdm import tqdm
