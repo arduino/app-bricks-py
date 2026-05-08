@@ -669,6 +669,7 @@ class AutomaticSpeechRecognition:
 
                         await asyncio.gather(flush_task, send_task, return_exceptions=True)
 
+                        # Server protocol: close session BEFORE tearing down WebSockets
                         try:
                             await asyncio.to_thread(self._close_transcription_session, session_id)
                         except Exception as e:
