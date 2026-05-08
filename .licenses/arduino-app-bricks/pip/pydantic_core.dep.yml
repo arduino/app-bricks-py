@@ -1,6 +1,6 @@
 ---
 name: pydantic_core
-version: 2.46.3
+version: 2.46.4
 type: pip
 summary: Core functionality for Pydantic validation and serialization
 homepage: https://github.com/pydantic/pydantic
