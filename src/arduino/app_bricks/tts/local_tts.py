@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import re
 import threading
 from dataclasses import dataclass
 from typing import Literal
@@ -14,6 +15,8 @@ from arduino.app_internal.core import resolve_address, get_brick_config, get_bri
 from arduino.app_utils import brick, Logger
 
 logger = Logger("TextToSpeech")
+
+TTS_MAX_BYTES = 1024
 
 
 @dataclass(eq=False)
@@ -126,6 +129,7 @@ class TextToSpeech:
     def speak(self, text: str):
         """
         Synthesize speech from text and play it through the provided speaker.
+        Long text is split into 1024-byte chunks before synthesis.
 
         Args:
             text (str): The text to be synthesized into speech.
@@ -134,28 +138,58 @@ class TextToSpeech:
             ValueError: If the specified language is not supported.
             RuntimeError: If the synthesis fails.
         """
+        chunks = self.chunk_text(text)
+        if not chunks:
+            return
+
         session = _SpeechSession(cancelled=threading.Event())
         with self._active_sessions_lock:
             self._active_sessions.add(session)
 
         try:
-            audio_bytes = self._synthesize_pcm(text, language=self._selected_language, cancelled=session.cancelled)
-            if audio_bytes is None:
-                return
-            if session.cancelled.is_set():
-                logger.debug("Speech session cancelled before playback")
-                return
-
-            audio_array = np.frombuffer(audio_bytes, dtype=np.int16)  # melo-tts uses 16-bit PCM
             with self._playback_lock:
-                if session.cancelled.is_set():
-                    logger.debug("Speech session cancelled before playback")
-                    return
-                self._play_pcm(audio_array, session.cancelled)
+                for chunk in chunks:
+                    if session.cancelled.is_set():
+                        logger.debug("Speech session cancelled before synthesis")
+                        return
+
+                    audio_bytes = self._synthesize_pcm(chunk, language=self._selected_language, cancelled=session.cancelled)
+                    if audio_bytes is None:
+                        return
+                    if session.cancelled.is_set():
+                        logger.debug("Speech session cancelled before playback")
+                        return
+
+                    audio_array = np.frombuffer(audio_bytes, dtype=np.int16)  # melo-tts uses 16-bit PCM
+                    self._play_pcm(audio_array, session.cancelled)
         finally:
             session.cancelled.set()
             with self._active_sessions_lock:
                 self._active_sessions.discard(session)
+
+    def chunk_text(self, text: str) -> list[str]:
+        """Split text into chunks accepted by the local TTS service.
+
+        Args:
+            text (str): The input text to be chunked.
+
+        Returns:
+            list[str]: A list of text chunks.
+        """
+        text = text.strip()
+        chunks = []
+
+        while len(text.encode("utf-8")) > TTS_MAX_BYTES:
+            window = text.encode("utf-8")[:TTS_MAX_BYTES].decode("utf-8", errors="ignore")
+            match = re.search(r"[.!?][^.!?]*$", window)
+            cut = match.start() + 1 if match else len(window)
+            chunks.append(text[:cut].strip())
+            text = text[cut:].strip()
+
+        if text:
+            chunks.append(text)
+
+        return chunks
 
     def synthesize_wav(self, text: str) -> bytes:
         """
