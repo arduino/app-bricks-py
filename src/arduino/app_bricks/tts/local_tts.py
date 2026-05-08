@@ -5,8 +5,8 @@
 import re
 import threading
 import time
-from collections.abc import Iterator
-from typing import Literal
+from collections.abc import Generator, Iterator
+from typing import ContextManager, Literal
 
 import numpy as np
 import requests
@@ -26,6 +26,28 @@ class TTSError(Exception):
 
 class TTSBusyError(TTSError):
     """Raised when this TTS instance already has an active speech session."""
+
+
+class SynthesisStream(ContextManager["SynthesisStream"], Iterator[bytes]):
+    """Iterator wrapper that guarantees proper teardown on context exit."""
+
+    def __init__(self, generator: Generator[bytes, None, None]):
+        self._generator = generator
+
+    def __enter__(self) -> "SynthesisStream":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.close()
+
+    def __iter__(self) -> "SynthesisStream":
+        return self
+
+    def __next__(self) -> bytes:
+        return next(self._generator)
+
+    def close(self) -> None:
+        self._generator.close()
 
 
 @brick
@@ -138,15 +160,12 @@ class TextToSpeech:
             TTSBusyError: If this instance already has an active speech session.
             RuntimeError: If the synthesis fails.
         """
-        chunks = self.chunk_text(text)
+        chunks = self._chunk_text(text)
         if not chunks:
             return
 
         if not self._active_session_lock.acquire(blocking=False):
-            raise TTSBusyError(
-                "A speech session is already active on this instance. "
-                "Create a separate TextToSpeech instance for concurrent speech."
-            )
+            raise TTSBusyError("A speech session is already active on this instance. Create a separate TextToSpeech instance for concurrent speech.")
 
         cancelled = threading.Event()
         self._cancelled = cancelled
@@ -170,36 +189,6 @@ class TextToSpeech:
             cancelled.set()
             self._cancelled = None
             self._active_session_lock.release()
-
-    def chunk_text(self, text: str) -> list[str]:
-        """Split text into chunks accepted by the local TTS service.
-
-        Args:
-            text (str): The input text to be chunked.
-
-        Returns:
-            list[str]: A list of text chunks.
-        """
-        started_at = time.perf_counter()
-        input_bytes = len(text.encode("utf-8"))
-
-        text = text.strip()
-        chunks = []
-
-        while len(text.encode("utf-8")) > TTS_MAX_BYTES:
-            window = text.encode("utf-8")[:TTS_MAX_BYTES].decode("utf-8", errors="ignore")
-            match = re.search(r"[.!?][^.!?]*$", window)
-            cut = match.start() + 1 if match else len(window)
-            chunks.append(text[:cut].strip())
-            text = text[cut:].strip()
-
-        if text:
-            chunks.append(text)
-
-        elapsed_ms = (time.perf_counter() - started_at) * 1000
-        logger.debug(f"TTS chunk_text completed in {elapsed_ms:.2f} ms (input_bytes={input_bytes}, text_chunks={len(chunks)})")
-
-        return chunks
 
     def synthesize_wav(self, text: str) -> bytes:
         """
@@ -247,10 +236,10 @@ class TextToSpeech:
             TTSBusyError: If this instance already has an active speech session.
             RuntimeError: If the synthesis fails.
         """
-        audio_bytes = b"".join(self.synthesize_pcm_stream(text, language=language))
-        return audio_bytes
+        with self.synthesize_pcm_stream(text, language=language) as stream:
+            return b"".join(stream)
 
-    def synthesize_pcm_stream(self, text: str, language: Literal["en", "es", "zh"] = "en") -> Iterator[bytes]:
+    def synthesize_pcm_stream(self, text: str, language: Literal["en", "es", "zh"] = "en") -> SynthesisStream:
         """
         Synthesize speech from text and stream PCM audio chunks as they arrive.
 
@@ -258,23 +247,55 @@ class TextToSpeech:
             text (str): The text to be synthesized into speech.
             language (Literal["en", "es", "zh"]): The language of the text.
 
-        Yields:
-            bytes: PCM audio chunks.
+        Returns:
+            SynthesisStream: An iterable/context-manager yielding PCM audio chunks. Use as a
+                ``with`` block to guarantee teardown of the underlying HTTP response and
+                release of the session lock.
 
         Raises:
             ValueError: If the specified language is not supported.
             TTSBusyError: If this instance already has an active speech session.
             RuntimeError: If the synthesis fails.
         """
-        if not self._active_session_lock.acquire(blocking=False):
-            raise TTSBusyError(
-                "A speech session is already active on this instance. "
-                "Create a separate TextToSpeech instance for concurrent speech."
-            )
-        try:
-            yield from self._synthesize_pcm_stream(text, language=language)
-        finally:
-            self._active_session_lock.release()
+        def locked_stream() -> Generator[bytes, None, None]:
+            if not self._active_session_lock.acquire(blocking=False):
+                raise TTSBusyError("A speech session is already active on this instance. Create a separate TextToSpeech instance for concurrent speech.")
+            try:
+                yield from self._synthesize_pcm_stream(text, language=language)
+            finally:
+                self._active_session_lock.release()
+
+        return SynthesisStream(locked_stream())
+
+    def _chunk_text(self, text: str) -> list[str]:
+        """Split text into chunks accepted by the local TTS service.
+
+        Args:
+            text (str): The input text to be chunked.
+
+        Returns:
+            list[str]: A list of text chunks.
+        """
+        started_at = time.perf_counter()
+        input_bytes = len(text.encode("utf-8"))
+
+        text = text.strip()
+        chunks = []
+
+        while len(text.encode("utf-8")) > TTS_MAX_BYTES:
+            window = text.encode("utf-8")[:TTS_MAX_BYTES].decode("utf-8", errors="ignore")
+            match = re.search(r"[.!?][^.!?]*$", window)
+            cut = match.start() + 1 if match else len(window)
+            chunks.append(text[:cut].strip())
+            text = text[cut:].strip()
+
+        if text:
+            chunks.append(text)
+
+        elapsed_ms = (time.perf_counter() - started_at) * 1000
+        logger.debug(f"TTS chunk_text completed in {elapsed_ms:.2f} ms (input_bytes={input_bytes}, text_chunks={len(chunks)})")
+
+        return chunks
 
     def _synthesize_pcm_stream(
         self,

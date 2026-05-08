@@ -110,7 +110,7 @@ def test_chunk_text_splits_on_sentence_boundary(monkeypatch):
     tts = make_tts(monkeypatch, speaker, lambda url, json, **kwargs: FakeResponse(content=np.arange(4, dtype=np.int16).tobytes()))
     text = f"{'a' * 1000}. {'b' * 1000}"
 
-    chunks = tts.chunk_text(text)
+    chunks = tts._chunk_text(text)
 
     assert chunks == [f"{'a' * 1000}.", "b" * 1000]
     assert all(len(chunk.encode("utf-8")) <= TTS_MAX_BYTES for chunk in chunks)
@@ -120,7 +120,7 @@ def test_chunk_text_preserves_utf8_boundaries(monkeypatch):
     speaker = BlockingSpeaker()
     tts = make_tts(monkeypatch, speaker, lambda url, json, **kwargs: FakeResponse(content=np.arange(4, dtype=np.int16).tobytes()))
 
-    chunks = tts.chunk_text("é" * 600)
+    chunks = tts._chunk_text("é" * 600)
 
     assert chunks == ["é" * 512, "é" * 88]
     assert all(len(chunk.encode("utf-8")) <= TTS_MAX_BYTES for chunk in chunks)
@@ -139,7 +139,7 @@ def test_speak_synthesizes_text_chunks(monkeypatch):
         return FakeResponse(content=np.arange(4, dtype=np.int16).tobytes())
 
     tts = make_tts(monkeypatch, speaker, post_response)
-    expected_chunks = tts.chunk_text(text)
+    expected_chunks = tts._chunk_text(text)
 
     tts.speak(text)
 
