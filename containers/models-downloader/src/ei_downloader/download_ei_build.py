@@ -21,7 +21,7 @@ import requests
 
 
 BASE_URL = "https://studio.edgeimpulse.com/v1/api/{project_id}/deployment/download?type={target}&modelType={quantization}&impulseId={impulse_id}"
-CHUNK_SIZE = 8192
+CHUNK_SIZE = 1024 * 1024  # 1 MB
 
 
 def _filename_from_response(response: requests.Response, fallback: str) -> str:

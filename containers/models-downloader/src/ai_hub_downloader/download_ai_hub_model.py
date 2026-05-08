@@ -13,7 +13,7 @@ import zipfile
 import requests
 
 
-CHUNK_SIZE = 8192
+CHUNK_SIZE = 1024 * 1024  # 1 MB
 
 
 def _filename_from_response(response: requests.Response, fallback: str) -> str:
@@ -185,7 +185,10 @@ def main():
         sys.exit(1)
 
     try:
-        print(f"Downloading model from: {url}")
+        if args.json_progress:
+            print(json.dumps({"event": "info", "description": f"Downloading model from: {url}"}), flush=True)
+        else:
+            print(f"Downloading model from: {url}")
         output_path = download(url, args.output_dir, args.json_progress)
     except requests.HTTPError as exc:
         msg = f"HTTP error: {exc.response.status_code} {exc.response.reason}"
@@ -203,11 +206,17 @@ def main():
         sys.exit(1)
 
     if not args.no_unzip and output_path.lower().endswith(".zip"):
-        print(f"Unzipping: {output_path}")
+        if args.json_progress:
+            print(json.dumps({"event": "info", "description": f"Unzipping: {output_path}"}), flush=True)
+        else:
+            print(f"Unzipping: {output_path}")
         try:
             with zipfile.ZipFile(output_path, "r") as zf:
                 zf.extractall(args.output_dir)
-            print(f"Extracted to: {args.output_dir}")
+            if args.json_progress:
+                print(json.dumps({"event": "info", "description": f"Extracted to: {args.output_dir}"}), flush=True)
+            else:
+                print(f"Extracted to: {args.output_dir}")
         except Exception as exc:
             msg = f"Failed to unzip {output_path}: {exc}"
             if args.json_progress:
