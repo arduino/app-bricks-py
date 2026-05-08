@@ -72,6 +72,9 @@ class V4LCamera(BaseCamera):
         Returns:
             list[int]: List of USB camera indices.
         """
+        if not os.path.exists("/dev/v4l/by-id/"):
+            return []
+
         indices: list[int] = []
         try:
             devices = [dev for dev in os.listdir("/dev/v4l/by-id/")]
