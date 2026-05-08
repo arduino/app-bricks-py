@@ -1,6 +1,6 @@
 ---
 name: google-cloud-speech
-version: 2.38.0
+version: 2.39.0
 type: pip
 summary: Google Cloud Speech API client library
 homepage: https://github.com/googleapis/google-cloud-python/tree/main/packages/google-cloud-speech
