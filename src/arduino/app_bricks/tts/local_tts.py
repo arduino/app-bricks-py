@@ -165,7 +165,10 @@ class TextToSpeech:
             return
 
         if not self._active_session_lock.acquire(blocking=False):
-            raise TTSBusyError("A speech session is already active on this instance. Create a separate TextToSpeech instance for concurrent speech.")
+            raise TTSBusyError(
+                "A speech session is already active on this instance. "
+                "Create a separate TextToSpeech instance for concurrent speech."
+            )
 
         cancelled = threading.Event()
         self._cancelled = cancelled
