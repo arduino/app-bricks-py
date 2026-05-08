@@ -10,4 +10,9 @@ The `TextToSpeech` brick provides a completely offline text-to-speech (TTS) solu
 - **Long Text Support:** `speak()` splits long input into sentence-aware chunks before synthesis.
 - **Streaming Playback:** `speak()` plays PCM chunks as they arrive from the local TTS service instead of waiting for the full rendered response.
 - **Cancellable Playback:** Use `cancel()` to stop the current spoken sequence and notify the local TTS service without stopping the TTS brick or speaker.
-- **Concurrency Control:** Serializes synthesis requests to avoid overlapping calls to the local TTS service.
+- **Single-Session Semantics:** Each instance handles one speech session at a time. For concurrent speech, create multiple `TextToSpeech` instances.
+
+## Errors
+
+- `TTSBusyError`: raised if you call `speak()`, `synthesize_pcm()`, `synthesize_pcm_stream()`, or `synthesize_wav()` while the instance already has an active session. Fix by awaiting the current session or using a separate instance.
+- `TTSError`: base class for all of the above.

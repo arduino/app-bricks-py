@@ -6,7 +6,6 @@ import re
 import threading
 import time
 from collections.abc import Iterator
-from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
@@ -21,9 +20,12 @@ logger = Logger("TextToSpeech")
 TTS_MAX_BYTES = 1024
 
 
-@dataclass(eq=False)
-class _SpeechSession:
-    cancelled: threading.Event
+class TTSError(Exception):
+    """Base class for TTS errors."""
+
+
+class TTSBusyError(TTSError):
+    """Raised when this TTS instance already has an active speech session."""
 
 
 @brick
@@ -101,10 +103,8 @@ class TextToSpeech:
                 logger.warning(f"Configured model '{model}' not found in available TTS models. Defaulting to en.")
                 self._selected_language = "en"
 
-        self._synthesis_lock = threading.Lock()
-        self._active_sessions_lock = threading.Lock()
-        self._active_sessions: set[_SpeechSession] = set()
-        self._playback_lock = threading.Lock()
+        self._active_session_lock = threading.Lock()
+        self._cancelled: threading.Event | None = None
 
     def start(self):
         """Start the TextToSpeech brick by initializing the speaker."""
@@ -117,16 +117,12 @@ class TextToSpeech:
 
     def cancel(self):
         """Cancel active speech playback, if any, without stopping the speaker."""
-        with self._active_sessions_lock:
-            active_sessions = tuple(self._active_sessions)
-
-        if not active_sessions:
+        cancelled = self._cancelled
+        if cancelled is None:
             logger.debug("No active speech session to cancel")
             return
-
-        logger.debug(f"Cancelling {len(active_sessions)} speech session(s)")
-        for session in active_sessions:
-            session.cancelled.set()
+        logger.debug("Cancelling active speech session")
+        cancelled.set()
         self._cancel_remote_tts()
 
     def speak(self, text: str):
@@ -139,34 +135,38 @@ class TextToSpeech:
 
         Raises:
             ValueError: If the specified language is not supported.
+            TTSBusyError: If this instance already has an active speech session.
             RuntimeError: If the synthesis fails.
         """
         chunks = self.chunk_text(text)
         if not chunks:
             return
 
-        session = _SpeechSession(cancelled=threading.Event())
-        with self._active_sessions_lock:
-            self._active_sessions.add(session)
+        if not self._active_session_lock.acquire(blocking=False):
+            raise TTSBusyError(
+                "A speech session is already active on this instance. "
+                "Create a separate TextToSpeech instance for concurrent speech."
+            )
 
+        cancelled = threading.Event()
+        self._cancelled = cancelled
         try:
-            with self._playback_lock:
-                for chunk in chunks:
-                    if session.cancelled.is_set():
-                        logger.debug("Speech session cancelled before synthesis")
-                        return
+            for chunk in chunks:
+                if cancelled.is_set():
+                    logger.debug("Speech session cancelled before synthesis")
+                    return
 
-                    pcm_stream = self._synthesize_pcm_stream(
-                        chunk,
-                        language=self._selected_language,
-                        cancelled=session.cancelled,
-                        keep_alive=True,
-                    )
-                    self._play_pcm_stream(pcm_stream, session.cancelled)
+                pcm_stream = self._synthesize_pcm_stream(
+                    chunk,
+                    language=self._selected_language,
+                    cancelled=cancelled,
+                    keep_alive=True,
+                )
+                self._play_pcm_stream(pcm_stream, cancelled)
         finally:
-            session.cancelled.set()
-            with self._active_sessions_lock:
-                self._active_sessions.discard(session)
+            cancelled.set()
+            self._cancelled = None
+            self._active_session_lock.release()
 
     def chunk_text(self, text: str) -> list[str]:
         """Split text into chunks accepted by the local TTS service.
@@ -210,6 +210,7 @@ class TextToSpeech:
 
         Raises:
             ValueError: If the specified language is not supported.
+            TTSBusyError: If this instance already has an active speech session.
             RuntimeError: If the synthesis fails.
         """
         pcm_audio = self.synthesize_pcm(text, language=self._selected_language)
@@ -240,6 +241,7 @@ class TextToSpeech:
 
         Raises:
             ValueError: If the specified language is not supported.
+            TTSBusyError: If this instance already has an active speech session.
             RuntimeError: If the synthesis fails.
         """
         audio_bytes = b"".join(self.synthesize_pcm_stream(text, language=language))
@@ -258,9 +260,18 @@ class TextToSpeech:
 
         Raises:
             ValueError: If the specified language is not supported.
+            TTSBusyError: If this instance already has an active speech session.
             RuntimeError: If the synthesis fails.
         """
-        yield from self._synthesize_pcm_stream(text, language=language)
+        if not self._active_session_lock.acquire(blocking=False):
+            raise TTSBusyError(
+                "A speech session is already active on this instance. "
+                "Create a separate TextToSpeech instance for concurrent speech."
+            )
+        try:
+            yield from self._synthesize_pcm_stream(text, language=language)
+        finally:
+            self._active_session_lock.release()
 
     def _synthesize_pcm_stream(
         self,
@@ -272,70 +283,69 @@ class TextToSpeech:
         if language not in self._language_to_voice:
             raise ValueError(f"Unsupported language: {language}")
 
-        with self._synthesis_lock:
+        if cancelled is not None and cancelled.is_set():
+            logger.debug("Speech session cancelled before synthesis")
+            return
+
+        model_params = self._language_to_voice[language]
+        payload = {
+            "text": text,
+            "model": model_params["model"],
+            "language": language,
+            "voice": model_params["voice"],
+            "sample_rate": model_params["sample_rate"],
+            "keep_alive": keep_alive,
+        }
+        url = f"{self.api_base_url}/tts/synthesize"
+        started_at = time.perf_counter()
+        response = requests.post(url, json=payload, stream=True)
+        total_audio_bytes = 0
+        first_chunk_logged = False
+
+        try:
+            if response.status_code != 200:
+                error_msg = f"Failed to synthesize text."
+                try:
+                    error_data = response.json()
+                    if "error" in error_data:
+                        error_msg = error_data["error"].get("message", error_msg)
+                except:
+                    pass
+                raise RuntimeError(error_msg)
+
             if cancelled is not None and cancelled.is_set():
-                logger.debug("Speech session cancelled before synthesis")
-                return None
+                logger.debug("Speech session cancelled before reading synthesis stream")
+                return
 
-            model_params = self._language_to_voice[language]
-            payload = {
-                "text": text,
-                "model": model_params["model"],
-                "language": language,
-                "voice": model_params["voice"],
-                "sample_rate": model_params["sample_rate"],
-                "keep_alive": keep_alive,
-            }
-            url = f"{self.api_base_url}/tts/synthesize"
-            started_at = time.perf_counter()
-            response = requests.post(url, json=payload, stream=True)
-            total_audio_bytes = 0
-            first_chunk_logged = False
-
-            try:
-                if response.status_code != 200:
-                    error_msg = f"Failed to synthesize text."
-                    try:
-                        error_data = response.json()
-                        if "error" in error_data:
-                            error_msg = error_data["error"].get("message", error_msg)
-                    except:
-                        pass
-                    raise RuntimeError(error_msg)
-
+            stream_chunk_size = self._speaker.buffer_size * self._speaker.channels * self._speaker.format.itemsize
+            for audio_chunk in response.iter_content(chunk_size=stream_chunk_size):
                 if cancelled is not None and cancelled.is_set():
-                    logger.debug("Speech session cancelled before reading synthesis stream")
+                    logger.debug("Speech session cancelled while reading synthesis stream")
                     return
+                if not audio_chunk:
+                    continue
 
-                stream_chunk_size = self._speaker.buffer_size * self._speaker.channels * self._speaker.format.itemsize
-                for audio_chunk in response.iter_content(chunk_size=stream_chunk_size):
-                    if cancelled is not None and cancelled.is_set():
-                        logger.debug("Speech session cancelled while reading synthesis stream")
-                        return
-                    if not audio_chunk:
-                        continue
+                total_audio_bytes += len(audio_chunk)
+                if not first_chunk_logged:
+                    first_chunk_logged = True
+                    first_chunk_ms = (time.perf_counter() - started_at) * 1000
+                    logger.debug(
+                        f"TTS PCM stream first chunk received in {first_chunk_ms:.2f} ms "
+                        f"(input_bytes={len(text.encode('utf-8'))}, pcm_chunk_bytes={len(audio_chunk)}, keep_alive={keep_alive})"
+                    )
+                yield audio_chunk
 
-                    total_audio_bytes += len(audio_chunk)
-                    if not first_chunk_logged:
-                        first_chunk_logged = True
-                        first_chunk_ms = (time.perf_counter() - started_at) * 1000
-                        logger.debug(
-                            f"TTS PCM stream first chunk received in {first_chunk_ms:.2f} ms "
-                            f"(input_bytes={len(text.encode('utf-8'))}, pcm_chunk_bytes={len(audio_chunk)}, keep_alive={keep_alive})"
-                        )
-                    yield audio_chunk
+            if total_audio_bytes == 0 and (cancelled is None or not cancelled.is_set()):
+                raise RuntimeError("No audio data returned from synthesis API")
 
-                if total_audio_bytes == 0 and (cancelled is None or not cancelled.is_set()):
-                    raise RuntimeError("No audio data returned from synthesis API")
-
-            finally:
-                response.close()
-                elapsed_ms = (time.perf_counter() - started_at) * 1000
-                logger.debug(
-                    f"TTS PCM stream completed in {elapsed_ms:.2f} ms "
-                    f"(input_bytes={len(text.encode('utf-8'))}, status_code={response.status_code}, "
-                    f"pcm_bytes={total_audio_bytes}, keep_alive={keep_alive})"
-                )
+        finally:
+            response.close()
+            elapsed_ms = (time.perf_counter() - started_at) * 1000
+            logger.debug(
+                f"TTS PCM stream completed in {elapsed_ms:.2f} ms "
+                f"(input_bytes={len(text.encode('utf-8'))}, status_code={response.status_code}, "
+                f"pcm_bytes={total_audio_bytes}, keep_alive={keep_alive})"
+            )
 
     def _cancel_remote_tts(self) -> None:
         try:

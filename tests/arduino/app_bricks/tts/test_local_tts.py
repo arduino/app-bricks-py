@@ -5,8 +5,9 @@
 import threading
 
 import numpy as np
+import pytest
 
-from arduino.app_bricks.tts import TextToSpeech
+from arduino.app_bricks.tts import TextToSpeech, TTSBusyError
 from arduino.app_bricks.tts.local_tts import TTS_MAX_BYTES
 from arduino.app_peripherals.speaker import BaseSpeaker, FormatPlain, FormatPacked
 from arduino.app_utils import App
@@ -248,48 +249,52 @@ def test_cancel_during_synthesis_skips_playback(monkeypatch):
     assert speaker.close_called is False
 
 
-def test_synthesize_pcm_serializes_requests(monkeypatch):
+def test_synthesize_pcm_raises_when_busy(monkeypatch):
     speaker = BlockingSpeaker(buffer_size=4)
     first_synthesis_started = threading.Event()
-    second_synthesis_started = threading.Event()
     release_first_synthesis = threading.Event()
     post_calls = []
-    results = []
-    errors = []
 
     def post_response(url, json, **kwargs):
         post_calls.append(json["text"])
         if json["text"] == "first":
             first_synthesis_started.set()
             release_first_synthesis.wait(timeout=2)
-        else:
-            second_synthesis_started.set()
         return FakeResponse(content=np.arange(4, dtype=np.int16).tobytes())
 
     tts = make_tts(monkeypatch, speaker, post_response)
 
-    def synthesize(text):
-        try:
-            results.append(tts.synthesize_pcm(text))
-        except Exception as e:
-            errors.append(e)
-
-    first_thread = threading.Thread(target=synthesize, args=("first",), daemon=True)
-    second_thread = threading.Thread(target=synthesize, args=("second",), daemon=True)
-
+    first_thread = threading.Thread(target=tts.synthesize_pcm, args=("first",), daemon=True)
     first_thread.start()
     assert first_synthesis_started.wait(timeout=2)
-    second_thread.start()
 
-    assert second_synthesis_started.wait(timeout=0.1) is False
+    with pytest.raises(TTSBusyError):
+        tts.synthesize_pcm("second")
+
     assert post_calls == ["first"]
 
     release_first_synthesis.set()
     first_thread.join(timeout=2)
-    second_thread.join(timeout=2)
 
     assert first_thread.is_alive() is False
-    assert second_thread.is_alive() is False
-    assert errors == []
-    assert len(results) == 2
-    assert post_calls == ["first", "second"]
+    assert post_calls == ["first"]
+
+
+def test_speak_raises_when_busy(monkeypatch):
+    speaker = BlockingSpeaker(buffer_size=4)
+    pcm_audio = np.arange(12, dtype=np.int16)
+    tts = make_tts(monkeypatch, speaker, lambda url, json, **kwargs: FakeResponse(content=pcm_audio.tobytes()))
+
+    speak_thread = threading.Thread(target=tts.speak, args=("hello",), daemon=True)
+    speak_thread.start()
+
+    assert speaker.first_chunk_written.wait(timeout=2)
+
+    with pytest.raises(TTSBusyError):
+        tts.speak("second")
+
+    speaker.release_first_chunk.set()
+    tts.cancel()
+    speak_thread.join(timeout=2)
+
+    assert speak_thread.is_alive() is False
