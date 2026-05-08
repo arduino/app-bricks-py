@@ -2,6 +2,38 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+"""
+hf_downloader — Hugging Face Model Downloader CLI
+
+A command-line tool for downloading GGUF-format models from Hugging Face
+repositories. It targets llama.cpp-style repos that may contain multiple
+quantization variants and optional multimodal projection (mmproj) files.
+After downloading, it auto-generates a ``models.ini`` configuration file
+that indexes all downloaded models for use by downstream runners.
+
+Usage — two modes
+-----------------
+1. Compact key::
+
+       hf_downloader --model-key llamacpp:<repo_id>:<quantization>[:<mmproj_quantization>]
+
+2. Explicit names::
+
+       hf_downloader --model-repo-id <repo_id> --model-name <file> [--model-mmproj-name <file>]
+
+Key options
+-----------
+--output-dir DIR        Destination directory (default: current directory).
+                        Files are saved under ``<output-dir>/<repo-id>/``.
+--hf-token KEY          Hugging Face API token for gated/private repositories.
+--json-progress         Emit progress as JSON lines instead of a progress bar,
+                        suitable for machine-readable consumption by CI pipelines.
+--verbose               Print resolved parameters before downloading.
+
+After all files are downloaded, ``models.ini`` is written to ``<output-dir>``
+mapping each model stem to its GGUF path (and mmproj path where present).
+"""
+
 import os
 
 from huggingface_hub import snapshot_download
