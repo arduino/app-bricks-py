@@ -8,5 +8,8 @@
   "tag_latest": false,
   "build_whl": false,
   "update_compose": false,
-  "build_args": { }
+  "build_args": { },
+  "sbom": {
+    "runtime_base": "${REGISTRY}app-bricks/python-base:${BASE_IMAGE_VERSION}"
+  }  
 }
