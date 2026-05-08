@@ -4,6 +4,8 @@
 
 import re
 import threading
+import time
+from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Literal
 
@@ -125,6 +127,7 @@ class TextToSpeech:
         logger.debug(f"Cancelling {len(active_sessions)} speech session(s)")
         for session in active_sessions:
             session.cancelled.set()
+        self._cancel_remote_tts()
 
     def speak(self, text: str):
         """
@@ -153,15 +156,13 @@ class TextToSpeech:
                         logger.debug("Speech session cancelled before synthesis")
                         return
 
-                    audio_bytes = self._synthesize_pcm(chunk, language=self._selected_language, cancelled=session.cancelled)
-                    if audio_bytes is None:
-                        return
-                    if session.cancelled.is_set():
-                        logger.debug("Speech session cancelled before playback")
-                        return
-
-                    audio_array = np.frombuffer(audio_bytes, dtype=np.int16)  # melo-tts uses 16-bit PCM
-                    self._play_pcm(audio_array, session.cancelled)
+                    pcm_stream = self._synthesize_pcm_stream(
+                        chunk,
+                        language=self._selected_language,
+                        cancelled=session.cancelled,
+                        keep_alive=True,
+                    )
+                    self._play_pcm_stream(pcm_stream, session.cancelled)
         finally:
             session.cancelled.set()
             with self._active_sessions_lock:
@@ -176,6 +177,9 @@ class TextToSpeech:
         Returns:
             list[str]: A list of text chunks.
         """
+        started_at = time.perf_counter()
+        input_bytes = len(text.encode("utf-8"))
+
         text = text.strip()
         chunks = []
 
@@ -188,6 +192,9 @@ class TextToSpeech:
 
         if text:
             chunks.append(text)
+
+        elapsed_ms = (time.perf_counter() - started_at) * 1000
+        logger.debug(f"TTS chunk_text completed in {elapsed_ms:.2f} ms (input_bytes={input_bytes}, text_chunks={len(chunks)})")
 
         return chunks
 
@@ -235,12 +242,33 @@ class TextToSpeech:
             ValueError: If the specified language is not supported.
             RuntimeError: If the synthesis fails.
         """
-        audio_bytes = self._synthesize_pcm(text, language=language)
-        if audio_bytes is None:
-            raise RuntimeError("Synthesis was cancelled")
+        audio_bytes = b"".join(self.synthesize_pcm_stream(text, language=language))
         return audio_bytes
 
-    def _synthesize_pcm(self, text: str, language: Literal["en", "es", "zh"] = "en", cancelled: threading.Event | None = None) -> bytes | None:
+    def synthesize_pcm_stream(self, text: str, language: Literal["en", "es", "zh"] = "en") -> Iterator[bytes]:
+        """
+        Synthesize speech from text and stream PCM audio chunks as they arrive.
+
+        Args:
+            text (str): The text to be synthesized into speech.
+            language (Literal["en", "es", "zh"]): The language of the text.
+
+        Yields:
+            bytes: PCM audio chunks.
+
+        Raises:
+            ValueError: If the specified language is not supported.
+            RuntimeError: If the synthesis fails.
+        """
+        yield from self._synthesize_pcm_stream(text, language=language)
+
+    def _synthesize_pcm_stream(
+        self,
+        text: str,
+        language: Literal["en", "es", "zh"] = "en",
+        cancelled: threading.Event | None = None,
+        keep_alive: bool = False,
+    ) -> Iterator[bytes]:
         if language not in self._language_to_voice:
             raise ValueError(f"Unsupported language: {language}")
 
@@ -256,23 +284,66 @@ class TextToSpeech:
                 "language": language,
                 "voice": model_params["voice"],
                 "sample_rate": model_params["sample_rate"],
+                "keep_alive": keep_alive,
             }
             url = f"{self.api_base_url}/tts/synthesize"
-            response = requests.post(url, json=payload)
-            if response.status_code != 200:
-                error_msg = f"Failed to synthesize text."
-                try:
-                    error_data = response.json()
-                    if "error" in error_data:
-                        error_msg = error_data["error"].get("message", error_msg)
-                except:
-                    pass
-                raise RuntimeError(error_msg)
+            started_at = time.perf_counter()
+            response = requests.post(url, json=payload, stream=True)
+            total_audio_bytes = 0
+            first_chunk_logged = False
 
-            if not response.content:
-                raise RuntimeError("No audio data returned from synthesis API")
+            try:
+                if response.status_code != 200:
+                    error_msg = f"Failed to synthesize text."
+                    try:
+                        error_data = response.json()
+                        if "error" in error_data:
+                            error_msg = error_data["error"].get("message", error_msg)
+                    except:
+                        pass
+                    raise RuntimeError(error_msg)
 
-            return response.content  # The API returns raw PCM audio data
+                if cancelled is not None and cancelled.is_set():
+                    logger.debug("Speech session cancelled before reading synthesis stream")
+                    return
+
+                stream_chunk_size = self._speaker.buffer_size * self._speaker.channels * self._speaker.format.itemsize
+                for audio_chunk in response.iter_content(chunk_size=stream_chunk_size):
+                    if cancelled is not None and cancelled.is_set():
+                        logger.debug("Speech session cancelled while reading synthesis stream")
+                        return
+                    if not audio_chunk:
+                        continue
+
+                    total_audio_bytes += len(audio_chunk)
+                    if not first_chunk_logged:
+                        first_chunk_logged = True
+                        first_chunk_ms = (time.perf_counter() - started_at) * 1000
+                        logger.debug(
+                            f"TTS PCM stream first chunk received in {first_chunk_ms:.2f} ms "
+                            f"(input_bytes={len(text.encode('utf-8'))}, pcm_chunk_bytes={len(audio_chunk)}, keep_alive={keep_alive})"
+                        )
+                    yield audio_chunk
+
+                if total_audio_bytes == 0 and (cancelled is None or not cancelled.is_set()):
+                    raise RuntimeError("No audio data returned from synthesis API")
+
+            finally:
+                response.close()
+                elapsed_ms = (time.perf_counter() - started_at) * 1000
+                logger.debug(
+                    f"TTS PCM stream completed in {elapsed_ms:.2f} ms "
+                    f"(input_bytes={len(text.encode('utf-8'))}, status_code={response.status_code}, "
+                    f"pcm_bytes={total_audio_bytes}, keep_alive={keep_alive})"
+                )
+
+    def _cancel_remote_tts(self) -> None:
+        try:
+            response = requests.post(f"{self.api_base_url}/tts/cancel")
+            if response.status_code >= 400:
+                logger.warning(f"Failed to cancel remote TTS session: status_code={response.status_code}")
+        except Exception as e:
+            logger.warning(f"Failed to cancel remote TTS session: {e}")
 
     def _play_pcm(self, pcm_audio: np.ndarray, cancelled: threading.Event) -> None:
         if pcm_audio is None or len(pcm_audio) == 0:
@@ -292,3 +363,22 @@ class TextToSpeech:
             chunk = pcm_audio[offset : offset + chunk_size]
             self._speaker.play(chunk)
             offset += chunk_size
+
+    def _play_pcm_stream(self, pcm_chunks: Iterator[bytes], cancelled: threading.Event) -> None:
+        pending = b""
+        sample_width = np.dtype(np.int16).itemsize
+
+        for pcm_chunk in pcm_chunks:
+            if cancelled.is_set():
+                logger.debug("Speech playback cancelled")
+                return
+
+            audio_bytes = pending + pcm_chunk
+            aligned_size = len(audio_bytes) - (len(audio_bytes) % sample_width)
+            if aligned_size:
+                audio_array = np.frombuffer(audio_bytes[:aligned_size], dtype=np.int16)  # melo-tts uses 16-bit PCM
+                self._play_pcm(audio_array, cancelled)
+            pending = audio_bytes[aligned_size:]
+
+        if pending and not cancelled.is_set():
+            raise RuntimeError("Incomplete PCM sample returned from synthesis API")
