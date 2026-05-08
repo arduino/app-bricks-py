@@ -261,11 +261,11 @@ class RemoteSensor:
         try:
             server_future.result(timeout=self.timeout)
             self.logger.info(f"WebSocket remote sensor server available on {self.url}, security: {self.security_mode}")
-        except (PermissionError, Exception) as e:
+        except Exception as e:
             if self._server_thread.is_alive():
                 self._server_thread.join(timeout=1.0)
-            if isinstance(e, PermissionError):
-                raise RemoteSensorOpenError(f"Permission denied when attempting to bind WebSocket server on {self.url}")
+            if isinstance(e, OSError):
+                raise RemoteSensorOpenError(f"Failed to bind WebSocket server on {self.url}: {e}") from e
             raise
 
     def _start_server_thread(self, future: Future) -> None:
