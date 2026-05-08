@@ -8,10 +8,9 @@ FROM ${REGISTRY}app-bricks/python-base:${BASE_IMAGE_VERSION}
 
 COPY ./requirements.txt /app/requirements.txt
 
-COPY --chown=arduino:arduino ./src /app
+COPY --chown=arduino:arduino --chmod=755 ./src /app
 
 RUN set -ex; \
-    chown -R arduino:arduino /app; \
     pip install --no-cache-dir -r /app/requirements.txt && rm /app/requirements.txt; \
     # precompile python files to .pyc to speed up startup time
     python -m compileall /usr/local/bin; \
