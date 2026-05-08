@@ -1,0 +1,42 @@
+name: Generate SBOM Delta
+description: Install Syft, generate delta SBOM for a container, and upload the artifact.
+
+inputs:
+  container:
+    description: Container name to scan
+    required: true
+  version:
+    description: Image tag or version
+    required: true
+  registry:
+    description: Registry prefix (e.g. ghcr.io/org/)
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Install syft
+      shell: bash
+      run: curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+
+    - name: Install task
+      shell: bash
+      run: which task || curl -sSfL https://taskfile.dev/install.sh | sh -s -- -b /usr/local/bin
+
+    - name: Generate delta SBOM
+      shell: bash
+      env:
+        CONTAINER: ${{ inputs.container }}
+        VERSION: ${{ inputs.version }}
+        REGISTRY: ${{ inputs.registry }}
+      run: |
+        task -t Taskfile.dist.yml sbom:delta -- \
+          --version "$VERSION" \
+          --registry "$REGISTRY" \
+          "$CONTAINER"
+
+    - name: Upload delta SBOM artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: sbom-delta-${{ inputs.container }}
+        path: ./containers/${{ inputs.container }}/sbom-delta/

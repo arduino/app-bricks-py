@@ -35,6 +35,8 @@ class CloudLLM:
     'one-shot' responses and streaming output, with optional conversational memory.
     """
 
+    _logger = logger
+
     def __init__(
         self,
         api_key: str = os.getenv("API_KEY", ""),
@@ -340,11 +342,21 @@ class CloudLLM:
             AlreadyGenerating: If a streaming session is already active.
         """
         try:
-            return self._chat_stream_invoke(message, images)
+            yield from self._chat_stream_invoke(message, images)
 
+        except AlreadyGenerating:
+            raise
         except Exception as e:
-            logger.error(f"Response generation failed: {e}")
-            raise RuntimeError(f"Response generation failed: {e}")
+            self._handle_stream_error(e)
+
+    def _handle_stream_error(self, e: Exception) -> None:
+        """Handles stream errors and acts as an override hook for subclasses.
+
+        Args:
+            e (Exception): The exception that occurred during streaming.
+        """
+        self._logger.error(f"Response generation failed: {e}")
+        raise RuntimeError(f"Response generation failed: {e}") from e
 
     def _chat_stream_invoke(self, message: str, images: List[str | bytes] = None) -> Iterator[str]:
         """Internal method to perform the chat streaming invocation with the model.

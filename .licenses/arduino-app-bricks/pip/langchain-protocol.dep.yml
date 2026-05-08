@@ -1,6 +1,6 @@
 ---
 name: langchain-protocol
-version: 0.0.13
+version: 0.0.15
 type: pip
 summary: Python bindings for the LangChain agent streaming protocol
 homepage: https://github.com/langchain-ai/agent-protocol/tree/main/streaming

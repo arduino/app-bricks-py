@@ -51,14 +51,14 @@ class KeywordSpotting(AudioDetector):
         super().on_detect(keyword, callback)
 
     def start(self):
-        """Start the KeywordSpotter module and begin processing audio data.
+        """Start the KeywordSpotting module and begin processing audio data.
 
         Begins continuous audio stream processing and keyword detection.
         """
         super().start()
 
     def stop(self):
-        """Stop the KeywordSpotter module and release resources.
+        """Stop the KeywordSpotting module and release resources.
 
         Stops audio processing and releases microphone and model resources.
         """

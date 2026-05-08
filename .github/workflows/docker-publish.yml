@@ -261,6 +261,13 @@ jobs:
           provenance: false
           build-args: ${{ steps.config.outputs.build_args }}
 
+      - name: SBOM Delta
+        uses: ./.github/actions/sbom-delta
+        with:
+          container: ${{ matrix.container }}
+          version: ${{ needs.detect.outputs.version }}
+          registry: ${{ env.GHCR_DESTINATION_ORG }}
+
       - name: Update compose file references
         if: steps.config.outputs.update_compose == 'true'
         env:
@@ -364,6 +371,13 @@ jobs:
             BASE_IMAGE_VERSION=${{ needs.detect.outputs.version }}
             REGISTRY=${{ env.GHCR_DESTINATION_ORG }}/
 
+      - name: SBOM Delta
+        uses: ./.github/actions/sbom-delta
+        with:
+          container: ${{ matrix.container }}
+          version: ${{ needs.detect.outputs.version }}
+          registry: ${{ env.GHCR_DESTINATION_ORG }}
+
       - name: Update compose file references
         if: steps.config.outputs.update_compose == 'true'
         env:
@@ -408,10 +422,21 @@ jobs:
           name: whl
           path: dist/
 
+      - name: Download all SBOM delta artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: sbom-delta-*
+          path: sbom-delta/
+
+      - name: Zip SBOM artifacts
+        run: zip -r dist/sboms.zip sbom-delta/
+
       - name: Upload release asset
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/arduino*.whl
+          files: |
+            dist/arduino*.whl
+            dist/sboms.zip
           tag_name: ${{ needs.detect.outputs.tag_ref }}
           name: Release ${{ needs.detect.outputs.version }}
           prerelease: ${{ needs.detect.outputs.prerelease }}
