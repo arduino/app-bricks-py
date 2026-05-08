@@ -15,6 +15,7 @@ import argparse
 import json
 import os
 import sys
+import time
 
 import requests
 
@@ -67,17 +68,17 @@ def download(url: str, output_dir: str, output_name: str | None, json_progress: 
 
         if json_progress:
             emit_json_progress("start", filename, downloaded, total, "B")
+            last_update = time.monotonic()
             with open(output_path, "wb") as f:
                 for chunk in response.iter_content(chunk_size=CHUNK_SIZE):
                     if not chunk:
                         continue
                     f.write(chunk)
                     downloaded += len(chunk)
-                    pct = int(downloaded / total * 100) if total > 0 else -1
-                    if pct >= 0:
+                    now = time.monotonic()
+                    if now - last_update >= 1.0:
                         emit_json_progress("update", filename, downloaded, total, "B")
-                    else:
-                        emit_json_progress("update", filename, downloaded, total, "B")
+                        last_update = now
             emit_json_progress("complete", filename, downloaded, total, "B")
         else:
             try:
