@@ -628,17 +628,15 @@ class AutomaticSpeechRecognition:
                 async with (
                     websockets.connect(
                         self.ws_url,
-                        ping_interval=20,
-                        ping_timeout=20,
-                        close_timeout=3,
-                        max_queue=None,
+                        ping_interval=10,
+                        ping_timeout=5,
+                        close_timeout=5,
                     ) as write_ws,
                     websockets.connect(
                         self.ws_url,
-                        ping_interval=20,
-                        ping_timeout=20,
-                        close_timeout=3,
-                        max_queue=None,
+                        ping_interval=10,
+                        ping_timeout=5,
+                        close_timeout=5,
                     ) as read_ws,
                 ):
                     await self._await_connection_established(write_ws, "write_ws")
