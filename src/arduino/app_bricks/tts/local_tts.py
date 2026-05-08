@@ -162,7 +162,10 @@ class TextToSpeech:
                     cancelled=cancelled,
                     keep_alive=True,
                 )
-                self._play_pcm_stream(pcm_stream, cancelled)
+                try:
+                    self._play_pcm_stream(pcm_stream, cancelled)
+                finally:
+                    pcm_stream.close()
         finally:
             cancelled.set()
             self._cancelled = None
