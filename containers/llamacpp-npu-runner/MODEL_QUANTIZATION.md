@@ -7,7 +7,7 @@ This guide walks through quantizing a model from raw weights (FP32) to a smaller
 - **llama.cpp** — You can use the build available inside the container, or download and compile it from the [official repository](https://github.com/ggml-org/llama.cpp).
 - **Python 3** with `pip`
 
-## Step 1: Download the Model from Hugging Face
+## Step 1: Download original model's weights from Hugging Face (optional)
 
 Install the Hugging Face Hub client and download the model weights:
 
@@ -25,7 +25,7 @@ snapshot_download(
 EOF
 ```
 
-## Step 2: Convert the Model to GGUF
+## Step 2: Convert the Model to GGUF (optional)
 
 Before quantizing, the model must first be converted to the GGUF format:
 
@@ -40,7 +40,8 @@ python convert_hf_to_gguf.py \
 
 ## Step 3: Apply Quantization
 
-Run the quantization tool to produce the final optimized model:
+Run the quantization tool to produce the final optimized model. You can use pre-converted GGUG BF16 model
+or the one previously converted:
 
 ```bash
 ./llama-quantize \
@@ -50,4 +51,5 @@ Run the quantization tool to produce the final optimized model:
     Q4_0
 ```
 
-> **Note:** The `--pure` flag forces the backend to strictly apply the requested quantization type.
+> **Note:** The `--pure` flag forces the backend to strictly apply the requested quantization type to all layers.
+> It's possible to change quantization for some specific layes, like embeddings with `--token-embedding-type Q8_0`.
