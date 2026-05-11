@@ -325,7 +325,7 @@ class TextToSpeech:
             "model": model_params["model"],
             "language": language,
             "voice": model_params["voice"],
-            "sample_rate": model_params["sample_rate"],
+            "sample_rate": self._speaker.sample_rate,
             "keep_alive": keep_alive,
         }
         url = f"{self.api_base_url}/tts/synthesize"
