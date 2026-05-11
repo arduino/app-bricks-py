@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# SPDX-FileCopyrightText: Copyright (C) ARDUINO SRL (http://www.arduino.cc)
+#
+# SPDX-License-Identifier: MPL-2.0
+
 python /app/hf_downloader/hf_downloader.py \
     --model-key "${model_key}" \
     --output-dir /models \

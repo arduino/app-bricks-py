@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# SPDX-FileCopyrightText: Copyright (C) ARDUINO SRL (http://www.arduino.cc)
+#
+# SPDX-License-Identifier: MPL-2.0
+
 cd /models
 
 cmd=(python /app/ai_hub_downloader/download_ai_hub_model.py

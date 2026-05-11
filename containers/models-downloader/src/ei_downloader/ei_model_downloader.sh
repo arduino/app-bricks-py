@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# SPDX-FileCopyrightText: Copyright (C) ARDUINO SRL (http://www.arduino.cc)
+#
+# SPDX-License-Identifier: MPL-2.0
+
 python /app/ei_downloader/download_ei_build.py \
     --json-progress \
     --ei-project-id "${ei_project_id}" \
