@@ -15,97 +15,14 @@ import argparse
 import json
 import os
 import sys
-import time
 
 import requests
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from common.http_download import download  # noqa: E402
+
 
 BASE_URL = "https://studio.edgeimpulse.com/v1/api/{project_id}/deployment/download?type={target}&modelType={quantization}&impulseId={impulse_id}"
-CHUNK_SIZE = 1024 * 1024  # 1 MB
-
-
-def _filename_from_response(response: requests.Response, fallback: str) -> str:
-    cd = response.headers.get("Content-Disposition", "")
-    if "filename=" in cd:
-        return cd.split("filename=")[-1].strip().strip('"').strip("'")
-    return fallback
-
-
-def _simple_progress_bar(downloaded: int, total: int, width: int = 40) -> str:
-    if total <= 0:
-        return f"{downloaded} B"
-    pct = downloaded / total
-    filled = int(width * pct)
-    bar = "#" * filled + "-" * (width - filled)
-    return f"[{bar}] {pct * 100:.1f}%  ({downloaded}/{total} B)"
-
-
-def emit_json_progress(event_type: str, description: str, current: int, total: int, unit: str):
-    pct = round((current / total) * 100, 2) if total else 0
-    data = {
-        "event": event_type,
-        "description": description,
-        "current": current,
-        "total": total,
-        "unit": unit,
-        "percentage": f"{pct}%",
-    }
-    print(json.dumps(data), flush=True)
-
-
-def download(url: str, output_dir: str, output_name: str | None, json_progress: bool):
-    with requests.get(url, stream=True, timeout=60) as response:
-        response.raise_for_status()
-
-        if output_name is not None and output_name == "":
-            output_name = None
-        filename = output_name or _filename_from_response(response, url.rstrip("/").split("/")[-1] or "download")
-        os.makedirs(output_dir, exist_ok=True)
-        output_path = os.path.join(output_dir, filename)
-
-        total = int(response.headers.get("Content-Length", 0) or 0)
-        downloaded = 0
-
-        if json_progress:
-            emit_json_progress("start", filename, downloaded, total, "B")
-            last_update = time.monotonic()
-            with open(output_path, "wb") as f:
-                for chunk in response.iter_content(chunk_size=CHUNK_SIZE):
-                    if not chunk:
-                        continue
-                    f.write(chunk)
-                    downloaded += len(chunk)
-                    now = time.monotonic()
-                    if now - last_update >= 1.0:
-                        emit_json_progress("update", filename, downloaded, total, "B")
-                        last_update = now
-            emit_json_progress("complete", filename, downloaded, total, "B")
-        else:
-            try:
-                from tqdm import tqdm
-
-                with tqdm(total=total or None, unit="B", unit_scale=True, unit_divisor=1024, desc=filename) as pbar:
-                    with open(output_path, "wb") as f:
-                        for chunk in response.iter_content(chunk_size=CHUNK_SIZE):
-                            if not chunk:
-                                continue
-                            f.write(chunk)
-                            downloaded += len(chunk)
-                            pbar.update(len(chunk))
-            except ImportError:
-                # Fallback: simple inline progress bar without tqdm
-                with open(output_path, "wb") as f:
-                    for chunk in response.iter_content(chunk_size=CHUNK_SIZE):
-                        if not chunk:
-                            continue
-                        f.write(chunk)
-                        downloaded += len(chunk)
-                        print(f"\r{_simple_progress_bar(downloaded, total)}", end="", flush=True)
-                print()
-
-            print(f"Saved to: {output_path}")
-
-    return output_path
 
 
 def main():
@@ -160,7 +77,7 @@ def main():
 
     try:
         print(f"Downloading from: {url}")
-        download(url, args.output_dir, args.output_name, args.json_progress)
+        download(url, args.output_dir, args.json_progress, output_name=args.output_name)
     except requests.HTTPError as exc:
         msg = f"HTTP error: {exc.response.status_code} {exc.response.reason}"
         if args.json_progress:
