@@ -165,10 +165,7 @@ class TextToSpeech:
             return
 
         if not self._active_session_lock.acquire(blocking=False):
-            raise TTSBusyError(
-                "A speech session is already active on this instance. "
-                "Create a separate TextToSpeech instance for concurrent speech."
-            )
+            raise TTSBusyError("A speech session is already active on this instance. Create a separate TextToSpeech instance for concurrent speech.")
 
         cancelled = threading.Event()
         self._cancelled = cancelled
@@ -260,11 +257,11 @@ class TextToSpeech:
             TTSBusyError: If this instance already has an active speech session.
             RuntimeError: If the synthesis fails.
         """
+
         def locked_stream() -> Generator[bytes, None, None]:
             if not self._active_session_lock.acquire(blocking=False):
                 raise TTSBusyError(
-                    "A speech session is already active on this instance. "
-                    "Create a separate TextToSpeech instance for concurrent speech."
+                    "A speech session is already active on this instance. Create a separate TextToSpeech instance for concurrent speech."
                 )
             try:
                 yield from self._synthesize_pcm_stream(text, language=language)
