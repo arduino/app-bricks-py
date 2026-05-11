@@ -19,7 +19,7 @@ import sys
 import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from common.http_download import download, emit_json_error  # noqa: E402
+from common.http_download import download, emit_json_error
 
 
 BASE_URL = "https://studio.edgeimpulse.com/v1/api/{project_id}/deployment/download?type={target}&modelType={quantization}&impulseId={impulse_id}"
@@ -77,11 +77,13 @@ def main():
 
     try:
         print(f"Downloading from: {url}")
-        download(url, args.output_dir, args.json_progress, output_name=args.output_name)
+        out_file = download(url, args.output_dir, args.json_progress, output_name=args.output_name)
+        if os.path.isfile(out_file):
+            os.chmod(out_file, 0o755)  # Ensure the file is executable
     except requests.HTTPError as exc:
         msg = f"HTTP error: {exc.response.status_code} {exc.response.reason}"
         if args.json_progress:
-            print(json.dumps({"error": msg}), flush=True)
+            emit_json_error(msg)
         else:
             print(msg, file=sys.stderr)
         sys.exit(1)
