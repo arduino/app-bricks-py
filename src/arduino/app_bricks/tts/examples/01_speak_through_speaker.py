@@ -8,6 +8,7 @@ from arduino.app_bricks.tts import TextToSpeech
 from arduino.app_utils import App
 import time
 
+
 tts = TextToSpeech()
 
 
@@ -16,4 +17,4 @@ def runner():
     time.sleep(5)  # Wait for the speech to finish before ending the app
 
 
-App.run(loop=runner)
+App.run(user_loop=runner)
