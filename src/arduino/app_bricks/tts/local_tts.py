@@ -17,7 +17,7 @@ from arduino.app_utils import brick, Logger
 
 logger = Logger("TextToSpeech")
 
-TTS_MAX_BYTES = 1024
+TTS_MAX_CHARS = 1024
 
 
 class TTSError(Exception):
@@ -150,7 +150,7 @@ class TextToSpeech:
     def speak(self, text: str):
         """
         Synthesize speech from text and play it through the provided speaker.
-        Long text is split into 1024-byte chunks before synthesis.
+        Long text is split into 1024-character chunks before synthesis.
 
         Args:
             text (str): The text to be synthesized into speech.
@@ -262,7 +262,10 @@ class TextToSpeech:
         """
         def locked_stream() -> Generator[bytes, None, None]:
             if not self._active_session_lock.acquire(blocking=False):
-                raise TTSBusyError("A speech session is already active on this instance. Create a separate TextToSpeech instance for concurrent speech.")
+                raise TTSBusyError(
+                    "A speech session is already active on this instance. "
+                    "Create a separate TextToSpeech instance for concurrent speech."
+                )
             try:
                 yield from self._synthesize_pcm_stream(text, language=language)
             finally:
@@ -280,15 +283,20 @@ class TextToSpeech:
             list[str]: A list of text chunks.
         """
         started_at = time.perf_counter()
-        input_bytes = len(text.encode("utf-8"))
+        input_chars = len(text)
 
         text = text.strip()
         chunks = []
 
-        while len(text.encode("utf-8")) > TTS_MAX_BYTES:
-            window = text.encode("utf-8")[:TTS_MAX_BYTES].decode("utf-8", errors="ignore")
+        while len(text) > TTS_MAX_CHARS:
+            window = text[:TTS_MAX_CHARS]
             match = re.search(r"[.!?][^.!?]*$", window)
-            cut = match.start() + 1 if match else len(window)
+            if match:
+                cut = match.start() + 1
+            else:
+                newline_cut = window.rfind("\n")
+                space_cut = window.rfind(" ")
+                cut = next((index for index in (newline_cut, space_cut) if index > 0), len(window))
             chunks.append(text[:cut].strip())
             text = text[cut:].strip()
 
@@ -296,7 +304,7 @@ class TextToSpeech:
             chunks.append(text)
 
         elapsed_ms = (time.perf_counter() - started_at) * 1000
-        logger.debug(f"TTS chunk_text completed in {elapsed_ms:.2f} ms (input_bytes={input_bytes}, text_chunks={len(chunks)})")
+        logger.debug(f"TTS chunk_text completed in {elapsed_ms:.2f} ms (input_chars={input_chars}, text_chunks={len(chunks)})")
 
         return chunks
 
@@ -358,7 +366,7 @@ class TextToSpeech:
                     first_chunk_ms = (time.perf_counter() - started_at) * 1000
                     logger.debug(
                         f"TTS PCM stream first chunk received in {first_chunk_ms:.2f} ms "
-                        f"(input_bytes={len(text.encode('utf-8'))}, pcm_chunk_bytes={len(audio_chunk)}, keep_alive={keep_alive})"
+                        f"(input_chars={len(text)}, pcm_chunk_bytes={len(audio_chunk)}, keep_alive={keep_alive})"
                     )
                 yield audio_chunk
 
@@ -370,7 +378,7 @@ class TextToSpeech:
             elapsed_ms = (time.perf_counter() - started_at) * 1000
             logger.debug(
                 f"TTS PCM stream completed in {elapsed_ms:.2f} ms "
-                f"(input_bytes={len(text.encode('utf-8'))}, status_code={response.status_code}, "
+                f"(input_chars={len(text)}, status_code={response.status_code}, "
                 f"pcm_bytes={total_audio_bytes}, keep_alive={keep_alive})"
             )
 

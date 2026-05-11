@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from arduino.app_bricks.tts import TextToSpeech, TTSBusyError
-from arduino.app_bricks.tts.local_tts import TTS_MAX_BYTES
+from arduino.app_bricks.tts.local_tts import TTS_MAX_CHARS
 from arduino.app_peripherals.speaker import BaseSpeaker, FormatPlain, FormatPacked
 from arduino.app_utils import App
 
@@ -113,17 +113,39 @@ def test_chunk_text_splits_on_sentence_boundary(monkeypatch):
     chunks = tts._chunk_text(text)
 
     assert chunks == [f"{'a' * 1000}.", "b" * 1000]
-    assert all(len(chunk.encode("utf-8")) <= TTS_MAX_BYTES for chunk in chunks)
+    assert all(len(chunk) <= TTS_MAX_CHARS for chunk in chunks)
 
 
-def test_chunk_text_preserves_utf8_boundaries(monkeypatch):
+def test_chunk_text_splits_on_newline_when_no_sentence_boundary(monkeypatch):
+    speaker = BlockingSpeaker()
+    tts = make_tts(monkeypatch, speaker, lambda url, json, **kwargs: FakeResponse(content=np.arange(4, dtype=np.int16).tobytes()))
+    text = f"{'a' * 900}\n{'b' * 300}"
+
+    chunks = tts._chunk_text(text)
+
+    assert chunks == ["a" * 900, "b" * 300]
+    assert all(len(chunk) <= TTS_MAX_CHARS for chunk in chunks)
+
+
+def test_chunk_text_splits_on_space_when_no_sentence_or_newline_boundary(monkeypatch):
+    speaker = BlockingSpeaker()
+    tts = make_tts(monkeypatch, speaker, lambda url, json, **kwargs: FakeResponse(content=np.arange(4, dtype=np.int16).tobytes()))
+    text = f"{'a' * 900} {'b' * 300}"
+
+    chunks = tts._chunk_text(text)
+
+    assert chunks == ["a" * 900, "b" * 300]
+    assert all(len(chunk) <= TTS_MAX_CHARS for chunk in chunks)
+
+
+def test_chunk_text_splits_on_character_limit(monkeypatch):
     speaker = BlockingSpeaker()
     tts = make_tts(monkeypatch, speaker, lambda url, json, **kwargs: FakeResponse(content=np.arange(4, dtype=np.int16).tobytes()))
 
-    chunks = tts._chunk_text("é" * 600)
+    chunks = tts._chunk_text("é" * 1200)
 
-    assert chunks == ["é" * 512, "é" * 88]
-    assert all(len(chunk.encode("utf-8")) <= TTS_MAX_BYTES for chunk in chunks)
+    assert chunks == ["é" * TTS_MAX_CHARS, "é" * 176]
+    assert all(len(chunk) <= TTS_MAX_CHARS for chunk in chunks)
 
 
 def test_speak_synthesizes_text_chunks(monkeypatch):
