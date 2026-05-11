@@ -46,6 +46,14 @@ def emit_json_progress(event_type: str, description: str, current: int, total: i
     print(json.dumps(data), flush=True)
 
 
+def emit_json_error(description: str):
+    data = {
+        "event": "error",
+        "description": description,
+    }
+    print(json.dumps(data), flush=True)
+
+
 def download(url: str, output_dir: str, json_progress: bool, output_name: str | None = None) -> str:
     """Download *url* to *output_dir* and return the local file path.
 
@@ -178,7 +186,7 @@ def download_and_extract(url: str, output_dir: str, json_progress: bool) -> None
         except (OSError, zipfile.BadZipFile) as exc:
             msg = f"Extraction failed: {exc}"
             if json_progress:
-                print(json.dumps({"error": msg}), flush=True)
+                emit_json_error(msg)
             else:
                 print(msg, file=sys.stderr)
             raise

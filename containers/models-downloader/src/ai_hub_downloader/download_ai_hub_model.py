@@ -11,7 +11,7 @@ import sys
 import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from common.http_download import download, download_and_extract  # noqa: E402
+from common.http_download import download, download_and_extract, emit_json_error
 
 
 def main():
@@ -95,7 +95,7 @@ def main():
     except subprocess.CalledProcessError as exc:
         msg = f"Failed to fetch model URL: {exc.stderr.strip() or exc}"
         if args.json_progress:
-            print(json.dumps({"error": msg}), flush=True)
+            emit_json_error(msg)
         else:
             print(msg, file=sys.stderr)
         sys.exit(1)
@@ -113,21 +113,21 @@ def main():
     except requests.HTTPError as exc:
         msg = f"HTTP error: {exc.response.status_code} {exc.response.reason}"
         if args.json_progress:
-            print(json.dumps({"error": msg}), flush=True)
+            emit_json_error(msg)
         else:
             print(msg, file=sys.stderr)
         sys.exit(1)
     except requests.RequestException as exc:
         msg = f"Request failed: {exc}"
         if args.json_progress:
-            print(json.dumps({"error": msg}), flush=True)
+            emit_json_error(msg)
         else:
             print(msg, file=sys.stderr)
         sys.exit(1)
     except Exception as exc:
         msg = f"Unexpected error: {exc}"
         if args.json_progress:
-            print(json.dumps({"error": msg}), flush=True)
+            emit_json_error(msg)
         else:
             print(msg, file=sys.stderr)
         sys.exit(1)

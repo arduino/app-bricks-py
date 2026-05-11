@@ -19,7 +19,7 @@ import sys
 import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from common.http_download import download  # noqa: E402
+from common.http_download import download, emit_json_error  # noqa: E402
 
 
 BASE_URL = "https://studio.edgeimpulse.com/v1/api/{project_id}/deployment/download?type={target}&modelType={quantization}&impulseId={impulse_id}"
@@ -88,7 +88,7 @@ def main():
     except requests.RequestException as exc:
         msg = f"Request failed: {exc}"
         if args.json_progress:
-            print(json.dumps({"error": msg}), flush=True)
+            emit_json_error(msg)
         else:
             print(msg, file=sys.stderr)
         sys.exit(1)
