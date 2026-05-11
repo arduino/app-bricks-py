@@ -446,6 +446,7 @@ class TestV4LCameraRecovery:
             True,  # For _resolve_name
             True,  # For _resolve_name
             True,  # For _open_camera
+            True,  # For v4l_path existence check
             False,  # For _safe_connect tentative for third capture()
             True,  # For _safe_connect check for fourth capture()
         ]
