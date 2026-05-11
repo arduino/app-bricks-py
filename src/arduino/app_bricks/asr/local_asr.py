@@ -212,13 +212,16 @@ class AutomaticSpeechRecognition:
                 None: ASR constructs a default Microphone() and owns its
                     lifecycle (started on start(), stopped on stop()).
                 Default: None.
-            language (str): Language code for the ASR model (e.g. "en" for English).
+            language (str): Language code for the ASR model (e.g. "en" for
+                English). This is typically auto-detected by the model,
+                but can be overridden here if needed.
 
         Note:
             Only one transcription can be active per instance at a time. For
             concurrent transcriptions on different mics, create multiple ASR
             instances.
         """
+        # API configuration
         self.api_host = resolve_address(self._APP_SERVICE_NAME)
         if not self.api_host:
             raise RuntimeError("Host address could not be resolved. Please check your configuration.")
@@ -234,6 +237,7 @@ class AutomaticSpeechRecognition:
             self.model = app_configured_model
         else:
             self.model = brick_config.get("model", None)
+
         self.language = language
 
         if source is None:
