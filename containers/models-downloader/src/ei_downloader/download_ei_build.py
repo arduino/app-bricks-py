@@ -12,7 +12,6 @@ Usage examples:
 """
 
 import argparse
-import json
 import os
 import sys
 
