@@ -47,7 +47,7 @@ class RemoteSensor:
 
     def __init__(
         self,
-        port: int = 8080,
+        port: int = 8090,
         timeout: int = 3,
         certs_dir_path: str = "/app/certs",
         use_tls: bool = False,
@@ -59,7 +59,7 @@ class RemoteSensor:
         Initialize RemoteSensor WebSocket server.
 
         Args:
-            port (int): Port to bind the server to
+            port (int): Port to bind the server to. Default: 8090.
             timeout (int): Connection timeout in seconds
             certs_dir_path (str): Path to the directory containing TLS certificates
             use_tls (bool): Enable TLS for secure connections. If True, 'encrypt' will
