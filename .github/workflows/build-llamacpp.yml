@@ -68,12 +68,16 @@ jobs:
           chmod +x build-linuxarm64-snapdragon.sh
           ./build-linuxarm64-snapdragon.sh
           mv "llamacpp-${LLAMA_CPP_VERSION}.tar.gz" ..
+          cd ..
+          sha256sum "llamacpp-${LLAMA_CPP_VERSION}.tar.gz" | tee "llamacpp-${LLAMA_CPP_VERSION}.tar.gz.sha256"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: llamacpp-${{ steps.params.outputs.version }}
-          path: llamacpp-${{ steps.params.outputs.version }}.tar.gz
+          path: |
+            llamacpp-${{ steps.params.outputs.version }}.tar.gz
+            llamacpp-${{ steps.params.outputs.version }}.tar.gz.sha256
 
       - name: Create or update release
         if: steps.params.outputs.release_version != ''
@@ -89,9 +93,12 @@ jobs:
             gh release delete "$TAG" --repo "$REPO" --yes --cleanup-tag
           fi
 
+          SHA256=$(cut -d' ' -f1 "llamacpp-${VERSION}.tar.gz.sha256")
+
           gh release create "$TAG" \
             "llamacpp-${VERSION}.tar.gz" \
+            "llamacpp-${VERSION}.tar.gz.sha256" \
             --repo "$REPO" \
             --latest=false \
             --title "llama.cpp $VERSION" \
-            --notes "llama.cpp built for ARM64 Linux with the Hexagon NPU (Snapdragon) backend. Built from ${{ steps.params.outputs.llama_cpp_repo }}@${{ steps.params.outputs.llama_cpp_ref }}."
+            --notes "$(printf 'llama.cpp built for ARM64 Linux with the Hexagon NPU (Snapdragon) backend. Built from %s@%s.\n\nSHA256: `%s`' "${{ steps.params.outputs.llama_cpp_repo }}" "${{ steps.params.outputs.llama_cpp_ref }}" "$SHA256")"

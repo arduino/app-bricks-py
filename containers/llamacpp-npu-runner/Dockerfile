@@ -9,8 +9,11 @@ FROM ${REGISTRY}app-bricks/aihub-models-runner:${BASE_IMAGE_VERSION}
 
 ARG LLAMA_CPP_GITHUB_REPO=arduino/app-bricks-py
 ARG LLAMA_CPP_RELEASE_VERSION=20260504
+ARG LLAMA_CPP_SHA256=0000000000000000000000000000000000000000000000000000000000000000
 
-ADD https://github.com/${LLAMA_CPP_GITHUB_REPO}/releases/download/llamacpp/${LLAMA_CPP_RELEASE_VERSION}/llamacpp-${LLAMA_CPP_RELEASE_VERSION}.tar.gz /tmp/llamacpp.tar.gz
+ADD --checksum=sha256:${LLAMA_CPP_SHA256} \
+    https://github.com/${LLAMA_CPP_GITHUB_REPO}/releases/download/llamacpp/${LLAMA_CPP_RELEASE_VERSION}/llamacpp-${LLAMA_CPP_RELEASE_VERSION}.tar.gz \
+    /tmp/llamacpp.tar.gz
 
 COPY ./scripts/* /
 
