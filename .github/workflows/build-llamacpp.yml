@@ -1,9 +1,6 @@
 name: Build llama.cpp with Hexagon support
 
 on:
-  push:
-    tags:
-      - 'llamacpp/*'
   workflow_dispatch:
     inputs:
       llama_cpp_repo:
@@ -13,9 +10,9 @@ on:
       llama_cpp_ref:
         description: 'Git ref to build (branch, tag, or commit SHA)'
         required: false
-        default: 'fde69a3607ff48b20bbb73e9a0059d5a142a5cf1'
+        default: 'master'
       release_version:
-        description: 'Release version stamp (leave empty to only upload as workflow artifact)'
+        description: 'Release version stamp (e.g. 20260601). Leave empty to only upload as workflow artifact.'
         required: false
         default: ''
 
@@ -43,24 +40,10 @@ jobs:
       - name: Resolve build parameters
         id: params
         run: |
-          # Fallback llama.cpp ref when the tag does not encode one.
-          DEFAULT_REF="fde69a3607ff48b20bbb73e9a0059d5a142a5cf1"
-          if [ "${GITHUB_EVENT_NAME}" = "push" ]; then
-            # Tag format: llamacpp/<version>[@<llama.cpp git ref>]
-            TAG_PATH="${GITHUB_REF#refs/tags/llamacpp/}"
-            if [[ "$TAG_PATH" == *@* ]]; then
-              VERSION="${TAG_PATH%@*}"
-              REF="${TAG_PATH#*@}"
-            else
-              VERSION="$TAG_PATH"
-              REF="$DEFAULT_REF"
-            fi
-            REPO="ggml-org/llama.cpp"
-          else
-            VERSION="${{ github.event.inputs.release_version }}"
-            REPO="${{ github.event.inputs.llama_cpp_repo }}"
-            REF="${{ github.event.inputs.llama_cpp_ref }}"
-          fi
+          VERSION="${{ inputs.release_version }}"
+          REPO="${{ inputs.llama_cpp_repo }}"
+          REF="${{ inputs.llama_cpp_ref }}"
+
           # Fall back to a snapshot stamp when no release version is provided
           STAMP="${VERSION:-snapshot-$(date -u +%Y%m%d)-${GITHUB_SHA::7}}"
           echo "version=$STAMP" >> $GITHUB_OUTPUT
@@ -93,29 +76,22 @@ jobs:
           path: llamacpp-${{ steps.params.outputs.version }}.tar.gz
 
       - name: Create or update release
-        if: github.event_name == 'push' || steps.params.outputs.release_version != ''
+        if: steps.params.outputs.release_version != ''
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION="${{ steps.params.outputs.version }}"
-          REF="${{ steps.params.outputs.llama_cpp_ref }}"
-          if [ "${GITHUB_EVENT_NAME}" = "push" ]; then
-            TAG="${GITHUB_REF_NAME}"
-          else
-            TAG="llamacpp/${VERSION}@${REF}"
-          fi
+          TAG="llamacpp/${VERSION}"
           REPO="${{ github.repository }}"
 
-          # Delete release if it already exists
           if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
             echo "Release $TAG already exists. Deleting..."
-            gh release delete "$TAG" --repo "$REPO" --yes
+            gh release delete "$TAG" --repo "$REPO" --yes --cleanup-tag
           fi
 
-          # Create release
           gh release create "$TAG" \
             "llamacpp-${VERSION}.tar.gz" \
             --repo "$REPO" \
             --latest=false \
-            --title "llama.cpp Hexagon $VERSION" \
+            --title "llama.cpp $VERSION" \
             --notes "llama.cpp built for ARM64 Linux with the Hexagon NPU (Snapdragon) backend. Built from ${{ steps.params.outputs.llama_cpp_repo }}@${{ steps.params.outputs.llama_cpp_ref }}."
