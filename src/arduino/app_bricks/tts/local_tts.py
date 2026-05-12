@@ -170,7 +170,7 @@ class TextToSpeech:
             with wave.open(wav_io, "wb") as wf:
                 wf.setnchannels(1)  # Mono
                 wf.setsampwidth(2)  # 16 bits
-                wf.setframerate(44100)  # 44.1kHz sample rate
+                wf.setframerate(self._speaker.sample_rate)
                 wf.writeframes(pcm_audio)
             wav_data = wav_io.getvalue()
 
