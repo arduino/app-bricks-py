@@ -1,4 +1,4 @@
-name: Build OpenCV Python wheel
+name: Build OpenCV Python Headless wheel
 
 on:
   push:
@@ -19,6 +19,25 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Determine version and upstream commit
+        id: version
+        env:
+          # Fallback opencv-python ref when the tag does not encode one.
+          DEFAULT_COMMIT: 4ddfc013fd1f13d9b9e379dbebf2cdbeb052e7f8
+        run: |
+          # Tag format: opencv/<version>[@<opencv-python git ref>]
+          TAG_PATH="${GITHUB_REF#refs/tags/opencv/}"
+          if [[ "$TAG_PATH" == *@* ]]; then
+            VERSION="${TAG_PATH%@*}"
+            COMMIT="${TAG_PATH#*@}"
+          else
+            VERSION="$TAG_PATH"
+            COMMIT="$DEFAULT_COMMIT"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "commit=$COMMIT" >> $GITHUB_OUTPUT
+          echo "Release version: $VERSION (from opencv-python@$COMMIT)"
 
       - name: Install prerequisites
         run: |
@@ -43,16 +62,17 @@ jobs:
 
       - name: Clone opencv-python repo
         run: |
+          COMMIT="${{ steps.version.outputs.commit }}"
           git clone --depth 1 https://github.com/opencv/opencv-python.git
           cd opencv-python
-          git fetch --depth 1 origin 4ddfc013fd1f13d9b9e379dbebf2cdbeb052e7f8
-          git checkout 4ddfc013fd1f13d9b9e379dbebf2cdbeb052e7f8
+          git fetch --depth 1 origin "$COMMIT"
+          git checkout "$COMMIT"
           git submodule update --init --recursive --depth 1
 
       - name: Build OpenCV Python wheels
         run: |
           cd opencv-python
-          export OPENCV_VERSION=4.13.0
+          export OPENCV_VERSION="${{ steps.version.outputs.version }}"
           export ENABLE_CONTRIB=0
           export ENABLE_HEADLESS=1
           export CMAKE_ARGS="-DWITH_GSTREAMER=ON -DWITH_FFMPEG=ON -DWITH_CAROTENE=ON -DWITH_LAPACK=ON -DBUILD_opencv_python3=ON -DWITH_AVIF=OFF -DWITH_GTK=OFF -DWITH_QT=OFF -DWITH_CUDA=OFF -DBUILD_opencv_java=OFF -DWITH_VTK=OFF -DBUILD_opencv_dnn=OFF -DBUILD_opencv_dnn_modern=OFF"
@@ -64,20 +84,12 @@ jobs:
           name: opencv-python-wheels
           path: opencv-python/*.whl
 
-      - name: Determine version
-        id: version
-        run: |
-          # Extract version from tag (opencv/4.13.0 -> 4.13.0)
-          VERSION="${GITHUB_REF#refs/tags/opencv/}"
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Release version: $VERSION"
-
       - name: Create or update release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |          
+        run: |
           VERSION="${{ steps.version.outputs.version }}"
-          TAG="opencv/$VERSION"
+          TAG="${GITHUB_REF_NAME}"
           REPO="${{ github.repository }}"
           
           # Delete release if it already exists
