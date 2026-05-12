@@ -8,10 +8,13 @@ FROM python:3.13-slim AS builder
 ARG OPENCV_GITHUB_REPO=arduino/app-bricks-py
 ARG OPENCV_RELEASE_VERSION=4.13.0.92
 ARG OPENCV_PYTHON_VERSION=cp313
+ARG OPENCV_WHL_SHA256=0000000000000000000000000000000000000000000000000000000000000000
 
 COPY ./requirements-base.txt /app/requirements.txt
 
-ADD https://github.com/${OPENCV_GITHUB_REPO}/releases/download/opencv/${OPENCV_RELEASE_VERSION}/opencv_python_headless-${OPENCV_RELEASE_VERSION}-${OPENCV_PYTHON_VERSION}-${OPENCV_PYTHON_VERSION}-linux_aarch64.whl /tmp/opencv_python_headless.whl
+ADD --checksum=sha256:${OPENCV_WHL_SHA256} \
+    https://github.com/${OPENCV_GITHUB_REPO}/releases/download/opencv/${OPENCV_RELEASE_VERSION}/opencv_python_headless-${OPENCV_RELEASE_VERSION}-${OPENCV_PYTHON_VERSION}-${OPENCV_PYTHON_VERSION}-linux_aarch64.whl \
+    /tmp/opencv_python_headless.whl
 
 RUN set -ex; \
     apt-get update -y; \
