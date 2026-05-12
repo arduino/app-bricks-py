@@ -1364,7 +1364,7 @@ models:
       ei-model-url: "https://studio.edgeimpulse.com/public/842271/live"      
       source-model-id: "hand-gestures"
       source-model-url: "https://studio.edgeimpulse.com/public/842271/live"
- - "genie:qwen3_4b":
+ - "genie:qwen3_4b_instruct_2507":
     runner: genie
     name : "Qwen 3-4B Instruct"
     description: >-
