@@ -241,9 +241,7 @@ class TextToSpeech:
 
         for entry in response.json() or []:
             entry_name = entry.get("name")
-            # HACK: allow partial match since some models have different name
-            # as reported by the runner vs. what we have in models-list.yaml
-            if model_name != entry_name and model_name not in entry_name:
+            if model_name != entry_name:
                 continue
             voices = entry.get("voices") or []
             if voices:
