@@ -1,0 +1,30 @@
+name: Build llama.cpp with Hexagon support
+
+on:
+  push:
+    tags:
+      - 'llamacpp/*'
+  workflow_dispatch:
+    inputs:
+      llama_cpp_repo:
+        description: 'llama.cpp repository in owner/repo format (e.g. a fork)'
+        required: false
+        default: 'ggml-org/llama.cpp'
+      llama_cpp_ref:
+        description: 'Git ref to build (branch, tag, or commit SHA)'
+        required: false
+        default: 'fde69a3607ff48b20bbb73e9a0059d5a142a5cf1'
+      release_version:
+        description: 'Release version stamp (leave empty to only upload as workflow artifact)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Stub
+        run: echo "This workflow is a stub and does not yet build llama.cpp with Hexagon support. Please check back later."
