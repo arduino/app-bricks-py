@@ -84,13 +84,13 @@ jobs:
           cd llama.cpp
           chmod +x build-linuxarm64-snapdragon.sh
           ./build-linuxarm64-snapdragon.sh
-          mv "llamacpp-hexagon-${LLAMA_CPP_VERSION}.tgz" ..
+          mv "llamacpp-${LLAMA_CPP_VERSION}.tar.gz" ..
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: llamacpp-hexagon-${{ steps.params.outputs.version }}
-          path: llamacpp-hexagon-${{ steps.params.outputs.version }}.tgz
+          name: llamacpp-${{ steps.params.outputs.version }}
+          path: llamacpp-${{ steps.params.outputs.version }}.tar.gz
 
       - name: Create or update release
         if: github.event_name == 'push' || steps.params.outputs.release_version != ''
@@ -114,7 +114,7 @@ jobs:
 
           # Create release
           gh release create "$TAG" \
-            "llamacpp-hexagon-${VERSION}.tgz" \
+            "llamacpp-${VERSION}.tar.gz" \
             --repo "$REPO" \
             --latest=false \
             --title "llama.cpp Hexagon $VERSION" \
