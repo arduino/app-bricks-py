@@ -1,0 +1,121 @@
+name: Build llama.cpp with Hexagon support
+
+on:
+  push:
+    tags:
+      - 'llamacpp/*'
+  workflow_dispatch:
+    inputs:
+      llama_cpp_repo:
+        description: 'llama.cpp repository in owner/repo format (e.g. a fork)'
+        required: false
+        default: 'ggml-org/llama.cpp'
+      llama_cpp_ref:
+        description: 'Git ref to build (branch, tag, or commit SHA)'
+        required: false
+        default: 'fde69a3607ff48b20bbb73e9a0059d5a142a5cf1'
+      release_version:
+        description: 'Release version stamp (leave empty to only upload as workflow artifact)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    # amd64 host is required: the snapdragon toolchain cross-compiles to arm64
+    runs-on: ubuntu-24.04
+    container:
+      image: ghcr.io/snapdragon-toolchain/arm64-linux:v0.1
+      options: --user root
+    timeout-minutes: 180
+
+    steps:
+      - name: Install prerequisites
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends gh git ca-certificates
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Resolve build parameters
+        id: params
+        run: |
+          # Fallback llama.cpp ref when the tag does not encode one.
+          DEFAULT_REF="fde69a3607ff48b20bbb73e9a0059d5a142a5cf1"
+          if [ "${GITHUB_EVENT_NAME}" = "push" ]; then
+            # Tag format: llamacpp/<version>[@<llama.cpp git ref>]
+            TAG_PATH="${GITHUB_REF#refs/tags/llamacpp/}"
+            if [[ "$TAG_PATH" == *@* ]]; then
+              VERSION="${TAG_PATH%@*}"
+              REF="${TAG_PATH#*@}"
+            else
+              VERSION="$TAG_PATH"
+              REF="$DEFAULT_REF"
+            fi
+            REPO="ggml-org/llama.cpp"
+          else
+            VERSION="${{ github.event.inputs.release_version }}"
+            REPO="${{ github.event.inputs.llama_cpp_repo }}"
+            REF="${{ github.event.inputs.llama_cpp_ref }}"
+          fi
+          # Fall back to a snapshot stamp when no release version is provided
+          STAMP="${VERSION:-snapshot-$(date -u +%Y%m%d)-${GITHUB_SHA::7}}"
+          echo "version=$STAMP" >> $GITHUB_OUTPUT
+          echo "release_version=$VERSION" >> $GITHUB_OUTPUT
+          echo "llama_cpp_repo=$REPO" >> $GITHUB_OUTPUT
+          echo "llama_cpp_ref=$REF" >> $GITHUB_OUTPUT
+          echo "Building $REPO@$REF as version $STAMP"
+
+      - name: Clone llama.cpp
+        run: |
+          git clone "https://github.com/${{ steps.params.outputs.llama_cpp_repo }}" llama.cpp
+          cd llama.cpp
+          git checkout "${{ steps.params.outputs.llama_cpp_ref }}"
+          cp ../containers/llamacpp-npu-runner/builder/CMakeUserPresets.json .
+          cp ../containers/llamacpp-npu-runner/builder/build-linuxarm64-snapdragon.sh .
+
+      - name: Build llama.cpp (snapdragon/hexagon)
+        env:
+          LLAMA_CPP_VERSION: ${{ steps.params.outputs.version }}
+        run: |
+          cd llama.cpp
+          chmod +x build-linuxarm64-snapdragon.sh
+          ./build-linuxarm64-snapdragon.sh
+          mv "llamacpp-hexagon-${LLAMA_CPP_VERSION}.tgz" ..
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: llamacpp-hexagon-${{ steps.params.outputs.version }}
+          path: llamacpp-hexagon-${{ steps.params.outputs.version }}.tgz
+
+      - name: Create or update release
+        if: github.event_name == 'push' || steps.params.outputs.release_version != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.params.outputs.version }}"
+          REF="${{ steps.params.outputs.llama_cpp_ref }}"
+          if [ "${GITHUB_EVENT_NAME}" = "push" ]; then
+            TAG="${GITHUB_REF_NAME}"
+          else
+            TAG="llamacpp/${VERSION}@${REF}"
+          fi
+          REPO="${{ github.repository }}"
+
+          # Delete release if it already exists
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            echo "Release $TAG already exists. Deleting..."
+            gh release delete "$TAG" --repo "$REPO" --yes
+          fi
+
+          # Create release
+          gh release create "$TAG" \
+            "llamacpp-hexagon-${VERSION}.tgz" \
+            --repo "$REPO" \
+            --latest=false \
+            --title "llama.cpp Hexagon $VERSION" \
+            --notes "llama.cpp built for ARM64 Linux with the Hexagon NPU (Snapdragon) backend. Built from ${{ steps.params.outputs.llama_cpp_repo }}@${{ steps.params.outputs.llama_cpp_ref }}."
