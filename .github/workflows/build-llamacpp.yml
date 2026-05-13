@@ -81,16 +81,12 @@ jobs:
               --mtime="@${SOURCE_DATE_EPOCH:-0}" \
               -cf - pkg-snapdragon | gzip -n > "llamacpp-hexagon-${LLAMA_CPP_VERSION}.tar.gz"
           mv "llamacpp-hexagon-${LLAMA_CPP_VERSION}.tar.gz" ..
-          cd ..
-          sha256sum "llamacpp-hexagon-${LLAMA_CPP_VERSION}.tar.gz" | tee "llamacpp-hexagon-${LLAMA_CPP_VERSION}.tar.gz.sha256"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: llamacpp-hexagon-${{ needs.resolve.outputs.version }}
-          path: |
-            llamacpp-hexagon-${{ needs.resolve.outputs.version }}.tar.gz
-            llamacpp-hexagon-${{ needs.resolve.outputs.version }}.tar.gz.sha256
+          path: llamacpp-hexagon-${{ needs.resolve.outputs.version }}.tar.gz
 
   build-cpu:
     needs: resolve
@@ -128,16 +124,12 @@ jobs:
               --mtime="@${SOURCE_DATE_EPOCH:-0}" \
               -cf - pkg-cpu | gzip -n > "llamacpp-cpu-${LLAMA_CPP_VERSION}.tar.gz"
           mv "llamacpp-cpu-${LLAMA_CPP_VERSION}.tar.gz" ..
-          cd ..
-          sha256sum "llamacpp-cpu-${LLAMA_CPP_VERSION}.tar.gz" | tee "llamacpp-cpu-${LLAMA_CPP_VERSION}.tar.gz.sha256"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: llamacpp-cpu-${{ needs.resolve.outputs.version }}
-          path: |
-            llamacpp-cpu-${{ needs.resolve.outputs.version }}.tar.gz
-            llamacpp-cpu-${{ needs.resolve.outputs.version }}.tar.gz.sha256
+          path: llamacpp-cpu-${{ needs.resolve.outputs.version }}.tar.gz
 
   build-blas:
     needs: resolve
@@ -177,16 +169,12 @@ jobs:
               --mtime="@${SOURCE_DATE_EPOCH:-0}" \
               -cf - pkg-blas | gzip -n > "llamacpp-blas-${LLAMA_CPP_VERSION}.tar.gz"
           mv "llamacpp-blas-${LLAMA_CPP_VERSION}.tar.gz" ..
-          cd ..
-          sha256sum "llamacpp-blas-${LLAMA_CPP_VERSION}.tar.gz" | tee "llamacpp-blas-${LLAMA_CPP_VERSION}.tar.gz.sha256"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: llamacpp-blas-${{ needs.resolve.outputs.version }}
-          path: |
-            llamacpp-blas-${{ needs.resolve.outputs.version }}.tar.gz
-            llamacpp-blas-${{ needs.resolve.outputs.version }}.tar.gz.sha256
+          path: llamacpp-blas-${{ needs.resolve.outputs.version }}.tar.gz
 
   release:
     needs: [ resolve, build-hexagon, build-cpu, build-blas ]
@@ -212,25 +200,9 @@ jobs:
             gh release delete "$TAG" --repo "$REPO" --yes --cleanup-tag
           fi
 
-          NOTES_FILE=$(mktemp)
-          {
-            echo "llama.cpp built for ARM64 Linux in three variants:"
-            echo "- **hexagon**: Snapdragon Hexagon NPU backend"
-            echo "- **cpu**: plain CPU build"
-            echo "- **blas**: CPU + OpenBLAS"
-            echo ""
-            echo "Built from \`${{ needs.resolve.outputs.llama_cpp_repo }}@${{ needs.resolve.outputs.llama_cpp_ref }}\`."
-            echo ""
-            echo "SHA256:"
-            for f in artifacts/*.tar.gz.sha256; do
-              echo "- \`$(cut -d' ' -f1 "$f")\` — \`$(basename "$f" .sha256)\`"
-            done
-          } > "$NOTES_FILE"
-
           gh release create "$TAG" \
             artifacts/*.tar.gz \
-            artifacts/*.tar.gz.sha256 \
             --repo "$REPO" \
             --latest=false \
             --title "llama.cpp $VERSION" \
-            --notes-file "$NOTES_FILE"
+            --notes "$(printf 'llama.cpp built for ARM64 Linux in three variants:\n- **hexagon**: Snapdragon Hexagon NPU backend\n- **cpu**: plain CPU build\n- **blas**: CPU + OpenBLAS\n\nBuilt from `%s@%s`.' "${{ needs.resolve.outputs.llama_cpp_repo }}" "${{ needs.resolve.outputs.llama_cpp_ref }}")"
