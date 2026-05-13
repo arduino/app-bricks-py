@@ -118,8 +118,8 @@ jobs:
             -DLLAMA_BUILD_TESTS=OFF \
             -DLLAMA_OPENSSL=OFF \
             -DGGML_NATIVE=OFF \
-            -DCMAKE_C_FLAGS="-march=armv8-a" \
-            -DCMAKE_CXX_FLAGS="-march=armv8-a"
+            -DCMAKE_C_FLAGS="-mcpu=cortex-a53" \
+            -DCMAKE_CXX_FLAGS="-mcpu=cortex-a53"
           cmake --build build --config Release -j "$(nproc)"
           cmake --install build --prefix pkg-cpu
           find pkg-cpu/bin -maxdepth 1 -name 'test*' -delete
@@ -165,8 +165,8 @@ jobs:
             -DLLAMA_BUILD_TESTS=OFF \
             -DLLAMA_OPENSSL=OFF \
             -DGGML_NATIVE=OFF \
-            -DCMAKE_C_FLAGS="-march=armv8-a" \
-            -DCMAKE_CXX_FLAGS="-march=armv8-a" \
+            -DCMAKE_C_FLAGS="-mcpu=cortex-a53" \
+            -DCMAKE_CXX_FLAGS="-mcpu=cortex-a53" \
             -DGGML_BLAS=ON \
             -DGGML_BLAS_VENDOR=OpenBLAS
           cmake --build build --config Release -j "$(nproc)"
@@ -214,8 +214,8 @@ jobs:
             -DLLAMA_BUILD_TESTS=OFF \
             -DLLAMA_OPENSSL=OFF \
             -DGGML_NATIVE=OFF \
-            -DCMAKE_C_FLAGS="-march=armv8-a" \
-            -DCMAKE_CXX_FLAGS="-march=armv8-a" \
+            -DCMAKE_C_FLAGS="-mcpu=cortex-a53" \
+            -DCMAKE_CXX_FLAGS="-mcpu=cortex-a53" \
             -DGGML_OPENCL=ON
           cmake --build build --config Release -j "$(nproc)"
           cmake --install build --prefix pkg-opencl
