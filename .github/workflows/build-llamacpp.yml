@@ -64,15 +64,22 @@ jobs:
           cd llama.cpp
           git checkout "${{ needs.resolve.outputs.llama_cpp_ref }}"
           cp ../containers/llamacpp-npu-runner/builder/CMakeUserPresets.json .
-          cp ../containers/llamacpp-npu-runner/builder/build-linuxarm64-snapdragon.sh .
+          # Anchor timestamps to the source commit time so builds are reproducible
+          echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
 
       - name: Build
         env:
           LLAMA_CPP_VERSION: ${{ needs.resolve.outputs.version }}
         run: |
           cd llama.cpp
-          chmod +x build-linuxarm64-snapdragon.sh
-          ./build-linuxarm64-snapdragon.sh
+          cmake --preset arm64-linux-snapdragon-release -B build-snapdragon
+          cmake --build build-snapdragon -j "$(nproc)"
+          cmake --install build-snapdragon --prefix pkg-snapdragon
+          find pkg-snapdragon/bin -maxdepth 1 -name 'test*' -delete
+          # Create a reproducible tarball
+          tar --sort=name --owner=0 --group=0 --numeric-owner \
+              --mtime="@${SOURCE_DATE_EPOCH:-0}" \
+              -cf - pkg-snapdragon | gzip -n > "llamacpp-hexagon-${LLAMA_CPP_VERSION}.tar.gz"
           mv "llamacpp-hexagon-${LLAMA_CPP_VERSION}.tar.gz" ..
           cd ..
           sha256sum "llamacpp-hexagon-${LLAMA_CPP_VERSION}.tar.gz" | tee "llamacpp-hexagon-${LLAMA_CPP_VERSION}.tar.gz.sha256"
@@ -103,6 +110,7 @@ jobs:
           git clone "https://github.com/${{ needs.resolve.outputs.llama_cpp_repo }}" llama.cpp
           cd llama.cpp
           git checkout "${{ needs.resolve.outputs.llama_cpp_ref }}"
+          echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
 
       - name: Build
         env:
@@ -115,7 +123,10 @@ jobs:
           cmake --build build --config Release -j "$(nproc)"
           cmake --install build --prefix pkg-cpu
           find pkg-cpu/bin -maxdepth 1 -name 'test*' -delete
-          tar -czvf "llamacpp-cpu-${LLAMA_CPP_VERSION}.tar.gz" pkg-cpu
+          # Create a reproducible tarball
+          tar --sort=name --owner=0 --group=0 --numeric-owner \
+              --mtime="@${SOURCE_DATE_EPOCH:-0}" \
+              -cf - pkg-cpu | gzip -n > "llamacpp-cpu-${LLAMA_CPP_VERSION}.tar.gz"
           mv "llamacpp-cpu-${LLAMA_CPP_VERSION}.tar.gz" ..
           cd ..
           sha256sum "llamacpp-cpu-${LLAMA_CPP_VERSION}.tar.gz" | tee "llamacpp-cpu-${LLAMA_CPP_VERSION}.tar.gz.sha256"
@@ -146,6 +157,7 @@ jobs:
           git clone "https://github.com/${{ needs.resolve.outputs.llama_cpp_repo }}" llama.cpp
           cd llama.cpp
           git checkout "${{ needs.resolve.outputs.llama_cpp_ref }}"
+          echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
 
       - name: Build
         env:
@@ -160,7 +172,10 @@ jobs:
           cmake --build build --config Release -j "$(nproc)"
           cmake --install build --prefix pkg-blas
           find pkg-blas/bin -maxdepth 1 -name 'test*' -delete
-          tar -czvf "llamacpp-blas-${LLAMA_CPP_VERSION}.tar.gz" pkg-blas
+          # Create a reproducible tarball
+          tar --sort=name --owner=0 --group=0 --numeric-owner \
+              --mtime="@${SOURCE_DATE_EPOCH:-0}" \
+              -cf - pkg-blas | gzip -n > "llamacpp-blas-${LLAMA_CPP_VERSION}.tar.gz"
           mv "llamacpp-blas-${LLAMA_CPP_VERSION}.tar.gz" ..
           cd ..
           sha256sum "llamacpp-blas-${LLAMA_CPP_VERSION}.tar.gz" | tee "llamacpp-blas-${LLAMA_CPP_VERSION}.tar.gz.sha256"
