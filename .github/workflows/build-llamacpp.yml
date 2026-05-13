@@ -1,4 +1,4 @@
-name: Build llama.cpp with Hexagon, CPU and BLAS support
+name: Build llama.cpp with Hexagon, CPU, BLAS and OpenCL support
 
 on:
   workflow_dispatch:
@@ -184,8 +184,56 @@ jobs:
           name: llamacpp-blas-${{ needs.resolve.outputs.version }}
           path: llamacpp-blas-${{ needs.resolve.outputs.version }}.tar.gz
 
+  build-opencl:
+    needs: resolve
+    runs-on: ubuntu-24.04-arm
+    container:
+      image: debian:trixie
+      options: --user root
+    timeout-minutes: 90
+    steps:
+      - name: Install prerequisites
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git ca-certificates build-essential cmake ninja-build pkg-config opencl-headers ocl-icd-opencl-dev python3
+
+      - name: Clone llama.cpp
+        run: |
+          git clone "https://github.com/${{ needs.resolve.outputs.llama_cpp_repo }}" llama.cpp
+          cd llama.cpp
+          git checkout "${{ needs.resolve.outputs.llama_cpp_ref }}"
+          echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
+
+      - name: Build
+        env:
+          LLAMA_CPP_VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          cd llama.cpp
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLLAMA_BUILD_TESTS=OFF \
+            -DLLAMA_OPENSSL=OFF \
+            -DGGML_NATIVE=OFF \
+            -DCMAKE_C_FLAGS="-march=armv8-a" \
+            -DCMAKE_CXX_FLAGS="-march=armv8-a" \
+            -DGGML_OPENCL=ON
+          cmake --build build --config Release -j "$(nproc)"
+          cmake --install build --prefix pkg-opencl
+          find pkg-opencl/bin -maxdepth 1 -name 'test*' -delete
+          # Create a reproducible tarball
+          tar --sort=name --owner=0 --group=0 --numeric-owner \
+              --mtime="@${SOURCE_DATE_EPOCH:-0}" \
+              -cf - pkg-opencl | gzip -n > "llamacpp-opencl-${LLAMA_CPP_VERSION}.tar.gz"
+          mv "llamacpp-opencl-${LLAMA_CPP_VERSION}.tar.gz" ..
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: llamacpp-opencl-${{ needs.resolve.outputs.version }}
+          path: llamacpp-opencl-${{ needs.resolve.outputs.version }}.tar.gz
+
   release:
-    needs: [ resolve, build-hexagon, build-cpu, build-blas ]
+    needs: [ resolve, build-hexagon, build-cpu, build-blas, build-opencl ]
     if: needs.resolve.outputs.release_version != ''
     runs-on: ubuntu-24.04
     steps:
@@ -213,4 +261,4 @@ jobs:
             --repo "$REPO" \
             --latest=false \
             --title "llama.cpp $VERSION" \
-            --notes "$(printf 'llama.cpp built for ARM64 Linux in three variants:\n- **hexagon**: Snapdragon Hexagon NPU backend\n- **cpu**: plain CPU build\n- **blas**: CPU + OpenBLAS\n\nBuilt from `%s@%s`.' "${{ needs.resolve.outputs.llama_cpp_repo }}" "${{ needs.resolve.outputs.llama_cpp_ref }}")"
+            --notes "$(printf 'llama.cpp built for ARM64 Linux in four variants:\n- **hexagon**: Snapdragon Hexagon NPU backend\n- **cpu**: plain CPU build\n- **blas**: CPU + OpenBLAS\n- **opencl**: CPU + OpenCL\n\nBuilt from `%s@%s`.' "${{ needs.resolve.outputs.llama_cpp_repo }}" "${{ needs.resolve.outputs.llama_cpp_ref }}")"
