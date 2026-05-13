@@ -115,7 +115,11 @@ jobs:
           cd llama.cpp
           cmake -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DLLAMA_BUILD_TESTS=OFF
+            -DLLAMA_BUILD_TESTS=OFF \
+            -DLLAMA_OPENSSL=OFF \
+            -DGGML_NATIVE=OFF \
+            -DCMAKE_C_FLAGS="-march=armv8-a" \
+            -DCMAKE_CXX_FLAGS="-march=armv8-a"
           cmake --build build --config Release -j "$(nproc)"
           cmake --install build --prefix pkg-cpu
           find pkg-cpu/bin -maxdepth 1 -name 'test*' -delete
@@ -159,6 +163,10 @@ jobs:
           cmake -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DLLAMA_BUILD_TESTS=OFF \
+            -DLLAMA_OPENSSL=OFF \
+            -DGGML_NATIVE=OFF \
+            -DCMAKE_C_FLAGS="-march=armv8-a" \
+            -DCMAKE_CXX_FLAGS="-march=armv8-a" \
             -DGGML_BLAS=ON \
             -DGGML_BLAS_VENDOR=OpenBLAS
           cmake --build build --config Release -j "$(nproc)"
