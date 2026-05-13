@@ -1,4 +1,4 @@
-name: Build llama.cpp with Hexagon support
+name: Build llama.cpp with Hexagon, CPU and BLAS support
 
 on:
   workflow_dispatch:
@@ -20,31 +20,20 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    # amd64 host is required: the snapdragon toolchain cross-compiles to arm64
+  resolve:
     runs-on: ubuntu-24.04
-    container:
-      image: ghcr.io/snapdragon-toolchain/arm64-linux:v0.6
-      options: --user root
-    timeout-minutes: 180
-
+    outputs:
+      version: ${{ steps.params.outputs.version }}
+      release_version: ${{ steps.params.outputs.release_version }}
+      llama_cpp_repo: ${{ steps.params.outputs.llama_cpp_repo }}
+      llama_cpp_ref: ${{ steps.params.outputs.llama_cpp_ref }}
     steps:
-      - name: Install prerequisites
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends gh git ca-certificates
-
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
       - name: Resolve build parameters
         id: params
         run: |
           VERSION="${{ inputs.release_version }}"
           REPO="${{ inputs.llama_cpp_repo }}"
           REF="${{ inputs.llama_cpp_ref }}"
-
-          # Fall back to a snapshot stamp when no release version is provided
           STAMP="${VERSION:-snapshot-$(date -u +%Y%m%d)-${GITHUB_SHA::7}}"
           echo "version=$STAMP" >> $GITHUB_OUTPUT
           echo "release_version=$VERSION" >> $GITHUB_OUTPUT
@@ -52,39 +41,154 @@ jobs:
           echo "llama_cpp_ref=$REF" >> $GITHUB_OUTPUT
           echo "Building $REPO@$REF as version $STAMP"
 
+  build-hexagon:
+    needs: resolve
+    # amd64 host is required: the snapdragon toolchain cross-compiles to arm64
+    runs-on: ubuntu-24.04
+    container:
+      image: ghcr.io/snapdragon-toolchain/arm64-linux:v0.6
+      options: --user root
+    timeout-minutes: 180
+    steps:
+      - name: Install prerequisites
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git ca-certificates
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Clone llama.cpp
         run: |
-          git clone "https://github.com/${{ steps.params.outputs.llama_cpp_repo }}" llama.cpp
+          git clone "https://github.com/${{ needs.resolve.outputs.llama_cpp_repo }}" llama.cpp
           cd llama.cpp
-          git checkout "${{ steps.params.outputs.llama_cpp_ref }}"
+          git checkout "${{ needs.resolve.outputs.llama_cpp_ref }}"
           cp ../containers/llamacpp-npu-runner/builder/CMakeUserPresets.json .
           cp ../containers/llamacpp-npu-runner/builder/build-linuxarm64-snapdragon.sh .
 
-      - name: Build llama.cpp (snapdragon/hexagon)
+      - name: Build
         env:
-          LLAMA_CPP_VERSION: ${{ steps.params.outputs.version }}
+          LLAMA_CPP_VERSION: ${{ needs.resolve.outputs.version }}
         run: |
           cd llama.cpp
           chmod +x build-linuxarm64-snapdragon.sh
           ./build-linuxarm64-snapdragon.sh
-          mv "llamacpp-${LLAMA_CPP_VERSION}.tar.gz" ..
+          mv "llamacpp-hexagon-${LLAMA_CPP_VERSION}.tar.gz" ..
           cd ..
-          sha256sum "llamacpp-${LLAMA_CPP_VERSION}.tar.gz" | tee "llamacpp-${LLAMA_CPP_VERSION}.tar.gz.sha256"
+          sha256sum "llamacpp-hexagon-${LLAMA_CPP_VERSION}.tar.gz" | tee "llamacpp-hexagon-${LLAMA_CPP_VERSION}.tar.gz.sha256"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: llamacpp-${{ steps.params.outputs.version }}
+          name: llamacpp-hexagon-${{ needs.resolve.outputs.version }}
           path: |
-            llamacpp-${{ steps.params.outputs.version }}.tar.gz
-            llamacpp-${{ steps.params.outputs.version }}.tar.gz.sha256
+            llamacpp-hexagon-${{ needs.resolve.outputs.version }}.tar.gz
+            llamacpp-hexagon-${{ needs.resolve.outputs.version }}.tar.gz.sha256
+
+  build-cpu:
+    needs: resolve
+    runs-on: ubuntu-24.04-arm
+    container:
+      image: debian:trixie
+      options: --user root
+    timeout-minutes: 90
+    steps:
+      - name: Install prerequisites
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git ca-certificates build-essential cmake ninja-build
+
+      - name: Clone llama.cpp
+        run: |
+          git clone "https://github.com/${{ needs.resolve.outputs.llama_cpp_repo }}" llama.cpp
+          cd llama.cpp
+          git checkout "${{ needs.resolve.outputs.llama_cpp_ref }}"
+
+      - name: Build
+        env:
+          LLAMA_CPP_VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          cd llama.cpp
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLLAMA_BUILD_TESTS=OFF
+          cmake --build build --config Release -j "$(nproc)"
+          cmake --install build --prefix pkg-cpu
+          find pkg-cpu/bin -maxdepth 1 -name 'test*' -delete
+          tar -czvf "llamacpp-cpu-${LLAMA_CPP_VERSION}.tar.gz" pkg-cpu
+          mv "llamacpp-cpu-${LLAMA_CPP_VERSION}.tar.gz" ..
+          cd ..
+          sha256sum "llamacpp-cpu-${LLAMA_CPP_VERSION}.tar.gz" | tee "llamacpp-cpu-${LLAMA_CPP_VERSION}.tar.gz.sha256"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: llamacpp-cpu-${{ needs.resolve.outputs.version }}
+          path: |
+            llamacpp-cpu-${{ needs.resolve.outputs.version }}.tar.gz
+            llamacpp-cpu-${{ needs.resolve.outputs.version }}.tar.gz.sha256
+
+  build-blas:
+    needs: resolve
+    runs-on: ubuntu-24.04-arm
+    container:
+      image: debian:trixie
+      options: --user root
+    timeout-minutes: 90
+    steps:
+      - name: Install prerequisites
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git ca-certificates build-essential cmake ninja-build pkg-config libopenblas-dev
+
+      - name: Clone llama.cpp
+        run: |
+          git clone "https://github.com/${{ needs.resolve.outputs.llama_cpp_repo }}" llama.cpp
+          cd llama.cpp
+          git checkout "${{ needs.resolve.outputs.llama_cpp_ref }}"
+
+      - name: Build
+        env:
+          LLAMA_CPP_VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          cd llama.cpp
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLLAMA_BUILD_TESTS=OFF \
+            -DGGML_BLAS=ON \
+            -DGGML_BLAS_VENDOR=OpenBLAS
+          cmake --build build --config Release -j "$(nproc)"
+          cmake --install build --prefix pkg-blas
+          find pkg-blas/bin -maxdepth 1 -name 'test*' -delete
+          tar -czvf "llamacpp-blas-${LLAMA_CPP_VERSION}.tar.gz" pkg-blas
+          mv "llamacpp-blas-${LLAMA_CPP_VERSION}.tar.gz" ..
+          cd ..
+          sha256sum "llamacpp-blas-${LLAMA_CPP_VERSION}.tar.gz" | tee "llamacpp-blas-${LLAMA_CPP_VERSION}.tar.gz.sha256"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: llamacpp-blas-${{ needs.resolve.outputs.version }}
+          path: |
+            llamacpp-blas-${{ needs.resolve.outputs.version }}.tar.gz
+            llamacpp-blas-${{ needs.resolve.outputs.version }}.tar.gz.sha256
+
+  release:
+    needs: [ resolve, build-hexagon, build-cpu, build-blas ]
+    if: needs.resolve.outputs.release_version != ''
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
 
       - name: Create or update release
-        if: steps.params.outputs.release_version != ''
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          VERSION="${{ steps.params.outputs.version }}"
+          VERSION="${{ needs.resolve.outputs.version }}"
           TAG="llamacpp/${VERSION}"
           REPO="${{ github.repository }}"
 
@@ -93,12 +197,25 @@ jobs:
             gh release delete "$TAG" --repo "$REPO" --yes --cleanup-tag
           fi
 
-          SHA256=$(cut -d' ' -f1 "llamacpp-${VERSION}.tar.gz.sha256")
+          NOTES_FILE=$(mktemp)
+          {
+            echo "llama.cpp built for ARM64 Linux in three variants:"
+            echo "- **hexagon**: Snapdragon Hexagon NPU backend"
+            echo "- **cpu**: plain CPU build"
+            echo "- **blas**: CPU + OpenBLAS"
+            echo ""
+            echo "Built from \`${{ needs.resolve.outputs.llama_cpp_repo }}@${{ needs.resolve.outputs.llama_cpp_ref }}\`."
+            echo ""
+            echo "SHA256:"
+            for f in artifacts/*.tar.gz.sha256; do
+              echo "- \`$(cut -d' ' -f1 "$f")\` — \`$(basename "$f" .sha256)\`"
+            done
+          } > "$NOTES_FILE"
 
           gh release create "$TAG" \
-            "llamacpp-${VERSION}.tar.gz" \
-            "llamacpp-${VERSION}.tar.gz.sha256" \
+            artifacts/*.tar.gz \
+            artifacts/*.tar.gz.sha256 \
             --repo "$REPO" \
             --latest=false \
             --title "llama.cpp $VERSION" \
-            --notes "$(printf 'llama.cpp built for ARM64 Linux with the Hexagon NPU (Snapdragon) backend. Built from %s@%s.\n\nSHA256: `%s`' "${{ steps.params.outputs.llama_cpp_repo }}" "${{ steps.params.outputs.llama_cpp_ref }}" "$SHA256")"
+            --notes-file "$NOTES_FILE"

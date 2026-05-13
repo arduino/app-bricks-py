@@ -11,4 +11,4 @@ cmake --install build-snapdragon --prefix pkg-snapdragon
 
 find pkg-snapdragon/bin -maxdepth 1 -name 'test*' -delete
 
-tar -czvf "llamacpp-${VERSION}.tar.gz" pkg-snapdragon
+tar -czvf "llamacpp-hexagon-${VERSION}.tar.gz" pkg-snapdragon
