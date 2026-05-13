@@ -6,11 +6,11 @@
 FROM python:3.13-slim AS builder
 
 ARG OPENCV_WHL_URL
-ARG OPENCV_WHL_SHA256
+ARG OPENCV_WHL_DIGEST
 
 COPY ./requirements-base.txt /app/requirements.txt
 
-ADD --checksum=sha256:${OPENCV_WHL_SHA256} ${OPENCV_WHL_URL} /tmp/opencv_python_headless.whl
+ADD --checksum=${OPENCV_WHL_DIGEST} ${OPENCV_WHL_URL} /tmp/opencv_python_headless.whl
 
 RUN set -ex; \
     apt-get update -y; \
@@ -36,15 +36,15 @@ RUN set -ex; \
 FROM python:3.13-slim AS production
 
 ARG LIBCAMERA_DEB_URL
-ARG LIBCAMERA_DEB_SHA256
+ARG LIBCAMERA_DEB_DIGEST
 ARG LIBCAMERA_IPA_DEB_URL
-ARG LIBCAMERA_IPA_DEB_SHA256
+ARG LIBCAMERA_IPA_DEB_DIGEST
 ARG GSTREAMER_LIBCAMERA_DEB_URL
-ARG GSTREAMER_LIBCAMERA_DEB_SHA256
+ARG GSTREAMER_LIBCAMERA_DEB_DIGEST
 
-ADD --checksum=sha256:${LIBCAMERA_DEB_SHA256} ${LIBCAMERA_DEB_URL} /tmp/libcamera0.7.deb
-ADD --checksum=sha256:${LIBCAMERA_IPA_DEB_SHA256} ${LIBCAMERA_IPA_DEB_URL} /tmp/libcamera-ipa.deb
-ADD --checksum=sha256:${GSTREAMER_LIBCAMERA_DEB_SHA256} ${GSTREAMER_LIBCAMERA_DEB_URL} /tmp/gstreamer1.0-libcamera.deb
+ADD --checksum=${LIBCAMERA_DEB_DIGEST} ${LIBCAMERA_DEB_URL} /tmp/libcamera0.7.deb
+ADD --checksum=${LIBCAMERA_IPA_DEB_DIGEST} ${LIBCAMERA_IPA_DEB_URL} /tmp/libcamera-ipa.deb
+ADD --checksum=${GSTREAMER_LIBCAMERA_DEB_DIGEST} ${GSTREAMER_LIBCAMERA_DEB_URL} /tmp/gstreamer1.0-libcamera.deb
 ADD https://raw.githubusercontent.com/googlefonts/opensans/main/fonts/ttf/OpenSans-Regular.ttf /home/app/.fonts/OpenSans.ttf
 
 # Copy the installed dependencies from the 'builder' stage
