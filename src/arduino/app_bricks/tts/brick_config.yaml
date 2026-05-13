@@ -7,4 +7,4 @@ supported_boards: ["ventunoq"]
 requires_services: ["arduino:genie_audio"]
 ai_frameworks_compatibility:
   - qnn
-model: melo-tts-en
+model: piper-tts-en
