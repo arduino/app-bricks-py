@@ -8,9 +8,9 @@ ARG BASE_IMAGE_VERSION=latest
 FROM ${REGISTRY}app-bricks/aihub-models-runner:${BASE_IMAGE_VERSION}
 
 ARG LLAMA_CPP_URL
-ARG LLAMA_CPP_SHA256
+ARG LLAMA_CPP_DIGEST
 
-ADD --checksum=sha256:${LLAMA_CPP_SHA256} ${LLAMA_CPP_URL} /tmp/llamacpp.tar.gz
+ADD --checksum=${LLAMA_CPP_DIGEST} ${LLAMA_CPP_URL} /tmp/llamacpp.tar.gz
 
 COPY ./scripts/* /
 
