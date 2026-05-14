@@ -1,6 +1,6 @@
 services:
   llamacpp-models-runner:
-    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/llamacpp-runner:dev-next
+    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/llamacpp-npu-runner:dev-next
     logging:
       driver: "json-file"
       options:
@@ -8,21 +8,23 @@ services:
         max-file: "2"
     environment:
       - LLAMA_LOG_LEVEL=error
-      - LLAMA_ARG_CTX_SIZE=${X_LLAMA_ARG_CTX_SIZE:-4096}
-      - LLAMA_ARG_REASONING=${X_LLAMA_ARG_REASONING:-off}
       - LLAMA_ARG_HOST=0.0.0.0
       - LLAMA_ARG_PORT=9999
+      - LLAMA_ARG_POLL=1000
+      - LLAMA_ARG_BATCH=1024
+      - LLAMA_ARG_UBATCH=256
       - LLAMA_ARG_MODELS_DIR=/models
+      - LLAMA_ARG_FLASH_ATTN=${X_LLAMA_ARG_FLASH_ATTN:-on}
       - LLAMA_ARG_MODELS_MAX=${X_LLAMA_ARG_MODELS_MAX:-2}
+      - LLAMA_ARG_CTX_SIZE=${X_LLAMA_ARG_CTX_SIZE:-4096}
+      - LLAMA_ARG_REASONING=${X_LLAMA_ARG_REASONING:-off}
       - LLAMA_ARG_THREADS=${X_LLAMA_ARG_THREADS:-4}
-      #- LLAMA_ARG_N_PREDICT=${X_LLAMA_ARG_N_PREDICT:-1024}
       - XDG_CACHE_HOME=/models
-      #- LLAMA_API_KEY=${X_LLAMA_API_KEY:-key}
     working_dir: /models
     ports:
       - ${BIND_ADDRESS:-127.0.0.1}:9999:9999
     mem_limit: 10g
-    oom_kill_disable: false
+    memswap_limit: 10g
     shm_size: 2g
     devices:
       - /dev/dma_heap/system

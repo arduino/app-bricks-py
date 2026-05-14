@@ -13,10 +13,6 @@ export ADSP_LIBRARY_PATH=/opt/pkg-snapdragon/lib
 exec /opt/pkg-snapdragon/bin/llama-server \
   --device HTP0 \
   -ngl 100 \
-  -fa on \
   --no-mmap \
-  -t 4 \
-  --poll 1000 \
-  --ubatch-size 256 \
   --log-disable \
   --models-preset /models/models.ini
