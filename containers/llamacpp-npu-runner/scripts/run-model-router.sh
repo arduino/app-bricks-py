@@ -4,30 +4,19 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# Function to handle cleanup on SIGTERM
-cleanup() {
-    echo "SIGTERM received. Cleaning up..."
-    # Kill background processes
-    kill "$LLAMA_PID"
-    exit 0
-}
-
-# Trap SIGTERM and SIGINT
-trap cleanup SIGTERM SIGINT
-
-# Now re-create the models.ini file
 echo "Generating models.ini..."
 python3 /generate_models_ini.py /models
 
 echo "Starting Llama server..."
-# Add your specific flags here (model path, port, etc.)
 export LD_LIBRARY_PATH=/opt/pkg-snapdragon/lib
 export ADSP_LIBRARY_PATH=/opt/pkg-snapdragon/lib
-
-/opt/pkg-snapdragon/bin/llama-server --device HTP0 -ngl 100 -fa on --no-mmap -t 4 --poll 1000 --ubatch-size 256 --log-disable --models-preset /models/models.ini &
-LLAMA_PID=$!
-
-echo "Processes started (Llama: $LLAMA_PID). Waiting..."
-
-# Wait for background processes to keep the script running
-wait
+exec /opt/pkg-snapdragon/bin/llama-server \
+  --device HTP0 \
+  -ngl 100 \
+  -fa on \
+  --no-mmap \
+  -t 4 \
+  --poll 1000 \
+  --ubatch-size 256 \
+  --log-disable \
+  --models-preset /models/models.ini
