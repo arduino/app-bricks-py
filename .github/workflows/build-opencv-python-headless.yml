@@ -84,16 +84,12 @@ jobs:
           export ENABLE_HEADLESS=1
           export CMAKE_ARGS="-DWITH_GSTREAMER=ON -DWITH_FFMPEG=ON -DWITH_CAROTENE=ON -DWITH_LAPACK=ON -DBUILD_opencv_python3=ON -DWITH_AVIF=OFF -DWITH_GTK=OFF -DWITH_QT=OFF -DWITH_CUDA=OFF -DBUILD_opencv_java=OFF -DWITH_VTK=OFF -DBUILD_opencv_dnn=OFF -DBUILD_opencv_dnn_modern=OFF"
           pip3 wheel . --verbose --no-deps
-          WHL=$(ls opencv_python_headless*.whl)
-          sha256sum "$WHL" | tee "$WHL.sha256"
 
       - name: Upload wheel files
         uses: actions/upload-artifact@v4
         with:
           name: opencv-python-wheels
-          path: |
-            opencv-python/opencv_python_headless*.whl
-            opencv-python/opencv_python_headless*.whl.sha256
+          path: opencv-python/opencv_python_headless*.whl
 
       - name: Create or update release
         if: steps.version.outputs.release_version != ''
@@ -109,12 +105,9 @@ jobs:
             gh release delete "$TAG" --repo "$REPO" --yes --cleanup-tag
           fi
 
-          SHA256=$(cut -d' ' -f1 opencv-python/opencv_python_headless*.whl.sha256)
-
           gh release create "$TAG" \
             opencv-python/opencv_python_headless*.whl \
-            opencv-python/opencv_python_headless*.whl.sha256 \
             --repo "$REPO" \
             --latest=false \
             --title "opencv-python-headless $VERSION" \
-            --notes "$(printf 'OpenCV Python headless wheel version %s optimized for ARM64 architecture with GStreamer and FFmpeg support.\n\nSHA256: `%s`' "$VERSION" "$SHA256")"
+            --notes "OpenCV Python headless wheel version $VERSION optimized for ARM64 architecture with GStreamer and FFmpeg support."
