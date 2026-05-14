@@ -10,7 +10,7 @@ ARG OPENCV_WHL_DIGEST
 
 COPY ./requirements-base.txt /app/requirements.txt
 
-ADD --checksum=${OPENCV_WHL_DIGEST} ${OPENCV_WHL_URL} /tmp/opencv_python_headless.whl
+ADD --checksum=${OPENCV_WHL_DIGEST} ${OPENCV_WHL_URL} /tmp/opencv-wheel/
 
 RUN set -ex; \
     apt-get update -y; \
@@ -21,8 +21,8 @@ RUN set -ex; \
     apt-get install -y --no-install-recommends --no-install-suggests libasound2-dev libalsaplayer-dev portaudio19-dev libzbar0; \
     # Install Python dependencies (requirements file + prefetched OpenCV wheel)
     pip install --no-cache-dir uv; \
-    uv pip install --system --no-cache-dir -r /app/requirements.txt /tmp/opencv_python_headless.whl; \
-    rm /app/requirements.txt /tmp/opencv_python_headless.whl; \
+    uv pip install --system --no-cache-dir -r /app/requirements.txt /tmp/opencv-wheel/*.whl; \
+    rm -rf /app/requirements.txt /tmp/opencv-wheel; \
     # Strip debug symbols, tests and remove unneeded packages to reduce size
     find /usr/local/lib/python3.13/site-packages -type f -name "*.so" -exec strip -s {} +; \
     find /usr/local/lib/python3.13/site-packages -type f -name "*.so.*" -exec strip -s {} +; \
