@@ -34,6 +34,7 @@ After all files are downloaded, ``models.ini`` is written to ``<output-dir>``
 mapping each model stem to its GGUF path (and mmproj path where present).
 """
 
+import fnmatch
 import os
 
 from huggingface_hub import snapshot_download
@@ -75,6 +76,22 @@ class JsonProgress(tqdm):
     def display(self, msg=None, pos=None):
         # Do not display the progress bar in the terminal, we will emit JSON events instead
         pass
+
+
+def delete_matched_files(output_dir: str, allow_pattern: str, verbose: bool = False):
+    """Delete files inside output_dir whose names match allow_pattern (fnmatch-style)."""
+    base = Path(output_dir)
+    if not base.exists():
+        print(f"Directory does not exist, nothing to delete: {output_dir}")
+        return
+    matched = [f for f in base.rglob("*") if f.is_file() and fnmatch.fnmatch(f.name, allow_pattern)]
+    if not matched:
+        print(f"No files matching '{allow_pattern}' found in {output_dir}")
+        return
+    for f in matched:
+        if verbose:
+            print(f"Deleting: {f}")
+        f.unlink()
 
 
 def generate_models_ini(models_dir: Path):
@@ -149,6 +166,11 @@ def main():
         action="store_true",
         help="Report progress as JSON lines, e.g. {'progress': '42%%'}, instead of a progress bar.",
     )
+    parser.add_argument(
+        "--delete",
+        action="store_true",
+        help="Delete already-present files matching the resolved patterns instead of downloading them.",
+    )
 
     args = parser.parse_args()
 
@@ -199,21 +221,31 @@ def main():
 
     # Create download folder if it doesn't exist. Patter is: output_dir + / repo_id
     output_dir = f"{args.output_dir}/{repo_id}"
-    os.makedirs(output_dir, exist_ok=True)
 
-    tqdm_class = JsonProgress
-    if not args.json_progress:
-        tqdm_class = None
-
-    # Download the model using Hugging Face API
-    if args.verbose:
-        print(f"Downloading model from Hugging Face repository: {repo_id} with allow pattern: {allow_pattern}")
-    snapshot_download(repo_id=repo_id, allow_patterns=[allow_pattern], ignore_patterns=["*mmproj*"], local_dir=output_dir, tqdm_class=tqdm_class)
-
-    if mmproj_allow_pattern:
+    if args.delete:
         if args.verbose:
-            print(f"Downloading mmproj model file from Hugging Face repository: {repo_id} with allow pattern: {mmproj_allow_pattern}")
-        snapshot_download(repo_id=repo_id, allow_patterns=[mmproj_allow_pattern], local_dir=output_dir, tqdm_class=tqdm_class)
+            print(f"Deleting files matching '{allow_pattern}' in {output_dir}")
+        delete_matched_files(output_dir, allow_pattern, args.verbose)
+        if mmproj_allow_pattern:
+            if args.verbose:
+                print(f"Deleting mmproj files matching '{mmproj_allow_pattern}' in {output_dir}")
+            delete_matched_files(output_dir, mmproj_allow_pattern, args.verbose)
+    else:
+        os.makedirs(output_dir, exist_ok=True)
+
+        tqdm_class = JsonProgress
+        if not args.json_progress:
+            tqdm_class = None
+
+        # Download the model using Hugging Face API
+        if args.verbose:
+            print(f"Downloading model from Hugging Face repository: {repo_id} with allow pattern: {allow_pattern}")
+        snapshot_download(repo_id=repo_id, allow_patterns=[allow_pattern], ignore_patterns=["*mmproj*"], local_dir=output_dir, tqdm_class=tqdm_class)
+
+        if mmproj_allow_pattern:
+            if args.verbose:
+                print(f"Downloading mmproj model file from Hugging Face repository: {repo_id} with allow pattern: {mmproj_allow_pattern}")
+            snapshot_download(repo_id=repo_id, allow_patterns=[mmproj_allow_pattern], local_dir=output_dir, tqdm_class=tqdm_class)
 
     # Generate models.ini file
     generate_models_ini(Path(args.output_dir))

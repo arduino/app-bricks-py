@@ -8,7 +8,7 @@ if [ -n "${model_key}" ]; then
     python /app/hf_downloader/hf_downloader.py \
         --model-key "${model_key}" \
         --output-dir /models \
-        --json-progress
+        --delete
     exit_code=$?
     model_id="${model_key}"
 else
@@ -16,7 +16,7 @@ else
         --model-repo-id "${model_repo_id}"
         --model-name "${model_name}"
         --output-dir /models
-        --json-progress
+        --delete
     )
     if [ -n "${model_mmproj_name}" ]; then
         args+=(--model-mmproj-name "${model_mmproj_name}")
@@ -27,6 +27,6 @@ else
 fi
 
 if [ "${exit_code}" -ne 0 ]; then
-    echo "Failed to download the model: ${model_id}"
+    echo "Failed to remove the model: ${model_id}"
     exit 1
 fi
