@@ -7,7 +7,13 @@ handlers:
               image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/models-downloader:dev-next
               volumes:
                 - ${download_location}:/models
-              command: ["/app/ai_hub_downloader/ai_hub_model_downloader.sh"]
+              command: ["/app/ai_hub/ai_hub_model_downloader.sh"]
+        - delete:
+            docker:
+              image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/models-downloader:dev-next
+              volumes:
+                - ${download_location}:/models
+              command: ["/app/ai_hub/ai_hub_model_remover.sh"]              
   - ei-handler:
       description: "Handler for models from Edge Impulse"
       actions:
@@ -16,7 +22,13 @@ handlers:
               image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/models-downloader:dev-next
               volumes:
                 - ${download_location}:/models
-              command: ["/app/ei_downloader/ei_model_downloader.sh"]
+              command: ["/app/edge_impulse/ei_model_downloader.sh"]
+        - delete:
+            docker:
+              image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/models-downloader:dev-next
+              volumes:
+                - ${download_location}:/models
+              command: ["/app/edge_impulse/ei_model_remover.sh"]               
   - hf-handler:
       description: "Handler for models from Hugging Face"
       actions:
@@ -25,4 +37,4 @@ handlers:
               image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/models-downloader:dev-next
               volumes:
                 - ${download_location}:/models
-              command: ["/app/hf_downloader/hf_model_downloader.sh"]
+              command: ["/app/hugging_face/hf_model_downloader.sh"]
