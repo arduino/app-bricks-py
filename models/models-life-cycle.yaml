@@ -1,0 +1,28 @@
+handlers:
+  - ai-hub-handler:
+      description: "Handler for models from AI Hub"
+      actions:
+        - download:
+            docker:
+              image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/models-downloader:dev-next
+              volumes:
+                - ${download_location}:/models
+              command: ["/app/ai_hub_downloader/ai_hub_model_downloader.sh"]
+  - ei-handler:
+      description: "Handler for models from Edge Impulse"
+      actions:
+        - download:
+            docker:
+              image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/models-downloader:dev-next
+              volumes:
+                - ${download_location}:/models
+              command: ["/app/ei_downloader/ei_model_downloader.sh"]
+  - hf-handler:
+      description: "Handler for models from Hugging Face"
+      actions:
+        - download:
+            docker:
+              image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/models-downloader:dev-next
+              volumes:
+                - ${download_location}:/models
+              command: ["/app/hf_downloader/hf_model_downloader.sh"]

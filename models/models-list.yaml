@@ -1376,7 +1376,8 @@ models:
     supported_boards: ["ventunoq"]
     bricks:
       - id: "arduino:llm"
-    download:
+    deployment:
+      handler: "ai-hub-handler"
       platforms:
         - ventunoq:
             variables:
@@ -1401,7 +1402,8 @@ models:
     supported_boards: ["ventunoq"]
     bricks:
       - id: "arduino:vlm"
-    download:
+    deployment:
+      handler: "ai-hub-handler"
       platforms:
         - ventunoq:
             variables:
@@ -1444,7 +1446,8 @@ models:
       making it highly reliable for real-world applications.
       Specifically, it excels in long-form transcription, capable of accurately transcribing audio clips up to 30 seconds long.
     supported_boards: ["ventunoq"]
-    download:
+    deployment:
+      handler: "ai-hub-handler"
       platforms:
         - ventunoq:
             variables:
@@ -1569,7 +1572,8 @@ models:
     supported_boards: ["ventunoq"]
     bricks:
       - id: "arduino:tts"
-    download:
+    deployment:
+      handler: "ai-hub-handler"
       platforms:
         - ventunoq:
             variables:
@@ -1592,7 +1596,8 @@ models:
     supported_boards: ["ventunoq"]
     bricks:
       - id: "arduino:tts"
-    download:
+    deployment:
+      handler: "ai-hub-handler"
       platforms:
         - ventunoq:
             variables:
@@ -1615,7 +1620,8 @@ models:
     supported_boards: ["ventunoq"]
     bricks:
       - id: "arduino:tts"
-    download:
+    deployment:
+      handler: "ai-hub-handler"
       platforms:
         - ventunoq:
             variables:
@@ -1638,7 +1644,8 @@ models:
     supported_boards: ["ventunoq"]
     bricks:
       - id: "arduino:tts"
-    download:
+    deployment:
+      handler: "ai-hub-handler"
       platforms:
         - ventunoq:
             variables:
@@ -1661,7 +1668,8 @@ models:
     supported_boards: ["ventunoq"]
     bricks:
       - id: "arduino:tts"
-    download:
+    deployment:
+      handler: "ai-hub-handler"
       platforms:
         - ventunoq:
             variables:
@@ -1684,7 +1692,8 @@ models:
     supported_boards: ["ventunoq"]
     bricks:
       - id: "arduino:tts"
-    download:
+    deployment:
+      handler: "ai-hub-handler"
       platforms:
         - ventunoq:
             variables:
