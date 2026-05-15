@@ -344,11 +344,15 @@ class AutomaticSpeechRecognition:
         """
         Transcribe audio until a sentence boundary is detected or timeout is reached, and return the text.
 
+        For finite sources (WAV/ndarray), if the source is consumed before a
+        sentence boundary is detected, the best-effort partial transcription is
+        returned instead.
+
         Args:
             hangover (int): Time in milliseconds to wait when detecting silence after
                 speech. Tune to allow short pauses within sentences. Default: 700 ms.
             timeout (int): Maximum recording time in seconds. ``0`` means no timeout.
-                Default: ``0``.
+                Ignored for finite sources (WAV/ndarray). Default: ``0``.
 
         Returns:
             str: The transcribed text, or an empty string if no speech was detected.
@@ -414,40 +418,39 @@ class AutomaticSpeechRecognition:
 
         return TranscriptionStream(sentence_gen())
 
-    def transcribe_continuous(self, timeout: int = 0) -> str:
+    def transcribe_continuous(self, timeout: int = 0) -> TranscriptionStream[str]:
         """
-        Transcribe audio indefinitely, returning text whenever cancel() is called.
+        Transcribe audio indefinitely and yield one sentence at a time.
+
+        Each iteration returns a single decoded sentence as a ``str``. Stop by
+        ``break``-ing out of the loop, calling :meth:`cancel`, or — for finite
+        sources (WAV/ndarray) — letting the source exhaust.
 
         Args:
             timeout (int): Maximum recording time in seconds. ``0`` means no timeout.
-                Default: ``0``.
+                Ignored for finite sources (WAV/ndarray). Default: ``0``.
 
-        Returns:
-            str: The transcribed text, or an empty string if no speech was detected.
+        Yields:
+            str: a complete sentence as recognized by the ASR.
 
         Raises:
             ASRBusyError: If this instance already has an active session.
             ASRServiceBusyError: If no more concurrent sessions are available.
             ASRUnavailableError: If the inference service is unreachable or the connection drops mid-session.
             RuntimeError: If the audio source has not been started.
-
         """
-        last_partial = ""
-        final_text = ""
+        self._ensure_source_started()
 
-        with self.transcribe_continuous_stream(timeout=timeout) as stream:
-            for chunk in stream:
-                if chunk.type == "partial_text" and chunk.data.strip():
-                    last_partial = chunk.data
-                elif chunk.type == "full_text" and chunk.data.strip():
-                    final_text += chunk.data
+        def sentence_gen() -> Generator[str, None, None]:
+            inner = self._transcribe_stream(duration=timeout)
+            try:
+                for event in inner:
+                    if event.type == "full_text" and event.data.strip():
+                        yield event.data
+            finally:
+                inner.close()
 
-        if final_text.strip():
-            return final_text
-        if last_partial.strip():
-            logger.warning("ASR returned empty full_text, falling back to last partial_text")
-            return last_partial
-        return ""
+        return TranscriptionStream(sentence_gen())
 
     def transcribe_continuous_stream(self, timeout: int = 0) -> TranscriptionStream[ASREvent]:
         """
