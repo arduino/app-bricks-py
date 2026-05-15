@@ -171,7 +171,7 @@ class TestConstructor:
     def test_invalid_source_type_raises(self):
         with pytest.raises(TypeError):
             AutomaticSpeechRecognition(source=42)  # type: ignore[arg-type]
-    
+
     def test_unsupported_dtype_raises_at_construction(self):
         with pytest.raises(ValueError, match="Unsupported numpy dtype"):
             AutomaticSpeechRecognition(source=np.zeros(4, dtype="<c8"))  # complex
@@ -212,19 +212,27 @@ class TestSourceStartedCheck:
 class TestTranscribe:
     def test_concatenates_full_text(self, monkeypatch):
         asr = AutomaticSpeechRecognition(source=np.zeros(10, dtype=np.int16))
-        _mock_transcribe_stream(monkeypatch, asr, [
-            ASREvent("partial_text", "hel"),
-            ASREvent("full_text", "hello "),
-            ASREvent("full_text", "world"),
-        ])
+        _mock_transcribe_stream(
+            monkeypatch,
+            asr,
+            [
+                ASREvent("partial_text", "hel"),
+                ASREvent("full_text", "hello "),
+                ASREvent("full_text", "world"),
+            ],
+        )
         assert asr.transcribe() == "hello world"
 
     def test_falls_back_to_last_partial_when_no_full_text(self, monkeypatch):
         asr = AutomaticSpeechRecognition(source=np.zeros(10, dtype=np.int16))
-        _mock_transcribe_stream(monkeypatch, asr, [
-            ASREvent("partial_text", "hi"),
-            ASREvent("partial_text", "hello world"),
-        ])
+        _mock_transcribe_stream(
+            monkeypatch,
+            asr,
+            [
+                ASREvent("partial_text", "hi"),
+                ASREvent("partial_text", "hello world"),
+            ],
+        )
         assert asr.transcribe() == "hello world"
 
     def test_returns_empty_when_no_speech(self, monkeypatch):
@@ -255,10 +263,14 @@ class TestTranscribeSentence:
 
     def test_falls_back_to_last_partial_when_source_exhausts(self, monkeypatch):
         asr = AutomaticSpeechRecognition(source=np.zeros(10, dtype=np.int16))
-        _mock_transcribe_stream(monkeypatch, asr, [
-            ASREvent("partial_text", "hello"),
-            ASREvent("partial_text", "hello world"),
-        ])
+        _mock_transcribe_stream(
+            monkeypatch,
+            asr,
+            [
+                ASREvent("partial_text", "hello"),
+                ASREvent("partial_text", "hello world"),
+            ],
+        )
         assert asr.transcribe_sentence() == "hello world"
 
     def test_passes_hangover_as_vad_ms(self, monkeypatch):
@@ -270,24 +282,32 @@ class TestTranscribeSentence:
 
     def test_empty_full_text_does_not_terminate_stream(self, monkeypatch):
         asr = AutomaticSpeechRecognition(source=np.zeros(10, dtype=np.int16))
-        _mock_transcribe_stream(monkeypatch, asr, [
-            ASREvent("full_text", "   "),  # blank — should not stop
-            ASREvent("partial_text", "hi"),
-            ASREvent("full_text", "hi there"),
-        ])
+        _mock_transcribe_stream(
+            monkeypatch,
+            asr,
+            [
+                ASREvent("full_text", "   "),  # blank — should not stop
+                ASREvent("partial_text", "hi"),
+                ASREvent("full_text", "hi there"),
+            ],
+        )
         assert asr.transcribe_sentence() == "hi there"
 
 
 class TestTranscribeContinuous:
     def test_yields_non_empty_full_text_only(self, monkeypatch):
         asr = AutomaticSpeechRecognition(source=np.zeros(10, dtype=np.int16))
-        _mock_transcribe_stream(monkeypatch, asr, [
-            ASREvent("partial_text", "hi"),
-            ASREvent("full_text", "hi"),
-            ASREvent("partial_text", "there"),
-            ASREvent("full_text", "   "),  # filtered out
-            ASREvent("full_text", "there"),
-        ])
+        _mock_transcribe_stream(
+            monkeypatch,
+            asr,
+            [
+                ASREvent("partial_text", "hi"),
+                ASREvent("full_text", "hi"),
+                ASREvent("partial_text", "there"),
+                ASREvent("full_text", "   "),  # filtered out
+                ASREvent("full_text", "there"),
+            ],
+        )
         with asr.transcribe_continuous() as sentences:
             collected = list(sentences)
         assert collected == ["hi", "there"]

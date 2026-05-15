@@ -493,90 +493,34 @@ class AutomaticSpeechRecognition:
         self._ensure_source_started()
         return TranscriptionStream(self._transcribe_stream(duration=timeout))
 
+    @brick.execute
+    def _asyncio_loop(self):
+        """Dedicated thread for the asyncio event loop hosting session coroutines."""
+        logger.debug("Asyncio event loop starting")
+        self._worker_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self._worker_loop)
+
+        async def keep_alive():
+            while not self._stop_worker.is_set():
+                await asyncio.sleep(0.1)
+
+        try:
+            self._worker_loop.run_until_complete(keep_alive())
+        except Exception as e:
+            logger.error(f"Event loop error: {e}")
+        finally:
+            pending = asyncio.all_tasks(self._worker_loop)
+            for task in pending:
+                task.cancel()
+            if pending:
+                self._worker_loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+            self._worker_loop.close()
+            self._worker_loop = None
+            logger.debug("Asyncio event loop stopped")
+
     def _ensure_source_started(self) -> None:
         if not self._source.is_started():
             raise RuntimeError("Audio source must be started before transcription.")
-
-    def _flush_transcription_session(self, session_id: str) -> None:
-        logger.debug(f"Flushing transcription session {session_id}")
-        url = f"{self.api_base_url}/transcriptions/flush"
-        try:
-            response = requests.post(url, json={"session_id": session_id}, timeout=3)
-        except Exception as e:
-            logger.warning(f"Failed to flush session {session_id}: {e}")
-            return
-        if response.status_code != 200:
-            logger.warning(f"Failed to flush session {session_id}: status {response.status_code}: {response.text}")
-            return
-        logger.debug(f"Session {session_id} flushed successfully")
-
-    def _close_transcription_session(self, session_id: str) -> None:
-        logger.debug(f"Closing transcription session {session_id}")
-        url = f"{self.api_base_url}/transcriptions/close"
-        try:
-            response = requests.post(url, json={"session_id": session_id}, timeout=20)
-        except Exception:
-            raise
-        if response.status_code != 200:
-            raise RuntimeError(f"HTTP status {response.status_code}: {response.text}")
-        logger.debug(f"Session {session_id} closed successfully")
-
-    def _create_transcription_session(self, vad_ms: int | None = None, language: str | None = None) -> str:
-        sampling_rate = str(self._source.sample_rate)
-        channels = str(self._source.channels)
-
-        # The API expects VAD hangover in 10ms slots, not milliseconds
-        hangover_ms = vad_ms if vad_ms is not None else self._DEFAULT_VAD_MS
-        vad_slots = str(hangover_ms // 10)
-
-        create_url = f"{self.api_base_url}/transcriptions/create"
-        create_data = {
-            "model": self.model,
-            "stream": True,
-            "parameters": json.dumps([
-                {"key": "sampling_rate", "value": sampling_rate},
-                {"key": "channels", "value": channels},
-                {"key": "format", "value": self._pcm_format},
-                {"key": "vad", "value": vad_slots},
-            ]),
-        }
-        if language is not None:
-            create_data["language"] = language
-
-        try:
-            response = requests.post(url=create_url, json=create_data, timeout=5)
-        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
-            raise ASRUnavailableError(f"Inference service unreachable: {e}") from None
-
-        if response.status_code == 400:
-            try:
-                err = response.json().get("error", {})
-                msg = err.get("message", "")
-            except Exception:
-                msg = response.text or ""
-            if "transcription session is already active" in msg:
-                raise ASRServiceBusyError(msg or "Inference server is serving another client")
-            raise ASRError(msg or f"Failed to create transcription session: 400")
-
-        if response.status_code != 200:
-            msg = f"Failed to create transcription session: {response.status_code}"
-            try:
-                err = response.json().get("error", {})
-                msg = err.get("message", msg)
-            except Exception:
-                pass
-            raise ASRError(msg)
-
-        result = response.json()
-        session_id = result.get("session_id")
-        if not session_id:
-            raise ASRError("No session ID returned from transcription API")
-
-        state = result.get("state")
-        if state != "asr_initialized":
-            logger.warning(f"ASR session {session_id} created but not initialized (state={state})")
-
-        return session_id
 
     def _transcribe_stream(self, duration: int = 0, vad_ms: int | None = None) -> Generator[ASREvent, None, None]:
         if self._worker_loop is None:
@@ -654,120 +598,62 @@ class AutomaticSpeechRecognition:
             self._active_session = None
             self._active_session_lock.release()
 
-    @brick.execute
-    def _asyncio_loop(self):
-        """Dedicated thread for the asyncio event loop hosting session coroutines."""
-        logger.debug("Asyncio event loop starting")
-        self._worker_loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self._worker_loop)
+    def _create_transcription_session(self, vad_ms: int | None = None, language: str | None = None) -> str:
+        sampling_rate = str(self._source.sample_rate)
+        channels = str(self._source.channels)
 
-        async def keep_alive():
-            while not self._stop_worker.is_set():
-                await asyncio.sleep(0.1)
+        # The API expects VAD hangover in 10ms slots, not milliseconds
+        hangover_ms = vad_ms if vad_ms is not None else self._DEFAULT_VAD_MS
+        vad_slots = str(hangover_ms // 10)
+
+        create_url = f"{self.api_base_url}/transcriptions/create"
+        create_data = {
+            "model": self.model,
+            "stream": True,
+            "parameters": json.dumps([
+                {"key": "sampling_rate", "value": sampling_rate},
+                {"key": "channels", "value": channels},
+                {"key": "format", "value": self._pcm_format},
+                {"key": "vad", "value": vad_slots},
+            ]),
+        }
+        if language is not None:
+            create_data["language"] = language
 
         try:
-            self._worker_loop.run_until_complete(keep_alive())
-        except Exception as e:
-            logger.error(f"Event loop error: {e}")
-        finally:
-            pending = asyncio.all_tasks(self._worker_loop)
-            for task in pending:
-                task.cancel()
-            if pending:
-                self._worker_loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
-            self._worker_loop.close()
-            self._worker_loop = None
-            logger.debug("Asyncio event loop stopped")
+            response = requests.post(url=create_url, json=create_data, timeout=5)
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+            raise ASRUnavailableError(f"Inference service unreachable: {e}") from None
 
-    async def _await_connection_established(self, websocket, label):
-        try:
-            raw = await asyncio.wait_for(websocket.recv(), timeout=5.0)
-        except (asyncio.TimeoutError, ConnectionClosed) as e:
-            raise ASRUnavailableError(f"{label} handshake failed: {e}") from None
-        msg = json.loads(raw)
-        if msg.get("state") != "connection_established":
-            raise RuntimeError(f"{label} expected connection_established, got {msg}")
-
-    async def _periodic_flush(self, session_info: SessionInfo) -> None:
-        session_id = session_info.session_id
-        has_duration = session_info.duration > 0
-        try:
-            while not self._stop_worker.is_set() and not session_info.cancelled.is_set():
-                await asyncio.sleep(self._FLUSH_INTERVAL_SECONDS)
-                if self._stop_worker.is_set() or session_info.cancelled.is_set():
-                    break
-                await asyncio.to_thread(self._flush_transcription_session, session_id)
-                if has_duration:
-                    remaining = session_info.duration - (time.time() - session_info.start_time)
-                    if remaining < self._FLUSH_INTERVAL_SECONDS:
-                        logger.debug(f"No more flushes for session {session_id}: only {remaining:.1f}s remaining")
-                        break
-        except asyncio.CancelledError:
-            logger.debug(f"Periodic flush cancelled for session {session_id}")
-            raise
-
-    def _reader_thread_body(self, session_info: SessionInfo) -> None:
-        session_id = session_info.session_id
-        start_time = session_info.start_time
-        duration = session_info.duration
-        try:
-            while not self._stop_worker.is_set() and not session_info.cancelled.is_set():
-                if duration > 0 and (time.time() - start_time) >= duration:
-                    logger.debug(f"Session {session_id} duration limit reached: {duration}s")
-                    break
-                try:
-                    chunk = self._source.capture()
-                except AudioSourceExhausted:
-                    logger.debug(f"Session {session_id} audio source exhausted")
-                    break
-                except Exception as e:
-                    logger.error(f"Reader thread capture error for session {session_id}: {e}")
-                    break
-                if chunk is None:
-                    continue  # transient (paused/underrun) — keep going
-                try:
-                    session_info.chunk_queue.put_nowait(chunk.tobytes())
-                except queue.Full:
-                    logger.warning(f"Send queue full for session {session_id}, dropping chunk")
-        finally:
+        if response.status_code == 400:
             try:
-                session_info.chunk_queue.put_nowait(_END_SENTINEL)
-            except queue.Full:
+                err = response.json().get("error", {})
+                msg = err.get("message", "")
+            except Exception:
+                msg = response.text or ""
+            if "transcription session is already active" in msg:
+                raise ASRServiceBusyError(msg or "Inference server is serving another client")
+            raise ASRError(msg or f"Failed to create transcription session: 400")
+
+        if response.status_code != 200:
+            msg = f"Failed to create transcription session: {response.status_code}"
+            try:
+                err = response.json().get("error", {})
+                msg = err.get("message", msg)
+            except Exception:
                 pass
-            logger.debug(f"Reader thread exited for session {session_id}")
+            raise ASRError(msg)
 
-    async def _drain_websocket(self, websocket: websockets.ClientConnection, session_info: SessionInfo, label: str) -> None:
-        session_id = session_info.session_id
+        result = response.json()
+        session_id = result.get("session_id")
+        if not session_id:
+            raise ASRError("No session ID returned from transcription API")
 
-        try:
-            while not self._stop_worker.is_set() and not session_info.cancelled.is_set():
-                try:
-                    message = await asyncio.wait_for(websocket.recv(), timeout=1.0)
-                except asyncio.TimeoutError:
-                    continue
+        state = result.get("state")
+        if state != "asr_initialized":
+            logger.warning(f"ASR session {session_id} created but not initialized (state={state})")
 
-                try:
-                    data = json.loads(message)
-                except json.JSONDecodeError:
-                    logger.debug(f"Drained non-JSON WebSocket message from {label}: {message}")
-                    continue
-
-                message_session_id = data.get("session_id")
-                if message_session_id is not None and message_session_id != session_id:
-                    logger.debug(
-                        f"Drained WebSocket message from {label} for session {message_session_id}; current session is {session_id}. Message: {data}"
-                    )
-                    continue
-
-                logger.debug(f"Drained WebSocket message from {label} for session {session_id}: {data}")
-
-        except asyncio.CancelledError:
-            logger.debug(f"Drain task cancelled for {label}, session {session_id}")
-            raise
-        except ConnectionClosedOK:
-            logger.debug(f"WebSocket {label} closed as expected while draining for session {session_id}")
-        except ConnectionClosed as e:
-            logger.debug(f"WebSocket {label} closed while draining for session {session_id}: {e}")
+        return session_id
 
     async def _transcription_session_handler(self, session_info: SessionInfo):
         session_id = session_info.session_id
@@ -850,6 +736,45 @@ class AutomaticSpeechRecognition:
             await asyncio.to_thread(reader.join, join_timeout)
             if reader.is_alive():
                 logger.warning(f"Reader thread for session {session_id} did not exit within {join_timeout}s; leaking as daemon")
+
+    def _reader_thread_body(self, session_info: SessionInfo) -> None:
+        session_id = session_info.session_id
+        start_time = session_info.start_time
+        duration = session_info.duration
+        try:
+            while not self._stop_worker.is_set() and not session_info.cancelled.is_set():
+                if duration > 0 and (time.time() - start_time) >= duration:
+                    logger.debug(f"Session {session_id} duration limit reached: {duration}s")
+                    break
+                try:
+                    chunk = self._source.capture()
+                except AudioSourceExhausted:
+                    logger.debug(f"Session {session_id} audio source exhausted")
+                    break
+                except Exception as e:
+                    logger.error(f"Reader thread capture error for session {session_id}: {e}")
+                    break
+                if chunk is None:
+                    continue  # transient (paused/underrun) — keep going
+                try:
+                    session_info.chunk_queue.put_nowait(chunk.tobytes())
+                except queue.Full:
+                    logger.warning(f"Send queue full for session {session_id}, dropping chunk")
+        finally:
+            try:
+                session_info.chunk_queue.put_nowait(_END_SENTINEL)
+            except queue.Full:
+                pass
+            logger.debug(f"Reader thread exited for session {session_id}")
+
+    async def _await_connection_established(self, websocket, label):
+        try:
+            raw = await asyncio.wait_for(websocket.recv(), timeout=5.0)
+        except (asyncio.TimeoutError, ConnectionClosed) as e:
+            raise ASRUnavailableError(f"{label} handshake failed: {e}") from None
+        msg = json.loads(raw)
+        if msg.get("state") != "connection_established":
+            raise RuntimeError(f"{label} expected connection_established, got {msg}")
 
     async def _send_pcm_stream(self, websocket: websockets.ClientConnection, session_info: SessionInfo) -> int:
         session_id = session_info.session_id
@@ -955,3 +880,78 @@ class AutomaticSpeechRecognition:
             return
         except ConnectionClosed as e:
             raise ASRUnavailableError(f"WebSocket connection lost while receiving for session {session_id}: {e}") from None
+
+    async def _drain_websocket(self, websocket: websockets.ClientConnection, session_info: SessionInfo, label: str) -> None:
+        session_id = session_info.session_id
+
+        try:
+            while not self._stop_worker.is_set() and not session_info.cancelled.is_set():
+                try:
+                    message = await asyncio.wait_for(websocket.recv(), timeout=1.0)
+                except asyncio.TimeoutError:
+                    continue
+
+                try:
+                    data = json.loads(message)
+                except json.JSONDecodeError:
+                    logger.debug(f"Drained non-JSON WebSocket message from {label}: {message}")
+                    continue
+
+                message_session_id = data.get("session_id")
+                if message_session_id is not None and message_session_id != session_id:
+                    logger.debug(
+                        f"Drained WebSocket message from {label} for session {message_session_id}; current session is {session_id}. Message: {data}"
+                    )
+                    continue
+
+                logger.debug(f"Drained WebSocket message from {label} for session {session_id}: {data}")
+
+        except asyncio.CancelledError:
+            logger.debug(f"Drain task cancelled for {label}, session {session_id}")
+            raise
+        except ConnectionClosedOK:
+            logger.debug(f"WebSocket {label} closed as expected while draining for session {session_id}")
+        except ConnectionClosed as e:
+            logger.debug(f"WebSocket {label} closed while draining for session {session_id}: {e}")
+
+    async def _periodic_flush(self, session_info: SessionInfo) -> None:
+        session_id = session_info.session_id
+        has_duration = session_info.duration > 0
+        try:
+            while not self._stop_worker.is_set() and not session_info.cancelled.is_set():
+                await asyncio.sleep(self._FLUSH_INTERVAL_SECONDS)
+                if self._stop_worker.is_set() or session_info.cancelled.is_set():
+                    break
+                await asyncio.to_thread(self._flush_transcription_session, session_id)
+                if has_duration:
+                    remaining = session_info.duration - (time.time() - session_info.start_time)
+                    if remaining < self._FLUSH_INTERVAL_SECONDS:
+                        logger.debug(f"No more flushes for session {session_id}: only {remaining:.1f}s remaining")
+                        break
+        except asyncio.CancelledError:
+            logger.debug(f"Periodic flush cancelled for session {session_id}")
+            raise
+
+    def _flush_transcription_session(self, session_id: str) -> None:
+        logger.debug(f"Flushing transcription session {session_id}")
+        url = f"{self.api_base_url}/transcriptions/flush"
+        try:
+            response = requests.post(url, json={"session_id": session_id}, timeout=3)
+        except Exception as e:
+            logger.warning(f"Failed to flush session {session_id}: {e}")
+            return
+        if response.status_code != 200:
+            logger.warning(f"Failed to flush session {session_id}: status {response.status_code}: {response.text}")
+            return
+        logger.debug(f"Session {session_id} flushed successfully")
+
+    def _close_transcription_session(self, session_id: str) -> None:
+        logger.debug(f"Closing transcription session {session_id}")
+        url = f"{self.api_base_url}/transcriptions/close"
+        try:
+            response = requests.post(url, json={"session_id": session_id}, timeout=20)
+        except Exception:
+            raise
+        if response.status_code != 200:
+            raise RuntimeError(f"HTTP status {response.status_code}: {response.text}")
+        logger.debug(f"Session {session_id} closed successfully")
