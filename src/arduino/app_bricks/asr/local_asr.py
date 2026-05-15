@@ -252,6 +252,11 @@ class AutomaticSpeechRecognition:
         else:
             raise TypeError(f"Unsupported source type: {type(source)!r}")
 
+        self._pcm_format = _dtype_to_pcm_format(
+            self._source.format,
+            self._source.format_is_packed,
+        )
+
         self._worker_loop: asyncio.AbstractEventLoop | None = None
         self._stop_worker = threading.Event()
 
@@ -282,6 +287,15 @@ class AutomaticSpeechRecognition:
             return
         logger.debug(f"Cancelling session {active.session_id}")
         active.cancelled.set()
+
+    def is_transcribing(self) -> bool:
+        """
+        Tells if a transcription session is currently active on this instance.
+
+        Returns:
+            bool: True if a session is active, False otherwise.
+        """
+        return self._active_session is not None
 
     def transcribe(self, duration: int = 0) -> str:
         """
@@ -507,7 +521,6 @@ class AutomaticSpeechRecognition:
     def _create_transcription_session(self, vad_ms: int | None = None) -> str:
         sampling_rate = str(self._source.sample_rate)
         channels = str(self._source.channels)
-        pcm_format = _dtype_to_pcm_format(self._source.format, getattr(self._source, "format_is_packed", False))
 
         # The API expects VAD hangover in 10ms slots, not milliseconds
         hangover_ms = vad_ms if vad_ms is not None else self._DEFAULT_VAD_MS
@@ -520,7 +533,7 @@ class AutomaticSpeechRecognition:
             "parameters": json.dumps([
                 {"key": "sampling_rate", "value": sampling_rate},
                 {"key": "channels", "value": channels},
-                {"key": "format", "value": pcm_format},
+                {"key": "format", "value": self._pcm_format},
                 {"key": "vad", "value": vad_slots},
             ]),
         }
