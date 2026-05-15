@@ -6,7 +6,7 @@ import re
 import threading
 import time
 from collections.abc import Generator, Iterator
-from typing import ContextManager, Literal
+from typing import ContextManager
 
 import numpy as np
 import requests
@@ -54,76 +54,35 @@ class SynthesisStream(ContextManager["SynthesisStream"], Iterator[bytes]):
 class TextToSpeech:
     """Text-to-Speech brick for offline speech synthesis using local TTS service."""
 
-    def __init__(self, language: str | None = None, speaker: BaseSpeaker | None = None):
+    _APP_SERVICE_NAME = "audio-analytics-runner"
+
+    def __init__(self, speaker: BaseSpeaker | None = None):
         """Initialize the TextToSpeech brick.
         Args:
-            language (str, optional): Preferred language for TTS. If not specified, it follow App configuration.
             speaker (BaseSpeaker, optional): Speaker instance to use for audio output. If not provided, a default Speaker will be used.
         """
         self._speaker = speaker or Speaker(sample_rate=Speaker.RATE_44K, shared=True)
 
         # API configuration
-        self.api_port = 8085
-        self.api_host = "audio-analytics-runner"  # Default hostname for the TTS service in the compose network
-        self.api_host = resolve_address(self.api_host)
+        self.api_host = resolve_address(self._APP_SERVICE_NAME)
         if not self.api_host:
             raise RuntimeError("Host address could not be resolved. Please check your configuration.")
+
+        self.api_port = 8085
         self.api_base_url = f"http://{self.api_host}:{self.api_port}/audio-analytics/v1/api"
 
-        logger.info(f"Initialized TextToSpeech with API base URL: {self.api_base_url}")
+        logger.debug(f"Initialized TextToSpeech with API base URL: {self.api_base_url}")
 
-        # Load the model configured at bricks level
-        brick_config = get_brick_config(self.__class__)
-        app_configured_model = get_brick_configured_model(brick_config.get("id") if brick_config else None)
-        if app_configured_model:
-            model = app_configured_model
-        else:
-            model = brick_config.get("model", None)
+        # Resolve the model: app.yaml override (per-brick `model:`) takes precedence over the brick default.
+        brick_config = get_brick_config(self.__class__) or {}
+        brick_id = brick_config.get("id")
+        override = get_brick_configured_model(brick_id) if brick_id else None
+        model_name = override or brick_config.get("model")
+        if not model_name:
+            raise RuntimeError("No TTS model configured for the TextToSpeech brick.")
 
-        # TTS configuration
-        self._language_to_voice = {}
-        self._model_to_language = {}
-        try:
-            url = f"{self.api_base_url}/tts/models"
-            response = requests.get(url)
-            if response.status_code != 200:
-                error_msg = f"Failed to fetch TTS models."
-                try:
-                    error_data = response.json()
-                    if "error" in error_data:
-                        error_msg = error_data["error"].get("message", error_msg)
-                except:
-                    pass
-                raise RuntimeError(error_msg)
-
-            models = response.json() or []
-            for model_entry in models:
-                model_name = model_entry.get("name")
-                for voice in model_entry.get("voices", []):
-                    lang = voice.get("language")
-                    if lang and lang not in self._language_to_voice:
-                        self._language_to_voice[lang] = {
-                            "voice": voice.get("name", "default"),
-                            "model": model_name,
-                            "sample_rate": voice.get("sample_rate", 44100),
-                        }
-                        self._model_to_language[model_name] = lang
-        except Exception as e:
-            raise RuntimeError(f"Failed to initialize TTS models: {e}.")
-
-        self._selected_language = None
-        if language:
-            if language in self._language_to_voice:
-                self._selected_language = language
-            else:
-                logger.warning(f"Configured language '{language}' not found in available TTS models. Defaulting to en.")
-                self._selected_language = "en"
-        if model:
-            if model in self._model_to_language:
-                self._selected_language = self._model_to_language[model]
-            else:
-                logger.warning(f"Configured model '{model}' not found in available TTS models. Defaulting to en.")
-                self._selected_language = "en"
+        self._voice = self._resolve_voice(model_name)
+        logger.debug(f"Using TTS model '{self._voice['model']}' (language='{self._voice['language']}').")
 
         self._active_session_lock = threading.Lock()
         self._cancelled: threading.Event | None = None
@@ -156,7 +115,6 @@ class TextToSpeech:
             text (str): The text to be synthesized into speech.
 
         Raises:
-            ValueError: If the specified language is not supported.
             TTSBusyError: If this instance already has an active speech session.
             RuntimeError: If the synthesis fails.
         """
@@ -177,7 +135,6 @@ class TextToSpeech:
 
                 pcm_stream = self._synthesize_pcm_stream(
                     chunk,
-                    language=self._selected_language,
                     cancelled=cancelled,
                     keep_alive=True,
                 )
@@ -201,11 +158,10 @@ class TextToSpeech:
             bytes: The synthesized audio in WAV format.
 
         Raises:
-            ValueError: If the specified language is not supported.
             TTSBusyError: If this instance already has an active speech session.
             RuntimeError: If the synthesis fails.
         """
-        pcm_audio = self.synthesize_pcm(text, language=self._selected_language)
+        pcm_audio = self.synthesize_pcm(text)
 
         import io
         import wave
@@ -214,38 +170,35 @@ class TextToSpeech:
             with wave.open(wav_io, "wb") as wf:
                 wf.setnchannels(1)  # Mono
                 wf.setsampwidth(2)  # 16 bits
-                wf.setframerate(44100)  # 44.1kHz sample rate
+                wf.setframerate(self._speaker.sample_rate)
                 wf.writeframes(pcm_audio)
             wav_data = wav_io.getvalue()
 
         return wav_data
 
-    def synthesize_pcm(self, text: str, language: Literal["en", "es", "zh"] = "en") -> bytes:
+    def synthesize_pcm(self, text: str) -> bytes:
         """
         Synthesize speech from text and return the audio in PCM format (mono, 16-bit, 44.1kHz).
 
         Args:
             text (str): The text to be synthesized into speech.
-            language (Literal["en", "es", "zh"]): The language of the text.
 
         Returns:
             bytes: The synthesized audio in PCM format.
 
         Raises:
-            ValueError: If the specified language is not supported.
             TTSBusyError: If this instance already has an active speech session.
             RuntimeError: If the synthesis fails.
         """
-        with self.synthesize_pcm_stream(text, language=language) as stream:
+        with self.synthesize_pcm_stream(text) as stream:
             return b"".join(stream)
 
-    def synthesize_pcm_stream(self, text: str, language: Literal["en", "es", "zh"] = "en") -> SynthesisStream:
+    def synthesize_pcm_stream(self, text: str) -> SynthesisStream:
         """
         Synthesize speech from text and stream PCM audio chunks as they arrive.
 
         Args:
             text (str): The text to be synthesized into speech.
-            language (Literal["en", "es", "zh"]): The language of the text.
 
         Returns:
             SynthesisStream: An iterable/context-manager yielding PCM audio chunks. Use as a
@@ -253,7 +206,6 @@ class TextToSpeech:
                 release of the session lock.
 
         Raises:
-            ValueError: If the specified language is not supported.
             TTSBusyError: If this instance already has an active speech session.
             RuntimeError: If the synthesis fails.
         """
@@ -264,11 +216,44 @@ class TextToSpeech:
                     "A speech session is already active on this instance. Create a separate TextToSpeech instance for concurrent speech."
                 )
             try:
-                yield from self._synthesize_pcm_stream(text, language=language)
+                yield from self._synthesize_pcm_stream(text)
             finally:
                 self._active_session_lock.release()
 
         return SynthesisStream(locked_stream())
+
+    def _resolve_voice(self, model_name: str) -> dict:
+        """Fetch available TTS models from the runner and return the voice config for `model_name`."""
+        try:
+            response = requests.get(f"{self.api_base_url}/tts/models")
+        except Exception as e:
+            raise RuntimeError(f"Failed to fetch TTS models: {e}.")
+
+        if response.status_code != 200:
+            error_msg = "Failed to fetch TTS models."
+            try:
+                error_data = response.json()
+                if "error" in error_data:
+                    error_msg = error_data["error"].get("message", error_msg)
+            except Exception:
+                pass
+            raise RuntimeError(error_msg)
+
+        for entry in response.json() or []:
+            entry_name = entry.get("name")
+            if model_name != entry_name:
+                continue
+            voices = entry.get("voices") or []
+            if voices:
+                voice = voices[0]
+                return {
+                    # We don't capture sample_rate since the TTS service resamples as needed
+                    "model": entry_name,
+                    "name": voice.get("name", "default"),
+                    "language": voice.get("language"),
+                }
+
+        raise RuntimeError(f"TTS model '{model_name}' is not available on the runner.")
 
     def _chunk_text(self, text: str) -> list[str]:
         """Split text into chunks accepted by the local TTS service.
@@ -308,24 +293,19 @@ class TextToSpeech:
     def _synthesize_pcm_stream(
         self,
         text: str,
-        language: Literal["en", "es", "zh"] = "en",
         cancelled: threading.Event | None = None,
         keep_alive: bool = False,
     ) -> Iterator[bytes]:
-        if language not in self._language_to_voice:
-            raise ValueError(f"Unsupported language: {language}")
-
         if cancelled is not None and cancelled.is_set():
             logger.debug("Speech session cancelled before synthesis")
             return
 
-        model_params = self._language_to_voice[language]
         payload = {
             "text": text,
-            "model": model_params["model"],
-            "language": language,
-            "voice": model_params["voice"],
-            "sample_rate": model_params["sample_rate"],
+            "model": self._voice["model"],
+            "language": self._voice["language"],
+            "voice": self._voice["name"],
+            "sample_rate": self._speaker.sample_rate,
             "keep_alive": keep_alive,
         }
         url = f"{self.api_base_url}/tts/synthesize"

@@ -67,7 +67,7 @@ class BlockingSpeaker(BaseSpeaker):
 def make_tts(monkeypatch, speaker, post_response, cancel_response=None):
     models = [
         {
-            "name": "melo-tts-en",
+            "name": "piper-tts-en",
             "voices": [
                 {
                     "language": "en",
