@@ -192,7 +192,7 @@ _END_SENTINEL = object()  # Sentinel value to signal end of audio stream in the 
 class AutomaticSpeechRecognition:
     _APP_SERVICE_NAME = "audio-analytics-runner"
     _FLUSH_INTERVAL_SECONDS = 5
-    _DEFAULT_VAD = "700"
+    _DEFAULT_VAD_MS = 700
 
     def __init__(
         self,
@@ -253,7 +253,6 @@ class AutomaticSpeechRecognition:
             raise TypeError(f"Unsupported source type: {type(source)!r}")
 
         self._worker_loop: asyncio.AbstractEventLoop | None = None
-        self._worker_ready = threading.Event()
         self._stop_worker = threading.Event()
 
         self._active_session_lock = threading.Lock()
@@ -318,7 +317,6 @@ class AutomaticSpeechRecognition:
         if last_partial.strip():
             logger.warning("ASR returned empty full_text, falling back to last partial_text")
             return last_partial
-        logger.info("ASR returned no speech / empty transcription")
         return ""
 
     def transcribe_stream(self, duration: int = 0) -> TranscriptionStream[ASREvent]:
@@ -339,9 +337,145 @@ class AutomaticSpeechRecognition:
                 connection drops mid-session.
             RuntimeError: If the audio source has not been started.
         """
+        self._ensure_source_started()
+        return TranscriptionStream(self._transcribe_stream(duration=duration))
+
+    def transcribe_sentence(self, hangover: int = 700, timeout: int = 0) -> str:
+        """
+        Transcribe audio until a sentence boundary is detected or timeout is reached, and return the text.
+
+        Args:
+            hangover (int): Time in milliseconds to wait when detecting silence after
+                speech. Tune to allow short pauses within sentences. Default: 700 ms.
+            timeout (int): Maximum recording time in seconds. ``0`` means no timeout.
+                Default: ``0``.
+
+        Returns:
+            str: The transcribed text, or an empty string if no speech was detected.
+
+        Raises:
+            ASRBusyError: If this instance already has an active session.
+            ASRServiceBusyError: If no more concurrent sessions are available.
+            ASRUnavailableError: If the inference service is unreachable or the connection drops mid-session.
+            RuntimeError: If the audio source has not been started.
+        """
+        last_partial = ""
+        final_text = ""
+
+        with self.transcribe_sentence_stream(hangover=hangover, timeout=timeout) as stream:
+            for chunk in stream:
+                if chunk.type == "partial_text" and chunk.data.strip():
+                    last_partial = chunk.data
+                elif chunk.type == "full_text" and chunk.data.strip():
+                    final_text += chunk.data
+
+        if final_text.strip():
+            return final_text
+        if last_partial.strip():
+            logger.warning("ASR returned empty full_text, falling back to last partial_text")
+            return last_partial
+        return ""
+
+    def transcribe_sentence_stream(self, hangover: int = 700, timeout: int = 0) -> TranscriptionStream[ASREvent]:
+        """
+        Transcribe audio from the configured source and stream events until a
+        sentence boundary is detected.
+
+        The stream ends after the first non-empty ``full_text`` event, or when
+        the source is exhausted / the timeout elapses without one.
+
+        Args:
+            hangover (int): Time in milliseconds to wait when detecting silence after
+                speech. Tune to allow short pauses within sentences. Default: 700 ms.
+            timeout (int): Maximum recording time in seconds. ``0`` means no timeout.
+                Ignored for finite sources (WAV/ndarray). Default: ``0``.
+
+        Yields:
+            ASREvent: objects representing transcription events.
+
+        Raises:
+            ASRBusyError: If this instance already has an active session.
+            ASRServiceBusyError: If no more concurrent sessions are available.
+            ASRUnavailableError: If the inference service is unreachable or the
+                connection drops mid-session.
+            RuntimeError: If the audio source has not been started.
+        """
+        self._ensure_source_started()
+
+        def sentence_gen() -> Generator[ASREvent, None, None]:
+            inner = self._transcribe_stream(duration=timeout, vad_ms=hangover)
+            try:
+                for event in inner:
+                    yield event
+                    if event.type == "full_text" and event.data.strip():
+                        return
+            finally:
+                inner.close()
+
+        return TranscriptionStream(sentence_gen())
+
+    def transcribe_continuous(self, timeout: int = 0) -> str:
+        """
+        Transcribe audio indefinitely, returning text whenever cancel() is called.
+
+        Args:
+            timeout (int): Maximum recording time in seconds. ``0`` means no timeout.
+                Default: ``0``.
+
+        Returns:
+            str: The transcribed text, or an empty string if no speech was detected.
+
+        Raises:
+            ASRBusyError: If this instance already has an active session.
+            ASRServiceBusyError: If no more concurrent sessions are available.
+            ASRUnavailableError: If the inference service is unreachable or the connection drops mid-session.
+            RuntimeError: If the audio source has not been started.
+
+        """
+        last_partial = ""
+        final_text = ""
+
+        with self.transcribe_continuous_stream(timeout=timeout) as stream:
+            for chunk in stream:
+                if chunk.type == "partial_text" and chunk.data.strip():
+                    last_partial = chunk.data
+                elif chunk.type == "full_text" and chunk.data.strip():
+                    final_text += chunk.data
+
+        if final_text.strip():
+            return final_text
+        if last_partial.strip():
+            logger.warning("ASR returned empty full_text, falling back to last partial_text")
+            return last_partial
+        return ""
+
+    def transcribe_continuous_stream(self, timeout: int = 0) -> TranscriptionStream[ASREvent]:
+        """
+        Transcribe audio from the configured source indefinitely and stream events.
+
+        Runs until ``cancel()`` is called, the timeout elapses, or — for finite
+        sources (WAV/ndarray) — the source is exhausted.
+
+        Args:
+            timeout (int): Maximum recording time in seconds. ``0`` means no timeout.
+                Ignored for finite sources (WAV/ndarray). Default: ``0``.
+
+        Yields:
+            ASREvent: objects representing transcription events.
+
+        Raises:
+            ASRBusyError: If this instance already has an active session.
+            ASRServiceBusyError: If no more concurrent sessions are available.
+            ASRUnavailableError: If the inference service is unreachable or the
+                connection drops mid-session.
+            RuntimeError: If the audio source has not been started.
+        """
+        self._ensure_source_started()
+        return TranscriptionStream(self._transcribe_stream(duration=timeout))
+
+    def _ensure_source_started(self) -> None:
         if not self._source.is_started():
             raise RuntimeError("Audio source must be started before transcription.")
-        return TranscriptionStream(self._transcribe_stream(duration=duration))
 
     def _flush_transcription_session(self, session_id: str) -> None:
         logger.debug(f"Flushing transcription session {session_id}")
@@ -367,10 +501,14 @@ class AutomaticSpeechRecognition:
             raise RuntimeError(f"HTTP status {response.status_code}: {response.text}")
         logger.debug(f"Session {session_id} closed successfully")
 
-    def _create_transcription_session(self) -> str:
+    def _create_transcription_session(self, vad_ms: int | None = None) -> str:
         sampling_rate = str(self._source.sample_rate)
         channels = str(self._source.channels)
         pcm_format = _dtype_to_pcm_format(self._source.format, getattr(self._source, "format_is_packed", False))
+
+        # The API expects VAD hangover in 10ms slots, not milliseconds
+        hangover_ms = vad_ms if vad_ms is not None else self._DEFAULT_VAD_MS
+        vad_slots = str(hangover_ms // 10)
 
         create_url = f"{self.api_base_url}/transcriptions/create"
         create_data = {
@@ -380,7 +518,7 @@ class AutomaticSpeechRecognition:
                 {"key": "sampling_rate", "value": sampling_rate},
                 {"key": "channels", "value": channels},
                 {"key": "format", "value": pcm_format},
-                {"key": "vad", "value": self._DEFAULT_VAD},
+                {"key": "vad", "value": vad_slots},
             ]),
         }
         if self.language is not None:
@@ -421,9 +559,9 @@ class AutomaticSpeechRecognition:
 
         return session_id
 
-    def _transcribe_stream(self, duration: int = 0) -> Generator[ASREvent, None, None]:
-        if not self._worker_ready.wait(timeout=5):
-            raise RuntimeError("Worker loop not initialized. Call start() first.")
+    def _transcribe_stream(self, duration: int = 0, vad_ms: int | None = None) -> Generator[ASREvent, None, None]:
+        if self._worker_loop is None:
+            raise RuntimeError("Worker loop is not initialized. Call start() first.")
         if self._stop_worker.is_set():
             raise RuntimeError("ASR is stopping or stopped")
 
@@ -440,7 +578,7 @@ class AutomaticSpeechRecognition:
         try:
             logger.debug(f"Creating transcription session with model={self.model}, language={self.language}")
 
-            session_id = self._create_transcription_session()
+            session_id = self._create_transcription_session(vad_ms=vad_ms)
 
             session_info = SessionInfo(
                 session_id=session_id,
@@ -504,7 +642,6 @@ class AutomaticSpeechRecognition:
         logger.debug("Asyncio event loop starting")
         self._worker_loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._worker_loop)
-        self._worker_ready.set()
 
         async def keep_alive():
             while not self._stop_worker.is_set():
@@ -520,7 +657,6 @@ class AutomaticSpeechRecognition:
                 task.cancel()
             if pending:
                 self._worker_loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
-            self._worker_ready.clear()
             self._worker_loop.close()
             self._worker_loop = None
             logger.debug("Asyncio event loop stopped")
