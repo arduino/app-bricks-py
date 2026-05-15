@@ -182,6 +182,7 @@ class SessionInfo:
     result_queue: queue.Queue[ASREvent]
     chunk_queue: queue.Queue[bytes | object]  # object is for _END_SENTINEL
     cancelled: threading.Event
+    language: str | None = None
     reader_thread: threading.Thread | None = None
 
 
@@ -214,7 +215,9 @@ class AutomaticSpeechRecognition:
                 Default: None.
             language (str): Language code for the ASR model (e.g. "en" for
                 English). This is typically auto-detected by the model,
-                but can be overridden here if needed.
+                but can be overridden here if needed. It is exposed as
+                the public ``language`` attribute and may be reassigned at
+                runtime; the new value takes effect on the next session.
 
         Note:
             Only one transcription can be active per instance at a time. For
@@ -518,7 +521,7 @@ class AutomaticSpeechRecognition:
             raise RuntimeError(f"HTTP status {response.status_code}: {response.text}")
         logger.debug(f"Session {session_id} closed successfully")
 
-    def _create_transcription_session(self, vad_ms: int | None = None) -> str:
+    def _create_transcription_session(self, vad_ms: int | None = None, language: str | None = None) -> str:
         sampling_rate = str(self._source.sample_rate)
         channels = str(self._source.channels)
 
@@ -537,8 +540,8 @@ class AutomaticSpeechRecognition:
                 {"key": "vad", "value": vad_slots},
             ]),
         }
-        if self.language is not None:
-            create_data["language"] = self.language
+        if language is not None:
+            create_data["language"] = language
 
         try:
             response = requests.post(url=create_url, json=create_data, timeout=5)
@@ -592,16 +595,15 @@ class AutomaticSpeechRecognition:
         future = None
 
         try:
-            logger.debug(f"Creating transcription session with model={self.model}, language={self.language}")
-
-            session_id = self._create_transcription_session(vad_ms=vad_ms)
-
+            session_language = self.language  # Snapshot current language for the session
+            session_id = self._create_transcription_session(vad_ms=vad_ms, language=session_language)
             session_info = SessionInfo(
                 session_id=session_id,
                 duration=duration,
                 start_time=time.time(),
                 result_queue=queue.Queue(),
                 chunk_queue=queue.Queue(maxsize=100),
+                language=session_language,
                 cancelled=threading.Event(),
             )
             self._active_session = session_info
