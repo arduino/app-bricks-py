@@ -1,40 +1,31 @@
 handlers:
   - ai-hub-handler:
       description: "Handler for models from AI Hub"
+      image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/models-downloader:0.10.0
+      volumes:
+        - ${download_location}:/models      
       actions:
         - download:
-            docker:
-              image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/models-downloader:dev-next
-              volumes:
-                - ${download_location}:/models
-              command: ["/app/ai_hub/ai_hub_model_downloader.sh"]
+            command: ["/app/ai_hub/ai_hub_model_downloader.sh"]
         - delete:
-            docker:
-              image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/models-downloader:dev-next
-              volumes:
-                - ${download_location}:/models
-              command: ["/app/ai_hub/ai_hub_model_remover.sh"]              
+            command: ["/app/ai_hub/ai_hub_model_remover.sh"]              
   - ei-handler:
       description: "Handler for models from Edge Impulse"
+      image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/models-downloader:0.10.0
+      volumes:
+        - ${download_location}:/models      
       actions:
         - download:
-            docker:
-              image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/models-downloader:dev-next
-              volumes:
-                - ${download_location}:/models
-              command: ["/app/edge_impulse/ei_model_downloader.sh"]
+            command: ["/app/edge_impulse/ei_model_downloader.sh"]
         - delete:
-            docker:
-              image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/models-downloader:dev-next
-              volumes:
-                - ${download_location}:/models
-              command: ["/app/edge_impulse/ei_model_remover.sh"]               
+            command: ["/app/edge_impulse/ei_model_remover.sh"]              
   - hf-handler:
       description: "Handler for models from Hugging Face"
+      image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/models-downloader:0.10.0
+      volumes:
+        - ${download_location}:/models      
       actions:
         - download:
-            docker:
-              image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/models-downloader:dev-next
-              volumes:
-                - ${download_location}:/models
-              command: ["/app/hugging_face/hf_model_downloader.sh"]
+            command: ["/app/hugging_face/hf_model_downloader.sh"]
+        - delete:
+            command: ["/app/hugging_face/hf_model_remover.sh"]

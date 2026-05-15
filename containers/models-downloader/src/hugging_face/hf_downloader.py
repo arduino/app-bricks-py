@@ -79,7 +79,9 @@ class JsonProgress(tqdm):
 
 
 def delete_matched_files(output_dir: str, allow_pattern: str, verbose: bool = False):
-    """Delete files inside output_dir whose names match allow_pattern (fnmatch-style)."""
+    """Delete files inside output_dir whose names match allow_pattern (fnmatch-style).
+    After deletion, removes any empty subdirectories but never output_dir itself.
+    """
     base = Path(output_dir)
     if not base.exists():
         print(f"Directory does not exist, nothing to delete: {output_dir}")
@@ -88,10 +90,20 @@ def delete_matched_files(output_dir: str, allow_pattern: str, verbose: bool = Fa
     if not matched:
         print(f"No files matching '{allow_pattern}' found in {output_dir}")
         return
+    dirs_to_check: set[Path] = set()
     for f in matched:
         if verbose:
             print(f"Deleting: {f}")
+        dirs_to_check.add(f.parent)
         f.unlink()
+    # Remove empty subdirectories (deepest first), but never output_dir itself
+    for d in sorted(dirs_to_check, key=lambda p: len(p.parts), reverse=True):
+        if d == base:
+            continue
+        if d.exists() and not any(d.iterdir()):
+            if verbose:
+                print(f"Removing empty directory: {d}")
+            d.rmdir()
 
 
 def generate_models_ini(models_dir: Path):
