@@ -1,0 +1,306 @@
+{
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "creationInfo": {
+    "created": "2026-05-18T13:22:33.386540Z",
+    "creators": [
+      "Tool: arduino-sbom-delta",
+      "Organization: Arduino SRL"
+    ]
+  },
+  "dataLicense": "CC0-1.0",
+  "documentDescribes": [
+    "SPDXRef-Container"
+  ],
+  "documentNamespace": "https://arduino.cc/sbom/delta/gesture-recognition-runner-0.10.0-20260518T132233Z",
+  "name": "gesture-recognition-runner",
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-Container",
+      "comment": "Delta SBOM for ghcr.io/arduino/app-bricks/gesture-recognition-runner:0.10.0 \u2014 changes relative to base image ghcr.io/arduino/app-bricks/aihub-models-runner:0.10.0",
+      "copyrightText": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "name": "gesture-recognition-runner"
+    },
+    {
+      "SPDXID": "SPDXRef-ai-edge-litert-pypi",
+      "annotations": [
+        {
+          "annotationDate": "2026-05-18T13:22:33.386540Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: arduino-sbom-delta",
+          "comment": "{\"change\": \"added\"}"
+        }
+      ],
+      "copyrightText": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:pypi/ai-edge-litert@2.1.5",
+          "referenceType": "purl"
+        }
+      ],
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "LicenseRef-Apache-2.0",
+      "name": "ai-edge-litert",
+      "versionInfo": "2.1.5"
+    },
+    {
+      "SPDXID": "SPDXRef-backports-strenum-pypi",
+      "annotations": [
+        {
+          "annotationDate": "2026-05-18T13:22:33.386540Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: arduino-sbom-delta",
+          "comment": "{\"change\": \"added\"}"
+        }
+      ],
+      "copyrightText": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:pypi/backports-strenum@1.2.8",
+          "referenceType": "purl"
+        }
+      ],
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT",
+      "name": "backports-strenum",
+      "versionInfo": "1.2.8"
+    },
+    {
+      "SPDXID": "SPDXRef-ffmpeg-generic",
+      "annotations": [
+        {
+          "annotationDate": "2026-05-18T13:22:33.386540Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: arduino-sbom-delta",
+          "comment": "{\"change\": \"added\"}"
+        }
+      ],
+      "copyrightText": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:generic/ffmpeg@5.1.6",
+          "referenceType": "purl"
+        }
+      ],
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "name": "ffmpeg",
+      "versionInfo": "5.1.6"
+    },
+    {
+      "SPDXID": "SPDXRef-flatbuffers-pypi",
+      "annotations": [
+        {
+          "annotationDate": "2026-05-18T13:22:33.386540Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: arduino-sbom-delta",
+          "comment": "{\"change\": \"added\"}"
+        }
+      ],
+      "copyrightText": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:pypi/flatbuffers@25.12.19",
+          "referenceType": "purl"
+        }
+      ],
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "LicenseRef-Apache-2.0",
+      "name": "flatbuffers",
+      "versionInfo": "25.12.19"
+    },
+    {
+      "SPDXID": "SPDXRef-numpy-pypi",
+      "annotations": [
+        {
+          "annotationDate": "2026-05-18T13:22:33.386540Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: arduino-sbom-delta",
+          "comment": "{\"change\": \"added\"}"
+        }
+      ],
+      "copyrightText": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:pypi/numpy@2.4.5",
+          "referenceType": "purl"
+        }
+      ],
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "(BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0)",
+      "name": "numpy",
+      "versionInfo": "2.4.5"
+    },
+    {
+      "SPDXID": "SPDXRef-opencv-python-headless-pypi",
+      "annotations": [
+        {
+          "annotationDate": "2026-05-18T13:22:33.386540Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: arduino-sbom-delta",
+          "comment": "{\"change\": \"added\"}"
+        }
+      ],
+      "copyrightText": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:pypi/opencv-python-headless@4.13.0.92",
+          "referenceType": "purl"
+        }
+      ],
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "LicenseRef-Apache-2.0",
+      "name": "opencv-python-headless",
+      "versionInfo": "4.13.0.92"
+    },
+    {
+      "SPDXID": "SPDXRef-protobuf-pypi",
+      "annotations": [
+        {
+          "annotationDate": "2026-05-18T13:22:33.386540Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: arduino-sbom-delta",
+          "comment": "{\"change\": \"added\"}"
+        }
+      ],
+      "copyrightText": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:pypi/protobuf@7.34.1",
+          "referenceType": "purl"
+        }
+      ],
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "LicenseRef-3-Clause-BSD-License",
+      "name": "protobuf",
+      "versionInfo": "7.34.1"
+    },
+    {
+      "SPDXID": "SPDXRef-tqdm-pypi",
+      "annotations": [
+        {
+          "annotationDate": "2026-05-18T13:22:33.386540Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: arduino-sbom-delta",
+          "comment": "{\"change\": \"added\"}"
+        }
+      ],
+      "copyrightText": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:pypi/tqdm@4.67.3",
+          "referenceType": "purl"
+        }
+      ],
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "(MPL-2.0 AND MIT)",
+      "name": "tqdm",
+      "versionInfo": "4.67.3"
+    },
+    {
+      "SPDXID": "SPDXRef-typing-extensions-pypi",
+      "annotations": [
+        {
+          "annotationDate": "2026-05-18T13:22:33.386540Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: arduino-sbom-delta",
+          "comment": "{\"change\": \"added\"}"
+        }
+      ],
+      "copyrightText": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:pypi/typing-extensions@4.15.0",
+          "referenceType": "purl"
+        }
+      ],
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "PSF-2.0",
+      "name": "typing-extensions",
+      "versionInfo": "4.15.0"
+    }
+  ],
+  "relationships": [
+    {
+      "relatedSpdxElement": "SPDXRef-Container",
+      "relationshipType": "DESCRIBES",
+      "spdxElementId": "SPDXRef-DOCUMENT"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-ai-edge-litert-pypi",
+      "relationshipType": "CONTAINS",
+      "spdxElementId": "SPDXRef-Container"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-backports-strenum-pypi",
+      "relationshipType": "CONTAINS",
+      "spdxElementId": "SPDXRef-Container"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-ffmpeg-generic",
+      "relationshipType": "CONTAINS",
+      "spdxElementId": "SPDXRef-Container"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-flatbuffers-pypi",
+      "relationshipType": "CONTAINS",
+      "spdxElementId": "SPDXRef-Container"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-numpy-pypi",
+      "relationshipType": "CONTAINS",
+      "spdxElementId": "SPDXRef-Container"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-opencv-python-headless-pypi",
+      "relationshipType": "CONTAINS",
+      "spdxElementId": "SPDXRef-Container"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-protobuf-pypi",
+      "relationshipType": "CONTAINS",
+      "spdxElementId": "SPDXRef-Container"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-tqdm-pypi",
+      "relationshipType": "CONTAINS",
+      "spdxElementId": "SPDXRef-Container"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-typing-extensions-pypi",
+      "relationshipType": "CONTAINS",
+      "spdxElementId": "SPDXRef-Container"
+    }
+  ],
+  "spdxVersion": "SPDX-2.3"
+}
