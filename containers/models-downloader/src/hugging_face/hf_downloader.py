@@ -26,8 +26,6 @@ Key options
 --output-dir DIR        Destination directory (default: current directory).
                         Files are saved under ``<output-dir>/<repo-id>/``.
 --hf-token KEY          Hugging Face API token for gated/private repositories.
---json-progress         Emit progress as JSON lines instead of a progress bar,
-                        suitable for machine-readable consumption by CI pipelines.
 --verbose               Print resolved parameters before downloading.
 
 After all files are downloaded, ``models.ini`` is written to ``<output-dir>``
@@ -43,6 +41,17 @@ import configparser
 from pathlib import Path
 from tqdm.auto import tqdm
 import json
+
+
+def emit_json_info(description: str, artifacts: list[str] | None = None):
+    data: dict = {"event": "info", "description": description}
+    if artifacts is not None:
+        data["artifacts"] = artifacts
+    print(json.dumps(data), flush=True)
+
+
+def emit_json_error(description: str):
+    print(json.dumps({"event": "error", "description": description}), flush=True)
 
 
 class JsonProgress(tqdm):
@@ -84,16 +93,16 @@ def delete_matched_files(output_dir: str, allow_pattern: str, verbose: bool = Fa
     """
     base = Path(output_dir)
     if not base.exists():
-        print(f"Directory does not exist, nothing to delete: {output_dir}")
+        emit_json_info(f"Directory does not exist, nothing to delete: {output_dir}")
         return
     matched = [f for f in base.rglob("*") if f.is_file() and fnmatch.fnmatch(f.name, allow_pattern)]
     if not matched:
-        print(f"No files matching '{allow_pattern}' found in {output_dir}")
+        emit_json_info(f"No files matching '{allow_pattern}' found in {output_dir}")
         return
     dirs_to_check: set[Path] = set()
     for f in matched:
         if verbose:
-            print(f"Deleting: {f}")
+            emit_json_info(f"Deleting: {f}")
         dirs_to_check.add(f.parent)
         f.unlink()
     # Remove empty subdirectories (deepest first), but never output_dir itself
@@ -102,7 +111,7 @@ def delete_matched_files(output_dir: str, allow_pattern: str, verbose: bool = Fa
             continue
         if d.exists() and not any(d.iterdir()):
             if verbose:
-                print(f"Removing empty directory: {d}")
+                emit_json_info(f"Removing empty directory: {d}")
             d.rmdir()
 
 
@@ -126,7 +135,7 @@ def generate_models_ini(models_dir: Path):
     with open(output_path, "w") as f:
         config.write(f)
 
-    print(f"Generated {output_path} with {len(config.sections())} model(s)")
+    emit_json_info(f"Generated models.ini with {len(config.sections())} model(s)", artifacts=[str(output_path)])
 
 
 def main():
@@ -174,11 +183,6 @@ def main():
         help="Enable verbose output.",
     )
     parser.add_argument(
-        "--json-progress",
-        action="store_true",
-        help="Report progress as JSON lines, e.g. {'progress': '42%%'}, instead of a progress bar.",
-    )
-    parser.add_argument(
         "--delete",
         action="store_true",
         help="Delete already-present files matching the resolved patterns instead of downloading them.",
@@ -201,12 +205,12 @@ def main():
             raise ValueError("quantization cannot be empty")
 
         if args.verbose:
-            print(f"Repository ID: {repo_id}")
-            print(f"Model key: {args.model_key}")
-            print(f"Model type: {model_type}")
-            print(f"Quantization: {quantization}")
+            emit_json_info(f"Repository ID: {repo_id}")
+            emit_json_info(f"Model key: {args.model_key}")
+            emit_json_info(f"Model type: {model_type}")
+            emit_json_info(f"Quantization: {quantization}")
             if mmproj_quantization:
-                print(f"MMProj Quantization: {mmproj_quantization[0]}")
+                emit_json_info(f"MMProj Quantization: {mmproj_quantization[0]}")
 
         allow_pattern = f"*{quantization}*.gguf"
         mmproj_allow_pattern = f"*mmproj*{mmproj_quantization[0]}*.gguf" if mmproj_quantization else None
@@ -219,19 +223,19 @@ def main():
         allow_pattern = args.model_name
         if allow_pattern == "":
             raise ValueError("model name cannot be empty")
-        if not allow_pattern.contains("*") and not allow_pattern.endswith(".gguf"):
+        if "*" not in allow_pattern and not allow_pattern.endswith(".gguf"):
             allow_pattern = f"*{allow_pattern}*"
 
         if args.model_mmproj_name and args.model_mmproj_name != "":
             mmproj_allow_pattern = args.model_mmproj_name
-            if not mmproj_allow_pattern.contains("*") and not mmproj_allow_pattern.endswith(".gguf"):
+            if "*" not in mmproj_allow_pattern and not mmproj_allow_pattern.endswith(".gguf"):
                 mmproj_allow_pattern = f"*{mmproj_allow_pattern}*"
 
         if args.verbose:
-            print(f"Repository ID: {repo_id}")
-            print(f"Model identifier: {allow_pattern}")
+            emit_json_info(f"Repository ID: {repo_id}")
+            emit_json_info(f"Model identifier: {allow_pattern}")
             if mmproj_allow_pattern:
-                print(f"MMProj file: {mmproj_allow_pattern}")
+                emit_json_info(f"MMProj file: {mmproj_allow_pattern}")
 
     if args.hf_token and args.hf_token != "":
         os.environ["HF_HUB_TOKEN"] = args.hf_token
@@ -245,37 +249,38 @@ def main():
         if mmproj_allow_pattern:
             matched += [f for f in base.rglob("*") if f.is_file() and fnmatch.fnmatch(f.name, mmproj_allow_pattern)] if base.exists() else []
         if matched:
-            print(json.dumps({"event": "info", "description": f"Model exists: {allow_pattern}"}))
+            emit_json_info(f"Model exists: {allow_pattern}")
         else:
-            print(json.dumps({"event": "error", "description": f"Model does not exist: {allow_pattern}"}))
+            emit_json_error(f"Model does not exist: {allow_pattern}")
             raise SystemExit(1)
     elif args.delete:
         if args.verbose:
-            print(f"Deleting files matching '{allow_pattern}' in {output_dir}")
+            emit_json_info(f"Deleting files matching '{allow_pattern}' in {output_dir}")
         delete_matched_files(output_dir, allow_pattern, args.verbose)
         if mmproj_allow_pattern:
             if args.verbose:
-                print(f"Deleting mmproj files matching '{mmproj_allow_pattern}' in {output_dir}")
+                emit_json_info(f"Deleting mmproj files matching '{mmproj_allow_pattern}' in {output_dir}")
             delete_matched_files(output_dir, mmproj_allow_pattern, args.verbose)
+
+        # Generate models.ini file
+        generate_models_ini(Path(args.output_dir))
     else:
         os.makedirs(output_dir, exist_ok=True)
 
         tqdm_class = JsonProgress
-        if not args.json_progress:
-            tqdm_class = None
 
         # Download the model using Hugging Face API
         if args.verbose:
-            print(f"Downloading model from Hugging Face repository: {repo_id} with allow pattern: {allow_pattern}")
+            emit_json_info(f"Downloading model from Hugging Face repository: {repo_id} with allow pattern: {allow_pattern}")
         snapshot_download(repo_id=repo_id, allow_patterns=[allow_pattern], ignore_patterns=["*mmproj*"], local_dir=output_dir, tqdm_class=tqdm_class)
 
         if mmproj_allow_pattern:
             if args.verbose:
-                print(f"Downloading mmproj model file from Hugging Face repository: {repo_id} with allow pattern: {mmproj_allow_pattern}")
+                emit_json_info(f"Downloading mmproj model file from Hugging Face repository: {repo_id} with allow pattern: {mmproj_allow_pattern}")
             snapshot_download(repo_id=repo_id, allow_patterns=[mmproj_allow_pattern], local_dir=output_dir, tqdm_class=tqdm_class)
 
-    # Generate models.ini file
-    generate_models_ini(Path(args.output_dir))
+        # Generate models.ini file
+        generate_models_ini(Path(args.output_dir))
 
 
 if __name__ == "__main__":

@@ -57,11 +57,6 @@ def main():
         help="Directory to save the downloaded file (default: current directory).",
     )
     parser.add_argument(
-        "--json-progress",
-        action="store_true",
-        help='Report progress as JSON lines, e.g. {"progress": "42%%"}, instead of a progress bar.',
-    )
-    parser.add_argument(
         "--no-unzip",
         action="store_true",
         help="Save the raw .zip file instead of extracting its contents (default: extract in-memory during download).",
@@ -94,42 +89,27 @@ def main():
             raise ValueError("Received wrong URL from qai_hub_models fetch command: " + url)
     except subprocess.CalledProcessError as exc:
         msg = f"Failed to fetch model URL: {exc.stderr.strip() or exc}"
-        if args.json_progress:
-            emit_json_error(msg)
-        else:
-            print(msg, file=sys.stderr)
+        emit_json_error(msg)
         sys.exit(1)
 
-    if args.json_progress:
-        print(json.dumps({"event": "info", "description": f"Downloading model from: {url}"}), flush=True)
-    else:
-        print(f"Downloading model from: {url}")
+    print(json.dumps({"event": "info", "description": f"Downloading model from: {url}"}), flush=True)
 
     try:
         if args.no_unzip:
-            download(url, args.output_dir, args.json_progress)
+            download(url, args.output_dir, True)
         else:
-            download_and_extract(url, args.output_dir, args.json_progress)
+            download_and_extract(url, args.output_dir, True)
     except requests.HTTPError as exc:
         msg = f"HTTP error: {exc.response.status_code} {exc.response.reason}"
-        if args.json_progress:
-            emit_json_error(msg)
-        else:
-            print(msg, file=sys.stderr)
+        emit_json_error(msg)
         sys.exit(1)
     except requests.RequestException as exc:
         msg = f"Request failed: {exc}"
-        if args.json_progress:
-            emit_json_error(msg)
-        else:
-            print(msg, file=sys.stderr)
+        emit_json_error(msg)
         sys.exit(1)
     except Exception as exc:
         msg = f"Unexpected error: {exc}"
-        if args.json_progress:
-            emit_json_error(msg)
-        else:
-            print(msg, file=sys.stderr)
+        emit_json_error(msg)
         sys.exit(1)
 
 

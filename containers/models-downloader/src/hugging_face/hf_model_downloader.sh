@@ -7,8 +7,7 @@
 if [ -n "${model_key}" ]; then
     python /app/hugging_face/hf_downloader.py \
         --model-key "${model_key}" \
-        --output-dir /models \
-        --json-progress
+        --output-dir /models
     exit_code=$?
     model_id="${model_key}"
 else
@@ -16,7 +15,6 @@ else
         --model-repo-id "${model_repo_id}"
         --model-name "${model_name}"
         --output-dir /models
-        --json-progress
     )
     if [ -n "${model_mmproj_name}" ]; then
         args+=(--model-mmproj-name "${model_mmproj_name}")

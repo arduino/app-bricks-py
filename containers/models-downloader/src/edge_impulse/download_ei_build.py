@@ -8,7 +8,7 @@ Usage examples:
     python download_ei_build.py --ei-project-id 948887 --impulse-id 11 --output-name model.eim --output-dir ./downloads \
         --quantization int8 --target runner-linux-aarch64-qnn
     python download_ei_build.py --ei-project-id 948887 --impulse-id 11 --output-name model.eim --output-dir ./downloads
-    python download_ei_build.py --ei-project-id 948887 --impulse-id 11 --output-name model.eim --json-progress
+    python download_ei_build.py --ei-project-id 948887 --impulse-id 11 --output-name model.eim
 """
 
 import argparse
@@ -64,33 +64,22 @@ def main():
         default="runner-linux-aarch64",
         help="Target type of the model (e.g. runner-linux-aarch64, runner-linux-aarch64-qnn).",
     )
-    parser.add_argument(
-        "--json-progress",
-        action="store_true",
-        help='Report progress as JSON lines, e.g. {"progress": "42%%"}, instead of a progress bar.',
-    )
 
     args = parser.parse_args()
 
     url = BASE_URL.format(project_id=args.ei_project_id, impulse_id=args.impulse_id, quantization=args.quantization, target=args.target)
 
     try:
-        out_file = download(url, args.output_dir, args.json_progress, output_name=args.output_name)
+        out_file = download(url, args.output_dir, True, output_name=args.output_name)
         if os.path.isfile(out_file):
             os.chmod(out_file, 0o755)  # Ensure the file is executable
     except requests.HTTPError as exc:
         msg = f"HTTP error: {exc.response.status_code} {exc.response.reason}"
-        if args.json_progress:
-            emit_json_error(msg)
-        else:
-            print(msg, file=sys.stderr)
+        emit_json_error(msg)
         sys.exit(1)
     except requests.RequestException as exc:
         msg = f"Request failed: {exc}"
-        if args.json_progress:
-            emit_json_error(msg)
-        else:
-            print(msg, file=sys.stderr)
+        emit_json_error(msg)
         sys.exit(1)
 
 
