@@ -306,7 +306,7 @@ class AutomaticSpeechRecognition:
 
     def transcribe(self, duration: int = 0) -> str:
         """
-        Transcribe audio from the configured source and return the final text.
+        Transcribe audio for a duration and return the final text.
 
         Args:
             duration (int): Maximum recording time in seconds. ``0`` means unbounded.
@@ -342,7 +342,7 @@ class AutomaticSpeechRecognition:
 
     def transcribe_stream(self, duration: int = 0) -> TranscriptionStream[ASREvent]:
         """
-        Transcribe audio from the configured source and stream events.
+        Transcribe audio for a duration and yield intermediate transcription events.
 
         Args:
             duration (int): Maximum recording time in seconds. ``0`` means unbounded.
@@ -363,11 +363,10 @@ class AutomaticSpeechRecognition:
 
     def transcribe_sentence(self, hangover: int = 700, timeout: int = 0) -> str:
         """
-        Transcribe audio until a sentence boundary is detected or timeout is reached, and return the text.
+        Transcribe a sentence returning the full text.
 
-        For finite sources (WAV/ndarray), if the source is consumed before a
-        sentence boundary is detected, the best-effort partial transcription is
-        returned instead.
+        Runs until the sentence boundary is detected, the timeout elapses
+        without one or when the source is exhausted.
 
         Args:
             hangover (int): Time in milliseconds to wait when detecting silence after
@@ -403,11 +402,10 @@ class AutomaticSpeechRecognition:
 
     def transcribe_sentence_stream(self, hangover: int = 700, timeout: int = 0) -> TranscriptionStream[ASREvent]:
         """
-        Transcribe audio from the configured source and stream events until a
-        sentence boundary is detected.
+        Transcribe a sentence and yield the intermediate transcription events.
 
-        The stream ends after the first non-empty ``full_text`` event, or when
-        the source is exhausted / the timeout elapses without one.
+        The stream ends after the sentence boundary is detected, the timeout
+        elapses without one or when the source is exhausted.
 
         Args:
             hangover (int): Time in milliseconds to wait when detecting silence after
@@ -442,10 +440,9 @@ class AutomaticSpeechRecognition:
     def transcribe_continuous(self, timeout: int = 0) -> TranscriptionStream[str]:
         """
         Transcribe audio indefinitely and yield one sentence at a time.
-
-        Each iteration returns a single decoded sentence as a ``str``. Stop by
-        ``break``-ing out of the loop, calling :meth:`cancel`, or — for finite
-        sources (WAV/ndarray) — letting the source exhaust.
+        
+        The stream ends when :meth:`cancel` is called, the timeout elapses, or
+        when the source is exhausted.
 
         Args:
             timeout (int): Maximum recording time in seconds. ``0`` means no timeout.
@@ -475,10 +472,10 @@ class AutomaticSpeechRecognition:
 
     def transcribe_continuous_stream(self, timeout: int = 0) -> TranscriptionStream[ASREvent]:
         """
-        Transcribe audio from the configured source indefinitely and stream events.
+        Transcribe audio indefinitely and yield intermediate transcription events.
 
-        Runs until ``cancel()`` is called, the timeout elapses, or — for finite
-        sources (WAV/ndarray) — the source is exhausted.
+        The stream ends when :meth:`cancel` is called, the timeout elapses, or
+        when the source is exhausted.
 
         Args:
             timeout (int): Maximum recording time in seconds. ``0`` means no timeout.
