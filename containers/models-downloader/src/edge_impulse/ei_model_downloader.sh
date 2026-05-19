@@ -4,7 +4,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-python /app/ei_downloader/download_ei_build.py \
+python /app/edge_impulse/download_ei_build.py \
     --json-progress \
     --ei-project-id "${ei_project_id}" \
     --impulse-id "${ei_impulse_id}" \

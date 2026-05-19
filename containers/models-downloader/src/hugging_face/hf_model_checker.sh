@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 if [ -n "${model_key}" ]; then
-    python /app/hf_downloader/hf_downloader.py \
+    python /app/hugging_face/hf_downloader.py \
         --model-key "${model_key}" \
         --output-dir /models \
         --check
@@ -19,5 +19,5 @@ else
     if [ -n "${model_mmproj_name}" ]; then
         args+=(--model-mmproj-name "${model_mmproj_name}")
     fi
-    python /app/hf_downloader/hf_downloader.py "${args[@]}"
+    python /app/hugging_face/hf_downloader.py "${args[@]}"
 fi

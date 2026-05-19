@@ -6,7 +6,7 @@
 
 cd /models
 
-cmd=(python /app/ai_hub_downloader/download_ai_hub_model.py
+cmd=(python /app/ai_hub/download_ai_hub_model.py
     --model_type "$model_type"
     --model_name "$model_name"
     --quantization "$quantization"
