@@ -6,6 +6,8 @@
 
 if [ -d "/models/${model_name}" ]; then
     echo "{\"event\": \"info\", \"description\": \"Model exists: ${model_name}\"}"
+    exit 0
 else
     echo "{\"event\": \"error\", \"description\": \"Model does not exist: ${model_name}\"}"
+    exit 1
 fi

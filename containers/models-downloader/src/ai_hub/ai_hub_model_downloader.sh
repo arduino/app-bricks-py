@@ -4,6 +4,12 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+
+if [ -d "/models/${model_directory}" ]; then
+    echo "{\"event\": \"info\", \"description\": \"Model exists: ${model_directory}\"}"
+    exit 0
+fi
+
 cd /models
 
 cmd=(python /app/ai_hub/download_ai_hub_model.py
@@ -19,6 +25,6 @@ fi
 
 "${cmd[@]}"
 if [ $? -ne 0 ]; then
-    echo "Failed to download the model: ${model_name}"
+    echo "{\"event\": \"error\", \"description\": \"Failed to download the model: ${model_name}\"}"
     exit 1
 fi

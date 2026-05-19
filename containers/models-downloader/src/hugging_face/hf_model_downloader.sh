@@ -27,6 +27,6 @@ else
 fi
 
 if [ "${exit_code}" -ne 0 ]; then
-    echo "Failed to download the model: ${model_id}"
+    echo "{\"event\": \"error\", \"description\": \"Failed to download the model: ${model_id}\"}"
     exit 1
 fi

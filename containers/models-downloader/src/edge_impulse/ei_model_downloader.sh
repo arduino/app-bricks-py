@@ -13,6 +13,6 @@ python /app/edge_impulse/download_ei_build.py \
     --quantization "${quantization}" \
     --target "${target}"
 if [ $? -ne 0 ]; then
-    echo "Failed to download the model: ${model_name}"
+    echo "{\"event\": \"error\", \"description\": \"Failed to download the model: ${model_name}\"}"
     exit 1
 fi

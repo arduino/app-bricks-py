@@ -75,7 +75,6 @@ def main():
     url = BASE_URL.format(project_id=args.ei_project_id, impulse_id=args.impulse_id, quantization=args.quantization, target=args.target)
 
     try:
-        print(f"Downloading from: {url}")
         out_file = download(url, args.output_dir, args.json_progress, output_name=args.output_name)
         if os.path.isfile(out_file):
             os.chmod(out_file, 0o755)  # Ensure the file is executable

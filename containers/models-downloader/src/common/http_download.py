@@ -82,7 +82,11 @@ def download(url: str, output_dir: str, json_progress: bool, output_name: str | 
         downloaded = 0
 
         if json_progress:
-            emit_json_progress("start", filename, downloaded, total, "B")
+            if os.path.exists(output_path):
+                emit_json_progress("info", f"File already exists: {output_path}", total, total, "B", artifacts=[output_path])
+                return output_path
+            
+            emit_json_progress("start", f"Downloading {filename} from {url}", downloaded, total, "B")
             last_update = time.monotonic()
             with open(output_path, "wb") as f:
                 for chunk in response.iter_content(chunk_size=CHUNK_SIZE):
@@ -92,12 +96,16 @@ def download(url: str, output_dir: str, json_progress: bool, output_name: str | 
                     downloaded += len(chunk)
                     now = time.monotonic()
                     if now - last_update >= 1.0:
-                        emit_json_progress("update", filename, downloaded, total, "B")
+                        emit_json_progress("update", f"Downloading {filename} from {url}", downloaded, total, "B")
                         last_update = now
-            emit_json_progress("complete", filename, downloaded, total, "B", artifacts=[output_path])
+            emit_json_progress("complete", f"Downloaded {filename} from {url}", downloaded, total, "B", artifacts=[output_path])
         else:
             try:
                 from tqdm import tqdm
+
+                if os.path.exists(output_path):
+                    print(f"File already exists: {output_path}")
+                    return output_path
 
                 with tqdm(total=total or None, unit="B", unit_scale=True, unit_divisor=1024, desc=filename) as pbar:
                     with open(output_path, "wb") as f:
@@ -154,7 +162,7 @@ def _download_and_extract_streaming(url: str, output_dir: str, json_progress: bo
         last_update = time.monotonic()
 
         if json_progress:
-            emit_json_progress("start", filename, 0, total, "B")
+            emit_json_progress("start", f"Downloading {filename} from {url}", 0, total, "B")
         else:
             try:
                 from tqdm import tqdm
@@ -171,7 +179,7 @@ def _download_and_extract_streaming(url: str, output_dir: str, json_progress: bo
                 if json_progress:
                     now = time.monotonic()
                     if now - last_update >= 1.0:
-                        emit_json_progress("update", filename, downloaded, total, "B")
+                        emit_json_progress("update", f"Downloading {filename} from {url}", downloaded, total, "B")
                         last_update = now
                 elif pbar:
                     pbar.update(len(chunk))
@@ -227,7 +235,7 @@ def _download_and_extract_buffered(url: str, output_dir: str, json_progress: boo
                 tmp_path = tmp.name
 
                 if json_progress:
-                    emit_json_progress("start", filename, downloaded, total, "B")
+                    emit_json_progress("start", f"Downloading {filename} from {url}", downloaded, total, "B")
                     last_update = time.monotonic()
                     for chunk in response.iter_content(chunk_size=CHUNK_SIZE):
                         if not chunk:
@@ -236,9 +244,9 @@ def _download_and_extract_buffered(url: str, output_dir: str, json_progress: boo
                         downloaded += len(chunk)
                         now = time.monotonic()
                         if now - last_update >= 1.0:
-                            emit_json_progress("update", filename, downloaded, total, "B")
+                            emit_json_progress("update", f"Downloading {filename} from {url}", downloaded, total, "B")
                             last_update = now
-                    emit_json_progress("complete", filename, downloaded, total, "B")
+                    emit_json_progress("complete", f"Downloaded {filename} from {url}", downloaded, total, "B")
                 else:
                     try:
                         from tqdm import tqdm
@@ -260,9 +268,9 @@ def _download_and_extract_buffered(url: str, output_dir: str, json_progress: boo
                         print()
 
         if json_progress:
-            print(json.dumps({"event": "info", "description": f"Extracting: {filename}"}), flush=True)
+            print(json.dumps({"event": "info", "description": f"Extracting {filename} to {output_dir}"}), flush=True)
         else:
-            print(f"Extracting: {filename}")
+            print(f"Extracting {filename} to {output_dir}")
 
         extracted_artifacts: list[str] = []
         try:
