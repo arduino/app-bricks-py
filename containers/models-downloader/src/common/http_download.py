@@ -98,7 +98,7 @@ def download(url: str, output_dir: str, json_progress: bool, output_name: str | 
                     if now - last_update >= 1.0:
                         emit_json_progress("update", f"Downloading {filename} from {url}", downloaded, total, "B")
                         last_update = now
-            emit_json_progress("complete", f"Downloaded {filename} from {url}", downloaded, total, "B", artifacts=[output_path])
+            emit_json_progress("complete", f"Downloaded {filename} from {url}", total, total, "B", artifacts=[output_path])
         else:
             try:
                 from tqdm import tqdm
