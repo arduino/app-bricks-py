@@ -33,7 +33,7 @@ def _simple_progress_bar(downloaded: int, total: int, width: int = 40) -> str:
     return f"[{bar}] {pct * 100:.1f}%  ({downloaded}/{total} B)"
 
 
-def emit_json_progress(event_type: str, description: str, current: int, total: int, unit: str):
+def emit_json_progress(event_type: str, description: str, current: int, total: int, unit: str, artifacts: list[str] | None = None):
     pct = round((current / total) * 100, 2) if total else 0
     data = {
         "event": event_type,
@@ -43,6 +43,8 @@ def emit_json_progress(event_type: str, description: str, current: int, total: i
         "unit": unit,
         "percentage": f"{pct}%",
     }
+    if artifacts is not None:
+        data["artifacts"] = artifacts
     print(json.dumps(data), flush=True)
 
 
@@ -92,7 +94,7 @@ def download(url: str, output_dir: str, json_progress: bool, output_name: str | 
                     if now - last_update >= 1.0:
                         emit_json_progress("update", filename, downloaded, total, "B")
                         last_update = now
-            emit_json_progress("complete", filename, downloaded, total, "B")
+            emit_json_progress("complete", filename, downloaded, total, "B", artifacts=[output_path])
         else:
             try:
                 from tqdm import tqdm
@@ -180,8 +182,10 @@ def download_and_extract(url: str, output_dir: str, json_progress: bool) -> None
         else:
             print(f"Extracting: {filename}")
 
+        extracted_artifacts: list[str] = []
         try:
             with zipfile.ZipFile(tmp_path) as zf:
+                extracted_artifacts = [os.path.join(output_dir, name) for name in zf.namelist()]
                 zf.extractall(output_dir)
         except (OSError, zipfile.BadZipFile) as exc:
             msg = f"Extraction failed: {exc}"
@@ -192,7 +196,7 @@ def download_and_extract(url: str, output_dir: str, json_progress: bool) -> None
             raise
 
         if json_progress:
-            print(json.dumps({"event": "info", "description": f"Extracted to: {output_dir}"}), flush=True)
+            print(json.dumps({"event": "complete", "description": f"Extracted to: {output_dir}", "artifacts": extracted_artifacts}), flush=True)
         else:
             print(f"Extracted to: {output_dir}")
     finally:

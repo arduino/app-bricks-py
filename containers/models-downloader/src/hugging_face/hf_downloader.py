@@ -183,6 +183,11 @@ def main():
         action="store_true",
         help="Delete already-present files matching the resolved patterns instead of downloading them.",
     )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Check if model files matching the resolved patterns are present on the filesystem.",
+    )
 
     args = parser.parse_args()
 
@@ -234,7 +239,17 @@ def main():
     # Create download folder if it doesn't exist. Patter is: output_dir + / repo_id
     output_dir = f"{args.output_dir}/{repo_id}"
 
-    if args.delete:
+    if args.check:
+        base = Path(output_dir)
+        matched = [f for f in base.rglob("*") if f.is_file() and fnmatch.fnmatch(f.name, allow_pattern)] if base.exists() else []
+        if mmproj_allow_pattern:
+            matched += [f for f in base.rglob("*") if f.is_file() and fnmatch.fnmatch(f.name, mmproj_allow_pattern)] if base.exists() else []
+        if matched:
+            print(json.dumps({"event": "info", "description": f"Model exists: {allow_pattern}"}))
+        else:
+            print(json.dumps({"event": "error", "description": f"Model does not exist: {allow_pattern}"}))
+            raise SystemExit(1)
+    elif args.delete:
         if args.verbose:
             print(f"Deleting files matching '{allow_pattern}' in {output_dir}")
         delete_matched_files(output_dir, allow_pattern, args.verbose)
