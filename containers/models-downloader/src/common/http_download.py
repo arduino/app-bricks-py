@@ -34,7 +34,7 @@ def _simple_progress_bar(downloaded: int, total: int, width: int = 40) -> str:
 
 
 def emit_json_progress(event_type: str, description: str, current: int, total: int, unit: str, artifacts: list[str] | None = None):
-    pct = round((current / total) * 100, 2) if total else 0
+    pct = round((current / total) * 100, 2) if total and total > 0 else 0
     data = {
         "event": event_type,
         "description": description,
@@ -98,7 +98,7 @@ def download(url: str, output_dir: str, json_progress: bool, output_name: str | 
                     if now - last_update >= 1.0:
                         emit_json_progress("update", f"Downloading {filename} from {url}", downloaded, total, "B")
                         last_update = now
-            emit_json_progress("complete", f"Downloaded {filename} from {url}", total, total, "B", artifacts=[output_path])
+            emit_json_progress("complete", f"Downloaded {filename} from {url}", downloaded, total, "B", artifacts=[output_path])
         else:
             try:
                 from tqdm import tqdm
