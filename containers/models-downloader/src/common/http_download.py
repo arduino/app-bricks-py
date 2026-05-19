@@ -123,14 +123,96 @@ def download(url: str, output_dir: str, json_progress: bool, output_name: str | 
     return output_path
 
 
-def download_and_extract(url: str, output_dir: str, json_progress: bool) -> None:
+def download_and_extract(url: str, output_dir: str, json_progress: bool, streaming: bool = True) -> None:
     """Stream-download a ZIP from *url* and extract it to *output_dir*.
 
-    The response is streamed chunk-by-chunk into a temporary file on disk
-    (so arbitrarily large archives never reside fully in memory).  Once the
-    download is complete the archive is extracted and the temporary file is
-    deleted.
+    Args:
+        streaming: When ``True`` (default), uses ``stream-unzip`` to decompress
+            each entry as chunks arrive — no temporary file required and memory
+            usage stays constant.  When ``False``, streams into a temporary file
+            on disk first, then extracts with the stdlib ``zipfile`` module.
     """
+    if streaming:
+        _download_and_extract_streaming(url, output_dir, json_progress)
+    else:
+        _download_and_extract_buffered(url, output_dir, json_progress)
+
+
+def _download_and_extract_streaming(url: str, output_dir: str, json_progress: bool) -> None:
+    from stream_unzip import stream_unzip
+
+    os.makedirs(output_dir, exist_ok=True)
+    extracted_artifacts: list[str] = []
+    pbar = None
+
+    with requests.get(url, stream=True, timeout=60) as response:
+        response.raise_for_status()
+
+        filename = _filename_from_response(response, url.rstrip("/").split("/")[-1] or "download")
+        total = int(response.headers.get("Content-Length", 0) or 0)
+        downloaded = 0
+        last_update = time.monotonic()
+
+        if json_progress:
+            emit_json_progress("start", filename, 0, total, "B")
+        else:
+            try:
+                from tqdm import tqdm
+                pbar = tqdm(total=total or None, unit="B", unit_scale=True, unit_divisor=1024, desc=filename)
+            except ImportError:
+                pass
+
+        def byte_chunks():
+            nonlocal downloaded, last_update
+            for chunk in response.iter_content(chunk_size=CHUNK_SIZE):
+                if not chunk:
+                    continue
+                downloaded += len(chunk)
+                if json_progress:
+                    now = time.monotonic()
+                    if now - last_update >= 1.0:
+                        emit_json_progress("update", filename, downloaded, total, "B")
+                        last_update = now
+                elif pbar:
+                    pbar.update(len(chunk))
+                else:
+                    print(f"\r{_simple_progress_bar(downloaded, total)}", end="", flush=True)
+                yield chunk
+
+        try:
+            for zipped_path, _file_size, unzipped_chunks in stream_unzip(byte_chunks()):
+                file_name = zipped_path.decode() if isinstance(zipped_path, bytes) else zipped_path
+                output_path = os.path.join(output_dir, file_name)
+                extracted_artifacts.append(output_path)
+                if file_name.endswith("/"):
+                    os.makedirs(output_path, exist_ok=True)
+                    for _ in unzipped_chunks:
+                        pass
+                else:
+                    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+                    with open(output_path, "wb") as f:
+                        for chunk in unzipped_chunks:
+                            f.write(chunk)
+        except Exception as exc:
+            msg = f"Extraction failed: {exc}"
+            if json_progress:
+                emit_json_error(msg)
+            else:
+                print(msg, file=sys.stderr)
+            raise
+        finally:
+            if pbar:
+                pbar.close()
+            elif not json_progress:
+                print()
+
+    if json_progress:
+        print(json.dumps({"event": "complete", "description": f"Extracted to: {output_dir}", "artifacts": extracted_artifacts}), flush=True)
+    else:
+        print(f"Extracted to: {output_dir}")
+
+
+def _download_and_extract_buffered(url: str, output_dir: str, json_progress: bool) -> None:
     os.makedirs(output_dir, exist_ok=True)
     tmp_path = None
     try:
