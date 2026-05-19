@@ -27,6 +27,8 @@ else
 fi
 
 if [ "${exit_code}" -ne 0 ]; then
-    echo "Failed to remove the model: ${model_id}"
+    echo "{\"event\": \"error\", \"description\": \"Failed to remove model: ${model_id}\"}"
     exit 1
 fi
+
+echo "{\"event\": \"info\", \"description\": \"Model removed: ${model_id}\"}"

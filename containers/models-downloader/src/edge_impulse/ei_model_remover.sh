@@ -8,6 +8,8 @@ cd /models
 
 rm -fr "${model_name}"
 if [ $? -ne 0 ]; then
-    echo "Failed to remove model: ${model_name}"
+    echo "{\"event\": \"error\", \"description\": \"Failed to remove model: ${model_name}\"}"
     exit 1
 fi
+
+echo "{\"event\": \"info\", \"description\": \"Model removed: ${model_name}\"}"

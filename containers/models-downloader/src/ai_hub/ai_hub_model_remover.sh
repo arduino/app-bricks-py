@@ -10,6 +10,8 @@ cmd=(rm -fr "$model_directory")
 
 "${cmd[@]}"
 if [ $? -ne 0 ]; then
-    echo "Failed to remove model: ${model_directory}"
+    echo "{\"event\": \"error\", \"description\": \"Failed to remove model: ${model_directory}\"}"
     exit 1
 fi
+
+echo "{\"event\": \"info\", \"description\": \"Model removed: ${model_directory}\"}"
