@@ -85,7 +85,7 @@ def download(url: str, output_dir: str, json_progress: bool, output_name: str | 
             if os.path.exists(output_path):
                 emit_json_progress("info", f"File already exists: {output_path}", total, total, "B", artifacts=[output_path])
                 return output_path
-            
+
             emit_json_progress("start", f"Downloading {filename} from {url}", downloaded, total, "B")
             last_update = time.monotonic()
             with open(output_path, "wb") as f:
@@ -135,6 +135,10 @@ def download_and_extract(url: str, output_dir: str, json_progress: bool, streami
     """Stream-download a ZIP from *url* and extract it to *output_dir*.
 
     Args:
+        url: URL to download.
+        output_dir: Directory where the ZIP contents will be extracted.
+        json_progress: When ``True`` emit progress as JSON lines; otherwise
+            use a ``tqdm`` progress bar (falling back to a simple inline bar
         streaming: When ``True`` (default), uses ``stream-unzip`` to decompress
             each entry as chunks arrive — no temporary file required and memory
             usage stays constant.  When ``False``, streams into a temporary file
@@ -166,6 +170,7 @@ def _download_and_extract_streaming(url: str, output_dir: str, json_progress: bo
         else:
             try:
                 from tqdm import tqdm
+
                 pbar = tqdm(total=total or None, unit="B", unit_scale=True, unit_divisor=1024, desc=filename)
             except ImportError:
                 pass
