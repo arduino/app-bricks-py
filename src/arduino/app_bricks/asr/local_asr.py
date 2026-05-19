@@ -11,6 +11,7 @@ import threading
 import time
 import wave
 from collections.abc import Generator, Iterator
+from concurrent.futures import CancelledError, Future
 from dataclasses import dataclass
 from typing import ContextManager, Generic, Literal, TypeVar
 
@@ -260,7 +261,7 @@ class AutomaticSpeechRecognition:
             self._source.format_is_packed,
         )
 
-        self._worker_loop: asyncio.AbstractEventLoop | None = None
+        self._worker_loop: Future[asyncio.AbstractEventLoop] = Future()
         self._stop_worker = threading.Event()
 
         self._active_session_lock = threading.Lock()
@@ -270,6 +271,8 @@ class AutomaticSpeechRecognition:
         """Prepare the ASR for transcription. Starts the owned mic if applicable."""
         logger.debug("Starting ASR and preparing resources...")
         self._stop_worker.clear()
+        if self._worker_loop.done():
+            self._worker_loop = Future()
         if self._owns_source:
             self._source.start()
 
@@ -277,6 +280,7 @@ class AutomaticSpeechRecognition:
         """Stop the ASR and clean up resources. Stops the owned mic if applicable."""
         logger.debug("Stopping ASR and cleaning up resources...")
         self._stop_worker.set()
+        self._worker_loop.cancel()
         self.cancel()
         if self._owns_source:
             self._source.stop()
@@ -497,25 +501,25 @@ class AutomaticSpeechRecognition:
     def _asyncio_loop(self):
         """Dedicated thread for the asyncio event loop hosting session coroutines."""
         logger.debug("Asyncio event loop starting")
-        self._worker_loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self._worker_loop)
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        self._worker_loop.set_result(loop)
 
         async def keep_alive():
             while not self._stop_worker.is_set():
                 await asyncio.sleep(0.1)
 
         try:
-            self._worker_loop.run_until_complete(keep_alive())
+            loop.run_until_complete(keep_alive())
         except Exception as e:
             logger.error(f"Event loop error: {e}")
         finally:
-            pending = asyncio.all_tasks(self._worker_loop)
+            pending = asyncio.all_tasks(loop)
             for task in pending:
                 task.cancel()
             if pending:
-                self._worker_loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
-            self._worker_loop.close()
-            self._worker_loop = None
+                loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+            loop.close()
             logger.debug("Asyncio event loop stopped")
 
     def _ensure_source_started(self) -> None:
@@ -523,10 +527,16 @@ class AutomaticSpeechRecognition:
             raise RuntimeError("Audio source must be started before transcription.")
 
     def _transcribe_stream(self, duration: int = 0, vad_ms: int | None = None) -> Generator[ASREvent, None, None]:
-        if self._worker_loop is None:
-            raise RuntimeError("Worker loop is not initialized. Call start() first.")
         if self._stop_worker.is_set():
-            raise RuntimeError("ASR is stopping or stopped")
+            raise RuntimeError("Brick is stopping or already stopped")
+        try:
+            worker_loop = self._worker_loop.result(timeout=5)
+        except TimeoutError:
+            raise RuntimeError("Worker loop is not initialized. Call start() first.") from None
+        except CancelledError:
+            raise RuntimeError("Brick is stopping or already stopped") from None
+        if self._stop_worker.is_set():
+            raise RuntimeError("Brick is stopping or already stopped")
 
         if not self._active_session_lock.acquire(blocking=False):
             active_id = self._active_session.session_id if self._active_session else "unknown"
@@ -554,7 +564,7 @@ class AutomaticSpeechRecognition:
 
             future = asyncio.run_coroutine_threadsafe(
                 self._transcription_session_handler(session_info),
-                self._worker_loop,
+                worker_loop,
             )
 
             while not future.done():
