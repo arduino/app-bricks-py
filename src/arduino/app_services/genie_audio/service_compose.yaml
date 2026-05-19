@@ -47,7 +47,6 @@ services:
                chmod 666 /dev/dma_heap/* 2>/dev/null || true;               
                chmod -R 777 /var/log/supervisor;
                chmod 666 /proc/1/fd/1 /proc/1/fd/2 2>/dev/null || true;
-               mkdir -p /usr/share/qcom/conf.d;
                cp /etc/fastrpc/hexagon-dsp-binaries.yaml /usr/share/qcom/conf.d/;
                exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf"
     logging:
