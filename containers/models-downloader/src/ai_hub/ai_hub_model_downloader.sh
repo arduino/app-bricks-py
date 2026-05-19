@@ -17,7 +17,6 @@ cmd=(python /app/ai_hub/download_ai_hub_model.py
     --model_name "$model_name"
     --quantization "$quantization"
     --chipset "$chipset"
-    --json-progress
 )
 if [ -n "$version" ]; then
     cmd+=(--version "$version")
