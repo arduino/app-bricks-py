@@ -88,11 +88,12 @@ class JsonProgress(tqdm):
         pass
 
 
-def delete_matched_files(output_dir: str, allow_pattern: str, verbose: bool = False):
+def delete_matched_files(output_dir: str, models_base: str, allow_pattern: str, verbose: bool = False):
     """Delete files inside output_dir whose names match allow_pattern (fnmatch-style).
     After deletion, removes any empty subdirectories but never output_dir itself.
     """
     base = Path(output_dir)
+    models_base_path = Path(models_base)
     if not base.exists():
         emit_json_info(f"Directory does not exist, nothing to delete: {output_dir}")
         return
@@ -108,9 +109,15 @@ def delete_matched_files(output_dir: str, allow_pattern: str, verbose: bool = Fa
         f.unlink()
     # Remove empty subdirectories (deepest first), but never output_dir itself
     for d in sorted(dirs_to_check, key=lambda p: len(p.parts), reverse=True):
-        if d == base:
+        if d == models_base:
             continue
         if d.exists() and not any(d.iterdir()):
+            if verbose:
+                emit_json_info(f"Removing empty directory: {d}")
+            d.rmdir()
+    # Remove all empty directories up to output_dir. List all directories under models_base and check if they are empty, removing them
+    for d in sorted(models_base_path.rglob("*"), key=lambda p: len(p.parts), reverse=True):
+        if d.is_dir() and d != base and not any(d.iterdir()):
             if verbose:
                 emit_json_info(f"Removing empty directory: {d}")
             d.rmdir()
@@ -257,11 +264,11 @@ def main():
     elif args.delete:
         if args.verbose:
             emit_json_info(f"Deleting files matching '{allow_pattern}' in {output_dir}")
-        delete_matched_files(output_dir, allow_pattern, args.verbose)
+        delete_matched_files(output_dir, args.output_dir, allow_pattern, args.verbose)
         if mmproj_allow_pattern:
             if args.verbose:
                 emit_json_info(f"Deleting mmproj files matching '{mmproj_allow_pattern}' in {output_dir}")
-            delete_matched_files(output_dir, mmproj_allow_pattern, args.verbose)
+            delete_matched_files(output_dir, args.output_dir, mmproj_allow_pattern, args.verbose)
 
         # Generate models.ini file
         generate_models_ini(Path(args.output_dir))
