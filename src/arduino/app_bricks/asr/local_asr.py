@@ -440,7 +440,7 @@ class AutomaticSpeechRecognition:
     def transcribe_continuous(self, timeout: int = 0) -> TranscriptionStream[str]:
         """
         Transcribe audio indefinitely and yield one sentence at a time.
-        
+
         The stream ends when :meth:`cancel` is called, the timeout elapses, or
         when the source is exhausted.
 
