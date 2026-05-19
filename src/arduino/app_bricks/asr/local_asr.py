@@ -609,9 +609,7 @@ class AutomaticSpeechRecognition:
         sampling_rate = str(self._source.sample_rate)
         channels = str(self._source.channels)
 
-        # The API expects VAD hangover in 10ms slots, not milliseconds
-        hangover_ms = vad_ms if vad_ms is not None else self._DEFAULT_VAD_MS
-        vad_slots = str(hangover_ms // 10)
+        hangover_ms = str(vad_ms if vad_ms is not None else self._DEFAULT_VAD_MS)
 
         create_url = f"{self.api_base_url}/transcriptions/create"
         create_data = {
@@ -621,7 +619,7 @@ class AutomaticSpeechRecognition:
                 {"key": "sampling_rate", "value": sampling_rate},
                 {"key": "channels", "value": channels},
                 {"key": "format", "value": self._pcm_format},
-                {"key": "vad", "value": vad_slots},
+                {"key": "vad", "value": hangover_ms},
             ]),
         }
         if language is not None:
