@@ -4,7 +4,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-if [ -d "/models/${model_name}" ]; then
+if [ -f "/models/${model_name}" ]; then
     echo "{\"event\": \"info\", \"description\": \"Model exists: ${model_name}\"}"
     exit 0
 else
