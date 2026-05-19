@@ -34,6 +34,7 @@ mapping each model stem to its GGUF path (and mmproj path where present).
 
 import fnmatch
 import os
+import shutil
 
 from huggingface_hub import snapshot_download
 import argparse
@@ -278,6 +279,11 @@ def main():
             if args.verbose:
                 emit_json_info(f"Downloading mmproj model file from Hugging Face repository: {repo_id} with allow pattern: {mmproj_allow_pattern}")
             snapshot_download(repo_id=repo_id, allow_patterns=[mmproj_allow_pattern], local_dir=output_dir, tqdm_class=tqdm_class)
+
+        # Remove download caches
+        cache_path = Path(output_dir) / ".cache"
+        if cache_path.is_dir():
+            shutil.rmtree(cache_path)
 
         # Generate models.ini file
         generate_models_ini(Path(args.output_dir))
