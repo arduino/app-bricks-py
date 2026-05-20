@@ -24,7 +24,7 @@ jobs:
     # amd64 host is required: the snapdragon toolchain cross-compiles to arm64
     runs-on: ubuntu-24.04
     container:
-      image: ghcr.io/snapdragon-toolchain/arm64-linux:v0.1
+      image: ghcr.io/snapdragon-toolchain/arm64-linux:v0.6
       options: --user root
     timeout-minutes: 180
 
