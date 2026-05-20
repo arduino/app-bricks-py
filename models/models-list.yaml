@@ -1623,18 +1623,6 @@ models:
     supported_boards: ["ventunoq"]
     bricks:
       - id: "arduino:tts"
-    deployment:
-      handler: "ai-hub-handler"
-      platforms:
-        - ventunoq:
-            variables:
-              model_type: "voice_ai"
-              model_name: "piper_tts_de"
-              models_repository: "/var/lib/arduino-app-cli/models/audio-analytics/tts"
-              model_directory: "piper_tts_de-voice_ai-w8a16-qualcomm_qcs8275"
-              quantization: "w8a16"
-              chipset: "qualcomm-qcs8275"
-              version: "0.51.0"
     metadata:
       source: "qualcomm-ai-hub"
       source-model-id: "piper_tts_de"
@@ -1646,18 +1634,6 @@ models:
     supported_boards: ["ventunoq"]
     bricks:
       - id: "arduino:tts"
-    deployment:
-      handler: "ai-hub-handler"
-      platforms:
-        - ventunoq:
-            variables:
-              model_type: "voice_ai"
-              model_name: "piper_tts_it"
-              models_repository: "/var/lib/arduino-app-cli/models/audio-analytics/tts"
-              model_directory: "piper_tts_it-voice_ai-w8a16-qualcomm_qcs8275"
-              quantization: "w8a16"
-              chipset: "qualcomm-qcs8275"
-              version: "0.51.0"
     metadata:
       source: "qualcomm-ai-hub"
       source-model-id: "piper_tts_it"
@@ -1669,18 +1645,6 @@ models:
     supported_boards: ["ventunoq"]
     bricks:
       - id: "arduino:tts"
-    deployment:
-      handler: "ai-hub-handler"
-      platforms:
-        - ventunoq:
-            variables:
-              model_type: "voice_ai"
-              model_name: "piper_tts_en"
-              models_repository: "/var/lib/arduino-app-cli/models/audio-analytics/tts"
-              model_directory: "piper_tts_en-voice_ai-w8a16-qualcomm_qcs8275"
-              quantization: "w8a16"
-              chipset: "qualcomm-qcs8275"
-              version: "0.51.0"
     metadata:
       source: "qualcomm-ai-hub"
       source-model-id: "piper_tts_en"
