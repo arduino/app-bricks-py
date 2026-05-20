@@ -304,14 +304,14 @@ class AutomaticSpeechRecognition:
         """
         return self._active_session is not None
 
-    def transcribe(self, duration: int = 0) -> str:
+    def transcribe(self, duration: int = 60) -> str:
         """
         Transcribe audio for a duration and return the final text.
 
         Args:
             duration (int): Maximum recording time in seconds. ``0`` means unbounded.
                 Ignored for finite sources (WAV/ndarray), which are consumed
-                to completion regardless. Default: ``0``.
+                to completion regardless. Default: ``60``.
 
         Returns:
             str: The transcribed text, or an empty string if no speech was detected.
@@ -346,7 +346,7 @@ class AutomaticSpeechRecognition:
 
         Args:
             duration (int): Maximum recording time in seconds. ``0`` means unbounded.
-                Ignored for finite sources (WAV/ndarray). Default: ``0``.
+                Ignored for finite sources (WAV/ndarray). Default: ``60``.
 
         Yields:
             ASREvent: objects representing transcription events.
