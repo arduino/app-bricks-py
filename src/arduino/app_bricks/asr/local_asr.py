@@ -361,7 +361,7 @@ class AutomaticSpeechRecognition:
         self._ensure_source_started()
         return TranscriptionStream(self._transcribe_stream(duration=duration))
 
-    def transcribe_sentence(self, hangover: int = 700, timeout: int = 0) -> str:
+    def transcribe_sentence(self, timeout: int = 0) -> str:
         """
         Transcribe a sentence returning the full text.
 
@@ -369,8 +369,6 @@ class AutomaticSpeechRecognition:
         without one or when the source is exhausted.
 
         Args:
-            hangover (int): Time in milliseconds to wait when detecting silence after
-                speech. Tune to allow short pauses within sentences. Default: 700 ms.
             timeout (int): Maximum recording time in seconds. ``0`` means no timeout.
                 Ignored for finite sources (WAV/ndarray). Default: ``0``.
 
@@ -386,7 +384,7 @@ class AutomaticSpeechRecognition:
         last_partial = ""
         final_text = ""
 
-        with self.transcribe_sentence_stream(hangover=hangover, timeout=timeout) as stream:
+        with self.transcribe_sentence_stream(timeout=timeout) as stream:
             for chunk in stream:
                 if chunk.type == "partial_text" and chunk.data.strip():
                     last_partial = chunk.data
@@ -400,7 +398,7 @@ class AutomaticSpeechRecognition:
             return last_partial
         return ""
 
-    def transcribe_sentence_stream(self, hangover: int = 700, timeout: int = 0) -> TranscriptionStream[ASREvent]:
+    def transcribe_sentence_stream(self, timeout: int = 0) -> TranscriptionStream[ASREvent]:
         """
         Transcribe a sentence and yield the intermediate transcription events.
 
@@ -408,8 +406,6 @@ class AutomaticSpeechRecognition:
         elapses without one or when the source is exhausted.
 
         Args:
-            hangover (int): Time in milliseconds to wait when detecting silence after
-                speech. Tune to allow short pauses within sentences. Default: 700 ms.
             timeout (int): Maximum recording time in seconds. ``0`` means no timeout.
                 Ignored for finite sources (WAV/ndarray). Default: ``0``.
 
@@ -426,7 +422,7 @@ class AutomaticSpeechRecognition:
         self._ensure_source_started()
 
         def sentence_gen() -> Generator[ASREvent, None, None]:
-            inner = self._transcribe_stream(duration=timeout, vad_ms=hangover)
+            inner = self._transcribe_stream(duration=timeout)
             try:
                 for event in inner:
                     yield event
