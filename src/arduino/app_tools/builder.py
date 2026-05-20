@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import glob
 import os
 import sys
 from setuptools.build_meta import build_wheel as _orig_build_wheel
@@ -54,7 +55,11 @@ def run_preprocessing(dev_mode: bool = False) -> None:
 
     try:
         print(f"################################## Embed models list ###############################################################################")
-        shutil.copyfile("models/models-list.yaml", f"{cache_folder_path}/models-list.yaml")
+        matched_files = glob.glob("models/models-*.yaml")
+        if not matched_files:
+            raise FileNotFoundError("No files matching 'models/models-*.yaml' were found")
+        for src_file in matched_files:
+            shutil.copy(src_file, f"{cache_folder_path}/{os.path.basename(src_file)}")
     except Exception as e:
         print(f"Error: {e}.")
         raise
