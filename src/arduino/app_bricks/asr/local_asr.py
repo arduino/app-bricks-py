@@ -4,12 +4,10 @@
 
 import asyncio
 import base64
-import io
 import json
 import queue
 import threading
 import time
-import wave
 from collections.abc import Generator, Iterator
 from concurrent.futures import CancelledError, Future
 from dataclasses import dataclass
@@ -116,65 +114,6 @@ class TranscriptionStream(Generic[T], ContextManager["TranscriptionStream[T]"], 
         self._generator.close()
 
 
-class InMemoryAudioSource:
-    """
-    Audio source wrapping WAV bytes or a raw PCM ndarray.
-
-    Exposes only the subset of BaseMicrophone attributes/methods that ASR uses,
-    so it can be used uniformly. ``capture()`` raises ``AudioSourceExhausted``
-    when the underlying buffer is drained.
-    """
-
-    _DEFAULT_SAMPLING_RATE = 16000
-    _DEFAULT_CHANNELS = 1
-    _DEFAULT_BUFFER_SIZE = 1024
-
-    def __init__(self, samples: bytes | np.ndarray):
-        if isinstance(samples, (bytes, bytearray)):
-            with wave.open(io.BytesIO(bytes(samples)), "rb") as wf:
-                self.sample_rate = wf.getframerate()
-                self.channels = wf.getnchannels()
-                sample_width = wf.getsampwidth()
-                frames = wf.readframes(wf.getnframes())
-            # Derive numpy dtype from WAV sample width (signed int, little-endian — WAV convention)
-            dtype_map = {1: np.uint8, 2: np.int16, 4: np.int32}
-            if sample_width not in dtype_map:
-                raise ValueError(f"Unsupported WAV sample width: {sample_width}")
-            self.format = np.dtype(dtype_map[sample_width])
-            self._samples = np.frombuffer(frames, dtype=self.format)
-        elif isinstance(samples, np.ndarray):
-            self.sample_rate = self._DEFAULT_SAMPLING_RATE
-            self.channels = self._DEFAULT_CHANNELS
-            self.format = samples.dtype
-            self._samples = samples
-        else:
-            raise TypeError(f"Unsupported in-memory audio source type: {type(samples)!r}")
-
-        self.format_is_packed = False
-        self.buffer_size = self._DEFAULT_BUFFER_SIZE
-        self._started = True  # It's started by default, this is not a real device
-        self._cursor = 0
-
-    def is_started(self) -> bool:
-        return self._started
-
-    def start(self) -> None:
-        self._started = True
-
-    def stop(self) -> None:
-        self._started = False
-
-    def capture(self) -> np.ndarray:
-        step = self.buffer_size * self.channels
-        if self._cursor >= len(self._samples):
-            raise AudioSourceExhausted()
-
-        chunk = self._samples[self._cursor : self._cursor + step]
-        self._cursor += step
-
-        return chunk
-
-
 @dataclass
 class SessionInfo:
     session_id: str
@@ -190,41 +129,19 @@ class SessionInfo:
 _END_SENTINEL = object()  # Sentinel value to signal end of audio stream in the chunk queue
 
 
-@brick
-class AutomaticSpeechRecognition:
+class BaseASR:
+    """
+    Shared logic for ASR bricks. Subclasses bind the audio source
+    via :meth:`_build_source` and add their own public ``transcribe*`` surface.
+
+    Not decorated with ``@brick`` — only the concrete subclasses register.
+    """
+
     _APP_SERVICE_NAME = "audio-analytics-runner"
     _FLUSH_INTERVAL_SECONDS = 5
     _DEFAULT_VAD_MS = 700
 
-    def __init__(
-        self,
-        source: BaseMicrophone | np.ndarray | bytes | None = None,
-        language: str | None = None,
-    ):
-        """
-        ASR brick that uses a local audio analytics service to decode audio streams.
-
-        Args:
-            source: Audio source for transcription. One of:
-                BaseMicrophone: used as-is; the caller owns its
-                    lifecycle (ASR never calls start()/stop() on it).
-                bytes: treated as a WAV container and wrapped internally.
-                np.ndarray: treated as raw PCM samples at 16 kHz mono
-                    (dtype inferred) and wrapped internally.
-                None: ASR constructs a default Microphone() and owns its
-                    lifecycle (started on start(), stopped on stop()).
-                Default: None.
-            language (str): Language code for the ASR model (e.g. "en" for
-                English). This is typically auto-detected by the model,
-                but can be overridden here if needed. It is exposed as
-                the public ``language`` attribute and may be reassigned at
-                runtime; the new value takes effect on the next session.
-
-        Note:
-            Only one transcription can be active per instance at a time. For
-            concurrent transcriptions on different mics, create multiple ASR
-            instances.
-        """
+    def __init__(self, source, language: str | None = None):
         # API configuration
         self.api_host = resolve_address(self._APP_SERVICE_NAME)
         if not self.api_host:
@@ -244,17 +161,7 @@ class AutomaticSpeechRecognition:
 
         self.language = language
 
-        if source is None:
-            self._source = Microphone()
-            self._owns_source = True
-        elif isinstance(source, BaseMicrophone):
-            self._source = source
-            self._owns_source = False
-        elif isinstance(source, (bytes, bytearray, np.ndarray)):
-            self._source = InMemoryAudioSource(source)
-            self._owns_source = False
-        else:
-            raise TypeError(f"Unsupported source type: {type(source)!r}")
+        self._source, self._owns_source = self._build_source(source)
 
         self._pcm_format = _dtype_to_pcm_format(
             self._source.format,
@@ -304,29 +211,26 @@ class AutomaticSpeechRecognition:
         """
         return self._active_session is not None
 
-    def transcribe(self, duration: int = 60) -> str:
+    def _build_source(self, source) -> tuple:
+        """Bind the audio source. Subclasses must override."""
+        raise NotImplementedError("Subclasses must override _build_source")
+
+    def _ensure_source_started(self) -> None:
+        if not self._source.is_started():
+            raise RuntimeError("Audio source must be started before transcription.")
+
+    def _collect_transcription(self, stream: TranscriptionStream[ASREvent]) -> str:
         """
-        Transcribe audio for a duration and return the final text.
+        Drain an event stream into a single transcription string.
 
-        Args:
-            duration (int): Maximum recording time in seconds. ``0`` means unbounded.
-                Ignored for finite sources (WAV/ndarray), which are consumed
-                to completion regardless. Default: ``60``.
-
-        Returns:
-            str: The transcribed text, or an empty string if no speech was detected.
-
-        Raises:
-            ASRBusyError: If this instance already has an active session.
-            ASRServiceBusyError: If no more concurrent sessions are available.
-            ASRUnavailableError: If the inference service is unreachable or the
-                connection drops mid-session.
-            RuntimeError: If the audio source has not been started.
+        Accumulates non-empty ``full_text`` events; if none arrive, falls back
+        to the most recent non-empty ``partial_text``. Returns ``""`` if no
+        speech was detected.
         """
         last_partial = ""
         final_text = ""
 
-        with self.transcribe_stream(duration=duration) as stream:
+        with stream:
             for chunk in stream:
                 if chunk.type == "partial_text" and chunk.data.strip():
                     last_partial = chunk.data
@@ -339,156 +243,6 @@ class AutomaticSpeechRecognition:
             logger.warning("ASR returned empty full_text, falling back to last partial_text")
             return last_partial
         return ""
-
-    def transcribe_stream(self, duration: int = 0) -> TranscriptionStream[ASREvent]:
-        """
-        Transcribe audio for a duration and yield intermediate transcription events.
-
-        Args:
-            duration (int): Maximum recording time in seconds. ``0`` means unbounded.
-                Ignored for finite sources (WAV/ndarray). Default: ``60``.
-
-        Yields:
-            ASREvent: objects representing transcription events.
-
-        Raises:
-            ASRBusyError: If this instance already has an active session.
-            ASRServiceBusyError: If no more concurrent sessions are available.
-            ASRUnavailableError: If the inference service is unreachable or the
-                connection drops mid-session.
-            RuntimeError: If the audio source has not been started.
-        """
-        self._ensure_source_started()
-        return TranscriptionStream(self._transcribe_stream(duration=duration))
-
-    def transcribe_sentence(self, timeout: int = 0) -> str:
-        """
-        Transcribe a sentence returning the full text.
-
-        Runs until the sentence boundary is detected, the timeout elapses
-        without one or when the source is exhausted.
-
-        Args:
-            timeout (int): Maximum recording time in seconds. ``0`` means no timeout.
-                Ignored for finite sources (WAV/ndarray). Default: ``0``.
-
-        Returns:
-            str: The transcribed text, or an empty string if no speech was detected.
-
-        Raises:
-            ASRBusyError: If this instance already has an active session.
-            ASRServiceBusyError: If no more concurrent sessions are available.
-            ASRUnavailableError: If the inference service is unreachable or the connection drops mid-session.
-            RuntimeError: If the audio source has not been started.
-        """
-        last_partial = ""
-        final_text = ""
-
-        with self.transcribe_sentence_stream(timeout=timeout) as stream:
-            for chunk in stream:
-                if chunk.type == "partial_text" and chunk.data.strip():
-                    last_partial = chunk.data
-                elif chunk.type == "full_text" and chunk.data.strip():
-                    final_text += chunk.data
-
-        if final_text.strip():
-            return final_text
-        if last_partial.strip():
-            logger.warning("ASR returned empty full_text, falling back to last partial_text")
-            return last_partial
-        return ""
-
-    def transcribe_sentence_stream(self, timeout: int = 0) -> TranscriptionStream[ASREvent]:
-        """
-        Transcribe a sentence and yield the intermediate transcription events.
-
-        The stream ends after the sentence boundary is detected, the timeout
-        elapses without one or when the source is exhausted.
-
-        Args:
-            timeout (int): Maximum recording time in seconds. ``0`` means no timeout.
-                Ignored for finite sources (WAV/ndarray). Default: ``0``.
-
-        Yields:
-            ASREvent: objects representing transcription events.
-
-        Raises:
-            ASRBusyError: If this instance already has an active session.
-            ASRServiceBusyError: If no more concurrent sessions are available.
-            ASRUnavailableError: If the inference service is unreachable or the
-                connection drops mid-session.
-            RuntimeError: If the audio source has not been started.
-        """
-        self._ensure_source_started()
-
-        def sentence_gen() -> Generator[ASREvent, None, None]:
-            inner = self._transcribe_stream(duration=timeout)
-            try:
-                for event in inner:
-                    yield event
-                    if event.type == "full_text" and event.data.strip():
-                        return
-            finally:
-                inner.close()
-
-        return TranscriptionStream(sentence_gen())
-
-    def transcribe_continuous(self, timeout: int = 0) -> TranscriptionStream[str]:
-        """
-        Transcribe audio indefinitely and yield one sentence at a time.
-
-        The stream ends when :meth:`cancel` is called, the timeout elapses, or
-        when the source is exhausted.
-
-        Args:
-            timeout (int): Maximum recording time in seconds. ``0`` means no timeout.
-                Ignored for finite sources (WAV/ndarray). Default: ``0``.
-
-        Yields:
-            str: a complete sentence as recognized by the ASR.
-
-        Raises:
-            ASRBusyError: If this instance already has an active session.
-            ASRServiceBusyError: If no more concurrent sessions are available.
-            ASRUnavailableError: If the inference service is unreachable or the connection drops mid-session.
-            RuntimeError: If the audio source has not been started.
-        """
-        self._ensure_source_started()
-
-        def sentence_gen() -> Generator[str, None, None]:
-            inner = self._transcribe_stream(duration=timeout)
-            try:
-                for event in inner:
-                    if event.type == "full_text" and event.data.strip():
-                        yield event.data
-            finally:
-                inner.close()
-
-        return TranscriptionStream(sentence_gen())
-
-    def transcribe_continuous_stream(self, timeout: int = 0) -> TranscriptionStream[ASREvent]:
-        """
-        Transcribe audio indefinitely and yield intermediate transcription events.
-
-        The stream ends when :meth:`cancel` is called, the timeout elapses, or
-        when the source is exhausted.
-
-        Args:
-            timeout (int): Maximum recording time in seconds. ``0`` means no timeout.
-                Ignored for finite sources (WAV/ndarray). Default: ``0``.
-
-        Yields:
-            ASREvent: objects representing transcription events.
-
-        Raises:
-            ASRBusyError: If this instance already has an active session.
-            ASRServiceBusyError: If no more concurrent sessions are available.
-            ASRUnavailableError: If the inference service is unreachable or the
-                connection drops mid-session.
-            RuntimeError: If the audio source has not been started.
-        """
-        self._ensure_source_started()
-        return TranscriptionStream(self._transcribe_stream(duration=timeout))
 
     @brick.execute
     def _asyncio_loop(self):
@@ -515,10 +269,6 @@ class AutomaticSpeechRecognition:
             loop.close()
             logger.debug("Asyncio event loop stopped")
 
-    def _ensure_source_started(self) -> None:
-        if not self._source.is_started():
-            raise RuntimeError("Audio source must be started before transcription.")
-
     def _transcribe_stream(self, duration: int = 0, vad_ms: int | None = None) -> Generator[ASREvent, None, None]:
         if self._stop_worker.is_set():
             raise RuntimeError("Brick is stopping or already stopped")
@@ -535,7 +285,7 @@ class AutomaticSpeechRecognition:
             active_id = self._active_session.session_id if self._active_session else "unknown"
             raise ASRBusyError(
                 f"A transcription session (id={active_id}) is already active on this instance. "
-                f"Create a separate AutomaticSpeechRecognition instance for concurrent transcriptions."
+                f"Create a separate ASR instance for concurrent transcriptions."
             )
 
         session_info: SessionInfo | None = None
@@ -956,3 +706,194 @@ class AutomaticSpeechRecognition:
         if response.status_code != 200:
             raise RuntimeError(f"HTTP status {response.status_code}: {response.text}")
         logger.debug(f"Session {session_id} closed successfully")
+
+
+@brick
+class AutomaticSpeechRecognition(BaseASR):
+    """ASR brick for live audio transcription from a microphone."""
+
+    def __init__(
+        self,
+        mic: BaseMicrophone | None = None,
+        language: str | None = None,
+    ):
+        """
+        ASR brick that transcribes a live audio stream from a microphone.
+
+        Args:
+            mic: Microphone to be captured for transcription. One of:
+                BaseMicrophone: used as-is; the caller owns its
+                    lifecycle (ASR never calls start()/stop() on it).
+                None: ASR constructs a default Microphone() and owns its
+                    lifecycle (started on start(), stopped on stop()).
+                Default: None.
+            language (str): Language code for the ASR model (e.g. "en" for
+                English). This is typically auto-detected by the model,
+                but can be overridden here if needed. It is exposed as
+                the public ``language`` attribute and may be reassigned at
+                runtime; the new value takes effect on the next session.
+
+        Note:
+            Only one transcription can be active at a time.
+        """
+        super().__init__(source=mic, language=language)
+
+    def _build_source(self, source) -> tuple:
+        if source is None:
+            return Microphone(), True
+        if isinstance(source, BaseMicrophone):
+            return source, False
+        raise TypeError(f"Unsupported source type: {type(source)!r}")
+
+    def transcribe(self, duration: int = 60) -> str:
+        """
+        Transcribe audio for a duration and return the final text.
+
+        Args:
+            duration (int): Maximum recording time in seconds. ``0`` means unbounded.
+                Default: ``60``.
+
+        Returns:
+            str: The transcribed text, or an empty string if no speech was detected.
+
+        Raises:
+            ASRBusyError: If this instance already has an active session.
+            ASRServiceBusyError: If no more concurrent sessions are available.
+            ASRUnavailableError: If the inference service is unreachable or the
+                connection drops mid-session.
+            RuntimeError: If the microphone has not been started.
+        """
+        return self._collect_transcription(self.transcribe_stream(duration=duration))
+
+    def transcribe_stream(self, duration: int = 0) -> TranscriptionStream[ASREvent]:
+        """
+        Transcribe audio for a duration and yield intermediate transcription events.
+
+        Args:
+            duration (int): Maximum recording time in seconds. ``0`` means unbounded.
+                Default: ``0``.
+
+        Yields:
+            ASREvent: objects representing transcription events.
+
+        Raises:
+            ASRBusyError: If this instance already has an active session.
+            ASRServiceBusyError: If no more concurrent sessions are available.
+            ASRUnavailableError: If the inference service is unreachable or the
+                connection drops mid-session.
+            RuntimeError: If the microphone has not been started.
+        """
+        self._ensure_source_started()
+        return TranscriptionStream(self._transcribe_stream(duration=duration))
+
+    def transcribe_sentence(self, timeout: int = 0) -> str:
+        """
+        Transcribe a sentence returning the full text.
+
+        Runs until the sentence boundary is detected, the timeout elapses
+        without one.
+
+        Args:
+            timeout (int): Maximum recording time in seconds. ``0`` means no timeout.
+                Default: ``0``.
+
+        Returns:
+            str: The transcribed text, or an empty string if no speech was detected.
+
+        Raises:
+            ASRBusyError: If this instance already has an active session.
+            ASRServiceBusyError: If no more concurrent sessions are available.
+            ASRUnavailableError: If the inference service is unreachable or the connection drops mid-session.
+            RuntimeError: If the microphone has not been started.
+        """
+        return self._collect_transcription(self.transcribe_sentence_stream(timeout=timeout))
+
+    def transcribe_sentence_stream(self, timeout: int = 0) -> TranscriptionStream[ASREvent]:
+        """
+        Transcribe a sentence and yield the intermediate transcription events.
+
+        The stream ends after the sentence boundary is detected, the timeout
+        elapses without one.
+
+        Args:
+            timeout (int): Maximum recording time in seconds. ``0`` means no timeout.
+                Default: ``0``.
+
+        Yields:
+            ASREvent: objects representing transcription events.
+
+        Raises:
+            ASRBusyError: If this instance already has an active session.
+            ASRServiceBusyError: If no more concurrent sessions are available.
+            ASRUnavailableError: If the inference service is unreachable or the
+                connection drops mid-session.
+            RuntimeError: If the microphone has not been started.
+        """
+        self._ensure_source_started()
+
+        def sentence_gen() -> Generator[ASREvent, None, None]:
+            inner = self._transcribe_stream(duration=timeout)
+            try:
+                for event in inner:
+                    yield event
+                    if event.type == "full_text" and event.data.strip():
+                        return
+            finally:
+                inner.close()
+
+        return TranscriptionStream(sentence_gen())
+
+    def transcribe_continuous(self, timeout: int = 0) -> TranscriptionStream[str]:
+        """
+        Transcribe audio indefinitely and yield one sentence at a time.
+
+        The stream ends when :meth:`cancel` is called or the timeout elapses.
+
+        Args:
+            timeout (int): Maximum recording time in seconds. ``0`` means no timeout.
+                Default: ``0``.
+
+        Yields:
+            str: a complete sentence as recognized by the ASR.
+
+        Raises:
+            ASRBusyError: If this instance already has an active session.
+            ASRServiceBusyError: If no more concurrent sessions are available.
+            ASRUnavailableError: If the inference service is unreachable or the connection drops mid-session.
+            RuntimeError: If the microphone has not been started.
+        """
+        self._ensure_source_started()
+
+        def sentence_gen() -> Generator[str, None, None]:
+            inner = self._transcribe_stream(duration=timeout)
+            try:
+                for event in inner:
+                    if event.type == "full_text" and event.data.strip():
+                        yield event.data
+            finally:
+                inner.close()
+
+        return TranscriptionStream(sentence_gen())
+
+    def transcribe_continuous_stream(self, timeout: int = 0) -> TranscriptionStream[ASREvent]:
+        """
+        Transcribe audio indefinitely and yield intermediate transcription events.
+
+        The stream ends when :meth:`cancel` is called or the timeout elapses.
+
+        Args:
+            timeout (int): Maximum recording time in seconds. ``0`` means no timeout.
+                Default: ``0``.
+
+        Yields:
+            ASREvent: objects representing transcription events.
+
+        Raises:
+            ASRBusyError: If this instance already has an active session.
+            ASRServiceBusyError: If no more concurrent sessions are available.
+            ASRUnavailableError: If the inference service is unreachable or the
+                connection drops mid-session.
+            RuntimeError: If the microphone has not been started.
+        """
+        self._ensure_source_started()
+        return TranscriptionStream(self._transcribe_stream(duration=timeout))
