@@ -843,47 +843,11 @@ class AutomaticSpeechRecognition(BaseASR):
 
         return TranscriptionStream(sentence_gen())
 
-    def transcribe_continuous(self, timeout: int = 0) -> TranscriptionStream[str]:
-        """
-        Transcribe audio indefinitely and yield one sentence at a time.
-
-        The stream ends when :meth:`cancel` is called or the timeout elapses.
-
-        Args:
-            timeout (int): Maximum recording time in seconds. ``0`` means no timeout.
-                Default: ``0``.
-
-        Yields:
-            str: a complete sentence as recognized by the ASR.
-
-        Raises:
-            ASRBusyError: If this instance already has an active session.
-            ASRServiceBusyError: If no more concurrent sessions are available.
-            ASRUnavailableError: If the inference service is unreachable or the connection drops mid-session.
-            RuntimeError: If the microphone has not been started.
-        """
-        self._ensure_source_started()
-
-        def sentence_gen() -> Generator[str, None, None]:
-            inner = self._transcribe_stream(duration=timeout)
-            try:
-                for event in inner:
-                    if event.type == "full_text" and event.data.strip():
-                        yield event.data
-            finally:
-                inner.close()
-
-        return TranscriptionStream(sentence_gen())
-
-    def transcribe_continuous_stream(self, timeout: int = 0) -> TranscriptionStream[ASREvent]:
+    def transcribe_until_cancelled(self) -> TranscriptionStream[ASREvent]:
         """
         Transcribe audio indefinitely and yield intermediate transcription events.
 
-        The stream ends when :meth:`cancel` is called or the timeout elapses.
-
-        Args:
-            timeout (int): Maximum recording time in seconds. ``0`` means no timeout.
-                Default: ``0``.
+        The stream ends only when :meth:`cancel` is called.
 
         Yields:
             ASREvent: objects representing transcription events.
@@ -896,4 +860,4 @@ class AutomaticSpeechRecognition(BaseASR):
             RuntimeError: If the microphone has not been started.
         """
         self._ensure_source_started()
-        return TranscriptionStream(self._transcribe_stream(duration=timeout))
+        return TranscriptionStream(self._transcribe_stream(duration=0))

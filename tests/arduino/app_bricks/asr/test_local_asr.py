@@ -102,13 +102,9 @@ class TestSourceStartedCheck:
         with pytest.raises(RuntimeError, match="started"):
             stopped_asr.transcribe_sentence_stream()
 
-    def test_transcribe_continuous(self, stopped_asr):
+    def test_transcribe_until_cancelled(self, stopped_asr):
         with pytest.raises(RuntimeError, match="started"):
-            stopped_asr.transcribe_continuous()
-
-    def test_transcribe_continuous_stream(self, stopped_asr):
-        with pytest.raises(RuntimeError, match="started"):
-            stopped_asr.transcribe_continuous_stream()
+            stopped_asr.transcribe_until_cancelled()
 
 
 class TestTranscribe:
@@ -173,23 +169,19 @@ class TestTranscribeSentence:
         assert asr.transcribe_sentence() == "hi there"
 
 
-class TestTranscribeContinuous:
-    def test_yields_non_empty_full_text_only(self, monkeypatch):
+class TestTranscribeUntilCancelled:
+    def test_yields_event_stream(self, monkeypatch):
         asr = AutomaticSpeechRecognition(mic=_started_mic())
-        _mock_transcribe_stream(
-            monkeypatch,
-            asr,
-            [
-                ASREvent("partial_text", "hi"),
-                ASREvent("full_text", "hi"),
-                ASREvent("partial_text", "there"),
-                ASREvent("full_text", "   "),  # filtered out
-                ASREvent("full_text", "there"),
-            ],
-        )
-        with asr.transcribe_continuous() as sentences:
-            collected = list(sentences)
-        assert collected == ["hi", "there"]
+        events = [
+            ASREvent("partial_text", "hi"),
+            ASREvent("full_text", "hi"),
+            ASREvent("partial_text", "there"),
+            ASREvent("full_text", "there"),
+        ]
+        _mock_transcribe_stream(monkeypatch, asr, events)
+        with asr.transcribe_until_cancelled() as stream:
+            collected = list(stream)
+        assert collected == events
         assert not asr.is_transcribing()
 
     def test_break_closes_underlying_stream(self, monkeypatch):
@@ -204,17 +196,17 @@ class TestTranscribeContinuous:
                 inner_closed.set()
 
         monkeypatch.setattr(asr, "_transcribe_stream", fake)
-        with asr.transcribe_continuous() as sentences:
-            for sentence in sentences:
-                assert sentence == "one"
+        with asr.transcribe_until_cancelled() as stream:
+            for event in stream:
+                assert event.data == "one"
                 break
         assert inner_closed.is_set()
         assert not asr.is_transcribing()
 
-    def test_timeout_passed_as_duration(self, monkeypatch):
+    def test_calls_underlying_generator_unbounded(self, monkeypatch):
         asr = AutomaticSpeechRecognition(mic=_started_mic())
         seen = _mock_transcribe_stream(monkeypatch, asr, [])
-        with asr.transcribe_continuous(timeout=42) as sentences:
-            list(sentences)
-        assert seen["duration"] == 42
+        with asr.transcribe_until_cancelled() as stream:
+            list(stream)
+        assert seen["duration"] == 0
         assert not asr.is_transcribing()
