@@ -42,6 +42,10 @@ class SessionInfo:
     silence_deadline: float
 
 
+def _normalize_duration(value: float) -> float:
+    return math.inf if value <= 0 else value
+
+
 @brick
 class CloudASR:
     """
@@ -113,11 +117,12 @@ class CloudASR:
 
         Args:
             duration (float): Max seconds for the transcription session.
+                ``0`` means unbounded.
 
         Returns:
             str: The transcribed text.
         """
-        with self._session_scope(duration=duration) as session:
+        with self._session_scope(duration=_normalize_duration(duration)) as session:
             for resp in self._transcribe_stream(session):
                 if resp.type == "text":
                     return resp.data or ""
@@ -130,11 +135,12 @@ class CloudASR:
 
         Args:
             duration (float): Max seconds for the transcription session.
+                ``0`` means unbounded.
 
         Returns:
             Iterator[ASREvent]: Generator yielding transcription events.
         """
-        with self._session_scope(duration=duration) as session:
+        with self._session_scope(duration=_normalize_duration(duration)) as session:
             gen = self._transcribe_stream(session)
             try:
                 yield gen
@@ -150,6 +156,7 @@ class CloudASR:
 
         Args:
             timeout (float): Max seconds to wait for the sentence.
+                ``0`` means no timeout.
 
         Returns:
             str: The transcribed sentence.
@@ -170,11 +177,12 @@ class CloudASR:
 
         Args:
             timeout (float): Max seconds to wait for the sentence.
+                ``0`` means no timeout.
 
         Yields:
             ASREvent: Transcription events.
         """
-        with self._session_scope(duration=timeout) as session:
+        with self._session_scope(duration=_normalize_duration(timeout)) as session:
 
             def sentence_gen() -> Generator[ASREvent, None, None]:
                 inner = self._transcribe_stream(session)
