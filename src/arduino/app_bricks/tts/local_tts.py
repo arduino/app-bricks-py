@@ -90,6 +90,7 @@ class TextToSpeech:
     def start(self):
         """Start the TextToSpeech brick by initializing the speaker."""
         self._speaker.start()
+        self._warmup()
 
     def stop(self):
         """Stop the TextToSpeech brick by stopping the speaker."""
@@ -289,6 +290,19 @@ class TextToSpeech:
         logger.debug(f"TTS chunk_text completed in {elapsed_ms:.2f} ms (input_chars={input_chars}, text_chunks={len(chunks)})")
 
         return chunks
+
+    def _warmup(self) -> None:
+        """Best-effort warmup: synthesize a short text so the inference container loads
+        the TTS model before the first real speak()."""
+        started_at = time.perf_counter()
+        try:
+            for _ in self._synthesize_pcm_stream("ok", keep_alive=True):
+                pass
+        except Exception as e:
+            logger.warning(f"TTS warmup failed: {e}")
+            return
+        elapsed_ms = (time.perf_counter() - started_at) * 1000
+        logger.debug(f"TTS warmup completed in {elapsed_ms:.2f} ms")
 
     def _synthesize_pcm_stream(
         self,
