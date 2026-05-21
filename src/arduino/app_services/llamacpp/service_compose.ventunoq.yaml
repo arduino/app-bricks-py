@@ -19,6 +19,7 @@ services:
       - LLAMA_ARG_CTX_SIZE=${X_LLAMA_ARG_CTX_SIZE:-4096}
       - LLAMA_ARG_REASONING=${X_LLAMA_ARG_REASONING:-off}
       - LLAMA_ARG_THREADS=${X_LLAMA_ARG_THREADS:-4}
+      - LLAMA_ARG_CPU_MASK=${X_LLAMA_ARG_CPU_MASK:-0x0f}
       - XDG_CACHE_HOME=/models
     working_dir: /models
     ports:
