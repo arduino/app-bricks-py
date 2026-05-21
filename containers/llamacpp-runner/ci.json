@@ -5,8 +5,8 @@
   "build_whl": false,
   "update_compose": false,
   "build_args": {
-    "LLAMA_CPP_URL": "https://github.com/robgee86/app-bricks-py/releases/download/llamacpp%2F20260514/llamacpp-cpu-20260514.tar.gz",
-    "LLAMA_CPP_DIGEST": "sha256:d284fec3f315ae167ede10676bd7940e0d075c75c3e01686b15071a0ede46788"
+    "LLAMA_CPP_URL": "https://github.com/robgee86/app-bricks-py/releases/download/llamacpp%2F20260522/llamacpp-cpu-20260522.tar.gz",
+    "LLAMA_CPP_DIGEST": "sha256:ee163f746e12e573e0668d7dbf2bb4a65213a78f62bebda7e79776f0ca3f5e07"
   },
   "sbom": {
     "runtime_base": "python:3.13-slim"
