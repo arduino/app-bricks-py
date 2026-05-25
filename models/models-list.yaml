@@ -1375,6 +1375,7 @@ models:
               chipset: "qualcomm-qcs8275"
               version: "0.51.0"
     metadata:
+      model_size_mb: 3039
       source: "qualcomm-ai-hub"
       source-model-id: "qwen3_4b_instruct_2507"
       source-model-url: "https://aihub.qualcomm.com/models/qwen3_4b_instruct_2507"
@@ -1399,6 +1400,7 @@ models:
               chipset: "qualcomm-qcs8275"
               version: "0.53.1"
     metadata:
+      model_size_mb: 6488
       source: "qualcomm-ai-hub"
       source-model-id: "qwen2_5_vl_7b_instruct"
       source-model-url: "https://aihub.qualcomm.com/models/qwen2_5_vl_7b_instruct"
@@ -1444,6 +1446,7 @@ models:
     bricks:
       - id: "arduino:asr"
     metadata:
+      model_size_mb: 343
       source: "qualcomm-ai-hub"
       source-model-id: "whisper_small_quantized"
       source-model-url: "https://aihub.qualcomm.com/models/whisper_small_quantized"
@@ -1567,6 +1570,7 @@ models:
               chipset: "qualcomm-qcs8275"
               version: "0.51.0"
     metadata:
+      model_size_mb: 291
       source: "qualcomm-ai-hub"
       source-model-id: "melotts_en"
       source-model-url: "https://aihub.qualcomm.com/models/melotts_en"
@@ -1590,6 +1594,7 @@ models:
               chipset: "qualcomm-qcs8275"
               version: "0.51.0"
     metadata:
+      model_size_mb: 106
       source: "qualcomm-ai-hub"
       source-model-id: "melotts_es"
       source-model-url: "https://aihub.qualcomm.com/models/melotts_es"
@@ -1613,6 +1618,7 @@ models:
               chipset: "qualcomm-qcs8275"
               version: "0.51.0"
     metadata:
+      model_size_mb: 360
       source: "qualcomm-ai-hub"
       source-model-id: "melotts_zh"
       source-model-url: "https://aihub.qualcomm.com/models/melotts_zh"
@@ -1624,6 +1630,7 @@ models:
     bricks:
       - id: "arduino:tts"
     metadata:
+      model_size_mb: 44
       source: "qualcomm-ai-hub"
       source-model-id: "piper_tts_de"
       source-model-url: "https://aihub.qualcomm.com/models/piper_tts_de"
@@ -1635,6 +1642,7 @@ models:
     bricks:
       - id: "arduino:tts"
     metadata:
+      model_size_mb: 44
       source: "qualcomm-ai-hub"
       source-model-id: "piper_tts_it"
       source-model-url: "https://aihub.qualcomm.com/models/piper_tts_it"
@@ -1646,6 +1654,7 @@ models:
     bricks:
       - id: "arduino:tts"
     metadata:
+      model_size_mb: 46
       source: "qualcomm-ai-hub"
       source-model-id: "piper_tts_en"
       source-model-url: "https://aihub.qualcomm.com/models/piper_tts_en"             
