@@ -11,6 +11,7 @@ from .local_asr import (
     AutomaticSpeechRecognition,
     TranscriptionStream,
 )
+from .local_asr_wav import WAVAutomaticSpeechRecognition
 
 __all__ = [
     "ASREvent",
@@ -18,6 +19,7 @@ __all__ = [
     "ASRBusyError",
     "ASRServiceBusyError",
     "ASRUnavailableError",
-    "AutomaticSpeechRecognition",
     "TranscriptionStream",
+    "AutomaticSpeechRecognition",
+    "WAVAutomaticSpeechRecognition",
 ]
