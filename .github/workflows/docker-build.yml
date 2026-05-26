@@ -196,7 +196,7 @@ jobs:
 
       - name: Copy models-list.yaml into build context
         if: matrix.container == 'models-downloader'
-        run: cp models/models-list.yaml containers/models-downloader/models/models-list.yaml
+        run: cp models/models-list.yaml containers/models-downloader/models-list.yaml
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v7
