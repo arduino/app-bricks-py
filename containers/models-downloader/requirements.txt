@@ -3,3 +3,4 @@ requests
 huggingface_hub
 tqdm
 stream-unzip
+pyyaml

@@ -12,6 +12,9 @@ models:
       - id: "arduino:video_object_detection"
         model_configuration:
           "EI_V_OBJ_DETECTION_MODEL": "/models/ootb/ei/lw-face-det.eim"
+    deployment:
+      handler: "ei-handler"
+      pre-loaded: true          
     metadata:
       source: "qualcomm-ai-hub"
       image-resolution: "320x240"
@@ -33,6 +36,9 @@ models:
       - id: "arduino:video_object_detection"
         model_configuration:
           "EI_V_OBJ_DETECTION_MODEL": "/models/ootb/ei/lw-face-det-qnn-640.eim"
+    deployment:
+      handler: "ei-handler"
+      pre-loaded: true          
     metadata:
       source: "qualcomm-ai-hub"
       hw_acceleration_backend: "qnn"
@@ -135,6 +141,9 @@ models:
       source-model-id: "YOLOX-Nano"
       source-model-url: "https://github.com/Megvii-BaseDetection/YOLOX"
     supported_boards: ["unoq"]
+    deployment:
+      handler: "ei-handler"
+      pre-loaded: true    
     bricks:
       - id: "arduino:object_detection"
         model_configuration:
@@ -236,6 +245,9 @@ models:
       source-model-id: "YOLOX-Nano"
       source-model-url: "https://github.com/Megvii-BaseDetection/YOLOX"
     supported_boards: ["ventunoq"]
+    deployment:
+      handler: "ei-handler"
+      pre-loaded: true    
     bricks:
       - id: "arduino:object_detection"
         model_configuration:
@@ -1204,6 +1216,9 @@ models:
       ei-model-url: "https://studio.edgeimpulse.com/public/708500/live"
       source-model-id: "MobileNetV2"
       source-model-url: "https://www.tensorflow.org/api_docs/python/tf/keras/applications/MobileNetV2"
+    deployment:
+      handler: "ei-handler"
+      pre-loaded: true      
     bricks:
       - id: "arduino:image_classification"
         model_configuration:
@@ -1232,6 +1247,9 @@ models:
       - id: "arduino:video_image_classification"
         model_configuration:
           "EI_V_CLASSIFICATION_MODEL": "/models/ootb/ei/person-classification.eim"   
+    deployment:
+      handler: "ei-handler"
+      pre-loaded: true
  - concreate-crack-anomaly-detection:
     name : "Concrete crack anomaly detection"
     description: "Anomaly detection model to identify cracks in concrete structures."
@@ -1243,6 +1261,9 @@ models:
       source-model-id: "concrete-crack-anomaly-detection"
       source-model-url: "https://studio.edgeimpulse.com/public/800941/live"
     supported_boards: ["unoq"]
+    deployment:
+      handler: "ei-handler"
+      pre-loaded: true    
     bricks:
       - id: "arduino:visual_anomaly_detection"
         model_configuration:
@@ -1259,6 +1280,9 @@ models:
       source-model-id: "concrete-crack-anomaly-detection"
       source-model-url: "https://studio.edgeimpulse.com/public/906179/live"
     supported_boards: ["ventunoq"]
+    deployment:
+      handler: "ei-handler"
+      pre-loaded: true    
     bricks:
       - id: "arduino:visual_anomaly_detection"
         model_configuration:
@@ -1282,6 +1306,9 @@ models:
       - id: "arduino:keyword_spotting"
         model_configuration:
           "EI_KEYWORD_SPOTTING_MODEL": "/models/ootb/ei/keyword-spotting-hey-arduino.eim"
+    deployment:
+      handler: "ei-handler"
+      pre-loaded: true          
  - updown-wave-motion-detection:
     name : "Continuous motion detection"
     description: "A motion detection model designed to identify up/down, wave, and snake movements evalauting accelerometer data."
@@ -1300,6 +1327,9 @@ models:
       - id: "arduino:motion_detection"
         model_configuration:
           "EI_MOTION_DETECTION_MODEL": "/models/ootb/ei/updown-wave-motion-detection.eim"
+    deployment:
+      handler: "ei-handler"
+      pre-loaded: true          
  - fan-anomaly-detection:
     name : "Fan anomaly detection"
     description: "An anomaly detection model designed to identify anomalies in fan operation."
@@ -1313,6 +1343,9 @@ models:
       - id: "arduino:vibration_anomaly_detection"
         model_configuration:
           "EI_VIBRATION_ANOMALY_DETECTION_MODEL": "/models/ootb/ei/fan-anomaly-detection.eim" 
+    deployment:
+      handler: "ei-handler"
+      pre-loaded: true
  - glass-breaking:
     name : "Glass breaking classifier"
     description: "A glass breaking classifier model to detect glass breaking sounds in audio recordings"
@@ -1330,6 +1363,9 @@ models:
       - id: "arduino:audio_classification"
         model_configuration:
           "EI_AUDIO_CLASSIFICATION_MODEL": "/models/ootb/ei/glass-breaking.eim"
+    deployment:
+      handler: "ei-handler"
+      pre-loaded: true          
  - hand-gestures:
     name : "Hand gestures"
     description: "A lightweight vision model that detects four hand gestures: neutral fist, open hand (five), V-sign (peace), and thumbs-up (good)."
@@ -1351,6 +1387,9 @@ models:
       ei-model-url: "https://studio.edgeimpulse.com/public/842271/live"      
       source-model-id: "hand-gestures"
       source-model-url: "https://studio.edgeimpulse.com/public/842271/live"
+    deployment:
+      handler: "ei-handler"
+      pre-loaded: true      
  - "genie:qwen3_4b_instruct_2507":
     name : "Qwen 3-4B Instruct"
     description: >-
@@ -1629,6 +1668,9 @@ models:
     supported_boards: ["ventunoq"]
     bricks:
       - id: "arduino:tts"
+    deployment:
+      handler: "ai-hub-handler"
+      pre-loaded: true      
     metadata:
       model_size_mb: 44
       source: "qualcomm-ai-hub"
@@ -1641,6 +1683,9 @@ models:
     supported_boards: ["ventunoq"]
     bricks:
       - id: "arduino:tts"
+    deployment:
+      handler: "ai-hub-handler"
+      pre-loaded: true
     metadata:
       model_size_mb: 44
       source: "qualcomm-ai-hub"
@@ -1653,6 +1698,9 @@ models:
     supported_boards: ["ventunoq"]
     bricks:
       - id: "arduino:tts"
+    deployment:
+      handler: "ai-hub-handler"
+      pre-loaded: true
     metadata:
       model_size_mb: 46
       source: "qualcomm-ai-hub"
