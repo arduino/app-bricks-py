@@ -4,4 +4,4 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-python /app/list_models.py --json
+python /app/list_models.py --json --supported-board ${board}

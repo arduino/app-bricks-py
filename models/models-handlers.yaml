@@ -1,3 +1,6 @@
+listing:
+  image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/models-downloader:0.10.0
+  command: ["/app/list_models.sh"]
 handlers:
   - ai-hub-handler:
       description: "Handler for models from AI Hub"

@@ -1471,6 +1471,7 @@ models:
     bricks:
       - id: "arduino:gesture_recognition"
     metadata:
+      model_size_mb: 6
       source: "qualcomm-ai-hub"  
       source-model-id: "mediapipe_hand_gesture"
       source-model-url: "https://aihub.qualcomm.com/models/mediapipe_hand_gesture"
