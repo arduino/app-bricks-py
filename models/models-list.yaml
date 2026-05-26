@@ -16,6 +16,7 @@ models:
       handler: "ei-handler"
       pre-loaded: true          
     metadata:
+      model_size_mb: 17
       source: "qualcomm-ai-hub"
       image-resolution: "320x240"
       ei-project-id: 830703
@@ -40,6 +41,7 @@ models:
       handler: "ei-handler"
       pre-loaded: true          
     metadata:
+      model_size_mb: 17
       source: "qualcomm-ai-hub"
       hw_acceleration_backend: "qnn"
       image-resolution: "640x480"
@@ -133,6 +135,7 @@ models:
       - wine glass
       - zebra
     metadata:
+      model_size_mb: 17
       source: "edgeimpulse"
       image-resolution: "416x416"
       ei-project-id: 717280
@@ -236,6 +239,7 @@ models:
       - wine glass
       - zebra
     metadata:
+      model_size_mb: 17
       source: "edgeimpulse"
       image-resolution: "416x416"
       hw_acceleration_backend: "qnn"
@@ -1211,6 +1215,7 @@ models:
       - zebra
       - zucchini
     metadata:
+      model_size_mb: 27
       source: "edgeimpulse"
       ei-project-id: 708500
       ei-model-url: "https://studio.edgeimpulse.com/public/708500/live"
@@ -1233,6 +1238,7 @@ models:
       - "non person"
       - "person"
     metadata:
+      model_size_mb: 14
       source: "edgeimpulse"
       image-resolution: "224x224"
       ei-project-id: 755016
@@ -1254,6 +1260,7 @@ models:
     name : "Concrete crack anomaly detection"
     description: "Anomaly detection model to identify cracks in concrete structures."
     metadata:
+      model_size_mb: 12
       source: "edgeimpulse"
       image-resolution: "160x160"
       ei-project-id: 800941
@@ -1272,6 +1279,7 @@ models:
     name : "Concrete crack anomaly detection - High resolution"
     description: "Anomaly detection model to identify cracks in concrete structures with higher resolution input images for improved accuracy. This version of the model is optimized for NPU acceleration on supported devices, providing faster inference times while maintaining accuracy."
     metadata:
+      model_size_mb: 12
       source: "edgeimpulse"
       image-resolution: "512x512"
       hw_acceleration_backend: "qnn"
@@ -1295,6 +1303,7 @@ models:
       - "hey_arduino"
       - "other"
     metadata:
+      model_size_mb: 13
       source: "edgeimpulse"
       ei-project-id: 757509
       ei-model-url: "https://studio.edgeimpulse.com/studio/757509/live"
@@ -1318,6 +1327,7 @@ models:
       - updown
       - wave      
     metadata:
+      model_size_mb: 13
       source: "edgeimpulse"
       ei-project-id: 734960
       ei-model-url: "https://studio.edgeimpulse.com/public/734960/live"
@@ -1334,6 +1344,7 @@ models:
     name : "Fan anomaly detection"
     description: "An anomaly detection model designed to identify anomalies in fan operation."
     metadata:
+      model_size_mb: 13
       source: "edgeimpulse"
       ei-project-id: 774707
       ei-model-url: "https://studio.edgeimpulse.com/public/774707/live"
@@ -1353,6 +1364,7 @@ models:
       - "Background"
       - "Glass_Breaking"
     metadata:
+      model_size_mb: 13
       source: "edgeimpulse"
       ei-project-id: 749446
       ei-model-url: "https://studio.edgeimpulse.com/public/749446/live"
@@ -1382,6 +1394,7 @@ models:
         model_configuration:
           "EI_V_OBJ_DETECTION_MODEL": "/models/ootb/ei/hand-gestures.eim"
     metadata:
+      model_size_mb: 15
       source: "edgeimpulse"
       ei-project-id: 842271
       ei-model-url: "https://studio.edgeimpulse.com/public/842271/live"      
