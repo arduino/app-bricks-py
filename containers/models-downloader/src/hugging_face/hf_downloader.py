@@ -36,7 +36,8 @@ import fnmatch
 import os
 import shutil
 
-from huggingface_hub import snapshot_download
+from huggingface_hub import HfApi, snapshot_download
+from huggingface_hub.hf_api import RepoFile
 import argparse
 import configparser
 from pathlib import Path
@@ -200,6 +201,11 @@ def main():
         action="store_true",
         help="Check if model files matching the resolved patterns are present on the filesystem.",
     )
+    parser.add_argument(
+        "--info",
+        action="store_true",
+        help="Print the total size (in bytes) of files matching the resolved patterns on Hugging Face.",
+    )
 
     args = parser.parse_args()
 
@@ -251,7 +257,27 @@ def main():
     # Create download folder if it doesn't exist. Patter is: output_dir + / repo_id
     output_dir = f"{args.output_dir}/{repo_id}"
 
-    if args.check:
+    if args.info:
+        patterns = [allow_pattern]
+        if mmproj_allow_pattern:
+            patterns.append(mmproj_allow_pattern)
+        api = HfApi()
+        all_files = [item for item in api.list_repo_tree(repo_id=repo_id, recursive=True) if isinstance(item, RepoFile)]
+        matched_files = [
+            {"file": f.path, "size": f.size} for f in all_files if f.size and any(fnmatch.fnmatch(f.path.split("/")[-1], p) for p in patterns)
+        ]
+        total_bytes = sum(f["size"] for f in matched_files)
+        print(
+            json.dumps({
+                "event": "stat",
+                "description": f"Total download size for {repo_id}",
+                "size_bytes": total_bytes,
+                "size_mb": round(total_bytes / 1024 / 1024, 2),
+                "files": matched_files,
+            }),
+            flush=True,
+        )
+    elif args.check:
         base = Path(output_dir)
         matched = [f for f in base.rglob("*") if f.is_file() and fnmatch.fnmatch(f.name, allow_pattern)] if base.exists() else []
         if mmproj_allow_pattern:

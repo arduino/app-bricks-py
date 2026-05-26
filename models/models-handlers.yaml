@@ -38,3 +38,5 @@ handlers:
             command: ["/app/hugging_face/hf_model_remover.sh"]
         - check:
             command: ["/app/hugging_face/hf_model_checker.sh"]
+        - info:
+            command: ["/app/hugging_face/hf_model_info.sh"]            
