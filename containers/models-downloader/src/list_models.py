@@ -152,6 +152,34 @@ def check_model_exists(model_info, models_base_dir):
     return False, full_path
 
 
+LLAMACPP_SUBDIR = "llamacpp"
+
+
+def find_llamacpp_models(models_base_dir):
+    """Scan for .gguf files under the llamacpp directory."""
+    llamacpp_dir = os.path.join(models_base_dir, LLAMACPP_SUBDIR)
+    results = []
+    if not os.path.isdir(llamacpp_dir):
+        return results
+
+    for root, _dirs, files in os.walk(llamacpp_dir):
+        for f in files:
+            if f.endswith(".gguf"):
+                full_path = os.path.join(root, f)
+                rel_path = os.path.relpath(full_path, models_base_dir)
+                model_name = os.path.splitext(f)[0]
+                results.append({
+                    "id": f"llamacpp:{model_name}",
+                    "name": model_name,
+                    "handler": "llamacpp",
+                    "platform": "",
+                    "model_type": "llamacpp",
+                    "path": full_path,
+                    "installed": True,
+                })
+    return results
+
+
 def main():
     parser = argparse.ArgumentParser(description="List all models and their filesystem status.")
     parser.add_argument(
@@ -228,6 +256,13 @@ def main():
             "path": path,
             "installed": exists,
         })
+
+    # Scan for llamacpp .gguf models on the filesystem
+    llamacpp_models = find_llamacpp_models(args.models_dir)
+    for m in llamacpp_models:
+        if args.not_installed_only:
+            continue
+        results.append(m)
 
     if args.output_json:
         print(json.dumps({"event": "info", "models": results}, indent=2))
