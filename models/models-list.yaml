@@ -1421,7 +1421,7 @@ models:
             variables:
               model_type: "genie"
               model_name: "qwen3_4b_instruct_2507"
-              models_repository: "/var/lib/arduino-app-cli/models/genai"
+              models_repository: "models/genai"
               model_directory: "qwen3_4b_instruct_2507-genie-w4a16-qualcomm_qcs8275"
               quantization: "w4a16"
               chipset: "qualcomm-qcs8275"
@@ -1447,7 +1447,7 @@ models:
             variables:
               model_type: "genie"
               model_name: "qwen2_5_vl_7b_instruct"
-              models_repository: "/var/lib/arduino-app-cli/models/genai"
+              models_repository: "models/genai"
               quantization: "w4a16"
               chipset: "qualcomm-qcs8275"
               version: "0.53.1"
@@ -1491,7 +1491,7 @@ models:
             variables:
               model_type: "voice_ai"
               model_name: "whisper_small_quantized"
-              models_repository: "/var/lib/arduino-app-cli/models/audio-analytics/asr"
+              models_repository: "models/audio-analytics/asr"
               model_directory: "whisper_small_quantized-voice_ai-w8a16-qualcomm_qcs8275"
               quantization: "w8a16"
               chipset: "qualcomm-qcs8275"
@@ -1617,7 +1617,7 @@ models:
             variables:
               model_type: "voice_ai"
               model_name: "melotts_en"
-              models_repository: "/var/lib/arduino-app-cli/models/audio-analytics/tts"
+              models_repository: "models/audio-analytics/tts"
               model_directory: "melotts_en-voice_ai-mixed_with_float-qualcomm_qcs8275"
               quantization: "mixed_with_float"
               chipset: "qualcomm-qcs8275"
@@ -1641,7 +1641,7 @@ models:
             variables:
               model_type: "voice_ai"
               model_name: "melotts_es"
-              models_repository: "/var/lib/arduino-app-cli/models/audio-analytics/tts"
+              models_repository: "models/audio-analytics/tts"
               model_directory: "melotts_es-voice_ai-mixed_with_float-qualcomm_qcs8275"
               quantization: "mixed_with_float"
               chipset: "qualcomm-qcs8275"
@@ -1665,7 +1665,7 @@ models:
             variables:
               model_type: "voice_ai"
               model_name: "melotts_zh"
-              models_repository: "/var/lib/arduino-app-cli/models/audio-analytics/tts"
+              models_repository: "models/audio-analytics/tts"
               model_directory: "melotts_zh-voice_ai-mixed_with_float-qualcomm_qcs8275"
               quantization: "mixed_with_float"
               chipset: "qualcomm-qcs8275"
