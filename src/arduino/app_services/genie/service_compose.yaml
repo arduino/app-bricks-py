@@ -37,6 +37,7 @@ services:
       - /dev/dma_heap/system
       - /dev/dma_heap/qcom,system
       - /dev/fastrpc-cdsp
+      - /dev/fastrpc-cdsp-secure
     volumes:
       # Mount hexagon firmware
       - /sys/firmware/devicetree/base/model:/run/device-model
