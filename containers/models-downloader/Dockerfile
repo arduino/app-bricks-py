@@ -10,7 +10,7 @@ COPY --chown=arduino:arduino --chmod=755 ./requirements.txt /app/requirements.tx
 
 COPY --chown=arduino:arduino --chmod=755 ./src /app
 
-COPY --chown=arduino:arduino --chmod=644 models/models-list.yaml /app/models-list.yaml
+COPY --chown=arduino:arduino --chmod=644 ./models-list.yaml /app/models-list.yaml
 
 RUN set -ex; \
     pip install --no-cache-dir -r /app/requirements.txt && rm /app/requirements.txt; \
