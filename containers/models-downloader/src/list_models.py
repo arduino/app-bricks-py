@@ -103,7 +103,7 @@ def get_model_subdir(models_repository):
     marker = "/models/"
     idx = models_repository.rfind(marker)
     if idx != -1:
-        return models_repository[idx + len(marker):]
+        return models_repository[idx + len(marker) :]
     return ""
 
 
@@ -145,8 +145,7 @@ def check_model_exists(model_info, models_base_dir):
         normalized = model_directory.replace("-", "_")
         for entry in os.listdir(search_dir):
             entry_normalized = entry.replace("-", "_")
-            if (entry.startswith(model_directory) or entry_normalized.startswith(normalized)) \
-                    and os.path.isdir(os.path.join(search_dir, entry)):
+            if (entry.startswith(model_directory) or entry_normalized.startswith(normalized)) and os.path.isdir(os.path.join(search_dir, entry)):
                 return True, os.path.join(search_dir, entry)
 
     return False, full_path
@@ -166,7 +165,6 @@ def find_llamacpp_models(models_base_dir):
         for f in files:
             if f.endswith(".gguf"):
                 full_path = os.path.join(root, f)
-                rel_path = os.path.relpath(full_path, models_base_dir)
                 model_name = os.path.splitext(f)[0]
                 results.append({
                     "id": f"llamacpp:{model_name}",
@@ -229,10 +227,7 @@ def main():
 
     # Filter by supported board
     if args.supported_board:
-        all_models = [
-            m for m in all_models
-            if not m["supported_boards"] or args.supported_board in m["supported_boards"]
-        ]
+        all_models = [m for m in all_models if not m["supported_boards"] or args.supported_board in m["supported_boards"]]
 
     results = []
     for model_info in all_models:
