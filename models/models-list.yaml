@@ -1741,6 +1741,7 @@ models:
             variables:
               ei_project_id: 948887
               ei_impulse_id: 4
+              models_repository: "models/edge-impulse"
               model_name: efficientnet-b4-qnn.eim
               quantization: float32
               target: runner-linux-aarch64-qnn

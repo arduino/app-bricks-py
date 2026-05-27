@@ -1,5 +1,7 @@
 listing:
   image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/models-downloader:0.10.0
+  volumes:
+    - ${download_location}:/models
   command: ["/app/list_models.sh"]
 handlers:
   - ai-hub-handler:
@@ -39,4 +41,4 @@ handlers:
         - check:
             command: ["/app/hugging_face/hf_model_checker.sh"]
         - info:
-            command: ["/app/hugging_face/hf_model_info.sh"]            
+            command: ["/app/hugging_face/hf_model_info.sh"]
