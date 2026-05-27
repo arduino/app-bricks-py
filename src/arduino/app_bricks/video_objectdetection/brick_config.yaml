@@ -8,7 +8,6 @@ description: |
 category: video
 requires_model: true
 requires_container: true
-mount_devices_into_container: true
 required_devices:
   - camera
 # For backward compatibility
