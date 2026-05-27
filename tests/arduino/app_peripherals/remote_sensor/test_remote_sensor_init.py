@@ -16,8 +16,8 @@ from arduino.app_peripherals.remote_sensor import RemoteSensor, RemoteSensorConf
 def test_remote_sensor_initialization():
     """Test RemoteSensor can be initialized with default parameters."""
     sensor = RemoteSensor()
-    assert sensor.url == "ws://0.0.0.0:8080"
-    assert sensor.port == 8080
+    assert sensor.url == "ws://0.0.0.0:8090"
+    assert sensor.port == 8090
     assert sensor.timeout == 3
     assert sensor.secret is None
     assert sensor.encrypt is False
