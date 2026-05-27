@@ -117,6 +117,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build wheel in debian:trixie
+        if: startsWith(needs.detect.outputs.tag_ref, 'release/')
         run: |
           # Remove tags that setuptools_scm can't parse (only ai/* and release/* are valid)
           git tag -l | grep -v -E '^(ai|release)/' | xargs -r git tag -d
