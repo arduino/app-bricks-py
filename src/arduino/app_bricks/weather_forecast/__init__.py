@@ -57,10 +57,10 @@ class WeatherForecast:
         """
         try:
             response = requests.get(city_api_url, params={"name": city})
-        except:
-            raise RuntimeError("Failed to look city up")
-
-        data = response.json()
+            response.raise_for_status()
+            data = response.json()
+        except Exception as e:
+            raise RuntimeError(f"Failed to look city up: {e}")
         results = data.get("results", [])
         if results:
             result = results[0]
@@ -94,12 +94,10 @@ class WeatherForecast:
         }
         try:
             response = requests.get(forecast_api_url, params=params)
-        except:
-            raise RuntimeError("Failed to get weather data")
-
-        data = response.json()
-        if response.status_code != 200:
-            raise RuntimeError(f"Failed to get weather data: {data.get('reason', 'Unknown error')}")
+            response.raise_for_status()
+            data = response.json()
+        except Exception as e:
+            raise RuntimeError(f"Failed to get weather data: {e}")
 
         if "daily" not in data or "weather_code" not in data["daily"]:
             raise RuntimeError("Invalid response format")
