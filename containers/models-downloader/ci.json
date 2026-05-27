@@ -1,5 +1,5 @@
 {
-  "tag_prefix": "ai",
+  "tag_prefix": "release",
   "watch_paths": [
     "containers/python-base/",
     "containers/models-downloader/",
