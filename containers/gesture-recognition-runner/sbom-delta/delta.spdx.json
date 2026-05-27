@@ -1,7 +1,7 @@
 {
   "SPDXID": "SPDXRef-DOCUMENT",
   "creationInfo": {
-    "created": "2026-05-18T13:22:33.386540Z",
+    "created": "2026-05-27T14:18:41.496809Z",
     "creators": [
       "Tool: arduino-sbom-delta",
       "Organization: Arduino SRL"
@@ -11,12 +11,12 @@
   "documentDescribes": [
     "SPDXRef-Container"
   ],
-  "documentNamespace": "https://arduino.cc/sbom/delta/gesture-recognition-runner-0.10.0-20260518T132233Z",
+  "documentNamespace": "https://arduino.cc/sbom/delta/gesture-recognition-runner-0.11.0rc1-20260527T141841Z",
   "name": "gesture-recognition-runner",
   "packages": [
     {
       "SPDXID": "SPDXRef-Container",
-      "comment": "Delta SBOM for ghcr.io/arduino/app-bricks/gesture-recognition-runner:0.10.0 \u2014 changes relative to base image ghcr.io/arduino/app-bricks/aihub-models-runner:0.10.0",
+      "comment": "Delta SBOM for ghcr.io/arduino/app-bricks/gesture-recognition-runner:0.11.0rc1 \u2014 changes relative to base image ghcr.io/arduino/app-bricks/aihub-models-runner:0.11.0rc1",
       "copyrightText": "NOASSERTION",
       "downloadLocation": "NOASSERTION",
       "filesAnalyzed": false,
@@ -28,7 +28,7 @@
       "SPDXID": "SPDXRef-ai-edge-litert-pypi",
       "annotations": [
         {
-          "annotationDate": "2026-05-18T13:22:33.386540Z",
+          "annotationDate": "2026-05-27T14:18:41.496809Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"added\"}"
@@ -53,7 +53,7 @@
       "SPDXID": "SPDXRef-backports-strenum-pypi",
       "annotations": [
         {
-          "annotationDate": "2026-05-18T13:22:33.386540Z",
+          "annotationDate": "2026-05-27T14:18:41.496809Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"added\"}"
@@ -78,7 +78,7 @@
       "SPDXID": "SPDXRef-ffmpeg-generic",
       "annotations": [
         {
-          "annotationDate": "2026-05-18T13:22:33.386540Z",
+          "annotationDate": "2026-05-27T14:18:41.496809Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"added\"}"
@@ -103,7 +103,7 @@
       "SPDXID": "SPDXRef-flatbuffers-pypi",
       "annotations": [
         {
-          "annotationDate": "2026-05-18T13:22:33.386540Z",
+          "annotationDate": "2026-05-27T14:18:41.496809Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"added\"}"
@@ -128,7 +128,7 @@
       "SPDXID": "SPDXRef-numpy-pypi",
       "annotations": [
         {
-          "annotationDate": "2026-05-18T13:22:33.386540Z",
+          "annotationDate": "2026-05-27T14:18:41.496809Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"added\"}"
@@ -139,7 +139,7 @@
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:pypi/numpy@2.4.5",
+          "referenceLocator": "pkg:pypi/numpy@2.4.6",
           "referenceType": "purl"
         }
       ],
@@ -147,13 +147,13 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "(BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0)",
       "name": "numpy",
-      "versionInfo": "2.4.5"
+      "versionInfo": "2.4.6"
     },
     {
       "SPDXID": "SPDXRef-opencv-python-headless-pypi",
       "annotations": [
         {
-          "annotationDate": "2026-05-18T13:22:33.386540Z",
+          "annotationDate": "2026-05-27T14:18:41.496809Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"added\"}"
@@ -178,7 +178,7 @@
       "SPDXID": "SPDXRef-protobuf-pypi",
       "annotations": [
         {
-          "annotationDate": "2026-05-18T13:22:33.386540Z",
+          "annotationDate": "2026-05-27T14:18:41.496809Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"added\"}"
@@ -189,7 +189,7 @@
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:pypi/protobuf@7.34.1",
+          "referenceLocator": "pkg:pypi/protobuf@7.35.0",
           "referenceType": "purl"
         }
       ],
@@ -197,13 +197,13 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "LicenseRef-3-Clause-BSD-License",
       "name": "protobuf",
-      "versionInfo": "7.34.1"
+      "versionInfo": "7.35.0"
     },
     {
       "SPDXID": "SPDXRef-tqdm-pypi",
       "annotations": [
         {
-          "annotationDate": "2026-05-18T13:22:33.386540Z",
+          "annotationDate": "2026-05-27T14:18:41.496809Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"added\"}"
@@ -228,7 +228,7 @@
       "SPDXID": "SPDXRef-typing-extensions-pypi",
       "annotations": [
         {
-          "annotationDate": "2026-05-18T13:22:33.386540Z",
+          "annotationDate": "2026-05-27T14:18:41.496809Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"added\"}"
