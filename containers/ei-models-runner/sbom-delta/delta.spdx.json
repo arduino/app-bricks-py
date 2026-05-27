@@ -1,7 +1,7 @@
 {
   "SPDXID": "SPDXRef-DOCUMENT",
   "creationInfo": {
-    "created": "2026-05-18T13:20:20.960761Z",
+    "created": "2026-05-27T14:16:23.575871Z",
     "creators": [
       "Tool: arduino-sbom-delta",
       "Organization: Arduino SRL"
@@ -11,12 +11,12 @@
   "documentDescribes": [
     "SPDXRef-Container"
   ],
-  "documentNamespace": "https://arduino.cc/sbom/delta/ei-models-runner-0.10.0-20260518T132020Z",
+  "documentNamespace": "https://arduino.cc/sbom/delta/ei-models-runner-0.11.0rc1-20260527T141623Z",
   "name": "ei-models-runner",
   "packages": [
     {
       "SPDXID": "SPDXRef-Container",
-      "comment": "Delta SBOM for ghcr.io/arduino/app-bricks/ei-models-runner:0.10.0 \u2014 changes relative to base image public.ecr.aws/g7a8t7v6/inference-container:v1.92.3",
+      "comment": "Delta SBOM for ghcr.io/arduino/app-bricks/ei-models-runner:0.11.0rc1 \u2014 changes relative to base image public.ecr.aws/g7a8t7v6/inference-container:v1.92.3",
       "copyrightText": "NOASSERTION",
       "downloadLocation": "NOASSERTION",
       "filesAnalyzed": false,
