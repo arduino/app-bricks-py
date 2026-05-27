@@ -10,7 +10,6 @@ requires_model: true
 requires_container: true
 ai_frameworks_compatibility:
   - edgeimpulse
-mount_devices_into_container: true
 required_devices:
   - camera
 model: mobilenet-image-classification

@@ -9,6 +9,7 @@ import json
 import os
 import sys
 import argparse
+import glob
 import shutil
 import time
 from urllib.parse import urlparse
@@ -628,27 +629,23 @@ def main():
 
         logger_class = type(logger)
         logger_file_path = inspect.getfile(logger_class)
-        model_path = os.path.join(
+        static_path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(logger_file_path))),
             "app_bricks",
             "static",
-            "models-list.yaml",
         )
-        exists = os.path.exists(model_path)
-        if exists:
-            shutil.copy(model_path, args.model_output)
+        model_files = glob.glob(os.path.join(static_path, "models-*.yaml"))
+        output_dir = os.path.dirname(args.model_output)
+        if model_files:
+            for model_path in model_files:
+                shutil.copy(model_path, os.path.join(output_dir, os.path.basename(model_path)))
             # Copy api-docs as well
-            api_docs_source = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.abspath(logger_file_path))),
-                "app_bricks",
-                "static",
-                "api-docs",
-            )
-            api_docs_destination = os.path.join(os.path.dirname(args.model_output), "api-docs")
+            api_docs_source = os.path.join(static_path, "api-docs")
+            api_docs_destination = os.path.join(output_dir, "api-docs")
             if os.path.exists(api_docs_source):
                 shutil.copytree(api_docs_source, api_docs_destination, dirs_exist_ok=True)
         else:
-            print(f"Model path: {model_path} does not exist. Skipping model copy.")
+            print(f"No models-*.yaml files found in {static_path}. Skipping model copy.")
 
 
 if __name__ == "__main__":

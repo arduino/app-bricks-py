@@ -8,5 +8,5 @@
   "sbom": {
     "runtime_base": "python:3.13-slim"
   },
-  "downstream": ["python-apps-base"]
+  "downstream": ["python-apps-base", "models-downloader"]
 }

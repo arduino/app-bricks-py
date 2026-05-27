@@ -249,6 +249,10 @@ jobs:
             org.opencontainers.image.source=${{ env.GH_DESTINATION_REPO }}
             org.opencontainers.image.url=${{ env.GH_DESTINATION_REPO }}
 
+      - name: Copy models-list.yaml into build context
+        if: steps.rebuild_check.outputs.needs_build == 'true' && matrix.container == 'models-downloader'
+        run: cp models/models-list.yaml containers/models-downloader/models-list.yaml
+
       - name: Build and push Docker image
         if: steps.rebuild_check.outputs.needs_build == 'true'
         uses: docker/build-push-action@v7
@@ -356,6 +360,10 @@ jobs:
           labels: |
             org.opencontainers.image.source=${{ env.GH_DESTINATION_REPO }}
             org.opencontainers.image.url=${{ env.GH_DESTINATION_REPO }}
+
+      - name: Copy models-list.yaml into build context
+        if: matrix.container == 'models-downloader'
+        run: cp models/models-list.yaml containers/models-downloader/models-list.yaml
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v7
