@@ -8,5 +8,5 @@
   "sbom": {
     "runtime_base": "ubuntu:24.04"
   },
-  "downstream": ["gesture-recognition-runner"]
+  "downstream": ["gesture-recognition-runner", "llamacpp-npu-runner"]
 }

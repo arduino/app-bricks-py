@@ -5,11 +5,12 @@
 
 FROM python:3.13-slim AS builder
 
-ARG PYTHON_VERSION=cp313
-ARG OPENCV_REPO_OWNER=arduino
-ARG OPENCV_VERSION=4.13.0.92
+ARG OPENCV_WHL_URL
+ARG OPENCV_WHL_DIGEST
 
 COPY ./requirements-base.txt /app/requirements.txt
+
+ADD --checksum=${OPENCV_WHL_DIGEST} ${OPENCV_WHL_URL} /tmp/opencv-wheel/
 
 RUN set -ex; \
     apt-get update -y; \
@@ -18,12 +19,10 @@ RUN set -ex; \
     apt-get install -y --no-install-recommends --no-install-suggests build-essential ca-certificates binutils; \
     # Install dependencies for building ALSA
     apt-get install -y --no-install-recommends --no-install-suggests libasound2-dev libalsaplayer-dev portaudio19-dev libzbar0; \
-    # Append OpenCV wheel URL (full wheel name with platform details)
-    echo "https://github.com/${OPENCV_REPO_OWNER}/app-bricks-py/releases/download/opencv/${OPENCV_VERSION}/opencv_python_headless-${OPENCV_VERSION}-${PYTHON_VERSION}-${PYTHON_VERSION}-linux_aarch64.whl" >> /app/requirements.txt; \
-    # Install Python dependencies
+    # Install Python dependencies (requirements file + prefetched OpenCV wheel)
     pip install --no-cache-dir uv; \
-    uv pip install --system --no-cache-dir -r /app/requirements.txt; \
-    rm /app/requirements.txt; \
+    uv pip install --system --no-cache-dir -r /app/requirements.txt /tmp/opencv-wheel/*.whl; \
+    rm -rf /app/requirements.txt /tmp/opencv-wheel; \
     # Strip debug symbols, tests and remove unneeded packages to reduce size
     find /usr/local/lib/python3.13/site-packages -type f -name "*.so" -exec strip -s {} +; \
     find /usr/local/lib/python3.13/site-packages -type f -name "*.so.*" -exec strip -s {} +; \
@@ -36,8 +35,17 @@ RUN set -ex; \
 
 FROM python:3.13-slim AS production
 
-ARG LIBCAMERA_REPO_OWNER=arduino
-ARG LIBCAMERA_VERSION=0.7.0-4
+ARG LIBCAMERA_DEB_URL
+ARG LIBCAMERA_DEB_DIGEST
+ARG LIBCAMERA_IPA_DEB_URL
+ARG LIBCAMERA_IPA_DEB_DIGEST
+ARG GSTREAMER_LIBCAMERA_DEB_URL
+ARG GSTREAMER_LIBCAMERA_DEB_DIGEST
+
+ADD --checksum=${LIBCAMERA_DEB_DIGEST} ${LIBCAMERA_DEB_URL} /tmp/libcamera0.7.deb
+ADD --checksum=${LIBCAMERA_IPA_DEB_DIGEST} ${LIBCAMERA_IPA_DEB_URL} /tmp/libcamera-ipa.deb
+ADD --checksum=${GSTREAMER_LIBCAMERA_DEB_DIGEST} ${GSTREAMER_LIBCAMERA_DEB_URL} /tmp/gstreamer1.0-libcamera.deb
+ADD https://raw.githubusercontent.com/googlefonts/opensans/main/fonts/ttf/OpenSans-Regular.ttf /home/app/.fonts/OpenSans.ttf
 
 # Copy the installed dependencies from the 'builder' stage
 COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
@@ -48,7 +56,6 @@ RUN set -ex; \
     useradd -u 1000 -g arduino -ms /bin/bash arduino; \
     apt-get update -y; \
     apt-get upgrade -y; \
-    apt-get install -y --no-install-recommends --no-install-suggests wget; \
     # Install dependencies for running ALSA
     apt-get install -y --no-install-recommends --no-install-suggests alsa-utils libportaudiocpp0; \
     # Install dependencies for running OpenCV with Gstreamer backend
@@ -57,15 +64,10 @@ RUN set -ex; \
     apt-get install -y --no-install-recommends --no-install-suggests libgstreamer1.0-0 libgstreamer-plugins-base1.0-0 gstreamer1.0-plugins-good gstreamer1.0-plugins-base-apps; \
     # Install dependencies for running libcamera
     apt-get install -y libpisp-common libboost-filesystem1.83.0 libboost-log1.83.0 libboost-thread1.83.0 libpisp1 libegl1 libgles2 libyaml-0-2 liblttng-ust1 libdw1t64 libyuv0; \
-    wget -O libcamera0.7_${LIBCAMERA_VERSION}_arm64.deb https://github.com/${LIBCAMERA_REPO_OWNER}/app-bricks-py/releases/download/libcamera%2F${LIBCAMERA_VERSION}/libcamera0.7_${LIBCAMERA_VERSION}_arm64.deb; \
-    wget -O libcamera-ipa_${LIBCAMERA_VERSION}_arm64.deb https://github.com/${LIBCAMERA_REPO_OWNER}/app-bricks-py/releases/download/libcamera%2F${LIBCAMERA_VERSION}/libcamera-ipa_${LIBCAMERA_VERSION}_arm64.deb; \
-    wget -O gstreamer1.0-libcamera_${LIBCAMERA_VERSION}_arm64.deb https://github.com/${LIBCAMERA_REPO_OWNER}/app-bricks-py/releases/download/libcamera%2F${LIBCAMERA_VERSION}/gstreamer1.0-libcamera_${LIBCAMERA_VERSION}_arm64.deb; \
-    dpkg -i libcamera0.7_${LIBCAMERA_VERSION}_arm64.deb libcamera-ipa_${LIBCAMERA_VERSION}_arm64.deb gstreamer1.0-libcamera_${LIBCAMERA_VERSION}_arm64.deb; \
+    dpkg -i /tmp/libcamera0.7.deb /tmp/libcamera-ipa.deb /tmp/gstreamer1.0-libcamera.deb; \
+    rm /tmp/libcamera0.7.deb /tmp/libcamera-ipa.deb /tmp/gstreamer1.0-libcamera.deb; \
     # Install other runtime dependencies
     apt-get install -y --no-install-recommends --no-install-suggests libglib2.0-0 inotify-tools libzbar0; \
-    mkdir -p /home/app/.fonts; \
-    wget -O /home/app/.fonts/OpenSans.ttf https://raw.githubusercontent.com/googlefonts/opensans/main/fonts/ttf/OpenSans-Regular.ttf; \
-    apt-get remove -y wget; \
     apt-get autoclean -y; \
     apt-get autoremove -y; \
     dpkg -r --force-depends libegl-mesa0 mesa-libgallium libllvm19; \

@@ -94,9 +94,9 @@ class LargeLanguageModel(CloudLLM):
             if model.startswith(self.GENIE_MODEL):
                 port = 9001
                 host = "genie-models-runner"
-            # elif model.startswith(self.LLAMACPP_MODEL):
-            #     port = 9999
-            #     host = "llamacpp-models-runner"
+            elif model.startswith(self.LLAMACPP_MODEL):
+                port = 9999
+                host = "llamacpp-models-runner"
             # elif model.startswith(self.OLLAMA_MODEL):
             #     port = 11434
             #     host = "ollama-models-runner"

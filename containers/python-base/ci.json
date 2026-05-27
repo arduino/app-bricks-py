@@ -4,7 +4,16 @@
   "tag_latest": true,
   "build_whl": false,
   "update_compose": false,
-  "build_args": {},
+  "build_args": {
+    "OPENCV_WHL_URL": "https://github.com/arduino/app-bricks-py/releases/download/opencv/4.13.0.92/opencv_python_headless-4.13.0.92-cp313-cp313-linux_aarch64.whl",
+    "OPENCV_WHL_DIGEST": "sha256:2ebc4d497956b26d4d4467933fc31ac580bd4bbe719d79a1e56d7083f52fec07",
+    "LIBCAMERA_DEB_URL": "https://github.com/arduino/app-bricks-py/releases/download/libcamera%2F0.7.0-4/libcamera0.7_0.7.0-4_arm64.deb",
+    "LIBCAMERA_DEB_DIGEST": "sha256:457ae31932e9dcba22762eefb78231de19df8d1c487c3264e840ae188beb0eeb",
+    "LIBCAMERA_IPA_DEB_URL": "https://github.com/arduino/app-bricks-py/releases/download/libcamera%2F0.7.0-4/libcamera-ipa_0.7.0-4_arm64.deb",
+    "LIBCAMERA_IPA_DEB_DIGEST": "sha256:b7ff2d52ba29e5c5142669b3a174b1ea229bf7f0e7be3f634d9081c2b76918bb",
+    "GSTREAMER_LIBCAMERA_DEB_URL": "https://github.com/arduino/app-bricks-py/releases/download/libcamera%2F0.7.0-4/gstreamer1.0-libcamera_0.7.0-4_arm64.deb",
+    "GSTREAMER_LIBCAMERA_DEB_DIGEST": "sha256:1ffc340aa0e639d85fb86d9d86bd5d0a7cd1faec3450fba9f56cfb8559b41d85"
+  },
   "sbom": {
     "runtime_base": "python:3.13-slim"
   },

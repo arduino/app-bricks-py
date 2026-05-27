@@ -51,7 +51,7 @@ class WebSocketMicrophone(BaseMicrophone):
 
     def __init__(
         self,
-        port: int = 8080,
+        port: int = 8070,
         timeout: int = 3,
         certs_dir_path: str = "/app/certs",
         use_tls: bool = False,
@@ -67,7 +67,7 @@ class WebSocketMicrophone(BaseMicrophone):
         Initialize WebSocket microphone server.
 
         Args:
-            port (int): Port to bind the server to. Default: 8080.
+            port (int): Port to bind the server to. Default: 8070.
             timeout (int): Connection timeout in seconds. Default: 3.
             certs_dir_path (str): Path to the directory containing TLS certificates.
                 Default: "/app/certs".

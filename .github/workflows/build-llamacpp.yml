@@ -1,0 +1,167 @@
+name: Build llama.cpp with Hexagon and CPU support
+
+on:
+  workflow_dispatch:
+    inputs:
+      llama_cpp_repo:
+        description: 'llama.cpp repository in owner/repo format (e.g. a fork)'
+        required: false
+        default: 'ggml-org/llama.cpp'
+      llama_cpp_ref:
+        description: 'Git ref to build (branch, tag, or commit SHA)'
+        required: false
+        default: 'master'
+      release_version:
+        description: 'Release version stamp (e.g. 20260601). Leave empty to only upload as workflow artifact.'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  resolve:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.params.outputs.version }}
+      release_version: ${{ steps.params.outputs.release_version }}
+      llama_cpp_repo: ${{ steps.params.outputs.llama_cpp_repo }}
+      llama_cpp_ref: ${{ steps.params.outputs.llama_cpp_ref }}
+    steps:
+      - name: Resolve build parameters
+        id: params
+        run: |
+          VERSION="${{ inputs.release_version }}"
+          REPO="${{ inputs.llama_cpp_repo }}"
+          REF="${{ inputs.llama_cpp_ref }}"
+          STAMP="${VERSION:-snapshot-$(date -u +%Y%m%d)-${GITHUB_SHA::7}}"
+          echo "version=$STAMP" >> $GITHUB_OUTPUT
+          echo "release_version=$VERSION" >> $GITHUB_OUTPUT
+          echo "llama_cpp_repo=$REPO" >> $GITHUB_OUTPUT
+          echo "llama_cpp_ref=$REF" >> $GITHUB_OUTPUT
+          echo "Building $REPO@$REF as version $STAMP"
+
+  build-hexagon:
+    needs: resolve
+    # amd64 host is required: the snapdragon toolchain cross-compiles to arm64
+    runs-on: ubuntu-24.04
+    container:
+      image: ghcr.io/snapdragon-toolchain/arm64-linux:v0.6
+      options: --user root
+    timeout-minutes: 180
+    steps:
+      - name: Install prerequisites
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git ca-certificates
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Clone llama.cpp
+        run: |
+          git clone "https://github.com/${{ needs.resolve.outputs.llama_cpp_repo }}" llama.cpp
+          cd llama.cpp
+          git checkout "${{ needs.resolve.outputs.llama_cpp_ref }}"
+          cp ../containers/llamacpp-npu-runner/builder/CMakeUserPresets.json .
+          # Anchor timestamps to the source commit time so builds are reproducible
+          echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
+
+      - name: Build
+        env:
+          LLAMA_CPP_VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          cd llama.cpp
+          cmake --preset arm64-linux-snapdragon-release -B build-snapdragon
+          cmake --build build-snapdragon -j "$(nproc)"
+          cmake --install build-snapdragon --prefix pkg-snapdragon
+          find pkg-snapdragon/bin -maxdepth 1 -name 'test*' -delete
+          # Create a reproducible tarball
+          tar --sort=name --owner=0 --group=0 --numeric-owner \
+              --mtime="@${SOURCE_DATE_EPOCH:-0}" \
+              -cf - pkg-snapdragon | gzip -n > "llamacpp-hexagon-${LLAMA_CPP_VERSION}.tar.gz"
+          mv "llamacpp-hexagon-${LLAMA_CPP_VERSION}.tar.gz" ..
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: llamacpp-hexagon-${{ needs.resolve.outputs.version }}
+          path: llamacpp-hexagon-${{ needs.resolve.outputs.version }}.tar.gz
+
+  build-cpu:
+    needs: resolve
+    runs-on: ubuntu-24.04-arm
+    container:
+      image: debian:trixie
+      options: --user root
+    timeout-minutes: 90
+    steps:
+      - name: Install prerequisites
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git ca-certificates build-essential cmake ninja-build
+
+      - name: Clone llama.cpp
+        run: |
+          git clone "https://github.com/${{ needs.resolve.outputs.llama_cpp_repo }}" llama.cpp
+          cd llama.cpp
+          git checkout "${{ needs.resolve.outputs.llama_cpp_ref }}"
+          echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
+
+      - name: Build
+        env:
+          LLAMA_CPP_VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          cd llama.cpp
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLLAMA_BUILD_TESTS=OFF \
+            -DLLAMA_OPENSSL=OFF \
+            -DGGML_NATIVE=OFF \
+            -DCMAKE_C_FLAGS="-mcpu=cortex-a53" \
+            -DCMAKE_CXX_FLAGS="-mcpu=cortex-a53"
+          cmake --build build --config Release -j "$(nproc)"
+          cmake --install build --prefix pkg-cpu
+          find pkg-cpu/bin -maxdepth 1 -name 'test*' -delete
+          # Create a reproducible tarball
+          tar --sort=name --owner=0 --group=0 --numeric-owner \
+              --mtime="@${SOURCE_DATE_EPOCH:-0}" \
+              -cf - pkg-cpu | gzip -n > "llamacpp-cpu-${LLAMA_CPP_VERSION}.tar.gz"
+          mv "llamacpp-cpu-${LLAMA_CPP_VERSION}.tar.gz" ..
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: llamacpp-cpu-${{ needs.resolve.outputs.version }}
+          path: llamacpp-cpu-${{ needs.resolve.outputs.version }}.tar.gz
+
+  release:
+    needs: [ resolve, build-hexagon, build-cpu ]
+    if: needs.resolve.outputs.release_version != ''
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create or update release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ needs.resolve.outputs.version }}"
+          TAG="llamacpp/${VERSION}"
+          REPO="${{ github.repository }}"
+
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            echo "Release $TAG already exists. Deleting..."
+            gh release delete "$TAG" --repo "$REPO" --yes --cleanup-tag
+          fi
+
+          gh release create "$TAG" \
+            artifacts/*.tar.gz \
+            --repo "$REPO" \
+            --latest=false \
+            --title "llama.cpp $VERSION" \
+            --notes "$(printf 'llama.cpp built for ARM64 Linux in two variants:\n- **hexagon**: Snapdragon Hexagon NPU backend\n- **cpu**: plain CPU build\n\nBuilt from `%s@%s`.' "${{ needs.resolve.outputs.llama_cpp_repo }}" "${{ needs.resolve.outputs.llama_cpp_ref }}")"

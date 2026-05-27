@@ -1,9 +1,20 @@
-name: Build OpenCV Python wheel
+name: Build OpenCV Python Headless wheel
 
 on:
-  push:
-    tags:
-      - 'opencv/*'
+  workflow_dispatch:
+    inputs:
+      opencv_python_repo:
+        description: 'opencv-python repository in owner/repo format (e.g. a fork)'
+        required: false
+        default: 'opencv/opencv-python'
+      opencv_python_ref:
+        description: 'Git ref to build (branch, tag, or commit SHA)'
+        required: false
+        default: '4.x'
+      release_version:
+        description: 'Release version stamp (e.g. 4.13.0). Leave empty to only upload as workflow artifact.'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -19,6 +30,21 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Resolve build parameters
+        id: version
+        run: |
+          VERSION="${{ inputs.release_version }}"
+          REPO="${{ inputs.opencv_python_repo }}"
+          COMMIT="${{ inputs.opencv_python_ref }}"
+
+          # Fall back to a snapshot stamp when no release version is provided
+          STAMP="${VERSION:-snapshot-$(date -u +%Y%m%d)-${GITHUB_SHA::7}}"
+          echo "version=$STAMP" >> $GITHUB_OUTPUT
+          echo "release_version=$VERSION" >> $GITHUB_OUTPUT
+          echo "opencv_python_repo=$REPO" >> $GITHUB_OUTPUT
+          echo "commit=$COMMIT" >> $GITHUB_OUTPUT
+          echo "Building $REPO@$COMMIT as version $STAMP"
 
       - name: Install prerequisites
         run: |
@@ -43,16 +69,17 @@ jobs:
 
       - name: Clone opencv-python repo
         run: |
-          git clone --depth 1 https://github.com/opencv/opencv-python.git
+          COMMIT="${{ steps.version.outputs.commit }}"
+          git clone --depth 1 "https://github.com/${{ steps.version.outputs.opencv_python_repo }}.git" opencv-python
           cd opencv-python
-          git fetch --depth 1 origin 4ddfc013fd1f13d9b9e379dbebf2cdbeb052e7f8
-          git checkout 4ddfc013fd1f13d9b9e379dbebf2cdbeb052e7f8
+          git fetch --depth 1 origin "$COMMIT"
+          git checkout "$COMMIT"
           git submodule update --init --recursive --depth 1
 
       - name: Build OpenCV Python wheels
         run: |
           cd opencv-python
-          export OPENCV_VERSION=4.13.0
+          export OPENCV_VERSION="${{ steps.version.outputs.version }}"
           export ENABLE_CONTRIB=0
           export ENABLE_HEADLESS=1
           export CMAKE_ARGS="-DWITH_GSTREAMER=ON -DWITH_FFMPEG=ON -DWITH_CAROTENE=ON -DWITH_LAPACK=ON -DBUILD_opencv_python3=ON -DWITH_AVIF=OFF -DWITH_GTK=OFF -DWITH_QT=OFF -DWITH_CUDA=OFF -DBUILD_opencv_java=OFF -DWITH_VTK=OFF -DBUILD_opencv_dnn=OFF -DBUILD_opencv_dnn_modern=OFF"
@@ -62,31 +89,22 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: opencv-python-wheels
-          path: opencv-python/*.whl
-
-      - name: Determine version
-        id: version
-        run: |
-          # Extract version from tag (opencv/4.13.0 -> 4.13.0)
-          VERSION="${GITHUB_REF#refs/tags/opencv/}"
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Release version: $VERSION"
+          path: opencv-python/opencv_python_headless*.whl
 
       - name: Create or update release
+        if: steps.version.outputs.release_version != ''
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |          
+        run: |
           VERSION="${{ steps.version.outputs.version }}"
-          TAG="opencv/$VERSION"
+          TAG="opencv/${VERSION}"
           REPO="${{ github.repository }}"
-          
-          # Delete release if it already exists
+
           if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
             echo "Release $TAG already exists. Deleting..."
-            gh release delete "$TAG" --repo "$REPO" --yes
+            gh release delete "$TAG" --repo "$REPO" --yes --cleanup-tag
           fi
 
-          # Create release
           gh release create "$TAG" \
             opencv-python/opencv_python_headless*.whl \
             --repo "$REPO" \
