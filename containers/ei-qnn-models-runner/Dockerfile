@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-FROM public.ecr.aws/z9b3d4t5/inference-container-qnn:v1.92.19-test-f19ce2e7
+FROM public.ecr.aws/g7a8t7v6/inference-container-qnn:v1.93.4
 
 # Create the user and group needed to run the container as non-root
 RUN set -ex; \

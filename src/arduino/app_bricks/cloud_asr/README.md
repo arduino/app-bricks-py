@@ -80,3 +80,8 @@ You can select a provider using the `CloudProvider` enum or by passing its raw s
 
 - **`transcribe(duration=60.0)`**: Returns the first finalized transcription (`text`).
 - **`transcribe_stream(duration=60.0)`**: Yields `ASREvent` items (`speech_start`, `partial_text`, `text`, `speech_stop`).
+- **`transcribe_sentence(timeout=60.0)`**: Returns the first sentence as a string. Stops at the provider's sentence boundary (VAD) or when `timeout` elapses.
+- **`transcribe_sentence_stream(timeout=60.0)`**: Yields `ASREvent` items for a single sentence; the stream ends after the first `text` event.
+- **`transcribe_until_cancelled()`**: Yields one sentence (`str`) per `text` event; runs until `cancel()` or silence timeout.
+- **`cancel()`**: Cancels the active transcription session, if any.
+- **`is_transcribing()`**: Returns `True` if a transcription session is currently active.
