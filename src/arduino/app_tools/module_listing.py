@@ -7,6 +7,7 @@ import pathlib
 import yaml
 import json
 import os
+import re
 import sys
 import argparse
 import glob
@@ -449,6 +450,19 @@ def library_provisioning(out_path: str = None, modules: Dict[str, List[ArduinoBr
 
     # Save services files
     save_services_files(services_folder, services_output_dir)
+
+    # Update models-handlers.yaml container versions with arduino_bricks_version
+    models_handlers_file = os.path.join(out_path, "models-handlers.yaml")
+    if os.path.isfile(models_handlers_file):
+        with open(models_handlers_file, "r") as f:
+            content = f.read()
+        updated_content = re.sub(
+            r"models-downloader:[^ \"'\n]+",
+            f"models-downloader:{arduino_bricks_version}",
+            content,
+        )
+        with open(models_handlers_file, "w") as f:
+            f.write(updated_content)
 
     # Save API docs files
     if buildtime:

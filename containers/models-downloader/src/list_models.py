@@ -108,7 +108,7 @@ def get_model_subdir(models_repository):
         return models_repository[idx + len(marker) :]
     # Handle relative paths like "models/genai" or "models/audio-analytics/asr"
     if models_repository.startswith("models/"):
-        return models_repository[len("models/"):]
+        return models_repository[len("models/") :]
     return ""
 
 
