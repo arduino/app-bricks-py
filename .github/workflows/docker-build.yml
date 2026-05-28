@@ -161,13 +161,6 @@ jobs:
           ref: ${{ needs.setup.outputs.branch }}
           fetch-depth: 0
 
-      - name: Update models-handlers.yaml image references
-        env:
-          VERSION: ${{ needs.setup.outputs.image_tag }}
-        run: |
-          echo "Updating models/models-handlers.yaml: models-downloader -> $VERSION"
-          sed -i -E "s|models-downloader:[^ \"']+|models-downloader:${VERSION}|g" models/models-handlers.yaml
-
       - name: Read container config
         id: config
         run: |
@@ -256,13 +249,6 @@ jobs:
         with:
           ref: ${{ needs.setup.outputs.branch }}
           fetch-depth: 0
-
-      - name: Update models-handlers.yaml image references
-        env:
-          VERSION: ${{ needs.setup.outputs.image_tag }}
-        run: |
-          echo "Updating models/models-handlers.yaml: models-downloader -> $VERSION"
-          sed -i -E "s|models-downloader:[^ \"']+|models-downloader:${VERSION}|g" models/models-handlers.yaml
 
       - name: Build wheel in debian:trixie
         if: matrix.container == 'python-apps-base'
