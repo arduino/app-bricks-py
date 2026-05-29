@@ -182,6 +182,7 @@ class BaseASR:
             self._worker_loop = Future()
         if self._owns_source:
             self._source.start()
+        self._warmup()
 
     def stop(self):
         """Stop the ASR and clean up resources. Stops the owned mic if applicable."""
@@ -268,6 +269,25 @@ class BaseASR:
                 loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
             loop.close()
             logger.debug("Asyncio event loop stopped")
+
+    def _warmup(self) -> None:
+        """Best-effort warmup: create and immediately close a transcription session so the
+        inference container loads the ASR model before the first real transcription."""
+        if self._stop_worker.is_set():
+            return
+        started_at = time.perf_counter()
+        try:
+            session_id = self._create_transcription_session(language=self.language)
+        except Exception as e:
+            logger.warning(f"ASR warmup failed during session creation: {e}")
+            return
+        try:
+            self._close_transcription_session(session_id)
+        except Exception as e:
+            logger.warning(f"ASR warmup failed during closing session {session_id}: {e}")
+            return
+        elapsed_ms = (time.perf_counter() - started_at) * 1000
+        logger.debug(f"ASR warmup completed in {elapsed_ms:.2f} ms")
 
     def _transcribe_stream(self, duration: int = 0, vad_ms: int | None = None) -> Generator[ASREvent, None, None]:
         if self._stop_worker.is_set():
@@ -402,7 +422,7 @@ class BaseASR:
 
         state = result.get("state")
         if state != "asr_initialized":
-            logger.warning(f"ASR session {session_id} created but not initialized (state={state})")
+            raise ASRError(f"Unexpected session state: {state}")
 
         return session_id
 
