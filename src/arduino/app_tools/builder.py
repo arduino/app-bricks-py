@@ -32,6 +32,17 @@ def run_preprocessing(dev_mode: bool = False) -> None:
     os.makedirs(cache_folder_path, exist_ok=True)
 
     try:
+        print(f"################################## Embed models list ###############################################################################")
+        matched_files = glob.glob("models/models-*.yaml")
+        if not matched_files:
+            raise FileNotFoundError("No files matching 'models/models-*.yaml' were found")
+        for src_file in matched_files:
+            shutil.copy(src_file, f"{cache_folder_path}/{os.path.basename(src_file)}")
+    except Exception as e:
+        print(f"Error: {e}.")
+        raise
+
+    try:
         print(f"################################## Building bricks list Version: {version} - Dev Mode: {dev_mode} ##################################")
         cmd = ["arduino-bricks-release", "-o", f"{cache_folder_path}/bricks-list.yaml", "--version", f"{version}"]
         if registry:
@@ -47,19 +58,8 @@ def run_preprocessing(dev_mode: bool = False) -> None:
 
     try:
         print(f"################################## Pre-provision bricks list #######################################################################")
-        cmd = ["arduino-bricks-list-modules", "-p", "-b", "-c", f"{cache_folder_path}"]
+        cmd = ["arduino-bricks-list-modules", "-p", "-b", "-c", f"{cache_folder_path}", "--version", f"{version}"]
         subprocess.run(cmd, check=True, cwd=os.getcwd())
-    except Exception as e:
-        print(f"Error: {e}.")
-        raise
-
-    try:
-        print(f"################################## Embed models list ###############################################################################")
-        matched_files = glob.glob("models/models-*.yaml")
-        if not matched_files:
-            raise FileNotFoundError("No files matching 'models/models-*.yaml' were found")
-        for src_file in matched_files:
-            shutil.copy(src_file, f"{cache_folder_path}/{os.path.basename(src_file)}")
     except Exception as e:
         print(f"Error: {e}.")
         raise

@@ -1719,4 +1719,36 @@ models:
       model_size_mb: 46
       source: "qualcomm-ai-hub"
       source-model-id: "piper_tts_en"
-      source-model-url: "https://aihub.qualcomm.com/models/piper_tts_en"             
+      source-model-url: "https://aihub.qualcomm.com/models/piper_tts_en"
+ - "ei:efficientnet-b4":
+    name : "General purpose object classification - EfficientNet-B4"
+    description: "EfficientNetB4 is a machine learning model that can classify images from the Imagenet dataset. It can also be used as a backbone in building more complex models for specific use cases. This version of the model is optimized for NPU acceleration on supported devices, providing faster inference times while maintaining accuracy."
+    metadata:
+      model_size_mb: 89
+      source: "edgeimpulse"
+      image-resolution: "380x380"
+      hw_acceleration_backend: "qnn"
+      ei-project-id: 948887
+      ei-impulse-id: 4
+      ei-model-url: "https://studio.edgeimpulse.com/public/948887/live"
+      source-model-id: "efficientnet_b4"
+      source-model-url: "https://aihub.qualcomm.com/compute/models/efficientnet_b4"
+    supported_boards: ["ventunoq"]
+    deployment:
+      handler: "ei-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              ei_project_id: 948887
+              ei_impulse_id: 4
+              models_repository: "models/edge-impulse"
+              model_name: efficientnet-b4-qnn.eim
+              quantization: float32
+              target: runner-linux-aarch64-qnn
+    bricks:
+      - id: "arduino:image_classification"
+        model_configuration:
+          "EI_IMAGE_CLASSIFICATION_MODEL": "${models_repository}/efficientnet-b4-qnn.eim"
+      - id: "arduino:video_image_classification"
+        model_configuration:
+          "EI_V_IMAGE_CLASSIFICATION_MODEL": "${models_repository}/efficientnet-b4-qnn.eim"

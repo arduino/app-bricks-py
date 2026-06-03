@@ -7,6 +7,7 @@ import pathlib
 import yaml
 import json
 import os
+import re
 import sys
 import argparse
 import glob
@@ -365,6 +366,8 @@ def save_compose_file(module: ArduinoBrick, output_dir: str, appslab_version: st
 
         output_file_name: pathlib.Path = output_folder / compose_file.name
 
+        logger.info(f"Copying compose file from {compose_file} to {output_file_name}")
+
         with open(compose_file, "rb") as f_source, open(output_file_name, "wb") as f_dest:
             while True:
                 chunk = f_source.read(2048)
@@ -372,7 +375,8 @@ def save_compose_file(module: ArduinoBrick, output_dir: str, appslab_version: st
                     break
                 f_dest.write(chunk)
 
-        _update_compose_release_version_by_platform(compose_file_path=output_file_name, release_version=appslab_version)
+        if appslab_version and appslab_version != "":
+            _update_compose_release_version_by_platform(compose_file_path=output_file_name, release_version=appslab_version)
 
 
 def save_readme_file(module: ArduinoBrick, output_dir: str):
@@ -422,13 +426,14 @@ def save_examples_files(module: ArduinoBrick, output_dir: str):
         shutil.copytree(input_folder, output_folder, dirs_exist_ok=True)
 
 
-def library_provisioning(out_path: str = None, modules: Dict[str, List[ArduinoBrick]] = None, services_folder: str = None, buildtime: bool = False):
-    print(f"Provisioning compose files for app execution and bricks documentation. File: {out_path}")
-    try:
-        from arduino._version import __version__ as arduino_bricks_version
-    except ImportError:
-        logger.error("Error: AppLab version not found. 'appslab._version' module is not available.")
-        sys.exit(1)
+def library_provisioning(
+    out_path: str = None,
+    modules: Dict[str, List[ArduinoBrick]] = None,
+    services_folder: str = None,
+    buildtime: bool = False,
+    arduino_bricks_version: str = None,
+):
+    print(f"Provisioning compose files. File: {out_path} | Buildtime: {buildtime} | Version: {arduino_bricks_version}")
 
     compose_output_dir = f"{out_path}/compose"
     services_output_dir = f"{out_path}/services/arduino"
@@ -454,6 +459,20 @@ def library_provisioning(out_path: str = None, modules: Dict[str, List[ArduinoBr
     if buildtime:
         print(f"Saving API docs files... buildtime: {buildtime}")
         save_api_docs_files(api_docs_output_dir)
+
+        if arduino_bricks_version and arduino_bricks_version != "":
+            # Update models-handlers.yaml container versions with arduino_bricks_version
+            models_handlers_file = os.path.join(out_path, "models-handlers.yaml")
+            if os.path.isfile(models_handlers_file):
+                with open(models_handlers_file, "r") as f:
+                    content = f.read()
+                updated_content = re.sub(
+                    r"models-downloader:[^ \"'\n]+",
+                    f"models-downloader:{arduino_bricks_version}",
+                    content,
+                )
+                with open(models_handlers_file, "w") as f:
+                    f.write(updated_content)
 
 
 def release():
@@ -588,25 +607,27 @@ def main():
 
     parser.add_argument("-b", "--buildtime", action="store_true", help="Buildtime execution.")
 
+    parser.add_argument("-v", "--version", type=str, default=None, help="Release version.")
+
     args = parser.parse_args()
+
+    arduino_bricks_version = ""
+    if args.version is not None and args.version != "":
+        arduino_bricks_version = args.version
 
     discovered_modules, services_folder = list_installed_packages_pkg_resources()
 
     modules = []
-    imported_modules = []
     for path, module_list in discovered_modules.items():
         for module in module_list:
-            if module.id in imported_modules:
-                continue
             modules.append(module.to_dict())
-            imported_modules.append(module.id)
 
     if args.provision_compose:
         composeout = args.output
         if args.compose_output is not None and args.compose_output != "":
             composeout = args.compose_output
         # Provision compose files for app execution and bricks documentation
-        library_provisioning(composeout, discovered_modules, services_folder, args.buildtime)
+        library_provisioning(composeout, discovered_modules, services_folder, args.buildtime, arduino_bricks_version)
         if args.buildtime or len(args.output) > 0:
             print("Compose provisioning completed.")
             sys.exit(0)

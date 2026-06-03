@@ -56,6 +56,29 @@ def emit_json_error(description: str):
     print(json.dumps(data), flush=True)
 
 
+def check(url: str, output_name: str | None = None) -> dict[str, str | int | None]:
+    """Perform a HEAD request on *url* and return content-length and filename.
+
+    Args:
+        url: URL to check.
+        output_name: Optional filename override.  When ``None`` (or an empty
+            string) the name is inferred from the ``Content-Disposition``
+            header or the last path segment of *url*.
+
+    Returns:
+        A dict with keys ``filename`` and ``content_length``.
+    """
+    response = requests.head(url, timeout=60, allow_redirects=True)
+    response.raise_for_status()
+
+    if not output_name:
+        output_name = None
+    filename = output_name or _filename_from_response(response, url.rstrip("/").split("/")[-1] or "download")
+    content_length = int(response.headers.get("Content-Length", 0) or 0) or None
+
+    return {"filename": filename, "content_length": content_length}
+
+
 def download(url: str, output_dir: str, json_progress: bool, output_name: str | None = None) -> str:
     """Download *url* to *output_dir* and return the local file path.
 

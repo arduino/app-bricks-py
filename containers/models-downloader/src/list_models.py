@@ -75,7 +75,7 @@ def get_model_info(model_entry):
                     continue
                 for platform_name, platform_config in platform_entry.items():
                     variables = platform_config.get("variables", {})
-                    model_directory = variables.get("model_directory") or build_model_directory(variables)
+                    model_directory = variables.get("model_directory") or build_model_directory(variables) or variables.get("model_name", "")
                     models_repository = variables.get("models_repository", "")
 
                     results.append({
@@ -99,11 +99,16 @@ def get_model_subdir(models_repository):
 
     e.g. "/var/lib/arduino-app-cli/models/audio-analytics/tts" -> "audio-analytics/tts"
          "/var/lib/arduino-app-cli/models/genai" -> "genai"
+         "models/genai" -> "genai"
+         "models/audio-analytics/asr" -> "audio-analytics/asr"
     """
     marker = "/models/"
     idx = models_repository.rfind(marker)
     if idx != -1:
         return models_repository[idx + len(marker) :]
+    # Handle relative paths like "models/genai" or "models/audio-analytics/asr"
+    if models_repository.startswith("models/"):
+        return models_repository[len("models/") :]
     return ""
 
 
@@ -134,9 +139,9 @@ def check_model_exists(model_info, models_base_dir):
     else:
         search_dir = models_base_dir
 
-    # Exact match first
+    # Exact match first (directory or file)
     full_path = os.path.join(search_dir, model_directory)
-    if os.path.isdir(full_path):
+    if os.path.exists(full_path):
         return True, full_path
 
     # Check for directories that start with model_directory (e.g. _proxy suffix)

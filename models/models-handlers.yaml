@@ -1,5 +1,7 @@
 listing:
   image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/models-downloader:0.10.0
+  volumes:
+    - ${download_location}:/models
   command: ["/app/list_models.sh"]
 handlers:
   - ai-hub-handler:
@@ -26,6 +28,8 @@ handlers:
             command: ["/app/edge_impulse/ei_model_remover.sh"]
         - check:
             command: ["/app/edge_impulse/ei_model_checker.sh"]
+        - info:
+            command: ["/app/edge_impulse/ei_model_info.sh"]            
   - hf-handler:
       description: "Handler for models from Hugging Face"
       image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/models-downloader:0.10.0
@@ -39,4 +43,4 @@ handlers:
         - check:
             command: ["/app/hugging_face/hf_model_checker.sh"]
         - info:
-            command: ["/app/hugging_face/hf_model_info.sh"]            
+            command: ["/app/hugging_face/hf_model_info.sh"]
