@@ -35,7 +35,6 @@ services:
     volumes:
       # Mount hexagon firmware
       - /usr/share/qcom/qcs8300/Qualcomm/QCS8300-RIDE/dsp/cdsp:/lib/dsp/cdsp
+      - /var/lib/arduino-app-cli/models/llamacpp/:/models/
     # Pin on cores 0-3 for performance reasons: it's like using --cpu-mask 0x0f on llama-cli/server. Then set LLAMA_ARG_THREADS to 4 to use all those cores.
     cpuset: "0-3"
-    volumes:
-      - /var/lib/arduino-app-cli/models/llamacpp/:/models/
