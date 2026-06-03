@@ -618,13 +618,9 @@ def main():
     discovered_modules, services_folder = list_installed_packages_pkg_resources()
 
     modules = []
-    imported_modules = []
     for path, module_list in discovered_modules.items():
         for module in module_list:
-            if module.id in imported_modules:
-                continue
             modules.append(module.to_dict())
-            imported_modules.append(module.id)
 
     if args.provision_compose:
         composeout = args.output

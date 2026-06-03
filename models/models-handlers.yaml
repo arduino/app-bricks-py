@@ -28,6 +28,8 @@ handlers:
             command: ["/app/edge_impulse/ei_model_remover.sh"]
         - check:
             command: ["/app/edge_impulse/ei_model_checker.sh"]
+        - info:
+            command: ["/app/edge_impulse/ei_model_info.sh"]            
   - hf-handler:
       description: "Handler for models from Hugging Face"
       image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/models-downloader:0.10.0

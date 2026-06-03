@@ -18,7 +18,7 @@ import sys
 import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from common.http_download import download, emit_json_error
+from common.http_download import check, download, emit_json_error
 
 
 BASE_URL = "https://studio.edgeimpulse.com/v1/api/{project_id}/deployment/download?type={target}&modelType={quantization}&impulseId={impulse_id}"
@@ -64,15 +64,35 @@ def main():
         default="runner-linux-aarch64",
         help="Target type of the model (e.g. runner-linux-aarch64, runner-linux-aarch64-qnn).",
     )
+    parser.add_argument(
+        "--info",
+        action="store_true",
+        help="Only retrieve file size and name via a HEAD request (no download).",
+    )
 
     args = parser.parse_args()
 
     url = BASE_URL.format(project_id=args.ei_project_id, impulse_id=args.impulse_id, quantization=args.quantization, target=args.target)
 
     try:
-        out_file = download(url, args.output_dir, True, output_name=args.output_name)
-        if os.path.isfile(out_file):
-            os.chmod(out_file, 0o755)  # Ensure the file is executable
+        if args.info:
+            import json
+
+            info = check(url, output_name=args.output_name)
+            print(
+                json.dumps({
+                    "event": "stat",
+                    "description": f"Model info for project {args.ei_project_id} impulse {args.impulse_id}",
+                    "filename": info["filename"],
+                    "size_bytes": info["content_length"],
+                    "size_mb": round(info["content_length"] / 1024 / 1024, 2) if info["content_length"] else None,
+                }),
+                flush=True,
+            )
+        else:
+            out_file = download(url, args.output_dir, True, output_name=args.output_name)
+            if os.path.isfile(out_file):
+                os.chmod(out_file, 0o755)  # Ensure the file is executable
     except requests.HTTPError as exc:
         msg = f"HTTP error: {exc.response.status_code} {exc.response.reason}"
         emit_json_error(msg)
