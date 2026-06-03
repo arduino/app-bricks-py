@@ -58,7 +58,7 @@ def run_preprocessing(dev_mode: bool = False) -> None:
 
     try:
         print(f"################################## Pre-provision bricks list #######################################################################")
-        cmd = ["arduino-bricks-list-modules", "-p", "-b", "-c", f"{cache_folder_path}"]
+        cmd = ["arduino-bricks-list-modules", "-p", "-b", "-c", f"{cache_folder_path}", "--version", f"{version}"]
         subprocess.run(cmd, check=True, cwd=os.getcwd())
     except Exception as e:
         print(f"Error: {e}.")
