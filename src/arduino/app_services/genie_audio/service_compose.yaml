@@ -1,6 +1,6 @@
 services:
   audio-analytics-runner:
-    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/audio-analytics-models-runner:0.10.0
+    image: artifacts.codelinaro.org/iot-solutions-microservices/audio-analytics:1.0.1
     user: 0:0
     devices:
       - /dev/dma_heap/system
