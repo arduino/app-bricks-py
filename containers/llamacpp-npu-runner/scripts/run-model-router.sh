@@ -14,5 +14,5 @@ exec /opt/pkg-snapdragon/bin/llama-server \
   --device HTP0 \
   -ngl 100 \
   --no-mmap \
-  --log-disable \
+#  --log-disable \
   --models-preset /models/models.ini
