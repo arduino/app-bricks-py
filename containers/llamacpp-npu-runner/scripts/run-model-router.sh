@@ -7,12 +7,23 @@
 echo "Generating models.ini..."
 python3 /generate_models_ini.py /models
 
-echo "Starting Llama server..."
+echo "Starting LLama server..."
 export LD_LIBRARY_PATH=/opt/pkg-snapdragon/lib
 export ADSP_LIBRARY_PATH=/opt/pkg-snapdragon/lib
 
+# Build --device argument from GGML_HEXAGON_NDEV (default: 1)
+NDEV="${GGML_HEXAGON_NDEV:-1}"
+DEVICE_LIST=""
+for ((i=0; i<NDEV; i++)); do
+  if [ -z "$DEVICE_LIST" ]; then
+    DEVICE_LIST="HTP${i}"
+  else
+    DEVICE_LIST="${DEVICE_LIST},HTP${i}"
+  fi
+done
+
 LLAMA_ARGS=(
-  --device HTP0
+  --device "$DEVICE_LIST"
   -ngl 100
   --no-mmap
   --models-preset /models/models.ini
