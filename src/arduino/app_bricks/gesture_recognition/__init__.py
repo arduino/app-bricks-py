@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (C) ARDUINO SRL (http://www.arduino.cc)
+# SPDX-FileCopyrightText: Copyright (C) Arduino s.r.l. and/or its affiliated companies
 #
 # SPDX-License-Identifier: MPL-2.0
 
@@ -24,7 +24,7 @@ logger = Logger("GestureRecognition")
 
 @brick
 class GestureRecognition:
-    def __init__(self, camera: BaseCamera | None = None, confidence: float = 0.9):
+    def __init__(self, camera: BaseCamera | None = None, confidence: float = 0.0):
         if camera is None:
             camera = Camera(fps=30)
         self._camera = camera

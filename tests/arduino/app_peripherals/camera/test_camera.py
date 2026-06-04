@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (C) ARDUINO SRL (http://www.arduino.cc)
+# SPDX-FileCopyrightText: Copyright (C) Arduino s.r.l. and/or its affiliated companies
 #
 # SPDX-License-Identifier: MPL-2.0
 
@@ -12,6 +12,7 @@ from conftest import v4l_device_argument  # noqa: F401
 
 def test_camera_factory_with_v4l_device(v4l_device_argument):
     """Test Camera factory with multiple device paths (V4L)."""
+    print(f">>>>>>: Testing with V4L device argument: {v4l_device_argument}")
     camera = Camera(v4l_device_argument)
     assert isinstance(camera, V4LCamera)
     assert camera.v4l_path == "/dev/v4l/by-id/usb-Camera-video-index0"

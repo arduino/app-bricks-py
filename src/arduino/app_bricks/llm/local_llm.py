@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (C) ARDUINO SRL (http://www.arduino.cc)
+# SPDX-FileCopyrightText: Copyright (C) Arduino s.r.l. and/or its affiliated companies
 #
 # SPDX-License-Identifier: MPL-2.0
 
@@ -24,6 +24,8 @@ class LargeLanguageModel(CloudLLM):
     for chatting with models like Qwenm, LLama, Gemma. It supports both synchronous
     'one-shot' responses and streaming output, with optional conversational memory.
     """
+
+    _logger = logger
 
     GENIE_MODEL = "genie"
     LLAMACPP_MODEL = "llamacpp"
@@ -92,9 +94,9 @@ class LargeLanguageModel(CloudLLM):
             if model.startswith(self.GENIE_MODEL):
                 port = 9001
                 host = "genie-models-runner"
-            # elif model.startswith(self.LLAMACPP_MODEL):
-            #     port = 9999
-            #     host = "llamacpp-models-runner"
+            elif model.startswith(self.LLAMACPP_MODEL):
+                port = 9999
+                host = "llamacpp-models-runner"
             # elif model.startswith(self.OLLAMA_MODEL):
             #     port = 11434
             #     host = "ollama-models-runner"
@@ -252,24 +254,27 @@ class LargeLanguageModel(CloudLLM):
             RuntimeError: If the internal chain is not initialized or if the API request fails.
             AlreadyGenerating: If a streaming session is already active.
         """
-        try:
-            in_thininkg = False
-            for chunk in super()._chat_stream_invoke(message=message, images=images):
-                if in_thininkg:
-                    if "</think>" in chunk:
-                        in_thininkg = False
-                        chunk = chunk.split("</think>")[-1]  # Take content after </think>
-                        if chunk is not None and chunk.strip() != "":
-                            yield chunk
-                    continue
+        in_thinking = False
+        for chunk in super().chat_stream(message=message, images=images):
+            if in_thinking:
+                if "</think>" in chunk:
+                    in_thinking = False
+                    chunk = chunk.split("</think>")[-1]  # Take content after </think>
+                    if chunk is not None and chunk.strip() != "":
+                        yield chunk
+                continue
 
-                if "<think>" in chunk:
-                    in_thininkg = True
-                    continue  # Skip the <think> tag itself
-                else:
-                    yield chunk
-        except (BadRequestError, APIError) as e:
+            if "<think>" in chunk:
+                in_thinking = True
+                continue  # Skip the <think> tag itself
+            else:
+                yield chunk
+
+    def _handle_stream_error(self, e: Exception) -> None:
+        if isinstance(e, (BadRequestError, APIError)):
             self._handle_api_error(logger, e)
+
+        super()._handle_stream_error(e)
 
     def stop_stream(self) -> None:
         """Signals the active streaming generation to stop.

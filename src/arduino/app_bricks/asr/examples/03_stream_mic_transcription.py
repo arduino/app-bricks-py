@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (C) ARDUINO SRL (http://www.arduino.cc)
+# SPDX-FileCopyrightText: Copyright (C) Arduino s.r.l. and/or its affiliated companies
 #
 # SPDX-License-Identifier: MPL-2.0
 
@@ -11,8 +11,8 @@ from arduino.app_peripherals.microphone import Microphone
 mic = Microphone()
 mic.start()
 
-asr = AutomaticSpeechRecognition()
-with asr.transcribe_mic_stream(mic, duration=5) as stream:
+asr = AutomaticSpeechRecognition(mic)
+with asr.transcribe_stream(duration=5) as stream:
     for chunk in stream:
         match chunk.type:
             case "partial_text":

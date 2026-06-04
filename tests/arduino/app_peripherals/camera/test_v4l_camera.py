@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (C) ARDUINO SRL (http://www.arduino.cc)
+# SPDX-FileCopyrightText: Copyright (C) Arduino s.r.l. and/or its affiliated companies
 #
 # SPDX-License-Identifier: MPL-2.0
 
@@ -104,7 +104,7 @@ class TestV4LCameraStartStop:
         camera.start()
 
         assert camera.is_started()
-        mock_videocapture.assert_called_once_with("/dev/v4l/by-id/usb-Camera-video-index0")
+        mock_videocapture.assert_called_once_with("/dev/v4l/by-id/usb-Camera-video-index0", cv2.CAP_V4L2)
 
         # Verify V4L camera setup calls
         assert mock_successful_connect.set.call_count == 4
@@ -446,6 +446,7 @@ class TestV4LCameraRecovery:
             True,  # For _resolve_name
             True,  # For _resolve_name
             True,  # For _open_camera
+            True,  # For v4l_path existence check
             False,  # For _safe_connect tentative for third capture()
             True,  # For _safe_connect check for fourth capture()
         ]

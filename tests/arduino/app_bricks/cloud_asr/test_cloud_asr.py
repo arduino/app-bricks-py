@@ -1,44 +1,44 @@
-# SPDX-FileCopyrightText: Copyright (C) ARDUINO SRL (http://www.arduino.cc)
+# SPDX-FileCopyrightText: Copyright (C) Arduino s.r.l. and/or its affiliated companies
 #
 # SPDX-License-Identifier: MPL-2.0
 
 import queue
-import threading
-import time
 from typing import Iterable, List
 
 import numpy as np
 import pytest
 
 from arduino.app_bricks.cloud_asr import CloudASR, CloudProvider
+from arduino.app_bricks.cloud_asr.cloud_asr import TranscriptionStreamError
 from arduino.app_bricks.cloud_asr.providers import ASRProviderEvent, ASRProviderError
-from arduino.app_utils.app import App
+from arduino.app_peripherals.microphone.base_microphone import BaseMicrophone
 
 
-class MockMicrophone:
+class MockMicrophone(BaseMicrophone):
     """Lightweight microphone stub that yields pre-loaded chunks."""
 
-    def __init__(self, chunks: Iterable, sample_rate: int = 16000, delay_between_chunks: float = 0.0):
-        self.sample_rate = sample_rate
-        self.is_recording = threading.Event()
+    def __init__(
+        self,
+        chunks: Iterable,
+        sample_rate: int = 16000,
+        channels: int = 1,
+        format: type | np.dtype | str = np.int16,
+        buffer_size: int = 1024,
+        auto_reconnect: bool = True,
+    ):
+        super().__init__(sample_rate=sample_rate, channels=channels, format=format, buffer_size=buffer_size, auto_reconnect=auto_reconnect)
         self._chunks: List = list(chunks)
-        self._delay = delay_between_chunks
-        self.start_calls = 0
-        self.stop_calls = 0
 
-    def start(self):
-        self.start_calls += 1
-        self.is_recording.set()
+    def _open_microphone(self):
+        pass
 
-    def stop(self):
-        self.stop_calls += 1
-        self.is_recording.clear()
+    def _close_microphone(self):
+        pass
 
-    def stream(self):
-        while self.is_recording.is_set() and self._chunks:
-            if self._delay:
-                time.sleep(self._delay)
-            yield self._chunks.pop(0)
+    def _read_audio(self):
+        if not self._chunks:
+            return None
+        return self._chunks.pop(0)
 
 
 class DummyProvider:
@@ -88,21 +88,19 @@ def make_provider(monkeypatch: pytest.MonkeyPatch):
 
 def test_transcribe_stream_use_microphone_state(make_provider):
     mic = MockMicrophone(chunks=[])
+    mic.start()
     provider = make_provider(events=[ASRProviderEvent(type="text", data="mock")])
     asr = CloudASR(api_key="dummy", mic=mic, provider=CloudProvider.OPENAI_TRANSCRIBE)
 
     try:
         with asr.transcribe_stream() as stream:
             next(stream)
-            assert mic.start_calls == 1
-            assert mic.is_recording.is_set()
             assert provider.start_called is True
 
-        assert mic.stop_calls == 1
-        assert not mic.is_recording.is_set()
         assert provider.stop_called is True
     finally:
-        App.unregister(asr)
+        asr.stop()
+        mic.stop()
 
 
 def test_transcribe_stream_aggregates_partial_text_in_append_mode(make_provider):
@@ -112,10 +110,8 @@ def test_transcribe_stream_aggregates_partial_text_in_append_mode(make_provider)
         ASRProviderEvent(type="text", data=None),
     ]
     audio_chunks = [np.array([1, 2, 3], dtype=np.int16), None, np.array([4, 5, 6], dtype=np.int16)]
-    mic = MockMicrophone(
-        chunks=audio_chunks,
-        delay_between_chunks=0.002,
-    )
+    mic = MockMicrophone(audio_chunks)
+    mic.start()
     provider = make_provider(events=events, partial_mode="append", audio_chunks_len=sum(ch is not None for ch in audio_chunks))
     asr = CloudASR(api_key="dummy", mic=mic, provider=CloudProvider.OPENAI_TRANSCRIBE)
 
@@ -127,7 +123,8 @@ def test_transcribe_stream_aggregates_partial_text_in_append_mode(make_provider)
                 if ev.type == "text":
                     break
     finally:
-        App.unregister(asr)
+        asr.stop()
+        mic.stop()
 
     assert provider.start_called is True
     assert [msg.type for msg in results] == ["partial_text", "partial_text", "text"]
@@ -149,10 +146,8 @@ def test_transcribe_stream_resets_partial_buffer_in_replace_mode(make_provider):
         ASRProviderEvent(type="text", data=None),
     ]
     audio_chunks = [np.ones(4, dtype=np.int16) for _ in range(5)]
-    mic = MockMicrophone(
-        chunks=audio_chunks,
-        delay_between_chunks=0.002,
-    )
+    mic = MockMicrophone(audio_chunks)
+    mic.start()
     provider = make_provider(events=events, partial_mode="replace", audio_chunks_len=sum(ch is not None for ch in audio_chunks))
     asr = CloudASR(api_key="dummy", mic=mic, provider=CloudProvider.GOOGLE_SPEECH)
 
@@ -167,13 +162,129 @@ def test_transcribe_stream_resets_partial_buffer_in_replace_mode(make_provider):
                 if text_count == 2:
                     break
     finally:
-        App.unregister(asr)
+        asr.stop()
+        mic.stop()
 
     assert provider.start_called is True
     assert [msg.type for msg in results] == ["partial_text", "partial_text", "text", "partial_text", "text"]
     assert results[2].data == "due"
     assert results[4].data == "tre"
     assert provider.stop_called is True
+
+
+def test_transcribe_sentence_returns_first_text(make_provider):
+    events = [
+        ASRProviderEvent(type="partial_text", data="Hel"),
+        ASRProviderEvent(type="text", data="Hello"),
+        ASRProviderEvent(type="text", data="Should not be returned"),
+    ]
+    audio_chunks = [np.array([1, 2, 3], dtype=np.int16), np.array([4, 5, 6], dtype=np.int16)]
+    mic = MockMicrophone(audio_chunks)
+    mic.start()
+    provider = make_provider(events=events, audio_chunks_len=2)
+    asr = CloudASR(api_key="dummy", mic=mic, provider=CloudProvider.OPENAI_TRANSCRIBE)
+
+    try:
+        result = asr.transcribe_sentence()
+    finally:
+        asr.stop()
+        mic.stop()
+
+    assert result == "Hello"
+    assert provider.start_called is True
+    assert provider.stop_called is True
+
+
+def test_transcribe_sentence_stream_stops_at_first_text(make_provider):
+    events = [
+        ASRProviderEvent(type="partial_text", data="Hel"),
+        ASRProviderEvent(type="partial_text", data="lo"),
+        ASRProviderEvent(type="text", data=None),
+        ASRProviderEvent(type="text", data="Should not appear"),
+    ]
+    audio_chunks = [np.array([1, 2, 3], dtype=np.int16) for _ in range(4)]
+    mic = MockMicrophone(audio_chunks)
+    mic.start()
+    make_provider(events=events, partial_mode="append", audio_chunks_len=4)
+    asr = CloudASR(api_key="dummy", mic=mic, provider=CloudProvider.OPENAI_TRANSCRIBE)
+
+    try:
+        with asr.transcribe_sentence_stream() as stream:
+            seen = list(stream)
+    finally:
+        asr.stop()
+        mic.stop()
+
+    assert [e.type for e in seen] == ["partial_text", "partial_text", "text"]
+    assert seen[-1].data == "Hello"
+
+
+def test_transcribe_until_cancelled_yields_sentences_and_stops_on_cancel(make_provider):
+    events = [
+        ASRProviderEvent(type="text", data="first"),
+        ASRProviderEvent(type="text", data="second"),
+    ]
+    audio_chunks = [np.array([1, 2, 3], dtype=np.int16) for _ in range(5)]
+    mic = MockMicrophone(audio_chunks)
+    mic.start()
+    make_provider(events=events, audio_chunks_len=2)
+    asr = CloudASR(
+        api_key="dummy",
+        mic=mic,
+        provider=CloudProvider.OPENAI_TRANSCRIBE,
+        silence_timeout=60.0,
+    )
+
+    try:
+        with asr.transcribe_until_cancelled() as stream:
+            first = next(stream)
+            second = next(stream)
+            asr.cancel()
+            remaining = list(stream)
+    finally:
+        asr.stop()
+        mic.stop()
+
+    assert first == "first"
+    assert second == "second"
+    assert remaining == []
+
+
+def test_is_transcribing_reflects_session_state(make_provider):
+    events = [ASRProviderEvent(type="text", data="hello")]
+    audio_chunks = [np.array([1, 2], dtype=np.int16)]
+    mic = MockMicrophone(audio_chunks)
+    mic.start()
+    make_provider(events=events, audio_chunks_len=1)
+    asr = CloudASR(api_key="dummy", mic=mic, provider=CloudProvider.OPENAI_TRANSCRIBE)
+
+    try:
+        assert asr.is_transcribing() is False
+        with asr.transcribe_stream() as stream:
+            next(stream, None)
+            assert asr.is_transcribing() is True
+        assert asr.is_transcribing() is False
+    finally:
+        asr.stop()
+        mic.stop()
+
+
+def test_concurrent_session_raises(make_provider):
+    events = [ASRProviderEvent(type="text", data="ok")]
+    audio_chunks = [np.array([1, 2], dtype=np.int16)]
+    mic = MockMicrophone(audio_chunks)
+    mic.start()
+    make_provider(events=events, audio_chunks_len=1)
+    asr = CloudASR(api_key="dummy", mic=mic, provider=CloudProvider.OPENAI_TRANSCRIBE)
+
+    try:
+        with asr.transcribe_stream() as stream:
+            next(stream, None)
+            with pytest.raises(TranscriptionStreamError, match="already active"):
+                asr.transcribe(duration=1.0)
+    finally:
+        asr.stop()
+        mic.stop()
 
 
 def test_transcribe_stream_surfaces_provider_errors(monkeypatch: pytest.MonkeyPatch):
@@ -186,8 +297,8 @@ def test_transcribe_stream_surfaces_provider_errors(monkeypatch: pytest.MonkeyPa
 
     mic = MockMicrophone(
         chunks=[np.array([7, 8], dtype=np.int16), np.array([9, 10], dtype=np.int16)],
-        delay_between_chunks=0.001,
     )
+    mic.start()
     asr = CloudASR(api_key="dummy", mic=mic, provider=CloudProvider.OPENAI_TRANSCRIBE)
 
     try:
@@ -197,7 +308,8 @@ def test_transcribe_stream_surfaces_provider_errors(monkeypatch: pytest.MonkeyPa
         assert isinstance(exc, ASRProviderError)
         assert str(exc) == "boom"
     finally:
-        App.unregister(asr)
+        asr.stop()
+        mic.stop()
 
     assert provider.start_called is True
     assert provider.stop_called is True

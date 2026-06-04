@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (C) ARDUINO SRL (http://www.arduino.cc)
+# SPDX-FileCopyrightText: Copyright (C) Arduino s.r.l. and/or its affiliated companies
 #
 # SPDX-License-Identifier: MPL-2.0
 
@@ -464,7 +464,7 @@ def test_record_avi():
         tmp.flush()
 
         read_count = 0
-        cap = cv2.VideoCapture(tmp.name)
+        cap = cv2.VideoCapture(tmp.name, cv2.CAP_FFMPEG)
         while True:
             ret, frame = cap.read()
             if not ret:
@@ -499,7 +499,7 @@ def test_record_avi_uint8_conversion():
         tmp.flush()
 
         read_count = 0
-        cap = cv2.VideoCapture(tmp.name)
+        cap = cv2.VideoCapture(tmp.name, cv2.CAP_FFMPEG)
         while True:
             ret, frame = cap.read()
             if not ret:

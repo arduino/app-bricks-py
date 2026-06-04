@@ -5,3 +5,4 @@ description: |
   It's designed to leverage hardware acceleration features of supported platforms, ensuring efficient performance for AI workloads.
 category: ai
 supported_boards: ["ventunoq"]
+supported_model_types: ["whisper*", "melo*", "piper*"]

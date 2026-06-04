@@ -8,7 +8,8 @@ description: |
 category: video
 requires_model: true
 requires_container: true
-mount_devices_into_container: true
+ai_frameworks_compatibility:
+  - edgeimpulse
 required_devices:
   - camera
 model: mobilenet-image-classification

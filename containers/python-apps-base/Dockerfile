@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (C) ARDUINO SRL (http://www.arduino.cc)
+# SPDX-FileCopyrightText: Copyright (C) Arduino s.r.l. and/or its affiliated companies
 #
 # SPDX-License-Identifier: MPL-2.0
 
@@ -9,13 +9,10 @@ FROM ${REGISTRY}app-bricks/python-base:${BASE_IMAGE_VERSION}
 # Copy the Streamlit configuration file with customized settings in home app shared directory
 COPY ./streamlit/config.toml /home/app/.streamlit/config.toml
 
-COPY ./requirements-base.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt && rm /app/requirements.txt
-
 COPY ./*.sh /
 COPY ./arduino*.whl /app/
-RUN bash -c 'WHL_FILES=(/app/*.whl) && pip install --no-cache-dir "${WHL_FILES[@]}"[all] && pip cache purge'; \
-    rm /app/*.whl; \
+RUN bash -c 'WHL_FILES=(/app/*.whl) && uv pip install --system --no-cache-dir "${WHL_FILES[@]}"[all]'; \
+    rm /app/*.whl; \    
     # fix permissions for /home/app
     chown arduino:arduino -R /home/app; \
     chmod 777 -R /home/app; \

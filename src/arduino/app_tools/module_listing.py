@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (C) ARDUINO SRL (http://www.arduino.cc)
+# SPDX-FileCopyrightText: Copyright (C) Arduino s.r.l. and/or its affiliated companies
 #
 # SPDX-License-Identifier: MPL-2.0
 
@@ -7,14 +7,16 @@ import pathlib
 import yaml
 import json
 import os
+import re
 import sys
 import argparse
+import glob
 import shutil
 import time
 from urllib.parse import urlparse
 from typing import List, Dict, Optional
 from arduino.app_internal.core.module import (
-    _update_compose_release_version,
+    _update_compose_release_version_by_platform,
     EnvVariable,
 )
 from arduino.app_utils import Logger
@@ -25,6 +27,7 @@ editable_module_config = "direct_url.json"
 
 config_file_name: str = "brick_config.yaml"
 compose_config_file_name: str = "brick_compose.yaml"
+compose_config_file_name_prefix: str = "brick_compose"
 service_config_file_name: str = "service_config.yaml"
 service_compose_config_file_name: str = "service_compose.yaml"
 main_readme_file_name: str = "README.md"
@@ -47,6 +50,8 @@ class ArduinoBrick:
         env_variables: Dict[str, str] = None,
         supported_boards: List[str] = None,
         requires_services: List[str] = None,
+        ai_frameworks_compatibility: List[str] = None,
+        model_by_platform: List[Dict[str, str]] = None,
     ):
         self.id = id
         self.name = name
@@ -65,6 +70,8 @@ class ArduinoBrick:
         self.env_variables: Optional[Dict[str, str]] = env_variables
         self.supported_boards: Optional[List[str]] = supported_boards
         self.requires_services: Optional[List[str]] = requires_services
+        self.ai_frameworks_compatibility: Optional[List[str]] = ai_frameworks_compatibility
+        self.model_by_platform: Optional[List[Dict[str, str]]] = model_by_platform
 
     def to_dict(self) -> dict:
         out_dict: dict = {
@@ -87,7 +94,10 @@ class ArduinoBrick:
             out_dict["supported_boards"] = self.supported_boards
         if self.requires_services:
             out_dict["requires_services"] = self.requires_services
-
+        if self.model_by_platform:
+            out_dict["model_by_platform"] = self.model_by_platform
+        if self.ai_frameworks_compatibility:
+            out_dict["ai_frameworks_compatibility"] = self.ai_frameworks_compatibility
         if self.env_variables and len(self.env_variables) > 0:
             additional_vars: List[EnvVariable] = []
             for var in self.env_variables:
@@ -224,6 +234,8 @@ def find_config_yaml(root_path: str) -> tuple[List[ArduinoBrick], List[ArduinoSe
                         env_variables=config.get("variables", None),
                         supported_boards=config.get("supported_boards", None),
                         requires_services=config.get("requires_services", None),
+                        ai_frameworks_compatibility=config.get("ai_frameworks_compatibility", None),
+                        model_by_platform=config.get("model_by_platform", None),
                     )
                     discovered_modules.append(mod)
                 except yaml.YAMLError:
@@ -341,16 +353,30 @@ def save_compose_file(module: ArduinoBrick, output_dir: str, appslab_version: st
     module_name = "/".join(module.id.split(":"))
     output_folder: pathlib.Path = pathlib.Path(output_dir) / module_name
     output_folder.mkdir(parents=True, exist_ok=True)
-    output_file_name: pathlib.Path = output_folder / compose_config_file_name
 
-    with open(module.compose_file, "rb") as f_source, open(output_file_name, "wb") as f_dest:
-        while True:
-            chunk = f_source.read(2048)
-            if not chunk:
-                break
-            f_dest.write(chunk)
+    # Search for all brick_compose*.yaml files in the module path and find the one with the latest modification time,
+    # in case there are multiple ones (e.g. brick_compose.yaml and brick_compose.ventunoq.yaml)
+    compose_files = list(pathlib.Path(module.path).glob(f"{compose_config_file_name_prefix}*.yaml"))
+    if not compose_files:
+        logger.warning(f"No compose file found for module {module.id} in path {module.path}")
+        return
 
-    _update_compose_release_version(compose_file_path=output_file_name, release_version=appslab_version)
+    for compose_file in compose_files:
+        logger.info(f"Found compose file {compose_file} for module {module.id}")
+
+        output_file_name: pathlib.Path = output_folder / compose_file.name
+
+        logger.info(f"Copying compose file from {compose_file} to {output_file_name}")
+
+        with open(compose_file, "rb") as f_source, open(output_file_name, "wb") as f_dest:
+            while True:
+                chunk = f_source.read(2048)
+                if not chunk:
+                    break
+                f_dest.write(chunk)
+
+        if appslab_version and appslab_version != "":
+            _update_compose_release_version_by_platform(compose_file_path=output_file_name, release_version=appslab_version)
 
 
 def save_readme_file(module: ArduinoBrick, output_dir: str):
@@ -400,13 +426,14 @@ def save_examples_files(module: ArduinoBrick, output_dir: str):
         shutil.copytree(input_folder, output_folder, dirs_exist_ok=True)
 
 
-def library_provisioning(out_path: str = None, modules: Dict[str, List[ArduinoBrick]] = None, services_folder: str = None, buildtime: bool = False):
-    print(f"Provisioning compose files for app execution and bricks documentation. File: {out_path}")
-    try:
-        from arduino._version import __version__ as arduino_bricks_version
-    except ImportError:
-        logger.error("Error: AppLab version not found. 'appslab._version' module is not available.")
-        sys.exit(1)
+def library_provisioning(
+    out_path: str = None,
+    modules: Dict[str, List[ArduinoBrick]] = None,
+    services_folder: str = None,
+    buildtime: bool = False,
+    arduino_bricks_version: str = None,
+):
+    print(f"Provisioning compose files. File: {out_path} | Buildtime: {buildtime} | Version: {arduino_bricks_version}")
 
     compose_output_dir = f"{out_path}/compose"
     services_output_dir = f"{out_path}/services/arduino"
@@ -432,6 +459,20 @@ def library_provisioning(out_path: str = None, modules: Dict[str, List[ArduinoBr
     if buildtime:
         print(f"Saving API docs files... buildtime: {buildtime}")
         save_api_docs_files(api_docs_output_dir)
+
+        if arduino_bricks_version and arduino_bricks_version != "":
+            # Update models-handlers.yaml container versions with arduino_bricks_version
+            models_handlers_file = os.path.join(out_path, "models-handlers.yaml")
+            if os.path.isfile(models_handlers_file):
+                with open(models_handlers_file, "r") as f:
+                    content = f.read()
+                updated_content = re.sub(
+                    r"models-downloader:[^ \"'\n]+",
+                    f"models-downloader:{arduino_bricks_version}",
+                    content,
+                )
+                with open(models_handlers_file, "w") as f:
+                    f.write(updated_content)
 
 
 def release():
@@ -473,7 +514,7 @@ def release():
             # Update the compose file with the release version
             if module.require_container:
                 print(f"Processing compose file {module.compose_file} for arduino bricks version {arduino_bricks_version}")
-                _update_compose_release_version(
+                _update_compose_release_version_by_platform(
                     compose_file_path=module.compose_file,
                     release_version=arduino_bricks_version,
                     append_suffix=False,
@@ -491,7 +532,7 @@ def release():
             for sub_entry in os.scandir(entry.path):
                 if sub_entry.is_file() and sub_entry.name == service_compose_config_file_name:
                     print(f"Found service compose file {sub_entry.path} | {sub_entry.name}. Updating...")
-                    _update_compose_release_version(
+                    _update_compose_release_version_by_platform(
                         compose_file_path=sub_entry.path,
                         release_version=arduino_bricks_version,
                         append_suffix=False,
@@ -538,7 +579,7 @@ def update_ai_container_references():
             modules.append(module.to_dict())
             # Update the compose file with the release version
             if module.require_container:
-                _update_compose_release_version(
+                _update_compose_release_version_by_platform(
                     compose_file_path=module.compose_file,
                     release_version=arduino_bricks_version,
                     append_suffix=False,
@@ -566,25 +607,27 @@ def main():
 
     parser.add_argument("-b", "--buildtime", action="store_true", help="Buildtime execution.")
 
+    parser.add_argument("-v", "--version", type=str, default=None, help="Release version.")
+
     args = parser.parse_args()
+
+    arduino_bricks_version = ""
+    if args.version is not None and args.version != "":
+        arduino_bricks_version = args.version
 
     discovered_modules, services_folder = list_installed_packages_pkg_resources()
 
     modules = []
-    imported_modules = []
     for path, module_list in discovered_modules.items():
         for module in module_list:
-            if module.id in imported_modules:
-                continue
             modules.append(module.to_dict())
-            imported_modules.append(module.id)
 
     if args.provision_compose:
         composeout = args.output
         if args.compose_output is not None and args.compose_output != "":
             composeout = args.compose_output
         # Provision compose files for app execution and bricks documentation
-        library_provisioning(composeout, discovered_modules, services_folder, args.buildtime)
+        library_provisioning(composeout, discovered_modules, services_folder, args.buildtime, arduino_bricks_version)
         if args.buildtime or len(args.output) > 0:
             print("Compose provisioning completed.")
             sys.exit(0)
@@ -607,27 +650,23 @@ def main():
 
         logger_class = type(logger)
         logger_file_path = inspect.getfile(logger_class)
-        model_path = os.path.join(
+        static_path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(logger_file_path))),
             "app_bricks",
             "static",
-            "models-list.yaml",
         )
-        exists = os.path.exists(model_path)
-        if exists:
-            shutil.copy(model_path, args.model_output)
+        model_files = glob.glob(os.path.join(static_path, "models-*.yaml"))
+        output_dir = os.path.dirname(args.model_output)
+        if model_files:
+            for model_path in model_files:
+                shutil.copy(model_path, os.path.join(output_dir, os.path.basename(model_path)))
             # Copy api-docs as well
-            api_docs_source = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.abspath(logger_file_path))),
-                "app_bricks",
-                "static",
-                "api-docs",
-            )
-            api_docs_destination = os.path.join(os.path.dirname(args.model_output), "api-docs")
+            api_docs_source = os.path.join(static_path, "api-docs")
+            api_docs_destination = os.path.join(output_dir, "api-docs")
             if os.path.exists(api_docs_source):
                 shutil.copytree(api_docs_source, api_docs_destination, dirs_exist_ok=True)
         else:
-            print(f"Model path: {model_path} does not exist. Skipping model copy.")
+            print(f"No models-*.yaml files found in {static_path}. Skipping model copy.")
 
 
 if __name__ == "__main__":

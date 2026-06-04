@@ -4,3 +4,4 @@ description: |
   LLaMaCPP LLM service provides an interface to run and manage large language models (LLMs) for Arduino applications.
 category: ai
 supported_boards: ["unoq", "ventunoq"]
+supported_model_types: ["llamacpp:*"]

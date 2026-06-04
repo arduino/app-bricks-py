@@ -1,0 +1,6 @@
+qai-hub-models-cli
+requests
+huggingface_hub
+tqdm
+stream-unzip
+pyyaml

@@ -1,8 +1,9 @@
-# SPDX-FileCopyrightText: Copyright (C) ARDUINO SRL (http://www.arduino.cc)
+# SPDX-FileCopyrightText: Copyright (C) Arduino s.r.l. and/or its affiliated companies
 #
 # SPDX-License-Identifier: MPL-2.0
 
 import time
+import cv2
 import pytest
 import numpy as np
 from unittest.mock import MagicMock, patch
@@ -123,7 +124,7 @@ def test_ip_camera_start_rtsp(mock_videocapture, mock_requests):
     camera.start()
 
     assert camera.is_started()
-    mock_vc.assert_called_once_with("rtsp://192.168.1.100/stream")
+    mock_vc.assert_called_once_with("rtsp://192.168.1.100/stream", cv2.CAP_FFMPEG)
     # RTSP should not test HTTP connectivity
     mock_requests.head.assert_not_called()
 
