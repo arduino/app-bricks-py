@@ -7,10 +7,8 @@
 echo "Generating models.ini..."
 python3 /generate_models_ini.py /models
 
-echo "Starting Llama server..."
+echo "Starting LLama server..."
 export LD_LIBRARY_PATH=/opt/pkg-cpu/lib
 exec /opt/pkg-cpu/bin/llama-server \
   --device none \
-  -ngl 0 \
-  --log-disable \
   --models-preset /models/models.ini

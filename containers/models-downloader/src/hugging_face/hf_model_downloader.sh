@@ -10,6 +10,17 @@ if [ -n "${model_key}" ]; then
         --output-dir /models
     exit_code=$?
     model_id="${model_key}"
+elif [ -n "${model_url}" ]; then
+    args=(
+        --model-url "${model_url}"
+        --output-dir /models
+    )
+    if [ -n "${model_mmproj_url}" ]; then
+        args+=(--model-mmproj-url "${model_mmproj_url}")
+    fi
+    python /app/hugging_face/hf_downloader.py "${args[@]}"
+    exit_code=$?
+    model_id="${model_url}"
 else
     args=(
         --model-repo-id "${model_repo_id}"
