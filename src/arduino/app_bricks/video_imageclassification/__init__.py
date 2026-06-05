@@ -17,7 +17,7 @@ from websockets.exceptions import ConnectionClosedOK, ConnectionClosedError
 
 from arduino.app_peripherals.camera import Camera, BaseCamera
 from arduino.app_internal.core.module import get_brick_config, get_brick_configured_model, load_model_list, load_brick_compose_file, resolve_address
-from arduino.app_internal.core.ei import compute_softmax_over_ei_classification
+from arduino.app_internal.core.ei import normalize_ei_classification
 from arduino.app_internal.core import EdgeImpulseRunnerFacade
 from arduino.app_utils.image.adjustments import compress_to_jpeg
 from arduino.app_utils import brick, Logger
@@ -85,8 +85,8 @@ class VideoImageClassification:
             if app_configured_model is not None and app_configured_model in models_list:
                 model_entry = models_list[app_configured_model]
                 logger.info(f"Model entry: {model_entry}")
-                if model_entry.metadata and "requires_softmax" in model_entry.metadata and model_entry.metadata["requires_softmax"]:
-                    self.apply_softmax = True
+                if model_entry.metadata and "requires_normalization" in model_entry.metadata and model_entry.metadata["requires_normalization"]:
+                    self.apply_normalization = True
 
         self._uri = f"ws://{self._host}:4912"
         logger.info(f"[{self.__class__.__name__}] Host: {self._host} - URL: {self._uri}")
@@ -265,8 +265,8 @@ class VideoImageClassification:
             det_classifications = {}
             classifications = result.get("classification", [])
             if classifications:
-                if self.apply_softmax:
-                    classifications = compute_softmax_over_ei_classification(classifications)
+                if self.apply_normalization:
+                    classifications = normalize_ei_classification(classifications)
                 for classification in classifications:
                     confidence = float(classifications[classification])
                     if confidence < self._confidence:
