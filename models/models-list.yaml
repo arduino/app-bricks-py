@@ -1752,3 +1752,49 @@ models:
       - id: "arduino:video_image_classification"
         model_configuration:
           "EI_V_IMAGE_CLASSIFICATION_MODEL": "${models_repository}/efficientnet-b4-qnn.eim"
+ - "llamacpp:gemma-4-E2B-it-Q4_0":
+    name : "Gemma 4 E2B"
+    description: >-
+      Gemma 4 E2B is an efficient, open multimodal AI model developed by Google DeepMind.
+      Activating an effective two billion parameters, it is engineered specifically for mobile and edge devices.
+      It's optimized for offline agentic workflows.
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:llm"
+    deployment:
+      handler: "hf-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              model_url: "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/blob/main/gemma-4-E2B-it-Q4_0.gguf"
+              models_repository: "models/llamacpp"
+              model_directory: "unsloth/gemma-4-E2B-it-GGUF"
+    metadata:
+      model_size_mb: 3112
+      source: "huggingface"
+      source-model-id: "gemma-4-E2B-it-GGUF"
+      source-model-url: "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF"
+ - "llamacpp:gemma-4-E4B-it-Q4_0":
+    name : "Gemma 4 E4B"
+    description: >-
+      Gemma 4 E4B is an efficient, open multimodal AI model developed by Google DeepMind.
+      Activating an effective four billion parameters, it is engineered specifically for mobile and edge devices.
+      It's optimized for offline agentic workflows.
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:llm"
+        model_configuration:
+          GGML_HEXAGON_NDEV: 2
+    deployment:
+      handler: "hf-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              model_url: "https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF/blob/main/gemma-4-E4B-it-Q4_0.gguf"
+              models_repository: "models/llamacpp"
+              model_directory: "unsloth/gemma-4-E4B-it-GGUF"
+    metadata:
+      model_size_mb: 3112
+      source: "huggingface"
+      source-model-id: "gemma-4-E4B-it-GGUF"
+      source-model-url: "https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF"      

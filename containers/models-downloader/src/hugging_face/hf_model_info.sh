@@ -9,6 +9,16 @@ if [ -n "${model_key}" ]; then
         --model-key "${model_key}" \
         --output-dir /models \
         --info
+elif [ -n "${model_url}" ]; then
+    args=(
+        --model-url "${model_url}"
+        --output-dir /models
+        --info
+    )
+    if [ -n "${model_mmproj_url}" ]; then
+        args+=(--model-mmproj-url "${model_mmproj_url}")
+    fi
+    python /app/hugging_face/hf_downloader.py "${args[@]}"
 else
     args=(
         --model-repo-id "${model_repo_id}"
