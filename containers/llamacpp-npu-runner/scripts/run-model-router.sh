@@ -13,6 +13,7 @@ export ADSP_LIBRARY_PATH=/opt/pkg-snapdragon/lib
 
 # Build --device argument from GGML_HEXAGON_NDEV (default: 1)
 NDEV="${GGML_HEXAGON_NDEV:-1}"
+echo "Configuring ${NDEV} session(s)..."
 DEVICE_LIST=""
 for ((i=0; i<NDEV; i++)); do
   if [ -z "$DEVICE_LIST" ]; then
