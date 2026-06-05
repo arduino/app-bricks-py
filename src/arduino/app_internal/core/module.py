@@ -107,11 +107,7 @@ def get_bricks_static_assets_directory() -> Optional[str]:
         Optional[str]: The path to the static assets directory if found, otherwise None.
     """
     try:
-        module = ModuleVariable.__module__
-        module_obj = __import__(module, fromlist=["__file__"])
-        file_path = os.path.abspath(module_obj.__file__)
-        directory_path = os.path.dirname(file_path)
-
+        directory_path = os.path.dirname(os.path.abspath(__file__))
         # Go 2 directories above, then into app_bricks/static
         base_path = os.path.dirname(os.path.dirname(directory_path))
         requested_path = os.path.join(base_path, "app_bricks", "static")
@@ -196,7 +192,11 @@ def load_model_list() -> Optional[Dict[str, ModelEntry]]:
         if os.path.exists(model_list_path):
             with open(model_list_path, encoding="utf-8") as f:
                 model_list_content = yaml.safe_load(f)
-            if not model_list_content or not isinstance(model_list_content, list):
+            if not model_list_content:
+                return None
+            if isinstance(model_list_content, dict) and "models" in model_list_content:
+                model_list_content = model_list_content["models"]
+            if not isinstance(model_list_content, list):
                 return None
             models = {}
             for entry in model_list_content:
