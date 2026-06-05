@@ -16,7 +16,7 @@ from websockets.sync.connection import Connection
 from websockets.exceptions import ConnectionClosedOK, ConnectionClosedError
 
 from arduino.app_peripherals.camera import Camera, BaseCamera
-from arduino.app_internal.core import load_brick_compose_file, resolve_address
+from arduino.app_internal.core import load_brick_compose_file, resolve_address, compute_softmax_over_ei_classification
 from arduino.app_internal.core import EdgeImpulseRunnerFacade
 from arduino.app_utils.image.adjustments import compress_to_jpeg
 from arduino.app_utils import brick, Logger
@@ -72,6 +72,8 @@ class VideoImageClassification:
         self._host = resolve_address(self._host)
         if not self._host:
             raise RuntimeError("Host address could not be resolved. Please check your configuration.")
+
+        self.apply_softmax = False
 
         self._uri = f"ws://{self._host}:4912"
         logger.info(f"[{self.__class__.__name__}] Host: {self._host} - URL: {self._uri}")
@@ -250,8 +252,10 @@ class VideoImageClassification:
             det_classifications = {}
             classifications = result.get("classification", [])
             if classifications:
+                if self.apply_softmax:
+                    classifications = compute_softmax_over_ei_classification(classifications)
                 for classification in classifications:
-                    confidence = classifications[classification]
+                    confidence = float(classifications[classification])
                     if confidence < self._confidence:
                         continue
                     det_classifications[classification] = confidence

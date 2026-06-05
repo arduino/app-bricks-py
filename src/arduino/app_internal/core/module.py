@@ -98,6 +98,27 @@ def get_brick_linked_resource_file(cls, resource_file_name) -> Optional[str]:
     except ModuleNotFoundError:
         return None
 
+def get_bricks_static_assets_directory(cls) -> Optional[str]:
+    """Gets the full path to the static assets directory in the directory containing a class."""
+    try:
+        module = cls.__module__
+        if module == "__main__":
+            directory_path = os.path.dirname(os.path.abspath(__file__))
+        else:
+            module_obj = __import__(module, fromlist=["__file__"])
+            file_path = os.path.abspath(module_obj.__file__)
+            directory_path = os.path.dirname(file_path)
+
+        requested_path = os.path.join(directory_path, resource_file_name)
+        if os.path.exists(requested_path):
+            return requested_path
+        else:
+            return None
+    except AttributeError:
+        # Handle built-in classes or other cases where __file__ is not available
+        return None
+    except ModuleNotFoundError:
+        return None
 
 def get_brick_configured_model(brick_id: str) -> Optional[str]:
     """Helper method to extract the model name from the app configuration for this brick.

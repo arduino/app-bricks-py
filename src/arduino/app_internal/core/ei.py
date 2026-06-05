@@ -259,3 +259,28 @@ class EdgeImpulseRunnerFacade:
         if not addr:
             raise RuntimeError("Host address resolution failed for Edge Impulse runner.")
         return f"http://{addr}:1337"
+
+
+def compute_softmax_over_ei_classification(det_classifications: dict) -> dict:
+    """Compute softmax over Edge Impulse classification results if required by the model.
+
+    det_classifications: A dictionary containing classification results from Edge Impulse.
+        format: det_classifications["classification"] = confidence
+
+    Returns:
+        dict: A dictionary with the same structure as det_classifications, but with softmax applied to the confidence values.
+    """
+
+    # Extract confidence values and compute softmax
+    classes = list(det_classifications.keys())
+    confidences = [float(det_classifications[cls]) for cls in classes]
+    max_confidence = max(confidences)
+    exp_confidences = [pow(2.71828, conf - max_confidence) for conf in confidences]  # Subtract max for numerical stability
+    sum_exp_confidences = sum(exp_confidences)
+
+    # Update classification with softmax probabilities
+    for i, cls in enumerate(classes):
+        softmax_confidence = exp_confidences[i] / sum_exp_confidences if sum_exp_confidences > 0 else 0.0
+        det_classifications[cls] = f"{softmax_confidence:.2f}"  # Format to 2 decimal places
+
+    return det_classifications
