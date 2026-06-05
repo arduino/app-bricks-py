@@ -51,7 +51,7 @@ class ArduinoBrick:
         supported_boards: List[str] = None,
         requires_services: List[str] = None,
         ai_frameworks_compatibility: List[str] = None,
-        model_by_platform: List[Dict[str, str]] = None,
+        model_by_boards: List[Dict[str, str]] = None,
     ):
         self.id = id
         self.name = name
@@ -71,7 +71,7 @@ class ArduinoBrick:
         self.supported_boards: Optional[List[str]] = supported_boards
         self.requires_services: Optional[List[str]] = requires_services
         self.ai_frameworks_compatibility: Optional[List[str]] = ai_frameworks_compatibility
-        self.model_by_platform: Optional[List[Dict[str, str]]] = model_by_platform
+        self.model_by_boards: Optional[List[Dict[str, str]]] = model_by_boards
 
     def to_dict(self) -> dict:
         out_dict: dict = {
@@ -94,8 +94,8 @@ class ArduinoBrick:
             out_dict["supported_boards"] = self.supported_boards
         if self.requires_services:
             out_dict["requires_services"] = self.requires_services
-        if self.model_by_platform:
-            out_dict["model_by_platform"] = self.model_by_platform
+        if self.model_by_boards:
+            out_dict["model_by_boards"] = self.model_by_boards
         if self.ai_frameworks_compatibility:
             out_dict["ai_frameworks_compatibility"] = self.ai_frameworks_compatibility
         if self.env_variables and len(self.env_variables) > 0:
@@ -235,7 +235,7 @@ def find_config_yaml(root_path: str) -> tuple[List[ArduinoBrick], List[ArduinoSe
                         supported_boards=config.get("supported_boards", None),
                         requires_services=config.get("requires_services", None),
                         ai_frameworks_compatibility=config.get("ai_frameworks_compatibility", None),
-                        model_by_platform=config.get("model_by_platform", None),
+                        model_by_boards=config.get("model_by_boards", None),
                     )
                     discovered_modules.append(mod)
                 except yaml.YAMLError:
