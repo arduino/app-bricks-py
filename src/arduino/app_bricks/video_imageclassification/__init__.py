@@ -16,7 +16,8 @@ from websockets.sync.connection import Connection
 from websockets.exceptions import ConnectionClosedOK, ConnectionClosedError
 
 from arduino.app_peripherals.camera import Camera, BaseCamera
-from arduino.app_internal.core import load_brick_compose_file, resolve_address, compute_softmax_over_ei_classification
+from arduino.app_internal.core.module import get_brick_config, get_brick_configured_model, load_model_list, load_brick_compose_file, resolve_address
+from arduino.app_internal.core.ei import compute_softmax_over_ei_classification
 from arduino.app_internal.core import EdgeImpulseRunnerFacade
 from arduino.app_utils.image.adjustments import compress_to_jpeg
 from arduino.app_utils import brick, Logger
@@ -73,7 +74,19 @@ class VideoImageClassification:
         if not self._host:
             raise RuntimeError("Host address could not be resolved. Please check your configuration.")
 
-        self.apply_softmax = False
+        brick_config = get_brick_config(self.__class__)
+        app_configured_model = get_brick_configured_model(brick_config.get("id") if brick_config else None, brick_config=brick_config)
+
+        logger.info(f"Configured model: {app_configured_model}")
+
+        models_list = load_model_list()
+        logger.info(f"Available models: {list(models_list.keys())}")
+        if models_list is not None:
+            if app_configured_model is not None and app_configured_model in models_list:
+                model_entry = models_list[app_configured_model]
+                logger.info(f"Model entry: {model_entry}")
+                if model_entry.metadata and "requires_softmax" in model_entry.metadata and model_entry.metadata["requires_softmax"]:
+                    self.apply_softmax = True
 
         self._uri = f"ws://{self._host}:4912"
         logger.info(f"[{self.__class__.__name__}] Host: {self._host} - URL: {self._uri}")

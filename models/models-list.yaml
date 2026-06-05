@@ -1724,7 +1724,7 @@ models:
     name : "General purpose object classification - EfficientNet-B4"
     description: "EfficientNetB4 is a machine learning model that can classify images from the Imagenet dataset. It can also be used as a backbone in building more complex models for specific use cases. This version of the model is optimized for NPU acceleration on supported devices, providing faster inference times while maintaining accuracy."
     metadata:
-      requires_softmax_layer: true
+      requires_softmax: true
       model_size_mb: 89
       source: "edgeimpulse"
       image-resolution: "380x380"

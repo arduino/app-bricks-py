@@ -281,6 +281,6 @@ def compute_softmax_over_ei_classification(det_classifications: dict) -> dict:
     # Update classification with softmax probabilities
     for i, cls in enumerate(classes):
         softmax_confidence = exp_confidences[i] / sum_exp_confidences if sum_exp_confidences > 0 else 0.0
-        det_classifications[cls] = f"{softmax_confidence:.2f}"  # Format to 2 decimal places
+        det_classifications[cls] = f"{softmax_confidence:.4f}"  # Format to 4 decimal places
 
     return det_classifications
