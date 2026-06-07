@@ -15,7 +15,7 @@ from arduino.app_utils import brick
 
 from .utils import logger
 from .models import CloudModel, CloudModelProvider
-from .memory import WindowedChatMessageHistory
+from .memory import MessagePersistence, SQLMessagePersistence, WindowedChatMessageHistory
 
 DEFAULT_MEMORY = 10
 
@@ -120,22 +120,41 @@ class CloudLLM:
 
         self._keep_streaming = threading.Event()
 
-    def with_memory(self, max_messages: int = DEFAULT_MEMORY) -> "CloudLLM":
+    def with_memory(
+        self,
+        max_messages: int = DEFAULT_MEMORY,
+        persistence: Union[bool, MessagePersistence, None] = None,
+    ) -> "CloudLLM":
         """Enables conversational memory for this instance.
 
         Configures the Brick to retain a window of previous messages, allowing the
-        AI to maintain context across multiple interactions.
+        AI to maintain context across multiple interactions. An optional persistence
+        backend stores the history so it can resume across restarts.
 
         Args:
-            max_messages (int): The maximum number of messages (user + AI) to keep
-                in history. Older messages are discarded. Set to 0 to disable memory.
-                Defaults to 10.
+            max_messages (int): The maximum number of messages.
+            persistence (bool | MessagePersistence | None): Optional persistence backend.
+                `None` or `False` keep history in memory only (default behavior).
+                `True` instantiates a default `SQLMessagePersistence()`. Pass a
+                `MessagePersistence` implementation directly (e.g.
+                `SQLMessagePersistence(thread_id="user-42")`) for full control.
 
         Returns:
             CloudLLM: The current instance, allowing for method chaining.
         """
+        if persistence is True:
+            store: Optional[MessagePersistence] = SQLMessagePersistence()
+        elif persistence in (False, None):
+            store = None
+        else:
+            store = persistence
+
         self._max_messages = max_messages
-        self._history = WindowedChatMessageHistory(k=self._max_messages, system_message=self._system_prompt)
+        self._history = WindowedChatMessageHistory(
+            k=max_messages,
+            system_message=self._system_prompt,
+            store=store,
+        )
 
         return self
 
