@@ -182,7 +182,6 @@ def find_llamacpp_models(models_base_dir):
                     "id": f"llamacpp:{model_name}",
                     "name": model_name,
                     "handler": "llamacpp",
-                    "model_type": "llamacpp",
                     "path": full_path,
                     "installed": True,
                 })
@@ -248,7 +247,6 @@ def main():
                 "id": model_info["id"],
                 "name": model_info["name"],
                 "handler": model_info["handler"],
-                "model_type": model_info["model_type"],
                 "installed": True,
             }
         else:
@@ -257,7 +255,6 @@ def main():
                 "id": model_info["id"],
                 "name": model_info["name"],
                 "handler": model_info["handler"],
-                "model_type": model_info["model_type"],
                 "installed": exists,
             }
             if exists:

@@ -4,12 +4,12 @@
 
 """Return model_size_mb from models-list.yaml for a given ai-hub-handler model.
 
-Looks up the model by constructing its YAML key as "<model_type>:<model_name>".
+Looks up the model by matching model_type and model_name in the deployment variables.
 Prints a JSON stat event with size_mb if found, or size_mb -1 if not found.
 
 Usage:
     python ai_hub_model_info.py --model-type genie --model-name qwen3_4b_instruct_2507
-    python ai_hub_model_info.py --model-type genie --model-name qwen3_4b_instruct_2507 --model-list /app/models-list.yaml
+    python ai_hub_model_info.py --model-type voice_ai --model-name whisper_small_quantized --model-list /app/models-list.yaml
 """
 
 import argparse
@@ -70,7 +70,7 @@ def main():
         )
         sys.exit(1)
 
-    size_mb = find_model_size_mb(models, model_key)
+    size_mb = find_model_size_mb(models, args.model_type, args.model_name)
 
     print(
         json.dumps({
