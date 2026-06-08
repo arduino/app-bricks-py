@@ -74,18 +74,18 @@ class VideoImageClassification:
         if not self._host:
             raise RuntimeError("Host address could not be resolved. Please check your configuration.")
 
+        self.apply_softmax = False
+
         brick_config = get_brick_config(self.__class__)
         app_configured_model = get_brick_configured_model(brick_config.get("id") if brick_config else None, brick_config=brick_config)
 
         logger.info(f"Configured model: {app_configured_model}")
-
         models_list = load_model_list()
-        logger.info(f"Available models: {list(models_list.keys())}")
         if models_list is not None:
             if app_configured_model is not None and app_configured_model in models_list:
                 model_entry = models_list[app_configured_model]
-                logger.info(f"Model entry: {model_entry}")
                 if model_entry.metadata and "requires_softmax" in model_entry.metadata and model_entry.metadata["requires_softmax"]:
+                    logger.info(f"Model '{app_configured_model}' requires softmax application. Enabling softmax in the classification results.")
                     self.apply_softmax = True
 
         self._uri = f"ws://{self._host}:4912"
