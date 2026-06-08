@@ -261,33 +261,26 @@ class EdgeImpulseRunnerFacade:
         return f"http://{addr}:1337"
 
 
-def normalize_ei_classification(det_classifications: dict) -> dict:
-    """Normalize Edge Impulse classification confidences into a probability distribution.
+def compute_softmax_over_ei_classification(det_classifications: dict) -> dict:
+    """Compute softmax over Edge Impulse classification results if required by the model.
 
-    Edge Impulse already returns confidence scores in [0, 1] per class, but their sum
-    is typically less than 1 because near-zero classes are clipped to 0. This function
-    renormalizes the non-zero entries so they sum to 1.0, preserving their relative
-    magnitudes — unlike softmax, which collapses scores toward uniform when applied
-    over the full ~1000-class label space.
-
-    Args:
-        det_classifications: A dictionary mapping class name to confidence.
-            Values are read with ``float()`` and modified in place.
+    det_classifications: A dictionary containing classification results from Edge Impulse.
+        format: det_classifications["classification"] = confidence
 
     Returns:
-        The same dictionary, with each non-zero value replaced by its share of the
-        total non-zero mass, formatted to 4 decimal places. Zero values are kept as
-        ``"0.0000"``. If no class has a positive confidence, the dictionary is
-        returned unchanged with all values formatted to 4 decimals.
+        dict: A dictionary with the same structure as det_classifications, but with softmax applied to the confidence values.
     """
 
-    total = sum(float(v) for v in det_classifications.values() if float(v) > 0)
+    # Extract confidence values and compute softmax
+    classes = list(det_classifications.keys())
+    confidences = [float(det_classifications[cls]) for cls in classes]
+    max_confidence = max(confidences)
+    exp_confidences = [pow(2.71828, conf - max_confidence) for conf in confidences]  # Subtract max for numerical stability
+    sum_exp_confidences = sum(exp_confidences)
 
-    for cls in det_classifications:
-        val = float(det_classifications[cls])
-        if val > 0 and total > 0:
-            det_classifications[cls] = f"{(val / total):.4f}"
-        else:
-            det_classifications[cls] = "0.0000"
+    # Update classification with softmax probabilities
+    for i, cls in enumerate(classes):
+        softmax_confidence = exp_confidences[i] / sum_exp_confidences if sum_exp_confidences > 0 else 0.0
+        det_classifications[cls] = f"{softmax_confidence:.4f}"  # Format to 4 decimal places
 
     return det_classifications

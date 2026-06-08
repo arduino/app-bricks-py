@@ -16,7 +16,7 @@ SAMPLE_MODELS_YAML = """
     name: "General purpose object classification - EfficientNet-B4"
     description: "EfficientNetB4 is a machine learning model."
     metadata:
-      requires_normalization_layer: true
+      requires_softmax_layer: true
       model_size_mb: 89
       source: "edgeimpulse"
       image-resolution: "380x380"
@@ -128,8 +128,8 @@ def test_load_model_list_no_deployment(mock_static_dir, tmp_path):
 
 
 @patch("arduino.app_internal.core.module.get_bricks_static_assets_directory")
-def test_load_model_list_metadata_requires_normalization(mock_static_dir, tmp_path):
-    """Test that metadata contains requires_normalization_layer for ei:efficientnet-b4."""
+def test_load_model_list_metadata_requires_softmax(mock_static_dir, tmp_path):
+    """Test that metadata contains requires_softmax_layer for ei:efficientnet-b4."""
     model_file = tmp_path / "models-list.yaml"
     model_file.write_text(SAMPLE_MODELS_YAML, encoding="utf-8")
     mock_static_dir.return_value = str(tmp_path)
@@ -137,8 +137,8 @@ def test_load_model_list_metadata_requires_normalization(mock_static_dir, tmp_pa
     result = load_model_list()
     entry = result["ei:efficientnet-b4"]
 
-    assert "requires_normalization_layer" in entry.metadata
-    assert entry.metadata["requires_normalization_layer"] is True
+    assert "requires_softmax_layer" in entry.metadata
+    assert entry.metadata["requires_softmax_layer"] is True
 
 
 @patch("arduino.app_internal.core.module.get_bricks_static_assets_directory")
