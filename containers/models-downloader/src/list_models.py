@@ -40,6 +40,7 @@ def get_model_info(model_entry):
             name = model_data.get("name", model_id)
             supported_boards = model_data.get("supported_boards", [])
             deployment = model_data.get("deployment")
+            model_size_mb = model_data.get("metadata", {}).get("model_size_mb")
 
             if not deployment:
                 continue
@@ -55,6 +56,7 @@ def get_model_info(model_entry):
                     "models_repository": "",
                     "model_type": "",
                     "model_name": "",
+                    "model_size_mb": model_size_mb,
                     "pre_loaded": True,
                     "supported_boards": supported_boards,
                 })
@@ -79,6 +81,7 @@ def get_model_info(model_entry):
                         "models_repository": models_repository,
                         "model_type": variables.get("model_type", ""),
                         "model_name": variables.get("model_name", ""),
+                        "model_size_mb": model_size_mb,
                         "pre_loaded": False,
                         "supported_boards": supported_boards,
                     })
@@ -249,6 +252,8 @@ def main():
                 "handler": model_info["handler"],
                 "installed": True,
             }
+            if model_info.get("model_size_mb") is not None:
+                entry["model_size_mb"] = model_info["model_size_mb"]
         else:
             exists, path = check_model_exists(model_info, args.models_dir)
             entry = {
@@ -257,6 +262,8 @@ def main():
                 "handler": model_info["handler"],
                 "installed": exists,
             }
+            if model_info.get("model_size_mb") is not None:
+                entry["model_size_mb"] = model_info["model_size_mb"]
             if exists:
                 entry["path"] = path
                 entry["disk_size_mb"] = get_dir_size_mb(path)
@@ -286,7 +293,7 @@ def main():
         print("-" * 152)
         for r in results:
             status = "INSTALLED" if r["installed"] else "NOT FOUND"
-            size = f"{r['disk_size_mb']:.2f}" if r.get("disk_size_mb") is not None else "-"
+            size = f"{r['disk_size_mb']:.2f}" if r.get("disk_size_mb") is not None else (f"{r['model_size_mb']}" if r.get("model_size_mb") is not None else "-")
             path = r.get("path", "")
             print(f"{status:<12} {size:<12} {r['id']:<45} {r['name']:<40} {path}")
 
