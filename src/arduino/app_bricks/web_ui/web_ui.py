@@ -79,7 +79,6 @@ class WebUI:
                 allow_credentials=not is_wildcard,
                 allow_methods=["*"],
                 allow_headers=["*"],
-                allow_private_network=True,
             )
 
         self._addr = addr
