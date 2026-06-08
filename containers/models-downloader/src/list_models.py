@@ -247,27 +247,34 @@ def main():
     for model_info in all_models:
         if model_info.get("pre_loaded"):
             exists = True
-            path = "pre-loaded"
-            disk_size_mb = None
+            entry = {
+                "id": model_info["id"],
+                "name": model_info["name"],
+                "handler": model_info["handler"],
+                "platform": model_info["platform"],
+                "model_type": model_info["model_type"],
+                "installed": True,
+            }
         else:
             exists, path = check_model_exists(model_info, args.models_dir)
-            disk_size_mb = get_dir_size_mb(path) if exists else None
+            entry = {
+                "id": model_info["id"],
+                "name": model_info["name"],
+                "handler": model_info["handler"],
+                "platform": model_info["platform"],
+                "model_type": model_info["model_type"],
+                "installed": exists,
+            }
+            if exists:
+                entry["path"] = path
+                entry["disk_size_mb"] = get_dir_size_mb(path)
 
         if args.installed_only and not exists:
             continue
         if args.not_installed_only and exists:
             continue
 
-        results.append({
-            "id": model_info["id"],
-            "name": model_info["name"],
-            "handler": model_info["handler"],
-            "platform": model_info["platform"],
-            "model_type": model_info["model_type"],
-            "path": path,
-            "installed": exists,
-            "disk_size_mb": disk_size_mb,
-        })
+        results.append(entry)
 
     # Scan for llamacpp .gguf models on the filesystem
     llamacpp_models = find_llamacpp_models(args.models_dir)
@@ -288,7 +295,8 @@ def main():
         for r in results:
             status = "INSTALLED" if r["installed"] else "NOT FOUND"
             size = f"{r['disk_size_mb']:.2f}" if r.get("disk_size_mb") is not None else "-"
-            print(f"{status:<12} {size:<12} {r['id']:<45} {r['name']:<40} {r['path']}")
+            path = r.get("path", "")
+            print(f"{status:<12} {size:<12} {r['id']:<45} {r['name']:<40} {path}")
 
 
 if __name__ == "__main__":
