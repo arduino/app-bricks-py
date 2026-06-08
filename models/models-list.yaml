@@ -1730,7 +1730,7 @@ models:
       image-resolution: "380x380"
       hw_acceleration_backend: "qnn"
       ei-project-id: 948887
-      ei-impulse-id: 4
+      ei-impulse-id: 10
       ei-model-url: "https://studio.edgeimpulse.com/public/948887/live"
       source-model-id: "efficientnet_b4"
       source-model-url: "https://aihub.qualcomm.com/compute/models/efficientnet_b4"
