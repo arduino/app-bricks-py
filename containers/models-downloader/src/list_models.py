@@ -293,7 +293,11 @@ def main():
         print("-" * 152)
         for r in results:
             status = "INSTALLED" if r["installed"] else "NOT FOUND"
-            size = f"{r['disk_size_mb']:.2f}" if r.get("disk_size_mb") is not None else (f"{r['model_size_mb']}" if r.get("model_size_mb") is not None else "-")
+            size = (
+                f"{r['disk_size_mb']:.2f}"
+                if r.get("disk_size_mb") is not None
+                else (f"{r['model_size_mb']}" if r.get("model_size_mb") is not None else "-")
+            )
             path = r.get("path", "")
             print(f"{status:<12} {size:<12} {r['id']:<45} {r['name']:<40} {path}")
 
