@@ -324,7 +324,11 @@ class _ClientServer:
         with self._conn_lock:
             if self._conn is not None:
                 try:
-                    self._conn.close()  # Unblocks a recv() pending in the read loop
+                    self._conn.shutdown(socket.SHUT_RDWR)  # Wake a recv() on the read side
+                except OSError:
+                    pass  # Already disconnected
+                try:
+                    self._conn.close()  # Release resources
                 except Exception:
                     pass
                 self._conn = None
