@@ -266,7 +266,8 @@ class VideoImageClassification:
             classifications = result.get("classification", [])
             if classifications:
                 if self.apply_softmax:
-                    classifications = compute_softmax_over_ei_classification(classifications)
+                    # In case of softmax, reduce to top_k = 5 to avoid diluting confidence scores across too many classes (e.g. ImageNet-1000)
+                    classifications = compute_softmax_over_ei_classification(classifications, top_k=5)
                 for classification in classifications:
                     confidence = float(classifications[classification])
                     if confidence < self._confidence:

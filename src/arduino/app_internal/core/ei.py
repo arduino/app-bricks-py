@@ -261,26 +261,30 @@ class EdgeImpulseRunnerFacade:
         return f"http://{addr}:1337"
 
 
-def compute_softmax_over_ei_classification(det_classifications: dict) -> dict:
+def compute_softmax_over_ei_classification(det_classifications: dict, top_k: int | None = None) -> dict:
     """Compute softmax over Edge Impulse classification results if required by the model.
 
     det_classifications: A dictionary containing classification results from Edge Impulse.
         format: det_classifications["classification"] = confidence
+    top_k: If set to a positive integer, restrict the softmax to the top-K highest logits
+        and return only those classes. Useful for large label spaces (e.g. ImageNet-1000)
+        where the long tail of low/negative logits otherwise dilutes the top probabilities.
+        If None or <= 0, softmax is computed over all classes.
 
     Returns:
-        dict: A dictionary with the same structure as det_classifications, but with softmax applied to the confidence values.
+        dict: A dictionary with softmax-normalized confidence values, formatted as 4-decimal strings.
     """
 
-    # Extract confidence values and compute softmax
     classes = list(det_classifications.keys())
     confidences = [float(det_classifications[cls]) for cls in classes]
+
+    if top_k is not None and top_k > 0 and top_k < len(classes):
+        top_indices = sorted(range(len(confidences)), key=lambda i: confidences[i], reverse=True)[:top_k]
+        classes = [classes[i] for i in top_indices]
+        confidences = [confidences[i] for i in top_indices]
+
     max_confidence = max(confidences)
     exp_confidences = [pow(2.71828, conf - max_confidence) for conf in confidences]  # Subtract max for numerical stability
     sum_exp_confidences = sum(exp_confidences)
 
-    # Update classification with softmax probabilities
-    for i, cls in enumerate(classes):
-        softmax_confidence = exp_confidences[i] / sum_exp_confidences if sum_exp_confidences > 0 else 0.0
-        det_classifications[cls] = f"{softmax_confidence:.4f}"  # Format to 4 decimal places
-
-    return det_classifications
+    return {cls: f"{(exp_confidences[i] / sum_exp_confidences if sum_exp_confidences > 0 else 0.0):.4f}" for i, cls in enumerate(classes)}
