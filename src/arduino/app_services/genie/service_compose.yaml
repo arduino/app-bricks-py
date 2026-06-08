@@ -45,4 +45,4 @@ services:
       - /var/lib/arduino-app-cli/models/genai:/mnt/work/models/
     stop_signal: SIGTERM
     stop_grace_period: 10s
-    command: ["hypercorn", "openapi_server.main:app", "--bind", "0.0.0.0:${GENAI_PORT:-9001}", "--log-level", "info"]
+    command: ["hypercorn", "openapi_server.main:app", "--bind", "0.0.0.0:${GENAI_PORT:-9001}"]
