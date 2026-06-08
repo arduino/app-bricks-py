@@ -19,17 +19,11 @@ import json
 import os
 import sys
 
-import yaml
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from common.models_list import load_models_list, MODELS_LIST_PATH
 
 
-MODELS_LIST_PATH = "/app/models-list.yaml"
 MODELS_BASE_DIR = "/models"
-
-
-def load_models_list(yaml_path):
-    with open(yaml_path, "r") as f:
-        data = yaml.safe_load(f)
-    return data.get("models", [])
 
 
 def get_model_info(model_entry):
@@ -124,6 +118,21 @@ def build_model_directory(variables):
     if model_name and model_type and quantization and chipset:
         return f"{model_name}-{model_type}-{quantization}-{chipset}"
     return ""
+
+
+def get_dir_size_mb(path):
+    """Return total disk usage of a path (file or directory) in MB, rounded to 2 decimals."""
+    if os.path.isfile(path):
+        return round(os.path.getsize(path) / 1024 / 1024, 2)
+    if os.path.isdir(path):
+        total = 0
+        for dirpath, _dirnames, filenames in os.walk(path):
+            for f in filenames:
+                fp = os.path.join(dirpath, f)
+                if not os.path.islink(fp):
+                    total += os.path.getsize(fp)
+        return round(total / 1024 / 1024, 2)
+    return None
 
 
 def check_model_exists(model_info, models_base_dir):
@@ -239,8 +248,10 @@ def main():
         if model_info.get("pre_loaded"):
             exists = True
             path = "pre-loaded"
+            disk_size_mb = None
         else:
             exists, path = check_model_exists(model_info, args.models_dir)
+            disk_size_mb = get_dir_size_mb(path) if exists else None
 
         if args.installed_only and not exists:
             continue
@@ -255,6 +266,7 @@ def main():
             "model_type": model_info["model_type"],
             "path": path,
             "installed": exists,
+            "disk_size_mb": disk_size_mb,
         })
 
     # Scan for llamacpp .gguf models on the filesystem
@@ -262,6 +274,7 @@ def main():
     for m in llamacpp_models:
         if args.not_installed_only:
             continue
+        m["disk_size_mb"] = get_dir_size_mb(m["path"])
         results.append(m)
 
     if args.output_json:
@@ -270,11 +283,12 @@ def main():
         installed_count = sum(1 for r in results if r["installed"])
         total_count = len(results)
         print(f"Models: {installed_count}/{total_count} installed\n")
-        print(f"{'STATUS':<12} {'ID':<45} {'NAME':<40} {'PATH'}")
-        print("-" * 140)
+        print(f"{'STATUS':<12} {'SIZE (MB)':<12} {'ID':<45} {'NAME':<40} {'PATH'}")
+        print("-" * 152)
         for r in results:
             status = "INSTALLED" if r["installed"] else "NOT FOUND"
-            print(f"{status:<12} {r['id']:<45} {r['name']:<40} {r['path']}")
+            size = f"{r['disk_size_mb']:.2f}" if r.get("disk_size_mb") is not None else "-"
+            print(f"{status:<12} {size:<12} {r['id']:<45} {r['name']:<40} {r['path']}")
 
 
 if __name__ == "__main__":
