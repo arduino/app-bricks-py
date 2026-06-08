@@ -52,13 +52,13 @@ class TestLifecycle(unittest.TestCase):
         client = _ClientServer(address=f"unix://{sock_path}")
         client.start()
         self.assertTrue(client._is_connected_flag.wait(timeout=2), "Client did not connect")
-        self.assertTrue(client._read_thread.is_alive())
+        background_thread = client._read_thread
+        self.assertTrue(background_thread.is_alive())
 
         client.stop()
 
-        self.assertFalse(client._read_thread is not None and client._read_thread.is_alive(), "Background thread leaked after stop()")
-        # No Bridge.read_loop thread should survive
-        self.assertFalse(any(t.name == "Bridge.read_loop" and t.is_alive() for t in threading.enumerate()))
+        self.assertFalse(background_thread.is_alive(), "Background thread leaked after stop()")
+        self.assertIsNone(client._read_thread)
 
     def test_stop_without_start_is_safe(self):
         """stop() must be a safe no-op even if start() was never called."""
