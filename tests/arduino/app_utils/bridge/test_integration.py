@@ -50,6 +50,11 @@ class TestIntegration(unittest.TestCase):
         if self.server_thread:
             self.server_thread.join(timeout=2)
 
+        instance = ClientServer._instance
+        if instance is not None:
+            instance.stop()
+        ClientServer._instance = None
+
         self.tmpdir.cleanup()
 
     def test_notify(self):
