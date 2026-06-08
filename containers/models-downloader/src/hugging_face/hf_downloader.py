@@ -11,8 +11,8 @@ quantization variants and optional multimodal projection (mmproj) files.
 After downloading, it auto-generates a ``models.ini`` configuration file
 that indexes all downloaded models for use by downstream runners.
 
-Usage — two modes
------------------
+Usage — three modes
+--------------------
 1. Compact key::
 
        hf_downloader --model-key llamacpp:<repo_id>:<quantization>[:<mmproj_quantization>]
@@ -20,6 +20,10 @@ Usage — two modes
 2. Explicit names::
 
        hf_downloader --model-repo-id <repo_id> --model-name <file> [--model-mmproj-name <file>]
+
+3. Direct URL::
+
+       hf_downloader --model-url https://huggingface.co/<org>/<repo>/resolve/main/<file>
 
 Key options
 -----------
@@ -34,9 +38,10 @@ mapping each model stem to its GGUF path (and mmproj path where present).
 
 import fnmatch
 import os
+import re
 import shutil
 
-from huggingface_hub import HfApi, snapshot_download
+from huggingface_hub import HfApi, hf_hub_download, snapshot_download
 from huggingface_hub.hf_api import RepoFile
 import argparse
 import configparser
@@ -87,6 +92,25 @@ class JsonProgress(tqdm):
     def display(self, msg=None, pos=None):
         # Do not display the progress bar in the terminal, we will emit JSON events instead
         pass
+
+
+def parse_hf_url(url: str) -> tuple[str, str, str]:
+    """Parse a Hugging Face URL and return (repo_id, filename, revision).
+
+    Supports URLs like:
+      https://huggingface.co/<org>/<repo>/resolve/<revision>/<filename>
+      https://huggingface.co/<org>/<repo>/blob/<revision>/<filename>
+    """
+    match = re.match(
+        r"https?://huggingface\.co/([^/]+/[^/]+)/(?:resolve|blob)/([^/]+)/(.+?)(?:\?.*)?$",
+        url,
+    )
+    if not match:
+        raise ValueError(f"Invalid Hugging Face URL: {url}\nExpected format: https://huggingface.co/<org>/<repo>/resolve/<revision>/<filename>")
+    repo_id = match.group(1)
+    revision = match.group(2)
+    filename = match.group(3)
+    return repo_id, filename, revision
 
 
 def delete_matched_files(output_dir: str, models_base: str, allow_pattern: str, verbose: bool = False):
@@ -157,6 +181,20 @@ def main():
         "The format is: <model_type>:<repo_id>:<quantization>:<optional mmproj quantization>.",
     )
     parser.add_argument(
+        "--model-url",
+        type=str,
+        metavar="URL",
+        help="Direct Hugging Face file URL (e.g. https://huggingface.co/org/repo/resolve/main/model.gguf). "
+        "Supports both /resolve/ and /blob/ URL formats.",
+    )
+    parser.add_argument(
+        "--model-mmproj-url",
+        type=str,
+        metavar="URL",
+        help="Direct Hugging Face URL for the mmproj file (e.g. https://huggingface.co/org/repo/resolve/main/mmproj-BF16.gguf). "
+        "Only used with --model-url.",
+    )
+    parser.add_argument(
         "--model-repo-id",
         type=str,
         metavar="KEY",
@@ -211,7 +249,28 @@ def main():
 
     allow_pattern = None
     mmproj_allow_pattern = None
-    if args.model_key and args.model_key != "":
+    url_filename = None  # set when --model-url is used (single-file download)
+    url_revision = None
+    mmproj_url_filename = None
+    mmproj_url_revision = None
+
+    if args.model_url and args.model_url != "":
+        repo_id, url_filename, url_revision = parse_hf_url(args.model_url)
+        allow_pattern = url_filename.split("/")[-1]  # use basename as pattern for check/delete
+
+        if args.model_mmproj_url and args.model_mmproj_url != "":
+            _, mmproj_url_filename, mmproj_url_revision = parse_hf_url(args.model_mmproj_url)
+            mmproj_allow_pattern = mmproj_url_filename.split("/")[-1]
+
+        if args.verbose:
+            emit_json_info(f"Parsed URL — Repository ID: {repo_id}")
+            emit_json_info(f"Filename: {url_filename}")
+            emit_json_info(f"Revision: {url_revision}")
+            if mmproj_url_filename:
+                emit_json_info(f"MMProj Filename: {mmproj_url_filename}")
+                emit_json_info(f"MMProj Revision: {mmproj_url_revision}")
+
+    elif args.model_key and args.model_key != "":
         model_type, repo_id, quantization, *mmproj_quantization = args.model_key.split(":")
         if repo_id == "":
             raise ValueError("repo_id cannot be empty")
@@ -303,15 +362,41 @@ def main():
 
         tqdm_class = JsonProgress
 
-        # Download the model using Hugging Face API
-        if args.verbose:
-            emit_json_info(f"Downloading model from Hugging Face repository: {repo_id} with allow pattern: {allow_pattern}")
-        snapshot_download(repo_id=repo_id, allow_patterns=[allow_pattern], ignore_patterns=["*mmproj*"], local_dir=output_dir, tqdm_class=tqdm_class)
-
-        if mmproj_allow_pattern:
+        if url_filename:
+            # Single-file download via direct URL
             if args.verbose:
-                emit_json_info(f"Downloading mmproj model file from Hugging Face repository: {repo_id} with allow pattern: {mmproj_allow_pattern}")
-            snapshot_download(repo_id=repo_id, allow_patterns=[mmproj_allow_pattern], local_dir=output_dir, tqdm_class=tqdm_class)
+                emit_json_info(f"Downloading file '{url_filename}' from {repo_id} (revision: {url_revision})")
+            hf_hub_download(
+                repo_id=repo_id,
+                filename=url_filename,
+                revision=url_revision,
+                local_dir=output_dir,
+                tqdm_class=tqdm_class,
+            )
+            if mmproj_url_filename:
+                if args.verbose:
+                    emit_json_info(f"Downloading mmproj file '{mmproj_url_filename}' from {repo_id} (revision: {mmproj_url_revision})")
+                hf_hub_download(
+                    repo_id=repo_id,
+                    filename=mmproj_url_filename,
+                    revision=mmproj_url_revision,
+                    local_dir=output_dir,
+                    tqdm_class=tqdm_class,
+                )
+        else:
+            # Pattern-based download via snapshot
+            if args.verbose:
+                emit_json_info(f"Downloading model from Hugging Face repository: {repo_id} with allow pattern: {allow_pattern}")
+            snapshot_download(
+                repo_id=repo_id, allow_patterns=[allow_pattern], ignore_patterns=["*mmproj*"], local_dir=output_dir, tqdm_class=tqdm_class
+            )
+
+            if mmproj_allow_pattern:
+                if args.verbose:
+                    emit_json_info(
+                        f"Downloading mmproj model file from Hugging Face repository: {repo_id} with allow pattern: {mmproj_allow_pattern}"
+                    )
+                snapshot_download(repo_id=repo_id, allow_patterns=[mmproj_allow_pattern], local_dir=output_dir, tqdm_class=tqdm_class)
 
         # Remove download caches
         cache_path = Path(output_dir) / ".cache"

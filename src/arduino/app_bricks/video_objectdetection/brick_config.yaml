@@ -10,13 +10,11 @@ requires_model: true
 requires_container: true
 required_devices:
   - camera
-# For backward compatibility
-model: yolox-object-detection
-model_by_platform:
-    - platform: ventunoq
-      model: yolox-qnn-object-detection
-    - platform: unoq
-      model: yolox-object-detection
+model_by_boards:
+    - board: ventunoq
+      model_name: yolox-qnn-object-detection
+    - board: unoq
+      model_name: yolox-object-detection      
 ai_frameworks_compatibility:
   - edgeimpulse
 model_configuration_variables:
