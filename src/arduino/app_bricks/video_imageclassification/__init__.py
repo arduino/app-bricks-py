@@ -79,7 +79,8 @@ class VideoImageClassification:
         brick_config = get_brick_config(self.__class__)
         app_configured_model = get_brick_configured_model(brick_config.get("id") if brick_config else None, brick_config=brick_config)
 
-        logger.info(f"Configured model: {app_configured_model}")
+        if app_configured_model is not None:
+            logger.info(f"Configured model: {app_configured_model}")
         models_list = load_model_list()
         if models_list is not None:
             if app_configured_model is not None and app_configured_model in models_list:
