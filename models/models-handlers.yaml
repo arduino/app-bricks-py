@@ -16,6 +16,8 @@ handlers:
             command: ["/app/ai_hub/ai_hub_model_remover.sh"]
         - check:
             command: ["/app/ai_hub/ai_hub_model_checker.sh"]
+        - info:
+            command: ["/app/ai_hub/ai_hub_model_info.sh"]
   - ei-handler:
       description: "Handler for models from Edge Impulse"
       image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/models-downloader:0.10.0

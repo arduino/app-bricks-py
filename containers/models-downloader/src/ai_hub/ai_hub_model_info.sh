@@ -4,4 +4,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-python /app/list_models.py --json --supported-board ${BOARD_NAME}
+python /app/ai_hub/ai_hub_model_info.py \
+    --model-type "${model_type}" \
+    --model-name "${model_name}"
