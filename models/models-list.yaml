@@ -1753,7 +1753,7 @@ models:
       - id: "arduino:video_image_classification"
         model_configuration:
           "EI_V_IMAGE_CLASSIFICATION_MODEL": "${models_repository}/efficientnet-b4-qnn.eim"
- - "llamacpp:gemma-4-E2B-it-Q4_0":
+ - "llamacpp:gemma-4-E2B_q4_0-it":
     name : "Gemma 4 E2B"
     description: >-
       Gemma 4 E2B is an efficient, open multimodal AI model developed by Google DeepMind.
@@ -1775,7 +1775,7 @@ models:
       source: "huggingface"
       source-model-id: "gemma-4-E2B-it-qat-q4_0-gguf"
       source-model-url: "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf"
- - "llamacpp:gemma-4-E4B-it-Q4_0":
+ - "llamacpp:gemma-4-E4B_q4_0-it":
     name : "Gemma 4 E4B"
     description: >-
       Gemma 4 E4B is an efficient, open multimodal AI model developed by Google DeepMind.

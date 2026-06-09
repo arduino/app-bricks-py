@@ -1,15 +1,15 @@
 {
   "SPDXID": "SPDXRef-DOCUMENT",
   "creationInfo": {
-    "created": "2026-06-03T12:22:17Z",
+    "created": "2026-06-09T12:45:18Z",
     "creators": [
       "Organization: Anchore, Inc",
-      "Tool: syft-1.45.0"
+      "Tool: syft-1.45.1"
     ],
     "licenseListVersion": "3.28"
   },
   "dataLicense": "CC0-1.0",
-  "documentNamespace": "https://anchore.com/syft/image/public.ecr.aws/g7a8t7v6/inference-container-63701dd3-8b36-4745-9468-472d169f2a5c",
+  "documentNamespace": "https://anchore.com/syft/image/public.ecr.aws/g7a8t7v6/inference-container-092b4375-0057-4469-bfa5-4a9f68d9502d",
   "files": [
     {
       "SPDXID": "SPDXRef-File-...-aws-crypto-crc32-package.json-772f2f9f2384e320",
