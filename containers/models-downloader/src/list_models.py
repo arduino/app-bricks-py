@@ -19,17 +19,11 @@ import json
 import os
 import sys
 
-import yaml
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from common.models_list import load_models_list, MODELS_LIST_PATH
 
 
-MODELS_LIST_PATH = "/app/models-list.yaml"
 MODELS_BASE_DIR = "/models"
-
-
-def load_models_list(yaml_path):
-    with open(yaml_path, "r") as f:
-        data = yaml.safe_load(f)
-    return data.get("models", [])
 
 
 def get_model_info(model_entry):
@@ -46,6 +40,7 @@ def get_model_info(model_entry):
             name = model_data.get("name", model_id)
             supported_boards = model_data.get("supported_boards", [])
             deployment = model_data.get("deployment")
+            model_size_mb = model_data.get("metadata", {}).get("model_size_mb")
 
             if not deployment:
                 continue
@@ -57,11 +52,11 @@ def get_model_info(model_entry):
                     "id": model_id,
                     "name": name,
                     "handler": deployment.get("handler", ""),
-                    "platform": "",
                     "model_directory": "",
                     "models_repository": "",
                     "model_type": "",
                     "model_name": "",
+                    "model_size_mb": model_size_mb,
                     "pre_loaded": True,
                     "supported_boards": supported_boards,
                 })
@@ -82,11 +77,11 @@ def get_model_info(model_entry):
                         "id": model_id,
                         "name": name,
                         "handler": deployment.get("handler", ""),
-                        "platform": platform_name,
                         "model_directory": model_directory,
                         "models_repository": models_repository,
                         "model_type": variables.get("model_type", ""),
                         "model_name": variables.get("model_name", ""),
+                        "model_size_mb": model_size_mb,
                         "pre_loaded": False,
                         "supported_boards": supported_boards,
                     })
@@ -124,6 +119,21 @@ def build_model_directory(variables):
     if model_name and model_type and quantization and chipset:
         return f"{model_name}-{model_type}-{quantization}-{chipset}"
     return ""
+
+
+def get_dir_size_mb(path):
+    """Return total disk usage of a path (file or directory) in MB, rounded to 2 decimals."""
+    if os.path.isfile(path):
+        return round(os.path.getsize(path) / 1024 / 1024, 2)
+    if os.path.isdir(path):
+        total = 0
+        for dirpath, _dirnames, filenames in os.walk(path):
+            for f in filenames:
+                fp = os.path.join(dirpath, f)
+                if not os.path.islink(fp):
+                    total += os.path.getsize(fp)
+        return round(total / 1024 / 1024, 2)
+    return None
 
 
 def check_model_exists(model_info, models_base_dir):
@@ -175,8 +185,6 @@ def find_llamacpp_models(models_base_dir):
                     "id": f"llamacpp:{model_name}",
                     "name": model_name,
                     "handler": "llamacpp",
-                    "platform": "",
-                    "model_type": "llamacpp",
                     "path": full_path,
                     "installed": True,
                 })
@@ -238,30 +246,41 @@ def main():
     for model_info in all_models:
         if model_info.get("pre_loaded"):
             exists = True
-            path = "pre-loaded"
+            entry = {
+                "id": model_info["id"],
+                "name": model_info["name"],
+                "handler": model_info["handler"],
+                "installed": True,
+            }
+            if model_info.get("model_size_mb") is not None:
+                entry["model_size_mb"] = model_info["model_size_mb"]
         else:
             exists, path = check_model_exists(model_info, args.models_dir)
+            entry = {
+                "id": model_info["id"],
+                "name": model_info["name"],
+                "handler": model_info["handler"],
+                "installed": exists,
+            }
+            if model_info.get("model_size_mb") is not None:
+                entry["model_size_mb"] = model_info["model_size_mb"]
+            if exists:
+                entry["path"] = path
+                entry["disk_size_mb"] = get_dir_size_mb(path)
 
         if args.installed_only and not exists:
             continue
         if args.not_installed_only and exists:
             continue
 
-        results.append({
-            "id": model_info["id"],
-            "name": model_info["name"],
-            "handler": model_info["handler"],
-            "platform": model_info["platform"],
-            "model_type": model_info["model_type"],
-            "path": path,
-            "installed": exists,
-        })
+        results.append(entry)
 
     # Scan for llamacpp .gguf models on the filesystem
     llamacpp_models = find_llamacpp_models(args.models_dir)
     for m in llamacpp_models:
         if args.not_installed_only:
             continue
+        m["disk_size_mb"] = get_dir_size_mb(m["path"])
         results.append(m)
 
     if args.output_json:
@@ -270,11 +289,17 @@ def main():
         installed_count = sum(1 for r in results if r["installed"])
         total_count = len(results)
         print(f"Models: {installed_count}/{total_count} installed\n")
-        print(f"{'STATUS':<12} {'ID':<45} {'NAME':<40} {'PATH'}")
-        print("-" * 140)
+        print(f"{'STATUS':<12} {'SIZE (MB)':<12} {'ID':<45} {'NAME':<40} {'PATH'}")
+        print("-" * 152)
         for r in results:
             status = "INSTALLED" if r["installed"] else "NOT FOUND"
-            print(f"{status:<12} {r['id']:<45} {r['name']:<40} {r['path']}")
+            size = (
+                f"{r['disk_size_mb']:.2f}"
+                if r.get("disk_size_mb") is not None
+                else (f"{r['model_size_mb']}" if r.get("model_size_mb") is not None else "-")
+            )
+            path = r.get("path", "")
+            print(f"{status:<12} {size:<12} {r['id']:<45} {r['name']:<40} {path}")
 
 
 if __name__ == "__main__":
