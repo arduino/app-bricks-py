@@ -1,0 +1,6 @@
+name: Transcribe audio from microphone and stream the results
+icon: 🎙️
+description: Transcribe audio from microphone and stream the results
+
+bricks:
+  - arduino:asr

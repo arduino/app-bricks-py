@@ -1,0 +1,6 @@
+name: MQTT topic subscribe and read messages
+icon: 📡
+description: MQTT topic subscribe and read messages
+
+bricks:
+  - arduino:mqtt

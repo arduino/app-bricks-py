@@ -1,0 +1,6 @@
+name: Detect the 'hello world' keyword
+icon: 🗣️
+description: Detect the 'hello world' keyword
+
+bricks:
+  - arduino:keyword_spotting

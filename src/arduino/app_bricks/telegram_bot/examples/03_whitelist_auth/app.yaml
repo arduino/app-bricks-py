@@ -1,0 +1,6 @@
+name: Bot with user ID whitelist
+icon: 📱
+description: Bot with user ID whitelist
+
+bricks:
+  - arduino:telegram_bot

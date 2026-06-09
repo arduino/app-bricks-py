@@ -1,0 +1,6 @@
+name: Streaming responses from an LLM
+icon: ✨
+description: Streaming responses from an LLM
+
+bricks:
+  - arduino:cloud_llm

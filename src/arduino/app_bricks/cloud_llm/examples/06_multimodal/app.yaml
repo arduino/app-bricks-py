@@ -1,0 +1,6 @@
+name: Chat with an Multimodal LLM
+icon: ✨
+description: Chat with an Multimodal LLM
+
+bricks:
+  - arduino:cloud_llm

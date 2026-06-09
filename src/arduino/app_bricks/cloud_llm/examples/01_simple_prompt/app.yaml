@@ -1,0 +1,6 @@
+name: Chat with an LLM
+icon: ✨
+description: Chat with an LLM
+
+bricks:
+  - arduino:cloud_llm

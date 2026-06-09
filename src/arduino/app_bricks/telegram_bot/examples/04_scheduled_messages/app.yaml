@@ -1,0 +1,6 @@
+name: Schedule recurring messages
+icon: 📱
+description: Schedule recurring messages
+
+bricks:
+  - arduino:telegram_bot

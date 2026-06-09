@@ -1,0 +1,6 @@
+name: Detect the glass breaking sound from audio file
+icon: 🔊
+description: Detect the glass breaking sound from audio file
+
+bricks:
+  - arduino:audio_classification

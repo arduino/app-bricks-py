@@ -1,0 +1,6 @@
+name: Echo audio messages
+icon: 📱
+description: Echo audio messages
+
+bricks:
+  - arduino:telegram_bot

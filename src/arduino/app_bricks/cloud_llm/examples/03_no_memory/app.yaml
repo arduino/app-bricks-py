@@ -1,0 +1,6 @@
+name: Conversation with memory
+icon: ✨
+description: Conversation with memory
+
+bricks:
+  - arduino:cloud_llm

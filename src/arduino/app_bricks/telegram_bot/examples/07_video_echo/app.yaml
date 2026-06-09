@@ -1,0 +1,6 @@
+name: Echo video messages
+icon: 📱
+description: Echo video messages
+
+bricks:
+  - arduino:telegram_bot

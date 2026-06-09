@@ -1,0 +1,6 @@
+name: Echo text messages
+icon: 📱
+description: Echo text messages
+
+bricks:
+  - arduino:telegram_bot

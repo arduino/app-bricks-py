@@ -1,0 +1,6 @@
+name: Arduino Cloud Light with Colors Example
+icon: ☁️
+description: Arduino Cloud Light with Colors Example
+
+bricks:
+  - arduino:arduino_cloud

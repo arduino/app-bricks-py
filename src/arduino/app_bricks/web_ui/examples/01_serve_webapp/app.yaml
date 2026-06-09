@@ -1,0 +1,6 @@
+name: Serve a web application
+icon: 🌐
+description: Serve a web application
+
+bricks:
+  - arduino:web_ui

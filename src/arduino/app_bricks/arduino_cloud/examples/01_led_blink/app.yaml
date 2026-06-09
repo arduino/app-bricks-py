@@ -1,0 +1,6 @@
+name: Arduino Cloud LED Blink Example
+icon: ☁️
+description: Arduino Cloud LED Blink Example
+
+bricks:
+  - arduino:arduino_cloud

@@ -1,0 +1,6 @@
+name: LLM Model Selection
+icon: ✨
+description: LLM Model Selection
+
+bricks:
+  - arduino:cloud_llm

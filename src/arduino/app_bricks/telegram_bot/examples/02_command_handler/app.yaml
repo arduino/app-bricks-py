@@ -1,0 +1,6 @@
+name: Register and handle commands
+icon: 📱
+description: Register and handle commands
+
+bricks:
+  - arduino:telegram_bot

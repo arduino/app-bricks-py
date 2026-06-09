@@ -1,0 +1,6 @@
+name: Gesture recognition
+icon: 👋
+description: Gesture recognition
+
+bricks:
+  - arduino:gesture_recognition

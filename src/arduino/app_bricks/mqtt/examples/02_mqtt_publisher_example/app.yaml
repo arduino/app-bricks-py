@@ -1,0 +1,6 @@
+name: Publish message
+icon: 📡
+description: Publish message
+
+bricks:
+  - arduino:mqtt

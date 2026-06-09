@@ -1,0 +1,6 @@
+name: Transcribe a wav file
+icon: 🎙️
+description: Transcribe a wav file
+
+bricks:
+  - arduino:asr
