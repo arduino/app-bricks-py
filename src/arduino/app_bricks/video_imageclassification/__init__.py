@@ -16,7 +16,8 @@ from websockets.sync.connection import Connection
 from websockets.exceptions import ConnectionClosedOK, ConnectionClosedError
 
 from arduino.app_peripherals.camera import Camera, BaseCamera
-from arduino.app_internal.core import load_brick_compose_file, resolve_address
+from arduino.app_internal.core.module import get_brick_config, get_brick_configured_model, load_model_list, load_brick_compose_file, resolve_address
+from arduino.app_internal.core.ei import compute_softmax_over_ei_classification
 from arduino.app_internal.core import EdgeImpulseRunnerFacade
 from arduino.app_utils.image.adjustments import compress_to_jpeg
 from arduino.app_utils import brick, Logger
@@ -72,6 +73,21 @@ class VideoImageClassification:
         self._host = resolve_address(self._host)
         if not self._host:
             raise RuntimeError("Host address could not be resolved. Please check your configuration.")
+
+        self.apply_softmax = False
+
+        brick_config = get_brick_config(self.__class__)
+        app_configured_model = get_brick_configured_model(brick_config.get("id") if brick_config else None, brick_config=brick_config)
+
+        if app_configured_model is not None:
+            logger.info(f"Configured model: {app_configured_model}")
+        models_list = load_model_list()
+        if models_list is not None:
+            if app_configured_model is not None and app_configured_model in models_list:
+                model_entry = models_list[app_configured_model]
+                if model_entry.metadata and "requires_softmax" in model_entry.metadata and model_entry.metadata["requires_softmax"]:
+                    logger.info(f"Model '{app_configured_model}' requires softmax application. Enabling softmax in the classification results.")
+                    self.apply_softmax = True
 
         self._uri = f"ws://{self._host}:4912"
         logger.info(f"[{self.__class__.__name__}] Host: {self._host} - URL: {self._uri}")
@@ -250,8 +266,11 @@ class VideoImageClassification:
             det_classifications = {}
             classifications = result.get("classification", [])
             if classifications:
+                if self.apply_softmax:
+                    # Softmax over the full logit vector; top_k just trims the returned classes.
+                    classifications = compute_softmax_over_ei_classification(classifications, top_k=5)
                 for classification in classifications:
-                    confidence = classifications[classification]
+                    confidence = float(classifications[classification])
                     if confidence < self._confidence:
                         continue
                     det_classifications[classification] = confidence

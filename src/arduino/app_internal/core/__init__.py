@@ -4,3 +4,4 @@
 
 from .module import *
 from .ei import EdgeImpulseRunnerFacade as EdgeImpulseRunnerFacade
+from .ei import compute_softmax_over_ei_classification as compute_softmax_over_ei_classification
