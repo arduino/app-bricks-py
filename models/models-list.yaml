@@ -1767,14 +1767,14 @@ models:
       platforms:
         - ventunoq:
             variables:
-              model_url: "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/blob/main/gemma-4-E2B-it-Q4_0.gguf"
+              model_url: "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf/blob/main/gemma-4-E2B_q4_0-it.gguf"
               models_repository: "models/llamacpp"
-              model_directory: "unsloth/gemma-4-E2B-it-GGUF"
+              model_directory: "google/gemma-4-E2B-it-qat-q4_0-gguf"
     metadata:
-      model_size_mb: 3112
+      model_size_mb: 3430
       source: "huggingface"
-      source-model-id: "gemma-4-E2B-it-GGUF"
-      source-model-url: "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF"
+      source-model-id: "gemma-4-E2B-it-qat-q4_0-gguf"
+      source-model-url: "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf"
  - "llamacpp:gemma-4-E4B-it-Q4_0":
     name : "Gemma 4 E4B"
     description: >-
@@ -1791,14 +1791,14 @@ models:
       platforms:
         - ventunoq:
             variables:
-              model_url: "https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF/blob/main/gemma-4-E4B-it-Q4_0.gguf"
+              model_url: "https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf/blob/main/gemma-4-E4B_q4_0-it.gguf"
               models_repository: "models/llamacpp"
-              model_directory: "unsloth/gemma-4-E4B-it-GGUF"
+              model_directory: "google/gemma-4-E4B-it-qat-q4_0-gguf"
     metadata:
-      model_size_mb: 3112
+      model_size_mb: 5273
       source: "huggingface"
-      source-model-id: "gemma-4-E4B-it-GGUF"
-      source-model-url: "https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF"
+      source-model-id: "gemma-4-E4B-it-qat-q4_0-gguf"
+      source-model-url: "https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf"
  - "llamacpp:gemma-3-1b-it-Q4_0":
      name : "Gemma 3 1B"
      description: >-

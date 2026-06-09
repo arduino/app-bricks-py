@@ -1,6 +1,6 @@
 services:
   genie-models-runner:
-    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/genie-models-runner:0.10.0
+    image: artifacts.codelinaro.org/iot-solutions-microservices/genai-llm-vlm-service:1.2.0
     # Currently, genie-models-runner requires to run as root
     user: 0:0
     restart: on-failure
@@ -45,4 +45,4 @@ services:
       - /var/lib/arduino-app-cli/models/genai:/mnt/work/models/
     stop_signal: SIGTERM
     stop_grace_period: 10s
-    command: ["hypercorn", "openapi_server.main:app", "--bind", "0.0.0.0:${GENAI_PORT:-9001}", "--log-level", "info"]
+    command: ["hypercorn", "openapi_server.main:app", "--bind", "0.0.0.0:${GENAI_PORT:-9001}"]
