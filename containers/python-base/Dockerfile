@@ -86,6 +86,10 @@ RUN set -ex; \
     find /usr/share/doc -type d -empty -delete; \
     # precompile python files to .pyc to speed up startup time
     python -m compileall /usr/local/bin; \
-    python -m compileall /usr/local/lib
+    python -m compileall /usr/local/lib; \
+    # HACK: Remove VPX plugin
+    rm -f /usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstvpx.so; \
+    # Ensure libvpx and libx265 are not present
+    dpkg -r --force-depends libx265-215 libvpx9
 
 COPY libcamera.yaml /etc/libcamera/configuration.yaml
