@@ -5,8 +5,8 @@
   "build_whl": false,
   "update_compose": false,
   "build_args": {
-    "OPENCV_WHL_URL": "https://github.com/arduino/app-bricks-py/releases/download/opencv/4.13.0.92/opencv_python_headless-4.13.0.92-cp313-cp313-linux_aarch64.whl",
-    "OPENCV_WHL_DIGEST": "sha256:2ebc4d497956b26d4d4467933fc31ac580bd4bbe719d79a1e56d7083f52fec07",
+    "OPENCV_WHL_URL": "https://github.com/arduino/app-bricks-py/releases/download/opencv%2F4.13.0.92-20260609/opencv_python_headless-4.13.0+1ddb20b-cp313-cp313-linux_aarch64.whl",
+    "OPENCV_WHL_DIGEST": "sha256:805a10d0df2c0a49f002656aea30ec806f2b102036814d8d436d877592fcc3cb",
     "LIBCAMERA_DEB_URL": "https://github.com/arduino/app-bricks-py/releases/download/libcamera%2F0.7.0-4/libcamera0.7_0.7.0-4_arm64.deb",
     "LIBCAMERA_DEB_DIGEST": "sha256:457ae31932e9dcba22762eefb78231de19df8d1c487c3264e840ae188beb0eeb",
     "LIBCAMERA_IPA_DEB_URL": "https://github.com/arduino/app-bricks-py/releases/download/libcamera%2F0.7.0-4/libcamera-ipa_0.7.0-4_arm64.deb",
