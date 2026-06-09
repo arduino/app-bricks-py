@@ -33,6 +33,7 @@ jobs:
 
       - name: Resolve build parameters
         id: version
+        shell: bash
         run: |
           VERSION="${{ inputs.release_version }}"
           REPO="${{ inputs.opencv_python_repo }}"
