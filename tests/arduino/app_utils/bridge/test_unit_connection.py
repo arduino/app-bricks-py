@@ -33,9 +33,8 @@ class TestConnection(UnitTest):
             target()  # run the register_methods_on_reconnect function
             return self.mock_thread_instance
 
-        with patch("arduino.app_utils.bridge.time.sleep"):
-            with patch("arduino.app_utils.bridge.threading.Thread", side_effect=run_target_synchronously):
-                client._connect()
+        with patch("arduino.app_utils.bridge.threading.Thread", side_effect=run_target_synchronously):
+            client._connect()
 
         # 4. Verify that the handler was re-registered
         client.call.assert_called_once_with("$/register", method_name)
