@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import math
 import requests
 import io
 from arduino.app_internal.core import load_brick_compose_file, resolve_address
@@ -259,3 +260,40 @@ class EdgeImpulseRunnerFacade:
         if not addr:
             raise RuntimeError("Host address resolution failed for Edge Impulse runner.")
         return f"http://{addr}:1337"
+
+
+def compute_softmax_over_ei_classification(det_classifications: dict, top_k: int | None = None) -> dict:
+    """Compute softmax over Edge Impulse classification results if required by the model.
+
+    The softmax is always computed over the *full* set of logits, so the resulting
+    probabilities preserve the calibration produced by the network (e.g. EfficientNet-B4
+    trained on ImageNet-1000). The optional ``top_k`` is applied *after* the softmax as
+    a pure output filter: it trims the returned dict to the K highest-probability classes
+    but does not alter their probability values.
+
+    det_classifications: A dictionary containing classification results from Edge Impulse,
+        in the form ``{class_name: logit}``.
+    top_k: If set to a positive integer, return only the K classes with the highest
+        probability. If None or <= 0, all classes are returned.
+
+    Returns:
+        dict: A dictionary with softmax-normalized confidence values, formatted as 4-decimal strings.
+    """
+
+    classes = list(det_classifications.keys())
+    logits = [float(det_classifications[cls]) for cls in classes]
+
+    if not logits:
+        return {}
+
+    max_logit = max(logits)
+    exp_logits = [math.exp(z - max_logit) for z in logits]
+    sum_exp = sum(exp_logits)
+    probs = [e / sum_exp for e in exp_logits] if sum_exp > 0 else [0.0] * len(logits)
+
+    if top_k is not None and top_k > 0 and top_k < len(classes):
+        top_indices = sorted(range(len(probs)), key=lambda i: probs[i], reverse=True)[:top_k]
+    else:
+        top_indices = range(len(classes))
+
+    return {classes[i]: f"{probs[i]:.4f}" for i in top_indices}

@@ -8,10 +8,10 @@ requires_container: true
 requires_model: true
 # For backward compatibility
 model: concrete-crack-anomaly-detection
-model_by_platform:
-    - platform: ventunoq
+model_by_boards:
+    - board: ventunoq
       model: concreate-crack-anomaly-detection-high-resolution
-    - platform: unoq
+    - board: unoq
       model: concrete-crack-anomaly-detection
 ai_frameworks_compatibility:
   - edgeimpulse
