@@ -1724,12 +1724,13 @@ models:
     name : "General purpose object classification - EfficientNet-B4"
     description: "EfficientNetB4 is a machine learning model that can classify images from the Imagenet dataset. It can also be used as a backbone in building more complex models for specific use cases. This version of the model is optimized for NPU acceleration on supported devices, providing faster inference times while maintaining accuracy."
     metadata:
+      requires_softmax: true
       model_size_mb: 89
       source: "edgeimpulse"
       image-resolution: "380x380"
       hw_acceleration_backend: "qnn"
       ei-project-id: 948887
-      ei-impulse-id: 4
+      ei-impulse-id: 10
       ei-model-url: "https://studio.edgeimpulse.com/public/948887/live"
       source-model-id: "efficientnet_b4"
       source-model-url: "https://aihub.qualcomm.com/compute/models/efficientnet_b4"
@@ -1797,4 +1798,57 @@ models:
       model_size_mb: 3112
       source: "huggingface"
       source-model-id: "gemma-4-E4B-it-GGUF"
-      source-model-url: "https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF"      
+      source-model-url: "https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF"
+ - "llamacpp:gemma-3-1b-it-Q4_0":
+     name : "Gemma 3 1B"
+     description: >-
+        Gemma 3 1B is an efficient, open multimodal AI model developed by Google DeepMind.
+        Activating an effective one billion parameters, it is engineered specifically for mobile and edge devices.
+        It's optimized for offline agentic workflows.
+     supported_boards: ["ventunoq", "unoq"]
+     bricks:
+       - id: "arduino:llm"
+     deployment:
+       handler: "hf-handler"
+       platforms:
+         - ventunoq:
+             variables:
+               model_url: "https://huggingface.co/unsloth/gemma-3-1b-it-GGUF/blob/main/gemma-3-1b-it-Q4_0.gguf"
+               models_repository: "models/llamacpp"
+               model_directory: "unsloth/gemma-3-1b-it-GGUF"
+         - unoq:
+             variables:
+               model_url: "https://huggingface.co/unsloth/gemma-3-1b-it-GGUF/blob/main/gemma-3-1b-it-Q4_0.gguf"
+               models_repository: "models/llamacpp"
+               model_directory: "unsloth/gemma-3-1b-it-GGUF"
+     metadata:
+       model_size_mb: 722
+       source: "huggingface"
+       source-model-id: "gemma-3-1b-it-GGUF"
+       source-model-url: "https://huggingface.co/unsloth/gemma-3-1b-it-GGUF"
+ - "llamacpp:Qwen3.5-0.8B-Q4_0":
+     name : "Qwen 3.5 0.8B"
+     description: >-
+       Qwen 3.5 0.8B is a compact yet powerful language model developed by Alibaba, designed to deliver efficient performance on edge devices.
+       With 0.8 billion parameters, it strikes a balance between capability and resource efficiency, making it ideal for applications that require natural language understanding and generation in constrained environments.
+     supported_boards: ["ventunoq", "unoq"]
+     bricks:
+       - id: "arduino:llm"
+     deployment:
+       handler: "hf-handler"
+       platforms:
+         - ventunoq:
+             variables:
+               model_url: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/blob/main/Qwen3.5-0.8B-Q4_0.gguf"
+               models_repository: "models/llamacpp"
+               model_directory: "unsloth/Qwen3.5-0.8B-GGUF"
+         - unoq:
+             variables:
+               model_url: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/blob/main/Qwen3.5-0.8B-Q4_0.gguf"
+               models_repository: "models/llamacpp"
+               model_directory: "unsloth/Qwen3.5-0.8B-GGUF"
+     metadata:
+       model_size_mb: 507
+       source: "huggingface"
+       source-model-id: "Qwen3.5-0.8B-Q4_0"
+       source-model-url: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF"
