@@ -8,7 +8,6 @@ import queue
 import socket
 import threading
 import msgpack
-import time
 import os
 from urllib.parse import urlparse
 from .logger import Logger
@@ -273,7 +272,14 @@ class SingletonMeta(type):
         return cls._instance
 
 
-class ClientServer(metaclass=SingletonMeta):
+class _ClientServer:
+    """Connection worker for the RPC bridge. Owns the socket and the background
+    read/reconnect thread.
+
+    Requires a call to ``start()`` to connect and ``stop()`` to release resources,
+    both methods are idempotent. It can also be used as a context manager.
+    """
+
     def __init__(self, address: str = "unix:///var/run/arduino-router.sock"):
         self.next_msgid = 0
         self.next_msgid_lock = threading.Lock()
@@ -294,11 +300,52 @@ class ClientServer(metaclass=SingletonMeta):
         self._conn = None
         self._conn_lock = threading.Lock()
         self._is_connected_flag = threading.Event()  # This avoids locking recv calls
+        self._stop_event = threading.Event()
+        self._read_thread = None
 
+    def start(self):
+        """Connects to the router and starts the background read/reconnect loop.
+        A no-op if the background loop is already running.
+        """
+        if self._read_thread is not None and self._read_thread.is_alive():
+            return
+        self._stop_event.clear()
         self._connect()
-
         self._read_thread = threading.Thread(target=self._conn_manager, name="Bridge.read_loop", daemon=True)
         self._read_thread.start()
+
+    def stop(self):
+        """Stops the background loop, closes the connection and releases resources.
+        Idempotent and safe to call even if ``start()`` was never called.
+        """
+        self._stop_event.set()
+        self._is_connected_flag.clear()
+
+        with self._conn_lock:
+            if self._conn is not None:
+                try:
+                    self._conn.shutdown(socket.SHUT_RDWR)  # Wake a recv() on the read side
+                except OSError:
+                    pass  # Already disconnected
+                try:
+                    self._conn.close()  # Release resources
+                except Exception:
+                    pass
+                self._conn = None
+
+        thread = self._read_thread
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(timeout=_reconnect_delay + 1.0)
+        self._read_thread = None
+
+        self._fail_pending_callbacks(ConnectionError("Bridge connection stopped."))
+
+    def __enter__(self):
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.stop()
 
     def notify(self, method_name: str, *params):
         """Sends a notification to the server without waiting for a response."""
@@ -397,11 +444,15 @@ class ClientServer(metaclass=SingletonMeta):
 
     def _conn_manager(self):
         """Manages connection and reconnection attempts. Once the connection is established, delegates to the read loop."""
-        while True:
+        while not self._stop_event.is_set():
             # Ensure we're connected to the router
-            self._connect()  # This retries internally until connected
+            self._connect()  # This retries internally until connected or stop() is requested
+            if self._stop_event.is_set():
+                break
             self._read_loop()  # This blocks until connection is lost or errors out
-            time.sleep(_reconnect_delay)  # Wait before trying to reconnect
+            if self._stop_event.is_set():
+                break
+            self._stop_event.wait(_reconnect_delay)
 
     def _connect(self):
         """Makes sure we're connected to the router by retrying periodically until we have a clean connection.
@@ -424,6 +475,8 @@ class ClientServer(metaclass=SingletonMeta):
         self._is_connected_flag.clear()
 
         while not self._is_connected():
+            if self._stop_event.is_set():
+                return
             try:
                 with self._conn_lock:
                     if self.socket_type == "unix":
@@ -450,7 +503,7 @@ class ClientServer(metaclass=SingletonMeta):
                 return
             except Exception as e:
                 logger.error(f"Failed to connect to router: {e}")
-                time.sleep(_reconnect_delay)  # Try to connect again after a delay
+                self._stop_event.wait(_reconnect_delay)
 
     def _is_connected(self) -> bool:
         """Performs a lightweight check to verify if the connection is usable and active.
@@ -478,7 +531,7 @@ class ClientServer(metaclass=SingletonMeta):
         """The core loop that reads and processes messages from the active socket."""
         unpacker = msgpack.Unpacker()
         try:
-            while True:
+            while not self._stop_event.is_set():
                 try:
                     data = self._conn.recv(4096)
                     if not data:
@@ -491,6 +544,8 @@ class ClientServer(metaclass=SingletonMeta):
                     logger.warning(f"Connection reset in read loop: {e}")
                     break
                 except Exception as e:
+                    if self._stop_event.is_set():
+                        break
                     logger.error(f"Unexpected error in read loop: {e}")
                     continue
         finally:
@@ -632,3 +687,11 @@ class ClientServer(metaclass=SingletonMeta):
                 self._conn.sendall(packed_data)
             except socket.error as e:
                 raise ConnectionError(f"Send failed due to socket error: {e}")
+
+
+class ClientServer(_ClientServer, metaclass=SingletonMeta):
+    """Process-wide singleton bridge connection."""
+
+    def __init__(self, address: str = "unix:///var/run/arduino-router.sock"):
+        super().__init__(address)
+        self.start()
