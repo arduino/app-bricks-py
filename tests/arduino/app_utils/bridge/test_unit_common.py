@@ -26,14 +26,18 @@ class UnitTest(unittest.TestCase):
         self.mock_socket.socket.return_value = self.mock_socket_instance
         self.mock_socket.create_connection.return_value = self.mock_socket_instance
 
-        # Mock the threading.Thread to avoid running background threads
+        # Mock only threading.Thread so the background read loop never runs.
         self.mock_thread_instance = MagicMock()
-        self.threading_patcher = patch("arduino.app_utils.bridge.threading")
-        self.mock_threading = self.threading_patcher.start()
-        self.mock_threading.Thread.return_value = self.mock_thread_instance
+        self.thread_patcher = patch("arduino.app_utils.bridge.threading.Thread", return_value=self.mock_thread_instance)
+        self.mock_thread = self.thread_patcher.start()
 
     def tearDown(self):
         """This method is called after each test and cleans up the patched dependencies."""
-        self.logger_patcher.stop()
+        instance = ClientServer._instance
+        if instance is not None:
+            instance.stop()
+        ClientServer._instance = None
+
+        self.thread_patcher.stop()
         self.socket_patcher.stop()
-        self.threading_patcher.stop()
+        self.logger_patcher.stop()
