@@ -67,6 +67,7 @@ jobs:
 
       - name: Build custom minimal FFmpeg
         id: ffmpeg
+        shell: bash
         run: |
           FFMPEG_VER="${{ inputs.ffmpeg_debian_version }}"
           if [[ "$FFMPEG_VER" == "latest" ]]; then FFMPEG_VER=""; fi
@@ -108,6 +109,7 @@ jobs:
 
       - name: Build custom minimal GStreamer Good plugins
         id: gstreamer
+        shell: bash
         run: |
           GST_VER="${{ inputs.gstreamer_good_version }}"
           if [[ "$GST_VER" == "latest" ]]; then GST_VER=""; fi
