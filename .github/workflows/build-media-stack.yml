@@ -213,7 +213,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           STACK_VERSION="${{ needs.setup.outputs.stack_version }}"
-          WHL_VERSION="${{ needs.build-opencv.outputs.wheel_version }}"
+          OPENCV_VERSION="${{ needs.build-opencv.outputs.wheel_version }}"
           OPENCV_REPO="${{ needs.setup.outputs.opencv_python_repo }}"
           OPENCV_REF="${{ needs.setup.outputs.commit }}"
           FFMPEG_VERSION="${{ needs.build-ffmpeg.outputs.version }}"
@@ -225,13 +225,12 @@ jobs:
           gh release delete "$TAG" --repo "$REPO" --yes --cleanup-tag || true
           
           NOTES=$(cat <<EOF
-          Custom minimal media stack with H.265 and VP9 disabled.
+          Custom minimal media stack for Q boards.
           
           Media Stack Build Version: ${STACK_VERSION}
           
           Component Details:
-          - OpenCV Wheel Version: ${WHL_VERSION}
-            (Source: ${OPENCV_REPO}@${OPENCV_REF})
+          - OpenCV Wheel Version: ${OPENCV_VERSION} (Source: ${OPENCV_REPO}@${OPENCV_REF})
           - FFmpeg (Debian Source): ${FFMPEG_VERSION}
           - GStreamer Good Plugins (Debian Source): ${GSTREAMER_VERSION}
           EOF
