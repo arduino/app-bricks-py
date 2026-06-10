@@ -77,10 +77,35 @@ jobs:
           REAL_VER=$(dpkg-parsechangelog -S Version)
           echo "version=$REAL_VER" >> $GITHUB_OUTPUT
           
-          # Disabling heavy/unwanted codecs and features
-          export DEB_CONFIGURE_EXTRA_FLAGS="--disable-libvpx --disable-libx265 --disable-libdav1d --disable-libaom --disable-debug --disable-doc --disable-sdl2 --disable-libass --disable-libvidstab --disable-libbluray --disable-librtmp --disable-libopenjpeg --disable-libopus --disable-libtheora --disable-libvorbis"
-          export DEB_CONFIGURE_EXTRA_FLAGS="--disable-libvpx --disable-libx265 --disable-libdav1d --disable-libaom --disable-debug --disable-doc --disable-sdl2 --disable-libass --disable-libvidstab --disable-libbluray --disable-librtmp --disable-libopenjpeg --disable-libopus --disable-libtheora --disable-libvorbis"
-          
+          # debian/rules overrides dh_auto_configure — DEB_CONFIGURE_EXTRA_FLAGS is never
+          # read. FFmpeg 7.x builds each flavor with `../../configure $(strip $(CONFIG)
+          # $(CONFIG_$*))`. Append our disables to the END of that invocation: the last
+          # flag wins, so these override any --enable-* set earlier in $(CONFIG).
+          python3 - <<'PYEOF'
+          import re
+          with open("debian/rules") as f:
+              c = f.read()
+          DISABLE = (
+              "--disable-libvpx --disable-libx265 --disable-libdav1d --disable-libaom "
+              "--disable-sdl2 --disable-libass --disable-libvidstab "
+              "--disable-libbluray --disable-librtmp --disable-libopenjpeg "
+              "--disable-libopus --disable-libtheora --disable-libvorbis"
+          )
+          # Inject before the ' ||' error guard FFmpeg's rules append to the configure call.
+          c, n = re.subn(r"(\.\./\.\./configure [^\n]*?)( *\|\|)",
+                         r"\g<1> " + DISABLE + r"\g<2>", c, count=1)
+          if not n:
+              # Fallback: configure call without a trailing guard — inject at end of line.
+              c, n = re.subn(r"(\.\./\.\./configure [^\n]*?)(\n)",
+                             r"\g<1> " + DISABLE + r"\g<2>", c, count=1)
+          if not n:
+              print(c[:4000])
+              raise RuntimeError("Could not find ./configure invocation in debian/rules")
+          with open("debian/rules", "w") as f:
+              f.write(c)
+          print("Injected disable flags into configure invocation")
+          PYEOF
+
           DEB_BUILD_OPTIONS=nocheck dpkg-buildpackage -b -uc -us -j$(nproc)
           cd ..
           mkdir -p artifacts
@@ -123,10 +148,44 @@ jobs:
           # Append a debhelper hook that mutates the already-configured Meson
           # build dir with `meson configure`. This preserves every flag Debian
           # passed to dh_auto_configure and only adds ours on top.
-          MESON_OPTS="-Dvpx=disabled -Dgtk3=disabled -Dqt5=disabled -Dqt6=disabled -Daalib=disabled -Dcaca=disabled -Ddv1394=disabled -Ddv=disabled -Dflx=disabled -Dgoom=disabled -Dgoom2k1=disabled -Dmonoscope=disabled -Doss=disabled -Doss4=disabled -Dspeex=disabled -Djack=disabled -Dlame=disabled -Dtwolame=disabled -Dmpg123=disabled -Dwavpack=disabled -Dshapewipe=disabled -Dsmpte=disabled -Dnavigationtest=disabled -Dshout2=disabled -Dcairo=disabled -Dpulseaudio=disabled -Dximagesrc=disabled"
+          MESON_OPTS="-Dauto_features=enabled -Ddv1394=disabled -Daalib=disabled -Damrnb=disabled -Damrwbdec=disabled -Dapetag=disabled -Dlibcaca=disabled -Dcairo=disabled -Dcutter=disabled -Ddv=disabled -Deffectv=disabled -Dflac=disabled -Dflx=disabled -Dgdk-pixbuf=disabled -Dgoom=disabled -Dgoom2k1=disabled -Dgtk3=disabled -Djack=disabled -Dlame=disabled -Dmonoscope=disabled -Dmpg123=disabled -Doss4=disabled -Doss=disabled -Dosxaudio=disabled -Dosxvideo=disabled -Dpulse=disabled -Dqt6=disabled -Dqt5=disabled -Drpicamsrc=disabled -Dshapewipe=disabled -Dshout2=disabled -Dsmpte=disabled -Dspeex=disabled -Dtaglib=disabled -Dtwolame=disabled -Dvpx=disabled -Dwavpack=disabled -Dximagesrc=disabled -Dalpha=disabled -Dauparse=disabled -Ddebugutils=disabled -Ddeinterlace=disabled -Ddtmf=disabled -Dequalizer=disabled -Dflv=disabled -Dicydemux=disabled -Did3demux=disabled -Dmultifile=disabled -Dreplaygain=disabled -Dspectrum=disabled -Dxingmux=disabled -Dy4m=disabled"
+
+          # Patch debian/rules: wrap every explicit `dh_install -p<pkg> debian/tmp/…libgst….so`
+          # call with a `test -f` guard so disabled plugins are silently skipped.
+          # This must run before dpkg-buildpackage reads the rules file.
+          {
+            printf 'import re\n'
+            printf 'with open("debian/rules") as f:\n'
+            printf '    c = f.read()\n'
+            printf 'c = re.sub(\n'
+            printf '    r"\\t(dh_install -\\S+ (debian/tmp/\\S+libgst\\S+\\.so))",\n'
+            printf '    lambda m: "\\t" + "test -f " + m.group(2) + " && " + m.group(1) + " || true",\n'
+            printf '    c\n'
+            printf ')\n'
+            printf 'with open("debian/rules", "w") as f:\n'
+            printf '    f.write(c)\n'
+          } > patch-rules.py
+          python3 patch-rules.py
+
+          # Write a helper script run just before dh_install that drops .install
+          # entries for plugins absent from debian/tmp (i.e. disabled at build time).
+          {
+            printf 'import re, glob\n'
+            printf 'for f in glob.glob("debian/*.install"):\n'
+            printf '    lines = open(f).readlines()\n'
+            printf '    kept = [l for l in lines\n'
+            printf '            if not re.search(r"gstreamer-1\\.0/libgst", l.strip())\n'
+            printf '            or glob.glob("debian/tmp/" + l.strip())]\n'
+            printf '    open(f, "w").writelines(kept)\n'
+          } > prune-install-files.py
+
           {
             printf '\nexecute_after_dh_auto_configure:\n'
             printf '\tmeson configure obj-$(DEB_HOST_GNU_TYPE) %s\n' "$MESON_OPTS"
+            printf '\nexecute_before_dh_install:\n'
+            printf '\tpython3 prune-install-files.py\n'
+            printf '\noverride_dh_missing:\n'
+            printf '\tdh_missing --list-missing\n'
           } >> debian/rules
 
           DEB_BUILD_OPTIONS=nocheck dpkg-buildpackage -b -uc -us -j$(nproc)
@@ -162,9 +221,9 @@ jobs:
 
       - name: Install custom debs
         run: |
-          dpkg -i debs/ffmpeg-debs/libavcodec*.deb debs/ffmpeg-debs/libavformat*.deb debs/ffmpeg-debs/libavutil*.deb debs/ffmpeg-debs/libswscale*.deb ; apt-get install -f -y
-          dpkg -i debs/ffmpeg-debs/libav*-dev*.deb ; apt-get install -f -y
-          dpkg -i debs/gstreamer-debs/gstreamer1.0-plugins-good*.deb ; apt-get install -f -y
+          # Exclude -extra (conflicts with base packages) and -dbgsym (unneeded).
+          apt-get install -y $(ls ./debs/ffmpeg-debs/*.deb | grep -vE '\-(extra|dbgsym)')
+          apt-get install -y ./debs/gstreamer-debs/gstreamer1.0-plugins-good_*.deb
 
       - name: Install OpenCV build deps
         run: |
@@ -230,9 +289,9 @@ jobs:
           Media Stack Build Version: ${STACK_VERSION}
           
           Component Details:
-          - OpenCV Wheel Version: ${OPENCV_VERSION} (Source: ${OPENCV_REPO}@${OPENCV_REF})
+          - opencv-python-headless (Wheel): ${OPENCV_VERSION} (Source: ${OPENCV_REPO} @ ${OPENCV_REF})
           - FFmpeg (Debian Source): ${FFMPEG_VERSION}
-          - GStreamer Good Plugins (Debian Source): ${GSTREAMER_VERSION}
+          - gstreamer1.0-plugins-good (Debian Source): ${GSTREAMER_VERSION}
           EOF
           )
           
@@ -241,7 +300,15 @@ jobs:
           cp artifacts/opencv-wheel/*.whl release-assets/
           cp artifacts/ffmpeg-debs/*.deb release-assets/
           cp artifacts/gstreamer-debs/*.deb release-assets/
-          
+
+          FFMPEG_VERSION_SAFE="${FFMPEG_VERSION##*:}"  # strip Debian epoch (e.g. 7:) for the filename
+          mkdir ffmpeg-libs
+          for pkg in libavcodec61 libavformat61 libavutil59 libswscale8 libswresample5; do
+            cp artifacts/ffmpeg-debs/${pkg}_*.deb ffmpeg-libs/
+          done
+          FFMPEG_LIBS_TARBALL="ffmpeg-libs-${FFMPEG_VERSION_SAFE}.tar.gz"
+          tar -czf "release-assets/${FFMPEG_LIBS_TARBALL}" -C ffmpeg-libs .
+
           gh release create "$TAG" \
             release-assets/* \
             --repo "$REPO" \

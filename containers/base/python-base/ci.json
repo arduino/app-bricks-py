@@ -19,8 +19,8 @@
     "GSTREAMER_LIBGSTREAMER_PLUGINS_BASE_DEB_DIGEST": "sha256:a6e1aaadbac810957f5c4ce981d955c686734e85c23cbb5b89ddd33299f920c6",
     "FFMPEG_LIBS_DEB_URL": "REPLACE_ME",
     "FFMPEG_LIBS_DEB_DIGEST": "REPLACE_ME",
-    "GSTREAMER_GOOD_DEB_URL": "REPLACE_ME",
-    "GSTREAMER_GOOD_DEB_DIGEST": "REPLACE_ME"
+    "GSTREAMER_GOOD_DEB_URL": "https://github.com/robgee86/app-bricks-py/releases/download/media-stack%2F1.0.0/gstreamer1.0-plugins-good_1.26.2-1+deb13u1_arm64.deb",
+    "GSTREAMER_GOOD_DEB_DIGEST": "sha256:363759707c4c136bf427c21b3eba73e318fc1ebd5af128d51790e0428495aa96",
   },
   "sbom": {
     "runtime_base": "${REGISTRY}app-bricks/python-slim:${BASE_IMAGE_VERSION}"
