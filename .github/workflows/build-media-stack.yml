@@ -76,10 +76,11 @@ jobs:
           cd ffmpeg-*
           REAL_VER=$(dpkg-parsechangelog -S Version)
           echo "version=$REAL_VER" >> $GITHUB_OUTPUT
-          sed -i 's/--enable-libvpx/--disable-libvpx/g' debian/rules
-          sed -i 's/--enable-libx265/--disable-libx265/g' debian/rules
-          sed -i '/libvpx-dev/d' debian/control
-          sed -i '/libx265-dev/d' debian/control
+          
+          # Disabling heavy/unwanted codecs and features
+          export DEB_CONFIGURE_EXTRA_FLAGS="--disable-libvpx --disable-libx265 --disable-libdav1d --disable-libaom --disable-debug --disable-doc --disable-sdl2 --disable-libass --disable-libvidstab --disable-libbluray --disable-librtmp --disable-libopenjpeg --disable-libopus --disable-libtheora --disable-libvorbis"
+          export DEB_CONFIGURE_EXTRA_FLAGS="--disable-libvpx --disable-libx265 --disable-libdav1d --disable-libaom --disable-debug --disable-doc --disable-sdl2 --disable-libass --disable-libvidstab --disable-libbluray --disable-librtmp --disable-libopenjpeg --disable-libopus --disable-libtheora --disable-libvorbis"
+          
           DEB_BUILD_OPTIONS=nocheck dpkg-buildpackage -b -uc -us -j$(nproc)
           cd ..
           mkdir -p artifacts
