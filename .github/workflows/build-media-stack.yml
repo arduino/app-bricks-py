@@ -1,0 +1,189 @@
+name: Build Media Stack
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: 'Release version (e.g. 1.0.0). If empty, no release will be created.'
+        required: false
+        default: ''
+      opencv_python_repo:
+        description: 'opencv-python repository in owner/repo format'
+        required: false
+        default: 'opencv/opencv-python'
+      opencv_python_ref:
+        description: 'Git ref to build'
+        required: false
+        default: '4.x'
+      ffmpeg_debian_version:
+        description: 'Specific Debian version of FFmpeg to pull (e.g. 7.1-4). Leave empty for latest in Trixie.'
+        required: false
+        default: ''
+      gstreamer_good_version:
+        description: 'Specific Debian version of GStreamer Good to pull (e.g. 1.24.12-1). Leave empty for latest in Trixie.'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build-media-stack:
+    runs-on: ubuntu-24.04-arm
+    container:
+      image: debian:trixie
+      options: --user root
+    timeout-minutes: 240
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Resolve build parameters
+        id: version
+        shell: bash
+        run: |
+          RELEASE_VERSION="${{ inputs.release_version }}"
+          REPO="${{ inputs.opencv_python_repo }}"
+          COMMIT="${{ inputs.opencv_python_ref }}"
+          
+          # This is the version for the entire surgical media stack bundle
+          STACK_VERSION="${RELEASE_VERSION:-snapshot-$(date -u +%Y%m%d)-${GITHUB_SHA::7}}"
+          
+          echo "stack_version=$STACK_VERSION" >> $GITHUB_OUTPUT
+          echo "release_version=$RELEASE_VERSION" >> $GITHUB_OUTPUT
+          echo "opencv_python_repo=$REPO" >> $GITHUB_OUTPUT
+          echo "commit=$COMMIT" >> $GITHUB_OUTPUT
+
+      - name: Install build tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends gh git ca-certificates build-essential pkg-config ninja-build devscripts equivs debhelper-compat meson
+
+      - name: Enable source repositories
+        run: |
+          sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sources
+          apt-get update
+
+      - name: Build custom minimal FFmpeg
+        id: ffmpeg
+        run: |
+          FFMPEG_VER="${{ inputs.ffmpeg_debian_version }}"
+          apt-get build-dep -y ffmpeg${FFMPEG_VER:+=$FFMPEG_VER}
+          apt-get source ffmpeg${FFMPEG_VER:+=$FFMPEG_VER}
+          cd ffmpeg-*
+          # Extract version
+          REAL_VER=$(dpkg-parsechangelog -S Version)
+          echo "version=$REAL_VER" >> $GITHUB_OUTPUT
+          # Disable libvpx and libx265 in debian/rules
+          sed -i 's/--enable-libvpx/--disable-libvpx/g' debian/rules
+          sed -i 's/--enable-libx265/--disable-libx265/g' debian/rules
+          # Remove them from Build-Depends in debian/control
+          sed -i '/libvpx-dev/d' debian/control
+          sed -i '/libx265-dev/d' debian/control
+          # Build debs
+          DEB_BUILD_OPTIONS=nocheck dpkg-buildpackage -b -uc -us
+          cd ..
+          mkdir -p artifacts/ffmpeg
+          cp *.deb artifacts/ffmpeg/
+
+      - name: Build custom minimal GStreamer Good plugins
+        id: gstreamer
+        run: |
+          GST_VER="${{ inputs.gstreamer_good_version }}"
+          apt-get build-dep -y gstreamer1.0-plugins-good${GST_VER:+=$GST_VER}
+          apt-get source gstreamer1.0-plugins-good${GST_VER:+=$GST_VER}
+          cd gst-plugins-good1.0-*
+          # Extract version
+          REAL_VER=$(dpkg-parsechangelog -S Version)
+          echo "version=$REAL_VER" >> $GITHUB_OUTPUT
+          # Disable vpx in debian/rules (Meson flag)
+          sed -i 's/-Dvpx=enabled/-Dvpx=disabled/g' debian/rules
+          # Trim other unnecessary plugins
+          sed -i 's/-Dgtk3=enabled/-Dgtk3=disabled/g' debian/rules
+          sed -i 's/-Dqt5=enabled/-Dqt5=disabled/g' debian/rules
+          # Remove libvpx-dev from Build-Depends
+          sed -i '/libvpx-dev/d' debian/control
+          # Build debs
+          DEB_BUILD_OPTIONS=nocheck dpkg-buildpackage -b -uc -us
+          cd ..
+          mkdir -p artifacts/gstreamer
+          cp *.deb artifacts/gstreamer/
+
+      - name: Install custom debs for OpenCV build
+        run: |
+          # Install (and repair) custom FFmpeg and GStreamer debs so OpenCV links against them
+          dpkg -i artifacts/ffmpeg/libavcodec*.deb artifacts/ffmpeg/libavformat*.deb artifacts/ffmpeg/libavutil*.deb artifacts/ffmpeg/libswscale*.deb || apt-get install -f -y
+          dpkg -i artifacts/ffmpeg/libav*-dev*.deb || apt-get install -f -y
+          dpkg -i artifacts/gstreamer/gstreamer1.0-plugins-good*.deb || apt-get install -f -y
+
+      - name: Install Python and OpenCV build deps
+        run: |
+          apt-get install -y --no-install-recommends python3 python3-dev python3-pip
+          apt-get install -y --no-install-recommends libjpeg62-turbo-dev libpng-dev libtiff-dev libwebp-dev libopenblas-dev liblapacke-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
+
+      - name: Clone and build OpenCV Python wheel
+        id: opencv
+        run: |
+          REPO="${{ steps.version.outputs.opencv_python_repo }}"
+          COMMIT="${{ steps.version.outputs.commit }}"
+          git clone --depth 1 "https://github.com/$REPO.git" opencv-python
+          cd opencv-python
+          git fetch --depth 1 origin "$COMMIT"
+          git checkout "$COMMIT"
+          git submodule update --init --recursive --depth 1
+          export OPENCV_VERSION="${{ steps.version.outputs.version }}"
+          export ENABLE_CONTRIB=0
+          export ENABLE_HEADLESS=1
+          export CMAKE_ARGS="-DWITH_GSTREAMER=ON -DWITH_FFMPEG=ON -DWITH_VPX=OFF -DWITH_X265=OFF -DWITH_CAROTENE=ON -DWITH_LAPACK=ON -DBUILD_opencv_python3=ON -DWITH_AVIF=OFF -DWITH_GTK=OFF -DWITH_QT=OFF -DWITH_CUDA=OFF -DBUILD_opencv_java=OFF -DWITH_VTK=OFF -DBUILD_opencv_dnn=OFF -DBUILD_opencv_dnn_modern=OFF"
+          pip3 wheel . --verbose --no-deps
+          
+          # Extract the actual version from the built wheel filename
+          WHL_FILE=$(ls opencv_python_headless*.whl | head -n 1)
+          WHL_VER=$(echo "$WHL_FILE" | cut -d'-' -f2)
+          echo "wheel_version=$WHL_VER" >> $GITHUB_OUTPUT
+          
+          mv *.whl ../artifacts/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: media-stack-artifacts
+          path: artifacts/
+
+      - name: Create or update release
+        if: steps.version.outputs.release_version != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          OPENCV_VERSION="${{ steps.opencv.outputs.wheel_version }}"
+          OPENCV_REPO="${{ steps.version.outputs.opencv_python_repo }}"
+          OPENCV_REF="${{ steps.version.outputs.commit }}"
+          FFMPEG_VERSION="${{ steps.ffmpeg.outputs.version }}"
+          GSTREAMER_VERSION="${{ steps.gstreamer.outputs.version }}"
+          TAG="media-stack/${VERSION}"
+          REPO="${{ github.repository }}"
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            gh release delete "$TAG" --repo "$REPO" --yes --cleanup-tag
+          fi
+          
+          NOTES=$(cat <<EOF
+          Custom minimal media stack for Q boards.
+          
+          Component Versions:
+          - OpenCV Python Headless: ${OPENCV_VERSION}
+            (Source: ${OPENCV_REPO}@${OPENCV_REF})
+          - FFmpeg (Debian): ${FFMPEG_VERSION}
+          - GStreamer Good Plugins (Debian): ${GSTREAMER_VERSION}
+          EOF
+          )
+          
+          gh release create "$TAG" \
+            artifacts/*.whl \
+            artifacts/ffmpeg/*.deb \
+            artifacts/gstreamer/*.deb \
+            --repo "$REPO" \
+            --latest=false \
+            --title "Media Stack $VERSION" \
+            --notes "$NOTES"
