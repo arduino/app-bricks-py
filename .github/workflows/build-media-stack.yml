@@ -154,9 +154,9 @@ jobs:
 
       - name: Install custom debs
         run: |
-          dpkg -i debs/ffmpeg-debs/libavcodec*.deb debs/ffmpeg-debs/libavformat*.deb debs/ffmpeg-debs/libavutil*.deb debs/ffmpeg-debs/libswscale*.deb || apt-get install -f -y
-          dpkg -i debs/ffmpeg-debs/libav*-dev*.deb || apt-get install -f -y
-          dpkg -i debs/gstreamer-debs/gstreamer1.0-plugins-good*.deb || apt-get install -f -y
+          dpkg -i debs/ffmpeg-debs/libavcodec*.deb debs/ffmpeg-debs/libavformat*.deb debs/ffmpeg-debs/libavutil*.deb debs/ffmpeg-debs/libswscale*.deb ; apt-get install -f -y
+          dpkg -i debs/ffmpeg-debs/libav*-dev*.deb ; apt-get install -f -y
+          dpkg -i debs/gstreamer-debs/gstreamer1.0-plugins-good*.deb ; apt-get install -f -y
 
       - name: Install OpenCV build deps
         run: |
@@ -175,8 +175,8 @@ jobs:
           export OPENCV_VERSION="${{ needs.setup.outputs.stack_version }}"
           export ENABLE_CONTRIB=0
           export ENABLE_HEADLESS=1
-          # Use all cores for cmake build
-          export CMAKE_ARGS="-j$(nproc) -DWITH_GSTREAMER=ON -DWITH_FFMPEG=ON -DWITH_VPX=OFF -DWITH_X265=OFF -DWITH_CAROTENE=ON -DWITH_LAPACK=ON -DBUILD_opencv_python3=ON -DWITH_AVIF=OFF -DWITH_GTK=OFF -DWITH_QT=OFF -DWITH_CUDA=OFF -DBUILD_opencv_java=OFF -DWITH_VTK=OFF -DBUILD_opencv_dnn=OFF -DBUILD_opencv_dnn_modern=OFF"
+          export CMAKE_BUILD_PARALLEL_LEVEL=$(nproc)
+          export CMAKE_ARGS="-DWITH_GSTREAMER=ON -DWITH_FFMPEG=ON -DWITH_VPX=OFF -DWITH_X265=OFF -DWITH_CAROTENE=ON -DWITH_LAPACK=ON -DBUILD_opencv_python3=ON -DWITH_AVIF=OFF -DWITH_GTK=OFF -DWITH_QT=OFF -DWITH_CUDA=OFF -DBUILD_opencv_java=OFF -DWITH_VTK=OFF -DBUILD_opencv_dnn=OFF -DBUILD_opencv_dnn_modern=OFF"
           pip3 wheel . --verbose --no-deps
           WHL_FILE=$(ls opencv_python_headless*.whl | head -n 1)
           WHL_VER=$(echo "$WHL_FILE" | cut -d'-' -f2)
