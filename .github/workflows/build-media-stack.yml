@@ -118,11 +118,18 @@ jobs:
           cd gst-plugins-good1.0-*
           REAL_VER=$(dpkg-parsechangelog -S Version)
           echo "version=$REAL_VER" >> $GITHUB_OUTPUT
-          sed -i 's/-Dvpx=enabled/-Dvpx=disabled/g' debian/rules
-          sed -i 's/-Dgtk3=enabled/-Dgtk3=disabled/g' debian/rules
-          sed -i 's/-Dqt5=enabled/-Dqt5=disabled/g' debhelper/rules || sed -i 's/-Dqt5=enabled/-Dqt5=disabled/g' debian/rules
-          sed -i '/libvpx-dev/d' debian/control
+
+          # Append a debhelper hook that mutates the already-configured Meson
+          # build dir with `meson configure`. This preserves every flag Debian
+          # passed to dh_auto_configure and only adds ours on top.
+          MESON_OPTS="-Dvpx=disabled -Dgtk3=disabled -Dqt5=disabled -Dqt6=disabled -Daalib=disabled -Dcaca=disabled -Ddv1394=disabled -Ddv=disabled -Dflx=disabled -Dgoom=disabled -Dgoom2k1=disabled -Dmonoscope=disabled -Doss=disabled -Doss4=disabled -Dspeex=disabled -Djack=disabled -Dlame=disabled -Dtwolame=disabled -Dmpg123=disabled -Dwavpack=disabled -Dshapewipe=disabled -Dsmpte=disabled -Dnavigationtest=disabled -Dshout2=disabled -Dcairo=disabled -Dpulseaudio=disabled -Dximagesrc=disabled"
+          {
+            printf '\nexecute_after_dh_auto_configure:\n'
+            printf '\tmeson configure obj-$(DEB_HOST_GNU_TYPE) %s\n' "$MESON_OPTS"
+          } >> debian/rules
+
           DEB_BUILD_OPTIONS=nocheck dpkg-buildpackage -b -uc -us -j$(nproc)
+
           cd ..
           mkdir -p artifacts
           cp *.deb artifacts/
