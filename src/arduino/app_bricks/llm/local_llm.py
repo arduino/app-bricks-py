@@ -6,12 +6,13 @@ from langchain_core.language_models import BaseChatModel
 
 from arduino.app_bricks.cloud_llm import CloudLLM, CloudModelProvider
 from arduino.app_bricks.cloud_llm.cloud_llm import DEFAULT_MEMORY
+from arduino.app_bricks.cloud_llm.memory import MessagePersistence
 from arduino.app_utils import Logger, brick
 from arduino.app_internal.core import resolve_address, get_brick_config, get_brick_configured_model
 
 import os
 from openai import OpenAI, APIError, BadRequestError
-from typing import Iterator, List, Optional, Any, Callable
+from typing import Iterator, List, Optional, Any, Callable, Union
 
 logger = Logger("LargeLanguageModel")
 
@@ -152,21 +153,28 @@ class LargeLanguageModel(CloudLLM):
             logger.warning(f"Failed to list models: {e}")
             return []
 
-    def with_memory(self, max_messages: int = DEFAULT_MEMORY) -> "LargeLanguageModel":
+    def with_memory(
+        self,
+        max_messages: int = DEFAULT_MEMORY,
+        persistence: Union[bool, MessagePersistence, None] = None,
+    ) -> "LargeLanguageModel":
         """Enables conversational memory for this instance.
 
         Configures the Brick to retain a window of previous messages, allowing the
-        AI to maintain context across multiple interactions.
+        AI to maintain context across multiple interactions. An optional persistence
+        backend stores the history so it can resume across restarts.
 
         Args:
-            max_messages (int): The maximum number of messages (user + AI) to keep
-                in history. Older messages are discarded. Set to 0 to disable memory.
-                Defaults to 10.
+            max_messages (int): The maximum number of messages.
+            persistence (bool | MessagePersistence | None): Optional persistence backend.
+                `None`/`False` for in-memory only, `True` for a default
+                `SQLMessagePersistence`, or any `MessagePersistence` instance for full
+                control.
 
         Returns:
             LargeLanguageModel: The current instance, allowing for method chaining.
         """
-        return super().with_memory(max_messages=max_messages)
+        return super().with_memory(max_messages=max_messages, persistence=persistence)
 
     def get_client(self) -> BaseChatModel:
         """Returns the underlying LangChain model instance.

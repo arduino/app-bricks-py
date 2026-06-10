@@ -4,13 +4,14 @@
 
 from langchain_core.language_models import BaseChatModel
 
+from arduino.app_bricks.cloud_llm.memory import MessagePersistence
 from arduino.app_bricks.llm import LargeLanguageModel
 from arduino.app_utils import Logger, brick
 from arduino.app_internal.core import get_brick_config, get_brick_configured_model
 
 import os
 import openai
-from typing import Iterator, List, Optional, Any, Callable
+from typing import Iterator, List, Optional, Any, Callable, Union
 
 logger = Logger("VisionLanguageModel")
 
@@ -149,18 +150,25 @@ class VisionLanguageModel(LargeLanguageModel):
         """
         super().clear_memory()
 
-    def with_memory(self, max_messages: int = 0) -> "VisionLanguageModel":
+    def with_memory(
+        self,
+        max_messages: int = 0,
+        persistence: Union[bool, MessagePersistence, None] = None,
+    ) -> "VisionLanguageModel":
         """Enables conversational memory for this instance.
 
         Configures the Brick to retain a window of previous messages, allowing the
-        AI to maintain context across multiple interactions.
+        AI to maintain context across multiple interactions. An optional persistence
+        backend stores the history so it can resume across restarts.
 
         Args:
-            max_messages (int): The maximum number of messages (user + AI) to keep
-                in history. Older messages are discarded. Set to 0 to disable memory.
-                Defaults to 0.
+            max_messages (int): The maximum number of messages.
+            persistence (bool | MessagePersistence | None): Optional persistence backend.
+                `None` or `False` keep history in memory only (default behavior).
+                `True` instantiates the default SQL-backed store. Pass a
+                `MessagePersistence` implementation directly for full control.
 
         Returns:
             VisionLanguageModel: The current instance, allowing for method chaining.
         """
-        return super().with_memory(max_messages=max_messages)
+        return super().with_memory(max_messages=max_messages, persistence=persistence)

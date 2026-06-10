@@ -3,7 +3,7 @@
   "watch_paths": ["containers/llamacpp-runner/"],
   "tag_latest": false,
   "build_whl": false,
-  "update_compose": false,
+  "update_compose": true,
   "build_args": {
     "LLAMA_CPP_URL": "https://github.com/arduino/app-bricks-py/releases/download/llamacpp%2F20260604/llamacpp-cpu-20260604.tar.gz",
     "LLAMA_CPP_DIGEST": "sha256:6c31d355cb6e77413121c821d9ff45496cd4b4cbd5fd914b80b04e1202075fb3"
