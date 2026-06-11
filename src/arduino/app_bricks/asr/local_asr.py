@@ -538,10 +538,14 @@ class BaseASR:
                     else:
                         logger.warning(f"Send queue full for session {session_id}, dropping chunk")
         finally:
-            try:
-                session_info.chunk_queue.put_nowait(_END_SENTINEL)
-            except queue.Full:
-                pass
+            # Block until the end sentinel is enqueued so the sender always sees it.
+            # This is required if exit condition is duration or WAV exhaustion.
+            while not self._stop_worker.is_set() and not session_info.cancelled.is_set():
+                try:
+                    session_info.chunk_queue.put(_END_SENTINEL, timeout=0.2)
+                    break
+                except queue.Full:
+                    continue
             logger.debug(f"Reader thread exited for session {session_id}")
 
     async def _await_connection_established(self, websocket, label):
