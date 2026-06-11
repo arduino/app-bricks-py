@@ -3,4 +3,4 @@ icon: 🎬
 description: Basic usage of the Video Object Detection Brick
 
 bricks:
-  - arduino:video_objectdetection
+  - arduino:video_object_detection
