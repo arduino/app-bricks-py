@@ -530,7 +530,11 @@ class BaseASR:
                 try:
                     session_info.chunk_queue.put_nowait(chunk.tobytes())
                 except queue.Full:
-                    logger.warning(f"Send queue full for session {session_id}, dropping chunk")
+                    if not isinstance(self._source, BaseMicrophone):
+                        try:
+                            session_info.chunk_queue.put(chunk.tobytes())
+                        except queue.Full:
+                            logger.warning(f"Send queue full for session {session_id}, dropping chunk")
         finally:
             try:
                 session_info.chunk_queue.put_nowait(_END_SENTINEL)
@@ -615,9 +619,11 @@ class BaseASR:
                 if evt_state == "connection_established":
                     continue
                 elif evt_type == "transcript.text.delta":
+                    logger.debug(f"Session {session_id} putting partial transcription: {evt_text}")
                     result_queue.put(ASREvent("partial_text", evt_text))
                     continue
                 elif evt_type == "transcript.text.done":
+                    logger.debug(f"Session {session_id} putting full transcription: {evt_text}")
                     result_queue.put(ASREvent("full_text", evt_text))
                     continue
                 elif evt_type == "transcript.event":
