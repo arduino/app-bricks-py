@@ -3,8 +3,6 @@ name: Large Language Model (LLM)
 description: "Large Language Model (LLM) Brick enables seamless integration with locally hosted LLMs for advanced AI capabilities in your Arduino projects."
 requires_services: ["arduino:genie", "arduino:llamacpp"]
 requires_model: true
-# TODO: remove model as deprecated with model_by_boards syntax
-model: genie:qwen3_4b_instruct_2507
 model_by_boards:
     - platform: ventunoq
       model: genie:qwen3_4b_instruct_2507
