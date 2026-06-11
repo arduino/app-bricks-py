@@ -108,6 +108,7 @@ jobs:
           PYEOF
 
           DEB_BUILD_OPTIONS=nocheck dpkg-buildpackage -b -uc -us -j$(nproc)
+
           cd ..
           mkdir -p artifacts
           cp *.deb artifacts/
