@@ -89,7 +89,8 @@ jobs:
               "--disable-libvpx --disable-libx265 --disable-libdav1d --disable-libaom "
               "--disable-sdl2 --disable-libass --disable-libvidstab "
               "--disable-libbluray --disable-librtmp --disable-libopenjpeg "
-              "--disable-libopus --disable-libtheora --disable-libvorbis"
+              "--disable-libopus --disable-libtheora --disable-libvorbis "
+              "--disable-librsvg"
           )
           # Inject before the ' ||' error guard FFmpeg's rules append to the configure call.
           c, n = re.subn(r"(\.\./\.\./configure [^\n]*?)( *\|\|)",
