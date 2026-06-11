@@ -1744,7 +1744,6 @@ models:
               ei_impulse_id: 4
               models_repository: "models/edge-impulse"
               model_name: efficientnet-b4-qnn.eim
-              quantization: float32
               target: runner-linux-aarch64-qnn
     bricks:
       - id: "arduino:image_classification"
