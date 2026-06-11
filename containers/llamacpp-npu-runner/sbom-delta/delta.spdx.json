@@ -1,0 +1,66 @@
+{
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "creationInfo": {
+    "created": "2026-06-11T07:53:26.421866Z",
+    "creators": [
+      "Tool: arduino-sbom-delta",
+      "Organization: Arduino SRL"
+    ]
+  },
+  "dataLicense": "CC0-1.0",
+  "documentDescribes": [
+    "SPDXRef-Container"
+  ],
+  "documentNamespace": "https://arduino.cc/sbom/delta/llamacpp-npu-runner-0.11.0rc4-20260611T075326Z",
+  "name": "llamacpp-npu-runner",
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-Container",
+      "comment": "Delta SBOM for ghcr.io/arduino/app-bricks/llamacpp-npu-runner:0.11.0rc4 \u2014 changes relative to base image ghcr.io/arduino/app-bricks/aihub-models-runner:0.11.0rc4",
+      "copyrightText": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "name": "llamacpp-npu-runner"
+    },
+    {
+      "SPDXID": "SPDXRef-cross-toolchain-base-deb",
+      "annotations": [
+        {
+          "annotationDate": "2026-06-11T07:53:26.421866Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: arduino-sbom-delta",
+          "comment": "{\"change\": \"added\"}"
+        }
+      ],
+      "copyrightText": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:deb/debian/cross-toolchain-base@77?distro=debian",
+          "referenceType": "purl"
+        }
+      ],
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "name": "cross-toolchain-base",
+      "versionInfo": "77"
+    }
+  ],
+  "relationships": [
+    {
+      "relatedSpdxElement": "SPDXRef-Container",
+      "relationshipType": "DESCRIBES",
+      "spdxElementId": "SPDXRef-DOCUMENT"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-cross-toolchain-base-deb",
+      "relationshipType": "CONTAINS",
+      "spdxElementId": "SPDXRef-Container"
+    }
+  ],
+  "spdxVersion": "SPDX-2.3"
+}
