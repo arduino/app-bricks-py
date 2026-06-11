@@ -1,17 +1,6 @@
 # Automatic Speech Recognition Brick
 
-The `AutomaticSpeechRecognition` brick provides on-device automatic speech recognition (ASR) capabilities for audio streams and files. It offers a high-level interface for transcribing audio using a local model, with support for both real-time microphone capture and in-memory audio (WAV bytes or raw PCM arrays).
-
-## Overview
-
-The ASR Brick allows you to:
-
-- Stream audio from a microphone
-- Transcribe WAV and PCM audio files
-- Transcribe using a local model
-- Use multiple languages
-
-This Brick streams audio from a `Microphone` or `audio files` and gives you the transcribed text.
+The `AutomaticSpeechRecognition` brick provides on-device automatic speech recognition (ASR) capabilities for audio streams and files. It offers a high-level interface for transcribing audio using a local model, with support for both real-time microphone capture and in-memory audio (WAV bytes or raw PCM arrays). With the possibility to use multiple languages.
 
 ## Features
 
@@ -41,15 +30,11 @@ Tips:
 
 ## Code Example and Usage
 
-This example transcribes audio captured from the microphone for 5 seconds.
+This example transcribes audio captured from the microphone for 5 seconds. The brick automatically uses the microphone and handles the start and stop functions.
 
 ```python
 from arduino.app_bricks.asr import AutomaticSpeechRecognition
 from arduino.app_peripherals.microphone import Microphone
-
-
-mic = Microphone()
-mic.start()
 
 asr = AutomaticSpeechRecognition()
 text = asr.transcribe_mic(mic, duration=5)
