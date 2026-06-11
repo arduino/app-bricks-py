@@ -1852,7 +1852,7 @@ models:
        source: "huggingface"
        source-model-id: "Qwen3.5-0.8B-Q4_0"
        source-model-url: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF"
- - yolox-small-qnn-object-detection:
+ - "ei:yolox-small-qnn-object-detection":
     name : "General purpose object detection - YoloX small"
     description: "General purpose object detection model based on YoloX-Small. This model is trained on the COCO dataset and can detect 80 different object classes. This version of the model is optimized for NPU acceleration on supported devices, providing faster inference times while maintaining accuracy."
     model_labels:
