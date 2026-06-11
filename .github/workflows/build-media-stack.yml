@@ -12,15 +12,15 @@ on:
         required: false
         default: 'opencv/opencv-python'
       opencv_python_ref:
-        description: 'Git ref to build'
+        description: 'opencv-python''s git ref to build'
         required: false
         default: '4.x'
       ffmpeg_debian_version:
-        description: 'Specific Debian version of FFmpeg to pull (e.g. 7.1-4). Use "latest" for the latest in Trixie.'
+        description: 'Specific Debian version of FFmpeg to pull (e.g. 7.1-4).'
         required: false
         default: 'latest'
       gstreamer_good_version:
-        description: 'Specific Debian version of GStreamer Good to pull (e.g. 1.24.12-1). Use "latest" for the latest in Trixie.'
+        description: 'Specific Debian version of GStreamer Good to pull (e.g. 1.24.12-1).'
         required: false
         default: 'latest'
 
@@ -34,20 +34,20 @@ jobs:
       stack_version: ${{ steps.version.outputs.stack_version }}
       release_version: ${{ steps.version.outputs.release_version }}
       opencv_python_repo: ${{ steps.version.outputs.opencv_python_repo }}
-      commit: ${{ steps.version.outputs.commit }}
+      opencv_python_commit: ${{ steps.version.outputs.opencv_python_commit }}
     steps:
       - name: Resolve build parameters
         id: version
         shell: bash
         run: |
           RELEASE_VERSION="${{ inputs.release_version }}"
+          STACK_VERSION="${RELEASE_VERSION:-snapshot-$(date -u +%Y%m%d)-${GITHUB_SHA::7}}"
           REPO="${{ inputs.opencv_python_repo }}"
           COMMIT="${{ inputs.opencv_python_ref }}"
-          STACK_VERSION="${RELEASE_VERSION:-snapshot-$(date -u +%Y%m%d)-${GITHUB_SHA::7}}"
-          echo "stack_version=$STACK_VERSION" >> $GITHUB_OUTPUT
           echo "release_version=$RELEASE_VERSION" >> $GITHUB_OUTPUT
+          echo "stack_version=$STACK_VERSION" >> $GITHUB_OUTPUT
           echo "opencv_python_repo=$REPO" >> $GITHUB_OUTPUT
-          echo "commit=$COMMIT" >> $GITHUB_OUTPUT
+          echo "opencv_python_commit=$COMMIT" >> $GITHUB_OUTPUT
 
   build-ffmpeg:
     needs: setup
@@ -65,6 +65,8 @@ jobs:
           sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sources
           apt-get update
 
+      # FFmpeg uses its own ./configure script. The strategy is: patch debian/rules
+      # to disable the features we don't want.
       - name: Build custom minimal FFmpeg
         id: ffmpeg
         shell: bash
@@ -77,12 +79,12 @@ jobs:
           REAL_VER=$(dpkg-parsechangelog -S Version)
           echo "version=$REAL_VER" >> $GITHUB_OUTPUT
           
-          # debian/rules overrides dh_auto_configure — DEB_CONFIGURE_EXTRA_FLAGS is never
-          # read. FFmpeg 7.x builds each flavor with `../../configure $(strip $(CONFIG)
-          # $(CONFIG_$*))`. Append our disables to the END of that invocation: the last
-          # flag wins, so these override any --enable-* set earlier in $(CONFIG).
+          # debian/rules overrides dh_auto_configure and calls ./configure itself, so
+          # there's no env var to inject through. Append our --disable-* flags onto the
+          # end of that call to override the --enable-* flags it sets earlier.
           python3 - <<'PYEOF'
           import re
+
           with open("debian/rules") as f:
               c = f.read()
           DISABLE = (
@@ -92,6 +94,7 @@ jobs:
               "--disable-libopus --disable-libtheora --disable-libvorbis "
               "--disable-librsvg"
           )
+
           # Inject before the ' ||' error guard FFmpeg's rules append to the configure call.
           c, n = re.subn(r"(\.\./\.\./configure [^\n]*?)( *\|\|)",
                          r"\g<1> " + DISABLE + r"\g<2>", c, count=1)
@@ -100,8 +103,10 @@ jobs:
               c, n = re.subn(r"(\.\./\.\./configure [^\n]*?)(\n)",
                              r"\g<1> " + DISABLE + r"\g<2>", c, count=1)
           if not n:
-              print(c[:4000])
+              # Fail if we couldn't find a configure call to patch
+              print(c)
               raise RuntimeError("Could not find ./configure invocation in debian/rules")
+
           with open("debian/rules", "w") as f:
               f.write(c)
           print("Injected disable flags into configure invocation")
@@ -135,6 +140,12 @@ jobs:
           sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sources
           apt-get update
 
+      # GStreamer uses Meson, and Debian's packaging explicitly enumerates
+      # every plugin in .install files and in hand-written dh_install calls.
+      # Disabling a plugin stops it from being compiled, but the packaging
+      # layer still expects the file and aborts. So the strategy is one step
+      # to trim + three steps of damage control to stop Debian's machinery from
+      # failing over the now-missing files.
       - name: Build custom minimal GStreamer Good plugins
         id: gstreamer
         shell: bash
@@ -147,40 +158,37 @@ jobs:
           REAL_VER=$(dpkg-parsechangelog -S Version)
           echo "version=$REAL_VER" >> $GITHUB_OUTPUT
 
-          # Append a debhelper hook that mutates the already-configured Meson
-          # build dir with `meson configure`. This preserves every flag Debian
-          # passed to dh_auto_configure and only adds ours on top.
+          # Trim: remove the plugins to disable. Applied via `meson configure` so
+          # Debian's own configure flags are preserved and we layer ours on top.
           MESON_OPTS="-Dauto_features=enabled -Ddv1394=disabled -Daalib=disabled -Damrnb=disabled -Damrwbdec=disabled -Dapetag=disabled -Dlibcaca=disabled -Dcairo=disabled -Dcutter=disabled -Ddv=disabled -Deffectv=disabled -Dflac=disabled -Dflx=disabled -Dgdk-pixbuf=disabled -Dgoom=disabled -Dgoom2k1=disabled -Dgtk3=disabled -Djack=disabled -Dlame=disabled -Dmonoscope=disabled -Dmpg123=disabled -Doss4=disabled -Doss=disabled -Dosxaudio=disabled -Dosxvideo=disabled -Dpulse=disabled -Dqt6=disabled -Dqt5=disabled -Drpicamsrc=disabled -Dshapewipe=disabled -Dshout2=disabled -Dsmpte=disabled -Dspeex=disabled -Dtaglib=disabled -Dtwolame=disabled -Dvpx=disabled -Dwavpack=disabled -Dximagesrc=disabled -Dalpha=disabled -Dauparse=disabled -Ddebugutils=disabled -Ddeinterlace=disabled -Ddtmf=disabled -Dequalizer=disabled -Dflv=disabled -Dicydemux=disabled -Did3demux=disabled -Dmultifile=disabled -Dreplaygain=disabled -Dspectrum=disabled -Dxingmux=disabled -Dy4m=disabled"
 
-          # Patch debian/rules: wrap every explicit `dh_install -p<pkg> debian/tmp/…libgst….so`
-          # call with a `test -f` guard so disabled plugins are silently skipped.
-          # This must run before dpkg-buildpackage reads the rules file.
-          {
-            printf 'import re\n'
-            printf 'with open("debian/rules") as f:\n'
-            printf '    c = f.read()\n'
-            printf 'c = re.sub(\n'
-            printf '    r"\\t(dh_install -\\S+ (debian/tmp/\\S+libgst\\S+\\.so))",\n'
-            printf '    lambda m: "\\t" + "test -f " + m.group(2) + " && " + m.group(1) + " || true",\n'
-            printf '    c\n'
-            printf ')\n'
-            printf 'with open("debian/rules", "w") as f:\n'
-            printf '    f.write(c)\n'
-          } > patch-rules.py
-          python3 patch-rules.py
+          # Damage control 1/3: guard explicit dh_install calls with `test -f`.
+          python3 - <<'PYEOF'
+          import re
+          with open("debian/rules") as f:
+              c = f.read()
+          c = re.sub(
+              r"\t(dh_install -\S+ (debian/tmp/\S+libgst\S+\.so))",
+              lambda m: "\t" + "test -f " + m.group(2) + " && " + m.group(1) + " || true",
+              c
+          )
+          with open("debian/rules", "w") as f:
+              f.write(c)
+          PYEOF
 
-          # Write a helper script run just before dh_install that drops .install
-          # entries for plugins absent from debian/tmp (i.e. disabled at build time).
-          {
-            printf 'import re, glob\n'
-            printf 'for f in glob.glob("debian/*.install"):\n'
-            printf '    lines = open(f).readlines()\n'
-            printf '    kept = [l for l in lines\n'
-            printf '            if not re.search(r"gstreamer-1\\.0/libgst", l.strip())\n'
-            printf '            or glob.glob("debian/tmp/" + l.strip())]\n'
-            printf '    open(f, "w").writelines(kept)\n'
-          } > prune-install-files.py
+          # Damage control 2/3: drop .install entries for plugins not in debian/tmp.
+          cat > prune-install-files.py <<'PYEOF'
+          import re, glob
+          for f in glob.glob("debian/*.install"):
+              lines = open(f).readlines()
+              kept = [l for l in lines
+                      if not re.search(r"gstreamer-1\.0/libgst", l.strip())
+                      or glob.glob("debian/tmp/" + l.strip())]
+              open(f, "w").writelines(kept)
+          PYEOF
 
+          # Damage control 3/3: wire the hooks into debian/rules: apply MESON_OPTS,
+          # run prune-install-files.py and make dh_missing warn instead of abort.
           {
             printf '\nexecute_after_dh_auto_configure:\n'
             printf '\tmeson configure obj-$(DEB_HOST_GNU_TYPE) %s\n' "$MESON_OPTS"
@@ -235,7 +243,7 @@ jobs:
         id: opencv
         run: |
           REPO="${{ needs.setup.outputs.opencv_python_repo }}"
-          COMMIT="${{ needs.setup.outputs.commit }}"
+          COMMIT="${{ needs.setup.outputs.opencv_python_commit }}"
           git clone --depth 1 "https://github.com/$REPO.git" opencv-python
           cd opencv-python
           git fetch --depth 1 origin "$COMMIT"
@@ -276,7 +284,7 @@ jobs:
           STACK_VERSION="${{ needs.setup.outputs.stack_version }}"
           OPENCV_VERSION="${{ needs.build-opencv.outputs.wheel_version }}"
           OPENCV_REPO="${{ needs.setup.outputs.opencv_python_repo }}"
-          OPENCV_REF="${{ needs.setup.outputs.commit }}"
+          OPENCV_REF="${{ needs.setup.outputs.opencv_python_commit }}"
           FFMPEG_VERSION="${{ needs.build-ffmpeg.outputs.version }}"
           GSTREAMER_VERSION="${{ needs.build-gstreamer.outputs.version }}"
           TAG="media-stack/${STACK_VERSION}"
