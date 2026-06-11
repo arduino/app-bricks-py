@@ -9,6 +9,8 @@ import sys
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional
 
+from arduino.app_utils.utils import get_board_name
+
 application_config_file_name: str = "app.yaml"
 config_file_name: str = "brick_config.yaml"
 compose_config_file_name: str = "brick_compose.yaml"
@@ -244,8 +246,13 @@ def get_brick_configured_model(brick_id: str, brick_config: Dict = None) -> Opti
     if brick_config and "model" in brick_config:
         return brick_config["model"]
     elif brick_config and "model_by_boards" in brick_config:
-        # Logic to handle model_by_boards can be added here
-        pass
+        board_name = get_board_name()
+        print(f"Looking for model configuration for board '{board_name}' in brick_config.yaml...")
+        for board_entry in brick_config["model_by_boards"]:
+            print(f"Checking board entry: {board_entry}")
+            if "platform" in board_entry and board_entry["platform"] == board_name:
+                print(f"Found matching board entry for platform '{board_name}': {board_entry}")
+                return board_entry["model"]
     return None
 
 

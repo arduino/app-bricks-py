@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import inspect
+import os
 
 
 def _has_callable_method(obj_or_cls, method_name):
@@ -67,3 +68,12 @@ def _has_callable_method(obj_or_cls, method_name):
 
 def _brick_name(brick) -> str:
     return type(brick).__name__
+
+def get_board_name() -> str:
+    """Returns the name of the board currently running the code.
+    
+    Returns:
+        str: The name of the board, in lowercase (e.g.: unoq, ventunoq, etc.).
+            If the board name cannot be determined, returns "unknown".
+    """
+    return os.environ.get("BOARD_NAME", "unknown").lower()
