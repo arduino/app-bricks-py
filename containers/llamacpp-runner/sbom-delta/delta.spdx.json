@@ -1,0 +1,66 @@
+{
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "creationInfo": {
+    "created": "2026-06-11T07:51:07.232794Z",
+    "creators": [
+      "Tool: arduino-sbom-delta",
+      "Organization: Arduino SRL"
+    ]
+  },
+  "dataLicense": "CC0-1.0",
+  "documentDescribes": [
+    "SPDXRef-Container"
+  ],
+  "documentNamespace": "https://arduino.cc/sbom/delta/llamacpp-runner-0.11.0rc4-20260611T075107Z",
+  "name": "llamacpp-runner",
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-Container",
+      "comment": "Delta SBOM for ghcr.io/arduino/app-bricks/llamacpp-runner:0.11.0rc4 \u2014 changes relative to base image python:3.13-slim",
+      "copyrightText": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "name": "llamacpp-runner"
+    },
+    {
+      "SPDXID": "SPDXRef-libgomp1-deb",
+      "annotations": [
+        {
+          "annotationDate": "2026-06-11T07:51:07.232794Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: arduino-sbom-delta",
+          "comment": "{\"change\": \"added\"}"
+        }
+      ],
+      "copyrightText": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:deb/debian/libgomp1@14.2.0-19?arch=arm64&distro=debian-13&upstream=gcc-14",
+          "referenceType": "purl"
+        }
+      ],
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "name": "libgomp1",
+      "versionInfo": "14.2.0-19"
+    }
+  ],
+  "relationships": [
+    {
+      "relatedSpdxElement": "SPDXRef-Container",
+      "relationshipType": "DESCRIBES",
+      "spdxElementId": "SPDXRef-DOCUMENT"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-libgomp1-deb",
+      "relationshipType": "CONTAINS",
+      "spdxElementId": "SPDXRef-Container"
+    }
+  ],
+  "spdxVersion": "SPDX-2.3"
+}
