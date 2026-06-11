@@ -3,4 +3,4 @@ icon: 🎥
 description: Basic usage of the Video Image Classification Brick
 
 bricks:
-  - arduino:video_imageclassification
+  - arduino:video_image_classification
