@@ -95,11 +95,11 @@ def main():
             if os.path.isfile(out_file):
                 os.chmod(out_file, 0o755)  # Ensure the file is executable
     except requests.HTTPError as exc:
-        msg = f"HTTP error: {exc.response.status_code} {exc.response.reason}"
+        msg = f"HTTP error: {exc.response.status_code} {exc.response.reason} (url: {url})"
         emit_json_error(msg)
         sys.exit(1)
     except requests.RequestException as exc:
-        msg = f"Request failed: {exc}"
+        msg = f"Request failed: {exc} (url: {url})"
         emit_json_error(msg)
         sys.exit(1)
 
