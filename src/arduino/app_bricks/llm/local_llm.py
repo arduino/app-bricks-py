@@ -75,7 +75,7 @@ class LargeLanguageModel(CloudLLM):
 
         if model is None:
             brick_config = get_brick_config(self.__class__)
-            app_configured_model = get_brick_configured_model(brick_config.get("id") if brick_config else None)
+            app_configured_model = get_brick_configured_model(brick_config.get("id") if brick_config else None, brick_config=brick_config)
             if app_configured_model:
                 logger.debug(f"Using model: '{app_configured_model}'.")
                 model = app_configured_model

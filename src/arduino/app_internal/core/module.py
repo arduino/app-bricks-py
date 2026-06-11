@@ -243,16 +243,21 @@ def get_brick_configured_model(brick_id: str, brick_config: Dict = None) -> Opti
                     return brick_config["model"]
 
     # No model found in app config, check if it's specified in the brick_config.yaml as default for the brick
-    if brick_config and "model" in brick_config:
-        return brick_config["model"]
-    elif brick_config and "model_by_boards" in brick_config:
+    if brick_config is None:
+        return None
+
+    if brick_config and "model_by_boards" in brick_config:
         board_name = get_board_name()
         print(f"Looking for model configuration for board '{board_name}' in brick_config.yaml...")
         for board_entry in brick_config["model_by_boards"]:
-            print(f"Checking board entry: {board_entry}")
             if "platform" in board_entry and board_entry["platform"] == board_name:
                 print(f"Found matching board entry for platform '{board_name}': {board_entry}")
                 return board_entry["model"]
+
+    if brick_config and "model" in brick_config:
+        print(f"Found model configuration in brick_config.yaml for brick '{brick_id}': {brick_config['model']}")
+        return brick_config["model"]
+
     return None
 
 
