@@ -1,5 +1,5 @@
 {
-  "tag_prefix": "llamacpp",
+  "tag_prefix": "ai",
   "watch_paths": ["containers/llamacpp-runner/"],
   "tag_latest": false,
   "build_whl": false,

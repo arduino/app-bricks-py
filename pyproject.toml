@@ -51,7 +51,7 @@ folderwatcher = [
     "watchdog>=6.0.0",
 ]
 usb_camera = [
-    # The .* prefix prevents pulling what's available from PyPI and forces uv
+    # The .* suffix prevents pulling what's available from PyPI and forces uv
     # to install our custom built wheel.
     "opencv-python-headless==4.13.0.*",
 ]
