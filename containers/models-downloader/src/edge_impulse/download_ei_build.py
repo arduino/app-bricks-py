@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from common.http_download import check, download, emit_json_error
 
 
-BASE_URL = "https://studio.edgeimpulse.com/v1/api/{project_id}/deployment/download?type={target}&modelType={quantization}&impulseId={impulse_id}"
+BASE_URL = "https://studio.edgeimpulse.com/v1/api/{project_id}/deployment/download?type={target}&impulseId={impulse_id}"
 
 
 def main():
@@ -54,9 +54,8 @@ def main():
     )
     parser.add_argument(
         "--quantization",
-        required=True,
-        default="float32",
-        help="Quantization type of the model (e.g. float32, int8).",
+        default=None,
+        help="Quantization type of the model (e.g. float32, int8). If omitted, not sent as a query parameter.",
     )
     parser.add_argument(
         "--target",
@@ -72,7 +71,9 @@ def main():
 
     args = parser.parse_args()
 
-    url = BASE_URL.format(project_id=args.ei_project_id, impulse_id=args.impulse_id, quantization=args.quantization, target=args.target)
+    url = BASE_URL.format(project_id=args.ei_project_id, impulse_id=args.impulse_id, target=args.target)
+    if args.quantization:
+        url += f"&modelType={args.quantization}"
 
     try:
         if args.info:
