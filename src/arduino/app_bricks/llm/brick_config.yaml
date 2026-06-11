@@ -4,7 +4,7 @@ description: "Large Language Model (LLM) Brick enables seamless integration with
 requires_services: ["arduino:genie", "arduino:llamacpp"]
 requires_model: true
 model: genie:qwen3_4b_instruct_2507
-model_by_board:
+model_by_boards:
     - platform: ventunoq
       model: genie:qwen3_4b_instruct_2507
     - platform: unoq
