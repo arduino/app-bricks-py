@@ -535,6 +535,8 @@ class BaseASR:
                             session_info.chunk_queue.put(chunk.tobytes())
                         except queue.Full:
                             logger.warning(f"Send queue full for session {session_id}, dropping chunk")
+                    else:
+                        logger.warning(f"Send queue full for session {session_id}, dropping chunk")
         finally:
             try:
                 session_info.chunk_queue.put_nowait(_END_SENTINEL)
