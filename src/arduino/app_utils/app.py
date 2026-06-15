@@ -137,6 +137,7 @@ class AppController:
         # Explicitly detect Streamlit's ScriptRunContext (definitive signal)
         try:
             from streamlit.runtime.scriptrunner import get_script_run_ctx
+
             if get_script_run_ctx(suppress_warning=True) is not None:
                 return True
         except ImportError:
