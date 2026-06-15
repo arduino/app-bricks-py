@@ -19,37 +19,42 @@ When running, your application will be accessible via a web browser at `http://<
 - Easily integrates with other Python modules and Arduino bricks
 - Supports themes, layout customization, and Markdown/HTML rendering
 
-## Important: Do NOT use `App.run()` with this brick
+## How `App.run()` works with Streamlit
 
-The Streamlit brick is executed via `streamlit run`, which manages its own event loop and runs your script in a secondary thread. Calling `App.run()` will raise:
+The Streamlit brick is executed via `streamlit run`, which manages its own event loop and runs your script in a worker thread. `AppController` automatically detects this environment and adapts its behavior:
 
-```
-ValueError: signal only works in main thread of the main interpreter
-```
+- Bricks are started normally (their daemon threads run in the background)
+- The blocking loop is skipped (Streamlit owns the process lifecycle)
+- `App.run()` is idempotent: Streamlit re-runs the script on every user interaction, but bricks are only started once
 
-This happens because `App.run()` internally calls `signal.signal()`, which Python only allows from the main thread.
+### Brick instantiation with `@st.cache_resource`
 
-**If your app only uses Streamlit (no other bricks):** simply omit `App.run()`. Streamlit manages the application lifecycle.
+Streamlit re-executes the entire script on every user interaction. This means any brick instantiated at top-level will be **re-created** on every re-run, potentially reopening hardware resources (e.g. ALSA devices, cameras, network connections).
 
-**If your app uses Streamlit together with other bricks:** use `App.start_bricks()` instead of `App.run()`. Wrap the initialization in `@st.cache_resource` to ensure bricks are started only once (Streamlit re-runs the script on every user interaction).
+To avoid this, wrap brick instantiation in `@st.cache_resource`:
 
 ```python
-import streamlit as st
-from arduino.app_utils import App, Bridge
-from arduino.app_bricks.some_brick import SomeBrick
+from arduino.app_utils import App
+from arduino.app_bricks.streamlit_ui import st
+from arduino.app_bricks.sound_generator import SoundGenerator, SoundEffect
+
 
 @st.cache_resource
 def init_bricks():
-    brick = SomeBrick(...)
-    App.start_bricks()
-    return brick
+    return SoundGenerator(sound_effects=[SoundEffect.adsr()])
 
-init_bricks()
+
+player = init_bricks()
 
 st.title("My App")
-value = Bridge.call("readSensor")
-st.metric("Sensor", value)
+
+if st.button("Play"):
+    player.play("C4", 1.0)
+
+App.run()
 ```
+
+`App.run()` does not need to be cached — it is already idempotent and returns immediately on subsequent re-runs.
 
 See the `examples/` folder for complete examples.
 

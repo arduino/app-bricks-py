@@ -4,10 +4,6 @@
 
 # EXAMPLE_NAME = "Using Streamlit UI with other bricks"
 
-# NOTE: Do NOT use App.run() with the Streamlit brick.
-# Streamlit manages its own lifecycle and runs your script in a secondary thread,
-# which is incompatible with App.run(). Use App.start_bricks() instead.
-
 from arduino.app_bricks.streamlit_ui import st
 from arduino.app_utils import App
 from arduino.app_bricks.sound_generator import SoundGenerator, SoundEffect
@@ -16,10 +12,8 @@ from arduino.app_bricks.sound_generator import SoundGenerator, SoundEffect
 @st.cache_resource
 def init_bricks():
     """Initialize bricks once. Streamlit re-runs the script on every interaction,
-    so we use @st.cache_resource to ensure bricks are started only once."""
-    player = SoundGenerator(sound_effects=[SoundEffect.adsr()])
-    App.start_bricks()
-    return player
+    so we use @st.cache_resource to avoid re-creating hardware resources."""
+    return SoundGenerator(sound_effects=[SoundEffect.adsr()])
 
 
 player = init_bricks()
@@ -33,3 +27,5 @@ duration = st.slider("Duration (seconds)", min_value=0.5, max_value=3.0, value=1
 if st.button("Play sound"):
     player.play(note, duration)
     st.success(f"Played {note} for {duration}s")
+
+App.run()
