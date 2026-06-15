@@ -530,12 +530,22 @@ class BaseASR:
                 try:
                     session_info.chunk_queue.put_nowait(chunk.tobytes())
                 except queue.Full:
-                    logger.warning(f"Send queue full for session {session_id}, dropping chunk")
+                    if not isinstance(self._source, BaseMicrophone):
+                        try:
+                            session_info.chunk_queue.put(chunk.tobytes())
+                        except queue.Full:
+                            logger.warning(f"Send queue full for session {session_id}, dropping chunk")
+                    else:
+                        logger.warning(f"Send queue full for session {session_id}, dropping chunk")
         finally:
-            try:
-                session_info.chunk_queue.put_nowait(_END_SENTINEL)
-            except queue.Full:
-                pass
+            # Block until the end sentinel is enqueued so the sender always sees it.
+            # This is required if exit condition is duration or WAV exhaustion.
+            while not self._stop_worker.is_set() and not session_info.cancelled.is_set():
+                try:
+                    session_info.chunk_queue.put(_END_SENTINEL, timeout=0.2)
+                    break
+                except queue.Full:
+                    continue
             logger.debug(f"Reader thread exited for session {session_id}")
 
     async def _await_connection_established(self, websocket, label):
@@ -615,9 +625,11 @@ class BaseASR:
                 if evt_state == "connection_established":
                     continue
                 elif evt_type == "transcript.text.delta":
+                    logger.debug(f"Session {session_id} putting partial transcription: {evt_text}")
                     result_queue.put(ASREvent("partial_text", evt_text))
                     continue
                 elif evt_type == "transcript.text.done":
+                    logger.debug(f"Session {session_id} putting full transcription: {evt_text}")
                     result_queue.put(ASREvent("full_text", evt_text))
                     continue
                 elif evt_type == "transcript.event":
