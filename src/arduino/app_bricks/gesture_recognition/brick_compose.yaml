@@ -8,6 +8,7 @@ services:
         max-file: "2"
     ports:
       - ${BIND_ADDRESS:-0.0.0.0}:5002:5002
+      - ${BIND_ADDRESS_IPV6:-[::]}:5002:5002
     devices:
       - /dev/dma_heap/system
       - /dev/dma_heap/qcom,system
