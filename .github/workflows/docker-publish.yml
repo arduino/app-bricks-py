@@ -279,7 +279,7 @@ jobs:
           CONTAINER: ${{ matrix.container }}
           VERSION: ${{ needs.detect.outputs.version }}
         run: |
-          find src -name "brick_compose*.yaml" | while read f; do
+          find src \( -name "brick_compose*.yaml" -o -name "service_compose*.yaml" \) | while read f; do
             if grep -q "$CONTAINER" "$f"; then
               echo "  Updating: $f"
               sed -i -E "s|${CONTAINER}:[^ \"']+|${CONTAINER}:${VERSION}|g" "$f"
@@ -393,7 +393,7 @@ jobs:
           CONTAINER: ${{ matrix.container }}
           VERSION: ${{ needs.detect.outputs.version }}
         run: |
-          find src -name "brick_compose*.yaml" | while read f; do
+          find src \( -name "brick_compose*.yaml" -o -name "service_compose*.yaml" \) | while read f; do
             if grep -q "$CONTAINER" "$f"; then
               echo "  Updating: $f"
               sed -i -E "s|${CONTAINER}:[^ \"']+|${CONTAINER}:${VERSION}|g" "$f"
