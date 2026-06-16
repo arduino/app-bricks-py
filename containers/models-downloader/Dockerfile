@@ -11,6 +11,8 @@ COPY --chown=arduino:arduino --chmod=755 ./src /app
 COPY --chown=arduino:arduino --chmod=644 ./models-list.yaml /app/models-list.yaml
 
 RUN set -ex; \
+    groupadd -g 1000 arduino || true; \
+    useradd -u 1000 -g arduino -ms /bin/bash arduino; \
     apt-get update -y; \
     apt-get upgrade -y; \
     apt-get autoclean -y; \
