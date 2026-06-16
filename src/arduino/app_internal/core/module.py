@@ -248,6 +248,8 @@ def get_brick_configured_model(brick_id: str, brick_config: Dict = None) -> Opti
 
     if brick_config and "model_by_boards" in brick_config:
         board_name = get_board_name()
+        if board_name == "unknown":
+            board_name = "ventunoq"  # Default to ventunoq if board name cannot be determined
         print(f"Looking for model configuration for board '{board_name}' in brick_config.yaml...")
         for board_entry in brick_config["model_by_boards"]:
             if "platform" in board_entry and board_entry["platform"] == board_name:

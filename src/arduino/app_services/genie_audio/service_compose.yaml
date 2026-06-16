@@ -33,6 +33,7 @@ services:
       - SD_ENABLE_PULSE=1
     ports:
       - ${BIND_ADDRESS:-127.0.0.1}:8085:8085
+      - ${BIND_ADDRESS_IPV6:-[::1]}:8085:8085
     volumes:
       - /var/lib/arduino-app-cli/models/audio-analytics:/mnt/work/models:ro
       # Mount hexagon firmware
