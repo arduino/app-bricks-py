@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-FROM python:3.13-slim
+FROM debian:trixie-slim
 
 ARG LLAMA_CPP_URL
 ARG LLAMA_CPP_DIGEST
@@ -13,7 +13,9 @@ COPY ./scripts/* /
 
 RUN set -x \
     && apt-get update \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends --no-install-suggests libgomp1 \
+    && apt-get dist-clean \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd -g 1000 ubuntu \
     && useradd -u 1000 -g ubuntu -ms /bin/bash ubuntu \
