@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-FROM debian:trixie-slim
+FROM python:3.13-slim
 
 ARG LLAMA_CPP_URL
 ARG LLAMA_CPP_DIGEST
