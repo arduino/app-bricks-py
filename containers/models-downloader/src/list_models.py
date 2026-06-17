@@ -17,6 +17,7 @@ Usage:
 import argparse
 import json
 import os
+import stat
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -123,17 +124,57 @@ def build_model_directory(variables):
 
 def get_dir_size_mb(path):
     """Return total disk usage of a path (file or directory) in MB, rounded to 2 decimals."""
-    if os.path.isfile(path):
-        return round(os.path.getsize(path) / 1024 / 1024, 2)
-    if os.path.isdir(path):
-        total = 0
-        for dirpath, _dirnames, filenames in os.walk(path):
-            for f in filenames:
-                fp = os.path.join(dirpath, f)
-                if not os.path.islink(fp):
-                    total += os.path.getsize(fp)
-        return round(total / 1024 / 1024, 2)
-    return None
+    try:
+        st = os.stat(path, follow_symlinks=False)
+    except OSError:
+        return None
+
+    if stat.S_ISREG(st.st_mode):
+        return round(st.st_size / 1024 / 1024, 2)
+    if not stat.S_ISDIR(st.st_mode):
+        return None
+
+    total = 0
+    stack = [path]
+    while stack:
+        current = stack.pop()
+        try:
+            with os.scandir(current) as it:
+                for entry in it:
+                    try:
+                        # Don't follow symlinks; use cached stat from DirEntry.
+                        entry_stat = entry.stat(follow_symlinks=False)
+                    except OSError:
+                        continue
+                    mode = entry_stat.st_mode
+                    if stat.S_ISDIR(mode):
+                        stack.append(entry.path)
+                    elif stat.S_ISREG(mode):
+                        total += entry_stat.st_size
+        except OSError:
+            continue
+    return round(total / 1024 / 1024, 2)
+
+
+# Cache of os.scandir results keyed by search_dir.
+# Each entry is a list of (name, is_dir) tuples, or None if the dir doesn't exist.
+_SEARCH_DIR_CACHE = {}
+
+
+def _scandir_cached(search_dir):
+    """Return cached [(name, is_dir), ...] for search_dir, or None if missing."""
+    cached = _SEARCH_DIR_CACHE.get(search_dir)
+    if cached is not None or search_dir in _SEARCH_DIR_CACHE:
+        return cached
+    try:
+        with os.scandir(search_dir) as it:
+            entries = [(e.name, e.is_dir(follow_symlinks=False)) for e in it]
+    except (FileNotFoundError, NotADirectoryError):
+        entries = None
+    except OSError:
+        entries = None
+    _SEARCH_DIR_CACHE[search_dir] = entries
+    return entries
 
 
 def check_model_exists(model_info, models_base_dir):
@@ -149,19 +190,24 @@ def check_model_exists(model_info, models_base_dir):
     else:
         search_dir = models_base_dir
 
-    # Exact match first (directory or file)
     full_path = os.path.join(search_dir, model_directory)
-    if os.path.exists(full_path):
-        return True, full_path
+    entries = _scandir_cached(search_dir)
+    if entries is None:
+        return False, full_path
+
+    # Exact match first (directory or file)
+    for name, _is_dir in entries:
+        if name == model_directory:
+            return True, full_path
 
     # Check for directories that start with model_directory (e.g. _proxy suffix)
     # Also normalize hyphens/underscores for fuzzy matching
-    if os.path.isdir(search_dir):
-        normalized = model_directory.replace("-", "_")
-        for entry in os.listdir(search_dir):
-            entry_normalized = entry.replace("-", "_")
-            if (entry.startswith(model_directory) or entry_normalized.startswith(normalized)) and os.path.isdir(os.path.join(search_dir, entry)):
-                return True, os.path.join(search_dir, entry)
+    normalized = model_directory.replace("-", "_")
+    for name, is_dir in entries:
+        if not is_dir:
+            continue
+        if name.startswith(model_directory) or name.replace("-", "_").startswith(normalized):
+            return True, os.path.join(search_dir, name)
 
     return False, full_path
 
