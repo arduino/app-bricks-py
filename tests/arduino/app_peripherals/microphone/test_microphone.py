@@ -82,6 +82,13 @@ class TestMicrophoneFactoryInstantiation:
         with pytest.raises(MicrophoneConfigError):
             Microphone(device=None)
 
+    def test_factory_no_microphone_raises_open_error(self, mock_pw_dump):
+        """Test that an integer index with no discoverable microphone raises MicrophoneOpenError."""
+        mock_pw_dump(usb_ids=(), builtin_ids=())
+
+        with pytest.raises(MicrophoneOpenError):
+            Microphone(device=0)
+
 
 class TestMicrophoneConfiguration:
     """Test microphone configuration and parameters."""
@@ -216,7 +223,7 @@ class TestMicrophoneStartStop:
 class TestMicrophoneContextManager:
     """Test context manager behavior."""
 
-    def test_context_manager_starts_and_stops(self):
+    def test_context_manager_starts_and_stops(self, mock_alsa_usb_mics):
         """Test that context manager starts and stops microphone."""
         mic = Microphone(device=0)
 
@@ -227,7 +234,7 @@ class TestMicrophoneContextManager:
 
         assert not mic.is_started()
 
-    def test_context_manager_stops_on_exception(self):
+    def test_context_manager_stops_on_exception(self, mock_alsa_usb_mics):
         """Test that context manager stops even on exception."""
         mic = Microphone(device=0)
 

@@ -16,7 +16,7 @@ from arduino.app_peripherals.microphone.errors import MicrophoneConfigError, Mic
 class TestAlSAMicrophoneInitialization:
     """Test ALSA microphone initialization."""
 
-    def test_alsa_start_opens_device(self, pcm_registry):
+    def test_alsa_start_opens_device(self, pcm_registry, mock_alsa_usb_mics):
         """Test that start() opens ALSA device."""
         mic = Microphone(device=0)
 
@@ -28,7 +28,7 @@ class TestAlSAMicrophoneInitialization:
         pcm_instance = pcm_registry.get_last_instance()
         assert pcm_instance is not None
 
-    def test_alsa_stop_closes_device(self, pcm_registry):
+    def test_alsa_stop_closes_device(self, pcm_registry, mock_alsa_usb_mics):
         """Test that stop() closes ALSA device."""
         mic = Microphone(device=0)
         mic.start()
