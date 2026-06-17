@@ -33,7 +33,9 @@ RUN set -ex; \
     apt-get autoremove -y
 
 
-FROM python:3.13-slim AS production
+ARG REGISTRY
+ARG BASE_IMAGE_VERSION=latest
+FROM ${REGISTRY}app-bricks/python-slim:${BASE_IMAGE_VERSION} AS production
 
 ARG LIBCAMERA_DEB_URL
 ARG LIBCAMERA_DEB_DIGEST

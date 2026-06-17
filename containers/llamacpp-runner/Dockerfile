@@ -2,7 +2,9 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-FROM python:3.13-slim
+ARG REGISTRY
+ARG BASE_IMAGE_VERSION=latest
+FROM ${REGISTRY}app-bricks/python-slim:${BASE_IMAGE_VERSION}
 
 ARG LLAMA_CPP_URL
 ARG LLAMA_CPP_DIGEST
