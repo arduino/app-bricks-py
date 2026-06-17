@@ -41,7 +41,6 @@ COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/pytho
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 RUN set -ex; \
-    echo "deb http://deb.debian.org/debian trixie-backports main" > /etc/apt/sources.list.d/trixie-backports.list; \
     groupadd -g 1000 arduino || true; \
     useradd -u 1000 -g arduino -ms /bin/bash arduino; \
     apt-get update -y; \
