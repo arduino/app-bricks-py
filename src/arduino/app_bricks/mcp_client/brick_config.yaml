@@ -1,0 +1,7 @@
+id: arduino:mcp_client
+name: MCP Client
+description: |
+  This brick helps you connect to the MCP server and send/receive messages.
+  It provides a simple interface for communication with the MCP server,
+  allowing you to easily integrate it into your Arduino projects.
+category: ai
