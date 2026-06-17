@@ -2,9 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-ARG REGISTRY
-ARG BASE_IMAGE_VERSION=latest
-FROM ${REGISTRY}app-bricks/python-base:${BASE_IMAGE_VERSION}
+FROM python:3.13-slim
 
 COPY --chown=arduino:arduino --chmod=755 ./requirements.txt /app/requirements.txt
 
@@ -13,6 +11,25 @@ COPY --chown=arduino:arduino --chmod=755 ./src /app
 COPY --chown=arduino:arduino --chmod=644 ./models-list.yaml /app/models-list.yaml
 
 RUN set -ex; \
+    groupadd -g 1000 arduino || true; \
+    useradd -u 1000 -g arduino -ms /bin/bash arduino; \
+    apt-get update -y; \
+    apt-get upgrade -y; \
+    apt-get autoclean -y; \
+    apt-get autoremove -y; \
+    apt-get dist-clean; \
+    # cleanup unnecessary files to reduce image size
+    rm -rf /tmp/* /var/tmp/*; \
+    rm -rf /var/lib/apt/lists/*; \
+    rm -fr /var/cache/apt/archives/*.deb \
+        /var/cache/apt/archives/partial/*.deb \
+        /usr/share/man/* \
+        /usr/share/locale/* \
+        /var/cache/debconf/* \
+        /var/lib/dpkg/info/* \
+        /var/cache/apt/*.bin; \
+    find /usr/share/doc -type f ! -name 'copyright' -delete; \
+    find /usr/share/doc -type d -empty -delete; \
     pip install --no-cache-dir -r /app/requirements.txt && rm /app/requirements.txt; \
     # precompile python files to .pyc to speed up startup time
     python -m compileall /usr/local/bin; \
