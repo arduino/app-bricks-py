@@ -15,7 +15,7 @@
     "GSTREAMER_LIBCAMERA_DEB_DIGEST": "sha256:1ffc340aa0e639d85fb86d9d86bd5d0a7cd1faec3450fba9f56cfb8559b41d85"
   },
   "sbom": {
-    "runtime_base": "${REGISTRY}app-bricks/python-slim:${BASE_IMAGE_VERSION}"
+    "runtime_base": "python:3.13-slim"
   },
   "downstream": ["python-apps-base"]
 }
