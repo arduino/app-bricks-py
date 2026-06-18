@@ -1,6 +1,6 @@
 id: arduino:vlm
-name: Visual Language Model (VLM)
-description: "Visual Language Model (VLM) Brick enables seamless integration with locally hosted VLMs for advanced AI capabilities in your Arduino projects."
+name: Vision Language Model (VLM)
+description: "Vision Language Model (VLM) Brick enables seamless integration with locally hosted VLMs for advanced AI capabilities in your Arduino projects."
 requires_services: ["arduino:genie"]
 requires_model: true
 model: genie:qwen2_5_vl_7b_instruct
