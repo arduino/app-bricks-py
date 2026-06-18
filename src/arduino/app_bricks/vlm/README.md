@@ -1,6 +1,6 @@
-# Visual Language Model (VLM) Brick
+# Vision Language Model (VLM) Brick
 
-The Visual Language Model (VLM) Brick provides a simple Python® interface for asking a locally hosted multimodal AI model questions about images. It lets Arduino® App Lab applications send text prompts together with image file paths or image bytes, then receive generated text from the model running on the board.
+The Vision Language Model (VLM) Brick provides a simple Python® interface for asking a locally hosted multimodal AI model questions about images. It lets Arduino® App Lab applications send text prompts together with image file paths or image bytes, then receive generated text from the model running on the board.
 
 ## Overview
 
@@ -133,7 +133,7 @@ The Brick configuration declares that `arduino:vlm` requires a local model servi
 
 ```yaml
 id: arduino:vlm
-name: Visual Language Model (VLM)
+name: Vision Language Model (VLM)
 requires_services: ["arduino:genie"]
 requires_model: true
 model: genie:qwen2_5_vl_7b_instruct
