@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from arduino.app_peripherals.microphone.errors import MicrophoneOpenError
-from arduino.app_peripherals.microphone.utils import _list_audio_sources, nth_plugged_microphone
+from arduino.app_peripherals.microphone.utils import list_audio_sources, nth_plugged_microphone
 
 _CARRIER_ENV = "CONFIGURED_CARRIERS"
 
@@ -80,7 +80,7 @@ class TestListAudioSources:
     def test_partitions_usb_and_builtin(self, mock_pw_dump):
         mock_pw_dump(usb_ids=(50,), builtin_ids=(52,))
 
-        usb, builtin = _list_audio_sources()
+        usb, builtin = list_audio_sources()
 
         assert [s["id"] for s in usb] == [50]
         assert [s["id"] for s in builtin] == [52]
@@ -89,7 +89,7 @@ class TestListAudioSources:
         # Declared out of order; discovery must sort by node id (lowest first).
         mock_pw_dump(usb_ids=(60, 50), builtin_ids=())
 
-        usb, _ = _list_audio_sources()
+        usb, _ = list_audio_sources()
 
         assert [s["id"] for s in usb] == [50, 60]
 
@@ -110,7 +110,7 @@ class TestListAudioSources:
         ]
         with patch("arduino.app_peripherals.microphone.utils.subprocess.run") as run:
             run.return_value = MagicMock(stdout=json.dumps(objects))
-            usb, builtin = _list_audio_sources()
+            usb, builtin = list_audio_sources()
 
         assert usb == []
         assert [s["id"] for s in builtin] == [50]

@@ -283,33 +283,6 @@ def pcm_registry():
 
 
 @pytest.fixture
-def mock_alsa_usb_mics():
-    """
-    Fixture that mocks ALSA USB device detection for USB microphone tests.
-
-    This fixture patches Path.exists and Path.resolve to simulate a USB audio device
-    being present on the system. Use this fixture in tests that need to work with
-    USB microphones.
-
-    Example:
-        def test_usb_microphone(mock_alsa_usb_mics):
-            mic = Microphone()
-            mic.start()
-            # ... test operations
-    """
-    from unittest.mock import patch
-
-    # Mock USB device path resolution
-    usb_device_path = "/sys/devices/platform/soc@0/4ef8800.usb/4e00000.usb/xhci-hcd.2.auto/usb1/1-1/1-1.3/1-1.3:1.0/sound/card0/pcmC0D0c"
-
-    with (
-        patch("arduino.app_peripherals.microphone.alsa_microphone.Path.exists", return_value=True) as mock_exists,
-        patch("arduino.app_peripherals.microphone.alsa_microphone.Path.resolve", return_value=Path(usb_device_path)) as mock_resolve,
-    ):
-        yield {"mock_exists": mock_exists, "mock_resolve": mock_resolve, "usb_device_path": usb_device_path}
-
-
-@pytest.fixture
 def mock_alsa_usb_speakers():
     """
     Fixture that mocks ALSA USB device detection for USB speaker tests.

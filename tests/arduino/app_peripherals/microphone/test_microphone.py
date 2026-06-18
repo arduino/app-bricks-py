@@ -15,27 +15,27 @@ from arduino.app_peripherals.microphone.errors import MicrophoneConfigError, Mic
 class TestMicrophoneFactoryInstantiation:
     """Test factory instantiation of different microphone types."""
 
-    def test_factory_creates_alsa_microphone_with_integer(self, mock_alsa_usb_mics):
+    def test_factory_creates_alsa_microphone_with_integer(self):
         """Test factory creates ALSA microphone with integer device index."""
         mic = Microphone(device=0)
 
         assert isinstance(mic, ALSAMicrophone)
-        assert mic.device_stable_ref == "CARD=SomeCard,DEV=0"
+        assert mic.device_stable_ref == "plughw:CARD=SomeCard,DEV=0"
 
-    def test_factory_creates_alsa_microphone_with_string_index(self, mock_alsa_usb_mics):
+    def test_factory_creates_alsa_microphone_with_string_index(self):
         """Test factory creates ALSA microphone with string device index."""
 
         mic = Microphone(device="1")
 
         assert isinstance(mic, ALSAMicrophone)
-        assert mic.device_stable_ref == "CARD=AnotherCard,DEV=0"
+        assert mic.device_stable_ref == "plughw:CARD=AnotherCard,DEV=0"
 
-    def test_factory_creates_alsa_microphone_with_device_name(self, mock_alsa_usb_mics):
+    def test_factory_creates_alsa_microphone_with_device_name(self):
         """Test factory creates ALSA microphone with explicit device name."""
         mic = Microphone(device="hw:0,0")
 
         assert isinstance(mic, ALSAMicrophone)
-        assert mic.device_stable_ref == "CARD=SomeCard,DEV=0"
+        assert mic.device_stable_ref == "plughw:CARD=SomeCard,DEV=0"
 
     def test_factory_creates_websocket_microphone_with_ws_url(self):
         """Test factory creates WebSocket microphone with ws:// URL."""
@@ -80,7 +80,7 @@ class TestMicrophoneFactoryInstantiation:
     def test_factory_invalid_device_type_raises_error(self):
         """Test that invalid device type raises MicrophoneConfigError."""
         with pytest.raises(MicrophoneConfigError):
-            Microphone(device=None)
+            Microphone(device=None)  # type: ignore
 
     def test_factory_no_microphone_raises_open_error(self, mock_pw_dump):
         """Test that an integer index with no discoverable microphone raises MicrophoneOpenError."""
@@ -93,7 +93,7 @@ class TestMicrophoneFactoryInstantiation:
 class TestMicrophoneConfiguration:
     """Test microphone configuration and parameters."""
 
-    def test_default_parameters(self, mock_alsa_usb_mics):
+    def test_default_parameters(self):
         """Test that microphones use default parameters."""
         mic = Microphone(device=0)
 
@@ -102,7 +102,7 @@ class TestMicrophoneConfiguration:
         assert mic.format == np.int16
         assert mic.buffer_size == Microphone.BUFFER_SIZE_BALANCED
 
-    def test_custom_parameters_alsa(self, mock_alsa_usb_mics):
+    def test_custom_parameters_alsa(self):
         """Test ALSA microphone with custom parameters."""
         mic = Microphone(device=0, sample_rate=48000, channels=2, format=np.int32, buffer_size=2048)
 
@@ -149,12 +149,14 @@ class TestMicrophoneConfiguration:
     def test_invalid_device_type_raises_error(self):
         """Test that invalid device type raises error."""
         with pytest.raises(MicrophoneConfigError):
-            ALSAMicrophone(device=None)
+            ALSAMicrophone(device=None)  # type: ignore
 
-    def test_no_devices_found_raises_error(self):
+    def test_no_devices_found_raises_error(self, mock_pw_dump):
         """Test that no USB devices found raises error."""
+        mock_pw_dump(usb_ids=(), builtin_ids=())
+
         with pytest.raises(MicrophoneConfigError):
-            ALSAMicrophone()
+            ALSAMicrophone(device="usb:1")
 
     def test_out_of_range_device_index_raises_error(self):
         """Test that out of range device index raises error."""
@@ -223,7 +225,7 @@ class TestMicrophoneStartStop:
 class TestMicrophoneContextManager:
     """Test context manager behavior."""
 
-    def test_context_manager_starts_and_stops(self, mock_alsa_usb_mics):
+    def test_context_manager_starts_and_stops(self):
         """Test that context manager starts and stops microphone."""
         mic = Microphone(device=0)
 
@@ -234,7 +236,7 @@ class TestMicrophoneContextManager:
 
         assert not mic.is_started()
 
-    def test_context_manager_stops_on_exception(self, mock_alsa_usb_mics):
+    def test_context_manager_stops_on_exception(self):
         """Test that context manager stops even on exception."""
         mic = Microphone(device=0)
 
@@ -254,7 +256,7 @@ class TestBaseMicrophoneAbstraction:
     def test_cannot_instantiate_base_class(self):
         """Test that BaseMicrophone cannot be instantiated directly."""
         with pytest.raises(TypeError):
-            BaseMicrophone()
+            BaseMicrophone()  # type: ignore
 
     def test_subclass_must_implement_abstract_methods(self):
         """Test that subclass must implement all abstract methods."""
@@ -268,7 +270,7 @@ class TestBaseMicrophoneAbstraction:
                 pass
 
         with pytest.raises(TypeError):
-            IncompleteMic1()
+            IncompleteMic1()  # type: ignore
 
         # Missing _close_microphone
         class IncompleteMic2(BaseMicrophone):
@@ -279,7 +281,7 @@ class TestBaseMicrophoneAbstraction:
                 pass
 
         with pytest.raises(TypeError):
-            IncompleteMic2()
+            IncompleteMic2()  # type: ignore
 
         # Missing _open_microphone
         class IncompleteMic3(BaseMicrophone):
@@ -290,7 +292,7 @@ class TestBaseMicrophoneAbstraction:
                 pass
 
         with pytest.raises(TypeError):
-            IncompleteMic3()
+            IncompleteMic3()  # type: ignore
 
 
 class TestExceptionHierarchy:

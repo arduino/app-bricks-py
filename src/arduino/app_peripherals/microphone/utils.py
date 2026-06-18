@@ -11,6 +11,11 @@ from .errors import MicrophoneOpenError
 _MEDIA_CARRIER = "media-carrier"
 
 
+def has_media_carrier() -> bool:
+    """Tell whether the media carrier is currently configured on the board."""
+    return os.environ.get("CONFIGURED_CARRIERS") == _MEDIA_CARRIER
+
+
 def nth_plugged_microphone(idx: int) -> str:
     """
     Find the n-th available physically connected microphone.
@@ -29,18 +34,18 @@ def nth_plugged_microphone(idx: int) -> str:
     Raises:
         MicrophoneOpenError: If no matching microphone is found.
     """
-    usb_mics, builtin_mics = _list_audio_sources()
+    usb_mics, builtin_mics = list_audio_sources()
 
     if idx < len(usb_mics):
         return f"usb:{idx + 1}"
 
-    if os.environ.get("CONFIGURED_CARRIERS") == _MEDIA_CARRIER and idx < len(builtin_mics):
+    if has_media_carrier() and idx < len(builtin_mics):
         return f"jack:{idx + 1}"
 
     raise MicrophoneOpenError("No available microphones found")
 
 
-def _list_audio_sources() -> tuple[list[dict], list[dict]]:
+def list_audio_sources() -> tuple[list[dict], list[dict]]:
     """
     Discover audio capture devices via pw-dump, partitioned into USB and
     built-in, each ordered by ascending PipeWire node id (lowest id first).

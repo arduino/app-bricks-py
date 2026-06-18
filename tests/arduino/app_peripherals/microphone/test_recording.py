@@ -462,7 +462,7 @@ class TestWAVFileFloatConversion:
 class TestRecordingWithRealMicrophone:
     """Test recording with real microphone implementations (mocked hardware)."""
 
-    def test_alsa_microphone_record(self, pcm_registry, mock_alsa_usb_mics):
+    def test_alsa_microphone_record(self, pcm_registry):
         """Test recording with ALSA microphone (raw PCM)."""
         mic = Microphone(device=0)
         mic.start()
@@ -478,7 +478,7 @@ class TestRecordingWithRealMicrophone:
         assert len(recording) > 0
         assert recording.dtype == np.int16
 
-    def test_alsa_microphone_record_wav(self, pcm_registry, mock_alsa_usb_mics):
+    def test_alsa_microphone_record_wav(self, pcm_registry):
         """Test recording WAV format with ALSA microphone."""
 
         mic = Microphone(device=0)

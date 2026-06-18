@@ -21,16 +21,15 @@ def build_pw_dump(usb_ids=(), builtin_ids=()):
     Build a minimal pw-dump JSON payload.
 
     Args:
-        usb_ids: PipeWire node ids for USB Audio/Source nodes.
+        usb_ids: PipeWire node ids for USB Audio/Source nodes. Each is assigned an
+            ALSA card index by enumeration order, so the node-id ordering maps to the
+            mocked alsaaudio cards (SomeCard=0, AnotherCard=1).
         builtin_ids: PipeWire node ids for built-in (jack) Audio/Source nodes.
-
-    Each source is paired with a parent Audio/Device; USB ones carry
-    ``device.bus == "usb"`` while built-in ones look like the platform device.
     """
     objects = []
     dev_seq = iter(range(1000, 2000))
 
-    def add(node_id, is_usb):
+    def add(node_id, is_usb, alsa_card=None):
         dev_id = next(dev_seq)
         if is_usb:
             dev_props = {
@@ -39,6 +38,13 @@ def build_pw_dump(usb_ids=(), builtin_ids=()):
                 "device.name": f"alsa_card.usb-Device-{node_id}",
             }
             node_name = f"alsa_input.usb-Device-{node_id}.analog-mono"
+            source_props = {
+                "media.class": "Audio/Source",
+                "node.name": node_name,
+                "device.id": dev_id,
+                "api.alsa.pcm.card": alsa_card,
+                "api.alsa.path": f"hw:{alsa_card}",
+            }
         else:
             dev_props = {
                 "media.class": "Audio/Device",
@@ -46,14 +52,16 @@ def build_pw_dump(usb_ids=(), builtin_ids=()):
                 "device.form-factor": "internal",
             }
             node_name = f"alsa_input.platform-sound.Source-{node_id}"
+            source_props = {
+                "media.class": "Audio/Source",
+                "node.name": node_name,
+                "device.id": dev_id,
+            }
         objects.append({"id": dev_id, "info": {"props": dev_props}})
-        objects.append({
-            "id": node_id,
-            "info": {"props": {"media.class": "Audio/Source", "node.name": node_name, "device.id": dev_id}},
-        })
+        objects.append({"id": node_id, "info": {"props": source_props}})
 
-    for node_id in usb_ids:
-        add(node_id, is_usb=True)
+    for alsa_card, node_id in enumerate(usb_ids):
+        add(node_id, is_usb=True, alsa_card=alsa_card)
     for node_id in builtin_ids:
         add(node_id, is_usb=False)
     return objects
