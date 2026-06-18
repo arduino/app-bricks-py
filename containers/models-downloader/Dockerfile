@@ -9,6 +9,7 @@ FROM ${REGISTRY}app-bricks/python-slim:${BASE_IMAGE_VERSION}
 RUN set -ex; \
     groupadd -g 1000 arduino || true; \
     useradd -u 1000 -g arduino -ms /bin/bash arduino; \
+    mkdir /app; \
     chown arduino:arduino -R /app
 
 COPY --chown=arduino:arduino --chmod=755 ./requirements.txt /app/requirements.txt
