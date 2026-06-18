@@ -18,6 +18,7 @@ MODEL_FROM_BOARD = "genie:board-specific-model"
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _app_cfg(brick_id: str, model: str) -> dict:
     """Minimal app.yaml structure that maps brick_id -> model."""
     return {"bricks": [{brick_id: {"model": model}}]}
@@ -41,6 +42,7 @@ def _brick_cfg_with_model_and_boards(board: str, board_model: str, default_model
 # ---------------------------------------------------------------------------
 # Model from app.yaml
 # ---------------------------------------------------------------------------
+
 
 @patch("arduino.app_internal.core.module.get_app_config")
 def test_model_returned_from_app_yaml(mock_app_cfg):
@@ -143,6 +145,7 @@ def test_model_bare_string_brick_entries_are_skipped(mock_app_cfg):
 # Model from brick_config – model_by_boards
 # ---------------------------------------------------------------------------
 
+
 @patch("arduino.app_internal.core.module.get_board_name")
 @patch("arduino.app_internal.core.module.get_app_config")
 def test_model_from_model_by_boards_matching_platform(mock_app_cfg, mock_board):
@@ -189,6 +192,7 @@ def test_model_from_model_by_boards_multiple_entries_selects_correct(mock_app_cf
 # Model from brick_config – flat 'model' key
 # ---------------------------------------------------------------------------
 
+
 @patch("arduino.app_internal.core.module.get_app_config")
 def test_model_from_brick_config_flat_model(mock_app_cfg):
     mock_app_cfg.return_value = None
@@ -201,6 +205,7 @@ def test_model_from_brick_config_flat_model(mock_app_cfg):
 # ---------------------------------------------------------------------------
 # No model found
 # ---------------------------------------------------------------------------
+
 
 @patch("arduino.app_internal.core.module.get_app_config")
 def test_returns_none_when_no_app_config_and_no_brick_config(mock_app_cfg):
@@ -235,6 +240,7 @@ def test_returns_none_when_model_by_boards_has_no_match_and_no_model_key(mock_ap
 # ---------------------------------------------------------------------------
 # Invalid input
 # ---------------------------------------------------------------------------
+
 
 def test_raises_value_error_for_none_brick_id():
     with pytest.raises(ValueError):

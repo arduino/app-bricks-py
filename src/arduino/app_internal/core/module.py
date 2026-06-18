@@ -233,17 +233,15 @@ def get_brick_configured_model(brick_id: str, brick_config: Dict = None) -> Opti
     if brick_id is None or brick_id.strip() == "":
         raise ValueError("Invalid brick_id provided to get_brick_configured_model")
 
-    print(f"Searching for model configuration for brick '{brick_id}' in app.yaml...")
     app_cfg = get_app_config()
     if app_cfg and "bricks" in app_cfg:
         bricks_list = app_cfg["bricks"]
         for brick_entry in bricks_list:
             if isinstance(brick_entry, dict) and brick_id in brick_entry:
+                print(f"Found brick entry for '{brick_id}' in app.yaml: {brick_entry}")
                 brick_section = brick_entry[brick_id]
                 if isinstance(brick_section, dict) and "model" in brick_section:
                     return brick_section["model"]
-
-    print(f"No model configuration found for brick '{brick_id}' in app.yaml. Checking brick_config.yaml for defaults... {brick_config}")
 
     # No model found in app config, check if it's specified in the brick_config.yaml as default for the brick
     if brick_config is None:
