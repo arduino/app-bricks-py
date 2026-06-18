@@ -12,7 +12,7 @@ import base64
 import numpy as np
 
 from arduino.app_internal.core.peripherals.bpp_codec import BPPCodec
-from arduino.app_peripherals.microphone import WebSocketMicrophone, MicrophoneOpenError
+from arduino.app_peripherals.microphone import WebSocketMicrophone, MicrophoneOpenError, MicrophoneConfigError
 
 
 class TestWebSocketMicrophoneInit:
@@ -31,8 +31,8 @@ class TestWebSocketMicrophoneInit:
         assert mic._server is None
 
     def test_encrypt_without_secret_fails(self):
-        """Test that encrypt=True without a secret raises RuntimeError."""
-        with pytest.raises(RuntimeError, match="Encryption requires a secret key"):
+        """Test that encrypt=True without a secret raises a config error."""
+        with pytest.raises(MicrophoneConfigError, match="Encryption requires a secret key"):
             WebSocketMicrophone(encrypt=True)
 
     def test_empty_string_secret_enables_bpp(self):

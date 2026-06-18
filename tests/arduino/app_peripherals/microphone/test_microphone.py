@@ -151,16 +151,16 @@ class TestMicrophoneConfiguration:
         with pytest.raises(MicrophoneConfigError):
             ALSAMicrophone(device=None)  # type: ignore
 
-    def test_no_devices_found_raises_error(self, mock_pw_dump):
-        """Test that no USB devices found raises error."""
+    def test_no_devices_found_raises_open_error(self, mock_pw_dump):
+        """Test that no USB devices found raises an open error."""
         mock_pw_dump(usb_ids=(), builtin_ids=())
 
-        with pytest.raises(MicrophoneConfigError):
+        with pytest.raises(MicrophoneOpenError):
             ALSAMicrophone(device="usb:1")
 
-    def test_out_of_range_device_index_raises_error(self):
-        """Test that out of range device index raises error."""
-        with pytest.raises(MicrophoneConfigError):
+    def test_out_of_range_device_index_raises_open_error(self):
+        """Test that an out of range ordinal index raises an open error."""
+        with pytest.raises(MicrophoneOpenError):
             ALSAMicrophone(device=10)
 
 

@@ -45,7 +45,7 @@ class TestALSAMicrophoneDeviceResolution:
     @pytest.mark.parametrize(
         "device, expected",
         [
-            (0, "plughw:CARD=SomeCard,DEV=0"),
+            (0, "plughw:CARD=SomeCard,DEV=0"),  # Ordinal -> n-th plugged microphone
             (1, "plughw:CARD=AnotherCard,DEV=0"),
             ("CARD=SomeCard,DEV=0", "plughw:CARD=SomeCard,DEV=0"),
             ("plughw:CARD=SomeCard,DEV=0", "plughw:CARD=SomeCard,DEV=0"),
@@ -58,8 +58,8 @@ class TestALSAMicrophoneDeviceResolution:
         """Test that supported identifiers resolve to a full ALSA path."""
         assert ALSAMicrophone(device=device).device_stable_ref == expected
 
-    def test_default_device_resolves_to_first_card(self):
-        """Test that the default device selects the first card."""
+    def test_default_device_resolves_to_first_plugged(self):
+        """Test that the default device selects the first plugged microphone."""
         assert ALSAMicrophone().device_stable_ref == "plughw:CARD=SomeCard,DEV=0"
 
     def test_resolve_by_id_symlink(self):
@@ -75,25 +75,45 @@ class TestALSAMicrophoneDeviceResolution:
     @pytest.mark.parametrize(
         "device, message",
         [
-            (5, "out of range"),  # Card index beyond the available cards
+            (None, "Invalid device type"),  # Wrong type
             ("not-a-real-device", "Unsupported device identifier"),  # Unrecognized format
-            ("CARD=Ghost,DEV=0", "not found among available"),  # Well-formed but disconnected
         ],
     )
-    def test_invalid_device_raises_error(self, device, message):
-        """Test that unresolvable identifiers raise a config error."""
+    def test_bad_parameter_raises_config_error(self, device, message):
+        """Test that a wrong or unsupported device parameter raises a config error."""
         with pytest.raises(MicrophoneConfigError) as exc_info:
             ALSAMicrophone(device=device)
 
         assert message in str(exc_info.value)
 
+    @pytest.mark.parametrize(
+        "device, message",
+        [
+            (5, "No available microphones found"),  # Ordinal beyond the plugged microphones
+            ("CARD=Ghost,DEV=0", "not found among available"),  # Well-formed but disconnected
+        ],
+    )
+    def test_unavailable_device_raises_open_error(self, device, message):
+        """Test that a missing or unavailable device raises an open error."""
+        with pytest.raises(MicrophoneOpenError) as exc_info:
+            ALSAMicrophone(device=device)
+
+        assert message in str(exc_info.value)
+
     @patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.pcms", return_value=[])
-    def test_no_alsa_devices_raises_error(self, mock_pcms):
-        """Test that error is raised when no ALSA capture devices are present."""
-        with pytest.raises(MicrophoneConfigError) as exc_info:
-            ALSAMicrophone(device=0)
+    def test_no_alsa_devices_raises_open_error(self, mock_pcms):
+        """Test that an explicit device with no ALSA capture devices present raises an open error."""
+        with pytest.raises(MicrophoneOpenError) as exc_info:
+            ALSAMicrophone(device="CARD=SomeCard,DEV=0")
 
         assert "No ALSA microphones found" in str(exc_info.value)
+
+    def test_ordinal_with_no_plugged_mic_raises_open_error(self, mock_pw_dump):
+        """Test that an ordinal index with no plugged microphone raises an open error."""
+        mock_pw_dump(usb_ids=(), builtin_ids=())
+
+        with pytest.raises(MicrophoneOpenError):
+            ALSAMicrophone(device=0)
 
 
 class TestALSAErrorManagement:
@@ -198,7 +218,7 @@ class TestALSADeviceReconnection:
         """Test reconnection when device becomes available."""
         # Initially no devices - creation should fail
         with patch("arduino.app_peripherals.microphone.alsa_microphone.alsaaudio.pcms", side_effect=None, return_value=[]):
-            with pytest.raises(MicrophoneConfigError):
+            with pytest.raises(MicrophoneOpenError):
                 mic = ALSAMicrophone(device="CARD=SomeCard,DEV=0")
 
         # Now creation and start should work
@@ -315,7 +335,7 @@ class TestALSAMicrophoneUsbDiscovery:
     def test_usb_out_of_range_raises(self, mock_pw_dump):
         mock_pw_dump(usb_ids=(50,))
 
-        with pytest.raises(MicrophoneConfigError):
+        with pytest.raises(MicrophoneOpenError):
             ALSAMicrophone(device="usb:2")
 
     def test_listed_device_is_accepted_as_input(self):
@@ -338,7 +358,7 @@ class TestALSAMicrophoneJackResolution:
     def test_list_jack_devices_requires_media_carrier(self, mock_pw_dump):
         mock_pw_dump(usb_ids=(), builtin_ids=(52,))
 
-        # Off-carrier the built-in mic is not exposed.
+        # Without media carrier the built-in mic is not exposed.
         assert ALSAMicrophone.list_jack_devices() == []
 
     def test_list_jack_devices_under_media_carrier(self, mock_pw_dump, media_carrier):
@@ -369,14 +389,27 @@ class TestALSAMicrophoneJackResolution:
     def test_second_jack_unsupported(self, mock_pw_dump, media_carrier):
         mock_pw_dump(usb_ids=(), builtin_ids=(52,))
 
-        with pytest.raises(MicrophoneConfigError):
+        with pytest.raises(MicrophoneOpenError):
             ALSAMicrophone(device="jack:2")
 
     def test_jack_off_media_carrier_raises(self, mock_pw_dump):
         mock_pw_dump(usb_ids=(), builtin_ids=(52,))
 
-        with pytest.raises(MicrophoneConfigError):
+        with pytest.raises(MicrophoneOpenError):
             ALSAMicrophone(device="jack:1")
+
+    def test_ordinal_falls_back_to_jack_under_media_carrier(self, mock_pw_dump, media_carrier):
+        # No USB, one built-in: the first plugged mic is the jack device.
+        mock_pw_dump(usb_ids=(), builtin_ids=(52,))
+
+        assert ALSAMicrophone(device=0).device_stable_ref == "pipewire:NODE=52"
+
+    def test_ordinal_no_jack_fallback_off_media_carrier(self, mock_pw_dump):
+        # Without media carrier there is no jack fallback, so an ordinal with no USB raises.
+        mock_pw_dump(usb_ids=(), builtin_ids=(52,))
+
+        with pytest.raises(MicrophoneOpenError):
+            ALSAMicrophone(device=0)
 
     def test_explicit_pipewire_node_passthrough(self, pcm_registry):
         mic = ALSAMicrophone(device="pipewire:NODE=99")

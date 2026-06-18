@@ -30,7 +30,7 @@ class TestNthPluggedMicrophone:
     def test_out_of_range_without_carrier_raises(self, mock_pw_dump):
         mock_pw_dump(usb_ids=(50,), builtin_ids=(52,))
 
-        # Second position has no USB device and there is no built-in fallback off-carrier.
+        # Second position has no USB device and there is no built-in fallback without media carrier.
         with pytest.raises(MicrophoneOpenError):
             nth_plugged_microphone(1)
 
