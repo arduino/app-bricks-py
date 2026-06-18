@@ -233,6 +233,7 @@ def get_brick_configured_model(brick_id: str, brick_config: Dict = None) -> Opti
     if brick_id is None or brick_id.strip() == "":
         raise ValueError("Invalid brick_id provided to get_brick_configured_model")
 
+    print(f"Searching for model configuration for brick '{brick_id}' in app.yaml...")
     app_cfg = get_app_config()
     if app_cfg and "bricks" in app_cfg:
         bricks_list = app_cfg["bricks"]
@@ -242,14 +243,15 @@ def get_brick_configured_model(brick_id: str, brick_config: Dict = None) -> Opti
                 if isinstance(brick_config, dict) and "model" in brick_config:
                     return brick_config["model"]
 
+    print(f"No model configuration found for brick '{brick_id}' in app.yaml. Checking brick_config.yaml for defaults... {brick_config}")
+
     # No model found in app config, check if it's specified in the brick_config.yaml as default for the brick
     if brick_config is None:
         return None
 
     if brick_config and "model_by_boards" in brick_config:
+        print(f"Found 'model_by_boards' in brick_config.yaml for brick '{brick_id}'. Checking for matching board...")
         board_name = get_board_name()
-        if board_name == "unknown":
-            board_name = "ventunoq"  # Default to ventunoq if board name cannot be determined
         print(f"Looking for model configuration for board '{board_name}' in brick_config.yaml...")
         for board_entry in brick_config["model_by_boards"]:
             if "platform" in board_entry and board_entry["platform"] == board_name:
