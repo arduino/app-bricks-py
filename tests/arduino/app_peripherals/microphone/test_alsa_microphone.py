@@ -377,6 +377,17 @@ class TestALSAMicrophoneJackResolution:
         mic = ALSAMicrophone(device="jack:1")
         assert mic.device_stable_ref == "pipewire:NODE=52"
 
+    def test_jack_name_uses_pipewire_description(self, mock_pw_dump, media_carrier):
+        mock_pw_dump(usb_ids=(), builtin_ids=(52,))
+
+        mic = ALSAMicrophone(device="jack:1")
+        assert mic.name == "Built-in Audio 52"
+
+    def test_jack_name_falls_back_to_node_ref_without_description(self):
+        # An explicit pipewire node absent from pw-dump keeps the technical ref as name.
+        mic = ALSAMicrophone(device="pipewire:NODE=99")
+        assert mic.name == "pipewire:NODE=99"
+
     def test_jack_opens_pipewire_device(self, mock_pw_dump, media_carrier, pcm_registry):
         mock_pw_dump(usb_ids=(), builtin_ids=(52,))
 

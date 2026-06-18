@@ -66,6 +66,29 @@ def list_audio_sources() -> tuple[list[dict], list[dict]]:
     return usb, builtin
 
 
+def node_description(node_id: int) -> str | None:
+    """
+    Return a PipeWire node's human-readable description, if available.
+
+    Returns None when the node can't be found or pw-dump fails.
+
+    Args:
+        node_id (int): PipeWire node id.
+
+    Returns:
+        str | None: The node's "node.description" (or "node.nick"), or None.
+    """
+    try:
+        objects = _pw_dump()
+    except MicrophoneOpenError:
+        return None
+    for obj in objects:
+        if obj.get("id") == node_id:
+            props = _props(obj)
+            return props.get("node.description") or props.get("node.nick")
+    return None
+
+
 def _pw_dump() -> list:
     """Run pw-dump and parse its JSON output."""
     try:

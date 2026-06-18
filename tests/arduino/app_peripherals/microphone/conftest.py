@@ -55,6 +55,7 @@ def build_pw_dump(usb_ids=(), builtin_ids=()):
             source_props = {
                 "media.class": "Audio/Source",
                 "node.name": node_name,
+                "node.description": f"Built-in Audio {node_id}",
                 "device.id": dev_id,
             }
         objects.append({"id": dev_id, "info": {"props": dev_props}})

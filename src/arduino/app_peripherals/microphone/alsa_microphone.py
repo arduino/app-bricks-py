@@ -12,7 +12,7 @@ import numpy as np
 
 from .base_microphone import BaseMicrophone, FormatPlain, FormatPacked
 from .errors import MicrophoneError, MicrophoneOpenError, MicrophoneReadError, MicrophoneConfigError
-from .utils import has_media_carrier, list_audio_sources, nth_plugged_microphone
+from .utils import has_media_carrier, list_audio_sources, nth_plugged_microphone, node_description
 from arduino.app_utils.logger import Logger
 
 logger = Logger("ALSAMicrophone")
@@ -332,7 +332,11 @@ class ALSAMicrophone(BaseMicrophone):
         """
         if isinstance(device_ref, str):
             if device_ref.startswith("pipewire:"):
+                node_match = re.match(r"^pipewire:NODE=(\d+)$", device_ref)
+                if node_match:
+                    return node_description(int(node_match.group(1))) or device_ref
                 return device_ref
+
             match = re.match(r"^(?:plughw:|hw:)([^,]+),\d+,\d+$", device_ref)
             if match:
                 return match.group(1)
