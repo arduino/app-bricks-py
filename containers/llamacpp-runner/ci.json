@@ -9,7 +9,7 @@
     "LLAMA_CPP_DIGEST": "sha256:6c31d355cb6e77413121c821d9ff45496cd4b4cbd5fd914b80b04e1202075fb3"
   },
   "sbom": {
-    "runtime_base": "debian:trixie-slim"
+    "runtime_base": "${REGISTRY}app-bricks/python-slim:${BASE_IMAGE_VERSION}"
   },
   "downstream": []
 }
