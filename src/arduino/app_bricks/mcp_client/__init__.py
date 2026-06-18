@@ -4,10 +4,17 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import asyncio
-from abc import ABC, abstractmethod
+import sys
+from abc import ABC
+from typing import TYPE_CHECKING
+
+from langchain_core.tools import BaseTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
 from arduino.app_utils import brick
+
+if TYPE_CHECKING:
+    import httpx
 
 
 class MCPEndpoint(ABC):
@@ -18,46 +25,66 @@ class MCPEndpoint(ABC):
         self.transport = transport
         self.config = kwargs
 
-    @abstractmethod
-    def to_dict(self):
-        config: dict = {}
-        config[self.name] = {
-            "transport": self.transport,
-            **self.config,
+    def to_conn(self) -> dict:
+        """Build the connection configuration consumed by MultiServerMCPClient.
+
+        Returns:
+            dict: A mapping of the endpoint name to its transport configuration.
+        """
+        return {
+            self.name: {
+                "transport": self.transport,
+                **self.config,
+            }
         }
-        return config
 
 
 class HTTPEndpoint(MCPEndpoint):
     """A class to communicate with remote MCP server via HTTP protocol to perform various tasks."""
 
-    def __init__(self, name: str, url: str, headers: dict = None):
-        """Initialize the HTTPEndpoint with the given name, URL, and optional headers.
+    def __init__(self, name: str, url: str, headers: dict | None = None, token: str | None = None, auth: "httpx.Auth | None" = None):
+        """Initialize the HTTPEndpoint with the given name, URL, and optional authentication.
         Configure url to point to the /mcp endpoint of the remote MCP server.
-        To add authentication, include the necessary headers (e.g., Authorization) in the headers dictionary.
+
+        Authentication can be provided in three ways (see the brick README for provider recipes):
+        - ``token``: a convenience for bearer auth, added as an ``Authorization: Bearer <token>`` header
+          (e.g. a GitHub PAT or a Stripe restricted key).
+        - ``headers``: arbitrary custom headers, for providers that use their own scheme
+          (e.g. Datadog's ``DD-API-KEY`` / ``DD-APPLICATION-KEY``, or HTTP ``Basic`` auth).
+        - ``auth``: an ``httpx.Auth`` object, for advanced or rotating-credential schemes (e.g. OAuth).
+
+        An explicit ``Authorization`` entry in ``headers`` takes precedence over ``token``.
 
         Args:
             name (str): A unique name for the MCP endpoint configuration.
             url (str): The URL of the remote MCP server's /mcp endpoint (e.g., http://localhost:8080/mcp).
             headers (dict, optional): Optional HTTP headers for authentication or other purposes. Defaults to None.
+            token (str, optional): Bearer token added as an ``Authorization: Bearer`` header. Defaults to None.
+            auth (httpx.Auth, optional): An httpx authentication object passed through to the HTTP client. Defaults to None.
         """
-        super().__init__(name=name, transport="http", url=url, headers=headers)
-
-    def to_dict(self):
-        return super().to_dict()
+        headers = dict(headers) if headers else {}
+        if token:
+            headers.setdefault("Authorization", f"Bearer {token}")
+        config: dict = {"url": url}
+        if headers:
+            config["headers"] = headers
+        if auth is not None:
+            config["auth"] = auth
+        super().__init__(name=name, transport="http", **config)
 
 
 class LocalPythonMCPEndpoint(MCPEndpoint):
     """A class to communicate with a local Python MCP server to perform various tasks."""
 
-    def __init__(self, name: str, script_path: str, args: list = None):
+    def __init__(self, name: str, script_path: str, args: list | None = None, env: dict | None = None):
         """Initialize the LocalPythonMCPEndpoint with the given name, script path, and optional arguments.
-        The script specified by script_path should implement an MCP server using the MCPServer class from the langchain_mcp_adapters library.
+        The script specified by script_path should implement an MCP server using ``FastMCP`` from the ``mcp`` library (see the example below).
 
         Args:
             name (str): A unique name for the MCP endpoint configuration.
             script_path (str): The path to the Python script implementing the MCP server.
             args (list, optional): Additional command-line arguments to pass to the script. Defaults to None.
+            env (dict, optional): Environment variables for the server process, e.g. to pass credentials/API keys. Defaults to None.
 
         !!! python "Example usage"
             ```python
@@ -77,10 +104,10 @@ class LocalPythonMCPEndpoint(MCPEndpoint):
             ```
 
         """
-        super().__init__(name=name, transport="stdio", command="python", args=[script_path] + (args or []))
-
-    def to_dict(self):
-        return super().to_dict()
+        config: dict = {"command": sys.executable, "args": [script_path] + (args or [])}
+        if env:
+            config["env"] = env
+        super().__init__(name=name, transport="stdio", **config)
 
 
 @brick
@@ -99,7 +126,7 @@ class MCPClient:
         """
         connections = {}
         for client in clients:
-            connections.update(client.to_dict())
+            connections.update(client.to_conn())
         self._client = MultiServerMCPClient(
             connections=connections,
             tool_name_prefix=tool_name_prefix,
@@ -114,10 +141,14 @@ class MCPClient:
         """
         return self._client
 
-    def list_tools(self) -> str:
-        """List the available tools from the MCP server.
+    def get_tools(self) -> list[BaseTool]:
+        """Discover the tools exposed by the configured MCP servers.
+
+        The returned tools are LangChain ``BaseTool`` instances that can be passed directly to the LLM
+        bricks via their ``tools`` argument (e.g. ``CloudLLM(tools=mcp.get_tools())`` or
+        ``LargeLanguageModel(tools=mcp.get_tools())``).
 
         Returns:
-            str: A list of available tools.
+            list[BaseTool]: The tools aggregated from every configured endpoint.
         """
         return asyncio.run(self._client.get_tools())

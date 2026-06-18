@@ -3,15 +3,17 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# EXAMPLE_NAME = "Basic mcp client usage example"
+# EXAMPLE_NAME = "List tools from a remote MCP server over HTTP"
 
 from arduino.app_bricks.mcp_client import MCPClient, HTTPEndpoint
-from arduino.app_utils import App
+from arduino.app_utils import Logger, App
+
+logger = Logger(name="network_mcp_client_example")
 
 external_mcp = HTTPEndpoint(name="filesystem_proxy", url="http://localhost:8080/mcp")
 
 client = MCPClient(clients=[external_mcp])
 
-print(client.list_tools())
+logger.info(client.get_tools())
 
 App.run()

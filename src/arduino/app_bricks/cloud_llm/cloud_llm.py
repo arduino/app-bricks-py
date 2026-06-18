@@ -8,10 +8,11 @@ import os
 import re
 import threading
 from dataclasses import dataclass
-from typing import Iterator, List, Optional, Union, Any, Callable
+from typing import Iterator, List, Optional, Union, Any, Sequence
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage, AIMessage, ToolCall
+from langchain_core.tools import BaseTool
 
 from arduino.app_utils import brick
 
@@ -85,7 +86,7 @@ class CloudLLM:
         reasoning_effort: Union["ReasoningEffort", str, int, None] = None,
         max_tool_loops: int = 8,
         timeout: Optional[int] = None,
-        tools: List[Callable[..., Any]] = None,
+        tools: Optional[Sequence[BaseTool]] = None,
         callbacks: Any = None,
         **kwargs,
     ):
@@ -119,7 +120,7 @@ class CloudLLM:
             timeout (Optional[int]): The maximum duration in seconds to wait for a response before
                 timing out. Defaults to None.
             callbacks (Any): Optional callbacks for monitoring generation events.
-            tools (List[Callable[..., Any]]): A list of callable tool functions to register. Defaults to None.
+            tools (Sequence[BaseTool]): Tools to register, e.g. from the @tool decorator or MCPClient.get_tools(). Defaults to None.
             **kwargs: Additional arguments passed to the model constructor
 
         Raises:

@@ -3,15 +3,18 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# EXAMPLE_NAME = "Basic mcp client usage example"
+# EXAMPLE_NAME = "List tools from a local MCP server"
 
 from arduino.app_bricks.mcp_client import MCPClient, LocalPythonMCPEndpoint
-from arduino.app_utils import App
+from arduino.app_utils import Logger, App
+
+
+logger = Logger(name="local_mcp_client_example")
 
 local = LocalPythonMCPEndpoint(name="local_math_server", script_path="math_server.py")
 
 client = MCPClient(clients=[local])
 
-print(client.list_tools())
+logger.info(client.get_tools())
 
 App.run()

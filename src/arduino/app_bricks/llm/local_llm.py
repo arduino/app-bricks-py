@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 from langchain_core.language_models import BaseChatModel
+from langchain_core.tools import BaseTool
 
 from arduino.app_bricks.cloud_llm import CloudLLM, CloudModelProvider
 from arduino.app_bricks.cloud_llm.cloud_llm import DEFAULT_MEMORY
@@ -11,7 +12,7 @@ from arduino.app_utils import Logger, brick
 from arduino.app_internal.core import resolve_address, get_brick_config, get_brick_configured_model
 
 from openai import OpenAI, APIError, BadRequestError
-from typing import Iterator, List, Optional, Any, Callable, Union
+from typing import Iterator, List, Optional, Union, Sequence
 
 logger = Logger("LargeLanguageModel")
 
@@ -36,8 +37,8 @@ class LargeLanguageModel(CloudLLM):
         temperature: Optional[float] = 0.7,
         max_tokens: int = 512,
         timeout: Optional[int] = None,
-        tools: List[Callable[..., Any]] = None,
-        model: str = None,
+        tools: Optional[Sequence[BaseTool]] = None,
+        model: Optional[str] = None,
         **kwargs,
     ):
         """Initializes the LargeLanguageModel brick with the specified provider and configuration.
@@ -54,7 +55,7 @@ class LargeLanguageModel(CloudLLM):
                 Defaults to 512.
             timeout (Optional[int]): The maximum duration in seconds to wait for a response before
                 timing out. Defaults to None.
-            tools (List[Callable[..., Any]]): A list of callable tool functions to register. Defaults to None.
+            tools (Sequence[BaseTool]): Tools to register, e.g. from the @tool decorator or MCPClient.get_tools(). Defaults to None.
             **kwargs: Additional arguments passed to the model constructor
 
         Raises:

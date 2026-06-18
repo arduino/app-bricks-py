@@ -87,7 +87,7 @@ cloud_llm = [
     "langchain-google-genai >=4.1.3",
 ]
 mcp_client = [
-    "langchain-mcp-adapters",
+    "langchain-mcp-adapters >=0.2.1",
 ]
 cloud_asr = [
     "websocket-client",
