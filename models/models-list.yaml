@@ -1748,10 +1748,10 @@ models:
     bricks:
       - id: "arduino:image_classification"
         model_configuration:
-          "EI_IMAGE_CLASSIFICATION_MODEL": "models/${models_repository}/efficientnet-b4-qnn.eim"
+          "EI_IMAGE_CLASSIFICATION_MODEL": "models/edge-impulse/efficientnet-b4-qnn.eim"
       - id: "arduino:video_image_classification"
         model_configuration:
-          "EI_V_IMAGE_CLASSIFICATION_MODEL": "models/${models_repository}/efficientnet-b4-qnn.eim"
+          "EI_V_IMAGE_CLASSIFICATION_MODEL": "models/edge-impulse/efficientnet-b4-qnn.eim"
  - "llamacpp:gemma-4-E2B_q4_0-it":
     name : "Gemma 4 E2B"
     description: >-
