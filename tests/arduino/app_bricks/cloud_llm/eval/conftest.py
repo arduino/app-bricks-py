@@ -49,7 +49,7 @@ models_to_test = [
 
 def _load_cases() -> list[dict]:
     cases: list[dict] = []
-    paths = sorted(p for p in glob.glob("tests/arduino/app_bricks/cloud_llm/cases/*.json") if not os.path.basename(p).startswith("_"))
+    paths = sorted(p for p in glob.glob("tests/arduino/app_bricks/cloud_llm/eval/cases/*.json") if not os.path.basename(p).startswith("_"))
     for path in paths:
         with open(path, "r", encoding="utf-8") as f:
             c = json.load(f)

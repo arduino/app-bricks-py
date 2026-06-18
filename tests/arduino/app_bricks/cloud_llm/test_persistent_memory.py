@@ -54,7 +54,7 @@ def test_store_append_and_load_round_trip(sql_store):
 
 
 def test_store_default_uses_dedicated_database_and_thread():
-    with patch("arduino.app_bricks.dbstorage_sqlstore.SQLStore") as mock_sql_store:
+    with patch("arduino.app_bricks.cloud_llm.memory.SQLStore") as mock_sql_store:
         sql_store = mock_sql_store.return_value
 
         store = SQLMessagePersistence()
