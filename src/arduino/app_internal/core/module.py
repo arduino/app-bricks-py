@@ -239,9 +239,9 @@ def get_brick_configured_model(brick_id: str, brick_config: Dict = None) -> Opti
         bricks_list = app_cfg["bricks"]
         for brick_entry in bricks_list:
             if isinstance(brick_entry, dict) and brick_id in brick_entry:
-                brick_config = brick_entry[brick_id]
-                if isinstance(brick_config, dict) and "model" in brick_config:
-                    return brick_config["model"]
+                brick_section = brick_entry[brick_id]
+                if isinstance(brick_section, dict) and "model" in brick_section:
+                    return brick_section["model"]
 
     print(f"No model configuration found for brick '{brick_id}' in app.yaml. Checking brick_config.yaml for defaults... {brick_config}")
 
