@@ -2,7 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-
 FROM python:3.13-slim AS builder
 
 ARG OPENCV_WHL_URL
