@@ -340,14 +340,14 @@ class TestVolumeControl:
 class TestStaticMethods:
     """Test static convenience methods."""
 
-    def test_play_pcm_static_method(self, mock_alsa_usb_speakers):
+    def test_play_pcm_static_method(self):
         """Test Speaker.play_pcm static method."""
         audio_data = np.zeros(1024, dtype=np.int16)
 
         # Should not raise
         Speaker.play_pcm(pcm_audio=audio_data, sample_rate=16000, channels=1, format=np.int16, device=0)
 
-    def test_play_wav_static_method(self, mock_alsa_usb_speakers):
+    def test_play_wav_static_method(self):
         """Test Speaker.play_wav static method."""
         # Create WAV data
         audio_samples = np.arange(1000, dtype=np.int16)

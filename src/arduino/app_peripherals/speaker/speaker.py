@@ -36,6 +36,8 @@ class Speaker:
     """Shorthand for the first USB speaker available."""
     USB_SPEAKER_2 = "usb:2"
     """Shorthand for the second USB speaker available."""
+    JACK_SPEAKER_1 = "jack:1"
+    """Shorthand for the first built-in (jack) speaker available."""
 
     # =============================================================================
     # Sample Rate Constants
@@ -96,7 +98,7 @@ class Speaker:
 
     def __new__(
         cls,
-        device: str | int = USB_SPEAKER_1,
+        device: str | int = 0,
         sample_rate: int = RATE_16K,
         channels: int = CHANNELS_MONO,
         format: FormatPlain | FormatPacked = np.int16,
@@ -108,10 +110,13 @@ class Speaker:
 
         Args:
             device (Union[str, int]): Speaker device identifier. Supports:
-                - int | str: ALSA device ordinal index (e.g., 0, 1, "0", "1", ...)
+                - int | str: Auto-select the n-th available plugged speaker
+                    (e.g., 0, 1, "0", "1", ...), giving priority to USB speakers,
+                    then jack speakers if supported by the platform
                 - str: ALSA device name (e.g., "plughw:CARD=MyCard,DEV=0", "hw:0,0", "CARD=MyCard,DEV=0")
                 - str: ALSA device file path (e.g., "/dev/snd/by-id/usb-My-Device-00")
-                - str: Speaker.USB_SPEAKER_x macros
+                - str: Speaker.USB_SPEAKER_x / Speaker.JACK_SPEAKER_x macros
+                Default: 0.
             sample_rate (int): Sample rate in Hz. Default: 16000.
             channels (int): Number of audio channels. Default: 1.
             format (FormatPlain | FormatPacked): Audio format as one of:
@@ -133,21 +138,33 @@ class Speaker:
             BaseSpeaker: Appropriate speaker implementation instance
 
         Raises:
-            SpeakerConfigError: If device type is not supported or parameters are invalid
+            SpeakerConfigError: If speaker type is not supported or parameters are invalid
+            SpeakerOpenError: If no speaker is available at the requested index
 
         Examples:
             ALSA Speaker:
 
             ```python
-            speaker = Speaker(sample_rate=16000, channels=1)  # First USB speaker
-            speaker = Speaker(USB_SPEAKER_1, sample_rate=16000, channels=1)  # Equivalent to above
-            speaker = Speaker(1)  # Second speaker
+            speaker = Speaker(sample_rate=16000, channels=1)  # First plugged speaker
+            speaker = Speaker(USB_SPEAKER_1, sample_rate=16000, channels=1)  # First USB speaker
+            speaker = Speaker(1)  # Second plugged speaker
             speaker = Speaker("CARD=USB,DEV=0", format="S16_LE")
             speaker = Speaker("plughw:CARD=USB,DEV=0")
             speaker = Speaker("hw:0,0", buffer_size=2048)
             speaker = Speaker("/dev/snd/by-id/usb-My-Device-00")  # Using device file path
             ```
         """
+        if not isinstance(device, (str, int)):
+            from .errors import SpeakerConfigError
+
+            raise SpeakerConfigError(f"Invalid device type: {type(device)}")
+
+        if isinstance(device, int) or (isinstance(device, str) and device.isdigit()):
+            # Select the n-th plugged speaker (resolves to "usb:X"/"jack:X")
+            from .utils import nth_plugged_speaker
+
+            device = nth_plugged_speaker(int(device))
+
         from .alsa_speaker import ALSASpeaker  # Imported here to avoid circular dependency
 
         return ALSASpeaker(
@@ -165,7 +182,7 @@ class Speaker:
         sample_rate: int,
         channels: int,
         format: FormatPlain | FormatPacked,
-        device: str | int = USB_SPEAKER_1,
+        device: str | int = 0,
     ):
         """
         Play raw PCM audio data.
@@ -180,11 +197,13 @@ class Speaker:
                 - Strings: 'int16', '<i2', '>f4', 'float32'
                 - Tuple of (format, is_packed): to specify if the format is packed (e.g. 24-bit audio)
             device (Union[str, int], optional): Speaker device identifier. Supports:
-                - int | str: ALSA device ordinal index (e.g., 0, 1, "0", "1", ...)
+                - int | str: Auto-select the n-th available plugged speaker
+                    (e.g., 0, 1, "0", "1", ...), giving priority to USB speakers,
+                    then jack speakers if supported by the platform
                 - str: ALSA device name (e.g., "plughw:CARD=MyCard,DEV=0", "hw:0,0", "CARD=MyCard,DEV=0")
                 - str: ALSA device file path (e.g., "/dev/snd/by-id/usb-My-Device-00")
-                - str: Speaker.USB_SPEAKER_x macros
-                Default: Speaker.USB_SPEAKER_1 - First USB speaker available.
+                - str: Speaker.USB_SPEAKER_x / Speaker.JACK_SPEAKER_x macros
+                Default: 0.
 
         Raises:
             SpeakerOpenError: If speaker can't be opened.
@@ -196,7 +215,7 @@ class Speaker:
             speaker.play_pcm(pcm_audio)
 
     @staticmethod
-    def play_wav(wav_audio: np.ndarray, device: str | int = USB_SPEAKER_1):
+    def play_wav(wav_audio: np.ndarray, device: str | int = 0):
         """
         Play audio from WAV format data.
         Note: Only uncompressed PCM WAV files are supported.
@@ -204,11 +223,13 @@ class Speaker:
         Args:
             wav_audio (np.ndarray): WAV format audio data (including header).
             device (Union[str, int], optional): Speaker device identifier. Supports:
-                - int | str: ALSA device ordinal index (e.g., 0, 1, "0", "1", ...)
+                - int | str: Auto-select the n-th available plugged speaker
+                    (e.g., 0, 1, "0", "1", ...), giving priority to USB speakers,
+                    then jack speakers if supported by the platform
                 - str: ALSA device name (e.g., "plughw:CARD=MyCard,DEV=0", "hw:0,0", "CARD=MyCard,DEV=0")
                 - str: ALSA device file path (e.g., "/dev/snd/by-id/usb-My-Device-00")
-                - str: Speaker.USB_SPEAKER_x macros
-                Default: Speaker.USB_SPEAKER_1 - First USB speaker available.
+                - str: Speaker.USB_SPEAKER_x / Speaker.JACK_SPEAKER_x macros
+                Default: 0.
 
         Raises:
             SpeakerOpenError: If speaker can't be opened.
