@@ -392,7 +392,11 @@ class BaseASR:
             create_data["language"] = language
 
         try:
-            response = requests.post(url=create_url, json=create_data, timeout=5)
+            start = time.monotonic()
+            response = requests.post(url=create_url, json=create_data, timeout=10)
+            elapsed = time.monotonic() - start
+            if elapsed > 5:
+                logger.warning(f"Session creation took {elapsed:.1f}s")
         except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
             raise ASRUnavailableError(f"Inference service unreachable: {e}") from None
 
