@@ -1,5 +1,5 @@
 {
-  "tag_prefix": "release",
+  "tag_prefix": "ai",
   "watch_paths": ["containers/python-slim/"],
   "tag_latest": true,
   "build_whl": false,

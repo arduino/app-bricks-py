@@ -1,5 +1,5 @@
 {
-  "tag_prefix": "release",
+  "tag_prefix": "models-downloader",
   "watch_paths": [
     "containers/python-base/",
     "containers/models-downloader/",
