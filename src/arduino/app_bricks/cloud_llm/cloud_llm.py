@@ -304,7 +304,7 @@ class CloudLLM:
                 input_messages.append(
                     ToolMessage(
                         tool_call_id=tool_id,
-                        content=tool_output,
+                        content=self._content_to_text(tool_output),
                     )
                 )
 
