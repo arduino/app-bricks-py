@@ -6,7 +6,8 @@
 import asyncio
 import sys
 from abc import ABC
-from typing import TYPE_CHECKING
+from fnmatch import fnmatchcase
+from typing import TYPE_CHECKING, Iterable
 
 from langchain_core.tools import BaseTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -141,14 +142,42 @@ class MCPClient:
         """
         return self._client
 
-    def get_tools(self) -> list[BaseTool]:
+    def get_tools(self, include: Iterable[str] | None = None, exclude: Iterable[str] | None = None) -> list[BaseTool]:
         """Discover the tools exposed by the configured MCP servers.
 
         The returned tools are LangChain ``BaseTool`` instances that can be passed directly to the LLM
         bricks via their ``tools`` argument (e.g. ``CloudLLM(tools=mcp.get_tools())`` or
         ``LargeLanguageModel(tools=mcp.get_tools())``).
 
+        Filtering by name lets you curate a small, relevant subset, useful for models with a small
+        context window. Names are matched as fnmatch-style glob patterns, so both exact names and
+        wildcards work (e.g. ``files_*``, ``*_read``).
+
+        Args:
+            include (Iterable[str], optional): Keep only tools whose name matches one of these patterns
+                (exact names or globs). Defaults to None (keep all).
+            exclude (Iterable[str], optional): Drop tools whose name matches one of these patterns
+                (exact names or globs). Defaults to None.
+
         Returns:
-            list[BaseTool]: The tools aggregated from every configured endpoint.
+            list[BaseTool]: The tools aggregated from every configured endpoint, after filtering.
         """
-        return asyncio.run(self._client.get_tools())
+        tools = asyncio.run(self._client.get_tools())
+        if include is not None:
+            patterns = list(include)
+            tools = [t for t in tools if any(fnmatchcase(t.name, p) for p in patterns)]
+        if exclude:
+            patterns = list(exclude)
+            tools = [t for t in tools if not any(fnmatchcase(t.name, p) for p in patterns)]
+        return tools
+
+    def describe_tools(self) -> dict[str, str]:
+        """Return a ``{tool_name: description}`` mapping of the available tools.
+
+        Useful for discovery: inspect what each MCP server exposes (title and description) to
+        decide which tools to keep via ``get_tools(include=..., exclude=...)``.
+
+        Returns:
+            dict[str, str]: Mapping of each tool's name (title) to its description.
+        """
+        return {tool.name: tool.description for tool in self.get_tools()}

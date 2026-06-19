@@ -175,7 +175,8 @@ Use one variable per credential (multiple servers/providers → multiple variabl
 | Member | Description |
 | :----- | :---------- |
 | `MCPClient(clients, tool_name_prefix=True, **kwargs)` | Create a client over a list of endpoints. When `tool_name_prefix` is `True`, tool names are prefixed with the endpoint name. Extra `kwargs` are forwarded to the underlying `MultiServerMCPClient`. |
-| `MCPClient.get_tools() -> list[BaseTool]` | Discover and return the tools exposed by all configured endpoints, as LangChain tools ready for the LLM bricks. |
+| `MCPClient.get_tools(include=None, exclude=None) -> list[BaseTool]` | Discover and return the tools from all configured endpoints, as LangChain tools for the LLM bricks. Optionally filter by tool name (exact names or glob patterns) via `include`/`exclude` — handy to curate a small subset for small-context models. |
+| `MCPClient.describe_tools() -> dict[str, str]` | Return a `{tool_name: description}` map of the available tools — useful to explore a server and decide what to `include`/`exclude`. |
 | `MCPClient.get_client() -> MultiServerMCPClient` | Access the underlying `langchain-mcp-adapters` client for advanced use (async sessions, prompts, resources). |
 | `LocalPythonMCPEndpoint(name, script_path, args=None, env=None)` | A local Python MCP server launched over `stdio`. `env` passes environment variables (e.g. credentials) to the process. |
 | `HTTPEndpoint(name, url, headers=None, token=None, auth=None)` | A remote MCP server reached over HTTP. `token` (bearer), `headers` (custom), and `auth` (`httpx.Auth`) configure authentication. |
