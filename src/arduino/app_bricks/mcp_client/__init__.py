@@ -171,13 +171,28 @@ class MCPClient:
             tools = [t for t in tools if not any(fnmatchcase(t.name, p) for p in patterns)]
         return tools
 
-    def describe_tools(self) -> dict[str, str]:
-        """Return a ``{tool_name: description}`` mapping of the available tools.
+    def list_tools(self) -> dict[str, str]:
+        """Return a ``{tool_name: description}`` overview of the available tools.
 
-        Useful for discovery: inspect what each MCP server exposes (title and description) to
-        decide which tools to keep via ``get_tools(include=..., exclude=...)``.
+        Useful for discovery: see what each MCP server exposes to decide which tools to keep via
+        ``get_tools(include=..., exclude=...)``. Use ``inspect_tool`` for a single tool's details.
 
         Returns:
-            dict[str, str]: Mapping of each tool's name (title) to its description.
+            dict[str, str]: Mapping of each tool's name to its description.
         """
         return {tool.name: tool.description for tool in self.get_tools()}
+
+    def inspect_tool(self, name: str) -> dict | None:
+        """Return the details of a single tool, or None if no tool has that name.
+
+        Args:
+            name (str): The tool name, as returned by ``list_tools`` / ``get_tools``.
+
+        Returns:
+            dict | None: ``{"name", "description", "parameters"}`` where ``parameters`` is the tool's
+                argument schema, or None if no tool matches ``name``.
+        """
+        for tool in self.get_tools():
+            if tool.name == name:
+                return {"name": tool.name, "description": tool.description, "parameters": tool.args}
+        return None
