@@ -74,9 +74,7 @@ mood_detector = [
 stream = [
     "websockets",
 ]
-arduino_cloud = [
-    "arduino-iot-cloud",
-]
+
 telegram_bot = [
     "python-telegram-bot>=21.1",
 ]

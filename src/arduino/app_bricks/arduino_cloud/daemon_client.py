@@ -1,0 +1,155 @@
+# SPDX-FileCopyrightText: Copyright (C) Arduino s.r.l. and/or its affiliated companies
+#
+# SPDX-License-Identifier: MPL-2.0
+
+"""HTTP transport to the arduino-app-cloud daemon's localhost REST/SSE API.
+
+The daemon owns the MQTT connection to Arduino Cloud; the brick only exchanges
+variable values with it over two endpoints (RFC-13 §8):
+
+* ``PUT /v1/variables/{name}`` with body ``{"value": <any>}`` — queue a value
+  for ordered delivery to the cloud.
+* ``GET /v1/variables/{name}/events`` — a Server-Sent Events stream. The first
+  event (``event: lastvalue``) replays the variable's current stored value and
+  timestamp; every subsequent change is an ``event: update``. Each event's
+  JSON payload is ``{name, value, timestamp, last_value}``.
+"""
+
+import json
+import logging
+import threading
+from datetime import datetime
+from urllib.parse import quote
+
+import requests
+
+logger = logging.getLogger("ArduinoCloud")
+
+_PUT_TIMEOUT = 10.0          # seconds for a value PUT
+_SSE_CONNECT_TIMEOUT = 10.0  # seconds to establish the SSE connection
+_RECONNECT_MAX = 5.0         # max backoff between SSE reconnects
+
+
+def parse_timestamp(value) -> float | None:
+    """Parse an RFC3339 timestamp from the daemon into epoch seconds.
+
+    The daemon emits Go RFC3339Nano (e.g. ``2026-06-22T10:00:00.123456789Z``),
+    whose fractional part can exceed datetime's 6-digit limit, so it is
+    truncated to microseconds. Returns None if the value is missing/unparseable.
+    """
+    if not value or not isinstance(value, str):
+        return None
+    text = value.strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    # Truncate an over-long fractional second component to 6 digits.
+    if "." in text:
+        head, _, tail = text.partition(".")
+        frac = ""
+        rest = ""
+        for i, ch in enumerate(tail):
+            if ch.isdigit():
+                frac += ch
+            else:
+                rest = tail[i:]
+                break
+        text = f"{head}.{frac[:6]}{rest}"
+    try:
+        return datetime.fromisoformat(text).timestamp()
+    except ValueError:
+        logger.debug("ArduinoCloud: could not parse timestamp %r", value)
+        return None
+
+
+class DaemonClient:
+    """Thin client for the daemon REST/SSE API."""
+
+    def __init__(self, base_url: str):
+        self._base = base_url.rstrip("/")
+        self._session = requests.Session()
+        self._sse_sessions: list[requests.Session] = []
+        self._sse_lock = threading.Lock()
+
+    def put_value(self, name: str, value) -> None:
+        """Send a variable value to the daemon (best-effort; logs on failure)."""
+        url = f"{self._base}/v1/variables/{quote(name, safe='')}"
+        try:
+            resp = self._session.put(url, json={"value": value}, timeout=_PUT_TIMEOUT)
+            if resp.status_code >= 400:
+                logger.warning("ArduinoCloud: PUT %s -> %s %s", name, resp.status_code, resp.text.strip())
+        except requests.RequestException as e:
+            logger.warning("ArduinoCloud: failed to send %s: %s", name, e)
+
+    def stream_events(self, name: str, handler, stop_event: threading.Event) -> None:
+        """Stream SSE events for a variable until stop_event is set.
+
+        ``handler(event_name, payload_dict)`` is called for each event. The
+        stream is reconnected with capped exponential backoff on any error; the
+        daemon replays the last value on every (re)connection, so no state is
+        lost across reconnects.
+        """
+        url = f"{self._base}/v1/variables/{quote(name, safe='')}/events"
+        session = requests.Session()
+        with self._sse_lock:
+            self._sse_sessions.append(session)
+
+        backoff = 0.5
+        while not stop_event.is_set():
+            try:
+                with session.get(url, stream=True, timeout=(_SSE_CONNECT_TIMEOUT, None)) as resp:
+                    resp.raise_for_status()
+                    backoff = 0.5  # reset after a successful connect
+                    self._consume(resp, handler, stop_event)
+            except Exception as e:  # noqa: BLE001 - reconnect on any transport error
+                if stop_event.is_set():
+                    break
+                logger.debug("ArduinoCloud: SSE %s disconnected (%s), reconnecting", name, e)
+            if stop_event.wait(backoff):
+                break
+            backoff = min(backoff * 2, _RECONNECT_MAX)
+
+    @staticmethod
+    def _consume(resp, handler, stop_event: threading.Event) -> None:
+        """Parse the SSE byte stream and dispatch complete events."""
+        event = None
+        data_lines: list[str] = []
+        for raw in resp.iter_lines(decode_unicode=True):
+            if stop_event.is_set():
+                return
+            if raw is None:
+                continue
+            if raw == "":  # blank line terminates an event
+                if data_lines:
+                    try:
+                        payload = json.loads("\n".join(data_lines))
+                    except ValueError:
+                        payload = None
+                    if isinstance(payload, dict):
+                        handler(event or "message", payload)
+                event = None
+                data_lines = []
+                continue
+            if raw.startswith(":"):  # comment / heartbeat
+                continue
+            field, _, val = raw.partition(":")
+            if val.startswith(" "):
+                val = val[1:]
+            if field == "event":
+                event = val
+            elif field == "data":
+                data_lines.append(val)
+
+    def close(self) -> None:
+        """Close all sessions, unblocking any in-flight SSE reads."""
+        with self._sse_lock:
+            sessions = list(self._sse_sessions)
+            self._sse_sessions.clear()
+        for s in sessions:
+            try:
+                s.close()
+            except Exception:  # noqa: BLE001
+                pass
+        try:
+            self._session.close()
+        except Exception:  # noqa: BLE001
+            pass
