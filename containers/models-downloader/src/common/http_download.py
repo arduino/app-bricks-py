@@ -154,7 +154,7 @@ def download(url: str, output_dir: str, json_progress: bool, output_name: str | 
     return output_path
 
 
-def download_and_extract(url: str, output_dir: str, json_progress: bool, streaming: bool = True) -> None:
+def download_and_extract(url: str, output_dir: str, json_progress: bool, streaming: bool = True) -> list[str]:
     """Stream-download a ZIP from *url* and extract it to *output_dir*.
 
     Args:
@@ -166,18 +166,21 @@ def download_and_extract(url: str, output_dir: str, json_progress: bool, streami
             each entry as chunks arrive — no temporary file required and memory
             usage stays constant.  When ``False``, streams into a temporary file
             on disk first, then extracts with the stdlib ``zipfile`` module.
+
+    Returns:
+        List of paths (files only, no directories) of every entry extracted.
     """
     if streaming:
-        _download_and_extract_streaming(url, output_dir, json_progress)
+        return _download_and_extract_streaming(url, output_dir, json_progress)
     else:
-        _download_and_extract_buffered(url, output_dir, json_progress)
+        return _download_and_extract_buffered(url, output_dir, json_progress)
 
 
-def _download_and_extract_streaming(url: str, output_dir: str, json_progress: bool) -> None:
+def _download_and_extract_streaming(url: str, output_dir: str, json_progress: bool) -> list[str]:
     from stream_unzip import stream_unzip
 
     os.makedirs(output_dir, exist_ok=True)
-    extracted_artifacts: list[str] = []
+    extracted_files: list[str] = []
     pbar = None
 
     with requests.get(url, stream=True, timeout=60) as response:
@@ -219,7 +222,6 @@ def _download_and_extract_streaming(url: str, output_dir: str, json_progress: bo
             for zipped_path, _file_size, unzipped_chunks in stream_unzip(byte_chunks()):
                 file_name = zipped_path.decode() if isinstance(zipped_path, bytes) else zipped_path
                 output_path = os.path.join(output_dir, file_name)
-                extracted_artifacts.append(output_path)
                 if file_name.endswith("/"):
                     os.makedirs(output_path, exist_ok=True)
                     for _ in unzipped_chunks:
@@ -229,6 +231,7 @@ def _download_and_extract_streaming(url: str, output_dir: str, json_progress: bo
                     with open(output_path, "wb") as f:
                         for chunk in unzipped_chunks:
                             f.write(chunk)
+                    extracted_files.append(output_path)
         except Exception as exc:
             msg = f"Extraction failed: {exc}"
             if json_progress:
@@ -243,12 +246,14 @@ def _download_and_extract_streaming(url: str, output_dir: str, json_progress: bo
                 print()
 
     if json_progress:
-        print(json.dumps({"event": "complete", "description": f"Extracted to: {output_dir}", "artifacts": extracted_artifacts}), flush=True)
+        print(json.dumps({"event": "complete", "description": f"Extracted to: {output_dir}", "artifacts": extracted_files}), flush=True)
     else:
         print(f"Extracted to: {output_dir}")
 
+    return extracted_files
 
-def _download_and_extract_buffered(url: str, output_dir: str, json_progress: bool) -> None:
+
+def _download_and_extract_buffered(url: str, output_dir: str, json_progress: bool) -> list[str]:
     os.makedirs(output_dir, exist_ok=True)
     tmp_path = None
     try:
@@ -303,8 +308,12 @@ def _download_and_extract_buffered(url: str, output_dir: str, json_progress: boo
         extracted_artifacts: list[str] = []
         try:
             with zipfile.ZipFile(tmp_path) as zf:
-                extracted_artifacts = [os.path.join(output_dir, name) for name in zf.namelist()]
                 zf.extractall(output_dir)
+                extracted_artifacts = [
+                    os.path.join(output_dir, info.filename)
+                    for info in zf.infolist()
+                    if not info.is_dir()
+                ]
         except (OSError, zipfile.BadZipFile) as exc:
             msg = f"Extraction failed: {exc}"
             if json_progress:
@@ -317,6 +326,99 @@ def _download_and_extract_buffered(url: str, output_dir: str, json_progress: boo
             print(json.dumps({"event": "complete", "description": f"Extracted to: {output_dir}", "artifacts": extracted_artifacts}), flush=True)
         else:
             print(f"Extracted to: {output_dir}")
+
+        return extracted_artifacts
     finally:
         if tmp_path is not None and os.path.exists(tmp_path):
             os.remove(tmp_path)
+
+
+MANIFEST_FILENAME = ".downloaded.json"
+
+
+def write_manifest(directory: str, files: list[str], manifest_name: str = MANIFEST_FILENAME) -> str:
+    """Write a manifest describing every file that belongs to a download.
+
+    The manifest is a JSON document of the form::
+
+        {
+            "version": 1,
+            "files": [
+                {"path": "<path relative to *directory*>", "size": <bytes>},
+                ...
+            ]
+        }
+
+    Storing relative paths keeps the manifest valid even if the model
+    directory is moved or bind-mounted at a different location.
+
+    Args:
+        directory: Directory the manifest is written into (and that all
+            *files* must live under).
+        files: Absolute paths of every file produced by the download.
+        manifest_name: Filename of the manifest within *directory*.  The
+            default of ``.downloaded.json`` is intended for downloads whose
+            artifacts live in a dedicated model directory; downloads that
+            place several independent artifacts side-by-side (e.g. one
+            ``.eim`` file per Edge Impulse model, or multiple Hugging Face
+            quantizations of the same repo) should pass a per-artifact name
+            to avoid clobbering each other's manifest.
+
+    Returns:
+        The absolute path of the manifest file that was written.
+    """
+    directory = os.path.abspath(directory)
+    os.makedirs(directory, exist_ok=True)
+
+    entries: list[dict[str, object]] = []
+    for path in files:
+        abs_path = os.path.abspath(path)
+        rel_path = os.path.relpath(abs_path, directory)
+        entries.append({"path": rel_path, "size": os.path.getsize(abs_path)})
+
+    manifest_path = os.path.join(directory, manifest_name)
+    # Write atomically so a crash mid-write never leaves a half-valid manifest.
+    tmp_path = manifest_path + ".tmp"
+    with open(tmp_path, "w") as f:
+        json.dump({"version": 1, "files": entries}, f)
+    os.replace(tmp_path, manifest_path)
+    return manifest_path
+
+
+def verify_manifest(directory: str, manifest_name: str = MANIFEST_FILENAME) -> tuple[bool, str]:
+    """Verify the manifest in *directory* against the files on disk.
+
+    Returns:
+        ``(True, "")`` if the manifest exists and every listed file is
+        present with the expected size; ``(False, <reason>)`` otherwise.
+    """
+    manifest_path = os.path.join(directory, manifest_name)
+    if not os.path.isfile(manifest_path):
+        return False, f"manifest missing: {manifest_path}"
+
+    try:
+        with open(manifest_path) as f:
+            manifest = json.load(f)
+    except (OSError, json.JSONDecodeError) as exc:
+        return False, f"manifest unreadable: {exc}"
+
+    files = manifest.get("files") if isinstance(manifest, dict) else None
+    if not isinstance(files, list) or not files:
+        return False, "manifest contains no files"
+
+    for entry in files:
+        rel_path = entry.get("path") if isinstance(entry, dict) else None
+        expected_size = entry.get("size") if isinstance(entry, dict) else None
+        if not isinstance(rel_path, str) or not isinstance(expected_size, int):
+            return False, f"manifest entry is malformed: {entry!r}"
+        abs_path = os.path.join(directory, rel_path)
+        if not os.path.isfile(abs_path):
+            return False, f"file missing: {rel_path}"
+        actual_size = os.path.getsize(abs_path)
+        if actual_size != expected_size:
+            return False, (
+                f"size mismatch for {rel_path}: expected {expected_size} bytes, "
+                f"found {actual_size} bytes"
+            )
+
+    return True, ""

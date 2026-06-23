@@ -18,7 +18,7 @@ import sys
 import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from common.http_download import check, download, emit_json_error
+from common.http_download import check, download, emit_json_error, write_manifest
 
 
 BASE_URL = "https://studio.edgeimpulse.com/v1/api/{project_id}/deployment/download?type={target}&impulseId={impulse_id}"
@@ -94,6 +94,13 @@ def main():
             out_file = download(url, args.output_dir, True, output_name=args.output_name)
             if os.path.isfile(out_file):
                 os.chmod(out_file, 0o755)  # Ensure the file is executable
+            # Sidecar manifest: the EI checker uses it to confirm the file is
+            # present *and* fully downloaded (matches the expected size).
+            write_manifest(
+                args.output_dir,
+                [out_file],
+                manifest_name=f"{args.output_name}.downloaded.json",
+            )
     except requests.HTTPError as exc:
         msg = f"HTTP error: {exc.response.status_code} {exc.response.reason} (url: {url})"
         emit_json_error(msg)

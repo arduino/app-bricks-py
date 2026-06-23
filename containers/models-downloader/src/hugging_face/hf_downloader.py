@@ -40,6 +40,7 @@ import fnmatch
 import os
 import re
 import shutil
+import sys
 
 from huggingface_hub import HfApi, hf_hub_download, snapshot_download
 from huggingface_hub.hf_api import RepoFile
@@ -48,6 +49,9 @@ import configparser
 from pathlib import Path
 from tqdm.auto import tqdm
 import json
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from common.http_download import write_manifest, verify_manifest
 
 
 def emit_json_info(description: str, artifacts: list[str] | None = None):
@@ -169,6 +173,22 @@ def generate_models_ini(models_dir: Path):
         config.write(f)
 
     emit_json_info(f"Generated models.ini with {len(config.sections())} model(s)", artifacts=[str(output_path)])
+
+
+def _matched_files(base: Path, pattern: str) -> list[Path]:
+    if not base.exists():
+        return []
+    return [f for f in base.rglob("*") if f.is_file() and fnmatch.fnmatch(f.name, pattern)]
+
+
+def _manifest_name(allow_pattern: str, mmproj_allow_pattern: str | None) -> str:
+    """Build a deterministic, filesystem-safe manifest filename for a (pattern,
+    mmproj_pattern) request. Different requests against the same repository
+    therefore get independent manifests and never overwrite each other.
+    """
+    raw = allow_pattern if not mmproj_allow_pattern else f"{allow_pattern}__{mmproj_allow_pattern}"
+    safe = re.sub(r"[^A-Za-z0-9._-]", "_", raw)
+    return f".downloaded.{safe}.json"
 
 
 def main():
@@ -338,13 +358,12 @@ def main():
         )
     elif args.check:
         base = Path(output_dir)
-        matched = [f for f in base.rglob("*") if f.is_file() and fnmatch.fnmatch(f.name, allow_pattern)] if base.exists() else []
-        if mmproj_allow_pattern:
-            matched += [f for f in base.rglob("*") if f.is_file() and fnmatch.fnmatch(f.name, mmproj_allow_pattern)] if base.exists() else []
-        if matched:
+        manifest_name = _manifest_name(allow_pattern, mmproj_allow_pattern)
+        ok, reason = verify_manifest(str(base), manifest_name=manifest_name)
+        if ok:
             emit_json_info(f"Model exists: {allow_pattern}")
         else:
-            emit_json_error(f"Model does not exist: {allow_pattern}")
+            emit_json_error(f"Model does not exist: {allow_pattern} ({reason})")
             raise SystemExit(1)
     elif args.delete:
         if args.verbose:
@@ -354,6 +373,14 @@ def main():
             if args.verbose:
                 emit_json_info(f"Deleting mmproj files matching '{mmproj_allow_pattern}' in {output_dir}")
             delete_matched_files(output_dir, args.output_dir, mmproj_allow_pattern, args.verbose)
+
+        # Remove the sidecar manifest so a later --check correctly reports
+        # the model as absent.
+        manifest_path = Path(output_dir) / _manifest_name(allow_pattern, mmproj_allow_pattern)
+        if manifest_path.is_file():
+            if args.verbose:
+                emit_json_info(f"Removing manifest: {manifest_path}")
+            manifest_path.unlink()
 
         # Generate models.ini file
         generate_models_ini(Path(args.output_dir))
@@ -402,6 +429,25 @@ def main():
         cache_path = Path(output_dir) / ".cache"
         if cache_path.is_dir():
             shutil.rmtree(cache_path)
+
+        # Write the sidecar manifest listing every file produced by this
+        # request, so --check can verify the download was actually complete
+        # (presence + expected size) and not just a partial extraction.
+        base = Path(output_dir)
+        downloaded_files = _matched_files(base, allow_pattern)
+        if mmproj_allow_pattern:
+            downloaded_files += _matched_files(base, mmproj_allow_pattern)
+        if not downloaded_files:
+            emit_json_error(
+                f"No files matched after download for repository {repo_id} "
+                f"(pattern: {allow_pattern})"
+            )
+            raise SystemExit(1)
+        write_manifest(
+            str(base),
+            [str(f) for f in downloaded_files],
+            manifest_name=_manifest_name(allow_pattern, mmproj_allow_pattern),
+        )
 
         # Generate models.ini file
         generate_models_ini(Path(args.output_dir))

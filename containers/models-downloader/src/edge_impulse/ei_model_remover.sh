@@ -6,7 +6,7 @@
 
 cd /models
 
-rm -fr "${model_name}"
+rm -fr "${model_name}" "${model_name}.downloaded.json"
 if [ $? -ne 0 ]; then
     echo "{\"event\": \"error\", \"description\": \"Failed to remove model: ${model_name}\"}"
     exit 1

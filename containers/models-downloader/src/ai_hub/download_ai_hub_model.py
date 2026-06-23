@@ -11,7 +11,7 @@ import sys
 import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from common.http_download import download, download_and_extract, emit_json_error
+from common.http_download import download, download_and_extract, emit_json_error, write_manifest
 
 
 def main():
@@ -61,6 +61,14 @@ def main():
         action="store_true",
         help="Save the raw .zip file instead of extracting its contents (default: extract in-memory during download).",
     )
+    parser.add_argument(
+        "--model-directory",
+        default=os.environ.get("model_directory"),
+        metavar="DIR",
+        help="Name of the model sub-directory under --output-dir; used to "
+             "write the manifest file (defaults to the 'model_directory' "
+             "environment variable).",
+    )
 
     args = parser.parse_args()
 
@@ -96,9 +104,10 @@ def main():
 
     try:
         if args.no_unzip:
-            download(url, args.output_dir, True)
+            artifact = download(url, args.output_dir, True)
+            artifacts = [artifact]
         else:
-            download_and_extract(url, args.output_dir, True)
+            artifacts = download_and_extract(url, args.output_dir, True)
     except requests.HTTPError as exc:
         msg = f"HTTP error: {exc.response.status_code} {exc.response.reason}"
         emit_json_error(msg)
@@ -110,6 +119,21 @@ def main():
     except Exception as exc:
         msg = f"Unexpected error: {exc}"
         emit_json_error(msg)
+        sys.exit(1)
+
+    # Write the download manifest as the final step so a partially-failed
+    # download is never reported as complete by the checker.
+    if not args.model_directory:
+        emit_json_error(
+            "Cannot write download manifest: --model-directory is not set "
+            "and the 'model_directory' environment variable is empty."
+        )
+        sys.exit(1)
+    try:
+        manifest_dir = os.path.join(args.output_dir, args.model_directory)
+        write_manifest(manifest_dir, artifacts)
+    except OSError as exc:
+        emit_json_error(f"Failed to write download manifest: {exc}")
         sys.exit(1)
 
 

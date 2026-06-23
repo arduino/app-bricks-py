@@ -5,7 +5,10 @@
 # SPDX-License-Identifier: MPL-2.0
 
 
-if [ -d "/models/${model_directory}" ]; then
+# Skip the download only when the model directory already contains every
+# file listed in its download manifest (and each file has the expected
+# size). A bare or partially-extracted directory is treated as missing.
+if python /app/ai_hub/ai_hub_model_checker.py > /dev/null 2>&1; then
     echo "{\"event\": \"info\", \"description\": \"Model exists: ${model_directory}\"}"
     exit 0
 fi
