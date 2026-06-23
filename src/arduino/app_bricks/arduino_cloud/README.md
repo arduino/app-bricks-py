@@ -28,10 +28,12 @@ from arduino.app_utils import App, Bridge
 
 iot_cloud = ArduinoCloud()
 
+
 def led_callback(client: object, value: bool):
     """Called when the LED variable is updated from the cloud."""
     print(f"LED blink value updated from cloud: {value}")
     Bridge.call("set_led_state", value)
+
 
 iot_cloud.register("led", value=False, on_write=led_callback)
 

@@ -25,9 +25,9 @@ import requests
 
 logger = logging.getLogger("ArduinoCloud")
 
-_PUT_TIMEOUT = 10.0          # seconds for a value PUT
+_PUT_TIMEOUT = 10.0  # seconds for a value PUT
 _SSE_CONNECT_TIMEOUT = 10.0  # seconds to establish the SSE connection
-_RECONNECT_MAX = 5.0         # max backoff between SSE reconnects
+_RECONNECT_MAX = 5.0  # max backoff between SSE reconnects
 
 
 def parse_timestamp(value) -> float | None:

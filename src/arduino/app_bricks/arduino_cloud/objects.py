@@ -85,10 +85,10 @@ class CloudObject:
         keys = kwargs.pop("keys", None)
 
         # Internal state.
-        self._owner = self          # whose on_write fires when this leaf changes
-        self._push = None           # set by CloudObject.bind: callable(name, value)
-        self._local_ts = None       # epoch secs of the last local change
-        self._cloud_ts = None       # epoch secs of the last applied cloud value
+        self._owner = self  # whose on_write fires when this leaf changes
+        self._push = None  # set by CloudObject.bind: callable(name, value)
+        self._local_ts = None  # epoch secs of the last local change
+        self._cloud_ts = None  # epoch secs of the last applied cloud value
         self.on_write_scheduled = False
         self.last_poll = 0.0
 

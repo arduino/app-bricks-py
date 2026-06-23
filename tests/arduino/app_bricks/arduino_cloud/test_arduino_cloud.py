@@ -73,9 +73,7 @@ def _make_cloud(fake_client):
 
 
 def test_parse_timestamp():
-    assert parse_timestamp("2026-06-22T10:00:00Z") == pytest.approx(
-        parse_timestamp("2026-06-22T10:00:00+00:00")
-    )
+    assert parse_timestamp("2026-06-22T10:00:00Z") == pytest.approx(parse_timestamp("2026-06-22T10:00:00+00:00"))
     # Over-long (nanosecond) fractional part is tolerated.
     assert parse_timestamp("2026-06-22T10:00:00.123456789Z") is not None
     assert parse_timestamp(None) is None
