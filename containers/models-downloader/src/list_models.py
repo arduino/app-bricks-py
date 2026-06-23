@@ -15,6 +15,7 @@ Usage:
 """
 
 import argparse
+import glob
 import json
 import os
 import stat
@@ -97,7 +98,11 @@ def get_model_subdir(models_repository):
          "/var/lib/arduino-app-cli/models/genai" -> "genai"
          "models/genai" -> "genai"
          "models/audio-analytics/asr" -> "audio-analytics/asr"
+         "llamacpp" -> "llamacpp"
+         "audio-analytics/tts" -> "audio-analytics/tts"
     """
+    if not models_repository:
+        return ""
     marker = "/models/"
     idx = models_repository.rfind(marker)
     if idx != -1:
@@ -105,6 +110,12 @@ def get_model_subdir(models_repository):
     # Handle relative paths like "models/genai" or "models/audio-analytics/asr"
     if models_repository.startswith("models/"):
         return models_repository[len("models/") :]
+    # Bare repository name (e.g. "llamacpp" or "audio-analytics/tts") — used
+    # as-is, since models-list.yaml stores values in this short form and the
+    # listing container mounts ``${CUSTOM_MODEL_DIR}:/models`` so every
+    # repository lives directly under ``/models/<models_repository>/``.
+    if not models_repository.startswith("/"):
+        return models_repository
     return ""
 
 
@@ -177,38 +188,69 @@ def _scandir_cached(search_dir):
     return entries
 
 
+def _name_matches_model_directory(name: str, model_directory: str) -> bool:
+    """Best-effort fuzzy directory-name match (preserves legacy behavior)."""
+    if name == model_directory:
+        return True
+    normalized = model_directory.replace("-", "_")
+    return name.startswith(model_directory) or name.replace("-", "_").startswith(normalized)
+
+
+def _has_download_manifest(model_path: str) -> bool:
+    """Return True if any download manifest is present for *model_path*.
+
+    Handlers write manifests in one of two shapes:
+
+    * ``<model_path>/.downloaded*.json`` — when *model_path* is a directory
+      (AI Hub, Hugging Face). Hugging Face uses a per-request suffix so the
+      glob covers every variant.
+    * ``<model_path>.downloaded.json`` — sidecar next to a single file
+      (Edge Impulse).
+
+    The check is intentionally lightweight: it only verifies that a
+    manifest exists, not that every file it lists is still on disk with
+    the expected size. The full integrity check is the job of the
+    explicit ``check`` action in each handler.
+    """
+    if os.path.isdir(model_path):
+        if glob.glob(os.path.join(model_path, ".downloaded*.json")):
+            return True
+    return os.path.isfile(f"{model_path}.downloaded.json")
+
+
 def check_model_exists(model_info, models_base_dir):
-    """Check if a model exists on the filesystem."""
+    """Check whether a model appears to be installed on the filesystem.
+
+    The model is considered installed when a download manifest produced by
+    one of the handlers is present (see :func:`_has_download_manifest`).
+    """
     model_directory = model_info.get("model_directory") or ""
     if not model_directory:
         return False, ""
 
-    # Build full path using models_repository subfolder
     subdir = get_model_subdir(model_info.get("models_repository", ""))
-    if subdir:
-        search_dir = os.path.join(models_base_dir, subdir)
-    else:
-        search_dir = models_base_dir
-
+    search_dir = os.path.join(models_base_dir, subdir) if subdir else models_base_dir
     full_path = os.path.join(search_dir, model_directory)
+
+    # Honor multi-level ``model_directory`` paths (e.g. ``"google/gemma-..."``)
+    # by checking the joined path directly before falling back to a fuzzy
+    # scandir lookup (used for legacy ``*_proxy`` / hyphen-underscore variants
+    # of single-level names).
+    if os.path.exists(full_path):
+        return _has_download_manifest(full_path), full_path
+
+    if os.sep in model_directory or "/" in model_directory:
+        return False, full_path
+
     entries = _scandir_cached(search_dir)
     if entries is None:
         return False, full_path
-
-    # Exact match first (directory or file)
-    for name, _is_dir in entries:
-        if name == model_directory:
-            return True, full_path
-
-    # Check for directories that start with model_directory (e.g. _proxy suffix)
-    # Also normalize hyphens/underscores for fuzzy matching
-    normalized = model_directory.replace("-", "_")
     for name, is_dir in entries:
         if not is_dir:
             continue
-        if name.startswith(model_directory) or name.replace("-", "_").startswith(normalized):
-            return True, os.path.join(search_dir, name)
-
+        if _name_matches_model_directory(name, model_directory):
+            resolved = os.path.join(search_dir, name)
+            return _has_download_manifest(resolved), resolved
     return False, full_path
 
 
