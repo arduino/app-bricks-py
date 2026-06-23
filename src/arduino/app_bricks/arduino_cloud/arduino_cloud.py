@@ -7,6 +7,7 @@ import threading
 import time
 import warnings
 from typing import Any
+from urllib.parse import quote
 
 from arduino.app_utils import brick, Logger
 
@@ -15,7 +16,12 @@ from .objects import CloudObject, CLOUD_WINS  # noqa: F401 (CLOUD_WINS re-export
 
 logger = Logger("ArduinoCloud")
 
-_DEFAULT_DAEMON_PORT = 5683
+# The daemon serves its API on a UNIX socket (bind-mounted into the app
+# container), so the brick talks to it over the socket by default — no network
+# exposure. Override the whole URL with ARDUINO_CLOUD_DAEMON_URL (e.g. an
+# http://127.0.0.1:5683 endpoint on the host), or just the socket path with
+# ARDUINO_CLOUD_DAEMON_SOCKET.
+_DEFAULT_DAEMON_SOCKET = "/run/arduino-app-cloud/daemon.sock"
 _LOOP_INTERVAL = 0.1  # seconds between callback-poll passes
 
 # Sentinel for the deprecated constructor arguments: lets us tell "not passed"
@@ -59,8 +65,9 @@ class ArduinoCloud:
             port (int): Deprecated and ignored (see server).
             daemon_url (str, optional): Base URL of the local daemon REST API.
                 If omitted, uses the ARDUINO_CLOUD_DAEMON_URL environment
-                variable, otherwise http://127.0.0.1:<ARDUINO_CLOUD_DAEMON__PORT
-                or 5683>.
+                variable, otherwise the daemon's UNIX socket
+                (http+unix://<ARDUINO_CLOUD_DAEMON_SOCKET or
+                /run/arduino-app-cloud/daemon.sock>).
         """
         legacy = {"device_id": device_id, "secret": secret, "server": server, "port": port}
         if passed := [name for name, value in legacy.items() if value is not _DEPRECATED]:
@@ -83,8 +90,8 @@ class ArduinoCloud:
     def _default_daemon_url() -> str:
         if url := os.getenv("ARDUINO_CLOUD_DAEMON_URL"):
             return url
-        port = os.getenv("ARDUINO_CLOUD_DAEMON__PORT", str(_DEFAULT_DAEMON_PORT))
-        return f"http://127.0.0.1:{port}"
+        socket_path = os.getenv("ARDUINO_CLOUD_DAEMON_SOCKET", _DEFAULT_DAEMON_SOCKET)
+        return "http+unix://" + quote(socket_path, safe="")
 
     # ── lifecycle (managed by the App framework) ────────────────────────────────
     def start(self):

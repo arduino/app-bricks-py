@@ -19,9 +19,11 @@ import json
 import logging
 import threading
 from datetime import datetime
-from urllib.parse import quote
+from urllib.parse import quote, unquote, urlparse
 
 import requests
+
+from .unix_adapter import UnixHTTPAdapter
 
 logger = logging.getLogger("ArduinoCloud")
 
@@ -66,9 +68,19 @@ class DaemonClient:
 
     def __init__(self, base_url: str):
         self._base = base_url.rstrip("/")
-        self._session = requests.Session()
+        # If the URL uses the http+unix:// scheme, every session must mount the
+        # UNIX-socket adapter; the socket path is the percent-encoded host part.
+        parsed = urlparse(self._base)
+        self._socket_path = unquote(parsed.netloc) if parsed.scheme == "http+unix" else None
+        self._session = self._new_session()
         self._sse_sessions: list[requests.Session] = []
         self._sse_lock = threading.Lock()
+
+    def _new_session(self) -> requests.Session:
+        session = requests.Session()
+        if self._socket_path:
+            session.mount("http+unix://", UnixHTTPAdapter(self._socket_path))
+        return session
 
     def put_value(self, name: str, value) -> None:
         """Send a variable value to the daemon (best-effort; logs on failure)."""
@@ -89,7 +101,7 @@ class DaemonClient:
         lost across reconnects.
         """
         url = f"{self._base}/v1/variables/{quote(name, safe='')}/events"
-        session = requests.Session()
+        session = self._new_session()
         with self._sse_lock:
             self._sse_sessions.append(session)
 

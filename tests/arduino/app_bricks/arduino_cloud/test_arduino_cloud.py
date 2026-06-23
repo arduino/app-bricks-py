@@ -2,9 +2,15 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import http.server
+import json
+import os
+import socket
+import socketserver
 import threading
 import time
 import warnings
+from urllib.parse import quote
 
 import pytest
 
@@ -16,8 +22,10 @@ from arduino.app_bricks.arduino_cloud import (
     MOST_RECENT_WINS,
 )
 from arduino.app_bricks.arduino_cloud import arduino_cloud as ac_module
-from arduino.app_bricks.arduino_cloud.daemon_client import parse_timestamp
+from arduino.app_bricks.arduino_cloud.daemon_client import DaemonClient, parse_timestamp
 from arduino.app_bricks.arduino_cloud.objects import CloudObject
+
+_HAS_AF_UNIX = os.name == "posix" and hasattr(socket, "AF_UNIX") and hasattr(socketserver, "UnixStreamServer")
 
 
 class FakeDaemonClient:
@@ -183,3 +191,95 @@ def test_no_legacy_args_is_silent(fake_client):
     with warnings.catch_warnings():
         warnings.simplefilter("error")  # any DeprecationWarning would fail the test
         ArduinoCloud()
+
+
+# ── UNIX-socket transport ────────────────────────────────────────────────────
+
+
+def test_default_daemon_url_is_unix_socket(monkeypatch):
+    monkeypatch.delenv("ARDUINO_CLOUD_DAEMON_URL", raising=False)
+    monkeypatch.delenv("ARDUINO_CLOUD_DAEMON_SOCKET", raising=False)
+    url = ArduinoCloud._default_daemon_url()
+    assert url.startswith("http+unix://")
+    assert "daemon.sock" in url
+
+
+def test_daemon_client_mounts_unix_adapter():
+    client = DaemonClient("http+unix://%2Frun%2Farduino-app-cloud%2Fdaemon.sock")
+    assert client._socket_path == "/run/arduino-app-cloud/daemon.sock"
+    assert "http+unix://" in client._session.adapters
+
+
+def test_daemon_client_plain_http_has_no_socket():
+    client = DaemonClient("http://127.0.0.1:5683")
+    assert client._socket_path is None
+
+
+@pytest.mark.skipif(not _HAS_AF_UNIX, reason="AF_UNIX not available on this platform")
+def test_put_and_sse_over_unix_socket(tmp_path):
+    sock_path = str(tmp_path / "daemon.sock")
+    received = {}
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_PUT(self):
+            length = int(self.headers.get("Content-Length", 0))
+            received["path"] = self.path
+            received["body"] = self.rfile.read(length)
+            self.send_response(204)
+            self.end_headers()
+
+        def do_GET(self):
+            received["sse_path"] = self.path
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
+            payload = json.dumps({"name": "led", "value": True, "timestamp": "2026-06-22T10:00:00Z", "last_value": True})
+            self.wfile.write(f"event: lastvalue\ndata: {payload}\n\n".encode())
+            self.wfile.flush()
+
+        def log_message(self, *args):
+            pass
+
+    class UnixHTTPServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
+        daemon_threads = True
+
+        def get_request(self):
+            # BaseHTTPRequestHandler expects a (host, port) client address.
+            return self.socket.accept()[0], ("localhost", 0)
+
+    server = UnixHTTPServer(sock_path, Handler)
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+
+    client = DaemonClient("http+unix://" + quote(sock_path, safe=""))
+    try:
+        # PUT over the socket.
+        client.put_value("led", True)
+        for _ in range(200):
+            if "body" in received:
+                break
+            time.sleep(0.005)
+        assert received.get("path") == "/v1/variables/led"
+        assert json.loads(received["body"]) == {"value": True}
+
+        # SSE over the socket: the first event is delivered to the handler.
+        events = []
+        stop = threading.Event()
+        sse_thread = threading.Thread(
+            target=client.stream_events,
+            args=("led", lambda evt, data: (events.append((evt, data)), stop.set()), stop),
+            daemon=True,
+        )
+        sse_thread.start()
+        for _ in range(200):
+            if events:
+                break
+            time.sleep(0.005)
+        stop.set()
+        assert events and events[0][0] == "lastvalue"
+        assert events[0][1]["value"] is True
+    finally:
+        stop.set()
+        client.close()
+        server.shutdown()
+        server.server_close()
