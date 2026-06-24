@@ -5,13 +5,14 @@
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 
 import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from common.http_download import download, download_and_extract, emit_json_error, write_manifest
+from common.http_download import download, download_and_extract, emit_json_error, is_complete, write_manifest
 
 
 def main():
@@ -72,6 +73,31 @@ def main():
 
     args = parser.parse_args()
 
+    if not args.model_directory:
+        emit_json_error(
+            "Cannot determine target directory: --model-directory is not set "
+            "and the 'model_directory' environment variable is empty."
+        )
+        sys.exit(1)
+
+    manifest_dir = os.path.join(args.output_dir, args.model_directory)
+
+    # Idempotency contract: a valid manifest means the previous download
+    # finished cleanly; skip. Otherwise wipe any leftover from a partial
+    # download so the new run starts from a clean slate.
+    if is_complete(manifest_dir):
+        print(
+            json.dumps({"event": "info", "description": f"Model already downloaded: {args.model_directory}"}),
+            flush=True,
+        )
+        return
+    if os.path.isdir(manifest_dir):
+        print(
+            json.dumps({"event": "info", "description": f"Cleaning up incomplete download: {manifest_dir}"}),
+            flush=True,
+        )
+        shutil.rmtree(manifest_dir)
+
     # Build the qai_hub_models fetch command to retrieve the download URL.
     # model_name, model_type, quantization and chipset are mandatory;
     # version is optional.
@@ -123,15 +149,8 @@ def main():
 
     # Write the download manifest as the final step so a partially-failed
     # download is never reported as complete by the checker.
-    if not args.model_directory:
-        emit_json_error(
-            "Cannot write download manifest: --model-directory is not set "
-            "and the 'model_directory' environment variable is empty."
-        )
-        sys.exit(1)
     try:
-        manifest_dir = os.path.join(args.output_dir, args.model_directory)
-        write_manifest(manifest_dir, artifacts)
+        write_manifest(manifest_dir, artifacts, model_id=os.environ["model_id"])
     except OSError as exc:
         emit_json_error(f"Failed to write download manifest: {exc}")
         sys.exit(1)

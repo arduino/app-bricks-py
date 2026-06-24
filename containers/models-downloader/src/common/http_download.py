@@ -105,10 +105,6 @@ def download(url: str, output_dir: str, json_progress: bool, output_name: str | 
         downloaded = 0
 
         if json_progress:
-            if os.path.exists(output_path):
-                emit_json_progress("info", f"File already exists: {output_path}", total, total, "B", artifacts=[output_path])
-                return output_path
-
             emit_json_progress("start", f"Downloading {filename} from {url}", downloaded, total, "B")
             last_update = time.monotonic()
             with open(output_path, "wb") as f:
@@ -125,10 +121,6 @@ def download(url: str, output_dir: str, json_progress: bool, output_name: str | 
         else:
             try:
                 from tqdm import tqdm
-
-                if os.path.exists(output_path):
-                    print(f"File already exists: {output_path}")
-                    return output_path
 
                 with tqdm(total=total or None, unit="B", unit_scale=True, unit_divisor=1024, desc=filename) as pbar:
                     with open(output_path, "wb") as f:
@@ -333,16 +325,22 @@ def _download_and_extract_buffered(url: str, output_dir: str, json_progress: boo
             os.remove(tmp_path)
 
 
-MANIFEST_FILENAME = ".downloaded.json"
+MANIFEST_FILENAME = "downloaded.json"
 
 
-def write_manifest(directory: str, files: list[str], manifest_name: str = MANIFEST_FILENAME) -> str:
+def write_manifest(
+    directory: str,
+    files: list[str],
+    model_id: str,
+    manifest_name: str = MANIFEST_FILENAME,
+) -> str:
     """Write a manifest describing every file that belongs to a download.
 
     The manifest is a JSON document of the form::
 
         {
             "version": 1,
+            "model_id": "<id from models-list.yaml>",
             "files": [
                 {"path": "<path relative to *directory*>", "size": <bytes>},
                 ...
@@ -350,14 +348,18 @@ def write_manifest(directory: str, files: list[str], manifest_name: str = MANIFE
         }
 
     Storing relative paths keeps the manifest valid even if the model
-    directory is moved or bind-mounted at a different location.
+    directory is moved or bind-mounted at a different location. The
+    ``model_id`` lets the consumer attribute each manifest back to its
+    model regardless of where the artifacts live on disk.
 
     Args:
         directory: Directory the manifest is written into (and that all
             *files* must live under).
         files: Absolute paths of every file produced by the download.
+        model_id: ID of the model this download belongs to, as declared
+            in models-list.yaml.
         manifest_name: Filename of the manifest within *directory*.  The
-            default of ``.downloaded.json`` is intended for downloads whose
+            default of ``downloaded.json`` is intended for downloads whose
             artifacts live in a dedicated model directory; downloads that
             place several independent artifacts side-by-side (e.g. one
             ``.eim`` file per Edge Impulse model, or multiple Hugging Face
@@ -380,7 +382,7 @@ def write_manifest(directory: str, files: list[str], manifest_name: str = MANIFE
     # Write atomically so a crash mid-write never leaves a half-valid manifest.
     tmp_path = manifest_path + ".tmp"
     with open(tmp_path, "w") as f:
-        json.dump({"version": 1, "files": entries}, f)
+        json.dump({"version": 1, "model_id": model_id, "files": entries}, f)
     os.replace(tmp_path, manifest_path)
     return manifest_path
 
@@ -422,3 +424,17 @@ def verify_manifest(directory: str, manifest_name: str = MANIFEST_FILENAME) -> t
             )
 
     return True, ""
+
+
+def is_complete(directory: str, manifest_name: str = MANIFEST_FILENAME) -> bool:
+    """Return ``True`` if ``<directory>/<manifest_name>`` exists and verifies.
+
+    Convenience wrapper around :func:`verify_manifest` for callers that only
+    need a boolean. The contract used by every handler is:
+
+    * manifest present and verified → previous download is complete, skip it;
+    * manifest absent or invalid    → previous download is incomplete, the
+      caller must wipe whatever leftovers it owns and download again.
+    """
+    ok, _ = verify_manifest(directory, manifest_name=manifest_name)
+    return ok

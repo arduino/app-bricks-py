@@ -18,7 +18,7 @@ import sys
 import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from common.http_download import check, download, emit_json_error, write_manifest
+from common.http_download import check, download, emit_json_error, is_complete, write_manifest
 
 
 BASE_URL = "https://studio.edgeimpulse.com/v1/api/{project_id}/deployment/download?type={target}&impulseId={impulse_id}"
@@ -91,6 +91,23 @@ def main():
                 flush=True,
             )
         else:
+            manifest_name = f"{args.output_name}.downloaded.json"
+            out_path = os.path.join(args.output_dir, args.output_name)
+
+            # Idempotency contract: trust the sidecar manifest as the only
+            # marker of completeness. If it verifies, skip. Otherwise wipe
+            # any partial artifact + stale manifest before re-downloading.
+            if is_complete(args.output_dir, manifest_name=manifest_name):
+                import json as _json
+                print(
+                    _json.dumps({"event": "info", "description": f"Model already downloaded: {args.output_name}"}),
+                    flush=True,
+                )
+                return
+            for stale in (out_path, os.path.join(args.output_dir, manifest_name)):
+                if os.path.isfile(stale):
+                    os.remove(stale)
+
             out_file = download(url, args.output_dir, True, output_name=args.output_name)
             if os.path.isfile(out_file):
                 os.chmod(out_file, 0o755)  # Ensure the file is executable
@@ -99,7 +116,8 @@ def main():
             write_manifest(
                 args.output_dir,
                 [out_file],
-                manifest_name=f"{args.output_name}.downloaded.json",
+                model_id=os.environ["model_id"],
+                manifest_name=manifest_name,
             )
     except requests.HTTPError as exc:
         msg = f"HTTP error: {exc.response.status_code} {exc.response.reason} (url: {url})"

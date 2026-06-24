@@ -51,7 +51,7 @@ from tqdm.auto import tqdm
 import json
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from common.http_download import write_manifest, verify_manifest
+from common.http_download import is_complete, write_manifest
 
 
 def emit_json_info(description: str, artifacts: list[str] | None = None):
@@ -117,41 +117,6 @@ def parse_hf_url(url: str) -> tuple[str, str, str]:
     return repo_id, filename, revision
 
 
-def delete_matched_files(output_dir: str, models_base: str, allow_pattern: str, verbose: bool = False):
-    """Delete files inside output_dir whose names match allow_pattern (fnmatch-style).
-    After deletion, removes any empty subdirectories but never output_dir itself.
-    """
-    base = Path(output_dir)
-    models_base_path = Path(models_base)
-    if not base.exists():
-        emit_json_info(f"Directory does not exist, nothing to delete: {output_dir}")
-        return
-    matched = [f for f in base.rglob("*") if f.is_file() and fnmatch.fnmatch(f.name, allow_pattern)]
-    if not matched:
-        emit_json_info(f"No files matching '{allow_pattern}' found in {output_dir}")
-        return
-    dirs_to_check: set[Path] = set()
-    for f in matched:
-        if verbose:
-            emit_json_info(f"Deleting: {f}")
-        dirs_to_check.add(f.parent)
-        f.unlink()
-    # Remove empty subdirectories (deepest first), but never output_dir itself
-    for d in sorted(dirs_to_check, key=lambda p: len(p.parts), reverse=True):
-        if d == models_base:
-            continue
-        if d.exists() and not any(d.iterdir()):
-            if verbose:
-                emit_json_info(f"Removing empty directory: {d}")
-            d.rmdir()
-    # Remove all empty directories up to output_dir. List all directories under models_base and check if they are empty, removing them
-    for d in sorted(models_base_path.rglob("*"), key=lambda p: len(p.parts), reverse=True):
-        if d.is_dir() and d != base and not any(d.iterdir()):
-            if verbose:
-                emit_json_info(f"Removing empty directory: {d}")
-            d.rmdir()
-
-
 def generate_models_ini(models_dir: Path):
     config = configparser.ConfigParser()
 
@@ -185,10 +150,14 @@ def _manifest_name(allow_pattern: str, mmproj_allow_pattern: str | None) -> str:
     """Build a deterministic, filesystem-safe manifest filename for a (pattern,
     mmproj_pattern) request. Different requests against the same repository
     therefore get independent manifests and never overwrite each other.
+
+    The name is suffixed with ``.downloaded.json`` so that a single
+    ``*downloaded.json`` glob covers every handler's manifest naming
+    convention (AI Hub, Edge Impulse, Hugging Face).
     """
     raw = allow_pattern if not mmproj_allow_pattern else f"{allow_pattern}__{mmproj_allow_pattern}"
     safe = re.sub(r"[^A-Za-z0-9._-]", "_", raw)
-    return f".downloaded.{safe}.json"
+    return f"{safe}.downloaded.json"
 
 
 def main():
@@ -248,16 +217,6 @@ def main():
         "--verbose",
         action="store_true",
         help="Enable verbose output.",
-    )
-    parser.add_argument(
-        "--delete",
-        action="store_true",
-        help="Delete already-present files matching the resolved patterns instead of downloading them.",
-    )
-    parser.add_argument(
-        "--check",
-        action="store_true",
-        help="Check if model files matching the resolved patterns are present on the filesystem.",
     )
     parser.add_argument(
         "--info",
@@ -356,35 +315,26 @@ def main():
             }),
             flush=True,
         )
-    elif args.check:
-        base = Path(output_dir)
-        manifest_name = _manifest_name(allow_pattern, mmproj_allow_pattern)
-        ok, reason = verify_manifest(str(base), manifest_name=manifest_name)
-        if ok:
-            emit_json_info(f"Model exists: {allow_pattern}")
-        else:
-            emit_json_error(f"Model does not exist: {allow_pattern} ({reason})")
-            raise SystemExit(1)
-    elif args.delete:
-        if args.verbose:
-            emit_json_info(f"Deleting files matching '{allow_pattern}' in {output_dir}")
-        delete_matched_files(output_dir, args.output_dir, allow_pattern, args.verbose)
-        if mmproj_allow_pattern:
-            if args.verbose:
-                emit_json_info(f"Deleting mmproj files matching '{mmproj_allow_pattern}' in {output_dir}")
-            delete_matched_files(output_dir, args.output_dir, mmproj_allow_pattern, args.verbose)
-
-        # Remove the sidecar manifest so a later --check correctly reports
-        # the model as absent.
-        manifest_path = Path(output_dir) / _manifest_name(allow_pattern, mmproj_allow_pattern)
-        if manifest_path.is_file():
-            if args.verbose:
-                emit_json_info(f"Removing manifest: {manifest_path}")
-            manifest_path.unlink()
-
-        # Generate models.ini file
-        generate_models_ini(Path(args.output_dir))
     else:
+        manifest_name = _manifest_name(allow_pattern, mmproj_allow_pattern)
+        base = Path(output_dir)
+
+        # Idempotency contract: the per-request manifest is the only marker
+        # of completeness. If it verifies, skip. Otherwise wipe any
+        # previously-matched files and the stale manifest before
+        # re-downloading so a partial run never lingers on disk.
+        if is_complete(str(base), manifest_name=manifest_name):
+            emit_json_info(f"Model already downloaded: {repo_id} ({allow_pattern})")
+            return
+        stale_manifest = base / manifest_name
+        if stale_manifest.is_file():
+            stale_manifest.unlink()
+        for f in _matched_files(base, allow_pattern):
+            f.unlink()
+        if mmproj_allow_pattern:
+            for f in _matched_files(base, mmproj_allow_pattern):
+                f.unlink()
+
         os.makedirs(output_dir, exist_ok=True)
 
         tqdm_class = JsonProgress
@@ -431,9 +381,9 @@ def main():
             shutil.rmtree(cache_path)
 
         # Write the sidecar manifest listing every file produced by this
-        # request, so --check can verify the download was actually complete
-        # (presence + expected size) and not just a partial extraction.
-        base = Path(output_dir)
+        # request, so the next invocation can verify the download was
+        # actually complete (presence + expected size) and not just a
+        # partial extraction.
         downloaded_files = _matched_files(base, allow_pattern)
         if mmproj_allow_pattern:
             downloaded_files += _matched_files(base, mmproj_allow_pattern)
@@ -446,7 +396,8 @@ def main():
         write_manifest(
             str(base),
             [str(f) for f in downloaded_files],
-            manifest_name=_manifest_name(allow_pattern, mmproj_allow_pattern),
+            model_id=os.environ["model_id"],
+            manifest_name=manifest_name,
         )
 
         # Generate models.ini file
