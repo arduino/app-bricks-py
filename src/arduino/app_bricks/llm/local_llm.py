@@ -107,6 +107,7 @@ class LargeLanguageModel(CloudLLM):
 
             base_url = f"http://{host}:{port}/v1"
 
+        local_model_name = model
         if model.startswith(self.GENIE_MODEL) or model.startswith(self.LLAMACPP_MODEL) or model.startswith(self.OLLAMA_MODEL):
             model = model.split(":")[-1]  # Extract model name without provider prefix
 
@@ -127,6 +128,7 @@ class LargeLanguageModel(CloudLLM):
             max_tokens=max_tokens,
             **kwargs,
         )
+        self._model_name = local_model_name
 
         available_models = self.list_models()
         if plain_model_name not in available_models:
