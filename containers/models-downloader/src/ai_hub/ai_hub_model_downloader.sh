@@ -4,10 +4,9 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-
-if [ -d "/models/${model_directory}" ]; then
-    echo "{\"event\": \"info\", \"description\": \"Model exists: ${model_directory}\"}"
-    exit 0
+# Clear any stale/partial download before fetching.
+if [ -n "${model_directory}" ] && [ -d "/models/${model_directory}" ]; then
+    rm -fr "/models/${model_directory}"
 fi
 
 cd /models

@@ -4,6 +4,20 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+# Clear any stale/partial download under /models/<repo_id>/ before fetching.
+repo_id=""
+if [ -n "${model_repo_id}" ]; then
+    repo_id="${model_repo_id}"
+elif [ -n "${model_key}" ]; then
+    repo_id="$(echo "${model_key}" | cut -d: -f2)"
+elif [ -n "${model_url}" ]; then
+    repo_id="$(echo "${model_url}" | sed -nE 's#https?://huggingface\.co/([^/]+/[^/]+)/(resolve|blob)/.+#\1#p')"
+fi
+
+if [ -n "${repo_id}" ] && [ -d "/models/${repo_id}" ]; then
+    rm -fr "/models/${repo_id}"
+fi
+
 if [ -n "${model_key}" ]; then
     python /app/hugging_face/hf_downloader.py \
         --model-key "${model_key}" \

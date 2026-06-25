@@ -9,6 +9,11 @@ if [ -n "${quantization}" ]; then
     quantization_arg=(--quantization "${quantization}")
 fi
 
+# Clear any stale/partial download before fetching.
+if [ -n "${model_name}" ] && [ -f "/models/${model_name}" ]; then
+    rm -f "/models/${model_name}"
+fi
+
 python /app/edge_impulse/download_ei_build.py \
     --ei-project-id "${ei_project_id}" \
     --impulse-id "${ei_impulse_id}" \
