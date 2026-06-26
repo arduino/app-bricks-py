@@ -16,7 +16,7 @@ The Brick uses the model configured for `arduino:vlm` in Arduino App Lab.
 - **Text plus image prompts**: Accepts a text message and one or more images as local file paths or raw image bytes.
 - **Synchronous responses**: Uses `chat()` when the application needs the full answer before continuing.
 - **Streaming responses**: Uses `chat_stream()` when the application should display generated text as it arrives.
-- **Conversation memory**: Keeps recent chat history with `with_memory()` and can persist that history with a `MessagePersistence` backend.
+- **Conversation memory**: Keeps recent chat history with `with_memory()` and can persist it across restarts with `persistence=True`.
 - **Configurable generation**: Supports system prompts, temperature, token limits, timeouts, and model overrides.
 - **Advanced access**: Exposes the underlying LangChain chat model through `get_client()` for custom integrations.
 
@@ -90,24 +90,16 @@ def analyze_frame(frame_bytes: bytes) -> str:
 
 ### Enable Conversation Memory
 
-Use `with_memory()` when follow-up prompts should keep recent context. For persistent memory across restarts, pass a `MessagePersistence` implementation such as `SQLMessagePersistence`.
+Use `with_memory()` when follow-up prompts should keep recent visual context across calls. Pass `persistence=True` to retain memory across restarts — this uses the `SQLStore` brick internally, so no extra setup is required.
 
 ```python
-from arduino.app_bricks.cloud_llm import SQLMessagePersistence
-from arduino.app_bricks.dbstorage_sqlstore import SQLStore
 from arduino.app_bricks.vlm import VisionLanguageModel
-
-db = SQLStore("vlm_memory.db")
-db.start()
 
 vlm = VisionLanguageModel(
     system_prompt="You remember relevant visual details.",
 ).with_memory(
     max_messages=10,
-    persistence=SQLMessagePersistence(
-        sql_store=db,
-        thread_id="vlm-session",
-    ),
+    persistence=True,
 )
 
 print(vlm.chat("Remember what is in this image.", images=["chair.jpg"]))
@@ -145,7 +137,7 @@ supported_boards: ["ventunoq"]
 - **`chat(message, images=None)`**: Sends a prompt and optional images, then returns the complete generated response as a string.
 - **`chat_stream(message, images=None)`**: Sends a prompt and optional images, then yields generated text chunks as they arrive.
 - **`stop_stream()`**: Requests cancellation of the active streaming response.
-- **`with_memory(max_messages=0, persistence=None)`**: Enables conversational memory for the instance. Pass `max_messages=0` to disable history.
+- **`with_memory(max_messages=0, persistence=None)`**: Enables conversational memory for the instance. `persistence=True` enables persistence with a default database/thread; pass a `MessagePersistence` for full control. Pass `max_messages=0` to disable history.
 - **`clear_memory()`**: Clears the active conversation history.
 - **`get_client()`**: Returns the underlying LangChain `BaseChatModel` instance.
 
