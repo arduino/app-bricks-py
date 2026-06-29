@@ -98,7 +98,11 @@ class JsonProgress(tqdm):
         return displayed
 
     def close(self):
-        self._emit("complete")
+        # Only report completion if the transfer actually finished. tqdm.close()
+        # also runs while the stack unwinds on an interrupt, so guard against
+        # emitting a bogus "complete" for a partial download.
+        if self.total and self.n >= self.total:
+            self._emit("complete")
         super().close()
 
     def display(self, msg=None, pos=None):
@@ -383,6 +387,8 @@ def main():
         os.makedirs(output_dir, exist_ok=True)
         marker.write_text(f"{repo_id}\n")
 
+        emit_json_info(f"Downloading to: {os.path.abspath(output_dir)}", artifacts=[os.path.abspath(output_dir)])
+
         tqdm_class = JsonProgress
 
         try:
@@ -437,8 +443,12 @@ def main():
         # Generate models.ini file
         generate_models_ini(Path(args.output_dir))
 
+        # Report the absolute path(s) of the downloaded model file(s).
+        downloaded = sorted(str(p.resolve()) for p in Path(output_dir).rglob("*.gguf"))
+        emit_json_info(f"Downloaded to: {output_dir}", artifacts=downloaded)
+
         # Download finished successfully: clear the in-progress marker.
-        marker = Path(args.output_dir) / ".download"
+        marker = Path(output_dir) / ".download"
         if marker.exists():
             marker.unlink()
 
