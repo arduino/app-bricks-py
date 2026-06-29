@@ -212,6 +212,31 @@ def check_model_exists(model_info, models_base_dir):
     return False, full_path
 
 
+def model_is_downloading(model_info, models_base_dir):
+    """Return the in-progress model name if a ".download" marker exists, else None.
+
+    The marker is per-model: AI Hub/HF store it inside the model directory
+    (<dir>/.download), Edge Impulse stores a sibling (.<file>.download). Its
+    presence means the download was interrupted before completing.
+    """
+    subdir = get_model_subdir(model_info.get("models_repository", ""))
+    search_dir = os.path.join(models_base_dir, subdir) if subdir else models_base_dir
+    model_directory = model_info.get("model_directory") or ""
+    model_name = model_info.get("model_name") or ""
+    candidates = []
+    if model_directory:
+        candidates.append(os.path.join(search_dir, model_directory, ".download"))
+    if model_name:
+        candidates.append(os.path.join(search_dir, f".{model_name}.download"))
+    for marker in candidates:
+        try:
+            with open(marker) as f:
+                return f.read().strip() or True
+        except OSError:
+            continue
+    return None
+
+
 LLAMACPP_SUBDIR = "llamacpp"
 
 
@@ -302,11 +327,14 @@ def main():
                 entry["model_size_mb"] = model_info["model_size_mb"]
         else:
             exists, path = check_model_exists(model_info, args.models_dir)
+            # Per-model ".download" marker present => download in progress/incomplete.
+            downloading = bool(model_is_downloading(model_info, args.models_dir))
             entry = {
                 "id": model_info["id"],
                 "name": model_info["name"],
                 "handler": model_info["handler"],
-                "installed": exists,
+                "installed": exists and not downloading,
+                "downloading": downloading,
             }
             if model_info.get("model_size_mb") is not None:
                 entry["model_size_mb"] = model_info["model_size_mb"]
@@ -314,9 +342,9 @@ def main():
                 entry["path"] = path
                 entry["disk_size_mb"] = get_dir_size_mb(path)
 
-        if args.installed_only and not exists:
+        if args.installed_only and not entry["installed"]:
             continue
-        if args.not_installed_only and exists:
+        if args.not_installed_only and entry["installed"]:
             continue
 
         results.append(entry)
@@ -338,7 +366,7 @@ def main():
         print(f"{'STATUS':<12} {'SIZE (MB)':<12} {'ID':<45} {'NAME':<40} {'PATH'}")
         print("-" * 152)
         for r in results:
-            status = "INSTALLED" if r["installed"] else "NOT FOUND"
+            status = "DOWNLOADING" if r.get("downloading") else ("INSTALLED" if r["installed"] else "NOT FOUND")
             size = (
                 f"{r['disk_size_mb']:.2f}"
                 if r.get("disk_size_mb") is not None

@@ -28,6 +28,6 @@ else
     fi
 fi
 
-# Use exec so python replaces this shell as PID 1 and receives SIGINT/SIGTERM
-# directly, allowing it to clean up partial downloads before exiting.
+# exec so python becomes PID 1 and receives SIGINT/SIGTERM. hf_downloader.py
+# manages the per-repo ".download" marker and wipes partial repos from a kill.
 exec python /app/hugging_face/hf_downloader.py "${args[@]}"

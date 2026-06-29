@@ -98,6 +98,10 @@ def main():
             out_file = download(url, args.output_dir, True, output_name=args.output_name)
             if os.path.isfile(out_file):
                 os.chmod(out_file, 0o755)  # Ensure the file is executable
+            # Download finished successfully: clear the in-progress marker.
+            marker = os.path.join(args.output_dir, f".{args.output_name}.download")
+            if os.path.exists(marker):
+                os.remove(marker)
     except requests.HTTPError as exc:
         msg = f"HTTP error: {exc.response.status_code} {exc.response.reason} (url: {url})"
         emit_json_error(msg)

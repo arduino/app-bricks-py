@@ -103,6 +103,10 @@ def main():
             download(url, args.output_dir, True)
         else:
             download_and_extract(url, args.output_dir, True)
+        # Download finished successfully: clear the in-progress marker.
+        marker = os.path.join(args.output_dir, os.environ.get("model_directory", ""), ".download")
+        if os.path.exists(marker):
+            os.remove(marker)
     except requests.HTTPError as exc:
         msg = f"HTTP error: {exc.response.status_code} {exc.response.reason}"
         emit_json_error(msg)

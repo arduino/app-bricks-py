@@ -370,7 +370,18 @@ def main():
         # Generate models.ini file
         generate_models_ini(Path(args.output_dir))
     else:
+        # Per-repo ".download" marker: present => prior run killed mid-download,
+        # wipe and retry; absent but dir exists => already complete.
+        marker = Path(output_dir) / ".download"
+        if marker.is_file():
+            emit_json_info(f"Removing incomplete previous download: {repo_id}")
+            shutil.rmtree(output_dir, ignore_errors=True)
+        elif os.path.isdir(output_dir):
+            emit_json_info(f"Model exists: {repo_id}")
+            return
+
         os.makedirs(output_dir, exist_ok=True)
+        marker.write_text(f"{repo_id}\n")
 
         tqdm_class = JsonProgress
 
@@ -425,6 +436,11 @@ def main():
 
         # Generate models.ini file
         generate_models_ini(Path(args.output_dir))
+
+        # Download finished successfully: clear the in-progress marker.
+        marker = Path(args.output_dir) / ".download"
+        if marker.exists():
+            marker.unlink()
 
 
 if __name__ == "__main__":
