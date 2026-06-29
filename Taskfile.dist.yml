@@ -55,12 +55,12 @@ tasks:
   test:
     desc: Run all unit tests
     cmds:
-      - pytest -vs ./tests --ignore=tests/arduino/app_bricks/cloud_llm/
+      - pytest -vs ./tests --ignore=tests/arduino/app_bricks/cloud_llm/eval/
 
   llm_test:
     desc: Run all LLM tests
     cmds:
-      - deepeval test run tests/arduino/app_bricks/cloud_llm/ -n 4 -vs
+      - deepeval test run tests/arduino/app_bricks/cloud_llm/eval/ -n 4 -vs
 
   test:*:
     desc: Run tests for a specific folder
