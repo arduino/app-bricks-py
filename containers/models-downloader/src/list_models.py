@@ -71,7 +71,9 @@ def get_model_info(model_entry):
                     continue
                 for platform_name, platform_config in platform_entry.items():
                     variables = platform_config.get("variables", {})
-                    model_directory = variables.get("model_directory") or build_model_directory(variables) or variables.get("model_name", "")
+                    model_directory = (
+                        variables.get("model_directory") or build_model_directory(variables) or os.path.splitext(variables.get("model_name", ""))[0]
+                    )
                     models_repository = variables.get("models_repository", "")
 
                     results.append({
@@ -218,19 +220,16 @@ def check_model_exists(model_info, models_base_dir):
 def model_is_downloading(model_info, models_base_dir):
     """Return the in-progress model name if a ".download" marker exists, else None.
 
-    The marker is per-model: AI Hub/HF store it inside the model directory
-    (<dir>/.download), Edge Impulse stores a sibling (.<file>.download). Its
-    presence means the download was interrupted before completing.
+    The marker is per-model and lives inside the model directory
+    (<dir>/.download) for AI Hub, HF and Edge Impulse alike. Its presence means
+    the download was interrupted before completing.
     """
     subdir = get_model_subdir(model_info.get("models_repository", ""))
     search_dir = os.path.join(models_base_dir, subdir) if subdir else models_base_dir
     model_directory = model_info.get("model_directory") or ""
-    model_name = model_info.get("model_name") or ""
     candidates = []
     if model_directory:
         candidates.append(os.path.join(search_dir, model_directory, ".download"))
-    if model_name:
-        candidates.append(os.path.join(search_dir, f".{model_name}.download"))
     for marker in candidates:
         try:
             with open(marker) as f:

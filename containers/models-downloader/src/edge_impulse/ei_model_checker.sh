@@ -4,7 +4,9 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-if [ -f "/models/${model_name}" ]; then
+model_folder="${model_name%.*}"
+
+if [ -f "/models/${model_folder}/${model_name}" ]; then
     echo "{\"event\": \"info\", \"description\": \"Model exists: ${model_name}\"}"
     exit 0
 else

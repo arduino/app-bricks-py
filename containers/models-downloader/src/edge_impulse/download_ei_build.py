@@ -13,6 +13,7 @@ Usage examples:
 
 import argparse
 import os
+import shutil
 import sys
 
 import requests
@@ -22,6 +23,17 @@ from common.http_download import check, download, emit_json_error, install_signa
 
 
 BASE_URL = "https://studio.edgeimpulse.com/v1/api/{project_id}/deployment/download?type={target}&impulseId={impulse_id}"
+
+
+def _wipe_model_dir(model_dir: str) -> None:
+    """Remove the partial model directory (and its ``.download`` marker) after a
+    failed or interrupted download. Refuses to remove the top-level ``/models``
+    mount, which cannot be deleted from inside the container.
+    """
+    abs_dir = os.path.abspath(model_dir)
+    if abs_dir in (os.path.abspath("/models"), os.sep):
+        return
+    shutil.rmtree(model_dir, ignore_errors=True)
 
 
 def main():
@@ -79,8 +91,12 @@ def main():
     if args.quantization:
         url += f"&modelType={args.quantization}"
 
-    # In-progress marker shared with the listing tool; clear it on success or interrupt.
-    marker = os.path.join(args.output_dir, f".{args.output_name}.download")
+    # In-progress marker shared with the listing tool; it lives *inside* the
+    # model folder (mirrors AI Hub / HF). On success only the marker is cleared;
+    # on interrupt or error the whole model folder (marker + partial files) is
+    # removed so the next run starts fresh and the listing tool never sees a
+    # phantom (empty) model folder that would be mistaken for an installed model.
+    marker = os.path.join(args.output_dir, ".download")
 
     try:
         if args.info:
@@ -106,15 +122,19 @@ def main():
                 os.remove(marker)
     except requests.HTTPError as exc:
         msg = f"HTTP error: {exc.response.status_code} {exc.response.reason} (url: {url})"
+        if not args.info:
+            _wipe_model_dir(args.output_dir)
         emit_json_error(msg)
         sys.exit(1)
     except requests.RequestException as exc:
         msg = f"Request failed: {exc} (url: {url})"
+        if not args.info:
+            _wipe_model_dir(args.output_dir)
         emit_json_error(msg)
         sys.exit(1)
     except KeyboardInterrupt:
-        if os.path.exists(marker):
-            os.remove(marker)
+        if not args.info:
+            _wipe_model_dir(args.output_dir)
         emit_json_error("Download interrupted by signal; partial files removed")
         sys.exit(130)
 
