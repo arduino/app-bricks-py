@@ -18,7 +18,7 @@ import sys
 import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from common.http_download import check, download, emit_json_error
+from common.http_download import check, download, emit_json_error, install_signal_handlers
 
 
 BASE_URL = "https://studio.edgeimpulse.com/v1/api/{project_id}/deployment/download?type={target}&impulseId={impulse_id}"
@@ -71,6 +71,10 @@ def main():
 
     args = parser.parse_args()
 
+    # Ensure SIGINT/SIGTERM (e.g. `docker stop`) trigger cleanup of partial
+    # downloads before exiting. SIGKILL (-9) cannot be caught.
+    install_signal_handlers()
+
     url = BASE_URL.format(project_id=args.ei_project_id, impulse_id=args.impulse_id, target=args.target)
     if args.quantization:
         url += f"&modelType={args.quantization}"
@@ -102,6 +106,9 @@ def main():
         msg = f"Request failed: {exc} (url: {url})"
         emit_json_error(msg)
         sys.exit(1)
+    except KeyboardInterrupt:
+        emit_json_error("Download interrupted by signal; partial files removed")
+        sys.exit(130)
 
 
 if __name__ == "__main__":

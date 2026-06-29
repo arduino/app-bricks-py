@@ -5,12 +5,14 @@
 # SPDX-License-Identifier: MPL-2.0
 
 
-if [ -d "/models/${model_directory}" ]; then
-    echo "{\"event\": \"info\", \"description\": \"Model exists: ${model_directory}\"}"
-    exit 0
-fi
-
 cd /models
+
+# If the target directory already exists (e.g. a partial download left by a
+# SIGKILL, which cannot be intercepted), remove it and start a fresh download.
+if [ -d "/models/${model_directory}" ]; then
+    echo "{\"event\": \"info\", \"description\": \"Removing existing download and starting fresh: ${model_directory}\"}"
+    rm -rf "/models/${model_directory:?}"
+fi
 
 cmd=(python /app/ai_hub/download_ai_hub_model.py
     --model_type "$model_type"
@@ -22,8 +24,6 @@ if [ -n "$version" ]; then
     cmd+=(--version "$version")
 fi
 
-"${cmd[@]}"
-if [ $? -ne 0 ]; then
-    echo "{\"event\": \"error\", \"description\": \"Failed to download the model: ${model_name}\"}"
-    exit 1
-fi
+# Use exec so python replaces this shell as PID 1 and receives SIGINT/SIGTERM
+# directly, allowing it to clean up partial downloads before exiting.
+exec "${cmd[@]}"

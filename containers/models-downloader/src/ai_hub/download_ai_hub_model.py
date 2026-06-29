@@ -11,7 +11,7 @@ import sys
 import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from common.http_download import download, download_and_extract, emit_json_error
+from common.http_download import download, download_and_extract, emit_json_error, install_signal_handlers
 
 
 def main():
@@ -64,6 +64,10 @@ def main():
 
     args = parser.parse_args()
 
+    # Ensure SIGINT/SIGTERM (e.g. `docker stop`) trigger cleanup of partial
+    # downloads/extractions before exiting. SIGKILL (-9) cannot be caught.
+    install_signal_handlers()
+
     # Build the qai_hub_models fetch command to retrieve the download URL.
     # model_name, model_type, quantization and chipset are mandatory;
     # version is optional.
@@ -107,6 +111,9 @@ def main():
         msg = f"Request failed: {exc}"
         emit_json_error(msg)
         sys.exit(1)
+    except KeyboardInterrupt:
+        emit_json_error("Download interrupted by signal; partial files removed")
+        sys.exit(130)
     except Exception as exc:
         msg = f"Unexpected error: {exc}"
         emit_json_error(msg)

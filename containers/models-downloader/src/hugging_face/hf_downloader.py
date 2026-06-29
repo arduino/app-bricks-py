@@ -61,6 +61,18 @@ def emit_json_error(description: str):
     print(json.dumps({"event": "error", "description": description}), flush=True)
 
 
+def install_signal_handlers() -> None:
+    """Translate SIGINT/SIGTERM into KeyboardInterrupt so cleanup runs before
+    exit. SIGKILL (-9) cannot be caught."""
+    import signal
+
+    def _handler(signum, _frame):
+        raise KeyboardInterrupt(f"received signal {signum}")
+
+    signal.signal(signal.SIGINT, _handler)
+    signal.signal(signal.SIGTERM, _handler)
+
+
 class JsonProgress(tqdm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -362,41 +374,49 @@ def main():
 
         tqdm_class = JsonProgress
 
-        if url_filename:
-            # Single-file download via direct URL
-            if args.verbose:
-                emit_json_info(f"Downloading file '{url_filename}' from {repo_id} (revision: {url_revision})")
-            hf_hub_download(
-                repo_id=repo_id,
-                filename=url_filename,
-                revision=url_revision,
-                local_dir=output_dir,
-                tqdm_class=tqdm_class,
-            )
-            if mmproj_url_filename:
+        try:
+            if url_filename:
+                # Single-file download via direct URL
                 if args.verbose:
-                    emit_json_info(f"Downloading mmproj file '{mmproj_url_filename}' from {repo_id} (revision: {mmproj_url_revision})")
+                    emit_json_info(f"Downloading file '{url_filename}' from {repo_id} (revision: {url_revision})")
                 hf_hub_download(
                     repo_id=repo_id,
-                    filename=mmproj_url_filename,
-                    revision=mmproj_url_revision,
+                    filename=url_filename,
+                    revision=url_revision,
                     local_dir=output_dir,
                     tqdm_class=tqdm_class,
                 )
-        else:
-            # Pattern-based download via snapshot
-            if args.verbose:
-                emit_json_info(f"Downloading model from Hugging Face repository: {repo_id} with allow pattern: {allow_pattern}")
-            snapshot_download(
-                repo_id=repo_id, allow_patterns=[allow_pattern], ignore_patterns=["*mmproj*"], local_dir=output_dir, tqdm_class=tqdm_class
-            )
-
-            if mmproj_allow_pattern:
-                if args.verbose:
-                    emit_json_info(
-                        f"Downloading mmproj model file from Hugging Face repository: {repo_id} with allow pattern: {mmproj_allow_pattern}"
+                if mmproj_url_filename:
+                    if args.verbose:
+                        emit_json_info(f"Downloading mmproj file '{mmproj_url_filename}' from {repo_id} (revision: {mmproj_url_revision})")
+                    hf_hub_download(
+                        repo_id=repo_id,
+                        filename=mmproj_url_filename,
+                        revision=mmproj_url_revision,
+                        local_dir=output_dir,
+                        tqdm_class=tqdm_class,
                     )
-                snapshot_download(repo_id=repo_id, allow_patterns=[mmproj_allow_pattern], local_dir=output_dir, tqdm_class=tqdm_class)
+            else:
+                # Pattern-based download via snapshot
+                if args.verbose:
+                    emit_json_info(f"Downloading model from Hugging Face repository: {repo_id} with allow pattern: {allow_pattern}")
+                snapshot_download(
+                    repo_id=repo_id, allow_patterns=[allow_pattern], ignore_patterns=["*mmproj*"], local_dir=output_dir, tqdm_class=tqdm_class
+                )
+
+                if mmproj_allow_pattern:
+                    if args.verbose:
+                        emit_json_info(
+                            f"Downloading mmproj model file from Hugging Face repository: {repo_id} with allow pattern: {mmproj_allow_pattern}"
+                        )
+                    snapshot_download(repo_id=repo_id, allow_patterns=[mmproj_allow_pattern], local_dir=output_dir, tqdm_class=tqdm_class)
+        except BaseException:
+            # Network/extraction errors and SIGINT/SIGTERM-driven KeyboardInterrupt
+            # leave a partial repo directory; remove it before exiting. SIGKILL (-9)
+            # cannot be intercepted and is reclaimed by deleting the dir on retry.
+            if os.path.isdir(output_dir):
+                shutil.rmtree(output_dir, ignore_errors=True)
+            raise
 
         # Remove download caches
         cache_path = Path(output_dir) / ".cache"
@@ -408,4 +428,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    install_signal_handlers()
+    try:
+        main()
+    except KeyboardInterrupt:
+        emit_json_error("Download interrupted by signal; partial files removed")
+        raise SystemExit(130)
