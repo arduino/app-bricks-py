@@ -105,6 +105,9 @@ def get_model_subdir(models_repository):
     # Handle relative paths like "models/genai" or "models/audio-analytics/asr"
     if models_repository.startswith("models/"):
         return models_repository[len("models/") :]
+    # Bare repository name (e.g. "edge-impulse", "genai") => use as-is
+    if models_repository:
+        return models_repository
     return ""
 
 

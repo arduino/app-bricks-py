@@ -79,6 +79,9 @@ def main():
     if args.quantization:
         url += f"&modelType={args.quantization}"
 
+    # In-progress marker shared with the listing tool; clear it on success or interrupt.
+    marker = os.path.join(args.output_dir, f".{args.output_name}.download")
+
     try:
         if args.info:
             import json
@@ -99,7 +102,6 @@ def main():
             if os.path.isfile(out_file):
                 os.chmod(out_file, 0o755)  # Ensure the file is executable
             # Download finished successfully: clear the in-progress marker.
-            marker = os.path.join(args.output_dir, f".{args.output_name}.download")
             if os.path.exists(marker):
                 os.remove(marker)
     except requests.HTTPError as exc:
@@ -111,6 +113,8 @@ def main():
         emit_json_error(msg)
         sys.exit(1)
     except KeyboardInterrupt:
+        if os.path.exists(marker):
+            os.remove(marker)
         emit_json_error("Download interrupted by signal; partial files removed")
         sys.exit(130)
 

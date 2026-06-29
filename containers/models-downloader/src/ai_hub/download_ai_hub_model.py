@@ -98,13 +98,15 @@ def main():
 
     print(json.dumps({"event": "info", "description": f"Downloading model from: {url}"}), flush=True)
 
+    # In-progress marker shared with the listing tool; clear it on success or interrupt.
+    marker = os.path.join(args.output_dir, os.environ.get("model_directory", ""), ".download")
+
     try:
         if args.no_unzip:
             download(url, args.output_dir, True)
         else:
             download_and_extract(url, args.output_dir, True)
         # Download finished successfully: clear the in-progress marker.
-        marker = os.path.join(args.output_dir, os.environ.get("model_directory", ""), ".download")
         if os.path.exists(marker):
             os.remove(marker)
     except requests.HTTPError as exc:
@@ -116,6 +118,8 @@ def main():
         emit_json_error(msg)
         sys.exit(1)
     except KeyboardInterrupt:
+        if os.path.exists(marker):
+            os.remove(marker)
         emit_json_error("Download interrupted by signal; partial files removed")
         sys.exit(130)
     except Exception as exc:

@@ -296,7 +296,8 @@ def _download_and_extract_streaming(url: str, output_dir: str, json_progress: bo
                 print()
 
     if json_progress:
-        print(json.dumps({"event": "complete", "description": f"Extracted to: {abs_dir}", "artifacts": [os.path.abspath(p) for p in extracted_artifacts]}), flush=True)
+        abs_artifacts = [os.path.abspath(p) for p in extracted_artifacts]
+        print(json.dumps({"event": "complete", "description": f"Extracted to: {abs_dir}", "artifacts": abs_artifacts}), flush=True)
     else:
         print(f"Extracted to: {output_dir}")
 
@@ -373,7 +374,8 @@ def _download_and_extract_buffered(url: str, output_dir: str, json_progress: boo
             raise
 
         if json_progress:
-            print(json.dumps({"event": "complete", "description": f"Extracted to: {abs_dir}", "artifacts": [os.path.abspath(p) for p in extracted_artifacts]}), flush=True)
+            abs_artifacts = [os.path.abspath(p) for p in extracted_artifacts]
+            print(json.dumps({"event": "complete", "description": f"Extracted to: {abs_dir}", "artifacts": abs_artifacts}), flush=True)
         else:
             print(f"Extracted to: {output_dir}")
     finally:
