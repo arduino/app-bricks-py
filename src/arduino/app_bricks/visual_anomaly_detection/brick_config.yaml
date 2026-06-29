@@ -10,7 +10,7 @@ requires_model: true
 model: concrete-crack-anomaly-detection
 model_by_boards:
     - platform: ventunoq
-      model: concreate-crack-anomaly-detection-high-resolution
+      model: concrete-crack-anomaly-detection-high-resolution
     - platform: unoq
       model: concrete-crack-anomaly-detection
 ai_frameworks_compatibility:
