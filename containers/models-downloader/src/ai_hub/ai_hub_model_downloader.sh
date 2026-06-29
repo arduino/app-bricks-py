@@ -7,19 +7,23 @@
 
 cd /models
 
-# Per-model ".download" marker (inside the model dir): present => prior run was
-# killed mid-download, wipe and retry; absent but dir exists => already complete.
-if [ -f "/models/${model_directory}/.download" ]; then
+model_path="/models/${model_directory}"
+
+# Decide whether a usable model is already present. A ".download" marker, or a
+# leftover directory that is empty / only contains that marker, means a previous
+# run was interrupted (e.g. SIGKILL) and must be wiped and retried rather than
+# reported as "Model exists".
+if [ -f "${model_path}/.download" ] || { [ -d "${model_path}" ] && [ -z "$(find "${model_path}" -mindepth 1 ! -name '.download' -print -quit 2>/dev/null)" ]; }; then
     echo "{\"event\": \"info\", \"description\": \"Removing incomplete previous download: ${model_directory}\"}"
-    rm -rf "/models/${model_directory:?}"
-elif [ -d "/models/${model_directory}" ]; then
+    rm -rf "${model_path:?}"
+elif [ -d "${model_path}" ]; then
     echo "{\"event\": \"info\", \"description\": \"Model exists: ${model_directory}\"}"
     exit 0
 fi
 
 # Flag this model's download as in-progress; download_ai_hub_model.py removes it on success.
-mkdir -p "/models/${model_directory}"
-printf '%s\n' "${model_directory}" > "/models/${model_directory}/.download"
+mkdir -p "${model_path}"
+printf '%s\n' "${model_directory}" > "${model_path}/.download"
 
 cmd=(python /app/ai_hub/download_ai_hub_model.py
     --model_type "$model_type"
