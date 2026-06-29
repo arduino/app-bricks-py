@@ -1256,7 +1256,7 @@ models:
     deployment:
       handler: "ei-handler"
       pre-loaded: true
- - concreate-crack-anomaly-detection:
+ - concrete-crack-anomaly-detection:
     name : "Concrete crack anomaly detection"
     description: "Anomaly detection model to identify cracks in concrete structures."
     metadata:
@@ -1275,7 +1275,7 @@ models:
       - id: "arduino:visual_anomaly_detection"
         model_configuration:
           "EI_V_ANOMALY_DETECTION_MODEL": "/models/ootb/ei/concrete-crack-anomaly-detection.eim"
- - concreate-crack-anomaly-detection-high-resolution:
+ - concrete-crack-anomaly-detection-high-resolution:
     name : "Concrete crack anomaly detection - High resolution"
     description: "Anomaly detection model to identify cracks in concrete structures with higher resolution input images for improved accuracy. This version of the model is optimized for NPU acceleration on supported devices, providing faster inference times while maintaining accuracy."
     metadata:
