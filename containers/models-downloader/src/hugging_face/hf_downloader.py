@@ -75,6 +75,7 @@ def install_signal_handlers() -> None:
 
 class JsonProgress(tqdm):
     def __init__(self, *args, **kwargs):
+        self._complete_emitted = False
         super().__init__(*args, **kwargs)
         # Emit an initial "start" event
         self._emit("start")
@@ -98,10 +99,9 @@ class JsonProgress(tqdm):
         return displayed
 
     def close(self):
-        # Only report completion if the transfer actually finished. tqdm.close()
-        # also runs while the stack unwinds on an interrupt, so guard against
-        # emitting a bogus "complete" for a partial download.
-        if self.total and self.n >= self.total:
+        # Only report completion if the transfer actually finished.
+        if self.total and self.n >= self.total and not self._complete_emitted:
+            self._complete_emitted = True
             self._emit("complete")
         super().close()
 
