@@ -16,7 +16,7 @@ services:
       - /dev/fastrpc-cdsp-secure
     volumes:
       # Mount hexagon firmware
-      - /usr/share/qcom/qcs8300/Qualcomm/QCS8300-RIDE/dsp/cdsp:/lib/dsp/cdsp      
+      - /usr/share/qcom/qcs8300/Qualcomm/QCS8300-RIDE/dsp/cdsp:/lib/dsp/cdsp
     healthcheck:
       test: [ "CMD-SHELL", "nc -zv gesture_recognition 5002 || exit 1" ]
       interval: 1s
