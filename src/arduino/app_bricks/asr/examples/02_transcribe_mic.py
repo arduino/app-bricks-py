@@ -17,4 +17,5 @@ def transcribe():
     text = asr.transcribe(duration=5)
     print(f"Transcription: {text}")
 
+
 App.run(user_loop=transcribe)
