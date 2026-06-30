@@ -1,6 +1,6 @@
 services:
   genie-models-runner:
-    image: artifacts.codelinaro.org/iot-solutions-microservices/genai-llm-vlm-service:1.2.0
+    image: artifacts.codelinaro.org/iot-solutions-microservices/genai-llm-vlm-service:1.3.0
     # Currently, genie-models-runner requires to run as root
     user: 0:0
     restart: on-failure
