@@ -12,12 +12,11 @@ llm = LargeLanguageModel()
 
 
 def ask_prompt():
-    prompt = input("Enter your prompt (or type 'exit' to quit): ")
-    if prompt.lower() == "exit":
-        raise StopIteration()
+    prompt = "Hi, what can you do as an AI assistant?"
     for chunk in llm.chat_stream(prompt):
         print(chunk, end="", flush=True)
     print()
+    raise StopIteration
 
 
 App.run(ask_prompt)

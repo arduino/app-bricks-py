@@ -22,14 +22,9 @@ llm = LargeLanguageModel(
 
 
 def ask_prompt():
-    prompt = input("Enter your prompt (or 'exit' to quit, 'forget' to clear history): ")
-    if prompt.lower() == "exit":
-        raise StopIteration()
-    if prompt.lower() == "forget":
-        llm.clear_memory()
-        print("Memory cleared for this thread.")
-        return
+    prompt = "Hi, what can you do as an AI assistant?"
     print(llm.chat(prompt))
+    raise StopIteration
 
 
 App.run(ask_prompt)
