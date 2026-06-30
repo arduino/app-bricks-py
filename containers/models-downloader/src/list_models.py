@@ -403,21 +403,36 @@ def main():
                 entry["path"] = path
                 entry["disk_size_mb"] = get_dir_size_mb(path)
 
-        if args.installed_only and not entry["installed"]:
-            continue
-        if args.not_installed_only and entry["installed"]:
-            continue
-
         results.append(entry)
 
-    # Scan for llamacpp .gguf models on the filesystem
-    llamacpp_models = find_llamacpp_models(args.models_dir)
-    for m in llamacpp_models:
-        if args.not_installed_only and m["installed"]:
-            continue
-        if args.installed_only and not m["installed"]:
-            continue
-        results.append(m)
+    # Scan for llamacpp .gguf models on the filesystem. These may correspond to
+    # a models-list.yaml entry (same id) whose nested model_directory the YAML
+    # path check couldn't resolve; merge filesystem status into that entry
+    # instead of listing the model twice. Otherwise add it as a new entry.
+    by_id = {entry["id"]: entry for entry in results}
+    for m in find_llamacpp_models(args.models_dir):
+        existing = by_id.get(m["id"])
+        if existing is not None:
+            # Keep the canonical YAML name/handler/model_size_mb; take the
+            # filesystem-derived status and on-disk details.
+            existing["installed"] = m["installed"]
+            existing["downloading"] = m["downloading"]
+            if "path" in m:
+                existing["path"] = m["path"]
+            if m.get("disk_size_mb") is not None:
+                existing["disk_size_mb"] = m["disk_size_mb"]
+            if "mmproj" in m:
+                existing["mmproj"] = m["mmproj"]
+        else:
+            results.append(m)
+            by_id[m["id"]] = m
+
+    # Apply installed/not-installed filters once, after merging.
+    if args.installed_only:
+        results = [r for r in results if r["installed"]]
+    if args.not_installed_only:
+        results = [r for r in results if not r["installed"]]
+
 
     if args.output_json:
         print(json.dumps({"event": "info", "models": results}, indent=2))
