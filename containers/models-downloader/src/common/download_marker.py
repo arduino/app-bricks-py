@@ -22,22 +22,28 @@ import os
 MARKER_NAME = ".download"
 
 
-def marker_payload(handler="", models_repository="", model_directory=""):
-    """Build the marker dict from the fields that match a models-list.yaml entry."""
-    return {
+def marker_payload(handler="", models_repository="", model_directory="", model_url=""):
+    """Build the marker dict from the fields that match a models-list.yaml entry.
+
+    ``model_url`` is included only when set (some handlers download by URL).
+    """
+    payload = {
         "status": "downloading",
         "handler": handler or "",
         "models_repository": models_repository or "",
         "model_directory": model_directory or "",
     }
+    if model_url:
+        payload["model_url"] = model_url
+    return payload
 
 
-def write_marker(model_dir, handler="", models_repository="", model_directory=""):
+def write_marker(model_dir, handler="", models_repository="", model_directory="", model_url=""):
     """Create ``<model_dir>/.download`` with the JSON payload and return its path."""
     os.makedirs(model_dir, exist_ok=True)
     path = os.path.join(model_dir, MARKER_NAME)
     with open(path, "w") as f:
-        json.dump(marker_payload(handler, models_repository, model_directory), f)
+        json.dump(marker_payload(handler, models_repository, model_directory, model_url), f)
         f.write("\n")
     return path
 

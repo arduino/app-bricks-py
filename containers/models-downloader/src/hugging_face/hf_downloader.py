@@ -430,6 +430,7 @@ def main():
             handler="hf-handler",
             models_repository=os.environ.get("models_repository", ""),
             model_directory=os.environ.get("model_directory", "") or repo_id,
+            model_url=args.model_url or "",
         )
 
         emit_json_info(f"Downloading to: {os.path.abspath(output_dir)}", artifacts=[os.path.abspath(output_dir)])

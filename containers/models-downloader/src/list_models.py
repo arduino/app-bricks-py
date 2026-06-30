@@ -241,12 +241,35 @@ def model_is_downloading(model_info, models_base_dir):
 LLAMACPP_SUBDIR = "llamacpp"
 
 
+def llamacpp_name_from_marker(marker, root):
+    """Derive a model name for an in-progress llamacpp download from its marker.
+
+    If the marker carries a ``model_url`` pointing at a .gguf file, the file
+    stem is used (e.g. ".../gemma-4-E2B_q4_0-it.gguf" -> "gemma-4-E2B_q4_0-it").
+    Otherwise fall back to the model_directory / folder name.
+    """
+    url = marker.get("model_url") or ""
+    if url:
+        base = url.split("?")[0].rstrip("/").rsplit("/", 1)[-1]
+        if base.endswith(".gguf"):
+            return os.path.splitext(base)[0]
+        if base:
+            return base
+    model_directory = marker.get("model_directory") or ""
+    if model_directory:
+        return os.path.basename(model_directory.rstrip("/"))
+    return os.path.basename(root.rstrip(os.sep))
+
+
 def find_llamacpp_models(models_base_dir):
     """Scan for .gguf models under the llamacpp directory.
 
     Mirrors the grouping used when generating models.ini: ``*mmproj*.gguf``
     files are not standalone models but the multimodal projection belonging to
     the main GGUF in the same directory, so they are not listed separately.
+
+    A directory that only holds a ".download" marker (download in progress, no
+    GGUF on disk yet) is still surfaced, using the marker info for the entry.
     """
     llamacpp_dir = os.path.join(models_base_dir, LLAMACPP_SUBDIR)
     results = []
@@ -256,8 +279,10 @@ def find_llamacpp_models(models_base_dir):
     for root, _dirs, files in os.walk(llamacpp_dir):
         gguf_files = sorted(f for f in files if f.endswith(".gguf"))
         mmproj_files = [f for f in gguf_files if "mmproj" in f]
-        downloading = read_marker(os.path.join(root, ".download")) is not None
+        marker = read_marker(os.path.join(root, ".download"))
+        downloading = marker is not None
 
+        emitted = False
         for f in gguf_files:
             if "mmproj" in f:
                 continue
@@ -281,6 +306,20 @@ def find_llamacpp_models(models_base_dir):
             if mmproj_files:
                 entry["mmproj"] = os.path.join(root, mmproj_files[0])
             results.append(entry)
+            emitted = True
+
+        # Download in progress but no main GGUF on disk yet: surface the
+        # pending model from the marker so it still shows up in the listing.
+        if marker is not None and not emitted:
+            model_name = llamacpp_name_from_marker(marker, root)
+            results.append({
+                "id": f"llamacpp:{model_name}",
+                "name": model_name,
+                "handler": "llamacpp",
+                "path": root,
+                "installed": False,
+                "downloading": True,
+            })
     return results
 
 

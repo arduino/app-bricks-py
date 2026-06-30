@@ -92,6 +92,7 @@ def main():
         handler="ai-hub-handler",
         models_repository=os.environ.get("models_repository", ""),
         model_directory=os.environ.get("model_directory", ""),
+        model_url=os.environ.get("model_url", ""),
     )
 
     # Build the qai_hub_models fetch command to retrieve the download URL.

@@ -104,6 +104,7 @@ def main():
             handler="ei-handler",
             models_repository=os.environ.get("models_repository", ""),
             model_directory=os.environ.get("model_directory") or os.path.basename(os.path.normpath(args.output_dir)),
+            model_url=os.environ.get("model_url", ""),
         )
 
     try:
