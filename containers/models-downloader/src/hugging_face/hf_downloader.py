@@ -50,15 +50,20 @@ from tqdm.auto import tqdm
 import json
 
 
-def emit_json_info(description: str, artifacts: list[str] | None = None):
+def emit_json_info(description: str, artifacts: list[str] | None = None, downloading: bool | None = None):
     data: dict = {"event": "info", "description": description}
     if artifacts is not None:
         data["artifacts"] = artifacts
+    if downloading is not None:
+        data["downloading"] = downloading
     print(json.dumps(data), flush=True)
 
 
-def emit_json_error(description: str):
-    print(json.dumps({"event": "error", "description": description}), flush=True)
+def emit_json_error(description: str, downloading: bool | None = None):
+    data: dict = {"event": "error", "description": description}
+    if downloading is not None:
+        data["downloading"] = downloading
+    print(json.dumps(data), flush=True)
 
 
 def install_signal_handlers() -> None:
@@ -354,14 +359,18 @@ def main():
         )
     elif args.check:
         base = Path(output_dir)
-        matched = [f for f in base.rglob("*") if f.is_file() and fnmatch.fnmatch(f.name, allow_pattern)] if base.exists() else []
-        if mmproj_allow_pattern:
-            matched += [f for f in base.rglob("*") if f.is_file() and fnmatch.fnmatch(f.name, mmproj_allow_pattern)] if base.exists() else []
-        if matched:
-            emit_json_info(f"Model exists: {allow_pattern}")
+        # A ".download" marker means a download is in progress or was interrupted
+        if (base / ".download").is_file():
+            emit_json_info(f"Model downloading: {repo_id}", downloading=True)
         else:
-            emit_json_error(f"Model does not exist: {allow_pattern}")
-            raise SystemExit(1)
+            matched = [f for f in base.rglob("*") if f.is_file() and fnmatch.fnmatch(f.name, allow_pattern)] if base.exists() else []
+            if mmproj_allow_pattern:
+                matched += [f for f in base.rglob("*") if f.is_file() and fnmatch.fnmatch(f.name, mmproj_allow_pattern)] if base.exists() else []
+            if matched:
+                emit_json_info(f"Model exists: {allow_pattern}", downloading=False)
+            else:
+                emit_json_error(f"Model does not exist: {allow_pattern}", downloading=False)
+                raise SystemExit(1)
     elif args.delete:
         if args.verbose:
             emit_json_info(f"Deleting files matching '{allow_pattern}' in {output_dir}")
