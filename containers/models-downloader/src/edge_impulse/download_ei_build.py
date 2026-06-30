@@ -13,15 +13,28 @@ Usage examples:
 
 import argparse
 import os
+import shutil
 import sys
 
 import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from common.http_download import check, download, emit_json_error
+from common.download_marker import write_marker
+from common.http_download import check, download, emit_json_error, install_signal_handlers
 
 
 BASE_URL = "https://studio.edgeimpulse.com/v1/api/{project_id}/deployment/download?type={target}&impulseId={impulse_id}"
+
+
+def _wipe_model_dir(model_dir: str) -> None:
+    """Remove the partial model directory (and its ``.download`` marker) after a
+    failed or interrupted download. Refuses to remove the top-level ``/models``
+    mount, which cannot be deleted from inside the container.
+    """
+    abs_dir = os.path.abspath(model_dir)
+    if abs_dir in (os.path.abspath("/models"), os.sep):
+        return
+    shutil.rmtree(model_dir, ignore_errors=True)
 
 
 def main():
@@ -71,9 +84,28 @@ def main():
 
     args = parser.parse_args()
 
+    # Ensure SIGINT/SIGTERM (e.g. `docker stop`) trigger cleanup of partial
+    # downloads before exiting. SIGKILL (-9) cannot be caught.
+    install_signal_handlers()
+
     url = BASE_URL.format(project_id=args.ei_project_id, impulse_id=args.impulse_id, target=args.target)
     if args.quantization:
         url += f"&modelType={args.quantization}"
+
+    # In-progress marker shared with the listing tool; it lives *inside* the
+    # model folder (mirrors AI Hub / HF). On success only the marker is cleared;
+    # on interrupt or error the whole model folder (marker + partial files) is
+    # removed so the next run starts fresh and the listing tool never sees a
+    # phantom (empty) model folder that would be mistaken for an installed model.
+    marker = os.path.join(args.output_dir, ".download")
+    if not args.info:
+        write_marker(
+            args.output_dir,
+            handler="ei-handler",
+            models_repository=os.environ.get("models_repository", ""),
+            model_directory=os.environ.get("model_directory") or os.path.basename(os.path.normpath(args.output_dir)),
+            model_url=os.environ.get("model_url", ""),
+        )
 
     try:
         if args.info:
@@ -94,14 +126,26 @@ def main():
             out_file = download(url, args.output_dir, True, output_name=args.output_name)
             if os.path.isfile(out_file):
                 os.chmod(out_file, 0o755)  # Ensure the file is executable
+            # Download finished successfully: clear the in-progress marker.
+            if os.path.exists(marker):
+                os.remove(marker)
     except requests.HTTPError as exc:
         msg = f"HTTP error: {exc.response.status_code} {exc.response.reason} (url: {url})"
+        if not args.info:
+            _wipe_model_dir(args.output_dir)
         emit_json_error(msg)
         sys.exit(1)
     except requests.RequestException as exc:
         msg = f"Request failed: {exc} (url: {url})"
+        if not args.info:
+            _wipe_model_dir(args.output_dir)
         emit_json_error(msg)
         sys.exit(1)
+    except KeyboardInterrupt:
+        if not args.info:
+            _wipe_model_dir(args.output_dir)
+        emit_json_error("Download interrupted by signal; partial files removed")
+        sys.exit(130)
 
 
 if __name__ == "__main__":
