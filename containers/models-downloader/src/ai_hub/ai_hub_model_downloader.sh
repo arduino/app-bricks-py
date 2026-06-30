@@ -5,12 +5,24 @@
 # SPDX-License-Identifier: MPL-2.0
 
 
-if [ -d "/models/${model_directory}" ]; then
+cd /models
+
+model_path="/models/${model_directory}"
+
+# Decide whether a usable model is already present. A ".download" marker, or a
+# leftover directory that is empty / only contains that marker, means a previous
+# run was interrupted (e.g. SIGKILL) and must be wiped and retried rather than
+# reported as "Model exists".
+if [ -f "${model_path}/.download" ] || { [ -d "${model_path}" ] && [ -z "$(find "${model_path}" -mindepth 1 ! -name '.download' -print -quit 2>/dev/null)" ]; }; then
+    echo "{\"event\": \"info\", \"description\": \"Removing incomplete previous download: ${model_directory}\"}"
+    rm -rf "${model_path:?}"
+elif [ -d "${model_path}" ]; then
     echo "{\"event\": \"info\", \"description\": \"Model exists: ${model_directory}\"}"
     exit 0
 fi
 
-cd /models
+# Ensure the model directory exists
+mkdir -p "${model_path}"
 
 cmd=(python /app/ai_hub/download_ai_hub_model.py
     --model_type "$model_type"
@@ -22,8 +34,6 @@ if [ -n "$version" ]; then
     cmd+=(--version "$version")
 fi
 
-"${cmd[@]}"
-if [ $? -ne 0 ]; then
-    echo "{\"event\": \"error\", \"description\": \"Failed to download the model: ${model_name}\"}"
-    exit 1
-fi
+# Use exec so python replaces this shell as PID 1 and receives SIGINT/SIGTERM
+# directly, allowing it to clean up partial downloads before exiting.
+exec "${cmd[@]}"
