@@ -37,12 +37,11 @@ llm = LargeLanguageModel(max_tokens=512, tools=[get_current_weather])
 
 
 def ask_prompt():
-    prompt = input("Enter your prompt (or type 'exit' to quit): ")
-    if prompt.lower() == "exit":
-        raise StopIteration()
+    prompt = "What is the weather like in Turin?"
     for chunk in llm.chat_stream(prompt):
         print(chunk, end="", flush=True)
     print()
+    raise StopIteration
 
 
 App.run(ask_prompt)

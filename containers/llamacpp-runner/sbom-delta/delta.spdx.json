@@ -1,7 +1,7 @@
 {
   "SPDXID": "SPDXRef-DOCUMENT",
   "creationInfo": {
-    "created": "2026-06-15T08:43:44.167195Z",
+    "created": "2026-06-30T14:48:47.007691Z",
     "creators": [
       "Tool: arduino-sbom-delta",
       "Organization: Arduino SRL"
@@ -11,12 +11,12 @@
   "documentDescribes": [
     "SPDXRef-Container"
   ],
-  "documentNamespace": "https://arduino.cc/sbom/delta/llamacpp-runner-0.11.0-20260615T084344Z",
+  "documentNamespace": "https://arduino.cc/sbom/delta/llamacpp-runner-0.11.1-20260630T144847Z",
   "name": "llamacpp-runner",
   "packages": [
     {
       "SPDXID": "SPDXRef-Container",
-      "comment": "Delta SBOM for ghcr.io/arduino/app-bricks/llamacpp-runner:0.11.0 \u2014 changes relative to base image python:3.13-slim",
+      "comment": "Delta SBOM for ghcr.io/arduino/app-bricks/llamacpp-runner:0.11.1 \u2014 changes relative to base image ghcr.io/arduino/app-bricks/python-slim:0.11.1",
       "copyrightText": "NOASSERTION",
       "downloadLocation": "NOASSERTION",
       "filesAnalyzed": false,
@@ -28,7 +28,7 @@
       "SPDXID": "SPDXRef-libgomp1-deb",
       "annotations": [
         {
-          "annotationDate": "2026-06-15T08:43:44.167195Z",
+          "annotationDate": "2026-06-30T14:48:47.007691Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"added\"}"
@@ -48,6 +48,31 @@
       "licenseDeclared": "NOASSERTION",
       "name": "libgomp1",
       "versionInfo": "14.2.0-19"
+    },
+    {
+      "SPDXID": "SPDXRef-gcc-14-deb",
+      "annotations": [
+        {
+          "annotationDate": "2026-06-30T14:48:47.007691Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: arduino-sbom-delta",
+          "comment": "{\"change\": \"removed\"}"
+        }
+      ],
+      "copyrightText": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:deb/debian/gcc-14@14.2.0-19?distro=debian",
+          "referenceType": "purl"
+        }
+      ],
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "name": "gcc-14",
+      "versionInfo": "14.2.0-19"
     }
   ],
   "relationships": [
@@ -58,6 +83,11 @@
     },
     {
       "relatedSpdxElement": "SPDXRef-libgomp1-deb",
+      "relationshipType": "CONTAINS",
+      "spdxElementId": "SPDXRef-Container"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-gcc-14-deb",
       "relationshipType": "CONTAINS",
       "spdxElementId": "SPDXRef-Container"
     }
