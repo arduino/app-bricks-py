@@ -27,9 +27,8 @@ elif [ -f "${model_path}/${model_name}" ]; then
     exit 0
 fi
 
-# Flag this model's download as in-progress; download_ei_build.py removes it on success.
+# Ensure the model directory exists
 mkdir -p "${model_path}"
-printf '%s\n' "${model_folder}" > "${model_path}/.download"
 
 # Use exec so python replaces this shell as PID 1 and receives SIGINT/SIGTERM
 # directly, allowing it to clean up partial downloads before exiting.

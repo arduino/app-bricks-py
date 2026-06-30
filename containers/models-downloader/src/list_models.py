@@ -21,6 +21,7 @@ import stat
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from common.download_marker import read_marker
 from common.models_list import load_models_list, MODELS_LIST_PATH
 
 
@@ -218,11 +219,11 @@ def check_model_exists(model_info, models_base_dir):
 
 
 def model_is_downloading(model_info, models_base_dir):
-    """Return the in-progress model name if a ".download" marker exists, else None.
+    """Return the parsed ".download" marker dict if present, else None.
 
     The marker is per-model and lives inside the model directory
     (<dir>/.download) for AI Hub, HF and Edge Impulse alike. Its presence means
-    the download was interrupted before completing.
+    a download is in progress or was interrupted before completing.
     """
     subdir = get_model_subdir(model_info.get("models_repository", ""))
     search_dir = os.path.join(models_base_dir, subdir) if subdir else models_base_dir
@@ -231,11 +232,9 @@ def model_is_downloading(model_info, models_base_dir):
     if model_directory:
         candidates.append(os.path.join(search_dir, model_directory, ".download"))
     for marker in candidates:
-        try:
-            with open(marker) as f:
-                return f.read().strip() or True
-        except OSError:
-            continue
+        data = read_marker(marker)
+        if data is not None:
+            return data
     return None
 
 
@@ -330,7 +329,8 @@ def main():
         else:
             exists, path = check_model_exists(model_info, args.models_dir)
             # Per-model ".download" marker present => download in progress/incomplete.
-            downloading = bool(model_is_downloading(model_info, args.models_dir))
+            download_info = model_is_downloading(model_info, args.models_dir)
+            downloading = bool(download_info)
             entry = {
                 "id": model_info["id"],
                 "name": model_info["name"],
@@ -338,6 +338,8 @@ def main():
                 "installed": exists and not downloading,
                 "downloading": downloading,
             }
+            if isinstance(download_info, dict):
+                entry["download_info"] = download_info
             if model_info.get("model_size_mb") is not None:
                 entry["model_size_mb"] = model_info["model_size_mb"]
             if exists:

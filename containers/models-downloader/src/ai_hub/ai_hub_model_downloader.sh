@@ -21,9 +21,8 @@ elif [ -d "${model_path}" ]; then
     exit 0
 fi
 
-# Flag this model's download as in-progress; download_ai_hub_model.py removes it on success.
+# Ensure the model directory exists
 mkdir -p "${model_path}"
-printf '%s\n' "${model_directory}" > "${model_path}/.download"
 
 cmd=(python /app/ai_hub/download_ai_hub_model.py
     --model_type "$model_type"

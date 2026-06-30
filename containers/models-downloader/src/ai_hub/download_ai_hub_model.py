@@ -12,6 +12,7 @@ import sys
 import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from common.download_marker import write_marker
 from common.http_download import download, download_and_extract, emit_json_error, install_signal_handlers
 
 
@@ -79,6 +80,20 @@ def main():
     # downloads/extractions before exiting. SIGKILL (-9) cannot be caught.
     install_signal_handlers()
 
+    # In-progress marker shared with the listing tool; it lives *inside* the
+    # model directory and is written before the (interruptible) fetch so an
+    # aborted run is never mistaken for an installed model. On success only the
+    # marker is cleared; on interrupt or error the whole model directory (marker
+    # + partial files) is removed so the next run starts fresh and the listing
+    # tool never sees a phantom (empty) model directory.
+    model_dir = os.path.join(args.output_dir, os.environ.get("model_directory", ""))
+    marker = write_marker(
+        model_dir,
+        handler="ai-hub-handler",
+        models_repository=os.environ.get("models_repository", ""),
+        model_directory=os.environ.get("model_directory", ""),
+    )
+
     # Build the qai_hub_models fetch command to retrieve the download URL.
     # model_name, model_type, quantization and chipset are mandatory;
     # version is optional.
@@ -108,14 +123,6 @@ def main():
         sys.exit(1)
 
     print(json.dumps({"event": "info", "description": f"Downloading model from: {url}"}), flush=True)
-
-    # In-progress marker shared with the listing tool; it lives *inside* the
-    # model directory. On success only the marker is cleared; on interrupt or
-    # error the whole model directory (marker + partial files) is removed so the
-    # next run starts fresh and the listing tool never sees a phantom (empty)
-    # model directory that would be mistaken for an installed model.
-    model_dir = os.path.join(args.output_dir, os.environ.get("model_directory", ""))
-    marker = os.path.join(model_dir, ".download")
 
     try:
         if args.no_unzip:

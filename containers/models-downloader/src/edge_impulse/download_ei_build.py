@@ -19,6 +19,7 @@ import sys
 import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from common.download_marker import write_marker
 from common.http_download import check, download, emit_json_error, install_signal_handlers
 
 
@@ -97,6 +98,13 @@ def main():
     # removed so the next run starts fresh and the listing tool never sees a
     # phantom (empty) model folder that would be mistaken for an installed model.
     marker = os.path.join(args.output_dir, ".download")
+    if not args.info:
+        write_marker(
+            args.output_dir,
+            handler="ei-handler",
+            models_repository=os.environ.get("models_repository", ""),
+            model_directory=os.environ.get("model_directory") or os.path.basename(os.path.normpath(args.output_dir)),
+        )
 
     try:
         if args.info:

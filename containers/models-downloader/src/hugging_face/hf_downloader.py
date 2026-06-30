@@ -40,6 +40,7 @@ import fnmatch
 import os
 import re
 import shutil
+import sys
 
 from huggingface_hub import HfApi, hf_hub_download, snapshot_download
 from huggingface_hub.hf_api import RepoFile
@@ -48,6 +49,9 @@ import configparser
 from pathlib import Path
 from tqdm.auto import tqdm
 import json
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from common.download_marker import write_marker
 
 
 def emit_json_info(description: str, artifacts: list[str] | None = None, downloading: bool | None = None):
@@ -394,7 +398,12 @@ def main():
             return
 
         os.makedirs(output_dir, exist_ok=True)
-        marker.write_text(f"{repo_id}\n")
+        write_marker(
+            output_dir,
+            handler="hf-handler",
+            models_repository=os.environ.get("models_repository", ""),
+            model_directory=os.environ.get("model_directory", "") or repo_id,
+        )
 
         emit_json_info(f"Downloading to: {os.path.abspath(output_dir)}", artifacts=[os.path.abspath(output_dir)])
 
