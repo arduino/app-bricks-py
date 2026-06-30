@@ -31,11 +31,10 @@ llm = LargeLanguageModel(
 
 
 def ask_prompt():
-    prompt = input("Enter your prompt (or type 'exit' to quit): ")
-    if prompt.lower() == "exit":
-        raise StopIteration()
+    prompt = "What is the weather like in Turin?"
     print(llm.chat(prompt))
     print()
+    raise StopIteration
 
 
 App.run(ask_prompt)
