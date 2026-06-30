@@ -4,15 +4,17 @@
 
 # EXAMPLE_NAME = "Transcribe audio from microphone"
 # EXAMPLE_REQUIRES = "Requires a microphone device"
+
+from arduino.app_utils import App
 from arduino.app_bricks.asr import AutomaticSpeechRecognition
-from arduino.app_peripherals.microphone import Microphone
+
+asr = AutomaticSpeechRecognition()
+
+print("Please start speaking for transcription...")
 
 
-mic = Microphone()
-mic.start()
+def transcribe():
+    text = asr.transcribe(duration=5)
+    print(f"Transcription: {text}")
 
-asr = AutomaticSpeechRecognition(mic)
-text = asr.transcribe(duration=5)
-print(f"Transcription: {text}")
-
-mic.stop()
+App.run(user_loop=transcribe)

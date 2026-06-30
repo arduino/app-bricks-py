@@ -4,10 +4,16 @@
 
 # EXAMPLE_NAME = "Transcribe a wav file"
 # EXAMPLE_REQUIRES = "Requires a WAV file with a voice recording"
-from arduino.app_bricks.asr import AutomaticSpeechRecognition
+
+from arduino.app_utils import App
+from arduino.app_bricks.asr import WAVAutomaticSpeechRecognition
 
 
 with open("recording_01.wav", "rb") as wav_file:
-    asr = AutomaticSpeechRecognition(wav_file.read())
+    audio_bytes = wav_file.read()
+    asr = WAVAutomaticSpeechRecognition(audio_bytes)
+    App.start_brick(asr)
     text = asr.transcribe()
     print(f"Transcription: {text}")
+
+App.run()
