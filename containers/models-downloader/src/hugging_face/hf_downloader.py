@@ -40,6 +40,8 @@ import fnmatch
 import os
 import re
 import shutil
+import sys
+import time
 
 from huggingface_hub import HfApi, hf_hub_download, snapshot_download
 from huggingface_hub.hf_api import RepoFile
@@ -49,26 +51,71 @@ from pathlib import Path
 from tqdm.auto import tqdm
 import json
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from common.download_marker import write_marker
 
-def emit_json_info(description: str, artifacts: list[str] | None = None):
+
+def emit_json_info(description: str, artifacts: list[str] | None = None, downloading: bool | None = None):
     data: dict = {"event": "info", "description": description}
     if artifacts is not None:
         data["artifacts"] = artifacts
+    if downloading is not None:
+        data["downloading"] = downloading
     print(json.dumps(data), flush=True)
 
 
-def emit_json_error(description: str):
-    print(json.dumps({"event": "error", "description": description}), flush=True)
+def emit_json_error(description: str, downloading: bool | None = None):
+    data: dict = {"event": "error", "description": description}
+    if downloading is not None:
+        data["downloading"] = downloading
+    print(json.dumps(data), flush=True)
+
+
+def remove_model_dir(output_dir: str, base_dir: str) -> None:
+    """Remove the repo directory and prune now-empty parent dirs up to base_dir.
+
+    repo_id may contain a '/', so output_dir is nested (e.g.
+    <base>/moondream/moondream2-gguf). Deleting only output_dir would leave an
+    empty org directory (<base>/moondream) behind; walk up removing empty parents,
+    stopping at base_dir (the mounted /models, which is never removed).
+    """
+    base = os.path.abspath(base_dir)
+    shutil.rmtree(output_dir, ignore_errors=True)
+    parent = os.path.dirname(os.path.abspath(output_dir))
+    while parent != base and parent.startswith(base + os.sep):
+        try:
+            os.rmdir(parent)  # only succeeds if the directory is empty
+        except OSError:
+            break
+        parent = os.path.dirname(parent)
+
+
+def install_signal_handlers() -> None:
+    """Translate SIGINT/SIGTERM into KeyboardInterrupt so cleanup runs before
+    exit. SIGKILL (-9) cannot be caught."""
+    import signal
+
+    def _handler(signum, _frame):
+        raise KeyboardInterrupt(f"received signal {signum}")
+
+    signal.signal(signal.SIGINT, _handler)
+    signal.signal(signal.SIGTERM, _handler)
 
 
 class JsonProgress(tqdm):
+    # Minimum seconds between emitted "update" events to avoid flooding stdout.
+    EMIT_INTERVAL = 1.0
+
     def __init__(self, *args, **kwargs):
+        self._complete_emitted = False
+        self._last_emit = 0.0
         super().__init__(*args, **kwargs)
         # Emit an initial "start" event
         self._emit("start")
 
     def _emit(self, event_type):
         """Helper to print the current state as JSON"""
+        self._last_emit = time.monotonic()
         pct = round((self.n / self.total) * 100, 2) if self.total else 0
         data = {
             "event": event_type,
@@ -82,11 +129,16 @@ class JsonProgress(tqdm):
 
     def update(self, n=1):
         displayed = super().update(n)
-        self._emit("update")
+        # Throttle: only emit an "update" event once EMIT_INTERVAL has elapsed.
+        if time.monotonic() - self._last_emit >= self.EMIT_INTERVAL:
+            self._emit("update")
         return displayed
 
     def close(self):
-        self._emit("complete")
+        # Only report completion if the transfer actually finished.
+        if self.total and self.n >= self.total and not self._complete_emitted:
+            self._complete_emitted = True
+            self._emit("complete")
         super().close()
 
     def display(self, msg=None, pos=None):
@@ -338,14 +390,18 @@ def main():
         )
     elif args.check:
         base = Path(output_dir)
-        matched = [f for f in base.rglob("*") if f.is_file() and fnmatch.fnmatch(f.name, allow_pattern)] if base.exists() else []
-        if mmproj_allow_pattern:
-            matched += [f for f in base.rglob("*") if f.is_file() and fnmatch.fnmatch(f.name, mmproj_allow_pattern)] if base.exists() else []
-        if matched:
-            emit_json_info(f"Model exists: {allow_pattern}")
+        # A ".download" marker means a download is in progress or was interrupted
+        if (base / ".download").is_file():
+            emit_json_info(f"Model downloading: {repo_id}", downloading=True)
         else:
-            emit_json_error(f"Model does not exist: {allow_pattern}")
-            raise SystemExit(1)
+            matched = [f for f in base.rglob("*") if f.is_file() and fnmatch.fnmatch(f.name, allow_pattern)] if base.exists() else []
+            if mmproj_allow_pattern:
+                matched += [f for f in base.rglob("*") if f.is_file() and fnmatch.fnmatch(f.name, mmproj_allow_pattern)] if base.exists() else []
+            if matched:
+                emit_json_info(f"Model exists: {allow_pattern}", downloading=False)
+            else:
+                emit_json_error(f"Model does not exist: {allow_pattern}", downloading=False)
+                raise SystemExit(1)
     elif args.delete:
         if args.verbose:
             emit_json_info(f"Deleting files matching '{allow_pattern}' in {output_dir}")
@@ -358,45 +414,71 @@ def main():
         # Generate models.ini file
         generate_models_ini(Path(args.output_dir))
     else:
+        # Per-repo ".download" marker: present => prior run killed mid-download,
+        # wipe and retry; absent but dir exists => already complete.
+        marker = Path(output_dir) / ".download"
+        if marker.is_file():
+            emit_json_info(f"Removing incomplete previous download: {repo_id}")
+            remove_model_dir(output_dir, args.output_dir)
+        elif os.path.isdir(output_dir):
+            emit_json_info(f"Model exists: {repo_id}")
+            return
+
         os.makedirs(output_dir, exist_ok=True)
+        write_marker(
+            output_dir,
+            handler="hf-handler",
+            models_repository=os.environ.get("models_repository", ""),
+            model_directory=os.environ.get("model_directory", "") or repo_id,
+            model_url=args.model_url or "",
+        )
+
+        emit_json_info(f"Downloading to: {os.path.abspath(output_dir)}", artifacts=[os.path.abspath(output_dir)])
 
         tqdm_class = JsonProgress
 
-        if url_filename:
-            # Single-file download via direct URL
-            if args.verbose:
-                emit_json_info(f"Downloading file '{url_filename}' from {repo_id} (revision: {url_revision})")
-            hf_hub_download(
-                repo_id=repo_id,
-                filename=url_filename,
-                revision=url_revision,
-                local_dir=output_dir,
-                tqdm_class=tqdm_class,
-            )
-            if mmproj_url_filename:
+        try:
+            if url_filename:
+                # Single-file download via direct URL
                 if args.verbose:
-                    emit_json_info(f"Downloading mmproj file '{mmproj_url_filename}' from {repo_id} (revision: {mmproj_url_revision})")
+                    emit_json_info(f"Downloading file '{url_filename}' from {repo_id} (revision: {url_revision})")
                 hf_hub_download(
                     repo_id=repo_id,
-                    filename=mmproj_url_filename,
-                    revision=mmproj_url_revision,
+                    filename=url_filename,
+                    revision=url_revision,
                     local_dir=output_dir,
                     tqdm_class=tqdm_class,
                 )
-        else:
-            # Pattern-based download via snapshot
-            if args.verbose:
-                emit_json_info(f"Downloading model from Hugging Face repository: {repo_id} with allow pattern: {allow_pattern}")
-            snapshot_download(
-                repo_id=repo_id, allow_patterns=[allow_pattern], ignore_patterns=["*mmproj*"], local_dir=output_dir, tqdm_class=tqdm_class
-            )
-
-            if mmproj_allow_pattern:
-                if args.verbose:
-                    emit_json_info(
-                        f"Downloading mmproj model file from Hugging Face repository: {repo_id} with allow pattern: {mmproj_allow_pattern}"
+                if mmproj_url_filename:
+                    if args.verbose:
+                        emit_json_info(f"Downloading mmproj file '{mmproj_url_filename}' from {repo_id} (revision: {mmproj_url_revision})")
+                    hf_hub_download(
+                        repo_id=repo_id,
+                        filename=mmproj_url_filename,
+                        revision=mmproj_url_revision,
+                        local_dir=output_dir,
+                        tqdm_class=tqdm_class,
                     )
-                snapshot_download(repo_id=repo_id, allow_patterns=[mmproj_allow_pattern], local_dir=output_dir, tqdm_class=tqdm_class)
+            else:
+                # Pattern-based download via snapshot
+                if args.verbose:
+                    emit_json_info(f"Downloading model from Hugging Face repository: {repo_id} with allow pattern: {allow_pattern}")
+                snapshot_download(
+                    repo_id=repo_id, allow_patterns=[allow_pattern], ignore_patterns=["*mmproj*"], local_dir=output_dir, tqdm_class=tqdm_class
+                )
+
+                if mmproj_allow_pattern:
+                    if args.verbose:
+                        emit_json_info(
+                            f"Downloading mmproj model file from Hugging Face repository: {repo_id} with allow pattern: {mmproj_allow_pattern}"
+                        )
+                    snapshot_download(repo_id=repo_id, allow_patterns=[mmproj_allow_pattern], local_dir=output_dir, tqdm_class=tqdm_class)
+        except BaseException:
+            # Network/extraction errors and SIGINT/SIGTERM-driven KeyboardInterrupt
+            # leave a partial repo directory; remove it before exiting.
+            if os.path.isdir(output_dir):
+                remove_model_dir(output_dir, args.output_dir)
+            raise
 
         # Remove download caches
         cache_path = Path(output_dir) / ".cache"
@@ -406,6 +488,20 @@ def main():
         # Generate models.ini file
         generate_models_ini(Path(args.output_dir))
 
+        # Report the absolute path(s) of the downloaded model file(s).
+        downloaded = sorted(str(p.resolve()) for p in Path(output_dir).rglob("*.gguf"))
+        emit_json_info(f"Downloaded to: {output_dir}", artifacts=downloaded)
+
+        # Download finished successfully: clear the in-progress marker.
+        marker = Path(output_dir) / ".download"
+        if marker.exists():
+            marker.unlink()
+
 
 if __name__ == "__main__":
-    main()
+    install_signal_handlers()
+    try:
+        main()
+    except KeyboardInterrupt:
+        emit_json_error("Download interrupted by signal; partial files removed")
+        raise SystemExit(130)

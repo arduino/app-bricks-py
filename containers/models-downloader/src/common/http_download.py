@@ -56,6 +56,40 @@ def emit_json_error(description: str):
     print(json.dumps(data), flush=True)
 
 
+def _cleanup_artifacts(artifacts: list[str], base_dir: str) -> None:
+    """Remove partially downloaded/extracted *artifacts* and now-empty dirs.
+
+    Best-effort: errors while removing individual files are ignored so a
+    cleanup triggered by an interruption never masks the original error.
+    """
+    for path in artifacts:
+        try:
+            if os.path.isfile(path):
+                os.remove(path)
+        except OSError:
+            pass
+    # Remove empty directories left behind, deepest first, never base_dir.
+    dirs = {os.path.dirname(p) for p in artifacts if os.path.dirname(p)}
+    for d in sorted(dirs, key=lambda p: p.count(os.sep), reverse=True):
+        try:
+            if os.path.abspath(d) != os.path.abspath(base_dir) and os.path.isdir(d) and not os.listdir(d):
+                os.rmdir(d)
+        except OSError:
+            pass
+
+
+def install_signal_handlers() -> None:
+    """Translate SIGINT/SIGTERM into KeyboardInterrupt so ``finally``/``except``
+    cleanup blocks run before exit. SIGKILL (-9) cannot be caught."""
+    import signal
+
+    def _handler(signum, _frame):
+        raise KeyboardInterrupt(f"received signal {signum}")
+
+    signal.signal(signal.SIGINT, _handler)
+    signal.signal(signal.SIGTERM, _handler)
+
+
 def check(url: str, output_name: str | None = None) -> dict[str, str | int | None]:
     """Perform a HEAD request on *url* and return content-length and filename.
 
@@ -103,53 +137,63 @@ def download(url: str, output_dir: str, json_progress: bool, output_name: str | 
 
         total = int(response.headers.get("Content-Length", 0) or 0)
         downloaded = 0
+        completed = False
 
-        if json_progress:
-            if os.path.exists(output_path):
-                emit_json_progress("info", f"File already exists: {output_path}", total, total, "B", artifacts=[output_path])
-                return output_path
-
-            emit_json_progress("start", f"Downloading {filename} from {url}", downloaded, total, "B")
-            last_update = time.monotonic()
-            with open(output_path, "wb") as f:
-                for chunk in response.iter_content(chunk_size=CHUNK_SIZE):
-                    if not chunk:
-                        continue
-                    f.write(chunk)
-                    downloaded += len(chunk)
-                    now = time.monotonic()
-                    if now - last_update >= 1.0:
-                        emit_json_progress("update", f"Downloading {filename} from {url}", downloaded, total, "B")
-                        last_update = now
-            emit_json_progress("complete", f"Downloaded {filename} from {url}", downloaded, total, "B", artifacts=[output_path])
-        else:
-            try:
-                from tqdm import tqdm
-
+        try:
+            if json_progress:
                 if os.path.exists(output_path):
-                    print(f"File already exists: {output_path}")
+                    emit_json_progress("info", f"File already exists: {output_path}", total, total, "B", artifacts=[output_path])
                     return output_path
 
-                with tqdm(total=total or None, unit="B", unit_scale=True, unit_divisor=1024, desc=filename) as pbar:
-                    with open(output_path, "wb") as f:
-                        for chunk in response.iter_content(chunk_size=CHUNK_SIZE):
-                            if not chunk:
-                                continue
-                            f.write(chunk)
-                            downloaded += len(chunk)
-                            pbar.update(len(chunk))
-            except ImportError:
-                # Fallback: simple inline progress bar without tqdm
+                abs_path = os.path.abspath(output_path)
+                emit_json_progress("start", f"Downloading {filename} to {abs_path}", downloaded, total, "B", artifacts=[abs_path])
+                last_update = time.monotonic()
                 with open(output_path, "wb") as f:
                     for chunk in response.iter_content(chunk_size=CHUNK_SIZE):
                         if not chunk:
                             continue
                         f.write(chunk)
                         downloaded += len(chunk)
-                        print(f"\r{_simple_progress_bar(downloaded, total)}", end="", flush=True)
-                print()
+                        now = time.monotonic()
+                        if now - last_update >= 1.0:
+                            emit_json_progress("update", f"Downloading {filename} to {abs_path}", downloaded, total, "B", artifacts=[abs_path])
+                            last_update = now
+                emit_json_progress("complete", f"Downloaded {filename} to {abs_path}", downloaded, total, "B", artifacts=[abs_path])
+            else:
+                try:
+                    from tqdm import tqdm
 
-            print(f"Saved to: {output_path}")
+                    if os.path.exists(output_path):
+                        print(f"File already exists: {output_path}")
+                        return output_path
+
+                    with tqdm(total=total or None, unit="B", unit_scale=True, unit_divisor=1024, desc=filename) as pbar:
+                        with open(output_path, "wb") as f:
+                            for chunk in response.iter_content(chunk_size=CHUNK_SIZE):
+                                if not chunk:
+                                    continue
+                                f.write(chunk)
+                                downloaded += len(chunk)
+                                pbar.update(len(chunk))
+                except ImportError:
+                    # Fallback: simple inline progress bar without tqdm
+                    with open(output_path, "wb") as f:
+                        for chunk in response.iter_content(chunk_size=CHUNK_SIZE):
+                            if not chunk:
+                                continue
+                            f.write(chunk)
+                            downloaded += len(chunk)
+                            print(f"\r{_simple_progress_bar(downloaded, total)}", end="", flush=True)
+                    print()
+
+                print(f"Saved to: {output_path}")
+            completed = True
+        except BaseException:
+            # Remove the partial file on errors and on SIGINT/SIGTERM-driven
+            # KeyboardInterrupt. SIGKILL (-9) cannot be intercepted.
+            if not completed:
+                _cleanup_artifacts([output_path], output_dir)
+            raise
 
     return output_path
 
@@ -187,9 +231,10 @@ def _download_and_extract_streaming(url: str, output_dir: str, json_progress: bo
         total = int(response.headers.get("Content-Length", 0) or 0)
         downloaded = 0
         last_update = time.monotonic()
+        abs_dir = os.path.abspath(output_dir)
 
         if json_progress:
-            emit_json_progress("start", f"Downloading {filename} from {url}", 0, total, "B")
+            emit_json_progress("start", f"Downloading {filename} to {abs_dir}", 0, total, "B", artifacts=[abs_dir])
         else:
             try:
                 from tqdm import tqdm
@@ -207,7 +252,7 @@ def _download_and_extract_streaming(url: str, output_dir: str, json_progress: bo
                 if json_progress:
                     now = time.monotonic()
                     if now - last_update >= 1.0:
-                        emit_json_progress("update", f"Downloading {filename} from {url}", downloaded, total, "B")
+                        emit_json_progress("update", f"Downloading {filename} to {abs_dir}", downloaded, total, "B", artifacts=[abs_dir])
                         last_update = now
                 elif pbar:
                     pbar.update(len(chunk))
@@ -229,12 +274,20 @@ def _download_and_extract_streaming(url: str, output_dir: str, json_progress: bo
                     with open(output_path, "wb") as f:
                         for chunk in unzipped_chunks:
                             f.write(chunk)
-        except Exception as exc:
-            msg = f"Extraction failed: {exc}"
+        except BaseException as exc:
+            # Covers network errors, extraction failures AND interruptions
+            # (KeyboardInterrupt/SystemExit raised by SIGINT/SIGTERM handlers).
+            # Note: SIGKILL (-9) cannot be intercepted by any process, so partial
+            # files left by a SIGKILL must be reclaimed on the next run instead.
+            if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+                msg = "Download interrupted; cleaning up partial files"
+            else:
+                msg = f"Extraction failed: {exc}"
             if json_progress:
                 emit_json_error(msg)
             else:
                 print(msg, file=sys.stderr)
+            _cleanup_artifacts(extracted_artifacts, output_dir)
             raise
         finally:
             if pbar:
@@ -243,7 +296,8 @@ def _download_and_extract_streaming(url: str, output_dir: str, json_progress: bo
                 print()
 
     if json_progress:
-        print(json.dumps({"event": "complete", "description": f"Extracted to: {output_dir}", "artifacts": extracted_artifacts}), flush=True)
+        abs_artifacts = [os.path.abspath(p) for p in extracted_artifacts]
+        print(json.dumps({"event": "complete", "description": f"Extracted to: {abs_dir}", "artifacts": abs_artifacts}), flush=True)
     else:
         print(f"Extracted to: {output_dir}")
 
@@ -262,8 +316,9 @@ def _download_and_extract_buffered(url: str, output_dir: str, json_progress: boo
             with tempfile.NamedTemporaryFile(dir=output_dir, suffix=".zip", delete=False) as tmp:
                 tmp_path = tmp.name
 
+                abs_dir = os.path.abspath(output_dir)
                 if json_progress:
-                    emit_json_progress("start", f"Downloading {filename} from {url}", downloaded, total, "B")
+                    emit_json_progress("start", f"Downloading {filename} to {abs_dir}", downloaded, total, "B", artifacts=[abs_dir])
                     last_update = time.monotonic()
                     for chunk in response.iter_content(chunk_size=CHUNK_SIZE):
                         if not chunk:
@@ -272,9 +327,9 @@ def _download_and_extract_buffered(url: str, output_dir: str, json_progress: boo
                         downloaded += len(chunk)
                         now = time.monotonic()
                         if now - last_update >= 1.0:
-                            emit_json_progress("update", f"Downloading {filename} from {url}", downloaded, total, "B")
+                            emit_json_progress("update", f"Downloading {filename} to {abs_dir}", downloaded, total, "B", artifacts=[abs_dir])
                             last_update = now
-                    emit_json_progress("complete", f"Downloaded {filename} from {url}", downloaded, total, "B")
+                    emit_json_progress("complete", f"Downloaded {filename} to {abs_dir}", downloaded, total, "B", artifacts=[abs_dir])
                 else:
                     try:
                         from tqdm import tqdm
@@ -311,10 +366,16 @@ def _download_and_extract_buffered(url: str, output_dir: str, json_progress: boo
                 emit_json_error(msg)
             else:
                 print(msg, file=sys.stderr)
+            _cleanup_artifacts(extracted_artifacts, output_dir)
+            raise
+        except BaseException:
+            # SIGINT/SIGTERM during extraction: drop partially extracted files.
+            _cleanup_artifacts(extracted_artifacts, output_dir)
             raise
 
         if json_progress:
-            print(json.dumps({"event": "complete", "description": f"Extracted to: {output_dir}", "artifacts": extracted_artifacts}), flush=True)
+            abs_artifacts = [os.path.abspath(p) for p in extracted_artifacts]
+            print(json.dumps({"event": "complete", "description": f"Extracted to: {abs_dir}", "artifacts": abs_artifacts}), flush=True)
         else:
             print(f"Extracted to: {output_dir}")
     finally:
