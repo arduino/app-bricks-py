@@ -242,24 +242,45 @@ LLAMACPP_SUBDIR = "llamacpp"
 
 
 def find_llamacpp_models(models_base_dir):
-    """Scan for .gguf files under the llamacpp directory."""
+    """Scan for .gguf models under the llamacpp directory.
+
+    Mirrors the grouping used when generating models.ini: ``*mmproj*.gguf``
+    files are not standalone models but the multimodal projection belonging to
+    the main GGUF in the same directory, so they are not listed separately.
+    """
     llamacpp_dir = os.path.join(models_base_dir, LLAMACPP_SUBDIR)
     results = []
     if not os.path.isdir(llamacpp_dir):
         return results
 
     for root, _dirs, files in os.walk(llamacpp_dir):
-        for f in files:
-            if f.endswith(".gguf"):
-                full_path = os.path.join(root, f)
-                model_name = os.path.splitext(f)[0]
-                results.append({
-                    "id": f"llamacpp:{model_name}",
-                    "name": model_name,
-                    "handler": "llamacpp",
-                    "path": full_path,
-                    "installed": True,
-                })
+        gguf_files = sorted(f for f in files if f.endswith(".gguf"))
+        mmproj_files = [f for f in gguf_files if "mmproj" in f]
+        downloading = read_marker(os.path.join(root, ".download")) is not None
+
+        for f in gguf_files:
+            if "mmproj" in f:
+                continue
+            full_path = os.path.join(root, f)
+            model_name = os.path.splitext(f)[0]
+            disk_size_mb = get_dir_size_mb(full_path)
+            # The mmproj file in the same directory is part of this model.
+            if mmproj_files:
+                mmproj_size = get_dir_size_mb(os.path.join(root, mmproj_files[0]))
+                if disk_size_mb is not None and mmproj_size is not None:
+                    disk_size_mb = round(disk_size_mb + mmproj_size, 2)
+            entry = {
+                "id": f"llamacpp:{model_name}",
+                "name": model_name,
+                "handler": "llamacpp",
+                "path": full_path,
+                "installed": not downloading,
+                "downloading": downloading,
+                "disk_size_mb": disk_size_mb,
+            }
+            if mmproj_files:
+                entry["mmproj"] = os.path.join(root, mmproj_files[0])
+            results.append(entry)
     return results
 
 
@@ -353,9 +374,10 @@ def main():
     # Scan for llamacpp .gguf models on the filesystem
     llamacpp_models = find_llamacpp_models(args.models_dir)
     for m in llamacpp_models:
-        if args.not_installed_only:
+        if args.not_installed_only and m["installed"]:
             continue
-        m["disk_size_mb"] = get_dir_size_mb(m["path"])
+        if args.installed_only and not m["installed"]:
+            continue
         results.append(m)
 
     if args.output_json:

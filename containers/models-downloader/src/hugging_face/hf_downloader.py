@@ -41,6 +41,7 @@ import os
 import re
 import shutil
 import sys
+import time
 
 from huggingface_hub import HfApi, hf_hub_download, snapshot_download
 from huggingface_hub.hf_api import RepoFile
@@ -70,6 +71,25 @@ def emit_json_error(description: str, downloading: bool | None = None):
     print(json.dumps(data), flush=True)
 
 
+def remove_model_dir(output_dir: str, base_dir: str) -> None:
+    """Remove the repo directory and prune now-empty parent dirs up to base_dir.
+
+    repo_id may contain a '/', so output_dir is nested (e.g.
+    <base>/moondream/moondream2-gguf). Deleting only output_dir would leave an
+    empty org directory (<base>/moondream) behind; walk up removing empty parents,
+    stopping at base_dir (the mounted /models, which is never removed).
+    """
+    base = os.path.abspath(base_dir)
+    shutil.rmtree(output_dir, ignore_errors=True)
+    parent = os.path.dirname(os.path.abspath(output_dir))
+    while parent != base and parent.startswith(base + os.sep):
+        try:
+            os.rmdir(parent)  # only succeeds if the directory is empty
+        except OSError:
+            break
+        parent = os.path.dirname(parent)
+
+
 def install_signal_handlers() -> None:
     """Translate SIGINT/SIGTERM into KeyboardInterrupt so cleanup runs before
     exit. SIGKILL (-9) cannot be caught."""
@@ -83,14 +103,19 @@ def install_signal_handlers() -> None:
 
 
 class JsonProgress(tqdm):
+    # Minimum seconds between emitted "update" events to avoid flooding stdout.
+    EMIT_INTERVAL = 1.0
+
     def __init__(self, *args, **kwargs):
         self._complete_emitted = False
+        self._last_emit = 0.0
         super().__init__(*args, **kwargs)
         # Emit an initial "start" event
         self._emit("start")
 
     def _emit(self, event_type):
         """Helper to print the current state as JSON"""
+        self._last_emit = time.monotonic()
         pct = round((self.n / self.total) * 100, 2) if self.total else 0
         data = {
             "event": event_type,
@@ -104,7 +129,9 @@ class JsonProgress(tqdm):
 
     def update(self, n=1):
         displayed = super().update(n)
-        self._emit("update")
+        # Throttle: only emit an "update" event once EMIT_INTERVAL has elapsed.
+        if time.monotonic() - self._last_emit >= self.EMIT_INTERVAL:
+            self._emit("update")
         return displayed
 
     def close(self):
@@ -392,7 +419,7 @@ def main():
         marker = Path(output_dir) / ".download"
         if marker.is_file():
             emit_json_info(f"Removing incomplete previous download: {repo_id}")
-            shutil.rmtree(output_dir, ignore_errors=True)
+            remove_model_dir(output_dir, args.output_dir)
         elif os.path.isdir(output_dir):
             emit_json_info(f"Model exists: {repo_id}")
             return
@@ -447,10 +474,9 @@ def main():
                     snapshot_download(repo_id=repo_id, allow_patterns=[mmproj_allow_pattern], local_dir=output_dir, tqdm_class=tqdm_class)
         except BaseException:
             # Network/extraction errors and SIGINT/SIGTERM-driven KeyboardInterrupt
-            # leave a partial repo directory; remove it before exiting. SIGKILL (-9)
-            # cannot be intercepted and is reclaimed by deleting the dir on retry.
+            # leave a partial repo directory; remove it before exiting.
             if os.path.isdir(output_dir):
-                shutil.rmtree(output_dir, ignore_errors=True)
+                remove_model_dir(output_dir, args.output_dir)
             raise
 
         # Remove download caches
