@@ -329,8 +329,7 @@ def main():
         else:
             exists, path = check_model_exists(model_info, args.models_dir)
             # Per-model ".download" marker present => download in progress/incomplete.
-            download_info = model_is_downloading(model_info, args.models_dir)
-            downloading = bool(download_info)
+            downloading = bool(model_is_downloading(model_info, args.models_dir))
             entry = {
                 "id": model_info["id"],
                 "name": model_info["name"],
@@ -338,8 +337,6 @@ def main():
                 "installed": exists and not downloading,
                 "downloading": downloading,
             }
-            if isinstance(download_info, dict):
-                entry["download_info"] = download_info
             if model_info.get("model_size_mb") is not None:
                 entry["model_size_mb"] = model_info["model_size_mb"]
             if exists:
