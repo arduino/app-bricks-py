@@ -433,7 +433,6 @@ def main():
     if args.not_installed_only:
         results = [r for r in results if not r["installed"]]
 
-
     if args.output_json:
         print(json.dumps({"event": "info", "models": results}, indent=2))
     else:

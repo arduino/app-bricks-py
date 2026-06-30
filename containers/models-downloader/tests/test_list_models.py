@@ -141,9 +141,7 @@ def test_model_is_downloading_absent(tmp_path):
 # llamacpp_name_from_marker
 # --------------------------------------------------------------------------- #
 def test_name_from_marker_gguf_url():
-    marker = {
-        "model_url": "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf/blob/main/gemma-4-E2B_q4_0-it.gguf"
-    }
+    marker = {"model_url": "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf/blob/main/gemma-4-E2B_q4_0-it.gguf"}
     assert list_models.llamacpp_name_from_marker(marker, "/models/x") == "gemma-4-E2B_q4_0-it"
 
 
@@ -340,9 +338,7 @@ def test_main_dedup_merges_filesystem_into_yaml(monkeypatch, capsys, tmp_path):
     """A llamacpp gguf on disk must not duplicate its models-list.yaml entry."""
     models_dir, models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
     # Place the gguf the YAML path check can't resolve (nested model_directory).
-    _make_gguf(
-        str(models_dir / "llamacpp" / "google" / "gemma-4-E2B-it-qat-q4_0-gguf" / "gemma-4-E2B_q4_0-it.gguf")
-    )
+    _make_gguf(str(models_dir / "llamacpp" / "google" / "gemma-4-E2B-it-qat-q4_0-gguf" / "gemma-4-E2B_q4_0-it.gguf"))
 
     list_models._SEARCH_DIR_CACHE.clear()
     models_dir, models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
@@ -368,7 +364,9 @@ def test_main_not_installed_when_no_files(monkeypatch, capsys, tmp_path):
 
 
 def test_main_supported_board_filter(monkeypatch, capsys, tmp_path):
-    yaml_text = SAMPLE_YAML + """\
+    yaml_text = (
+        SAMPLE_YAML
+        + """\
  - "ei:unoq-only":
     name: "Uno Q only"
     supported_boards: ["unoq"]
@@ -380,9 +378,8 @@ def test_main_supported_board_filter(monkeypatch, capsys, tmp_path):
               models_repository: "models/edge-impulse"
               model_name: "unoq-only.eim"
 """
-    _models_dir, models = _run_main(
-        monkeypatch, capsys, tmp_path, yaml_text, extra_args=["--supported-board", "ventunoq"]
     )
+    _models_dir, models = _run_main(monkeypatch, capsys, tmp_path, yaml_text, extra_args=["--supported-board", "ventunoq"])
     ids = {m["id"] for m in models}
     assert "ei:unoq-only" not in ids
     assert "llamacpp:gemma-4-E2B_q4_0-it" in ids
@@ -393,9 +390,7 @@ def test_main_installed_only_filter(monkeypatch, capsys, tmp_path):
     yaml_path.write_text(SAMPLE_YAML)
     models_dir = tmp_path / "models"
     models_dir.mkdir()
-    _make_gguf(
-        str(models_dir / "llamacpp" / "google" / "gemma-4-E2B-it-qat-q4_0-gguf" / "gemma-4-E2B_q4_0-it.gguf")
-    )
+    _make_gguf(str(models_dir / "llamacpp" / "google" / "gemma-4-E2B-it-qat-q4_0-gguf" / "gemma-4-E2B_q4_0-it.gguf"))
     monkeypatch.setattr(
         "sys.argv",
         [
