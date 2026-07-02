@@ -1495,7 +1495,7 @@ models:
               model_directory: "whisper_small_quantized-voice_ai-w8a16-qualcomm_qcs8275"
               quantization: "w8a16"
               chipset: "qualcomm-qcs8275"
-              version: "0.51.0"
+              version: "0.57.0"
     bricks:
       - id: "arduino:asr"
     metadata:
@@ -1621,7 +1621,7 @@ models:
               model_directory: "melotts_en-voice_ai-mixed_with_float-qualcomm_qcs8275"
               quantization: "mixed_with_float"
               chipset: "qualcomm-qcs8275"
-              version: "0.51.0"
+              version: "0.57.0"
     metadata:
       model_size_mb: 291
       source: "qualcomm-ai-hub"
@@ -1645,7 +1645,7 @@ models:
               model_directory: "melotts_es-voice_ai-mixed_with_float-qualcomm_qcs8275"
               quantization: "mixed_with_float"
               chipset: "qualcomm-qcs8275"
-              version: "0.51.0"
+              version: "0.57.0"
     metadata:
       model_size_mb: 106
       source: "qualcomm-ai-hub"
@@ -1669,7 +1669,7 @@ models:
               model_directory: "melotts_zh-voice_ai-mixed_with_float-qualcomm_qcs8275"
               quantization: "mixed_with_float"
               chipset: "qualcomm-qcs8275"
-              version: "0.51.0"
+              version: "0.57.0"
     metadata:
       model_size_mb: 360
       source: "qualcomm-ai-hub"
@@ -1684,12 +1684,21 @@ models:
       - id: "arduino:tts"
     deployment:
       handler: "ai-hub-handler"
-      pre-loaded: true      
+      platforms:
+        - ventunoq:
+            variables:
+              model_type: "voice_ai"
+              model_name: "pipertts_de"
+              models_repository: "audio-analytics/tts"
+              model_directory: "pipertts_de-voice_ai-float-qualcomm_qcs8275"
+              quantization: "float"
+              chipset: "qualcomm-qcs8275"
+              version: "0.57.0"
     metadata:
-      model_size_mb: 44
+      model_size_mb: 79
       source: "qualcomm-ai-hub"
-      source-model-id: "piper_tts_de"
-      source-model-url: "https://aihub.qualcomm.com/models/piper_tts_de"
+      source-model-id: "pipertts_de"
+      source-model-url: "https://aihub.qualcomm.com/models/pipertts_de"
  - piper-tts-it:
     name : "Piper TTS (Italian)"
     description: >-
@@ -1699,12 +1708,21 @@ models:
       - id: "arduino:tts"
     deployment:
       handler: "ai-hub-handler"
-      pre-loaded: true
+      platforms:
+        - ventunoq:
+            variables:
+              model_type: "voice_ai"
+              model_name: "pipertts_it"
+              models_repository: "audio-analytics/tts"
+              model_directory: "pipertts_it-voice_ai-float-qualcomm_qcs8275"
+              quantization: "float"
+              chipset: "qualcomm-qcs8275"
+              version: "0.57.0"
     metadata:
-      model_size_mb: 44
+      model_size_mb: 79
       source: "qualcomm-ai-hub"
-      source-model-id: "piper_tts_it"
-      source-model-url: "https://aihub.qualcomm.com/models/piper_tts_it"
+      source-model-id: "pipertts_it"
+      source-model-url: "https://aihub.qualcomm.com/models/pipertts_it"
  - piper-tts-en:
     name : "Piper TTS (English)"
     description: >-
@@ -1714,12 +1732,21 @@ models:
       - id: "arduino:tts"
     deployment:
       handler: "ai-hub-handler"
-      pre-loaded: true
+      platforms:
+        - ventunoq:
+            variables:
+              model_type: "voice_ai"
+              model_name: "pipertts_en"
+              models_repository: "audio-analytics/tts"
+              model_directory: "pipertts_en-voice_ai-float-qualcomm_qcs8275"
+              quantization: "float"
+              chipset: "qualcomm-qcs8275"
+              version: "0.57.0"
     metadata:
-      model_size_mb: 46
+      model_size_mb: 79
       source: "qualcomm-ai-hub"
-      source-model-id: "piper_tts_en"
-      source-model-url: "https://aihub.qualcomm.com/models/piper_tts_en"
+      source-model-id: "pipertts_en"
+      source-model-url: "https://aihub.qualcomm.com/models/pipertts_en"
  - "ei:efficientnet-b4":
     name : "General purpose object classification - EfficientNet-B4"
     description: "EfficientNetB4 is a machine learning model that can classify images from the Imagenet dataset. It can also be used as a backbone in building more complex models for specific use cases. This version of the model is optimized for NPU acceleration on supported devices, providing faster inference times while maintaining accuracy."
