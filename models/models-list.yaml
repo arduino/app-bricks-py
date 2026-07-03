@@ -1448,6 +1448,7 @@ models:
               model_type: "genie"
               model_name: "qwen2_5_vl_7b_instruct"
               models_repository: "genai"
+              model_directory: "qwen2_5_vl_7b_instruct-genie-w4a16-qualcomm_qcs8275"
               quantization: "w4a16"
               chipset: "qualcomm-qcs8275"
               version: "0.53.1"
@@ -1472,6 +1473,7 @@ models:
             variables:
               model_type: "genie"
               model_name: "qwen3_vl_4b_instruct"
+              model_directory: "qwen3_vl_4b_instruct-genie-w4a16-qualcomm_qcs8275"
               models_repository: "genai"
               quantization: "w4a16"
               chipset: "qualcomm-qcs8275"
