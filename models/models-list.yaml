@@ -1484,7 +1484,8 @@ models:
  - gesture-recognition:
     name : "MediaPipe Hand-Gesture Recognition"
     description: >-
-      The MediaPipe Gesture Recognizer is a real-time machine learning pipeline that detects hands, predicts 21 hand landmarks, determines handedness (left/right),
+      The MediaPipe Gesture Recognizer is a real-time machine learning pipeline that detects hands,
+      predicts 21 hand landmarks, determines handedness (left/right),
       and classifies gestures from a predefined set.
     model_labels:
       - Thumb_Up
@@ -1780,7 +1781,7 @@ models:
  - "llamacpp:gemma-4-E2B_q4_0-it":
     name : "Gemma 4 E2B"
     description: >-
-      Gemma 4 E2B is an efficient, open multimodal AI model developed by Google DeepMind.
+      Gemma 4 E2B is an efficient, open AI model developed by Google DeepMind.
       Activating an effective two billion parameters, it is engineered specifically for mobile and edge devices.
       It's optimized for offline agentic workflows.
     supported_boards: ["ventunoq"]
@@ -1802,7 +1803,7 @@ models:
  - "llamacpp:gemma-4-E4B_q4_0-it":
     name : "Gemma 4 E4B"
     description: >-
-      Gemma 4 E4B is an efficient, open multimodal AI model developed by Google DeepMind.
+      Gemma 4 E4B is an efficient, open AI model developed by Google DeepMind.
       Activating an effective four billion parameters, it is engineered specifically for mobile and edge devices.
       It's optimized for offline agentic workflows.
     supported_boards: ["ventunoq"]
@@ -1826,9 +1827,7 @@ models:
  - "llamacpp:gemma-3-1b-it-Q4_0":
      name : "Gemma 3 1B"
      description: >-
-        Gemma 3 1B is an efficient, open multimodal AI model developed by Google DeepMind.
-        Activating an effective one billion parameters, it is engineered specifically for mobile and edge devices.
-        It's optimized for offline agentic workflows.
+        Gemma 3 1B is an efficient AI model developed by Google DeepMind.
      supported_boards: ["ventunoq", "unoq"]
      bricks:
        - id: "arduino:llm"
@@ -1854,7 +1853,8 @@ models:
      name : "Qwen 3.5 0.8B"
      description: >-
        Qwen 3.5 0.8B is a compact yet powerful language model developed by Alibaba, designed to deliver efficient performance on edge devices.
-       With 0.8 billion parameters, it strikes a balance between capability and resource efficiency, making it ideal for applications that require natural language understanding and generation in constrained environments.
+       With 0.8 billion parameters, it strikes a balance between capability and resource efficiency, making it ideal
+       for applications that require natural language understanding and generation in constrained environments.
      supported_boards: ["ventunoq", "unoq"]
      bricks:
        - id: "arduino:llm"
