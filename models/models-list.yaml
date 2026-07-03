@@ -1434,9 +1434,9 @@ models:
  - "genie:qwen2_5_vl_7b_instruct":
     name : "Qwen 2.5-VL-7B VLM"
     description: >-
-      The Qwen2.5 7B VLM is a state-of-the-art multilingual vision-language model with 7
-      billion parameters, excelling in language understanding, generation, coding, and
-      mathematics.
+      Qwen2.5-VL 7B is a multimodal vision-language model with 7 billion
+      parameters that can process both images and text, enabling visual question
+      answering, image description, and other vision-language tasks.
     supported_boards: ["ventunoq"]
     bricks:
       - id: "arduino:vlm"
@@ -1448,6 +1448,7 @@ models:
               model_type: "genie"
               model_name: "qwen2_5_vl_7b_instruct"
               models_repository: "genai"
+              model_directory: "qwen2_5_vl_7b_instruct-genie-w4a16-qualcomm_qcs8275"
               quantization: "w4a16"
               chipset: "qualcomm-qcs8275"
               version: "0.53.1"
@@ -1456,10 +1457,37 @@ models:
       source: "qualcomm-ai-hub"
       source-model-id: "qwen2_5_vl_7b_instruct"
       source-model-url: "https://aihub.qualcomm.com/models/qwen2_5_vl_7b_instruct"
+ - "genie:qwen3_vl_4b_instruct":
+    name : "Qwen 3-VL-4B VLM"
+    description: >-
+      Qwen3-VL is a vision-language model from Alibaba Cloud capable of understanding
+      both text and images for multimodal reasoning tasks such as visual question
+      answering and image captioning.
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:vlm"
+    deployment:
+      handler: "ai-hub-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              model_type: "genie"
+              model_name: "qwen3_vl_4b_instruct"
+              model_directory: "qwen3_vl_4b_instruct-genie-w4a16-qualcomm_qcs8275"
+              models_repository: "genai"
+              quantization: "w4a16"
+              chipset: "qualcomm-qcs8275"
+              version: "0.57.1"
+    metadata:
+      model_size_mb: 4166
+      source: "qualcomm-ai-hub"
+      source-model-id: "qwen3_vl_4b_instruct"
+      source-model-url: "https://aihub.qualcomm.com/models/qwen3_vl_4b_instruct"      
  - gesture-recognition:
     name : "MediaPipe Hand-Gesture Recognition"
     description: >-
-      The MediaPipe Gesture Recognizer is a real-time machine learning pipeline that detects hands, predicts 21 hand landmarks, determines handedness (left/right),
+      The MediaPipe Gesture Recognizer is a real-time machine learning pipeline that detects hands,
+      predicts 21 hand landmarks, determines handedness (left/right),
       and classifies gestures from a predefined set.
     model_labels:
       - Thumb_Up
@@ -1782,7 +1810,7 @@ models:
  - "llamacpp:gemma-4-E2B_q4_0-it":
     name : "Gemma 4 E2B"
     description: >-
-      Gemma 4 E2B is an efficient, open multimodal AI model developed by Google DeepMind.
+      Gemma 4 E2B is an efficient, open AI model developed by Google DeepMind.
       Activating an effective two billion parameters, it is engineered specifically for mobile and edge devices.
       It's optimized for offline agentic workflows.
     supported_boards: ["ventunoq"]
@@ -1804,7 +1832,7 @@ models:
  - "llamacpp:gemma-4-E4B_q4_0-it":
     name : "Gemma 4 E4B"
     description: >-
-      Gemma 4 E4B is an efficient, open multimodal AI model developed by Google DeepMind.
+      Gemma 4 E4B is an efficient, open AI model developed by Google DeepMind.
       Activating an effective four billion parameters, it is engineered specifically for mobile and edge devices.
       It's optimized for offline agentic workflows.
     supported_boards: ["ventunoq"]
@@ -1828,9 +1856,7 @@ models:
  - "llamacpp:gemma-3-1b-it-Q4_0":
      name : "Gemma 3 1B"
      description: >-
-        Gemma 3 1B is an efficient, open multimodal AI model developed by Google DeepMind.
-        Activating an effective one billion parameters, it is engineered specifically for mobile and edge devices.
-        It's optimized for offline agentic workflows.
+        Gemma 3 1B is an efficient AI model developed by Google DeepMind.
      supported_boards: ["ventunoq", "unoq"]
      bricks:
        - id: "arduino:llm"
@@ -1856,7 +1882,8 @@ models:
      name : "Qwen 3.5 0.8B"
      description: >-
        Qwen 3.5 0.8B is a compact yet powerful language model developed by Alibaba, designed to deliver efficient performance on edge devices.
-       With 0.8 billion parameters, it strikes a balance between capability and resource efficiency, making it ideal for applications that require natural language understanding and generation in constrained environments.
+       With 0.8 billion parameters, it strikes a balance between capability and resource efficiency, making it ideal
+       for applications that require natural language understanding and generation in constrained environments.
      supported_boards: ["ventunoq", "unoq"]
      bricks:
        - id: "arduino:llm"
