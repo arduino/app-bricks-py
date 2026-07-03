@@ -1477,7 +1477,7 @@ models:
               chipset: "qualcomm-qcs8275"
               version: "0.57.1"
     metadata:
-      model_size_mb: 6488
+      model_size_mb: 3858
       source: "qualcomm-ai-hub"
       source-model-id: "qwen3_vl_4b_instruct"
       source-model-url: "https://aihub.qualcomm.com/models/qwen3_vl_4b_instruct"      
