@@ -223,6 +223,13 @@ class TextToSpeech:
 
         return SynthesisStream(locked_stream())
 
+    @staticmethod
+    def _normalize_model_name(name: str) -> str:
+        """Catalog ids and runner-reported names differ only by separators
+        (e.g. catalog `piper-tts-en` vs runner `pipertts_en`), so compare them
+        stripped of `-` and `_`."""
+        return name.replace("-", "").replace("_", "").lower()
+
     def _resolve_voice(self, model_name: str) -> dict:
         """Fetch available TTS models from the runner and return the voice config for `model_name`."""
         try:
@@ -240,9 +247,10 @@ class TextToSpeech:
                 pass
             raise RuntimeError(error_msg)
 
+        wanted = self._normalize_model_name(model_name)
         for entry in response.json() or []:
             entry_name = entry.get("name")
-            if model_name != entry_name:
+            if not entry_name or self._normalize_model_name(entry_name) != wanted:
                 continue
             voices = entry.get("voices") or []
             if voices:
