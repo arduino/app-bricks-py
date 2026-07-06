@@ -1703,7 +1703,7 @@ models:
       source: "qualcomm-ai-hub"
       source-model-id: "melotts_zh"
       source-model-url: "https://aihub.qualcomm.com/models/melotts_zh"
- - piper-tts-de:
+ - pipertts_de:
     name : "Piper TTS (German)"
     description: >-
       Piper is a high-quality multi-lingual text-to-speech library - German version.
@@ -1721,13 +1721,13 @@ models:
               model_directory: "pipertts_de-voice_ai-float-qualcomm_qcs8275"
               quantization: "float"
               chipset: "qualcomm-qcs8275"
-              version: "0.57.0"
+              version: "0.57.1"
     metadata:
       model_size_mb: 79
       source: "qualcomm-ai-hub"
       source-model-id: "pipertts_de"
       source-model-url: "https://aihub.qualcomm.com/models/pipertts_de"
- - piper-tts-it:
+ - pipertts_it:
     name : "Piper TTS (Italian)"
     description: >-
       Piper is a high-quality multi-lingual text-to-speech library - Italian version.
@@ -1745,13 +1745,13 @@ models:
               model_directory: "pipertts_it-voice_ai-float-qualcomm_qcs8275"
               quantization: "float"
               chipset: "qualcomm-qcs8275"
-              version: "0.57.0"
+              version: "0.57.1"
     metadata:
       model_size_mb: 79
       source: "qualcomm-ai-hub"
       source-model-id: "pipertts_it"
       source-model-url: "https://aihub.qualcomm.com/models/pipertts_it"
- - piper-tts-en:
+ - pipertts_en:
     name : "Piper TTS (English)"
     description: >-
       Piper is a high-quality multi-lingual text-to-speech library - English version.
@@ -1769,7 +1769,7 @@ models:
               model_directory: "pipertts_en-voice_ai-float-qualcomm_qcs8275"
               quantization: "float"
               chipset: "qualcomm-qcs8275"
-              version: "0.57.0"
+              version: "0.57.1"
     metadata:
       model_size_mb: 79
       source: "qualcomm-ai-hub"
