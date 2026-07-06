@@ -25,11 +25,8 @@ carries a sync policy mirroring the C++ ``ArduinoIoTCloud`` semantics:
   back to the cloud so it converges to the device.
 """
 
-import logging
 import time
 from typing import Any
-
-logger = logging.getLogger("ArduinoCloud")
 
 # ── Sync policies ───────────────────────────────────────────────────────────
 # String constants (JSON/log friendly) mirroring the C++ ArduinoIoTCloud enum.

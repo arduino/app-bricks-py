@@ -79,7 +79,9 @@ class ArduinoCloud:
                 stacklevel=2,
             )
 
-        self._client = DaemonClient(daemon_url or self._default_daemon_url())
+        url = daemon_url or self._default_daemon_url()
+        logger.info("ArduinoCloud: initialising — daemon API at %s", url)
+        self._client = DaemonClient(url)
         self._records: dict[str, CloudObject] = {}
         self._lock = threading.RLock()
         self._stop = threading.Event()
@@ -117,6 +119,7 @@ class ArduinoCloud:
 
     def stop(self):
         """Stop the brick and tear down the SSE listener threads."""
+        logger.info("ArduinoCloud: stopping — closing sessions and joining %d listener(s)", len(self._listeners))
         self._stop.set()
         self._client.close()
         for thread in self._listeners:
@@ -176,6 +179,7 @@ class ArduinoCloud:
         def handle(_event: str, payload: dict):
             value = payload.get("value")
             ts = parse_timestamp(payload.get("timestamp"))
+            logger.debug("ArduinoCloud: cloud update for '%s' (event=%s): value=%r ts=%s", leaf.name, _event, value, ts)
             with self._lock:
                 applied = leaf.apply_cloud(value, ts)
                 if applied:

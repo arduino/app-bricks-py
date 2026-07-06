@@ -16,16 +16,17 @@ variable values with it over two endpoints (RFC-13 §8):
 """
 
 import json
-import logging
 import threading
 from datetime import datetime
 from urllib.parse import quote, unquote, urlparse
 
 import requests
 
+from arduino.app_utils import Logger
+
 from .unix_adapter import UnixHTTPAdapter
 
-logger = logging.getLogger("ArduinoCloud")
+logger = Logger("ArduinoCloud")
 
 _PUT_TIMEOUT = 10.0  # seconds for a value PUT
 _SSE_CONNECT_TIMEOUT = 10.0  # seconds to establish the SSE connection
@@ -75,6 +76,9 @@ class DaemonClient:
         self._session = self._new_session()
         self._sse_sessions: list[requests.Session] = []
         self._sse_lock = threading.Lock()
+        # Count of consecutive PUT failures, to distinguish a transient glitch
+        # from a persistent stall in the daemon and to log a clear recovery.
+        self._put_fail_count = 0
 
     def _new_session(self) -> requests.Session:
         session = requests.Session()
@@ -83,14 +87,50 @@ class DaemonClient:
         return session
 
     def put_value(self, name: str, value) -> None:
-        """Send a variable value to the daemon (best-effort; logs on failure)."""
+        """Send a variable value to the daemon (best-effort; logs on failure).
+
+        Failures are classified so the log points at the likely cause: a read
+        timeout means the daemon accepted the request but never replied (it is
+        stuck — e.g. blocked on the cloud broker); a connection error means the
+        daemon/socket is unreachable. Consecutive failures are counted so a
+        persistent stall is distinguishable from a one-off glitch, and a clear
+        recovery line is logged once PUTs succeed again.
+        """
         url = f"{self._base}/v1/variables/{quote(name, safe='')}"
         try:
             resp = self._session.put(url, json={"value": value}, timeout=_PUT_TIMEOUT)
-            if resp.status_code >= 400:
-                logger.warning("ArduinoCloud: PUT %s -> %s %s", name, resp.status_code, resp.text.strip())
+        except requests.exceptions.ReadTimeout:
+            self._put_fail_count += 1
+            logger.warning(
+                "ArduinoCloud: PUT '%s' timed out after %.0fs (consecutive failure #%d) — "
+                "the daemon accepted the request but never responded, so it is likely "
+                "blocked (e.g. wedged on the cloud broker connection). Values are NOT "
+                "reaching the cloud; restarting arduino-app-cloud clears it.",
+                name, _PUT_TIMEOUT, self._put_fail_count,
+            )
+            return
+        except requests.exceptions.ConnectionError as e:
+            self._put_fail_count += 1
+            logger.warning(
+                "ArduinoCloud: cannot reach the daemon at %s to send '%s' (consecutive "
+                "failure #%d): %s — is arduino-app-cloud running and its socket mounted?",
+                self._base, name, self._put_fail_count, e,
+            )
+            return
         except requests.RequestException as e:
-            logger.warning("ArduinoCloud: failed to send %s: %s", name, e)
+            self._put_fail_count += 1
+            logger.warning("ArduinoCloud: failed to send '%s' (consecutive failure #%d): %s",
+                           name, self._put_fail_count, e)
+            return
+
+        if resp.status_code >= 400:
+            logger.warning("ArduinoCloud: PUT '%s' rejected by daemon: HTTP %s %s",
+                           name, resp.status_code, resp.text.strip())
+            return
+        if self._put_fail_count:
+            logger.info("ArduinoCloud: '%s' delivered again after %d consecutive failure(s)",
+                        name, self._put_fail_count)
+            self._put_fail_count = 0
 
     def stream_events(self, name: str, handler, stop_event: threading.Event) -> None:
         """Stream SSE events for a variable until stop_event is set.
@@ -115,7 +155,7 @@ class DaemonClient:
             except Exception as e:  # noqa: BLE001 - reconnect on any transport error
                 if stop_event.is_set():
                     break
-                logger.debug("ArduinoCloud: SSE %s disconnected (%s), reconnecting", name, e)
+                logger.debug("ArduinoCloud: SSE '%s' disconnected (%s); reconnecting in %.1fs", name, e, backoff)
             if stop_event.wait(backoff):
                 break
             backoff = min(backoff * 2, _RECONNECT_MAX)
