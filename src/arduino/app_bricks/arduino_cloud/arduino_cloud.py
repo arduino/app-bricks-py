@@ -80,7 +80,6 @@ class ArduinoCloud:
             )
 
         url = daemon_url or self._default_daemon_url()
-        logger.info("ArduinoCloud: initialising — daemon API at %s", url)
         self._client = DaemonClient(url)
         self._records: dict[str, CloudObject] = {}
         self._lock = threading.RLock()
