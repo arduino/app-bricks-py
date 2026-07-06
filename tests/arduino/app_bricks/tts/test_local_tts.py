@@ -67,7 +67,9 @@ class BlockingSpeaker(BaseSpeaker):
 def make_tts(monkeypatch, speaker, post_response, cancel_response=None):
     models = [
         {
-            "name": "piper-tts-en",
+            # The runner reports the name from the model's config.json (underscore
+            # style), while the brick is configured with the catalog id (piper-tts-en).
+            "name": "pipertts_en",
             "voices": [
                 {
                     "language": "en",
@@ -92,6 +94,16 @@ def make_tts(monkeypatch, speaker, post_response, cancel_response=None):
     App.unregister(tts)
     speaker.start()
     return tts
+
+
+def test_resolve_voice_matches_runner_name_with_different_separators(monkeypatch):
+    speaker = BlockingSpeaker()
+    tts = make_tts(monkeypatch, speaker, lambda url, json, **kwargs: FakeResponse(content=b""))
+
+    # Configured catalog id `piper-tts-en` resolves to the runner-reported
+    # `pipertts_en`, which is what synthesis requests must send.
+    assert tts._voice["model"] == "pipertts_en"
+    assert tts._voice["language"] == "en"
 
 
 def test_cancel_without_active_speech_keeps_speaker_running(monkeypatch):
