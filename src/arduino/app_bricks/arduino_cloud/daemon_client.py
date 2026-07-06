@@ -106,7 +106,9 @@ class DaemonClient:
                 "the daemon accepted the request but never responded, so it is likely "
                 "blocked (e.g. wedged on the cloud broker connection). Values are NOT "
                 "reaching the cloud; restarting arduino-app-cloud clears it.",
-                name, _PUT_TIMEOUT, self._put_fail_count,
+                name,
+                _PUT_TIMEOUT,
+                self._put_fail_count,
             )
             return
         except requests.exceptions.ConnectionError as e:
@@ -114,22 +116,22 @@ class DaemonClient:
             logger.warning(
                 "ArduinoCloud: cannot reach the daemon at %s to send '%s' (consecutive "
                 "failure #%d): %s — is arduino-app-cloud running and its socket mounted?",
-                self._base, name, self._put_fail_count, e,
+                self._base,
+                name,
+                self._put_fail_count,
+                e,
             )
             return
         except requests.RequestException as e:
             self._put_fail_count += 1
-            logger.warning("ArduinoCloud: failed to send '%s' (consecutive failure #%d): %s",
-                           name, self._put_fail_count, e)
+            logger.warning("ArduinoCloud: failed to send '%s' (consecutive failure #%d): %s", name, self._put_fail_count, e)
             return
 
         if resp.status_code >= 400:
-            logger.warning("ArduinoCloud: PUT '%s' rejected by daemon: HTTP %s %s",
-                           name, resp.status_code, resp.text.strip())
+            logger.warning("ArduinoCloud: PUT '%s' rejected by daemon: HTTP %s %s", name, resp.status_code, resp.text.strip())
             return
         if self._put_fail_count:
-            logger.info("ArduinoCloud: '%s' delivered again after %d consecutive failure(s)",
-                        name, self._put_fail_count)
+            logger.info("ArduinoCloud: '%s' delivered again after %d consecutive failure(s)", name, self._put_fail_count)
             self._put_fail_count = 0
 
     def stream_events(self, name: str, handler, stop_event: threading.Event) -> None:
