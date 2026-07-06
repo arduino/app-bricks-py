@@ -6,7 +6,7 @@
   "update_compose": true,
   "build_args": {
     "LLAMA_CPP_URL": "https://github.com/arduino/app-bricks-py/releases/download/llamacpp%2F20260703/llamacpp-hexagon-20260703.tar.gz",
-    "LLAMA_CPP_DIGEST": "sha256:466cba79d6d59e6efe9891d69fd1a019b1bcea2fbb17353296d7b39b5b60cb00"
+    "LLAMA_CPP_DIGEST": "sha256:7aa6b9a4877b0afc0e129f6f60c1312b9e0826077dbf27bbfcdfb078bd19000f"
   },
   "sbom": {
     "runtime_base": "${REGISTRY}app-bricks/aihub-models-runner:${BASE_IMAGE_VERSION}"
