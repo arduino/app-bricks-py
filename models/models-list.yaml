@@ -1503,6 +1503,9 @@ models:
       source: "qualcomm-ai-hub"  
       source-model-id: "mediapipe_hand_gesture"
       source-model-url: "https://aihub.qualcomm.com/models/mediapipe_hand_gesture"
+    deployment:
+      handler: "ai-hub-handler"
+      pre-loaded: true
  - whisper-small-quantized:
     name : "Whisper Small (quantized)"
     description: >-
