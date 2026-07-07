@@ -1,7 +1,7 @@
 {
   "SPDXID": "SPDXRef-DOCUMENT",
   "creationInfo": {
-    "created": "2026-06-30T14:48:45.946252Z",
+    "created": "2026-07-07T07:26:01.414098Z",
     "creators": [
       "Tool: arduino-sbom-delta",
       "Organization: Arduino SRL"
@@ -11,12 +11,12 @@
   "documentDescribes": [
     "SPDXRef-Container"
   ],
-  "documentNamespace": "https://arduino.cc/sbom/delta/llamacpp-npu-runner-0.11.1-20260630T144845Z",
+  "documentNamespace": "https://arduino.cc/sbom/delta/llamacpp-npu-runner-0.11.2-20260707T072601Z",
   "name": "llamacpp-npu-runner",
   "packages": [
     {
       "SPDXID": "SPDXRef-Container",
-      "comment": "Delta SBOM for ghcr.io/arduino/app-bricks/llamacpp-npu-runner:0.11.1 \u2014 changes relative to base image ghcr.io/arduino/app-bricks/aihub-models-runner:0.11.1",
+      "comment": "Delta SBOM for ghcr.io/arduino/app-bricks/llamacpp-npu-runner:0.11.2 \u2014 changes relative to base image ghcr.io/arduino/app-bricks/aihub-models-runner:0.11.2",
       "copyrightText": "NOASSERTION",
       "downloadLocation": "NOASSERTION",
       "filesAnalyzed": false,
@@ -28,7 +28,7 @@
       "SPDXID": "SPDXRef-cross-toolchain-base-deb",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:48:45.946252Z",
+          "annotationDate": "2026-07-07T07:26:01.414098Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"added\"}"
