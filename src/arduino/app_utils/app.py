@@ -187,10 +187,10 @@ class AppController:
             return 0
         except KeyboardInterrupt:
             logger.debug("KeyboardInterrupt received")
-            return 128 + signal.SIGINT
+            return min(128 + signal.SIGINT, 255)
         except SignalReceived as signal_received:
             logger.debug(f"Termination signal {signal_received.signum} received")
-            return 128 + signal_received.signum
+            return min(128 + signal_received.signum, 255)
         except Exception:
             logger.exception("Unhandled exception in application loop")
             return 1
