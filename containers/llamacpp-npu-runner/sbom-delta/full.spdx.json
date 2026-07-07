@@ -1,7 +1,7 @@
 {
   "SPDXID": "SPDXRef-DOCUMENT",
   "creationInfo": {
-    "created": "2026-06-30T14:48:45Z",
+    "created": "2026-07-07T07:26:01Z",
     "creators": [
       "Organization: Anchore, Inc",
       "Tool: syft-1.46.0"
@@ -9,7 +9,7 @@
     "licenseListVersion": "3.28"
   },
   "dataLicense": "CC0-1.0",
-  "documentNamespace": "https://anchore.com/syft/image/ghcr.io/arduino/app-bricks/llamacpp-npu-runner-13a7d958-bd34-4035-83c8-0c9fde86d4c4",
+  "documentNamespace": "https://anchore.com/syft/image/ghcr.io/arduino/app-bricks/llamacpp-npu-runner-9006c1dc-f9da-4678-8ac6-2e1f0f3d7fc9",
   "files": [
     {
       "SPDXID": "SPDXRef-File-etc-adduser.conf-2ce74246982310ad",
@@ -2013,42 +2013,18 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...pkg-snapdragon-bin-export-graph-ops-5842fcdacec8ab40",
+      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-a869a528fd8518d9",
       "checksums": [
         {
           "algorithm": "SHA1",
-          "checksumValue": "a5237be6e9abe6284596929689aa8bb5d90d7d8f"
+          "checksumValue": "75c5ee0b296a1e19556fc8f133123196976c186c"
         },
         {
           "algorithm": "SHA256",
-          "checksumValue": "770016134aef86372dcdde8c31accae38f7a286f4799c6450f624989c32847cf"
+          "checksumValue": "1ecd7287924bd169b78821b0b16a0321c1e48b1721a9291e8868fafbd3da1b2e"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
-      "copyrightText": "NOASSERTION",
-      "fileName": "opt/pkg-snapdragon/bin/export-graph-ops",
-      "fileTypes": [
-        "APPLICATION",
-        "BINARY"
-      ],
-      "licenseConcluded": "NOASSERTION",
-      "licenseInfoInFiles": [
-        "NOASSERTION"
-      ]
-    },
-    {
-      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-07bf9cbf1a2b217b",
-      "checksums": [
-        {
-          "algorithm": "SHA1",
-          "checksumValue": "37007f8fac165c07593c3a604b6c81170fb1b8df"
-        },
-        {
-          "algorithm": "SHA256",
-          "checksumValue": "93a8462980e719f998b845a51de466b911ba2cc812410ee90bc7adb42d63c89c"
-        }
-      ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama",
       "fileTypes": [
@@ -2061,18 +2037,18 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-batched-fde71377dffd0e13",
+      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-batched-9fedfc94131d0c4d",
       "checksums": [
         {
           "algorithm": "SHA1",
-          "checksumValue": "b6a938ae157d968784e5ae5be166d4b04cc33b67"
+          "checksumValue": "c855b4cd6279d2bf7bd61f42f68446c5c0f8e21d"
         },
         {
           "algorithm": "SHA256",
-          "checksumValue": "78ddf684210a4c97cbfa9d98e7dc347468a0a2a2502e9563927df525e2fab6a7"
+          "checksumValue": "3b7267e11e7ca9d6692e52aa1a8e52b7599554e7f2935a11570661674b1ae14e"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-batched",
       "fileTypes": [
@@ -2085,7 +2061,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...pkg-snapdragon-bin-llama-batched-bench-7c6b1e5739363f2b",
+      "SPDXID": "SPDXRef-File-...pkg-snapdragon-bin-llama-batched-bench-2661ed5419870b1d",
       "checksums": [
         {
           "algorithm": "SHA1",
@@ -2096,7 +2072,7 @@
           "checksumValue": "e14e0278d64a7e279a58b278bb6b126091cf0d0a1b4bf8e6e2a5eb7fe0163a68"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-batched-bench",
       "fileTypes": [
@@ -2109,7 +2085,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-bench-2dd274c01753ad62",
+      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-bench-8dfa719965d6857c",
       "checksums": [
         {
           "algorithm": "SHA1",
@@ -2120,7 +2096,7 @@
           "checksumValue": "59bf5d41e81db825db87857983d468356d758c81393032a0eee7ce046c3d1302"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-bench",
       "fileTypes": [
@@ -2133,7 +2109,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-cli-032d32ede4dc8466",
+      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-cli-abe3e94d8049e610",
       "checksums": [
         {
           "algorithm": "SHA1",
@@ -2144,7 +2120,7 @@
           "checksumValue": "75be89d30af17a086895b4d561db18713d5ff82b9fe31a475206afef8be293e7"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-cli",
       "fileTypes": [
@@ -2157,7 +2133,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...pkg-snapdragon-bin-llama-completion-0fbdd2fc5e37fb55",
+      "SPDXID": "SPDXRef-File-...pkg-snapdragon-bin-llama-completion-fb0648bc9d2fe137",
       "checksums": [
         {
           "algorithm": "SHA1",
@@ -2168,7 +2144,7 @@
           "checksumValue": "70e08014e1d2d9f1065042f4649022e3bab05f8d2672f69f240f38f2a6e59939"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-completion",
       "fileTypes": [
@@ -2181,7 +2157,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...bin-llama-convert-llama2c-to-ggml-32d0f2ba39676648",
+      "SPDXID": "SPDXRef-File-...bin-llama-convert-llama2c-to-ggml-ca3489073f3eb02e",
       "checksums": [
         {
           "algorithm": "SHA1",
@@ -2192,7 +2168,7 @@
           "checksumValue": "52cb581ac214dc14c7d33ef4ec55bdcfb07b3a4e29da48cbf843b7a1e3ff6485"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-convert-llama2c-to-ggml",
       "fileTypes": [
@@ -2205,18 +2181,18 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...bin-llama-cvector-generator-6ca510e7b17a8267",
+      "SPDXID": "SPDXRef-File-...bin-llama-cvector-generator-3be5d23128bc20e9",
       "checksums": [
         {
           "algorithm": "SHA1",
-          "checksumValue": "4035e54f6fb270748ee2b9fa4e1fa9a7dccd00ac"
+          "checksumValue": "b1cd683e1b51efbcd696985e05eb6f8212ff497d"
         },
         {
           "algorithm": "SHA256",
-          "checksumValue": "46dbd6cd541e4912cbe7b972ff582aaf97db9d16d20cd2f08987f10b75d5c7f2"
+          "checksumValue": "9b34bc7b5f408c20353a0165c0a29d40bd3df845ab26346a762a65e0e1448c4e"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-cvector-generator",
       "fileTypes": [
@@ -2229,18 +2205,18 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-debug-26d8e89a06dfe261",
+      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-debug-7540d314ad900f5b",
       "checksums": [
         {
           "algorithm": "SHA1",
-          "checksumValue": "e5015abe6293d5fac6196dd4a8b5b8dfddde8a48"
+          "checksumValue": "95207a95565123a72f49439b97565fb27c678e2f"
         },
         {
           "algorithm": "SHA256",
-          "checksumValue": "55913e4ce7d11f25717583dbc24d4d8b9a55284c27fa2ceab23014a1b73ff3fe"
+          "checksumValue": "6295d865c08600890b759096c267bf8726b663701f73b91497cc7e34619cb260"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-debug",
       "fileTypes": [
@@ -2253,18 +2229,18 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...bin-llama-debug-template-parser-f59ef6fa5d5305a7",
+      "SPDXID": "SPDXRef-File-...bin-llama-debug-template-parser-63a88e925339db05",
       "checksums": [
         {
           "algorithm": "SHA1",
-          "checksumValue": "af187e06571338be30469245ea14ea589c6009a8"
+          "checksumValue": "9c36ada0e4a241fe79b9454e2e7ef193d6d9de6d"
         },
         {
           "algorithm": "SHA256",
-          "checksumValue": "5e94cb88e450e40a67bb8f640cc35f5cef9e5aba6de7493c82560d5b08b14fae"
+          "checksumValue": "e762bbadd3c5401200c92005ba11f42aad8edabe1523502582d54bdd53a1d9a7"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-debug-template-parser",
       "fileTypes": [
@@ -2277,18 +2253,18 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...pkg-snapdragon-bin-llama-diffusion-cli-6ab996d19d122068",
+      "SPDXID": "SPDXRef-File-...pkg-snapdragon-bin-llama-diffusion-cli-a74aa2dd6f1d1352",
       "checksums": [
         {
           "algorithm": "SHA1",
-          "checksumValue": "b039550fa0d65ca41629ba706da7758fc2b2a1eb"
+          "checksumValue": "dc8952aa518245c8b29ef90da19a694dd4d04d39"
         },
         {
           "algorithm": "SHA256",
-          "checksumValue": "5562fa07c198c69e2187748977eb5103bf22ca6408ca044ea04b809bf4581531"
+          "checksumValue": "72d3f5376712a1155312871233403a0e9fa7c189c6bd2937502f69d57f077062"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-diffusion-cli",
       "fileTypes": [
@@ -2301,18 +2277,18 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-embedding-eb7bff36054d9426",
+      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-embedding-8a99a2c5cf43392c",
       "checksums": [
         {
           "algorithm": "SHA1",
-          "checksumValue": "817845c08d97d5853079ec19cfe0d44c9c972237"
+          "checksumValue": "c0a80f34b3f1a4a58e223ddd31c8087014586354"
         },
         {
           "algorithm": "SHA256",
-          "checksumValue": "566043ed85d6d2848d18d22662cbe354acdb3ea4b64d1f76d50e055fc6a56ea9"
+          "checksumValue": "d28ca3604c3f65cf7807aa0a33b0514cfb6395f82cd905d966a71338ca37b050"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-embedding",
       "fileTypes": [
@@ -2325,18 +2301,18 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...pkg-snapdragon-bin-llama-eval-callback-3519a23424ae87c3",
+      "SPDXID": "SPDXRef-File-...pkg-snapdragon-bin-llama-eval-callback-ee7ce72aa6f2aa39",
       "checksums": [
         {
           "algorithm": "SHA1",
-          "checksumValue": "96188fe29413478999eca0d2862f0a1990220ee8"
+          "checksumValue": "a7103ca62ff0b065fca4577a3e55e15a046aa34f"
         },
         {
           "algorithm": "SHA256",
-          "checksumValue": "eb3261c7a3a3b52eacc6afb651961ebe729b066c939e80735b8892307b8aa9d5"
+          "checksumValue": "d065d84b3afb7c7ecb80eff9b5b6ed0d15faccab2c9f2aeb9ae887e6a784edcd"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-eval-callback",
       "fileTypes": [
@@ -2349,18 +2325,18 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...pkg-snapdragon-bin-llama-export-lora-4dcb1ea6ef3f3b32",
+      "SPDXID": "SPDXRef-File-...pkg-snapdragon-bin-llama-export-lora-8fa1d533e89c6c88",
       "checksums": [
         {
           "algorithm": "SHA1",
-          "checksumValue": "beb223800c9da0bc7c396c7285f721f2d340580a"
+          "checksumValue": "34c9d11d7dfca436542bed953d62777a91b53887"
         },
         {
           "algorithm": "SHA256",
-          "checksumValue": "0e1b1d86f56a93173352a96e9eaa8f37eeab9b9bb0298505bac11b089c9dbd4f"
+          "checksumValue": "68dc5ae21b3119ef5e32ca6fb6fb405fed59933b60491fe766b7080c67cddf2f"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-export-lora",
       "fileTypes": [
@@ -2373,18 +2349,18 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-finetune-40509c05aae77a6a",
+      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-finetune-e7719c8cc115ced0",
       "checksums": [
         {
           "algorithm": "SHA1",
-          "checksumValue": "a4415d4ec19b4fa70f23972b4d4beeabb854cf22"
+          "checksumValue": "e01d9e9f8eff5fddf5fbecd60e559bb4dd6a2359"
         },
         {
           "algorithm": "SHA256",
-          "checksumValue": "9a970dcb23af8ab6c107ed930c4c25658c691775f639d28e61e0b9954b8a2675"
+          "checksumValue": "939c8354f74c20e4d9bc672a187ebfd1866d4fa9cd7c83f14a2e96c873eb12d4"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-finetune",
       "fileTypes": [
@@ -2397,7 +2373,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...pkg-snapdragon-bin-llama-fit-params-e959cc4e8348e16d",
+      "SPDXID": "SPDXRef-File-...pkg-snapdragon-bin-llama-fit-params-ed76be72e1eaa46f",
       "checksums": [
         {
           "algorithm": "SHA1",
@@ -2408,7 +2384,7 @@
           "checksumValue": "9dc4e3b9b1a20273c2edc8d504104d447ef0288b2a8c1dc07fbcdc225b802ec6"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-fit-params",
       "fileTypes": [
@@ -2421,18 +2397,18 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-gen-docs-eee383ce77f8d6e6",
+      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-gen-docs-b042d0401dd5a2ec",
       "checksums": [
         {
           "algorithm": "SHA1",
-          "checksumValue": "0e601aa8d9793646ddedeaa02b17ee75031ef1cc"
+          "checksumValue": "45037000f5725e759c163fdec06b8b3e18c79119"
         },
         {
           "algorithm": "SHA256",
-          "checksumValue": "a247605bfb49298cc6d0dcd8fef26afeb99157e1f2fddc557fb632e6a6fdb77a"
+          "checksumValue": "6c5be2b5eb873801d8a89f63830d8662c52e04e191ef078b824adb4d8e7075ed"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-gen-docs",
       "fileTypes": [
@@ -2445,7 +2421,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-gguf-5abd79b4008d7d12",
+      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-gguf-02cb0f0b2dda5f68",
       "checksums": [
         {
           "algorithm": "SHA1",
@@ -2456,7 +2432,7 @@
           "checksumValue": "b4f7bc27f38100e89d240d54d025ebc73ac54fa8fde92d5a7ca7a08a4a9a331b"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-gguf",
       "fileTypes": [
@@ -2469,7 +2445,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-gguf-hash-ef9d945957060a06",
+      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-gguf-hash-b753822f8e418ee4",
       "checksums": [
         {
           "algorithm": "SHA1",
@@ -2480,7 +2456,7 @@
           "checksumValue": "0c16ee2fe2ba6dd30ed912132759f26efc8a9e7c4f3026777a74ba0495703221"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-gguf-hash",
       "fileTypes": [
@@ -2493,7 +2469,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...pkg-snapdragon-bin-llama-gguf-split-e1d07adca39d22b8",
+      "SPDXID": "SPDXRef-File-...pkg-snapdragon-bin-llama-gguf-split-c612cfa24047e3ce",
       "checksums": [
         {
           "algorithm": "SHA1",
@@ -2504,7 +2480,7 @@
           "checksumValue": "9d369b35a7643543d05a838ba3dca50d21711f020d76cbba2f93e7ca17273620"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-gguf-split",
       "fileTypes": [
@@ -2517,18 +2493,18 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-idle-cb39acb78dba949e",
+      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-idle-0d70b3c3cae964a0",
       "checksums": [
         {
           "algorithm": "SHA1",
-          "checksumValue": "fddf00fbd300dc46cc6d6920243ef4cf648a564d"
+          "checksumValue": "e7be276288a29705ec7543cc0dca2f6a1f25c0ae"
         },
         {
           "algorithm": "SHA256",
-          "checksumValue": "9e3be490b8394ea3a3eef55b0aa80c05b0b3e561d75decd0374872fe02a02766"
+          "checksumValue": "d15a6cfa6f18930fe96f603a48a12c6134bc5640dc6e4f0ff9eecde4f92b7340"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-idle",
       "fileTypes": [
@@ -2541,18 +2517,18 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-imatrix-62da01662b246315",
+      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-imatrix-d9f564e800167eb7",
       "checksums": [
         {
           "algorithm": "SHA1",
-          "checksumValue": "498fa5c0e6b63b55b4513aa7910966095267b985"
+          "checksumValue": "92e078bb2577e80846cbc0ec03aa097a3ad764ed"
         },
         {
           "algorithm": "SHA256",
-          "checksumValue": "4340ba850378c914b5961dbfa3d058bf22806c6c32ff600a35394534ad78b154"
+          "checksumValue": "d8f4502fbbaf138cdb80ea5f9ea65959249ff59075b2daea3c8b0b0d7b7814ff"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-imatrix",
       "fileTypes": [
@@ -2565,18 +2541,18 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-lookahead-ae81a53e1d1aa808",
+      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-lookahead-11d1d6db45d087da",
       "checksums": [
         {
           "algorithm": "SHA1",
-          "checksumValue": "7770299dc77339b4ef9ab5256976ab65f633693f"
+          "checksumValue": "93f98f3bba58bf2c70d64fdc2ef005022c70c666"
         },
         {
           "algorithm": "SHA256",
-          "checksumValue": "243bf1adb268ed74096e9bfc315cd098be1479305d92e75f96c29478e220c484"
+          "checksumValue": "35de24184e70ff4ca93e5ac0ed20679bf7186de16a616049555958fca492e70b"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-lookahead",
       "fileTypes": [
@@ -2589,18 +2565,18 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-lookup-5649b226a741ead2",
+      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-lookup-1a1618a92ddde308",
       "checksums": [
         {
           "algorithm": "SHA1",
-          "checksumValue": "9a2e7757383d921eab22b27faefc02146f9ffd52"
+          "checksumValue": "49e47cfd28251a3490ec800c2b3a601985ce7084"
         },
         {
           "algorithm": "SHA256",
-          "checksumValue": "cef3c5431179086cebbd04446fe7ba63c78c20ed10d51095577e4530beb168a2"
+          "checksumValue": "741f679b6b97b75e2b2c2774f376dfbc3fa5834c7882425ab92682e0a68d36cf"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-lookup",
       "fileTypes": [
@@ -2613,18 +2589,18 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...pkg-snapdragon-bin-llama-lookup-create-afcea63a292cd27e",
+      "SPDXID": "SPDXRef-File-...pkg-snapdragon-bin-llama-lookup-create-9da490f8b5936328",
       "checksums": [
         {
           "algorithm": "SHA1",
-          "checksumValue": "fa0ff43580badbf588915196a17c16d9aba8afab"
+          "checksumValue": "6795b53591fa9c8390345ba7b63113ea57e506be"
         },
         {
           "algorithm": "SHA256",
-          "checksumValue": "844d22238c19ff20b785369f809faee2a83fcc35b65a8eaa14426333acbdd199"
+          "checksumValue": "b55602ec8ad6f21cf157bb742e19701f1c6a900667f0d30b374ad5a7380d9311"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-lookup-create",
       "fileTypes": [
@@ -2637,7 +2613,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...pkg-snapdragon-bin-llama-lookup-merge-0652730e5a3c4f7f",
+      "SPDXID": "SPDXRef-File-...pkg-snapdragon-bin-llama-lookup-merge-a20e6604c8a1638d",
       "checksums": [
         {
           "algorithm": "SHA1",
@@ -2648,7 +2624,7 @@
           "checksumValue": "123eec8a9d0d97f9ec70d4ac2cb0c6e55683b8f24b4a8a98996d7d8c34baf5ef"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-lookup-merge",
       "fileTypes": [
@@ -2661,18 +2637,18 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...pkg-snapdragon-bin-llama-lookup-stats-51ee4e3e045e96f8",
+      "SPDXID": "SPDXRef-File-...pkg-snapdragon-bin-llama-lookup-stats-b9e5227e9c24e0ea",
       "checksums": [
         {
           "algorithm": "SHA1",
-          "checksumValue": "4d50699389db480aa099244d5f3c7e780ec8fbda"
+          "checksumValue": "aaad8628634fe7da299ea100fadac82a2229d008"
         },
         {
           "algorithm": "SHA256",
-          "checksumValue": "24349a45ad589e2c8663d3b8523ec5b8a0a97e3f413174c3d9885c8e040318e5"
+          "checksumValue": "4238fbd78a0f96ed6286e4a39732c17d106a6364dffcd36fbe02cb997542b7ad"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-lookup-stats",
       "fileTypes": [
@@ -2685,18 +2661,18 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-mtmd-cli-31515f570bb190a5",
+      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-mtmd-cli-7d93cd35892a22c7",
       "checksums": [
         {
           "algorithm": "SHA1",
-          "checksumValue": "8cfb1edbccd6ca256d932e8839a006d0a7d85362"
+          "checksumValue": "9c7dcd632ff353554d0f207b5ecfce8a9db058a6"
         },
         {
           "algorithm": "SHA256",
-          "checksumValue": "648465ff11923e385f995a0ec0e5c540cf4a6133ef15c4155f69b78aaee80aa2"
+          "checksumValue": "6edda0b3374784dd17287a85db3ac36eaa48fa2de0b9776fd939ebdca7b84b27"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-mtmd-cli",
       "fileTypes": [
@@ -2709,18 +2685,18 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-parallel-330cb9be5f8832a2",
+      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-parallel-b2a0d19d85db6520",
       "checksums": [
         {
           "algorithm": "SHA1",
-          "checksumValue": "be3e5701aa0bfa74bbb7bce8440b87292889ccdf"
+          "checksumValue": "523d41e38dd552ec7f628823b105df59f130c06e"
         },
         {
           "algorithm": "SHA256",
-          "checksumValue": "1e44d24b8d782372c57373b218189baf4d934fd64b3a3b293f92adad9ed52918"
+          "checksumValue": "94113ddab42ca0c12544b2c146209d82702a54be9f8380a48142cb61d5d8bc24"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-parallel",
       "fileTypes": [
@@ -2733,18 +2709,18 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-passkey-bc25c83ade90f9e0",
+      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-passkey-c24d7183db8e8c72",
       "checksums": [
         {
           "algorithm": "SHA1",
-          "checksumValue": "d95d69f52ea528827b9ee5a2794cbf2f7da78dfb"
+          "checksumValue": "c9834ddc74382de21f7202527cc7ee24611b6644"
         },
         {
           "algorithm": "SHA256",
-          "checksumValue": "742c444f2f2f4ba0e7354ac15d7fe434dde9bfe5cd21400811d22864f8f78b7b"
+          "checksumValue": "92c06b69937de0b2271e75ba3e3ff02de5c0aa4c7b7fcf5d553f0cd95baedaf3"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-passkey",
       "fileTypes": [
@@ -2757,7 +2733,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...pkg-snapdragon-bin-llama-perplexity-ec93f292e5f18dc6",
+      "SPDXID": "SPDXRef-File-...pkg-snapdragon-bin-llama-perplexity-f45f04d534669044",
       "checksums": [
         {
           "algorithm": "SHA1",
@@ -2768,7 +2744,7 @@
           "checksumValue": "263105b3e046644f638894b5514d341642e5920439479fa8cac5ee7b0ea4aae8"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-perplexity",
       "fileTypes": [
@@ -2781,7 +2757,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-quantize-d1d79cb6cc236bf6",
+      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-quantize-9fc0fbff84d64d5c",
       "checksums": [
         {
           "algorithm": "SHA1",
@@ -2792,7 +2768,7 @@
           "checksumValue": "bee2c6238fbf45664b31ec0af4536262d1675ab9e8259f5224e1c7bed2aeb355"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-quantize",
       "fileTypes": [
@@ -2805,18 +2781,18 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-results-3387d676f3930f5c",
+      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-results-a62dff54a232340a",
       "checksums": [
         {
           "algorithm": "SHA1",
-          "checksumValue": "d5ae7c0c22e0d5675d6cd2bbe3b513d23eea8799"
+          "checksumValue": "9802999281757a0dd13625d15c82349c27911910"
         },
         {
           "algorithm": "SHA256",
-          "checksumValue": "1e01bc9bd1128eaee821bd97d67db782c7f2358ffab626cb49d76e0a1852e861"
+          "checksumValue": "7f0e79491259fff8c3b6f2f1f6d0540ccbf35051d321a92c0e5f723e29ba3a14"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-results",
       "fileTypes": [
@@ -2829,18 +2805,18 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-retrieval-25112927f3f35f59",
+      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-retrieval-5290663800f83867",
       "checksums": [
         {
           "algorithm": "SHA1",
-          "checksumValue": "8432f3b8270fc2e237145e496803385391d068e3"
+          "checksumValue": "ee29c704c319148e163f1d5b262a7281b149ac9e"
         },
         {
           "algorithm": "SHA256",
-          "checksumValue": "024beb1c8488c69d85a222739db139abaa08a7e9182d7cea31ff1cffc7565172"
+          "checksumValue": "10700a2e11a18643c3ffac7564a4e603439dacc12909131f77ac9eb7944ca6d2"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-retrieval",
       "fileTypes": [
@@ -2853,7 +2829,7 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-server-a73a442e96ce4e3f",
+      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-server-1cb36d00b6f6f0cd",
       "checksums": [
         {
           "algorithm": "SHA1",
@@ -2864,7 +2840,7 @@
           "checksumValue": "7ae8b15e43be5ad0c01fa168df2b700a5e80ef17ee2b7ad69ab48bd007586b90"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-server",
       "fileTypes": [
@@ -2877,18 +2853,18 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-simple-4d010508f38e31e2",
+      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-simple-603a1e495e3fac8c",
       "checksums": [
         {
           "algorithm": "SHA1",
-          "checksumValue": "8b0e4c091f514049f64396d976cbbf5281e0df85"
+          "checksumValue": "adafd774c55dda097b47bcab561d0d324e27a77c"
         },
         {
           "algorithm": "SHA256",
-          "checksumValue": "4ba539db2aa735919f736dac053a371f227dc6bff59af7b6a9fe11917e172041"
+          "checksumValue": "e6fb2b9e6f4735aa5bc329acbcd95d34ee72b5c2d71cdae19d9bf147aa89ce75"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-simple",
       "fileTypes": [
@@ -2901,18 +2877,18 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...pkg-snapdragon-bin-llama-simple-chat-551f68fee45be5a9",
+      "SPDXID": "SPDXRef-File-...pkg-snapdragon-bin-llama-simple-chat-4da157fc6ef80d9f",
       "checksums": [
         {
           "algorithm": "SHA1",
-          "checksumValue": "16e66ee4b1e19838d29065d7c884136efa2bcd5e"
+          "checksumValue": "f99359c44316bd590dcf10cd77a0f31c0eee8fe9"
         },
         {
           "algorithm": "SHA256",
-          "checksumValue": "b744a3db522c97d72cc85ebeb68f3d48f74351e82eb1d4d460fb6b76806ffa80"
+          "checksumValue": "3acd2f4e988ad246165ae3b0eda7c2ca0d650786ea5f0903ce1dea4d3a2a90e3"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-simple-chat",
       "fileTypes": [
@@ -2925,18 +2901,18 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...pkg-snapdragon-bin-llama-speculative-fd84c5cf3f900eff",
+      "SPDXID": "SPDXRef-File-...pkg-snapdragon-bin-llama-speculative-fbbf80838f4afcc5",
       "checksums": [
         {
           "algorithm": "SHA1",
-          "checksumValue": "83f9a6794468821402d38dea0d604137f6c2fb03"
+          "checksumValue": "705f45e3aeb948606c23fdb403302808738dd48b"
         },
         {
           "algorithm": "SHA256",
-          "checksumValue": "cf92043677627adf2f40184d5eeefa2485d6fc575083d36489a514367bbb46b8"
+          "checksumValue": "caa46a419d7a879bcdd302cbd763b2893f322315875f1f7f409cc2855071dec0"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-speculative",
       "fileTypes": [
@@ -2949,18 +2925,18 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...bin-llama-speculative-simple-0b4d411ced6a617a",
+      "SPDXID": "SPDXRef-File-...bin-llama-speculative-simple-caddb289899b69e4",
       "checksums": [
         {
           "algorithm": "SHA1",
-          "checksumValue": "ccf779c9e896df4a2deeffa1e3cbfff8b06836cb"
+          "checksumValue": "14b79e7c6ec06037e477d30f00d552b588b9dda0"
         },
         {
           "algorithm": "SHA256",
-          "checksumValue": "2ffeebff2400fcaded251ce4f5cabf33542259b574c57316902660ad76e427fc"
+          "checksumValue": "e5a3142cf345c95a751767d16d14d84c0986226ddc7c4d71febf9482c9e4d7e1"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-speculative-simple",
       "fileTypes": [
@@ -2973,18 +2949,18 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...bin-llama-template-analysis-17222859ee5fd097",
+      "SPDXID": "SPDXRef-File-...bin-llama-template-analysis-f458185f7c7d8e09",
       "checksums": [
         {
           "algorithm": "SHA1",
-          "checksumValue": "d32875e9b81c78013d8bc994771ffb9840e425e9"
+          "checksumValue": "f8cd1232477b0e3c99e4d5d640bae046d8b2ce19"
         },
         {
           "algorithm": "SHA256",
-          "checksumValue": "43e946c28f8202bb1d69c3e5380f2913feec5cf8fb2b97b7dfc78a904a9e1764"
+          "checksumValue": "d85675c392f7c76db3d7575540e0772824bb47f25d1832595102bb2ba0f24f6e"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-template-analysis",
       "fileTypes": [
@@ -2997,18 +2973,18 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-tokenize-fe41455dc7d446c1",
+      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-tokenize-9030fc91e48e4e6b",
       "checksums": [
         {
           "algorithm": "SHA1",
-          "checksumValue": "96313065252222057d74d73d56baa08bc6e86c73"
+          "checksumValue": "9c7feb1653ab016c5d01fa798521d08c5a640f6a"
         },
         {
           "algorithm": "SHA256",
-          "checksumValue": "b90aa9c5cfbe7c9d3d1b8940136429e11b97a7dbc31d1229364f00864ea88b47"
+          "checksumValue": "b4b400233ee0e98aeacc6b21883256bf3089a81af58ca9eb7fca76daaf1bc088"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-tokenize",
       "fileTypes": [
@@ -3021,18 +2997,18 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-tts-6dfb20b72599292b",
+      "SPDXID": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-tts-f9ef3f7331b5e9f5",
       "checksums": [
         {
           "algorithm": "SHA1",
-          "checksumValue": "e10e9532447f20baf18f19fd61e3d0018e11c453"
+          "checksumValue": "09c058bc1730ceff7c9930d19001eafd9546da47"
         },
         {
           "algorithm": "SHA256",
-          "checksumValue": "609e0441d81f003a57a4d15b1048a6ecdc8d34b45408e74c62a6c33538227f54"
+          "checksumValue": "cafa817560ecd0c5194ebcc5996df2395cc316cef5821aaa51dc3985e45ffa74"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/bin/llama-tts",
       "fileTypes": [
@@ -3045,94 +3021,62 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...lib-libggml-base.so.0.13.1-913e5852f1f8fd3a",
+      "SPDXID": "SPDXRef-File-...lib-libggml-base.so.0.15.3-e003e64d80c26420",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
-      "fileName": "opt/pkg-snapdragon/lib/libggml-base.so.0.13.1",
+      "fileName": "opt/pkg-snapdragon/lib/libggml-base.so.0.15.3",
       "licenseConcluded": "NOASSERTION",
       "licenseInfoInFiles": [
         "NOASSERTION"
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...lib-libggml-cpu.so.0.13.1-719a35d8abb8b7ac",
+      "SPDXID": "SPDXRef-File-...lib-libggml-cpu.so.0.15.3-ebd699d699cf36b1",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
-      "fileName": "opt/pkg-snapdragon/lib/libggml-cpu.so.0.13.1",
+      "fileName": "opt/pkg-snapdragon/lib/libggml-cpu.so.0.15.3",
       "licenseConcluded": "NOASSERTION",
       "licenseInfoInFiles": [
         "NOASSERTION"
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...lib-libggml-hexagon.so.0.13.1-153e4744170fd44f",
+      "SPDXID": "SPDXRef-File-...lib-libggml-hexagon.so.0.15.3-213023432d449f18",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
-      "fileName": "opt/pkg-snapdragon/lib/libggml-hexagon.so.0.13.1",
+      "fileName": "opt/pkg-snapdragon/lib/libggml-hexagon.so.0.15.3",
       "licenseConcluded": "NOASSERTION",
       "licenseInfoInFiles": [
         "NOASSERTION"
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...pkg-snapdragon-lib-libggml-htp-v68.so-70f32e5d361f7e46",
+      "SPDXID": "SPDXRef-File-...pkg-snapdragon-lib-libggml-htp-v73.so-7a2c4ec7228b0e45",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
-      "copyrightText": "NOASSERTION",
-      "fileName": "opt/pkg-snapdragon/lib/libggml-htp-v68.so",
-      "licenseConcluded": "NOASSERTION",
-      "licenseInfoInFiles": [
-        "NOASSERTION"
-      ]
-    },
-    {
-      "SPDXID": "SPDXRef-File-...pkg-snapdragon-lib-libggml-htp-v69.so-b828a7b398d7c0c9",
-      "checksums": [
-        {
-          "algorithm": "SHA1",
-          "checksumValue": "0000000000000000000000000000000000000000"
-        }
-      ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
-      "copyrightText": "NOASSERTION",
-      "fileName": "opt/pkg-snapdragon/lib/libggml-htp-v69.so",
-      "licenseConcluded": "NOASSERTION",
-      "licenseInfoInFiles": [
-        "NOASSERTION"
-      ]
-    },
-    {
-      "SPDXID": "SPDXRef-File-...pkg-snapdragon-lib-libggml-htp-v73.so-21389658300bc4df",
-      "checksums": [
-        {
-          "algorithm": "SHA1",
-          "checksumValue": "0000000000000000000000000000000000000000"
-        }
-      ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/lib/libggml-htp-v73.so",
       "licenseConcluded": "NOASSERTION",
@@ -3141,14 +3085,14 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...pkg-snapdragon-lib-libggml-htp-v75.so-850e034c0b5dbd47",
+      "SPDXID": "SPDXRef-File-...pkg-snapdragon-lib-libggml-htp-v75.so-eb46a562055872fd",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/lib/libggml-htp-v75.so",
       "licenseConcluded": "NOASSERTION",
@@ -3157,14 +3101,14 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...pkg-snapdragon-lib-libggml-htp-v79.so-3066c06b8260631f",
+      "SPDXID": "SPDXRef-File-...pkg-snapdragon-lib-libggml-htp-v79.so-b64c65f0cde45b11",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/lib/libggml-htp-v79.so",
       "licenseConcluded": "NOASSERTION",
@@ -3173,14 +3117,14 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...pkg-snapdragon-lib-libggml-htp-v81.so-58278787fbddcae6",
+      "SPDXID": "SPDXRef-File-...pkg-snapdragon-lib-libggml-htp-v81.so-4b2ac82498e6c790",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/lib/libggml-htp-v81.so",
       "licenseConcluded": "NOASSERTION",
@@ -3189,30 +3133,30 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...pkg-snapdragon-lib-libggml.so.0.13.1-804e08816eadc322",
+      "SPDXID": "SPDXRef-File-...pkg-snapdragon-lib-libggml.so.0.15.3-e7b680c5ed6a3f74",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
-      "fileName": "opt/pkg-snapdragon/lib/libggml.so.0.13.1",
+      "fileName": "opt/pkg-snapdragon/lib/libggml.so.0.15.3",
       "licenseConcluded": "NOASSERTION",
       "licenseInfoInFiles": [
         "NOASSERTION"
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...lib-libllama-batched-bench-impl.so-a255e9961cef04e3",
+      "SPDXID": "SPDXRef-File-...lib-libllama-batched-bench-impl.so-311082c44a737115",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/lib/libllama-batched-bench-impl.so",
       "licenseConcluded": "NOASSERTION",
@@ -3221,14 +3165,14 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...lib-libllama-bench-impl.so-5eaa9e8fc76b221a",
+      "SPDXID": "SPDXRef-File-...lib-libllama-bench-impl.so-afd6b05947c02b7c",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/lib/libllama-bench-impl.so",
       "licenseConcluded": "NOASSERTION",
@@ -3237,14 +3181,14 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...lib-libllama-cli-impl.so-2ef6ecb1de7d38f5",
+      "SPDXID": "SPDXRef-File-...lib-libllama-cli-impl.so-98f15e8d0d3db00b",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/lib/libllama-cli-impl.so",
       "licenseConcluded": "NOASSERTION",
@@ -3253,30 +3197,30 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...lib-libllama-common.so.0.0.9508-314a099f081c5fba",
+      "SPDXID": "SPDXRef-File-...lib-libllama-common.so.0.0.9868-3626a943630be758",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
-      "fileName": "opt/pkg-snapdragon/lib/libllama-common.so.0.0.9508",
+      "fileName": "opt/pkg-snapdragon/lib/libllama-common.so.0.0.9868",
       "licenseConcluded": "NOASSERTION",
       "licenseInfoInFiles": [
         "NOASSERTION"
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...lib-libllama-completion-impl.so-ad7db91fec1af646",
+      "SPDXID": "SPDXRef-File-...lib-libllama-completion-impl.so-873e7a55eb43ce28",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/lib/libllama-completion-impl.so",
       "licenseConcluded": "NOASSERTION",
@@ -3285,14 +3229,14 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...lib-libllama-fit-params-impl.so-dbba836cf3dd3a69",
+      "SPDXID": "SPDXRef-File-...lib-libllama-fit-params-impl.so-1a1b069dec7ba5ef",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/lib/libllama-fit-params-impl.so",
       "licenseConcluded": "NOASSERTION",
@@ -3301,14 +3245,14 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...lib-libllama-perplexity-impl.so-aba6b736052aba2e",
+      "SPDXID": "SPDXRef-File-...lib-libllama-perplexity-impl.so-1312405fe7e1d2f8",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/lib/libllama-perplexity-impl.so",
       "licenseConcluded": "NOASSERTION",
@@ -3317,14 +3261,14 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...lib-libllama-quantize-impl.so-3787b0591c078564",
+      "SPDXID": "SPDXRef-File-...lib-libllama-quantize-impl.so-ac376c5f440d4c42",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/lib/libllama-quantize-impl.so",
       "licenseConcluded": "NOASSERTION",
@@ -3333,14 +3277,14 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...lib-libllama-server-impl.so-64bc2d54c9d2f408",
+      "SPDXID": "SPDXRef-File-...lib-libllama-server-impl.so-5d6e13bc146347b2",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
       "fileName": "opt/pkg-snapdragon/lib/libllama-server-impl.so",
       "licenseConcluded": "NOASSERTION",
@@ -3349,32 +3293,32 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...lib-libllama.so.0.0.9508-c975b00b631d3ca3",
+      "SPDXID": "SPDXRef-File-...lib-libllama.so.0.0.9868-c4e53fccf24ad5f2",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
-      "fileName": "opt/pkg-snapdragon/lib/libllama.so.0.0.9508",
+      "fileName": "opt/pkg-snapdragon/lib/libllama.so.0.0.9868",
       "licenseConcluded": "NOASSERTION",
       "licenseInfoInFiles": [
         "NOASSERTION"
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...pkg-snapdragon-lib-libmtmd.so.0.0.9508-a28df431304e1827",
+      "SPDXID": "SPDXRef-File-...pkg-snapdragon-lib-libmtmd.so.0.0.9868-b5c5b9a69e4cbdb0",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:e69905217955eabe00e2c2c4e64576d3985b4efa3f130a2cf60e1c408db2fa15",
+      "comment": "layerID: sha256:0641067641b605e97d2be7afef3176303aa4d1260e2bf7b34b4c8e79a87ccbd9",
       "copyrightText": "NOASSERTION",
-      "fileName": "opt/pkg-snapdragon/lib/libmtmd.so.0.0.9508",
+      "fileName": "opt/pkg-snapdragon/lib/libmtmd.so.0.0.9868",
       "licenseConcluded": "NOASSERTION",
       "licenseInfoInFiles": [
         "NOASSERTION"
@@ -108641,7 +108585,7 @@
       "versionInfo": "9.4-3ubuntu6.2"
     },
     {
-      "SPDXID": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4",
+      "SPDXID": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77",
       "copyrightText": "NOASSERTION",
       "downloadLocation": "NOASSERTION",
       "externalRefs": [
@@ -108705,7 +108649,7 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "name": "cross-toolchain-base",
-      "sourceInfo": "acquired package info from DPKG DB: /opt/pkg-snapdragon/bin/export-graph-ops, /opt/pkg-snapdragon/bin/llama, /opt/pkg-snapdragon/bin/llama-batched, /opt/pkg-snapdragon/bin/llama-batched-bench, /opt/pkg-snapdragon/bin/llama-bench, /opt/pkg-snapdragon/bin/llama-cli, /opt/pkg-snapdragon/bin/llama-completion, /opt/pkg-snapdragon/bin/llama-convert-llama2c-to-ggml, /opt/pkg-snapdragon/bin/llama-cvector-generator, /opt/pkg-snapdragon/bin/llama-debug, /opt/pkg-snapdragon/bin/llama-debug-template-parser, /opt/pkg-snapdragon/bin/llama-diffusion-cli, /opt/pkg-snapdragon/bin/llama-embedding, /opt/pkg-snapdragon/bin/llama-eval-callback, /opt/pkg-snapdragon/bin/llama-export-lora, /opt/pkg-snapdragon/bin/llama-finetune, /opt/pkg-snapdragon/bin/llama-fit-params, /opt/pkg-snapdragon/bin/llama-gen-docs, /opt/pkg-snapdragon/bin/llama-gguf, /opt/pkg-snapdragon/bin/llama-gguf-hash, /opt/pkg-snapdragon/bin/llama-gguf-split, /opt/pkg-snapdragon/bin/llama-idle, /opt/pkg-snapdragon/bin/llama-imatrix, /opt/pkg-snapdragon/bin/llama-lookahead, /opt/pkg-snapdragon/bin/llama-lookup, /opt/pkg-snapdragon/bin/llama-lookup-create, /opt/pkg-snapdragon/bin/llama-lookup-merge, /opt/pkg-snapdragon/bin/llama-lookup-stats, /opt/pkg-snapdragon/bin/llama-mtmd-cli, /opt/pkg-snapdragon/bin/llama-parallel, /opt/pkg-snapdragon/bin/llama-passkey, /opt/pkg-snapdragon/bin/llama-perplexity, /opt/pkg-snapdragon/bin/llama-quantize, /opt/pkg-snapdragon/bin/llama-results, /opt/pkg-snapdragon/bin/llama-retrieval, /opt/pkg-snapdragon/bin/llama-server, /opt/pkg-snapdragon/bin/llama-simple, /opt/pkg-snapdragon/bin/llama-simple-chat, /opt/pkg-snapdragon/bin/llama-speculative, /opt/pkg-snapdragon/bin/llama-speculative-simple, /opt/pkg-snapdragon/bin/llama-template-analysis, /opt/pkg-snapdragon/bin/llama-tokenize, /opt/pkg-snapdragon/bin/llama-tts",
+      "sourceInfo": "acquired package info from DPKG DB: /opt/pkg-snapdragon/bin/llama, /opt/pkg-snapdragon/bin/llama-batched, /opt/pkg-snapdragon/bin/llama-batched-bench, /opt/pkg-snapdragon/bin/llama-bench, /opt/pkg-snapdragon/bin/llama-cli, /opt/pkg-snapdragon/bin/llama-completion, /opt/pkg-snapdragon/bin/llama-convert-llama2c-to-ggml, /opt/pkg-snapdragon/bin/llama-cvector-generator, /opt/pkg-snapdragon/bin/llama-debug, /opt/pkg-snapdragon/bin/llama-debug-template-parser, /opt/pkg-snapdragon/bin/llama-diffusion-cli, /opt/pkg-snapdragon/bin/llama-embedding, /opt/pkg-snapdragon/bin/llama-eval-callback, /opt/pkg-snapdragon/bin/llama-export-lora, /opt/pkg-snapdragon/bin/llama-finetune, /opt/pkg-snapdragon/bin/llama-fit-params, /opt/pkg-snapdragon/bin/llama-gen-docs, /opt/pkg-snapdragon/bin/llama-gguf, /opt/pkg-snapdragon/bin/llama-gguf-hash, /opt/pkg-snapdragon/bin/llama-gguf-split, /opt/pkg-snapdragon/bin/llama-idle, /opt/pkg-snapdragon/bin/llama-imatrix, /opt/pkg-snapdragon/bin/llama-lookahead, /opt/pkg-snapdragon/bin/llama-lookup, /opt/pkg-snapdragon/bin/llama-lookup-create, /opt/pkg-snapdragon/bin/llama-lookup-merge, /opt/pkg-snapdragon/bin/llama-lookup-stats, /opt/pkg-snapdragon/bin/llama-mtmd-cli, /opt/pkg-snapdragon/bin/llama-parallel, /opt/pkg-snapdragon/bin/llama-passkey, /opt/pkg-snapdragon/bin/llama-perplexity, /opt/pkg-snapdragon/bin/llama-quantize, /opt/pkg-snapdragon/bin/llama-results, /opt/pkg-snapdragon/bin/llama-retrieval, /opt/pkg-snapdragon/bin/llama-server, /opt/pkg-snapdragon/bin/llama-simple, /opt/pkg-snapdragon/bin/llama-simple-chat, /opt/pkg-snapdragon/bin/llama-speculative, /opt/pkg-snapdragon/bin/llama-speculative-simple, /opt/pkg-snapdragon/bin/llama-template-analysis, /opt/pkg-snapdragon/bin/llama-tokenize, /opt/pkg-snapdragon/bin/llama-tts",
       "supplier": "NOASSERTION",
       "versionInfo": "77"
     },
@@ -114578,7 +114522,7 @@
       "checksums": [
         {
           "algorithm": "SHA256",
-          "checksumValue": "89727f65e44d559219d3c945b86457ba056eb0c49d6783582e9920b8d139a2cd"
+          "checksumValue": "b130e71fc195c2208956c23df1cefb2c3fd4424f4affeed1a331b2cd6e6c2aa9"
         }
       ],
       "copyrightText": "NOASSERTION",
@@ -114586,7 +114530,7 @@
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:oci/ghcr.io%2Farduino%2Fapp-bricks%2Fllamacpp-npu-runner@sha256%3A89727f65e44d559219d3c945b86457ba056eb0c49d6783582e9920b8d139a2cd?arch=arm64&tag=0.11.1",
+          "referenceLocator": "pkg:oci/ghcr.io%2Farduino%2Fapp-bricks%2Fllamacpp-npu-runner@sha256%3Ab130e71fc195c2208956c23df1cefb2c3fd4424f4affeed1a331b2cd6e6c2aa9?arch=arm64&tag=0.11.2",
           "referenceType": "purl"
         }
       ],
@@ -114596,7 +114540,7 @@
       "name": "ghcr.io/arduino/app-bricks/llamacpp-npu-runner",
       "primaryPackagePurpose": "CONTAINER",
       "supplier": "NOASSERTION",
-      "versionInfo": "0.11.1"
+      "versionInfo": "0.11.2"
     }
   ],
   "relationships": [
@@ -135831,17 +135775,17 @@
       "spdxElementId": "SPDXRef-Package-deb-libblkid1-2cb53d6b247adb0f"
     },
     {
+      "relatedSpdxElement": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77",
+      "relationshipType": "DEPENDENCY_OF",
+      "spdxElementId": "SPDXRef-Package-deb-libgcc-s1-310f2090a6c8c8e3"
+    },
+    {
       "relatedSpdxElement": "SPDXRef-Package-deb-qairt-libs-4aad578fdf6849b0",
       "relationshipType": "DEPENDENCY_OF",
       "spdxElementId": "SPDXRef-Package-deb-libgcc-s1-310f2090a6c8c8e3"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-deb-libapt-pkg6.0t64-5d7551c5054f015c",
-      "relationshipType": "DEPENDENCY_OF",
-      "spdxElementId": "SPDXRef-Package-deb-libgcc-s1-310f2090a6c8c8e3"
-    },
-    {
-      "relatedSpdxElement": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4",
       "relationshipType": "DEPENDENCY_OF",
       "spdxElementId": "SPDXRef-Package-deb-libgcc-s1-310f2090a6c8c8e3"
     },
@@ -136116,6 +136060,11 @@
       "spdxElementId": "SPDXRef-Package-deb-libc6-78213a0bee0a8eb7"
     },
     {
+      "relatedSpdxElement": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77",
+      "relationshipType": "DEPENDENCY_OF",
+      "spdxElementId": "SPDXRef-Package-deb-libc6-78213a0bee0a8eb7"
+    },
+    {
       "relatedSpdxElement": "SPDXRef-Package-deb-diffutils-0aaf037edc13cb8b",
       "relationshipType": "DEPENDENCY_OF",
       "spdxElementId": "SPDXRef-Package-deb-libc6-78213a0bee0a8eb7"
@@ -136297,11 +136246,6 @@
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-deb-libgmp10-6ce79255ef2e90df",
-      "relationshipType": "DEPENDENCY_OF",
-      "spdxElementId": "SPDXRef-Package-deb-libc6-78213a0bee0a8eb7"
-    },
-    {
-      "relatedSpdxElement": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4",
       "relationshipType": "DEPENDENCY_OF",
       "spdxElementId": "SPDXRef-Package-deb-libc6-78213a0bee0a8eb7"
     },
@@ -137051,17 +136995,17 @@
       "spdxElementId": "SPDXRef-Package-deb-python3-setuptools-whl-c4efc37ba8e6101d"
     },
     {
+      "relatedSpdxElement": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77",
+      "relationshipType": "DEPENDENCY_OF",
+      "spdxElementId": "SPDXRef-Package-deb-libstdc--6-c87e403e3baa810b"
+    },
+    {
       "relatedSpdxElement": "SPDXRef-Package-deb-qairt-libs-4aad578fdf6849b0",
       "relationshipType": "DEPENDENCY_OF",
       "spdxElementId": "SPDXRef-Package-deb-libstdc--6-c87e403e3baa810b"
     },
     {
       "relatedSpdxElement": "SPDXRef-Package-deb-libapt-pkg6.0t64-5d7551c5054f015c",
-      "relationshipType": "DEPENDENCY_OF",
-      "spdxElementId": "SPDXRef-Package-deb-libstdc--6-c87e403e3baa810b"
-    },
-    {
-      "relatedSpdxElement": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4",
       "relationshipType": "DEPENDENCY_OF",
       "spdxElementId": "SPDXRef-Package-deb-libstdc--6-c87e403e3baa810b"
     },
@@ -137333,6 +137277,258 @@
       "relatedSpdxElement": "SPDXRef-File-usr-share-doc-libexpat1-copyright-d82d1302fe1cb4dc",
       "relationshipType": "OTHER",
       "spdxElementId": "SPDXRef-Package-deb-libexpat1-060b6417145c67c8"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-gguf-02cb0f0b2dda5f68",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-idle-0d70b3c3cae964a0",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-lookahead-11d1d6db45d087da",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-lookup-1a1618a92ddde308",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-server-1cb36d00b6f6f0cd",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-...pkg-snapdragon-bin-llama-batched-bench-2661ed5419870b1d",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-...bin-llama-cvector-generator-3be5d23128bc20e9",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-...pkg-snapdragon-bin-llama-simple-chat-4da157fc6ef80d9f",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-retrieval-5290663800f83867",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-simple-603a1e495e3fac8c",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-...bin-llama-debug-template-parser-63a88e925339db05",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-debug-7540d314ad900f5b",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-mtmd-cli-7d93cd35892a22c7",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-embedding-8a99a2c5cf43392c",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-bench-8dfa719965d6857c",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-...pkg-snapdragon-bin-llama-export-lora-8fa1d533e89c6c88",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-tokenize-9030fc91e48e4e6b",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-...pkg-snapdragon-bin-llama-lookup-create-9da490f8b5936328",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-quantize-9fc0fbff84d64d5c",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-batched-9fedfc94131d0c4d",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-...pkg-snapdragon-bin-llama-lookup-merge-a20e6604c8a1638d",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-results-a62dff54a232340a",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-...pkg-snapdragon-bin-llama-diffusion-cli-a74aa2dd6f1d1352",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-a869a528fd8518d9",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-cli-abe3e94d8049e610",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-gen-docs-b042d0401dd5a2ec",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-parallel-b2a0d19d85db6520",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-gguf-hash-b753822f8e418ee4",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-...pkg-snapdragon-bin-llama-lookup-stats-b9e5227e9c24e0ea",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-passkey-c24d7183db8e8c72",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-...pkg-snapdragon-bin-llama-gguf-split-c612cfa24047e3ce",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-...bin-llama-convert-llama2c-to-ggml-ca3489073f3eb02e",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-...bin-llama-speculative-simple-caddb289899b69e4",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-imatrix-d9f564e800167eb7",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-finetune-e7719c8cc115ced0",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-...pkg-snapdragon-bin-llama-fit-params-ed76be72e1eaa46f",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-...pkg-snapdragon-bin-llama-eval-callback-ee7ce72aa6f2aa39",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-...bin-llama-template-analysis-f458185f7c7d8e09",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-...pkg-snapdragon-bin-llama-perplexity-f45f04d534669044",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-tts-f9ef3f7331b5e9f5",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-...pkg-snapdragon-bin-llama-completion-fb0648bc9d2fe137",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "relatedSpdxElement": "SPDXRef-File-...pkg-snapdragon-bin-llama-speculative-fbbf80838f4afcc5",
+      "relationshipType": "OTHER",
+      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77"
     },
     {
       "comment": "evident-by: indicates the package's existence is evident by the given file",
@@ -138803,264 +138999,6 @@
       "relatedSpdxElement": "SPDXRef-File-usr-share-doc-libgmp10-copyright-d875932d77d85888",
       "relationshipType": "OTHER",
       "spdxElementId": "SPDXRef-Package-deb-libgmp10-6ce79255ef2e90df"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-cli-032d32ede4dc8466",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-...pkg-snapdragon-bin-llama-lookup-merge-0652730e5a3c4f7f",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-07bf9cbf1a2b217b",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-...bin-llama-speculative-simple-0b4d411ced6a617a",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-...pkg-snapdragon-bin-llama-completion-0fbdd2fc5e37fb55",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-...bin-llama-template-analysis-17222859ee5fd097",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-retrieval-25112927f3f35f59",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-debug-26d8e89a06dfe261",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-bench-2dd274c01753ad62",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-mtmd-cli-31515f570bb190a5",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-...bin-llama-convert-llama2c-to-ggml-32d0f2ba39676648",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-parallel-330cb9be5f8832a2",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-results-3387d676f3930f5c",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-...pkg-snapdragon-bin-llama-eval-callback-3519a23424ae87c3",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-finetune-40509c05aae77a6a",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-simple-4d010508f38e31e2",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-...pkg-snapdragon-bin-llama-export-lora-4dcb1ea6ef3f3b32",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-...pkg-snapdragon-bin-llama-lookup-stats-51ee4e3e045e96f8",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-...pkg-snapdragon-bin-llama-simple-chat-551f68fee45be5a9",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-lookup-5649b226a741ead2",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-...pkg-snapdragon-bin-export-graph-ops-5842fcdacec8ab40",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-gguf-5abd79b4008d7d12",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-imatrix-62da01662b246315",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-...pkg-snapdragon-bin-llama-diffusion-cli-6ab996d19d122068",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-...bin-llama-cvector-generator-6ca510e7b17a8267",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-tts-6dfb20b72599292b",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-...pkg-snapdragon-bin-llama-batched-bench-7c6b1e5739363f2b",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-server-a73a442e96ce4e3f",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-lookahead-ae81a53e1d1aa808",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-...pkg-snapdragon-bin-llama-lookup-create-afcea63a292cd27e",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-passkey-bc25c83ade90f9e0",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-idle-cb39acb78dba949e",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-quantize-d1d79cb6cc236bf6",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-...pkg-snapdragon-bin-llama-gguf-split-e1d07adca39d22b8",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-...pkg-snapdragon-bin-llama-fit-params-e959cc4e8348e16d",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-embedding-eb7bff36054d9426",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-...pkg-snapdragon-bin-llama-perplexity-ec93f292e5f18dc6",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-gen-docs-eee383ce77f8d6e6",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-gguf-hash-ef9d945957060a06",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-...bin-llama-debug-template-parser-f59ef6fa5d5305a7",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-...pkg-snapdragon-bin-llama-speculative-fd84c5cf3f900eff",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-batched-fde71377dffd0e13",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
-    },
-    {
-      "comment": "evident-by: indicates the package's existence is evident by the given file",
-      "relatedSpdxElement": "SPDXRef-File-opt-pkg-snapdragon-bin-llama-tokenize-fe41455dc7d446c1",
-      "relationshipType": "OTHER",
-      "spdxElementId": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4"
     },
     {
       "comment": "evident-by: indicates the package's existence is evident by the given file",
@@ -141411,7 +141349,7 @@
       "spdxElementId": "SPDXRef-DocumentRoot-Image-ghcr.io-arduino-app-bricks-llamacpp-npu-runner"
     },
     {
-      "relatedSpdxElement": "SPDXRef-Package-deb-cross-toolchain-base-75a8a9850770f7e4",
+      "relatedSpdxElement": "SPDXRef-Package-deb-cross-toolchain-base-0869e65319fd4c77",
       "relationshipType": "CONTAINS",
       "spdxElementId": "SPDXRef-DocumentRoot-Image-ghcr.io-arduino-app-bricks-llamacpp-npu-runner"
     },
