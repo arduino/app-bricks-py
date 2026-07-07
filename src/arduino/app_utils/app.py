@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import signal
+import sys
 import threading
 from collections import deque
 import time
@@ -113,8 +114,11 @@ class AppController:
             logger.info("Running in framework-managed mode (process lifecycle handled externally)")
             return
 
-        self.loop(user_loop)
+        exit_code = self.loop(user_loop)
         self._shutdown()
+
+        if exit_code:
+            sys.exit(exit_code)
 
     def _shutdown(self):
         """Performs a clean shutdown of all bricks."""
@@ -145,7 +149,7 @@ class AppController:
 
         return False
 
-    def loop(self, user_loop: callable = None):
+    def loop(self, user_loop: callable = None) -> int:
         """This method keeps the application running, blocking until a KeyboardInterrupt (Ctrl+C) occurs.
 
         If a user_loop callable is provided, it will be executed inside an infinite loop and
@@ -153,16 +157,23 @@ class AppController:
 
         Args:
             user_loop (callable, optional): A user-defined function to run inside an infinite loop.
+
+        Returns:
+            int: The exit code describing why the loop terminated:
+                - 0 for a clean termination
+                - 128 + signal number for termination signals
+                - a code < 128 for other errors
         """
 
-        class SigtermReceived(BaseException):
-            pass
+        class SignalReceived(BaseException):
+            def __init__(self, signum):
+                self.signum = signum
 
-        def handle_sigterm(signum, frame):
-            raise SigtermReceived
+        def handle_signal(signum, frame):
+            raise SignalReceived(signum)
 
         if threading.current_thread() is threading.main_thread():
-            signal.signal(signal.SIGTERM, handle_sigterm)
+            signal.signal(signal.SIGTERM, handle_signal)
 
         try:
             if user_loop:
@@ -173,10 +184,16 @@ class AppController:
                     time.sleep(10)
         except StopIteration:
             logger.debug("StopIteration received from user loop")
+            return 0
         except KeyboardInterrupt:
             logger.debug("KeyboardInterrupt received")
-        except SigtermReceived:
-            logger.debug("SIGTERM received")
+            return 128 + signal.SIGINT
+        except SignalReceived as signal_received:
+            logger.debug(f"Termination signal {signal_received.signum} received")
+            return 128 + signal_received.signum
+        except Exception:
+            logger.exception("Unhandled exception in application loop")
+            return 1
 
     def _start_managed_bricks(self):
         with self._app_lock:
