@@ -1,7 +1,7 @@
 {
   "SPDXID": "SPDXRef-DOCUMENT",
   "creationInfo": {
-    "created": "2026-06-30T14:48:47.007691Z",
+    "created": "2026-07-07T07:26:00.008554Z",
     "creators": [
       "Tool: arduino-sbom-delta",
       "Organization: Arduino SRL"
@@ -11,12 +11,12 @@
   "documentDescribes": [
     "SPDXRef-Container"
   ],
-  "documentNamespace": "https://arduino.cc/sbom/delta/llamacpp-runner-0.11.1-20260630T144847Z",
+  "documentNamespace": "https://arduino.cc/sbom/delta/llamacpp-runner-0.11.2-20260707T072600Z",
   "name": "llamacpp-runner",
   "packages": [
     {
       "SPDXID": "SPDXRef-Container",
-      "comment": "Delta SBOM for ghcr.io/arduino/app-bricks/llamacpp-runner:0.11.1 \u2014 changes relative to base image ghcr.io/arduino/app-bricks/python-slim:0.11.1",
+      "comment": "Delta SBOM for ghcr.io/arduino/app-bricks/llamacpp-runner:0.11.2 \u2014 changes relative to base image ghcr.io/arduino/app-bricks/python-slim:0.11.2",
       "copyrightText": "NOASSERTION",
       "downloadLocation": "NOASSERTION",
       "filesAnalyzed": false,
@@ -28,7 +28,7 @@
       "SPDXID": "SPDXRef-libgomp1-deb",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:48:47.007691Z",
+          "annotationDate": "2026-07-07T07:26:00.008554Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"added\"}"
@@ -53,7 +53,7 @@
       "SPDXID": "SPDXRef-gcc-14-deb",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:48:47.007691Z",
+          "annotationDate": "2026-07-07T07:26:00.008554Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"removed\"}"
