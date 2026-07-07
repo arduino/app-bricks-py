@@ -63,7 +63,6 @@ class ArduinoBrick:
         self.readme_file: Optional[str] = self.get_readme_file()
         self.require_container: bool = self.compose_file is not None
         self.model_name: str = model_name
-        self.require_model: bool = model_name != ""
         self.category = category
         self.mount_devices_into_container: bool = mount_devices_into_container
         self.requires_display: Optional[str] = requires_display
@@ -81,12 +80,11 @@ class ArduinoBrick:
             "name": self.name,
             "description": self.brick_description,
             "require_container": self.require_container,
-            "require_model": self.require_model,
             "mount_devices_into_container": self.mount_devices_into_container,
             "ports": self.ports,
             "category": self.category,
         }
-        if self.require_model:
+        if self.model_name and self.model_name != "":
             out_dict["model_name"] = self.model_name
         if self.requires_display:
             out_dict["requires_display"] = self.requires_display
