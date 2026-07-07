@@ -8,7 +8,7 @@ This module reimplements the public surface that used to come from the
 ``arduino_iot_cloud`` library (``Location``, ``Color``, ``ColoredLight``,
 ``DimmedLight``, ``Schedule``) without depending on it. The brick no longer
 speaks MQTT itself: connectivity, provisioning and the cloud handshake are
-owned by the ``arduino-app-cloud`` daemon, and the brick exchanges variable
+owned by the ``arduino-cloud-connector`` daemon, and the brick exchanges variable
 values with it over a localhost REST + SSE API. These objects are therefore
 pure value holders plus the per-variable conflict-resolution logic.
 

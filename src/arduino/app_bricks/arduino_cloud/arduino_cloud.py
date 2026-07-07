@@ -18,10 +18,10 @@ logger = Logger("ArduinoCloud")
 
 # The daemon serves its API on a UNIX socket (bind-mounted into the app
 # container), so the brick talks to it over the socket by default — no network
-# exposure. Override the whole URL with ARDUINO_CLOUD_DAEMON_URL (e.g. an
+# exposure. Override the whole URL with ARDUINO_CLOUD_CONNECTOR_URL (e.g. an
 # http://127.0.0.1:5683 endpoint on the host), or just the socket path with
-# ARDUINO_CLOUD_DAEMON_SOCKET.
-_DEFAULT_DAEMON_SOCKET = "/run/arduino-app-cloud/daemon.sock"
+# ARDUINO_CLOUD_CONNECTOR_SOCKET.
+_DEFAULT_DAEMON_SOCKET = "/run/arduino-cloud-connector/daemon.sock"
 _LOOP_INTERVAL = 0.1  # seconds between callback-poll passes
 
 # Sentinel for the deprecated constructor arguments: lets us tell "not passed"
@@ -34,7 +34,7 @@ class ArduinoCloud:
     """Arduino Cloud client for exchanging variables with the Arduino Cloud daemon.
 
     Connectivity, provisioning and the cloud handshake are owned by the
-    ``arduino-app-cloud`` daemon running on the board; this brick exchanges
+    ``arduino-cloud-connector`` daemon running on the board; this brick exchanges
     variable values with it over its localhost REST/SSE API. The public
     interface (constructor, ``register``, attribute get/set, the ``on_write`` /
     ``on_read`` / ``on_run`` callbacks and the re-exported ``Location`` /
@@ -64,17 +64,17 @@ class ArduinoCloud:
                           cloud broker on the brick's behalf.
             port (int): Deprecated and ignored (see server).
             daemon_url (str, optional): Base URL of the local daemon REST API.
-                If omitted, uses the ARDUINO_CLOUD_DAEMON_URL environment
+                If omitted, uses the ARDUINO_CLOUD_CONNECTOR_URL environment
                 variable, otherwise the daemon's UNIX socket
-                (http+unix://<ARDUINO_CLOUD_DAEMON_SOCKET or
-                /run/arduino-app-cloud/daemon.sock>).
+                (http+unix://<ARDUINO_CLOUD_CONNECTOR_SOCKET or
+                /run/arduino-cloud-connector/daemon.sock>).
         """
         legacy = {"device_id": device_id, "secret": secret, "server": server, "port": port}
         if passed := [name for name, value in legacy.items() if value is not _DEPRECATED]:
             warnings.warn(
                 f"ArduinoCloud argument(s) {passed} are deprecated and ignored: device "
                 "identity, credentials and broker connectivity are now managed by the "
-                "arduino-app-cloud daemon. Pass daemon_url to reach a non-default daemon.",
+                "arduino-cloud-connector daemon. Pass daemon_url to reach a non-default daemon.",
                 DeprecationWarning,
                 stacklevel=2,
             )
@@ -89,9 +89,9 @@ class ArduinoCloud:
 
     @staticmethod
     def _default_daemon_url() -> str:
-        if url := os.getenv("ARDUINO_CLOUD_DAEMON_URL"):
+        if url := os.getenv("ARDUINO_CLOUD_CONNECTOR_URL"):
             return url
-        socket_path = os.getenv("ARDUINO_CLOUD_DAEMON_SOCKET", _DEFAULT_DAEMON_SOCKET)
+        socket_path = os.getenv("ARDUINO_CLOUD_CONNECTOR_SOCKET", _DEFAULT_DAEMON_SOCKET)
         return "http+unix://" + quote(socket_path, safe="")
 
     # ── lifecycle (managed by the App framework) ────────────────────────────────

@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""HTTP transport to the arduino-app-cloud daemon's localhost REST/SSE API.
+"""HTTP transport to the arduino-cloud-connector daemon's localhost REST/SSE API.
 
 The daemon owns the MQTT connection to Arduino Cloud; the brick only exchanges
 variable values with it over two endpoints (RFC-13 §8):
@@ -105,7 +105,7 @@ class DaemonClient:
                 "ArduinoCloud: PUT '%s' timed out after %.0fs (consecutive failure #%d) — "
                 "the daemon accepted the request but never responded, so it is likely "
                 "blocked (e.g. wedged on the cloud broker connection). Values are NOT "
-                "reaching the cloud; restarting arduino-app-cloud clears it.",
+                "reaching the cloud; restarting arduino-cloud-connector clears it.",
                 name,
                 _PUT_TIMEOUT,
                 self._put_fail_count,
@@ -115,7 +115,7 @@ class DaemonClient:
             self._put_fail_count += 1
             logger.warning(
                 "ArduinoCloud: cannot reach the daemon at %s to send '%s' (consecutive "
-                "failure #%d): %s — is arduino-app-cloud running and its socket mounted?",
+                "failure #%d): %s — is arduino-cloud-connector running and its socket mounted?",
                 self._base,
                 name,
                 self._put_fail_count,

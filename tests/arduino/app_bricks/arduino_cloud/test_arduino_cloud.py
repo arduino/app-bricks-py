@@ -197,16 +197,16 @@ def test_no_legacy_args_is_silent(fake_client):
 
 
 def test_default_daemon_url_is_unix_socket(monkeypatch):
-    monkeypatch.delenv("ARDUINO_CLOUD_DAEMON_URL", raising=False)
-    monkeypatch.delenv("ARDUINO_CLOUD_DAEMON_SOCKET", raising=False)
+    monkeypatch.delenv("ARDUINO_CLOUD_CONNECTOR_URL", raising=False)
+    monkeypatch.delenv("ARDUINO_CLOUD_CONNECTOR_SOCKET", raising=False)
     url = ArduinoCloud._default_daemon_url()
     assert url.startswith("http+unix://")
     assert "daemon.sock" in url
 
 
 def test_daemon_client_mounts_unix_adapter():
-    client = DaemonClient("http+unix://%2Frun%2Farduino-app-cloud%2Fdaemon.sock")
-    assert client._socket_path == "/run/arduino-app-cloud/daemon.sock"
+    client = DaemonClient("http+unix://%2Frun%2Farduino-cloud-connector%2Fdaemon.sock")
+    assert client._socket_path == "/run/arduino-cloud-connector/daemon.sock"
     assert "http+unix://" in client._session.adapters
 
 

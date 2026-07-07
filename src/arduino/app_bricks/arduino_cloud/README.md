@@ -4,7 +4,7 @@ This Brick provides integration with the Arduino Cloud platform, enabling IoT de
 
 ## Overview
 
-The Arduino Cloud Brick lets your application exchange variable values with Arduino Cloud. It does **not** connect to the cloud itself: connectivity, device provisioning and the cloud handshake are handled by the local **arduino-app-cloud daemon** running on the board. The Brick talks to that daemon over its localhost REST/SSE API, so your application code stays simple and focused on reading and writing cloud variables.
+The Arduino Cloud Brick lets your application exchange variable values with Arduino Cloud. It does **not** connect to the cloud itself: connectivity, device provisioning and the cloud handshake are handled by the local **arduino-cloud-connector daemon** running on the board. The Brick talks to that daemon over its localhost REST/SSE API, so your application code stays simple and focused on reading and writing cloud variables.
 
 ## Features
 
@@ -16,9 +16,9 @@ The Arduino Cloud Brick lets your application exchange variable values with Ardu
 
 ## Prerequisites
 
-The board must be provisioned and associated with a Thing in Arduino Cloud, and the `arduino-app-cloud` daemon must be running locally. The daemon owns the device identity and credentials, so the application no longer needs to supply a `device_id` / `secret` to exchange variables.
+The board must be provisioned and associated with a Thing in Arduino Cloud, and the `arduino-cloud-connector` daemon must be running locally. The daemon owns the device identity and credentials, so the application no longer needs to supply a `device_id` / `secret` to exchange variables.
 
-By default the Brick connects to the daemon at `http://127.0.0.1:5683`. Override it with the `ARDUINO_CLOUD_DAEMON_URL` environment variable (or `ARDUINO_CLOUD_DAEMON__PORT` to change just the port), or by passing `daemon_url=...` to the constructor.
+By default the Brick connects to the daemon at `http://127.0.0.1:5683`. Override it with the `ARDUINO_CLOUD_CONNECTOR_URL` environment variable (or `ARDUINO_CLOUD_CONNECTOR__PORT` to change just the port), or by passing `daemon_url=...` to the constructor.
 
 ## Code Example and Usage
 
