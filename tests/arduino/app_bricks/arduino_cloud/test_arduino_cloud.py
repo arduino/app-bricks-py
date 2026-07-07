@@ -22,19 +22,36 @@ from arduino.app_bricks.arduino_cloud import (
     MOST_RECENT_WINS,
 )
 from arduino.app_bricks.arduino_cloud import arduino_cloud as ac_module
-from arduino.app_bricks.arduino_cloud.daemon_client import DaemonClient, parse_timestamp
+from arduino.app_bricks.arduino_cloud.daemon_client import (
+    DaemonClient,
+    parse_timestamp,
+    EVENT_LASTVALUE,
+    EVENT_LASTVALUE_MISSING,
+    EVENT_THING_UNAVAILABLE,
+)
 from arduino.app_bricks.arduino_cloud.objects import CloudObject
 
 _HAS_AF_UNIX = os.name == "posix" and hasattr(socket, "AF_UNIX") and hasattr(socketserver, "UnixStreamServer")
 
 
 class FakeDaemonClient:
-    """In-memory stand-in for DaemonClient: records PUTs and lets tests feed SSE events."""
+    """In-memory stand-in for DaemonClient: records PUTs, serves a configurable
+    initial sync frame (fetch_initial) and lets tests feed live SSE events."""
 
     def __init__(self, base_url=None):
         self.puts = []
         self.handlers = {}
         self._ready = threading.Event()
+        # Per-name first frame returned by fetch_initial; the default is
+        # "thing assigned, no cloud value" (steady) so local values are pushed.
+        self.initial = {}
+        self.default_initial = (EVENT_LASTVALUE_MISSING, {})
+
+    def fetch_initial(self, name, stop_event):
+        event, payload = self.initial.get(name, self.default_initial)
+        frame = {"name": name}
+        frame.update(payload)
+        return (event, frame)
 
     def put_value(self, name, value):
         self.puts.append((name, value))
@@ -48,15 +65,22 @@ class FakeDaemonClient:
         pass
 
     def feed(self, name, value, timestamp="2026-06-22T10:00:00Z", last_value=False):
-        # Wait for the listener thread to register its handler.
+        self.feed_event(
+            name,
+            EVENT_LASTVALUE if last_value else "update",
+            {"name": name, "value": value, "timestamp": timestamp, "last_value": last_value},
+        )
+
+    def feed_event(self, name, event, payload=None):
+        # Wait for the listener thread to register its handler, then dispatch.
         for _ in range(200):
             if name in self.handlers:
                 break
             time.sleep(0.005)
-        self.handlers[name](
-            "lastvalue" if last_value else "update",
-            {"name": name, "value": value, "timestamp": timestamp, "last_value": last_value},
-        )
+        frame = {"name": name}
+        if payload:
+            frame.update(payload)
+        self.handlers[name](event, frame)
 
 
 @pytest.fixture
@@ -105,12 +129,15 @@ def test_most_recent_wins_respects_local_timestamp():
     obj.bind(lambda n, val: pushes.append((n, val)))
     obj.set_local(5)  # stamps a local timestamp = now
     assert pushes == [("v", 5)]
-    # An older cloud value is ignored.
+    # An older cloud value is ignored; the newer local value is re-pushed so the
+    # cloud converges to the device.
     assert obj.apply_cloud(9, cloud_ts=time.time() - 100) is False
     assert obj.value == 5
-    # A newer cloud value wins.
+    assert pushes == [("v", 5), ("v", 5)]
+    # A newer cloud value wins (and is not re-pushed).
     assert obj.apply_cloud(9, cloud_ts=time.time() + 100) is True
     assert obj.value == 9
+    assert pushes == [("v", 5), ("v", 5)]
 
 
 def test_device_wins_repushes_local_and_ignores_cloud():
@@ -137,9 +164,11 @@ def test_invalid_sync_policy_rejected():
 
 def test_setattr_pushes_value(fake_client):
     cloud, client = _make_cloud(fake_client)
+    # Default seed is lastvalue_missing (thing assigned, no cloud value), so the
+    # registered default is pushed up first; then the explicit set pushes True.
     cloud.register("led", value=False)
     cloud.led = True
-    assert client.puts == [("led", True)]
+    assert client.puts == [("led", False), ("led", True)]
     assert cloud.led is True
 
 
@@ -191,6 +220,126 @@ def test_no_legacy_args_is_silent(fake_client):
     with warnings.catch_warnings():
         warnings.simplefilter("error")  # any DeprecationWarning would fail the test
         ArduinoCloud()
+
+
+# ── Synchronous register + sync-frame resolution ─────────────────────────────
+
+
+def test_register_seeds_cloud_value_cloud_wins(fake_client):
+    cloud, client = _make_cloud(fake_client)
+    client.initial["temp"] = (EVENT_LASTVALUE, {"value": 100, "timestamp": "2026-07-07T10:00:00Z", "last_value": True})
+    cloud.register("temp", value=0)  # CLOUD_WINS (default)
+    # The cloud last value wins over the register default, synchronously.
+    assert cloud.temp == 100
+    # The stale default is not pushed up under CLOUD_WINS.
+    assert client.puts == []
+
+
+def test_register_seeds_lastvalue_missing_pushes_local(fake_client):
+    cloud, client = _make_cloud(fake_client)
+    client.initial["temp"] = (EVENT_LASTVALUE_MISSING, {})
+    cloud.register("temp", value=7)
+    # No cloud value: the local default wins and is pushed up.
+    assert cloud.temp == 7
+    assert client.puts == [("temp", 7)]
+
+
+def test_register_without_value_missing_pushes_nothing(fake_client):
+    cloud, client = _make_cloud(fake_client)
+    client.initial["temp"] = (EVENT_LASTVALUE_MISSING, {})
+    cloud.register("temp")  # no default value
+    assert cloud.get("temp") is None
+    assert client.puts == []  # nothing local to assert yet
+
+
+def test_thing_unavailable_defers_writes_until_sync(fake_client):
+    cloud, client = _make_cloud(fake_client)
+    client.initial["temp"] = (EVENT_THING_UNAVAILABLE, {})
+    cloud.register("temp", value=0)
+    cloud.start()
+    try:
+        # No thing assigned yet: writes are kept locally, not pushed.
+        cloud.temp = 42
+        assert client.puts == []
+        assert cloud.temp == 42
+        # Thing arrives with no cloud value → resync lastvalue_missing: the
+        # deferred local value now wins and is pushed up.
+        client.feed_event("temp", EVENT_LASTVALUE_MISSING)
+        assert ("temp", 42) in client.puts
+        assert cloud.temp == 42
+    finally:
+        cloud.stop()
+
+
+def test_cloud_wins_discards_prewrite_on_sync(fake_client):
+    cloud, client = _make_cloud(fake_client)
+    client.initial["temp"] = (EVENT_THING_UNAVAILABLE, {})
+    cloud.register("temp", value=0)  # CLOUD_WINS
+    cloud.start()
+    try:
+        cloud.temp = 42  # pending: kept local, not pushed
+        assert client.puts == []
+        # Thing arrives with a cloud value → CLOUD_WINS: cloud wins, prewrite dropped.
+        client.feed("temp", 100, last_value=True)
+        assert cloud.temp == 100
+        assert client.puts == []  # the stale 42 was never sent
+    finally:
+        cloud.stop()
+
+
+def test_device_wins_sends_local_on_sync(fake_client):
+    cloud, client = _make_cloud(fake_client)
+    client.initial["temp"] = (EVENT_THING_UNAVAILABLE, {})
+    cloud.register("temp", value=7, sync=DEVICE_WINS)
+    cloud.start()
+    try:
+        # Thing arrives with a diverging cloud value → DEVICE_WINS: local wins, pushed.
+        client.feed("temp", 100, last_value=True)
+        assert cloud.temp == 7
+        assert ("temp", 7) in client.puts
+    finally:
+        cloud.stop()
+
+
+def test_fetch_initial_and_put_409_over_tcp():
+    """Exercise the real DaemonClient: fetch_initial parses the first frame and
+    a 409 PUT (thing_unavailable) is handled without raising."""
+    frame = {"name": "temp", "value": 21.5, "timestamp": "2026-07-07T10:00:00Z", "last_value": True}
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_PUT(self):
+            length = int(self.headers.get("Content-Length", 0))
+            self.rfile.read(length)
+            self.send_response(409)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"error":"thing_unavailable"}')
+
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
+            self.wfile.write(f"event: lastvalue\ndata: {json.dumps(frame)}\n\n".encode())
+            self.wfile.flush()
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    port = server.server_address[1]
+
+    client = DaemonClient(f"http://127.0.0.1:{port}")
+    try:
+        event, payload = client.fetch_initial("temp", threading.Event())
+        assert event == EVENT_LASTVALUE
+        assert payload["value"] == 21.5
+        # A 409 PUT must not raise (it is logged and swallowed).
+        client.put_value("temp", 5)
+    finally:
+        client.close()
+        server.shutdown()
+        server.server_close()
 
 
 # ── UNIX-socket transport ────────────────────────────────────────────────────

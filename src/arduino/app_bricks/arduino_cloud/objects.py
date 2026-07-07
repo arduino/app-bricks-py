@@ -86,6 +86,7 @@ class CloudObject:
         self._push = None  # set by CloudObject.bind: callable(name, value)
         self._local_ts = None  # epoch secs of the last local change
         self._cloud_ts = None  # epoch secs of the last applied cloud value
+        self._pending = False  # True while no thing is assigned (thing_unavailable)
         self.on_write_scheduled = False
         self.last_poll = 0.0
 
@@ -168,6 +169,12 @@ class CloudObject:
             return
         self._value = value
         self._local_ts = _now()
+        if self._pending:
+            # No thing assigned yet: the daemon would reject the push
+            # (thing_unavailable). Keep the value locally; it is pushed at sync
+            # time according to the policy (lastvalue_missing → always;
+            # DEVICE_WINS / MOST_RECENT_WINS when the local value should win).
+            return
         if self._push is not None:
             self._push(self.name, value)
 
@@ -200,12 +207,25 @@ class CloudObject:
             return False
 
         if self.sync == MOST_RECENT_WINS and self._local_ts is not None and cloud_ts <= self._local_ts:
-            return False  # the local change is newer, keep it
+            # The local change is newer: keep it and push it up so the cloud
+            # converges (guarded on divergence to avoid an echo loop).
+            if self._value is not None and value != self._value and self._push is not None:
+                self._push(self.name, self._value)
+            return False
 
         if value == self._value:
             return False
         self._value = value
         return True
+
+    def apply_missing(self):
+        """Resolve a ``lastvalue_missing`` sync frame: the cloud has no stored
+        value for this variable, so the local value wins and is pushed up so the
+        cloud converges. Applies to every sync policy. No-op if there is no local
+        value to assert yet.
+        """
+        if self._value is not None and self._push is not None:
+            self._push(self.name, self._value)
 
     # ── loop execution ─────────────────────────────────────────────────────────
     def run_sync(self, client):

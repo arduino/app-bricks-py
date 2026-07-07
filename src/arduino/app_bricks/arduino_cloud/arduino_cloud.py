@@ -11,7 +11,13 @@ from urllib.parse import quote
 
 from arduino.app_utils import brick, Logger
 
-from .daemon_client import DaemonClient, parse_timestamp
+from .daemon_client import (
+    DaemonClient,
+    parse_timestamp,
+    EVENT_LASTVALUE,
+    EVENT_LASTVALUE_MISSING,
+    EVENT_THING_UNAVAILABLE,
+)
 from .objects import CloudObject, CLOUD_WINS  # noqa: F401 (CLOUD_WINS re-exported)
 
 logger = Logger("ArduinoCloud")
@@ -147,6 +153,14 @@ class ArduinoCloud:
         aiotobj.bind(self._client.put_value)
         with self._lock:
             self._records[aiotobj.name] = aiotobj
+
+        # Synchronous initial sync: contact the daemon for each leaf's first
+        # frame and resolve the local value per sync policy before returning, so
+        # the variable holds the right value as soon as register() returns.
+        for leaf in aiotobj.leaves():
+            self._seed_leaf(leaf)
+
+        with self._lock:
             if self._started:
                 self._subscribe(aiotobj)
 
@@ -160,6 +174,27 @@ class ArduinoCloud:
         return default if value is None else value
 
     # ── SSE subscription ───────────────────────────────────────────────────────
+    def _seed_leaf(self, leaf: CloudObject):
+        """Synchronously fetch and apply a leaf's first (sync) frame from the
+        daemon, resolving the local value per policy before register() returns.
+
+        Logs and returns on a connection error; the streaming thread (started in
+        start()) will retry and re-seed on connect, so a momentarily unreachable
+        daemon does not lose the variable.
+        """
+        handler = self._make_handler(leaf)
+        try:
+            evt = self._client.fetch_initial(leaf.name, self._stop)
+        except Exception as e:  # noqa: BLE001 - any transport error is non-fatal here
+            logger.error(
+                "ArduinoCloud: initial sync for '%s' failed: %s — keeping local value; will retry when the stream connects",
+                leaf.name,
+                e,
+            )
+            return
+        if evt is not None:
+            handler(*evt)
+
     def _subscribe(self, record: CloudObject):
         """Start one SSE listener thread per scalar leaf of the record."""
         for leaf in record.leaves():
@@ -173,15 +208,49 @@ class ArduinoCloud:
             self._listeners.append(thread)
 
     def _make_handler(self, leaf: CloudObject):
-        """Build the SSE event handler that applies cloud updates for a leaf."""
+        """Build the SSE event handler for a leaf.
 
-        def handle(_event: str, payload: dict):
-            value = payload.get("value")
-            ts = parse_timestamp(payload.get("timestamp"))
-            logger.debug("ArduinoCloud: cloud update for '%s' (event=%s): value=%r ts=%s", leaf.name, _event, value, ts)
+        Dispatches on the event name (see daemon_client): the sync frames
+        (thing_unavailable / lastvalue / lastvalue_missing) resolve the leaf's
+        local value and move it in/out of the pending state; live ``update``
+        events apply cloud changes (and are ignored while pending, since only a
+        sync frame ends the "no thing assigned" state).
+        """
+
+        def handle(event: str, payload: dict):
             with self._lock:
-                applied = leaf.apply_cloud(value, ts)
-                if applied:
+                if event == EVENT_THING_UNAVAILABLE:
+                    if not leaf._pending:
+                        leaf._pending = True
+                        logger.warning(
+                            "ArduinoCloud: '%s' — no thing assigned yet; keeping local value, will sync when the thing becomes available",
+                            leaf.name,
+                        )
+                    return
+
+                if event == EVENT_LASTVALUE_MISSING:
+                    leaf._pending = False
+                    logger.debug("ArduinoCloud: '%s' has no cloud value; local value wins", leaf.name)
+                    leaf.apply_missing()
+                    return
+
+                if event == EVENT_LASTVALUE:
+                    leaf._pending = False
+                    value = payload.get("value")
+                    ts = parse_timestamp(payload.get("timestamp"))
+                    logger.debug("ArduinoCloud: '%s' sync lastvalue=%r ts=%s", leaf.name, value, ts)
+                    if leaf.apply_cloud(value, ts):
+                        leaf._owner.on_write_scheduled = True
+                    return
+
+                # Live update. Ignore while pending: only a sync frame ends the
+                # "no thing assigned" state.
+                if leaf._pending:
+                    return
+                value = payload.get("value")
+                ts = parse_timestamp(payload.get("timestamp"))
+                logger.debug("ArduinoCloud: cloud update for '%s': value=%r ts=%s", leaf.name, value, ts)
+                if leaf.apply_cloud(value, ts):
                     leaf._owner.on_write_scheduled = True
 
         return handle

@@ -10,9 +10,14 @@ variable values with it over two endpoints (RFC-13 §8):
 * ``PUT /v1/variables/{name}`` with body ``{"value": <any>}`` — queue a value
   for ordered delivery to the cloud.
 * ``GET /v1/variables/{name}/events`` — a Server-Sent Events stream. The first
-  event (``event: lastvalue``) replays the variable's current stored value and
-  timestamp; every subsequent change is an ``event: update``. Each event's
-  JSON payload is ``{name, value, timestamp, last_value}``.
+  event is always one of three "sync" events telling the client how to seed its
+  local value: ``thing_unavailable`` (no thing assigned yet), ``lastvalue`` (the
+  variable's stored cloud value, replayed with ``last_value: true``) or
+  ``lastvalue_missing`` (thing assigned, no cloud value). Once the cloud reaches
+  steady state a ``lastvalue``/``lastvalue_missing`` resync frame follows for
+  clients that connected while unprovisioned. Every subsequent live change is an
+  ``event: update``. Each event's JSON payload is ``{name, value, timestamp,
+  last_value}`` (``thing_unavailable``/``lastvalue_missing`` carry only ``name``).
 """
 
 import json
@@ -31,6 +36,14 @@ logger = Logger("ArduinoCloud")
 _PUT_TIMEOUT = 10.0  # seconds for a value PUT
 _SSE_CONNECT_TIMEOUT = 10.0  # seconds to establish the SSE connection
 _RECONNECT_MAX = 5.0  # max backoff between SSE reconnects
+
+# SSE event names exchanged with the daemon (see its internal/variables package).
+# The first frame of every stream is always one of the three "sync" events;
+# subsequent live changes are EVENT_UPDATE.
+EVENT_UPDATE = "update"
+EVENT_LASTVALUE = "lastvalue"
+EVENT_LASTVALUE_MISSING = "lastvalue_missing"
+EVENT_THING_UNAVAILABLE = "thing_unavailable"
 
 
 def parse_timestamp(value) -> float | None:
@@ -127,6 +140,15 @@ class DaemonClient:
             logger.warning("ArduinoCloud: failed to send '%s' (consecutive failure #%d): %s", name, self._put_fail_count, e)
             return
 
+        if resp.status_code == 409:
+            # No thing assigned yet (cloud not steady): the daemon deliberately
+            # did not queue the value. Expected during startup/reprovision — the
+            # value is kept locally and pushed at sync time; log as a warning.
+            logger.warning(
+                "ArduinoCloud: '%s' not sent — no thing assigned yet (cloud not steady); value kept locally until sync",
+                name,
+            )
+            return
         if resp.status_code >= 400:
             logger.warning("ArduinoCloud: PUT '%s' rejected by daemon: HTTP %s %s", name, resp.status_code, resp.text.strip())
             return
@@ -134,13 +156,37 @@ class DaemonClient:
             logger.info("ArduinoCloud: '%s' delivered again after %d consecutive failure(s)", name, self._put_fail_count)
             self._put_fail_count = 0
 
+    def fetch_initial(self, name: str, stop_event: threading.Event):
+        """Open the events stream, read its first (sync) frame synchronously and
+        return it as ``(event_name, payload_dict)``.
+
+        The daemon always sends a first frame immediately on connect
+        (``thing_unavailable`` / ``lastvalue`` / ``lastvalue_missing``), so this
+        blocks only for the round-trip. Returns None if the stream closes before
+        any frame arrives. Raises on a connection/transport error (the caller is
+        expected to log it and rely on the streaming thread to retry).
+        """
+        url = f"{self._base}/v1/variables/{quote(name, safe='')}/events"
+        session = self._new_session()
+        try:
+            resp = session.get(url, stream=True, timeout=(_SSE_CONNECT_TIMEOUT, _SSE_CONNECT_TIMEOUT))
+            resp.raise_for_status()
+            for evt in self._iter_events(resp, stop_event):
+                return evt
+            return None
+        finally:
+            try:
+                session.close()
+            except Exception:  # noqa: BLE001
+                pass
+
     def stream_events(self, name: str, handler, stop_event: threading.Event) -> None:
         """Stream SSE events for a variable until stop_event is set.
 
         ``handler(event_name, payload_dict)`` is called for each event. The
         stream is reconnected with capped exponential backoff on any error; the
-        daemon replays the last value on every (re)connection, so no state is
-        lost across reconnects.
+        daemon replays a sync frame on every (re)connection, so no state is lost
+        across reconnects.
         """
         url = f"{self._base}/v1/variables/{quote(name, safe='')}/events"
         session = self._new_session()
@@ -153,7 +199,8 @@ class DaemonClient:
                 with session.get(url, stream=True, timeout=(_SSE_CONNECT_TIMEOUT, None)) as resp:
                     resp.raise_for_status()
                     backoff = 0.5  # reset after a successful connect
-                    self._consume(resp, handler, stop_event)
+                    for event, payload in self._iter_events(resp, stop_event):
+                        handler(event, payload)
             except Exception as e:  # noqa: BLE001 - reconnect on any transport error
                 if stop_event.is_set():
                     break
@@ -163,8 +210,10 @@ class DaemonClient:
             backoff = min(backoff * 2, _RECONNECT_MAX)
 
     @staticmethod
-    def _consume(resp, handler, stop_event: threading.Event) -> None:
-        """Parse the SSE byte stream and dispatch complete events."""
+    def _iter_events(resp, stop_event: threading.Event):
+        """Parse the SSE byte stream, yielding each complete event as
+        ``(event_name, payload_dict)``. Stops when stop_event is set or the
+        stream ends."""
         event = None
         data_lines: list[str] = []
         for raw in resp.iter_lines(decode_unicode=True):
@@ -179,7 +228,7 @@ class DaemonClient:
                     except ValueError:
                         payload = None
                     if isinstance(payload, dict):
-                        handler(event or "message", payload)
+                        yield (event or "message", payload)
                 event = None
                 data_lines = []
                 continue
