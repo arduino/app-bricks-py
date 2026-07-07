@@ -127,7 +127,6 @@ The Brick configuration declares that `arduino:vlm` requires a local model servi
 id: arduino:vlm
 name: Vision Language Model (VLM)
 requires_services: ["arduino:genie"]
-requires_model: true
 model: genie:qwen2_5_vl_7b_instruct
 supported_boards: ["ventunoq"]
 ```

@@ -5,7 +5,6 @@ description: |
   It takes input from accelerometer sensors to identify various motion patterns.
   You can use it with pre-trained models provided by the framework or with your custom motion classification models trained on the Edge Impulse platform.
 requires_container: true
-requires_model: true
 ai_frameworks_compatibility:
   - edgeimpulse
 model: updown-wave-motion-detection
