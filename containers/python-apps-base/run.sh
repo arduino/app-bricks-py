@@ -4,7 +4,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-OPENCV_DEBUG=1
+OPENCV_DEBUG=0
 
 if [ -z "$PYTHONUNBUFFERED" ]; then
   export PYTHONUNBUFFERED=1
