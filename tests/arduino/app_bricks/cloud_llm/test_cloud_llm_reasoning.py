@@ -89,6 +89,11 @@ def _content_chunk(text: str) -> AIMessageChunk:
     return AIMessageChunk(content=[{"type": "text", "text": text, "index": 0}])
 
 
+def _gemini_thinking_chunk(text: str) -> AIMessageChunk:
+    """Gemini surfaces reasoning as ``thinking`` content blocks."""
+    return AIMessageChunk(content=[{"type": "thinking", "thinking": text}])
+
+
 def _tool_call_chunk(name: str, args: str, call_id: str) -> AIMessageChunk:
     return AIMessageChunk(
         content=[{"type": "function_call", "arguments": args, "index": 0}],
@@ -182,7 +187,35 @@ def test_chat_stream_reasoning_separates_reasoning_and_content(make_llm):
     ]
 
 
-def test_chat_stream_reasoning_persists_only_answer_to_memory(make_llm):
+def test_chat_stream_reasoning_separates_gemini_thinking_blocks(make_llm):
+    llm = make_llm()
+    llm._reasoning_model = FakeReasoningModel([
+        _gemini_thinking_chunk("Think A "),
+        _gemini_thinking_chunk("Think B"),
+        _content_chunk("Ans"),
+        _content_chunk("wer"),
+    ])
+
+    out = list(llm.chat_stream_reasoning("hi"))
+
+    assert out == [
+        ReasoningChunk("Think A "),
+        ReasoningChunk("Think B"),
+        ContentChunk("Ans"),
+        ContentChunk("wer"),
+    ]
+
+
+def test_extract_reasoning_supports_openai_and_gemini_formats(make_llm):
+    llm = make_llm()
+
+    openai_token = AIMessageChunk(content="", additional_kwargs={"reasoning_content": "R"})
+    gemini_token = AIMessageChunk(content=[{"type": "thinking", "thinking": "T "}, {"type": "text", "text": "ans"}])
+    plain_token = AIMessageChunk(content="just an answer")
+
+    assert llm._extract_reasoning(openai_token) == "R"
+    assert llm._extract_reasoning(gemini_token) == "T "
+    assert llm._extract_reasoning(plain_token) == ""
     llm = make_llm()
     llm._reasoning_model = FakeReasoningModel([
         _reasoning_chunk("secret thoughts"),
@@ -204,6 +237,18 @@ def test_chat_stream_reasoning_rejects_non_openai_model(make_llm):
 
     with pytest.raises(RuntimeError, match="OpenAI-compatible"):
         list(llm.chat_stream_reasoning("hi"))
+
+
+def test_get_reasoning_model_enables_gemini_thoughts(make_llm):
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
+    llm = make_llm()
+    llm._base_model = ChatGoogleGenerativeAI(model="gemini-2.5-flash", google_api_key="x")
+    llm._reasoning_model = None
+
+    reasoning_model = llm._get_reasoning_model()
+
+    assert reasoning_model.include_thoughts is True
 
 
 def test_chat_stream_reasoning_raises_when_already_streaming(make_llm):

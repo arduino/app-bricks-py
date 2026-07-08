@@ -469,9 +469,12 @@ class CloudLLM:
     def _get_reasoning_model(self) -> BaseChatModel:
         """Returns a reasoning-capable client that streams reasoning tokens.
 
-        The client is derived lazily from the base model by enabling the OpenAI
-        Responses API, which exposes reasoning content while streaming. Only
-        OpenAI-compatible models support this path.
+        The client is derived lazily from the base model depending on the provider:
+
+        - OpenAI-compatible models enable the OpenAI Responses API, which exposes
+          reasoning content while streaming.
+        - Google Gemini models enable ``include_thoughts`` so the model streams its
+          reasoning summaries as ``thinking`` content blocks.
 
         Returns:
             BaseChatModel: A model configured to stream reasoning tokens.
@@ -484,15 +487,69 @@ class CloudLLM:
 
         from .reasoning import ChatOpenAIReasoning
 
-        if not isinstance(self._base_model, ChatOpenAIReasoning):
-            raise RuntimeError("Reasoning streaming is only supported for OpenAI-compatible models.")
+        base_model = self._base_model
+        if isinstance(base_model, ChatOpenAIReasoning):
+            reasoning_model = base_model.model_copy(update={"use_responses_api": True, "output_version": "responses/v1"})
+        elif self._is_google_model(base_model):
+            reasoning_model = base_model.model_copy(update={"include_thoughts": True})
+        else:
+            raise RuntimeError("Reasoning streaming is only supported for OpenAI-compatible and Google Gemini models.")
 
-        reasoning_model = self._base_model.model_copy(update={"use_responses_api": True, "output_version": "responses/v1"})
         if self._tools and len(self._tools) > 0:
             reasoning_model = reasoning_model.bind_tools(tools=self._tools)
 
         self._reasoning_model = reasoning_model
         return self._reasoning_model
+
+    @staticmethod
+    def _is_google_model(model: BaseChatModel) -> bool:
+        """Returns True when ``model`` is a Google Gemini chat model.
+
+        The import is performed lazily so the optional ``langchain-google-genai``
+        dependency is only required when a Gemini model is actually in use.
+
+        Args:
+            model (BaseChatModel): The model instance to inspect.
+
+        Returns:
+            bool: True if ``model`` is a ``ChatGoogleGenerativeAI`` instance.
+        """
+        try:
+            from langchain_google_genai import ChatGoogleGenerativeAI
+        except ImportError:
+            return False
+        return isinstance(model, ChatGoogleGenerativeAI)
+
+    def _extract_reasoning(self, token: BaseMessage) -> str:
+        """Extracts reasoning (chain-of-thought) text from a streamed token.
+
+        Supports both provider conventions:
+
+        - OpenAI-compatible models surface reasoning via
+          ``additional_kwargs['reasoning_content']``.
+        - Google Gemini models surface reasoning as ``thinking`` content blocks
+          within the message content list.
+
+        Args:
+            token (BaseMessage): A streamed message chunk.
+
+        Returns:
+            str: The reasoning text fragment, or an empty string if the token
+                carries no reasoning.
+        """
+        reasoning = token.additional_kwargs.get("reasoning_content")
+        if reasoning:
+            return reasoning
+
+        content = token.content
+        if isinstance(content, list):
+            parts: list[str] = []
+            for part in content:
+                if isinstance(part, dict) and part.get("type") == "thinking":
+                    parts.append(part.get("thinking", ""))
+            return "".join(parts)
+
+        return ""
 
     def chat_stream_reasoning(self, message: str, images: List[str | bytes] = None) -> Iterator[ReasoningStreamChunk]:
         """Sends a message and yields both reasoning and answer tokens as they are generated.
@@ -503,8 +560,8 @@ class CloudLLM:
         `ContentChunk` (final answer), both exposing a `content` text fragment.
         Branch on the concrete type with `isinstance`.
 
-        This requires an OpenAI-compatible reasoning model. The generation can be
-        interrupted by calling `stop_stream()`.
+        This requires an OpenAI-compatible or Google Gemini reasoning model. The
+        generation can be interrupted by calling `stop_stream()`.
 
         Args:
             message (str): The input text prompt from the user.
@@ -558,17 +615,16 @@ class CloudLLM:
                     if not self._keep_streaming.is_set():
                         break  # This stops the iteration and halts further token generation
 
-                    reasoning = token.additional_kwargs.get("reasoning_content")
+                    reasoning = self._extract_reasoning(token)
                     if reasoning:
                         yield ReasoningChunk(content=reasoning)
-                        continue
 
                     content = self._content_to_text(token.content)
                     if content:
                         assistant_chunks.append(content)
                         yield ContentChunk(content=content)
 
-                    # Accumulate non-reasoning chunks so streamed tool calls can be assembled.
+                    # Accumulate chunks so streamed tool calls can be assembled.
                     gathered = token if gathered is None else gathered + token
 
                 if not self._keep_streaming.is_set():
