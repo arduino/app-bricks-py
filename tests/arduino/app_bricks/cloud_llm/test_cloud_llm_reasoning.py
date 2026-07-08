@@ -19,7 +19,7 @@ import pytest
 from langchain_core.messages import AIMessageChunk, HumanMessage
 
 import arduino.app_bricks.cloud_llm.cloud_llm as cloud_llm_module
-from arduino.app_bricks.cloud_llm import CloudLLM, tool
+from arduino.app_bricks.cloud_llm import CloudLLM, ContentChunk, ReasoningChunk, tool
 from arduino.app_bricks.cloud_llm.cloud_llm import AlreadyGenerating
 from arduino.app_bricks.cloud_llm.reasoning import ChatOpenAIReasoning
 
@@ -175,10 +175,10 @@ def test_chat_stream_reasoning_separates_reasoning_and_content(make_llm):
     out = list(llm.chat_stream_reasoning("hi"))
 
     assert out == [
-        {"type": "reasoning", "content": "Think A "},
-        {"type": "reasoning", "content": "Think B"},
-        {"type": "content", "content": "Ans"},
-        {"type": "content", "content": "wer"},
+        ReasoningChunk("Think A "),
+        ReasoningChunk("Think B"),
+        ContentChunk("Ans"),
+        ContentChunk("wer"),
     ]
 
 
@@ -227,7 +227,7 @@ def test_chat_stream_reasoning_stop_halts_generation(make_llm):
         collected.append(chunk)
         llm.stop_stream()
 
-    assert collected == [{"type": "content", "content": "first"}]
+    assert collected == [ContentChunk("first")]
 
 
 def test_chat_stream_reasoning_handles_tool_calls(make_llm):
@@ -247,8 +247,8 @@ def test_chat_stream_reasoning_handles_tool_calls(make_llm):
     out = list(llm.chat_stream_reasoning("weather in Rome?"))
 
     assert out == [
-        {"type": "reasoning", "content": "Using the tool result "},
-        {"type": "content", "content": "It is sunny in Rome."},
+        ReasoningChunk("Using the tool result "),
+        ContentChunk("It is sunny in Rome."),
     ]
     # The tool result must have been fed back into the second stream call.
     second_call_messages = llm._reasoning_model.inputs[1]

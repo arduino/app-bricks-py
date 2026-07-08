@@ -6,6 +6,7 @@ import asyncio
 import base64
 import os
 import threading
+from dataclasses import dataclass
 from typing import Iterator, List, Optional, Union, Any, Callable
 
 from langchain_core.language_models import BaseChatModel
@@ -24,6 +25,35 @@ class AlreadyGenerating(Exception):
     """Exception raised when a generation is already in progress."""
 
     pass
+
+
+@dataclass(frozen=True)
+class ReasoningStreamChunk:
+    """Base type for chunks yielded by `CloudLLM.chat_stream_reasoning`.
+
+    Every chunk carries a `content` text fragment. Use `isinstance` checks to
+    distinguish the model's reasoning from its final answer:
+
+    ```python
+    for chunk in llm.chat_stream_reasoning("..."):
+        if isinstance(chunk, ReasoningChunk):
+            ...  # chunk.content is part of the chain-of-thought
+        elif isinstance(chunk, ContentChunk):
+            ...  # chunk.content is part of the final answer
+    ```
+    """
+
+    content: str
+
+
+@dataclass(frozen=True)
+class ReasoningChunk(ReasoningStreamChunk):
+    """A fragment of the model's internal reasoning (chain-of-thought)."""
+
+
+@dataclass(frozen=True)
+class ContentChunk(ReasoningStreamChunk):
+    """A fragment of the model's final answer."""
 
 
 @brick
@@ -464,13 +494,14 @@ class CloudLLM:
         self._reasoning_model = reasoning_model
         return self._reasoning_model
 
-    def chat_stream_reasoning(self, message: str, images: List[str | bytes] = None) -> Iterator[dict]:
+    def chat_stream_reasoning(self, message: str, images: List[str | bytes] = None) -> Iterator[ReasoningStreamChunk]:
         """Sends a message and yields both reasoning and answer tokens as they are generated.
 
         Unlike `chat_stream`, this method separates the model's internal reasoning
-        (chain-of-thought) from the final answer. Each yielded item is a dictionary
-        with a `type` key that is either `"reasoning"` or `"content"`, and a
-        `content` key holding the text chunk.
+        (chain-of-thought) from the final answer. Each yielded item is a
+        `ReasoningStreamChunk`: either a `ReasoningChunk` (chain-of-thought) or a
+        `ContentChunk` (final answer), both exposing a `content` text fragment.
+        Branch on the concrete type with `isinstance`.
 
         This requires an OpenAI-compatible reasoning model. The generation can be
         interrupted by calling `stop_stream()`.
@@ -480,7 +511,7 @@ class CloudLLM:
             images (List[str | bytes]): Optional list of image file paths or raw bytes to include in the prompt.
 
         Yields:
-            dict: A chunk of the form `{"type": "reasoning" | "content", "content": str}`.
+            ReasoningStreamChunk: A `ReasoningChunk` or `ContentChunk` holding a `content` text fragment.
 
         Raises:
             RuntimeError: If the model is not initialized, does not support reasoning, or the API request fails.
@@ -494,7 +525,7 @@ class CloudLLM:
         except Exception as e:
             self._handle_stream_error(e)
 
-    def _chat_stream_reasoning_invoke(self, message: str, images: List[str | bytes] = None) -> Iterator[dict]:
+    def _chat_stream_reasoning_invoke(self, message: str, images: List[str | bytes] = None) -> Iterator[ReasoningStreamChunk]:
         """Internal method to stream reasoning and answer tokens from the model.
 
         This is separated from `chat_stream_reasoning()` to allow for better error
@@ -505,7 +536,7 @@ class CloudLLM:
             images (List[str | bytes]): Optional list of image file paths or raw bytes to include in the prompt.
 
         Yields:
-            dict: A chunk of the form `{"type": "reasoning" | "content", "content": str}`.
+            ReasoningStreamChunk: A `ReasoningChunk` or `ContentChunk` holding a `content` text fragment.
 
         Raises:
             RuntimeError: If the internal chain is not initialized or if the API request fails.
@@ -529,13 +560,13 @@ class CloudLLM:
 
                     reasoning = token.additional_kwargs.get("reasoning_content")
                     if reasoning:
-                        yield {"type": "reasoning", "content": reasoning}
+                        yield ReasoningChunk(content=reasoning)
                         continue
 
                     content = self._content_to_text(token.content)
                     if content:
                         assistant_chunks.append(content)
-                        yield {"type": "content", "content": content}
+                        yield ContentChunk(content=content)
 
                     # Accumulate non-reasoning chunks so streamed tool calls can be assembled.
                     gathered = token if gathered is None else gathered + token

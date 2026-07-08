@@ -4,7 +4,7 @@
 
 from langchain_core.language_models import BaseChatModel
 
-from arduino.app_bricks.cloud_llm import CloudLLM, CloudModelProvider
+from arduino.app_bricks.cloud_llm import CloudLLM, CloudModelProvider, ReasoningStreamChunk
 from arduino.app_bricks.cloud_llm.cloud_llm import DEFAULT_MEMORY
 from arduino.app_bricks.cloud_llm.memory import MessagePersistence
 from arduino.app_utils import Logger, brick
@@ -281,13 +281,14 @@ class LargeLanguageModel(CloudLLM):
             else:
                 yield chunk
 
-    def chat_stream_reasoning(self, message: str, images: List[str | bytes] = None) -> Iterator[dict]:
+    def chat_stream_reasoning(self, message: str, images: List[str | bytes] = None) -> Iterator[ReasoningStreamChunk]:
         """Sends a message and yields both reasoning and answer tokens as they are generated.
 
         Unlike `chat_stream`, this method keeps the model's internal reasoning
         (chain-of-thought) separate from the final answer. Each yielded item is a
-        dictionary with a `type` key that is either `"reasoning"` or `"content"`,
-        and a `content` key holding the text chunk.
+        `ReasoningStreamChunk`: either a `ReasoningChunk` (chain-of-thought) or a
+        `ContentChunk` (final answer), both exposing a `content` text fragment.
+        Branch on the concrete type with `isinstance`.
 
         The generation can be interrupted by calling `stop_stream()`.
 
@@ -296,7 +297,7 @@ class LargeLanguageModel(CloudLLM):
             images (List[str | bytes]): Optional list of image file paths or raw bytes to include in the prompt.
 
         Yields:
-            dict: A chunk of the form `{"type": "reasoning" | "content", "content": str}`.
+            ReasoningStreamChunk: A `ReasoningChunk` or `ContentChunk` holding a `content` text fragment.
 
         Raises:
             RuntimeError: If the internal chain is not initialized or if the API request fails.
