@@ -4,11 +4,14 @@
 
 # EXAMPLE_NAME = "Transcribe a wav file and stream the results"
 # EXAMPLE_REQUIRES = "Requires a WAV file with a voice recording"
-from arduino.app_bricks.asr import AutomaticSpeechRecognition
+
+from arduino.app_utils import App
+from arduino.app_bricks.asr import WAVAutomaticSpeechRecognition
 
 
 with open("recording_01.wav", "rb") as wav_file:
-    asr = AutomaticSpeechRecognition(wav_file.read())
+    asr = WAVAutomaticSpeechRecognition(wav_file.read())
+    App.start_brick(asr)
     with asr.transcribe_stream() as stream:
         for chunk in stream:
             match chunk.type:
@@ -17,3 +20,5 @@ with open("recording_01.wav", "rb") as wav_file:
                 case "full_text":
                     print(f"Final: {chunk.data}")
                     break
+
+App.run()

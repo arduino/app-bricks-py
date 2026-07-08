@@ -29,6 +29,9 @@ RUN apt-get update \
     /opt/venv/bin/pip install --no-cache-dir -r requirements-base.txt; \
     /opt/venv/bin/python -m compileall /opt/venv/lib; \
     rm requirements-base.txt; \
+    # Remove unneeded platform packages
+    rm -fr /usr/share/qcom/qcm6490; \
+    rm -fr /usr/share/qcom/sa8775p; \
     # Remove unneeded linux firmware
     dpkg -r --force-depends linux-firmware-dragonwing qcom-video-firmware tc9564-firmware firmware-qcm6490-msl firmware-qcom-hlosfw linux-firmware 
 
@@ -37,6 +40,8 @@ ENV VIRTUAL_ENV="/opt/venv"
 
 ENV PYTHONPATH="/opt"
 COPY aihub/ /opt/aihub/
+
+ENV ADSP_LIBRARY_PATH="/usr/share/qcom/qcs8300/Qualcomm/QCS8300-RIDE/dsp/cdsp"
 
 # Prepare the app directory for child images
 RUN mkdir -p /app

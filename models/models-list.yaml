@@ -1256,7 +1256,7 @@ models:
     deployment:
       handler: "ei-handler"
       pre-loaded: true
- - concreate-crack-anomaly-detection:
+ - concrete-crack-anomaly-detection:
     name : "Concrete crack anomaly detection"
     description: "Anomaly detection model to identify cracks in concrete structures."
     metadata:
@@ -1275,7 +1275,7 @@ models:
       - id: "arduino:visual_anomaly_detection"
         model_configuration:
           "EI_V_ANOMALY_DETECTION_MODEL": "/models/ootb/ei/concrete-crack-anomaly-detection.eim"
- - concreate-crack-anomaly-detection-high-resolution:
+ - concrete-crack-anomaly-detection-high-resolution:
     name : "Concrete crack anomaly detection - High resolution"
     description: "Anomaly detection model to identify cracks in concrete structures with higher resolution input images for improved accuracy. This version of the model is optimized for NPU acceleration on supported devices, providing faster inference times while maintaining accuracy."
     metadata:
@@ -1421,7 +1421,7 @@ models:
             variables:
               model_type: "genie"
               model_name: "qwen3_4b_instruct_2507"
-              models_repository: "models/genai"
+              models_repository: "genai"
               model_directory: "qwen3_4b_instruct_2507-genie-w4a16-qualcomm_qcs8275"
               quantization: "w4a16"
               chipset: "qualcomm-qcs8275"
@@ -1434,9 +1434,9 @@ models:
  - "genie:qwen2_5_vl_7b_instruct":
     name : "Qwen 2.5-VL-7B VLM"
     description: >-
-      The Qwen2.5 7B VLM is a state-of-the-art multilingual vision-language model with 7
-      billion parameters, excelling in language understanding, generation, coding, and
-      mathematics.
+      Qwen2.5-VL 7B is a multimodal vision-language model with 7 billion
+      parameters that can process both images and text, enabling visual question
+      answering, image description, and other vision-language tasks.
     supported_boards: ["ventunoq"]
     bricks:
       - id: "arduino:vlm"
@@ -1447,7 +1447,8 @@ models:
             variables:
               model_type: "genie"
               model_name: "qwen2_5_vl_7b_instruct"
-              models_repository: "models/genai"
+              models_repository: "genai"
+              model_directory: "qwen2_5_vl_7b_instruct-genie-w4a16-qualcomm_qcs8275"
               quantization: "w4a16"
               chipset: "qualcomm-qcs8275"
               version: "0.53.1"
@@ -1456,10 +1457,37 @@ models:
       source: "qualcomm-ai-hub"
       source-model-id: "qwen2_5_vl_7b_instruct"
       source-model-url: "https://aihub.qualcomm.com/models/qwen2_5_vl_7b_instruct"
+ - "genie:qwen3_vl_4b_instruct":
+    name : "Qwen 3-VL-4B VLM"
+    description: >-
+      Qwen3-VL is a vision-language model from Alibaba Cloud capable of understanding
+      both text and images for multimodal reasoning tasks such as visual question
+      answering and image captioning.
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:vlm"
+    deployment:
+      handler: "ai-hub-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              model_type: "genie"
+              model_name: "qwen3_vl_4b_instruct"
+              model_directory: "qwen3_vl_4b_instruct-genie-w4a16-qualcomm_qcs8275"
+              models_repository: "genai"
+              quantization: "w4a16"
+              chipset: "qualcomm-qcs8275"
+              version: "0.57.1"
+    metadata:
+      model_size_mb: 4166
+      source: "qualcomm-ai-hub"
+      source-model-id: "qwen3_vl_4b_instruct"
+      source-model-url: "https://aihub.qualcomm.com/models/qwen3_vl_4b_instruct"      
  - gesture-recognition:
     name : "MediaPipe Hand-Gesture Recognition"
     description: >-
-      The MediaPipe Gesture Recognizer is a real-time machine learning pipeline that detects hands, predicts 21 hand landmarks, determines handedness (left/right),
+      The MediaPipe Gesture Recognizer is a real-time machine learning pipeline that detects hands,
+      predicts 21 hand landmarks, determines handedness (left/right),
       and classifies gestures from a predefined set.
     model_labels:
       - Thumb_Up
@@ -1475,6 +1503,9 @@ models:
       source: "qualcomm-ai-hub"  
       source-model-id: "mediapipe_hand_gesture"
       source-model-url: "https://aihub.qualcomm.com/models/mediapipe_hand_gesture"
+    deployment:
+      handler: "ai-hub-handler"
+      pre-loaded: true
  - whisper-small-quantized:
     name : "Whisper Small (quantized)"
     description: >-
@@ -1491,11 +1522,11 @@ models:
             variables:
               model_type: "voice_ai"
               model_name: "whisper_small_quantized"
-              models_repository: "models/audio-analytics/asr"
+              models_repository: "audio-analytics/asr"
               model_directory: "whisper_small_quantized-voice_ai-w8a16-qualcomm_qcs8275"
               quantization: "w8a16"
               chipset: "qualcomm-qcs8275"
-              version: "0.51.0"
+              version: "0.57.0"
     bricks:
       - id: "arduino:asr"
     metadata:
@@ -1617,11 +1648,11 @@ models:
             variables:
               model_type: "voice_ai"
               model_name: "melotts_en"
-              models_repository: "models/audio-analytics/tts"
+              models_repository: "audio-analytics/tts"
               model_directory: "melotts_en-voice_ai-mixed_with_float-qualcomm_qcs8275"
               quantization: "mixed_with_float"
               chipset: "qualcomm-qcs8275"
-              version: "0.51.0"
+              version: "0.57.0"
     metadata:
       model_size_mb: 291
       source: "qualcomm-ai-hub"
@@ -1641,11 +1672,11 @@ models:
             variables:
               model_type: "voice_ai"
               model_name: "melotts_es"
-              models_repository: "models/audio-analytics/tts"
+              models_repository: "audio-analytics/tts"
               model_directory: "melotts_es-voice_ai-mixed_with_float-qualcomm_qcs8275"
               quantization: "mixed_with_float"
               chipset: "qualcomm-qcs8275"
-              version: "0.51.0"
+              version: "0.57.0"
     metadata:
       model_size_mb: 106
       source: "qualcomm-ai-hub"
@@ -1665,17 +1696,17 @@ models:
             variables:
               model_type: "voice_ai"
               model_name: "melotts_zh"
-              models_repository: "models/audio-analytics/tts"
+              models_repository: "audio-analytics/tts"
               model_directory: "melotts_zh-voice_ai-mixed_with_float-qualcomm_qcs8275"
               quantization: "mixed_with_float"
               chipset: "qualcomm-qcs8275"
-              version: "0.51.0"
+              version: "0.57.0"
     metadata:
       model_size_mb: 360
       source: "qualcomm-ai-hub"
       source-model-id: "melotts_zh"
       source-model-url: "https://aihub.qualcomm.com/models/melotts_zh"
- - piper-tts-de:
+ - pipertts_de:
     name : "Piper TTS (German)"
     description: >-
       Piper is a high-quality multi-lingual text-to-speech library - German version.
@@ -1684,13 +1715,22 @@ models:
       - id: "arduino:tts"
     deployment:
       handler: "ai-hub-handler"
-      pre-loaded: true      
+      platforms:
+        - ventunoq:
+            variables:
+              model_type: "voice_ai"
+              model_name: "pipertts_de"
+              models_repository: "audio-analytics/tts"
+              model_directory: "pipertts_de-voice_ai-float-qualcomm_qcs8275"
+              quantization: "float"
+              chipset: "qualcomm-qcs8275"
+              version: "0.57.1"
     metadata:
-      model_size_mb: 44
+      model_size_mb: 79
       source: "qualcomm-ai-hub"
-      source-model-id: "piper_tts_de"
-      source-model-url: "https://aihub.qualcomm.com/models/piper_tts_de"
- - piper-tts-it:
+      source-model-id: "pipertts_de"
+      source-model-url: "https://aihub.qualcomm.com/models/pipertts_de"
+ - pipertts_it:
     name : "Piper TTS (Italian)"
     description: >-
       Piper is a high-quality multi-lingual text-to-speech library - Italian version.
@@ -1699,13 +1739,22 @@ models:
       - id: "arduino:tts"
     deployment:
       handler: "ai-hub-handler"
-      pre-loaded: true
+      platforms:
+        - ventunoq:
+            variables:
+              model_type: "voice_ai"
+              model_name: "pipertts_it"
+              models_repository: "audio-analytics/tts"
+              model_directory: "pipertts_it-voice_ai-float-qualcomm_qcs8275"
+              quantization: "float"
+              chipset: "qualcomm-qcs8275"
+              version: "0.57.1"
     metadata:
-      model_size_mb: 44
+      model_size_mb: 79
       source: "qualcomm-ai-hub"
-      source-model-id: "piper_tts_it"
-      source-model-url: "https://aihub.qualcomm.com/models/piper_tts_it"
- - piper-tts-en:
+      source-model-id: "pipertts_it"
+      source-model-url: "https://aihub.qualcomm.com/models/pipertts_it"
+ - pipertts_en:
     name : "Piper TTS (English)"
     description: >-
       Piper is a high-quality multi-lingual text-to-speech library - English version.
@@ -1714,12 +1763,21 @@ models:
       - id: "arduino:tts"
     deployment:
       handler: "ai-hub-handler"
-      pre-loaded: true
+      platforms:
+        - ventunoq:
+            variables:
+              model_type: "voice_ai"
+              model_name: "pipertts_en"
+              models_repository: "audio-analytics/tts"
+              model_directory: "pipertts_en-voice_ai-float-qualcomm_qcs8275"
+              quantization: "float"
+              chipset: "qualcomm-qcs8275"
+              version: "0.57.1"
     metadata:
-      model_size_mb: 46
+      model_size_mb: 79
       source: "qualcomm-ai-hub"
-      source-model-id: "piper_tts_en"
-      source-model-url: "https://aihub.qualcomm.com/models/piper_tts_en"
+      source-model-id: "pipertts_en"
+      source-model-url: "https://aihub.qualcomm.com/models/pipertts_en"
  - "ei:efficientnet-b4":
     name : "General purpose object classification - EfficientNet-B4"
     description: "EfficientNetB4 is a machine learning model that can classify images from the Imagenet dataset. It can also be used as a backbone in building more complex models for specific use cases. This version of the model is optimized for NPU acceleration on supported devices, providing faster inference times while maintaining accuracy."
@@ -1741,21 +1799,21 @@ models:
         - ventunoq:
             variables:
               ei_project_id: 948887
-              ei_impulse_id: 4
-              models_repository: "models/edge-impulse"
+              ei_impulse_id: 10
+              models_repository: "edge-impulse"
               model_name: efficientnet-b4-qnn.eim
               target: runner-linux-aarch64-qnn
     bricks:
       - id: "arduino:image_classification"
         model_configuration:
-          "EI_IMAGE_CLASSIFICATION_MODEL": "${models_repository}/efficientnet-b4-qnn.eim"
+          "EI_CLASSIFICATION_MODEL": "/var/lib/arduino-app-cli/models/edge-impulse/efficientnet-b4-qnn/efficientnet-b4-qnn.eim"
       - id: "arduino:video_image_classification"
         model_configuration:
-          "EI_V_IMAGE_CLASSIFICATION_MODEL": "${models_repository}/efficientnet-b4-qnn.eim"
+          "EI_V_CLASSIFICATION_MODEL": "/var/lib/arduino-app-cli/models/edge-impulse/efficientnet-b4-qnn/efficientnet-b4-qnn.eim"
  - "llamacpp:gemma-4-E2B_q4_0-it":
     name : "Gemma 4 E2B"
     description: >-
-      Gemma 4 E2B is an efficient, open multimodal AI model developed by Google DeepMind.
+      Gemma 4 E2B is an efficient, open AI model developed by Google DeepMind.
       Activating an effective two billion parameters, it is engineered specifically for mobile and edge devices.
       It's optimized for offline agentic workflows.
     supported_boards: ["ventunoq"]
@@ -1767,7 +1825,7 @@ models:
         - ventunoq:
             variables:
               model_url: "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf/blob/main/gemma-4-E2B_q4_0-it.gguf"
-              models_repository: "models/llamacpp"
+              models_repository: "llamacpp"
               model_directory: "google/gemma-4-E2B-it-qat-q4_0-gguf"
     metadata:
       model_size_mb: 3430
@@ -1777,7 +1835,7 @@ models:
  - "llamacpp:gemma-4-E4B_q4_0-it":
     name : "Gemma 4 E4B"
     description: >-
-      Gemma 4 E4B is an efficient, open multimodal AI model developed by Google DeepMind.
+      Gemma 4 E4B is an efficient, open AI model developed by Google DeepMind.
       Activating an effective four billion parameters, it is engineered specifically for mobile and edge devices.
       It's optimized for offline agentic workflows.
     supported_boards: ["ventunoq"]
@@ -1791,7 +1849,7 @@ models:
         - ventunoq:
             variables:
               model_url: "https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf/blob/main/gemma-4-E4B_q4_0-it.gguf"
-              models_repository: "models/llamacpp"
+              models_repository: "llamacpp"
               model_directory: "google/gemma-4-E4B-it-qat-q4_0-gguf"
     metadata:
       model_size_mb: 5273
@@ -1801,9 +1859,7 @@ models:
  - "llamacpp:gemma-3-1b-it-Q4_0":
      name : "Gemma 3 1B"
      description: >-
-        Gemma 3 1B is an efficient, open multimodal AI model developed by Google DeepMind.
-        Activating an effective one billion parameters, it is engineered specifically for mobile and edge devices.
-        It's optimized for offline agentic workflows.
+        Gemma 3 1B is an efficient AI model developed by Google DeepMind.
      supported_boards: ["ventunoq", "unoq"]
      bricks:
        - id: "arduino:llm"
@@ -1813,12 +1869,12 @@ models:
          - ventunoq:
              variables:
                model_url: "https://huggingface.co/unsloth/gemma-3-1b-it-GGUF/blob/main/gemma-3-1b-it-Q4_0.gguf"
-               models_repository: "models/llamacpp"
+               models_repository: "llamacpp"
                model_directory: "unsloth/gemma-3-1b-it-GGUF"
          - unoq:
              variables:
                model_url: "https://huggingface.co/unsloth/gemma-3-1b-it-GGUF/blob/main/gemma-3-1b-it-Q4_0.gguf"
-               models_repository: "models/llamacpp"
+               models_repository: "llamacpp"
                model_directory: "unsloth/gemma-3-1b-it-GGUF"
      metadata:
        model_size_mb: 722
@@ -1829,7 +1885,8 @@ models:
      name : "Qwen 3.5 0.8B"
      description: >-
        Qwen 3.5 0.8B is a compact yet powerful language model developed by Alibaba, designed to deliver efficient performance on edge devices.
-       With 0.8 billion parameters, it strikes a balance between capability and resource efficiency, making it ideal for applications that require natural language understanding and generation in constrained environments.
+       With 0.8 billion parameters, it strikes a balance between capability and resource efficiency, making it ideal
+       for applications that require natural language understanding and generation in constrained environments.
      supported_boards: ["ventunoq", "unoq"]
      bricks:
        - id: "arduino:llm"
@@ -1839,12 +1896,12 @@ models:
          - ventunoq:
              variables:
                model_url: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/blob/main/Qwen3.5-0.8B-Q4_0.gguf"
-               models_repository: "models/llamacpp"
+               models_repository: "llamacpp"
                model_directory: "unsloth/Qwen3.5-0.8B-GGUF"
          - unoq:
              variables:
                model_url: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/blob/main/Qwen3.5-0.8B-Q4_0.gguf"
-               models_repository: "models/llamacpp"
+               models_repository: "llamacpp"
                model_directory: "unsloth/Qwen3.5-0.8B-GGUF"
      metadata:
        model_size_mb: 507
@@ -1953,13 +2010,13 @@ models:
             variables:
               ei_project_id: 1014102
               ei_impulse_id: 1
-              models_repository: "models/edge-impulse"
+              models_repository: "edge-impulse"
               model_name: yolo-x-small-qnn.eim
-              target: runner-linux-aarch64-qnn   
+              target: runner-linux-aarch64-qnn
     bricks:
       - id: "arduino:object_detection"
         model_configuration:
-          "EI_OBJ_DETECTION_MODEL": "${models_repository}/yolo-x-small-qnn.eim"
+          "EI_OBJ_DETECTION_MODEL": "/var/lib/arduino-app-cli/models/edge-impulse/yolo-x-small-qnn/yolo-x-small-qnn.eim"
       - id: "arduino:video_object_detection"
         model_configuration:
-          "EI_V_OBJ_DETECTION_MODEL": "${models_repository}/yolo-x-small-qnn.eim"          
+          "EI_V_OBJ_DETECTION_MODEL": "/var/lib/arduino-app-cli/models/edge-impulse/yolo-x-small-qnn/yolo-x-small-qnn.eim"

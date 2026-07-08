@@ -21,6 +21,7 @@ import stat
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from common.download_marker import read_marker
 from common.models_list import load_models_list, MODELS_LIST_PATH
 
 
@@ -71,7 +72,9 @@ def get_model_info(model_entry):
                     continue
                 for platform_name, platform_config in platform_entry.items():
                     variables = platform_config.get("variables", {})
-                    model_directory = variables.get("model_directory") or build_model_directory(variables) or variables.get("model_name", "")
+                    model_directory = (
+                        variables.get("model_directory") or build_model_directory(variables) or os.path.splitext(variables.get("model_name", ""))[0]
+                    )
                     models_repository = variables.get("models_repository", "")
 
                     results.append({
@@ -105,6 +108,9 @@ def get_model_subdir(models_repository):
     # Handle relative paths like "models/genai" or "models/audio-analytics/asr"
     if models_repository.startswith("models/"):
         return models_repository[len("models/") :]
+    # Bare repository name (e.g. "edge-impulse", "genai") => use as-is
+    if models_repository:
+        return models_repository
     return ""
 
 
@@ -212,28 +218,108 @@ def check_model_exists(model_info, models_base_dir):
     return False, full_path
 
 
+def model_is_downloading(model_info, models_base_dir):
+    """Return the parsed ".download" marker dict if present, else None.
+
+    The marker is per-model and lives inside the model directory
+    (<dir>/.download) for AI Hub, HF and Edge Impulse alike. Its presence means
+    a download is in progress or was interrupted before completing.
+    """
+    subdir = get_model_subdir(model_info.get("models_repository", ""))
+    search_dir = os.path.join(models_base_dir, subdir) if subdir else models_base_dir
+    model_directory = model_info.get("model_directory") or ""
+    candidates = []
+    if model_directory:
+        candidates.append(os.path.join(search_dir, model_directory, ".download"))
+    for marker in candidates:
+        data = read_marker(marker)
+        if data is not None:
+            return data
+    return None
+
+
 LLAMACPP_SUBDIR = "llamacpp"
 
 
+def llamacpp_name_from_marker(marker, root):
+    """Derive a model name for an in-progress llamacpp download from its marker.
+
+    If the marker carries a ``model_url`` pointing at a .gguf file, the file
+    stem is used (e.g. ".../gemma-4-E2B_q4_0-it.gguf" -> "gemma-4-E2B_q4_0-it").
+    Otherwise fall back to the model_directory / folder name.
+    """
+    url = marker.get("model_url") or ""
+    if url:
+        base = url.split("?")[0].rstrip("/").rsplit("/", 1)[-1]
+        if base.endswith(".gguf"):
+            return os.path.splitext(base)[0]
+        if base:
+            return base
+    model_directory = marker.get("model_directory") or ""
+    if model_directory:
+        return os.path.basename(model_directory.rstrip("/"))
+    return os.path.basename(root.rstrip(os.sep))
+
+
 def find_llamacpp_models(models_base_dir):
-    """Scan for .gguf files under the llamacpp directory."""
+    """Scan for .gguf models under the llamacpp directory.
+
+    Mirrors the grouping used when generating models.ini: ``*mmproj*.gguf``
+    files are not standalone models but the multimodal projection belonging to
+    the main GGUF in the same directory, so they are not listed separately.
+
+    A directory that only holds a ".download" marker (download in progress, no
+    GGUF on disk yet) is still surfaced, using the marker info for the entry.
+    """
     llamacpp_dir = os.path.join(models_base_dir, LLAMACPP_SUBDIR)
     results = []
     if not os.path.isdir(llamacpp_dir):
         return results
 
     for root, _dirs, files in os.walk(llamacpp_dir):
-        for f in files:
-            if f.endswith(".gguf"):
-                full_path = os.path.join(root, f)
-                model_name = os.path.splitext(f)[0]
-                results.append({
-                    "id": f"llamacpp:{model_name}",
-                    "name": model_name,
-                    "handler": "llamacpp",
-                    "path": full_path,
-                    "installed": True,
-                })
+        gguf_files = sorted(f for f in files if f.endswith(".gguf"))
+        mmproj_files = [f for f in gguf_files if "mmproj" in f]
+        marker = read_marker(os.path.join(root, ".download"))
+        downloading = marker is not None
+
+        emitted = False
+        for f in gguf_files:
+            if "mmproj" in f:
+                continue
+            full_path = os.path.join(root, f)
+            model_name = os.path.splitext(f)[0]
+            disk_size_mb = get_dir_size_mb(full_path)
+            # The mmproj file in the same directory is part of this model.
+            if mmproj_files:
+                mmproj_size = get_dir_size_mb(os.path.join(root, mmproj_files[0]))
+                if disk_size_mb is not None and mmproj_size is not None:
+                    disk_size_mb = round(disk_size_mb + mmproj_size, 2)
+            entry = {
+                "id": f"llamacpp:{model_name}",
+                "name": model_name,
+                "handler": "llamacpp",
+                "path": full_path,
+                "installed": not downloading,
+                "downloading": downloading,
+                "disk_size_mb": disk_size_mb,
+            }
+            if mmproj_files:
+                entry["mmproj"] = os.path.join(root, mmproj_files[0])
+            results.append(entry)
+            emitted = True
+
+        # Download in progress but no main GGUF on disk yet: surface the
+        # pending model from the marker so it still shows up in the listing.
+        if marker is not None and not emitted:
+            model_name = llamacpp_name_from_marker(marker, root)
+            results.append({
+                "id": f"llamacpp:{model_name}",
+                "name": model_name,
+                "handler": "llamacpp",
+                "path": root,
+                "installed": False,
+                "downloading": True,
+            })
     return results
 
 
@@ -302,11 +388,14 @@ def main():
                 entry["model_size_mb"] = model_info["model_size_mb"]
         else:
             exists, path = check_model_exists(model_info, args.models_dir)
+            # Per-model ".download" marker present => download in progress/incomplete.
+            downloading = bool(model_is_downloading(model_info, args.models_dir))
             entry = {
                 "id": model_info["id"],
                 "name": model_info["name"],
                 "handler": model_info["handler"],
-                "installed": exists,
+                "installed": exists and not downloading,
+                "downloading": downloading,
             }
             if model_info.get("model_size_mb") is not None:
                 entry["model_size_mb"] = model_info["model_size_mb"]
@@ -314,20 +403,35 @@ def main():
                 entry["path"] = path
                 entry["disk_size_mb"] = get_dir_size_mb(path)
 
-        if args.installed_only and not exists:
-            continue
-        if args.not_installed_only and exists:
-            continue
-
         results.append(entry)
 
-    # Scan for llamacpp .gguf models on the filesystem
-    llamacpp_models = find_llamacpp_models(args.models_dir)
-    for m in llamacpp_models:
-        if args.not_installed_only:
-            continue
-        m["disk_size_mb"] = get_dir_size_mb(m["path"])
-        results.append(m)
+    # Scan for llamacpp .gguf models on the filesystem. These may correspond to
+    # a models-list.yaml entry (same id) whose nested model_directory the YAML
+    # path check couldn't resolve; merge filesystem status into that entry
+    # instead of listing the model twice. Otherwise add it as a new entry.
+    by_id = {entry["id"]: entry for entry in results}
+    for m in find_llamacpp_models(args.models_dir):
+        existing = by_id.get(m["id"])
+        if existing is not None:
+            # Keep the canonical YAML name/handler/model_size_mb; take the
+            # filesystem-derived status and on-disk details.
+            existing["installed"] = m["installed"]
+            existing["downloading"] = m["downloading"]
+            if "path" in m:
+                existing["path"] = m["path"]
+            if m.get("disk_size_mb") is not None:
+                existing["disk_size_mb"] = m["disk_size_mb"]
+            if "mmproj" in m:
+                existing["mmproj"] = m["mmproj"]
+        else:
+            results.append(m)
+            by_id[m["id"]] = m
+
+    # Apply installed/not-installed filters once, after merging.
+    if args.installed_only:
+        results = [r for r in results if r["installed"]]
+    if args.not_installed_only:
+        results = [r for r in results if not r["installed"]]
 
     if args.output_json:
         print(json.dumps({"event": "info", "models": results}, indent=2))
@@ -338,7 +442,7 @@ def main():
         print(f"{'STATUS':<12} {'SIZE (MB)':<12} {'ID':<45} {'NAME':<40} {'PATH'}")
         print("-" * 152)
         for r in results:
-            status = "INSTALLED" if r["installed"] else "NOT FOUND"
+            status = "DOWNLOADING" if r.get("downloading") else ("INSTALLED" if r["installed"] else "NOT FOUND")
             size = (
                 f"{r['disk_size_mb']:.2f}"
                 if r.get("disk_size_mb") is not None

@@ -11,7 +11,7 @@ def generate_models_ini(models_dir: Path):
     config = configparser.ConfigParser()
 
     for gguf_file in sorted(models_dir.rglob("*.gguf")):
-        if gguf_file.name.startswith("mmproj"):
+        if "mmproj" in gguf_file.name:
             continue
 
         section = gguf_file.stem
@@ -19,7 +19,7 @@ def generate_models_ini(models_dir: Path):
         config[section]["model"] = str(gguf_file.as_posix())
 
         # Look for mmproj file in the same directory
-        mmproj_files = list(gguf_file.parent.glob("mmproj*.gguf"))
+        mmproj_files = sorted(gguf_file.parent.glob("*mmproj*.gguf"))
         if mmproj_files:
             config[section]["mmproj"] = str(mmproj_files[0].as_posix())
 

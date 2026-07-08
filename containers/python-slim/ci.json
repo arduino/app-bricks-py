@@ -1,0 +1,12 @@
+{
+  "tag_prefix": "ai",
+  "watch_paths": ["containers/python-slim/"],
+  "tag_latest": true,
+  "build_whl": false,
+  "update_compose": false,
+  "build_args": {},
+  "sbom": {
+    "runtime_base": "python:3.13-slim"
+  },
+  "downstream": ["llamacpp-runner"]
+}

@@ -1,4 +1,4 @@
-qai-hub-models-cli
+qai-hub-models-cli>=0.57.1
 requests
 huggingface_hub
 tqdm

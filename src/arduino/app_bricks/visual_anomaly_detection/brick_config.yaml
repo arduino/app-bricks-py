@@ -5,13 +5,10 @@ description: |
   Supports pre-trained models provided by the framework or custom anomaly detection models trained on the Edge Impulse platform. 
 category: image
 requires_container: true
-requires_model: true
-# For backward compatibility
-model: concrete-crack-anomaly-detection
 model_by_boards:
-    - board: ventunoq
-      model: concreate-crack-anomaly-detection-high-resolution
-    - board: unoq
+    - platform: ventunoq
+      model: concrete-crack-anomaly-detection-high-resolution
+    - platform: unoq
       model: concrete-crack-anomaly-detection
 ai_frameworks_compatibility:
   - edgeimpulse

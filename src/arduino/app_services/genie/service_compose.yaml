@@ -1,6 +1,6 @@
 services:
   genie-models-runner:
-    image: artifacts.codelinaro.org/iot-solutions-microservices/genai-llm-vlm-service:1.2.0
+    image: artifacts.codelinaro.org/iot-solutions-microservices/genai-llm-vlm-service:1.3.0
     # Currently, genie-models-runner requires to run as root
     user: 0:0
     restart: on-failure
@@ -21,7 +21,7 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-ERROR}
       - GENAI_PORT=${GENAI_PORT:-9001}
       - TOOL_RESPONSE_TIMEOUT_SECONDS=${TOOL_RESPONSE_TIMEOUT_SECONDS:-30}
-      - GENAI_CONTEXT_CAPPING=${GENAI_CONTEXT_CAPPING:-2048}
+      - GENAI_CONTEXT_CAPPING=${GENAI_CONTEXT_CAPPING:-4096}
       - MAX_ACTIVE_MODELS=${MAX_ACTIVE_MODELS:-3}
     # Memory and resource limits for VLM model loading
     ulimits:
