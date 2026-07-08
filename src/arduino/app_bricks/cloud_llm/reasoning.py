@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+from dataclasses import dataclass
 from typing import Any, AsyncIterator, Iterator, List, Optional
 
 from langchain_core.callbacks import AsyncCallbackManagerForLLMRun, CallbackManagerForLLMRun
@@ -18,6 +19,23 @@ _REASONING_DELTA_EVENTS = (
     "response.reasoning_text.delta",
     "response.reasoning_summary_text.delta",
 )
+
+
+@dataclass
+class _ResponsesStreamState:
+    """Mutable cross-chunk state for Responses API streaming conversion.
+
+    Carries the indices the langchain-openai converter threads through
+    successive chunks, so a single conversion helper can be shared between the
+    sync and async streaming loops.
+    """
+
+    schema: Any = None
+    is_first_chunk: bool = True
+    current_index: int = -1
+    current_output_index: int = -1
+    current_sub_index: int = -1
+    has_reasoning: bool = False
 
 
 class ChatOpenAIReasoning(ChatOpenAI):
@@ -57,7 +75,8 @@ class ChatOpenAIReasoning(ChatOpenAI):
 
         This mirrors ``BaseChatOpenAI._stream_responses`` but adds handling for
         the reasoning delta events, which are otherwise ignored by the
-        langchain-openai converter.
+        langchain-openai converter. The per-event conversion is shared with the
+        async variant via ``_convert_responses_stream_chunk``.
         """
         import openai
         from langchain_openai.chat_models import base as _oai_base
@@ -74,53 +93,16 @@ class ChatOpenAIReasoning(ChatOpenAI):
             else:
                 context_manager = self.root_client.responses.create(**payload)
                 headers = {}
-            original_schema_obj = kwargs.get("response_format")
+            state = _ResponsesStreamState(schema=kwargs.get("response_format"))
 
             with context_manager as response:
-                is_first_chunk = True
-                current_index = -1
-                current_output_index = -1
-                current_sub_index = -1
-                has_reasoning = False
                 for chunk in response:
-                    if getattr(chunk, "type", None) in _REASONING_DELTA_EVENTS:
-                        delta = getattr(chunk, "delta", "") or ""
-                        if delta:
-                            generation_chunk = ChatGenerationChunk(
-                                message=AIMessageChunk(
-                                    content="",
-                                    additional_kwargs={"reasoning_content": delta},
-                                )
-                            )
-                            if run_manager:
-                                run_manager.on_llm_new_token("", chunk=generation_chunk)
-                            is_first_chunk = False
-                            yield generation_chunk
+                    generation_chunk = self._convert_responses_stream_chunk(chunk, state, headers)
+                    if generation_chunk is None:
                         continue
-
-                    metadata = headers if is_first_chunk else {}
-                    (
-                        current_index,
-                        current_output_index,
-                        current_sub_index,
-                        generation_chunk,
-                    ) = _oai_base._convert_responses_chunk_to_generation_chunk(
-                        chunk,
-                        current_index,
-                        current_output_index,
-                        current_sub_index,
-                        schema=original_schema_obj,
-                        metadata=metadata,
-                        has_reasoning=has_reasoning,
-                        output_version=self.output_version,
-                    )
-                    if generation_chunk:
-                        if run_manager:
-                            run_manager.on_llm_new_token(generation_chunk.text, chunk=generation_chunk)
-                        is_first_chunk = False
-                        if "reasoning" in generation_chunk.message.additional_kwargs:
-                            has_reasoning = True
-                        yield generation_chunk
+                    if run_manager:
+                        run_manager.on_llm_new_token(generation_chunk.text, chunk=generation_chunk)
+                    yield generation_chunk
         except openai.BadRequestError as e:
             _oai_base._handle_openai_bad_request(e)
         except openai.APIError as e:
@@ -142,7 +124,7 @@ class ChatOpenAIReasoning(ChatOpenAI):
         run_manager: Optional[AsyncCallbackManagerForLLMRun] = None,
         **kwargs: Any,
     ) -> AsyncIterator[ChatGenerationChunk]:
-        """Async counterpart of `_stream_responses`, surfacing reasoning deltas."""
+        """Async counterpart of ``_stream_responses``, surfacing reasoning deltas."""
         import openai
         from langchain_openai.chat_models import base as _oai_base
 
@@ -157,54 +139,62 @@ class ChatOpenAIReasoning(ChatOpenAI):
             else:
                 context_manager = await self.root_async_client.responses.create(**payload)
                 headers = {}
-            original_schema_obj = kwargs.get("response_format")
+            state = _ResponsesStreamState(schema=kwargs.get("response_format"))
 
             async with context_manager as response:
-                is_first_chunk = True
-                current_index = -1
-                current_output_index = -1
-                current_sub_index = -1
-                has_reasoning = False
                 async for chunk in response:
-                    if getattr(chunk, "type", None) in _REASONING_DELTA_EVENTS:
-                        delta = getattr(chunk, "delta", "") or ""
-                        if delta:
-                            generation_chunk = ChatGenerationChunk(
-                                message=AIMessageChunk(
-                                    content="",
-                                    additional_kwargs={"reasoning_content": delta},
-                                )
-                            )
-                            if run_manager:
-                                await run_manager.on_llm_new_token("", chunk=generation_chunk)
-                            is_first_chunk = False
-                            yield generation_chunk
+                    generation_chunk = self._convert_responses_stream_chunk(chunk, state, headers)
+                    if generation_chunk is None:
                         continue
-
-                    metadata = headers if is_first_chunk else {}
-                    (
-                        current_index,
-                        current_output_index,
-                        current_sub_index,
-                        generation_chunk,
-                    ) = _oai_base._convert_responses_chunk_to_generation_chunk(
-                        chunk,
-                        current_index,
-                        current_output_index,
-                        current_sub_index,
-                        schema=original_schema_obj,
-                        metadata=metadata,
-                        has_reasoning=has_reasoning,
-                        output_version=self.output_version,
-                    )
-                    if generation_chunk:
-                        if run_manager:
-                            await run_manager.on_llm_new_token(generation_chunk.text, chunk=generation_chunk)
-                        is_first_chunk = False
-                        if "reasoning" in generation_chunk.message.additional_kwargs:
-                            has_reasoning = True
-                        yield generation_chunk
+                    if run_manager:
+                        await run_manager.on_llm_new_token(generation_chunk.text, chunk=generation_chunk)
+                    yield generation_chunk
         except openai.BadRequestError as e:
             _oai_base._handle_openai_bad_request(e)
         except openai.APIError as e:
             _oai_base._handle_openai_api_error(e)
+
+    def _convert_responses_stream_chunk(
+        self,
+        chunk: Any,
+        state: _ResponsesStreamState,
+        headers: dict,
+    ) -> Optional[ChatGenerationChunk]:
+        """Convert one raw Responses API event into a ``ChatGenerationChunk``.
+
+        Reasoning delta events are surfaced via
+        ``additional_kwargs['reasoning_content']``; every other event is
+        delegated to the stock langchain-openai converter. Returns ``None`` when
+        the event yields no chunk (and should be skipped). ``state`` is mutated
+        in place to thread the converter's cross-chunk indices.
+        """
+        from langchain_openai.chat_models import base as _oai_base
+
+        if getattr(chunk, "type", None) in _REASONING_DELTA_EVENTS:
+            delta = getattr(chunk, "delta", "") or ""
+            if not delta:
+                return None
+            state.is_first_chunk = False
+            return ChatGenerationChunk(message=AIMessageChunk(content="", additional_kwargs={"reasoning_content": delta}))
+
+        metadata = headers if state.is_first_chunk else {}
+        (
+            state.current_index,
+            state.current_output_index,
+            state.current_sub_index,
+            generation_chunk,
+        ) = _oai_base._convert_responses_chunk_to_generation_chunk(
+            chunk,
+            state.current_index,
+            state.current_output_index,
+            state.current_sub_index,
+            schema=state.schema,
+            metadata=metadata,
+            has_reasoning=state.has_reasoning,
+            output_version=self.output_version,
+        )
+        if generation_chunk:
+            state.is_first_chunk = False
+            if "reasoning" in generation_chunk.message.additional_kwargs:
+                state.has_reasoning = True
+        return generation_chunk
