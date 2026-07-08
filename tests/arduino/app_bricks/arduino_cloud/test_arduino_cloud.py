@@ -225,6 +225,64 @@ def test_no_legacy_args_is_silent(fake_client):
 # ── Synchronous register + sync-frame resolution ─────────────────────────────
 
 
+def test_lastvalue_sync_fires_on_write_when_cloud_wins(fake_client):
+    # Mirrors the C++ ArduinoIoTCloud library: the last-value sync (initial or on
+    # reconnect) fires on_write whenever the synced cloud value wins per policy
+    # and actually differs from the local value, so an actuator is restored to a
+    # cloud state changed while the board was offline.
+    cloud, client = _make_cloud(fake_client)
+    received = []
+    # Cloud has a last value at register time → seeded synchronously as a
+    # 'lastvalue' frame that differs from the register default.
+    client.initial["led"] = (EVENT_LASTVALUE, {"value": True, "timestamp": "2026-07-07T10:00:00Z", "last_value": True})
+    # interval=0 so every loop() pass is due (the default 1.0s would gate later passes).
+    cloud.register("led", value=False, on_write=lambda c, v: received.append(v), interval=0)
+    cloud.start()
+    try:
+        cloud.loop()  # fires the scheduled on_write
+        assert cloud.led is True  # cloud value applied
+        assert received == [True]  # on_write fired for the sync (C++ parity)
+        # A subsequent live update still fires on_write.
+        client.feed("led", False)  # 'update' event
+        cloud.loop()
+        assert received == [True, False]
+    finally:
+        cloud.stop()
+
+
+def test_lastvalue_sync_no_on_write_when_value_unchanged(fake_client):
+    # The C++ guard (isDifferentFromCloud): a synced cloud value equal to the
+    # local value does not fire on_write.
+    cloud, client = _make_cloud(fake_client)
+    received = []
+    client.initial["led"] = (EVENT_LASTVALUE, {"value": True, "timestamp": "2026-07-07T10:00:00Z", "last_value": True})
+    cloud.register("led", value=True, on_write=lambda c, v: received.append(v), interval=0)
+    cloud.start()
+    try:
+        cloud.loop()
+        assert cloud.led is True
+        assert received == []  # value unchanged → no on_write
+    finally:
+        cloud.stop()
+
+
+def test_lastvalue_sync_no_on_write_device_wins(fake_client):
+    # DEVICE_WINS (onForceDeviceSync) never applies the cloud value, so the sync
+    # does not fire on_write; the local value is pushed up instead.
+    cloud, client = _make_cloud(fake_client)
+    received = []
+    client.initial["temp"] = (EVENT_LASTVALUE, {"value": 100, "timestamp": "2026-07-07T10:00:00Z", "last_value": True})
+    cloud.register("temp", value=7, sync=DEVICE_WINS, on_write=lambda c, v: received.append(v), interval=0)
+    cloud.start()
+    try:
+        cloud.loop()
+        assert cloud.temp == 7  # local wins
+        assert received == []  # on_write not fired on sync
+        assert ("temp", 7) in client.puts  # local pushed up
+    finally:
+        cloud.stop()
+
+
 def test_register_seeds_cloud_value_cloud_wins(fake_client):
     cloud, client = _make_cloud(fake_client)
     client.initial["temp"] = (EVENT_LASTVALUE, {"value": 100, "timestamp": "2026-07-07T10:00:00Z", "last_value": True})

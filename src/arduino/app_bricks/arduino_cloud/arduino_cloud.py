@@ -214,7 +214,9 @@ class ArduinoCloud:
         (thing_unavailable / lastvalue / lastvalue_missing) resolve the leaf's
         local value and move it in/out of the pending state; live ``update``
         events apply cloud changes (and are ignored while pending, since only a
-        sync frame ends the "no thing assigned" state).
+        sync frame ends the "no thing assigned" state). A ``lastvalue`` whose
+        cloud value wins and changes the local value fires on_write too, matching
+        the C++ ArduinoIoTCloud sync semantics (initial sync and reconnect resync).
         """
 
         def handle(event: str, payload: dict):
@@ -239,6 +241,12 @@ class ArduinoCloud:
                     value = payload.get("value")
                     ts = parse_timestamp(payload.get("timestamp"))
                     logger.debug("ArduinoCloud: '%s' sync lastvalue=%r ts=%s", leaf.name, value, ts)
+                    # Resolve the synced cloud value per policy. Mirroring the C++
+                    # ArduinoIoTCloud library (execCallbackOnSync -> onUpdate), fire
+                    # on_write whenever the cloud value wins and actually changes
+                    # the local value (apply_cloud returns True) — on the initial
+                    # sync and on a reconnect resync alike, so an actuator is
+                    # restored to a cloud state changed while offline.
                     if leaf.apply_cloud(value, ts):
                         leaf._owner.on_write_scheduled = True
                     return
