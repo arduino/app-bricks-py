@@ -111,6 +111,11 @@ class CloudLLM:
             **kwargs,
         )
 
+        # Keep a reference to the unbound model so a reasoning-capable client can
+        # be derived lazily (see `_get_reasoning_model`).
+        self._base_model = self._model
+        self._reasoning_model = None
+
         if self._tools and len(self._tools) > 0:
             logger.info(f"Binding {len(self._tools)} tool(s) to the model.")
             self._model = self._model.bind_tools(tools=self._tools)
@@ -431,6 +436,130 @@ class CloudLLM:
                 full_response = "".join(assistant_chunks)
                 self._history.add_messages([AIMessage(content=full_response)])
 
+    def _get_reasoning_model(self) -> BaseChatModel:
+        """Returns a reasoning-capable client that streams reasoning tokens.
+
+        The client is derived lazily from the base model by enabling the OpenAI
+        Responses API, which exposes reasoning content while streaming. Only
+        OpenAI-compatible models support this path.
+
+        Returns:
+            BaseChatModel: A model configured to stream reasoning tokens.
+
+        Raises:
+            RuntimeError: If the underlying model does not support reasoning streaming.
+        """
+        if self._reasoning_model is not None:
+            return self._reasoning_model
+
+        from .reasoning import ChatOpenAIReasoning
+
+        if not isinstance(self._base_model, ChatOpenAIReasoning):
+            raise RuntimeError("Reasoning streaming is only supported for OpenAI-compatible models.")
+
+        reasoning_model = self._base_model.model_copy(update={"use_responses_api": True, "output_version": "responses/v1"})
+        if self._tools and len(self._tools) > 0:
+            reasoning_model = reasoning_model.bind_tools(tools=self._tools)
+
+        self._reasoning_model = reasoning_model
+        return self._reasoning_model
+
+    def chat_stream_reasoning(self, message: str, images: List[str | bytes] = None) -> Iterator[dict]:
+        """Sends a message and yields both reasoning and answer tokens as they are generated.
+
+        Unlike `chat_stream`, this method separates the model's internal reasoning
+        (chain-of-thought) from the final answer. Each yielded item is a dictionary
+        with a `type` key that is either `"reasoning"` or `"content"`, and a
+        `content` key holding the text chunk.
+
+        This requires an OpenAI-compatible reasoning model. The generation can be
+        interrupted by calling `stop_stream()`.
+
+        Args:
+            message (str): The input text prompt from the user.
+            images (List[str | bytes]): Optional list of image file paths or raw bytes to include in the prompt.
+
+        Yields:
+            dict: A chunk of the form `{"type": "reasoning" | "content", "content": str}`.
+
+        Raises:
+            RuntimeError: If the model is not initialized, does not support reasoning, or the API request fails.
+            AlreadyGenerating: If a streaming session is already active.
+        """
+        try:
+            yield from self._chat_stream_reasoning_invoke(message, images)
+
+        except AlreadyGenerating:
+            raise
+        except Exception as e:
+            self._handle_stream_error(e)
+
+    def _chat_stream_reasoning_invoke(self, message: str, images: List[str | bytes] = None) -> Iterator[dict]:
+        """Internal method to stream reasoning and answer tokens from the model.
+
+        This is separated from `chat_stream_reasoning()` to allow for better error
+        handling and potential reuse in subclasses.
+
+        Args:
+            message (str): The input text prompt from the user.
+            images (List[str | bytes]): Optional list of image file paths or raw bytes to include in the prompt.
+
+        Yields:
+            dict: A chunk of the form `{"type": "reasoning" | "content", "content": str}`.
+
+        Raises:
+            RuntimeError: If the internal chain is not initialized or if the API request fails.
+            AlreadyGenerating: If a streaming session is already active.
+        """
+        reasoning_model = self._get_reasoning_model()
+        if self._keep_streaming.is_set():
+            raise AlreadyGenerating("A streaming response is already in progress. Please stop it before starting a new one.")
+        assistant_chunks: list[str] = []
+
+        try:
+            self._keep_streaming.set()
+            input_messages = self._get_message_with_history(message, images)
+            loops = 0
+
+            while True:
+                gathered = None
+                for token in reasoning_model.stream(input_messages):
+                    if not self._keep_streaming.is_set():
+                        break  # This stops the iteration and halts further token generation
+
+                    reasoning = token.additional_kwargs.get("reasoning_content")
+                    if reasoning:
+                        yield {"type": "reasoning", "content": reasoning}
+                        continue
+
+                    content = self._content_to_text(token.content)
+                    if content:
+                        assistant_chunks.append(content)
+                        yield {"type": "content", "content": content}
+
+                    # Accumulate non-reasoning chunks so streamed tool calls can be assembled.
+                    gathered = token if gathered is None else gathered + token
+
+                if not self._keep_streaming.is_set():
+                    break
+
+                tool_calls = getattr(gathered, "tool_calls", None) or [] if gathered is not None else []
+                if not tool_calls:
+                    break
+
+                loops += 1
+                if loops > self._max_tool_loops:
+                    raise RuntimeError(f"Too many consecutive tool-call loops ({self._max_tool_loops}). Possible tool loop.")
+
+                input_messages.append(gathered)
+                input_messages = self._process_tool_calls(tool_calls, input_messages.copy())
+
+        finally:
+            self._keep_streaming.clear()
+            if len(assistant_chunks) > 0:
+                full_response = "".join(assistant_chunks)
+                self._history.add_messages([AIMessage(content=full_response)])
+
     def stop_stream(self) -> None:
         """Signals the active streaming generation to stop.
 
@@ -486,12 +615,12 @@ def model_factory(model_name: CloudModel, **kwargs) -> BaseChatModel:
 
         return ChatAnthropic(model=model_name, **kwargs)
     elif model_name == CloudModel.OPENAI_GPT or model_name.startswith(f"{CloudModelProvider.OPENAI}:"):
-        from langchain_openai import ChatOpenAI
+        from .reasoning import ChatOpenAIReasoning
 
         if model_name.startswith(f"{CloudModelProvider.OPENAI}:"):
             model_name = model_name.split(":", 1)[1]
 
-        return ChatOpenAI(model=model_name, **kwargs)
+        return ChatOpenAIReasoning(model=model_name, **kwargs)
     elif model_name == CloudModel.GOOGLE_GEMINI or model_name.startswith(f"{CloudModelProvider.GOOGLE}:"):
         from langchain_google_genai import ChatGoogleGenerativeAI
 

@@ -17,3 +17,7 @@ supported_boards: ["unoq", "ventunoq"]
 ai_frameworks_compatibility:
   - genie
   - llamacpp
+variables:
+  - name: X_LLAMA_ARG_REASONING
+    description: LLama.cpp reasoning mode (on|off)
+    default_value: off

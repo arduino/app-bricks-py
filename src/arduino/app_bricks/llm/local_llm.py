@@ -281,6 +281,29 @@ class LargeLanguageModel(CloudLLM):
             else:
                 yield chunk
 
+    def chat_stream_reasoning(self, message: str, images: List[str | bytes] = None) -> Iterator[dict]:
+        """Sends a message and yields both reasoning and answer tokens as they are generated.
+
+        Unlike `chat_stream`, this method keeps the model's internal reasoning
+        (chain-of-thought) separate from the final answer. Each yielded item is a
+        dictionary with a `type` key that is either `"reasoning"` or `"content"`,
+        and a `content` key holding the text chunk.
+
+        The generation can be interrupted by calling `stop_stream()`.
+
+        Args:
+            message (str): The input text prompt from the user.
+            images (List[str | bytes]): Optional list of image file paths or raw bytes to include in the prompt.
+
+        Yields:
+            dict: A chunk of the form `{"type": "reasoning" | "content", "content": str}`.
+
+        Raises:
+            RuntimeError: If the internal chain is not initialized or if the API request fails.
+            AlreadyGenerating: If a streaming session is already active.
+        """
+        yield from super().chat_stream_reasoning(message=message, images=images)
+
     def _handle_stream_error(self, e: Exception) -> None:
         if isinstance(e, (BadRequestError, APIError)):
             self._handle_api_error(logger, e)

@@ -96,8 +96,8 @@ def make_llm(fake_model, monkeypatch):
     [
         (CloudModel.ANTHROPIC_CLAUDE, "langchain_anthropic.ChatAnthropic", str(CloudModel.ANTHROPIC_CLAUDE)),
         ("anthropic:claude-x", "langchain_anthropic.ChatAnthropic", "claude-x"),
-        (CloudModel.OPENAI_GPT, "langchain_openai.ChatOpenAI", str(CloudModel.OPENAI_GPT)),
-        ("openai:gpt-x", "langchain_openai.ChatOpenAI", "gpt-x"),
+        (CloudModel.OPENAI_GPT, "arduino.app_bricks.cloud_llm.reasoning.ChatOpenAIReasoning", str(CloudModel.OPENAI_GPT)),
+        ("openai:gpt-x", "arduino.app_bricks.cloud_llm.reasoning.ChatOpenAIReasoning", "gpt-x"),
         (CloudModel.GOOGLE_GEMINI, "langchain_google_genai.ChatGoogleGenerativeAI", str(CloudModel.GOOGLE_GEMINI)),
         ("google:gemini-x", "langchain_google_genai.ChatGoogleGenerativeAI", "gemini-x"),
     ],
@@ -127,7 +127,7 @@ def test_model_factory_defaults_to_openai_when_base_url_and_no_prefix(monkeypatc
         captured["kwargs"] = kwargs
         return "OAI"
 
-    monkeypatch.setattr("langchain_openai.ChatOpenAI", fake_ctor)
+    monkeypatch.setattr("arduino.app_bricks.cloud_llm.reasoning.ChatOpenAIReasoning", fake_ctor)
 
     result = model_factory("local-model", base_url="http://localhost:1234", api_key="k")
 
