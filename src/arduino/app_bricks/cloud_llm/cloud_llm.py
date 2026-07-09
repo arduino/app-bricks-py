@@ -495,6 +495,8 @@ class CloudLLM:
         if self._reasoning_model is not None and self._reasoning_effort == reasoning_effort:
             return self._reasoning_model
 
+        self._validate_reasoning_effort(reasoning_effort)
+
         from .reasoning import ChatOpenAIReasoning
 
         base_model = self._base_model
@@ -535,13 +537,53 @@ class CloudLLM:
             allowed = ", ".join(e.value for e in ReasoningEffort)
             raise ValueError(f"Unsupported reasoning effort '{reasoning_effort}'. Expected one of: {allowed}, or an integer token budget.")
 
+    @staticmethod
+    def _validate_reasoning_effort(reasoning_effort: Union["ReasoningEffort", str, int, None]) -> None:
+        """Guards the ``reasoning_effort`` argument to avoid level/budget confusion.
+
+        Accepted forms:
+        - ``None`` (use the model default),
+        - a discrete level: ``ReasoningEffort`` or its string value ('minimal',
+          'low', 'medium', 'high'),
+        - an integer token budget.
+
+        A ``bool`` and a numeric string (e.g. ``'64'``) are rejected explicitly
+        because they are ambiguous with an integer budget.
+
+        Args:
+            reasoning_effort (ReasoningEffort | str | int | None): The value to validate.
+
+        Raises:
+            ValueError: If a bool is passed, a numeric string is passed, or a string
+                is not a supported effort level.
+            TypeError: If the value is not a ``ReasoningEffort``, ``str``, ``int``, or ``None``.
+        """
+        if reasoning_effort is None:
+            return
+        if isinstance(reasoning_effort, bool):
+            raise ValueError("reasoning_effort must be an effort level (str) or an int token budget, not a bool.")
+        if isinstance(reasoning_effort, int):
+            return
+        if isinstance(reasoning_effort, str):
+            if reasoning_effort.strip().lstrip("-").isdigit():
+                allowed = ", ".join(e.value for e in ReasoningEffort)
+                raise ValueError(
+                    f"reasoning_effort '{reasoning_effort}' is a numeric string. Pass an int "
+                    f"(e.g. {int(reasoning_effort)}) for a token budget, or a level ({allowed})."
+                )
+            CloudLLM._resolve_effort_level(reasoning_effort)
+            return
+        raise TypeError(f"reasoning_effort must be ReasoningEffort, str, int, or None, got {type(reasoning_effort).__name__}.")
+
     def _openai_effort_update(self, model: BaseChatModel, reasoning_effort: Union["ReasoningEffort", str, int, None]) -> dict:
         """Builds the model-copy update applying reasoning effort for OpenAI models.
 
-        A discrete level maps to the standard ``reasoning_effort`` field. An integer
-        maps to llama.cpp's ``reasoning_budget`` (``-1`` unrestricted, ``0`` off,
-        ``N>0`` token budget), passed via ``extra_body`` since it is not a standard
-        OpenAI field.
+        A discrete level maps to the standard ``reasoning_effort`` field (used by
+        the real OpenAI API). An integer maps to llama.cpp's ``thinking_budget_tokens``
+        (``-1`` unrestricted, ``0`` off, ``N>0`` token budget), passed via
+        ``extra_body`` since it is not a standard OpenAI field. Because llama.cpp only
+        applies the budget when the model is actually thinking, ``enable_thinking`` is
+        also set via ``chat_template_kwargs`` for templates that gate thinking behind it.
 
         Args:
             model (BaseChatModel): The base OpenAI-compatible model.
@@ -554,7 +596,10 @@ class CloudLLM:
             return {}
         if isinstance(reasoning_effort, int) and not isinstance(reasoning_effort, bool):
             extra_body = dict(getattr(model, "extra_body", None) or {})
-            extra_body["reasoning_budget"] = reasoning_effort
+            extra_body["thinking_budget_tokens"] = reasoning_effort
+            chat_template_kwargs = dict(extra_body.get("chat_template_kwargs") or {})
+            chat_template_kwargs.setdefault("enable_thinking", True)
+            extra_body["chat_template_kwargs"] = chat_template_kwargs
             return {"extra_body": extra_body}
         return {"reasoning_effort": self._resolve_effort_level(reasoning_effort).value}
 
@@ -661,8 +706,9 @@ class CloudLLM:
                 'minimal'/'low'/'medium'/'high') or an explicit integer token budget
                 (`-1` dynamic/unrestricted, `0` off, `N>0` token budget). The value
                 is mapped to the provider's native knob (OpenAI `reasoning_effort`,
-                Gemini `thinking_level`/`thinking_budget`, llama.cpp `reasoning_budget`).
-                `None` uses the model default.
+                Gemini `thinking_level`/`thinking_budget`, llama.cpp `thinking_budget_tokens`).
+                `None` uses the model default. A bool or a numeric string (e.g. '64')
+                is rejected to avoid confusion with an integer budget.
 
         Yields:
             ReasoningStreamChunk: A `ReasoningChunk` or `ContentChunk` holding a `content` text fragment.
@@ -670,12 +716,13 @@ class CloudLLM:
         Raises:
             RuntimeError: If the model is not initialized, does not support reasoning, or the API request fails.
             ValueError: If `reasoning_effort` is not a supported level or budget.
+            TypeError: If `reasoning_effort` is not a ReasoningEffort, str, int, or None.
             AlreadyGenerating: If a streaming session is already active.
         """
         try:
             yield from self._chat_stream_reasoning_invoke(message, images, reasoning_effort)
 
-        except (AlreadyGenerating, ValueError):
+        except (AlreadyGenerating, ValueError, TypeError):
             raise
         except Exception as e:
             self._handle_stream_error(e)

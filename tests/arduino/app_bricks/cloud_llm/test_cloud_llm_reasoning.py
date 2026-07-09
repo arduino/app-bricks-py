@@ -262,10 +262,14 @@ def test_reasoning_effort_openai_level_and_budget(make_llm):
     level_model = llm._get_reasoning_model(ReasoningEffort.HIGH)
     assert level_model.reasoning_effort == "high"
 
-    # An integer maps to llama.cpp's reasoning_budget via extra_body.
+    # An integer maps to llama.cpp's thinking_budget_tokens via extra_body,
+    # with thinking enabled so gated templates honor the budget.
     llm._reasoning_model = None
     budget_model = llm._get_reasoning_model(-1)
-    assert budget_model.extra_body == {"reasoning_budget": -1}
+    assert budget_model.extra_body == {
+        "thinking_budget_tokens": -1,
+        "chat_template_kwargs": {"enable_thinking": True},
+    }
 
 
 def test_reasoning_effort_gemini3_uses_thinking_level(make_llm):
@@ -317,6 +321,39 @@ def test_reasoning_effort_invalid_level_raises(make_llm):
 
     with pytest.raises(ValueError, match="Unsupported reasoning effort"):
         llm._get_reasoning_model("ultra")
+
+
+def test_reasoning_effort_numeric_string_rejected(make_llm):
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
+    llm = make_llm()
+    llm._base_model = ChatGoogleGenerativeAI(model="gemini-3.5-flash", google_api_key="x")
+    llm._reasoning_model = None
+
+    with pytest.raises(ValueError, match="numeric string"):
+        llm._get_reasoning_model("64")
+
+
+def test_reasoning_effort_bool_rejected(make_llm):
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
+    llm = make_llm()
+    llm._base_model = ChatGoogleGenerativeAI(model="gemini-3.5-flash", google_api_key="x")
+    llm._reasoning_model = None
+
+    with pytest.raises(ValueError, match="not a bool"):
+        llm._get_reasoning_model(True)
+
+
+def test_reasoning_effort_wrong_type_rejected(make_llm):
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
+    llm = make_llm()
+    llm._base_model = ChatGoogleGenerativeAI(model="gemini-3.5-flash", google_api_key="x")
+    llm._reasoning_model = None
+
+    with pytest.raises(TypeError, match="must be ReasoningEffort"):
+        llm._get_reasoning_model(1.5)
 
 
 def test_reasoning_effort_recomputes_on_change(make_llm):
