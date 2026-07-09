@@ -36,6 +36,24 @@ MOST_RECENT_WINS = "MOST_RECENT_WINS"
 
 _POLICIES = (DEVICE_WINS, CLOUD_WINS, MOST_RECENT_WINS)
 
+# ── Update policy (device → cloud) ───────────────────────────────────────────
+# The ``interval`` argument mirrors the C++ ArduinoIoTCloud ``seconds`` argument
+# of ``addProperty`` (see AIoTC_Const.h ``static long const ON_CHANGE = -1``):
+#
+# * ``interval == ON_CHANGE`` (a negative sentinel, the default): publish on
+#   change — the value is sent to the cloud whenever it differs from the last
+#   value sent, throttled to at most one publish per ``_MIN_PUBLISH_INTERVAL``
+#   (mirrors ``publishOnChange`` with Property::DEFAULT_MIN_TIME_BETWEEN_UPDATES).
+# * ``interval > 0``: publish on a timer — the current value is sent every
+#   ``interval`` seconds regardless of whether it changed (mirrors
+#   ``publishEvery(seconds)``). Values that change within a window are not
+#   individually sent; only the latest value at the tick is published.
+ON_CHANGE = -1.0
+
+# Minimum time between two device→cloud publishes in ON_CHANGE mode, in seconds.
+# Mirrors the C++ Property::DEFAULT_MIN_TIME_BETWEEN_UPDATES_MILLIS = 500 ms (2 Hz).
+_MIN_PUBLISH_INTERVAL = 0.5
+
 
 def _now() -> float:
     """Current wall-clock time as epoch seconds (UTC), used for local changes.
@@ -57,11 +75,17 @@ class CloudObject:
 
     Callbacks (same contract as the legacy library):
 
-    * ``on_write(client, value)`` — fired (in the brick loop) after a cloud
-      update has been applied to this variable.
+    * ``on_write(client, value)`` — fired immediately, as soon as a cloud update
+      has been applied to this variable (from the SSE listener), mirroring the
+      synchronous ``onUpdate`` dispatch of the C++ ArduinoIoTCloud library. It is
+      NOT gated by ``interval``.
     * ``on_read(client) -> value`` — polled in the brick loop; its return value
-      becomes the local value and is pushed to the cloud when it changes.
-    * ``on_run(client, args)`` — polled in the brick loop unconditionally.
+      becomes the local value, published to the cloud per the update policy (see
+      ``interval`` / ``ON_CHANGE`` above). In ON_CHANGE mode it is polled every
+      loop pass so a change is detected promptly; in timed mode it is polled
+      once per ``interval``.
+    * ``on_run(client, args)`` — polled in the brick loop, at the same cadence
+      as ``on_read``, unconditionally.
     """
 
     def __init__(self, name: str, **kwargs: Any):
@@ -69,7 +93,7 @@ class CloudObject:
         self.on_read = kwargs.pop("on_read", None)
         self.on_write = kwargs.pop("on_write", None)
         self.on_run = kwargs.pop("on_run", None)
-        self.interval = kwargs.pop("interval", 1.0)
+        self.interval = kwargs.pop("interval", ON_CHANGE)
         self.backoff = kwargs.pop("backoff", None)
         self.args = kwargs.pop("args", None)
 
@@ -87,8 +111,12 @@ class CloudObject:
         self._local_ts = None  # epoch secs of the last local change
         self._cloud_ts = None  # epoch secs of the last applied cloud value
         self._pending = False  # True while no thing is assigned (thing_unavailable)
-        self.on_write_scheduled = False
         self.last_poll = 0.0
+        # Outbound (device → cloud) publish state, driven by pump() from the loop.
+        self._dirty = False  # local value changed since the last publish (ON_CHANGE)
+        self._last_push_ts = 0.0  # epoch secs of the last device→cloud publish
+        self._has_pushed_once = False  # first publish is immediate (C++ !_has_been_updated_once)
+        self._has_local_source = False  # the device has ever set this value (timed republish guard)
 
         if keys:
             # Complex object: build a scalar sub-object per key. Sub-object
@@ -105,7 +133,9 @@ class CloudObject:
         if kwargs:  # any leftover kwarg is a typo / unsupported option
             raise TypeError(f"'{type(self).__name__}' got unexpected keyword argument(s): {list(kwargs)}")
 
-        self.runnable = any((self.on_run, self.on_read, self.on_write))
+        # on_write is not polled: it fires immediately from the SSE handler.
+        # Only the device→cloud callbacks are polled at ``interval``.
+        self.runnable = any((self.on_run, self.on_read))
 
     def __repr__(self) -> str:
         return f"{self._value}"
@@ -154,7 +184,15 @@ class CloudObject:
 
     # ── local (device → cloud) changes ─────────────────────────────────────────
     def set_local(self, value: Any):
-        """Apply a value set by the application and push it to the cloud."""
+        """Record a value set by the application; it is published by ``pump()``.
+
+        This no longer publishes directly: the outbound value is sent by the
+        loop's ``pump()`` according to the update policy (ON_CHANGE throttle or
+        timed interval), mirroring the C++ library where a property write is
+        published on the next ``update()`` pass that ``shouldBeUpdated()`` allows
+        — not synchronously at assignment. Sync-time convergence pushes
+        (``apply_missing`` / policy push-back) remain immediate.
+        """
         if self.is_complex:
             # Assigning the whole object: accept a dict or another CloudObject.
             src = value._value if isinstance(value, CloudObject) else value
@@ -169,14 +207,44 @@ class CloudObject:
             return
         self._value = value
         self._local_ts = _now()
-        if self._pending:
-            # No thing assigned yet: the daemon would reject the push
-            # (thing_unavailable). Keep the value locally; it is pushed at sync
-            # time according to the policy (lastvalue_missing → always;
-            # DEVICE_WINS / MOST_RECENT_WINS when the local value should win).
+        self._has_local_source = True
+        self._dirty = True  # pump() publishes it per policy (skipped while pending)
+
+    def _do_push(self, now: float):
+        """Publish the current value to the cloud now and update publish state.
+
+        The single low-level send used by both the loop's ``pump()`` (policy
+        driven) and the immediate sync-time convergence pushes. Clears the dirty
+        flag and arms the ON_CHANGE throttle from ``now``.
+        """
+        if self._push is None:
             return
-        if self._push is not None:
-            self._push(self.name, value)
+        self._push(self.name, self._value)
+        self._last_push_ts = now
+        self._has_pushed_once = True
+        self._dirty = False
+
+    def pump(self, now: float, interval: float):
+        """Publish the local value to the cloud per the update policy.
+
+        Called from the brick loop for each scalar leaf. ``interval`` is the
+        owner object's policy selector (see ``ON_CHANGE`` / ``interval`` in the
+        module docstring). No-op while no thing is assigned (pending) or when
+        there is no value to send.
+        """
+        if self._push is None or self._pending or self._value is None:
+            return
+        if interval is None or interval < 0:
+            # ON_CHANGE: publish a changed value, throttled to _MIN_PUBLISH_INTERVAL
+            # (the very first publish is immediate, like C++ !_has_been_updated_once).
+            if self._dirty and (not self._has_pushed_once or (now - self._last_push_ts) >= _MIN_PUBLISH_INTERVAL):
+                self._do_push(now)
+        else:
+            # Timed (publishEvery): republish the current device value every
+            # ``interval`` seconds, changed or not. Guarded on _has_local_source
+            # so a purely cloud-controlled variable is never echoed back.
+            if self._has_local_source and (now - self._last_push_ts) >= interval:
+                self._do_push(now)
 
     def _coerce(self, value: Any) -> Any:
         # Workaround for the cloud int/float ambiguity: keep a float variable a
@@ -201,41 +269,61 @@ class CloudObject:
         if self.sync == DEVICE_WINS:
             # The device value always wins: ignore the cloud value and push the
             # local one back so the cloud converges. Re-push only on a real
-            # divergence to avoid an echo loop.
-            if self._value is not None and value != self._value and self._push is not None:
-                self._push(self.name, self._value)
+            # divergence to avoid an echo loop. Immediate (convergence), not
+            # subject to the outbound policy throttle.
+            if self._value is not None and value != self._value:
+                self._do_push(_now())
             return False
 
         if self.sync == MOST_RECENT_WINS and self._local_ts is not None and cloud_ts <= self._local_ts:
             # The local change is newer: keep it and push it up so the cloud
             # converges (guarded on divergence to avoid an echo loop).
-            if self._value is not None and value != self._value and self._push is not None:
-                self._push(self.name, self._value)
+            if self._value is not None and value != self._value:
+                self._do_push(_now())
             return False
 
         if value == self._value:
+            # Cloud already holds our value: nothing to publish.
+            self._dirty = False
             return False
         self._value = value
+        self._dirty = False  # cloud value adopted; discard any pending local push
         return True
 
     def apply_missing(self):
         """Resolve a ``lastvalue_missing`` sync frame: the cloud has no stored
         value for this variable, so the local value wins and is pushed up so the
         cloud converges. Applies to every sync policy. No-op if there is no local
-        value to assert yet.
+        value to assert yet. Immediate (convergence), not throttled by the policy.
         """
-        if self._value is not None and self._push is not None:
-            self._push(self.name, self._value)
+        if self._value is not None:
+            self._do_push(_now())
 
     # ── loop execution ─────────────────────────────────────────────────────────
     def run_sync(self, client):
-        """Run this object's callbacks once (called from the brick loop)."""
+        """Run this object's device→cloud callbacks once (called from the brick
+        loop every ``interval`` seconds).
+
+        Only ``on_run`` and ``on_read`` run here — they sample the device state
+        into the local value (via ``set_local``); the actual device→cloud publish
+        is done by ``pump()`` per the update policy. ``on_write`` is NOT fired
+        here: a cloud→device update fires it immediately from the SSE handler
+        (see ``fire_on_write``).
+        """
         if self.on_run is not None:
             self.on_run(client, self.args)
         if self.on_read is not None:
             self.set_local(self.on_read(client))
-        if self.on_write is not None and self.on_write_scheduled:
-            self.on_write_scheduled = False
+
+    def fire_on_write(self, client):
+        """Invoke this object's ``on_write`` callback with the current value.
+
+        Called synchronously from the SSE handler the moment a cloud update is
+        applied, mirroring the C++ ArduinoIoTCloud ``execCallbackOnChange`` /
+        ``onUpdate`` dispatch, which runs as soon as the update message is
+        decoded — not on a later, interval-gated pass.
+        """
+        if self.on_write is not None:
             self.on_write(client, self if self.is_complex else self._value)
 
 

@@ -109,7 +109,14 @@ class ArduinoCloud:
                 self._subscribe(record)
 
     def loop(self):
-        """Poll registered objects' callbacks (on_run / on_read / on_write)."""
+        """Sample device→cloud callbacks (on_run / on_read) and publish per policy.
+
+        Each pass, for every registered object: run its poll callbacks when due
+        (every pass in ON_CHANGE mode, once per ``interval`` in timed mode), then
+        publish each scalar leaf via ``pump()`` (ON_CHANGE throttle or timed
+        republish). on_write is not handled here: it fires immediately from the
+        SSE handler when a cloud update arrives.
+        """
         now = time.time()
         with self._lock:
             records = list(self._records.values())
@@ -118,6 +125,8 @@ class ArduinoCloud:
                 if record.runnable and self._poll_due(now, record):
                     record.run_sync(self)
                     record.last_poll = now
+                for leaf in record.leaves():
+                    leaf.pump(now, record.interval)
             except Exception as e:
                 logger.exception(f"Callback error for '{record.name}': {e}")
         time.sleep(_LOOP_INTERVAL)
@@ -132,6 +141,9 @@ class ArduinoCloud:
 
     @staticmethod
     def _poll_due(now: float, record: CloudObject) -> bool:
+        # In ON_CHANGE mode (negative interval) this is always true, so on_read/
+        # on_run are sampled every loop pass; in timed mode they poll once per
+        # interval. The actual cloud publish is throttled/timed in leaf.pump().
         return record.last_poll == 0.0 or (now - record.last_poll) >= record.interval
 
     # ── registration ─────────────────────────────────────────────────────────
@@ -142,8 +154,13 @@ class ArduinoCloud:
             aiotobj (str | Any): The variable name, or a cloud object
                                  (Location/Color/ColoredLight/DimmedLight/
                                  Schedule) to register.
-            **kwargs (Any): value, on_read, on_write, on_run, interval, args and
-                            sync (DEVICE_WINS/CLOUD_WINS/MOST_RECENT_WINS).
+            **kwargs (Any): value, on_read, on_write, on_run, args, sync
+                            (DEVICE_WINS/CLOUD_WINS/MOST_RECENT_WINS) and interval.
+                            ``interval`` selects the device→cloud update policy,
+                            like the C++ ``addProperty`` seconds argument:
+                            ``ON_CHANGE`` (default) publishes changes throttled to
+                            ~0.5s; a positive value publishes the current value
+                            every N seconds (timed).
         """
         if isinstance(aiotobj, str):
             aiotobj = CloudObject(aiotobj, **kwargs)
@@ -214,12 +231,20 @@ class ArduinoCloud:
         (thing_unavailable / lastvalue / lastvalue_missing) resolve the leaf's
         local value and move it in/out of the pending state; live ``update``
         events apply cloud changes (and are ignored while pending, since only a
-        sync frame ends the "no thing assigned" state). A ``lastvalue`` whose
-        cloud value wins and changes the local value fires on_write too, matching
-        the C++ ArduinoIoTCloud sync semantics (initial sync and reconnect resync).
+        sync frame ends the "no thing assigned" state). Whenever an applied cloud
+        value wins and actually changes the local value (``apply_cloud`` returns
+        True) the owner's on_write is fired immediately — as soon as the message
+        arrives, not on a later interval-gated loop pass — matching the C++
+        ArduinoIoTCloud synchronous onUpdate dispatch, on the initial sync, a
+        reconnect resync and live updates alike.
+
+        on_write is fired outside the lock (like the loop's run_sync, which also
+        runs callbacks unlocked): user callbacks must not block the state lock
+        held by other listeners and the poll loop.
         """
 
         def handle(event: str, payload: dict):
+            owner_to_fire = None
             with self._lock:
                 if event == EVENT_THING_UNAVAILABLE:
                     if not leaf._pending:
@@ -241,25 +266,24 @@ class ArduinoCloud:
                     value = payload.get("value")
                     ts = parse_timestamp(payload.get("timestamp"))
                     logger.debug("ArduinoCloud: '%s' sync lastvalue=%r ts=%s", leaf.name, value, ts)
-                    # Resolve the synced cloud value per policy. Mirroring the C++
-                    # ArduinoIoTCloud library (execCallbackOnSync -> onUpdate), fire
-                    # on_write whenever the cloud value wins and actually changes
-                    # the local value (apply_cloud returns True) — on the initial
-                    # sync and on a reconnect resync alike, so an actuator is
-                    # restored to a cloud state changed while offline.
                     if leaf.apply_cloud(value, ts):
-                        leaf._owner.on_write_scheduled = True
-                    return
+                        owner_to_fire = leaf._owner
+                else:
+                    # Live update. Ignore while pending: only a sync frame ends
+                    # the "no thing assigned" state.
+                    if leaf._pending:
+                        return
+                    value = payload.get("value")
+                    ts = parse_timestamp(payload.get("timestamp"))
+                    logger.debug("ArduinoCloud: cloud update for '%s': value=%r ts=%s", leaf.name, value, ts)
+                    if leaf.apply_cloud(value, ts):
+                        owner_to_fire = leaf._owner
 
-                # Live update. Ignore while pending: only a sync frame ends the
-                # "no thing assigned" state.
-                if leaf._pending:
-                    return
-                value = payload.get("value")
-                ts = parse_timestamp(payload.get("timestamp"))
-                logger.debug("ArduinoCloud: cloud update for '%s': value=%r ts=%s", leaf.name, value, ts)
-                if leaf.apply_cloud(value, ts):
-                    leaf._owner.on_write_scheduled = True
+            # Fire on_write immediately (outside the lock) so a cloud→device
+            # update invokes the callback the moment the message arrives, rather
+            # than waiting for the next interval-gated loop pass (C++ parity).
+            if owner_to_fire is not None:
+                owner_to_fire.fire_on_write(self)
 
         return handle
 

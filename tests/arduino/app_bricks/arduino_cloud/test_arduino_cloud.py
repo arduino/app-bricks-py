@@ -22,6 +22,7 @@ from arduino.app_bricks.arduino_cloud import (
     MOST_RECENT_WINS,
 )
 from arduino.app_bricks.arduino_cloud import arduino_cloud as ac_module
+from arduino.app_bricks.arduino_cloud import objects as ac_objects
 from arduino.app_bricks.arduino_cloud.daemon_client import (
     DaemonClient,
     parse_timestamp,
@@ -29,7 +30,7 @@ from arduino.app_bricks.arduino_cloud.daemon_client import (
     EVENT_LASTVALUE_MISSING,
     EVENT_THING_UNAVAILABLE,
 )
-from arduino.app_bricks.arduino_cloud.objects import CloudObject
+from arduino.app_bricks.arduino_cloud.objects import CloudObject, ON_CHANGE
 
 _HAS_AF_UNIX = os.name == "posix" and hasattr(socket, "AF_UNIX") and hasattr(socketserver, "UnixStreamServer")
 
@@ -127,10 +128,12 @@ def test_most_recent_wins_respects_local_timestamp():
     pushes = []
     obj = CloudObject("v", value=1, sync=MOST_RECENT_WINS)
     obj.bind(lambda n, val: pushes.append((n, val)))
-    obj.set_local(5)  # stamps a local timestamp = now
+    obj.set_local(5)  # stamps a local timestamp = now; marks dirty (not sent yet)
+    assert pushes == []  # set_local no longer publishes directly
+    obj.pump(time.time(), ON_CHANGE)  # the loop's pump publishes the change
     assert pushes == [("v", 5)]
-    # An older cloud value is ignored; the newer local value is re-pushed so the
-    # cloud converges to the device.
+    # An older cloud value is ignored; the newer local value is re-pushed
+    # immediately (convergence) so the cloud converges to the device.
     assert obj.apply_cloud(9, cloud_ts=time.time() - 100) is False
     assert obj.value == 5
     assert pushes == [("v", 5), ("v", 5)]
@@ -159,15 +162,71 @@ def test_invalid_sync_policy_rejected():
         CloudObject("v", sync="bogus")
 
 
+# ── Update policy: ON_CHANGE vs timed (pump) ─────────────────────────────────
+
+
+def test_on_change_publishes_changes_throttled():
+    # ON_CHANGE mirrors the C++ publishOnChange: publish a changed value, but no
+    # more than once per _MIN_PUBLISH_INTERVAL (first publish immediate).
+    pushes = []
+    obj = CloudObject("v", value=None, interval=ON_CHANGE)
+    obj.bind(lambda n, val: pushes.append((n, val)))
+    t = 1000.0
+    obj.set_local(1)
+    obj.pump(t, ON_CHANGE)  # first change → immediate
+    assert pushes == [("v", 1)]
+    # A change within the throttle window is held back.
+    obj.set_local(2)
+    obj.pump(t + 0.1, ON_CHANGE)
+    assert pushes == [("v", 1)]
+    # Once the window elapses, the latest value is published.
+    obj.pump(t + ac_objects._MIN_PUBLISH_INTERVAL, ON_CHANGE)
+    assert pushes == [("v", 1), ("v", 2)]
+    # No further change → no publish, however long we wait.
+    obj.pump(t + 100, ON_CHANGE)
+    assert pushes == [("v", 1), ("v", 2)]
+
+
+def test_timed_republishes_latest_value_every_interval():
+    # Timed mode mirrors the C++ publishEvery: republish the current value every
+    # `interval` seconds regardless of change; values changing within a window
+    # are not individually sent — only the latest at the tick.
+    pushes = []
+    obj = CloudObject("v", value=None, interval=5)
+    obj.bind(lambda n, val: pushes.append((n, val)))
+    t = 1000.0
+    # A purely cloud-controlled value (device never set it) is not republished.
+    obj.pump(t, 5)
+    assert pushes == []
+    obj.set_local(10)
+    obj.pump(t, 5)  # first tick → immediate
+    assert pushes == [("v", 10)]
+    # A change within the window is not sent yet.
+    obj.set_local(11)
+    obj.pump(t + 2, 5)
+    assert pushes == [("v", 10)]
+    # At the tick only the latest value is sent; the intermediate 11 is dropped.
+    obj.set_local(12)
+    obj.pump(t + 5, 5)
+    assert pushes == [("v", 10), ("v", 12)]
+    # Republishes the current value even without any change.
+    obj.pump(t + 10, 5)
+    assert pushes == [("v", 10), ("v", 12), ("v", 12)]
+
+
 # ── Brick behaviour with a fake daemon ───────────────────────────────────────
 
 
-def test_setattr_pushes_value(fake_client):
+def test_setattr_pushes_value(fake_client, monkeypatch):
+    monkeypatch.setattr(ac_objects, "_MIN_PUBLISH_INTERVAL", 0.0)  # no throttle delay in the test
     cloud, client = _make_cloud(fake_client)
     # Default seed is lastvalue_missing (thing assigned, no cloud value), so the
-    # registered default is pushed up first; then the explicit set pushes True.
+    # registered default is pushed up first (immediate convergence). The explicit
+    # set is published by the loop's pump (ON_CHANGE), not synchronously.
     cloud.register("led", value=False)
+    assert client.puts == [("led", False)]
     cloud.led = True
+    cloud.loop()
     assert client.puts == [("led", False), ("led", True)]
     assert cloud.led is True
 
@@ -178,8 +237,9 @@ def test_sse_update_fires_on_write(fake_client):
     cloud.register("led", value=False, on_write=lambda c, v: received.append(v))
     cloud.start()
     try:
+        # on_write fires immediately when the update arrives, not on a later,
+        # interval-gated loop pass (C++ parity).
         client.feed("led", True)
-        cloud.loop()  # on_write is scheduled then fired in the loop pass
         assert received == [True]
         assert cloud.led is True
     finally:
@@ -192,12 +252,13 @@ def test_complex_object_subscribes_and_pushes_each_leaf(fake_client):
     cloud.register(ColoredLight("clight", swi=True, on_write=lambda c, v: writes.append(v.swi)))
     cloud.start()
     try:
-        # Setting a sub-attribute pushes the namespaced leaf variable.
+        # Setting a sub-attribute publishes the namespaced leaf variable on the
+        # next loop pass (first publish of that leaf is immediate, not throttled).
         cloud.clight.hue = 120
-        assert ("clight:hue", 120) in client.puts
-        # A cloud update on a leaf schedules the parent object's on_write.
-        client.feed("clight:swi", False)
         cloud.loop()
+        assert ("clight:hue", 120) in client.puts
+        # A cloud update on a leaf fires the parent object's on_write immediately.
+        client.feed("clight:swi", False)
         assert writes == [False]
         assert cloud.clight.swi is False
     finally:
@@ -235,16 +296,14 @@ def test_lastvalue_sync_fires_on_write_when_cloud_wins(fake_client):
     # Cloud has a last value at register time → seeded synchronously as a
     # 'lastvalue' frame that differs from the register default.
     client.initial["led"] = (EVENT_LASTVALUE, {"value": True, "timestamp": "2026-07-07T10:00:00Z", "last_value": True})
-    # interval=0 so every loop() pass is due (the default 1.0s would gate later passes).
-    cloud.register("led", value=False, on_write=lambda c, v: received.append(v), interval=0)
+    # on_write fires immediately during the synchronous initial sync in register().
+    cloud.register("led", value=False, on_write=lambda c, v: received.append(v))
+    assert cloud.led is True  # cloud value applied
+    assert received == [True]  # on_write fired for the sync (C++ parity)
     cloud.start()
     try:
-        cloud.loop()  # fires the scheduled on_write
-        assert cloud.led is True  # cloud value applied
-        assert received == [True]  # on_write fired for the sync (C++ parity)
-        # A subsequent live update still fires on_write.
+        # A subsequent live update still fires on_write immediately.
         client.feed("led", False)  # 'update' event
-        cloud.loop()
         assert received == [True, False]
     finally:
         cloud.stop()
@@ -256,10 +315,9 @@ def test_lastvalue_sync_no_on_write_when_value_unchanged(fake_client):
     cloud, client = _make_cloud(fake_client)
     received = []
     client.initial["led"] = (EVENT_LASTVALUE, {"value": True, "timestamp": "2026-07-07T10:00:00Z", "last_value": True})
-    cloud.register("led", value=True, on_write=lambda c, v: received.append(v), interval=0)
+    cloud.register("led", value=True, on_write=lambda c, v: received.append(v))
     cloud.start()
     try:
-        cloud.loop()
         assert cloud.led is True
         assert received == []  # value unchanged → no on_write
     finally:
@@ -272,10 +330,9 @@ def test_lastvalue_sync_no_on_write_device_wins(fake_client):
     cloud, client = _make_cloud(fake_client)
     received = []
     client.initial["temp"] = (EVENT_LASTVALUE, {"value": 100, "timestamp": "2026-07-07T10:00:00Z", "last_value": True})
-    cloud.register("temp", value=7, sync=DEVICE_WINS, on_write=lambda c, v: received.append(v), interval=0)
+    cloud.register("temp", value=7, sync=DEVICE_WINS, on_write=lambda c, v: received.append(v))
     cloud.start()
     try:
-        cloud.loop()
         assert cloud.temp == 7  # local wins
         assert received == []  # on_write not fired on sync
         assert ("temp", 7) in client.puts  # local pushed up

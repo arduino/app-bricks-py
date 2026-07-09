@@ -12,6 +12,7 @@ from .objects import (
     DEVICE_WINS,
     CLOUD_WINS,
     MOST_RECENT_WINS,
+    ON_CHANGE,
 )
 
 
@@ -25,4 +26,5 @@ __all__ = [
     "DEVICE_WINS",
     "CLOUD_WINS",
     "MOST_RECENT_WINS",
+    "ON_CHANGE",
 ]
