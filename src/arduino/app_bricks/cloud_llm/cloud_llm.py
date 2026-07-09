@@ -20,6 +20,14 @@ from .memory import MessagePersistence, SQLMessagePersistence, WindowedChatMessa
 
 DEFAULT_MEMORY = 10
 
+# Anthropic extended thinking requires a minimum ``budget_tokens`` of 1024. Used to
+# clamp mapped budgets and as the headroom added to ``max_tokens`` when needed.
+ANTHROPIC_MIN_THINKING_BUDGET = 1024
+
+# Budget applied when reasoning is requested for an Anthropic model without an explicit
+# effort, since Claude does not think by default and would otherwise stream no reasoning.
+ANTHROPIC_DEFAULT_THINKING_BUDGET = 2048
+
 
 class AlreadyGenerating(Exception):
     """Exception raised when a generation is already in progress."""
@@ -476,6 +484,8 @@ class CloudLLM:
           reasoning content while streaming.
         - Google Gemini models enable ``include_thoughts`` so the model streams its
           reasoning summaries as ``thinking`` content blocks.
+        - Anthropic Claude models enable extended thinking (``thinking``) so the model
+          streams its reasoning as ``thinking`` content blocks.
 
         The optional ``reasoning_effort`` controls how much the model reasons and is
         translated to each provider's native knob (see ``_reasoning_effort_update``).
@@ -508,8 +518,10 @@ class CloudLLM:
             update = {"include_thoughts": True}
             update.update(self._gemini_effort_update(base_model, reasoning_effort))
             reasoning_model = base_model.model_copy(update=update)
+        elif self._is_anthropic_model(base_model):
+            reasoning_model = base_model.model_copy(update=self._anthropic_effort_update(base_model, reasoning_effort))
         else:
-            raise RuntimeError("Reasoning streaming is only supported for OpenAI-compatible and Google Gemini models.")
+            raise RuntimeError("Reasoning streaming is only supported for OpenAI-compatible, Google Gemini, and Anthropic Claude models.")
 
         if self._tools and len(self._tools) > 0:
             reasoning_model = reasoning_model.bind_tools(tools=self._tools)
@@ -631,6 +643,54 @@ class CloudLLM:
             return {"thinking_level": level.value}
         return {"thinking_budget": EFFORT_TO_BUDGET[level]}
 
+    def _anthropic_effort_update(self, model: BaseChatModel, reasoning_effort: Union["ReasoningEffort", str, int, None]) -> dict:
+        """Builds the model-copy update applying reasoning effort for Anthropic models.
+
+        Anthropic exposes reasoning via extended thinking, enabled through the
+        ``thinking`` config rather than a discrete level. This method maps the effort:
+
+        - ``None`` enables thinking with a default token budget so the reasoning stream
+          is populated (Claude does not think by default).
+        - An integer ``0`` disables thinking (no reasoning is produced).
+        - An integer ``-1`` selects adaptive thinking (``{"type": "adaptive"}``), which
+          lets the model choose its own budget. Adaptive is only supported on Claude
+          Opus 4.6+; other models will reject it.
+        - An integer ``N > 0`` maps to ``budget_tokens``, clamped to Anthropic's minimum
+          of 1024.
+        - A discrete level maps to a ``budget_tokens`` count via ``EFFORT_TO_BUDGET``
+          (also clamped to 1024), since the default Claude models do not support the
+          native ``effort`` parameter.
+
+        When thinking is enabled, ``temperature`` is forced to ``1`` because the Anthropic
+        API rejects any other temperature while thinking is active, and ``max_tokens`` is
+        raised above the budget when necessary (``budget_tokens`` must be strictly less
+        than ``max_tokens``).
+
+        Args:
+            model (BaseChatModel): The base Anthropic model.
+            reasoning_effort (ReasoningEffort | str | int | None): Effort level or budget.
+
+        Returns:
+            dict: Fields to apply via ``model_copy``.
+        """
+        if isinstance(reasoning_effort, int) and not isinstance(reasoning_effort, bool):
+            if reasoning_effort == 0:
+                return {}
+            if reasoning_effort < 0:
+                return {"thinking": {"type": "adaptive"}, "temperature": 1}
+            budget = max(reasoning_effort, ANTHROPIC_MIN_THINKING_BUDGET)
+        elif reasoning_effort is None:
+            budget = ANTHROPIC_DEFAULT_THINKING_BUDGET
+        else:
+            level = self._resolve_effort_level(reasoning_effort)
+            budget = max(EFFORT_TO_BUDGET[level], ANTHROPIC_MIN_THINKING_BUDGET)
+
+        update: dict = {"thinking": {"type": "enabled", "budget_tokens": budget}, "temperature": 1}
+        max_tokens = getattr(model, "max_tokens", None)
+        if max_tokens is not None and max_tokens <= budget:
+            update["max_tokens"] = budget + ANTHROPIC_MIN_THINKING_BUDGET
+        return update
+
     @staticmethod
     def _is_google_model(model: BaseChatModel) -> bool:
         """Returns True when ``model`` is a Google Gemini chat model.
@@ -649,6 +709,25 @@ class CloudLLM:
         except ImportError:
             return False
         return isinstance(model, ChatGoogleGenerativeAI)
+
+    @staticmethod
+    def _is_anthropic_model(model: BaseChatModel) -> bool:
+        """Returns True when ``model`` is an Anthropic Claude chat model.
+
+        The import is performed lazily so the optional ``langchain-anthropic``
+        dependency is only required when a Claude model is actually in use.
+
+        Args:
+            model (BaseChatModel): The model instance to inspect.
+
+        Returns:
+            bool: True if ``model`` is a ``ChatAnthropic`` instance.
+        """
+        try:
+            from langchain_anthropic import ChatAnthropic
+        except ImportError:
+            return False
+        return isinstance(model, ChatAnthropic)
 
     def _extract_reasoning(self, token: BaseMessage) -> str:
         """Extracts reasoning (chain-of-thought) text from a streamed token.
@@ -695,8 +774,8 @@ class CloudLLM:
         `ContentChunk` (final answer), both exposing a `content` text fragment.
         Branch on the concrete type with `isinstance`.
 
-        This requires an OpenAI-compatible or Google Gemini reasoning model. The
-        generation can be interrupted by calling `stop_stream()`.
+        This requires an OpenAI-compatible, Google Gemini, or Anthropic Claude
+        reasoning model. The generation can be interrupted by calling `stop_stream()`.
 
         Args:
             message (str): The input text prompt from the user.
@@ -706,9 +785,11 @@ class CloudLLM:
                 'minimal'/'low'/'medium'/'high') or an explicit integer token budget
                 (`-1` dynamic/unrestricted, `0` off, `N>0` token budget). The value
                 is mapped to the provider's native knob (OpenAI `reasoning_effort`,
-                Gemini `thinking_level`/`thinking_budget`, llama.cpp `thinking_budget_tokens`).
-                `None` uses the model default. A bool or a numeric string (e.g. '64')
-                is rejected to avoid confusion with an integer budget.
+                Gemini `thinking_level`/`thinking_budget`, Anthropic `thinking` budget_tokens,
+                llama.cpp `thinking_budget_tokens`). `None` uses the model default (for
+                Anthropic, a default thinking budget is applied since Claude does not think
+                by default). A bool or a numeric string (e.g. '64') is rejected to avoid
+                confusion with an integer budget.
 
         Yields:
             ReasoningStreamChunk: A `ReasoningChunk` or `ContentChunk` holding a `content` text fragment.

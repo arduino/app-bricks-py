@@ -312,6 +312,105 @@ def test_reasoning_effort_gemini_int_budget(make_llm):
     assert reasoning_model.thinking_budget == 4096
 
 
+def test_reasoning_effort_anthropic_level_maps_to_budget(make_llm):
+    from langchain_anthropic import ChatAnthropic
+    from arduino.app_bricks.cloud_llm import ReasoningEffort
+    from arduino.app_bricks.cloud_llm.models import EFFORT_TO_BUDGET
+
+    llm = make_llm()
+    llm._base_model = ChatAnthropic(model="claude-sonnet-4-6", api_key="x")
+    llm._reasoning_model = None
+
+    reasoning_model = llm._get_reasoning_model(ReasoningEffort.HIGH)
+
+    assert reasoning_model.thinking == {"type": "enabled", "budget_tokens": EFFORT_TO_BUDGET[ReasoningEffort.HIGH]}
+    # Thinking requires temperature == 1 on Anthropic.
+    assert reasoning_model.temperature == 1
+
+
+def test_reasoning_effort_anthropic_minimal_level_clamped_to_minimum(make_llm):
+    from langchain_anthropic import ChatAnthropic
+    from arduino.app_bricks.cloud_llm import ReasoningEffort
+
+    llm = make_llm()
+    llm._base_model = ChatAnthropic(model="claude-sonnet-4-6", api_key="x")
+    llm._reasoning_model = None
+
+    # MINIMAL maps to 512, which is below Anthropic's 1024 minimum and must be clamped.
+    reasoning_model = llm._get_reasoning_model(ReasoningEffort.MINIMAL)
+
+    assert reasoning_model.thinking == {"type": "enabled", "budget_tokens": 1024}
+
+
+def test_reasoning_effort_anthropic_int_budget_clamped(make_llm):
+    from langchain_anthropic import ChatAnthropic
+
+    llm = make_llm()
+    llm._base_model = ChatAnthropic(model="claude-sonnet-4-6", api_key="x")
+
+    llm._reasoning_model = None
+    big = llm._get_reasoning_model(4096)
+    assert big.thinking == {"type": "enabled", "budget_tokens": 4096}
+    assert big.temperature == 1
+
+    # Below the 1024 minimum is clamped up.
+    llm._reasoning_model = None
+    small = llm._get_reasoning_model(100)
+    assert small.thinking == {"type": "enabled", "budget_tokens": 1024}
+
+
+def test_reasoning_effort_anthropic_zero_disables_thinking(make_llm):
+    from langchain_anthropic import ChatAnthropic
+
+    llm = make_llm()
+    llm._base_model = ChatAnthropic(model="claude-sonnet-4-6", api_key="x")
+    llm._reasoning_model = None
+
+    reasoning_model = llm._get_reasoning_model(0)
+
+    assert reasoning_model.thinking is None
+
+
+def test_reasoning_effort_anthropic_negative_uses_adaptive(make_llm):
+    from langchain_anthropic import ChatAnthropic
+
+    llm = make_llm()
+    llm._base_model = ChatAnthropic(model="claude-opus-4-8", api_key="x")
+    llm._reasoning_model = None
+
+    reasoning_model = llm._get_reasoning_model(-1)
+
+    assert reasoning_model.thinking == {"type": "adaptive"}
+    assert reasoning_model.temperature == 1
+
+
+def test_reasoning_effort_anthropic_none_uses_default_budget(make_llm):
+    from langchain_anthropic import ChatAnthropic
+    from arduino.app_bricks.cloud_llm.cloud_llm import ANTHROPIC_DEFAULT_THINKING_BUDGET
+
+    llm = make_llm()
+    llm._base_model = ChatAnthropic(model="claude-sonnet-4-6", api_key="x")
+    llm._reasoning_model = None
+
+    reasoning_model = llm._get_reasoning_model()
+
+    assert reasoning_model.thinking == {"type": "enabled", "budget_tokens": ANTHROPIC_DEFAULT_THINKING_BUDGET}
+
+
+def test_reasoning_effort_anthropic_raises_max_tokens_above_budget(make_llm):
+    from langchain_anthropic import ChatAnthropic
+
+    llm = make_llm()
+    # A small max_tokens must be raised above the thinking budget (budget < max_tokens).
+    llm._base_model = ChatAnthropic(model="claude-sonnet-4-6", api_key="x", max_tokens=512)
+    llm._reasoning_model = None
+
+    reasoning_model = llm._get_reasoning_model(4096)
+
+    assert reasoning_model.thinking == {"type": "enabled", "budget_tokens": 4096}
+    assert reasoning_model.max_tokens > 4096
+
+
 def test_reasoning_effort_invalid_level_raises(make_llm):
     from langchain_google_genai import ChatGoogleGenerativeAI
 
