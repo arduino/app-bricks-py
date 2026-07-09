@@ -16,6 +16,16 @@ from typing import Iterator, List, Optional, Any, Callable, Union
 
 logger = Logger("LargeLanguageModel")
 
+# llama.cpp reasoning budgets, mapped to the OpenAI-compatible ``thinking_budget_tokens``
+# request field honored by the llama.cpp server: ``-1`` streams unrestricted reasoning,
+# ``0`` disables it, and ``N>0`` caps the reasoning to N tokens. Discrete effort levels are
+# ignored by llama.cpp, so reasoning is controlled exclusively through these integer budgets.
+REASONING_BUDGET_UNRESTRICTED = -1
+REASONING_BUDGET_OFF = 0
+REASONING_BUDGET_LOW = 64
+REASONING_BUDGET_MEDIUM = 512
+REASONING_BUDGET_HIGH = 2048
+
 
 @brick
 class LargeLanguageModel(CloudLLM):
@@ -281,7 +291,12 @@ class LargeLanguageModel(CloudLLM):
             else:
                 yield chunk
 
-    def chat_stream_reasoning(self, message: str, images: List[str | bytes] = None) -> Iterator[ReasoningStreamChunk]:
+    def chat_stream_reasoning(
+        self,
+        message: str,
+        images: List[str | bytes] = None,
+        reasoning_effort: Optional[int] = None,
+    ) -> Iterator[ReasoningStreamChunk]:
         """Sends a message and yields both reasoning and answer tokens as they are generated.
 
         Unlike `chat_stream`, this method keeps the model's internal reasoning
@@ -290,20 +305,42 @@ class LargeLanguageModel(CloudLLM):
         `ContentChunk` (final answer), both exposing a `content` text fragment.
         Branch on the concrete type with `isinstance`.
 
+        This is currently supported only for llama.cpp models. Genie models do not
+        support reasoning streaming and raise a `NotImplementedError`.
+
         The generation can be interrupted by calling `stop_stream()`.
 
         Args:
             message (str): The input text prompt from the user.
             images (List[str | bytes]): Optional list of image file paths or raw bytes to include in the prompt.
+            reasoning_effort (Optional[int]): An integer token budget controlling how much
+                the model reasons, mapped to llama.cpp's `thinking_budget_tokens` field.
+                Use `REASONING_BUDGET_UNRESTRICTED` (`-1`) for unrestricted reasoning,
+                `REASONING_BUDGET_OFF` (`0`) to disable it, or a positive token budget
+                (see `REASONING_BUDGET_LOW`/`REASONING_BUDGET_MEDIUM`/`REASONING_BUDGET_HIGH`).
+                Discrete effort levels are not supported because llama.cpp ignores them.
+                `None` uses the model default.
 
         Yields:
             ReasoningStreamChunk: A `ReasoningChunk` or `ContentChunk` holding a `content` text fragment.
 
         Raises:
+            NotImplementedError: If the configured model is a Genie model.
+            ValueError: If `reasoning_effort` is not an integer token budget or `None`.
             RuntimeError: If the internal chain is not initialized or if the API request fails.
             AlreadyGenerating: If a streaming session is already active.
         """
-        yield from super().chat_stream_reasoning(message=message, images=images)
+        if self._model_name.startswith(self.GENIE_MODEL):
+            raise NotImplementedError("Reasoning streaming is not supported for Genie models. Use a llama.cpp model instead.")
+
+        if reasoning_effort is not None and (isinstance(reasoning_effort, bool) or not isinstance(reasoning_effort, int)):
+            raise ValueError(
+                "reasoning_effort must be an integer token budget for local llama.cpp models "
+                f"(e.g. {REASONING_BUDGET_OFF} to disable, {REASONING_BUDGET_UNRESTRICTED} for unrestricted, "
+                "or a positive budget), or None to use the model default."
+            )
+
+        yield from super().chat_stream_reasoning(message=message, images=images, reasoning_effort=reasoning_effort)
 
     def _handle_stream_error(self, e: Exception) -> None:
         if isinstance(e, (BadRequestError, APIError)):
