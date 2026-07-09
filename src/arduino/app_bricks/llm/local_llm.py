@@ -10,7 +10,6 @@ from arduino.app_bricks.cloud_llm.memory import MessagePersistence
 from arduino.app_utils import Logger, brick
 from arduino.app_internal.core import resolve_address, get_brick_config, get_brick_configured_model
 
-import os
 from openai import OpenAI, APIError, BadRequestError
 from typing import Iterator, List, Optional, Any, Callable, Union
 
@@ -32,7 +31,7 @@ class LargeLanguageModel(CloudLLM):
     """A Brick for interacting with locally-based Large Language Models (LLMs).
 
     This class wraps LangChain functionality to provide a simplified, unified interface
-    for chatting with models like Qwenm, LLama, Gemma. It supports both synchronous
+    for chatting with models like Qwen, LLama, Gemma. It supports both synchronous
     'one-shot' responses and streaming output, with optional conversational memory.
     """
 
@@ -40,11 +39,9 @@ class LargeLanguageModel(CloudLLM):
 
     GENIE_MODEL = "genie"
     LLAMACPP_MODEL = "llamacpp"
-    OLLAMA_MODEL = "ollama"
 
     def __init__(
         self,
-        api_key: str = os.getenv("LOCAL_LLM_API_KEY", "api_key"),
         system_prompt: str = "",
         temperature: Optional[float] = 0.7,
         max_tokens: int = 512,
@@ -56,8 +53,6 @@ class LargeLanguageModel(CloudLLM):
         """Initializes the LargeLanguageModel brick with the specified provider and configuration.
 
         Args:
-            api_key (str): The API access key for the target LLM service. Defaults to the
-                'LOCAL_LLM_API_KEY' environment variable.
             model (str): The specific model name or identifier to use (e.g., "genie:qwen3-4b").
                 If not provided, model will be determined from app configuration or default brick configuration.
             system_prompt (str): A system-level instruction that defines the AI's persona
@@ -72,8 +67,6 @@ class LargeLanguageModel(CloudLLM):
             tools (List[Callable[..., Any]]): A list of callable tool functions to register. Defaults to None.
             **kwargs: Additional arguments passed to the model constructor
 
-        Raises:
-            ValueError: If `api_key` is not provided (empty string).
         """
 
         host = "localhost"
@@ -118,7 +111,7 @@ class LargeLanguageModel(CloudLLM):
             base_url = f"http://{host}:{port}/v1"
 
         local_model_name = model
-        if model.startswith(self.GENIE_MODEL) or model.startswith(self.LLAMACPP_MODEL) or model.startswith(self.OLLAMA_MODEL):
+        if model.startswith(self.GENIE_MODEL) or model.startswith(self.LLAMACPP_MODEL):
             model = model.split(":")[-1]  # Extract model name without provider prefix
 
         logger.info(f"Initializing brick with model '{model}' at {base_url}")
@@ -128,7 +121,7 @@ class LargeLanguageModel(CloudLLM):
         model = f"{CloudModelProvider.OPENAI}:{model}"
 
         super().__init__(
-            api_key=api_key,
+            api_key="key",  # No API key needed for local LLMs
             model=model,
             system_prompt=system_prompt,
             temperature=temperature,
