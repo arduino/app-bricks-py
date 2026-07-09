@@ -15,7 +15,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage, AIMe
 from arduino.app_utils import brick
 
 from .utils import logger
-from .models import CloudModel, CloudModelProvider
+from .models import CloudModel, CloudModelProvider, ReasoningEffort, EFFORT_TO_BUDGET
 from .memory import MessagePersistence, SQLMessagePersistence, WindowedChatMessageHistory
 
 DEFAULT_MEMORY = 10
@@ -145,6 +145,7 @@ class CloudLLM:
         # be derived lazily (see `_get_reasoning_model`).
         self._base_model = self._model
         self._reasoning_model = None
+        self._reasoning_effort = None
 
         if self._tools and len(self._tools) > 0:
             logger.info(f"Binding {len(self._tools)} tool(s) to the model.")
@@ -466,7 +467,7 @@ class CloudLLM:
                 full_response = "".join(assistant_chunks)
                 self._history.add_messages([AIMessage(content=full_response)])
 
-    def _get_reasoning_model(self) -> BaseChatModel:
+    def _get_reasoning_model(self, reasoning_effort: Union["ReasoningEffort", str, int, None] = None) -> BaseChatModel:
         """Returns a reasoning-capable client that streams reasoning tokens.
 
         The client is derived lazily from the base model depending on the provider:
@@ -476,22 +477,35 @@ class CloudLLM:
         - Google Gemini models enable ``include_thoughts`` so the model streams its
           reasoning summaries as ``thinking`` content blocks.
 
+        The optional ``reasoning_effort`` controls how much the model reasons and is
+        translated to each provider's native knob (see ``_reasoning_effort_update``).
+
+        Args:
+            reasoning_effort (ReasoningEffort | str | int | None): A discrete effort
+                level or an explicit integer token budget. ``None`` uses the model
+                default.
+
         Returns:
             BaseChatModel: A model configured to stream reasoning tokens.
 
         Raises:
             RuntimeError: If the underlying model does not support reasoning streaming.
+            ValueError: If ``reasoning_effort`` is not a supported level or budget.
         """
-        if self._reasoning_model is not None:
+        if self._reasoning_model is not None and self._reasoning_effort == reasoning_effort:
             return self._reasoning_model
 
         from .reasoning import ChatOpenAIReasoning
 
         base_model = self._base_model
         if isinstance(base_model, ChatOpenAIReasoning):
-            reasoning_model = base_model.model_copy(update={"use_responses_api": True, "output_version": "responses/v1"})
+            update = {"use_responses_api": True, "output_version": "responses/v1"}
+            update.update(self._openai_effort_update(base_model, reasoning_effort))
+            reasoning_model = base_model.model_copy(update=update)
         elif self._is_google_model(base_model):
-            reasoning_model = base_model.model_copy(update={"include_thoughts": True})
+            update = {"include_thoughts": True}
+            update.update(self._gemini_effort_update(base_model, reasoning_effort))
+            reasoning_model = base_model.model_copy(update=update)
         else:
             raise RuntimeError("Reasoning streaming is only supported for OpenAI-compatible and Google Gemini models.")
 
@@ -499,7 +513,78 @@ class CloudLLM:
             reasoning_model = reasoning_model.bind_tools(tools=self._tools)
 
         self._reasoning_model = reasoning_model
+        self._reasoning_effort = reasoning_effort
         return self._reasoning_model
+
+    @staticmethod
+    def _resolve_effort_level(reasoning_effort: Union["ReasoningEffort", str]) -> ReasoningEffort:
+        """Validates and normalizes a discrete effort level.
+
+        Args:
+            reasoning_effort (ReasoningEffort | str): The effort level to validate.
+
+        Returns:
+            ReasoningEffort: The normalized effort level.
+
+        Raises:
+            ValueError: If the value is not a supported effort level.
+        """
+        try:
+            return ReasoningEffort(reasoning_effort)
+        except ValueError:
+            allowed = ", ".join(e.value for e in ReasoningEffort)
+            raise ValueError(f"Unsupported reasoning effort '{reasoning_effort}'. Expected one of: {allowed}, or an integer token budget.")
+
+    def _openai_effort_update(self, model: BaseChatModel, reasoning_effort: Union["ReasoningEffort", str, int, None]) -> dict:
+        """Builds the model-copy update applying reasoning effort for OpenAI models.
+
+        A discrete level maps to the standard ``reasoning_effort`` field. An integer
+        maps to llama.cpp's ``reasoning_budget`` (``-1`` unrestricted, ``0`` off,
+        ``N>0`` token budget), passed via ``extra_body`` since it is not a standard
+        OpenAI field.
+
+        Args:
+            model (BaseChatModel): The base OpenAI-compatible model.
+            reasoning_effort (ReasoningEffort | str | int | None): Effort level or budget.
+
+        Returns:
+            dict: Fields to apply via ``model_copy``.
+        """
+        if reasoning_effort is None:
+            return {}
+        if isinstance(reasoning_effort, int) and not isinstance(reasoning_effort, bool):
+            extra_body = dict(getattr(model, "extra_body", None) or {})
+            extra_body["reasoning_budget"] = reasoning_effort
+            return {"extra_body": extra_body}
+        return {"reasoning_effort": self._resolve_effort_level(reasoning_effort).value}
+
+    def _gemini_effort_update(self, model: BaseChatModel, reasoning_effort: Union["ReasoningEffort", str, int, None]) -> dict:
+        """Builds the model-copy update applying reasoning effort for Gemini models.
+
+        An integer maps directly to ``thinking_budget`` (``-1`` dynamic, ``0`` off,
+        ``N>0`` token budget). A discrete level maps to ``thinking_level`` on Gemini
+        3+ models, or to a ``thinking_budget`` token count on Gemini 2.5 models,
+        which do not support ``thinking_level``.
+
+        Args:
+            model (BaseChatModel): The base Gemini model.
+            reasoning_effort (ReasoningEffort | str | int | None): Effort level or budget.
+
+        Returns:
+            dict: Fields to apply via ``model_copy``.
+        """
+        if reasoning_effort is None:
+            return {}
+        if isinstance(reasoning_effort, int) and not isinstance(reasoning_effort, bool):
+            return {"thinking_budget": reasoning_effort}
+
+        level = self._resolve_effort_level(reasoning_effort)
+
+        from langchain_google_genai.chat_models import _is_gemini_3_or_later
+
+        if _is_gemini_3_or_later(getattr(model, "model", "") or ""):
+            return {"thinking_level": level.value}
+        return {"thinking_budget": EFFORT_TO_BUDGET[level]}
 
     @staticmethod
     def _is_google_model(model: BaseChatModel) -> bool:
@@ -551,7 +636,12 @@ class CloudLLM:
 
         return ""
 
-    def chat_stream_reasoning(self, message: str, images: List[str | bytes] = None) -> Iterator[ReasoningStreamChunk]:
+    def chat_stream_reasoning(
+        self,
+        message: str,
+        images: List[str | bytes] = None,
+        reasoning_effort: Union["ReasoningEffort", str, int, None] = None,
+    ) -> Iterator[ReasoningStreamChunk]:
         """Sends a message and yields both reasoning and answer tokens as they are generated.
 
         Unlike `chat_stream`, this method separates the model's internal reasoning
@@ -566,23 +656,36 @@ class CloudLLM:
         Args:
             message (str): The input text prompt from the user.
             images (List[str | bytes]): Optional list of image file paths or raw bytes to include in the prompt.
+            reasoning_effort (ReasoningEffort | str | int | None): Controls how much
+                the model reasons. Pass a discrete level (`ReasoningEffort` or one of
+                'minimal'/'low'/'medium'/'high') or an explicit integer token budget
+                (`-1` dynamic/unrestricted, `0` off, `N>0` token budget). The value
+                is mapped to the provider's native knob (OpenAI `reasoning_effort`,
+                Gemini `thinking_level`/`thinking_budget`, llama.cpp `reasoning_budget`).
+                `None` uses the model default.
 
         Yields:
             ReasoningStreamChunk: A `ReasoningChunk` or `ContentChunk` holding a `content` text fragment.
 
         Raises:
             RuntimeError: If the model is not initialized, does not support reasoning, or the API request fails.
+            ValueError: If `reasoning_effort` is not a supported level or budget.
             AlreadyGenerating: If a streaming session is already active.
         """
         try:
-            yield from self._chat_stream_reasoning_invoke(message, images)
+            yield from self._chat_stream_reasoning_invoke(message, images, reasoning_effort)
 
-        except AlreadyGenerating:
+        except (AlreadyGenerating, ValueError):
             raise
         except Exception as e:
             self._handle_stream_error(e)
 
-    def _chat_stream_reasoning_invoke(self, message: str, images: List[str | bytes] = None) -> Iterator[ReasoningStreamChunk]:
+    def _chat_stream_reasoning_invoke(
+        self,
+        message: str,
+        images: List[str | bytes] = None,
+        reasoning_effort: Union["ReasoningEffort", str, int, None] = None,
+    ) -> Iterator[ReasoningStreamChunk]:
         """Internal method to stream reasoning and answer tokens from the model.
 
         This is separated from `chat_stream_reasoning()` to allow for better error
@@ -591,15 +694,17 @@ class CloudLLM:
         Args:
             message (str): The input text prompt from the user.
             images (List[str | bytes]): Optional list of image file paths or raw bytes to include in the prompt.
+            reasoning_effort (ReasoningEffort | str | int | None): Effort level or token budget.
 
         Yields:
             ReasoningStreamChunk: A `ReasoningChunk` or `ContentChunk` holding a `content` text fragment.
 
         Raises:
             RuntimeError: If the internal chain is not initialized or if the API request fails.
+            ValueError: If `reasoning_effort` is not a supported level or budget.
             AlreadyGenerating: If a streaming session is already active.
         """
-        reasoning_model = self._get_reasoning_model()
+        reasoning_model = self._get_reasoning_model(reasoning_effort)
         if self._keep_streaming.is_set():
             raise AlreadyGenerating("A streaming response is already in progress. Please stop it before starting a new one.")
         assistant_chunks: list[str] = []

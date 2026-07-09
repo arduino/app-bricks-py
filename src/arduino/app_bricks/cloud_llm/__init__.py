@@ -4,7 +4,7 @@
 
 from .cloud_llm import CloudLLM, ContentChunk, ReasoningChunk, ReasoningStreamChunk
 from .memory import MessagePersistence, SQLMessagePersistence, WindowedChatMessageHistory
-from .models import CloudModel, CloudModelProvider
+from .models import CloudModel, CloudModelProvider, ReasoningEffort
 from langchain_core.tools import tool
 
 __all__ = [
@@ -14,6 +14,7 @@ __all__ = [
     "ContentChunk",
     "MessagePersistence",
     "ReasoningChunk",
+    "ReasoningEffort",
     "ReasoningStreamChunk",
     "SQLMessagePersistence",
     "WindowedChatMessageHistory",

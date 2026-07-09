@@ -251,6 +251,90 @@ def test_get_reasoning_model_enables_gemini_thoughts(make_llm):
     assert reasoning_model.include_thoughts is True
 
 
+def test_reasoning_effort_openai_level_and_budget(make_llm):
+    from arduino.app_bricks.cloud_llm import ReasoningEffort
+    from arduino.app_bricks.cloud_llm.reasoning import ChatOpenAIReasoning
+
+    llm = make_llm()
+    llm._base_model = ChatOpenAIReasoning(model="gpt-5", api_key="x")
+
+    llm._reasoning_model = None
+    level_model = llm._get_reasoning_model(ReasoningEffort.HIGH)
+    assert level_model.reasoning_effort == "high"
+
+    # An integer maps to llama.cpp's reasoning_budget via extra_body.
+    llm._reasoning_model = None
+    budget_model = llm._get_reasoning_model(-1)
+    assert budget_model.extra_body == {"reasoning_budget": -1}
+
+
+def test_reasoning_effort_gemini3_uses_thinking_level(make_llm):
+    from langchain_google_genai import ChatGoogleGenerativeAI
+    from arduino.app_bricks.cloud_llm import ReasoningEffort
+
+    llm = make_llm()
+    llm._base_model = ChatGoogleGenerativeAI(model="gemini-3.5-flash", google_api_key="x")
+    llm._reasoning_model = None
+
+    reasoning_model = llm._get_reasoning_model(ReasoningEffort.MEDIUM)
+
+    assert reasoning_model.thinking_level == "medium"
+    assert reasoning_model.include_thoughts is True
+
+
+def test_reasoning_effort_gemini25_maps_level_to_budget(make_llm):
+    from langchain_google_genai import ChatGoogleGenerativeAI
+    from arduino.app_bricks.cloud_llm.models import EFFORT_TO_BUDGET, ReasoningEffort
+
+    llm = make_llm()
+    llm._base_model = ChatGoogleGenerativeAI(model="gemini-2.5-flash", google_api_key="x")
+    llm._reasoning_model = None
+
+    reasoning_model = llm._get_reasoning_model("high")
+
+    assert reasoning_model.thinking_budget == EFFORT_TO_BUDGET[ReasoningEffort.HIGH]
+    assert reasoning_model.thinking_level is None
+
+
+def test_reasoning_effort_gemini_int_budget(make_llm):
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
+    llm = make_llm()
+    llm._base_model = ChatGoogleGenerativeAI(model="gemini-3.5-flash", google_api_key="x")
+    llm._reasoning_model = None
+
+    reasoning_model = llm._get_reasoning_model(4096)
+
+    assert reasoning_model.thinking_budget == 4096
+
+
+def test_reasoning_effort_invalid_level_raises(make_llm):
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
+    llm = make_llm()
+    llm._base_model = ChatGoogleGenerativeAI(model="gemini-3.5-flash", google_api_key="x")
+    llm._reasoning_model = None
+
+    with pytest.raises(ValueError, match="Unsupported reasoning effort"):
+        llm._get_reasoning_model("ultra")
+
+
+def test_reasoning_effort_recomputes_on_change(make_llm):
+    from langchain_google_genai import ChatGoogleGenerativeAI
+    from arduino.app_bricks.cloud_llm import ReasoningEffort
+
+    llm = make_llm()
+    llm._base_model = ChatGoogleGenerativeAI(model="gemini-3.5-flash", google_api_key="x")
+    llm._reasoning_model = None
+
+    low_model = llm._get_reasoning_model(ReasoningEffort.LOW)
+    high_model = llm._get_reasoning_model(ReasoningEffort.HIGH)
+
+    assert low_model.thinking_level == "low"
+    assert high_model.thinking_level == "high"
+    assert low_model is not high_model
+
+
 def test_chat_stream_reasoning_raises_when_already_streaming(make_llm):
     llm = make_llm()
     llm._reasoning_model = FakeReasoningModel([_content_chunk("x")])
