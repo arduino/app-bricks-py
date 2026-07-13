@@ -18,7 +18,7 @@ Before using the TTS Speak Through Speaker example, shown in the next section, e
 
 - USB-C® Hub with external power supply (5V, 3A)
 - USB audio device (USB speaker or USB-C → 3.5mm adapter)
-- Arduino UNO Q running in Network Mode or SBC Mode (USB-C port needed for the hub)
+- Arduino VENTUNO Q running in Network Mode or SBC Mode (USB-C port needed for the hub)
 
 ## Code Example and Usage
 
