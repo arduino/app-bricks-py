@@ -4,18 +4,16 @@
 # SPDX-License-Identifier: MPL-2.0
 
 # EXAMPLE_NAME = "Use MCP tools with an LLM"
-# EXAMPLE_REQUIRES = "Requires a reachable MCP server and a valid API key to a cloud LLM service."
+# EXAMPLE_REQUIRES = "Requires a valid API key to a cloud LLM service."
 
 from arduino.app_bricks.mcp_client import MCPClient, HTTPEndpoint
 from arduino.app_bricks.cloud_llm import CloudLLM
 from arduino.app_utils import App
 
-# Expose the tools of a remote MCP server as LangChain tools.
-# See the Dockerfile in this folder for a ready-to-run filesystem MCP server on port 8080.
-mcp = MCPClient(endpoints=[HTTPEndpoint(name="filesystem", url="http://localhost:8080/mcp")])
+# The MCP server is built and deployed with the app (see bricks/mcp-server);
+# The model can call its tools while chatting: try "What time is it in Rome?".
+mcp = MCPClient(endpoints=[HTTPEndpoint(name="clock", url="http://mcp-server:8080/mcp")])
 
-# Hand the discovered MCP tools to the LLM: the model can now call them while chatting.
-# The same `tools=mcp.get_tools()` also works with the on-device `LargeLanguageModel` brick.
 llm = CloudLLM(
     model="google:gemini-2.5-flash",
     api_key="YOUR_API_KEY",  # Replace with your actual API key

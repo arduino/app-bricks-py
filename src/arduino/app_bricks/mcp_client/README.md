@@ -19,7 +19,7 @@ The MCP Client Brick connects your Arduino app to one or more [Model Context Pro
   ```bash
   pip install arduino_app_bricks[mcp_client]
   ```
-- **An MCP server**: a server exposing an HTTP `/mcp` endpoint, reachable from the app. The `examples/Dockerfile` shows how to expose a filesystem MCP server over HTTP using `mcp-proxy`.
+- **An MCP server**: a server exposing an HTTP `/mcp` endpoint, reachable from the app. You can also deploy one *together with the app* as a custom brick — see [Bundle an MCP server with your app](#bundle-an-mcp-server-with-your-app).
 
 ## Code Example and Usage
 
@@ -37,8 +37,6 @@ print(mcp.get_tools())  # -> list[BaseTool]
 App.run()
 ```
 
-See `examples/Dockerfile` for a ready-to-run HTTP MCP server (a filesystem server behind `mcp-proxy`).
-
 ### Give MCP tools to an LLM (the main use case)
 
 `get_tools()` returns LangChain tools that plug directly into the LLM bricks. The model can then call the MCP tools while chatting.
@@ -48,7 +46,7 @@ from arduino.app_bricks.mcp_client import MCPClient, HTTPEndpoint
 from arduino.app_bricks.cloud_llm import CloudLLM
 from arduino.app_utils import App
 
-mcp = MCPClient(endpoints=[HTTPEndpoint(name="filesystem", url="http://localhost:8080/mcp")])
+mcp = MCPClient(endpoints=[HTTPEndpoint(name="clock", url="http://mcp-server:8080/mcp")])
 
 llm = CloudLLM(
     model="google:gemini-2.5-flash",
@@ -57,12 +55,44 @@ llm = CloudLLM(
 )
 
 def ask():
-    print(llm.chat("List the files you can access"))
+    print(llm.chat("What time is it in Rome?"))
 
 App.run(ask)
 ```
 
-The same `tools=mcp.get_tools()` also works with the on-device `LargeLanguageModel` brick.
+Here the model answers by calling the `get_current_datetime` tool of the MCP server bundled with the app (see [Bundle an MCP server with your app](#bundle-an-mcp-server-with-your-app) below); `examples/02_with_custom_brick_and_llm` is the complete, runnable version. The same `tools=mcp.get_tools()` also works with the on-device `LargeLanguageModel` brick.
+
+### Bundle an MCP server with your app
+
+An app can ship its own MCP server as a **custom brick backed by a Docker container**: declare the container in a local brick's `brick_compose.yaml`, and App Lab deploys it automatically alongside the app — no external setup needed. The container can be a **prebuilt image** — `examples/01_with_custom_brick_basic_usage` runs the [Docker MCP Gateway](https://hub.docker.com/r/docker/mcp-gateway), which serves the MCP servers of the [Docker MCP catalog](https://hub.docker.com/catalogs/mcp) over HTTP — or an image **built from a Dockerfile shipped with the brick**, as in `examples/02_with_custom_brick_and_llm`:
+
+```
+my-app/
+├── app.yaml                     # references the local brick by id
+├── python/main.py
+└── bricks/
+    └── mcp-server/
+        ├── brick_config.yaml    # id, name, description
+        ├── brick_compose.yaml   # Docker Compose service running the server
+        ├── Dockerfile           # image built for the service
+        └── server.py            # the MCP server (FastMCP, streamable HTTP)
+```
+
+`app.yaml` lists the local brick next to this one:
+
+```yaml
+bricks:
+  - arduino:mcp_client
+  - mcp-server
+```
+
+All the app's containers share one network, so the Python code reaches the server using the **compose service name as hostname**:
+
+```python
+mcp = MCPClient(endpoints=[HTTPEndpoint(name="demo", url="http://mcp-server:8080/mcp")])
+```
+
+Declare a `healthcheck` in `brick_compose.yaml` so the app only starts once the server is ready.
 
 ## Authentication
 

@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# EXAMPLE_NAME = "Connect to an authenticated remote MCP server"
+# EXAMPLE_NAME = "Connect to an authenticated MCP server"
 # EXAMPLE_REQUIRES = "Requires an access token/API key for the target MCP server."
 
 import os
@@ -14,15 +14,15 @@ from arduino.app_utils import Logger, App
 
 logger = Logger(name="authenticated_mcp_client_example")
 
-# Bearer token auth (e.g. a GitHub PAT or a Stripe restricted key).
-# `token` is added as an "Authorization: Bearer <token>" header.
+# `token` is sent as an "Authorization: Bearer" header;
+# set GITHUB_MCP_PAT in app.yaml under the brick's `variables`.
 github = HTTPEndpoint(
     name="github",
     url="https://api.githubcopilot.com/mcp/",
     token=os.getenv("GITHUB_MCP_PAT"),
 )
 
-# Custom-header auth: some providers use their own header scheme instead of a bearer token.
+# Some providers use custom headers instead of a bearer token:
 # datadog = HTTPEndpoint(
 #     name="datadog",
 #     url="https://<your-datadog-mcp-domain>/mcp",

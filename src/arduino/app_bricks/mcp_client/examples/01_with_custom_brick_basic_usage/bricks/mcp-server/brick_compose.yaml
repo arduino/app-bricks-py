@@ -1,0 +1,24 @@
+services:
+  mcp-server:
+    image: docker/mcp-gateway:latest
+    # Serve the docker catalog's `time` MCP server over streamable HTTP.
+    command:
+      - --transport=streaming
+      - --port=8080
+      - --servers=time
+      - --allow-unauthenticated
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:8080:8080"
+    volumes:
+      # The gateway needs the Docker socket to run the catalog servers.
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
