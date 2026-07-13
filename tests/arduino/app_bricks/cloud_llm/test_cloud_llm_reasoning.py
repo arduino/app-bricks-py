@@ -274,10 +274,12 @@ def test_chat_with_reasoning_effort_returns_only_answer(make_llm):
     # (bypasses provider-specific model construction).
     llm._reasoning_effort = ReasoningEffort.HIGH
     llm._reasoning_model = FakeInvokeModel(
-        AIMessage(content=[
-            {"type": "thinking", "thinking": "secret chain-of-thought"},
-            {"type": "text", "text": "Final answer"},
-        ])
+        AIMessage(
+            content=[
+                {"type": "thinking", "thinking": "secret chain-of-thought"},
+                {"type": "text", "text": "Final answer"},
+            ]
+        )
     )
 
     out = llm.chat("hi", reasoning_effort=ReasoningEffort.HIGH)
@@ -288,15 +290,15 @@ def test_chat_with_reasoning_effort_returns_only_answer(make_llm):
 
 
 def test_chat_with_reasoning_effort_persists_only_answer_to_history(make_llm):
-    from arduino.app_bricks.cloud_llm import ReasoningEffort
-
     llm = make_llm()
     llm._reasoning_effort = 64
     llm._reasoning_model = FakeInvokeModel(
-        AIMessage(content=[
-            {"type": "thinking", "thinking": "secret"},
-            {"type": "text", "text": "Answer"},
-        ])
+        AIMessage(
+            content=[
+                {"type": "thinking", "thinking": "secret"},
+                {"type": "text", "text": "Answer"},
+            ]
+        )
     )
 
     llm.chat("hi", reasoning_effort=64)
