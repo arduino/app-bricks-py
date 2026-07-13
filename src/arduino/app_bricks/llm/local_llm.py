@@ -4,26 +4,17 @@
 
 from langchain_core.language_models import BaseChatModel
 
-from arduino.app_bricks.cloud_llm import CloudLLM, CloudModelProvider, ReasoningStreamChunk
+from arduino.app_bricks.cloud_llm import CloudLLM, CloudModelProvider
 from arduino.app_bricks.cloud_llm.cloud_llm import DEFAULT_MEMORY
 from arduino.app_bricks.cloud_llm.memory import MessagePersistence
 from arduino.app_utils import Logger, brick
 from arduino.app_internal.core import resolve_address, get_brick_config, get_brick_configured_model
 
+import os
 from openai import OpenAI, APIError, BadRequestError
 from typing import Iterator, List, Optional, Any, Callable, Union
 
 logger = Logger("LargeLanguageModel")
-
-# llama.cpp reasoning budgets, mapped to the OpenAI-compatible ``thinking_budget_tokens``
-# request field honored by the llama.cpp server: ``-1`` streams unrestricted reasoning,
-# ``0`` disables it, and ``N>0`` caps the reasoning to N tokens. Discrete effort levels are
-# ignored by llama.cpp, so reasoning is controlled exclusively through these integer budgets.
-REASONING_BUDGET_UNRESTRICTED = -1
-REASONING_BUDGET_OFF = 0
-REASONING_BUDGET_LOW = 64
-REASONING_BUDGET_MEDIUM = 512
-REASONING_BUDGET_HIGH = 2048
 
 
 @brick
@@ -31,7 +22,7 @@ class LargeLanguageModel(CloudLLM):
     """A Brick for interacting with locally-based Large Language Models (LLMs).
 
     This class wraps LangChain functionality to provide a simplified, unified interface
-    for chatting with models like Qwen, LLama, Gemma. It supports both synchronous
+    for chatting with models like Qwenm, LLama, Gemma. It supports both synchronous
     'one-shot' responses and streaming output, with optional conversational memory.
     """
 
@@ -39,9 +30,11 @@ class LargeLanguageModel(CloudLLM):
 
     GENIE_MODEL = "genie"
     LLAMACPP_MODEL = "llamacpp"
+    OLLAMA_MODEL = "ollama"
 
     def __init__(
         self,
+        api_key: str = os.getenv("LOCAL_LLM_API_KEY", "api_key"),
         system_prompt: str = "",
         temperature: Optional[float] = 0.7,
         max_tokens: int = 512,
@@ -53,6 +46,8 @@ class LargeLanguageModel(CloudLLM):
         """Initializes the LargeLanguageModel brick with the specified provider and configuration.
 
         Args:
+            api_key (str): The API access key for the target LLM service. Defaults to the
+                'LOCAL_LLM_API_KEY' environment variable.
             model (str): The specific model name or identifier to use (e.g., "genie:qwen3-4b").
                 If not provided, model will be determined from app configuration or default brick configuration.
             system_prompt (str): A system-level instruction that defines the AI's persona
@@ -67,6 +62,8 @@ class LargeLanguageModel(CloudLLM):
             tools (List[Callable[..., Any]]): A list of callable tool functions to register. Defaults to None.
             **kwargs: Additional arguments passed to the model constructor
 
+        Raises:
+            ValueError: If `api_key` is not provided (empty string).
         """
 
         host = "localhost"
@@ -111,7 +108,7 @@ class LargeLanguageModel(CloudLLM):
             base_url = f"http://{host}:{port}/v1"
 
         local_model_name = model
-        if model.startswith(self.GENIE_MODEL) or model.startswith(self.LLAMACPP_MODEL):
+        if model.startswith(self.GENIE_MODEL) or model.startswith(self.LLAMACPP_MODEL) or model.startswith(self.OLLAMA_MODEL):
             model = model.split(":")[-1]  # Extract model name without provider prefix
 
         logger.info(f"Initializing brick with model '{model}' at {base_url}")
@@ -121,7 +118,7 @@ class LargeLanguageModel(CloudLLM):
         model = f"{CloudModelProvider.OPENAI}:{model}"
 
         super().__init__(
-            api_key="key",  # No API key needed for local LLMs
+            api_key=api_key,
             model=model,
             system_prompt=system_prompt,
             temperature=temperature,
@@ -283,57 +280,6 @@ class LargeLanguageModel(CloudLLM):
                 continue  # Skip the <think> tag itself
             else:
                 yield chunk
-
-    def chat_stream_reasoning(
-        self,
-        message: str,
-        images: List[str | bytes] = None,
-        reasoning_effort: Optional[int] = None,
-    ) -> Iterator[ReasoningStreamChunk]:
-        """Sends a message and yields both reasoning and answer tokens as they are generated.
-
-        Unlike `chat_stream`, this method keeps the model's internal reasoning
-        (chain-of-thought) separate from the final answer. Each yielded item is a
-        `ReasoningStreamChunk`: either a `ReasoningChunk` (chain-of-thought) or a
-        `ContentChunk` (final answer), both exposing a `content` text fragment.
-        Branch on the concrete type with `isinstance`.
-
-        This is currently supported only for llama.cpp models. Genie models do not
-        support reasoning streaming and raise a `NotImplementedError`.
-
-        The generation can be interrupted by calling `stop_stream()`.
-
-        Args:
-            message (str): The input text prompt from the user.
-            images (List[str | bytes]): Optional list of image file paths or raw bytes to include in the prompt.
-            reasoning_effort (Optional[int]): An integer token budget controlling how much
-                the model reasons, mapped to llama.cpp's `thinking_budget_tokens` field.
-                Use `REASONING_BUDGET_UNRESTRICTED` (`-1`) for unrestricted reasoning,
-                `REASONING_BUDGET_OFF` (`0`) to disable it, or a positive token budget
-                (see `REASONING_BUDGET_LOW`/`REASONING_BUDGET_MEDIUM`/`REASONING_BUDGET_HIGH`).
-                Discrete effort levels are not supported because llama.cpp ignores them.
-                `None` uses the model default.
-
-        Yields:
-            ReasoningStreamChunk: A `ReasoningChunk` or `ContentChunk` holding a `content` text fragment.
-
-        Raises:
-            NotImplementedError: If the configured model is a Genie model.
-            ValueError: If `reasoning_effort` is not an integer token budget or `None`.
-            RuntimeError: If the internal chain is not initialized or if the API request fails.
-            AlreadyGenerating: If a streaming session is already active.
-        """
-        if self._model_name.startswith(self.GENIE_MODEL):
-            raise NotImplementedError("Reasoning streaming is not supported for Genie models. Use a llama.cpp model instead.")
-
-        if reasoning_effort is not None and (isinstance(reasoning_effort, bool) or not isinstance(reasoning_effort, int)):
-            raise ValueError(
-                "reasoning_effort must be an integer token budget for local llama.cpp models "
-                f"(e.g. {REASONING_BUDGET_OFF} to disable, {REASONING_BUDGET_UNRESTRICTED} for unrestricted, "
-                "or a positive budget), or None to use the model default."
-            )
-
-        yield from super().chat_stream_reasoning(message=message, images=images, reasoning_effort=reasoning_effort)
 
     def _handle_stream_error(self, e: Exception) -> None:
         if isinstance(e, (BadRequestError, APIError)):
