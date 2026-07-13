@@ -375,7 +375,8 @@ def test_reasoning_effort_anthropic_negative_uses_adaptive(make_llm):
     from langchain_anthropic import ChatAnthropic
 
     llm = make_llm()
-    llm._base_model = ChatAnthropic(model="claude-opus-4-8", api_key="x")
+    # Legacy model: -1 requests adaptive thinking without the newer display/effort keys.
+    llm._base_model = ChatAnthropic(model="claude-sonnet-4-6", api_key="x")
     llm._reasoning_model = None
 
     reasoning_model = llm._get_reasoning_model(-1)
@@ -409,6 +410,93 @@ def test_reasoning_effort_anthropic_raises_max_tokens_above_budget(make_llm):
 
     assert reasoning_model.thinking == {"type": "enabled", "budget_tokens": 4096}
     assert reasoning_model.max_tokens > 4096
+
+
+def test_reasoning_effort_anthropic_new_model_uses_adaptive_effort(make_llm):
+    from langchain_anthropic import ChatAnthropic
+    from arduino.app_bricks.cloud_llm import ReasoningEffort
+
+    llm = make_llm()
+    # Sonnet 5+ / Opus 4.7+ dropped budget_tokens and require adaptive thinking + effort.
+    llm._base_model = ChatAnthropic(model="claude-sonnet-5", api_key="x")
+    llm._reasoning_model = None
+
+    reasoning_model = llm._get_reasoning_model(ReasoningEffort.HIGH)
+
+    assert reasoning_model.thinking == {"type": "adaptive", "display": "summarized"}
+    # HIGH maps up to Anthropic's "xhigh" so adaptive thinking always reasons (its
+    # default "high" skips thinking on simple prompts).
+    assert reasoning_model.effort == "xhigh"
+    assert reasoning_model.temperature == 1
+
+
+def test_reasoning_effort_anthropic_new_model_maps_minimal_to_low(make_llm):
+    from langchain_anthropic import ChatAnthropic
+    from arduino.app_bricks.cloud_llm import ReasoningEffort
+
+    llm = make_llm()
+    llm._base_model = ChatAnthropic(model="claude-opus-4-7", api_key="x")
+    llm._reasoning_model = None
+
+    reasoning_model = llm._get_reasoning_model(ReasoningEffort.MINIMAL)
+
+    # Anthropic has no "minimal" effort; it is folded into "low".
+    assert reasoning_model.effort == "low"
+    assert reasoning_model.thinking == {"type": "adaptive", "display": "summarized"}
+
+
+def test_reasoning_effort_anthropic_new_model_int_budget_uses_adaptive(make_llm):
+    from langchain_anthropic import ChatAnthropic
+
+    llm = make_llm()
+    llm._base_model = ChatAnthropic(model="claude-sonnet-5", api_key="x")
+    llm._reasoning_model = None
+
+    # Adaptive-only models do not accept an explicit budget, so no effort is set.
+    reasoning_model = llm._get_reasoning_model(4096)
+
+    assert reasoning_model.thinking == {"type": "adaptive", "display": "summarized"}
+    assert reasoning_model.effort is None
+
+
+def test_reasoning_effort_anthropic_new_model_none_uses_adaptive(make_llm):
+    from langchain_anthropic import ChatAnthropic
+
+    llm = make_llm()
+    llm._base_model = ChatAnthropic(model="claude-sonnet-5-20260101", api_key="x")
+    llm._reasoning_model = None
+
+    reasoning_model = llm._get_reasoning_model()
+
+    assert reasoning_model.thinking == {"type": "adaptive", "display": "summarized"}
+    assert reasoning_model.effort is None
+
+
+def test_reasoning_effort_anthropic_new_model_zero_disables_thinking(make_llm):
+    from langchain_anthropic import ChatAnthropic
+
+    llm = make_llm()
+    llm._base_model = ChatAnthropic(model="claude-sonnet-5", api_key="x")
+    llm._reasoning_model = None
+
+    reasoning_model = llm._get_reasoning_model(0)
+
+    assert reasoning_model.thinking is None
+
+
+def test_anthropic_requires_adaptive_version_detection():
+    from arduino.app_bricks.cloud_llm.cloud_llm import CloudLLM
+
+    requires = CloudLLM._anthropic_requires_adaptive
+    # Legacy (enabled + budget_tokens)
+    assert requires("claude-sonnet-4-6") is False
+    assert requires("claude-opus-4-5-20251101") is False
+    assert requires("claude-opus-4-6") is False
+    assert requires("claude-3-7-sonnet-20250219") is False
+    # Adaptive-only (adaptive + effort)
+    assert requires("claude-opus-4-7") is True
+    assert requires("claude-sonnet-5") is True
+    assert requires("claude-sonnet-5-20260101") is True
 
 
 def test_reasoning_effort_invalid_level_raises(make_llm):

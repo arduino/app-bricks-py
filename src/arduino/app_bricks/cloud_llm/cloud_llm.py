@@ -5,6 +5,7 @@
 import asyncio
 import base64
 import os
+import re
 import threading
 from dataclasses import dataclass
 from typing import Iterator, List, Optional, Union, Any, Callable
@@ -15,18 +16,18 @@ from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage, AIMe
 from arduino.app_utils import brick
 
 from .utils import logger
-from .models import CloudModel, CloudModelProvider, ReasoningEffort, EFFORT_TO_BUDGET
+from .models import (
+    CloudModel,
+    CloudModelProvider,
+    ReasoningEffort,
+    EFFORT_TO_BUDGET,
+    ANTHROPIC_MIN_THINKING_BUDGET,
+    ANTHROPIC_DEFAULT_THINKING_BUDGET,
+    ANTHROPIC_EFFORT_MAP,
+)
 from .memory import MessagePersistence, SQLMessagePersistence, WindowedChatMessageHistory
 
 DEFAULT_MEMORY = 10
-
-# Anthropic extended thinking requires a minimum ``budget_tokens`` of 1024. Used to
-# clamp mapped budgets and as the headroom added to ``max_tokens`` when needed.
-ANTHROPIC_MIN_THINKING_BUDGET = 1024
-
-# Budget applied when reasoning is requested for an Anthropic model without an explicit
-# effort, since Claude does not think by default and would otherwise stream no reasoning.
-ANTHROPIC_DEFAULT_THINKING_BUDGET = 2048
 
 
 class AlreadyGenerating(Exception):
@@ -657,25 +658,29 @@ class CloudLLM:
     def _anthropic_effort_update(self, model: BaseChatModel, reasoning_effort: Union["ReasoningEffort", str, int, None]) -> dict:
         """Builds the model-copy update applying reasoning effort for Anthropic models.
 
-        Anthropic exposes reasoning via extended thinking, enabled through the
-        ``thinking`` config rather than a discrete level. This method maps the effort:
+        Anthropic exposes reasoning via extended thinking, but the API differs by model
+        generation:
 
-        - ``None`` enables thinking with a default token budget so the reasoning stream
-          is populated (Claude does not think by default).
-        - An integer ``0`` disables thinking (no reasoning is produced).
-        - An integer ``-1`` selects adaptive thinking (``{"type": "adaptive"}``), which
-          lets the model choose its own budget. Adaptive is only supported on Claude
-          Opus 4.6+; other models will reject it.
-        - An integer ``N > 0`` maps to ``budget_tokens``, clamped to Anthropic's minimum
-          of 1024.
-        - A discrete level maps to a ``budget_tokens`` count via ``EFFORT_TO_BUDGET``
-          (also clamped to 1024), since the default Claude models do not support the
-          native ``effort`` parameter.
+        - Legacy models (Sonnet 3.7 through 4.6, Opus 4.5/4.6) use
+          ``thinking={"type": "enabled", "budget_tokens": N}``.
+        - Newer models (Opus 4.7+ and Sonnet 5+) dropped ``budget_tokens`` and require
+          ``thinking={"type": "adaptive"}`` with ``output_config.effort``
+          (see ``_anthropic_requires_adaptive`` and ``_anthropic_adaptive_update``).
 
-        When thinking is enabled, ``temperature`` is forced to ``1`` because the Anthropic
-        API rejects any other temperature while thinking is active, and ``max_tokens`` is
-        raised above the budget when necessary (``budget_tokens`` must be strictly less
-        than ``max_tokens``).
+        The effort argument maps as follows (``0`` disables thinking, ``-1`` defers the
+        budget to the model, ``N>0`` is a token budget, and a level is a discrete effort):
+
+        - ``0`` -> thinking disabled (no reasoning).
+        - ``-1`` -> adaptive thinking.
+        - ``N>0`` -> legacy ``budget_tokens`` (clamped to the 1024 minimum); ignored on
+          adaptive-only models (which use adaptive thinking without a discrete effort).
+        - level -> legacy ``budget_tokens`` via ``EFFORT_TO_BUDGET`` (clamped), or
+          ``output_config.effort`` via ``ANTHROPIC_EFFORT_MAP`` on adaptive-only models.
+        - ``None`` -> a default budget (legacy) or plain adaptive thinking (newer).
+
+        When thinking is enabled ``temperature`` is forced to ``1`` (Anthropic rejects any
+        other temperature while thinking is active), and on legacy models ``max_tokens`` is
+        raised above the budget when needed (``budget_tokens`` must be ``< max_tokens``).
 
         Args:
             model (BaseChatModel): The base Anthropic model.
@@ -684,23 +689,82 @@ class CloudLLM:
         Returns:
             dict: Fields to apply via ``model_copy``.
         """
-        if isinstance(reasoning_effort, int) and not isinstance(reasoning_effort, bool):
-            if reasoning_effort == 0:
-                return {}
-            if reasoning_effort < 0:
-                return {"thinking": {"type": "adaptive"}, "temperature": 1}
-            budget = max(reasoning_effort, ANTHROPIC_MIN_THINKING_BUDGET)
-        elif reasoning_effort is None:
+        model_name = getattr(model, "model", "") or ""
+        is_budget = isinstance(reasoning_effort, int) and not isinstance(reasoning_effort, bool)
+
+        # An explicit 0 disables thinking; a negative budget defers the amount to the model.
+        if is_budget and reasoning_effort == 0:
+            return {}
+        if is_budget and reasoning_effort < 0:
+            return self._anthropic_adaptive_update(model_name, level=None)
+
+        # Newer models only accept adaptive thinking guided by ``output_config.effort``; an
+        # explicit token budget is not supported, so only a discrete level (if any) is used.
+        if self._anthropic_requires_adaptive(model_name):
+            level = None if (is_budget or reasoning_effort is None) else self._resolve_effort_level(reasoning_effort)
+            return self._anthropic_adaptive_update(model_name, level)
+
+        # Legacy models use enabled thinking with an explicit token budget.
+        if reasoning_effort is None:
             budget = ANTHROPIC_DEFAULT_THINKING_BUDGET
+        elif is_budget:
+            budget = max(reasoning_effort, ANTHROPIC_MIN_THINKING_BUDGET)
         else:
-            level = self._resolve_effort_level(reasoning_effort)
-            budget = max(EFFORT_TO_BUDGET[level], ANTHROPIC_MIN_THINKING_BUDGET)
+            budget = max(EFFORT_TO_BUDGET[self._resolve_effort_level(reasoning_effort)], ANTHROPIC_MIN_THINKING_BUDGET)
 
         update: dict = {"thinking": {"type": "enabled", "budget_tokens": budget}, "temperature": 1}
         max_tokens = getattr(model, "max_tokens", None)
         if max_tokens is not None and max_tokens <= budget:
             update["max_tokens"] = budget + ANTHROPIC_MIN_THINKING_BUDGET
         return update
+
+    def _anthropic_adaptive_update(self, model_name: str, level: Optional["ReasoningEffort"]) -> dict:
+        """Builds the model-copy update for Anthropic adaptive thinking.
+
+        Adaptive thinking (``{"type": "adaptive"}``) lets the model choose its own reasoning
+        budget. On models that require it (Opus 4.7+/Sonnet 5+) the reasoning output is
+        omitted by default, so ``display`` is set to ``"summarized"`` to surface the stream
+        and a discrete ``level`` (if any) is forwarded as ``output_config.effort``. On legacy
+        models reached via an explicit ``-1``, neither key applies.
+
+        Args:
+            model_name (str): The Anthropic model identifier.
+            level (ReasoningEffort | None): Optional discrete effort to forward as
+                ``output_config.effort`` (only on adaptive-only models).
+
+        Returns:
+            dict: Fields to apply via ``model_copy``.
+        """
+        thinking: dict = {"type": "adaptive"}
+        update: dict = {"thinking": thinking, "temperature": 1}
+        if self._anthropic_requires_adaptive(model_name):
+            thinking["display"] = "summarized"
+            if level is not None:
+                update["effort"] = ANTHROPIC_EFFORT_MAP[level]
+        return update
+
+    @staticmethod
+    def _anthropic_requires_adaptive(model_name: str) -> bool:
+        """Returns True when a Claude model requires adaptive thinking + effort.
+
+        Newer Claude models (Opus 4.7+ and Sonnet 5+) dropped the
+        ``thinking.type.enabled`` / ``budget_tokens`` API and only accept
+        ``thinking.type.adaptive`` together with ``output_config.effort``. The version is
+        parsed from the model identifier; older date-suffixed or legacy-named models
+        (e.g. ``claude-3-7-sonnet``) fall back to the legacy path.
+
+        Args:
+            model_name (str): The Anthropic model identifier (e.g. ``claude-sonnet-4-6``).
+
+        Returns:
+            bool: True if the model requires the adaptive thinking API.
+        """
+        match = re.search(r"claude-(?:sonnet|opus|haiku)-(\d+)(?:-(\d+))?", (model_name or "").lower())
+        if not match:
+            return False
+        major = int(match.group(1))
+        minor = int(match.group(2) or 0)
+        return major >= 5 or (major == 4 and minor >= 7)
 
     @staticmethod
     def _is_google_model(model: BaseChatModel) -> bool:
@@ -796,11 +860,12 @@ class CloudLLM:
                 'minimal'/'low'/'medium'/'high') or an explicit integer token budget
                 (`-1` dynamic/unrestricted, `0` off, `N>0` token budget). The value
                 is mapped to the provider's native knob (OpenAI `reasoning_effort`,
-                Gemini `thinking_level`/`thinking_budget`, Anthropic `thinking` budget_tokens,
-                llama.cpp `thinking_budget_tokens`). `None` uses the model default (for
-                Anthropic, a default thinking budget is applied since Claude does not think
-                by default). A bool or a numeric string (e.g. '64') is rejected to avoid
-                confusion with an integer budget.
+                Gemini `thinking_level`/`thinking_budget`, Anthropic `thinking` budget_tokens
+                on legacy models or `output_config.effort` with adaptive thinking on newer
+                ones (Opus 4.7+/Sonnet 5+), llama.cpp `thinking_budget_tokens`). `None` uses
+                the model default (for Anthropic, a default thinking budget is applied since
+                Claude does not think by default). A bool or a numeric string (e.g. '64') is
+                rejected to avoid confusion with an integer budget.
 
         Yields:
             ReasoningStreamChunk: A `ReasoningChunk` or `ContentChunk` holding a `content` text fragment.
