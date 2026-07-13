@@ -82,6 +82,7 @@ class CloudLLM:
         model: Union[str, CloudModel] = CloudModel.ANTHROPIC_CLAUDE,
         system_prompt: str = "",
         temperature: Optional[float] = None,
+        reasoning_effort: Union["ReasoningEffort", str, int, None] = None,
         max_tool_loops: int = 8,
         timeout: Optional[int] = None,
         tools: List[Callable[..., Any]] = None,
@@ -105,6 +106,14 @@ class CloudLLM:
                 deterministic. When ``None`` (default) no temperature is sent and each
                 provider's own default is used; this also avoids errors on models that
                 deprecated ``temperature`` (e.g. Anthropic Claude Sonnet 5+).
+            reasoning_effort (ReasoningEffort | str | int | None): Optional default reasoning
+                effort applied to every ``chat``/``chat_stream``/``chat_stream_reasoning``
+                call that does not pass its own. When ``None`` (default) nothing is added and
+                the plain model is used. When set, the reasoning-capable client (Responses
+                API for OpenAI) is used so it works with tools. It is never forwarded as a raw
+                model argument (which would break tool calling on OpenAI chat completions).
+                Accepts a discrete level (`ReasoningEffort` / 'minimal'/'low'/'medium'/'high')
+                or an integer token budget.
             max_tool_loops (int): The maximum number of consecutive tool-call loops
                 allowed during a single chat interaction. Defaults to 8.
             timeout (Optional[int]): The maximum duration in seconds to wait for a response before
@@ -128,6 +137,8 @@ class CloudLLM:
         # Model configuration
         self._system_prompt = system_prompt
         self._temperature = temperature
+        self._validate_reasoning_effort(reasoning_effort)
+        self._reasoning_effort_default = reasoning_effort
         self._max_tool_loops = max_tool_loops
         self._timeout = timeout
         self._callbacks = callbacks
@@ -147,7 +158,11 @@ class CloudLLM:
         # provider use its own default and, crucially, avoids sending the field to models
         # that deprecated it (Anthropic Sonnet 5+) or reject ``None`` for it (Gemini, whose
         # ``temperature`` is a strict float).
+        # ``reasoning_effort`` is never forwarded to the base model: on OpenAI it would be
+        # sent as a raw chat-completions field and break tool calling. It is applied only
+        # through the reasoning flow (Responses API) when set.
         model_kwargs = dict(kwargs)
+        model_kwargs.pop("reasoning_effort", None)
         if self._temperature is not None:
             model_kwargs["temperature"] = self._temperature
 
@@ -166,6 +181,13 @@ class CloudLLM:
 
         if self._tools and len(self._tools) > 0:
             logger.info(f"Binding {len(self._tools)} tool(s) to the model.")
+            from .reasoning import ChatOpenAIReasoning
+
+            # OpenAI reasoning models (e.g. gpt-5.x) reason by default and reject function
+            # tools combined with reasoning in /v1/chat/completions. The Responses API
+            # supports both, so switch the OpenAI client to it before binding tools.
+            if isinstance(self._model, ChatOpenAIReasoning):
+                self._model = self._model.model_copy(update={"use_responses_api": True, "output_version": "responses/v1"})
             self._model = self._model.bind_tools(tools=self._tools)
 
         # Memory management
@@ -399,7 +421,8 @@ class CloudLLM:
             RuntimeError: If the internal chain is not initialized or if the API request fails.
             ValueError: If `reasoning_effort` is not a supported level or budget.
         """
-        model = self._model if reasoning_effort is None else self._get_reasoning_model(reasoning_effort)
+        effort = reasoning_effort if reasoning_effort is not None else self._reasoning_effort_default
+        model = self._model if effort is None else self._get_reasoning_model(effort)
         input_messages = self._get_message_with_history(message, images)
         loops = 0
 
@@ -482,12 +505,16 @@ class CloudLLM:
             raise AlreadyGenerating("A streaming response is already in progress. Please stop it before starting a new one.")
         assistant_chunks: list[str] = []
 
+        # A configured default reasoning effort routes the plain stream through the
+        # reasoning-capable client (Responses API for OpenAI); only content is yielded here.
+        model = self._model if self._reasoning_effort_default is None else self._get_reasoning_model(self._reasoning_effort_default)
+
         try:
             self._keep_streaming.set()
             input_messages = self._get_message_with_history(message, images)
 
             tool_calls = []
-            for token in self._model.stream(input_messages):
+            for token in model.stream(input_messages):
                 if not self._keep_streaming.is_set():
                     break  # This stops the iteration and halts further token generation
                 if token.tool_calls and len(token.tool_calls) > 0:
@@ -500,7 +527,7 @@ class CloudLLM:
             # If there were tool calls, process them
             if len(tool_calls) > 0:
                 input_messages = self._process_tool_calls(tool_calls, input_messages.copy())
-                for token in self._model.stream(input=input_messages, config={"callbacks": self._callbacks}):
+                for token in model.stream(input=input_messages, config={"callbacks": self._callbacks}):
                     if not self._keep_streaming.is_set():
                         break
                     if token.content and len(token.content) > 0:
@@ -951,7 +978,8 @@ class CloudLLM:
             ValueError: If `reasoning_effort` is not a supported level or budget.
             AlreadyGenerating: If a streaming session is already active.
         """
-        reasoning_model = self._get_reasoning_model(reasoning_effort)
+        effort = reasoning_effort if reasoning_effort is not None else self._reasoning_effort_default
+        reasoning_model = self._get_reasoning_model(effort)
         if self._keep_streaming.is_set():
             raise AlreadyGenerating("A streaming response is already in progress. Please stop it before starting a new one.")
         assistant_chunks: list[str] = []
