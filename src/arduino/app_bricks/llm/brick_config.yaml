@@ -17,10 +17,3 @@ supported_boards: ["unoq", "ventunoq"]
 ai_frameworks_compatibility:
   - genie
   - llamacpp
-variables:
-  - name: X_LLAMA_ARG_CTX_SIZE
-    description: LLama.cpp context size
-    default_value: 16382
-  - name: X_LLAMA_ARG_REASONING
-    description: LLama.cpp reasoning mode (on|off)
-    default_value: off
