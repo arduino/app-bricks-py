@@ -32,7 +32,7 @@ github = HTTPEndpoint(
 #     },
 # )
 
-client = MCPClient(clients=[github])
+client = MCPClient(endpoints=[github])
 
 logger.info(client.get_tools())
 

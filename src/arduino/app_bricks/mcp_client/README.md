@@ -30,7 +30,7 @@ from arduino.app_bricks.mcp_client import MCPClient, HTTPEndpoint
 from arduino.app_utils import App
 
 remote = HTTPEndpoint(name="filesystem", url="http://localhost:8080/mcp")
-mcp = MCPClient(clients=[remote])
+mcp = MCPClient(endpoints=[remote])
 
 print(mcp.get_tools())  # -> list[BaseTool]
 
@@ -48,7 +48,7 @@ from arduino.app_bricks.mcp_client import MCPClient, HTTPEndpoint
 from arduino.app_bricks.cloud_llm import CloudLLM
 from arduino.app_utils import App
 
-mcp = MCPClient(clients=[HTTPEndpoint(name="filesystem", url="http://localhost:8080/mcp")])
+mcp = MCPClient(endpoints=[HTTPEndpoint(name="filesystem", url="http://localhost:8080/mcp")])
 
 llm = CloudLLM(
     model="google:gemini-2.5-flash",
@@ -89,7 +89,7 @@ github = HTTPEndpoint(
     url="https://api.githubcopilot.com/mcp/",
     token=os.getenv("GITHUB_MCP_PAT"),
 )
-mcp = MCPClient(clients=[github])
+mcp = MCPClient(endpoints=[github])
 ```
 
 **Custom headers** (Datadog uses two custom headers instead of a bearer token):
@@ -137,7 +137,7 @@ Use one variable per credential (multiple servers/providers → multiple variabl
 
 | Member | Description |
 | :----- | :---------- |
-| `MCPClient(clients, tool_name_prefix=True, **kwargs)` | Create a client over a list of endpoints. When `tool_name_prefix` is `True`, tool names are prefixed with the endpoint name. Extra `kwargs` are forwarded to the underlying `MultiServerMCPClient`. |
+| `MCPClient(endpoints, tool_name_prefix=True, **kwargs)` | Create a client over a list of endpoints. When `tool_name_prefix` is `True`, tool names are prefixed with the endpoint name. Extra `kwargs` are forwarded to the underlying `MultiServerMCPClient`. |
 | `MCPClient.get_tools(include=None, exclude=None) -> list[BaseTool]` | Discover and return the tools from all configured endpoints, as LangChain tools for the LLM bricks. Optionally filter by tool name (exact names or glob patterns) via `include`/`exclude` — handy to curate a small subset for small-context models. |
 | `MCPClient.list_tools() -> dict[str, str]` | Return a `{tool_name: description}` overview of the available tools — useful to explore a server and decide what to `include`/`exclude`. |
 | `MCPClient.inspect_tool(name) -> dict \| None` | Return one tool's details (`{name, description, parameters}`, where `parameters` is its argument schema), or `None` if not found. |

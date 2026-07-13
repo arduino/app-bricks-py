@@ -67,19 +67,19 @@ class HTTPEndpoint:
 class MCPClient:
     """A class to communicate with the MCP server to perform various tasks."""
 
-    def __init__(self, clients: list[HTTPEndpoint], tool_name_prefix: bool = True, **kwargs):
+    def __init__(self, endpoints: list[HTTPEndpoint], tool_name_prefix: bool = True, **kwargs):
         """Initialize the MCPClient with a MultiServerMCPClient.
 
         Args:
-            clients (list[HTTPEndpoint]): A list of MCP endpoint configurations. Use the brick's HTTPEndpoint class
+            endpoints (list[HTTPEndpoint]): A list of MCP endpoint configurations. Use the brick's HTTPEndpoint class
                 to create endpoint configurations.
             tool_name_prefix (bool, optional): Whether to prefix tool names with the client name. Defaults to True.
             **kwargs: Additional keyword arguments to pass to the MultiServerMCPClient.
 
         """
         connections = {}
-        for client in clients:
-            connections.update(client.to_conn())
+        for endpoint in endpoints:
+            connections.update(endpoint.to_conn())
         self._client = MultiServerMCPClient(
             connections=connections,
             tool_name_prefix=tool_name_prefix,

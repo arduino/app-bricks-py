@@ -12,7 +12,7 @@ logger = Logger(name="network_mcp_client_example")
 
 external_mcp = HTTPEndpoint(name="filesystem_proxy", url="http://localhost:8080/mcp")
 
-client = MCPClient(clients=[external_mcp])
+client = MCPClient(endpoints=[external_mcp])
 
 logger.info(client.get_tools())
 

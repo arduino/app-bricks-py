@@ -12,7 +12,7 @@ from arduino.app_utils import App
 
 # Expose the tools of a remote MCP server as LangChain tools.
 # See the Dockerfile in this folder for a ready-to-run filesystem MCP server on port 8080.
-mcp = MCPClient(clients=[HTTPEndpoint(name="filesystem", url="http://localhost:8080/mcp")])
+mcp = MCPClient(endpoints=[HTTPEndpoint(name="filesystem", url="http://localhost:8080/mcp")])
 
 # Hand the discovered MCP tools to the LLM: the model can now call them while chatting.
 # The same `tools=mcp.get_tools()` also works with the on-device `LargeLanguageModel` brick.
