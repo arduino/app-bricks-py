@@ -144,6 +144,37 @@ def test_model_factory_rejects_unknown_model_without_prefix():
 # --- construction ------------------------------------------------------------
 
 
+def test_init_omits_temperature_when_none(monkeypatch):
+    # The default temperature is None and must NOT be forwarded to the provider, so
+    # each SDK uses its own default (and models that deprecated/rejected the field are
+    # not sent it, e.g. Anthropic Sonnet 5+ or Gemini which rejects a None temperature).
+    captured = {}
+
+    def fake_factory(model, **kwargs):
+        captured.update(kwargs)
+        return FakeChatModel()
+
+    monkeypatch.setattr(cloud_llm_module, "model_factory", fake_factory)
+
+    CloudLLM(api_key="k", model="openai:gpt-x")
+
+    assert "temperature" not in captured
+
+
+def test_init_forwards_temperature_when_set(monkeypatch):
+    captured = {}
+
+    def fake_factory(model, **kwargs):
+        captured.update(kwargs)
+        return FakeChatModel()
+
+    monkeypatch.setattr(cloud_llm_module, "model_factory", fake_factory)
+
+    CloudLLM(api_key="k", model="openai:gpt-x", temperature=0.2)
+
+    assert captured["temperature"] == 0.2
+
+
 @pytest.mark.parametrize("model", ["openai:gpt-x", "anthropic:claude-x", "google:gemini-x"])
 def test_init_requires_api_key_for_provider_prefixed_models(model):
     with pytest.raises(ValueError, match="API key is required"):

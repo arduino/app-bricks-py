@@ -87,7 +87,7 @@ The Brick is initialized with the following parameters:
 | `api_key`       | `str`                 | `os.getenv("API_KEY")`        | The authentication key for the LLM provider. **Recommended:** Set this via the **Brick Configuration** menu in App Lab instead of code. |
 | `model`         | `str` \| `CloudModel` | `CloudModel.ANTHROPIC_CLAUDE` | The specific model to use. Accepts a `CloudModel` enum or its string value.                                                              |
 | `system_prompt` | `str`                 | `""`                          | A base instruction that defines the AI's behavior and persona.                                                                           |
-| `temperature`   | `float`               | `0.7`                         | Controls randomness. `0.0` is deterministic, `1.0` is creative.                                                                          |
+| `temperature`   | `float`               | `None`                        | Controls randomness. `0.0` is deterministic, `1.0` is creative. When `None` the provider default is used and no temperature is sent (required by models that deprecated it, e.g. Claude Sonnet 5+). |
 | `timeout`       | `int`                 | `30`                          | Maximum time (in seconds) to wait for a response.                                                                                        |
 
 ### Supported Models

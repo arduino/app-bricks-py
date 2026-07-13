@@ -81,7 +81,7 @@ class CloudLLM:
         api_key: str = os.getenv("API_KEY", ""),
         model: Union[str, CloudModel] = CloudModel.ANTHROPIC_CLAUDE,
         system_prompt: str = "",
-        temperature: Optional[float] = 0.7,
+        temperature: Optional[float] = None,
         max_tool_loops: int = 8,
         timeout: Optional[int] = None,
         tools: List[Callable[..., Any]] = None,
@@ -102,7 +102,9 @@ class CloudLLM:
                 and constraints (e.g., "You are a helpful assistant"). Defaults to empty.
             temperature (Optional[float]): The sampling temperature between 0.0 and 1.0.
                 Higher values make output more random/creative; lower values make it more
-                deterministic. Defaults to 0.7.
+                deterministic. When ``None`` (default) no temperature is sent and each
+                provider's own default is used; this also avoids errors on models that
+                deprecated ``temperature`` (e.g. Anthropic Claude Sonnet 5+).
             max_tool_loops (int): The maximum number of consecutive tool-call loops
                 allowed during a single chat interaction. Defaults to 8.
             timeout (Optional[int]): The maximum duration in seconds to wait for a response before
@@ -141,13 +143,19 @@ class CloudLLM:
             for tool_func in tools:
                 self._tools_map[tool_func.name] = tool_func
 
-        # LangChain components
+        # Only forward ``temperature`` when explicitly set: passing ``None`` lets each
+        # provider use its own default and, crucially, avoids sending the field to models
+        # that deprecated it (Anthropic Sonnet 5+) or reject ``None`` for it (Gemini, whose
+        # ``temperature`` is a strict float).
+        model_kwargs = dict(kwargs)
+        if self._temperature is not None:
+            model_kwargs["temperature"] = self._temperature
+
         self._model = model_factory(
             model,
             api_key=self._api_key,
-            temperature=self._temperature,
             timeout=self._timeout,
-            **kwargs,
+            **model_kwargs,
         )
 
         # Keep a reference to the unbound model so a reasoning-capable client can
@@ -707,9 +715,11 @@ class CloudLLM:
           ``output_config.effort`` via ``ANTHROPIC_EFFORT_MAP`` on adaptive-only models.
         - ``None`` -> a default budget (legacy) or plain adaptive thinking (newer).
 
-        When thinking is enabled ``temperature`` is forced to ``1`` (Anthropic rejects any
-        other temperature while thinking is active), and on legacy models ``max_tokens`` is
-        raised above the budget when needed (``budget_tokens`` must be ``< max_tokens``).
+        When thinking is enabled ``temperature`` is only sent when explicitly configured on
+        the brick (``self._temperature``); otherwise it is left unset so the provider default
+        applies (Anthropic defaults to ``1``, which is required while thinking is active). On
+        legacy models ``max_tokens`` is raised above the budget when needed (``budget_tokens``
+        must be ``< max_tokens``).
 
         Args:
             model (BaseChatModel): The base Anthropic model.
@@ -741,7 +751,9 @@ class CloudLLM:
         else:
             budget = max(EFFORT_TO_BUDGET[self._resolve_effort_level(reasoning_effort)], ANTHROPIC_MIN_THINKING_BUDGET)
 
-        update: dict = {"thinking": {"type": "enabled", "budget_tokens": budget}, "temperature": 1}
+        update: dict = {"thinking": {"type": "enabled", "budget_tokens": budget}}
+        if self._temperature is not None:
+            update["temperature"] = self._temperature
         max_tokens = getattr(model, "max_tokens", None)
         if max_tokens is not None and max_tokens <= budget:
             update["max_tokens"] = budget + ANTHROPIC_MIN_THINKING_BUDGET
@@ -765,7 +777,9 @@ class CloudLLM:
             dict: Fields to apply via ``model_copy``.
         """
         thinking: dict = {"type": "adaptive"}
-        update: dict = {"thinking": thinking, "temperature": 1}
+        update: dict = {"thinking": thinking}
+        if self._temperature is not None:
+            update["temperature"] = self._temperature
         if self._anthropic_requires_adaptive(model_name):
             thinking["display"] = "summarized"
             if level is not None:

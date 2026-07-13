@@ -402,8 +402,39 @@ def test_reasoning_effort_anthropic_level_maps_to_budget(make_llm):
     reasoning_model = llm._get_reasoning_model(ReasoningEffort.HIGH)
 
     assert reasoning_model.thinking == {"type": "enabled", "budget_tokens": EFFORT_TO_BUDGET[ReasoningEffort.HIGH]}
-    # Thinking requires temperature == 1 on Anthropic.
-    assert reasoning_model.temperature == 1
+    # temperature is left unset (None) when not configured on the brick, so the
+    # Anthropic default (1) applies while thinking is active.
+    assert reasoning_model.temperature is None
+
+
+def test_reasoning_effort_anthropic_forwards_configured_temperature(make_llm):
+    from langchain_anthropic import ChatAnthropic
+    from arduino.app_bricks.cloud_llm import ReasoningEffort
+
+    # A temperature explicitly configured on the brick is forwarded to the reasoning
+    # model (legacy enabled-thinking path).
+    llm = make_llm(temperature=0.5)
+    llm._base_model = ChatAnthropic(model="claude-sonnet-4-6", api_key="x")
+    llm._reasoning_model = None
+
+    reasoning_model = llm._get_reasoning_model(ReasoningEffort.HIGH)
+
+    assert reasoning_model.temperature == 0.5
+
+
+def test_reasoning_effort_anthropic_adaptive_forwards_configured_temperature(make_llm):
+    from langchain_anthropic import ChatAnthropic
+    from arduino.app_bricks.cloud_llm import ReasoningEffort
+
+    # Same, on the adaptive-only path (Sonnet 5+).
+    llm = make_llm(temperature=0.3)
+    llm._base_model = ChatAnthropic(model="claude-sonnet-5", api_key="x")
+    llm._reasoning_model = None
+
+    reasoning_model = llm._get_reasoning_model(ReasoningEffort.HIGH)
+
+    assert reasoning_model.thinking == {"type": "adaptive", "display": "summarized"}
+    assert reasoning_model.temperature == 0.3
 
 
 def test_reasoning_effort_anthropic_minimal_level_clamped_to_minimum(make_llm):
@@ -429,7 +460,7 @@ def test_reasoning_effort_anthropic_int_budget_clamped(make_llm):
     llm._reasoning_model = None
     big = llm._get_reasoning_model(4096)
     assert big.thinking == {"type": "enabled", "budget_tokens": 4096}
-    assert big.temperature == 1
+    assert big.temperature is None
 
     # Below the 1024 minimum is clamped up.
     llm._reasoning_model = None
@@ -460,7 +491,7 @@ def test_reasoning_effort_anthropic_negative_uses_adaptive(make_llm):
     reasoning_model = llm._get_reasoning_model(-1)
 
     assert reasoning_model.thinking == {"type": "adaptive"}
-    assert reasoning_model.temperature == 1
+    assert reasoning_model.temperature is None
 
 
 def test_reasoning_effort_anthropic_none_uses_default_budget(make_llm):
@@ -505,7 +536,7 @@ def test_reasoning_effort_anthropic_new_model_uses_adaptive_effort(make_llm):
     # HIGH maps up to Anthropic's "xhigh" so adaptive thinking always reasons (its
     # default "high" skips thinking on simple prompts).
     assert reasoning_model.effort == "xhigh"
-    assert reasoning_model.temperature == 1
+    assert reasoning_model.temperature is None
 
 
 def test_reasoning_effort_anthropic_new_model_maps_minimal_to_low(make_llm):
