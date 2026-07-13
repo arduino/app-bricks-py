@@ -4,8 +4,6 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import asyncio
-import sys
-from abc import ABC
 from fnmatch import fnmatchcase
 from typing import TYPE_CHECKING, Iterable
 
@@ -18,29 +16,7 @@ if TYPE_CHECKING:
     import httpx
 
 
-class MCPEndpoint(ABC):
-    """A class representing an MCP endpoint configuration."""
-
-    def __init__(self, name: str, transport: str, **kwargs):
-        self.name = name
-        self.transport = transport
-        self.config = kwargs
-
-    def to_conn(self) -> dict:
-        """Build the connection configuration consumed by MultiServerMCPClient.
-
-        Returns:
-            dict: A mapping of the endpoint name to its transport configuration.
-        """
-        return {
-            self.name: {
-                "transport": self.transport,
-                **self.config,
-            }
-        }
-
-
-class HTTPEndpoint(MCPEndpoint):
+class HTTPEndpoint:
     """A class to communicate with remote MCP server via HTTP protocol to perform various tasks."""
 
     def __init__(self, name: str, url: str, headers: dict | None = None, token: str | None = None, auth: "httpx.Auth | None" = None):
@@ -66,61 +42,37 @@ class HTTPEndpoint(MCPEndpoint):
         headers = dict(headers) if headers else {}
         if token:
             headers.setdefault("Authorization", f"Bearer {token}")
-        config: dict = {"url": url}
+        self.name = name
+        self.config: dict = {"url": url}
         if headers:
-            config["headers"] = headers
+            self.config["headers"] = headers
         if auth is not None:
-            config["auth"] = auth
-        super().__init__(name=name, transport="http", **config)
+            self.config["auth"] = auth
 
+    def to_conn(self) -> dict:
+        """Build the connection configuration consumed by MultiServerMCPClient.
 
-class LocalPythonMCPEndpoint(MCPEndpoint):
-    """A class to communicate with a local Python MCP server to perform various tasks."""
-
-    def __init__(self, name: str, script_path: str, args: list | None = None, env: dict | None = None):
-        """Initialize the LocalPythonMCPEndpoint with the given name, script path, and optional arguments.
-        The script specified by script_path should implement an MCP server using ``FastMCP`` from the ``mcp`` library (see the example below).
-
-        Args:
-            name (str): A unique name for the MCP endpoint configuration.
-            script_path (str): The path to the Python script implementing the MCP server.
-            args (list, optional): Additional command-line arguments to pass to the script. Defaults to None.
-            env (dict, optional): Environment variables for the server process, e.g. to pass credentials/API keys. Defaults to None.
-
-        !!! python "Example usage"
-            ```python
-            from mcp.server.fastmcp import FastMCP
-
-            mcp = FastMCP("MathServer")
-
-
-            @mcp.tool()
-            def add(a: int, b: int) -> int:
-                '''Add two numbers'''
-                return a + b
-
-
-            if __name__ == "__main__":
-                mcp.run(transport="stdio")
-            ```
-
+        Returns:
+            dict: A mapping of the endpoint name to its transport configuration.
         """
-        config: dict = {"command": sys.executable, "args": [script_path] + (args or [])}
-        if env:
-            config["env"] = env
-        super().__init__(name=name, transport="stdio", **config)
+        return {
+            self.name: {
+                "transport": "http",
+                **self.config,
+            }
+        }
 
 
 @brick
 class MCPClient:
     """A class to communicate with the MCP server to perform various tasks."""
 
-    def __init__(self, clients: list[MCPEndpoint], tool_name_prefix: bool = True, **kwargs):
+    def __init__(self, clients: list[HTTPEndpoint], tool_name_prefix: bool = True, **kwargs):
         """Initialize the MCPClient with a MultiServerMCPClient.
 
         Args:
-            clients (list[MCPEndpoint]): A list of MCP endpoint configurations. Use brick's exposed endpoint classes like
-                HTTPEndpoint or LocalPythonMCPEndpoint to create endpoint configurations.
+            clients (list[HTTPEndpoint]): A list of MCP endpoint configurations. Use the brick's HTTPEndpoint class
+                to create endpoint configurations.
             tool_name_prefix (bool, optional): Whether to prefix tool names with the client name. Defaults to True.
             **kwargs: Additional keyword arguments to pass to the MultiServerMCPClient.
 
