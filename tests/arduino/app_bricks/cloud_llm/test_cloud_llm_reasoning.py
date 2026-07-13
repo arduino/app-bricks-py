@@ -16,7 +16,7 @@ These tests cover two layers without any network access:
 from types import SimpleNamespace
 
 import pytest
-from langchain_core.messages import AIMessageChunk, HumanMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 
 import arduino.app_bricks.cloud_llm.cloud_llm as cloud_llm_module
 from arduino.app_bricks.cloud_llm import CloudLLM, ContentChunk, ReasoningChunk, tool
@@ -79,6 +79,21 @@ class FakeReasoningModel:
         self.inputs.append(input)
         batch = self._batches.pop(0)
         yield from batch
+
+
+class FakeInvokeModel:
+    """Scriptable stand-in for a chat model supporting non-streaming ``invoke``.
+
+    Each positional argument is the message returned by a single ``invoke`` call.
+    """
+
+    def __init__(self, *responses):
+        self._responses = list(responses)
+        self.inputs: list = []
+
+    def invoke(self, input, config=None):
+        self.inputs.append(input)
+        return self._responses.pop(0)
 
 
 def _reasoning_chunk(text: str) -> AIMessageChunk:
@@ -237,6 +252,67 @@ def test_chat_stream_reasoning_rejects_non_openai_model(make_llm):
 
     with pytest.raises(RuntimeError, match="OpenAI-compatible"):
         list(llm.chat_stream_reasoning("hi"))
+
+
+def test_chat_without_reasoning_effort_uses_base_model(make_llm):
+    llm = make_llm()
+    llm._model = FakeInvokeModel(AIMessage(content="Hello"))
+
+    out = llm.chat("hi")
+
+    assert out == "Hello"
+    # The default path must not build the reasoning model at all.
+    assert llm._reasoning_model is None
+    assert llm._model.inputs, "base model should have been invoked"
+
+
+def test_chat_with_reasoning_effort_returns_only_answer(make_llm):
+    from arduino.app_bricks.cloud_llm import ReasoningEffort
+
+    llm = make_llm()
+    # Pre-seed the cached reasoning model so the effort cache hit returns our fake
+    # (bypasses provider-specific model construction).
+    llm._reasoning_effort = ReasoningEffort.HIGH
+    llm._reasoning_model = FakeInvokeModel(
+        AIMessage(content=[
+            {"type": "thinking", "thinking": "secret chain-of-thought"},
+            {"type": "text", "text": "Final answer"},
+        ])
+    )
+
+    out = llm.chat("hi", reasoning_effort=ReasoningEffort.HIGH)
+
+    # Only the final answer text is returned; the thinking block is excluded.
+    assert out == "Final answer"
+    assert llm._reasoning_model.inputs, "reasoning model should have been invoked"
+
+
+def test_chat_with_reasoning_effort_persists_only_answer_to_history(make_llm):
+    from arduino.app_bricks.cloud_llm import ReasoningEffort
+
+    llm = make_llm()
+    llm._reasoning_effort = 64
+    llm._reasoning_model = FakeInvokeModel(
+        AIMessage(content=[
+            {"type": "thinking", "thinking": "secret"},
+            {"type": "text", "text": "Answer"},
+        ])
+    )
+
+    llm.chat("hi", reasoning_effort=64)
+
+    history = [(type(m).__name__, llm._content_to_text(m.content)) for m in llm._history.get_messages()]
+    assert history == [
+        ("HumanMessage", "hi"),
+        ("AIMessage", "Answer"),
+    ]
+
+
+def test_chat_invalid_reasoning_effort_raises_value_error(make_llm):
+    llm = make_llm()
+
+    with pytest.raises(ValueError):
+        llm.chat("hi", reasoning_effort="nonsense")
 
 
 def test_get_reasoning_model_enables_gemini_thoughts(make_llm):

@@ -102,7 +102,7 @@ You can select a model using the `CloudModel` enum or by passing the correspondi
 
 ## Methods
 
-- **`chat(message)`**: Sends a message and returns the complete response string. Blocks until generation is finished.
+- **`chat(message, reasoning_effort=None)`**: Sends a message and returns the complete response string. Blocks until generation is finished. When `reasoning_effort` is left as `None` (default) the behavior is unchanged; when set (a discrete level or an integer token budget, same values as `chat_stream_reasoning`) the model reasons with that effort but only the final answer text is returned (the chain-of-thought is not included). Requires a reasoning model.
 - **`chat_stream(message)`**: Returns a generator yielding response tokens as they arrive.
 - **`chat_stream_reasoning(message, reasoning_effort=None)`**: Streams both the model's reasoning (chain-of-thought) and its final answer, yielding `ReasoningChunk` and `ContentChunk` items. Supported on OpenAI-compatible, Google Gemini, and Anthropic Claude reasoning models. `reasoning_effort` accepts a discrete level (`ReasoningEffort` / `'minimal'`/`'low'`/`'medium'`/`'high'`) or an integer token budget, mapped to each provider's native knob.
 - **`stop_stream()`**: Interrupts an active streaming generation.
