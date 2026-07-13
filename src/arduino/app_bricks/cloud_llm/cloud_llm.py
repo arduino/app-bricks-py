@@ -590,12 +590,21 @@ class CloudLLM:
     def _openai_effort_update(self, model: BaseChatModel, reasoning_effort: Union["ReasoningEffort", str, int, None]) -> dict:
         """Builds the model-copy update applying reasoning effort for OpenAI models.
 
-        A discrete level maps to the standard ``reasoning_effort`` field (used by
-        the real OpenAI API). An integer maps to llama.cpp's ``thinking_budget_tokens``
+        Since reasoning streaming goes through the Responses API, effort and the
+        reasoning summary are configured via the ``reasoning`` dict. ``summary``
+        is always set to ``'auto'`` so OpenAI's proprietary reasoning models emit
+        their ``response.reasoning_summary_text.delta`` events; without it these
+        models reason silently and no reasoning is streamed. A discrete level maps
+        to ``reasoning['effort']``; ``None`` keeps the model default effort while
+        still requesting the summary.
+
+        An integer instead maps to llama.cpp's ``thinking_budget_tokens``
         (``-1`` unrestricted, ``0`` off, ``N>0`` token budget), passed via
         ``extra_body`` since it is not a standard OpenAI field. Because llama.cpp only
         applies the budget when the model is actually thinking, ``enable_thinking`` is
         also set via ``chat_template_kwargs`` for templates that gate thinking behind it.
+        llama.cpp/gpt-oss stream raw ``response.reasoning_text.delta`` events, so no
+        summary is requested on that path.
 
         Args:
             model (BaseChatModel): The base OpenAI-compatible model.
@@ -604,8 +613,6 @@ class CloudLLM:
         Returns:
             dict: Fields to apply via ``model_copy``.
         """
-        if reasoning_effort is None:
-            return {}
         if isinstance(reasoning_effort, int) and not isinstance(reasoning_effort, bool):
             extra_body = dict(getattr(model, "extra_body", None) or {})
             extra_body["thinking_budget_tokens"] = reasoning_effort
@@ -613,7 +620,11 @@ class CloudLLM:
             chat_template_kwargs.setdefault("enable_thinking", True)
             extra_body["chat_template_kwargs"] = chat_template_kwargs
             return {"extra_body": extra_body}
-        return {"reasoning_effort": self._resolve_effort_level(reasoning_effort).value}
+
+        reasoning: dict = {"summary": "auto"}
+        if reasoning_effort is not None:
+            reasoning["effort"] = self._resolve_effort_level(reasoning_effort).value
+        return {"reasoning": reasoning}
 
     def _gemini_effort_update(self, model: BaseChatModel, reasoning_effort: Union["ReasoningEffort", str, int, None]) -> dict:
         """Builds the model-copy update applying reasoning effort for Gemini models.

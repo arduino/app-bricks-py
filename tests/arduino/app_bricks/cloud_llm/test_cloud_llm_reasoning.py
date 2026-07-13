@@ -260,7 +260,7 @@ def test_reasoning_effort_openai_level_and_budget(make_llm):
 
     llm._reasoning_model = None
     level_model = llm._get_reasoning_model(ReasoningEffort.HIGH)
-    assert level_model.reasoning_effort == "high"
+    assert level_model.reasoning == {"effort": "high", "summary": "auto"}
 
     # An integer maps to llama.cpp's thinking_budget_tokens via extra_body,
     # with thinking enabled so gated templates honor the budget.
