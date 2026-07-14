@@ -22,4 +22,4 @@ def ask_prompt():
     time.sleep(60)
 
 
-App.run(ask_prompt)
+App.run(user_loop=ask_prompt)

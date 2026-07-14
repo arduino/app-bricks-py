@@ -24,4 +24,4 @@ def transcribe():
     raise StopIteration
 
 
-App.run(transcribe)
+App.run(user_loop=transcribe)

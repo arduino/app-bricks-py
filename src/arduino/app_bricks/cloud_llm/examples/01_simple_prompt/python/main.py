@@ -21,4 +21,4 @@ def ask_prompt():
     print()
 
 
-App.run(ask_prompt)
+App.run(user_loop=ask_prompt)

@@ -18,4 +18,4 @@ def ask_prompt():
     raise StopIteration
 
 
-App.run(ask_prompt)
+App.run(user_loop=ask_prompt)
