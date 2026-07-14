@@ -33,4 +33,4 @@ def ask_prompt():
     print(llm.chat(prompt))
 
 
-App.run(ask_prompt)
+App.run(user_loop=ask_prompt)

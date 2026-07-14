@@ -1,0 +1,7 @@
+name: Local VLM chat with persistent memory
+icon: 👀
+description: Local VLM chat with persistent memory
+
+bricks:
+  - arduino:vlm
+  - arduino:dbstorage_sqlstore

@@ -1,0 +1,7 @@
+name: Conversation with persistent memory
+icon: ✨
+description: Conversation with persistent memory
+
+bricks:
+  - arduino:cloud_llm
+  - arduino:dbstorage_sqlstore

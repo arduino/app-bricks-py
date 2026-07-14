@@ -35,4 +35,4 @@ def ask_prompt():
     print(vlm.chat(message, images=images))
 
 
-App.run(ask_prompt)
+App.run(user_loop=ask_prompt)
