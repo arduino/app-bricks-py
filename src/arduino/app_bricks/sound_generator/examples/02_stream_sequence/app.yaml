@@ -4,3 +4,4 @@ description: Stream a sequence of notes over websocket via WebUI
 
 bricks:
   - arduino:sound_generator
+  - arduino:web_ui
