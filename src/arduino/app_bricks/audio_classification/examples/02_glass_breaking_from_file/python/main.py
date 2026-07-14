@@ -2,9 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# EXAMPLE_NAME = "Detect the glass breaking sound from audio file"
-# EXAMPLE_REQUIRES = "Requires an audio file with the glass breaking sound."
-
 from arduino.app_utils import App
 from arduino.app_bricks.audio_classification import AudioClassification
 

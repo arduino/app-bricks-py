@@ -2,9 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# EXAMPLE_NAME = "Get user confirmation with hand gestures"
-# EXAMPLE_REQUIRES = "Requires a connected camera"
-
 from arduino.app_utils import App
 from arduino.app_bricks.gesture_recognition import GestureRecognition
 from arduino.app_utils.app import App

@@ -2,9 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# EXAMPLE_NAME = "Chat with an LLM"
-# EXAMPLE_REQUIRES = "Requires a valid API key to a cloud LLM service."
-
 from arduino.app_bricks.cloud_llm import CloudLLM
 from arduino.app_utils import App
 

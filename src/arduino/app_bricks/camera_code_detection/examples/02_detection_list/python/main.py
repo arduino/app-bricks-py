@@ -2,8 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# EXAMPLE_NAME = "Code detection (aggregated result)"
-# EXAMPLE_REQUIRES = "Requires an USB webcam connected to the Arduino board."
 from PIL.Image import Image
 from arduino.app_utils import App
 from arduino.app_bricks.camera_code_detection import CameraCodeDetection, Detection

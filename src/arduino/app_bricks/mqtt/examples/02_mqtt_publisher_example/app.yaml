@@ -1,6 +1,6 @@
 name: Publish message
 icon: 📡
-description: Publish message
+description: "Publish message. Requires an MQTT broker running locally on port 1883."
 
 bricks:
   - arduino:mqtt

@@ -2,7 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# EXAMPLE_NAME: Play a MusicComposition
 from arduino.app_bricks.sound_generator import SoundGenerator, SoundEffect, MusicComposition
 from arduino.app_utils import App
 

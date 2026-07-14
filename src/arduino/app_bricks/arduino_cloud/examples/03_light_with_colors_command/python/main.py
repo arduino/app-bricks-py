@@ -2,7 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# EXAMPLE_NAME = "Arduino Cloud Light with Colors Example"
 from arduino.app_bricks.arduino_cloud import ArduinoCloud, ColoredLight
 from arduino.app_utils import App
 from typing import Any

@@ -2,9 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# EXAMPLE_NAME = "Get air quality by city"
-# EXAMPLE_REQUIRES = "Requires an AQICN API token (https://aqicn.org/data-platform/token/)."
-
 from arduino.app_bricks.air_quality_monitoring import AirQualityMonitoring
 from arduino.app_utils import App
 

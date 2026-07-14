@@ -2,8 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# EXAMPLE_NAME = "Store and read data using SQLStore"
-
 from arduino.app_utils import App
 from arduino.app_bricks.dbstorage_sqlstore import SQLStore
 

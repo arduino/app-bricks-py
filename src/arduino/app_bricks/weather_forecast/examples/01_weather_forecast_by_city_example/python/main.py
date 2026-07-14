@@ -2,8 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# EXAMPLE_NAME = "Weather Forecast by city name"
-
 from arduino.app_utils import App
 from arduino.app_bricks.weather_forecast import WeatherForecast
 

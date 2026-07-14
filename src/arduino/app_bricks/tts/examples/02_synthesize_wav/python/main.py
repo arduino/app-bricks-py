@@ -2,8 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# EXAMPLE_NAME = "Synthesize speech audio from text and save as WAV file"
-
 from arduino.app_utils import App
 from arduino.app_bricks.tts import TextToSpeech
 

@@ -2,7 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# EXAMPLE_NAME: Play a WAV file
 from arduino.app_bricks.sound_generator import SoundGenerator
 from arduino.app_utils import App
 

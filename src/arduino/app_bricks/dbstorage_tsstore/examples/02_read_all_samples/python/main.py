@@ -2,8 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# EXAMPLE_NAME = "Read all samples from database in a given time range"
-
 from arduino.app_utils import App
 import time
 from arduino.app_bricks.dbstorage_tsstore import TimeSeriesStore

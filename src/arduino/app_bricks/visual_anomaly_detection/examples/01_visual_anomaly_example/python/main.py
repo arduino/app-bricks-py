@@ -2,8 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# EXAMPLE_NAME = "Visual Anomaly Detection"
-
 from arduino.app_utils import App
 from arduino.app_bricks.visual_anomaly_detection import VisualAnomalyDetection
 from arduino.app_utils.image import draw_anomaly_markers

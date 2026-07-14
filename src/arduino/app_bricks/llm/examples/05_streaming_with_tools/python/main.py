@@ -2,9 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# EXAMPLE_NAME = "Chat with tools and streaming"
-# EXAMPLE_REQUIRES = "Models must be downloaded and available locally."
-
 from arduino.app_bricks.llm import LargeLanguageModel, tool
 from arduino.app_utils import App
 

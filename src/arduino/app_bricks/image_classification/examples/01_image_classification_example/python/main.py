@@ -2,8 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# EXAMPLE_NAME = "Image classification"
-
 from arduino.app_utils import App
 from arduino.app_bricks.image_classification import ImageClassification
 

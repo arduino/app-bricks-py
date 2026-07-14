@@ -2,7 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# EXAMPLE_NAME: Play a sequence of notes (Fur Elise)
 from arduino.app_bricks.sound_generator import SoundGenerator, SoundEffect
 from arduino.app_utils import App
 

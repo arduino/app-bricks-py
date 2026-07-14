@@ -2,8 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# EXAMPLE_NAME = "Speak text through a speaker"
-
 from arduino.app_bricks.tts import TextToSpeech
 from arduino.app_utils import App
 import time

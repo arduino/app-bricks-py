@@ -2,8 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# EXAMPLE_NAME = "Publish message"
-# EXAMPLE_REQUIRES = "Requires an MQTT broker running locally on port 1883."
 import time
 from arduino.app_bricks.mqtt import MQTT
 from arduino.app_utils import App

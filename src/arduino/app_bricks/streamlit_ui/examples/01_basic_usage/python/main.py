@@ -2,8 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# EXAMPLE_NAME = "Basic usage of the Streamlit UI Brick"
-
 from arduino.app_utils import App
 from arduino.app_bricks.streamlit_ui import st
 

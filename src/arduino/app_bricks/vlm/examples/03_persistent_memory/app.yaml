@@ -1,6 +1,6 @@
 name: Local VLM chat with persistent memory
 icon: 👀
-description: Local VLM chat with persistent memory
+description: "Local VLM chat with persistent memory. Requires local VLM models and the dbstorage_sqlstore brick."
 
 bricks:
   - arduino:vlm

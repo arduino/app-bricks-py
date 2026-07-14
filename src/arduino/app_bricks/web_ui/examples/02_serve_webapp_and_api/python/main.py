@@ -2,7 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# EXAMPLE_NAME = "Serve a web application and its API"
 from arduino.app_utils import App
 from arduino.app_bricks.web_ui import WebUI
 

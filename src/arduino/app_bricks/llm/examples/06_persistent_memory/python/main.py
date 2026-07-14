@@ -2,9 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# EXAMPLE_NAME = "Local LLM chat with persistent memory"
-# EXAMPLE_REQUIRES = "Local LLM models available and the dbstorage_sqlstore brick."
-
 from arduino.app_bricks.cloud_llm import SQLMessagePersistence
 from arduino.app_bricks.dbstorage_sqlstore import SQLStore
 from arduino.app_bricks.llm import LargeLanguageModel

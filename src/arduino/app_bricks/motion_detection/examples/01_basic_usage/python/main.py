@@ -2,8 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# EXAMPLE_NAME = "Basic usage of the Motion Detection Brick"
-
 from arduino.app_bricks.motion_detection import MotionDetection
 from arduino.app_utils import App, Bridge
 

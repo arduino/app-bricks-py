@@ -2,8 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# EXAMPLE_NAME = "Object Detection"
-
 from arduino.app_utils import App
 from arduino.app_bricks.object_detection import ObjectDetection
 from arduino.app_utils.image import draw_bounding_boxes

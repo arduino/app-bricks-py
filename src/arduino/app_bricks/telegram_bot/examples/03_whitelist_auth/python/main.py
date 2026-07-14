@@ -2,9 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# EXAMPLE_NAME = "Bot with user ID whitelist"
-# EXAMPLE_REQUIRES = "Requires TELEGRAM_BOT_TOKEN environment variable and authorized user IDs."
-
 from arduino.app_bricks.telegram_bot import TelegramBot, Sender, Message
 from arduino.app_utils import App
 

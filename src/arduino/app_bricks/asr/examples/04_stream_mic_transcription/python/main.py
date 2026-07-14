@@ -2,9 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# EXAMPLE_NAME = "Transcribe audio from microphone and stream the results"
-# EXAMPLE_REQUIRES = "Requires a microphone device"
-
 from arduino.app_utils import App
 from arduino.app_bricks.asr import AutomaticSpeechRecognition
 

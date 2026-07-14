@@ -2,9 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# EXAMPLE_NAME = "Register and handle commands"
-# EXAMPLE_REQUIRES = "Requires TELEGRAM_BOT_TOKEN environment variable."
-
 from arduino.app_bricks.telegram_bot import TelegramBot, Sender, Message
 from arduino.app_utils import App
 

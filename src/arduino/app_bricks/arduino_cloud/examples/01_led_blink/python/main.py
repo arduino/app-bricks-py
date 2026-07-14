@@ -2,7 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# EXAMPLE_NAME = "Arduino Cloud LED Blink Example"
 from arduino.app_bricks.arduino_cloud import ArduinoCloud
 from arduino.app_utils import App
 import time

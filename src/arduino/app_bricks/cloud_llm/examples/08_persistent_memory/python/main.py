@@ -2,9 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# EXAMPLE_NAME = "Conversation with persistent memory"
-# EXAMPLE_REQUIRES = "Requires a valid API key to a cloud LLM service and the dbstorage_sqlstore brick."
-
 from arduino.app_bricks.cloud_llm import CloudLLM, SQLMessagePersistence
 from arduino.app_bricks.dbstorage_sqlstore import SQLStore
 from arduino.app_utils import App

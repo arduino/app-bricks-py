@@ -1,6 +1,6 @@
-name: Conversation with memory
+name: Conversation without memory
 icon: ✨
-description: Conversation with memory
+description: "Conversation without memory. Requires a valid API key to a cloud LLM service."
 
 bricks:
   - arduino:cloud_llm

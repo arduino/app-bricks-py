@@ -2,9 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# EXAMPLE_NAME = "Detect speech from microphone, different providers"
-# EXAMPLE_REQUIRES = "Requires an USB microphone connected to the Arduino board."
-
 from arduino.app_utils import App
 from arduino.app_bricks.cloud_asr import CloudASR, CloudProvider
 

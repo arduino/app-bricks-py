@@ -2,9 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# EXAMPLE_NAME = "Transcribe a wav file"
-# EXAMPLE_REQUIRES = "Requires a WAV file with a voice recording"
-
 from arduino.app_utils import App
 from arduino.app_bricks.asr import WAVAutomaticSpeechRecognition
 

@@ -2,8 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# EXAMPLE_NAME = "Chat with an Ollama model"
-
 from arduino.app_bricks.cloud_llm import CloudLLM
 from arduino.app_utils import App
 import time

@@ -2,8 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# EXAMPLE_NAME = "Get camera preview frame and design bounding boxes on it"
-
 from arduino.app_utils import App
 from arduino.app_utils.image import draw_bounding_boxes, get_image_bytes
 from arduino.app_bricks.video_objectdetection import VideoObjectDetection

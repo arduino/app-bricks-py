@@ -1,6 +1,6 @@
 name: Detect the glass breaking sound from microphone
 icon: 🔊
-description: Detect the glass breaking sound from microphone
+description: "Detect the glass breaking sound from microphone. Requires an USB microphone connected to the Arduino board."
 
 bricks:
   - arduino:audio_classification

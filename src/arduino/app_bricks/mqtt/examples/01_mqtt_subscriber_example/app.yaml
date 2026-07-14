@@ -1,6 +1,6 @@
 name: MQTT topic subscribe and read messages
 icon: 📡
-description: MQTT topic subscribe and read messages
+description: "MQTT topic subscribe and read messages. Requires an MQTT broker running locally on port 1883."
 
 bricks:
   - arduino:mqtt
