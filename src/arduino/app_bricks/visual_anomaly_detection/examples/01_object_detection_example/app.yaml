@@ -1,6 +1,0 @@
-name: Object Detection
-icon: 👁️
-description: Object Detection
-
-bricks:
-  - arduino:visual_anomaly_detection
