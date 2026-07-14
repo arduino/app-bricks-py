@@ -6,7 +6,7 @@ from arduino.app_utils import App
 from arduino.app_bricks.asr import WAVAutomaticSpeechRecognition
 
 
-with open("/app/assets/recording_01.wav", "rb") as wav_file:
+with open("assets/recording_01.wav", "rb") as wav_file:
     audio_bytes = wav_file.read()
     asr = WAVAutomaticSpeechRecognition(audio_bytes)
     App.start_brick(asr)
