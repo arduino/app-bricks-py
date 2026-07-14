@@ -5,7 +5,10 @@
 from arduino.app_bricks.air_quality_monitoring import AirQualityMonitoring
 from arduino.app_utils import App
 
-monitor = AirQualityMonitoring(token="YOUR_AQICN_TOKEN")
+# Enter a valid AQICN API token to use the Brick properly
+my_token = "demo"
+
+monitor = AirQualityMonitoring(token=my_token)
 
 city = "Turin"
 data = monitor.get_air_quality_by_city(city)
