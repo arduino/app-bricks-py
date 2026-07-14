@@ -10,6 +10,6 @@ from arduino.app_bricks.vlm import VisionLanguageModel
 
 vlm = VisionLanguageModel()
 
-print(vlm.chat("Describe the image.", images=["chair.jpg"]))
+print(vlm.chat("Describe the image.", images=["/app/assets/chair.jpg"]))
 
 App.run()

@@ -30,7 +30,7 @@ def ask_prompt():
         print("Memory cleared for this thread.")
         return
 
-    images = ["chair.jpg"] if prompt.lower() == "image" else None
+    images = ["/app/assets/chair.jpg"] if prompt.lower() == "image" else None
     message = "Describe the image and remember relevant visual details." if images else prompt
     print(vlm.chat(message, images=images))
 

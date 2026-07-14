@@ -8,7 +8,7 @@
 from arduino.app_utils import App
 from arduino.app_bricks.audio_classification import AudioClassification
 
-classification = AudioClassification.classify_from_file("glass_breaking.wav")
+classification = AudioClassification.classify_from_file("/app/assets/glass_breaking.wav")
 print("Result:", classification)
 
 App.run()

@@ -5,14 +5,14 @@
 # EXAMPLE_NAME = "Object Detection"
 
 from arduino.app_utils import App
-import os
 from arduino.app_bricks.object_detection import ObjectDetection
 from arduino.app_utils.image import draw_bounding_boxes
 
 object_detection = ObjectDetection()
 
 # Image can be provided as bytes or PIL.Image
-img = os.read("path/to/your/image.jpg")
+with open("/app/assets/image.jpg", "rb") as f:
+    img = f.read()
 
 out = object_detection.detect(img)
 # You can also provide a confidence level

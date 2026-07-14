@@ -5,14 +5,14 @@
 # EXAMPLE_NAME = "Visual Anomaly Detection"
 
 from arduino.app_utils import App
-import os
 from arduino.app_bricks.visual_anomaly_detection import VisualAnomalyDetection
 from arduino.app_utils.image import draw_anomaly_markers
 
 anomaly_detection = VisualAnomalyDetection()
 
 # Image can be provided as bytes or PIL.Image
-img = os.read("path/to/your/image.jpg")
+with open("/app/assets/image.jpg", "rb") as f:
+    img = f.read()
 
 out = anomaly_detection.detect(img)
 if out and "detection" in out:

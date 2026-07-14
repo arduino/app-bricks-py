@@ -10,7 +10,7 @@ from arduino.app_bricks.image_classification import ImageClassification
 image_classification = ImageClassification()
 
 # Image frame can be as bytes or PIL image
-with open("image.jpg", "rb") as f:
+with open("/app/assets/image.jpg", "rb") as f:
     frame = f.read()
 
 out = image_classification.classify(frame)

@@ -10,7 +10,7 @@ from arduino.app_bricks.vlm import VisionLanguageModel
 
 vlm = VisionLanguageModel()
 
-for chunk in vlm.chat_stream("Describe the image.", images=["chair.jpg"]):
+for chunk in vlm.chat_stream("Describe the image.", images=["/app/assets/chair.jpg"]):
     print(chunk, end="", flush=True)
 
 App.run()

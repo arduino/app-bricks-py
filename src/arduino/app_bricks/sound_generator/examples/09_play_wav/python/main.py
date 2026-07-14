@@ -8,7 +8,7 @@ from arduino.app_utils import App
 
 player = SoundGenerator()
 
-# Provide the path to a WAV file in the app directory (e.g., "audio/sample.wav")
-player.play_wav("audio/sample.wav", block=True)
+# Provide the path to a WAV file in the app directory (e.g., "/app/assets/sample.wav")
+player.play_wav("/app/assets/sample.wav", block=True)
 
 App.run()
