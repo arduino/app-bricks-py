@@ -20,12 +20,15 @@ def light_callback(client: object, value: Any):
 
 arduino_cloud.register(ColoredLight("clight", swi=True, on_write=light_callback))
 
-App.start_brick(arduino_cloud)
 
-while True:
-    # randomize color
+def randomize_light():
+    """Push a random color to the cloud-controlled light once per iteration."""
     arduino_cloud.clight.hue = random.randint(0, 360)
     arduino_cloud.clight.sat = random.randint(0, 100)
     arduino_cloud.clight.bri = random.randint(0, 100)
     print(f"Light set to hue: {arduino_cloud.clight.hue}, saturation: {arduino_cloud.clight.sat}, brightness: {arduino_cloud.clight.bri}")
     time.sleep(3)
+
+
+App.start_brick(arduino_cloud)
+App.run(user_loop=randomize_light)
