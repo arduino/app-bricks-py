@@ -16,7 +16,8 @@ def on_code_detected(frame: Image, detection: Detection):
     # e.g., draw a bounding box, save it to a database or log it.
 
 
-camera = Camera(camera=2, resolution=(640, 360), fps=10)
+# Select another source to use different cameras
+camera = Camera(source=0, resolution=(640, 360), fps=10)
 detector = CameraCodeDetection(camera)
 detector.on_detect(on_code_detected)
 
