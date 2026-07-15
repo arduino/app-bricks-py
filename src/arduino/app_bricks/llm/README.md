@@ -1,9 +1,6 @@
 # Large Language Model (LLMs) Brick
 
-A Brick for interacting with locally-based Large Language Models (LLMs).
-
-This class wraps LangChain functionality to provide a simplified, unified interface for chatting with models like Qwenm, LLama, Gemma.
-It supports both synchronous 'one-shot' responses and streaming output, with optional conversational memory.
+The Large Language Model (LLM) Brick provides functionality for interacting with locally-based LLMs such as Qwenm, LLama, Gemma. It wraps LangChain functionality to provide a simplified, unified interface for chatting with the local models. It supports both synchronous 'one-shot' responses and streaming output, with optional conversational memory.
 
 ## Overview
 
@@ -14,95 +11,60 @@ This Brick acts as a gateway to powerful AI models hosted locally. Whether you n
 - **Multi-Provider Support**: Compatible with multiple LLM providers including Qwenm, LLama and Gemma.
 - **Conversational Memory**: Built-in support for windowed history, allowing the AI to remember context from previous exchanges.
 - **Streaming Responses**: Receive text chunks in real-time as they are generated, ideal for responsive user interfaces.
-
-
 - **Configurable Behavior**: Customize system prompts, temperature (creativity), and request timeouts.
-- **Simple API**: Unified `chat` and `chat_stream` methods regardless of the underlying model provider.
-
-## Prerequisites
-
-- **API Key**: A valid API key for the chosen service (e.g., OpenAI API Key, Anthropic API Key).
-- **Python Dependencies**: The Brick relies on LangChain integration packages (`langchain-anthropic`, `langchain-openai`, `langchain-google-genai`).
 
 ## Code Example and Usage
 
 ### Basic Conversation
 
-This example initializes the Brick with an OpenAI model and performs a simple chat interaction. 
-
-**Note:** The API key is not hardcoded. It is retrieved automatically from the **Brick Configuration** in App Lab.
+This example initializes the Brick with an local model and performs a simple chat interaction. Models must be downloaded and available locally.
 
 ```python
-import os
-from arduino.app_bricks.cloud_llm import CloudLLM, CloudModel
+from arduino.app_bricks.llm import LargeLanguageModel
 from arduino.app_utils import App
 
-# Initialize the Brick (API key is loaded from configuration)
-llm = CloudLLM(
-    model=CloudModel.OPENAI_GPT,
-    system_prompt="You are a helpful assistant for an IoT device."
-)
+llm = LargeLanguageModel()
 
-def simple_chat():
-    # Send a prompt and print the response
-    response = llm.chat("What is the capital of Italy?")
-    print(f"AI: {response}")
 
-# Run the application
-App.run(simple_chat)
+def ask_prompt():
+    prompt = "Hi, what can you do as an AI assistant?"
+    print(llm.chat(prompt))
+    print()
+    raise StopIteration
+
+
+App.run(ask_prompt)
 ```
 
 ### Streaming with Memory
 
-This example demonstrates how to enable conversational memory and process the response as a stream of tokens.
+This example demonstrates how to start a Local LLM chat with persistent memory.
 
 ```python
-from arduino.app_bricks.cloud_llm import CloudLLM, CloudModel
+from arduino.app_bricks.cloud_llm import SQLMessagePersistence
+from arduino.app_bricks.dbstorage_sqlstore import SQLStore
+from arduino.app_bricks.llm import LargeLanguageModel
 from arduino.app_utils import App
 
-# Initialize with memory enabled (keeps last 10 messages)
-# API Key is retrieved automatically from Brick Configuration
-llm = CloudLLM(
-    model=CloudModel.ANTHROPIC_CLAUDE
-).with_memory(max_messages=10)
+db = SQLStore("llm_persistent_demo.db")
+db.start()
 
-def chat_loop():
-    while True:
-        user_input = input("You: ")
-        if user_input.lower() in ["exit", "quit"]:
-            break
-            
-        print("AI: ", end="", flush=True)
-        
-        # Stream the response token by token
-        for token in llm.chat_stream(user_input):
-            print(token, end="", flush=True)
-        print() # Newline after response
+llm = LargeLanguageModel(
+    system_prompt="You are a helpful assistant.",
+).with_memory(
+    max_messages=10,
+    persistence=SQLMessagePersistence(sql_store=db, thread_id="llm-demo-conversation"),
+)
 
-App.run(chat_loop)
+
+def ask_prompt():
+    prompt = "Hi, what can you do as an AI assistant?"
+    print(llm.chat(prompt))
+    raise StopIteration
+
+
+App.run(ask_prompt)
 ```
-
-## Configuration
-
-The Brick is initialized with the following parameters:
-
-| Parameter       | Type                  | Default                       | Description                                                                                                                              |
-| :-------------- | :-------------------- | :---------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------- |
-| `api_key`       | `str`                 | `os.getenv("API_KEY")`        | The authentication key for the LLM provider. **Recommended:** Set this via the **Brick Configuration** menu in App Lab instead of code. |
-| `model`         | `str` \| `CloudModel` | `CloudModel.ANTHROPIC_CLAUDE` | The specific model to use. Accepts a `CloudModel` enum or its string value.                                                              |
-| `system_prompt` | `str`                 | `""`                          | A base instruction that defines the AI's behavior and persona.                                                                           |
-| `temperature`   | `float`               | `0.7`                         | Controls randomness. `0.0` is deterministic, `1.0` is creative.                                                                          |
-| `timeout`       | `int`                 | `30`                          | Maximum time (in seconds) to wait for a response.                                                                                        |
-
-### Supported Models
-
-You can select a model using the `CloudModel` enum or by passing the corresponding raw string identifier.
-
-| Enum Constant                 | Raw String ID              | Provider Documentation                                                      |
-| :---------------------------- | :------------------------- | :-------------------------------------------------------------------------- |
-| `CloudModel.ANTHROPIC_CLAUDE` | `claude-sonnet-4.6`        | [Anthropic Models](https://docs.anthropic.com/en/docs/about-claude/models)  |
-| `CloudModel.OPENAI_GPT`       | `gpt-5.4-mini`             | [OpenAI Models](https://platform.openai.com/docs/models)                    |
-| `CloudModel.GOOGLE_GEMINI`    | `gemini-2.5-flash`         | [Google Gemini Models](https://ai.google.dev/gemini-api/docs/models/gemini) |
 
 ## Methods
 
@@ -110,4 +72,3 @@ You can select a model using the `CloudModel` enum or by passing the correspondi
 - **`chat_stream(message)`**: Returns a generator yielding response tokens as they arrive.
 - **`stop_stream()`**: Interrupts an active streaming generation.
 - **`with_memory(max_messages, persistence=None)`**: Enables history tracking. `max_messages` is the window size sent to the model. `persistence=True` enables persistence with a dedicated default database/thread; pass a `MessagePersistence` (e.g. `SQLMessagePersistence`) for full control.
-- **`clear_memory()`**: Resets the conversation history (also deletes persisted rows for the active thread when a persistence backend is configured).
