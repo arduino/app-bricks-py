@@ -87,7 +87,7 @@ The Brick is initialized with the following parameters:
 | `api_key`       | `str`                 | `os.getenv("API_KEY")`        | The authentication key for the LLM provider. **Recommended:** Set this via the **Brick Configuration** menu in App Lab instead of code. |
 | `model`         | `str` \| `CloudModel` | `CloudModel.ANTHROPIC_CLAUDE` | The specific model to use. Accepts a `CloudModel` enum or its string value.                                                              |
 | `system_prompt` | `str`                 | `""`                          | A base instruction that defines the AI's behavior and persona.                                                                           |
-| `temperature`   | `float`               | `0.7`                         | Controls randomness. `0.0` is deterministic, `1.0` is creative.                                                                          |
+| `temperature`   | `float`               | `None`                        | Controls randomness. `0.0` is deterministic, `1.0` is creative. When `None` the provider default is used and no temperature is sent (required by models that deprecated it, e.g. Claude Sonnet 5+). |
 | `timeout`       | `int`                 | `30`                          | Maximum time (in seconds) to wait for a response.                                                                                        |
 
 ### Supported Models
@@ -102,8 +102,9 @@ You can select a model using the `CloudModel` enum or by passing the correspondi
 
 ## Methods
 
-- **`chat(message)`**: Sends a message and returns the complete response string. Blocks until generation is finished.
+- **`chat(message, reasoning_effort=None)`**: Sends a message and returns the complete response string. Blocks until generation is finished. When `reasoning_effort` is left as `None` (default) the behavior is unchanged; when set (a discrete level or an integer token budget, same values as `chat_stream_reasoning`) the model reasons with that effort but only the final answer text is returned (the chain-of-thought is not included). Requires a reasoning model.
 - **`chat_stream(message)`**: Returns a generator yielding response tokens as they arrive.
+- **`chat_stream_reasoning(message, reasoning_effort=None)`**: Streams both the model's reasoning (chain-of-thought) and its final answer, yielding `ReasoningChunk` and `ContentChunk` items. Supported on OpenAI-compatible, Google Gemini, and Anthropic Claude reasoning models. `reasoning_effort` accepts a discrete level (`ReasoningEffort` / `'minimal'`/`'low'`/`'medium'`/`'high'`) or an integer token budget, mapped to each provider's native knob.
 - **`stop_stream()`**: Interrupts an active streaming generation.
 - **`with_memory(max_messages, persistence=None)`**: Enables history tracking. `max_messages` is the window size sent to the model. `persistence=True` enables persistence with a dedicated default database/thread; pass a `MessagePersistence` (e.g. `SQLMessagePersistence`) for full control.
 - **`clear_memory()`**: Resets the conversation history (also deletes persisted rows for the active thread when a persistence backend is configured).
