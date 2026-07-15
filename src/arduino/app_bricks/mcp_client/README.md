@@ -29,13 +29,15 @@ The MCP Client Brick connects your Arduino app to one or more [Model Context Pro
 from arduino.app_bricks.mcp_client import MCPClient, HTTPEndpoint
 from arduino.app_utils import App
 
-remote = HTTPEndpoint(name="filesystem", url="http://localhost:8080/mcp")
-mcp = MCPClient(endpoints=[remote])
+server = HTTPEndpoint(name="server", url="http://<mcp-server-host>:8080/mcp")
+mcp = MCPClient(endpoints=[server])
 
 print(mcp.get_tools())  # -> list[BaseTool]
 
 App.run()
 ```
+
+`name` is a unique label for the endpoint: by default it prefixes the discovered tool names (`server_<tool>`) to avoid clashes between servers. The URL points to the server's `/mcp` endpoint.
 
 ### Give MCP tools to an LLM (the main use case)
 
@@ -104,7 +106,7 @@ MCP servers authenticate clients with **static credentials sent in HTTP headers*
 | `headers={...}` | Provider-specific header schemes (Datadog, HTTP Basic, …) | Sends the headers verbatim |
 | `auth=<httpx.Auth>` | Advanced or rotating credentials (e.g. OAuth) | Passed through to the underlying HTTP client |
 
-An explicit `Authorization` entry in `headers` takes precedence over `token`. Keep secrets out of source — read them from environment variables (declared as **secret** Brick Configuration variables, see [Storing credentials](#storing-credentials)).
+An explicit `Authorization` entry in `headers` takes precedence over `token`. Keep secrets out of source — read them from environment variables, set as brick variables in your `app.yaml` (see [Storing credentials](#storing-credentials)).
 
 ### Provider recipes
 
@@ -152,16 +154,22 @@ atlassian = HTTPEndpoint(name="atlassian", url="https://...", headers={"Authoriz
 
 ### Storing credentials
 
-Declare each credential as a **secret** variable in this brick's `brick_config.yaml`, so it can be set from the App Lab UI and read at runtime via `os.getenv`:
+Set each credential in your app's `app.yaml`, and retrieve them via `os.getenv`:
 
 ```yaml
-variables:
-  - name: GITHUB_MCP_PAT
-    description: GitHub MCP server personal access token
-    secret: true
+bricks:
+  - arduino:mcp_client:
+      variables:
+        GITHUB_MCP_PAT: "<your token>"
 ```
 
-Use one variable per credential (multiple servers/providers → multiple variables).
+```python
+github = HTTPEndpoint(
+    name="github",
+    url="https://<github>/mcp/",
+    token=os.getenv("GITHUB_MCP_PAT"),
+)
+```
 
 ## API
 
