@@ -4,6 +4,7 @@ services:
     user: 0:0
     devices:
       - /dev/dma_heap/system
+      - /dev/dma_heap/qcom,system
       - /dev/fastrpc-cdsp
       - /dev/fastrpc-adsp-secure
       - /dev/fastrpc-cdsp-secure
