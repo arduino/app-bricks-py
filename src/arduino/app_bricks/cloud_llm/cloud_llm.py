@@ -8,10 +8,11 @@ import os
 import re
 import threading
 from dataclasses import dataclass
-from typing import Iterator, List, Optional, Union, Any, Callable
+from typing import Iterator, List, Optional, Union, Any, Sequence, Callable
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage, AIMessage, ToolCall
+from langchain_core.tools import BaseTool, StructuredTool
 
 from arduino.app_utils import brick
 
@@ -28,6 +29,8 @@ from .models import (
 from .memory import MessagePersistence, SQLMessagePersistence, WindowedChatMessageHistory
 
 DEFAULT_MEMORY = 10
+
+ToolLike = Union[BaseTool, Callable[..., Any]]
 
 
 class AlreadyGenerating(Exception):
@@ -85,7 +88,7 @@ class CloudLLM:
         reasoning_effort: Union["ReasoningEffort", str, int, None] = None,
         max_tool_loops: int = 8,
         timeout: Optional[int] = None,
-        tools: List[Callable[..., Any]] = None,
+        tools: Optional[Sequence[ToolLike]] = None,
         callbacks: Any = None,
         **kwargs,
     ):
@@ -119,7 +122,8 @@ class CloudLLM:
             timeout (Optional[int]): The maximum duration in seconds to wait for a response before
                 timing out. Defaults to None.
             callbacks (Any): Optional callbacks for monitoring generation events.
-            tools (List[Callable[..., Any]]): A list of callable tool functions to register. Defaults to None.
+            tools (Sequence[ToolLike]): BaseTool objects (from @tool or MCPClient.get_tools()) or plain
+                callables (auto-wrapped into tools). Defaults to None.
             **kwargs: Additional arguments passed to the model constructor
 
         Raises:
@@ -150,8 +154,8 @@ class CloudLLM:
         if tools is None:
             self._tools = []
         else:
-            self._tools = tools
-            for tool_func in tools:
+            self._tools = [t if isinstance(t, BaseTool) else StructuredTool.from_function(t) for t in tools]
+            for tool_func in self._tools:
                 self._tools_map[tool_func.name] = tool_func
 
         # Only forward ``temperature`` when explicitly set: passing ``None`` lets each
@@ -303,7 +307,7 @@ class CloudLLM:
                 input_messages.append(
                     ToolMessage(
                         tool_call_id=tool_id,
-                        content=tool_output,
+                        content=self._content_to_text(tool_output),
                     )
                 )
 
