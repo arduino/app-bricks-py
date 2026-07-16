@@ -8,7 +8,7 @@ from arduino.app_bricks.image_classification import ImageClassification
 image_classification = ImageClassification()
 
 # Image frame can be as bytes or PIL image
-with open("/app/assets/image.jpg", "rb") as f:
+with open("assets/image.jpg", "rb") as f:
     frame = f.read()
 
 out = image_classification.classify(frame)
@@ -19,5 +19,6 @@ if out and "classification" in out:
         # For every object detected, get its details
         detected_object = obj_det.get("class_name", None)
         confidence = obj_det.get("confidence", None)
+        print(f"Object Detected! '{detected_object}' with confidence: {confidence}%")
 
 App.run()
