@@ -209,6 +209,11 @@ def find_config_yaml(root_path: str) -> tuple[List[ArduinoBrick], List[ArduinoSe
 
     for item in root_path_obj.iterdir():
         if item.is_dir():
+            if item.name == examples_folder_name:
+                # Example apps may embed app-local bricks (bricks/<id>/brick_config.yaml
+                # with a namespace-less id): they belong to the example only and must
+                # not be indexed as global bricks.
+                continue
             config_file: pathlib.Path = item / config_file_name
             service_config_file: pathlib.Path = item / service_config_file_name
             editable_module: pathlib.Path = item / editable_module_config
