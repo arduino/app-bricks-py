@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import json
 from unittest.mock import MagicMock, patch
 import pytest
 import time
@@ -19,6 +20,24 @@ import arduino.app_utils.app as app
 MOCK_CARDS = ["SomeCard"]
 MOCK_CARD_INDEXES = [i for i in range(len(MOCK_CARDS))]
 MOCK_PCMS = ["plughw:CARD=SomeCard,DEV=0"]
+
+# Minimal pw-dump payload: one USB sink on card 0, matching MOCK_CARDS/MOCK_PCMS above.
+MOCK_PW_DUMP = json.dumps(
+    [
+        {"id": 1000, "info": {"props": {"media.class": "Audio/Device", "device.bus": "usb"}}},
+        {
+            "id": 50,
+            "info": {
+                "props": {
+                    "media.class": "Audio/Sink",
+                    "device.id": 1000,
+                    "api.alsa.pcm.card": 0,
+                    "api.alsa.path": "hw:0",
+                }
+            },
+        },
+    ]
+)
 
 
 @pytest.fixture
@@ -61,15 +80,11 @@ def mock_speaker(monkeypatch):
 @patch("arduino.app_peripherals.speaker.alsa_speaker.alsaaudio.card_name", side_effect=lambda idx: [MOCK_CARDS[idx], f"USB Audio Device {idx}"])
 @patch("arduino.app_peripherals.speaker.alsa_speaker.alsaaudio.pcms", return_value=MOCK_PCMS)
 @patch("arduino.app_peripherals.speaker.alsa_speaker.alsaaudio.PCM")
-@patch("arduino.app_peripherals.speaker.utils.subprocess.run")
-@patch(
-    "arduino.app_peripherals.speaker.alsa_speaker.list_audio_sinks",
-    return_value=([{"info": {"props": {"api.alsa.pcm.card": 0, "api.alsa.path": "hw:0"}}}], []),
-)
+@patch("arduino.app_peripherals.speaker.utils.subprocess.run", return_value=MagicMock(stdout=MOCK_PW_DUMP))
 class TestWaveGeneratorInit:
     """Test suite for WaveGenerator brick."""
 
-    def test_default_init(self, mock_list_sinks, mock_pw_run, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
+    def test_default_init(self, mock_pw_run, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
         """Test WaveGenerator initializes with default parameters."""
         wave_gen = WaveGenerator()
 
@@ -80,7 +95,7 @@ class TestWaveGeneratorInit:
         assert wave_gen._speaker is not None
         assert wave_gen._speaker.sample_rate == 48000
 
-    def test_custom_init(self, mock_list_sinks, mock_pw_run, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
+    def test_custom_init(self, mock_pw_run, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
         """Test WaveGenerator initializes with custom parameters."""
         wave_gen = WaveGenerator(
             wave_type="square",
@@ -96,7 +111,7 @@ class TestWaveGeneratorInit:
         assert wave_gen._speaker.sample_rate == 48000
 
     def test_init_with_custom_speaker(
-        self, mock_list_sinks, mock_pw_run, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards, mock_speaker
+        self, mock_pw_run, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards, mock_speaker
     ):
         """Test WaveGenerator with externally provided Speaker."""
         speaker = mock_speaker
@@ -105,7 +120,7 @@ class TestWaveGeneratorInit:
         assert wave_gen._speaker is speaker
 
     @patch("arduino.app_peripherals.speaker.alsa_speaker.alsaaudio.PCM_FORMAT_FLOAT_LE", new=1)
-    def test_start_stop(self, mock_list_sinks, mock_pw_run, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
+    def test_start_stop(self, mock_pw_run, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
         """Test WaveGenerator start and stop methods."""
         pcm_instance = MagicMock()
         pcm_instance.info.return_value = {
@@ -132,7 +147,7 @@ class TestWaveGeneratorInit:
         assert not wave_gen._speaker.is_started()
 
     @patch("arduino.app_peripherals.speaker.alsa_speaker.alsaaudio.PCM_FORMAT_FLOAT_LE", new=1)
-    def test_multiple_start_stop(self, mock_list_sinks, mock_pw_run, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
+    def test_multiple_start_stop(self, mock_pw_run, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
         """Test starting and stopping multiple times."""
         pcm_instance = MagicMock()
         pcm_instance.info.return_value = {
@@ -156,7 +171,7 @@ class TestWaveGeneratorInit:
             time.sleep(0.05)
 
     @patch("arduino.app_peripherals.speaker.alsa_speaker.alsaaudio.PCM_FORMAT_FLOAT_LE", new=1)
-    def test_double_start(self, mock_list_sinks, mock_pw_run, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
+    def test_double_start(self, mock_pw_run, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
         """Test that starting an already running generator logs a warning."""
         pcm_instance = MagicMock()
         pcm_instance.info.return_value = {
@@ -180,7 +195,7 @@ class TestWaveGeneratorInit:
         wave_gen.stop()
 
     @patch("arduino.app_peripherals.speaker.alsa_speaker.alsaaudio.PCM_FORMAT_FLOAT_LE", new=1)
-    def test_double_stop(self, mock_list_sinks, mock_pw_run, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
+    def test_double_stop(self, mock_pw_run, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
         """Test that stopping a non-running generator logs a warning."""
         pcm_instance = MagicMock()
         pcm_instance.info.return_value = {
@@ -199,7 +214,7 @@ class TestWaveGeneratorInit:
         assert not wave_gen._running.is_set()
 
     @patch("arduino.app_peripherals.speaker.alsa_speaker.alsaaudio.PCM_FORMAT_FLOAT_LE", new=1)
-    def test_app_integration(self, mock_list_sinks, mock_pw_run, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards, app_instance):
+    def test_app_integration(self, mock_pw_run, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards, app_instance):
         """Test integration with AppController (start/stop via App)."""
         pcm_instance = MagicMock()
         pcm_instance.info.return_value = {
@@ -233,13 +248,9 @@ class TestWaveGeneratorInit:
 @patch("arduino.app_peripherals.speaker.alsa_speaker.alsaaudio.card_name", side_effect=lambda idx: [MOCK_CARDS[idx], f"USB Audio Device {idx}"])
 @patch("arduino.app_peripherals.speaker.alsa_speaker.alsaaudio.pcms", return_value=MOCK_PCMS)
 @patch("arduino.app_peripherals.speaker.alsa_speaker.alsaaudio.PCM")
-@patch("arduino.app_peripherals.speaker.utils.subprocess.run")
-@patch(
-    "arduino.app_peripherals.speaker.alsa_speaker.list_audio_sinks",
-    return_value=([{"info": {"props": {"api.alsa.pcm.card": 0, "api.alsa.path": "hw:0"}}}], []),
-)
+@patch("arduino.app_peripherals.speaker.utils.subprocess.run", return_value=MagicMock(stdout=MOCK_PW_DUMP))
 class TestWaveGeneratorGetterSetters:
-    def test_get_set_frequency(self, mock_list_sinks, mock_pw_run, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
+    def test_get_set_frequency(self, mock_pw_run, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
         """Test setting frequency."""
         wave_gen = WaveGenerator()
 
@@ -253,7 +264,7 @@ class TestWaveGeneratorGetterSetters:
             wave_gen.frequency = -100.0
         assert wave_gen.frequency == 880.0
 
-    def test_get_set_amplitude(self, mock_list_sinks, mock_pw_run, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
+    def test_get_set_amplitude(self, mock_pw_run, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
         """Test setting amplitude."""
         wave_gen = WaveGenerator()
 
@@ -274,7 +285,7 @@ class TestWaveGeneratorGetterSetters:
             wave_gen.amplitude = -0.5
         assert wave_gen.amplitude == 1.0
 
-    def test_get_set_wave_type(self, mock_list_sinks, mock_pw_run, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
+    def test_get_set_wave_type(self, mock_pw_run, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
         """Test setting wave type."""
         wave_gen = WaveGenerator()
 
@@ -294,7 +305,7 @@ class TestWaveGeneratorGetterSetters:
         with pytest.raises(ValueError):
             wave_gen.wave_type = "invalid"  # type: ignore
 
-    def test_get_set_volume(self, mock_list_sinks, mock_pw_run, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
+    def test_get_set_volume(self, mock_pw_run, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
         """Test setting hardware volume."""
         wave_gen = WaveGenerator()
         assert wave_gen.volume == 100  # Default volume
@@ -307,7 +318,7 @@ class TestWaveGeneratorGetterSetters:
         assert wave_gen.volume == 100
         assert wave_gen._speaker.volume == 100
 
-    def test_get_set_envelope_params(self, mock_list_sinks, mock_pw_run, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
+    def test_get_set_envelope_params(self, mock_pw_run, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
         """Test setting envelope parameters."""
         wave_gen = WaveGenerator()
 
@@ -333,7 +344,7 @@ class TestWaveGeneratorGetterSetters:
             wave_gen.glide = -0.03
         assert wave_gen.glide == 0.04
 
-    def test_get_state(self, mock_list_sinks, mock_pw_run, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
+    def test_get_state(self, mock_pw_run, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards):
         """Test getting current generator state."""
         wave_gen = WaveGenerator()
 
