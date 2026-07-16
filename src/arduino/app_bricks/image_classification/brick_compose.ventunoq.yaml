@@ -11,7 +11,6 @@ services:
       - ${BIND_ADDRESS_IPV6:-[::1]}:1338:1337
     devices:
       - /dev/dma_heap/system
-      - /dev/dma_heap/qcom,system
       - /dev/fastrpc-cdsp
     volumes:
       - "${CUSTOM_MODEL_PATH:-/home/arduino/.arduino-bricks}:${CUSTOM_MODEL_PATH:-/home/arduino/.arduino-bricks}"

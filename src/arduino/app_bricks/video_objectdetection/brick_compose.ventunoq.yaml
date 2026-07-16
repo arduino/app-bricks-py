@@ -8,7 +8,6 @@ services:
         max-file: "2"
     devices:
       - /dev/dma_heap/system
-      - /dev/dma_heap/qcom,system
       - /dev/fastrpc-cdsp
     ports:
       - ${BIND_ADDRESS:-0.0.0.0}:4912:4912  # Embedded UI port

@@ -8,7 +8,6 @@ services:
         max-file: "2"
     devices:
       - /dev/dma_heap/system
-      - /dev/dma_heap/qcom,system
       - /dev/fastrpc-cdsp        
     ports:
       - ${BIND_ADDRESS:-127.0.0.1}:1337:1337
