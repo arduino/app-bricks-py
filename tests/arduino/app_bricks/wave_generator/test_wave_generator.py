@@ -22,22 +22,20 @@ MOCK_CARD_INDEXES = [i for i in range(len(MOCK_CARDS))]
 MOCK_PCMS = ["plughw:CARD=SomeCard,DEV=0"]
 
 # Minimal pw-dump payload: one USB sink on card 0, matching MOCK_CARDS/MOCK_PCMS above.
-MOCK_PW_DUMP = json.dumps(
-    [
-        {"id": 1000, "info": {"props": {"media.class": "Audio/Device", "device.bus": "usb"}}},
-        {
-            "id": 50,
-            "info": {
-                "props": {
-                    "media.class": "Audio/Sink",
-                    "device.id": 1000,
-                    "api.alsa.pcm.card": 0,
-                    "api.alsa.path": "hw:0",
-                }
-            },
+MOCK_PW_DUMP = json.dumps([
+    {"id": 1000, "info": {"props": {"media.class": "Audio/Device", "device.bus": "usb"}}},
+    {
+        "id": 50,
+        "info": {
+            "props": {
+                "media.class": "Audio/Sink",
+                "device.id": 1000,
+                "api.alsa.pcm.card": 0,
+                "api.alsa.path": "hw:0",
+            }
         },
-    ]
-)
+    },
+])
 
 
 @pytest.fixture
@@ -110,9 +108,7 @@ class TestWaveGeneratorInit:
         assert wave_gen.glide == 0.03
         assert wave_gen._speaker.sample_rate == 48000
 
-    def test_init_with_custom_speaker(
-        self, mock_pw_run, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards, mock_speaker
-    ):
+    def test_init_with_custom_speaker(self, mock_pw_run, mock_pcm, mock_pcms, mock_card_name, mock_card_indexes, mock_cards, mock_speaker):
         """Test WaveGenerator with externally provided Speaker."""
         speaker = mock_speaker
         wave_gen = WaveGenerator(speaker=speaker)
