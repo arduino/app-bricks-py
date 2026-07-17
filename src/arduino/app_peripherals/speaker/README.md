@@ -7,7 +7,7 @@ This brick allow you to play audio using Alsa Linux audio subsystem
 ```python
 from arduino.app_peripherals.speaker import Speaker
 
-speak = Speaker(device='USB_SPEAKER_1')
+speak = Speaker()  # First plugged speaker
 speak.start()
 # data is a byte array
 speak.play(data)
@@ -16,7 +16,7 @@ speak.stop()
 
 ## Parameters
 
-- `device`: (optional) ALSA device name (default: 'USB_SPEAKER_1'. It can be the real ALSA device name or USB_SPEAKER_1, USB_SPEAKER_2, ..)
+- `device`: (optional) speaker device identifier (default: `0`). It can be an ordinal index of the n-th plugged speaker (`0`, `1`, ...), a real ALSA device name, or one of the `Speaker.USB_SPEAKER_1`, `Speaker.USB_SPEAKER_2`, `Speaker.JACK_SPEAKER_1` macros
 - `sample_rate`: (optional) sampling frequency (default: 16000 Hz)
 - `channels`: (optional) channels (default: 1)
 - `format`: (optional) ALSA audio format (default: 'S16_LE')

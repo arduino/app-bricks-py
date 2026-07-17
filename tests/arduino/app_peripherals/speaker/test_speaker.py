@@ -15,63 +15,44 @@ from arduino.app_peripherals.speaker.errors import SpeakerConfigError, SpeakerEr
 class TestSpeakerFactoryInstantiation:
     """Test factory instantiation of different speaker types."""
 
-    def test_factory_creates_alsa_speaker_with_integer(self, mock_alsa_usb_speakers):
+    def test_factory_creates_alsa_speaker_with_integer(self):
         """Test factory creates ALSA speaker with integer device index."""
         spkr = Speaker(device=0)
 
         assert isinstance(spkr, ALSASpeaker)
-        assert spkr.device_stable_ref == "CARD=SomeCard,DEV=0"
+        assert spkr.device_stable_ref == "plughw:CARD=SomeCard,DEV=0"
 
-    def test_factory_creates_alsa_speaker_with_string_index(self, mock_alsa_usb_speakers):
+    def test_factory_creates_alsa_speaker_with_string_index(self):
         """Test factory creates ALSA speaker with string device index."""
         spkr = Speaker(device="1")
 
         assert isinstance(spkr, ALSASpeaker)
-        assert spkr.device_stable_ref == "CARD=AnotherCard,DEV=0"
+        assert spkr.device_stable_ref == "plughw:CARD=AnotherCard,DEV=0"
 
-    def test_factory_creates_alsa_speaker_with_device_name(self, mock_alsa_usb_speakers):
+    def test_factory_creates_alsa_speaker_with_device_name(self):
         """Test factory creates ALSA speaker with explicit device name."""
         spkr = Speaker(device="plughw:CARD=SomeCard,DEV=0")
 
         assert isinstance(spkr, ALSASpeaker)
-        assert spkr.device_stable_ref == "CARD=SomeCard,DEV=0"
+        assert spkr.device_stable_ref == "plughw:CARD=SomeCard,DEV=0"
 
-    def test_factory_device_does_not_exist_raises_error(self, mock_alsa_usb_speakers):
-        """Test that invalid device raises SpeakerConfigError."""
-        with pytest.raises(SpeakerConfigError) as exc_info:
-            Speaker(device="usb:3")  # Assuming only 2 USB devices exist in the mock
-        assert "out of range" in str(exc_info.value).lower()
-
-    def test_factory_invalid_usb_format_raises_error(self, mock_alsa_usb_speakers):
-        """Test that invalid USB device format raises SpeakerConfigError."""
-        with pytest.raises(SpeakerConfigError) as exc_info:
-            Speaker(device="usb:something")
-        assert "invalid" in str(exc_info.value).lower()
-
-    def test_factory_invalid_device_type_raises_error(self, mock_alsa_usb_speakers):
+    def test_factory_invalid_device_type_raises_error(self):
         """Test that invalid device type raises SpeakerConfigError."""
-        with pytest.raises(SpeakerConfigError) as exc_info:
-            Speaker(device=None)
-        assert "unsupported" in str(exc_info.value).lower()
+        with pytest.raises(SpeakerConfigError):
+            Speaker(device=None)  # type: ignore
 
-    def test_factory_invalid_format_raises_error(self, mock_alsa_usb_speakers):
-        """Test that unsupported format raises error."""
-        with pytest.raises(SpeakerConfigError) as exc_info:
-            Speaker(device="hw:0,0", format="INVALID_FORMAT")
-        assert "invalid" in str(exc_info.value).lower()
+    def test_factory_no_speaker_raises_open_error(self, mock_pw_dump):
+        """Test that an integer index with no discoverable speaker raises SpeakerOpenError."""
+        mock_pw_dump(usb_ids=(), builtin_ids=())
 
-    def test_factory_no_devices_found_raises_error(self):
-        """Test that no USB devices found raises error."""
-        with pytest.raises(SpeakerConfigError) as exc_info:
-            Speaker()
-        assert "no usb speakers found" in str(exc_info.value).lower()
-        assert ALSASpeaker.list_usb_devices() == []
+        with pytest.raises(SpeakerOpenError):
+            Speaker(device=0)
 
 
 class TestSpeakerConfiguration:
     """Test speaker configuration and parameters."""
 
-    def test_default_parameters(self, mock_alsa_usb_speakers):
+    def test_default_parameters(self):
         """Test that speakers use default parameters."""
         spkr = Speaker(device=0)
 
@@ -80,7 +61,7 @@ class TestSpeakerConfiguration:
         assert spkr.format == np.int16
         assert spkr.buffer_size == Speaker.BUFFER_SIZE_BALANCED
 
-    def test_custom_parameters_alsa(self, mock_alsa_usb_speakers):
+    def test_custom_parameters_alsa(self):
         """Test ALSA speaker with custom parameters."""
         spkr = Speaker(device=0, sample_rate=48000, channels=2, format=np.int32, buffer_size=2048)
 
@@ -88,6 +69,28 @@ class TestSpeakerConfiguration:
         assert spkr.channels == 2
         assert spkr.format == np.int32
         assert spkr.buffer_size == 2048
+
+    def test_unsupported_format_raises_error(self):
+        """Test that unsupported format raises error."""
+        with pytest.raises(SpeakerConfigError):
+            ALSASpeaker(device="hw:0,0", format="INVALID_FORMAT")
+
+    def test_invalid_device_type_raises_error(self):
+        """Test that invalid device type raises error."""
+        with pytest.raises(SpeakerConfigError):
+            ALSASpeaker(device=None)  # type: ignore
+
+    def test_no_devices_found_raises_open_error(self, mock_pw_dump):
+        """Test that no USB devices found raises an open error."""
+        mock_pw_dump(usb_ids=(), builtin_ids=())
+
+        with pytest.raises(SpeakerOpenError):
+            ALSASpeaker(device="usb:1")
+
+    def test_out_of_range_device_index_raises_open_error(self):
+        """Test that an out of range ordinal index raises an open error."""
+        with pytest.raises(SpeakerOpenError):
+            ALSASpeaker(device=10)
 
 
 class TestSpeakerStartStop:
