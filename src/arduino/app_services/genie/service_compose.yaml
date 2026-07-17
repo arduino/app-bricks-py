@@ -41,7 +41,7 @@ services:
     volumes:
       # Mount hexagon firmware
       - /sys/firmware/devicetree/base/model:/run/device-model
-      - /usr/share/qcom:/usr/share/qcom
+      - ${HOST_DSP_INSTALLATION_PATH:-/usr/share/qcom}:/usr/share/qcom
       - /var/lib/arduino-app-cli/models/genai:/mnt/work/models/
     stop_signal: SIGTERM
     stop_grace_period: 10s

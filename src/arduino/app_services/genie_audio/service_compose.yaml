@@ -37,7 +37,7 @@ services:
       - /var/lib/arduino-app-cli/models/audio-analytics:/mnt/work/models:ro
       # Mount hexagon firmware
       - /sys/firmware/devicetree/base/model:/run/device-model
-      - /usr/share/qcom:/usr/share/qcom
+      - ${HOST_DSP_INSTALLATION_PATH:-/usr/share/qcom}:/usr/share/qcom
     # Use tmpfs for uploads to ensure proper permissions
     tmpfs:
       - /app/uploads:rw,size=500m,mode=777
