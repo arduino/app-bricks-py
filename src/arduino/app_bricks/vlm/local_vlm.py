@@ -64,7 +64,6 @@ class VisionLanguageModel(LargeLanguageModel):
 
         super().__init__(
             model=model,
-            api_key="api_key",
             system_prompt=system_prompt,
             temperature=temperature,
             max_tokens=max_tokens,
