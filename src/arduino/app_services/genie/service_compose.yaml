@@ -36,13 +36,12 @@ services:
     shm_size: 2g
     devices:
       - /dev/dma_heap/system
-      - /dev/dma_heap/qcom,system
       - /dev/fastrpc-cdsp
       - /dev/fastrpc-cdsp-secure
     volumes:
       # Mount hexagon firmware
       - /sys/firmware/devicetree/base/model:/run/device-model
-      - /usr/share/qcom:/usr/share/qcom
+      - ${HOST_DSP_INSTALLATION_PATH:-/usr/share/qcom}:/usr/share/qcom
       - /var/lib/arduino-app-cli/models/genai:/mnt/work/models/
     stop_signal: SIGTERM
     stop_grace_period: 10s
