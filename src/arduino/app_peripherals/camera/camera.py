@@ -42,9 +42,9 @@ class Camera:
 
         Args:
             source (Union[str, int]): Camera source identifier. Supports:
-                - int: Auto-select the n-th available physically connected camera
-                    giving priority to USB cameras, then CSI cameras if supported
-                    by the platform
+                - int | str: Auto-select the n-th available plugged camera
+                    (e.g., 0, 1, "0", "1", ...), giving priority to USB cameras,
+                    then CSI cameras if supported by the platform
                 - str: V4L camera ordinal index (e.g., "usb:0", "usb:1")
                 - str: V4L camera device path (e.g., "usb:/dev/video0",
                     "usb:/dev/v4l/by-id/...", "usb:/dev/v4l/by-path/...
@@ -89,8 +89,8 @@ class Camera:
             BaseCamera: Appropriate camera implementation instance
 
         Raises:
-            CameraConfigError: If source type is not supported or parameters are invalid
-            CameraOpenError: If the camera cannot be opened
+            CameraConfigError: If camera type is not supported or parameters are invalid
+            CameraOpenError: If no camera is available at the requested index
 
         Examples:
             V4L Camera:

@@ -96,7 +96,7 @@ class WebSocketMicrophone(BaseMicrophone):
         super().__init__(sample_rate, channels, format, buffer_size, auto_reconnect)
 
         if encrypt and secret is None:
-            raise RuntimeError("Encryption requires a secret key.")
+            raise MicrophoneConfigError("Encryption requires a secret key.")
 
         if use_tls and encrypt:
             logger.warning("Encryption is redundant over TLS connections, disabling encryption.")

@@ -30,5 +30,6 @@ WORKDIR /app
 
 ENV HOME=/home/app
 ENV USER=arduino
+ENV PIPEWIRE_REMOTE=/run/user/1000/pipewire-0
 
 ENTRYPOINT [ "/run.sh" ]
