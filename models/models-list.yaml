@@ -1824,7 +1824,7 @@ models:
       platforms:
         - ventunoq:
             variables:
-              model_url: "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf/blob/main/gemma-4-E2B_q4_0-it.gguf"
+              model_url: "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf/blob/1894d1fc0a19d86697abd40483f5983c867df03f/gemma-4-E2B_q4_0-it.gguf"
               models_repository: "llamacpp"
               model_directory: "google/gemma-4-E2B-it-qat-q4_0-gguf"
     metadata:
@@ -1848,7 +1848,7 @@ models:
       platforms:
         - ventunoq:
             variables:
-              model_url: "https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf/blob/main/gemma-4-E4B_q4_0-it.gguf"
+              model_url: "https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf/blob/99ef3d9bbf819591699ffa9084c4be12db1fbe6c/gemma-4-E4B_q4_0-it.gguf"
               models_repository: "llamacpp"
               model_directory: "google/gemma-4-E4B-it-qat-q4_0-gguf"
     metadata:
@@ -1868,12 +1868,12 @@ models:
        platforms:
          - ventunoq:
              variables:
-               model_url: "https://huggingface.co/unsloth/gemma-3-1b-it-GGUF/blob/main/gemma-3-1b-it-Q4_0.gguf"
+               model_url: "https://huggingface.co/unsloth/gemma-3-1b-it-GGUF/blob/f0b45be0aac41bd6a100a4b5734cad5f67255bfb/gemma-3-1b-it-Q4_0.gguf"
                models_repository: "llamacpp"
                model_directory: "unsloth/gemma-3-1b-it-GGUF"
          - unoq:
              variables:
-               model_url: "https://huggingface.co/unsloth/gemma-3-1b-it-GGUF/blob/main/gemma-3-1b-it-Q4_0.gguf"
+               model_url: "https://huggingface.co/unsloth/gemma-3-1b-it-GGUF/blob/f0b45be0aac41bd6a100a4b5734cad5f67255bfb/gemma-3-1b-it-Q4_0.gguf"
                models_repository: "llamacpp"
                model_directory: "unsloth/gemma-3-1b-it-GGUF"
      metadata:
@@ -1895,12 +1895,12 @@ models:
        platforms:
          - ventunoq:
              variables:
-               model_url: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/blob/main/Qwen3.5-0.8B-Q4_0.gguf"
+               model_url: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/blob/f4db1b3e9c54a9f3dc2576c93b26446d95ec36d0/Qwen3.5-0.8B-Q4_0.gguf"
                models_repository: "llamacpp"
                model_directory: "unsloth/Qwen3.5-0.8B-GGUF"
          - unoq:
              variables:
-               model_url: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/blob/main/Qwen3.5-0.8B-Q4_0.gguf"
+               model_url: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/blob/f4db1b3e9c54a9f3dc2576c93b26446d95ec36d0/Qwen3.5-0.8B-Q4_0.gguf"
                models_repository: "llamacpp"
                model_directory: "unsloth/Qwen3.5-0.8B-GGUF"
      metadata:
