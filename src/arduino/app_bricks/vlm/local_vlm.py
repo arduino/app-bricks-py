@@ -9,7 +9,6 @@ from arduino.app_bricks.llm import LargeLanguageModel
 from arduino.app_utils import Logger, brick
 from arduino.app_internal.core import get_brick_config, get_brick_configured_model
 
-import os
 import openai
 from typing import Iterator, List, Optional, Any, Callable, Union
 
@@ -27,7 +26,6 @@ class VisionLanguageModel(LargeLanguageModel):
 
     def __init__(
         self,
-        api_key: str = os.getenv("LOCAL_LLM_API_KEY", "api_key"),
         system_prompt: str = "",
         temperature: Optional[float] = 0.7,
         max_tokens: int = 512,
@@ -39,8 +37,6 @@ class VisionLanguageModel(LargeLanguageModel):
         """Initializes the VisionLanguageModel brick with the specified provider and configuration.
 
         Args:
-            api_key (str): The API access key for the target VLM service. Defaults to the
-                'LOCAL_LLM_API_KEY' environment variable.
             model (str): The specific model name or identifier to use (e.g., "genie:qwen3-4b").
                 If not provided, model will be determined from app configuration or default brick configuration.
             system_prompt (str): A system-level instruction that defines the AI's persona
@@ -54,9 +50,6 @@ class VisionLanguageModel(LargeLanguageModel):
                 timing out. Defaults to None.
             tools (List[Callable[..., Any]]): A list of callable tool functions to register. Defaults to None.
             **kwargs: Additional arguments passed to the model constructor
-
-        Raises:
-            ValueError: If `api_key` is not provided (empty string).
         """
 
         if model is None:
@@ -71,7 +64,7 @@ class VisionLanguageModel(LargeLanguageModel):
 
         super().__init__(
             model=model,
-            api_key=api_key,
+            api_key="api_key",
             system_prompt=system_prompt,
             temperature=temperature,
             max_tokens=max_tokens,
