@@ -141,7 +141,9 @@ class OpenAITranscribe:
                 text = message.get("transcript", "").strip()
                 if text:
                     return ASRProviderEvent(type="text", data=text)
-                raise ASRProviderError("Transcription completed with no text.")
+                # Empty completion (e.g. server VAD closed a turn on noise/silence):
+                logger.debug("Ignoring empty transcription completion.")
+                return None
 
             case "conversation.item.input_audio_transcription.failed":
                 raise ASRProviderError(f"OpenAI transcription failed: {message.get('error')}")

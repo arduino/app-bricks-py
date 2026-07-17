@@ -137,9 +137,10 @@ def test_recv_completed_yields_text(fake_sockets):
     assert event.data == "Hello world"
 
 
-def test_recv_completed_without_text_raises(fake_sockets):
-    with pytest.raises(ASRProviderError):
-        recv_event(fake_sockets, {"type": "conversation.item.input_audio_transcription.completed", "transcript": ""})
+def test_recv_completed_without_text_is_ignored(fake_sockets):
+    # Server VAD can close a turn on noise and return an empty transcript: ignore it,
+    # don't abort the stream.
+    assert recv_event(fake_sockets, {"type": "conversation.item.input_audio_transcription.completed", "transcript": ""}) is None
 
 
 def test_recv_transcription_failed_raises(fake_sockets):
