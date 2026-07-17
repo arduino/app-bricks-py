@@ -36,7 +36,7 @@ mic.stop()
 
 ## Parameters
 
-- `device`: (optional) ALSA device index or name or websocket address to expose to clients (default: 0)
+- `device`: (optional) microphone selector (default: 0). An integer index selects the n-th plugged microphone, giving priority to USB microphones and then jack microphones if supported by the platform. You can also pass an explicit ALSA device name/path, a `Microphone.USB_MIC_x`/`Microphone.JACK_MIC_x` shorthand, or a WebSocket address to expose to clients.
 - `rate`: (optional) sampling frequency (default: 16000 Hz)
 - `channels`: (optional) number channels (default: 1)
 - `format`: (optional) Aaudio format (default: 'S16_LE')
