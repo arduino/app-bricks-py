@@ -13,10 +13,8 @@
     "LIBCAMERA_IPA_DEB_DIGEST": "sha256:04ed476cd08acc897297f47b2a35e13fc71e459156b69be0bf7364a80bfac283",
     "GSTREAMER_LIBCAMERA_DEB_URL": "https://github.com/arduino/app-bricks-py/releases/download/libcamera%2F0.7.1-qcom4/gstreamer1.0-libcamera_0.7.1-1.bpo13+1qcom4_arm64.deb",
     "GSTREAMER_LIBCAMERA_DEB_DIGEST": "sha256:c5c38c5ddd9689cc4dd07cc433c85c325c408a67e631499679e67a616099e4f1",
-    "GSTREAMER_QTIQMMFSRC_DEB_URL": "https://github.com/robgee86/app-bricks-py/releases/download/qmmfsrc%2F0.1.3%2Bg9388932/qtiqmmfsrc-0.1.3.deb",
-    "GSTREAMER_QTIQMMFSRC_DEB_DIGEST": "sha256:33c325fd2e314d62732c58ff5fed423b0c8e40ee016d196d90091f6116916796",
-    "GSTREAMER_LIBGSTREAMER_PLUGINS_BASE_DEB_URL": "https://github.com/robgee86/app-bricks-py/releases/download/qmmfsrc%2F0.1.3%2Bg9388932/libgstreamer-plugins-base1.0-0_1.26.2-1+deb13u1_arm64.deb",
-    "GSTREAMER_LIBGSTREAMER_PLUGINS_BASE_DEB_DIGEST": "sha256:a6e1aaadbac810957f5c4ce981d955c686734e85c23cbb5b89ddd33299f920c6"
+    "GSTREAMER_QTIQMMFSRC_DEB_URL": "https://github.com/robgee86/app-bricks-py/releases/download/qtiqmmfsrc%2F1.8.1/qtiqmmfsrc-1.8.1.deb",
+    "GSTREAMER_QTIQMMFSRC_DEB_DIGEST": "sha256:b0b764a2f7ebf369de5cc9827c2952397d2ead757de7bee3f2c9c2f468d714a9"
   },
   "sbom": {
     "runtime_base": "python:3.13-slim"
