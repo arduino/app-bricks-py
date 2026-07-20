@@ -12,7 +12,9 @@
     "LIBCAMERA_IPA_DEB_URL": "https://github.com/arduino/app-bricks-py/releases/download/libcamera%2F0.7.1-qcom4/libcamera-ipa_0.7.1-1.bpo13+1qcom4_arm64.deb",
     "LIBCAMERA_IPA_DEB_DIGEST": "sha256:04ed476cd08acc897297f47b2a35e13fc71e459156b69be0bf7364a80bfac283",
     "GSTREAMER_LIBCAMERA_DEB_URL": "https://github.com/arduino/app-bricks-py/releases/download/libcamera%2F0.7.1-qcom4/gstreamer1.0-libcamera_0.7.1-1.bpo13+1qcom4_arm64.deb",
-    "GSTREAMER_LIBCAMERA_DEB_DIGEST": "sha256:c5c38c5ddd9689cc4dd07cc433c85c325c408a67e631499679e67a616099e4f1"
+    "GSTREAMER_LIBCAMERA_DEB_DIGEST": "sha256:c5c38c5ddd9689cc4dd07cc433c85c325c408a67e631499679e67a616099e4f1",
+    "GSTREAMER_QTIQMMFSRC_DEB_URL": "https://github.com/robgee86/app-bricks-py/releases/download/qmmfsrc%2F0.1.5%2Bgbf7adb2/qtiqmmfsrc.deb",
+    "GSTREAMER_QTIQMMFSRC_DEB_DIGEST": "sha256:207990667f00d5e7365da4cb88c41cf4e0f691908be3bebc2e58b5bf7fd82cf7"
   },
   "sbom": {
     "runtime_base": "python:3.13-slim"
