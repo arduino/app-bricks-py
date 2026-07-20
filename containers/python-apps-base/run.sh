@@ -81,10 +81,10 @@ fi
 
 # Install custom brick requirements with caching
 if [ -d "/app/bricks" ]; then
-  for brick_dir in /app/bricks/*/; do
+  for brick_dir in /app/bricks/*; do
     if [ -d "$brick_dir" ]; then
       brick_name=$(basename "$brick_dir")
-      brick_requirements="$brick_dir/requirements.txt"
+      brick_requirements="${brick_dir}/requirements.txt"
       brick_cache_dir="$CACHE_DIR/$brick_name"
       brick_installed_requirements="$brick_cache_dir/installed_requirements.txt"
       
