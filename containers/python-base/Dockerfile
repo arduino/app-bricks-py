@@ -49,6 +49,7 @@ ADD --checksum=${LIBCAMERA_DEB_DIGEST} ${LIBCAMERA_DEB_URL} /tmp/libcamera0.7.de
 ADD --checksum=${LIBCAMERA_IPA_DEB_DIGEST} ${LIBCAMERA_IPA_DEB_URL} /tmp/libcamera-ipa.deb
 ADD --checksum=${GSTREAMER_LIBCAMERA_DEB_DIGEST} ${GSTREAMER_LIBCAMERA_DEB_URL} /tmp/gstreamer1.0-libcamera.deb
 ADD --checksum=${GSTREAMER_QTIQMMFSRC_DEB_DIGEST} ${GSTREAMER_QTIQMMFSRC_DEB_URL} /tmp/qtiqmmfsrc.deb
+ADD --checksum=${GSTREAMER_LIBGSTREAMER_PLUGINS_BASE_DEB_DIGEST} ${GSTREAMER_LIBGSTREAMER_PLUGINS_BASE_DEB_URL} /tmp/libgstreamer-plugins-base.deb
 ADD https://raw.githubusercontent.com/googlefonts/opensans/main/fonts/ttf/OpenSans-Regular.ttf /home/app/.fonts/OpenSans.ttf
 
 # Copy the installed dependencies from the 'builder' stage
@@ -71,8 +72,8 @@ RUN set -ex; \
     # Install dependencies for running CSI cameras
     apt-get install -y --no-install-recommends --no-install-suggests libpisp-common libboost-filesystem1.83.0 libboost-log1.83.0 libboost-thread1.83.0 libpisp1 libegl1 libgles2 libyaml-0-2 liblttng-ust1 libdw1t64 libyuv0 python3-gi gir1.2-gst-1.0; \
     dpkg -i /tmp/libcamera0.7.deb /tmp/libcamera-ipa.deb /tmp/gstreamer1.0-libcamera.deb; \
-    apt-get install -y --no-install-recommends --no-install-suggests /tmp/qtiqmmfsrc.deb; \
-    rm /tmp/libcamera0.7.deb /tmp/libcamera-ipa.deb /tmp/gstreamer1.0-libcamera.deb /tmp/qtiqmmfsrc.deb; \
+    apt-get install -y --no-install-recommends --no-install-suggests --allow-downgrades /tmp/qtiqmmfsrc.deb /tmp/libgstreamer-plugins-base.deb; \
+    rm /tmp/libcamera0.7.deb /tmp/libcamera-ipa.deb /tmp/gstreamer1.0-libcamera.deb /tmp/qtiqmmfsrc.deb /tmp/libgstreamer-plugins-base.deb; \
     # Install other runtime dependencies
     apt-get install -y --no-install-recommends --no-install-suggests libglib2.0-0 inotify-tools libzbar0; \
     apt-get autoclean -y; \
