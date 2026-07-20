@@ -9,10 +9,19 @@ import os
 import re
 
 from .errors import CameraOpenError
+from .utils import resolve_camera_name
 
 
 def _iowr(type_char, nr, size):
     return (3 << 30) | (size << 16) | (ord(type_char) << 8) | nr
+
+
+_PLATFORM_DRIVERS = "/sys/bus/platform/drivers"
+
+
+def camss_driver_present() -> bool:
+    """True if the mainline qcom-camss platform driver is bound on the host."""
+    return os.path.isdir(os.path.join(_PLATFORM_DRIVERS, "qcom-camss"))
 
 
 # QCOM-CAMSS MEDIA DEVICE DISCOVERY
@@ -189,3 +198,30 @@ def find_sensor_i2c_addr(media_dev: str, csiphy_index: int) -> str:
         raise RuntimeError(f"Error scanning media graph: {e}")
 
     raise CameraOpenError(f"No sensor found on {csiphy_name}")
+
+
+# CAMSS BACKEND INTERFACE (used by CSICamera)
+
+
+def list_camera_ids() -> list[int]:
+    """Return the sorted list of CSIPHY indices with a sensor attached."""
+    media_dev = find_camss_media_device()
+    ids = set()
+    for csiphy_name, _ in scan_sensor_i2c_addresses(media_dev):
+        m = re.search(r"msm_csiphy(\d+)", csiphy_name)
+        if m:
+            ids.add(int(m.group(1)))
+    return sorted(ids)
+
+
+def get_camera_identifier(camera_id: int) -> str:
+    """Return the resolved sensor name for the sensor wired at the given CSIPHY index."""
+    media_dev = find_camss_media_device()
+    i2c_addr = find_sensor_i2c_addr(media_dev, camera_id)
+    return resolve_camera_name(i2c_addr)
+
+
+def gstreamer_source(camera_id: int) -> str:
+    """Build the libcamerasrc GStreamer source element for the given CSIPHY index."""
+    camera_name = get_camera_identifier(camera_id).replace(" ", r"\ ")  # Escape spaces for GStreamer pipeline
+    return f"libcamerasrc camera-name={camera_name}"

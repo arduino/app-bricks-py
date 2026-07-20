@@ -4,20 +4,34 @@
 
 import re
 import time
+from collections.abc import Callable
 from typing import Optional
+
 import cv2
 import numpy as np
-from collections.abc import Callable
 
 from arduino.app_utils import Logger
 
+from . import csi_camss_discovery, csi_camx_discovery
 from .camera import BaseCamera
 from .errors import CameraOpenError, CameraReadError
-from .media_graph import find_camss_media_device, scan_sensor_i2c_addresses, find_sensor_i2c_addr
-from .utils import resolve_camera_name
 
 
 logger = Logger("CSICamera")
+
+_BACKENDS = {
+    "camss": csi_camss_discovery,
+    "camx": csi_camx_discovery,
+}
+
+
+def detect_camera_stack() -> str:
+    """Detect the host CSI camera stack."""
+    if csi_camss_discovery.camss_driver_present():
+        return "camss"
+    if csi_camx_discovery.camx_driver_present() and csi_camx_discovery.camx_socket_available():
+        return "camx"
+    raise RuntimeError("No supported camera stack detected. Please ensure either CAMSS or CAMX is available.")
 
 
 class CSICamera(BaseCamera):
@@ -52,9 +66,9 @@ class CSICamera(BaseCamera):
         """
         super().__init__(resolution, fps, adjustments, auto_reconnect)
 
-        self.media_dev = find_camss_media_device()
-
-        self.csi_path = self._get_camera(device)
+        self._backend = _BACKENDS[detect_camera_stack()]
+        self._camera_id = self._resolve_camera_id(device)
+        self.csi_path = self._backend.get_camera_identifier(self._camera_id)
         self.name = f"csi:{self.csi_path}"  # Override parent name with a human-readable name
         self.logger = logger
 
@@ -71,20 +85,11 @@ class CSICamera(BaseCamera):
             list[int]: List of CSI camera indices.
         """
         try:
-            media_dev = find_camss_media_device()
-        except Exception:
-            # If media device is not found or an error occurs
+            backend = _BACKENDS[detect_camera_stack()]
+            return backend.list_camera_ids()
+        except Exception as e:
+            logger.error(f"Error listing available cameras: {e}")
             return []
-
-        entities = scan_sensor_i2c_addresses(media_dev)
-        indices = []
-        for csiphy_name, _ in entities:
-            m = re.search(r"msm_csiphy(\d+)", csiphy_name)
-            if m:
-                indices.append(int(m.group(1)))
-        indices.sort()
-
-        return indices
 
     @staticmethod
     def list_device_names() -> list[str]:
@@ -94,29 +99,16 @@ class CSICamera(BaseCamera):
         Returns:
             list[str]: List of CSI camera device paths.
         """
-        paths: list[str] = []
         try:
-            entities = scan_sensor_i2c_addresses(find_camss_media_device())
-            for _, i2c_addr in entities:
-                camera_name = resolve_camera_name(i2c_addr)
-                paths.append(camera_name)
-
+            backend = _BACKENDS[detect_camera_stack()]
+            return [backend.get_camera_identifier(camera_id) for camera_id in backend.list_camera_ids()]
         except Exception as e:
             logger.error(f"Error listing available cameras: {e}")
+            return []
 
-        return paths
-
-    def _get_camera_name(self, csiphy_index) -> str:
+    def _resolve_camera_id(self, device: str | int) -> int:
         """
-        Get the camera name wired at the given CSIPHY index, managed by the specified media device.
-        """
-        i2c = find_sensor_i2c_addr(self.media_dev, csiphy_index)
-
-        return resolve_camera_name(i2c)
-
-    def _get_camera(self, device: str | int) -> str:
-        """
-        Get the camera path for a given device identifier.
+        Resolve a device identifier to a backend-specific camera id.
 
         Args:
             device: Camera identifier in the form of either:
@@ -125,19 +117,19 @@ class CSICamera(BaseCamera):
                 - str: Camera name (e.g., "CAMERA0", "CAMERA1")
 
         Returns:
-            str: Camera device path
+            int: Backend-specific camera id
 
         Raises:
             CameraOpenError: If camera index is out of range or device cannot be found
         """
-        device_indices = self.list_devices()
+        camera_ids = self._backend.list_camera_ids()
 
         if isinstance(device, int) or (isinstance(device, str) and device.isdigit()):
-            device_index = int(device)
-            if device_index < 0 or device_index >= len(device_indices):
-                raise CameraOpenError(f"Camera index {device_index} out of range. Available: 0-{len(device_indices) - 1}")
+            ordinal = int(device)
+            if ordinal < 0 or ordinal >= len(camera_ids):
+                raise CameraOpenError(f"Camera index {ordinal} out of range. Available: 0-{len(camera_ids) - 1}")
 
-            csiphy_index = device_indices[device_index]
+            return camera_ids[ordinal]
 
         elif isinstance(device, str):
             if "CAMERA" not in device.upper():
@@ -147,14 +139,12 @@ class CSICamera(BaseCamera):
             if not m:
                 raise CameraOpenError(f"Invalid camera device string: {device}")
             requested = int(m.group(1))
-            if requested not in device_indices:
-                raise CameraOpenError(f"Camera csiphy index {requested} not available. Available: {device_indices}")
-            csiphy_index = requested
+            if requested not in camera_ids:
+                raise CameraOpenError(f"Camera id {requested} not available. Available: {camera_ids}")
+            return requested
 
         else:
             raise CameraOpenError(f"Invalid device identifier: {device}")
-
-        return self._get_camera_name(csiphy_index)
 
     def _open_camera(self) -> None:
         """
@@ -163,13 +153,12 @@ class CSICamera(BaseCamera):
         Retries with exponential backoff until successful or self.max_retries is reached.
         """
         self._close_camera()
-        camera_name = self.csi_path.replace(" ", r"\ ")  # Escape spaces for GStreamer pipeline
         width, height = 1280, 720  # Default resolution if not specified
         if self.resolution and self.resolution[0] and self.resolution[1]:
             width, height = self.resolution
 
         gstreamer_pipeline = (
-            f"libcamerasrc camera-name={camera_name} ! "
+            f"{self._backend.gstreamer_source(self._camera_id)} ! "
             f"video/x-raw,width={width},height={height},framerate={self.fps}/1 ! "
             "videoconvert ! "
             "video/x-raw,format=BGR ! "
