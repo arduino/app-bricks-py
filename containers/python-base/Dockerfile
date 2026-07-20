@@ -60,7 +60,6 @@ RUN set -ex; \
     useradd -u 1000 -g arduino -ms /bin/bash arduino; \
     apt-get update -y; \
     apt-get upgrade -y; \
-    apt-get install -y --no-install-recommends --no-install-suggests gdb; \
     # Install dependencies for running ALSA
     apt-get install -y --no-install-recommends --no-install-suggests alsa-utils libportaudiocpp0; \
     # Install dependencies for pipewire
