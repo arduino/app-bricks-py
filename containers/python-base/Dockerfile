@@ -69,7 +69,7 @@ RUN set -ex; \
     # Install dependencies for running CSI cameras
     apt-get install -y libpisp-common libboost-filesystem1.83.0 libboost-log1.83.0 libboost-thread1.83.0 libpisp1 libegl1 libgles2 libyaml-0-2 liblttng-ust1 libdw1t64 libyuv0; \
     dpkg -i /tmp/libcamera0.7.deb /tmp/libcamera-ipa.deb /tmp/gstreamer1.0-libcamera.deb; \
-    apt-get install -y /tmp/qtiqmmfsrc.deb; \
+    apt-get install -y --no-install-recommends --no-install-suggests /tmp/qtiqmmfsrc.deb; \
     rm /tmp/libcamera0.7.deb /tmp/libcamera-ipa.deb /tmp/gstreamer1.0-libcamera.deb /tmp/qtiqmmfsrc.deb; \
     # Install other runtime dependencies
     apt-get install -y --no-install-recommends --no-install-suggests libglib2.0-0 inotify-tools libzbar0; \
