@@ -59,7 +59,7 @@ fi
 
 if [ -f "$REQUIREMENTS_FILE" ]; then
   INSTALL_DEPS=1
-  REQUIREMENTS_LINES="$(cat $REQUIREMENTS_FILE | grep -c '[^[:space:]]')"
+  REQUIREMENTS_LINES="$(grep -c '[^[:space:]]' "$REQUIREMENTS_FILE")"
   if [ -f "$INSTALLED_REQUIREMENTS_FILE" ]; then
     if cmp -s "$REQUIREMENTS_FILE" "$INSTALLED_REQUIREMENTS_FILE"; then
       echo "Requirements already installed."
@@ -68,12 +68,15 @@ if [ -f "$REQUIREMENTS_FILE" ]; then
   fi
   if [ "$INSTALL_DEPS" -gt 0 ]; then
     if [ "$REQUIREMENTS_LINES" -ne 0 ]; then
-      uv pip install -r "$REQUIREMENTS_FILE"
+      if uv pip install -r "$REQUIREMENTS_FILE"; then
+        cp "$REQUIREMENTS_FILE" "$INSTALLED_REQUIREMENTS_FILE"
+      fi
+    else
+      cp "$REQUIREMENTS_FILE" "$INSTALLED_REQUIREMENTS_FILE"
     fi
   fi
   # clean up cache
   uv cache clean
-  cp "$REQUIREMENTS_FILE" "$INSTALLED_REQUIREMENTS_FILE"
 fi
 
 # Install custom brick requirements with caching
@@ -89,7 +92,7 @@ if [ -d "/app/bricks" ]; then
         mkdir -p "$brick_cache_dir"
         
         INSTALL_BRICK_DEPS=1
-        BRICK_REQUIREMENTS_LINES="$(cat $brick_requirements | grep -c '[^[:space:]]')"
+        BRICK_REQUIREMENTS_LINES="$(grep -c '[^[:space:]]' "$brick_requirements")"
         
         if [ -f "$brick_installed_requirements" ]; then
           if cmp -s "$brick_requirements" "$brick_installed_requirements"; then
@@ -101,12 +104,13 @@ if [ -d "/app/bricks" ]; then
         if [ "$INSTALL_BRICK_DEPS" -gt 0 ]; then
           if [ "$BRICK_REQUIREMENTS_LINES" -ne 0 ]; then
             echo "Installing requirements for brick: $brick_name"
-            uv pip install -r "$brick_requirements"
+            if uv pip install -r "$brick_requirements"; then
+              cp "$brick_requirements" "$brick_installed_requirements"
+            fi
+          else
+            cp "$brick_requirements" "$brick_installed_requirements"
           fi
         fi
-        
-        # Save the cache
-        cp "$brick_requirements" "$brick_installed_requirements"
       fi
     fi
   done
