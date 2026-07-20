@@ -166,7 +166,15 @@ class CSICamera(BaseCamera):
         )
 
         try:
-            self._cap = cv2.VideoCapture(gstreamer_pipeline, cv2.CAP_GSTREAMER)
+            # Temporarily suppress benign duration/position query warnings when
+            # opening a non-seekable GStreamer pipeline.
+            previous_log_level = cv2.utils.logging.getLogLevel()
+            cv2.utils.logging.setLogLevel(cv2.utils.logging.LOG_LEVEL_ERROR)
+            try:
+                self._cap = cv2.VideoCapture(gstreamer_pipeline, cv2.CAP_GSTREAMER)
+            finally:
+                cv2.utils.logging.setLogLevel(previous_log_level)
+
             if not self._cap.isOpened():
                 raise RuntimeError(f"Failed to open camera {self.name}")
 
