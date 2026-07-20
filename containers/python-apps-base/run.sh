@@ -62,9 +62,8 @@ if [ -f "$REQUIREMENTS_FILE" ]; then
   REQUIREMENTS_LINES="$(cat $REQUIREMENTS_FILE | grep -c '[^[:space:]]')"
   if [ -f "$INSTALLED_REQUIREMENTS_FILE" ]; then
     if cmp -s "$REQUIREMENTS_FILE" "$INSTALLED_REQUIREMENTS_FILE"; then
-        echo "Requirements already installed."
-    else
-        INSTALL_DEPS=0
+      echo "Requirements already installed."
+      INSTALL_DEPS=0
     fi
   fi
   if [ "$INSTALL_DEPS" -gt 0 ]; then
