@@ -19,8 +19,11 @@ if out and "detection" in out:
         detected_anomaly = anomaly.get("class_name", None)
         score = anomaly.get("score", None)
         bounding_box = anomaly.get("bounding_box_xyxy", None)
+        print(f"Anomaly Detected! '{detected_anomaly}' with score: {score} and bounding box coordinates: {bounding_box}")
 
-# Draw the bounding boxes
-out_image = draw_anomaly_markers(img, out)
+# Draw the bounding boxes and save the resulting image
+out_image = draw_anomaly_markers(image=img, detection=out)
+if out_image is not None:
+    out_image.save("result.png")
 
 App.run()
