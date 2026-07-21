@@ -7,6 +7,7 @@ from __future__ import annotations
 import base64
 import json
 
+import numpy as np
 import websocket
 
 from arduino.app_utils import Logger
@@ -16,28 +17,35 @@ from .types import ASRProviderEvent, ASRProviderError
 logger = Logger(__name__)
 
 
+def _resample_pcm16(pcm_chunk: bytes, input_rate: int, output_rate: int) -> bytes:
+    """Resample a chunk of mono little-endian PCM16 audio with linear interpolation."""
+
+    samples = np.frombuffer(pcm_chunk, dtype="<i2")
+    n_out = samples.size * output_rate // input_rate
+    positions = np.linspace(0, samples.size - 1, n_out)
+    return np.rint(np.interp(positions, np.arange(samples.size), samples)).astype("<i2").tobytes()
+
+
 class OpenAITranscribe:
     """
     OpenAI ASR cloud provider implementation.
-    It leverages the Realtime API to enable streaming transcription powered by a GPT-based model.
-    Audio is transmitted and received over WebSockets, while voice activity detection (VAD) server-side
-    is used to segment utterances.
-    If custom VAD behavior is desired, the VoiceActivityDetector class can be used client-side to
-    trigger commits based on local audio analysis. In that case, track the audio with the vad process_chunk method and
-    register the vad commit() method to send a `{"type": "input_audio_buffer.commit"}` message to the server.
+    It leverages the Realtime API with a transcription-only session: audio is
+    streamed over WebSocket, server-side voice activity detection (VAD) segments
+    utterances, and transcripts arrive as incremental deltas plus a final text.
+    The API only accepts 24 kHz mono PCM16 input, so audio is transparently
+    resampled from the configured microphone sample rate.
     """
 
     provider_name = "openai-transcribe"
     partial_mode = "append"
 
-    REALTIME_MODEL = "gpt-realtime"
     TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
     BASE_URL = "wss://api.openai.com/v1/realtime"
+    TARGET_SAMPLE_RATE = 24000
     IGNORED_COMMIT_CODES = {
         "input_audio_buffer_commit_empty",
         "input_audio_buffer_commit_short",
     }
-    VAD_MIN_BUFFER_MS = 120.0
     DEFAULT_LANGUAGE = "en"
 
     def __init__(
@@ -54,11 +62,8 @@ class OpenAITranscribe:
         if not self._language:
             self._language = self.DEFAULT_LANGUAGE
 
-        self._url = f"{self.BASE_URL}?model={self.REALTIME_MODEL}"
-        self._headers = [
-            f"Authorization: Bearer {self._api_key}",
-            "OpenAI-Beta: realtime=v1",
-        ]
+        self._url = f"{self.BASE_URL}?intent=transcription"
+        self._headers = [f"Authorization: Bearer {self._api_key}"]
         self._sample_rate = sample_rate
         self._ws: websocket.WebSocket
 
@@ -74,14 +79,17 @@ class OpenAITranscribe:
             json.dumps({
                 "type": "session.update",
                 "session": {
-                    "modalities": ["text"],
-                    "input_audio_format": "pcm16",
-                    "turn_detection": {"type": "server_vad"},
-                    "input_audio_transcription": {
-                        "model": self.TRANSCRIPTION_MODEL,
-                        "language": self._language,
+                    "type": "transcription",
+                    "audio": {
+                        "input": {
+                            "format": {"type": "audio/pcm", "rate": self.TARGET_SAMPLE_RATE},
+                            "transcription": {
+                                "model": self.TRANSCRIPTION_MODEL,
+                                "language": self._language,
+                            },
+                            "turn_detection": {"type": "server_vad"},
+                        },
                     },
-                    "instructions": "You are a transcription engine. Only return verbatim transcripts and do not chat or respond.",
                 },
             })
         )
@@ -133,7 +141,12 @@ class OpenAITranscribe:
                 text = message.get("transcript", "").strip()
                 if text:
                     return ASRProviderEvent(type="text", data=text)
-                raise ASRProviderError("Transcription completed with no text.")
+                # Empty completion (e.g. server VAD closed a turn on noise/silence):
+                logger.debug("Ignoring empty transcription completion.")
+                return None
+
+            case "conversation.item.input_audio_transcription.failed":
+                raise ASRProviderError(f"OpenAI transcription failed: {message.get('error')}")
 
             case "error" | "invalid_request_error":
                 code = self._extract_error_code(message)
@@ -163,6 +176,11 @@ class OpenAITranscribe:
     def send_audio(self, pcm_chunk: bytes) -> None:
         if not pcm_chunk:
             return
+
+        if self._sample_rate != self.TARGET_SAMPLE_RATE:
+            pcm_chunk = _resample_pcm16(pcm_chunk, self._sample_rate, self.TARGET_SAMPLE_RATE)
+            if not pcm_chunk:
+                return
 
         audio_payload = base64.b64encode(pcm_chunk).decode("ascii")
         self._ws.send(json.dumps({"type": "input_audio_buffer.append", "audio": audio_payload}))
