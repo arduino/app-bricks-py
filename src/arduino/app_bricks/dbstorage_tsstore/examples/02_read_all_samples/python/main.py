@@ -6,7 +6,7 @@ from arduino.app_utils import App
 import time
 from arduino.app_bricks.dbstorage_tsstore import TimeSeriesStore
 
-db = TimeSeriesStore(host="localhost")  # TODO: remove hardcoded host
+db = TimeSeriesStore()
 db.start()
 
 ts = int(time.time() * 1000)  # Current timestamp in milliseconds
