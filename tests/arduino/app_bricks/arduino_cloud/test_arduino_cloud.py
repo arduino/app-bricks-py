@@ -257,10 +257,48 @@ def test_complex_object_subscribes_and_pushes_each_leaf(fake_client):
         cloud.clight.hue = 120
         cloud.loop()
         assert ("clight:hue", 120) in client.puts
-        # A cloud update on a leaf fires the parent object's on_write immediately.
+        # A cloud update on a leaf marks the parent's on_write; it is coalesced
+        # and delivered once by the loop (not immediately, per-leaf).
         client.feed("clight:swi", False)
+        assert writes == []  # not fired yet — waits for the loop
+        cloud.loop()
         assert writes == [False]
         assert cloud.clight.swi is False
+    finally:
+        cloud.stop()
+
+
+def test_complex_seed_fires_on_write_once_with_full_object(fake_client):
+    # Each sub-property of a ColoredLight seeds as its own lastvalue frame; the
+    # brick must coalesce them into ONE on_write with the whole object populated
+    # (not one call per sub-property). Regression for the 4-call startup log.
+    cloud, client = _make_cloud(fake_client)
+    calls = []
+    for key, val in (("swi", True), ("hue", 134), ("sat", 19), ("bri", 75)):
+        client.initial[f"clight:{key}"] = (
+            EVENT_LASTVALUE,
+            {"value": val, "timestamp": "2026-07-21T10:00:00Z", "last_value": True},
+        )
+    cloud.register(ColoredLight("clight", on_write=lambda c, v: calls.append((v.swi, v.hue, v.sat, v.bri))))
+    # Fired exactly once, during register, with every attribute populated.
+    assert calls == [(True, 134, 19, 75)]
+
+
+def test_complex_live_multi_attribute_update_coalesced(fake_client):
+    # A whole-widget change in the cloud arrives as separate per-leaf update
+    # frames; on_write is delivered once (with all attributes) on the next loop
+    # pass, not once per leaf.
+    cloud, client = _make_cloud(fake_client)
+    calls = []
+    cloud.register(ColoredLight("clight", swi=True, on_write=lambda c, v: calls.append((v.swi, v.hue, v.sat, v.bri))))
+    cloud.start()
+    try:
+        client.feed("clight:hue", 200)
+        client.feed("clight:sat", 50)
+        client.feed("clight:bri", 80)
+        assert calls == []  # coalesced: nothing until the loop runs
+        cloud.loop()
+        assert calls == [(True, 200, 50, 80)]
     finally:
         cloud.stop()
 

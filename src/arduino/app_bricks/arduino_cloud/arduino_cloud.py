@@ -114,8 +114,9 @@ class ArduinoCloud:
         Each pass, for every registered object: run its poll callbacks when due
         (every pass in ON_CHANGE mode, once per ``interval`` in timed mode), then
         publish each scalar leaf via ``pump()`` (ON_CHANGE throttle or timed
-        republish). on_write is not handled here: it fires immediately from the
-        SSE handler when a cloud update arrives.
+        republish). Scalar on_write fires immediately from the SSE handler; a
+        complex object's coalesced on_write (one call for the whole object) is
+        delivered here, once per pass.
         """
         now = time.time()
         with self._lock:
@@ -127,9 +128,30 @@ class ArduinoCloud:
                     record.last_poll = now
                 for leaf in record.leaves():
                     leaf.pump(now, record.interval)
+                # Deliver a complex object's coalesced on_write once per pass,
+                # with the whole object populated (see _make_handler). Scalars
+                # fire immediately from the handler, so skip them here.
+                if record.is_complex:
+                    self._fire_pending_on_write(record)
             except Exception as e:
                 logger.exception(f"Callback error for '{record.name}': {e}")
         time.sleep(_LOOP_INTERVAL)
+
+    def _fire_pending_on_write(self, record: CloudObject):
+        """Fire a complex object's coalesced on_write once, if one is owed.
+
+        Checks and clears the pending flag under the lock, then invokes the
+        callback outside it (user callbacks must not hold the state lock). Scalar
+        objects never set the flag — they fire on_write immediately from the SSE
+        handler — so this is a no-op for them.
+        """
+        fire = False
+        with self._lock:
+            if record._on_write_pending:
+                record._on_write_pending = False
+                fire = True
+        if fire:
+            record.fire_on_write(self)
 
     def stop(self):
         """Stop the brick and tear down the SSE listener threads."""
@@ -176,6 +198,11 @@ class ArduinoCloud:
         # the variable holds the right value as soon as register() returns.
         for leaf in aiotobj.leaves():
             self._seed_leaf(leaf)
+
+        # A complex object's leaves seed as separate frames; deliver a single
+        # on_write with the fully-seeded object (fired here, before subscribing
+        # the live streams) rather than one callback per sub-property.
+        self._fire_pending_on_write(aiotobj)
 
         with self._lock:
             if self._started:
@@ -233,10 +260,12 @@ class ArduinoCloud:
         events apply cloud changes (and are ignored while pending, since only a
         sync frame ends the "no thing assigned" state). Whenever an applied cloud
         value wins and actually changes the local value (``apply_cloud`` returns
-        True) the owner's on_write is fired immediately — as soon as the message
-        arrives, not on a later interval-gated loop pass — matching the C++
-        ArduinoIoTCloud synchronous onUpdate dispatch, on the initial sync, a
-        reconnect resync and live updates alike.
+        True) on_write is delivered: for a scalar variable it fires immediately,
+        as soon as the message arrives (C++ ArduinoIoTCloud synchronous onUpdate
+        parity). For a complex object each sub-property arrives as its own frame,
+        so on_write is coalesced — the owner is flagged and fired once, with the
+        whole object populated, by register() after the initial seeding and by
+        the loop for live updates — rather than once per sub-property.
 
         on_write is fired outside the lock (like the loop's run_sync, which also
         runs callbacks unlocked): user callbacks must not block the state lock
@@ -266,8 +295,7 @@ class ArduinoCloud:
                     value = payload.get("value")
                     ts = parse_timestamp(payload.get("timestamp"))
                     logger.debug("ArduinoCloud: '%s' sync lastvalue=%r ts=%s", leaf.name, value, ts)
-                    if leaf.apply_cloud(value, ts):
-                        owner_to_fire = leaf._owner
+                    changed = leaf.apply_cloud(value, ts)
                 else:
                     # Live update. Ignore while pending: only a sync frame ends
                     # the "no thing assigned" state.
@@ -276,12 +304,25 @@ class ArduinoCloud:
                     value = payload.get("value")
                     ts = parse_timestamp(payload.get("timestamp"))
                     logger.debug("ArduinoCloud: cloud update for '%s': value=%r ts=%s", leaf.name, value, ts)
-                    if leaf.apply_cloud(value, ts):
-                        owner_to_fire = leaf._owner
+                    changed = leaf.apply_cloud(value, ts)
 
-            # Fire on_write immediately (outside the lock) so a cloud→device
-            # update invokes the callback the moment the message arrives, rather
-            # than waiting for the next interval-gated loop pass (C++ parity).
+                if changed:
+                    owner = leaf._owner
+                    if owner.is_complex:
+                        # Coalesce: the sub-properties of one complex object
+                        # arrive as separate per-leaf frames (initial sync or a
+                        # multi-attribute cloud change). Flag the owner and let
+                        # register() (after seeding) or the loop fire on_write
+                        # once, with the whole object populated — not once per
+                        # sub-property.
+                        owner._on_write_pending = True
+                    else:
+                        owner_to_fire = owner
+
+            # Scalars fire on_write immediately (outside the lock) so a
+            # cloud→device update invokes the callback the moment the message
+            # arrives (C++ parity). Complex objects are coalesced and fired once
+            # by register()/the loop (see above).
             if owner_to_fire is not None:
                 owner_to_fire.fire_on_write(self)
 

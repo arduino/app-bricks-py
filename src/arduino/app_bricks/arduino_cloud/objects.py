@@ -111,6 +111,11 @@ class CloudObject:
         self._local_ts = None  # epoch secs of the last local change
         self._cloud_ts = None  # epoch secs of the last applied cloud value
         self._pending = False  # True while no thing is assigned (thing_unavailable)
+        # Complex objects only: a sub-property changed and on_write is owed. The
+        # per-leaf cloud frames are coalesced into a single on_write (fired once
+        # with the whole object populated) by register() after seeding and by the
+        # loop for live updates, instead of one callback per sub-property.
+        self._on_write_pending = False
         self.last_poll = 0.0
         # Outbound (device → cloud) publish state, driven by pump() from the loop.
         self._dirty = False  # local value changed since the last publish (ON_CHANGE)
