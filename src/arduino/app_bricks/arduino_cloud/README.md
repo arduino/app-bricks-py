@@ -4,7 +4,7 @@ This Brick provides integration with the Arduino Cloud platform, enabling IoT de
 
 ## Overview
 
-The Arduino Cloud Brick lets your application exchange variable values with Arduino Cloud. It does **not** connect to the cloud itself: connectivity, device provisioning and the cloud handshake are handled by the local **arduino-cloud-connector daemon** running on the board. The Brick talks to that daemon over its localhost REST/SSE API, so your application code stays simple and focused on reading and writing cloud variables.
+The Arduino Cloud Brick lets your application exchange variable values with Arduino Cloud. It does **not** connect to the Cloud itself: connectivity, device provisioning and the cloud handshake are handled by the local **arduino-cloud-connector daemon** running on the board. The Brick talks to that daemon over its localhost REST/SSE API, so your application code stays simple and focused on reading and writing cloud variables.
 
 ## Features
 
@@ -42,11 +42,11 @@ App.run()
 
 ### Conflict resolution (sync policy)
 
-Each variable can choose how cloud updates interact with local changes, mirroring the Arduino Cloud (C++) semantics:
+Each variable can choose how Cloud updates interact with local changes, mirroring the Arduino Cloud (C++) semantics:
 
-- `CLOUD_WINS` (default): an incoming cloud value is always applied when it differs from the local value.
-- `MOST_RECENT_WINS`: a cloud value is applied only if it is newer than the last local change.
-- `DEVICE_WINS`: cloud values are ignored; the local value is pushed back so the cloud converges to the device.
+- `CLOUD_WINS` (default): an incoming Cloud value is always applied when it differs from the local value.
+- `MOST_RECENT_WINS`: a Cloud value is applied only if it is newer than the last local change.
+- `DEVICE_WINS`: Cloud values are ignored; the local value is pushed back so the Cloud converges to the device.
 
 ```python
 from arduino.app_bricks.arduino_cloud import ArduinoCloud, MOST_RECENT_WINS
