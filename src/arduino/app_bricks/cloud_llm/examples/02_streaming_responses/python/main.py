@@ -11,12 +11,10 @@ llm = CloudLLM(
 
 
 def ask_prompt():
-    prompt = input("Enter your prompt (or type 'exit' to quit): ")
-    if prompt.lower() == "exit":
-        raise StopIteration()
-    for token in llm.chat_stream(prompt):
+    for token in llm.chat_stream("Explain why the sky appears blue in three short sentences."):
         print(token, end="", flush=True)
     print()
+    raise StopIteration()
 
 
 App.run(user_loop=ask_prompt)

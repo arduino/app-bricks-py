@@ -12,10 +12,9 @@ llm.with_memory(0)
 
 
 def ask_prompt():
-    prompt = input("Enter your prompt (or type 'exit' to quit): ")
-    if prompt.lower() == "exit":
-        raise StopIteration()
-    print(llm.chat(prompt))
+    print(llm.chat("Remember that my favorite color is blue."))
+    print(llm.chat("What is my favorite color?"))
+    raise StopIteration()
 
 
 App.run(user_loop=ask_prompt)

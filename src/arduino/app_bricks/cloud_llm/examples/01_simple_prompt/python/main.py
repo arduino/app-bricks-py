@@ -11,11 +11,8 @@ llm = CloudLLM(
 
 
 def ask_prompt():
-    prompt = input("Enter your prompt (or type 'exit' to quit): ")
-    if prompt.lower() == "exit":
-        raise StopIteration()
-    print(llm.chat(prompt))
-    print()
+    print(llm.chat("What is the capital of Italy?"))
+    raise StopIteration()
 
 
 App.run(user_loop=ask_prompt)

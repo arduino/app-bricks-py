@@ -20,14 +20,9 @@ llm = CloudLLM(
 
 
 def ask_prompt():
-    prompt = input("Enter your prompt (or 'exit' to quit, 'forget' to clear history): ")
-    if prompt.lower() == "exit":
-        raise StopIteration()
-    if prompt.lower() == "forget":
-        llm.clear_memory()
-        print("Memory cleared for this thread.")
-        return
-    print(llm.chat(prompt))
+    print(llm.chat("Remember that my favorite color is blue."))
+    print(llm.chat("What is my favorite color?"))
+    raise StopIteration()
 
 
 App.run(user_loop=ask_prompt)

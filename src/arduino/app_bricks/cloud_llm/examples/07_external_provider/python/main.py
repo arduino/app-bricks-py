@@ -4,7 +4,6 @@
 
 from arduino.app_bricks.cloud_llm import CloudLLM
 from arduino.app_utils import App
-import time
 
 llm = CloudLLM(
     model="qwen3.5:0.8b",  # Replace with the actual model name you want to use. Model must be available in your Ollama instance.
@@ -18,7 +17,7 @@ def ask_prompt():
     for chunk in llm.chat_stream(message="Who was Giuseppe Verdi?"):
         print(chunk, end="", flush=True)
     print("\n----- Response complete -----")
-    time.sleep(60)
+    raise StopIteration()
 
 
 App.run(user_loop=ask_prompt)

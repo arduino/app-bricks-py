@@ -4,7 +4,6 @@
 
 from arduino.app_bricks.cloud_llm import CloudLLM, CloudModel
 from arduino.app_utils import App
-import time
 
 llm = CloudLLM(
     model=CloudModel.GOOGLE_GEMINI,
@@ -16,7 +15,7 @@ def ask_prompt():
     print(
         llm.chat(message="Describe the following image. Provide a bullet-point summary of the discovered objects", images=["/app/assets/image.jpg"])
     )
-    time.sleep(60)
+    raise StopIteration()
 
 
 App.run(user_loop=ask_prompt)
