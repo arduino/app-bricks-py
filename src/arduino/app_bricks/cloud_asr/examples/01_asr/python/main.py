@@ -9,7 +9,10 @@ cloud_asr = CloudASR(
     api_key="YOUR_API_KEY",  # Replace with your actual API key
 )
 
-text = cloud_asr.transcribe()
-print(f"Detected speech: {text}")
 
-App.run()
+def transcribe():
+    text = cloud_asr.transcribe()
+    print(f"Detected speech: {text}")
+
+
+App.run(user_loop=transcribe)

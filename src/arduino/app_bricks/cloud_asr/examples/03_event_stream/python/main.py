@@ -9,13 +9,17 @@ cloud_asr = CloudASR(
     api_key="YOUR_API_KEY",  # Replace with your actual API key
 )
 
-with cloud_asr.transcribe_stream() as stream:
-    print("Say 'stop' to stop the transcription.")
 
-    for event in stream:
-        print(f"{event.type}: {event.data}")
-        if event.type == "text" and (event.data or "").lower() == "stop":
-            print("Stopping transcription stream...")
-            break
+def transcribe():
+    with cloud_asr.transcribe_stream() as stream:
+        print("Say 'stop' to stop the transcription.")
 
-App.run()
+        for event in stream:
+            print(f"{event.type}: {event.data}")
+            if event.type == "text" and (event.data or "").lower() == "stop":
+                print("Stopping transcription stream...")
+                break
+    raise StopIteration
+
+
+App.run(user_loop=transcribe)

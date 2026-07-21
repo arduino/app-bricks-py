@@ -10,7 +10,10 @@ cloud_asr = CloudASR(
     language="it",  # Set language to Italian
 )
 
-text = cloud_asr.transcribe()
-print(f"Detected speech: {text}")
 
-App.run()
+def transcribe():
+    text = cloud_asr.transcribe()
+    print(f"Detected speech: {text}")
+
+
+App.run(user_loop=transcribe)
