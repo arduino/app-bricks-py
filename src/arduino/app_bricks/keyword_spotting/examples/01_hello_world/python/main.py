@@ -7,6 +7,6 @@ from arduino.app_utils import App
 
 
 spotting = KeywordSpotting()
-spotting.on_detect("helloworld", lambda: print(f"Hello world detected!"))
+spotting.on_detect("hey_arduino", lambda: print(f"Hey arduino detected!"))
 
 App.run()
