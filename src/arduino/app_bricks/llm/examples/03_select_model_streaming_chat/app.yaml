@@ -3,4 +3,5 @@ icon: 🤖
 description: "Chat with a Local LLM using a specific model. Models must be downloaded and available locally."
 
 bricks:
-  - arduino:llm
+  - arduino:llm:
+    model: genie:qwen3_4b_instruct_2507

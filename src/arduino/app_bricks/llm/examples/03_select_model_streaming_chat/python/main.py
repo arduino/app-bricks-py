@@ -5,7 +5,8 @@
 from arduino.app_bricks.llm import LargeLanguageModel
 from arduino.app_utils import App
 
-llm = LargeLanguageModel(model="genie:qwen3:4b")
+llm = LargeLanguageModel(model="genie:qwen3_4b_instruct_2507")
+# This model needs to be selected accordingly in the Brick's configuration under "AI model" tab
 
 
 def ask_prompt():
