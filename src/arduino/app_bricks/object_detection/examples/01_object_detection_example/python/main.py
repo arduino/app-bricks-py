@@ -21,8 +21,11 @@ if out and "detection" in out:
         detected_object = obj_det.get("class_name", None)
         confidence = obj_det.get("confidence", None)
         bounding_box = obj_det.get("bounding_box_xyxy", None)
+        print(f"Object Detected! '{detected_object}' with confidence: {confidence}% and bounding boxes coordinates: {bounding_box}")
 
-# Draw the bounding boxes
-out_image = draw_bounding_boxes(img, out)
+# Draw the bounding boxes and save the resulting image
+out_image = draw_bounding_boxes(image=img, detection=out)
+if out_image is not None:
+    out_image.save("data/result.png")
 
 App.run()
