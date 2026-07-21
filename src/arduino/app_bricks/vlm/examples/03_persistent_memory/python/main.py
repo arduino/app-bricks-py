@@ -19,17 +19,17 @@ vlm = VisionLanguageModel(
 
 
 def ask_prompt():
-    prompt = input("Enter your prompt (or 'exit' to quit, 'forget' to clear history, 'image' to include chair.jpg): ")
-    if prompt.lower() == "exit":
-        raise StopIteration()
-    if prompt.lower() == "forget":
-        vlm.clear_memory()
-        print("Memory cleared for this thread.")
-        return
+    images = ["/app/assets/chair.jpg"]
+    prompt = "Describe the image and its details"
+    print(vlm.chat(prompt, images=images))
 
-    images = ["/app/assets/chair.jpg"] if prompt.lower() == "image" else None
-    message = "Describe the image and remember relevant visual details." if images else prompt
-    print(vlm.chat(message, images=images))
+    prompt_2 = "Now summarize the image description and its details"
+    print(vlm.chat(prompt_2))
 
+    # Clear memory
+    vlm.clear_memory()
+    print("Memory cleared for this thread.")
+
+    raise StopIteration  # This ends the user loop
 
 App.run(user_loop=ask_prompt)

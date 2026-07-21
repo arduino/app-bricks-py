@@ -7,6 +7,6 @@ from arduino.app_bricks.web_ui import WebUI
 
 
 ui = WebUI()
-ui.on_message("hello", lambda data: print(f"Received message: {data}"))
+ui.on_message("hello", lambda sid, data: print(f"Received message: {data}"))
 
 App.run()  # This will block until the app is stopped
