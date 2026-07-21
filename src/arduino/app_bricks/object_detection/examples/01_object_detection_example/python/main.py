@@ -26,6 +26,6 @@ if out and "detection" in out:
 # Draw the bounding boxes and save the resulting image
 out_image = draw_bounding_boxes(image=img, detection=out)
 if out_image is not None:
-    out_image.save("data/result.png")
+    out_image.save("result.png")
 
 App.run()
