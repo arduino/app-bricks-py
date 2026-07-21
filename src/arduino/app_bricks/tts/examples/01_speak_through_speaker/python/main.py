@@ -4,7 +4,6 @@
 
 from arduino.app_bricks.tts import TextToSpeech
 from arduino.app_utils import App
-import time
 
 
 tts = TextToSpeech()
@@ -12,7 +11,7 @@ tts = TextToSpeech()
 
 def runner():
     tts.speak("Hello world, Arduino!")
-    time.sleep(5)  # Wait for the speech to finish before ending the app
+    raise StopIteration  # This ends the user loop
 
 
 App.run(user_loop=runner)
