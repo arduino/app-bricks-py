@@ -9,7 +9,7 @@ from arduino.app_utils.image import draw_bounding_boxes
 object_detection = ObjectDetection()
 
 # Image can be provided as bytes or PIL.Image
-with open("/app/assets/image.jpg", "rb") as f:
+with open("assets/image.jpg", "rb") as f:
     img = f.read()
 
 out = object_detection.detect(img)
