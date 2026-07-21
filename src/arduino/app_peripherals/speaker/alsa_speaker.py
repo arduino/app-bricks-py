@@ -155,7 +155,7 @@ class ALSASpeaker(BaseSpeaker):
             logger.error(f"Error listing jack speakers: {e}")
             return []
 
-        return [f"pipewire:NODE={builtin_sinks[0]['id']}"] if builtin_sinks else []
+        return [f"pipewire:NODE={builtin_sinks[0]['info']['props']['node.name']}"] if builtin_sinks else []
 
     def _resolve_stable_ref(self, identifier: str | int) -> str:
         """
