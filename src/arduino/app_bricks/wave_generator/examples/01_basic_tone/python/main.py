@@ -2,13 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""
-Basic Wave Generator Example
-
-Generates a simple 440Hz sine wave (A4 note) and demonstrates
-basic frequency and amplitude control.
-"""
-
 from arduino.app_bricks.wave_generator import WaveGenerator
 from arduino.app_utils import App
 

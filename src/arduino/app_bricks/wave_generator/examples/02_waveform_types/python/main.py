@@ -2,13 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""
-Waveform Comparison Example
-
-Cycles through different waveform types to hear the difference
-between sine, square, sawtooth, and triangle waves.
-"""
-
 import time
 from arduino.app_bricks.wave_generator import WaveGenerator
 from arduino.app_utils import App

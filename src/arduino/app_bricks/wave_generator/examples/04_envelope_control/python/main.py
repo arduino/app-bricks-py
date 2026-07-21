@@ -2,13 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""
-Envelope Control Example
-
-Demonstrates amplitude envelope control with different
-attack and release times for various sonic effects.
-"""
-
 import time
 from arduino.app_bricks.wave_generator import WaveGenerator
 from arduino.app_utils import App

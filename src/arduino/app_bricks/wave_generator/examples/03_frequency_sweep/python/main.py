@@ -2,13 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""
-Frequency Sweep Example
-
-Demonstrates smooth frequency transitions (glide/portamento effect)
-by sweeping through different frequency ranges.
-"""
-
 import time
 from arduino.app_bricks.wave_generator import WaveGenerator
 from arduino.app_utils import App

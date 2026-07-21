@@ -2,16 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""
-Custom Speaker Configuration Example
-
-Demonstrates how to use a pre-configured Speaker instance with WaveGenerator.
-Use this approach when you need:
-- Specific USB speaker selection (USB_SPEAKER_2, etc.)
-- Different audio format (np.float32, etc.)
-- Explicit device name ("plughw:CARD=Device,DEV=0")
-"""
-
 import time
 
 import numpy as np
