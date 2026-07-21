@@ -13,7 +13,7 @@ def ask_prompt():
     for chunk in llm.chat_stream(prompt):
         print(chunk, end="", flush=True)
     print()
-    raise StopIteration
+    raise StopIteration  # This stops the user loop
 
 
 App.run(user_loop=ask_prompt)

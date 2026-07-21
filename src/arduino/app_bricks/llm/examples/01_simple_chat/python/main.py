@@ -12,7 +12,7 @@ def ask_prompt():
     prompt = "Hi, what can you do as an AI assistant?"
     print(llm.chat(prompt))
     print()
-    raise StopIteration
+    raise StopIteration  # This stops the user loop
 
 
 App.run(user_loop=ask_prompt)

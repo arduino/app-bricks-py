@@ -31,7 +31,7 @@ def ask_prompt():
     prompt = "What is the weather like in Turin?"
     print(llm.chat(prompt))
     print()
-    raise StopIteration
+    raise StopIteration  # This stops the user loop
 
 
 App.run(user_loop=ask_prompt)
