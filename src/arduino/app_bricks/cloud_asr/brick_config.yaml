@@ -8,7 +8,6 @@ mount_devices_into_container: true
 required_devices:
   - microphone
 requires_container: false
-requires_model: false
 variables:
   - name: API_KEY
     description: "API Key for the cloud-based Speech to Text service"

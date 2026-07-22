@@ -8,7 +8,6 @@ requires_services:
   - id: arduino:llamacpp
     when:
       model: "llamacpp:*"
-requires_model: true
 model_by_boards:
     - platform: ventunoq
       model: genie:qwen3_4b_instruct_2507

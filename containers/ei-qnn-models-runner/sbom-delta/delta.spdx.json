@@ -1,7 +1,7 @@
 {
   "SPDXID": "SPDXRef-DOCUMENT",
   "creationInfo": {
-    "created": "2026-06-30T14:46:56.494470Z",
+    "created": "2026-07-07T07:24:41.473334Z",
     "creators": [
       "Tool: arduino-sbom-delta",
       "Organization: Arduino SRL"
@@ -11,12 +11,12 @@
   "documentDescribes": [
     "SPDXRef-Container"
   ],
-  "documentNamespace": "https://arduino.cc/sbom/delta/ei-qnn-models-runner-0.11.1-20260630T144656Z",
+  "documentNamespace": "https://arduino.cc/sbom/delta/ei-qnn-models-runner-0.11.2-20260707T072441Z",
   "name": "ei-qnn-models-runner",
   "packages": [
     {
       "SPDXID": "SPDXRef-Container",
-      "comment": "Delta SBOM for ghcr.io/arduino/app-bricks/ei-qnn-models-runner:0.11.1 \u2014 changes relative to base image public.ecr.aws/z9b3d4t5/inference-container-qnn:v1.92.19-test-f19ce2e7",
+      "comment": "Delta SBOM for ghcr.io/arduino/app-bricks/ei-qnn-models-runner:0.11.2 \u2014 changes relative to base image public.ecr.aws/z9b3d4t5/inference-container-qnn:v1.92.19-test-f19ce2e7",
       "copyrightText": "NOASSERTION",
       "downloadLocation": "NOASSERTION",
       "filesAnalyzed": false,
@@ -28,7 +28,7 @@
       "SPDXID": "SPDXRef-certifi-pypi",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"added\"}"
@@ -53,7 +53,7 @@
       "SPDXID": "SPDXRef-charset-normalizer-pypi",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"added\"}"
@@ -64,7 +64,7 @@
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:pypi/charset-normalizer@3.4.7",
+          "referenceLocator": "pkg:pypi/charset-normalizer@3.4.8",
           "referenceType": "purl"
         }
       ],
@@ -72,13 +72,13 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "MIT",
       "name": "charset-normalizer",
-      "versionInfo": "3.4.7"
+      "versionInfo": "3.4.8"
     },
     {
       "SPDXID": "SPDXRef-idna-pypi",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"added\"}"
@@ -103,7 +103,7 @@
       "SPDXID": "SPDXRef-packaging-pypi",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"added\"}"
@@ -128,7 +128,7 @@
       "SPDXID": "SPDXRef-pip-pypi",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"added\"}"
@@ -153,7 +153,7 @@
       "SPDXID": "SPDXRef-python3-packaging-deb",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"added\"}"
@@ -178,7 +178,7 @@
       "SPDXID": "SPDXRef-python3-pip-deb",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"added\"}"
@@ -203,7 +203,7 @@
       "SPDXID": "SPDXRef-python3-wheel-deb",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"added\"}"
@@ -228,7 +228,7 @@
       "SPDXID": "SPDXRef-requests-pypi",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"added\"}"
@@ -253,7 +253,7 @@
       "SPDXID": "SPDXRef-urllib3-pypi",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"added\"}"
@@ -278,7 +278,7 @@
       "SPDXID": "SPDXRef-wheel-pypi",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"added\"}"
@@ -303,7 +303,7 @@
       "SPDXID": "SPDXRef-curl-deb",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"updated\", \"previous-version\": \"8.14.1-2+deb13u2\"}"
@@ -328,7 +328,7 @@
       "SPDXID": "SPDXRef-edge-impulse-cli-npm",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"updated\", \"previous-version\": \"1.38.0\"}"
@@ -339,7 +339,7 @@
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:npm/edge-impulse-cli@1.39.1",
+          "referenceLocator": "pkg:npm/edge-impulse-cli@1.39.2",
           "referenceType": "purl"
         }
       ],
@@ -347,13 +347,13 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "BSD-3-Clause-Clear",
       "name": "edge-impulse-cli",
-      "versionInfo": "1.39.1"
+      "versionInfo": "1.39.2"
     },
     {
       "SPDXID": "SPDXRef-edge-impulse-linux-npm",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"updated\", \"previous-version\": \"1.25.0\"}"
@@ -375,10 +375,60 @@
       "versionInfo": "1.25.1"
     },
     {
+      "SPDXID": "SPDXRef-gstreamer1.0-plugins-good-deb",
+      "annotations": [
+        {
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: arduino-sbom-delta",
+          "comment": "{\"change\": \"updated\", \"previous-version\": \"1.26.2-1\"}"
+        }
+      ],
+      "copyrightText": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:deb/debian/gstreamer1.0-plugins-good@1.26.2-1%2Bdeb13u2?arch=arm64&distro=debian-13&upstream=gst-plugins-good1.0",
+          "referenceType": "purl"
+        }
+      ],
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "BSD-3-Clause AND GPL-2.0-only AND GPL-2.0-or-later AND LicenseRef-LGPL AND LGPL-2.0-only AND LGPL-2.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND LicenseRef-MIT-X11",
+      "name": "gstreamer1.0-plugins-good",
+      "versionInfo": "1.26.2-1+deb13u2"
+    },
+    {
+      "SPDXID": "SPDXRef-krb5-locales-deb",
+      "annotations": [
+        {
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: arduino-sbom-delta",
+          "comment": "{\"change\": \"updated\", \"previous-version\": \"1.21.3-5\"}"
+        }
+      ],
+      "copyrightText": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:deb/debian/krb5-locales@1.21.3-5%2Bdeb13u1?arch=all&distro=debian-13&upstream=krb5",
+          "referenceType": "purl"
+        }
+      ],
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "name": "krb5-locales",
+      "versionInfo": "1.21.3-5+deb13u1"
+    },
+    {
       "SPDXID": "SPDXRef-libc-bin-deb",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"updated\", \"previous-version\": \"2.41-12+deb13u2\"}"
@@ -403,7 +453,7 @@
       "SPDXID": "SPDXRef-libc6-deb",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"updated\", \"previous-version\": \"2.41-12+deb13u2\"}"
@@ -428,7 +478,7 @@
       "SPDXID": "SPDXRef-libcap2-deb",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"updated\", \"previous-version\": \"1:2.75-10+b8\"}"
@@ -453,7 +503,7 @@
       "SPDXID": "SPDXRef-libcap2-bin-deb",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"updated\", \"previous-version\": \"1:2.75-10+b8\"}"
@@ -478,7 +528,7 @@
       "SPDXID": "SPDXRef-libcom-err2-deb",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"updated\", \"previous-version\": \"1.47.2-3+b10\"}"
@@ -503,7 +553,7 @@
       "SPDXID": "SPDXRef-libcurl3t64-gnutls-deb",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"updated\", \"previous-version\": \"8.14.1-2+deb13u2\"}"
@@ -528,7 +578,7 @@
       "SPDXID": "SPDXRef-libcurl4t64-deb",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"updated\", \"previous-version\": \"8.14.1-2+deb13u2\"}"
@@ -553,7 +603,7 @@
       "SPDXID": "SPDXRef-libglib2.0-0t64-deb",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"updated\", \"previous-version\": \"2.84.4-3~deb13u2\"}"
@@ -578,7 +628,7 @@
       "SPDXID": "SPDXRef-libglib2.0-data-deb",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"updated\", \"previous-version\": \"2.84.4-3~deb13u2\"}"
@@ -603,7 +653,7 @@
       "SPDXID": "SPDXRef-libgnutls30t64-deb",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"updated\", \"previous-version\": \"3.8.9-3+deb13u2\"}"
@@ -625,10 +675,35 @@
       "versionInfo": "3.8.9-3+deb13u4"
     },
     {
+      "SPDXID": "SPDXRef-libgssapi-krb5-2-deb",
+      "annotations": [
+        {
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: arduino-sbom-delta",
+          "comment": "{\"change\": \"updated\", \"previous-version\": \"1.21.3-5\"}"
+        }
+      ],
+      "copyrightText": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:deb/debian/libgssapi-krb5-2@1.21.3-5%2Bdeb13u1?arch=arm64&distro=debian-13&upstream=krb5",
+          "referenceType": "purl"
+        }
+      ],
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "name": "libgssapi-krb5-2",
+      "versionInfo": "1.21.3-5+deb13u1"
+    },
+    {
       "SPDXID": "SPDXRef-libharfbuzz0b-deb",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"updated\", \"previous-version\": \"10.2.0-1+b1\"}"
@@ -650,10 +725,85 @@
       "versionInfo": "10.2.0-1+deb13u1"
     },
     {
+      "SPDXID": "SPDXRef-libk5crypto3-deb",
+      "annotations": [
+        {
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: arduino-sbom-delta",
+          "comment": "{\"change\": \"updated\", \"previous-version\": \"1.21.3-5\"}"
+        }
+      ],
+      "copyrightText": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:deb/debian/libk5crypto3@1.21.3-5%2Bdeb13u1?arch=arm64&distro=debian-13&upstream=krb5",
+          "referenceType": "purl"
+        }
+      ],
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "name": "libk5crypto3",
+      "versionInfo": "1.21.3-5+deb13u1"
+    },
+    {
+      "SPDXID": "SPDXRef-libkrb5-3-deb",
+      "annotations": [
+        {
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: arduino-sbom-delta",
+          "comment": "{\"change\": \"updated\", \"previous-version\": \"1.21.3-5\"}"
+        }
+      ],
+      "copyrightText": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:deb/debian/libkrb5-3@1.21.3-5%2Bdeb13u1?arch=arm64&distro=debian-13&upstream=krb5",
+          "referenceType": "purl"
+        }
+      ],
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "name": "libkrb5-3",
+      "versionInfo": "1.21.3-5+deb13u1"
+    },
+    {
+      "SPDXID": "SPDXRef-libkrb5support0-deb",
+      "annotations": [
+        {
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: arduino-sbom-delta",
+          "comment": "{\"change\": \"updated\", \"previous-version\": \"1.21.3-5\"}"
+        }
+      ],
+      "copyrightText": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:deb/debian/libkrb5support0@1.21.3-5%2Bdeb13u1?arch=arm64&distro=debian-13&upstream=krb5",
+          "referenceType": "purl"
+        }
+      ],
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "name": "libkrb5support0",
+      "versionInfo": "1.21.3-5+deb13u1"
+    },
+    {
       "SPDXID": "SPDXRef-libnghttp2-14-deb",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"updated\", \"previous-version\": \"1.64.0-1.1\"}"
@@ -678,7 +828,7 @@
       "SPDXID": "SPDXRef-libngtcp2-16-deb",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"updated\", \"previous-version\": \"1.11.0-1\"}"
@@ -703,7 +853,7 @@
       "SPDXID": "SPDXRef-libngtcp2-crypto-gnutls8-deb",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"updated\", \"previous-version\": \"1.11.0-1\"}"
@@ -728,7 +878,7 @@
       "SPDXID": "SPDXRef-libnss-systemd-deb",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"updated\", \"previous-version\": \"257.9-1~deb13u1\"}"
@@ -753,7 +903,7 @@
       "SPDXID": "SPDXRef-libpam-cap-deb",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"updated\", \"previous-version\": \"1:2.75-10+b8\"}"
@@ -778,7 +928,7 @@
       "SPDXID": "SPDXRef-libpam-systemd-deb",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"updated\", \"previous-version\": \"257.9-1~deb13u1\"}"
@@ -803,7 +953,7 @@
       "SPDXID": "SPDXRef-libpng16-16t64-deb",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"updated\", \"previous-version\": \"1.6.48-1+deb13u4\"}"
@@ -828,7 +978,7 @@
       "SPDXID": "SPDXRef-libpython3.13-minimal-deb",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"updated\", \"previous-version\": \"3.13.5-2\"}"
@@ -853,7 +1003,7 @@
       "SPDXID": "SPDXRef-libpython3.13-stdlib-deb",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"updated\", \"previous-version\": \"3.13.5-2\"}"
@@ -875,10 +1025,35 @@
       "versionInfo": "3.13.5-2+deb13u2"
     },
     {
+      "SPDXID": "SPDXRef-libssh2-1t64-deb",
+      "annotations": [
+        {
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: arduino-sbom-delta",
+          "comment": "{\"change\": \"updated\", \"previous-version\": \"1.11.1-1\"}"
+        }
+      ],
+      "copyrightText": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:deb/debian/libssh2-1t64@1.11.1-1%2Bdeb13u1?arch=arm64&distro=debian-13&upstream=libssh2",
+          "referenceType": "purl"
+        }
+      ],
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "LicenseRef-BSD3 AND ISC",
+      "name": "libssh2-1t64",
+      "versionInfo": "1.11.1-1+deb13u1"
+    },
+    {
       "SPDXID": "SPDXRef-libssl3t64-deb",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"updated\", \"previous-version\": \"3.5.5-1~deb13u2\"}"
@@ -889,7 +1064,7 @@
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libssl3t64@3.5.6-1~deb13u1?arch=arm64&distro=debian-13&upstream=openssl",
+          "referenceLocator": "pkg:deb/debian/libssl3t64@3.5.6-1~deb13u2?arch=arm64&distro=debian-13&upstream=openssl",
           "referenceType": "purl"
         }
       ],
@@ -897,13 +1072,13 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "Apache-2.0 AND LicenseRef-Artistic AND GPL-1.0-only AND GPL-1.0-or-later",
       "name": "libssl3t64",
-      "versionInfo": "3.5.6-1~deb13u1"
+      "versionInfo": "3.5.6-1~deb13u2"
     },
     {
       "SPDXID": "SPDXRef-libsystemd-shared-deb",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"updated\", \"previous-version\": \"257.9-1~deb13u1\"}"
@@ -928,7 +1103,7 @@
       "SPDXID": "SPDXRef-libsystemd0-deb",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"updated\", \"previous-version\": \"257.9-1~deb13u1\"}"
@@ -953,7 +1128,7 @@
       "SPDXID": "SPDXRef-libudev1-deb",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"updated\", \"previous-version\": \"257.9-1~deb13u1\"}"
@@ -978,7 +1153,7 @@
       "SPDXID": "SPDXRef-openssl-deb",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"updated\", \"previous-version\": \"3.5.5-1~deb13u2\"}"
@@ -989,7 +1164,7 @@
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/openssl@3.5.6-1~deb13u1?arch=arm64&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/openssl@3.5.6-1~deb13u2?arch=arm64&distro=debian-13",
           "referenceType": "purl"
         }
       ],
@@ -997,13 +1172,13 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "Apache-2.0 AND LicenseRef-Artistic AND GPL-1.0-only AND GPL-1.0-or-later",
       "name": "openssl",
-      "versionInfo": "3.5.6-1~deb13u1"
+      "versionInfo": "3.5.6-1~deb13u2"
     },
     {
       "SPDXID": "SPDXRef-openssl-provider-legacy-deb",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"updated\", \"previous-version\": \"3.5.5-1~deb13u2\"}"
@@ -1014,7 +1189,7 @@
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/openssl-provider-legacy@3.5.6-1~deb13u1?arch=arm64&distro=debian-13&upstream=openssl",
+          "referenceLocator": "pkg:deb/debian/openssl-provider-legacy@3.5.6-1~deb13u2?arch=arm64&distro=debian-13&upstream=openssl",
           "referenceType": "purl"
         }
       ],
@@ -1022,13 +1197,13 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "Apache-2.0 AND LicenseRef-Artistic AND GPL-1.0-only AND GPL-1.0-or-later",
       "name": "openssl-provider-legacy",
-      "versionInfo": "3.5.6-1~deb13u1"
+      "versionInfo": "3.5.6-1~deb13u2"
     },
     {
       "SPDXID": "SPDXRef-python3.13-deb",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"updated\", \"previous-version\": \"3.13.5-2\"}"
@@ -1053,7 +1228,7 @@
       "SPDXID": "SPDXRef-python3.13-minimal-deb",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"updated\", \"previous-version\": \"3.13.5-2\"}"
@@ -1078,7 +1253,7 @@
       "SPDXID": "SPDXRef-systemd-deb",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"updated\", \"previous-version\": \"257.9-1~deb13u1\"}"
@@ -1103,7 +1278,7 @@
       "SPDXID": "SPDXRef-systemd-cryptsetup-deb",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"updated\", \"previous-version\": \"257.9-1~deb13u1\"}"
@@ -1128,7 +1303,7 @@
       "SPDXID": "SPDXRef-systemd-sysv-deb",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"updated\", \"previous-version\": \"257.9-1~deb13u1\"}"
@@ -1153,7 +1328,7 @@
       "SPDXID": "SPDXRef-systemd-timesyncd-deb",
       "annotations": [
         {
-          "annotationDate": "2026-06-30T14:46:56.494470Z",
+          "annotationDate": "2026-07-07T07:24:41.473334Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"updated\", \"previous-version\": \"257.9-1~deb13u1\"}"
@@ -1252,6 +1427,16 @@
       "spdxElementId": "SPDXRef-Container"
     },
     {
+      "relatedSpdxElement": "SPDXRef-gstreamer1.0-plugins-good-deb",
+      "relationshipType": "CONTAINS",
+      "spdxElementId": "SPDXRef-Container"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-krb5-locales-deb",
+      "relationshipType": "CONTAINS",
+      "spdxElementId": "SPDXRef-Container"
+    },
+    {
       "relatedSpdxElement": "SPDXRef-libc-bin-deb",
       "relationshipType": "CONTAINS",
       "spdxElementId": "SPDXRef-Container"
@@ -1302,7 +1487,27 @@
       "spdxElementId": "SPDXRef-Container"
     },
     {
+      "relatedSpdxElement": "SPDXRef-libgssapi-krb5-2-deb",
+      "relationshipType": "CONTAINS",
+      "spdxElementId": "SPDXRef-Container"
+    },
+    {
       "relatedSpdxElement": "SPDXRef-libharfbuzz0b-deb",
+      "relationshipType": "CONTAINS",
+      "spdxElementId": "SPDXRef-Container"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-libk5crypto3-deb",
+      "relationshipType": "CONTAINS",
+      "spdxElementId": "SPDXRef-Container"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-libkrb5-3-deb",
+      "relationshipType": "CONTAINS",
+      "spdxElementId": "SPDXRef-Container"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-libkrb5support0-deb",
       "relationshipType": "CONTAINS",
       "spdxElementId": "SPDXRef-Container"
     },
@@ -1348,6 +1553,11 @@
     },
     {
       "relatedSpdxElement": "SPDXRef-libpython3.13-stdlib-deb",
+      "relationshipType": "CONTAINS",
+      "spdxElementId": "SPDXRef-Container"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-libssh2-1t64-deb",
       "relationshipType": "CONTAINS",
       "spdxElementId": "SPDXRef-Container"
     },

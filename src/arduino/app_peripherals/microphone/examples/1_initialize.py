@@ -4,17 +4,19 @@
 
 # EXAMPLE_NAME = "Initialize microphone"
 # EXAMPLE_REQUIRES = "Requires a connected microphone"
+import numpy as np
+
 from arduino.app_peripherals.microphone import Microphone, ALSAMicrophone, WebSocketMicrophone
 
 
 default = Microphone()  # Uses default microphone
 
 custom = Microphone(
-    device=0,  # The first ALSA device will be selected
+    device=Microphone.USB_MIC_1,  # The first USB microphone will be selected
     sample_rate=Microphone.RATE_48K,
     channels=Microphone.CHANNELS_STEREO,
-    format=Microphone.FORMAT_S24_LE,
-    chunk_size=Microphone.CHUNK_LOW_LATENCY,
+    format=np.int32,
+    buffer_size=Microphone.BUFFER_SIZE_REALTIME,
 )
 # Note: Microphone's constructor arguments other than those in its signature
 # must be provided in keyword format to forward them correctly to the

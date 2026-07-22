@@ -15,7 +15,7 @@ mic.start()
 # Capture audio for 5 seconds
 start_time = time.time()
 while time.time() - start_time < 5:
-    audio: np.ndarray = mic.capture()
+    audio: np.ndarray | None = mic.capture()
     # You can process the audio here if needed, e.g save it
 
 # Indefinitely produce audio chunks, call stop() or break to end

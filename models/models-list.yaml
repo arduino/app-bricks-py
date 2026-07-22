@@ -1503,6 +1503,9 @@ models:
       source: "qualcomm-ai-hub"  
       source-model-id: "mediapipe_hand_gesture"
       source-model-url: "https://aihub.qualcomm.com/models/mediapipe_hand_gesture"
+    deployment:
+      handler: "ai-hub-handler"
+      pre-loaded: true
  - whisper-small-quantized:
     name : "Whisper Small (quantized)"
     description: >-
@@ -1803,10 +1806,10 @@ models:
     bricks:
       - id: "arduino:image_classification"
         model_configuration:
-          "EI_IMAGE_CLASSIFICATION_MODEL": "models/edge-impulse/efficientnet-b4-qnn/efficientnet-b4-qnn.eim"
+          "EI_CLASSIFICATION_MODEL": "/var/lib/arduino-app-cli/models/edge-impulse/efficientnet-b4-qnn/efficientnet-b4-qnn.eim"
       - id: "arduino:video_image_classification"
         model_configuration:
-          "EI_V_IMAGE_CLASSIFICATION_MODEL": "models/edge-impulse/efficientnet-b4-qnn/efficientnet-b4-qnn.eim"
+          "EI_V_CLASSIFICATION_MODEL": "/var/lib/arduino-app-cli/models/edge-impulse/efficientnet-b4-qnn/efficientnet-b4-qnn.eim"
  - "llamacpp:gemma-4-E2B_q4_0-it":
     name : "Gemma 4 E2B"
     description: >-
@@ -1821,7 +1824,7 @@ models:
       platforms:
         - ventunoq:
             variables:
-              model_url: "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf/blob/main/gemma-4-E2B_q4_0-it.gguf"
+              model_url: "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf/blob/1894d1fc0a19d86697abd40483f5983c867df03f/gemma-4-E2B_q4_0-it.gguf"
               models_repository: "llamacpp"
               model_directory: "google/gemma-4-E2B-it-qat-q4_0-gguf"
     metadata:
@@ -1845,7 +1848,7 @@ models:
       platforms:
         - ventunoq:
             variables:
-              model_url: "https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf/blob/main/gemma-4-E4B_q4_0-it.gguf"
+              model_url: "https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf/blob/99ef3d9bbf819591699ffa9084c4be12db1fbe6c/gemma-4-E4B_q4_0-it.gguf"
               models_repository: "llamacpp"
               model_directory: "google/gemma-4-E4B-it-qat-q4_0-gguf"
     metadata:
@@ -1865,12 +1868,12 @@ models:
        platforms:
          - ventunoq:
              variables:
-               model_url: "https://huggingface.co/unsloth/gemma-3-1b-it-GGUF/blob/main/gemma-3-1b-it-Q4_0.gguf"
+               model_url: "https://huggingface.co/unsloth/gemma-3-1b-it-GGUF/blob/f0b45be0aac41bd6a100a4b5734cad5f67255bfb/gemma-3-1b-it-Q4_0.gguf"
                models_repository: "llamacpp"
                model_directory: "unsloth/gemma-3-1b-it-GGUF"
          - unoq:
              variables:
-               model_url: "https://huggingface.co/unsloth/gemma-3-1b-it-GGUF/blob/main/gemma-3-1b-it-Q4_0.gguf"
+               model_url: "https://huggingface.co/unsloth/gemma-3-1b-it-GGUF/blob/f0b45be0aac41bd6a100a4b5734cad5f67255bfb/gemma-3-1b-it-Q4_0.gguf"
                models_repository: "llamacpp"
                model_directory: "unsloth/gemma-3-1b-it-GGUF"
      metadata:
@@ -1892,12 +1895,12 @@ models:
        platforms:
          - ventunoq:
              variables:
-               model_url: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/blob/main/Qwen3.5-0.8B-Q4_0.gguf"
+               model_url: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/blob/f4db1b3e9c54a9f3dc2576c93b26446d95ec36d0/Qwen3.5-0.8B-Q4_0.gguf"
                models_repository: "llamacpp"
                model_directory: "unsloth/Qwen3.5-0.8B-GGUF"
          - unoq:
              variables:
-               model_url: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/blob/main/Qwen3.5-0.8B-Q4_0.gguf"
+               model_url: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/blob/f4db1b3e9c54a9f3dc2576c93b26446d95ec36d0/Qwen3.5-0.8B-Q4_0.gguf"
                models_repository: "llamacpp"
                model_directory: "unsloth/Qwen3.5-0.8B-GGUF"
      metadata:
@@ -2013,7 +2016,7 @@ models:
     bricks:
       - id: "arduino:object_detection"
         model_configuration:
-          "EI_OBJ_DETECTION_MODEL": "models/edge-impulse/yolo-x-small-qnn/yolo-x-small-qnn.eim"
+          "EI_OBJ_DETECTION_MODEL": "/var/lib/arduino-app-cli/models/edge-impulse/yolo-x-small-qnn/yolo-x-small-qnn.eim"
       - id: "arduino:video_object_detection"
         model_configuration:
-          "EI_V_OBJ_DETECTION_MODEL": "models/edge-impulse/yolo-x-small-qnn/yolo-x-small-qnn.eim"
+          "EI_V_OBJ_DETECTION_MODEL": "/var/lib/arduino-app-cli/models/edge-impulse/yolo-x-small-qnn/yolo-x-small-qnn.eim"

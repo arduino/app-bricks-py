@@ -57,6 +57,8 @@ RUN set -ex; \
     apt-get upgrade -y; \
     # Install dependencies for running ALSA
     apt-get install -y --no-install-recommends --no-install-suggests alsa-utils libportaudiocpp0; \
+    # Install dependencies for pipewire
+    apt-get install -y --no-install-recommends --no-install-suggests pipewire-alsa; \
     # Install dependencies for running OpenCV with Gstreamer backend
     apt-get install -y --no-install-recommends --no-install-suggests libavcodec61 libavformat61 libavutil59 libswscale8; \
     apt-get install -y --no-install-recommends --no-install-suggests libjpeg62-turbo libtiff6 libpng16-16t64 libwebp7 libwebpdecoder3 libwebpdemux2 libwebpmux3 libopenblas0 liblapacke; \

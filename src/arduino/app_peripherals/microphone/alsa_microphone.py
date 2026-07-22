@@ -5,14 +5,14 @@
 import os
 import re
 import time
-from pathlib import Path
 from typing import Optional
 
 import alsaaudio
 import numpy as np
 
 from .base_microphone import BaseMicrophone, FormatPlain, FormatPacked
-from .errors import MicrophoneOpenError, MicrophoneReadError, MicrophoneConfigError
+from .errors import MicrophoneError, MicrophoneOpenError, MicrophoneReadError, MicrophoneConfigError
+from .utils import has_media_carrier, list_audio_sources, nth_plugged_microphone, node_description
 from arduino.app_utils.logger import Logger
 
 logger = Logger("ALSAMicrophone")
@@ -29,7 +29,7 @@ class ALSAMicrophone(BaseMicrophone):
 
     def __init__(
         self,
-        device: str | int = Microphone.USB_MIC_1,
+        device: str | int = 0,
         sample_rate: int = Microphone.RATE_16K,
         channels: int = Microphone.CHANNELS_MONO,
         format: FormatPlain | FormatPacked = np.int16,
@@ -42,11 +42,12 @@ class ALSAMicrophone(BaseMicrophone):
 
         Args:
             device (Union[str, int]): ALSA device identifier. Can be:
-                - int | str: device ordinal index (e.g., 0, 1, "0", "1", ...)
+                - int | str: ordinal index of the n-th plugged microphone, USB first then
+                    built-in (jack) under media carrier (e.g., 0, 1, "0", "1", ...)
                 - str: device name (e.g., "plughw:CARD=MyCard,DEV=0", "hw:0,0", "CARD=MyCard,DEV=0")
                 - str: device file path (e.g., "/dev/snd/by-id/usb-My-Device-00")
-                - str: Microphone.USB_MIC_x macros
-                Default: Microphone.USB_MIC_1 - First USB microphone.
+                - str: Microphone.USB_MIC_x / Microphone.JACK_MIC_x macros
+                Default: 0.
             sample_rate (int): Sample rate in Hz (default: 16000).
             channels (int): Number of audio channels (default: 1).
             format (FormatPlain | FormatPacked): Audio format as one of:
@@ -77,8 +78,10 @@ class ALSAMicrophone(BaseMicrophone):
         try:
             self.device_stable_ref = self._resolve_stable_ref(device)  # e.g., "plughw:CARD=MyMic,DEV=0"
             self.name = self._resolve_name(self.device_stable_ref)  # Override parent name with a human-readable name
+        except MicrophoneError:
+            raise  # Already a typed config/open error
         except Exception as e:
-            raise MicrophoneConfigError(f"Failed to look for microphone device '{device}': {e}")
+            raise MicrophoneOpenError(f"Failed to look for microphone device '{device}': {e}")
         self.shared = shared
         self.logger = logger
 
@@ -87,145 +90,197 @@ class ALSAMicrophone(BaseMicrophone):
         self._last_reconnection_attempt = 0.0  # Used for auto-reconnection when _read_audio is called
 
     @property
-    def alsa_format_idx(self) -> int:
+    def _alsa_format_idx(self) -> int:
         """Get the ALSA format index corresponding to the current numpy dtype format."""
-        return getattr(alsaaudio, "PCM_FORMAT_" + self.alsa_format_name)
+        return getattr(alsaaudio, "PCM_FORMAT_" + self._alsa_format_name)
 
     @property
-    def alsa_format_name(self) -> str:
+    def _alsa_format_name(self) -> str:
         """Get the ALSA format string corresponding to the current numpy dtype format."""
         return _dtype_to_alsa_format_name(self.format, self.format_is_packed)
 
     @staticmethod
     def list_devices() -> list:
         """
-        Return a list of available ALSA microphones (plughw only).
+        Return all the available microphones as full ALSA device paths.
 
         Returns:
-            list: List of speakers in ALSA device name format.
+            list: Available microphones as full ALSA device paths.
         """
-        devices = []
-        try:
-            for dev in alsaaudio.pcms(alsaaudio.PCM_CAPTURE):
-                if dev.startswith("plughw:CARD="):
-                    devices.append(dev.removeprefix("plughw:"))
-        except Exception as e:
-            logger.error(f"Error retrieving ALSA devices: {e}")
-            return []
-
-        return devices
+        return ALSAMicrophone.list_usb_devices() + ALSAMicrophone.list_jack_devices()
 
     @staticmethod
     def list_usb_devices() -> list:
         """
-        Return a list of available USB ALSA microphones (plughw only).
+        Return only the available USB microphones as full ALSA device paths.
 
         Returns:
-            list: List of USB microphones in ALSA device name format.
+            list: Available USB microphones as full ALSA device paths.
         """
         usb_devices = []
         try:
+            usb_sources, _ = list_audio_sources()
             cards = alsaaudio.cards()
-            card_indexes = alsaaudio.card_indexes()
-            card_map = {name: idx for idx, name in zip(card_indexes, cards)}
-            for card_name, card_index in card_map.items():
-                device_path = Path(f"/sys/class/sound/card{card_index}/device")
-                if not device_path.exists():
+            for source in usb_sources:
+                props = source.get("info", {}).get("props", {})
+                card_idx = props.get("api.alsa.pcm.card")
+                if card_idx is None or card_idx >= len(cards):
                     continue
-
-                try:
-                    real_path = device_path.resolve()
-                    if "usb" in str(real_path).lower():
-                        # Find all hw and plughw devices for this card
-                        for dev in alsaaudio.pcms(alsaaudio.PCM_CAPTURE):
-                            if dev.startswith("plughw:CARD=") and f"CARD={card_name}," in dev:
-                                usb_devices.append(dev.removeprefix("plughw:"))
-
-                except Exception as e:
-                    logger.error(f"Error parsing card info for {card_name}: {e}")
-
+                device_idx = _alsa_path_device_index(props.get("api.alsa.path", ""))
+                usb_devices.append(f"plughw:CARD={cards[card_idx]},DEV={device_idx}")
         except Exception as e:
             logger.error(f"Error listing USB microphones: {e}")
 
         return usb_devices
 
+    @staticmethod
+    def list_jack_devices() -> list:
+        """
+        Return only the supported built-in (jack) microphones as full ALSA device
+        paths.
+
+        Note: built-in microphones can't be enumerated like USB ones, so always
+        ensure that they are plugged in and available before using them.
+
+        Returns:
+            list: Supported built-in (jack) microphones as full ALSA device paths.
+        """
+        if not has_media_carrier():
+            return []
+
+        try:
+            _, builtin_sources = list_audio_sources()
+        except Exception as e:
+            logger.error(f"Error listing jack microphones: {e}")
+            return []
+
+        return [f"pipewire:NODE={builtin_sources[0]['id']}"] if builtin_sources else []
+
     def _resolve_stable_ref(self, identifier: str | int) -> str:
         """
-        Resolve a microphone identifier to coordinates that are stable across
-        reconnections and that don't depend on current running system state.
+        Resolve a microphone identifier to a full ALSA device path that is stable
+        across reconnections and that doesn't depend on current running system state.
+
+        The returned path is always one of:
+            - "plughw:CARD=<name>,DEV=<n>" for card-based devices (USB and explicit),
+            - "hw:<c>,<d>,<s>" / "plughw:<c>,<d>,<s>" for fully-specified raw devices,
+            - "pipewire:NODE=<id>" for built-in (jack) devices.
 
         Args:
             identifier: Microphone identifier
 
         Returns:
-            str: stable reference to the microphone in ALSA device name format
+            str: stable reference to the microphone as a full ALSA device path
 
         Raises:
-            RuntimeError: If microphone can't be resolved
+            MicrophoneConfigError: If the identifier is of an unsupported type or format
+            MicrophoneOpenError: If the requested microphone is not available
         """
-        all_devices = self.list_devices()
-        if not all_devices:
-            raise RuntimeError("No ALSA microphones found")
+        if not isinstance(identifier, (str, int)):
+            raise MicrophoneConfigError(f"Invalid device type: {type(identifier)}")
 
-        resolved_device = ""
-        if isinstance(identifier, str) and not identifier.isdigit():
-            raw_hw_match = re.match(r"^(plughw:|hw:)[^,]+,\d+,\d+$", identifier)
-            if raw_hw_match:
+        # An ordinal index selects the n-th plugged microphone
+        if isinstance(identifier, int) or (isinstance(identifier, str) and identifier.isdigit()):
+            identifier = nth_plugged_microphone(int(identifier))  # -> "usb:X" / "jack:X"
+
+        # Complete device strings are opened as given
+        if isinstance(identifier, str):
+            if identifier.startswith("pipewire:"):
+                return identifier
+            if identifier.startswith("jack:"):
+                return self._resolve_jack_ref(identifier)
+            if identifier.startswith("usb:"):
+                return self._resolve_usb_ref(identifier)
+            if re.match(r"^(plughw:|hw:)[^,]+,\d+,\d+$", identifier):
                 return identifier
 
-            if identifier.startswith("usb:"):
-                # Resolve USB microphone by ordinal index
-                usb_index = int(identifier.removeprefix("usb:")) - 1
-                usb_devices = self.list_usb_devices()
-                if not usb_devices:
-                    raise RuntimeError("No USB microphones found")
-                if usb_index < 0 or usb_index >= len(usb_devices):
-                    raise RuntimeError(f"USB microphone index {usb_index + 1} out of range. Available: 1-{len(usb_devices)}")
-                resolved_device = usb_devices[usb_index]
+        # Everything else resolves to a card-based device
+        capture_devices = self._alsa_capture_devices()
+        if not capture_devices:
+            raise MicrophoneOpenError("No ALSA microphones found")
 
-            elif identifier.startswith("/dev/snd/by-id"):
-                # Already a stable link, resolve audio device following the symlink
-                if not os.path.exists(identifier):
-                    raise RuntimeError(f"{identifier} does not exist")
-                device_path = os.path.realpath(identifier)  # Resolves to /dev/snd/controlCX
-                base_name = os.path.basename(device_path)
-                if base_name.startswith("controlC") and base_name[8:].isdigit():
-                    card_idx = int(base_name[8:])
-                    card_name = self._resolve_name(card_idx)
-                    resolved_device = f"CARD={card_name},DEV=0"
+        resolved = self._resolve_card_ref(identifier)
+        if resolved not in capture_devices:
+            raise MicrophoneOpenError(f"Resolved device '{resolved}' not found among available ALSA devices")
+        return resolved
 
-            else:
-                numeric_format_match = re.match(r"^(.+:)?(\d+),(\d+)$", identifier)
-                if numeric_format_match:
-                    try:
-                        card_idx = int(numeric_format_match.group(2))
-                        device_index = int(numeric_format_match.group(3))
-                        card_name = self._resolve_name(card_idx)
-                        resolved_device = f"CARD={card_name},DEV={device_index}"
-                    except Exception as e:
-                        raise RuntimeError(f"Failed to resolve card name for hw/plughw identifier {identifier}: {e}")
+    def _resolve_card_ref(self, identifier: str) -> str:
+        """
+        Resolve an explicit card-based identifier to a full ALSA device path.
 
-                card_name_format_match = re.match(r"^(.+:)?CARD=([^,]+),DEV=(\d+)$", identifier)
-                if card_name_format_match:
-                    if card_name_format_match.group(1) is not None:
-                        # Remove prefix like "plughw:" or "hw:"
-                        resolved_device = identifier.split(":", 1)[-1]
-                    else:
-                        # Already in stable name format
-                        resolved_device = identifier
+        Args:
+            identifier: Card-based identifier to resolve. Supported inputs:
+                - str: "/dev/snd/by-id/..." symlink.
+                - str: "hw:<card>,<dev>" (or with "plughw:" prefix).
+                - str: "CARD=<name>,DEV=<n>" (with or without a prefix).
 
-        elif isinstance(identifier, int) or (isinstance(identifier, str) and identifier.isdigit()):
-            # Treat as /dev/controlC<card_idx>, resolve audio device by card number
-            card_idx = int(identifier)
-            card_name = self._resolve_name(card_idx)
-            resolved_device = f"CARD={card_name},DEV=0"
+        Returns:
+            str: stable reference in "plughw:CARD=<name>,DEV=<n>" format
 
-        if resolved_device:
-            if resolved_device not in all_devices:
-                raise RuntimeError(f"Resolved device '{resolved_device}' not found among available ALSA devices")
-            return resolved_device
+        Raises:
+            MicrophoneConfigError: If the identifier format is unsupported
+            MicrophoneOpenError: If the referenced device is not available
+        """
+        if identifier.startswith("/dev/snd/by-id"):
+            # Already a stable link, resolve audio device following the symlink
+            if not os.path.exists(identifier):
+                raise MicrophoneOpenError(f"{identifier} does not exist")
+            device_path = os.path.realpath(identifier)  # Resolves to /dev/snd/controlCX
+            base_name = os.path.basename(device_path)
+            if base_name.startswith("controlC") and base_name[8:].isdigit():
+                return f"plughw:CARD={self._resolve_name(int(base_name[8:]))},DEV=0"
 
-        raise RuntimeError(f"Unsupported device identifier: {identifier}")
+        card_name_match = re.match(r"^(.+:)?CARD=([^,]+),DEV=(\d+)$", identifier)
+        if card_name_match:
+            return f"plughw:CARD={card_name_match.group(2)},DEV={int(card_name_match.group(3))}"
+
+        numeric_match = re.match(r"^(.+:)?(\d+),(\d+)$", identifier)
+        if numeric_match:
+            return f"plughw:CARD={self._resolve_name(int(numeric_match.group(2)))},DEV={int(numeric_match.group(3))}"
+
+        raise MicrophoneConfigError(f"Unsupported device identifier: {identifier}")
+
+    def _resolve_usb_ref(self, identifier: str) -> str:
+        """
+        Resolve a "usb:X" shorthand to a full ALSA device path.
+
+        Args:
+            identifier: USB microphone shorthand (e.g. "usb:1")
+
+        Returns:
+            str: stable reference in "plughw:CARD=<name>,DEV=<n>" format
+
+        Raises:
+            MicrophoneOpenError: If no matching USB microphone is available
+        """
+        usb_index = int(identifier.removeprefix("usb:")) - 1
+        usb_devices = self.list_usb_devices()
+        if not usb_devices:
+            raise MicrophoneOpenError("No USB microphones found")
+        if usb_index < 0 or usb_index >= len(usb_devices):
+            raise MicrophoneOpenError(f"USB microphone index {usb_index + 1} out of range. Available: 1-{len(usb_devices)}")
+        return usb_devices[usb_index]
+
+    def _resolve_jack_ref(self, identifier: str) -> str:
+        """
+        Resolve a "jack:X" shorthand to a PipeWire node stable reference.
+
+        Args:
+            identifier: jack microphone shorthand (e.g. "jack:1")
+
+        Returns:
+            str: stable reference in full ALSA format ("pipewire:NODE=<id>")
+
+        Raises:
+            MicrophoneOpenError: If no matching jack microphone is available
+        """
+        jack_index = int(identifier.removeprefix("jack:")) - 1
+        jack_devices = self.list_jack_devices()
+        if not jack_devices:
+            raise MicrophoneOpenError("No jack microphones found")
+        if jack_index < 0 or jack_index >= len(jack_devices):
+            raise MicrophoneOpenError(f"Jack microphone index {jack_index + 1} out of range. Available: 1-{len(jack_devices)}")
+        return jack_devices[jack_index]
 
     def _resolve_runtime_ref(self, device_stable_ref: str) -> tuple[int, int]:
         """
@@ -273,9 +328,15 @@ class ALSAMicrophone(BaseMicrophone):
             str: compact, human readable name
 
         Raises:
-            RuntimeError: If device name can't be resolved
+            MicrophoneOpenError: If the device name can't be resolved
         """
         if isinstance(device_ref, str):
+            if device_ref.startswith("pipewire:"):
+                node_match = re.match(r"^pipewire:NODE=(\d+)$", device_ref)
+                if node_match:
+                    return node_description(int(node_match.group(1))) or device_ref
+                return device_ref
+
             match = re.match(r"^(?:plughw:|hw:)([^,]+),\d+,\d+$", device_ref)
             if match:
                 return match.group(1)
@@ -286,34 +347,53 @@ class ALSAMicrophone(BaseMicrophone):
                     card_name = match.group(2)
                     return card_name
                 except Exception as e:
-                    raise RuntimeError(f"Failed to resolve microphone name from stable ref {device_ref}: {e}")
+                    raise MicrophoneOpenError(f"Failed to resolve microphone name from stable ref {device_ref}: {e}")
 
         elif isinstance(device_ref, int):
             # This is a card index like 0, 1, ...
             cards = alsaaudio.cards()
             if device_ref < 0 or device_ref >= len(cards):
-                raise RuntimeError(f"Card index {device_ref} out of range. Available: 0-{len(cards) - 1}")
+                raise MicrophoneOpenError(f"Card index {device_ref} out of range. Available: 0-{len(cards) - 1}")
             card_name = cards[device_ref]
             return card_name
 
-        raise RuntimeError(f"Invalid device reference for name resolution: {device_ref} (type:{type(device_ref)})")
+        raise MicrophoneOpenError(f"Invalid device reference for name resolution: {device_ref} (type:{type(device_ref)})")
+
+    def _alsa_capture_devices(self) -> list:
+        """
+        Return a list of available ALSA microphones (plughw only) as full
+        "plughw:CARD=<name>,DEV=<n>" device paths. This is a cheap lookup used
+        to detect USB hot-unplug.
+
+        Returns:
+            list: ALSA capture devices as full ALSA device paths.
+        """
+        devices = []
+        try:
+            for dev in alsaaudio.pcms(alsaaudio.PCM_CAPTURE):
+                if dev.startswith("plughw:CARD="):
+                    devices.append(dev)
+        except Exception as e:
+            logger.error(f"Error retrieving ALSA devices: {e}")
+            return []
+
+        return devices
 
     def _open_microphone(self) -> None:
         """Open the ALSA PCM device."""
         logger.debug(f"Opening PCM device: {self.device_stable_ref}")
 
         try:
-            raw_hw_match = re.match(r"^(plughw:|hw:)[^,]+,\d+,\d+$", self.device_stable_ref)
+            direct_match = re.match(r"^pipewire:|^(plughw:|hw:)[^,]+,\d+,\d+$", self.device_stable_ref)
 
-            if self.shared:
+            if direct_match:
+                device = self.device_stable_ref
+            elif self.shared:
                 card_idx, device_idx = self._resolve_runtime_ref(self.device_stable_ref)
                 device = f"plug_card_{card_idx}_dev_{device_idx}_mic"
             else:
-                if raw_hw_match:
-                    device = self.device_stable_ref
-                else:
-                    card_idx, device_idx = self._resolve_runtime_ref(self.device_stable_ref)
-                    device = f"plughw:CARD={card_idx},DEV={device_idx}"
+                card_idx, device_idx = self._resolve_runtime_ref(self.device_stable_ref)
+                device = f"plughw:CARD={card_idx},DEV={device_idx}"
 
             self._pcm = alsaaudio.PCM(
                 type=alsaaudio.PCM_CAPTURE,
@@ -321,7 +401,7 @@ class ALSAMicrophone(BaseMicrophone):
                 device=device,
                 rate=self.sample_rate,
                 channels=self.channels,
-                format=self.alsa_format_idx,
+                format=self._alsa_format_idx,
                 periodsize=self.buffer_size,
             )
 
@@ -338,8 +418,8 @@ class ALSAMicrophone(BaseMicrophone):
                 self.channels = actual_channels
 
             actual_format_name = info["format_name"]
-            if self.alsa_format_idx != info["format"]:
-                logger.warning(f"Requested format {self.alsa_format_name} not supported by {device}. Using {actual_format_name} instead.")
+            if self._alsa_format_idx != info["format"]:
+                logger.warning(f"Requested format {self._alsa_format_name} not supported by {device}. Using {actual_format_name} instead.")
                 self.format = _alsa_format_name_to_dtype(actual_format_name)
 
             actual_buffer_size = info["period_size"]
@@ -416,13 +496,27 @@ class ALSAMicrophone(BaseMicrophone):
             return None
 
     def _is_device_disconnected(self) -> bool:
-        """Check if the device is still in the USB devices list."""
+        """Check if the device is still in the available devices list."""
+        if self.device_stable_ref.startswith("pipewire:"):
+            # Built-in devices are always present
+            return False
+
         try:
-            usb_devices = self.list_devices()
-            return self.device_stable_ref not in usb_devices
+            devices = self._alsa_capture_devices()
+            return self.device_stable_ref not in devices
         except Exception as e:
             logger.debug(f"Error checking device status: {e}")
             return True  # Assume disconnected if we can't check
+
+
+def _alsa_path_device_index(alsa_path: str) -> int:
+    """
+    Parse the device index from a PipeWire "api.alsa.path" property.
+
+    Examples: "hw:0" -> 0, "hw:SomeCard,2" -> 2.
+    """
+    match = re.match(r"^hw:[^,]+,(\d+)$", alsa_path)
+    return int(match.group(1)) if match else 0
 
 
 def _dtype_to_alsa_format_name(dtype: np.dtype, is_packed: bool = False) -> str:

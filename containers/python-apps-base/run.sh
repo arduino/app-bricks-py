@@ -4,6 +4,8 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+OPENCV_DEBUG=0
+
 if [ -z "$PYTHONUNBUFFERED" ]; then
   export PYTHONUNBUFFERED=1
 fi
@@ -17,6 +19,13 @@ PYTHON_LIBS_DIR="$BASE_DIR/python-libraries"
 INSTALLED_REQUIREMENTS_FILE="$CACHE_DIR/installed_requirements.txt"
 
 export UV_CACHE_DIR="$CACHE_DIR/uv"
+
+if [ "${OPENCV_DEBUG:-0}" = "1" ]; then
+  export OPENCV_LOG_LEVEL="${OPENCV_LOG_LEVEL:-DEBUG}"
+  export OPENCV_VIDEOIO_DEBUG="${OPENCV_VIDEOIO_DEBUG:-1}"
+  export GST_DEBUG="${GST_DEBUG:-3}"
+  export GST_DEBUG_NO_COLOR="${GST_DEBUG_NO_COLOR:-1}"
+fi
 
 mkdir -p "$CACHE_DIR"
 if [ ! -d "$CACHE_DIR/.venv" ]; then

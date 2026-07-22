@@ -5,7 +5,6 @@ description: |
   Brick is designed to work with pre-trained models provided by framework or with custom object detection models trained on Edge Impulse platform. 
 category: video
 requires_container: true
-requires_model: true
 ai_frameworks_compatibility:
   - edgeimpulse
 model_by_boards:

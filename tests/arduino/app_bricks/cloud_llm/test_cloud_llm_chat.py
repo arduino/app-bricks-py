@@ -96,8 +96,8 @@ def make_llm(fake_model, monkeypatch):
     [
         (CloudModel.ANTHROPIC_CLAUDE, "langchain_anthropic.ChatAnthropic", str(CloudModel.ANTHROPIC_CLAUDE)),
         ("anthropic:claude-x", "langchain_anthropic.ChatAnthropic", "claude-x"),
-        (CloudModel.OPENAI_GPT, "langchain_openai.ChatOpenAI", str(CloudModel.OPENAI_GPT)),
-        ("openai:gpt-x", "langchain_openai.ChatOpenAI", "gpt-x"),
+        (CloudModel.OPENAI_GPT, "arduino.app_bricks.cloud_llm.reasoning.ChatOpenAIReasoning", str(CloudModel.OPENAI_GPT)),
+        ("openai:gpt-x", "arduino.app_bricks.cloud_llm.reasoning.ChatOpenAIReasoning", "gpt-x"),
         (CloudModel.GOOGLE_GEMINI, "langchain_google_genai.ChatGoogleGenerativeAI", str(CloudModel.GOOGLE_GEMINI)),
         ("google:gemini-x", "langchain_google_genai.ChatGoogleGenerativeAI", "gemini-x"),
     ],
@@ -127,7 +127,7 @@ def test_model_factory_defaults_to_openai_when_base_url_and_no_prefix(monkeypatc
         captured["kwargs"] = kwargs
         return "OAI"
 
-    monkeypatch.setattr("langchain_openai.ChatOpenAI", fake_ctor)
+    monkeypatch.setattr("arduino.app_bricks.cloud_llm.reasoning.ChatOpenAIReasoning", fake_ctor)
 
     result = model_factory("local-model", base_url="http://localhost:1234", api_key="k")
 
@@ -142,6 +142,115 @@ def test_model_factory_rejects_unknown_model_without_prefix():
 
 
 # --- construction ------------------------------------------------------------
+
+
+def test_init_omits_temperature_when_none(monkeypatch):
+    # The default temperature is None and must NOT be forwarded to the provider, so
+    # each SDK uses its own default (and models that deprecated/rejected the field are
+    # not sent it, e.g. Anthropic Sonnet 5+ or Gemini which rejects a None temperature).
+    captured = {}
+
+    def fake_factory(model, **kwargs):
+        captured.update(kwargs)
+        return FakeChatModel()
+
+    monkeypatch.setattr(cloud_llm_module, "model_factory", fake_factory)
+
+    CloudLLM(api_key="k", model="openai:gpt-x")
+
+    assert "temperature" not in captured
+
+
+def test_init_forwards_temperature_when_set(monkeypatch):
+    captured = {}
+
+    def fake_factory(model, **kwargs):
+        captured.update(kwargs)
+        return FakeChatModel()
+
+    monkeypatch.setattr(cloud_llm_module, "model_factory", fake_factory)
+
+    CloudLLM(api_key="k", model="openai:gpt-x", temperature=0.2)
+
+    assert captured["temperature"] == 0.2
+
+
+def test_init_does_not_forward_reasoning_effort_to_base_model(monkeypatch):
+    # reasoning_effort must NEVER be forwarded to the base model: on OpenAI it is sent as a
+    # raw chat-completions field and breaks tool calling. It is stored as a default instead.
+    captured = {}
+
+    def fake_factory(model, **kwargs):
+        captured.update(kwargs)
+        return FakeChatModel()
+
+    monkeypatch.setattr(cloud_llm_module, "model_factory", fake_factory)
+
+    llm = CloudLLM(api_key="k", model="openai:gpt-x", reasoning_effort="medium")
+
+    assert "reasoning_effort" not in captured
+    assert llm._reasoning_effort_default == "medium"
+
+
+def test_chat_uses_constructor_reasoning_effort_default(make_llm, monkeypatch):
+    # A default effort configured on the brick routes chat() through the reasoning model.
+    llm = make_llm(reasoning_effort="low")
+    used = {}
+    reasoning_fake = FakeChatModel().queue_invoke(AIMessage(content="ok"))
+
+    def fake_get(effort):
+        used["effort"] = effort
+        return reasoning_fake
+
+    monkeypatch.setattr(llm, "_get_reasoning_model", fake_get)
+
+    assert llm.chat("hi") == "ok"
+    assert used["effort"] == "low"
+
+
+def test_chat_per_call_reasoning_effort_overrides_default(make_llm, monkeypatch):
+    llm = make_llm(reasoning_effort="low")
+    used = {}
+    reasoning_fake = FakeChatModel().queue_invoke(AIMessage(content="ok"))
+
+    def fake_get(effort):
+        used["effort"] = effort
+        return reasoning_fake
+
+    monkeypatch.setattr(llm, "_get_reasoning_model", fake_get)
+
+    llm.chat("hi", reasoning_effort="high")
+
+    assert used["effort"] == "high"
+
+
+def test_chat_without_reasoning_effort_default_uses_base_model(make_llm, fake_model):
+    # No default and no per-call effort -> base model is used and nothing is added.
+    llm = make_llm()
+    fake_model.queue_invoke(AIMessage(content="base"))
+
+    assert llm.chat("hi") == "base"
+
+
+def test_init_openai_with_tools_uses_responses_api():
+    # OpenAI reasoning models reject function tools + reasoning on /v1/chat/completions;
+    # binding tools must switch the client to the Responses API so tool calling works.
+    @tool
+    def get_weather(location: str) -> str:
+        """Get the weather."""
+        return "sunny"
+
+    llm = CloudLLM(model="openai:gpt-5.6-terra", api_key="x", tools=[get_weather])
+
+    inner = getattr(llm._model, "bound", llm._model)
+    assert inner._use_responses_api({}) is True
+
+
+def test_init_openai_without_tools_uses_chat_completions():
+    # Without tools the base model is left on the default (chat completions) path.
+    llm = CloudLLM(model="openai:gpt-5.6-terra", api_key="x")
+
+    assert llm._model._use_responses_api({}) is False
 
 
 @pytest.mark.parametrize("model", ["openai:gpt-x", "anthropic:claude-x", "google:gemini-x"])

@@ -5,14 +5,13 @@
 from langchain_core.language_models import BaseChatModel
 
 from arduino.app_bricks.cloud_llm import CloudLLM, CloudModelProvider
-from arduino.app_bricks.cloud_llm.cloud_llm import DEFAULT_MEMORY
+from arduino.app_bricks.cloud_llm.cloud_llm import DEFAULT_MEMORY, ToolLike
 from arduino.app_bricks.cloud_llm.memory import MessagePersistence
 from arduino.app_utils import Logger, brick
 from arduino.app_internal.core import resolve_address, get_brick_config, get_brick_configured_model
 
-import os
 from openai import OpenAI, APIError, BadRequestError
-from typing import Iterator, List, Optional, Any, Callable, Union
+from typing import Iterator, List, Optional, Union, Sequence
 
 logger = Logger("LargeLanguageModel")
 
@@ -30,24 +29,20 @@ class LargeLanguageModel(CloudLLM):
 
     GENIE_MODEL = "genie"
     LLAMACPP_MODEL = "llamacpp"
-    OLLAMA_MODEL = "ollama"
 
     def __init__(
         self,
-        api_key: str = os.getenv("LOCAL_LLM_API_KEY", "api_key"),
         system_prompt: str = "",
         temperature: Optional[float] = 0.7,
         max_tokens: int = 512,
         timeout: Optional[int] = None,
-        tools: List[Callable[..., Any]] = None,
-        model: str = None,
+        tools: Optional[Sequence[ToolLike]] = None,
+        model: Optional[str] = None,
         **kwargs,
     ):
         """Initializes the LargeLanguageModel brick with the specified provider and configuration.
 
         Args:
-            api_key (str): The API access key for the target LLM service. Defaults to the
-                'LOCAL_LLM_API_KEY' environment variable.
             model (str): The specific model name or identifier to use (e.g., "genie:qwen3-4b").
                 If not provided, model will be determined from app configuration or default brick configuration.
             system_prompt (str): A system-level instruction that defines the AI's persona
@@ -59,7 +54,8 @@ class LargeLanguageModel(CloudLLM):
                 Defaults to 512.
             timeout (Optional[int]): The maximum duration in seconds to wait for a response before
                 timing out. Defaults to None.
-            tools (List[Callable[..., Any]]): A list of callable tool functions to register. Defaults to None.
+            tools (Sequence[ToolLike]): BaseTool objects (from @tool or MCPClient.get_tools()) or plain
+                callables (auto-wrapped into tools). Defaults to None.
             **kwargs: Additional arguments passed to the model constructor
 
         Raises:
@@ -108,7 +104,7 @@ class LargeLanguageModel(CloudLLM):
             base_url = f"http://{host}:{port}/v1"
 
         local_model_name = model
-        if model.startswith(self.GENIE_MODEL) or model.startswith(self.LLAMACPP_MODEL) or model.startswith(self.OLLAMA_MODEL):
+        if model.startswith(self.GENIE_MODEL) or model.startswith(self.LLAMACPP_MODEL):
             model = model.split(":")[-1]  # Extract model name without provider prefix
 
         logger.info(f"Initializing brick with model '{model}' at {base_url}")
@@ -118,7 +114,7 @@ class LargeLanguageModel(CloudLLM):
         model = f"{CloudModelProvider.OPENAI}:{model}"
 
         super().__init__(
-            api_key=api_key,
+            api_key="api_key",
             model=model,
             system_prompt=system_prompt,
             temperature=temperature,

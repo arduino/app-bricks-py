@@ -63,7 +63,6 @@ class ArduinoBrick:
         self.readme_file: Optional[str] = self.get_readme_file()
         self.require_container: bool = self.compose_file is not None
         self.model_name: str = model_name
-        self.require_model: bool = model_name != ""
         self.category = category
         self.mount_devices_into_container: bool = mount_devices_into_container
         self.requires_display: Optional[str] = requires_display
@@ -81,12 +80,11 @@ class ArduinoBrick:
             "name": self.name,
             "description": self.brick_description,
             "require_container": self.require_container,
-            "require_model": self.require_model,
             "mount_devices_into_container": self.mount_devices_into_container,
             "ports": self.ports,
             "category": self.category,
         }
-        if self.require_model:
+        if self.model_name and self.model_name != "":
             out_dict["model_name"] = self.model_name
         if self.requires_display:
             out_dict["requires_display"] = self.requires_display
@@ -211,6 +209,11 @@ def find_config_yaml(root_path: str) -> tuple[List[ArduinoBrick], List[ArduinoSe
 
     for item in root_path_obj.iterdir():
         if item.is_dir():
+            if item.name == examples_folder_name:
+                # Example apps may embed app-local bricks (bricks/<id>/brick_config.yaml
+                # with a namespace-less id): they belong to the example only and must
+                # not be indexed as global bricks.
+                continue
             config_file: pathlib.Path = item / config_file_name
             service_config_file: pathlib.Path = item / service_config_file_name
             editable_module: pathlib.Path = item / editable_module_config
