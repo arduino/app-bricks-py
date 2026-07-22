@@ -156,37 +156,21 @@ class DaemonClient:
             logger.info("ArduinoCloud: '%s' delivered again after %d consecutive failure(s)", name, self._put_fail_count)
             self._put_fail_count = 0
 
-    def fetch_initial(self, name: str, stop_event: threading.Event):
-        """Open the events stream, read its first (sync) frame synchronously and
-        return it as ``(event_name, payload_dict)``.
-
-        The daemon always sends a first frame immediately on connect
-        (``thing_unavailable`` / ``lastvalue`` / ``lastvalue_missing``), so this
-        blocks only for the round-trip. Returns None if the stream closes before
-        any frame arrives. Raises on a connection/transport error (the caller is
-        expected to log it and rely on the streaming thread to retry).
-        """
-        url = f"{self._base}/v1/variables/{quote(name, safe='')}/events"
-        session = self._new_session()
-        try:
-            resp = session.get(url, stream=True, timeout=(_SSE_CONNECT_TIMEOUT, _SSE_CONNECT_TIMEOUT))
-            resp.raise_for_status()
-            for evt in self._iter_events(resp, stop_event):
-                return evt
-            return None
-        finally:
-            try:
-                session.close()
-            except Exception:  # noqa: BLE001
-                pass
-
-    def stream_events(self, name: str, handler, stop_event: threading.Event) -> None:
+    def stream_events(self, name: str, handler, stop_event: threading.Event, ready: threading.Event = None) -> None:
         """Stream SSE events for a variable until stop_event is set.
 
-        ``handler(event_name, payload_dict)`` is called for each event. The
-        stream is reconnected with capped exponential backoff on any error; the
-        daemon replays a sync frame on every (re)connection, so no state is lost
-        across reconnects.
+        ``handler(event_name, payload_dict)`` is called for each event. The first
+        frame the daemon sends on every (re)connection is a sync frame
+        (``thing_unavailable`` / ``lastvalue`` / ``lastvalue_missing``); the rest
+        are live ``update`` events. The stream is reconnected with capped
+        exponential backoff on any error, so the sync frame is replayed and no
+        state is lost across reconnects.
+
+        If ``ready`` is given it is set as soon as the first frame has been
+        delivered to the handler. ``register`` waits on it for a synchronous
+        initial seed and then lets this same connection carry on with live
+        updates — so the last value is delivered on a single stream, not
+        re-announced by a second connection.
         """
         url = f"{self._base}/v1/variables/{quote(name, safe='')}/events"
         session = self._new_session()
@@ -201,6 +185,8 @@ class DaemonClient:
                     backoff = 0.5  # reset after a successful connect
                     for event, payload in self._iter_events(resp, stop_event):
                         handler(event, payload)
+                        if ready is not None and not ready.is_set():
+                            ready.set()  # first frame delivered → unblock register's seed
             except Exception as e:  # noqa: BLE001 - reconnect on any transport error
                 if stop_event.is_set():
                     break

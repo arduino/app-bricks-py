@@ -29,6 +29,13 @@ logger = Logger("ArduinoCloud")
 # ARDUINO_CLOUD_CONNECTOR_SOCKET.
 _DEFAULT_DAEMON_SOCKET = "/run/arduino-cloud-connector/daemon.sock"
 _LOOP_INTERVAL = 0.1  # seconds between callback-poll passes
+# How long register() waits for a leaf's first (sync) frame before returning
+# without a synchronous seed (the stream keeps retrying and seeds on connect).
+_SEED_TIMEOUT = 10.0
+# How often the loop re-checks that every registered leaf still has a live SSE
+# listener and re-subscribes any that is missing (e.g. a subscribe that failed
+# at register time, or a listener thread that died).
+_SUB_CHECK_INTERVAL = 5.0
 
 # Sentinel for the deprecated constructor arguments: lets us tell "not passed"
 # apart from a real value (so the common ArduinoCloud() call stays silent).
@@ -90,7 +97,10 @@ class ArduinoCloud:
         self._records: dict[str, CloudObject] = {}
         self._lock = threading.RLock()
         self._stop = threading.Event()
-        self._listeners: list[threading.Thread] = []
+        # One SSE listener thread per scalar leaf, keyed by leaf name, so the
+        # loop can verify each leaf is still subscribed and re-subscribe if not.
+        self._listeners: dict[str, threading.Thread] = {}
+        self._last_sub_check = 0.0
         self._started = False
 
     @staticmethod
@@ -102,11 +112,15 @@ class ArduinoCloud:
 
     # ── lifecycle (managed by the App framework) ────────────────────────────────
     def start(self):
-        """Start the brick: subscribe to every already-registered variable."""
+        """Mark the brick started and ensure every registered leaf is subscribed.
+
+        Subscription and the synchronous initial seed already happen in
+        ``register``; this is a safety net that (re)subscribes anything not yet
+        listening — e.g. a leaf whose register-time subscribe failed.
+        """
         with self._lock:
             self._started = True
-            for record in self._records.values():
-                self._subscribe(record)
+        self._ensure_subscribed()
 
     def loop(self):
         """Sample device→cloud callbacks (on_run / on_read) and publish per policy.
@@ -119,6 +133,11 @@ class ArduinoCloud:
         delivered here, once per pass.
         """
         now = time.time()
+        # Periodically make sure every registered leaf still has a live SSE
+        # listener (recovers a failed subscribe or a dead listener thread).
+        if now - self._last_sub_check >= _SUB_CHECK_INTERVAL:
+            self._last_sub_check = now
+            self._ensure_subscribed()
         with self._lock:
             records = list(self._records.values())
         for record in records:
@@ -155,10 +174,12 @@ class ArduinoCloud:
 
     def stop(self):
         """Stop the brick and tear down the SSE listener threads."""
-        logger.info("ArduinoCloud: stopping — closing sessions and joining %d listener(s)", len(self._listeners))
+        with self._lock:
+            threads = list(self._listeners.values())
+        logger.info("ArduinoCloud: stopping — closing sessions and joining %d listener(s)", len(threads))
         self._stop.set()
         self._client.close()
-        for thread in self._listeners:
+        for thread in threads:
             thread.join(timeout=2)
 
     @staticmethod
@@ -193,20 +214,17 @@ class ArduinoCloud:
         with self._lock:
             self._records[aiotobj.name] = aiotobj
 
-        # Synchronous initial sync: contact the daemon for each leaf's first
-        # frame and resolve the local value per sync policy before returning, so
-        # the variable holds the right value as soon as register() returns.
+        # Open one SSE stream per leaf and wait for its first (sync) frame, so the
+        # value is resolved per policy before register() returns; that same stream
+        # then stays open for live updates — no second connection re-announces the
+        # last value. If the daemon is momentarily unreachable the wait times out
+        # and the stream seeds later, on connect.
         for leaf in aiotobj.leaves():
-            self._seed_leaf(leaf)
+            self._subscribe_leaf(leaf, wait_ready=True)
 
         # A complex object's leaves seed as separate frames; deliver a single
-        # on_write with the fully-seeded object (fired here, before subscribing
-        # the live streams) rather than one callback per sub-property.
+        # on_write with the fully-seeded object rather than one per sub-property.
         self._fire_pending_on_write(aiotobj)
-
-        with self._lock:
-            if self._started:
-                self._subscribe(aiotobj)
 
     def get(self, name: str, default: Any = None) -> Any:
         """Return a registered variable's value, or default if unset/unknown."""
@@ -218,38 +236,61 @@ class ArduinoCloud:
         return default if value is None else value
 
     # ── SSE subscription ───────────────────────────────────────────────────────
-    def _seed_leaf(self, leaf: CloudObject):
-        """Synchronously fetch and apply a leaf's first (sync) frame from the
-        daemon, resolving the local value per policy before register() returns.
+    def _subscribe_leaf(self, leaf: CloudObject, wait_ready: bool = False):
+        """Start (once) the single SSE listener thread for a scalar leaf.
 
-        Logs and returns on a connection error; the streaming thread (started in
-        start()) will retry and re-seed on connect, so a momentarily unreachable
-        daemon does not lose the variable.
+        The listener's first frame seeds the leaf (resolving the local value per
+        policy); the same open stream then carries live updates — so the last
+        value is delivered on one connection, never re-announced by a second one.
+
+        With ``wait_ready`` (register), block until that first frame has been
+        applied, but no longer than ``_SEED_TIMEOUT`` so a momentarily
+        unreachable daemon does not hang register — the stream keeps retrying and
+        seeds when it connects.
+
+        No-op if the leaf already has a live listener (so the periodic
+        re-subscription check does not start duplicates).
         """
-        handler = self._make_handler(leaf)
-        try:
-            evt = self._client.fetch_initial(leaf.name, self._stop)
-        except Exception as e:  # noqa: BLE001 - any transport error is non-fatal here
-            logger.error(
-                "ArduinoCloud: initial sync for '%s' failed: %s — keeping local value; will retry when the stream connects",
-                leaf.name,
-                e,
-            )
-            return
-        if evt is not None:
-            handler(*evt)
+        with self._lock:
+            existing = self._listeners.get(leaf.name)
+            if existing is not None and existing.is_alive():
+                return
 
-    def _subscribe(self, record: CloudObject):
-        """Start one SSE listener thread per scalar leaf of the record."""
-        for leaf in record.leaves():
-            thread = threading.Thread(
-                target=self._client.stream_events,
-                args=(leaf.name, self._make_handler(leaf), self._stop),
-                name=f"ArduinoCloud.sse.{leaf.name}",
-                daemon=True,
+        ready = threading.Event() if wait_ready else None
+        thread = threading.Thread(
+            target=self._client.stream_events,
+            args=(leaf.name, self._make_handler(leaf), self._stop, ready),
+            name=f"ArduinoCloud.sse.{leaf.name}",
+            daemon=True,
+        )
+        thread.start()
+        with self._lock:
+            self._listeners[leaf.name] = thread
+
+        if ready is not None and not ready.wait(timeout=_SEED_TIMEOUT):
+            logger.warning(
+                "ArduinoCloud: '%s' not seeded within %.0fs (daemon slow/unreachable); keeping local value — the stream will seed when it connects",
+                leaf.name,
+                _SEED_TIMEOUT,
             )
-            thread.start()
-            self._listeners.append(thread)
+
+    def _ensure_subscribed(self):
+        """(Re)subscribe any registered leaf whose SSE listener is missing or dead.
+
+        Normally every leaf is subscribed in ``register``; this recovers a leaf
+        whose subscribe failed (e.g. a transient error at register time) or whose
+        listener thread died, so no property is ever left without a live stream.
+        """
+        with self._lock:
+            records = list(self._records.values())
+        for record in records:
+            for leaf in record.leaves():
+                with self._lock:
+                    thread = self._listeners.get(leaf.name)
+                    alive = thread is not None and thread.is_alive()
+                if not alive:
+                    logger.warning("ArduinoCloud: '%s' has no live SSE listener; re-subscribing", leaf.name)
+                    self._subscribe_leaf(leaf)
 
     def _make_handler(self, leaf: CloudObject):
         """Build the SSE event handler for a leaf.

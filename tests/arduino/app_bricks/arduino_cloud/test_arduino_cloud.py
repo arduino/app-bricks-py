@@ -36,29 +36,32 @@ _HAS_AF_UNIX = os.name == "posix" and hasattr(socket, "AF_UNIX") and hasattr(soc
 
 
 class FakeDaemonClient:
-    """In-memory stand-in for DaemonClient: records PUTs, serves a configurable
-    initial sync frame (fetch_initial) and lets tests feed live SSE events."""
+    """In-memory stand-in for DaemonClient: records PUTs, and (like the real
+    single-stream client) delivers a configurable first sync frame on connect
+    via stream_events, then lets tests feed live SSE events."""
 
     def __init__(self, base_url=None):
         self.puts = []
         self.handlers = {}
         self._ready = threading.Event()
-        # Per-name first frame returned by fetch_initial; the default is
+        # Per-name first frame the stream delivers on connect; the default is
         # "thing assigned, no cloud value" (steady) so local values are pushed.
         self.initial = {}
         self.default_initial = (EVENT_LASTVALUE_MISSING, {})
 
-    def fetch_initial(self, name, stop_event):
-        event, payload = self.initial.get(name, self.default_initial)
-        frame = {"name": name}
-        frame.update(payload)
-        return (event, frame)
-
     def put_value(self, name, value):
         self.puts.append((name, value))
 
-    def stream_events(self, name, handler, stop_event):
+    def stream_events(self, name, handler, stop_event, ready=None):
         self.handlers[name] = handler
+        # Mirror the daemon: deliver the first (sync) frame on connect, then
+        # signal ready so register()'s synchronous seed unblocks, then block.
+        event, payload = self.initial.get(name, self.default_initial)
+        frame = {"name": name}
+        frame.update(payload)
+        handler(event, frame)
+        if ready is not None:
+            ready.set()
         self._ready.set()
         stop_event.wait()  # mimic the blocking listener thread
 
@@ -303,6 +306,62 @@ def test_complex_live_multi_attribute_update_coalesced(fake_client):
         cloud.stop()
 
 
+def test_all_leaves_subscribed_after_register(fake_client):
+    # register() opens one SSE listener per scalar leaf; every leaf of a complex
+    # object must have a live listener once register returns.
+    cloud, client = _make_cloud(fake_client)
+    try:
+        cloud.register(ColoredLight("clight", swi=True))
+        with cloud._lock:
+            listeners = dict(cloud._listeners)
+        assert {"clight:swi", "clight:hue", "clight:sat", "clight:bri"} <= set(listeners)
+        assert all(t.is_alive() for t in listeners.values())
+    finally:
+        cloud.stop()
+
+
+def test_ensure_subscribed_resubscribes_missing_leaf(fake_client):
+    # If a leaf ends up without a live listener (a subscribe that failed at
+    # register time, or a dead thread), the periodic check re-subscribes it so no
+    # property is left unsubscribed.
+    cloud, client = _make_cloud(fake_client)
+    cloud.register("led", value=False)
+    cloud.start()
+    try:
+        with cloud._lock:
+            del cloud._listeners["led"]  # simulate a lost subscription
+        cloud._ensure_subscribed()
+        with cloud._lock:
+            assert "led" in cloud._listeners and cloud._listeners["led"].is_alive()
+    finally:
+        cloud.stop()
+
+
+def test_single_stream_no_reseed_bounce(fake_client):
+    # One stream per leaf: the last value is delivered once (seed), then only
+    # live updates. A device write is not bounced back by a re-announced last
+    # value, and no spurious on_write fires. Regression for the startup bounce.
+    cloud, client = _make_cloud(fake_client)
+    calls = []
+    for key, val in (("swi", False), ("hue", 302), ("sat", 82), ("bri", 99)):
+        client.initial[f"clight:{key}"] = (
+            EVENT_LASTVALUE,
+            {"value": val, "timestamp": "2026-07-21T10:00:00Z", "last_value": True},
+        )
+    cloud.register(ColoredLight("clight", on_write=lambda c, v: calls.append((v.swi, v.hue, v.sat, v.bri))))
+    cloud.start()
+    try:
+        assert calls == [(False, 302, 82, 99)]  # single coalesced seed on_write
+        cloud.clight.hue = 84
+        cloud.clight.sat = 6
+        cloud.clight.bri = 17
+        cloud.loop()
+        assert (cloud.clight.hue, cloud.clight.sat, cloud.clight.bri) == (84, 6, 17)  # no bounce
+        assert calls == [(False, 302, 82, 99)]  # no spurious on_write
+    finally:
+        cloud.stop()
+
+
 def test_get_returns_default_for_unknown(fake_client):
     cloud, _ = _make_cloud(fake_client)
     assert cloud.get("missing", default=42) == 42
@@ -454,9 +513,10 @@ def test_device_wins_sends_local_on_sync(fake_client):
         cloud.stop()
 
 
-def test_fetch_initial_and_put_409_over_tcp():
-    """Exercise the real DaemonClient: fetch_initial parses the first frame and
-    a 409 PUT (thing_unavailable) is handled without raising."""
+def test_stream_first_frame_and_put_409_over_tcp():
+    """Exercise the real DaemonClient: stream_events delivers the first sync
+    frame on connect and signals ``ready``, and a 409 PUT (thing_unavailable) is
+    handled without raising."""
     frame = {"name": "temp", "value": 21.5, "timestamp": "2026-07-07T10:00:00Z", "last_value": True}
 
     class Handler(http.server.BaseHTTPRequestHandler):
@@ -483,14 +543,26 @@ def test_fetch_initial_and_put_409_over_tcp():
     port = server.server_address[1]
 
     client = DaemonClient(f"http://127.0.0.1:{port}")
+    events = []
+    stop = threading.Event()
+    ready = threading.Event()
+
+    def handler(event, payload):
+        events.append((event, payload))
+        stop.set()  # stop after the first frame
+
+    t = threading.Thread(target=client.stream_events, args=("temp", handler, stop, ready), daemon=True)
+    t.start()
     try:
-        event, payload = client.fetch_initial("temp", threading.Event())
-        assert event == EVENT_LASTVALUE
-        assert payload["value"] == 21.5
+        assert ready.wait(timeout=5), "stream_events did not deliver the first frame"
+        assert events and events[0][0] == EVENT_LASTVALUE
+        assert events[0][1]["value"] == 21.5
         # A 409 PUT must not raise (it is logged and swallowed).
         client.put_value("temp", 5)
     finally:
+        stop.set()
         client.close()
+        t.join(timeout=2)
         server.shutdown()
         server.server_close()
 
