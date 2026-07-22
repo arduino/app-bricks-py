@@ -86,6 +86,7 @@ class TextToSpeech:
 
         self._active_session_lock = threading.Lock()
         self._cancelled: threading.Event | None = None
+        self._speak_thread: threading.Thread | None = None
 
     def start(self):
         """Start the TextToSpeech brick by initializing the speaker."""
@@ -95,6 +96,12 @@ class TextToSpeech:
     def stop(self):
         """Stop the TextToSpeech brick by stopping the speaker."""
         self.cancel()
+        speak_thread = self._speak_thread
+        if speak_thread is not None and speak_thread.is_alive():
+            speak_thread.join(timeout=5.0)
+            if speak_thread.is_alive():
+                logger.warning("Background speech session did not terminate in time")
+        self._speak_thread = None
         self._speaker.stop()
 
     def cancel(self):
@@ -107,17 +114,25 @@ class TextToSpeech:
         cancelled.set()
         self._cancel_remote_tts()
 
-    def speak(self, text: str):
+    def is_speaking(self) -> bool:
+        """Return True if this instance has an active speech or synthesis session."""
+        return self._active_session_lock.locked()
+
+    def speak(self, text: str, block: bool = True):
         """
         Synthesize speech from text and play it through the provided speaker.
         Long text is split into 1024-character chunks before synthesis.
 
         Args:
             text (str): The text to be synthesized into speech.
+            block (bool): If True, block until playback completes. If False, return
+                immediately and play in a background thread; synthesis or playback
+                errors are logged instead of raised. Use ``cancel()`` to interrupt
+                and ``is_speaking()`` to poll for completion.
 
         Raises:
             TTSBusyError: If this instance already has an active speech session.
-            RuntimeError: If the synthesis fails.
+            RuntimeError: If the synthesis fails (only when ``block`` is True).
         """
         chunks = self._chunk_text(text)
         if not chunks:
@@ -128,6 +143,22 @@ class TextToSpeech:
 
         cancelled = threading.Event()
         self._cancelled = cancelled
+
+        if block:
+            self._run_speech_session(chunks, cancelled)
+            return
+
+        def speak_in_background():
+            try:
+                self._run_speech_session(chunks, cancelled)
+            except Exception as e:
+                logger.error(f"Background speech session failed: {e}")
+
+        self._speak_thread = threading.Thread(target=speak_in_background, daemon=True, name="TTS-Speak")
+        self._speak_thread.start()
+
+    def _run_speech_session(self, chunks: list[str], cancelled: threading.Event) -> None:
+        """Run a speech session over pre-chunked text. The session lock must already be held."""
         try:
             for chunk in chunks:
                 if cancelled.is_set():

@@ -9,6 +9,7 @@ The `TextToSpeech` brick provides a completely offline text-to-speech (TTS) solu
 - **Audio Output Formats:** Directly output synthesized speech to a Speaker instance or to WAV, PCM, or PCM audio.
 - **Long Text Support:** `speak()` splits long input into sentence-aware chunks of up to 1024 characters before synthesis.
 - **Streaming Playback:** `speak()` plays PCM chunks as they arrive from the local TTS service instead of waiting for the full rendered response.
+- **Blocking or Background Playback:** `speak()` blocks until playback completes by default; pass `block=False` to return immediately and play in a background thread. In background mode synthesis errors are logged instead of raised, and you can use `is_speaking()` to poll for completion.
 - **Cancellable Playback:** Use `cancel()` to stop the current spoken sequence and notify the local TTS service without stopping the TTS brick or speaker.
 - **Single-Session Semantics:** Each instance handles one speech session at a time. For concurrent speech, create multiple `TextToSpeech` instances.
 
@@ -36,6 +37,28 @@ tts = TextToSpeech()
 def runner():
     tts.speak("Hello world, Arduino!")
     time.sleep(5)  # Wait for the speech to finish before ending the app
+
+
+App.run(user_loop=runner)
+```
+
+### Non-blocking playback
+
+This example shows how to start speech playback in the background and keep working while it plays.
+
+```python
+from arduino.app_bricks.tts import TextToSpeech
+from arduino.app_utils import App
+import time
+
+
+tts = TextToSpeech()
+
+
+def runner():
+    tts.speak("This sentence plays in the background.", block=False)
+    while tts.is_speaking():
+        time.sleep(0.1)  # Do other work while the speech plays
 
 
 App.run(user_loop=runner)
