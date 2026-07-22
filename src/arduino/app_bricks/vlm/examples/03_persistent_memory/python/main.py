@@ -21,8 +21,10 @@ vlm = VisionLanguageModel(
 def ask_prompt():
     images = ["/app/assets/chair.jpg"]
     prompt = "Describe the image and its details"
+    print("FIRST ANSWER:")
     print(vlm.chat(prompt, images=images))
 
+    print("SECOND ANSWER (based on memory, no image provided):")
     prompt_2 = "Now summarize the image description and its details"
     print(vlm.chat(prompt_2))
 
