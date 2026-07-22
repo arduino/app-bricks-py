@@ -720,7 +720,9 @@ class CloudLLM:
         from langchain_google_genai.chat_models import _is_gemini_3_or_later
 
         if _is_gemini_3_or_later(getattr(model, "model", "") or ""):
-            return {"thinking_level": level.value}
+            # ``reasoning_effort`` is the field name (serialization alias ``thinking_level``);
+            # ``model_copy(update=...)`` requires the field name, not the alias.
+            return {"reasoning_effort": level.value}
         return {"thinking_budget": EFFORT_TO_BUDGET[level]}
 
     def _anthropic_effort_update(self, model: BaseChatModel, reasoning_effort: Union["ReasoningEffort", str, int, None]) -> dict:
@@ -814,7 +816,10 @@ class CloudLLM:
         if self._anthropic_requires_adaptive(model_name):
             thinking["display"] = "summarized"
             if level is not None:
-                update["effort"] = ANTHROPIC_EFFORT_MAP[level]
+                # ``reasoning_effort`` is the field name (serialization alias ``effort``,
+                # sent as ``output_config.effort``); ``model_copy(update=...)`` requires the
+                # field name, not the alias.
+                update["reasoning_effort"] = ANTHROPIC_EFFORT_MAP[level]
         return update
 
     @staticmethod
