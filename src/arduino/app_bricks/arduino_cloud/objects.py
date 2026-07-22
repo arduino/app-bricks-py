@@ -28,6 +28,10 @@ carries a sync policy mirroring the C++ ``ArduinoIoTCloud`` semantics:
 import time
 from typing import Any
 
+from arduino.app_utils import Logger
+
+logger = Logger("ArduinoCloud")
+
 # ── Sync policies ───────────────────────────────────────────────────────────
 # String constants (JSON/log friendly) mirroring the C++ ArduinoIoTCloud enum.
 DEVICE_WINS = "DEVICE_WINS"
@@ -122,6 +126,7 @@ class CloudObject:
         self._last_push_ts = 0.0  # epoch secs of the last device→cloud publish
         self._has_pushed_once = False  # first publish is immediate (C++ !_has_been_updated_once)
         self._has_local_source = False  # the device has ever set this value (timed republish guard)
+        self._last_warn_ts = 0.0  # epoch secs of the last "updated locally, not synced" warning
 
         if keys:
             # Complex object: build a scalar sub-object per key. Sub-object
@@ -234,10 +239,16 @@ class CloudObject:
 
         Called from the brick loop for each scalar leaf. ``interval`` is the
         owner object's policy selector (see ``ON_CHANGE`` / ``interval`` in the
-        module docstring). No-op while no thing is assigned (pending) or when
-        there is no value to send.
+        module docstring). No-op when there is no value to send.
+
+        While no thing is assigned (``_pending``) the value cannot reach the
+        cloud, so instead of publishing it warns on each local change (see
+        ``_warn_local_only``) that the variable is being updated only locally.
         """
-        if self._push is None or self._pending or self._value is None:
+        if self._push is None or self._value is None:
+            return
+        if self._pending:
+            self._warn_local_only(now)
             return
         if interval is None or interval < 0:
             # ON_CHANGE: publish a changed value, throttled to _MIN_PUBLISH_INTERVAL
@@ -250,6 +261,26 @@ class CloudObject:
             # so a purely cloud-controlled variable is never echoed back.
             if self._has_local_source and (now - self._last_push_ts) >= interval:
                 self._do_push(now)
+
+    def _warn_local_only(self, now: float):
+        """Warn that a local change cannot be synced because no thing is assigned.
+
+        Called from ``pump`` while ``_pending``. Fires only on a real local change
+        (``_dirty``), throttled to ``_MIN_PUBLISH_INTERVAL`` like the ON_CHANGE
+        publish so a fast ``on_read`` source does not flood the log — the same
+        cadence as the HTTP 409 warning the daemon returns once a thing is
+        assigned but the cloud is not steady. The dirty flag is then cleared: the
+        current value is re-asserted to the cloud at sync time (``apply_cloud`` /
+        ``apply_missing``) regardless of it, so nothing is lost.
+        """
+        if self._dirty and (now - self._last_warn_ts) >= _MIN_PUBLISH_INTERVAL:
+            logger.warning(
+                "ArduinoCloud: '%s' updated locally but NOT synced to the cloud — no thing "
+                "assigned yet (cloud not steady); value kept local until a thing is available",
+                self.name,
+            )
+            self._last_warn_ts = now
+            self._dirty = False
 
     def _coerce(self, value: Any) -> Any:
         # Workaround for the cloud int/float ambiguity: keep a float variable a

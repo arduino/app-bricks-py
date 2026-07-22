@@ -217,6 +217,127 @@ def test_timed_republishes_latest_value_every_interval():
     assert pushes == [("v", 10), ("v", 12), ("v", 12)]
 
 
+def test_pending_warns_on_local_change_not_synced(monkeypatch):
+    # While no thing is assigned (_pending, i.e. a thing_unavailable frame was
+    # received), a local change is NOT published; instead a "updated locally,
+    # not synced" warning is emitted — once per change, throttled to
+    # _MIN_PUBLISH_INTERVAL (the same cadence as the daemon's 409 warning once a
+    # thing is assigned but the cloud is not steady).
+    class _RecordingLogger:
+        def __init__(self):
+            self.warnings = []
+
+        def warning(self, msg, *args):
+            self.warnings.append(msg % args if args else msg)
+
+    rec = _RecordingLogger()
+    monkeypatch.setattr(ac_objects, "logger", rec)
+
+    pushes = []
+    obj = CloudObject("v", value=None, interval=ON_CHANGE)
+    obj.bind(lambda n, val: pushes.append((n, val)))
+    obj._pending = True  # a thing_unavailable frame was received
+    t = 1000.0
+
+    # A local change while pending → no push, exactly one warning.
+    obj.set_local(1)
+    obj.pump(t, ON_CHANGE)
+    assert pushes == []
+    assert len(rec.warnings) == 1
+    assert "not synced" in rec.warnings[0].lower()
+
+    # No new change → no further warning, however long we wait.
+    obj.pump(t + 0.1, ON_CHANGE)
+    assert len(rec.warnings) == 1
+
+    # A new change within the throttle window is held back (still one warning).
+    obj.set_local(2)
+    obj.pump(t + 0.2, ON_CHANGE)
+    assert len(rec.warnings) == 1
+
+    # Once the window elapses, the pending change warns again.
+    obj.pump(t + ac_objects._MIN_PUBLISH_INTERVAL, ON_CHANGE)
+    assert len(rec.warnings) == 2
+
+    # Nothing was ever pushed to the cloud while pending.
+    assert pushes == []
+
+
+# ── Policy resolution after a pending warning cleared _dirty ──────────────────
+# _warn_local_only clears _dirty after warning about a local-only change; these
+# verify the sync-time policy still resolves correctly off _value / _local_ts
+# (which the warning preserves), so a value changed while pending is not lost.
+
+
+class _SilentLogger:
+    def warning(self, *args, **kwargs):
+        pass
+
+
+def _change_while_pending(monkeypatch, obj, value):
+    """Simulate a local change while no thing is assigned, with the loop's pump
+    running — which warns and clears _dirty. Leaves the object non-pending, as
+    the sync frame that follows would."""
+    monkeypatch.setattr(ac_objects, "logger", _SilentLogger())
+    obj._pending = True
+    obj.set_local(value)
+    obj.pump(time.time(), ON_CHANGE)  # pending branch: warns, clears _dirty
+    assert obj._dirty is False  # precondition: the warning cleared dirty
+    obj._pending = False  # the sync frame clears pending before applying policy
+
+
+def test_pending_then_cloud_wins_adopts_cloud(monkeypatch):
+    pushes = []
+    obj = CloudObject("v", value=1, sync=CLOUD_WINS)
+    obj.bind(lambda n, val: pushes.append((n, val)))
+    _change_while_pending(monkeypatch, obj, 5)
+    # lastvalue: CLOUD_WINS adopts the differing cloud value; the pre-sync local
+    # write is discarded (correct for the policy) despite the cleared _dirty.
+    assert obj.apply_cloud(9, cloud_ts=time.time()) is True
+    assert obj.value == 9
+    assert pushes == []
+
+
+def test_pending_then_device_wins_pushes_local(monkeypatch):
+    pushes = []
+    obj = CloudObject("v", value=1, sync=DEVICE_WINS)
+    obj.bind(lambda n, val: pushes.append((n, val)))
+    _change_while_pending(monkeypatch, obj, 5)
+    # lastvalue: DEVICE_WINS keeps the local value and pushes it up despite the
+    # cleared _dirty (the push is driven by _value != cloud, not by _dirty).
+    assert obj.apply_cloud(9, cloud_ts=time.time()) is False
+    assert obj.value == 5
+    assert pushes == [("v", 5)]
+
+
+def test_pending_then_most_recent_wins_pushes_newer_local(monkeypatch):
+    pushes = []
+    obj = CloudObject("v", value=1, sync=MOST_RECENT_WINS)
+    obj.bind(lambda n, val: pushes.append((n, val)))
+    _change_while_pending(monkeypatch, obj, 5)  # stamped _local_ts = now
+    # An older cloud value loses to the newer local one, which is re-pushed:
+    # _local_ts is preserved by the warning, so MOST_RECENT still resolves.
+    assert obj.apply_cloud(9, cloud_ts=time.time() - 100) is False
+    assert obj.value == 5
+    assert pushes == [("v", 5)]
+    # A newer cloud value still wins (and is not re-pushed).
+    assert obj.apply_cloud(7, cloud_ts=time.time() + 100) is True
+    assert obj.value == 7
+    assert pushes == [("v", 5)]
+
+
+def test_pending_then_lastvalue_missing_pushes_local(monkeypatch):
+    pushes = []
+    obj = CloudObject("v", value=1, sync=CLOUD_WINS)  # even under CLOUD_WINS
+    obj.bind(lambda n, val: pushes.append((n, val)))
+    _change_while_pending(monkeypatch, obj, 5)
+    # lastvalue_missing: the cloud has no value, so the local value wins for every
+    # policy and is pushed — not lost despite the cleared _dirty.
+    obj.apply_missing()
+    assert obj.value == 5
+    assert pushes == [("v", 5)]
+
+
 # ── Brick behaviour with a fake daemon ───────────────────────────────────────
 
 
