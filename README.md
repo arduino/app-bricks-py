@@ -16,13 +16,11 @@ src/arduino/app_bricks/brick_name/
 ├── brick_config.yaml          # Required: Brick metadata
 ├── brick_compose.yaml         # Optional: Docker services
 ├── README.md                  # Required: Documentation
-├── examples/                  # Required: Usage examples
-│   ├── 1_basic_usage.py
-│   ├── 2_advanced_usage.py
-│   └── ...
 ├── [implementation_files.py]  # Brick logic
 └── [assets]                   # Static resources
 ```
+
+Brick usage examples live in the [app-bricks-examples](https://github.com/arduino/app-bricks-examples) repository, under the `bricks/` folder.
 
 ## Configuration variables
 
