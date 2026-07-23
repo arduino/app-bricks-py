@@ -3,7 +3,28 @@
 # SPDX-License-Identifier: MPL-2.0
 
 from .arduino_cloud import ArduinoCloud
-from arduino_iot_cloud import Location, Color, ColoredLight, DimmedLight, Schedule
+from .objects import (
+    Location,
+    Color,
+    ColoredLight,
+    DimmedLight,
+    Schedule,
+    DEVICE_WINS,
+    CLOUD_WINS,
+    MOST_RECENT_WINS,
+    ON_CHANGE,
+)
 
 
-__all__ = ["ArduinoCloud", "Location", "Color", "ColoredLight", "DimmedLight", "Schedule"]
+__all__ = [
+    "ArduinoCloud",
+    "Location",
+    "Color",
+    "ColoredLight",
+    "DimmedLight",
+    "Schedule",
+    "DEVICE_WINS",
+    "CLOUD_WINS",
+    "MOST_RECENT_WINS",
+    "ON_CHANGE",
+]

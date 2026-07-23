@@ -155,7 +155,10 @@ class ALSASpeaker(BaseSpeaker):
             logger.error(f"Error listing jack speakers: {e}")
             return []
 
-        return [f"pipewire:NODE={builtin_sinks[0]['id']}"] if builtin_sinks else []
+        if not builtin_sinks:
+            return []
+        node_name = builtin_sinks[0].get("info", {}).get("props", {}).get("node.name")
+        return [f"pipewire:NODE={node_name}"] if node_name else []
 
     def _resolve_stable_ref(self, identifier: str | int) -> str:
         """
@@ -165,7 +168,7 @@ class ALSASpeaker(BaseSpeaker):
         The returned path is always one of:
             - "plughw:CARD=<name>,DEV=<n>" for card-based devices (USB and explicit),
             - "hw:<c>,<d>,<s>" / "plughw:<c>,<d>,<s>" for fully-specified raw devices,
-            - "pipewire:NODE=<id>" for built-in (jack) devices.
+            - "pipewire:NODE=<node.name>" for built-in (jack) devices.
 
         Args:
             identifier: Speaker identifier
@@ -270,7 +273,7 @@ class ALSASpeaker(BaseSpeaker):
             identifier: jack speaker shorthand (e.g. "jack:1")
 
         Returns:
-            str: stable reference in full ALSA format ("pipewire:NODE=<id>")
+            str: stable reference in full ALSA format ("pipewire:NODE=<node.name>")
 
         Raises:
             SpeakerOpenError: If no matching jack speaker is available
@@ -333,9 +336,9 @@ class ALSASpeaker(BaseSpeaker):
         """
         if isinstance(device_ref, str):
             if device_ref.startswith("pipewire:"):
-                node_match = re.match(r"^pipewire:NODE=(\d+)$", device_ref)
+                node_match = re.match(r"^pipewire:NODE=(.+)$", device_ref)
                 if node_match:
-                    return node_description(int(node_match.group(1))) or device_ref
+                    return node_description(node_match.group(1)) or device_ref
                 return device_ref
 
             match = re.match(r"^(?:plughw:|hw:)([^,]+),\d+,\d+$", device_ref)

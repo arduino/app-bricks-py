@@ -1,0 +1,780 @@
+# SPDX-FileCopyrightText: Copyright (C) Arduino s.r.l. and/or its affiliated companies
+#
+# SPDX-License-Identifier: MPL-2.0
+
+import http.server
+import json
+import os
+import socket
+import socketserver
+import threading
+import time
+import warnings
+from urllib.parse import quote
+
+import pytest
+
+from arduino.app_bricks.arduino_cloud import (
+    ArduinoCloud,
+    ColoredLight,
+    DEVICE_WINS,
+    CLOUD_WINS,
+    MOST_RECENT_WINS,
+)
+from arduino.app_bricks.arduino_cloud import arduino_cloud as ac_module
+from arduino.app_bricks.arduino_cloud import objects as ac_objects
+from arduino.app_bricks.arduino_cloud.daemon_client import (
+    DaemonClient,
+    parse_timestamp,
+    EVENT_LASTVALUE,
+    EVENT_LASTVALUE_MISSING,
+    EVENT_THING_UNAVAILABLE,
+)
+from arduino.app_bricks.arduino_cloud.objects import CloudObject, ON_CHANGE
+
+_HAS_AF_UNIX = os.name == "posix" and hasattr(socket, "AF_UNIX") and hasattr(socketserver, "UnixStreamServer")
+
+
+class FakeDaemonClient:
+    """In-memory stand-in for DaemonClient: records PUTs, and (like the real
+    single-stream client) delivers a configurable first sync frame on connect
+    via stream_events, then lets tests feed live SSE events."""
+
+    def __init__(self, base_url=None):
+        self.puts = []
+        self.handlers = {}
+        self._ready = threading.Event()
+        # Per-name first frame the stream delivers on connect; the default is
+        # "thing assigned, no cloud value" (steady) so local values are pushed.
+        self.initial = {}
+        self.default_initial = (EVENT_LASTVALUE_MISSING, {})
+
+    def put_value(self, name, value):
+        self.puts.append((name, value))
+
+    def stream_events(self, name, handler, stop_event, ready=None):
+        self.handlers[name] = handler
+        # Mirror the daemon: deliver the first (sync) frame on connect, then
+        # signal ready so register()'s synchronous seed unblocks, then block.
+        event, payload = self.initial.get(name, self.default_initial)
+        frame = {"name": name}
+        frame.update(payload)
+        handler(event, frame)
+        if ready is not None:
+            ready.set()
+        self._ready.set()
+        stop_event.wait()  # mimic the blocking listener thread
+
+    def close(self):
+        pass
+
+    def feed(self, name, value, timestamp="2026-06-22T10:00:00Z", last_value=False):
+        self.feed_event(
+            name,
+            EVENT_LASTVALUE if last_value else "update",
+            {"name": name, "value": value, "timestamp": timestamp, "last_value": last_value},
+        )
+
+    def feed_event(self, name, event, payload=None):
+        # Wait for the listener thread to register its handler, then dispatch.
+        for _ in range(200):
+            if name in self.handlers:
+                break
+            time.sleep(0.005)
+        frame = {"name": name}
+        if payload:
+            frame.update(payload)
+        self.handlers[name](event, frame)
+
+
+@pytest.fixture
+def fake_client(monkeypatch):
+    created = {}
+
+    def factory(base_url):
+        client = FakeDaemonClient(base_url)
+        created["client"] = client
+        return client
+
+    monkeypatch.setattr(ac_module, "DaemonClient", factory)
+    return created
+
+
+def _make_cloud(fake_client):
+    cloud = ArduinoCloud()
+    return cloud, fake_client["client"]
+
+
+# ── parse_timestamp ─────────────────────────────────────────────────────────
+
+
+def test_parse_timestamp():
+    assert parse_timestamp("2026-06-22T10:00:00Z") == pytest.approx(parse_timestamp("2026-06-22T10:00:00+00:00"))
+    # Over-long (nanosecond) fractional part is tolerated.
+    assert parse_timestamp("2026-06-22T10:00:00.123456789Z") is not None
+    assert parse_timestamp(None) is None
+    assert parse_timestamp("not-a-date") is None
+
+
+# ── CloudObject sync policies (unit) ─────────────────────────────────────────
+
+
+def test_cloud_wins_always_applies():
+    obj = CloudObject("v", value=1, sync=CLOUD_WINS)
+    assert obj.apply_cloud(2, cloud_ts=100.0) is True
+    assert obj.value == 2
+    # Same value → no change reported.
+    assert obj.apply_cloud(2, cloud_ts=200.0) is False
+
+
+def test_most_recent_wins_respects_local_timestamp():
+    pushes = []
+    obj = CloudObject("v", value=1, sync=MOST_RECENT_WINS)
+    obj.bind(lambda n, val: pushes.append((n, val)))
+    obj.set_local(5)  # stamps a local timestamp = now; marks dirty (not sent yet)
+    assert pushes == []  # set_local no longer publishes directly
+    obj.pump(time.time(), ON_CHANGE)  # the loop's pump publishes the change
+    assert pushes == [("v", 5)]
+    # An older cloud value is ignored; the newer local value is re-pushed
+    # immediately (convergence) so the cloud converges to the device.
+    assert obj.apply_cloud(9, cloud_ts=time.time() - 100) is False
+    assert obj.value == 5
+    assert pushes == [("v", 5), ("v", 5)]
+    # A newer cloud value wins (and is not re-pushed).
+    assert obj.apply_cloud(9, cloud_ts=time.time() + 100) is True
+    assert obj.value == 9
+    assert pushes == [("v", 5), ("v", 5)]
+
+
+def test_device_wins_repushes_local_and_ignores_cloud():
+    pushes = []
+    obj = CloudObject("v", value=7, sync=DEVICE_WINS)
+    obj.bind(lambda n, val: pushes.append((n, val)))
+    # A diverging cloud value is ignored and the local value is re-pushed.
+    assert obj.apply_cloud(3, cloud_ts=time.time()) is False
+    assert obj.value == 7
+    assert pushes == [("v", 7)]
+    # A cloud value equal to local does not trigger a re-push (no echo loop).
+    pushes.clear()
+    assert obj.apply_cloud(7, cloud_ts=time.time()) is False
+    assert pushes == []
+
+
+def test_invalid_sync_policy_rejected():
+    with pytest.raises(ValueError):
+        CloudObject("v", sync="bogus")
+
+
+# ── Update policy: ON_CHANGE vs timed (pump) ─────────────────────────────────
+
+
+def test_on_change_publishes_changes_throttled():
+    # ON_CHANGE mirrors the C++ publishOnChange: publish a changed value, but no
+    # more than once per _MIN_PUBLISH_INTERVAL (first publish immediate).
+    pushes = []
+    obj = CloudObject("v", value=None, interval=ON_CHANGE)
+    obj.bind(lambda n, val: pushes.append((n, val)))
+    t = 1000.0
+    obj.set_local(1)
+    obj.pump(t, ON_CHANGE)  # first change → immediate
+    assert pushes == [("v", 1)]
+    # A change within the throttle window is held back.
+    obj.set_local(2)
+    obj.pump(t + 0.1, ON_CHANGE)
+    assert pushes == [("v", 1)]
+    # Once the window elapses, the latest value is published.
+    obj.pump(t + ac_objects._MIN_PUBLISH_INTERVAL, ON_CHANGE)
+    assert pushes == [("v", 1), ("v", 2)]
+    # No further change → no publish, however long we wait.
+    obj.pump(t + 100, ON_CHANGE)
+    assert pushes == [("v", 1), ("v", 2)]
+
+
+def test_timed_republishes_latest_value_every_interval():
+    # Timed mode mirrors the C++ publishEvery: republish the current value every
+    # `interval` seconds regardless of change; values changing within a window
+    # are not individually sent — only the latest at the tick.
+    pushes = []
+    obj = CloudObject("v", value=None, interval=5)
+    obj.bind(lambda n, val: pushes.append((n, val)))
+    t = 1000.0
+    # A purely cloud-controlled value (device never set it) is not republished.
+    obj.pump(t, 5)
+    assert pushes == []
+    obj.set_local(10)
+    obj.pump(t, 5)  # first tick → immediate
+    assert pushes == [("v", 10)]
+    # A change within the window is not sent yet.
+    obj.set_local(11)
+    obj.pump(t + 2, 5)
+    assert pushes == [("v", 10)]
+    # At the tick only the latest value is sent; the intermediate 11 is dropped.
+    obj.set_local(12)
+    obj.pump(t + 5, 5)
+    assert pushes == [("v", 10), ("v", 12)]
+    # Republishes the current value even without any change.
+    obj.pump(t + 10, 5)
+    assert pushes == [("v", 10), ("v", 12), ("v", 12)]
+
+
+def test_pending_warns_on_local_change_not_synced(monkeypatch):
+    # While no thing is assigned (_pending, i.e. a thing_unavailable frame was
+    # received), a local change is NOT published; instead a "updated locally,
+    # not synced" warning is emitted — once per change, throttled to
+    # _MIN_PUBLISH_INTERVAL (the same cadence as the daemon's 409 warning once a
+    # thing is assigned but the cloud is not steady).
+    class _RecordingLogger:
+        def __init__(self):
+            self.warnings = []
+
+        def warning(self, msg, *args):
+            self.warnings.append(msg % args if args else msg)
+
+    rec = _RecordingLogger()
+    monkeypatch.setattr(ac_objects, "logger", rec)
+
+    pushes = []
+    obj = CloudObject("v", value=None, interval=ON_CHANGE)
+    obj.bind(lambda n, val: pushes.append((n, val)))
+    obj._pending = True  # a thing_unavailable frame was received
+    t = 1000.0
+
+    # A local change while pending → no push, exactly one warning.
+    obj.set_local(1)
+    obj.pump(t, ON_CHANGE)
+    assert pushes == []
+    assert len(rec.warnings) == 1
+    assert "not synced" in rec.warnings[0].lower()
+
+    # No new change → no further warning, however long we wait.
+    obj.pump(t + 0.1, ON_CHANGE)
+    assert len(rec.warnings) == 1
+
+    # A new change within the throttle window is held back (still one warning).
+    obj.set_local(2)
+    obj.pump(t + 0.2, ON_CHANGE)
+    assert len(rec.warnings) == 1
+
+    # Once the window elapses, the pending change warns again.
+    obj.pump(t + ac_objects._MIN_PUBLISH_INTERVAL, ON_CHANGE)
+    assert len(rec.warnings) == 2
+
+    # Nothing was ever pushed to the cloud while pending.
+    assert pushes == []
+
+
+# ── Policy resolution after a pending warning cleared _dirty ──────────────────
+# _warn_local_only clears _dirty after warning about a local-only change; these
+# verify the sync-time policy still resolves correctly off _value / _local_ts
+# (which the warning preserves), so a value changed while pending is not lost.
+
+
+class _SilentLogger:
+    def warning(self, *args, **kwargs):
+        pass
+
+
+def _change_while_pending(monkeypatch, obj, value):
+    """Simulate a local change while no thing is assigned, with the loop's pump
+    running — which warns and clears _dirty. Leaves the object non-pending, as
+    the sync frame that follows would."""
+    monkeypatch.setattr(ac_objects, "logger", _SilentLogger())
+    obj._pending = True
+    obj.set_local(value)
+    obj.pump(time.time(), ON_CHANGE)  # pending branch: warns, clears _dirty
+    assert obj._dirty is False  # precondition: the warning cleared dirty
+    obj._pending = False  # the sync frame clears pending before applying policy
+
+
+def test_pending_then_cloud_wins_adopts_cloud(monkeypatch):
+    pushes = []
+    obj = CloudObject("v", value=1, sync=CLOUD_WINS)
+    obj.bind(lambda n, val: pushes.append((n, val)))
+    _change_while_pending(monkeypatch, obj, 5)
+    # lastvalue: CLOUD_WINS adopts the differing cloud value; the pre-sync local
+    # write is discarded (correct for the policy) despite the cleared _dirty.
+    assert obj.apply_cloud(9, cloud_ts=time.time()) is True
+    assert obj.value == 9
+    assert pushes == []
+
+
+def test_pending_then_device_wins_pushes_local(monkeypatch):
+    pushes = []
+    obj = CloudObject("v", value=1, sync=DEVICE_WINS)
+    obj.bind(lambda n, val: pushes.append((n, val)))
+    _change_while_pending(monkeypatch, obj, 5)
+    # lastvalue: DEVICE_WINS keeps the local value and pushes it up despite the
+    # cleared _dirty (the push is driven by _value != cloud, not by _dirty).
+    assert obj.apply_cloud(9, cloud_ts=time.time()) is False
+    assert obj.value == 5
+    assert pushes == [("v", 5)]
+
+
+def test_pending_then_most_recent_wins_pushes_newer_local(monkeypatch):
+    pushes = []
+    obj = CloudObject("v", value=1, sync=MOST_RECENT_WINS)
+    obj.bind(lambda n, val: pushes.append((n, val)))
+    _change_while_pending(monkeypatch, obj, 5)  # stamped _local_ts = now
+    # An older cloud value loses to the newer local one, which is re-pushed:
+    # _local_ts is preserved by the warning, so MOST_RECENT still resolves.
+    assert obj.apply_cloud(9, cloud_ts=time.time() - 100) is False
+    assert obj.value == 5
+    assert pushes == [("v", 5)]
+    # A newer cloud value still wins (and is not re-pushed).
+    assert obj.apply_cloud(7, cloud_ts=time.time() + 100) is True
+    assert obj.value == 7
+    assert pushes == [("v", 5)]
+
+
+def test_pending_then_lastvalue_missing_pushes_local(monkeypatch):
+    pushes = []
+    obj = CloudObject("v", value=1, sync=CLOUD_WINS)  # even under CLOUD_WINS
+    obj.bind(lambda n, val: pushes.append((n, val)))
+    _change_while_pending(monkeypatch, obj, 5)
+    # lastvalue_missing: the cloud has no value, so the local value wins for every
+    # policy and is pushed — not lost despite the cleared _dirty.
+    obj.apply_missing()
+    assert obj.value == 5
+    assert pushes == [("v", 5)]
+
+
+# ── Brick behaviour with a fake daemon ───────────────────────────────────────
+
+
+def test_setattr_pushes_value(fake_client, monkeypatch):
+    monkeypatch.setattr(ac_objects, "_MIN_PUBLISH_INTERVAL", 0.0)  # no throttle delay in the test
+    cloud, client = _make_cloud(fake_client)
+    # Default seed is lastvalue_missing (thing assigned, no cloud value), so the
+    # registered default is pushed up first (immediate convergence). The explicit
+    # set is published by the loop's pump (ON_CHANGE), not synchronously.
+    cloud.register("led", value=False)
+    assert client.puts == [("led", False)]
+    cloud.led = True
+    cloud.loop()
+    assert client.puts == [("led", False), ("led", True)]
+    assert cloud.led is True
+
+
+def test_sse_update_fires_on_write(fake_client):
+    cloud, client = _make_cloud(fake_client)
+    received = []
+    cloud.register("led", value=False, on_write=lambda c, v: received.append(v))
+    cloud.start()
+    try:
+        # on_write fires immediately when the update arrives, not on a later,
+        # interval-gated loop pass (C++ parity).
+        client.feed("led", True)
+        assert received == [True]
+        assert cloud.led is True
+    finally:
+        cloud.stop()
+
+
+def test_complex_object_subscribes_and_pushes_each_leaf(fake_client):
+    cloud, client = _make_cloud(fake_client)
+    writes = []
+    cloud.register(ColoredLight("clight", swi=True, on_write=lambda c, v: writes.append(v.swi)))
+    cloud.start()
+    try:
+        # Setting a sub-attribute publishes the namespaced leaf variable on the
+        # next loop pass (first publish of that leaf is immediate, not throttled).
+        cloud.clight.hue = 120
+        cloud.loop()
+        assert ("clight:hue", 120) in client.puts
+        # A cloud update on a leaf marks the parent's on_write; it is coalesced
+        # and delivered once by the loop (not immediately, per-leaf).
+        client.feed("clight:swi", False)
+        assert writes == []  # not fired yet — waits for the loop
+        cloud.loop()
+        assert writes == [False]
+        assert cloud.clight.swi is False
+    finally:
+        cloud.stop()
+
+
+def test_complex_seed_fires_on_write_once_with_full_object(fake_client):
+    # Each sub-property of a ColoredLight seeds as its own lastvalue frame; the
+    # brick must coalesce them into ONE on_write with the whole object populated
+    # (not one call per sub-property). Regression for the 4-call startup log.
+    cloud, client = _make_cloud(fake_client)
+    calls = []
+    for key, val in (("swi", True), ("hue", 134), ("sat", 19), ("bri", 75)):
+        client.initial[f"clight:{key}"] = (
+            EVENT_LASTVALUE,
+            {"value": val, "timestamp": "2026-07-21T10:00:00Z", "last_value": True},
+        )
+    cloud.register(ColoredLight("clight", on_write=lambda c, v: calls.append((v.swi, v.hue, v.sat, v.bri))))
+    # Fired exactly once, during register, with every attribute populated.
+    assert calls == [(True, 134, 19, 75)]
+
+
+def test_complex_live_multi_attribute_update_coalesced(fake_client):
+    # A whole-widget change in the cloud arrives as separate per-leaf update
+    # frames; on_write is delivered once (with all attributes) on the next loop
+    # pass, not once per leaf.
+    cloud, client = _make_cloud(fake_client)
+    calls = []
+    cloud.register(ColoredLight("clight", swi=True, on_write=lambda c, v: calls.append((v.swi, v.hue, v.sat, v.bri))))
+    cloud.start()
+    try:
+        client.feed("clight:hue", 200)
+        client.feed("clight:sat", 50)
+        client.feed("clight:bri", 80)
+        assert calls == []  # coalesced: nothing until the loop runs
+        cloud.loop()
+        assert calls == [(True, 200, 50, 80)]
+    finally:
+        cloud.stop()
+
+
+def test_all_leaves_subscribed_after_register(fake_client):
+    # register() opens one SSE listener per scalar leaf; every leaf of a complex
+    # object must have a live listener once register returns.
+    cloud, client = _make_cloud(fake_client)
+    try:
+        cloud.register(ColoredLight("clight", swi=True))
+        with cloud._lock:
+            listeners = dict(cloud._listeners)
+        assert {"clight:swi", "clight:hue", "clight:sat", "clight:bri"} <= set(listeners)
+        assert all(t.is_alive() for t in listeners.values())
+    finally:
+        cloud.stop()
+
+
+def test_ensure_subscribed_resubscribes_missing_leaf(fake_client):
+    # If a leaf ends up without a live listener (a subscribe that failed at
+    # register time, or a dead thread), the periodic check re-subscribes it so no
+    # property is left unsubscribed.
+    cloud, client = _make_cloud(fake_client)
+    cloud.register("led", value=False)
+    cloud.start()
+    try:
+        with cloud._lock:
+            del cloud._listeners["led"]  # simulate a lost subscription
+        cloud._ensure_subscribed()
+        with cloud._lock:
+            assert "led" in cloud._listeners and cloud._listeners["led"].is_alive()
+    finally:
+        cloud.stop()
+
+
+def test_single_stream_no_reseed_bounce(fake_client):
+    # One stream per leaf: the last value is delivered once (seed), then only
+    # live updates. A device write is not bounced back by a re-announced last
+    # value, and no spurious on_write fires. Regression for the startup bounce.
+    cloud, client = _make_cloud(fake_client)
+    calls = []
+    for key, val in (("swi", False), ("hue", 302), ("sat", 82), ("bri", 99)):
+        client.initial[f"clight:{key}"] = (
+            EVENT_LASTVALUE,
+            {"value": val, "timestamp": "2026-07-21T10:00:00Z", "last_value": True},
+        )
+    cloud.register(ColoredLight("clight", on_write=lambda c, v: calls.append((v.swi, v.hue, v.sat, v.bri))))
+    cloud.start()
+    try:
+        assert calls == [(False, 302, 82, 99)]  # single coalesced seed on_write
+        cloud.clight.hue = 84
+        cloud.clight.sat = 6
+        cloud.clight.bri = 17
+        cloud.loop()
+        assert (cloud.clight.hue, cloud.clight.sat, cloud.clight.bri) == (84, 6, 17)  # no bounce
+        assert calls == [(False, 302, 82, 99)]  # no spurious on_write
+    finally:
+        cloud.stop()
+
+
+def test_get_returns_default_for_unknown(fake_client):
+    cloud, _ = _make_cloud(fake_client)
+    assert cloud.get("missing", default=42) == 42
+    cloud.register("known", value=7)
+    assert cloud.get("known") == 7
+
+
+def test_legacy_args_emit_deprecation_warning(fake_client):
+    with pytest.warns(DeprecationWarning):
+        ArduinoCloud(device_id="x", secret="y")
+
+
+def test_no_legacy_args_is_silent(fake_client):
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")  # any DeprecationWarning would fail the test
+        ArduinoCloud()
+
+
+# ── Synchronous register + sync-frame resolution ─────────────────────────────
+
+
+def test_lastvalue_sync_fires_on_write_when_cloud_wins(fake_client):
+    # Mirrors the C++ ArduinoIoTCloud library: the last-value sync (initial or on
+    # reconnect) fires on_write whenever the synced cloud value wins per policy
+    # and actually differs from the local value, so an actuator is restored to a
+    # cloud state changed while the board was offline.
+    cloud, client = _make_cloud(fake_client)
+    received = []
+    # Cloud has a last value at register time → seeded synchronously as a
+    # 'lastvalue' frame that differs from the register default.
+    client.initial["led"] = (EVENT_LASTVALUE, {"value": True, "timestamp": "2026-07-07T10:00:00Z", "last_value": True})
+    # on_write fires immediately during the synchronous initial sync in register().
+    cloud.register("led", value=False, on_write=lambda c, v: received.append(v))
+    assert cloud.led is True  # cloud value applied
+    assert received == [True]  # on_write fired for the sync (C++ parity)
+    cloud.start()
+    try:
+        # A subsequent live update still fires on_write immediately.
+        client.feed("led", False)  # 'update' event
+        assert received == [True, False]
+    finally:
+        cloud.stop()
+
+
+def test_lastvalue_sync_no_on_write_when_value_unchanged(fake_client):
+    # The C++ guard (isDifferentFromCloud): a synced cloud value equal to the
+    # local value does not fire on_write.
+    cloud, client = _make_cloud(fake_client)
+    received = []
+    client.initial["led"] = (EVENT_LASTVALUE, {"value": True, "timestamp": "2026-07-07T10:00:00Z", "last_value": True})
+    cloud.register("led", value=True, on_write=lambda c, v: received.append(v))
+    cloud.start()
+    try:
+        assert cloud.led is True
+        assert received == []  # value unchanged → no on_write
+    finally:
+        cloud.stop()
+
+
+def test_lastvalue_sync_no_on_write_device_wins(fake_client):
+    # DEVICE_WINS (onForceDeviceSync) never applies the cloud value, so the sync
+    # does not fire on_write; the local value is pushed up instead.
+    cloud, client = _make_cloud(fake_client)
+    received = []
+    client.initial["temp"] = (EVENT_LASTVALUE, {"value": 100, "timestamp": "2026-07-07T10:00:00Z", "last_value": True})
+    cloud.register("temp", value=7, sync=DEVICE_WINS, on_write=lambda c, v: received.append(v))
+    cloud.start()
+    try:
+        assert cloud.temp == 7  # local wins
+        assert received == []  # on_write not fired on sync
+        assert ("temp", 7) in client.puts  # local pushed up
+    finally:
+        cloud.stop()
+
+
+def test_register_seeds_cloud_value_cloud_wins(fake_client):
+    cloud, client = _make_cloud(fake_client)
+    client.initial["temp"] = (EVENT_LASTVALUE, {"value": 100, "timestamp": "2026-07-07T10:00:00Z", "last_value": True})
+    cloud.register("temp", value=0)  # CLOUD_WINS (default)
+    # The cloud last value wins over the register default, synchronously.
+    assert cloud.temp == 100
+    # The stale default is not pushed up under CLOUD_WINS.
+    assert client.puts == []
+
+
+def test_register_seeds_lastvalue_missing_pushes_local(fake_client):
+    cloud, client = _make_cloud(fake_client)
+    client.initial["temp"] = (EVENT_LASTVALUE_MISSING, {})
+    cloud.register("temp", value=7)
+    # No cloud value: the local default wins and is pushed up.
+    assert cloud.temp == 7
+    assert client.puts == [("temp", 7)]
+
+
+def test_register_without_value_missing_pushes_nothing(fake_client):
+    cloud, client = _make_cloud(fake_client)
+    client.initial["temp"] = (EVENT_LASTVALUE_MISSING, {})
+    cloud.register("temp")  # no default value
+    assert cloud.get("temp") is None
+    assert client.puts == []  # nothing local to assert yet
+
+
+def test_thing_unavailable_defers_writes_until_sync(fake_client):
+    cloud, client = _make_cloud(fake_client)
+    client.initial["temp"] = (EVENT_THING_UNAVAILABLE, {})
+    cloud.register("temp", value=0)
+    cloud.start()
+    try:
+        # No thing assigned yet: writes are kept locally, not pushed.
+        cloud.temp = 42
+        assert client.puts == []
+        assert cloud.temp == 42
+        # Thing arrives with no cloud value → resync lastvalue_missing: the
+        # deferred local value now wins and is pushed up.
+        client.feed_event("temp", EVENT_LASTVALUE_MISSING)
+        assert ("temp", 42) in client.puts
+        assert cloud.temp == 42
+    finally:
+        cloud.stop()
+
+
+def test_cloud_wins_discards_prewrite_on_sync(fake_client):
+    cloud, client = _make_cloud(fake_client)
+    client.initial["temp"] = (EVENT_THING_UNAVAILABLE, {})
+    cloud.register("temp", value=0)  # CLOUD_WINS
+    cloud.start()
+    try:
+        cloud.temp = 42  # pending: kept local, not pushed
+        assert client.puts == []
+        # Thing arrives with a cloud value → CLOUD_WINS: cloud wins, prewrite dropped.
+        client.feed("temp", 100, last_value=True)
+        assert cloud.temp == 100
+        assert client.puts == []  # the stale 42 was never sent
+    finally:
+        cloud.stop()
+
+
+def test_device_wins_sends_local_on_sync(fake_client):
+    cloud, client = _make_cloud(fake_client)
+    client.initial["temp"] = (EVENT_THING_UNAVAILABLE, {})
+    cloud.register("temp", value=7, sync=DEVICE_WINS)
+    cloud.start()
+    try:
+        # Thing arrives with a diverging cloud value → DEVICE_WINS: local wins, pushed.
+        client.feed("temp", 100, last_value=True)
+        assert cloud.temp == 7
+        assert ("temp", 7) in client.puts
+    finally:
+        cloud.stop()
+
+
+def test_stream_first_frame_and_put_409_over_tcp():
+    """Exercise the real DaemonClient: stream_events delivers the first sync
+    frame on connect and signals ``ready``, and a 409 PUT (thing_unavailable) is
+    handled without raising."""
+    frame = {"name": "temp", "value": 21.5, "timestamp": "2026-07-07T10:00:00Z", "last_value": True}
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_PUT(self):
+            length = int(self.headers.get("Content-Length", 0))
+            self.rfile.read(length)
+            self.send_response(409)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"error":"thing_unavailable"}')
+
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
+            self.wfile.write(f"event: lastvalue\ndata: {json.dumps(frame)}\n\n".encode())
+            self.wfile.flush()
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    port = server.server_address[1]
+
+    client = DaemonClient(f"http://127.0.0.1:{port}")
+    events = []
+    stop = threading.Event()
+    ready = threading.Event()
+
+    def handler(event, payload):
+        events.append((event, payload))
+        stop.set()  # stop after the first frame
+
+    t = threading.Thread(target=client.stream_events, args=("temp", handler, stop, ready), daemon=True)
+    t.start()
+    try:
+        assert ready.wait(timeout=5), "stream_events did not deliver the first frame"
+        assert events and events[0][0] == EVENT_LASTVALUE
+        assert events[0][1]["value"] == 21.5
+        # A 409 PUT must not raise (it is logged and swallowed).
+        client.put_value("temp", 5)
+    finally:
+        stop.set()
+        client.close()
+        t.join(timeout=2)
+        server.shutdown()
+        server.server_close()
+
+
+# ── UNIX-socket transport ────────────────────────────────────────────────────
+
+
+def test_default_daemon_url_is_unix_socket(monkeypatch):
+    monkeypatch.delenv("ARDUINO_CLOUD_CONNECTOR_URL", raising=False)
+    monkeypatch.delenv("ARDUINO_CLOUD_CONNECTOR_SOCKET", raising=False)
+    url = ArduinoCloud._default_daemon_url()
+    assert url.startswith("http+unix://")
+    assert "daemon.sock" in url
+
+
+def test_daemon_client_mounts_unix_adapter():
+    client = DaemonClient("http+unix://%2Frun%2Farduino-cloud-connector%2Fdaemon.sock")
+    assert client._socket_path == "/run/arduino-cloud-connector/daemon.sock"
+    assert "http+unix://" in client._session.adapters
+
+
+def test_daemon_client_plain_http_has_no_socket():
+    client = DaemonClient("http://127.0.0.1:5683")
+    assert client._socket_path is None
+
+
+@pytest.mark.skipif(not _HAS_AF_UNIX, reason="AF_UNIX not available on this platform")
+def test_put_and_sse_over_unix_socket(tmp_path):
+    sock_path = str(tmp_path / "daemon.sock")
+    received = {}
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_PUT(self):
+            length = int(self.headers.get("Content-Length", 0))
+            received["path"] = self.path
+            received["body"] = self.rfile.read(length)
+            self.send_response(204)
+            self.end_headers()
+
+        def do_GET(self):
+            received["sse_path"] = self.path
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
+            payload = json.dumps({"name": "led", "value": True, "timestamp": "2026-06-22T10:00:00Z", "last_value": True})
+            self.wfile.write(f"event: lastvalue\ndata: {payload}\n\n".encode())
+            self.wfile.flush()
+
+        def log_message(self, *args):
+            pass
+
+    class UnixHTTPServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
+        daemon_threads = True
+
+        def get_request(self):
+            # BaseHTTPRequestHandler expects a (host, port) client address.
+            return self.socket.accept()[0], ("localhost", 0)
+
+    server = UnixHTTPServer(sock_path, Handler)
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+
+    client = DaemonClient("http+unix://" + quote(sock_path, safe=""))
+    try:
+        # PUT over the socket.
+        client.put_value("led", True)
+        for _ in range(200):
+            if "body" in received:
+                break
+            time.sleep(0.005)
+        assert received.get("path") == "/v1/variables/led"
+        assert json.loads(received["body"]) == {"value": True}
+
+        # SSE over the socket: the first event is delivered to the handler.
+        events = []
+        stop = threading.Event()
+        sse_thread = threading.Thread(
+            target=client.stream_events,
+            args=("led", lambda evt, data: (events.append((evt, data)), stop.set()), stop),
+            daemon=True,
+        )
+        sse_thread.start()
+        for _ in range(200):
+            if events:
+                break
+            time.sleep(0.005)
+        stop.set()
+        assert events and events[0][0] == "lastvalue"
+        assert events[0][1]["value"] is True
+    finally:
+        stop.set()
+        client.close()
+        server.shutdown()
+        server.server_close()
