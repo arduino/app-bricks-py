@@ -13,7 +13,6 @@ ADD --checksum=${OPENCV_WHL_DIGEST} ${OPENCV_WHL_URL} /tmp/opencv-wheel/
 
 RUN set -ex; \
     apt-get update -y; \
-    apt-get upgrade -y; \
     # Install build dependencies
     apt-get install -y --no-install-recommends --no-install-suggests build-essential ca-certificates binutils; \
     # Install dependencies for building ALSA
@@ -38,7 +37,9 @@ RUN set -ex; \
     apt-get autoremove -y
 
 
-FROM python:3.13-slim AS production
+ARG REGISTRY
+ARG BASE_IMAGE_VERSION=latest
+FROM ${REGISTRY}app-bricks/python-base:${BASE_IMAGE_VERSION} AS production
 
 ARG LIBCAMERA_DEB_URL
 ARG LIBCAMERA_DEB_DIGEST
@@ -63,8 +64,6 @@ COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/pytho
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 RUN set -ex; \
-    groupadd -g 1000 arduino || true; \
-    useradd -u 1000 -g arduino -ms /bin/bash arduino; \
     apt-get update -y; \
     apt-get upgrade -y; \
     # Install dependencies for running ALSA

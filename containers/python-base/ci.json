@@ -20,7 +20,7 @@
     "GSTREAMER_LIBGSTREAMER_PLUGINS_BASE_DEB_DIGEST": "sha256:a6e1aaadbac810957f5c4ce981d955c686734e85c23cbb5b89ddd33299f920c6"
   },
   "sbom": {
-    "runtime_base": "python:3.13-slim"
+    "runtime_base": "${REGISTRY}app-bricks/python-base:${BASE_IMAGE_VERSION}"
   },
   "downstream": ["python-apps-base"]
 }

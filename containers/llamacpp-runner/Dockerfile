@@ -2,7 +2,9 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-FROM python:3.13-slim AS production
+ARG REGISTRY
+ARG BASE_IMAGE_VERSION=latest
+FROM ${REGISTRY}app-bricks/python-base:${BASE_IMAGE_VERSION}
 
 ARG LLAMA_CPP_URL
 ARG LLAMA_CPP_DIGEST
@@ -11,20 +13,17 @@ ADD --checksum=${LLAMA_CPP_DIGEST} ${LLAMA_CPP_URL} /tmp/llamacpp.tar.gz
 
 COPY ./scripts/* /
 
-RUN set -x \
-    && apt-get update \
-    && apt-get upgrade -y \
-    && apt-get install -y --no-install-recommends --no-install-suggests libgomp1 \
-    && apt-get dist-clean \
-    && groupadd -g 1000 arduino \
-    && useradd -u 1000 -g arduino -ms /bin/bash arduino \
-    && tar -xzf /tmp/llamacpp.tar.gz -C /opt \
-    && rm /tmp/llamacpp.tar.gz \
-    && chown -R arduino:arduino /opt/pkg-cpu \
-    && chmod +x /opt/pkg-cpu/bin/* \
-    && mkdir -p /models \
-    && chown arduino:arduino /models \
-    && chmod +x /*.sh; \
+RUN set -x; \
+    apt-get update -y; \
+    apt-get install -y --no-install-recommends --no-install-suggests libgomp1; \
+    apt-get dist-clean; \
+    tar -xzf /tmp/llamacpp.tar.gz -C /opt; \
+    rm /tmp/llamacpp.tar.gz; \
+    chown -R arduino:arduino /opt/pkg-cpu; \
+    chmod +x /opt/pkg-cpu/bin/*; \
+    mkdir -p /models; \
+    chown arduino:arduino /models; \
+    chmod +x /*.sh; \
     # cleanup unnecessary files to reduce image size
     rm -rf /tmp/* /var/tmp/*; \
     rm -rf /var/lib/apt/lists/*; \
