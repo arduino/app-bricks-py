@@ -10,6 +10,6 @@
   "update_compose": false,
   "build_args": { },
   "sbom": {
-    "runtime_base": "${REGISTRY}app-bricks/python-base:${BASE_IMAGE_VERSION}"
+    "runtime_base": "${REGISTRY}app-bricks/python-slim:${BASE_IMAGE_VERSION}"
   }  
 }

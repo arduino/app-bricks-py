@@ -39,7 +39,7 @@ RUN set -ex; \
 
 ARG REGISTRY
 ARG BASE_IMAGE_VERSION=latest
-FROM ${REGISTRY}app-bricks/python-base:${BASE_IMAGE_VERSION} AS production
+FROM ${REGISTRY}app-bricks/python-slim:${BASE_IMAGE_VERSION} AS production
 
 ARG LIBCAMERA_DEB_URL
 ARG LIBCAMERA_DEB_DIGEST

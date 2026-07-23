@@ -4,7 +4,7 @@
 
 ARG REGISTRY
 ARG BASE_IMAGE_VERSION=latest
-FROM ${REGISTRY}app-bricks/python-base:${BASE_IMAGE_VERSION}
+FROM ${REGISTRY}app-bricks/python-slim:${BASE_IMAGE_VERSION}
 
 COPY --chown=arduino:arduino --chmod=755 ./requirements.txt /app/requirements.txt
 
