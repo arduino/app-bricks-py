@@ -2,6 +2,9 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+ARG REGISTRY
+ARG BASE_IMAGE_VERSION=latest
+
 FROM python:3.13-slim AS builder
 
 ARG OPENCV_WHL_URL
@@ -37,8 +40,6 @@ RUN set -ex; \
     apt-get autoremove -y
 
 
-ARG REGISTRY
-ARG BASE_IMAGE_VERSION=latest
 FROM ${REGISTRY}app-bricks/python-slim:${BASE_IMAGE_VERSION} AS production
 
 ARG LIBCAMERA_DEB_URL
