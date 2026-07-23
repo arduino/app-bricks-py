@@ -174,4 +174,4 @@ RUN mkdir -p /etc/fastrpc && \
 
 # Use container libraries
 ENV ADSP_LIBRARY_PATH=/usr/lib/rfsa/adsp
-ENV CDSP_LIBRARY_PATH=/usr/lib/rfsa/cdsp
+ENV CDSP_LIBRARY_PATH=/usr/lib/rfsa/adsp
