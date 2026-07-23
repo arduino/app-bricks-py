@@ -4,26 +4,21 @@ This Brick provides integration with the Arduino Cloud platform, enabling IoT de
 
 ## Overview
 
-The Arduino Cloud Brick simplifies the process of connecting your Arduino device to the Arduino Cloud. It abstracts the complexities of device management, authentication, and data synchronization, allowing developers to focus on building applications and features. With this module, you can easily register devices, exchange data, and leverage cloud-based automation for your projects.
+The Arduino Cloud Brick lets your application exchange variable values with Arduino Cloud. It does **not** connect to the Cloud itself: connectivity, device provisioning and the cloud handshake are handled by the local **arduino-cloud-connector daemon** running on the board. The Brick talks to that daemon over its localhost REST/SSE API, so your application code stays simple and focused on reading and writing cloud variables.
 
 ## Features
 
-- Connects Arduino devices to the Arduino Cloud
-- Supports device registration and authentication
-- Enables data exchange between devices and the cloud
-- Provides APIs for sending and receiving data
+- Exchanges variable values with Arduino Cloud through the local daemon
+- Natural attribute access to variables (`cloud.my_var = 42`)
+- `on_write` / `on_read` / `on_run` callbacks
+- Structured objects: `Location`, `Color`, `ColoredLight`, `DimmedLight`, `Schedule`
+- Per-variable conflict resolution policy: `DEVICE_WINS`, `CLOUD_WINS`, `MOST_RECENT_WINS`
 
 ## Prerequisites
 
-To use this Brick, we need to have an active Arduino Cloud account, and a **device** and **thing** setup. To obtain the credentials, please follow the instructions at this [link](https://docs.arduino.cc/arduino-cloud/features/manual-device/). This is also covered in the [Blinking LED with Arduino Cloud](/examples/cloud-blink).
+The board must be provisioned and associated with a Thing in Arduino Cloud, and the `arduino-cloud-connector` daemon must be running locally. The daemon owns the device identity and credentials, so the application no longer needs to supply a `device_id` / `secret` to exchange variables.
 
-During the device configuration, we will obtain a `device_id` and `secret_key`, which is needed to use this Brick. Note that a Thing with the device associated is required, and that you will need to create variables / dashboard to send and receive data from the board.
-
-### Adding Credentials
-
-The `device_id` and `secret_key` can be added inside the Arduino Cloud brick, by clicking on the **Brick Configuration** button inside the Brick.
-
-Clicking the button will provide two fields where the `device_id` and `secret_key` can be added to the Brick.
+By default the Brick connects to the daemon at `http://127.0.0.1:5683`. Override it with the `ARDUINO_CLOUD_CONNECTOR_URL` environment variable (or `ARDUINO_CLOUD_CONNECTOR__PORT` to change just the port), or by passing `daemon_url=...` to the constructor.
 
 ## Code Example and Usage
 
@@ -33,12 +28,29 @@ from arduino.app_utils import App, Bridge
 
 iot_cloud = ArduinoCloud()
 
+
 def led_callback(client: object, value: bool):
-    """Callback function to handle LED blink updates from cloud."""
+    """Called when the LED variable is updated from the cloud."""
     print(f"LED blink value updated from cloud: {value}")
     Bridge.call("set_led_state", value)
+
 
 iot_cloud.register("led", value=False, on_write=led_callback)
 
 App.run()
+```
+
+### Conflict resolution (sync policy)
+
+Each variable can choose how Cloud updates interact with local changes, mirroring the Arduino Cloud (C++) semantics:
+
+- `CLOUD_WINS` (default): an incoming Cloud value is always applied when it differs from the local value.
+- `MOST_RECENT_WINS`: a Cloud value is applied only if it is newer than the last local change.
+- `DEVICE_WINS`: Cloud values are ignored; the local value is pushed back so the Cloud converges to the device.
+
+```python
+from arduino.app_bricks.arduino_cloud import ArduinoCloud, MOST_RECENT_WINS
+
+iot_cloud = ArduinoCloud()
+iot_cloud.register("temperature", value=0.0, sync=MOST_RECENT_WINS)
 ```
