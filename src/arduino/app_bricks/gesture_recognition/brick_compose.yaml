@@ -12,10 +12,10 @@ services:
     devices:
       - /dev/dma_heap/system
       - /dev/fastrpc-cdsp
-      - /dev/fastrpc-cdsp-secure
     volumes:
       # Mount hexagon firmware
-      - ${HOST_DSP_INSTALLATION_PATH:-/usr/share/qcom}/qcs8300/Qualcomm/QCS8300-RIDE/dsp/cdsp:/lib/dsp/cdsp
+      - /sys/firmware/devicetree/base/model:/run/device-model
+      - ${HOST_DSP_INSTALLATION_PATH:-/usr/share/qcom}:/usr/share/qcom
     healthcheck:
       test: [ "CMD-SHELL", "nc -zv gesture_recognition 5002 || exit 1" ]
       interval: 1s

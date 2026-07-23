@@ -6,7 +6,7 @@
   "update_compose": false,
   "build_args": {},
   "sbom": {
-    "runtime_base": "ubuntu:24.04"
+    "runtime_base": "${REGISTRY}app-bricks/qairt-common-base:${BASE_IMAGE_VERSION}"
   },
-  "downstream": ["gesture-recognition-runner", "llamacpp-npu-runner"]
+  "downstream": ["gesture-recognition-runner"]
 }

@@ -8,5 +8,5 @@
   "sbom": {
     "runtime_base": "python:3.13-slim"
   },
-  "downstream": ["llamacpp-npu-runner"]
+  "downstream": ["llamacpp-npu-runner", "aihub-models-runner"]
 }
