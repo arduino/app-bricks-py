@@ -897,13 +897,26 @@ class SoundGenerator(SoundGeneratorStreamer):
     def play_wav(self, wav_file: str, block: bool = False):
         """Play a WAV audio file through the output device.
 
+        Only uncompressed PCM WAV files matching the output device configuration
+        (channels, sample rate, sample width) are supported.
+
         Args:
             wav_file (str): The WAV audio file path.
             block (bool): If True, block until the entire WAV file has been played.
         """
+        import wave
+
         self._ensure_speaker_ready()
-        to_play, duration = super().play_wav(wav_file)
-        self._output_device.play(to_play)
+        file_path = Path(wav_file)
+        if not file_path.exists() or not file_path.is_file():
+            raise FileNotFoundError(f"WAV file not found: {wav_file}")
+
+        with wave.open(wav_file, "rb") as wav:
+            duration = wav.getnframes() / wav.getframerate()
+
+        # Delegate WAV validation and PCM conversion to the output device
+        wav_audio = np.frombuffer(file_path.read_bytes(), dtype=np.uint8)
+        self._output_device.play_wav(wav_audio)
         if block and duration > 0.0:
             time.sleep(duration)
 
