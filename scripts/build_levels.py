@@ -60,6 +60,7 @@ class Graph:
         self.children: dict[str, list[str]] = {}
         self.parents: dict[str, list[str]] = {}
         self.tag_prefix: dict[str, str] = {}
+        self.base_image: dict[str, bool] = {}
 
         ci_files = sorted(containers_dir.glob("*/ci.json"))
         if not ci_files:
@@ -71,6 +72,7 @@ class Graph:
             self.children.setdefault(name, [])
             self.parents.setdefault(name, [])
             self.tag_prefix[name] = str(config.get("tag_prefix", ""))
+            self.base_image[name] = bool(config.get("base_image", False))
 
         # Second pass: wire edges now that every node is known.
         for ci_json in ci_files:
@@ -103,13 +105,23 @@ def _closure(seeds: set[str], edges: dict[str, list[str]]) -> set[str]:
     return result
 
 
+def resolve_build_set(graph: Graph, seeds: set[str]) -> set[str]:
+    """Expand ``seeds`` into the full set of containers to (re)build.
+
+    The set is the forward closure of the seeds (all descendants, so downstream
+    images are rebuilt) plus the ancestors of that whole forward-closed set (so
+    every image being rebuilt has all of its base images rebuilt first). Taking
+    ancestors over the forward-closed set — rather than over the seeds alone —
+    keeps the result correct for diamond dependencies as well.
+    """
+    forward = _closure(seeds, graph.children)
+    return forward | _closure(forward, graph.parents)
+
+
 def resolve_dev_build_set(graph: Graph, select: str) -> set[str]:
     """Resolve the containers to build for the DEV workflow.
 
     ``select`` is either ``all`` or a comma-separated list of container names.
-    The build set is the full transitive closure of the seeds in *both*
-    directions: descendants (so downstream images are rebuilt) and ancestors
-    (so their base images are rebuilt first).
     """
     if select.strip() == "all":
         return set(graph.containers)
@@ -119,18 +131,20 @@ def resolve_dev_build_set(graph: Graph, select: str) -> set[str]:
     if unknown:
         raise BuildLevelsError(f"Unknown container(s) selected: {', '.join(unknown)}")
 
-    return _closure(seeds, graph.children) | _closure(seeds, graph.parents)
+    return resolve_build_set(graph, seeds)
 
 
 def resolve_release_build_set(graph: Graph, tag_prefix: str) -> set[str]:
     """Resolve the containers to build for the RELEASE workflow.
 
-    Seeds are the containers whose ``tag_prefix`` matches the pushed tag prefix.
-    The build set is the forward transitive closure (all descendants),
-    regardless of the descendants' own ``tag_prefix``.
+    Seeds are the containers whose ``tag_prefix`` matches the pushed tag prefix,
+    excluding those flagged ``base_image`` (common bases are never a direct
+    release target). The build set then adds their descendants *and* ancestors,
+    so a shared base image is rebuilt as a dependency even though it is not
+    itself a release target.
     """
-    seeds = {name for name, prefix in graph.tag_prefix.items() if prefix == tag_prefix}
-    return _closure(seeds, graph.children)
+    seeds = {name for name, prefix in graph.tag_prefix.items() if prefix == tag_prefix and not graph.base_image[name]}
+    return resolve_build_set(graph, seeds)
 
 
 def assign_levels(graph: Graph, build_set: set[str]) -> dict[str, int]:

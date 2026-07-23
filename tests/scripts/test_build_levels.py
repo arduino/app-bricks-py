@@ -28,7 +28,10 @@ from scripts.build_levels import (  # noqa: E402
 
 
 def make_graph(tmp_path: Path, spec: dict[str, dict]) -> Graph:
-    """Create a temporary ``containers/`` tree from ``{name: {downstream, tag_prefix}}``."""
+    """Create a temporary ``containers/`` tree from a ``{name: attrs}`` spec.
+
+    ``attrs`` may set ``downstream``, ``tag_prefix`` and ``base_image``.
+    """
     containers_dir = tmp_path / "containers"
     for name, attrs in spec.items():
         ci_dir = containers_dir / name
@@ -37,14 +40,18 @@ def make_graph(tmp_path: Path, spec: dict[str, dict]) -> Graph:
             "tag_prefix": attrs.get("tag_prefix", "release"),
             "downstream": attrs.get("downstream", []),
         }
+        if attrs.get("base_image"):
+            payload["base_image"] = True
         (ci_dir / "ci.json").write_text(json.dumps(payload), encoding="utf-8")
     return Graph(containers_dir)
 
 
-# The real chain under test: qairt -> aihub -> {gesture, llamacpp-npu}.
+# The real chain under test:
+#   qairt -> aihub -> gesture
+#   qairt -> llamacpp-npu
 CHAIN = {
-    "qairt-common-base": {"tag_prefix": "ai", "downstream": ["aihub-models-runner"]},
-    "aihub-models-runner": {"tag_prefix": "ai", "downstream": ["gesture-recognition-runner", "llamacpp-npu-runner"]},
+    "qairt-common-base": {"tag_prefix": "ai", "downstream": ["aihub-models-runner", "llamacpp-npu-runner"]},
+    "aihub-models-runner": {"tag_prefix": "ai", "downstream": ["gesture-recognition-runner"]},
     "gesture-recognition-runner": {"tag_prefix": "gesture", "downstream": []},
     "llamacpp-npu-runner": {"tag_prefix": "llamacpp", "downstream": []},
     "standalone": {"tag_prefix": "release", "downstream": []},
@@ -57,8 +64,8 @@ def test_three_level_chain_from_root(tmp_path):
     waves = build_plan(graph, build_set)
     assert len(waves) == MAX_LEVELS
     assert waves[0] == ["qairt-common-base"]
-    assert waves[1] == ["aihub-models-runner"]
-    assert waves[2] == ["gesture-recognition-runner", "llamacpp-npu-runner"]
+    assert waves[1] == ["aihub-models-runner", "llamacpp-npu-runner"]
+    assert waves[2] == ["gesture-recognition-runner"]
 
 
 def test_reverse_closure_from_leaf(tmp_path):
@@ -70,7 +77,7 @@ def test_reverse_closure_from_leaf(tmp_path):
     assert waves[0] == ["qairt-common-base"]
     assert waves[1] == ["aihub-models-runner"]
     assert waves[2] == ["gesture-recognition-runner"]
-    # The sibling llamacpp-npu-runner is NOT an ancestor and must be excluded.
+    # The sibling llamacpp-npu-runner is NOT an ancestor of gesture and must be excluded.
     assert "llamacpp-npu-runner" not in build_set
 
 
@@ -87,7 +94,7 @@ def test_node_without_parents_is_level_zero(tmp_path):
     assert waves[0] == ["standalone"]
 
 
-def test_release_forward_closure_by_tag_prefix(tmp_path):
+def test_release_seeds_by_tag_prefix_with_descendants(tmp_path):
     """Release seeds match tag_prefix, then pull descendants regardless of prefix."""
     graph = make_graph(tmp_path, CHAIN)
     build_set = resolve_release_build_set(graph, "ai")
@@ -102,11 +109,53 @@ def test_release_forward_closure_by_tag_prefix(tmp_path):
     assert "standalone" not in build_set
 
 
-def test_release_forward_only_no_ancestors(tmp_path):
-    """Release must not pull ancestors of a matched middle node."""
+def test_release_pulls_ancestors(tmp_path):
+    """Releasing a leaf must rebuild its ancestor bases first."""
     graph = make_graph(tmp_path, CHAIN)
     build_set = resolve_release_build_set(graph, "gesture")
-    assert build_set == {"gesture-recognition-runner"}
+    assert build_set == {"qairt-common-base", "aihub-models-runner", "gesture-recognition-runner"}
+    waves = build_plan(graph, build_set)
+    assert waves[0] == ["qairt-common-base"]
+    assert waves[1] == ["aihub-models-runner"]
+    assert waves[2] == ["gesture-recognition-runner"]
+
+
+def test_release_excludes_base_image_from_seeds_but_builds_it_as_ancestor(tmp_path):
+    """A base_image is never a direct seed, but is rebuilt when a release child needs it."""
+    spec = {
+        "common-base": {"tag_prefix": "release", "base_image": True, "downstream": ["app-a", "app-b"]},
+        "app-a": {"tag_prefix": "release", "downstream": []},
+        "app-b": {"tag_prefix": "release", "downstream": []},
+        "orphan-base": {"tag_prefix": "release", "base_image": True, "downstream": []},
+    }
+    graph = make_graph(tmp_path, spec)
+    build_set = resolve_release_build_set(graph, "release")
+    # common-base is pulled in as the ancestor of the two release apps...
+    assert build_set == {"common-base", "app-a", "app-b"}
+    # ...but orphan-base (base_image, no release dependents) is never built.
+    assert "orphan-base" not in build_set
+
+    waves = build_plan(graph, build_set)
+    assert waves[0] == ["common-base"]
+    assert waves[1] == ["app-a", "app-b"]
+
+
+def test_release_diamond_pulls_all_parents(tmp_path):
+    """Seeding one branch of a diamond must still rebuild the other parent of a shared child."""
+    spec = {
+        "base": {"tag_prefix": "base", "base_image": True, "downstream": ["a", "b"]},
+        "a": {"tag_prefix": "rel", "downstream": ["c"]},
+        "b": {"tag_prefix": "other", "downstream": ["c"]},
+        "c": {"tag_prefix": "leaf", "downstream": []},
+    }
+    graph = make_graph(tmp_path, spec)
+    build_set = resolve_release_build_set(graph, "rel")
+    # Seeding only 'a' pulls c (descendant), then b (c's other parent) and base.
+    assert build_set == {"base", "a", "b", "c"}
+    waves = build_plan(graph, build_set)
+    assert waves[0] == ["base"]
+    assert waves[1] == ["a", "b"]
+    assert waves[2] == ["c"]
 
 
 def test_unknown_selected_container_raises(tmp_path):

@@ -1,5 +1,6 @@
 {
-  "tag_prefix": "release",
+  "tag_prefix": "base",
+  "base_image": true,
   "watch_paths": ["containers/python-base/"],
   "tag_latest": true,
   "build_whl": false,

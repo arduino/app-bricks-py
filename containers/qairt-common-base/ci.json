@@ -1,5 +1,6 @@
 {
-  "tag_prefix": "ai",
+  "tag_prefix": "base",
+  "base_image": true,
   "watch_paths": ["containers/qairt-common-base/"],
   "tag_latest": true,
   "build_whl": false,
@@ -8,5 +9,5 @@
   "sbom": {
     "runtime_base": "python:3.13-slim"
   },
-  "downstream": ["aihub-models-runner"]
+  "downstream": ["aihub-models-runner", "llamacpp-npu-runner"]
 }
