@@ -5,7 +5,7 @@
 ARG REGISTRY
 ARG BASE_IMAGE_VERSION=latest
 
-FROM ${REGISTRY}app-bricks/aihub-models-runner:${BASE_IMAGE_VERSION}
+FROM ${REGISTRY}app-bricks/qairt-common-base:${BASE_IMAGE_VERSION}
 
 ARG LLAMA_CPP_URL
 ARG LLAMA_CPP_DIGEST
@@ -17,18 +17,18 @@ COPY ./scripts/* /
 RUN set -ex; \
     tar -xzf /tmp/llamacpp.tar.gz -C /opt; \
     rm /tmp/llamacpp.tar.gz; \
-    chown -R ubuntu:ubuntu /opt/pkg-snapdragon; \
+    chown -R arduino:arduino /opt/pkg-snapdragon; \
     chmod +x /opt/pkg-snapdragon/bin/*; \
     mkdir -p /models; \
-    chown ubuntu:ubuntu /models; \
+    chown arduino:arduino /models; \
     chmod +x /*.sh
 
 EXPOSE 9999
 
-USER ubuntu
+USER arduino
 
-ENV HOME=/home/ubuntu
-ENV USER=ubuntu
+ENV HOME=/home/arduino
+ENV USER=arduino
 
 ENV LD_LIBRARY_PATH=/opt/pkg-snapdragon/lib
 ENV ADSP_LIBRARY_PATH=/opt/pkg-snapdragon/lib

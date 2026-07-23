@@ -18,86 +18,75 @@ RUN apt-get update && \
 # ============================
 FROM base AS native-libs
 
-# Inherit the global default or --build-arg
-ARG INSTALL_NATIVE_LIBS=true
+# QAIRT version to download and install
+ENV QNP_VER=2.46.0.260424
 
 # Tools for download/unzip
-RUN if [ "$INSTALL_NATIVE_LIBS" = "true" ]; then \
-    apt-get update && \
+RUN apt-get update && \
     apt-get install -y wget unzip && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/*; \
-    fi
+    rm -rf /var/lib/apt/lists/*
 
-ENV VLM_BUILD_DIR="/mnt/work/build"
-ENV VLM_DEPLOY_DIR="/mnt/work/deploy"
-ENV VLM_ADSP_DIR=${VLM_DEPLOY_DIR}/usr/lib/rfsa/adsp
-ENV VLM_QNP_VER=2.46.0.260424
-ENV VLM_DOWNLOAD_DIR="/mnt/work/downloads"
-ENV VLM_QNP_SDK=v${VLM_QNP_VER}.zip
+ENV DEPLOY_DIR="/mnt/work/deploy"
+ENV ADSP_DIR=${DEPLOY_DIR}/usr/lib/rfsa/adsp
+ENV DOWNLOAD_DIR="/mnt/work/downloads"
+ENV QNP_SDK=v${QNP_VER}.zip
+
 # Expected unzip layout (adjust if archive differs)
-ENV VLM_QNN_ROOT=${VLM_DOWNLOAD_DIR}/qairt/${VLM_QNP_VER}
-ENV VLM_QNN_LIB_PATH=${VLM_QNN_ROOT}/lib
+ENV QNN_ROOT=${DOWNLOAD_DIR}/qairt/${QNP_VER}
+ENV QNN_LIB_PATH=${QNN_ROOT}/lib
 
 # Show variables
-RUN echo "INSTALL_NATIVE_LIBS=${INSTALL_NATIVE_LIBS}" && \
-    echo "VLM_QNP_VER=${VLM_QNP_VER}" && \
-    echo "VLM_QNP_SDK=${VLM_QNP_SDK}" && \
-    echo "VLM_QNN_ROOT=${VLM_QNN_ROOT}" && \
-    echo "VLM_QNN_LIB_PATH=${VLM_QNN_LIB_PATH}"
+RUN echo "QNP_VER=${QNP_VER}" && \
+    echo "QNP_SDK=${QNP_SDK}" && \
+    echo "QNN_ROOT=${QNN_ROOT}" && \
+    echo "QNN_LIB_PATH=${QNN_LIB_PATH}"
 
 # Ensure structure for downstream COPY
-RUN mkdir -p ${VLM_DEPLOY_DIR}/usr/lib ${VLM_ADSP_DIR} /usr/include /usr/lib ${VLM_DOWNLOAD_DIR}
+RUN mkdir -p ${DEPLOY_DIR}/usr/lib ${ADSP_DIR} /usr/include /usr/lib ${DOWNLOAD_DIR}
 
 # Install and VALIDATE native libs
 RUN set -eu && \
-    echo "INSTALL_NATIVE_LIBS=${INSTALL_NATIVE_LIBS}" && \
-    if [ "${INSTALL_NATIVE_LIBS}" = "true" ]; then \
-      echo "==> Clean previous artifacts"; \
-      rm -rf "${VLM_DOWNLOAD_DIR}/qairt" || true; \
-      rm -f  "${VLM_DOWNLOAD_DIR}/${VLM_QNP_SDK}" || true; \
-      \
-      echo "==> Download QAIRT ${VLM_QNP_VER}"; \
-      wget -t 3 -T 300 -P "${VLM_DOWNLOAD_DIR}" \
-        "https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/${VLM_QNP_VER}/${VLM_QNP_SDK}"; \
-      \
-      echo "==> Unzip SDK"; \
-      cd "${VLM_DOWNLOAD_DIR}" && unzip -q "${VLM_QNP_SDK}" && rm -f "${VLM_QNP_SDK}"; \
-      \
-      echo '==> Validate expected directory layout'; \
-      test -d "${VLM_QNN_ROOT}" || { echo "ERROR: ${VLM_QNN_ROOT} missing"; ls -la "${VLM_DOWNLOAD_DIR}/qairt" || true; exit 1; }; \
-      test -d "${VLM_QNN_LIB_PATH}" || { echo "ERROR: ${VLM_QNN_LIB_PATH} missing"; ls -la "${VLM_QNN_ROOT}" || true; exit 1; }; \
-      \
-      echo '==> Copy aarch64 QNN libs to deploy'; \
-      cp -v "${VLM_QNN_LIB_PATH}/aarch64-oe-linux-gcc11.2/"* "${VLM_DEPLOY_DIR}/usr/lib/"; \
-      \
-      echo '==> Copy ADSP (Hexagon) unsigned binaries'; \
-      for hv in hexagon-v73 hexagon-v75; do \
-        if [ -d "${VLM_QNN_LIB_PATH}/${hv}/unsigned" ]; then \
-          cp -v "${VLM_QNN_LIB_PATH}/${hv}/unsigned/"* "${VLM_ADSP_DIR}/"; \
-        else \
-          echo "WARN: ${hv}/unsigned not found for ${VLM_QNP_VER}"; \
-        fi; \
-      done; \
-      \
-      echo '==> Validate ADSP dir non-empty and contains .so'; \
-      test -d "${VLM_ADSP_DIR}" && test "$(find "${VLM_ADSP_DIR}" -type f -name '*.so' | wc -l)" -ge 1 || { \
-        echo "ERROR: No ADSP .so files copied into ${VLM_ADSP_DIR}"; exit 1; \
-      }; \
-      \
-      echo "==> QAIRT ${VLM_QNP_VER} install and validation complete"; \
-    else \
-      echo "Skipping native libs install (INSTALL_NATIVE_LIBS!=true)"; \
-    fi
+    echo "==> Clean previous artifacts"; \
+    rm -rf "${DOWNLOAD_DIR}/qairt" || true; \
+    rm -f  "${DOWNLOAD_DIR}/${QNP_SDK}" || true; \
+    \
+    echo "==> Download QAIRT ${QNP_VER}"; \
+    wget -t 3 -T 300 -P "${DOWNLOAD_DIR}" \
+      "https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/${QNP_VER}/${QNP_SDK}"; \
+    \
+    echo "==> Unzip SDK"; \
+    cd "${DOWNLOAD_DIR}" && unzip -q "${QNP_SDK}" && rm -f "${QNP_SDK}"; \
+    \
+    echo '==> Validate expected directory layout'; \
+    test -d "${QNN_ROOT}" || { echo "ERROR: ${QNN_ROOT} missing"; ls -la "${DOWNLOAD_DIR}/qairt" || true; exit 1; }; \
+    test -d "${QNN_LIB_PATH}" || { echo "ERROR: ${QNN_LIB_PATH} missing"; ls -la "${QNN_ROOT}" || true; exit 1; }; \
+    \
+    echo '==> Copy aarch64 QNN libs to deploy'; \
+    cp -v "${QNN_LIB_PATH}/aarch64-oe-linux-gcc11.2/"* "${DEPLOY_DIR}/usr/lib/"; \
+    \
+    echo '==> Copy ADSP (Hexagon) unsigned binaries'; \
+    for hv in hexagon-v73 hexagon-v75; do \
+      if [ -d "${QNN_LIB_PATH}/${hv}/unsigned" ]; then \
+        cp -v "${QNN_LIB_PATH}/${hv}/unsigned/"* "${ADSP_DIR}/"; \
+      else \
+        echo "WARN: ${hv}/unsigned not found for ${QNP_VER}"; \
+      fi; \
+    done; \
+    \
+    echo '==> Validate ADSP dir non-empty and contains .so'; \
+    test -d "${ADSP_DIR}" && test "$(find "${ADSP_DIR}" -type f -name '*.so' | wc -l)" -ge 1 || { \
+      echo "ERROR: No ADSP .so files copied into ${ADSP_DIR}"; exit 1; \
+    }; \
+    \
+    echo "==> QAIRT ${QNP_VER} install and validation complete"
 
 # Fail-fast: ADSP sanity (sprpc/skel presence optional)
-RUN if [ "$INSTALL_NATIVE_LIBS" = "true" ]; then \
-      if ! find "${VLM_ADSP_DIR}" -type f -name "*.so" | grep -q . ; then \
-        echo "ERROR: No .so files in ${VLM_ADSP_DIR}"; exit 1; \
-      fi; \
-      if ! (find "${VLM_ADSP_DIR}" -type f \( -name "*sprpc*.so" -o -name "*skel*.so" \) | grep -q .) ; then \
-        echo "WARNING: No *sprpc*/*skel* libs detected in ${VLM_ADSP_DIR}. Continuing."; \
-      fi; \
+RUN if ! find "${ADSP_DIR}" -type f -name "*.so" | grep -q . ; then \
+      echo "ERROR: No .so files in ${ADSP_DIR}"; exit 1; \
+    fi; \
+    if ! (find "${ADSP_DIR}" -type f \( -name "*sprpc*.so" -o -name "*skel*.so" \) | grep -q .) ; then \
+      echo "WARNING: No *sprpc*/*skel* libs detected in ${ADSP_DIR}. Continuing."; \
     fi
 
 # ============================
@@ -105,7 +94,7 @@ RUN if [ "$INSTALL_NATIVE_LIBS" = "true" ]; then \
 # ============================
 # Builds fastrpc from source. Provides libcdsprpc.so and libadsprpc.so
 # which are required by libtranslation.so at runtime.
-# Inherits from base to reuse the already-pulled ubuntu:24.04 image and apt-get upgrade layer.
+# Inherits from base to reuse the already-pulled image and apt-get upgrade layer.
 FROM base AS fastrpc-builder
 
 RUN apt-get update && \
@@ -132,18 +121,34 @@ RUN git clone --depth 1 https://github.com/quic/fastrpc.git \
 # base already ran apt-get upgrade so we don't need to repeat it here.
 FROM base AS runtime
 
-ARG INSTALL_NATIVE_LIBS=true
-
 # Single combined layer: runtime deps only.
 # base already ran apt-get upgrade. No build tools, no nodesource.
 # Node binary is copied from api-builder.
 RUN apt-get update && \
+    apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
       curl libyaml-0-2 libbsd0 libmd0 libatomic1 && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+    apt-get clean; \
+    apt-get dist-clean; \
+    # cleanup unnecessary files to reduce image size
+    rm -rf /tmp/* /var/tmp/*; \
+    rm -rf /var/lib/apt/lists/*; \
+    rm -fr /var/cache/apt/archives/*.deb \
+        /var/cache/apt/archives/partial/*.deb \
+        /usr/share/man/* \
+        /usr/share/locale/* \
+        /var/cache/debconf/* \
+        /var/lib/dpkg/info/* \
+        /var/cache/apt/*.bin; \
+    find /usr/share/doc -type f ! -name 'copyright' -delete; \
+    find /usr/share/doc -type d -empty -delete; \
+    # precompile python files to .pyc to speed up startup time
+    python -m compileall /usr/local/bin; \
+    python -m compileall /usr/local/lib
 
-RUN useradd -ms /bin/bash -u 1000 iot-user
+RUN groupadd -g 1000 arduino || true; \
+    useradd -u 1000 -g arduino -ms /bin/bash arduino; \
+    chown -R arduino:arduino /home/arduino
 
 COPY --from=native-libs /mnt/work/deploy/usr /usr
 
@@ -169,4 +174,4 @@ RUN mkdir -p /etc/fastrpc && \
 
 # Use container libraries
 ENV ADSP_LIBRARY_PATH=/usr/lib/rfsa/adsp
-ENV CDSP_LIBRARY_PATH=/usr/lib/rfsa/adsp
+ENV CDSP_LIBRARY_PATH=/usr/lib/rfsa/cdsp
