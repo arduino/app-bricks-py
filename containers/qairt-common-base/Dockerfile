@@ -161,8 +161,9 @@ COPY --from=fastrpc-builder /usr/lib/libadsprpc* /usr/lib/
 # after the bind-mount is in place, so fastrpc_shell resolves from the host.
 RUN mkdir -p /etc/fastrpc && \
     { \
-      echo '# SPDX-License-Identifier: BSD-3-Clause-Clear'; \
-      echo '# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.'; \
+      echo '# SPDX-FileCopyrightText: Copyright (C) Arduino s.r.l. and/or its affiliated companies'; \
+      echo '#'; \
+      echo '# SPDX-License-Identifier: MPL-2.0'; \
       echo 'machines:'; \
       echo '  Qualcomm Technologies, Inc. Monaco Monza addons:'; \
       echo '    DSP_LIBRARY_PATH: qcs8300/Qualcomm/QCS8300-RIDE/dsp'; \

@@ -9,7 +9,8 @@ python3 /generate_models_ini.py /models
 
 echo "Starting LLama server..."
 export LD_LIBRARY_PATH=/opt/pkg-snapdragon/lib
-export ADSP_LIBRARY_PATH=/opt/pkg-snapdragon/lib
+# Include both, llama.cpp libs and skel files from qairt
+export ADSP_LIBRARY_PATH="/opt/pkg-snapdragon/lib;/usr/lib/rfsa/adsp"
 
 # Build --device argument from GGML_HEXAGON_NDEV (default: 1)
 NDEV="${GGML_HEXAGON_NDEV:-1}"
