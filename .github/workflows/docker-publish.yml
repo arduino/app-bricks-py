@@ -36,8 +36,6 @@ jobs:
       level_0: ${{ steps.detect.outputs.level_0 }}
       level_1: ${{ steps.detect.outputs.level_1 }}
       level_2: ${{ steps.detect.outputs.level_2 }}
-      level_3: ${{ steps.detect.outputs.level_3 }}
-      level_4: ${{ steps.detect.outputs.level_4 }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -148,34 +146,10 @@ jobs:
       prerelease: ${{ needs.detect.outputs.prerelease }}
       allow_retag: false
 
-  build-l3:
-    needs: [detect, upload-whl, build-l2]
-    if: needs.detect.outputs.level_3 != '[]'
-    uses: ./.github/workflows/_build-containers-release.yml
-    secrets: inherit
-    with:
-      containers: ${{ needs.detect.outputs.level_3 }}
-      version: ${{ needs.detect.outputs.version }}
-      tag_ref: ${{ needs.detect.outputs.tag_ref }}
-      prerelease: ${{ needs.detect.outputs.prerelease }}
-      allow_retag: false
-
-  build-l4:
-    needs: [detect, upload-whl, build-l3]
-    if: needs.detect.outputs.level_4 != '[]'
-    uses: ./.github/workflows/_build-containers-release.yml
-    secrets: inherit
-    with:
-      containers: ${{ needs.detect.outputs.level_4 }}
-      version: ${{ needs.detect.outputs.version }}
-      tag_ref: ${{ needs.detect.outputs.tag_ref }}
-      prerelease: ${{ needs.detect.outputs.prerelease }}
-      allow_retag: false
-
   upload-release:
     runs-on: ubuntu-24.04-arm
     if: startsWith(needs.detect.outputs.tag_ref, 'release/')
-    needs: [detect, upload-whl, build-l0, build-l1, build-l2, build-l3, build-l4]
+    needs: [detect, upload-whl, build-l0, build-l1, build-l2]
     steps:
       - name: Download wheel artifact
         uses: actions/download-artifact@v4

@@ -32,7 +32,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 # Maximum number of build waves supported by the caller workflows
 # (jobs build-l0 .. build-l{MAX_LEVELS - 1}). Bump this together with the
 # number of chained jobs in docker-build.yml / docker-publish.yml.
-MAX_LEVELS = 5
+MAX_LEVELS = 3
 
 
 class BuildLevelsError(RuntimeError):

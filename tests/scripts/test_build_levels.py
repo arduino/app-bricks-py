@@ -55,10 +55,10 @@ def test_three_level_chain_from_root(tmp_path):
     graph = make_graph(tmp_path, CHAIN)
     build_set = resolve_dev_build_set(graph, "qairt-common-base")
     waves = build_plan(graph, build_set)
+    assert len(waves) == MAX_LEVELS
     assert waves[0] == ["qairt-common-base"]
     assert waves[1] == ["aihub-models-runner"]
     assert waves[2] == ["gesture-recognition-runner", "llamacpp-npu-runner"]
-    assert waves[3] == [] and waves[4] == []
 
 
 def test_reverse_closure_from_leaf(tmp_path):

@@ -36,8 +36,6 @@ jobs:
       level_0: ${{ steps.detect.outputs.level_0 }}
       level_1: ${{ steps.detect.outputs.level_1 }}
       level_2: ${{ steps.detect.outputs.level_2 }}
-      level_3: ${{ steps.detect.outputs.level_3 }}
-      level_4: ${{ steps.detect.outputs.level_4 }}
     steps:
       - name: Resolve branch
         id: resolve
@@ -94,26 +92,6 @@ jobs:
     uses: ./.github/workflows/_build-containers-dev.yml
     with:
       containers: ${{ needs.setup.outputs.level_2 }}
-      branch: ${{ needs.setup.outputs.branch }}
-      image_tag: ${{ needs.setup.outputs.image_tag }}
-      skip_cache: ${{ inputs.skip_cache }}
-
-  build-l3:
-    needs: [setup, build-l2]
-    if: needs.setup.outputs.level_3 != '[]'
-    uses: ./.github/workflows/_build-containers-dev.yml
-    with:
-      containers: ${{ needs.setup.outputs.level_3 }}
-      branch: ${{ needs.setup.outputs.branch }}
-      image_tag: ${{ needs.setup.outputs.image_tag }}
-      skip_cache: ${{ inputs.skip_cache }}
-
-  build-l4:
-    needs: [setup, build-l3]
-    if: needs.setup.outputs.level_4 != '[]'
-    uses: ./.github/workflows/_build-containers-dev.yml
-    with:
-      containers: ${{ needs.setup.outputs.level_4 }}
       branch: ${{ needs.setup.outputs.branch }}
       image_tag: ${{ needs.setup.outputs.image_tag }}
       skip_cache: ${{ inputs.skip_cache }}
