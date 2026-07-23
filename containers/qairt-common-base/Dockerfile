@@ -127,7 +127,7 @@ FROM base AS runtime
 RUN apt-get update && \
     apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
-      curl libyaml-0-2 libbsd0 libmd0 libatomic1 && \
+      curl libyaml-0-2 libbsd0 libmd0 libatomic1 strace && \
     apt-get clean; \
     apt-get dist-clean; \
     # cleanup unnecessary files to reduce image size
