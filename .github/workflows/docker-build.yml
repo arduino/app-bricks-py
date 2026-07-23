@@ -22,10 +22,6 @@ on:
         type: boolean
         default: false
 
-env:
-  REGISTRY: ghcr.io
-  DEV_REGISTRY_PATH: ghcr.io/${{ github.repository_owner }}/
-
 permissions:
   contents: read
   packages: write
@@ -36,9 +32,12 @@ jobs:
     runs-on: ubuntu-24.04-arm
     outputs:
       branch: ${{ steps.resolve.outputs.branch }}
-      containers: ${{ steps.detect.outputs.containers }}
-      downstream_containers: ${{ steps.detect.outputs.downstream_containers }}
       image_tag: ${{ steps.detect.outputs.image_tag }}
+      level_0: ${{ steps.detect.outputs.level_0 }}
+      level_1: ${{ steps.detect.outputs.level_1 }}
+      level_2: ${{ steps.detect.outputs.level_2 }}
+      level_3: ${{ steps.detect.outputs.level_3 }}
+      level_4: ${{ steps.detect.outputs.level_4 }}
     steps:
       - name: Resolve branch
         id: resolve
@@ -63,284 +62,58 @@ jobs:
           fi
           echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
 
-          INPUT="${{ inputs.containers }}"
-          CHANGED=()
-          if [[ "$INPUT" == "all" ]]; then
-            for CI_JSON in containers/*/ci.json; do
-              CHANGED+=("$(basename "$(dirname "$CI_JSON")")")
-            done
-          else
-            while IFS= read -r CONTAINER; do
-              CHANGED+=("$CONTAINER")
-            done < <(echo "$INPUT" | tr ',' '\n' | sed 's/^ *//;s/ *$//')
-          fi
+          # Compute the topological build plan (level_0 .. level_4) and append it
+          # to $GITHUB_OUTPUT. Bases are always placed before the images that
+          # derive FROM them, and both descendants and ancestors of the selection
+          # are pulled in so the full chain is rebuilt in order.
+          python3 -m scripts.build_levels --mode dev --select "${{ inputs.containers }}"
 
-          # Forward cascade: if a base container is selected, add its downstream containers
-          for CONTAINER in "${CHANGED[@]}"; do
-            DOWNSTREAM=$(jq -r '.downstream // [] | .[]' "containers/$CONTAINER/ci.json")
-            for DS in $DOWNSTREAM; do
-              if [[ ! " ${CHANGED[*]} " =~ " $DS " ]]; then
-                echo "Cascading downstream: $DS depends on $CONTAINER"
-                CHANGED+=("$DS")
-              fi
-            done
-          done
-
-          # Reverse cascade: if a downstream container is selected, add its parent so the
-          # base image is always built fresh before the downstream container
-          for CONTAINER in "${CHANGED[@]}"; do
-            for CI_JSON in containers/*/ci.json; do
-              PARENT=$(basename "$(dirname "$CI_JSON")")
-              DS_LIST=$(jq -r '.downstream // [] | .[]' "$CI_JSON" 2>/dev/null)
-              for DS in $DS_LIST; do
-                if [[ "$DS" == "$CONTAINER" ]] && [[ ! " ${CHANGED[*]} " =~ " $PARENT " ]]; then
-                  echo "Cascading upstream: $PARENT required by $CONTAINER"
-                  CHANGED+=("$PARENT")
-                fi
-              done
-            done
-          done
-
-          if [[ ${#CHANGED[@]} -eq 0 ]]; then
-            echo "No containers to build"
-            echo "containers=[]" >> $GITHUB_OUTPUT
-            echo "downstream_containers=[]" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          # Split into base and downstream containers.
-          # A container is downstream if it appears in another container's downstream list.
-          DOWNSTREAM_IN_BUILD=()
-          for CONTAINER in "${CHANGED[@]}"; do
-            DS_LIST=$(jq -r '.downstream // [] | .[]' "containers/$CONTAINER/ci.json" 2>/dev/null || true)
-            for DS in $DS_LIST; do
-              if [[ " ${CHANGED[*]} " =~ " $DS " ]] && [[ ! " ${DOWNSTREAM_IN_BUILD[*]} " =~ " $DS " ]]; then
-                DOWNSTREAM_IN_BUILD+=("$DS")
-              fi
-            done
-          done
-
-          BASE_CONTAINERS=()
-          for CONTAINER in "${CHANGED[@]}"; do
-            if [[ ! " ${DOWNSTREAM_IN_BUILD[*]} " =~ " $CONTAINER " ]]; then
-              BASE_CONTAINERS+=("$CONTAINER")
-            fi
-          done
-
-          echo "Base containers: ${BASE_CONTAINERS[*]}"
-          echo "Downstream containers: ${DOWNSTREAM_IN_BUILD[*]}"
-
-          if [[ ${#BASE_CONTAINERS[@]} -eq 0 ]]; then
-            echo "containers=[]" >> $GITHUB_OUTPUT
-          else
-            echo "containers=$(printf '%s\n' "${BASE_CONTAINERS[@]}" | jq -R . | jq -sc .)" >> $GITHUB_OUTPUT
-          fi
-
-          if [[ ${#DOWNSTREAM_IN_BUILD[@]} -eq 0 ]]; then
-            echo "downstream_containers=[]" >> $GITHUB_OUTPUT
-          else
-            echo "downstream_containers=$(printf '%s\n' "${DOWNSTREAM_IN_BUILD[@]}" | jq -R . | jq -sc .)" >> $GITHUB_OUTPUT
-          fi
-
-  build:
+  build-l0:
     needs: [setup]
-    if: needs.setup.outputs.containers != '[]'
-    runs-on: ubuntu-24.04-arm
-    env:
-      PYTHON_VERSION: "3.13"
-      TASKFILE_VERSION: "3.45.4"
-    strategy:
-      fail-fast: false
-      matrix:
-        container: ${{ fromJson(needs.setup.outputs.containers) }}
+    if: needs.setup.outputs.level_0 != '[]'
+    uses: ./.github/workflows/_build-containers-dev.yml
+    with:
+      containers: ${{ needs.setup.outputs.level_0 }}
+      branch: ${{ needs.setup.outputs.branch }}
+      image_tag: ${{ needs.setup.outputs.image_tag }}
+      skip_cache: ${{ inputs.skip_cache }}
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.setup.outputs.branch }}
-          fetch-depth: 0
+  build-l1:
+    needs: [setup, build-l0]
+    if: needs.setup.outputs.level_1 != '[]'
+    uses: ./.github/workflows/_build-containers-dev.yml
+    with:
+      containers: ${{ needs.setup.outputs.level_1 }}
+      branch: ${{ needs.setup.outputs.branch }}
+      image_tag: ${{ needs.setup.outputs.image_tag }}
+      skip_cache: ${{ inputs.skip_cache }}
 
-      - name: Read container config
-        id: config
-        run: |
-          CI_JSON="containers/${{ matrix.container }}/ci.json"
-          BUILD_ARGS=$(jq -r '.build_args // {} | to_entries | map("\(.key)=\(.value)") | join("\n")' "$CI_JSON")
-          echo "build_args<<EOF" >> $GITHUB_OUTPUT
-          echo "$BUILD_ARGS" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+  build-l2:
+    needs: [setup, build-l1]
+    if: needs.setup.outputs.level_2 != '[]'
+    uses: ./.github/workflows/_build-containers-dev.yml
+    with:
+      containers: ${{ needs.setup.outputs.level_2 }}
+      branch: ${{ needs.setup.outputs.branch }}
+      image_tag: ${{ needs.setup.outputs.image_tag }}
+      skip_cache: ${{ inputs.skip_cache }}
 
-      - name: Setup Docker buildx
-        uses: docker/setup-buildx-action@v4
+  build-l3:
+    needs: [setup, build-l2]
+    if: needs.setup.outputs.level_3 != '[]'
+    uses: ./.github/workflows/_build-containers-dev.yml
+    with:
+      containers: ${{ needs.setup.outputs.level_3 }}
+      branch: ${{ needs.setup.outputs.branch }}
+      image_tag: ${{ needs.setup.outputs.image_tag }}
+      skip_cache: ${{ inputs.skip_cache }}
 
-      - name: Log into registry ${{ env.REGISTRY }}
-        uses: docker/login-action@v4
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build cache configuration
-        id: cache
-        run: |
-          CACHE_TAG="${{ needs.setup.outputs.image_tag }}-buildcache"
-          if [ "${{ github.event.inputs.skip_cache }}" != "true" ]; then
-            echo "cache_from=type=registry,ref=ghcr.io/${{ github.repository_owner }}/app-bricks/${{ matrix.container }}:${CACHE_TAG}" >> $GITHUB_OUTPUT
-          else
-            echo "cache_from=" >> $GITHUB_OUTPUT
-          fi
-          echo "cache_to=type=registry,ref=ghcr.io/${{ github.repository_owner }}/app-bricks/${{ matrix.container }}:${CACHE_TAG},mode=max" >> $GITHUB_OUTPUT
-
-      - name: Extract Docker metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          tags: |
-            type=raw,value=${{ needs.setup.outputs.image_tag }}
-            type=raw,value=${{ needs.setup.outputs.image_tag }}-${{ github.run_number }}
-          images: ghcr.io/${{ github.repository_owner }}/app-bricks/${{ matrix.container }}
-          labels: |
-            org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.url=https://github.com/${{ github.repository }}
-
-      - name: Copy models-list.yaml into build context
-        if: matrix.container == 'models-downloader'
-        run: cp models/models-list.yaml containers/models-downloader/models-list.yaml
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v7
-        with:
-          context: ./containers/${{ matrix.container }}
-          file: ./containers/${{ matrix.container }}/Dockerfile
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          platforms: linux/arm64
-          cache-from: ${{ steps.cache.outputs.cache_from }}
-          cache-to: ${{ steps.cache.outputs.cache_to }}
-          provenance: false
-          build-args: |
-            ${{ steps.config.outputs.build_args }}
-            REGISTRY=${{ env.DEV_REGISTRY_PATH }}
-            BASE_IMAGE_VERSION=${{ needs.setup.outputs.image_tag }}
-
-      - name: SBOM Delta
-        uses: ./.github/actions/sbom-delta
-        with:
-          container: ${{ matrix.container }}
-          version: ${{ needs.setup.outputs.image_tag }}
-          registry: ${{ env.DEV_REGISTRY_PATH }}
-
-  build-downstream:
-    needs: [setup, build]
-    if: needs.setup.outputs.downstream_containers != '[]'
-    runs-on: ubuntu-24.04-arm
-    env:
-      PYTHON_VERSION: "3.13"
-      TASKFILE_VERSION: "3.45.4"
-    strategy:
-      fail-fast: false
-      matrix:
-        container: ${{ fromJson(needs.setup.outputs.downstream_containers) }}
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.setup.outputs.branch }}
-          fetch-depth: 0
-
-      - name: Build wheel in debian:trixie
-        if: matrix.container == 'python-apps-base'
-        run: |
-          # Remove tags that setuptools_scm can't parse (only ai/* and release/* are valid)
-          git tag -l | grep -v -E '^(ai|release)/' | xargs -r git tag -d
-
-          docker run --rm \
-            -v "${{ github.workspace }}:/${{ github.workspace }}" \
-            -w "${{ github.workspace }}" \
-            -e SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)" \
-            -e PUBLIC_IMAGE_REGISTRY_BASE="${{ env.DEV_REGISTRY_PATH }}/" \
-            -e DEV_TAG_VERSION="${{ needs.setup.outputs.image_tag }}" \
-            debian:trixie bash -c "
-              set -e
-              apt-get update
-              apt-get install -y --no-install-recommends --no-install-suggests sudo git ca-certificates python3-dev python3-pip build-essential pkg-config
-              echo '[global]' > /etc/pip.conf
-              echo 'break-system-packages = true' >> /etc/pip.conf
-              git config --global --add safe.directory '*'
-              pip install go-task-bin==${{ env.TASKFILE_VERSION }}
-              task init:ci
-              task build-dev
-              cp ./dist/arduino*.whl ./containers/python-apps-base/
-            "
-
-      - name: Read container config
-        id: config
-        run: |
-          CI_JSON="containers/${{ matrix.container }}/ci.json"
-          BUILD_ARGS=$(jq -r '.build_args // {} | to_entries | map("\(.key)=\(.value)") | join("\n")' "$CI_JSON")
-          echo "build_args<<EOF" >> $GITHUB_OUTPUT
-          echo "$BUILD_ARGS" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-      - name: Setup Docker buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Log into registry ${{ env.REGISTRY }}
-        uses: docker/login-action@v4
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build cache configuration
-        id: cache
-        run: |
-          CACHE_TAG="${{ needs.setup.outputs.image_tag }}-buildcache"
-          if [ "${{ github.event.inputs.skip_cache }}" != "true" ]; then
-            echo "cache_from=type=registry,ref=ghcr.io/${{ github.repository_owner }}/app-bricks/${{ matrix.container }}:${CACHE_TAG}" >> $GITHUB_OUTPUT
-          else
-            echo "cache_from=" >> $GITHUB_OUTPUT
-          fi
-          echo "cache_to=type=registry,ref=ghcr.io/${{ github.repository_owner }}/app-bricks/${{ matrix.container }}:${CACHE_TAG},mode=max" >> $GITHUB_OUTPUT
-
-      - name: Extract Docker metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          tags: |
-            type=raw,value=${{ needs.setup.outputs.image_tag }}
-            type=raw,value=${{ needs.setup.outputs.image_tag }}-${{ github.run_number }}
-          images: ghcr.io/${{ github.repository_owner }}/app-bricks/${{ matrix.container }}
-          labels: |
-            org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.url=https://github.com/${{ github.repository }}
-
-      - name: Copy models-list.yaml into build context
-        if: matrix.container == 'models-downloader'
-        run: cp models/models-list.yaml containers/models-downloader/models-list.yaml
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v7
-        with:
-          context: ./containers/${{ matrix.container }}
-          file: ./containers/${{ matrix.container }}/Dockerfile
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          platforms: linux/arm64
-          cache-from: ${{ steps.cache.outputs.cache_from }}
-          cache-to: ${{ steps.cache.outputs.cache_to }}
-          provenance: false
-          build-args: |
-            ${{ steps.config.outputs.build_args }}
-            REGISTRY=${{ env.DEV_REGISTRY_PATH }}
-            BASE_IMAGE_VERSION=${{ needs.setup.outputs.image_tag }}
-
-      - name: SBOM Delta
-        uses: ./.github/actions/sbom-delta
-        with:
-          container: ${{ matrix.container }}
-          version: ${{ needs.setup.outputs.image_tag }}
-          registry: ${{ env.DEV_REGISTRY_PATH }}
+  build-l4:
+    needs: [setup, build-l3]
+    if: needs.setup.outputs.level_4 != '[]'
+    uses: ./.github/workflows/_build-containers-dev.yml
+    with:
+      containers: ${{ needs.setup.outputs.level_4 }}
+      branch: ${{ needs.setup.outputs.branch }}
+      image_tag: ${{ needs.setup.outputs.image_tag }}
+      skip_cache: ${{ inputs.skip_cache }}
