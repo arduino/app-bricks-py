@@ -384,18 +384,18 @@ class TestALSASpeakerJackResolution:
     def test_list_jack_devices_under_media_carrier(self, mock_pw_dump, media_carrier):
         mock_pw_dump(usb_ids=(), builtin_ids=(52,))
 
-        assert ALSASpeaker.list_jack_devices() == ["pipewire:NODE=52"]
+        assert ALSASpeaker.list_jack_devices() == ["pipewire:NODE=alsa_output.platform-sound.Sink-52"]
 
     def test_list_devices_combines_usb_and_jack(self, mock_pw_dump, media_carrier):
         mock_pw_dump(usb_ids=(50,), builtin_ids=(52,))
 
-        assert ALSASpeaker.list_devices() == ["plughw:CARD=SomeCard,DEV=0", "pipewire:NODE=52"]
+        assert ALSASpeaker.list_devices() == ["plughw:CARD=SomeCard,DEV=0", "pipewire:NODE=alsa_output.platform-sound.Sink-52"]
 
     def test_jack_resolves_to_pipewire_node(self, mock_pw_dump, media_carrier):
         mock_pw_dump(usb_ids=(), builtin_ids=(52,))
 
         spkr = ALSASpeaker(device="jack:1")
-        assert spkr.device_stable_ref == "pipewire:NODE=52"
+        assert spkr.device_stable_ref == "pipewire:NODE=alsa_output.platform-sound.Sink-52"
 
     def test_jack_name_uses_pipewire_description(self, mock_pw_dump, media_carrier):
         mock_pw_dump(usb_ids=(), builtin_ids=(52,))
@@ -405,8 +405,8 @@ class TestALSASpeakerJackResolution:
 
     def test_jack_name_falls_back_to_node_ref_without_description(self):
         # An explicit pipewire node absent from pw-dump keeps the technical ref as name.
-        spkr = ALSASpeaker(device="pipewire:NODE=99")
-        assert spkr.name == "pipewire:NODE=99"
+        spkr = ALSASpeaker(device="pipewire:NODE=unknown.node")
+        assert spkr.name == "pipewire:NODE=unknown.node"
 
     def test_jack_opens_pipewire_device(self, mock_pw_dump, media_carrier, pcm_registry):
         mock_pw_dump(usb_ids=(), builtin_ids=(52,))
@@ -414,7 +414,7 @@ class TestALSASpeakerJackResolution:
         spkr = ALSASpeaker(device="jack:1")
         spkr.start()
 
-        assert pcm_registry.get_last_instance().device == "pipewire:NODE=52"
+        assert pcm_registry.get_last_instance().device == "pipewire:NODE=alsa_output.platform-sound.Sink-52"
         assert spkr._is_device_disconnected() is False
 
     def test_second_jack_unsupported(self, mock_pw_dump, media_carrier):
@@ -433,7 +433,7 @@ class TestALSASpeakerJackResolution:
         # No USB, one built-in: the first plugged speaker is the jack device.
         mock_pw_dump(usb_ids=(), builtin_ids=(52,))
 
-        assert ALSASpeaker(device=0).device_stable_ref == "pipewire:NODE=52"
+        assert ALSASpeaker(device=0).device_stable_ref == "pipewire:NODE=alsa_output.platform-sound.Sink-52"
 
     def test_ordinal_no_jack_fallback_off_media_carrier(self, mock_pw_dump):
         # Without media carrier there is no jack fallback, so an ordinal with no USB raises.
@@ -443,8 +443,8 @@ class TestALSASpeakerJackResolution:
             ALSASpeaker(device=0)
 
     def test_explicit_pipewire_node_passthrough(self, pcm_registry):
-        spkr = ALSASpeaker(device="pipewire:NODE=99")
-        assert spkr.device_stable_ref == "pipewire:NODE=99"
+        spkr = ALSASpeaker(device="pipewire:NODE=unknown.node")
+        assert spkr.device_stable_ref == "pipewire:NODE=unknown.node"
 
         spkr.start()
-        assert pcm_registry.get_last_instance().device == "pipewire:NODE=99"
+        assert pcm_registry.get_last_instance().device == "pipewire:NODE=unknown.node"

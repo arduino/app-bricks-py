@@ -420,20 +420,6 @@ def save_services_files(services_folder: str, output_dir: str):
     shutil.copytree(services_folder, output_dir, dirs_exist_ok=True)
 
 
-def save_examples_files(module: ArduinoBrick, output_dir: str):
-    """Save the examples files to the specified output directory."""
-    if not module.readme_file:
-        return
-
-    # We cannot save a folder containing the `:`, therefore we split and save it
-    # with parent folder. Example: `arduino/object_detection` instead of `arduino:object_detection`
-    module_name = "/".join(module.id.split(":"))
-    output_folder: pathlib.Path = pathlib.Path(output_dir) / module_name
-    input_folder: pathlib.Path = pathlib.Path(module.path) / examples_folder_name
-    if input_folder.is_dir():
-        shutil.copytree(input_folder, output_folder, dirs_exist_ok=True)
-
-
 def library_provisioning(
     out_path: str = None,
     modules: Dict[str, List[ArduinoBrick]] = None,
@@ -447,18 +433,15 @@ def library_provisioning(
     services_output_dir = f"{out_path}/services/arduino"
     docs_output_dir = f"{out_path}/docs"
     api_docs_output_dir = f"{out_path}/api-docs"
-    examples_output_dir = f"{out_path}/examples"
     os.makedirs(compose_output_dir, exist_ok=True)
     os.makedirs(services_output_dir, exist_ok=True)
     os.makedirs(docs_output_dir, exist_ok=True)
     os.makedirs(api_docs_output_dir, exist_ok=True)
-    os.makedirs(examples_output_dir, exist_ok=True)
 
     for path, module_list in modules.items():
         for module in module_list:
             save_compose_file(module, compose_output_dir, arduino_bricks_version)
             save_readme_file(module, docs_output_dir)
-            save_examples_files(module, examples_output_dir)
 
     # Save services files
     save_services_files(services_folder, services_output_dir)

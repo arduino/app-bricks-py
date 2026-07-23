@@ -154,7 +154,10 @@ class ALSAMicrophone(BaseMicrophone):
             logger.error(f"Error listing jack microphones: {e}")
             return []
 
-        return [f"pipewire:NODE={builtin_sources[0]['id']}"] if builtin_sources else []
+        if not builtin_sources:
+            return []
+        node_name = builtin_sources[0].get("info", {}).get("props", {}).get("node.name")
+        return [f"pipewire:NODE={node_name}"] if node_name else []
 
     def _resolve_stable_ref(self, identifier: str | int) -> str:
         """
@@ -164,7 +167,7 @@ class ALSAMicrophone(BaseMicrophone):
         The returned path is always one of:
             - "plughw:CARD=<name>,DEV=<n>" for card-based devices (USB and explicit),
             - "hw:<c>,<d>,<s>" / "plughw:<c>,<d>,<s>" for fully-specified raw devices,
-            - "pipewire:NODE=<id>" for built-in (jack) devices.
+            - "pipewire:NODE=<node.name>" for built-in (jack) devices.
 
         Args:
             identifier: Microphone identifier
@@ -269,7 +272,7 @@ class ALSAMicrophone(BaseMicrophone):
             identifier: jack microphone shorthand (e.g. "jack:1")
 
         Returns:
-            str: stable reference in full ALSA format ("pipewire:NODE=<id>")
+            str: stable reference in full ALSA format ("pipewire:NODE=<node.name>")
 
         Raises:
             MicrophoneOpenError: If no matching jack microphone is available
@@ -332,9 +335,9 @@ class ALSAMicrophone(BaseMicrophone):
         """
         if isinstance(device_ref, str):
             if device_ref.startswith("pipewire:"):
-                node_match = re.match(r"^pipewire:NODE=(\d+)$", device_ref)
+                node_match = re.match(r"^pipewire:NODE=(.+)$", device_ref)
                 if node_match:
-                    return node_description(int(node_match.group(1))) or device_ref
+                    return node_description(node_match.group(1)) or device_ref
                 return device_ref
 
             match = re.match(r"^(?:plughw:|hw:)([^,]+),\d+,\d+$", device_ref)
