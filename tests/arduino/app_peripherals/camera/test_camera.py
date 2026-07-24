@@ -7,7 +7,7 @@ import pytest
 
 from arduino.app_peripherals.camera import Camera, V4LCamera, IPCamera, WebSocketCamera, CameraConfigError
 
-from conftest import v4l_device_argument  # noqa: F401
+from conftest import two_v4l_cameras, v4l_device_argument  # noqa: F401
 
 
 def test_camera_factory_with_v4l_device(v4l_device_argument):
@@ -16,6 +16,40 @@ def test_camera_factory_with_v4l_device(v4l_device_argument):
     camera = Camera(v4l_device_argument)
     assert isinstance(camera, V4LCamera)
     assert camera.v4l_path == "/dev/v4l/by-id/usb-Camera-video-index0"
+
+
+def test_auto_selection_assigns_distinct_cameras(two_v4l_cameras):
+    """Auto-selected cameras must not contend for the same device."""
+    cam1 = Camera()
+    cam2 = Camera()
+    assert cam1.v4l_path == "/dev/v4l/by-id/usb-CamA-video-index0"
+    assert cam2.v4l_path == "/dev/v4l/by-id/usb-CamB-video-index0"
+
+
+def test_auto_selection_reuses_cameras_when_all_claimed(two_v4l_cameras):
+    """Once every camera is claimed, auto-selection falls back to plugged order."""
+    cameras = [Camera(), Camera(), Camera()]
+    assert cameras[2].v4l_path == cameras[0].v4l_path
+
+
+def test_auto_selection_releases_camera_when_instance_is_dropped(two_v4l_cameras):
+    """A camera claimed by a dropped instance becomes available again."""
+    import gc
+
+    cam = Camera()
+    first_path = cam.v4l_path
+    del cam
+    gc.collect()
+
+    assert Camera().v4l_path == first_path
+
+
+def test_explicit_index_selects_nth_available_camera(two_v4l_cameras):
+    """An explicit index counts among the cameras still available."""
+    cam2 = Camera(1)
+    cam1 = Camera()
+    assert cam2.v4l_path == "/dev/v4l/by-id/usb-CamB-video-index0"
+    assert cam1.v4l_path == "/dev/v4l/by-id/usb-CamA-video-index0"
 
 
 def test_camera_factory_with_rtsp_url():

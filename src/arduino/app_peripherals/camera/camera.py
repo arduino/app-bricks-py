@@ -9,7 +9,7 @@ import numpy as np
 
 from .base_camera import BaseCamera
 from .errors import CameraConfigError
-from .utils import nth_plugged_camera
+from .utils import camera_registry, claim_nth_available_camera
 
 
 class Camera:
@@ -44,7 +44,9 @@ class Camera:
             source (Union[str, int]): Camera source identifier. Supports:
                 - int | str: Auto-select the n-th available plugged camera
                     (e.g., 0, 1, "0", "1", ...), giving priority to USB cameras,
-                    then CSI cameras if supported by the platform
+                    then CSI cameras if supported by the platform. Cameras already
+                    auto-selected by other instances are skipped, so concurrent
+                    instances get distinct cameras as long as enough are plugged
                 - str: V4L camera ordinal index (e.g., "usb:0", "usb:1")
                 - str: V4L camera device path (e.g., "usb:/dev/video0",
                     "usb:/dev/v4l/by-id/...", "usb:/dev/v4l/by-path/...
@@ -126,40 +128,57 @@ class Camera:
             raise CameraConfigError(f"Invalid source type: {type(source)}. Must be str or int.")
 
         if isinstance(source, int) or (isinstance(source, str) and source.isdigit()):
-            # Select the n-th available camera
-            idx = int(source) if isinstance(source, str) else source
-            source = nth_plugged_camera(idx)
+            # Select and claim the n-th available camera so other auto-selected instances skip it
+            source = claim_nth_available_camera(int(source))
+            try:
+                camera = _create_camera(source, resolution, fps, adjustments, **kwargs)
+            except BaseException:
+                camera_registry.release(source)
+                raise
+            camera_registry.bind(source, camera)
+            return camera
 
-        if source.startswith("usb:"):
+        return _create_camera(source, resolution, fps, adjustments, **kwargs)
+
+
+def _create_camera(
+    source: str,
+    resolution: tuple[int, int],
+    fps: int,
+    adjustments: Callable[[np.ndarray], np.ndarray] | None,
+    **kwargs,
+) -> BaseCamera:
+    """Create the camera implementation matching the given source identifier."""
+    if source.startswith("usb:"):
+        from .v4l_camera import V4LCamera
+
+        v4l_source = source[4:]  # Remove "usb:" prefix
+        return V4LCamera(v4l_source, resolution=resolution, fps=fps, adjustments=adjustments, **kwargs)
+
+    elif source.startswith("csi:"):
+        from .csi_camera import CSICamera
+
+        csi_source = source[4:]  # Remove "csi:" prefix
+        return CSICamera(csi_source, resolution=resolution, fps=fps, adjustments=adjustments, **kwargs)
+
+    # All other cases are handled by URL parsing
+    else:
+        parsed = urlparse(source)
+        if parsed.scheme in ["http", "https", "rtsp"]:
+            # IP Camera
+            from .ip_camera import IPCamera
+
+            return IPCamera(source, resolution=resolution, fps=fps, adjustments=adjustments, **kwargs)
+        elif parsed.scheme in ["ws", "wss"]:
+            # WebSocket Camera - extract host and port from URL
+            from .websocket_camera import WebSocketCamera
+
+            port = parsed.port or 8080
+            return WebSocketCamera(port=port, resolution=resolution, fps=fps, adjustments=adjustments, **kwargs)
+        elif source.startswith("/dev/video") or source.startswith("/dev/v4l/by-id/") or source.startswith("/dev/v4l/by-path/"):
+            # V4L device path, by-id, or by-path
             from .v4l_camera import V4LCamera
 
-            v4l_source = source[4:]  # Remove "usb:" prefix
-            return V4LCamera(v4l_source, resolution=resolution, fps=fps, adjustments=adjustments, **kwargs)
-
-        elif source.startswith("csi:"):
-            from .csi_camera import CSICamera
-
-            csi_source = source[4:]  # Remove "csi:" prefix
-            return CSICamera(csi_source, resolution=resolution, fps=fps, adjustments=adjustments, **kwargs)
-
-        # All other cases are handled by URL parsing
+            return V4LCamera(source, resolution=resolution, fps=fps, adjustments=adjustments, **kwargs)
         else:
-            parsed = urlparse(source)
-            if parsed.scheme in ["http", "https", "rtsp"]:
-                # IP Camera
-                from .ip_camera import IPCamera
-
-                return IPCamera(source, resolution=resolution, fps=fps, adjustments=adjustments, **kwargs)
-            elif parsed.scheme in ["ws", "wss"]:
-                # WebSocket Camera - extract host and port from URL
-                from .websocket_camera import WebSocketCamera
-
-                port = parsed.port or 8080
-                return WebSocketCamera(port=port, resolution=resolution, fps=fps, adjustments=adjustments, **kwargs)
-            elif source.startswith("/dev/video") or source.startswith("/dev/v4l/by-id/") or source.startswith("/dev/v4l/by-path/"):
-                # V4L device path, by-id, or by-path
-                from .v4l_camera import V4LCamera
-
-                return V4LCamera(source, resolution=resolution, fps=fps, adjustments=adjustments, **kwargs)
-            else:
-                raise CameraConfigError(f"Unsupported camera source: {source}")
+            raise CameraConfigError(f"Unsupported camera source: {source}")

@@ -4,6 +4,37 @@
 
 import pytest
 
+from arduino.app_peripherals.camera.utils import camera_registry
+
+
+@pytest.fixture(autouse=True)
+def clean_camera_registry():
+    """Give each test a clean slate of auto-selected camera claims."""
+    camera_registry.clear()
+    yield
+
+
+@pytest.fixture
+def two_v4l_cameras(monkeypatch):
+    """
+    Patch os functions in v4l_camera to simulate two stable USB cameras:
+    /dev/v4l/by-id/usb-CamA-video-index0 -> /dev/video0
+    /dev/v4l/by-id/usb-CamB-video-index0 -> /dev/video2
+    """
+    by_id_dir = "/dev/v4l/by-id/"
+    links = {
+        by_id_dir + "usb-CamA-video-index0": "/dev/video0",
+        by_id_dir + "usb-CamB-video-index0": "/dev/video2",
+    }
+
+    monkeypatch.setattr("arduino.app_peripherals.camera.v4l_camera.os.path.exists", lambda path: True)
+    monkeypatch.setattr("arduino.app_peripherals.camera.v4l_camera.os.path.islink", lambda path: path in links)
+    monkeypatch.setattr(
+        "arduino.app_peripherals.camera.v4l_camera.os.listdir",
+        lambda path: [entry.removeprefix(by_id_dir) for entry in links] if path == by_id_dir else [],
+    )
+    monkeypatch.setattr("arduino.app_peripherals.camera.v4l_camera.os.path.realpath", lambda path: links.get(path, path))
+
 
 @pytest.fixture(
     params=["/dev/video0", 0, "0", "/dev/v4l/by-path/platform-xhci-hcd.2.auto-usb-0:1.3:1.0-video-index0", "/dev/v4l/by-id/usb-Camera-video-index0"]

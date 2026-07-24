@@ -2,7 +2,47 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+from ..device_registry import DeviceRegistry
 from .errors import CameraOpenError
+
+camera_registry = DeviceRegistry()
+"""Tracks the cameras assigned to auto-selected Camera instances."""
+
+
+def claim_nth_available_camera(idx: int) -> str:
+    """
+    Find and claim the n-th available physically connected camera.
+
+    The precedence is USB cameras first, then CSI cameras, if supported
+    by the current platform. Cameras already claimed by other auto-selected
+    instances are skipped; when every plugged camera is claimed, the n-th
+    plugged one is reused. The claim must be released back to camera_registry,
+    either explicitly or by binding it to its owner.
+
+    Args:
+        idx (int): Index of the camera to select among the available ones (0-based).
+
+    Returns:
+        str: Identifier of the n-th available camera ("usb:X" or "csi:X").
+
+    Raises:
+        CameraOpenError: If no cameras are found or index is out of range
+    """
+
+    def usb_cameras() -> list[str]:
+        from .v4l_camera import V4LCamera
+
+        return [f"usb:{i}" for i in range(len(V4LCamera.list_devices()))]
+
+    def csi_cameras() -> list[str]:
+        from .csi_camera import CSICamera
+
+        return [f"csi:{i}" for i in range(len(CSICamera.list_devices()))]
+
+    camera = camera_registry.select(idx, usb_cameras, csi_cameras)
+    if camera is None:
+        raise CameraOpenError("No available cameras found")
+    return camera
 
 
 def nth_plugged_camera(idx: int) -> str:
