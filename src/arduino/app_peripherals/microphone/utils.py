@@ -6,14 +6,50 @@ import json
 import os
 import subprocess
 
+from ..device_registry import DeviceRegistry
 from .errors import MicrophoneOpenError
 
 _MEDIA_CARRIER = "media-carrier"
+
+microphone_registry = DeviceRegistry()
+"""Tracks the microphones assigned to auto-selected Microphone instances."""
 
 
 def has_media_carrier() -> bool:
     """Tell whether the media carrier is currently configured on the board."""
     return os.environ.get("CONFIGURED_CARRIERS") == _MEDIA_CARRIER
+
+
+def claim_nth_available_microphone(idx: int) -> str:
+    """
+    Find and claim the n-th available physically connected microphone.
+
+    The precedence is USB microphones first, then jack microphones if
+    supported by the platform. Microphones already claimed by other
+    auto-selected instances are skipped; when every plugged microphone is
+    claimed, the n-th plugged one is reused. The claim must be released back
+    to microphone_registry, either explicitly or by binding it to its owner.
+
+    Args:
+        idx (int): Index of the microphone to select among the available ones (0-based).
+
+    Returns:
+        str: Identifier of the n-th available microphone, "usb:X" or "jack:X",
+            where X is the 1-based ordinal index within its type.
+
+    Raises:
+        MicrophoneOpenError: If no matching microphone is found.
+    """
+    usb_mics, builtin_mics = list_audio_sources()
+
+    candidates = [f"usb:{i + 1}" for i in range(len(usb_mics))]
+    if has_media_carrier():
+        candidates += [f"jack:{i + 1}" for i in range(len(builtin_mics))]
+
+    device = microphone_registry.select(idx, lambda: candidates)
+    if device is None:
+        raise MicrophoneOpenError("No available microphones found")
+    return device
 
 
 def nth_plugged_microphone(idx: int) -> str:

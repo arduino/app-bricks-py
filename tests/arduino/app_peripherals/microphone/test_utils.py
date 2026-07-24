@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from arduino.app_peripherals.microphone.errors import MicrophoneOpenError
-from arduino.app_peripherals.microphone.utils import list_audio_sources, nth_plugged_microphone
+from arduino.app_peripherals.microphone.utils import claim_nth_available_microphone, list_audio_sources, nth_plugged_microphone
 
 _CARRIER_ENV = "CONFIGURED_CARRIERS"
 
@@ -72,6 +72,35 @@ class TestNthPluggedMicrophone:
 
         with pytest.raises(MicrophoneOpenError):
             nth_plugged_microphone(0)
+
+
+class TestClaimNthAvailableMicrophone:
+    """Claim-aware device resolution used by Microphone auto-selection."""
+
+    def test_skips_already_claimed_microphones(self, mock_pw_dump):
+        mock_pw_dump(usb_ids=(50, 60))
+
+        assert claim_nth_available_microphone(0) == "usb:1"
+        assert claim_nth_available_microphone(0) == "usb:2"
+
+    def test_falls_back_to_jack_under_media_carrier(self, mock_pw_dump, monkeypatch):
+        monkeypatch.setenv(_CARRIER_ENV, "media-carrier")
+        mock_pw_dump(usb_ids=(50,), builtin_ids=(52,))
+
+        assert claim_nth_available_microphone(0) == "usb:1"
+        assert claim_nth_available_microphone(0) == "jack:1"
+
+    def test_reuses_plugged_order_when_all_claimed(self, mock_pw_dump):
+        mock_pw_dump(usb_ids=(50,))
+
+        assert claim_nth_available_microphone(0) == "usb:1"
+        assert claim_nth_available_microphone(0) == "usb:1"
+
+    def test_no_devices_raises(self, mock_pw_dump):
+        mock_pw_dump(usb_ids=(), builtin_ids=())
+
+        with pytest.raises(MicrophoneOpenError):
+            claim_nth_available_microphone(0)
 
 
 class TestListAudioSources:

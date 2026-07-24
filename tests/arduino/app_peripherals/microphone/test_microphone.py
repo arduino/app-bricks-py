@@ -90,6 +90,35 @@ class TestMicrophoneFactoryInstantiation:
             Microphone(device=0)
 
 
+class TestMicrophoneAutoSelection:
+    """Auto-selected microphones must not contend for the same device."""
+
+    def test_auto_selection_assigns_distinct_microphones(self):
+        mic1 = Microphone()
+        mic2 = Microphone()
+
+        assert mic1.device_stable_ref == "plughw:CARD=SomeCard,DEV=0"
+        assert mic2.device_stable_ref == "plughw:CARD=AnotherCard,DEV=0"
+
+    def test_auto_selection_reuses_microphones_when_all_claimed(self, mock_pw_dump):
+        mock_pw_dump(usb_ids=(50,))
+
+        mic1 = Microphone()
+        mic2 = Microphone()
+
+        assert mic2.device_stable_ref == mic1.device_stable_ref
+
+    def test_auto_selection_releases_microphone_when_instance_is_dropped(self):
+        import gc
+
+        mic = Microphone()
+        first_ref = mic.device_stable_ref
+        del mic
+        gc.collect()
+
+        assert Microphone().device_stable_ref == first_ref
+
+
 class TestMicrophoneConfiguration:
     """Test microphone configuration and parameters."""
 

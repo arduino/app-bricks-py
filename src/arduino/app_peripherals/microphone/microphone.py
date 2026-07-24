@@ -113,7 +113,9 @@ class Microphone:
             device (Union[str, int]): Microphone device identifier. Supports:
                 - int | str: Auto-select the n-th available plugged microphone
                     (e.g., 0, 1, "0", "1", ...), giving priority to USB microphones,
-                    then jack microphones if supported by the platform
+                    then jack microphones if supported by the platform. Microphones
+                    already auto-selected by other instances are skipped, so concurrent
+                    instances get distinct microphones as long as enough are plugged
                 - str: ALSA device name (e.g., "plughw:CARD=MyCard,DEV=0", "hw:0,0", "CARD=MyCard,DEV=0")
                 - str: ALSA device file path (e.g., "/dev/snd/by-id/usb-My-Device-00")
                 - str: Microphone.USB_MIC_x / Microphone.JACK_MIC_x macros
@@ -184,42 +186,19 @@ class Microphone:
             raise MicrophoneConfigError(f"Invalid device type: {type(device)}")
 
         if isinstance(device, int) or (isinstance(device, str) and device.isdigit()):
-            # Select the n-th plugged microphone (resolves to "usb:X"/"jack:X")
-            from .utils import nth_plugged_microphone
+            # Select and claim the n-th available microphone so other auto-selected instances skip it
+            from .utils import claim_nth_available_microphone, microphone_registry
 
-            device = nth_plugged_microphone(int(device))
-
-        from urllib.parse import urlparse
-
-        parsed = urlparse(device)
-        if parsed.scheme in ["ws", "wss"]:
-            from .websocket_microphone import WebSocketMicrophone  # Imported here to avoid circular dependency
-
-            # WebSocket Microphone
-            port = parsed.port if parsed.port is not None else 8080
-            mic = WebSocketMicrophone(
-                port=port,
-                sample_rate=sample_rate,
-                channels=channels,
-                format=format,
-                buffer_size=buffer_size,
-                **kwargs,
-            )
-            if parsed.hostname != "0.0.0.0":
-                mic.logger.warning(f"Ignoring bind addresses other than '0.0.0.0' ({parsed.hostname}).")
+            device = claim_nth_available_microphone(int(device))
+            try:
+                mic = _create_microphone(device, sample_rate, channels, format, buffer_size, **kwargs)
+            except BaseException:
+                microphone_registry.release(device)
+                raise
+            microphone_registry.bind(device, mic)
             return mic
-        else:
-            from .alsa_microphone import ALSAMicrophone  # Imported here to avoid circular dependency
 
-            # ALSA Microphone
-            return ALSAMicrophone(
-                device=device,
-                sample_rate=sample_rate,
-                channels=channels,
-                format=format,
-                buffer_size=buffer_size,
-                **kwargs,
-            )
+        return _create_microphone(device, sample_rate, channels, format, buffer_size, **kwargs)
 
     @staticmethod
     def record_pcm(duration: float, sample_rate: int, channels: int, format: FormatPlain | FormatPacked, device: str | int = 0) -> np.ndarray:
@@ -303,3 +282,45 @@ class Microphone:
             format=format,
         ) as mic:
             return mic.record_wav(duration=duration)
+
+
+def _create_microphone(
+    device: str,
+    sample_rate: int,
+    channels: int,
+    format: FormatPlain | FormatPacked,
+    buffer_size: int,
+    **kwargs,
+) -> BaseMicrophone:
+    """Create the microphone implementation matching the given device identifier."""
+    from urllib.parse import urlparse
+
+    parsed = urlparse(device)
+    if parsed.scheme in ["ws", "wss"]:
+        from .websocket_microphone import WebSocketMicrophone  # Imported here to avoid circular dependency
+
+        # WebSocket Microphone
+        port = parsed.port if parsed.port is not None else 8080
+        mic = WebSocketMicrophone(
+            port=port,
+            sample_rate=sample_rate,
+            channels=channels,
+            format=format,
+            buffer_size=buffer_size,
+            **kwargs,
+        )
+        if parsed.hostname != "0.0.0.0":
+            mic.logger.warning(f"Ignoring bind addresses other than '0.0.0.0' ({parsed.hostname}).")
+        return mic
+    else:
+        from .alsa_microphone import ALSAMicrophone  # Imported here to avoid circular dependency
+
+        # ALSA Microphone
+        return ALSAMicrophone(
+            device=device,
+            sample_rate=sample_rate,
+            channels=channels,
+            format=format,
+            buffer_size=buffer_size,
+            **kwargs,
+        )
