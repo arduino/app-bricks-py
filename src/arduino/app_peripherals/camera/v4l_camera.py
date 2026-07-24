@@ -75,7 +75,7 @@ class V4LCamera(BaseCamera):
         return [index for index, _ in V4LCamera._scan_stable_links()]
 
     @staticmethod
-    def list_stable_paths() -> list[str]:
+    def _list_stable_paths() -> list[str]:
         """
         Return the stable /dev/v4l/by-id links of the available USB cameras,
         ordered by their video device index.
