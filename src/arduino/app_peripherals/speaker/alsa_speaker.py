@@ -12,7 +12,7 @@ import numpy as np
 
 from .base_speaker import BaseSpeaker, FormatPlain, FormatPacked
 from .errors import SpeakerError, SpeakerOpenError, SpeakerWriteError, SpeakerConfigError
-from .utils import has_media_carrier, list_audio_sinks, nth_plugged_speaker, node_description
+from .utils import has_media_carrier, list_audio_sinks, _nth_plugged_speaker, node_description
 from arduino.app_utils.logger import Logger
 
 logger = Logger("ALSASpeaker")
@@ -185,7 +185,7 @@ class ALSASpeaker(BaseSpeaker):
 
         # An ordinal index selects the n-th plugged speaker
         if isinstance(identifier, int) or (isinstance(identifier, str) and identifier.isdigit()):
-            identifier = nth_plugged_speaker(int(identifier))  # -> "usb:X" / "jack:X"
+            identifier = _nth_plugged_speaker(int(identifier))  # -> "usb:X" / "jack:X"
 
         # Complete device strings are opened as given
         if isinstance(identifier, str):

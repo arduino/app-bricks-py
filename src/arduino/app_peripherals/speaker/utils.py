@@ -11,7 +11,7 @@ from .errors import SpeakerOpenError
 
 _MEDIA_CARRIER = "media-carrier"
 
-speaker_registry = DeviceRegistry()
+_speaker_registry = DeviceRegistry()
 """Tracks the speakers assigned to auto-selected Speaker instances."""
 
 
@@ -20,13 +20,13 @@ def has_media_carrier() -> bool:
     return os.environ.get("CONFIGURED_CARRIERS") == _MEDIA_CARRIER
 
 
-def claim_first_available_speaker() -> str:
+def _claim_first_available_speaker() -> str:
     """
     Find and claim the first plugged speaker not assigned to another instance.
 
     USB speakers take precedence over jack ones, if supported by the platform.
     The claim is keyed on the speaker's stable reference so it survives device
-    reordering, and must be released back to speaker_registry, either
+    reordering, and must be released back to _speaker_registry, either
     explicitly or by binding it to its owner.
 
     Returns:
@@ -38,13 +38,13 @@ def claim_first_available_speaker() -> str:
     """
     from .alsa_speaker import ALSASpeaker
 
-    device = speaker_registry.select(ALSASpeaker.list_usb_devices, ALSASpeaker.list_jack_devices)
+    device = _speaker_registry.select(ALSASpeaker.list_usb_devices, ALSASpeaker.list_jack_devices)
     if device is None:
         raise SpeakerOpenError("No available speakers found: either none is plugged or all are already in use")
     return device
 
 
-def nth_plugged_speaker(idx: int) -> str:
+def _nth_plugged_speaker(idx: int) -> str:
     """
     Find the n-th available physically connected speaker.
 

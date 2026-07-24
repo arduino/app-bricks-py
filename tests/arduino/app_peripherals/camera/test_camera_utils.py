@@ -5,7 +5,7 @@
 import pytest
 
 from arduino.app_peripherals.camera.errors import CameraOpenError
-from arduino.app_peripherals.camera.utils import claim_first_available_camera, nth_plugged_camera
+from arduino.app_peripherals.camera.utils import _claim_first_available_camera, _nth_plugged_camera
 
 
 @pytest.fixture
@@ -42,32 +42,32 @@ class TestClaimFirstAvailableCamera:
     def test_usb_takes_precedence_over_csi(self, plugged_cameras):
         usb_paths, _ = plugged_cameras(usb=1, csi=1)
 
-        assert claim_first_available_camera() == (f"usb:{usb_paths[0]}", usb_paths[0])
+        assert _claim_first_available_camera() == (f"usb:{usb_paths[0]}", usb_paths[0])
 
     def test_skips_already_claimed_cameras(self, plugged_cameras):
         usb_paths, _ = plugged_cameras(usb=2)
 
-        claim_first_available_camera()
-        assert claim_first_available_camera() == (f"usb:{usb_paths[1]}", usb_paths[1])
+        _claim_first_available_camera()
+        assert _claim_first_available_camera() == (f"usb:{usb_paths[1]}", usb_paths[1])
 
     def test_falls_back_to_csi_when_usb_cameras_are_claimed(self, plugged_cameras):
         _, csi_names = plugged_cameras(usb=1, csi=1)
 
-        claim_first_available_camera()
-        assert claim_first_available_camera() == ("csi:0", csi_names[0])
+        _claim_first_available_camera()
+        assert _claim_first_available_camera() == ("csi:0", csi_names[0])
 
     def test_raises_when_all_cameras_are_claimed(self, plugged_cameras):
         plugged_cameras(usb=1)
 
-        claim_first_available_camera()
+        _claim_first_available_camera()
         with pytest.raises(CameraOpenError):
-            claim_first_available_camera()
+            _claim_first_available_camera()
 
     def test_raises_when_no_camera_is_plugged(self, plugged_cameras):
         plugged_cameras()
 
         with pytest.raises(CameraOpenError):
-            claim_first_available_camera()
+            _claim_first_available_camera()
 
     def test_csi_is_not_probed_when_a_usb_camera_is_available(self, plugged_cameras, monkeypatch):
         plugged_cameras(usb=1)
@@ -77,7 +77,7 @@ class TestClaimFirstAvailableCamera:
             staticmethod(lambda: probed.append(True) or []),
         )
 
-        claim_first_available_camera()
+        _claim_first_available_camera()
         assert probed == []
 
 
@@ -87,28 +87,28 @@ class TestNthPluggedCamera:
     def test_usb_takes_precedence_over_csi(self, plugged_cameras):
         plugged_cameras(usb=1, csi=1)
 
-        assert nth_plugged_camera(0) == "usb:0"
+        assert _nth_plugged_camera(0) == "usb:0"
 
     def test_index_spans_usb_cameras_first_then_csi(self, plugged_cameras):
         plugged_cameras(usb=1, csi=2)
 
-        assert nth_plugged_camera(1) == "csi:0"
-        assert nth_plugged_camera(2) == "csi:1"
+        assert _nth_plugged_camera(1) == "csi:0"
+        assert _nth_plugged_camera(2) == "csi:1"
 
     def test_ignores_claims(self, plugged_cameras):
         plugged_cameras(usb=1)
 
-        claim_first_available_camera()
-        assert nth_plugged_camera(0) == "usb:0"
+        _claim_first_available_camera()
+        assert _nth_plugged_camera(0) == "usb:0"
 
     def test_out_of_range_index_raises(self, plugged_cameras):
         plugged_cameras(usb=1)
 
         with pytest.raises(CameraOpenError):
-            nth_plugged_camera(1)
+            _nth_plugged_camera(1)
 
     def test_no_cameras_raises(self, plugged_cameras):
         plugged_cameras()
 
         with pytest.raises(CameraOpenError):
-            nth_plugged_camera(0)
+            _nth_plugged_camera(0)

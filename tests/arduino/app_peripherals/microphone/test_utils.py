@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from arduino.app_peripherals.microphone.errors import MicrophoneOpenError
-from arduino.app_peripherals.microphone.utils import claim_first_available_microphone, list_audio_sources, nth_plugged_microphone
+from arduino.app_peripherals.microphone.utils import _claim_first_available_microphone, list_audio_sources, _nth_plugged_microphone
 
 _CARRIER_ENV = "CONFIGURED_CARRIERS"
 
@@ -20,31 +20,31 @@ def _no_carrier(monkeypatch):
 
 
 class TestNthPluggedMicrophone:
-    """External behavior of nth_plugged_microphone device resolution."""
+    """External behavior of _nth_plugged_microphone device resolution."""
 
     def test_usb_first_without_carrier(self, mock_pw_dump):
         mock_pw_dump(usb_ids=(50,), builtin_ids=(52,))
 
-        assert nth_plugged_microphone(0) == "usb:1"
+        assert _nth_plugged_microphone(0) == "usb:1"
 
     def test_out_of_range_without_carrier_raises(self, mock_pw_dump):
         mock_pw_dump(usb_ids=(50,), builtin_ids=(52,))
 
         # Second position has no USB device and there is no built-in fallback without media carrier.
         with pytest.raises(MicrophoneOpenError):
-            nth_plugged_microphone(1)
+            _nth_plugged_microphone(1)
 
     def test_usb_precedence_under_media_carrier(self, mock_pw_dump, monkeypatch):
         monkeypatch.setenv(_CARRIER_ENV, "media-carrier")
         mock_pw_dump(usb_ids=(50,), builtin_ids=(52,))
 
-        assert nth_plugged_microphone(0) == "usb:1"
+        assert _nth_plugged_microphone(0) == "usb:1"
 
     def test_jack_fallback_under_media_carrier(self, mock_pw_dump, monkeypatch):
         monkeypatch.setenv(_CARRIER_ENV, "media-carrier")
         mock_pw_dump(usb_ids=(), builtin_ids=(52,))
 
-        assert nth_plugged_microphone(0) == "jack:1"
+        assert _nth_plugged_microphone(0) == "jack:1"
 
     def test_second_builtin_unsupported_under_media_carrier(self, mock_pw_dump, monkeypatch):
         monkeypatch.setenv(_CARRIER_ENV, "media-carrier")
@@ -52,26 +52,26 @@ class TestNthPluggedMicrophone:
 
         # Only one built-in microphone is supported, so jack:2 is out of range.
         with pytest.raises(MicrophoneOpenError):
-            nth_plugged_microphone(1)
+            _nth_plugged_microphone(1)
 
     def test_no_jack_fallback_without_carrier(self, mock_pw_dump):
         mock_pw_dump(usb_ids=(), builtin_ids=(52,))
 
         with pytest.raises(MicrophoneOpenError):
-            nth_plugged_microphone(0)
+            _nth_plugged_microphone(0)
 
     def test_no_jack_fallback_for_other_carrier(self, mock_pw_dump, monkeypatch):
         monkeypatch.setenv(_CARRIER_ENV, "some-other-carrier")
         mock_pw_dump(usb_ids=(), builtin_ids=(52,))
 
         with pytest.raises(MicrophoneOpenError):
-            nth_plugged_microphone(0)
+            _nth_plugged_microphone(0)
 
     def test_no_devices_raises(self, mock_pw_dump):
         mock_pw_dump(usb_ids=(), builtin_ids=())
 
         with pytest.raises(MicrophoneOpenError):
-            nth_plugged_microphone(0)
+            _nth_plugged_microphone(0)
 
 
 class TestClaimFirstAvailableMicrophone:
@@ -80,28 +80,28 @@ class TestClaimFirstAvailableMicrophone:
     def test_skips_already_claimed_microphones(self, mock_pw_dump):
         mock_pw_dump(usb_ids=(50, 60))
 
-        assert claim_first_available_microphone() == "plughw:CARD=SomeCard,DEV=0"
-        assert claim_first_available_microphone() == "plughw:CARD=AnotherCard,DEV=0"
+        assert _claim_first_available_microphone() == "plughw:CARD=SomeCard,DEV=0"
+        assert _claim_first_available_microphone() == "plughw:CARD=AnotherCard,DEV=0"
 
     def test_falls_back_to_jack_under_media_carrier(self, mock_pw_dump, monkeypatch):
         monkeypatch.setenv(_CARRIER_ENV, "media-carrier")
         mock_pw_dump(usb_ids=(50,), builtin_ids=(52,))
 
-        assert claim_first_available_microphone() == "plughw:CARD=SomeCard,DEV=0"
-        assert claim_first_available_microphone() == "pipewire:NODE=alsa_input.platform-sound.Source-52"
+        assert _claim_first_available_microphone() == "plughw:CARD=SomeCard,DEV=0"
+        assert _claim_first_available_microphone() == "pipewire:NODE=alsa_input.platform-sound.Source-52"
 
     def test_raises_when_all_microphones_are_claimed(self, mock_pw_dump):
         mock_pw_dump(usb_ids=(50,))
 
-        claim_first_available_microphone()
+        _claim_first_available_microphone()
         with pytest.raises(MicrophoneOpenError):
-            claim_first_available_microphone()
+            _claim_first_available_microphone()
 
     def test_raises_when_no_microphone_is_plugged(self, mock_pw_dump):
         mock_pw_dump(usb_ids=(), builtin_ids=())
 
         with pytest.raises(MicrophoneOpenError):
-            claim_first_available_microphone()
+            _claim_first_available_microphone()
 
 
 class TestListAudioSources:
@@ -152,10 +152,10 @@ class TestPwDumpFailures:
     def test_missing_binary_raises(self):
         with patch("arduino.app_peripherals.microphone.utils.subprocess.run", side_effect=FileNotFoundError):
             with pytest.raises(MicrophoneOpenError):
-                nth_plugged_microphone(0)
+                _nth_plugged_microphone(0)
 
     def test_invalid_json_raises(self):
         with patch("arduino.app_peripherals.microphone.utils.subprocess.run") as run:
             run.return_value = MagicMock(stdout="not-json")
             with pytest.raises(MicrophoneOpenError):
-                nth_plugged_microphone(0)
+                _nth_plugged_microphone(0)

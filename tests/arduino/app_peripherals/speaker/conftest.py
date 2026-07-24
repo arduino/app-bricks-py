@@ -15,13 +15,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from arduino.app_peripherals.speaker.utils import speaker_registry
+from arduino.app_peripherals.speaker.utils import _speaker_registry
 
 
 @pytest.fixture(autouse=True)
 def clean_speaker_registry():
     """Give each test a clean slate of auto-selected speaker claims."""
-    speaker_registry.clear()
+    _speaker_registry.clear()
     yield
 
 

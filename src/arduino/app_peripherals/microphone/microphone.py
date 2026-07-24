@@ -183,19 +183,19 @@ class Microphone:
             microphone = Microphone("ws://0.0.0.0:8080", secret="topsecret", encrypt=True)
             ```
         """
-        from .utils import microphone_registry
+        from .utils import _microphone_registry
 
         if device is None:
             # Auto-selection: claim the first available microphone so other instances don't select it
-            from .utils import claim_first_available_microphone
+            from .utils import _claim_first_available_microphone
 
-            device = claim_first_available_microphone()
+            device = _claim_first_available_microphone()
             try:
                 mic = _create_microphone(device, sample_rate, channels, format, buffer_size, **kwargs)
             except BaseException:
-                microphone_registry.release(device)
+                _microphone_registry.release(device)
                 raise
-            microphone_registry.bind(device, mic)
+            _microphone_registry.bind(device, mic)
             return mic
 
         if not isinstance(device, (str, int)):
@@ -209,8 +209,8 @@ class Microphone:
 
         if isinstance(mic, ALSAMicrophone):
             # Claim local devices so auto-selection doesn't pick them
-            microphone_registry.claim(mic.device_stable_ref)
-            microphone_registry.bind(mic.device_stable_ref, mic)
+            _microphone_registry.claim(mic.device_stable_ref)
+            _microphone_registry.bind(mic.device_stable_ref, mic)
         return mic
 
     @staticmethod

@@ -9,7 +9,7 @@ import numpy as np
 
 from .base_camera import BaseCamera
 from .errors import CameraConfigError
-from .utils import camera_registry, claim_first_available_camera, nth_plugged_camera
+from .utils import _camera_registry, _claim_first_available_camera, _nth_plugged_camera
 
 
 class Camera:
@@ -129,13 +129,13 @@ class Camera:
         """
         if source is None:
             # Auto-selection: claim the first available camera so other instances don't select it
-            source, key = claim_first_available_camera()
+            source, key = _claim_first_available_camera()
             try:
                 camera = _create_camera(source, resolution, fps, adjustments, **kwargs)
             except BaseException:
-                camera_registry.release(key)
+                _camera_registry.release(key)
                 raise
-            camera_registry.bind(key, camera)
+            _camera_registry.bind(key, camera)
             return camera
 
         if not isinstance(source, (str, int)):
@@ -143,15 +143,15 @@ class Camera:
 
         if isinstance(source, int) or (isinstance(source, str) and source.isdigit()):
             # Positional selection of the n-th plugged camera
-            source = nth_plugged_camera(int(source))
+            source = _nth_plugged_camera(int(source))
 
         camera = _create_camera(source, resolution, fps, adjustments, **kwargs)
 
         # Claim local devices so auto-selection doesn't pick them
         key = _claim_key(camera)
         if key is not None:
-            camera_registry.claim(key)
-            camera_registry.bind(key, camera)
+            _camera_registry.claim(key)
+            _camera_registry.bind(key, camera)
         return camera
 
 

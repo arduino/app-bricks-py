@@ -5,17 +5,17 @@
 from ..device_registry import DeviceRegistry
 from .errors import CameraOpenError
 
-camera_registry = DeviceRegistry()
+_camera_registry = DeviceRegistry()
 """Tracks the cameras assigned to auto-selected Camera instances."""
 
 
-def claim_first_available_camera() -> tuple[str, str]:
+def _claim_first_available_camera() -> tuple[str, str]:
     """
     Find and claim the first plugged camera not assigned to another instance.
 
     USB cameras take precedence over CSI ones, if supported by the current
     platform. The claim is keyed on the camera's stable identity so it survives
-    device reordering, and must be released back to camera_registry, either
+    device reordering, and must be released back to _camera_registry, either
     explicitly or by binding it to its owner.
 
     Returns:
@@ -28,21 +28,21 @@ def claim_first_available_camera() -> tuple[str, str]:
     """
     from .v4l_camera import V4LCamera
 
-    path = camera_registry.select(V4LCamera._list_stable_paths)
+    path = _camera_registry.select(V4LCamera._list_stable_paths)
     if path is not None:
         return f"usb:{path}", path
 
     from .csi_camera import CSICamera
 
     names = CSICamera.list_device_names()
-    name = camera_registry.select(lambda: names)
+    name = _camera_registry.select(lambda: names)
     if name is not None:
         return f"csi:{names.index(name)}", name
 
     raise CameraOpenError("No available cameras found: either none is plugged or all are already in use")
 
 
-def nth_plugged_camera(idx: int) -> str:
+def _nth_plugged_camera(idx: int) -> str:
     """
     Find the n-th plugged camera, regardless of whether it is already in use.
 

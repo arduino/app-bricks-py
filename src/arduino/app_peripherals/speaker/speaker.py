@@ -162,19 +162,19 @@ class Speaker:
             speaker = Speaker("pipewire:NODE=MyPipewireNode")  # Using PipeWire node name
             ```
         """
-        from .utils import speaker_registry
+        from .utils import _speaker_registry
 
         if device is None:
             # Auto-selection: claim the first available speaker so other instances don't select it
-            from .utils import claim_first_available_speaker
+            from .utils import _claim_first_available_speaker
 
-            device = claim_first_available_speaker()
+            device = _claim_first_available_speaker()
             try:
                 speaker = _create_speaker(device, sample_rate, channels, format, buffer_size, **kwargs)
             except BaseException:
-                speaker_registry.release(device)
+                _speaker_registry.release(device)
                 raise
-            speaker_registry.bind(device, speaker)
+            _speaker_registry.bind(device, speaker)
             return speaker
 
         if not isinstance(device, (str, int)):
@@ -185,8 +185,8 @@ class Speaker:
         speaker = _create_speaker(device, sample_rate, channels, format, buffer_size, **kwargs)
 
         # Claim the device so auto-selection doesn't pick it
-        speaker_registry.claim(speaker.device_stable_ref)
-        speaker_registry.bind(speaker.device_stable_ref, speaker)
+        _speaker_registry.claim(speaker.device_stable_ref)
+        _speaker_registry.bind(speaker.device_stable_ref, speaker)
         return speaker
 
     @staticmethod

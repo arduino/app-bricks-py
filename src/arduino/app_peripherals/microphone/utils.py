@@ -11,7 +11,7 @@ from .errors import MicrophoneOpenError
 
 _MEDIA_CARRIER = "media-carrier"
 
-microphone_registry = DeviceRegistry()
+_microphone_registry = DeviceRegistry()
 """Tracks the microphones assigned to auto-selected Microphone instances."""
 
 
@@ -20,14 +20,14 @@ def has_media_carrier() -> bool:
     return os.environ.get("CONFIGURED_CARRIERS") == _MEDIA_CARRIER
 
 
-def claim_first_available_microphone() -> str:
+def _claim_first_available_microphone() -> str:
     """
     Find and claim the first plugged microphone not assigned to another instance.
 
     USB microphones take precedence over jack ones, if supported by the
     platform. The claim is keyed on the microphone's stable reference so it
     survives device reordering, and must be released back to
-    microphone_registry, either explicitly or by binding it to its owner.
+    _microphone_registry, either explicitly or by binding it to its owner.
 
     Returns:
         str: Stable reference of the claimed microphone, either
@@ -38,13 +38,13 @@ def claim_first_available_microphone() -> str:
     """
     from .alsa_microphone import ALSAMicrophone
 
-    device = microphone_registry.select(ALSAMicrophone.list_usb_devices, ALSAMicrophone.list_jack_devices)
+    device = _microphone_registry.select(ALSAMicrophone.list_usb_devices, ALSAMicrophone.list_jack_devices)
     if device is None:
         raise MicrophoneOpenError("No available microphones found: either none is plugged or all are already in use")
     return device
 
 
-def nth_plugged_microphone(idx: int) -> str:
+def _nth_plugged_microphone(idx: int) -> str:
     """
     Find the n-th available physically connected microphone.
 
