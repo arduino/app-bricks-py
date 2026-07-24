@@ -112,7 +112,9 @@ class Speaker:
             device (Union[str, int]): Speaker device identifier. Supports:
                 - int | str: Auto-select the n-th available plugged speaker
                     (e.g., 0, 1, "0", "1", ...), giving priority to USB speakers,
-                    then jack speakers if supported by the platform
+                    then jack speakers if supported by the platform. Speakers
+                    already auto-selected by other instances are skipped, so concurrent
+                    instances get distinct speakers as long as enough are plugged
                 - str: ALSA device name (e.g., "plughw:CARD=MyCard,DEV=0", "hw:0,0", "CARD=MyCard,DEV=0")
                 - str: ALSA device file path (e.g., "/dev/snd/by-id/usb-My-Device-00")
                 - str: Speaker.USB_SPEAKER_x / Speaker.JACK_SPEAKER_x macros
@@ -163,21 +165,19 @@ class Speaker:
             raise SpeakerConfigError(f"Invalid device type: {type(device)}")
 
         if isinstance(device, int) or (isinstance(device, str) and device.isdigit()):
-            # Select the n-th plugged speaker (resolves to "usb:X"/"jack:X")
-            from .utils import nth_plugged_speaker
+            # Select and claim the n-th available speaker so other auto-selected instances skip it
+            from .utils import claim_nth_available_speaker, speaker_registry
 
-            device = nth_plugged_speaker(int(device))
+            device = claim_nth_available_speaker(int(device))
+            try:
+                speaker = _create_speaker(device, sample_rate, channels, format, buffer_size, **kwargs)
+            except BaseException:
+                speaker_registry.release(device)
+                raise
+            speaker_registry.bind(device, speaker)
+            return speaker
 
-        from .alsa_speaker import ALSASpeaker  # Imported here to avoid circular dependency
-
-        return ALSASpeaker(
-            device=device,
-            sample_rate=sample_rate,
-            channels=channels,
-            format=format,
-            buffer_size=buffer_size,
-            **kwargs,
-        )
+        return _create_speaker(device, sample_rate, channels, format, buffer_size, **kwargs)
 
     @staticmethod
     def play_pcm(
@@ -273,3 +273,24 @@ class Speaker:
         # Initialize speaker with WAV file parameters
         with Speaker(device=device, sample_rate=wav_framerate, channels=wav_channels, format=format) as speaker:
             speaker.play_wav(wav_audio)
+
+
+def _create_speaker(
+    device: str,
+    sample_rate: int,
+    channels: int,
+    format: FormatPlain | FormatPacked,
+    buffer_size: int,
+    **kwargs,
+) -> BaseSpeaker:
+    """Create the speaker implementation matching the given device identifier."""
+    from .alsa_speaker import ALSASpeaker  # Imported here to avoid circular dependency
+
+    return ALSASpeaker(
+        device=device,
+        sample_rate=sample_rate,
+        channels=channels,
+        format=format,
+        buffer_size=buffer_size,
+        **kwargs,
+    )

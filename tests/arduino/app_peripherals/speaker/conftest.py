@@ -15,6 +15,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from arduino.app_peripherals.speaker.utils import speaker_registry
+
+
+@pytest.fixture(autouse=True)
+def clean_speaker_registry():
+    """Give each test a clean slate of auto-selected speaker claims."""
+    speaker_registry.clear()
+    yield
+
 
 def build_pw_dump(usb_ids=(), builtin_ids=()):
     """

@@ -49,6 +49,35 @@ class TestSpeakerFactoryInstantiation:
             Speaker(device=0)
 
 
+class TestSpeakerAutoSelection:
+    """Auto-selected speakers must not contend for the same device."""
+
+    def test_auto_selection_assigns_distinct_speakers(self):
+        spkr1 = Speaker()
+        spkr2 = Speaker()
+
+        assert spkr1.device_stable_ref == "plughw:CARD=SomeCard,DEV=0"
+        assert spkr2.device_stable_ref == "plughw:CARD=AnotherCard,DEV=0"
+
+    def test_auto_selection_reuses_speakers_when_all_claimed(self, mock_pw_dump):
+        mock_pw_dump(usb_ids=(50,))
+
+        spkr1 = Speaker()
+        spkr2 = Speaker()
+
+        assert spkr2.device_stable_ref == spkr1.device_stable_ref
+
+    def test_auto_selection_releases_speaker_when_instance_is_dropped(self):
+        import gc
+
+        spkr = Speaker()
+        first_ref = spkr.device_stable_ref
+        del spkr
+        gc.collect()
+
+        assert Speaker().device_stable_ref == first_ref
+
+
 class TestSpeakerConfiguration:
     """Test speaker configuration and parameters."""
 
