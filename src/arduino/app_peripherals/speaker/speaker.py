@@ -98,7 +98,7 @@ class Speaker:
 
     def __new__(
         cls,
-        device: str | int = 0,
+        device: str | int | None = None,
         sample_rate: int = RATE_16K,
         channels: int = CHANNELS_MONO,
         format: FormatPlain | FormatPacked = np.int16,
@@ -109,16 +109,19 @@ class Speaker:
         Create a speaker instance based on the device type.
 
         Args:
-            device (Union[str, int]): Speaker device identifier. Supports:
-                - int | str: Auto-select the n-th available plugged speaker
-                    (e.g., 0, 1, "0", "1", ...), giving priority to USB speakers,
-                    then jack speakers if supported by the platform. Speakers
-                    already auto-selected by other instances are skipped, so concurrent
-                    instances get distinct speakers as long as enough are plugged
+            device (str | int | None): Speaker device identifier. Supports:
+                - None: Auto-select the first available plugged speaker, i.e. not
+                    already in use by another instance, giving priority to USB
+                    speakers, then jack ones if supported by the platform.
+                    Raises if every plugged speaker is already in use
+                - int | str: Select the n-th plugged speaker (e.g., 0, 1, "0",
+                    "1", ...) counting USB speakers first, then jack ones,
+                    regardless of whether it is already in use: contention on a
+                    reused speaker is only discovered when starting it
                 - str: ALSA device name (e.g., "plughw:CARD=MyCard,DEV=0", "hw:0,0", "CARD=MyCard,DEV=0")
                 - str: ALSA device file path (e.g., "/dev/snd/by-id/usb-My-Device-00")
                 - str: Speaker.USB_SPEAKER_x / Speaker.JACK_SPEAKER_x macros
-                Default: 0.
+                Default: None.
             sample_rate (int): Sample rate in Hz. Default: 16000.
             channels (int): Number of audio channels. Default: 1.
             format (FormatPlain | FormatPacked): Audio format as one of:
@@ -159,16 +162,13 @@ class Speaker:
             speaker = Speaker("pipewire:NODE=MyPipewireNode")  # Using PipeWire node name
             ```
         """
-        if not isinstance(device, (str, int)):
-            from .errors import SpeakerConfigError
+        from .utils import speaker_registry
 
-            raise SpeakerConfigError(f"Invalid device type: {type(device)}")
+        if device is None:
+            # Auto-selection: claim the first available speaker so other instances don't select it
+            from .utils import claim_first_available_speaker
 
-        if isinstance(device, int) or (isinstance(device, str) and device.isdigit()):
-            # Select and claim the n-th available speaker so other auto-selected instances skip it
-            from .utils import claim_nth_available_speaker, speaker_registry
-
-            device = claim_nth_available_speaker(int(device))
+            device = claim_first_available_speaker()
             try:
                 speaker = _create_speaker(device, sample_rate, channels, format, buffer_size, **kwargs)
             except BaseException:
@@ -177,7 +177,17 @@ class Speaker:
             speaker_registry.bind(device, speaker)
             return speaker
 
-        return _create_speaker(device, sample_rate, channels, format, buffer_size, **kwargs)
+        if not isinstance(device, (str, int)):
+            from .errors import SpeakerConfigError
+
+            raise SpeakerConfigError(f"Invalid device type: {type(device)}")
+
+        speaker = _create_speaker(device, sample_rate, channels, format, buffer_size, **kwargs)
+
+        # Claim the device so auto-selection doesn't pick it
+        speaker_registry.claim(speaker.device_stable_ref)
+        speaker_registry.bind(speaker.device_stable_ref, speaker)
+        return speaker
 
     @staticmethod
     def play_pcm(
@@ -200,9 +210,10 @@ class Speaker:
                 - Strings: 'int16', '<i2', '>f4', 'float32'
                 - Tuple of (format, is_packed): to specify if the format is packed (e.g. 24-bit audio)
             device (Union[str, int], optional): Speaker device identifier. Supports:
-                - int | str: Auto-select the n-th available plugged speaker
-                    (e.g., 0, 1, "0", "1", ...), giving priority to USB speakers,
-                    then jack speakers if supported by the platform
+                - int | str: Select the n-th plugged speaker (e.g., 0, 1, "0",
+                    "1", ...) counting USB speakers first, then jack ones if
+                    supported by the platform. The device is shared with other
+                    instances using it
                 - str: ALSA device name (e.g., "plughw:CARD=MyCard,DEV=0", "hw:0,0", "CARD=MyCard,DEV=0")
                 - str: ALSA device file path (e.g., "/dev/snd/by-id/usb-My-Device-00")
                 - str: Speaker.USB_SPEAKER_x / Speaker.JACK_SPEAKER_x macros
@@ -226,9 +237,10 @@ class Speaker:
         Args:
             wav_audio (np.ndarray): WAV format audio data (including header).
             device (Union[str, int], optional): Speaker device identifier. Supports:
-                - int | str: Auto-select the n-th available plugged speaker
-                    (e.g., 0, 1, "0", "1", ...), giving priority to USB speakers,
-                    then jack speakers if supported by the platform
+                - int | str: Select the n-th plugged speaker (e.g., 0, 1, "0",
+                    "1", ...) counting USB speakers first, then jack ones if
+                    supported by the platform. The device is shared with other
+                    instances using it
                 - str: ALSA device name (e.g., "plughw:CARD=MyCard,DEV=0", "hw:0,0", "CARD=MyCard,DEV=0")
                 - str: ALSA device file path (e.g., "/dev/snd/by-id/usb-My-Device-00")
                 - str: Speaker.USB_SPEAKER_x / Speaker.JACK_SPEAKER_x macros
@@ -276,7 +288,7 @@ class Speaker:
 
 
 def _create_speaker(
-    device: str,
+    device: str | int,
     sample_rate: int,
     channels: int,
     format: FormatPlain | FormatPacked,

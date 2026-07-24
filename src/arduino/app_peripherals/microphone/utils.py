@@ -20,35 +20,27 @@ def has_media_carrier() -> bool:
     return os.environ.get("CONFIGURED_CARRIERS") == _MEDIA_CARRIER
 
 
-def claim_nth_available_microphone(idx: int) -> str:
+def claim_first_available_microphone() -> str:
     """
-    Find and claim the n-th available physically connected microphone.
+    Find and claim the first plugged microphone not assigned to another instance.
 
-    The precedence is USB microphones first, then jack microphones if
-    supported by the platform. Microphones already claimed by other
-    auto-selected instances are skipped; when every plugged microphone is
-    claimed, the n-th plugged one is reused. The claim must be released back
-    to microphone_registry, either explicitly or by binding it to its owner.
-
-    Args:
-        idx (int): Index of the microphone to select among the available ones (0-based).
+    USB microphones take precedence over jack ones, if supported by the
+    platform. The claim is keyed on the microphone's stable reference so it
+    survives device reordering, and must be released back to
+    microphone_registry, either explicitly or by binding it to its owner.
 
     Returns:
-        str: Identifier of the n-th available microphone, "usb:X" or "jack:X",
-            where X is the 1-based ordinal index within its type.
+        str: Stable reference of the claimed microphone, either
+            "plughw:CARD=<name>,DEV=<n>" or "pipewire:NODE=<node.name>".
 
     Raises:
-        MicrophoneOpenError: If no matching microphone is found.
+        MicrophoneOpenError: If no microphone is plugged or all are already in use.
     """
-    usb_mics, builtin_mics = list_audio_sources()
+    from .alsa_microphone import ALSAMicrophone
 
-    candidates = [f"usb:{i + 1}" for i in range(len(usb_mics))]
-    if has_media_carrier():
-        candidates += [f"jack:{i + 1}" for i in range(len(builtin_mics))]
-
-    device = microphone_registry.select(idx, lambda: candidates)
+    device = microphone_registry.select(ALSAMicrophone.list_usb_devices, ALSAMicrophone.list_jack_devices)
     if device is None:
-        raise MicrophoneOpenError("No available microphones found")
+        raise MicrophoneOpenError("No available microphones found: either none is plugged or all are already in use")
     return device
 
 

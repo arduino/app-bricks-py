@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from arduino.app_peripherals.speaker.errors import SpeakerOpenError
-from arduino.app_peripherals.speaker.utils import claim_nth_available_speaker, list_audio_sinks, nth_plugged_speaker
+from arduino.app_peripherals.speaker.utils import claim_first_available_speaker, list_audio_sinks, nth_plugged_speaker
 
 _CARRIER_ENV = "CONFIGURED_CARRIERS"
 
@@ -74,33 +74,34 @@ class TestNthPluggedSpeaker:
             nth_plugged_speaker(0)
 
 
-class TestClaimNthAvailableSpeaker:
+class TestClaimFirstAvailableSpeaker:
     """Claim-aware device resolution used by Speaker auto-selection."""
 
     def test_skips_already_claimed_speakers(self, mock_pw_dump):
         mock_pw_dump(usb_ids=(50, 60))
 
-        assert claim_nth_available_speaker(0) == "usb:1"
-        assert claim_nth_available_speaker(0) == "usb:2"
+        assert claim_first_available_speaker() == "plughw:CARD=SomeCard,DEV=0"
+        assert claim_first_available_speaker() == "plughw:CARD=AnotherCard,DEV=0"
 
     def test_falls_back_to_jack_under_media_carrier(self, mock_pw_dump, monkeypatch):
         monkeypatch.setenv(_CARRIER_ENV, "media-carrier")
         mock_pw_dump(usb_ids=(50,), builtin_ids=(52,))
 
-        assert claim_nth_available_speaker(0) == "usb:1"
-        assert claim_nth_available_speaker(0) == "jack:1"
+        assert claim_first_available_speaker() == "plughw:CARD=SomeCard,DEV=0"
+        assert claim_first_available_speaker() == "pipewire:NODE=alsa_output.platform-sound.Sink-52"
 
-    def test_reuses_plugged_order_when_all_claimed(self, mock_pw_dump):
+    def test_raises_when_all_speakers_are_claimed(self, mock_pw_dump):
         mock_pw_dump(usb_ids=(50,))
 
-        assert claim_nth_available_speaker(0) == "usb:1"
-        assert claim_nth_available_speaker(0) == "usb:1"
+        claim_first_available_speaker()
+        with pytest.raises(SpeakerOpenError):
+            claim_first_available_speaker()
 
-    def test_no_devices_raises(self, mock_pw_dump):
+    def test_raises_when_no_speaker_is_plugged(self, mock_pw_dump):
         mock_pw_dump(usb_ids=(), builtin_ids=())
 
         with pytest.raises(SpeakerOpenError):
-            claim_nth_available_speaker(0)
+            claim_first_available_speaker()
 
 
 class TestListAudioSinks:

@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from arduino.app_peripherals.microphone.errors import MicrophoneOpenError
-from arduino.app_peripherals.microphone.utils import claim_nth_available_microphone, list_audio_sources, nth_plugged_microphone
+from arduino.app_peripherals.microphone.utils import claim_first_available_microphone, list_audio_sources, nth_plugged_microphone
 
 _CARRIER_ENV = "CONFIGURED_CARRIERS"
 
@@ -74,33 +74,34 @@ class TestNthPluggedMicrophone:
             nth_plugged_microphone(0)
 
 
-class TestClaimNthAvailableMicrophone:
+class TestClaimFirstAvailableMicrophone:
     """Claim-aware device resolution used by Microphone auto-selection."""
 
     def test_skips_already_claimed_microphones(self, mock_pw_dump):
         mock_pw_dump(usb_ids=(50, 60))
 
-        assert claim_nth_available_microphone(0) == "usb:1"
-        assert claim_nth_available_microphone(0) == "usb:2"
+        assert claim_first_available_microphone() == "plughw:CARD=SomeCard,DEV=0"
+        assert claim_first_available_microphone() == "plughw:CARD=AnotherCard,DEV=0"
 
     def test_falls_back_to_jack_under_media_carrier(self, mock_pw_dump, monkeypatch):
         monkeypatch.setenv(_CARRIER_ENV, "media-carrier")
         mock_pw_dump(usb_ids=(50,), builtin_ids=(52,))
 
-        assert claim_nth_available_microphone(0) == "usb:1"
-        assert claim_nth_available_microphone(0) == "jack:1"
+        assert claim_first_available_microphone() == "plughw:CARD=SomeCard,DEV=0"
+        assert claim_first_available_microphone() == "pipewire:NODE=alsa_input.platform-sound.Source-52"
 
-    def test_reuses_plugged_order_when_all_claimed(self, mock_pw_dump):
+    def test_raises_when_all_microphones_are_claimed(self, mock_pw_dump):
         mock_pw_dump(usb_ids=(50,))
 
-        assert claim_nth_available_microphone(0) == "usb:1"
-        assert claim_nth_available_microphone(0) == "usb:1"
+        claim_first_available_microphone()
+        with pytest.raises(MicrophoneOpenError):
+            claim_first_available_microphone()
 
-    def test_no_devices_raises(self, mock_pw_dump):
+    def test_raises_when_no_microphone_is_plugged(self, mock_pw_dump):
         mock_pw_dump(usb_ids=(), builtin_ids=())
 
         with pytest.raises(MicrophoneOpenError):
-            claim_nth_available_microphone(0)
+            claim_first_available_microphone()
 
 
 class TestListAudioSources:

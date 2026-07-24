@@ -39,7 +39,7 @@ class TestSpeakerFactoryInstantiation:
     def test_factory_invalid_device_type_raises_error(self):
         """Test that invalid device type raises SpeakerConfigError."""
         with pytest.raises(SpeakerConfigError):
-            Speaker(device=None)  # type: ignore
+            Speaker(device={"invalid": "type"})  # type: ignore
 
     def test_factory_no_speaker_raises_open_error(self, mock_pw_dump):
         """Test that an integer index with no discoverable speaker raises SpeakerOpenError."""
@@ -59,13 +59,14 @@ class TestSpeakerAutoSelection:
         assert spkr1.device_stable_ref == "plughw:CARD=SomeCard,DEV=0"
         assert spkr2.device_stable_ref == "plughw:CARD=AnotherCard,DEV=0"
 
-    def test_auto_selection_reuses_speakers_when_all_claimed(self, mock_pw_dump):
+    def test_auto_selection_raises_when_all_speakers_are_in_use(self, mock_pw_dump):
         mock_pw_dump(usb_ids=(50,))
 
-        spkr1 = Speaker()
-        spkr2 = Speaker()
+        spkr = Speaker()
+        assert spkr.device_stable_ref == "plughw:CARD=SomeCard,DEV=0"
 
-        assert spkr2.device_stable_ref == spkr1.device_stable_ref
+        with pytest.raises(SpeakerOpenError):
+            Speaker()
 
     def test_auto_selection_releases_speaker_when_instance_is_dropped(self):
         import gc
@@ -76,6 +77,21 @@ class TestSpeakerAutoSelection:
         gc.collect()
 
         assert Speaker().device_stable_ref == first_ref
+
+    def test_auto_selection_skips_explicitly_selected_speakers(self):
+        explicit = Speaker(0)
+        auto = Speaker()
+
+        assert explicit.device_stable_ref == "plughw:CARD=SomeCard,DEV=0"
+        assert auto.device_stable_ref == "plughw:CARD=AnotherCard,DEV=0"
+
+    def test_explicit_selection_reuses_a_speaker_already_in_use(self, mock_pw_dump):
+        mock_pw_dump(usb_ids=(50,))
+
+        spkr1 = Speaker(0)
+        spkr2 = Speaker(0)
+
+        assert spkr2.device_stable_ref == spkr1.device_stable_ref
 
 
 class TestSpeakerConfiguration:

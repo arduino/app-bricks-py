@@ -9,72 +9,68 @@ camera_registry = DeviceRegistry()
 """Tracks the cameras assigned to auto-selected Camera instances."""
 
 
-def claim_nth_available_camera(idx: int) -> str:
+def claim_first_available_camera() -> tuple[str, str]:
     """
-    Find and claim the n-th available physically connected camera.
+    Find and claim the first plugged camera not assigned to another instance.
 
-    The precedence is USB cameras first, then CSI cameras, if supported
-    by the current platform. Cameras already claimed by other auto-selected
-    instances are skipped; when every plugged camera is claimed, the n-th
-    plugged one is reused. The claim must be released back to camera_registry,
-    either explicitly or by binding it to its owner.
-
-    Args:
-        idx (int): Index of the camera to select among the available ones (0-based).
+    USB cameras take precedence over CSI ones, if supported by the current
+    platform. The claim is keyed on the camera's stable identity so it survives
+    device reordering, and must be released back to camera_registry, either
+    explicitly or by binding it to its owner.
 
     Returns:
-        str: Identifier of the n-th available camera ("usb:X" or "csi:X").
+        tuple[str, str]: The claimed camera as (source, claim key), where
+            source is a Camera factory source string and claim key is the
+            camera's stable identity.
 
     Raises:
-        CameraOpenError: If no cameras are found or index is out of range
+        CameraOpenError: If no camera is plugged or all are already in use.
     """
+    from .v4l_camera import V4LCamera
 
-    def usb_cameras() -> list[str]:
-        from .v4l_camera import V4LCamera
+    path = camera_registry.select(V4LCamera.list_stable_paths)
+    if path is not None:
+        return f"usb:{path}", path
 
-        return [f"usb:{i}" for i in range(len(V4LCamera.list_devices()))]
+    from .csi_camera import CSICamera
 
-    def csi_cameras() -> list[str]:
-        from .csi_camera import CSICamera
+    names = CSICamera.list_device_names()
+    name = camera_registry.select(lambda: names)
+    if name is not None:
+        return f"csi:{names.index(name)}", name
 
-        return [f"csi:{i}" for i in range(len(CSICamera.list_devices()))]
-
-    camera = camera_registry.select(idx, usb_cameras, csi_cameras)
-    if camera is None:
-        raise CameraOpenError("No available cameras found")
-    return camera
+    raise CameraOpenError("No available cameras found: either none is plugged or all are already in use")
 
 
 def nth_plugged_camera(idx: int) -> str:
     """
-    Find the n-th available physically connected camera.
-    The precedence is USB cameras first, then CSI cameras, if supported
-    by the current platform.
+    Find the n-th plugged camera, regardless of whether it is already in use.
+
+    The index spans USB cameras first, then CSI cameras, if supported by the
+    current platform.
 
     Args:
         idx (int): Index of the camera to select (0-based).
 
     Returns:
-        str | int: Identifier of the n-th available camera
+        str: Identifier of the n-th plugged camera ("usb:X" or "csi:X").
 
     Raises:
-        CameraOpenError: If no cameras are found or index is out of range
+        CameraOpenError: If no camera is plugged at the given index.
     """
     from .v4l_camera import V4LCamera
 
-    usb_cameras = V4LCamera.list_devices()
-    if len(usb_cameras) > 0:
-        if idx < len(usb_cameras):
-            return "usb:" + str(idx)
+    usb_count = len(V4LCamera.list_devices())
+    if idx < usb_count:
+        return f"usb:{idx}"
 
     from .csi_camera import CSICamera
 
-    csi_cameras = CSICamera.list_devices()
-    if len(csi_cameras) > 0:
-        if idx < len(csi_cameras):
-            return "csi:" + str(idx)
+    csi_count = len(CSICamera.list_devices())
+    if idx - usb_count < csi_count:
+        return f"csi:{idx - usb_count}"
 
-    raise CameraOpenError("No available cameras found")
+    raise CameraOpenError(f"No camera found at index {idx}: only {usb_count + csi_count} camera(s) plugged")
 
 
 def resolve_camera_name(i2c_addr: str) -> str:

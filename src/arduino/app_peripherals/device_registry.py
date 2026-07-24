@@ -9,60 +9,58 @@ from collections.abc import Callable, Sequence
 
 class DeviceRegistry:
     """
-    Process-wide registry of devices claimed by auto-selected peripherals.
+    Process-wide registry of devices claimed by peripheral instances.
 
-    Auto-selection consults it to skip devices already assigned to other
-    instances of the same peripheral type, so that e.g. two Camera() calls
-    resolve to two distinct cameras instead of contending for the same one.
+    Auto-selection consults it to pick a device not already assigned to another
+    instance of the same peripheral type. Explicitly addressed devices are
+    claimed too, so auto-selection routes around them; those claims never block
+    an explicit selection, since a device can be legitimately reused by
+    multiple instances (e.g. ALSA shared mode) and contention is only
+    discovered when starting the peripheral.
 
-    Claims are counted: a device handed out again once the pool is exhausted
-    stays claimed until every owner has released it. A claim bound to its
-    owner via bind() is released automatically when the owner is garbage
-    collected.
+    Claims are keyed on stable device identities (e.g. "/dev/v4l/by-id/..."
+    links or "plughw:CARD=..." refs) so they survive device reordering, and
+    are counted: a device reused by multiple instances stays claimed until
+    every owner has released it. A claim bound to its owner via bind() is
+    released automatically when the owner is garbage collected.
     """
 
     def __init__(self):
         self._lock = threading.Lock()
         self._claims: dict[str, int] = {}
 
-    def select(self, idx: int, *device_groups: Callable[[], Sequence[str]]) -> str | None:
+    def select(self, *device_groups: Callable[[], Sequence[str]]) -> str | None:
         """
-        Atomically claim and return the idx-th available device.
+        Atomically claim and return the first available device.
 
-        Devices already claimed are skipped. When fewer than idx+1 devices are
-        available, the idx-th plugged one is reused, so devices are shared only
-        once the pool is exhausted. Groups are enumerated lazily, in precedence
-        order, only until the requested index is satisfied.
+        Devices already claimed are skipped. Groups are enumerated lazily, in
+        precedence order, only until an available device is found.
 
         Args:
-            idx (int): Index among the available (unclaimed) devices (0-based).
             *device_groups: Callables returning candidate device identifiers,
                 in precedence order.
 
         Returns:
-            str | None: The claimed device identifier, or None if no device
-                exists at the requested index.
+            str | None: The claimed device identifier, or None if every device
+                is already claimed or none was listed.
         """
-        if idx < 0:
-            return None
         with self._lock:
-            plugged: list[str] = []
-            available: list[str] = []
             for group in device_groups:
                 for device in group():
-                    plugged.append(device)
                     if device not in self._claims:
-                        available.append(device)
-                if idx < len(available):
-                    break
-            if idx < len(available):
-                device = available[idx]
-            elif idx < len(plugged):
-                device = plugged[idx]
-            else:
-                return None
+                        self._claims[device] = 1
+                        return device
+        return None
+
+    def claim(self, device: str) -> None:
+        """
+        Claim a device unconditionally, even if it is already claimed.
+
+        Args:
+            device (str): Identifier of the device to claim.
+        """
+        with self._lock:
             self._claims[device] = self._claims.get(device, 0) + 1
-            return device
 
     def bind(self, device: str, owner: object) -> None:
         """Tie a claim on a device to its owner, releasing it when the owner is garbage collected."""

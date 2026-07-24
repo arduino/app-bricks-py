@@ -20,35 +20,27 @@ def has_media_carrier() -> bool:
     return os.environ.get("CONFIGURED_CARRIERS") == _MEDIA_CARRIER
 
 
-def claim_nth_available_speaker(idx: int) -> str:
+def claim_first_available_speaker() -> str:
     """
-    Find and claim the n-th available physically connected speaker.
+    Find and claim the first plugged speaker not assigned to another instance.
 
-    The precedence is USB speakers first, then jack speakers if supported
-    by the platform. Speakers already claimed by other auto-selected
-    instances are skipped; when every plugged speaker is claimed, the n-th
-    plugged one is reused. The claim must be released back to
-    speaker_registry, either explicitly or by binding it to its owner.
-
-    Args:
-        idx (int): Index of the speaker to select among the available ones (0-based).
+    USB speakers take precedence over jack ones, if supported by the platform.
+    The claim is keyed on the speaker's stable reference so it survives device
+    reordering, and must be released back to speaker_registry, either
+    explicitly or by binding it to its owner.
 
     Returns:
-        str: Identifier of the n-th available speaker, "usb:X" or "jack:X",
-            where X is the 1-based ordinal index within its type.
+        str: Stable reference of the claimed speaker, either
+            "plughw:CARD=<name>,DEV=<n>" or "pipewire:NODE=<node.name>".
 
     Raises:
-        SpeakerOpenError: If no matching speaker is found.
+        SpeakerOpenError: If no speaker is plugged or all are already in use.
     """
-    usb_spkrs, builtin_spkrs = list_audio_sinks()
+    from .alsa_speaker import ALSASpeaker
 
-    candidates = [f"usb:{i + 1}" for i in range(len(usb_spkrs))]
-    if has_media_carrier():
-        candidates += [f"jack:{i + 1}" for i in range(len(builtin_spkrs))]
-
-    device = speaker_registry.select(idx, lambda: candidates)
+    device = speaker_registry.select(ALSASpeaker.list_usb_devices, ALSASpeaker.list_jack_devices)
     if device is None:
-        raise SpeakerOpenError("No available speakers found")
+        raise SpeakerOpenError("No available speakers found: either none is plugged or all are already in use")
     return device
 
 

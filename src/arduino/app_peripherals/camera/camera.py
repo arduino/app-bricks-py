@@ -9,7 +9,7 @@ import numpy as np
 
 from .base_camera import BaseCamera
 from .errors import CameraConfigError
-from .utils import camera_registry, claim_nth_available_camera
+from .utils import camera_registry, claim_first_available_camera, nth_plugged_camera
 
 
 class Camera:
@@ -31,7 +31,7 @@ class Camera:
 
     def __new__(
         cls,
-        source: str | int = 0,
+        source: str | int | None = None,
         resolution: tuple[int, int] = (640, 480),
         fps: int = 10,
         adjustments: Callable[[np.ndarray], np.ndarray] | None = None,
@@ -41,12 +41,15 @@ class Camera:
         Create a camera instance based on the source type.
 
         Args:
-            source (Union[str, int]): Camera source identifier. Supports:
-                - int | str: Auto-select the n-th available plugged camera
-                    (e.g., 0, 1, "0", "1", ...), giving priority to USB cameras,
-                    then CSI cameras if supported by the platform. Cameras already
-                    auto-selected by other instances are skipped, so concurrent
-                    instances get distinct cameras as long as enough are plugged
+            source (str | int | None): Camera source identifier. Supports:
+                - None: Auto-select the first available plugged camera, i.e. not
+                    already in use by another instance, giving priority to USB
+                    cameras, then CSI cameras if supported by the platform.
+                    Raises if every plugged camera is already in use
+                - int | str: Select the n-th plugged camera (e.g., 0, 1, "0", "1",
+                    ...) counting USB cameras first, then CSI ones, regardless of
+                    whether it is already in use: contention on a reused camera
+                    is only discovered when starting it
                 - str: V4L camera ordinal index (e.g., "usb:0", "usb:1")
                 - str: V4L camera device path (e.g., "usb:/dev/video0",
                     "usb:/dev/v4l/by-id/...", "usb:/dev/v4l/by-path/...
@@ -55,7 +58,7 @@ class Camera:
                 - str: CSI camera name (e.g., "csi:CAMERA0", "csi:CAMERA1")
                 - str: URL for IP cameras (e.g., "rtsp://...", "http://...")
                 - str: WebSocket URL for input streams (e.g., "ws://0.0.0.0:8080")
-                Default: 0.
+                Default: None.
             resolution (tuple[int, int]): Frame resolution as (width, height).
                 Default: (640, 480).
             fps (int): Target frames per second. Default: 10.
@@ -124,21 +127,44 @@ class Camera:
             camera = Camera("ws://0.0.0.0:8080", use_tls=True, certs_dir_path="/path/to/certs")
             ```
         """
-        if not isinstance(source, (str, int)):
-            raise CameraConfigError(f"Invalid source type: {type(source)}. Must be str or int.")
-
-        if isinstance(source, int) or (isinstance(source, str) and source.isdigit()):
-            # Select and claim the n-th available camera so other auto-selected instances skip it
-            source = claim_nth_available_camera(int(source))
+        if source is None:
+            # Auto-selection: claim the first available camera so other instances don't select it
+            source, key = claim_first_available_camera()
             try:
                 camera = _create_camera(source, resolution, fps, adjustments, **kwargs)
             except BaseException:
-                camera_registry.release(source)
+                camera_registry.release(key)
                 raise
-            camera_registry.bind(source, camera)
+            camera_registry.bind(key, camera)
             return camera
 
-        return _create_camera(source, resolution, fps, adjustments, **kwargs)
+        if not isinstance(source, (str, int)):
+            raise CameraConfigError(f"Invalid source type: {type(source)}. Must be str, int or None.")
+
+        if isinstance(source, int) or (isinstance(source, str) and source.isdigit()):
+            # Positional selection of the n-th plugged camera
+            source = nth_plugged_camera(int(source))
+
+        camera = _create_camera(source, resolution, fps, adjustments, **kwargs)
+
+        # Claim local devices so auto-selection doesn't pick them
+        key = _claim_key(camera)
+        if key is not None:
+            camera_registry.claim(key)
+            camera_registry.bind(key, camera)
+        return camera
+
+
+def _claim_key(camera: BaseCamera) -> str | None:
+    """Return the stable identity of the local device held by the camera, if any."""
+    from .csi_camera import CSICamera
+    from .v4l_camera import V4LCamera
+
+    if isinstance(camera, V4LCamera):
+        return camera.v4l_path
+    if isinstance(camera, CSICamera):
+        return camera.csi_path
+    return None
 
 
 def _create_camera(
