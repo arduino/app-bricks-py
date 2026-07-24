@@ -76,7 +76,8 @@ def test_sound_generator_default_speaker_is_shared(monkeypatch):
         RATE_32K = 32000
         BUFFER_SIZE_SAFE = 4096
 
-        def __new__(cls, **kwargs):
+        def __new__(cls, device, **kwargs):
+            captured["device"] = device
             captured.update(kwargs)
             return FakeInternalSpeaker()
 
@@ -87,6 +88,7 @@ def test_sound_generator_default_speaker_is_shared(monkeypatch):
     assert generator.external_speaker is False
     assert isinstance(generator._output_device, FakeInternalSpeaker)
     assert captured == {
+        "device": 0,
         "sample_rate": 32000,
         "format": np.float32,
         "buffer_size": 4096,
