@@ -72,25 +72,40 @@ class V4LCamera(BaseCamera):
         Returns:
             list[int]: List of USB camera indices.
         """
+        return [index for index, _ in V4LCamera._scan_stable_links()]
+
+    @staticmethod
+    def list_stable_paths() -> list[str]:
+        """
+        Return the stable /dev/v4l/by-id links of the available USB cameras,
+        ordered by their video device index.
+
+        Returns:
+            list[str]: List of stable USB camera paths.
+        """
+        return [path for _, path in V4LCamera._scan_stable_links()]
+
+    @staticmethod
+    def _scan_stable_links() -> list[tuple[int, str]]:
+        """Scan /dev/v4l/by-id and return (video index, stable link) pairs sorted by index."""
         if not os.path.exists("/dev/v4l/by-id/"):
             return []
 
-        indices: list[int] = []
+        links: list[tuple[int, str]] = []
         try:
-            devices = [dev for dev in os.listdir("/dev/v4l/by-id/")]
-            for dev in devices:
+            for dev in os.listdir("/dev/v4l/by-id/"):
                 dev_path = os.path.join("/dev/v4l/by-id", dev)
                 target = os.path.realpath(dev_path)
                 video_basename = os.path.basename(target)
                 if video_basename.startswith("video"):
                     index = int(video_basename.removeprefix("video"))
-                    indices.append(index)
+                    links.append((index, dev_path))
 
         except Exception as e:
             logger.error(f"Error listing available cameras: {e}")
 
-        indices.sort()
-        return indices
+        links.sort()
+        return links
 
     def _resolve_stable_path(self, device: str | int) -> str:
         """
