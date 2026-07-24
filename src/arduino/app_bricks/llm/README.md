@@ -8,7 +8,7 @@ This Brick acts as a gateway to powerful AI models hosted locally. Whether you n
 
 ## Features
 
-- **Multi-Provider Support**: Compatible with multiple LLM providers including Qwen, LLama and Gemma. The default model used is different depending on the board that is used. Other models can be set and downloaded in Arduino App Labs.
+- **Multi-LLM Support**: Compatible with multiple LLM models including Qwen and Gemma. The default model used is different depending on the board that is used. Other models can be set and downloaded in Arduino App Labs.
 - **Conversational Memory**: Built-in support for windowed history, allowing the AI to remember context from previous exchanges.
 - **Streaming Responses**: Receive text chunks in real-time as they are generated, ideal for responsive user interfaces.
 - **Configurable Behavior**: Customize system prompts, temperature (creativity), and request timeouts.
