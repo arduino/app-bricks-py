@@ -189,7 +189,7 @@ class ALSASpeaker(BaseSpeaker):
 
         # Complete device strings are opened as given
         if isinstance(identifier, str):
-            if identifier.startswith("pipewire:"):
+            if identifier.startswith("pipewire"):
                 return identifier
             if identifier.startswith("jack:"):
                 return self._resolve_jack_ref(identifier)
@@ -335,6 +335,8 @@ class ALSASpeaker(BaseSpeaker):
             SpeakerOpenError: If the device name can't be resolved
         """
         if isinstance(device_ref, str):
+            if device_ref == "pipewire":
+                return "pipewire"
             if device_ref.startswith("pipewire:"):
                 node_match = re.match(r"^pipewire:NODE=(.+)$", device_ref)
                 if node_match:
@@ -388,7 +390,7 @@ class ALSASpeaker(BaseSpeaker):
         logger.debug(f"Opening PCM device: {self.device_stable_ref}")
 
         try:
-            direct_match = re.match(r"^pipewire:|^(plughw:|hw:)[^,]+,\d+,\d+$", self.device_stable_ref)
+            direct_match = re.match(r"^pipewire($|:)|^(plughw:|hw:)[^,]+,\d+,\d+$", self.device_stable_ref)
 
             if direct_match:
                 device = self.device_stable_ref
@@ -496,7 +498,7 @@ class ALSASpeaker(BaseSpeaker):
 
     def _is_device_disconnected(self) -> bool:
         """Check if the device is still in the available devices list."""
-        if self.device_stable_ref.startswith("pipewire:"):
+        if self.device_stable_ref.startswith("pipewire"):
             # Built-in devices are always present
             return False
 
