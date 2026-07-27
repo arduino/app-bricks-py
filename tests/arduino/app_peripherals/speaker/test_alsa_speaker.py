@@ -448,3 +448,22 @@ class TestALSASpeakerJackResolution:
 
         spkr.start()
         assert pcm_registry.get_last_instance().device == "pipewire:NODE=unknown.node"
+
+    @pytest.mark.parametrize(
+        "device",
+        [
+            "pipewire",  # Bare default PipeWire device
+            "pipewire:NODE=unknown.node",  # Explicit PipeWire node
+        ],
+    )
+    def test_pipewire_opens_as_direct_device(self, pcm_registry, device):
+        """Both the bare 'pipewire' string and 'pipewire:NODE=...' open as-is without runtime resolution."""
+        spkr = ALSASpeaker(device=device)
+        assert spkr.device_stable_ref == device
+
+        spkr.start()
+
+        # The stable ref is handed to ALSA verbatim, no plug_card_* remapping.
+        assert pcm_registry.get_last_instance().device == device
+        # PipeWire devices are always considered present.
+        assert spkr._is_device_disconnected() is False
