@@ -97,6 +97,9 @@ RUN if ! find "${ADSP_DIR}" -type f -name "*.so" | grep -q . ; then \
 # Inherits from base to reuse the already-pulled image and apt-get upgrade layer.
 FROM base AS fastrpc-builder
 
+# fastrpc version to build (git tag) as per QAIRT framework
+ENV FASTRPC_VER=1.0.6
+
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       git ca-certificates \
@@ -105,7 +108,7 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-RUN git clone --depth 1 https://github.com/quic/fastrpc.git \
+RUN git clone --depth 1 --branch v${FASTRPC_VER} https://github.com/quic/fastrpc.git \
     && cd fastrpc \
     && autoreconf -is \
     && CFLAGS='-UMACHINE_NAME_PATH -DMACHINE_NAME_PATH=\"/run/device-model\"' \
