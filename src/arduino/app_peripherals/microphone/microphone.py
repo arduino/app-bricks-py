@@ -160,7 +160,8 @@ class Microphone:
 
             ```python
             microphone = Microphone(sample_rate=16000, channels=1)  # First plugged microphone
-            microphone = Microphone(USB_MIC_1, sample_rate=16000, channels=1)  # First USB microphone
+            microphone = Microphone(Microphone.USB_MIC_1, sample_rate=16000, channels=1)  # First USB microphone
+            microphone = Microphone(Microphone.JACK_MIC_1)  # First built-in (jack) microphone
             microphone = Microphone(1)  # Second plugged microphone
             microphone = Microphone("CARD=MyCard,DEV=0", format="S16_LE")
             microphone = Microphone("plughw:CARD=MyCard,DEV=0")
