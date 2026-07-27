@@ -1,0 +1,97 @@
+name: Check examples alignment
+
+# Informative, non-blocking check: pyright analyzes the app-bricks-examples
+# Python code twice, resolving the library from the PR base and head sources,
+# and the diff of the two runs is reported in the job summary. New errors mean
+# this PR changes the API contract the published examples rely on.
+
+on:
+  pull_request:
+    paths:
+      - "src/**"
+      - "pyproject.toml"
+      - "containers/python-base/requirements-base.txt"
+      - "scripts/check_examples_alignment.py"
+      - ".github/workflows/check-examples-alignment.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: examples-alignment-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.13"
+  NODE_VERSION: "22"
+
+jobs:
+  examples-alignment:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: head
+
+      - name: Checkout PR base
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          path: base
+
+      - name: Checkout examples
+        uses: actions/checkout@v4
+        with:
+          repository: arduino/app-bricks-examples
+          ref: main
+          path: examples
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Build check venv
+        run: |
+          python -m venv checkenv
+          # Runtime baseline of the app container. Tolerant per-package install:
+          # packages needing system libs may fail on the runner; pyright degrades
+          # the affected types to Unknown instead of producing false errors.
+          while IFS= read -r pkg; do
+            pkg="${pkg%%#*}"
+            [ -z "${pkg// /}" ] && continue
+            ./checkenv/bin/pip install -q "$pkg" || echo "::notice::baseline package not installed: $pkg"
+          done < head/containers/python-base/requirements-base.txt
+          # Library dependencies (core + [all] extra), without the library itself:
+          # pyright resolves the library from the base/head sources.
+          python head/scripts/check_examples_alignment.py deps --pyproject head/pyproject.toml > library-deps.txt
+          ./checkenv/bin/pip install -q -r library-deps.txt
+          # Per-example dependencies.
+          find examples/bricks examples/core-and-foundational examples/inspirational \
+            -path '*/python/requirements.txt' -exec ./checkenv/bin/pip install -q -r {} \;
+
+      - name: Run pyright against base
+        run: python head/scripts/check_examples_alignment.py run --examples-dir examples --library-src base/src --python checkenv/bin/python --out base.json
+
+      - name: Run pyright against head
+        run: python head/scripts/check_examples_alignment.py run --examples-dir examples --library-src head/src --python checkenv/bin/python --out head.json
+
+      - name: Report alignment diff
+        run: python head/scripts/check_examples_alignment.py diff --base base.json --head head.json
+
+      - name: Upload run outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: examples-alignment-reports
+          path: |
+            base.json
+            head.json
+          retention-days: 15
