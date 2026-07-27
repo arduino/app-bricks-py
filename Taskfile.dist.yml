@@ -72,6 +72,11 @@ tasks:
     cmds:
       - ruff check --fix .
 
+  check:examples-alignment:
+    desc: "Check app-bricks-examples alignment against this library (see scripts/check_examples_alignment.py --help)"
+    cmds:
+      - python3 scripts/check_examples_alignment.py {{.CLI_ARGS}}
+
   fmt:
     desc: Format code
     cmds:
