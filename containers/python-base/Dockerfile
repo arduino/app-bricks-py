@@ -5,7 +5,7 @@
 ARG REGISTRY
 ARG BASE_IMAGE_VERSION=latest
 
-FROM python:3.13-slim AS builder
+FROM python:3.13-slim-trixie AS builder
 
 ARG OPENCV_WHL_URL
 ARG OPENCV_WHL_DIGEST

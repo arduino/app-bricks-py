@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-FROM python:3.13-slim AS production
+FROM python:3.13-slim-trixie AS production
 
 RUN set -ex; \
     apt-get update -y; \
