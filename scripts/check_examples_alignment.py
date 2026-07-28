@@ -7,12 +7,15 @@
 Pyright analyzes the examples' Python sources resolving the library directly
 from a source checkout (no wheel build needed). Three modes:
 
-  deps  Print the library dependencies (core + recursively expanded extra),
-        so the check venv can be built without building the library itself.
-  run   Run pyright over the examples trees against a library source path and
-        save the diagnostics as JSON.
-  diff  Compare two run outputs (base vs head of a PR) and report new/fixed
-        errors. Always exits 0: the check is informative, not blocking.
+  deps      Print the library dependencies (core + recursively expanded extra),
+            so the check venv can be built without building the library itself.
+  run       Run pyright over the examples trees against a library source path
+            and save the diagnostics as JSON.
+  diff      Compare two run outputs (base vs head of a PR) and report new/fixed
+            errors. Always exits 0: the check is informative, not blocking.
+  coverage  Report the library bricks that have no examples, highlighting the
+            ones introduced by the PR. Informative by design: a new brick may
+            legitimately land before its examples do.
 
 Typical PR usage:
   python3 scripts/check_examples_alignment.py run --examples-dir <examples> --library-src base/src --python <venv> --out base.json
@@ -150,6 +153,46 @@ def cmd_diff(args) -> int:
     return 0
 
 
+DISABLED_RE = re.compile(r"^disabled:\s*true\s*$", re.MULTILINE)
+
+
+def library_bricks(library_src: Path) -> set[str]:
+    """Names of the non-disabled bricks defined in a library source checkout."""
+    bricks = set()
+    for config in sorted(library_src.glob("arduino/app_bricks/*/brick_config.yaml")):
+        if not DISABLED_RE.search(config.read_text()):
+            bricks.add(config.parent.name)
+    return bricks
+
+
+def cmd_coverage(args) -> int:
+    examples_dir = Path(args.examples_dir).resolve()
+    covered = {path.name for path in examples_dir.glob("bricks/*/*") if path.is_dir()}
+    head_bricks = library_bricks(Path(args.head_src).resolve())
+    base_bricks = library_bricks(Path(args.base_src).resolve()) if args.base_src else head_bricks
+
+    uncovered = sorted(head_bricks - covered)
+    introduced = sorted((head_bricks - base_bricks) - covered)
+
+    lines = ["### Bricks without examples", ""]
+    if uncovered:
+        lines.append(f"{len(uncovered)} bricks have no examples in app-bricks-examples:")
+        lines += [f"- `{name}`" + (" — **introduced by this PR**" if name in introduced else "") for name in uncovered]
+        lines += ["", "Informative only: a new brick may legitimately land before its examples do."]
+    else:
+        lines.append("Every non-disabled brick has at least one example.")
+    report = "\n".join(lines)
+
+    print(report)
+    summary_path = args.summary or os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary_path:
+        with open(summary_path, "a") as f:
+            f.write(report + "\n")
+    for name in introduced:
+        print(f"::notice::examples coverage: this PR introduces the brick '{name}', which has no examples in app-bricks-examples yet")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="mode", required=True)
@@ -172,6 +215,13 @@ def main() -> int:
     diff.add_argument("--head", required=True)
     diff.add_argument("--summary", help="markdown output file (defaults to GITHUB_STEP_SUMMARY)")
     diff.set_defaults(func=cmd_diff)
+
+    coverage = sub.add_parser("coverage", help="report library bricks that have no examples")
+    coverage.add_argument("--examples-dir", required=True)
+    coverage.add_argument("--head-src", required=True)
+    coverage.add_argument("--base-src", help="library source of the PR base, to flag bricks introduced by the PR")
+    coverage.add_argument("--summary", help="markdown output file (defaults to GITHUB_STEP_SUMMARY)")
+    coverage.set_defaults(func=cmd_coverage)
 
     args = parser.parse_args()
     return args.func(args)

@@ -87,6 +87,9 @@ jobs:
       - name: Report alignment diff
         run: python head/scripts/check_examples_alignment.py diff --base base.json --head head.json
 
+      - name: Report bricks example coverage
+        run: python head/scripts/check_examples_alignment.py coverage --examples-dir examples --head-src head/src --base-src base/src
+
       - name: Upload run outputs
         uses: actions/upload-artifact@v4
         with:
