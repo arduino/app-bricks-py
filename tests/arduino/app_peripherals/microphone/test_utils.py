@@ -46,6 +46,12 @@ class TestNthPluggedMicrophone:
 
         assert _nth_plugged_microphone(0) == "jack:1"
 
+    def test_index_spans_usb_then_jack_under_media_carrier(self, mock_pw_dump, monkeypatch):
+        monkeypatch.setenv(_CARRIER_ENV, "media-carrier")
+        mock_pw_dump(usb_ids=(50,), builtin_ids=(52,))
+
+        assert _nth_plugged_microphone(1) == "jack:1"
+
     def test_second_builtin_unsupported_under_media_carrier(self, mock_pw_dump, monkeypatch):
         monkeypatch.setenv(_CARRIER_ENV, "media-carrier")
         mock_pw_dump(usb_ids=(), builtin_ids=(52,))

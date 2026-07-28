@@ -46,31 +46,32 @@ def _claim_first_available_microphone() -> str:
 
 def _nth_plugged_microphone(idx: int) -> str:
     """
-    Find the n-th available physically connected microphone.
+    Find the n-th plugged microphone, regardless of whether it is already in use.
 
-    The precedence is USB microphones first. Resolution falls back to jack
-    microphones if no USB microphone is available at the requested position
-    and the platform supports them.
+    The index spans USB microphones first, then jack microphones, if supported
+    by the current platform.
 
     Args:
         idx (int): Index of the microphone to select (0-based).
 
     Returns:
-        str: Identifier of the n-th available microphone, "usb:X" or "jack:X",
+        str: Identifier of the n-th plugged microphone, "usb:X" or "jack:X",
             where X is the 1-based ordinal index within its type.
 
     Raises:
-        MicrophoneOpenError: If no matching microphone is found.
+        MicrophoneOpenError: If no microphone is plugged at the given index.
     """
     usb_mics, builtin_mics = list_audio_sources()
 
-    if idx < len(usb_mics):
+    usb_count = len(usb_mics)
+    if idx < usb_count:
         return f"usb:{idx + 1}"
 
-    if has_media_carrier() and idx < len(builtin_mics):
-        return f"jack:{idx + 1}"
+    jack_count = len(builtin_mics) if has_media_carrier() else 0
+    if idx - usb_count < jack_count:
+        return f"jack:{idx - usb_count + 1}"
 
-    raise MicrophoneOpenError("No available microphones found")
+    raise MicrophoneOpenError(f"No microphone found at index {idx}: only {usb_count + jack_count} microphone(s) plugged")
 
 
 def list_audio_sources() -> tuple[list[dict], list[dict]]:

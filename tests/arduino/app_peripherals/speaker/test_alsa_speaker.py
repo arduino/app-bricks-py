@@ -89,7 +89,7 @@ class TestALSASpeakerDeviceResolution:
     @pytest.mark.parametrize(
         "device, message",
         [
-            (5, "No available speakers found"),  # Ordinal beyond the plugged speakers
+            (5, "No speaker found at index 5"),  # Ordinal beyond the plugged speakers
             ("CARD=Ghost,DEV=0", "not found among available"),  # Well-formed but disconnected
         ],
     )

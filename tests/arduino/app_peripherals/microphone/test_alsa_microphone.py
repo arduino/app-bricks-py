@@ -89,7 +89,7 @@ class TestALSAMicrophoneDeviceResolution:
     @pytest.mark.parametrize(
         "device, message",
         [
-            (5, "No available microphones found"),  # Ordinal beyond the plugged microphones
+            (5, "No microphone found at index 5"),  # Ordinal beyond the plugged microphones
             ("CARD=Ghost,DEV=0", "not found among available"),  # Well-formed but disconnected
         ],
     )

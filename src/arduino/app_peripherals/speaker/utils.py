@@ -46,31 +46,32 @@ def _claim_first_available_speaker() -> str:
 
 def _nth_plugged_speaker(idx: int) -> str:
     """
-    Find the n-th available physically connected speaker.
+    Find the n-th plugged speaker, regardless of whether it is already in use.
 
-    The precedence is USB speakers first. Resolution falls back to jack
-    speakers if no USB speaker is available at the requested position
-    and the platform supports them.
+    The index spans USB speakers first, then jack speakers, if supported
+    by the current platform.
 
     Args:
         idx (int): Index of the speaker to select (0-based).
 
     Returns:
-        str: Identifier of the n-th available speaker, "usb:X" or "jack:X",
+        str: Identifier of the n-th plugged speaker, "usb:X" or "jack:X",
             where X is the 1-based ordinal index within its type.
 
     Raises:
-        SpeakerOpenError: If no matching speaker is found.
+        SpeakerOpenError: If no speaker is plugged at the given index.
     """
     usb_spkrs, builtin_spkrs = list_audio_sinks()
 
-    if idx < len(usb_spkrs):
+    usb_count = len(usb_spkrs)
+    if idx < usb_count:
         return f"usb:{idx + 1}"
 
-    if has_media_carrier() and idx < len(builtin_spkrs):
-        return f"jack:{idx + 1}"
+    jack_count = len(builtin_spkrs) if has_media_carrier() else 0
+    if idx - usb_count < jack_count:
+        return f"jack:{idx - usb_count + 1}"
 
-    raise SpeakerOpenError("No available speakers found")
+    raise SpeakerOpenError(f"No speaker found at index {idx}: only {usb_count + jack_count} speaker(s) plugged")
 
 
 def list_audio_sinks() -> tuple[list[dict], list[dict]]:
