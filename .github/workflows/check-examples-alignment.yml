@@ -59,21 +59,26 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
+      - name: Install system build dependencies
+        # Headers needed to compile the audio C extensions (pyalsaaudio, pyaudio),
+        # same packages installed by 'task install:deps'.
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends libasound2-dev portaudio19-dev
+
       - name: Build check venv
         run: |
           python -m venv checkenv
-          # Runtime baseline of the app container. Tolerant per-package install:
-          # packages needing system libs may fail on the runner; pyright degrades
-          # the affected types to Unknown instead of producing false errors.
-          while IFS= read -r pkg; do
-            pkg="${pkg%%#*}"
-            [ -z "${pkg// /}" ] && continue
-            ./checkenv/bin/pip install -q "$pkg" || echo "::notice::baseline package not installed: $pkg"
-          done < head/containers/python-base/requirements-base.txt
           # Library dependencies (core + [all] extra), without the library itself:
           # pyright resolves the library from the base/head sources.
           python head/scripts/check_examples_alignment.py deps --pyproject head/pyproject.toml > library-deps.txt
-          ./checkenv/bin/pip install -q -r library-deps.txt
+          # Runtime baseline of the app container + library dependencies.
+          # Tolerant per-package install: a package that still fails to build on
+          # the runner only degrades the affected types to Unknown, it must not
+          # fail the job.
+          cat head/containers/python-base/requirements-base.txt library-deps.txt | while IFS= read -r pkg; do
+            pkg="${pkg%%#*}"
+            [ -z "${pkg// /}" ] && continue
+            ./checkenv/bin/pip install -q "$pkg" || echo "::notice::package not installed in the check venv: $pkg"
+          done
           # Per-example dependencies.
           find examples/bricks examples/core-and-foundational examples/inspirational \
             -path '*/python/requirements.txt' -exec ./checkenv/bin/pip install -q -r {} \;
