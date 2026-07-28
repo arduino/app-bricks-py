@@ -79,19 +79,27 @@ def list_audio_sinks() -> tuple[list[dict], list[dict]]:
     Discover audio playback devices via pw-dump, partitioned into USB and
     built-in, each ordered by ascending PipeWire node id (lowest id first).
 
+    Sinks are categorized by transport: USB, Bluetooth, HDMI or built-in.
+    Bluetooth and HDMI sinks are not supported yet, so they are excluded
+    from the returned lists.
+
     Returns:
         tuple[list[dict], list[dict]]: (usb_sinks, builtin_sinks)
     """
     objects = _pw_dump()
 
-    devices = {obj["id"]: _props(obj) for obj in objects if _props(obj).get("media.class") == "Audio/Device"}
+    devices = {obj["id"]: obj for obj in objects if _props(obj).get("media.class") == "Audio/Device"}
 
     sinks = [obj for obj in objects if _props(obj).get("media.class") == "Audio/Sink"]
     sinks.sort(key=lambda obj: obj["id"])
 
     usb, builtin = [], []
     for sink in sinks:
-        (usb if _is_usb_sink(sink, devices) else builtin).append(sink)
+        category = _categorize_node(sink, devices)
+        if category == _USB:
+            usb.append(sink)
+        elif category == _BUILTIN:
+            builtin.append(sink)
     return usb, builtin
 
 
@@ -133,12 +141,37 @@ def _pw_dump() -> list:
         raise SpeakerOpenError(f"Failed to enumerate audio devices via pw-dump: {e}")
 
 
-def _is_usb_sink(sink: dict, devices: dict) -> bool:
-    """Tell whether an Audio/Sink node is backed by a USB device."""
-    props = _props(sink)
-    parent = devices.get(props.get("device.id"), {})
-    if parent.get("device.bus") == "usb":
-        return True
+_USB = "usb"
+_BLUETOOTH = "bluetooth"
+_HDMI = "hdmi"
+_BUILTIN = "builtin"
+
+
+def _categorize_node(node: dict, devices: dict) -> str:
+    """Categorize an audio node by its transport: USB, Bluetooth, HDMI or built-in."""
+    device = devices.get(_props(node).get("device.id"), {})
+    device_props = _props(device)
+    if device_props.get("device.bus") == "usb":
+        return _USB
+    if device_props.get("device.bus") == "bluetooth" or device_props.get("device.api") == "bluez5":
+        return _BLUETOOTH
+    if _routes_through_hdmi(node, device):
+        return _HDMI
+    return _BUILTIN
+
+
+def _routes_through_hdmi(node: dict, device: dict) -> bool:
+    """Tell whether an audio node is routed through an HDMI port of its device."""
+    profile_device = _props(node).get("card.profile.device")
+    if profile_device is None:
+        return False
+    for route in device.get("info", {}).get("params", {}).get("EnumRoute", []):
+        if profile_device in route.get("devices", []):
+            # Route info is a flat [count, key, value, ...] list
+            info = route.get("info") or []
+            route_props = dict(zip(info[1::2], info[2::2]))
+            if route_props.get("port.type") == "hdmi":
+                return True
     return False
 
 

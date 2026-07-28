@@ -391,6 +391,25 @@ class TestALSASpeakerJackResolution:
 
         assert ALSASpeaker.list_devices() == ["plughw:CARD=SomeCard,DEV=0", "pipewire:NODE=alsa_output.platform-sound.Sink-52"]
 
+    def test_list_jack_devices_returns_all_builtin_nodes(self, mock_pw_dump, media_carrier):
+        mock_pw_dump(usb_ids=(), builtin_ids=(52, 54))
+
+        assert ALSASpeaker.list_jack_devices() == [
+            "pipewire:NODE=alsa_output.platform-sound.Sink-52",
+            "pipewire:NODE=alsa_output.platform-sound.Sink-54",
+        ]
+
+    def test_list_jack_devices_excludes_bluetooth_and_hdmi(self, mock_pw_dump, media_carrier):
+        mock_pw_dump(builtin_ids=(54,), bluetooth_ids=(50,), hdmi_ids=(52,))
+
+        assert ALSASpeaker.list_jack_devices() == ["pipewire:NODE=alsa_output.platform-sound.Sink-54"]
+
+    def test_second_jack_resolves_to_second_builtin_node(self, mock_pw_dump, media_carrier):
+        mock_pw_dump(usb_ids=(), builtin_ids=(52, 54))
+
+        spkr = ALSASpeaker(device="jack:2")
+        assert spkr.device_stable_ref == "pipewire:NODE=alsa_output.platform-sound.Sink-54"
+
     def test_jack_resolves_to_pipewire_node(self, mock_pw_dump, media_carrier):
         mock_pw_dump(usb_ids=(), builtin_ids=(52,))
 

@@ -154,10 +154,8 @@ class ALSAMicrophone(BaseMicrophone):
             logger.error(f"Error listing jack microphones: {e}")
             return []
 
-        if not builtin_sources:
-            return []
-        node_name = builtin_sources[0].get("info", {}).get("props", {}).get("node.name")
-        return [f"pipewire:NODE={node_name}"] if node_name else []
+        node_names = (source.get("info", {}).get("props", {}).get("node.name") for source in builtin_sources)
+        return [f"pipewire:NODE={name}" for name in node_names if name]
 
     def _resolve_stable_ref(self, identifier: str | int) -> str:
         """

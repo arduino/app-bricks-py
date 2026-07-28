@@ -25,7 +25,7 @@ def clean_microphone_registry():
     yield
 
 
-def build_pw_dump(usb_ids=(), builtin_ids=()):
+def build_pw_dump(usb_ids=(), builtin_ids=(), bluetooth_ids=(), hdmi_ids=()):
     """
     Build a minimal pw-dump JSON payload.
 
@@ -34,46 +34,55 @@ def build_pw_dump(usb_ids=(), builtin_ids=()):
             ALSA card index by enumeration order, so the node-id ordering maps to the
             mocked alsaaudio cards (SomeCard=0, AnotherCard=1).
         builtin_ids: PipeWire node ids for built-in (jack) Audio/Source nodes.
+        bluetooth_ids: PipeWire node ids for Bluetooth Audio/Source nodes.
+        hdmi_ids: PipeWire node ids for built-in Audio/Source nodes routed through HDMI.
     """
     objects = []
     dev_seq = iter(range(1000, 2000))
 
-    def add(node_id, is_usb, alsa_card=None):
+    def add(node_id, dev_props, source_props, dev_params=None):
         dev_id = next(dev_seq)
-        if is_usb:
-            dev_props = {
-                "media.class": "Audio/Device",
-                "device.bus": "usb",
-                "device.name": f"alsa_card.usb-Device-{node_id}",
-            }
-            node_name = f"alsa_input.usb-Device-{node_id}.analog-mono"
-            source_props = {
-                "media.class": "Audio/Source",
-                "node.name": node_name,
-                "device.id": dev_id,
-                "api.alsa.pcm.card": alsa_card,
-                "api.alsa.path": f"hw:{alsa_card}",
-            }
-        else:
-            dev_props = {
-                "media.class": "Audio/Device",
-                "device.bus-path": "platform-sound",
-                "device.form-factor": "internal",
-            }
-            node_name = f"alsa_input.platform-sound.Source-{node_id}"
-            source_props = {
-                "media.class": "Audio/Source",
-                "node.name": node_name,
-                "node.description": f"Built-in Audio {node_id}",
-                "device.id": dev_id,
-            }
-        objects.append({"id": dev_id, "info": {"props": dev_props}})
-        objects.append({"id": node_id, "info": {"props": source_props}})
+        device = {"id": dev_id, "info": {"props": {"media.class": "Audio/Device", **dev_props}}}
+        if dev_params:
+            device["info"]["params"] = dev_params
+        objects.append(device)
+        objects.append({"id": node_id, "info": {"props": {"media.class": "Audio/Source", "device.id": dev_id, **source_props}}})
 
     for alsa_card, node_id in enumerate(usb_ids):
-        add(node_id, is_usb=True, alsa_card=alsa_card)
+        add(
+            node_id,
+            {"device.bus": "usb", "device.name": f"alsa_card.usb-Device-{node_id}"},
+            {
+                "node.name": f"alsa_input.usb-Device-{node_id}.analog-mono",
+                "api.alsa.pcm.card": alsa_card,
+                "api.alsa.path": f"hw:{alsa_card}",
+            },
+        )
     for node_id in builtin_ids:
-        add(node_id, is_usb=False)
+        add(
+            node_id,
+            {"device.bus-path": "platform-sound", "device.form-factor": "internal"},
+            {
+                "node.name": f"alsa_input.platform-sound.Source-{node_id}",
+                "node.description": f"Built-in Audio {node_id}",
+            },
+        )
+    for node_id in bluetooth_ids:
+        add(
+            node_id,
+            {"device.bus": "bluetooth", "device.api": "bluez5"},
+            {"node.name": f"bluez_input.device-{node_id}.0"},
+        )
+    for node_id in hdmi_ids:
+        add(
+            node_id,
+            {"device.bus-path": "platform-sound", "device.form-factor": "internal"},
+            {
+                "node.name": f"alsa_input.platform-sound.HDMI-{node_id}",
+                "card.profile.device": 0,
+            },
+            dev_params={"EnumRoute": [{"index": 0, "direction": "Output", "info": [1, "port.type", "hdmi"], "devices": [0]}]},
+        )
     return objects
 
 
@@ -87,8 +96,8 @@ def mock_pw_dump():
         result.stdout = json.dumps(state["objects"])
         return result
 
-    def configure(usb_ids=(), builtin_ids=()):
-        state["objects"] = build_pw_dump(usb_ids=usb_ids, builtin_ids=builtin_ids)
+    def configure(**kwargs):
+        state["objects"] = build_pw_dump(**kwargs)
 
     with patch("arduino.app_peripherals.microphone.utils.subprocess.run", side_effect=fake_run):
         yield configure
