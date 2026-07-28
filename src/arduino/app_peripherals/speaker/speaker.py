@@ -146,7 +146,8 @@ class Speaker:
 
             ```python
             speaker = Speaker(sample_rate=16000, channels=1)  # First plugged speaker
-            speaker = Speaker(USB_SPEAKER_1, sample_rate=16000, channels=1)  # First USB speaker
+            speaker = Speaker(Speaker.USB_SPEAKER_1, sample_rate=16000, channels=1)  # First USB speaker
+            speaker = Speaker(Speaker.JACK_SPEAKER_1)  # First built-in (jack) speaker
             speaker = Speaker(1)  # Second plugged speaker
             speaker = Speaker("CARD=USB,DEV=0", format="S16_LE")
             speaker = Speaker("plughw:CARD=USB,DEV=0")
