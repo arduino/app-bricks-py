@@ -58,13 +58,14 @@ def build_pw_dump(usb_ids=(), builtin_ids=(), bluetooth_ids=(), hdmi_ids=()):
                 "api.alsa.path": f"hw:{alsa_card}",
             },
         )
-    for node_id in builtin_ids:
+    for alsa_device, node_id in enumerate(builtin_ids):
         add(
             node_id,
             {"device.bus-path": "platform-sound", "device.form-factor": "internal"},
             {
                 "node.name": f"alsa_input.platform-sound.Source-{node_id}",
                 "node.description": f"Built-in Audio {node_id}",
+                "api.alsa.path": f"hw:platformsound,{alsa_device}",
             },
         )
     for node_id in bluetooth_ids:

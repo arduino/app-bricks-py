@@ -77,7 +77,9 @@ def _nth_plugged_speaker(idx: int) -> str:
 def list_audio_sinks() -> tuple[list[dict], list[dict]]:
     """
     Discover audio playback devices via pw-dump, partitioned into USB and
-    built-in, each ordered by ascending PipeWire node id (lowest id first).
+    built-in. USB sinks are ordered by ascending PipeWire node id (lowest
+    id first); built-in ones by their ALSA path, which is stable across
+    reboots.
 
     Sinks are categorized by transport: USB, Bluetooth, HDMI or built-in.
     Bluetooth and HDMI sinks are not supported yet, so they are excluded
@@ -100,6 +102,7 @@ def list_audio_sinks() -> tuple[list[dict], list[dict]]:
             usb.append(sink)
         elif category == _BUILTIN:
             builtin.append(sink)
+    builtin.sort(key=_alsa_path_order)
     return usb, builtin
 
 
@@ -158,6 +161,15 @@ def _categorize_node(node: dict, devices: dict) -> str:
     if _routes_through_hdmi(node, device):
         return _HDMI
     return _BUILTIN
+
+
+def _alsa_path_order(node: dict) -> tuple[str, int]:
+    """Boot-stable ordering key: the node's ALSA card path with its numeric device suffix."""
+    path = _props(node).get("api.alsa.path", "")
+    card, sep, device = path.rpartition(",")
+    if sep and device.isdigit():
+        return card, int(device)
+    return path, -1
 
 
 def _routes_through_hdmi(node: dict, device: dict) -> bool:
