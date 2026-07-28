@@ -13,6 +13,11 @@ on:
         description: "Tag to release (e.g. release/1.2.3)"
         type: string
         required: true
+      skip_cache:
+        description: "Rebuild without cache"
+        type: boolean
+        required: false
+        default: false
 
 env:
   GHCR_REGISTRY: ghcr.io
@@ -121,6 +126,7 @@ jobs:
       tag_ref: ${{ needs.detect.outputs.tag_ref }}
       prerelease: ${{ needs.detect.outputs.prerelease }}
       allow_retag: true
+      skip_cache: ${{ inputs.skip_cache || false }}
 
   build-l1:
     needs: [detect, upload-whl, build-l0]
@@ -133,6 +139,7 @@ jobs:
       tag_ref: ${{ needs.detect.outputs.tag_ref }}
       prerelease: ${{ needs.detect.outputs.prerelease }}
       allow_retag: false
+      skip_cache: ${{ inputs.skip_cache || false }}
 
   build-l2:
     needs: [detect, upload-whl, build-l1]
@@ -145,6 +152,7 @@ jobs:
       tag_ref: ${{ needs.detect.outputs.tag_ref }}
       prerelease: ${{ needs.detect.outputs.prerelease }}
       allow_retag: false
+      skip_cache: ${{ inputs.skip_cache || false }}
 
   upload-release:
     runs-on: ubuntu-24.04-arm

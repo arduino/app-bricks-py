@@ -8,6 +8,17 @@ name: (reusable) RELEASE build one wave of containers
 # no base being rebuilt in this run, so when its own sources are unchanged it
 # can be safely re-tagged from the previous release. Derived images (level >= 1)
 # sit on top of a freshly built base and must always be rebuilt.
+#
+# Two independent reuse mechanisms are in play:
+#   1. `crane copy` (root wave only, see above) skips the build entirely when a
+#      root image is bit-for-bit the same as the previous release.
+#   2. A BuildKit registry cache (`<container>:buildcache` on GHCR) speeds up
+#      every build that does run. The cache is content-addressed, so a change to
+#      the Dockerfile, to a file in the build context, to a `ci.json` build arg
+#      or to the digest of the base image invalidates the layers from that point
+#      on; earlier layers stay cached. `skip_cache` forces a cold rebuild, which
+#      is the way to refresh layers whose content never changes but whose result
+#      does (e.g. `apt-get upgrade`).
 
 on:
   workflow_call:
@@ -30,6 +41,11 @@ on:
         required: true
       allow_retag:
         description: "Allow re-tagging unchanged images (root wave only)"
+        type: boolean
+        required: false
+        default: false
+      skip_cache:
+        description: "Rebuild without cache"
         type: boolean
         required: false
         default: false
@@ -148,6 +164,22 @@ jobs:
         if: steps.rebuild_check.outputs.needs_build == 'true'
         uses: docker/setup-buildx-action@v4
 
+      - name: Build cache configuration
+        id: cache
+        if: steps.rebuild_check.outputs.needs_build == 'true'
+        run: |
+          # Stable per-container cache tag. BuildKit is content-addressed, so the
+          # layers invalidate themselves whenever the Dockerfile, a file in the
+          # build context, a build arg or the base image digest changes.
+          CACHE_REF="ghcr.io/${{ github.repository_owner }}/app-bricks/${{ matrix.container }}:buildcache"
+          if [ "${{ inputs.skip_cache }}" != "true" ]; then
+            echo "cache_from=type=registry,ref=${CACHE_REF}" >> $GITHUB_OUTPUT
+          else
+            echo "cache_from=" >> $GITHUB_OUTPUT
+          fi
+          # Always exported, so a forced clean release re-seeds a correct cache.
+          echo "cache_to=type=registry,ref=${CACHE_REF},mode=max" >> $GITHUB_OUTPUT
+
       - name: Extract Docker metadata
         if: steps.rebuild_check.outputs.needs_build == 'true'
         id: meta
@@ -175,6 +207,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/arm64
+          cache-from: ${{ steps.cache.outputs.cache_from }}
+          cache-to: ${{ steps.cache.outputs.cache_to }}
           provenance: false
           build-args: |
             ${{ steps.config.outputs.build_args }}
