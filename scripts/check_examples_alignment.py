@@ -100,6 +100,11 @@ def cmd_run(args) -> int:
     Path(args.out).write_text(json.dumps(data, indent=2) + "\n")
     summary = data["summary"]
     print(f"{summary['filesAnalyzed']} files analyzed against {library_src}: {summary['errorCount']} errors, {summary['warningCount']} warnings")
+    if args.details:
+        errors = [diag for diag in data["generalDiagnostics"] if diag["severity"] == "error"]
+        for diag in sorted(errors, key=lambda d: (d.get("rule", ""), d["file"], d["range"]["start"]["line"])):
+            line = diag["range"]["start"]["line"] + 1
+            print(f"  [{diag.get('rule', '')}] {diag['file']}:{line}  {diag['message'].splitlines()[0]}")
     return 0
 
 
@@ -208,6 +213,7 @@ def main() -> int:
     run.add_argument("--python", help="python interpreter of the check venv")
     run.add_argument("--pyright-version", default=PYRIGHT_VERSION)
     run.add_argument("--out", required=True)
+    run.add_argument("--details", action="store_true", help="also print the error diagnostics, grouped by rule")
     run.set_defaults(func=cmd_run)
 
     diff = sub.add_parser("diff", help="compare two run outputs and report new/fixed errors")
