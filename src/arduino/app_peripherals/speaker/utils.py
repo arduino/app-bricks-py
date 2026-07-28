@@ -92,17 +92,16 @@ def list_audio_sinks() -> tuple[list[dict], list[dict]]:
 
     devices = {obj["id"]: obj for obj in objects if _props(obj).get("media.class") == "Audio/Device"}
 
-    sinks = [obj for obj in objects if _props(obj).get("media.class") == "Audio/Sink"]
-    sinks.sort(key=lambda obj: obj["id"])
-
     usb, builtin = [], []
-    for sink in sinks:
+    for sink in (obj for obj in objects if _props(obj).get("media.class") == "Audio/Sink"):
         category = _categorize_node(sink, devices)
         if category == _USB:
             usb.append(sink)
         elif category == _BUILTIN:
             builtin.append(sink)
-    builtin.sort(key=_alsa_path_order)
+
+    usb.sort(key=lambda obj: obj["id"])  # Discovery order: hot-plugged devices append at the end
+    builtin.sort(key=_alsa_path_order)  # Profile-defined order, stable across reboots
     return usb, builtin
 
 

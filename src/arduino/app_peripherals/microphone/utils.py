@@ -92,17 +92,16 @@ def list_audio_sources() -> tuple[list[dict], list[dict]]:
 
     devices = {obj["id"]: obj for obj in objects if _props(obj).get("media.class") == "Audio/Device"}
 
-    sources = [obj for obj in objects if _props(obj).get("media.class") == "Audio/Source"]
-    sources.sort(key=lambda obj: obj["id"])
-
     usb, builtin = [], []
-    for source in sources:
+    for source in (obj for obj in objects if _props(obj).get("media.class") == "Audio/Source"):
         category = _categorize_node(source, devices)
         if category == _USB:
             usb.append(source)
         elif category == _BUILTIN:
             builtin.append(source)
-    builtin.sort(key=_alsa_path_order)
+
+    usb.sort(key=lambda obj: obj["id"])  # Discovery order: hot-plugged devices append at the end
+    builtin.sort(key=_alsa_path_order)  # Profile-defined order, stable across reboots
     return usb, builtin
 
 
