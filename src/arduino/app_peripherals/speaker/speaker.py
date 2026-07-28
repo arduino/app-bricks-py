@@ -152,6 +152,8 @@ class Speaker:
             speaker = Speaker("plughw:CARD=USB,DEV=0")
             speaker = Speaker("hw:0,0", buffer_size=2048)
             speaker = Speaker("/dev/snd/by-id/usb-My-Device-00")  # Using device file path
+            speaker = Speaker("pipewire")  # To use default PipeWire speaker (if available)
+            speaker = Speaker("pipewire:NODE=MyPipewireNode")  # Using PipeWire node name
             ```
         """
         if not isinstance(device, (str, int)):
