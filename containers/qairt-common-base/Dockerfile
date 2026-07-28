@@ -9,9 +9,25 @@ FROM python:3.13-slim-trixie AS base
 # Install common dependencies
 RUN apt-get update && \
     apt-get upgrade -y && \
-    apt-get install -y --no-install-recommends curl netcat-openbsd \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    apt-get install -y --no-install-recommends \
+      curl libyaml-0-2 libbsd0 libmd0 libatomic1 strace netcat-openbsd && \
+    apt-get clean; \
+    apt-get dist-clean; \
+    # cleanup unnecessary files to reduce image size
+    rm -rf /tmp/* /var/tmp/*; \
+    rm -rf /var/lib/apt/lists/*; \
+    rm -fr /var/cache/apt/archives/*.deb \
+        /var/cache/apt/archives/partial/*.deb \
+        /usr/share/man/* \
+        /usr/share/locale/* \
+        /var/cache/debconf/* \
+        /var/lib/dpkg/info/* \
+        /var/cache/apt/*.bin; \
+    find /usr/share/doc -type f ! -name 'copyright' -delete; \
+    find /usr/share/doc -type d -empty -delete; \
+    # precompile python files to .pyc to speed up startup time
+    python -m compileall /usr/local/bin; \
+    python -m compileall /usr/local/lib
 
 # ============================
 # Stage: Native Libraries (ARM64 only)
@@ -120,39 +136,16 @@ RUN git clone --depth 1 --branch v${FASTRPC_VER} https://github.com/quic/fastrpc
 # ============================
 # Stage: Final Runtime Image
 # ============================
-# Inherits from base to reuse the already-pulled ubuntu:24.04 image and apt-get upgrade layer.
+# Inherits from base to reuse the already-pulled image and apt-get upgrade layer.
 # base already ran apt-get upgrade so we don't need to repeat it here.
 FROM base AS runtime
 
-# Single combined layer: runtime deps only.
-# base already ran apt-get upgrade. No build tools, no nodesource.
-# Node binary is copied from api-builder.
-RUN apt-get update && \
-    apt-get upgrade -y && \
-    apt-get install -y --no-install-recommends \
-      curl libyaml-0-2 libbsd0 libmd0 libatomic1 strace && \
-    apt-get clean; \
-    apt-get dist-clean; \
-    # cleanup unnecessary files to reduce image size
-    rm -rf /tmp/* /var/tmp/*; \
-    rm -rf /var/lib/apt/lists/*; \
-    rm -fr /var/cache/apt/archives/*.deb \
-        /var/cache/apt/archives/partial/*.deb \
-        /usr/share/man/* \
-        /usr/share/locale/* \
-        /var/cache/debconf/* \
-        /var/lib/dpkg/info/* \
-        /var/cache/apt/*.bin; \
-    find /usr/share/doc -type f ! -name 'copyright' -delete; \
-    find /usr/share/doc -type d -empty -delete; \
-    # precompile python files to .pyc to speed up startup time
-    python -m compileall /usr/local/bin; \
-    python -m compileall /usr/local/lib
-
+# Create a non-root user for Arduino services
 RUN groupadd -g 1000 arduino || true; \
     useradd -u 1000 -g arduino -ms /bin/bash arduino; \
     chown -R arduino:arduino /home/arduino
 
+# Add native compiled libraries from the native-libs stage
 COPY --from=native-libs /mnt/work/deploy/usr /usr
 
 # Copy fastrpc libs built from source
