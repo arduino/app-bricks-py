@@ -155,7 +155,7 @@ def _categorize_node(node: dict, devices: dict) -> str:
     device_props = _props(device)
     if device_props.get("device.bus") == "usb":
         return _USB
-    if device_props.get("device.bus") == "bluetooth" or device_props.get("device.api") == "bluez5":
+    if device_props.get("device.bus") == "bluetooth":
         return _BLUETOOTH
     if _routes_through_hdmi(node, device):
         return _HDMI
