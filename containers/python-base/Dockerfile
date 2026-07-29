@@ -23,6 +23,7 @@ RUN set -ex; \
     # Install Python dependencies (requirements file + prefetched OpenCV wheel)
     pip install --no-cache-dir uv; \
     uv pip install --system --no-cache-dir -r /app/requirements.txt /tmp/opencv-wheel/*.whl; \
+    printf 'opencv-python-headless==%s\n' "$(python -c 'from importlib.metadata import version; print(version("opencv-python-headless"))')" > /etc/uv-constraints.txt; \
     rm -rf /app/requirements.txt /tmp/opencv-wheel; \
     # Build PyGObject without cairo support
     uv pip install --system --no-cache-dir meson-python ninja; \
@@ -61,6 +62,10 @@ ADD https://raw.githubusercontent.com/googlefonts/opensans/main/fonts/ttf/OpenSa
 # Copy the installed dependencies from the 'builder' stage
 COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
+COPY --from=builder /etc/uv-constraints.txt /etc/uv-constraints.txt
+
+ENV UV_CONSTRAINT=/etc/uv-constraints.txt
+ENV PIP_CONSTRAINT=/etc/uv-constraints.txt
 
 RUN set -ex; \
     groupadd -g 1000 arduino || true; \
@@ -94,11 +99,8 @@ RUN set -ex; \
         /usr/share/man/* \
         /usr/share/locale/* \
         /var/cache/debconf/* \
+        /var/lib/dpkg/info/* \
         /var/cache/apt/*.bin; \
-    # keep the rest of /var/lib/dpkg/info, or derived images cannot apt-get upgrade
-    rm -fr /var/lib/dpkg/info/*.symbols \
-        /var/lib/dpkg/info/*.shlibs \
-        /var/lib/dpkg/info/*.templates; \
     find /usr/share/doc -type f ! -name 'copyright' -delete; \
     find /usr/share/doc -type d -empty -delete; \
     # precompile python files to .pyc to speed up startup time
