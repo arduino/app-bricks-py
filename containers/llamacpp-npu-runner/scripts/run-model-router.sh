@@ -4,10 +4,8 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-NDEV_HINT=/tmp/hexagon-ndev
-
 echo "Generating models.ini..."
-python3 /generate_models_ini.py /models --ndev-out "${NDEV_HINT}"
+python3 /generate_models_ini.py /models
 
 echo "Starting LLama server..."
 export LD_LIBRARY_PATH=/opt/pkg-snapdragon/lib
@@ -19,7 +17,7 @@ if [ -n "${GGML_HEXAGON_NDEV}" ]; then
   NDEV="${GGML_HEXAGON_NDEV}"
   echo "Using externally configured GGML_HEXAGON_NDEV=${NDEV}"
 else
-  NDEV="$(cat "${NDEV_HINT}" 2>/dev/null)"
+  NDEV="$(python3 /generate_models_ini.py /models --print-ndev)"
   NDEV="${NDEV:-1}"
   export GGML_HEXAGON_NDEV="${NDEV}"
   echo "GGML_HEXAGON_NDEV not set: auto-detected ${NDEV} session(s) from installed models"
