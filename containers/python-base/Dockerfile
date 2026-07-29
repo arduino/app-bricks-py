@@ -4,6 +4,7 @@
 
 FROM python:3.13-slim AS builder
 
+ARG DEBIAN_FRONTEND=noninteractive
 ARG OPENCV_WHL_URL
 ARG OPENCV_WHL_DIGEST
 
@@ -41,6 +42,7 @@ RUN set -ex; \
 
 FROM python:3.13-slim AS production
 
+ARG DEBIAN_FRONTEND=noninteractive
 ARG LIBCAMERA_DEB_URL
 ARG LIBCAMERA_DEB_DIGEST
 ARG LIBCAMERA_IPA_DEB_URL
