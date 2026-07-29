@@ -51,6 +51,8 @@ RUN set -ex; \
 FROM ${REGISTRY}app-bricks/python-slim:${BASE_IMAGE_VERSION} AS production
 
 ARG DEBIAN_FRONTEND=noninteractive
+ARG FFMPEG_LIBS_URL=https://github.com/robgee86/app-bricks-py/releases/download/media-stack%2F1.0.0/ffmpeg-libs-7.1.4-0+deb13u1.tar.gz
+ARG FFMPEG_LIBS_DIGEST=sha256:61e5eaff6a186dbccb68a40479063ff1ba18ffe2d5197ae0dc3daad51fca8734
 ARG LIBCAMERA_DEB_URL=https://github.com/arduino/app-bricks-py/releases/download/libcamera%2F0.7.1-qcom4/libcamera0.7_0.7.1-1.bpo13+1qcom4_arm64.deb
 ARG LIBCAMERA_DEB_DIGEST=sha256:958b7fb3d1a851542fddd5f54a259c685f1301945a3b10bce4fa15cf7886ef0f
 ARG LIBCAMERA_IPA_DEB_URL=https://github.com/arduino/app-bricks-py/releases/download/libcamera%2F0.7.1-qcom4/libcamera-ipa_0.7.1-1.bpo13+1qcom4_arm64.deb
@@ -61,18 +63,16 @@ ARG GSTREAMER_QTIQMMFSRC_DEB_URL=https://github.com/robgee86/app-bricks-py/relea
 ARG GSTREAMER_QTIQMMFSRC_DEB_DIGEST=sha256:b0b764a2f7ebf369de5cc9827c2952397d2ead757de7bee3f2c9c2f468d714a9
 ARG GSTREAMER_LIBGSTREAMER_PLUGINS_BASE_DEB_URL=https://github.com/robgee86/app-bricks-py/releases/download/qtiqmmfsrc%2F1.8.1/libgstreamer-plugins-base1.0-0_1.26.2-1+deb13u1_arm64.deb
 ARG GSTREAMER_LIBGSTREAMER_PLUGINS_BASE_DEB_DIGEST=sha256:a6e1aaadbac810957f5c4ce981d955c686734e85c23cbb5b89ddd33299f920c6
-ARG FFMPEG_LIBS_URL=https://github.com/robgee86/app-bricks-py/releases/download/media-stack%2F1.0.0/ffmpeg-libs-7.1.4-0+deb13u1.tar.gz
-ARG FFMPEG_LIBS_DIGEST=sha256:61e5eaff6a186dbccb68a40479063ff1ba18ffe2d5197ae0dc3daad51fca8734
-ARG GSTREAMER_GOOD_DEB_URL=https://github.com/robgee86/app-bricks-py/releases/download/media-stack%2F1.0.0/gstreamer1.0-plugins-good_1.26.2-1+deb13u1_arm64.deb
-ARG GSTREAMER_GOOD_DEB_DIGEST=sha256:363759707c4c136bf427c21b3eba73e318fc1ebd5af128d51790e0428495aa96
+ARG GSTREAMER_PLUGINS_GOOD_DEB_URL=https://github.com/robgee86/app-bricks-py/releases/download/media-stack%2F1.0.0/gstreamer1.0-plugins-good_1.26.2-1+deb13u1_arm64.deb
+ARG GSTREAMER_PLUGINS_GOOD_DEB_DIGEST=sha256:363759707c4c136bf427c21b3eba73e318fc1ebd5af128d51790e0428495aa96
 
+ADD --checksum=${FFMPEG_LIBS_DIGEST} ${FFMPEG_LIBS_URL} /tmp/ffmpeg-libs.tar.gz
 ADD --checksum=${LIBCAMERA_DEB_DIGEST} ${LIBCAMERA_DEB_URL} /tmp/libcamera0.7.deb
 ADD --checksum=${LIBCAMERA_IPA_DEB_DIGEST} ${LIBCAMERA_IPA_DEB_URL} /tmp/libcamera-ipa.deb
 ADD --checksum=${GSTREAMER_LIBCAMERA_DEB_DIGEST} ${GSTREAMER_LIBCAMERA_DEB_URL} /tmp/gstreamer1.0-libcamera.deb
 ADD --checksum=${GSTREAMER_QTIQMMFSRC_DEB_DIGEST} ${GSTREAMER_QTIQMMFSRC_DEB_URL} /tmp/qtiqmmfsrc.deb
 ADD --checksum=${GSTREAMER_LIBGSTREAMER_PLUGINS_BASE_DEB_DIGEST} ${GSTREAMER_LIBGSTREAMER_PLUGINS_BASE_DEB_URL} /tmp/libgstreamer-plugins-base.deb
-ADD --checksum=${FFMPEG_LIBS_DIGEST} ${FFMPEG_LIBS_URL} /tmp/ffmpeg-libs.tar.gz
-ADD --checksum=${GSTREAMER_GOOD_DEB_DIGEST} ${GSTREAMER_GOOD_DEB_URL} /tmp/gstreamer-good.deb
+ADD --checksum=${GSTREAMER_PLUGINS_GOOD_DEB_DIGEST} ${GSTREAMER_PLUGINS_GOOD_DEB_URL} /tmp/gstreamer-good.deb
 ADD --checksum=sha256:c53aceea2dcf5b4098099c0c4d0a061d17e178a049317b42a422b1a9f7f8eb59 https://raw.githubusercontent.com/googlefonts/opensans/bd7e37632246368c60fdcbd374dbf9bad11969b6/fonts/ttf/OpenSans-Regular.ttf /home/app/.fonts/OpenSans.ttf
 
 # Copy the installed dependencies from the 'builder' stage
@@ -106,8 +106,7 @@ RUN set -ex; \
     # Install custom minimal FFmpeg and GStreamer Good plugins
     mkdir -p /tmp/ffmpeg-libs; \
     tar -xzf /tmp/ffmpeg-libs.tar.gz -C /tmp/ffmpeg-libs; \
-    dpkg -i /tmp/ffmpeg-libs/*.deb /tmp/gstreamer-good.deb || apt-get install -f -y; \
-    apt-mark hold libavcodec61 libavformat61 libavutil59 libswscale8 gstreamer1.0-plugins-good; \
+    apt-get install -y --no-install-recommends --no-install-suggests /tmp/ffmpeg-libs/*.deb /tmp/gstreamer-good.deb; \
     apt-mark hold libavcodec61 libavformat61 libavutil59 libswscale8 libswresample5 gstreamer1.0-plugins-good; \
     # Install dependencies for running CSI cameras (libcamera, gstreamer introspection, qtiqmmfsrc)
     apt-get install -y --no-install-recommends --no-install-suggests libgirepository-2.0-0 gir1.2-glib-2.0 gir1.2-gstreamer-1.0 libpisp-common libboost-filesystem1.83.0 libboost-log1.83.0 libboost-thread1.83.0 libpisp1 libegl1 libgles2 libyaml-0-2 liblttng-ust1 libdw1t64 libyuv0; \
