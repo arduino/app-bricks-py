@@ -1,0 +1,23 @@
+services:
+  pose_estimation:
+    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/pose-estimation-runner:0.1.0
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+    ports:
+      - ${BIND_ADDRESS:-0.0.0.0}:5002:5002
+      - ${BIND_ADDRESS_IPV6:-[::]}:5002:5002
+    devices:
+      - /dev/dma_heap/system
+      - /dev/fastrpc-cdsp
+      - /dev/fastrpc-cdsp-secure
+    volumes:
+      # Mount hexagon firmware
+      - ${HOST_DSP_INSTALLATION_PATH:-/usr/share/qcom}/qcs8300/Qualcomm/QCS8300-RIDE/dsp/cdsp:/lib/dsp/cdsp
+    healthcheck:
+      test: [ "CMD-SHELL", "nc -zv pose_estimation 5002 || exit 1" ]
+      interval: 1s
+      timeout: 2s
+      retries: 30
