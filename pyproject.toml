@@ -37,7 +37,7 @@ dev = [
     "docstring_parser>=0.16",
     "arduino_app_bricks[all]",
     "deepeval",
-    "mcp",
+    "mcp<2",
     "langchain_mcp_adapters",
     "langchain_ollama",
 ]
@@ -86,6 +86,7 @@ cloud_llm = [
 ]
 mcp_client = [
     "langchain-mcp-adapters >=0.2.1",
+    "mcp<2",
 ]
 cloud_asr = [
     "websocket-client",
