@@ -18,8 +18,11 @@ RUN set -ex; \
         /usr/share/man/* \
         /usr/share/locale/* \
         /var/cache/debconf/* \
-        /var/lib/dpkg/info/* \
         /var/cache/apt/*.bin; \
+    # keep the rest of /var/lib/dpkg/info, or derived images cannot apt-get upgrade
+    rm -fr /var/lib/dpkg/info/*.symbols \
+        /var/lib/dpkg/info/*.shlibs \
+        /var/lib/dpkg/info/*.templates; \
     find /usr/share/doc -type f ! -name 'copyright' -delete; \
     find /usr/share/doc -type d -empty -delete; \
     # precompile python files to .pyc to speed up startup time
