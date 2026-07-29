@@ -4,7 +4,6 @@ description: |
   This Brick is designed for vibration anomaly detection and recognition, leveraging pre-trained models.
   It takes input from sensors (accelerometer) to identify possible anomalies based on vibration patterns.
   You can use it with pre-trained models provided by the framework or with your own custom anomaly detections models trained on the Edge Impulse platform.
-requires_container: true
 ai_frameworks_compatibility:
   - edgeimpulse
 model: fan-anomaly-detection
