@@ -45,6 +45,8 @@ RUN set -ex; \
 FROM ${REGISTRY}app-bricks/python-slim:${BASE_IMAGE_VERSION} AS production
 
 ARG DEBIAN_FRONTEND=noninteractive
+ARG FFMPEG_LIBS_URL
+ARG FFMPEG_LIBS_DIGEST
 ARG LIBCAMERA_DEB_URL
 ARG LIBCAMERA_DEB_DIGEST
 ARG LIBCAMERA_IPA_DEB_URL
@@ -55,18 +57,16 @@ ARG GSTREAMER_QTIQMMFSRC_DEB_URL
 ARG GSTREAMER_QTIQMMFSRC_DEB_DIGEST
 ARG GSTREAMER_LIBGSTREAMER_PLUGINS_BASE_DEB_URL
 ARG GSTREAMER_LIBGSTREAMER_PLUGINS_BASE_DEB_DIGEST
-ARG FFMPEG_LIBS_URL
-ARG FFMPEG_LIBS_DIGEST
-ARG GSTREAMER_GOOD_DEB_URL
-ARG GSTREAMER_GOOD_DEB_DIGEST
+ARG GSTREAMER_PLUGINS_GOOD_DEB_URL
+ARG GSTREAMER_PLUGINS_GOOD_DEB_DIGEST
 
+ADD --checksum=${FFMPEG_LIBS_DIGEST} ${FFMPEG_LIBS_URL} /tmp/ffmpeg-libs.tar.gz
 ADD --checksum=${LIBCAMERA_DEB_DIGEST} ${LIBCAMERA_DEB_URL} /tmp/libcamera0.7.deb
 ADD --checksum=${LIBCAMERA_IPA_DEB_DIGEST} ${LIBCAMERA_IPA_DEB_URL} /tmp/libcamera-ipa.deb
 ADD --checksum=${GSTREAMER_LIBCAMERA_DEB_DIGEST} ${GSTREAMER_LIBCAMERA_DEB_URL} /tmp/gstreamer1.0-libcamera.deb
 ADD --checksum=${GSTREAMER_QTIQMMFSRC_DEB_DIGEST} ${GSTREAMER_QTIQMMFSRC_DEB_URL} /tmp/qtiqmmfsrc.deb
 ADD --checksum=${GSTREAMER_LIBGSTREAMER_PLUGINS_BASE_DEB_DIGEST} ${GSTREAMER_LIBGSTREAMER_PLUGINS_BASE_DEB_URL} /tmp/libgstreamer-plugins-base.deb
-ADD --checksum=${FFMPEG_LIBS_DIGEST} ${FFMPEG_LIBS_URL} /tmp/ffmpeg-libs.tar.gz
-ADD --checksum=${GSTREAMER_GOOD_DEB_DIGEST} ${GSTREAMER_GOOD_DEB_URL} /tmp/gstreamer-good.deb
+ADD --checksum=${GSTREAMER_PLUGINS_GOOD_DEB_DIGEST} ${GSTREAMER_PLUGINS_GOOD_DEB_URL} /tmp/gstreamer-good.deb
 ADD https://raw.githubusercontent.com/googlefonts/opensans/main/fonts/ttf/OpenSans-Regular.ttf /home/app/.fonts/OpenSans.ttf
 
 # Copy the installed dependencies from the 'builder' stage
@@ -90,8 +90,7 @@ RUN set -ex; \
     # Install custom minimal FFmpeg and GStreamer Good plugins
     mkdir -p /tmp/ffmpeg-libs; \
     tar -xzf /tmp/ffmpeg-libs.tar.gz -C /tmp/ffmpeg-libs; \
-    dpkg -i /tmp/ffmpeg-libs/*.deb /tmp/gstreamer-good.deb || apt-get install -f -y; \
-    apt-mark hold libavcodec61 libavformat61 libavutil59 libswscale8 gstreamer1.0-plugins-good; \
+    apt-get install -y --no-install-recommends --no-install-suggests /tmp/ffmpeg-libs/*.deb /tmp/gstreamer-good.deb; \
     apt-mark hold libavcodec61 libavformat61 libavutil59 libswscale8 libswresample5 gstreamer1.0-plugins-good; \
     # Install dependencies for running CSI cameras (libcamera, gstreamer introspection, qtiqmmfsrc)
     apt-get install -y --no-install-recommends --no-install-suggests libgirepository-2.0-0 gir1.2-glib-2.0 gir1.2-gstreamer-1.0 libpisp-common libboost-filesystem1.83.0 libboost-log1.83.0 libboost-thread1.83.0 libpisp1 libegl1 libgles2 libyaml-0-2 liblttng-ust1 libdw1t64 libyuv0; \
