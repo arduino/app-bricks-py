@@ -26,11 +26,14 @@ INSTALLED_REQUIREMENTS_FILE="$CACHE_DIR/installed_requirements.txt"
 
 export UV_CACHE_DIR="$CACHE_DIR/uv"
 
-# Remove core dumps left in the app directory by a previous run.
-# maxdepth 1 keeps the core.* pattern from matching python sources.
-find "$BASE_DIR" -maxdepth 1 -type f \
-  \( -name 'core' -o -name 'core.[0-9]*' -o -name '*.core' \) \
-  -print -delete 2>/dev/null || true
+# Remove core dumps left in the app directory by a previous run, unless they
+# are explicitly wanted. maxdepth 1 keeps the core.* pattern from matching
+# python sources.
+if [ "${ENABLE_CORE_DUMPS:-0}" != "1" ]; then
+  find "$BASE_DIR" -maxdepth 1 -type f \
+    \( -name 'core' -o -name 'core.[0-9]*' -o -name '*.core' \) \
+    -print -delete 2>/dev/null || true
+fi
 
 if [ "${OPENCV_DEBUG:-0}" = "1" ]; then
   export OPENCV_LOG_LEVEL="${OPENCV_LOG_LEVEL:-DEBUG}"
