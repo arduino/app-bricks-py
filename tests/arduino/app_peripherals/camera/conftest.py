@@ -14,18 +14,16 @@ def clean_camera_registry():
     yield
 
 
-@pytest.fixture
-def two_v4l_cameras(monkeypatch):
+def _fake_v4l_devices(monkeypatch, links, capture_targets=None):
     """
-    Patch os functions in v4l_camera to simulate two stable USB cameras:
-    /dev/v4l/by-id/usb-CamA-video-index0 -> /dev/video0
-    /dev/v4l/by-id/usb-CamB-video-index0 -> /dev/video2
+    Patch os functions in v4l_camera to simulate the given /dev/v4l/by-id links.
+
+    Args:
+        monkeypatch: The pytest monkeypatch fixture.
+        links: Mapping of stable /dev/v4l/by-id paths to /dev/videoN targets.
+        capture_targets: Targets supporting video capture (all of them if None).
     """
     by_id_dir = "/dev/v4l/by-id/"
-    links = {
-        by_id_dir + "usb-CamA-video-index0": "/dev/video0",
-        by_id_dir + "usb-CamB-video-index0": "/dev/video2",
-    }
 
     monkeypatch.setattr("arduino.app_peripherals.camera.v4l_camera.os.path.exists", lambda path: True)
     monkeypatch.setattr("arduino.app_peripherals.camera.v4l_camera.os.path.islink", lambda path: path in links)
@@ -34,6 +32,45 @@ def two_v4l_cameras(monkeypatch):
         lambda path: [entry.removeprefix(by_id_dir) for entry in links] if path == by_id_dir else [],
     )
     monkeypatch.setattr("arduino.app_peripherals.camera.v4l_camera.os.path.realpath", lambda path: links.get(path, path))
+    monkeypatch.setattr(
+        "arduino.app_peripherals.camera.v4l_camera.V4LCamera._supports_video_capture",
+        staticmethod(lambda path: capture_targets is None or path in capture_targets),
+    )
+
+
+@pytest.fixture
+def two_v4l_cameras(monkeypatch):
+    """
+    Simulate two stable USB cameras:
+    /dev/v4l/by-id/usb-CamA-video-index0 -> /dev/video0
+    /dev/v4l/by-id/usb-CamB-video-index0 -> /dev/video2
+    """
+    by_id_dir = "/dev/v4l/by-id/"
+    _fake_v4l_devices(
+        monkeypatch,
+        {
+            by_id_dir + "usb-CamA-video-index0": "/dev/video0",
+            by_id_dir + "usb-CamB-video-index0": "/dev/video2",
+        },
+    )
+
+
+@pytest.fixture
+def usb_camera_with_metadata_node(monkeypatch):
+    """
+    Simulate a single UVC camera exposing a capture node and a metadata node:
+    /dev/v4l/by-id/usb-Cam-video-index0 -> /dev/video10 (capture)
+    /dev/v4l/by-id/usb-Cam-video-index1 -> /dev/video11 (metadata, not capture-capable)
+    """
+    by_id_dir = "/dev/v4l/by-id/"
+    _fake_v4l_devices(
+        monkeypatch,
+        {
+            by_id_dir + "usb-Cam-video-index0": "/dev/video10",
+            by_id_dir + "usb-Cam-video-index1": "/dev/video11",
+        },
+        capture_targets={"/dev/video10"},
+    )
 
 
 @pytest.fixture(
@@ -77,6 +114,7 @@ def v4l_device_argument(monkeypatch, request):
     monkeypatch.setattr("arduino.app_peripherals.camera.v4l_camera.os.path.islink", fake_islink)
     monkeypatch.setattr("arduino.app_peripherals.camera.v4l_camera.os.listdir", fake_listdir)
     monkeypatch.setattr("arduino.app_peripherals.camera.v4l_camera.os.path.realpath", fake_realpath)
+    monkeypatch.setattr("arduino.app_peripherals.camera.v4l_camera.V4LCamera._supports_video_capture", staticmethod(lambda path: True))
 
     # Provide the parameter to tests so they can inject it into the constructor
     return request.param

@@ -2,8 +2,10 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import fcntl
 import math
 import os
+import struct
 import time
 from typing import Literal, Optional
 import cv2
@@ -16,6 +18,10 @@ from .camera import BaseCamera
 from .errors import CameraOpenError, CameraReadError
 
 logger = Logger("V4LCamera")
+
+_VIDIOC_QUERYCAP = 0x80685600  # _IOR('V', 0, struct v4l2_capability)
+_V4L2_CAP_VIDEO_CAPTURE = 0x00000001
+_V4L2_CAP_DEVICE_CAPS = 0x80000000
 
 
 class V4LCamera(BaseCamera):
@@ -87,7 +93,7 @@ class V4LCamera(BaseCamera):
 
     @staticmethod
     def _scan_stable_links() -> list[tuple[int, str]]:
-        """Scan /dev/v4l/by-id and return (video index, stable link) pairs sorted by index."""
+        """Scan /dev/v4l/by-id and return (video index, stable link) pairs of capture devices, sorted by index."""
         if not os.path.exists("/dev/v4l/by-id/"):
             return []
 
@@ -97,7 +103,7 @@ class V4LCamera(BaseCamera):
                 dev_path = os.path.join("/dev/v4l/by-id", dev)
                 target = os.path.realpath(dev_path)
                 video_basename = os.path.basename(target)
-                if video_basename.startswith("video"):
+                if video_basename.startswith("video") and V4LCamera._supports_video_capture(target):
                     index = int(video_basename.removeprefix("video"))
                     links.append((index, dev_path))
 
@@ -106,6 +112,33 @@ class V4LCamera(BaseCamera):
 
         links.sort()
         return links
+
+    @staticmethod
+    def _supports_video_capture(device_path: str) -> bool:
+        """
+        Tell whether a V4L device node supports video capture.
+
+        Cameras also expose non-capture nodes (e.g. UVC metadata) under
+        /dev/v4l/by-id, which must not be listed as cameras.
+        """
+        try:
+            fd = os.open(device_path, os.O_RDWR | os.O_NONBLOCK)
+        except OSError as e:
+            logger.debug(f"Cannot open {device_path} to query its capabilities: {e}")
+            return False
+        try:
+            caps = bytearray(104)  # struct v4l2_capability
+            fcntl.ioctl(fd, _VIDIOC_QUERYCAP, caps)
+        except OSError as e:
+            logger.debug(f"Cannot query {device_path} capabilities: {e}")
+            return False
+        finally:
+            os.close(fd)
+
+        capabilities, device_caps = struct.unpack_from("<II", caps, 84)
+        if capabilities & _V4L2_CAP_DEVICE_CAPS:
+            return bool(device_caps & _V4L2_CAP_VIDEO_CAPTURE)
+        return bool(capabilities & _V4L2_CAP_VIDEO_CAPTURE)
 
     def _resolve_stable_path(self, device: str | int) -> str:
         """

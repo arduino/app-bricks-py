@@ -7,7 +7,7 @@ import pytest
 
 from arduino.app_peripherals.camera import Camera, V4LCamera, IPCamera, WebSocketCamera, CameraConfigError, CameraOpenError
 
-from conftest import two_v4l_cameras, v4l_device_argument  # noqa: F401
+from conftest import two_v4l_cameras, usb_camera_with_metadata_node, v4l_device_argument  # noqa: F401
 
 
 def test_camera_factory_with_v4l_device(v4l_device_argument):
@@ -60,6 +60,20 @@ def test_explicit_selection_reuses_a_camera_already_in_use(two_v4l_cameras):
     cam1 = Camera(0)
     cam2 = Camera(0)
     assert cam2.v4l_path == cam1.v4l_path
+
+
+def test_non_capture_nodes_are_not_listed_as_cameras(usb_camera_with_metadata_node):
+    """A UVC metadata node must not be enumerated as a camera."""
+    assert V4LCamera.list_devices() == [10]
+
+
+def test_auto_selection_never_selects_non_capture_nodes(usb_camera_with_metadata_node):
+    """A claimed camera leaves only its metadata node behind: not a selectable camera."""
+    cam1 = Camera()
+    assert cam1.v4l_path == "/dev/v4l/by-id/usb-Cam-video-index0"
+
+    with pytest.raises(CameraOpenError):
+        Camera()
 
 
 def test_explicit_index_selects_nth_plugged_camera(two_v4l_cameras):
