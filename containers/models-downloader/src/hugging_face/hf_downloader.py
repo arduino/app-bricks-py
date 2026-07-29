@@ -43,7 +43,7 @@ import shutil
 import sys
 import time
 
-from huggingface_hub import HfApi, hf_hub_download, snapshot_download
+from huggingface_hub import HfApi, hf_hub_download
 from huggingface_hub.hf_api import RepoFile
 import argparse
 import configparser
@@ -103,24 +103,65 @@ def install_signal_handlers() -> None:
 
 
 class JsonProgress(tqdm):
+    """tqdm replacement that reports download progress as JSON events on stdout.
+
+    huggingface_hub's Xet downloader tracks two byte counters: bytes written to disk
+    ("reconstruction") and bytes pulled from the network ("transfer"), and renders one
+    progress bar for each. Only the reconstruction bar honours ``tqdm_class``; the
+    transfer bar is created with huggingface_hub's own tqdm — and would print a real
+    progress bar next to our JSON — unless the class also exposes ``update_transfer``,
+    in which case both counters are routed into this single object instead
+    (see ``huggingface_hub.utils._xet_progress_reporting.XetDownloadProgressReporter``).
+
+    This is an internal integration point of huggingface_hub, which is why huggingface_hub
+    and hf_xet are pinned in requirements.txt: bump them together with a check of the
+    download output (``tests/test_hf_downloader.py`` covers the contract).
+    """
+
     # Minimum seconds between emitted "update" events to avoid flooding stdout.
     EMIT_INTERVAL = 1.0
+
+    # Suffixes huggingface_hub appends to the file name when naming its Xet bars. They
+    # describe an implementation detail, so they are stripped from the reported description.
+    DESC_SUFFIXES = (": reconstructing file", ": downloading bytes")
 
     def __init__(self, *args, **kwargs):
         self._complete_emitted = False
         self._last_emit = 0.0
+        self._transferred = 0
         super().__init__(*args, **kwargs)
         # Emit an initial "start" event
         self._emit("start")
 
+    def _current(self):
+        """Number of bytes to report as downloaded.
+
+        ``self.n`` counts bytes written to disk. For Xet downloads it only moves when
+        buffered chunks are flushed, which happens in big bursts — it can sit at 0 for the
+        first tens of MB — so on its own it makes progress look frozen. ``_transferred``
+        counts bytes received from the network and advances continuously, but can end up
+        below the file size when chunks are served from the local Xet cache. Report
+        whichever of the two is furthest along, capped at the file size.
+        """
+        current = max(self.n, self._transferred)
+        return min(current, self.total) if self.total else current
+
+    def _description(self):
+        # tqdm appends ": " to desc when it is set via set_description().
+        desc = (self.desc or "").removesuffix(": ")
+        for suffix in self.DESC_SUFFIXES:
+            desc = desc.removesuffix(suffix)
+        return desc
+
     def _emit(self, event_type):
         """Helper to print the current state as JSON"""
         self._last_emit = time.monotonic()
-        pct = round((self.n / self.total) * 100, 2) if self.total else 0
+        current = self._current()
+        pct = round((current / self.total) * 100, 2) if self.total else 0
         data = {
             "event": event_type,
-            "description": self.desc,
-            "current": self.n,
+            "description": self._description(),
+            "current": current,
             "total": self.total,
             "unit": self.unit,
             "percentage": f"{pct}%",
@@ -134,11 +175,31 @@ class JsonProgress(tqdm):
             self._emit("update")
         return displayed
 
+    def update_transfer(self, n=1):
+        """Track bytes received from the network, and report them (see _current()).
+
+        This is the counter that makes progress look alive: it is updated roughly ten times
+        per second, against disk writes that arrive in multi-MB bursts. It is kept apart
+        from ``self.n`` so that completion stays decided by the bytes actually written.
+        Implementing this method is also what stops huggingface_hub from creating a second,
+        terminal-drawn progress bar for this counter.
+        """
+        self._transferred = max(0, self._transferred + int(n or 0))
+        # Throttle, as update() does, to avoid flooding stdout.
+        if time.monotonic() - self._last_emit >= self.EMIT_INTERVAL:
+            self._emit("update")
+
+    def set_transfer_postfix_str(self, postfix, refresh=False):
+        """Ignore the transfer rate; it is not part of the reported events."""
+
     def close(self):
         # Only report completion if the transfer actually finished.
         if self.total and self.n >= self.total and not self._complete_emitted:
             self._complete_emitted = True
             self._emit("complete")
+        # tqdm writes a bare newline when closing a bar with leave=True. No bar was ever
+        # drawn, so there is nothing to leave on screen.
+        self.leave = False
         super().close()
 
     def display(self, msg=None, pos=None):
@@ -163,6 +224,51 @@ def parse_hf_url(url: str) -> tuple[str, str, str]:
     revision = match.group(2)
     filename = match.group(3)
     return repo_id, filename, revision
+
+
+def matches_pattern(path: str, pattern: str) -> bool:
+    """fnmatch a repo-relative *path* against *pattern*.
+
+    Patterns are written against file names (e.g. ``*Q4_0*.gguf``), but some repos nest
+    their files in per-quantization folders, so the full path is matched too.
+    """
+    return fnmatch.fnmatch(path, pattern) or fnmatch.fnmatch(path.split("/")[-1], pattern)
+
+
+def list_repo_matches(repo_id: str, patterns: list[str], ignore_pattern: str | None = None) -> list[RepoFile]:
+    """Return the files of *repo_id* matching any of *patterns*, minus *ignore_pattern*."""
+    api = HfApi()
+    all_files = [item for item in api.list_repo_tree(repo_id=repo_id, recursive=True) if isinstance(item, RepoFile)]
+    matched = [f for f in all_files if any(matches_pattern(f.path, p) for p in patterns)]
+    if ignore_pattern:
+        matched = [f for f in matched if not matches_pattern(f.path, ignore_pattern)]
+    return matched
+
+
+def download_matched_files(
+    repo_id: str,
+    allow_pattern: str,
+    output_dir: str,
+    tqdm_class: type[tqdm],
+    ignore_pattern: str | None = None,
+    verbose: bool = False,
+) -> None:
+    """Download every file of *repo_id* matching *allow_pattern* into *output_dir*.
+
+    ``snapshot_download`` is deliberately not used: it hands each individual file an
+    internal aggregating progress bar, so per-file byte counts never reach *tqdm_class*
+    and the JSON stream would describe huggingface_hub's own summary bars instead of the
+    model files. Resolving the file list up front also lets us fail loudly when the
+    requested quantization does not exist in the repo, rather than silently downloading
+    nothing.
+    """
+    matched = list_repo_matches(repo_id, [allow_pattern], ignore_pattern=ignore_pattern)
+    if not matched:
+        raise FileNotFoundError(f"No file matching '{allow_pattern}' found in repository '{repo_id}'")
+    for file in matched:
+        if verbose:
+            emit_json_info(f"Downloading '{file.path}' from {repo_id}")
+        hf_hub_download(repo_id=repo_id, filename=file.path, local_dir=output_dir, tqdm_class=tqdm_class)
 
 
 def delete_matched_files(output_dir: str, models_base: str, allow_pattern: str, verbose: bool = False):
@@ -363,7 +469,8 @@ def main():
                 emit_json_info(f"MMProj file: {mmproj_allow_pattern}")
 
     if args.hf_token and args.hf_token != "":
-        os.environ["HF_HUB_TOKEN"] = args.hf_token
+        # huggingface_hub reads the token from HF_TOKEN; HF_HUB_TOKEN is not a name it knows.
+        os.environ["HF_TOKEN"] = args.hf_token
 
     # Create download folder if it doesn't exist. Patter is: output_dir + / repo_id
     output_dir = f"{args.output_dir}/{repo_id}"
@@ -372,11 +479,7 @@ def main():
         patterns = [allow_pattern]
         if mmproj_allow_pattern:
             patterns.append(mmproj_allow_pattern)
-        api = HfApi()
-        all_files = [item for item in api.list_repo_tree(repo_id=repo_id, recursive=True) if isinstance(item, RepoFile)]
-        matched_files = [
-            {"file": f.path, "size": f.size} for f in all_files if f.size and any(fnmatch.fnmatch(f.path.split("/")[-1], p) for p in patterns)
-        ]
+        matched_files = [{"file": f.path, "size": f.size} for f in list_repo_matches(repo_id, patterns) if f.size]
         total_bytes = sum(f["size"] for f in matched_files)
         print(
             json.dumps({
@@ -460,11 +563,16 @@ def main():
                         tqdm_class=tqdm_class,
                     )
             else:
-                # Pattern-based download via snapshot
+                # Pattern-based download
                 if args.verbose:
                     emit_json_info(f"Downloading model from Hugging Face repository: {repo_id} with allow pattern: {allow_pattern}")
-                snapshot_download(
-                    repo_id=repo_id, allow_patterns=[allow_pattern], ignore_patterns=["*mmproj*"], local_dir=output_dir, tqdm_class=tqdm_class
+                download_matched_files(
+                    repo_id,
+                    allow_pattern,
+                    output_dir,
+                    tqdm_class,
+                    ignore_pattern="*mmproj*",
+                    verbose=args.verbose,
                 )
 
                 if mmproj_allow_pattern:
@@ -472,12 +580,15 @@ def main():
                         emit_json_info(
                             f"Downloading mmproj model file from Hugging Face repository: {repo_id} with allow pattern: {mmproj_allow_pattern}"
                         )
-                    snapshot_download(repo_id=repo_id, allow_patterns=[mmproj_allow_pattern], local_dir=output_dir, tqdm_class=tqdm_class)
-        except BaseException:
+                    download_matched_files(repo_id, mmproj_allow_pattern, output_dir, tqdm_class, verbose=args.verbose)
+        except BaseException as exc:
             # Network/extraction errors and SIGINT/SIGTERM-driven KeyboardInterrupt
             # leave a partial repo directory; remove it before exiting.
             if os.path.isdir(output_dir):
                 remove_model_dir(output_dir, args.output_dir)
+            if not isinstance(exc, KeyboardInterrupt):
+                # KeyboardInterrupt gets its own event from the top-level handler.
+                emit_json_error(f"Download failed: {exc}")
             raise
 
         # Remove download caches
