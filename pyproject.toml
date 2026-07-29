@@ -144,6 +144,8 @@ docstring-code-line-length = 150
 
 [tool.ruff.lint]
 select = [
+    "UP",      # pyupgrade: modernize typing and syntax to the target Python version
+    "ANN",     # flake8-annotations: require type annotations
     "E501",    # line too long
     "D100",    # missing docstring in public module
     "D206",    # Docstring should be indented with 4 spaces
@@ -174,6 +176,10 @@ ignore = [
     "D104",    # missing docstring in public package
     "D206",    # Docstring should be indented with 4 spaces
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# Type annotations are not required in tests.
+"tests/**" = ["ANN"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
