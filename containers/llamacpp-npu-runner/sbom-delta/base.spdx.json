@@ -1,7 +1,7 @@
 {
   "SPDXID": "SPDXRef-DOCUMENT",
   "creationInfo": {
-    "created": "2026-07-29T09:35:55Z",
+    "created": "2026-07-29T10:07:48Z",
     "creators": [
       "Organization: Anchore, Inc",
       "Tool: syft-1.50.0"
@@ -9,7 +9,7 @@
     "licenseListVersion": "3.28"
   },
   "dataLicense": "CC0-1.0",
-  "documentNamespace": "https://anchore.com/syft/image/ghcr.io/arduino/app-bricks/aihub-models-runner-793d7f46-bafb-47fd-bda0-a1601459391d",
+  "documentNamespace": "https://anchore.com/syft/image/ghcr.io/arduino/app-bricks/aihub-models-runner-34586339-605b-47d4-b011-f69c489bd0d2",
   "files": [
     {
       "SPDXID": "SPDXRef-File-etc-adduser.conf-2ce74246982310ad",
@@ -113149,7 +113149,7 @@
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:oci/ghcr.io%2Farduino%2Fapp-bricks%2Faihub-models-runner@sha256%3A0abf20aa68718963eccf466eda97bf9842fce435eab7f2d765fc203abb42b1e6?arch=arm64&tag=0.12.0",
+          "referenceLocator": "pkg:oci/ghcr.io%2Farduino%2Fapp-bricks%2Faihub-models-runner@sha256%3A0abf20aa68718963eccf466eda97bf9842fce435eab7f2d765fc203abb42b1e6?arch=arm64&tag=0.12.1",
           "referenceType": "purl"
         }
       ],
@@ -113159,7 +113159,7 @@
       "name": "ghcr.io/arduino/app-bricks/aihub-models-runner",
       "primaryPackagePurpose": "CONTAINER",
       "supplier": "NOASSERTION",
-      "versionInfo": "0.12.0"
+      "versionInfo": "0.12.1"
     }
   ],
   "relationships": [
