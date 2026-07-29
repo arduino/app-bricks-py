@@ -77,7 +77,7 @@ class Frame:
 
     # -- factory methods ----------------------------------------------
     @classmethod
-    def from_rows(cls, rows: list[list[int]] | list[str], brightness_levels: int = 256) -> "Frame":
+    def from_rows(cls, rows: list[list[int]] | list[str], brightness_levels: int = 256) -> Frame:
         """Create a Frame from frontend rows.
 
         Args:
@@ -291,7 +291,7 @@ class FrameDesigner:
         self.height = 8  # led matrix height
 
     # -- transformations (in-place) ------------------------------------
-    def invert(self, frame: "Frame") -> "Frame":
+    def invert(self, frame: Frame) -> Frame:
         """Invert brightness values in-place on a Frame.
         Args:
             frame (Frame): Frame instance to mutate.
@@ -303,7 +303,7 @@ class FrameDesigner:
         frame.set_array(new_arr)
         return frame
 
-    def invert_not_null(self, frame: "Frame") -> "Frame":
+    def invert_not_null(self, frame: Frame) -> Frame:
         """Invert non-zero brightness values in-place on a Frame.
         Args:
             frame (Frame): Frame instance to mutate.
@@ -317,7 +317,7 @@ class FrameDesigner:
         frame.set_array(arr)
         return frame
 
-    def rotate180(self, frame: "Frame") -> "Frame":
+    def rotate180(self, frame: Frame) -> Frame:
         """Rotate a Frame by 180 degrees in-place.
         Args:
             frame (Frame): Frame instance to mutate.
@@ -328,7 +328,7 @@ class FrameDesigner:
         frame.set_array(new_arr)
         return frame
 
-    def flip_horizontally(self, frame: "Frame") -> "Frame":
+    def flip_horizontally(self, frame: Frame) -> Frame:
         """Flip a Frame horizontally in-place.
         Args:
             frame (Frame): Frame instance to mutate.
@@ -339,7 +339,7 @@ class FrameDesigner:
         frame.set_array(new_arr)
         return frame
 
-    def flip_vertically(self, frame: "Frame") -> "Frame":
+    def flip_vertically(self, frame: Frame) -> Frame:
         """Flip a Frame vertically in-place.
         Args:
             frame (Frame): Frame instance to mutate.

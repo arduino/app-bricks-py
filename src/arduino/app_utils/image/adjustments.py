@@ -4,7 +4,6 @@
 
 import cv2
 import numpy as np
-from typing import Optional, Tuple
 from PIL import Image
 
 from arduino.app_utils.image.pipeable import PipeableFunction
@@ -28,8 +27,8 @@ Frames are expected to be in BGR, BGRA or greyscale format.
 
 def letterbox(
     frame: np.ndarray,
-    target_size: Optional[Tuple[int, int]] = None,
-    color: Tuple[int, int, int] | Tuple[int, int, int, int] = (114, 114, 114),
+    target_size: tuple[int, int] | None = None,
+    color: tuple[int, int, int] | tuple[int, int, int, int] = (114, 114, 114),
     interpolation: int = cv2.INTER_LINEAR,
 ) -> np.ndarray:
     """
@@ -83,7 +82,7 @@ def letterbox(
     return canvas
 
 
-def resize(frame: np.ndarray, target_size: Tuple[int, int], maintain_ratio: bool = False, interpolation: int = cv2.INTER_LINEAR) -> np.ndarray:
+def resize(frame: np.ndarray, target_size: tuple[int, int], maintain_ratio: bool = False, interpolation: int = cv2.INTER_LINEAR) -> np.ndarray:
     """
     Resize frame to target size.
 
@@ -131,7 +130,7 @@ def flip_v(frame: np.ndarray) -> np.ndarray:
     return frame[::-1, :, ...]
 
 
-def crop(frame: np.ndarray, width: int, height: int, x: Optional[int] = None, y: Optional[int] = None) -> np.ndarray:
+def crop(frame: np.ndarray, width: int, height: int, x: int | None = None, y: int | None = None) -> np.ndarray:
     """
     Crop frame to specified region. If x and y are not provided, the crop is centered.
 
@@ -164,9 +163,9 @@ def crop(frame: np.ndarray, width: int, height: int, x: Optional[int] = None, y:
 
 def crop_to_aspect_ratio(
     frame: np.ndarray,
-    aspect_ratio: Tuple[int, int],
-    x: Optional[int] = None,
-    y: Optional[int] = None,
+    aspect_ratio: tuple[int, int],
+    x: int | None = None,
+    y: int | None = None,
 ) -> np.ndarray:
     """
     Crop frame to specified aspect ratio. If x and y are not provided, the crop is
@@ -208,9 +207,9 @@ def crop_to_aspect_ratio(
 def rotate(
     frame: np.ndarray,
     angle: float,
-    center: Optional[Tuple[int, int]] = None,
+    center: tuple[int, int] | None = None,
     expand: bool = False,
-    color: Tuple[int, int, int] | Tuple[int, int, int, int] = (0, 0, 0),
+    color: tuple[int, int, int] | tuple[int, int, int, int] = (0, 0, 0),
     interpolation: int = cv2.INTER_LINEAR,
 ) -> np.ndarray:
     """
@@ -430,7 +429,7 @@ def greyscale(frame: np.ndarray) -> np.ndarray:
     return final_frame
 
 
-def compress_to_jpeg(frame: np.ndarray, quality: int = 80) -> Optional[np.ndarray]:
+def compress_to_jpeg(frame: np.ndarray, quality: int = 80) -> np.ndarray | None:
     """
     Compress frame to JPEG format.
 
@@ -449,7 +448,7 @@ def compress_to_jpeg(frame: np.ndarray, quality: int = 80) -> Optional[np.ndarra
         return None
 
 
-def compress_to_png(frame: np.ndarray, compression_level: int = 6) -> Optional[np.ndarray]:
+def compress_to_png(frame: np.ndarray, compression_level: int = 6) -> np.ndarray | None:
     """
     Compress frame to PNG format.
 
@@ -507,8 +506,8 @@ def pil_to_numpy(image: Image.Image) -> np.ndarray:
 
 
 def letterboxed(
-    target_size: Optional[Tuple[int, int]] = None,
-    color: Tuple[int, int, int] | Tuple[int, int, int, int] = (114, 114, 114),
+    target_size: tuple[int, int] | None = None,
+    color: tuple[int, int, int] | tuple[int, int, int, int] = (114, 114, 114),
     interpolation: int = cv2.INTER_LINEAR,
 ):
     """
@@ -529,7 +528,7 @@ def letterboxed(
     return PipeableFunction(letterbox, target_size=target_size, color=color, interpolation=interpolation)
 
 
-def resized(target_size: Tuple[int, int], maintain_ratio: bool = False, interpolation: int = cv2.INTER_LINEAR):
+def resized(target_size: tuple[int, int], maintain_ratio: bool = False, interpolation: int = cv2.INTER_LINEAR):
     """
     Pipeable resize function - resize frame with pipe operator support.
 
@@ -568,7 +567,7 @@ def flipped_v():
     return PipeableFunction(flip_v)
 
 
-def cropped(width: int, height: int, x: Optional[int] = None, y: Optional[int] = None):
+def cropped(width: int, height: int, x: int | None = None, y: int | None = None):
     """
     Pipeable crop function - crop frame with pipe operator support.
     If x and y are not provided, the crop is centered.
@@ -592,7 +591,7 @@ def cropped(width: int, height: int, x: Optional[int] = None, y: Optional[int] =
     return PipeableFunction(crop, width=width, height=height, x=x, y=y)
 
 
-def cropped_to_aspect_ratio(aspect_ratio: Tuple[int, int], x: Optional[int] = None, y: Optional[int] = None):
+def cropped_to_aspect_ratio(aspect_ratio: tuple[int, int], x: int | None = None, y: int | None = None):
     """
     Pipeable crop to aspect ratio function - crop frame to aspect ratio with
     pipe operator support.
@@ -618,9 +617,9 @@ def cropped_to_aspect_ratio(aspect_ratio: Tuple[int, int], x: Optional[int] = No
 
 def rotated(
     angle: float,
-    center: Optional[Tuple[int, int]] = None,
+    center: tuple[int, int] | None = None,
     expand: bool = False,
-    color: Tuple[int, int, int] | Tuple[int, int, int, int] = (0, 0, 0),
+    color: tuple[int, int, int] | tuple[int, int, int, int] = (0, 0, 0),
     interpolation: int = cv2.INTER_LINEAR,
 ):
     """

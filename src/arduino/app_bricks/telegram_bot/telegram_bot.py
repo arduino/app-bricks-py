@@ -6,7 +6,8 @@ import os
 import asyncio
 import threading
 import time
-from typing import Callable, Optional
+from typing import Optional
+from collections.abc import Callable
 from dataclasses import dataclass
 from arduino.app_utils import brick, Logger
 from telegram import Update, BotCommand, InputFile
@@ -35,8 +36,8 @@ class Sender:
     chat_id: int
     user_id: int
     first_name: str
-    last_name: Optional[str] = None
-    username: Optional[str] = None
+    last_name: str | None = None
+    username: str | None = None
 
     # Internal reference for helper methods
     _bot: Optional["TelegramBot"] = None
@@ -135,8 +136,8 @@ class Message:
     """
 
     message_id: int
-    text: Optional[str] = None
-    caption: Optional[str] = None
+    text: str | None = None
+    caption: str | None = None
 
 
 @brick
@@ -150,13 +151,13 @@ class TelegramBot:
 
     def __init__(
         self,
-        token: Optional[str] = None,
+        token: str | None = None,
         message_timeout: int = 30,
         media_timeout: int = 60,
         max_retries: int = 3,
         auto_set_commands: bool = True,
         enable_builtin_welcome: bool = False,
-        whitelist_user_ids: Optional[list[int]] = None,
+        whitelist_user_ids: list[int] | None = None,
     ) -> None:
         """Initialize the Telegram bot brick.
 
@@ -207,8 +208,8 @@ class TelegramBot:
             self._auth_filter = None
 
         self.application = Application.builder().token(self.token).build()
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
-        self._loop_thread: Optional[threading.Thread] = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._loop_thread: threading.Thread | None = None
         self._running: bool = False
         self._initialized: bool = False
         self._scheduled_tasks: dict[str, threading.Timer] = {}
@@ -847,7 +848,7 @@ class TelegramBot:
         chat_id: int,
         message_text: str,
         interval_seconds: int,
-        task_id: Optional[str] = None,
+        task_id: str | None = None,
     ) -> str:
         """Schedule a recurring message at regular intervals.
 

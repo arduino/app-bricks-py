@@ -95,7 +95,7 @@ T = TypeVar("T")
 class TranscriptionStream(Generic[T], ContextManager["TranscriptionStream[T]"], Iterator[T]):
     """Iterator wrapper that guarantees proper teardown on context exit."""
 
-    def __init__(self, generator: Generator[T, None, None]):
+    def __init__(self, generator: Generator[T]):
         self._generator = generator
 
     def __enter__(self) -> "TranscriptionStream[T]":
@@ -289,7 +289,7 @@ class BaseASR:
         elapsed_ms = (time.perf_counter() - started_at) * 1000
         logger.debug(f"ASR warmup completed in {elapsed_ms:.2f} ms")
 
-    def _transcribe_stream(self, duration: int = 0, vad_ms: int | None = None) -> Generator[ASREvent, None, None]:
+    def _transcribe_stream(self, duration: int = 0, vad_ms: int | None = None) -> Generator[ASREvent]:
         if self._stop_worker.is_set():
             raise RuntimeError("Brick is stopping or already stopped")
         try:
@@ -356,7 +356,7 @@ class BaseASR:
                     pass
             raise
 
-        except (TimeoutError, asyncio.TimeoutError):
+        except TimeoutError:
             raise
 
         except ASRError:
@@ -555,7 +555,7 @@ class BaseASR:
     async def _await_connection_established(self, websocket, label):
         try:
             raw = await asyncio.wait_for(websocket.recv(), timeout=5.0)
-        except (asyncio.TimeoutError, ConnectionClosed) as e:
+        except (TimeoutError, ConnectionClosed) as e:
             raise ASRUnavailableError(f"{label} handshake failed: {e}") from None
         msg = json.loads(raw)
         if msg.get("state") != "connection_established":
@@ -606,7 +606,7 @@ class BaseASR:
             while not self._stop_worker.is_set() and not session_info.cancelled.is_set():
                 try:
                     message = await asyncio.wait_for(websocket.recv(), timeout=1.0)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     continue
 
                 try:
@@ -675,7 +675,7 @@ class BaseASR:
             while not self._stop_worker.is_set() and not session_info.cancelled.is_set():
                 try:
                     message = await asyncio.wait_for(websocket.recv(), timeout=1.0)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     continue
 
                 try:
@@ -867,7 +867,7 @@ class AutomaticSpeechRecognition(BaseASR):
         """
         self._ensure_source_started()
 
-        def sentence_gen() -> Generator[ASREvent, None, None]:
+        def sentence_gen() -> Generator[ASREvent]:
             inner = self._transcribe_stream(duration=timeout)
             try:
                 for event in inner:

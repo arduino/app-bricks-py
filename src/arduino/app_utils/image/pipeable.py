@@ -12,7 +12,7 @@ Note: Due to numpy's element-wise operator behavior, using the pipe operator
 with numpy arrays (array | function) is not supported. Use function(array) instead.
 """
 
-from typing import Callable
+from collections.abc import Callable
 
 
 class PipeableFunction:

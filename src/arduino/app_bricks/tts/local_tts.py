@@ -31,7 +31,7 @@ class TTSBusyError(TTSError):
 class SynthesisStream(ContextManager["SynthesisStream"], Iterator[bytes]):
     """Iterator wrapper that guarantees proper teardown on context exit."""
 
-    def __init__(self, generator: Generator[bytes, None, None]):
+    def __init__(self, generator: Generator[bytes]):
         self._generator = generator
 
     def __enter__(self) -> "SynthesisStream":
@@ -211,7 +211,7 @@ class TextToSpeech:
             RuntimeError: If the synthesis fails.
         """
 
-        def locked_stream() -> Generator[bytes, None, None]:
+        def locked_stream() -> Generator[bytes]:
             if not self._active_session_lock.acquire(blocking=False):
                 raise TTSBusyError(
                     "A speech session is already active on this instance. Create a separate TextToSpeech instance for concurrent speech."

@@ -8,7 +8,6 @@ import asyncio
 import base64
 import json
 import threading
-from typing import Optional, Set
 
 import numpy as np
 import websockets
@@ -43,11 +42,11 @@ class WebSocketOutput(OutputSink):
         self._port = port
         self._jpeg_quality = 80
 
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._loop: asyncio.AbstractEventLoop | None = None
         self._server = None
-        self._clients: Set = set()
+        self._clients: set = set()
         self._clients_lock = threading.Lock()
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
 
         self._running = False
 
@@ -145,7 +144,7 @@ class WebSocketOutput(OutputSink):
             with self._clients_lock:
                 self._clients.discard(client)
 
-    def _encode_frame(self, frame: np.ndarray, metadata: dict) -> Optional[str]:
+    def _encode_frame(self, frame: np.ndarray, metadata: dict) -> str | None:
         """Encode frame to JSON message."""
         import cv2
 

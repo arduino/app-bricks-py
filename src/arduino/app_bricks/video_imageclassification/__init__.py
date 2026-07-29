@@ -9,7 +9,7 @@ import threading
 import socket
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
-from typing import Callable
+from collections.abc import Callable
 
 from websockets.sync.client import connect
 from websockets.sync.connection import Connection

@@ -5,7 +5,7 @@
 import paho.mqtt.client as mqtt
 import json
 import uuid
-from typing import Callable, List, Optional
+from collections.abc import Callable
 from arduino.app_utils import Logger, brick
 
 logger = Logger("MQTT")
@@ -25,7 +25,7 @@ def _generate_client_id(name: str):
     return name + "-" + str(uuid.uuid4())
 
 
-def _load_client(client_id: str, username: Optional[str], password: Optional[str], topics: List[str] = None) -> mqtt.Client:
+def _load_client(client_id: str, username: str | None, password: str | None, topics: list[str] = None) -> mqtt.Client:
     """Load and configure an MQTT client with connection and disconnection handlers.
 
     Args:
@@ -99,9 +99,9 @@ class MQTT:
         self,
         broker_address: str,
         broker_port: int,
-        username: Optional[str] = None,
-        password: Optional[str] = None,
-        topics: List[str] = None,
+        username: str | None = None,
+        password: str | None = None,
+        topics: list[str] = None,
         client_id: str = None,
     ):
         """Initialize the MQTT Publisher.

@@ -5,7 +5,8 @@
 import pytest
 import importlib
 import pkgutil
-from typing import Callable, Tuple, List, cast
+from typing import cast
+from collections.abc import Callable
 
 from arduino.app_bricks.cloud_llm import CloudLLM
 from runners.__init__ import ToolTrace
@@ -14,8 +15,8 @@ from conftest import ModelConfig
 from deepeval.test_case import ToolCall
 
 
-Runner = Callable[[ModelConfig, str], Tuple[CloudLLM, str, ToolTrace]]
-ExecuteRunner = Callable[[str, ModelConfig, str], Tuple[str, List[ToolCall], List[ToolCall]]]
+Runner = Callable[[ModelConfig, str], tuple[CloudLLM, str, ToolTrace]]
+ExecuteRunner = Callable[[str, ModelConfig, str], tuple[str, list[ToolCall], list[ToolCall]]]
 
 
 @pytest.fixture(scope="session")
@@ -65,7 +66,7 @@ def execute_runner(runners_registry, runners_cache) -> ExecuteRunner:
             return "\n".join(map(str, response))
         return str(response)
 
-    def _execute_runner(name: str, model: ModelConfig, prompt: str) -> Tuple[str, List[ToolCall], List[ToolCall]]:
+    def _execute_runner(name: str, model: ModelConfig, prompt: str) -> tuple[str, list[ToolCall], list[ToolCall]]:
         key = (name, model.name, model.provider, prompt)
 
         if key not in runners_cache:

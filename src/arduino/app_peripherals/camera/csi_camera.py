@@ -5,7 +5,6 @@
 import re
 import time
 from collections.abc import Callable
-from typing import Optional
 
 import cv2
 import numpy as np
@@ -53,7 +52,7 @@ class CSICamera(BaseCamera):
         device: str | int = 0,
         resolution: tuple[int, int] = (1280, 720),
         fps: int = 30,
-        adjustments: Optional[Callable[[np.ndarray], np.ndarray]] = None,
+        adjustments: Callable[[np.ndarray], np.ndarray] | None = None,
         auto_reconnect: bool = True,
     ):
         """

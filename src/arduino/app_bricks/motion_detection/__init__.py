@@ -7,7 +7,7 @@ import queue
 import inspect
 import numpy as np
 import time
-from typing import Iterable, Tuple
+from collections.abc import Iterable
 from arduino.app_internal.core import EdgeImpulseRunnerFacade
 from arduino.app_utils import brick, Logger, SlidingWindowBuffer
 
@@ -61,7 +61,7 @@ class MotionDetection(EdgeImpulseRunnerFacade):
                 logger.warning(f"Handler for movement '{movement}' already exists. Overwriting.")
             self._handlers[movement] = callback
 
-    def accumulate_samples(self, accelerometer_samples: Tuple[float, float, float]):
+    def accumulate_samples(self, accelerometer_samples: tuple[float, float, float]):
         """Accumulate accelerometer samples for motion detection.
 
         Args:
@@ -81,7 +81,7 @@ class MotionDetection(EdgeImpulseRunnerFacade):
             self._external_notification_queue.get_nowait()
         self._external_notification_queue.put_nowait(accelerometer_samples)
 
-    def get_sensor_samples(self) -> Iterable[Tuple[float, float, float]]:
+    def get_sensor_samples(self) -> Iterable[tuple[float, float, float]]:
         """Get the current sensor samples.
 
         Returns:
@@ -93,7 +93,7 @@ class MotionDetection(EdgeImpulseRunnerFacade):
                 continue
             yield acquired_samples
 
-    def _movement_spotted(self, item: dict) -> Tuple[str, float, dict] | None:
+    def _movement_spotted(self, item: dict) -> tuple[str, float, dict] | None:
         """Verify if a movement has been spotted.
 
         Args:

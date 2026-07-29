@@ -6,7 +6,7 @@ import asyncio
 import logging
 import threading
 from concurrent.futures import Future, CancelledError as FutureCancelledError
-from typing import Any, Optional
+from typing import Any
 from .adapter import create_adapter
 from .task import PipelineTask, SourceTask, ProcessorTask, SinkTask
 from arduino.app_utils import Logger
@@ -19,13 +19,13 @@ class Pipeline:
         if debug:
             logger.setLevel(logging.DEBUG)
         self._steps: list[PipelineTask] = []
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
-        self._loop_thread: Optional[threading.Thread] = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._loop_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
-        self._pipeline_future: Optional[Future] = None  # Represents the overall pipeline task
+        self._pipeline_future: Future | None = None  # Represents the overall pipeline task
         self._running = False
 
-    def add_source(self, brick: Any, rate_limit: Optional[int] = None, queue_size: int = 1):
+    def add_source(self, brick: Any, rate_limit: int | None = None, queue_size: int = 1):
         if self._running:
             raise RuntimeError("Cannot add bricks while pipeline is running.")
         if self._steps:
@@ -41,7 +41,7 @@ class Pipeline:
 
         return self
 
-    def add_processor(self, brick: Any, rate_limit: Optional[int] = None, queue_size: int = 1):
+    def add_processor(self, brick: Any, rate_limit: int | None = None, queue_size: int = 1):
         if self._running:
             raise RuntimeError("Cannot add bricks while pipeline is running.")
         if not self._steps:
@@ -59,7 +59,7 @@ class Pipeline:
 
         return self
 
-    def add_sink(self, brick: Any, rate_limit: Optional[int] = None, queue_size: int = 1):
+    def add_sink(self, brick: Any, rate_limit: int | None = None, queue_size: int = 1):
         if self._running:
             raise RuntimeError("Cannot add bricks while pipeline is running.")
         if not self._steps:
@@ -258,7 +258,7 @@ class Pipeline:
             try:
                 await asyncio.wait_for(self._pipeline_future, timeout=60.0)
                 logger.debug("Pipeline tasks finished after stop initiated.")
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.warning("Pipeline tasks did not finish within timeout even after unblocking source. Cancelling remaining.")
                 if not self._pipeline_future.done():
                     self._pipeline_future.cancel()

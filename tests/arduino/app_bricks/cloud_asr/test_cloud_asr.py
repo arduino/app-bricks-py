@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import queue
-from typing import Iterable, List
+from collections.abc import Iterable
 
 import numpy as np
 import pytest
@@ -27,7 +27,7 @@ class MockMicrophone(BaseMicrophone):
         auto_reconnect: bool = True,
     ):
         super().__init__(sample_rate=sample_rate, channels=channels, format=format, buffer_size=buffer_size, auto_reconnect=auto_reconnect)
-        self._chunks: List = list(chunks)
+        self._chunks: list = list(chunks)
 
     def _open_microphone(self):
         pass

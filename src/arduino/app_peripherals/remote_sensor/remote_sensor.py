@@ -10,7 +10,8 @@ import time
 import websockets
 import asyncio
 from urllib.parse import urlparse, parse_qs
-from typing import Callable, Literal
+from typing import Literal
+from collections.abc import Callable
 from concurrent.futures import CancelledError, ThreadPoolExecutor, Future
 
 from arduino.app_internal.core.peripherals.bpp_codec import BPPCodec

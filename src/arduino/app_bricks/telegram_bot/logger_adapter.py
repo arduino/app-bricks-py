@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import logging
-from typing import Optional
 
 
 class TelegramLoggerAdapter(logging.LoggerAdapter):
@@ -34,9 +33,9 @@ class TelegramLoggerAdapter(logging.LoggerAdapter):
     def __init__(
         self,
         logger: logging.Logger,
-        user_id: Optional[int] = None,
-        message_id: Optional[int] = None,
-        chat_id: Optional[int] = None,
+        user_id: int | None = None,
+        message_id: int | None = None,
+        chat_id: int | None = None,
     ):
         extra = {}
         if user_id is not None:

@@ -6,7 +6,8 @@ import threading
 import time
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
-from typing import Literal, Optional, Callable
+from typing import Literal
+from collections.abc import Callable
 import numpy as np
 
 from arduino.app_utils import Logger
@@ -130,7 +131,7 @@ class BaseCamera(ABC):
             except Exception as e:
                 self.logger.warning(f"Failed to stop camera: {e}")
 
-    def capture(self) -> Optional[np.ndarray]:
+    def capture(self) -> np.ndarray | None:
         """
         Capture a frame from the camera, respecting the configured FPS.
 
@@ -355,7 +356,7 @@ class BaseCamera(ABC):
         pass
 
     @abstractmethod
-    def _read_frame(self) -> Optional[np.ndarray]:
+    def _read_frame(self) -> np.ndarray | None:
         """
         Read a single frame from the camera.
 

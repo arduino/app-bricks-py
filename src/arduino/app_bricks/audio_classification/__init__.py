@@ -4,7 +4,7 @@
 
 import struct
 import wave
-from typing import Callable
+from collections.abc import Callable
 
 from arduino.app_internal.core.audio import AudioDetector
 from arduino.app_peripherals.microphone import Microphone

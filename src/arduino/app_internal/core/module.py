@@ -7,7 +7,6 @@ import re
 import yaml
 import sys
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional
 
 from arduino.app_utils.utils import get_board_name
 
@@ -16,7 +15,7 @@ config_file_name: str = "brick_config.yaml"
 compose_config_file_name: str = "brick_compose.yaml"
 
 
-def get_app_config() -> Optional[Dict]:
+def get_app_config() -> dict | None:
     """Gets app.yaml application configuration."""
     config_path = None
     app_root_dir = os.getenv("APP_HOME")
@@ -48,7 +47,7 @@ def get_app_config() -> Optional[Dict]:
     return None
 
 
-def get_brick_config(cls) -> Optional[Dict]:
+def get_brick_config(cls) -> dict | None:
     """Gets resolved brick_config.yaml file."""
     config_file = get_brick_linked_resource_file(cls, config_file_name)
     if config_file and os.path.exists(config_file):
@@ -58,17 +57,17 @@ def get_brick_config(cls) -> Optional[Dict]:
     return None
 
 
-def get_brick_config_file(cls) -> Optional[str]:
+def get_brick_config_file(cls) -> str | None:
     """Gets the full path of the brick_config.yaml file."""
     return get_brick_linked_resource_file(cls, config_file_name)
 
 
-def get_brick_compose_file(cls) -> Optional[str]:
+def get_brick_compose_file(cls) -> str | None:
     """Gets the full path of the brick_compose.yaml file, if present."""
     return get_brick_linked_resource_file(cls, compose_config_file_name)
 
 
-def load_brick_compose_file(cls) -> Optional[Dict]:
+def load_brick_compose_file(cls) -> dict | None:
     """Loads the brick_compose.yaml file and returns its content."""
     pathfile = get_brick_compose_file(cls)
     if pathfile:
@@ -79,7 +78,7 @@ def load_brick_compose_file(cls) -> Optional[Dict]:
         return None
 
 
-def get_brick_linked_resource_file(cls, resource_file_name) -> Optional[str]:
+def get_brick_linked_resource_file(cls, resource_file_name) -> str | None:
     """Gets the full path to a config file in the directory containing a class."""
     try:
         module = cls.__module__
@@ -102,7 +101,7 @@ def get_brick_linked_resource_file(cls, resource_file_name) -> Optional[str]:
         return None
 
 
-def get_bricks_static_assets_directory() -> Optional[str]:
+def get_bricks_static_assets_directory() -> str | None:
     """Gets the full path to the static assets directory.
 
     Returns:
@@ -127,7 +126,7 @@ def get_bricks_static_assets_directory() -> Optional[str]:
 @dataclass
 class ModelBrickConfig:
     id: str
-    model_configuration: Dict[str, str] = field(default_factory=dict)
+    model_configuration: dict[str, str] = field(default_factory=dict)
 
     @staticmethod
     def from_dict(data: dict) -> "ModelBrickConfig":
@@ -140,8 +139,8 @@ class ModelBrickConfig:
 @dataclass
 class ModelDeployment:
     handler: str = ""
-    platforms: Dict[str, Dict] = field(default_factory=dict)
-    metadata: Dict[str, str] = field(default_factory=dict)
+    platforms: dict[str, dict] = field(default_factory=dict)
+    metadata: dict[str, str] = field(default_factory=dict)
 
     @staticmethod
     def from_dict(data: dict) -> "ModelDeployment":
@@ -162,10 +161,10 @@ class ModelEntry:
     model_id: str
     name: str = ""
     description: str = ""
-    metadata: Dict[str, str] = field(default_factory=dict)
-    supported_boards: List[str] = field(default_factory=list)
-    deployment: Optional[ModelDeployment] = None
-    bricks: List[ModelBrickConfig] = field(default_factory=list)
+    metadata: dict[str, str] = field(default_factory=dict)
+    supported_boards: list[str] = field(default_factory=list)
+    deployment: ModelDeployment | None = None
+    bricks: list[ModelBrickConfig] = field(default_factory=list)
 
     @staticmethod
     def from_dict(model_id: str, data: dict) -> "ModelEntry":
@@ -182,7 +181,7 @@ class ModelEntry:
         )
 
 
-def load_model_list() -> Optional[Dict[str, ModelEntry]]:
+def load_model_list() -> dict[str, ModelEntry] | None:
     """Loads complete model list from static assets directory.
 
     Returns:
@@ -210,7 +209,7 @@ def load_model_list() -> Optional[Dict[str, ModelEntry]]:
     return None
 
 
-def get_brick_configured_model(brick_id: str, brick_config: Dict = None) -> Optional[str]:
+def get_brick_configured_model(brick_id: str, brick_config: dict = None) -> str | None:
     """Helper method to extract the model name from the app configuration for this brick.
     This allows dynamic configuration of the model via the app's config file, overriding defaults.
 
@@ -263,7 +262,7 @@ def get_brick_configured_model(brick_id: str, brick_config: Dict = None) -> Opti
     return None
 
 
-def parse_docker_compose_variable(variable_string) -> List[tuple[str, str]] | str:
+def parse_docker_compose_variable(variable_string) -> list[tuple[str, str]] | str:
     """Parses a Docker Compose-style environment variable string, including nested variables.
 
     Args:
@@ -363,16 +362,16 @@ class EnvVariable:
         return f"Name: {self.name}, Default value: {self.default_value}, Description: {self.description}"
 
 
-def load_module_supported_variables(file_path: str) -> Optional[List[ModuleVariable]]:
+def load_module_supported_variables(file_path: str) -> list[ModuleVariable] | None:
     """Loads a Docker Compose file and returns all supported variables with its default values and description.
 
     Returns:
         A list of ModuleVarable objects representing the variables found in the Docker Compose file.
     """
     try:
-        with open(file_path, "r") as file:
+        with open(file_path) as file:
             # Read the file content to get headers
-            descriptions: Dict[str, str] = {}
+            descriptions: dict[str, str] = {}
             while True:
                 line = file.readline()
                 if not line:  # End of file
@@ -455,7 +454,7 @@ def _update_compose_release_version(
     registry: str = None,
 ) -> str:
     """Updates the release version in the Docker Compose file."""
-    with open(compose_file_path, "r") as file:
+    with open(compose_file_path) as file:
         content = file.read()
 
     print("Updating compose file:", compose_file_path)

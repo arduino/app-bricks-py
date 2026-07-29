@@ -5,7 +5,7 @@
 import sqlite3
 import os
 import threading
-from typing import Optional, Any
+from typing import Any
 
 from arduino.app_utils import brick, Logger
 
@@ -217,10 +217,10 @@ class SQLStore:
     def read(
         self,
         table: str,
-        columns: Optional[list] = None,
-        condition: Optional[str] = None,
-        order_by: Optional[str] = None,
-        limit: Optional[int] = -1,
+        columns: list | None = None,
+        condition: str | None = None,
+        order_by: str | None = None,
+        limit: int | None = -1,
     ) -> list[dict[str, Any]]:
         """Get data from the specified table with flexible filtering options. If the table does not exist, it returns an empty list.
 
@@ -267,7 +267,7 @@ class SQLStore:
                 return []
             raise DBStorageSQLStoreError(f"Error reading data from {table}: {e}")
 
-    def update(self, table: str, data: dict[str, Any], condition: Optional[str] = ""):
+    def update(self, table: str, data: dict[str, Any], condition: str | None = ""):
         """Update data or records in the specified table.
 
         Args:
@@ -297,7 +297,7 @@ class SQLStore:
         except sqlite3.Error as e:
             raise DBStorageSQLStoreError(f"Error updating data in {table}: {e}")
 
-    def delete(self, table: str, condition: Optional[str] = ""):
+    def delete(self, table: str, condition: str | None = ""):
         """Delete data from the specified table. If no condition is provided, this will delete ALL records from the table.
 
         Args:
@@ -325,7 +325,7 @@ class SQLStore:
         except sqlite3.Error as e:
             raise DBStorageSQLStoreError(f"Error deleting data from {table}: {e}")
 
-    def execute_sql(self, sql: str, args: Optional[tuple] = None) -> list[dict[str, Any]] | None:
+    def execute_sql(self, sql: str, args: tuple | None = None) -> list[dict[str, Any]] | None:
         """Execute a raw SQL command.
 
         Args:

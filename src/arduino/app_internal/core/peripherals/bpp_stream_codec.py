@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import struct
-from typing import Iterator
+from collections.abc import Iterator
 
 from .bpp_codec import BPPCodec
 

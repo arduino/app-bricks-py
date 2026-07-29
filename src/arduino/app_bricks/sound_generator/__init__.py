@@ -5,7 +5,7 @@
 from arduino.app_utils import brick, Logger
 from arduino.app_peripherals.speaker import Speaker
 import threading
-from typing import Iterable
+from collections.abc import Iterable
 import numpy as np
 import time
 from pathlib import Path
@@ -1033,9 +1033,9 @@ class SoundGenerator(SoundGeneratorStreamer):
         """Render a single sequence step to a float32 audio buffer."""
         if notes and len(notes) > 0:
             if len(notes) == 1:
-                return super(SoundGenerator, self).play(notes[0], note_duration, volume)
-            return super(SoundGenerator, self).play_chord(notes, note_duration, volume)
-        return super(SoundGenerator, self).play("REST", note_duration, volume)
+                return super().play(notes[0], note_duration, volume)
+            return super().play_chord(notes, note_duration, volume)
+        return super().play("REST", note_duration, volume)
 
     def _playback_sequence_thread(
         self,

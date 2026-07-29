@@ -5,7 +5,7 @@
 import asyncio
 import queue
 import threading
-from typing import Any, Optional
+from typing import Any
 from .constants import _SHUTDOWN
 from .limiter import AsyncRateLimiter
 from arduino.app_utils import Logger
@@ -20,10 +20,10 @@ logger = Logger("pipeline.adapter")
 class AsyncBrickAdapter:
     """Base class for brick adapters, normalizing to an async API."""
 
-    def __init__(self, original_brick: Any, rate_limit: Optional[int] = None):
+    def __init__(self, original_brick: Any, rate_limit: int | None = None):
         self.original_brick = original_brick
         self.rate_limit = rate_limit
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._loop: asyncio.AbstractEventLoop | None = None
 
     def set_loop(self, loop: asyncio.AbstractEventLoop):
         self._loop = loop
@@ -59,7 +59,7 @@ class AsyncBrickAdapter:
 class AsyncSourceAdapter(AsyncBrickAdapter):
     """Adapter for async sources."""
 
-    def __init__(self, original_brick: Any, rate_limit: Optional[int] = None):
+    def __init__(self, original_brick: Any, rate_limit: int | None = None):
         super().__init__(original_brick, rate_limit)
 
         self._produce_method = getattr(self.original_brick, "produce", None)
@@ -79,7 +79,7 @@ class AsyncBlockingSourceAdapter(AsyncBrickAdapter):
     Manages a daemon thread internally to avoid blocking the event loop.
     """
 
-    def __init__(self, original_brick: Any, rate_limit: Optional[int] = None):
+    def __init__(self, original_brick: Any, rate_limit: int | None = None):
         super().__init__(original_brick, rate_limit)
 
         self._produce_method = getattr(self.original_brick, "produce", None)
@@ -92,7 +92,7 @@ class AsyncBlockingSourceAdapter(AsyncBrickAdapter):
         # Internal queue for daemon thread -> async communication
         self._data_queue = queue.Queue(1)
         self._stop_event = threading.Event()
-        self._producer_thread: Optional[threading.Thread] = None
+        self._producer_thread: threading.Thread | None = None
 
     async def start(self):
         """Start the original brick and the internal blocking producer thread."""
@@ -195,7 +195,7 @@ class AsyncBlockingSourceAdapter(AsyncBrickAdapter):
 
 
 class AsyncProcessorAdapter(AsyncBrickAdapter):
-    def __init__(self, original_brick: Any, rate_limit: Optional[int] = None):
+    def __init__(self, original_brick: Any, rate_limit: int | None = None):
         super().__init__(original_brick, rate_limit)
 
         self._process_method = getattr(self.original_brick, "process", None)
@@ -219,7 +219,7 @@ class AsyncProcessorAdapter(AsyncBrickAdapter):
 
 
 class AsyncSinkAdapter(AsyncBrickAdapter):
-    def __init__(self, original_brick: Any, rate_limit: Optional[int] = None):
+    def __init__(self, original_brick: Any, rate_limit: int | None = None):
         super().__init__(original_brick, rate_limit)
 
         self._consume_method = getattr(self.original_brick, "consume", None)
@@ -242,7 +242,7 @@ class AsyncSinkAdapter(AsyncBrickAdapter):
             return await self._consume_method(*args)
 
 
-def create_adapter(brick: Any, brick_type: str, rate_limit: Optional[int] = None) -> AsyncBrickAdapter:
+def create_adapter(brick: Any, brick_type: str, rate_limit: int | None = None) -> AsyncBrickAdapter:
     """Factory function that creates the appropriate adapter for the provided brick_type."""
     original_brick = brick
     method_name = ""

@@ -685,7 +685,7 @@ class _ClientServer:
                 raise ConnectionError(f"No connection object for router, send failed.")
             try:
                 self._conn.sendall(packed_data)
-            except socket.error as e:
+            except OSError as e:
                 raise ConnectionError(f"Send failed due to socket error: {e}")
 
 

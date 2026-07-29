@@ -7,7 +7,7 @@ import queue
 import inspect
 import numpy as np
 import time
-from typing import Iterable
+from collections.abc import Iterable
 from arduino.app_internal.core import EdgeImpulseRunnerFacade
 from arduino.app_utils import Logger, SlidingWindowBuffer, brick
 

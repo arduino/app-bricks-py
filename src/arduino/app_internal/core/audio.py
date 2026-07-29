@@ -7,7 +7,7 @@ import math
 import inspect
 import threading
 
-from typing import Callable
+from collections.abc import Callable
 
 from arduino.app_internal.core import EdgeImpulseRunnerFacade
 from arduino.app_peripherals.microphone import Microphone, BaseMicrophone

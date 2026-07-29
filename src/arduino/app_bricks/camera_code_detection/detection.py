@@ -4,7 +4,7 @@
 
 from dataclasses import dataclass
 import threading
-from typing import Callable
+from collections.abc import Callable
 
 from pyzbar.pyzbar import decode, ZBarSymbol, PyZbarError
 import numpy as np

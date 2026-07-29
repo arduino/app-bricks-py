@@ -9,7 +9,8 @@ import threading
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Generator, Iterator, Union, cast
+from typing import cast
+from collections.abc import Generator, Iterator
 
 import numpy as np
 
@@ -184,7 +185,7 @@ class CloudASR:
         """
         with self._session_scope(duration=_normalize_duration(timeout)) as session:
 
-            def sentence_gen() -> Generator[ASREvent, None, None]:
+            def sentence_gen() -> Generator[ASREvent]:
                 inner = self._transcribe_stream(session)
                 try:
                     for event in inner:
@@ -211,7 +212,7 @@ class CloudASR:
         """
         with self._session_scope(duration=math.inf) as session:
 
-            def sentence_gen() -> Generator[str, None, None]:
+            def sentence_gen() -> Generator[str]:
                 inner = self._transcribe_stream(session)
                 try:
                     for event in inner:
@@ -245,7 +246,7 @@ class CloudASR:
             self._active_session = None
             self._active_session_lock.release()
 
-    def _transcribe_stream(self, session: SessionInfo) -> Generator[ASREvent, None, None]:
+    def _transcribe_stream(self, session: SessionInfo) -> Generator[ASREvent]:
         """
         Perform continuous speech-to-text recognition with detailed events.
 
@@ -254,7 +255,7 @@ class CloudASR:
             {"event": ("speech_start|partial_text|text|error|speech_stop"), "data": "<payload>"}
             messages.
         """
-        messages: queue.Queue[Union[ASRProviderEvent, BaseException]] = queue.Queue()
+        messages: queue.Queue[ASRProviderEvent | BaseException] = queue.Queue()
 
         def _send():
             try:

@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import asyncio
-from typing import Generic, Optional
+from typing import Generic
 from concurrent.futures import CancelledError as FutureCancelledError
 from .constants import _SHUTDOWN, T_IN, T_OUT
 from .adapter import AsyncBrickAdapter, AsyncProcessorAdapter, AsyncSinkAdapter
@@ -21,8 +21,8 @@ class PipelineTask:
 
     def __init__(self, adapter: AsyncBrickAdapter):
         self.adapter = adapter
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
-        self._task: Optional[asyncio.Task] = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._task: asyncio.Task | None = None
 
     def set_loop(self, loop: asyncio.AbstractEventLoop):
         self._loop = loop
@@ -99,7 +99,7 @@ class ProcessorTask(PipelineTask, Generic[T_IN, T_OUT]):
     def __init__(self, adapter: AsyncProcessorAdapter, queue_size: int = 1):
         super().__init__(adapter)
         self.adapter: AsyncProcessorAdapter = adapter
-        self.input_queue: Optional[asyncio.Queue[T_IN]] = None
+        self.input_queue: asyncio.Queue[T_IN] | None = None
         self.output_queue: asyncio.Queue[T_OUT] = asyncio.Queue(queue_size)
 
     async def _run(self):
@@ -142,7 +142,7 @@ class SinkTask(PipelineTask, Generic[T_IN]):
     def __init__(self, adapter: AsyncSinkAdapter, queue_size: int = 1):
         super().__init__(adapter)
         self.adapter: AsyncSinkAdapter = adapter
-        self.input_queue: Optional[asyncio.Queue[T_IN]] = None
+        self.input_queue: asyncio.Queue[T_IN] | None = None
 
     async def _run(self):
         brick_name = type(self.adapter.original_brick).__name__

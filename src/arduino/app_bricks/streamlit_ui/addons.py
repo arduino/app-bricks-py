@@ -34,7 +34,7 @@ def arduino_header(title: str):
     svg_path = os.path.join(os.path.dirname(__file__), "assets", "RGB-Arduino-Logo-Color-Inline-Loop.svg")
     svg_path = os.path.abspath(svg_path)
     try:
-        with open(svg_path, "r", encoding="utf-8") as f:
+        with open(svg_path, encoding="utf-8") as f:
             svg_icon = f.read()
     except Exception as e:
         svg_icon = f"<span style='color:red'>Logo not found: {e}</span>"

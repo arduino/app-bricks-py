@@ -5,7 +5,6 @@
 import os
 import re
 import time
-from typing import Optional
 
 import alsaaudio
 import numpy as np
@@ -85,7 +84,7 @@ class ALSAMicrophone(BaseMicrophone):
         self.shared = shared
         self.logger = logger
 
-        self._pcm: Optional[alsaaudio.PCM] = None
+        self._pcm: alsaaudio.PCM | None = None
 
         self._last_reconnection_attempt = 0.0  # Used for auto-reconnection when _read_audio is called
 

@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-from typing import Callable
+from collections.abc import Callable
 from arduino.app_internal.core.audio import AudioDetector
 from arduino.app_peripherals.microphone import BaseMicrophone
 from arduino.app_utils import brick, Logger
