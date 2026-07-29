@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import queue
 import re
 import threading
 import time
@@ -18,6 +19,8 @@ from arduino.app_utils import brick, Logger
 logger = Logger("TextToSpeech")
 
 TTS_MAX_CHARS = 1024
+
+_SPEECH_QUEUE_STOP = object()
 
 
 class TTSError(Exception):
@@ -87,6 +90,10 @@ class TextToSpeech:
         self._active_session_lock = threading.Lock()
         self._cancelled: threading.Event | None = None
         self._speak_thread: threading.Thread | None = None
+        self._speech_queue: queue.Queue = queue.Queue()
+        self._worker_lock = threading.Lock()
+        self._cancel_epoch = 0
+        self._pending_speech = 0
 
     def start(self):
         """Start the TextToSpeech brick by initializing the speaker."""
@@ -96,17 +103,22 @@ class TextToSpeech:
     def stop(self):
         """Stop the TextToSpeech brick by stopping the speaker."""
         self.cancel()
-        speak_thread = self._speak_thread
+        with self._worker_lock:
+            speak_thread = self._speak_thread
+            self._speak_thread = None
         if speak_thread is not None and speak_thread.is_alive():
-            speak_thread.join(timeout=5.0)
+            self._speech_queue.put(_SPEECH_QUEUE_STOP)
+            speak_thread.join(timeout=1.0)
             if speak_thread.is_alive():
-                logger.warning("Background speech session did not terminate in time")
-        self._speak_thread = None
+                logger.warning("Background speech worker did not terminate in time")
         self._speaker.stop()
 
     def cancel(self):
-        """Cancel active speech playback, if any, without stopping the speaker."""
-        cancelled = self._cancelled
+        """Cancel active speech playback and drop any queued speech, without stopping the speaker."""
+        with self._worker_lock:
+            self._cancel_epoch += 1
+            self._drain_speech_queue()
+            cancelled = self._cancelled
         if cancelled is None:
             logger.debug("No active speech session to cancel")
             return
@@ -115,8 +127,10 @@ class TextToSpeech:
         self._cancel_remote_tts()
 
     def is_speaking(self) -> bool:
-        """Return True if this instance has an active speech or synthesis session."""
-        return self._active_session_lock.locked()
+        """Return True if this instance has an active speech or synthesis session, or queued speech pending playback."""
+        with self._worker_lock:
+            pending = self._pending_speech
+        return pending > 0 or self._active_session_lock.locked()
 
     def speak(self, text: str, block: bool = True):
         """
@@ -126,16 +140,23 @@ class TextToSpeech:
         Args:
             text (str): The text to be synthesized into speech.
             block (bool): If True, block until playback completes. If False, return
-                immediately and play in a background thread; synthesis or playback
-                errors are logged instead of raised. Use ``cancel()`` to interrupt
-                and ``is_speaking()`` to poll for completion.
+                immediately: the text is enqueued and played sequentially (FIFO) by a
+                single background worker thread, so ``speak()`` can be called
+                repeatedly (e.g. sentence by sentence from a streaming LLM) without
+                waiting. In this mode synthesis or playback errors are logged instead
+                of raised. Use ``cancel()`` to interrupt playback and drop queued
+                text, and ``is_speaking()`` to poll for completion.
 
         Raises:
-            TTSBusyError: If this instance already has an active speech session.
+            TTSBusyError: If ``block`` is True and this instance already has an active speech session.
             RuntimeError: If the synthesis fails (only when ``block`` is True).
         """
         chunks = self._chunk_text(text)
         if not chunks:
+            return
+
+        if not block:
+            self._enqueue_speech(chunks)
             return
 
         if not self._active_session_lock.acquire(blocking=False):
@@ -143,19 +164,51 @@ class TextToSpeech:
 
         cancelled = threading.Event()
         self._cancelled = cancelled
+        self._run_speech_session(chunks, cancelled)
 
-        if block:
-            self._run_speech_session(chunks, cancelled)
-            return
+    def _enqueue_speech(self, chunks: list[str]) -> None:
+        """Enqueue pre-chunked text for FIFO playback, starting the worker thread if needed."""
+        with self._worker_lock:
+            if self._speak_thread is None or not self._speak_thread.is_alive():
+                self._speak_thread = threading.Thread(target=self._speech_worker, daemon=True, name="TTS-SpeakWorker")
+                self._speak_thread.start()
+            self._pending_speech += 1
+            self._speech_queue.put((self._cancel_epoch, chunks))
 
-        def speak_in_background():
+    def _speech_worker(self) -> None:
+        """Consume queued speech requests sequentially until the stop sentinel arrives."""
+        while True:
+            item = self._speech_queue.get()
+            if item is _SPEECH_QUEUE_STOP:
+                return
+            epoch, chunks = item
             try:
-                self._run_speech_session(chunks, cancelled)
-            except Exception as e:
-                logger.error(f"Background speech session failed: {e}")
+                self._active_session_lock.acquire()
+                with self._worker_lock:
+                    if epoch < self._cancel_epoch:
+                        self._active_session_lock.release()
+                        continue
+                    cancelled = threading.Event()
+                    self._cancelled = cancelled
+                try:
+                    self._run_speech_session(chunks, cancelled)
+                except Exception as e:
+                    logger.error(f"Background speech session failed: {e}")
+            finally:
+                with self._worker_lock:
+                    self._pending_speech -= 1
 
-        self._speak_thread = threading.Thread(target=speak_in_background, daemon=True, name="TTS-Speak")
-        self._speak_thread.start()
+    def _drain_speech_queue(self) -> None:
+        """Drop all queued speech requests. Must be called with the worker lock held."""
+        while True:
+            try:
+                item = self._speech_queue.get_nowait()
+            except queue.Empty:
+                return
+            if item is _SPEECH_QUEUE_STOP:
+                self._speech_queue.put(item)
+                return
+            self._pending_speech -= 1
 
     def _run_speech_session(self, chunks: list[str], cancelled: threading.Event) -> None:
         """Run a speech session over pre-chunked text. The session lock must already be held."""
