@@ -1,7 +1,7 @@
 {
   "SPDXID": "SPDXRef-DOCUMENT",
   "creationInfo": {
-    "created": "2026-07-07T07:26:00.008554Z",
+    "created": "2026-07-29T10:08:02.301283Z",
     "creators": [
       "Tool: arduino-sbom-delta",
       "Organization: Arduino SRL"
@@ -11,12 +11,12 @@
   "documentDescribes": [
     "SPDXRef-Container"
   ],
-  "documentNamespace": "https://arduino.cc/sbom/delta/llamacpp-runner-0.11.2-20260707T072600Z",
+  "documentNamespace": "https://arduino.cc/sbom/delta/llamacpp-runner-0.12.1-20260729T100802Z",
   "name": "llamacpp-runner",
   "packages": [
     {
       "SPDXID": "SPDXRef-Container",
-      "comment": "Delta SBOM for ghcr.io/arduino/app-bricks/llamacpp-runner:0.11.2 \u2014 changes relative to base image ghcr.io/arduino/app-bricks/python-slim:0.11.2",
+      "comment": "Delta SBOM for ghcr.io/arduino/app-bricks/llamacpp-runner:0.12.1 \u2014 changes relative to base image ghcr.io/arduino/app-bricks/python-slim:0.12.1",
       "copyrightText": "NOASSERTION",
       "downloadLocation": "NOASSERTION",
       "filesAnalyzed": false,
@@ -28,7 +28,7 @@
       "SPDXID": "SPDXRef-libgomp1-deb",
       "annotations": [
         {
-          "annotationDate": "2026-07-07T07:26:00.008554Z",
+          "annotationDate": "2026-07-29T10:08:02.301283Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"added\"}"
@@ -39,7 +39,7 @@
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libgomp1@14.2.0-19?arch=arm64&distro=debian-13&upstream=gcc-14",
+          "referenceLocator": "pkg:deb/debian/libgomp1@14.2.0-19?arch=arm64&distro=debian-13.6&upstream=gcc-14",
           "referenceType": "purl"
         }
       ],
@@ -47,31 +47,6 @@
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "NOASSERTION",
       "name": "libgomp1",
-      "versionInfo": "14.2.0-19"
-    },
-    {
-      "SPDXID": "SPDXRef-gcc-14-deb",
-      "annotations": [
-        {
-          "annotationDate": "2026-07-07T07:26:00.008554Z",
-          "annotationType": "OTHER",
-          "annotator": "Tool: arduino-sbom-delta",
-          "comment": "{\"change\": \"removed\"}"
-        }
-      ],
-      "copyrightText": "NOASSERTION",
-      "downloadLocation": "NOASSERTION",
-      "externalRefs": [
-        {
-          "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/gcc-14@14.2.0-19?distro=debian",
-          "referenceType": "purl"
-        }
-      ],
-      "filesAnalyzed": false,
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
-      "name": "gcc-14",
       "versionInfo": "14.2.0-19"
     }
   ],
@@ -83,11 +58,6 @@
     },
     {
       "relatedSpdxElement": "SPDXRef-libgomp1-deb",
-      "relationshipType": "CONTAINS",
-      "spdxElementId": "SPDXRef-Container"
-    },
-    {
-      "relatedSpdxElement": "SPDXRef-gcc-14-deb",
       "relationshipType": "CONTAINS",
       "spdxElementId": "SPDXRef-Container"
     }
