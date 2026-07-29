@@ -128,9 +128,23 @@ class JsonProgress(tqdm):
     def __init__(self, *args, **kwargs):
         self._complete_emitted = False
         self._last_emit = 0.0
+        self._transferred = 0
         super().__init__(*args, **kwargs)
         # Emit an initial "start" event
         self._emit("start")
+
+    def _current(self):
+        """Number of bytes to report as downloaded.
+
+        ``self.n`` counts bytes written to disk. For Xet downloads it only moves when
+        buffered chunks are flushed, which happens in big bursts — it can sit at 0 for the
+        first tens of MB — so on its own it makes progress look frozen. ``_transferred``
+        counts bytes received from the network and advances continuously, but can end up
+        below the file size when chunks are served from the local Xet cache. Report
+        whichever of the two is furthest along, capped at the file size.
+        """
+        current = max(self.n, self._transferred)
+        return min(current, self.total) if self.total else current
 
     def _description(self):
         # tqdm appends ": " to desc when it is set via set_description().
@@ -142,11 +156,12 @@ class JsonProgress(tqdm):
     def _emit(self, event_type):
         """Helper to print the current state as JSON"""
         self._last_emit = time.monotonic()
-        pct = round((self.n / self.total) * 100, 2) if self.total else 0
+        current = self._current()
+        pct = round((current / self.total) * 100, 2) if self.total else 0
         data = {
             "event": event_type,
             "description": self._description(),
-            "current": self.n,
+            "current": current,
             "total": self.total,
             "unit": self.unit,
             "percentage": f"{pct}%",
@@ -161,17 +176,21 @@ class JsonProgress(tqdm):
         return displayed
 
     def update_transfer(self, n=1):
-        """Absorb the network-transfer counter without reporting it.
+        """Track bytes received from the network, and report them (see _current()).
 
-        Progress is reported on bytes written to disk: bytes received from the network
-        are a different quantity (chunk dedup and compression make them unpredictable,
-        which is why huggingface_hub shows them on a bar with no total) and mixing them
-        into ``n`` would push the percentage past 100%. Defining this method is what
-        keeps huggingface_hub from drawing its own transfer bar.
+        This is the counter that makes progress look alive: it is updated roughly ten times
+        per second, against disk writes that arrive in multi-MB bursts. It is kept apart
+        from ``self.n`` so that completion stays decided by the bytes actually written.
+        Implementing this method is also what stops huggingface_hub from creating a second,
+        terminal-drawn progress bar for this counter.
         """
+        self._transferred = max(0, self._transferred + int(n or 0))
+        # Throttle, as update() does, to avoid flooding stdout.
+        if time.monotonic() - self._last_emit >= self.EMIT_INTERVAL:
+            self._emit("update")
 
     def set_transfer_postfix_str(self, postfix, refresh=False):
-        """Ignore the transfer rate; the counterpart of update_transfer()."""
+        """Ignore the transfer rate; it is not part of the reported events."""
 
     def close(self):
         # Only report completion if the transfer actually finished.

@@ -68,16 +68,52 @@ def test_description_drops_progress_bar_decorations(desc, capsys):
     assert read_events(capsys)[0]["description"] == "model.gguf"
 
 
-def test_update_transfer_is_not_counted_as_progress(capsys):
-    """Network bytes must not move the percentage; only bytes written to disk do."""
+def test_network_bytes_drive_progress_while_disk_writes_lag(monkeypatch, capsys):
+    """Xet flushes to disk in bursts, so progress must follow the network counter.
+
+    Reporting only bytes written to disk leaves the percentage frozen at 0% for tens of MB.
+    """
+    monkeypatch.setattr(JsonProgress, "EMIT_INTERVAL", 0)
     bar = JsonProgress(desc="model.gguf", total=100, unit="B")
     read_events(capsys)  # drop the "start" event
 
-    bar.update_transfer(80)
+    bar.update_transfer(40)
     bar.set_transfer_postfix_str("1.00MB/s")
 
-    assert bar.n == 0
-    assert read_events(capsys) == []
+    assert bar.n == 0  # nothing written to disk yet
+    assert read_events(capsys) == [
+        {
+            "event": "update",
+            "description": "model.gguf",
+            "current": 40,
+            "total": 100,
+            "unit": "B",
+            "percentage": "40.0%",
+        }
+    ]
+
+
+def test_progress_never_exceeds_the_file_size(monkeypatch, capsys):
+    monkeypatch.setattr(JsonProgress, "EMIT_INTERVAL", 0)
+    bar = JsonProgress(desc="model.gguf", total=100, unit="B")
+    read_events(capsys)
+
+    bar.update_transfer(150)
+
+    assert read_events(capsys)[-1]["percentage"] == "100.0%"
+
+
+def test_completion_follows_disk_writes_not_the_network(monkeypatch, capsys):
+    """Cached Xet chunks make network bytes end below the file size: they cannot signal the end."""
+    monkeypatch.setattr(JsonProgress, "EMIT_INTERVAL", 0)
+    bar = JsonProgress(desc="model.gguf", total=100, unit="B")
+    bar.update_transfer(60)
+    bar.update(100)  # all bytes flushed to disk
+    bar.close()
+
+    events = read_events(capsys)
+    assert events[-1]["event"] == "complete"
+    assert events[-1]["current"] == 100
 
 
 def test_xet_download_routes_both_counters_into_a_single_bar():
