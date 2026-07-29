@@ -1,15 +1,15 @@
 {
   "SPDXID": "SPDXRef-DOCUMENT",
   "creationInfo": {
-    "created": "2026-07-07T07:23:49Z",
+    "created": "2026-07-29T09:34:13Z",
     "creators": [
       "Organization: Anchore, Inc",
-      "Tool: syft-1.46.0"
+      "Tool: syft-1.50.0"
     ],
     "licenseListVersion": "3.28"
   },
   "dataLicense": "CC0-1.0",
-  "documentNamespace": "https://anchore.com/syft/image/public.ecr.aws/g7a8t7v6/inference-container-5a55566e-ef16-48dd-904c-0d096e39207b",
+  "documentNamespace": "https://anchore.com/syft/image/public.ecr.aws/g7a8t7v6/inference-container-f0627755-be55-414f-8f35-39473536a5cd",
   "files": [
     {
       "SPDXID": "SPDXRef-File-...-aws-crypto-crc32-package.json-772f2f9f2384e320",
@@ -303389,42 +303389,7 @@
       "externalRefs": [
         {
           "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:beaugunderson:ip-address:10.1.0:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:beaugunderson:ip_address:10.1.0:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:ip-address:ip-address:10.1.0:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:ip-address:ip_address:10.1.0:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:ip_address:ip-address:10.1.0:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:ip_address:ip_address:10.1.0:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:ip:ip-address:10.1.0:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:ip:ip_address:10.1.0:*:*:*:*:*:*:*",
+          "referenceLocator": "cpe:2.3:a:beaugunderson:ip-address:10.1.0:*:*:*:*:node.js:*:*",
           "referenceType": "cpe23Type"
         },
         {
@@ -303450,42 +303415,7 @@
       "externalRefs": [
         {
           "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:beaugunderson:ip-address:9.0.5:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:beaugunderson:ip_address:9.0.5:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:ip-address:ip-address:9.0.5:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:ip-address:ip_address:9.0.5:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:ip_address:ip-address:9.0.5:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:ip_address:ip_address:9.0.5:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:ip:ip-address:9.0.5:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:ip:ip_address:9.0.5:*:*:*:*:*:*:*",
+          "referenceLocator": "cpe:2.3:a:beaugunderson:ip-address:9.0.5:*:*:*:*:node.js:*:*",
           "referenceType": "cpe23Type"
         },
         {
@@ -328775,6 +328705,11 @@
         },
         {
           "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:tar_project:tar:6.2.1:*:*:*:*:rust:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "SECURITY",
           "referenceLocator": "cpe:2.3:a:isaacs:tar:6.2.1:*:*:*:*:node.js:*:*",
           "referenceType": "cpe23Type"
         },
@@ -328802,6 +328737,11 @@
         {
           "referenceCategory": "SECURITY",
           "referenceLocator": "cpe:2.3:a:tar_project:tar:6.2.1:*:*:*:*:node.js:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:tar_project:tar:6.2.1:*:*:*:*:rust:*:*",
           "referenceType": "cpe23Type"
         },
         {
@@ -328837,6 +328777,11 @@
         },
         {
           "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:tar_project:tar:7.4.3:*:*:*:*:rust:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "SECURITY",
           "referenceLocator": "cpe:2.3:a:isaacs:tar:7.4.3:*:*:*:*:node.js:*:*",
           "referenceType": "cpe23Type"
         },
@@ -328864,6 +328809,11 @@
         {
           "referenceCategory": "SECURITY",
           "referenceLocator": "cpe:2.3:a:tar_project:tar:7.4.3:*:*:*:*:node.js:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:tar_project:tar:7.4.3:*:*:*:*:rust:*:*",
           "referenceType": "cpe23Type"
         },
         {
@@ -329441,12 +329391,7 @@
       "externalRefs": [
         {
           "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:raszi:tmp:0.0.33:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:tmp:tmp:0.0.33:*:*:*:*:*:*:*",
+          "referenceLocator": "cpe:2.3:a:raszi:tmp:0.0.33:*:*:*:*:node.js:*:*",
           "referenceType": "cpe23Type"
         },
         {
