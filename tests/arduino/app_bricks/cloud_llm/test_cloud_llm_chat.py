@@ -13,10 +13,11 @@ slice of the BaseChatModel surface the brick relies on (`invoke`, `stream`,
 """
 
 import base64
+import inspect
 from types import SimpleNamespace
 
 import pytest
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
 
 import arduino.app_bricks.cloud_llm.cloud_llm as cloud_llm_module
 from arduino.app_bricks.cloud_llm import CloudLLM, CloudModel, tool
@@ -33,6 +34,7 @@ class FakeChatModel:
         self._invoke_queue: list = []
         self._stream_queue: list = []
         self.invoke_inputs: list = []
+        self.stream_inputs: list = []
         self.bound_tools = None
 
     def queue_invoke(self, *messages):
@@ -54,6 +56,7 @@ class FakeChatModel:
         return self._invoke_queue.pop(0)
 
     def stream(self, input, config=None):
+        self.stream_inputs.append(list(input))
         for chunk in self._stream_queue.pop(0):
             yield chunk
 
@@ -62,8 +65,38 @@ def _text_chunk(text: str) -> SimpleNamespace:
     return SimpleNamespace(content=text, tool_calls=[])
 
 
+def _chunk(content) -> SimpleNamespace:
+    """A streamed chunk carrying `content` verbatim (a string or a list of content blocks)."""
+    return SimpleNamespace(content=content, tool_calls=[])
+
+
+# The `content` shapes real providers emit while streaming. Anything but a bare string
+# must be flattened to answer text before `chat_stream` yields it.
+CONTENT_SHAPES = [
+    pytest.param(lambda text: text, id="string"),
+    pytest.param(lambda text: [{"type": "text", "text": text, "index": 0}], id="gemini-blocks"),
+    pytest.param(lambda text: [{"type": "text", "text": text}], id="anthropic-blocks"),
+    pytest.param(lambda text: [{"type": "text", "text": text, "annotations": [], "index": 0}], id="openai-responses-blocks"),
+    pytest.param(lambda text: [text], id="bare-string-blocks"),
+    pytest.param(lambda text: [{"type": "text", "text": text[:1], "index": 0}, {"type": "text", "text": text[1:], "index": 1}], id="split-blocks"),
+]
+
+
+def _assert_plain_text(chunks: list) -> None:
+    """Fails when any yielded chunk is not a bare `str` (e.g. a raw block list/dict)."""
+    assert all(type(c) is str for c in chunks), f"chat_stream must yield plain strings, got {chunks!r}"
+
+
 def _tool_chunk(name: str, args: dict, call_id: str) -> SimpleNamespace:
     return SimpleNamespace(content="", tool_calls=[{"name": name, "args": args, "id": call_id, "type": "tool_call"}])
+
+
+def _tool_call_delta(name: str = None, args: str = "", call_id: str = None, index: int = 0) -> AIMessageChunk:
+    """One streamed tool-call delta, as providers emit them: the arguments JSON arrives in fragments."""
+    return AIMessageChunk(
+        content="",
+        tool_call_chunks=[{"name": name, "args": args, "id": call_id, "index": index, "type": "tool_call_chunk"}],
+    )
 
 
 def _tool_message(name: str, args: dict, call_id: str) -> AIMessage:
@@ -232,9 +265,9 @@ def test_chat_without_reasoning_effort_default_uses_base_model(make_llm, fake_mo
     assert llm.chat("hi") == "base"
 
 
-def test_init_openai_with_tools_uses_responses_api():
-    # OpenAI reasoning models reject function tools + reasoning on /v1/chat/completions;
-    # binding tools must switch the client to the Responses API so tool calling works.
+def test_init_openai_with_tools_stays_on_chat_completions():
+    # Binding tools must NOT move the model to the Responses API: local runners (genie,
+    # llama.cpp) only serve /v1/chat/completions and answer 404 on /v1/responses.
     @tool
     def get_weather(location: str) -> str:
         """Get the weather."""
@@ -243,7 +276,9 @@ def test_init_openai_with_tools_uses_responses_api():
     llm = CloudLLM(model="openai:gpt-5.6-terra", api_key="x", tools=[get_weather])
 
     inner = getattr(llm._model, "bound", llm._model)
-    assert inner._use_responses_api({}) is True
+    assert inner._use_responses_api({}) is False
+    assert inner.use_responses_api is None
+    assert inner.output_version != "responses/v1"
 
 
 def test_init_openai_without_tools_uses_chat_completions():
@@ -251,6 +286,37 @@ def test_init_openai_without_tools_uses_chat_completions():
     llm = CloudLLM(model="openai:gpt-5.6-terra", api_key="x")
 
     assert llm._model._use_responses_api({}) is False
+
+
+def test_init_with_tools_keeps_the_base_model_unbound_for_the_reasoning_flow():
+    # `_get_reasoning_model` derives its client from `_base_model`, so that reference must
+    # stay the plain, unbound model even when tools are bound to `_model`.
+    @tool
+    def get_weather(location: str) -> str:
+        """Get the weather."""
+        return "sunny"
+
+    llm = CloudLLM(model="openai:gpt-5.6-terra", api_key="x", tools=[get_weather])
+
+    assert llm._base_model is not llm._model
+    assert getattr(llm._base_model, "bound", None) is None
+    assert llm._base_model._use_responses_api({}) is False
+
+
+def test_reasoning_model_uses_responses_api_with_tools_bound():
+    # Reasoning still needs the Responses API, and the reasoning client binds the tools itself.
+    @tool
+    def get_weather(location: str) -> str:
+        """Get the weather."""
+        return "sunny"
+
+    llm = CloudLLM(model="openai:gpt-5.6-terra", api_key="x", tools=[get_weather])
+
+    reasoning_model = llm._get_reasoning_model("high")
+
+    inner = getattr(reasoning_model, "bound", reasoning_model)
+    assert inner._use_responses_api({}) is True
+    assert getattr(reasoning_model, "bound", None) is not None, "tools must be bound to the reasoning client"
 
 
 @pytest.mark.parametrize("model", ["openai:gpt-x", "anthropic:claude-x", "google:gemini-x"])
@@ -307,6 +373,61 @@ def test_chat_runs_tool_calls_then_returns_final_answer(make_llm, fake_model):
 
     assert llm.chat("weather in Turin?") == "It's sunny in Turin."
     assert seen == ["Turin"]
+
+
+# The tool exchange (the assistant message holding the tool calls plus the tool results)
+# must stay in the conversation history. Collapsing it into the final answer rewrites past
+# turns, and local runners that keep session state diff the next request against what they
+# already processed: the genie runner answers `400 No new messages to process` on the turn
+# that follows a tool call.
+
+
+def test_chat_records_the_tool_exchange_in_history(make_llm, fake_model):
+    @tool
+    def get_weather(city: str) -> str:
+        """Return the weather for a city."""
+        return f"sunny in {city}"
+
+    fake_model.queue_invoke(
+        _tool_message("get_weather", {"city": "Turin"}, "call-1"),
+        AIMessage(content="It's sunny in Turin."),
+    )
+    llm = make_llm(tools=[get_weather])
+
+    llm.chat("weather in Turin?")
+
+    history = llm._history.get_messages()
+    assert [type(m).__name__ for m in history] == ["HumanMessage", "AIMessage", "ToolMessage", "AIMessage"]
+    assert [tc["id"] for tc in history[1].tool_calls] == ["call-1"]
+    assert history[2].tool_call_id == "call-1"
+    assert history[2].content == "sunny in Turin"
+    assert history[3].content == "It's sunny in Turin."
+
+
+def test_chat_next_turn_resends_the_recorded_tool_exchange(make_llm, fake_model):
+    @tool
+    def get_weather(city: str) -> str:
+        """Return the weather for a city."""
+        return f"sunny in {city}"
+
+    fake_model.queue_invoke(
+        _tool_message("get_weather", {"city": "Turin"}, "call-1"),
+        AIMessage(content="It's sunny in Turin."),
+        AIMessage(content="You're welcome."),
+    )
+    llm = make_llm(tools=[get_weather])
+
+    llm.chat("weather in Turin?")
+    llm.chat("thanks")
+
+    sent = fake_model.invoke_inputs[-1]
+    assert [type(m).__name__ for m in sent] == [
+        "HumanMessage",
+        "AIMessage",
+        "ToolMessage",
+        "AIMessage",
+        "HumanMessage",
+    ]
 
 
 def test_chat_raises_when_tool_loop_limit_exceeded(make_llm, fake_model):
@@ -395,6 +516,280 @@ def test_chat_stream_processes_tool_calls(make_llm, fake_model):
 
     assert "".join(llm.chat_stream("weather in Rome?")) == "Rome is sunny."
     assert seen == ["Rome"]
+
+
+# --- chat_stream contract: streamed tool calls must be reassembled -------------
+#
+# A streamed tool call arrives as several deltas: the first carries the name and an
+# empty arguments string, the following ones carry fragments of the arguments JSON.
+# Reading `tool_calls` off a single delta yields partially parsed args (`{}` for the
+# first one), so the chunks must be merged before the tool is dispatched.
+
+
+def test_chat_stream_assembles_tool_call_arguments_split_across_chunks(make_llm, fake_model):
+    seen = []
+
+    @tool
+    def get_current_weather(location: str) -> str:
+        """Return the weather for a location."""
+        seen.append(location)
+        return f"sunny in {location}"
+
+    fake_model.queue_stream(
+        [
+            _tool_call_delta(name="get_current_weather", args="", call_id="c1"),
+            _tool_call_delta(args='{"loca'),
+            _tool_call_delta(args='tion": "Rome"}'),
+        ],
+        [_text_chunk("Rome is sunny.")],
+    )
+    llm = make_llm(tools=[get_current_weather])
+
+    assert "".join(llm.chat_stream("weather in Rome?")) == "Rome is sunny."
+    assert seen == ["Rome"], "each delta must not be dispatched as a tool call of its own"
+
+
+def test_chat_stream_assembles_parallel_tool_calls_by_index(make_llm, fake_model):
+    seen = []
+
+    @tool
+    def get_current_weather(location: str) -> str:
+        """Return the weather for a location."""
+        seen.append(location)
+        return f"sunny in {location}"
+
+    fake_model.queue_stream(
+        [
+            _tool_call_delta(name="get_current_weather", args="", call_id="c1", index=0),
+            _tool_call_delta(name="get_current_weather", args="", call_id="c2", index=1),
+            _tool_call_delta(args='{"location": "Rome"}', index=0),
+            _tool_call_delta(args='{"location": "Turin"}', index=1),
+        ],
+        [_text_chunk("Both are sunny.")],
+    )
+    llm = make_llm(tools=[get_current_weather])
+
+    assert "".join(llm.chat_stream("weather in Rome and Turin?")) == "Both are sunny."
+    assert seen == ["Rome", "Turin"]
+
+
+def test_chat_stream_sends_the_tool_call_message_before_the_tool_results(make_llm, fake_model):
+    # Providers reject tool results that are not preceded by the assistant message
+    # holding the matching tool_calls.
+    @tool
+    def get_current_weather(location: str) -> str:
+        """Return the weather for a location."""
+        return f"sunny in {location}"
+
+    fake_model.queue_stream(
+        [
+            _tool_call_delta(name="get_current_weather", args="", call_id="c1"),
+            _tool_call_delta(args='{"location": "Rome"}'),
+        ],
+        [_text_chunk("Rome is sunny.")],
+    )
+    llm = make_llm(tools=[get_current_weather])
+
+    list(llm.chat_stream("weather in Rome?"))
+
+    follow_up = fake_model.stream_inputs[1]
+    assert isinstance(follow_up[-1], ToolMessage)
+    assert follow_up[-1].tool_call_id == "c1"
+    assert [tc["id"] for tc in follow_up[-2].tool_calls] == ["c1"]
+
+
+def test_chat_stream_records_the_tool_exchange_in_history(make_llm, fake_model):
+    @tool
+    def get_current_weather(location: str) -> str:
+        """Return the weather for a location."""
+        return f"sunny in {location}"
+
+    fake_model.queue_stream(
+        [_tool_call_delta(name="get_current_weather", args='{"location": "Rome"}', call_id="c1")],
+        [_text_chunk("Rome is sunny.")],
+    )
+    llm = make_llm(tools=[get_current_weather])
+
+    list(llm.chat_stream("weather in Rome?"))
+
+    history = llm._history.get_messages()
+    assert [m.type for m in history] == ["human", "ai", "tool", "ai"]
+    assert [tc["id"] for tc in history[1].tool_calls] == ["c1"]
+    assert history[2].tool_call_id == "c1"
+    assert history[3].content == "Rome is sunny."
+
+
+def test_chat_stream_does_not_duplicate_text_streamed_with_the_tool_call(make_llm, fake_model):
+    # Text emitted alongside the tool call already belongs to the recorded assistant
+    # message: the final answer message must not repeat it.
+    @tool
+    def get_current_weather(location: str) -> str:
+        """Return the weather for a location."""
+        return f"sunny in {location}"
+
+    fake_model.queue_stream(
+        [
+            AIMessageChunk(
+                content="Let me check. ",
+                tool_call_chunks=[{"name": "get_current_weather", "args": '{"location": "Rome"}', "id": "c1", "index": 0, "type": "tool_call_chunk"}],
+            )
+        ],
+        [_text_chunk("Rome is sunny.")],
+    )
+    llm = make_llm(tools=[get_current_weather])
+
+    assert "".join(llm.chat_stream("weather in Rome?")) == "Let me check. Rome is sunny."
+
+    history = llm._history.get_messages()
+    assert history[1].content == "Let me check. "
+    assert history[-1].content == "Rome is sunny."
+
+
+def test_chat_stream_raises_when_tool_loop_limit_exceeded(make_llm, fake_model):
+    @tool
+    def loop_tool(x: int) -> str:
+        """A tool that never lets the model settle."""
+        return "again"
+
+    fake_model.queue_stream(*[[_tool_call_delta(name="loop_tool", args='{"x": 1}', call_id=f"c{i}")] for i in range(5)])
+    llm = make_llm(tools=[loop_tool], max_tool_loops=2)
+
+    with pytest.raises(RuntimeError, match="Too many consecutive tool-call loops"):
+        list(llm.chat_stream("go"))
+
+
+# --- chat_stream contract: plain text, chat completions -----------------------
+#
+# `chat_stream` is documented as an `Iterator[str]` of answer text. Two things must
+# never happen again:
+#   1. leaking a provider's raw content-block structure (list of dicts) to the caller,
+#   2. routing the stream through the reasoning client / Responses API.
+
+
+@pytest.mark.parametrize("as_content", CONTENT_SHAPES)
+def test_chat_stream_yields_plain_text_for_every_provider_content_shape(make_llm, fake_model, as_content):
+    fake_model.queue_stream([_chunk(as_content("Hel")), _chunk(as_content("lo"))])
+    llm = make_llm()
+
+    out = list(llm.chat_stream("hi"))
+
+    assert out == ["Hel", "lo"]
+    _assert_plain_text(out)
+
+
+@pytest.mark.parametrize("as_content", CONTENT_SHAPES)
+def test_chat_stream_records_plain_text_history_for_every_content_shape(make_llm, fake_model, as_content):
+    # The `finally` block joins the accumulated chunks: non-flattened content would
+    # either raise TypeError here or persist block dicts into the conversation history.
+    fake_model.queue_stream([_chunk(as_content("Hel")), _chunk(as_content("lo"))])
+    llm = make_llm()
+
+    list(llm.chat_stream("hi"))
+
+    recorded = llm._history.get_messages()[-1]
+    assert isinstance(recorded, AIMessage)
+    assert recorded.content == "Hello"
+    assert type(recorded.content) is str
+
+
+@pytest.mark.parametrize("as_content", CONTENT_SHAPES)
+def test_chat_stream_yields_plain_text_after_tool_calls(make_llm, fake_model, as_content):
+    # The second stream (after tool results) is a separate loop and must flatten too.
+    @tool
+    def get_weather(city: str) -> str:
+        """Return the weather for a city."""
+        return f"sunny in {city}"
+
+    fake_model.queue_stream(
+        [_tool_chunk("get_weather", {"city": "Rome"}, "c1")],
+        [_chunk(as_content("Rome is sunny."))],
+    )
+    llm = make_llm(tools=[get_weather])
+
+    out = list(llm.chat_stream("weather in Rome?"))
+
+    assert out == ["Rome is sunny."]
+    _assert_plain_text(out)
+
+
+@pytest.mark.parametrize(
+    "blocks",
+    [
+        pytest.param([{"type": "thinking", "thinking": "hmm", "index": 0}], id="anthropic-gemini-thinking"),
+        pytest.param([{"type": "reasoning", "summary": [{"type": "summary_text", "text": "hmm"}]}], id="openai-reasoning"),
+    ],
+)
+def test_chat_stream_drops_reasoning_blocks(make_llm, fake_model, blocks):
+    """Chain-of-thought is exclusive to `chat_stream_reasoning`; `chat_stream` yields answers only."""
+    fake_model.queue_stream([_chunk(blocks), _chunk("Hello")])
+    llm = make_llm()
+
+    assert list(llm.chat_stream("hi")) == ["Hello"]
+
+
+def test_chat_stream_keeps_only_text_from_mixed_blocks(make_llm, fake_model):
+    # A single chunk can carry reasoning and answer blocks together.
+    fake_model.queue_stream([
+        _chunk([
+            {"type": "thinking", "thinking": "hmm", "index": 0},
+            {"type": "text", "text": "Hello", "index": 1},
+        ])
+    ])
+    llm = make_llm()
+
+    assert list(llm.chat_stream("hi")) == ["Hello"]
+
+
+def test_chat_stream_skips_chunks_without_text(make_llm, fake_model):
+    # Empty strings, empty block lists and text-less blocks must not surface as chunks.
+    fake_model.queue_stream([
+        _chunk(""),
+        _chunk([]),
+        _chunk([{"type": "text", "text": "", "index": 0}]),
+        _chunk("Hello"),
+    ])
+    llm = make_llm()
+
+    assert list(llm.chat_stream("hi")) == ["Hello"]
+
+
+@pytest.mark.parametrize("effort", ["high", "minimal", 1024, -1, 0])
+def test_chat_stream_never_uses_the_reasoning_client(make_llm, fake_model, monkeypatch, effort):
+    """A `reasoning_effort` on the brick must not move `chat_stream` off chat completions."""
+    monkeypatch.setattr(
+        CloudLLM,
+        "_get_reasoning_model",
+        lambda self, reasoning_effort=None: pytest.fail("chat_stream must not route through the reasoning client"),
+    )
+    fake_model.queue_stream([_text_chunk("Hel"), _text_chunk("lo")])
+    llm = make_llm(reasoning_effort=effort)
+
+    assert list(llm.chat_stream("hi")) == ["Hel", "lo"]
+
+
+def test_chat_stream_never_uses_the_reasoning_client_after_tool_calls(make_llm, fake_model, monkeypatch):
+    @tool
+    def get_weather(city: str) -> str:
+        """Return the weather for a city."""
+        return f"sunny in {city}"
+
+    monkeypatch.setattr(
+        CloudLLM,
+        "_get_reasoning_model",
+        lambda self, reasoning_effort=None: pytest.fail("chat_stream must not route through the reasoning client"),
+    )
+    fake_model.queue_stream(
+        [_tool_chunk("get_weather", {"city": "Rome"}, "c1")],
+        [_text_chunk("Rome is sunny.")],
+    )
+    llm = make_llm(reasoning_effort="high", tools=[get_weather])
+
+    assert list(llm.chat_stream("weather in Rome?")) == ["Rome is sunny."]
+
+
+def test_chat_stream_has_no_reasoning_effort_parameter():
+    # Guards the public signature: reasoning is opt-in through `chat_stream_reasoning`.
+    assert "reasoning_effort" not in inspect.signature(CloudLLM.chat_stream).parameters
 
 
 # --- image encoding ----------------------------------------------------------
