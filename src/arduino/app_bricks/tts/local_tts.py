@@ -19,6 +19,7 @@ from arduino.app_utils import brick, Logger
 logger = Logger("TextToSpeech")
 
 TTS_MAX_CHARS = 1024
+TTS_MAX_QUEUE_SIZE = 32
 
 _SPEECH_QUEUE_STOP = object()
 
@@ -59,11 +60,16 @@ class TextToSpeech:
 
     _APP_SERVICE_NAME = "audio-analytics-runner"
 
-    def __init__(self, speaker: BaseSpeaker | None = None):
+    def __init__(self, speaker: BaseSpeaker | None = None, max_queue_size: int = TTS_MAX_QUEUE_SIZE):
         """Initialize the TextToSpeech brick.
         Args:
             speaker (BaseSpeaker, optional): Speaker instance to use for audio output. If not provided, a default Speaker will be used.
+            max_queue_size (int): Maximum number of pending ``speak(block=False)`` requests. When the
+                queue is full, further non-blocking calls raise TTSBusyError instead of piling up.
         """
+        if max_queue_size <= 0:
+            raise ValueError("max_queue_size must be greater than 0.")
+
         self._speaker = speaker or Speaker(sample_rate=Speaker.RATE_44K, shared=True)
 
         # API configuration
@@ -90,7 +96,7 @@ class TextToSpeech:
         self._active_session_lock = threading.Lock()
         self._cancelled: threading.Event | None = None
         self._speak_thread: threading.Thread | None = None
-        self._speech_queue: queue.Queue = queue.Queue()
+        self._speech_queue: queue.Queue = queue.Queue(maxsize=max_queue_size)
         self._worker_lock = threading.Lock()
         self._cancel_epoch = 0
         self._pending_speech = 0
@@ -107,7 +113,10 @@ class TextToSpeech:
             speak_thread = self._speak_thread
             self._speak_thread = None
         if speak_thread is not None and speak_thread.is_alive():
-            self._speech_queue.put(_SPEECH_QUEUE_STOP)
+            try:
+                self._speech_queue.put_nowait(_SPEECH_QUEUE_STOP)
+            except queue.Full:
+                logger.warning("Speech queue is full, the worker cannot be notified to stop")
             speak_thread.join(timeout=1.0)
             if speak_thread.is_alive():
                 logger.warning("Background speech worker did not terminate in time")
@@ -148,7 +157,8 @@ class TextToSpeech:
                 text, and ``is_speaking()`` to poll for completion.
 
         Raises:
-            TTSBusyError: If ``block`` is True and this instance already has an active speech session.
+            TTSBusyError: If ``block`` is True and this instance already has an active speech
+                session, or if ``block`` is False and the speech queue is full.
             RuntimeError: If the synthesis fails (only when ``block`` is True).
         """
         chunks = self._chunk_text(text)
@@ -169,11 +179,17 @@ class TextToSpeech:
     def _enqueue_speech(self, chunks: list[str]) -> None:
         """Enqueue pre-chunked text for FIFO playback, starting the worker thread if needed."""
         with self._worker_lock:
+            try:
+                self._speech_queue.put_nowait((self._cancel_epoch, chunks))
+            except queue.Full:
+                raise TTSBusyError(
+                    f"The speech queue is full ({self._speech_queue.maxsize} pending requests). "
+                    "Wait for playback to catch up or call cancel() to drop queued speech."
+                )
+            self._pending_speech += 1
             if self._speak_thread is None or not self._speak_thread.is_alive():
                 self._speak_thread = threading.Thread(target=self._speech_worker, daemon=True, name="TTS-SpeakWorker")
                 self._speak_thread.start()
-            self._pending_speech += 1
-            self._speech_queue.put((self._cancel_epoch, chunks))
 
     def _speech_worker(self) -> None:
         """Consume queued speech requests sequentially until the stop sentinel arrives."""

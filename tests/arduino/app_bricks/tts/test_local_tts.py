@@ -65,7 +65,7 @@ class BlockingSpeaker(BaseSpeaker):
             self.release_first_chunk.wait(timeout=2)
 
 
-def make_tts(monkeypatch, speaker, post_response, cancel_response=None):
+def make_tts(monkeypatch, speaker, post_response, cancel_response=None, **tts_kwargs):
     models = [
         {
             # The runner reports the name from the model's config.json (underscore
@@ -91,7 +91,7 @@ def make_tts(monkeypatch, speaker, post_response, cancel_response=None):
     monkeypatch.setattr("arduino.app_bricks.tts.local_tts.requests.get", lambda url: FakeResponse(json_data=models))
     monkeypatch.setattr("arduino.app_bricks.tts.local_tts.requests.post", post)
 
-    tts = TextToSpeech(speaker=speaker)
+    tts = TextToSpeech(speaker=speaker, **tts_kwargs)
     App.unregister(tts)
     speaker.start()
     return tts
@@ -381,6 +381,32 @@ def test_speak_non_blocking_queues_sequential_playback(monkeypatch):
     assert wait_until(lambda: not tts.is_speaking())
     assert post_calls == ["first", "second"]
     assert len(speaker.chunks_written) == 2
+
+
+def test_speak_non_blocking_raises_when_queue_full(monkeypatch):
+    speaker = BlockingSpeaker(buffer_size=4)
+    pcm_audio = np.arange(12, dtype=np.int16)
+    tts = make_tts(monkeypatch, speaker, lambda url, json, **kwargs: FakeResponse(content=pcm_audio.tobytes()), max_queue_size=1)
+
+    tts.speak("first", block=False)
+    # The worker dequeues "first" and blocks on the first written chunk, leaving the queue empty.
+    assert speaker.first_chunk_written.wait(timeout=2)
+    tts.speak("second", block=False)
+
+    with pytest.raises(TTSBusyError):
+        tts.speak("third", block=False)
+
+    speaker.release_first_chunk.set()
+
+    assert wait_until(lambda: not tts.is_speaking())
+    assert len(speaker.chunks_written) == 6  # "first" and "second" played, "third" rejected
+
+
+def test_max_queue_size_must_be_positive(monkeypatch):
+    speaker = BlockingSpeaker(buffer_size=4)
+
+    with pytest.raises(ValueError):
+        make_tts(monkeypatch, speaker, lambda url, json, **kwargs: FakeResponse(content=b""), max_queue_size=0)
 
 
 def test_speak_blocking_raises_when_background_playback_active(monkeypatch):
