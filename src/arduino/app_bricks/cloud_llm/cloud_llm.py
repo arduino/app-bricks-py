@@ -124,7 +124,12 @@ class CloudLLM:
                 timing out. Defaults to None.
             callbacks (Any): Optional callbacks for monitoring generation events.
             tools (Sequence[ToolLike]): BaseTool objects (from @tool or MCPClient.get_tools()) or plain
-                callables (auto-wrapped into tools). Defaults to None.
+                callables (auto-wrapped into tools). Defaults to None. On OpenAI reasoning models
+                from gpt-5.1 onwards, binding tools turns reasoning off on the plain path
+                (``chat`` without an effort, ``chat_stream``), since chat completions rejects
+                function tools while reasoning is active. To reason with tools, pass a
+                ``reasoning_effort`` or use ``chat_stream_reasoning``, which go through the
+                Responses API.
             **kwargs: Additional arguments passed to the model constructor
 
         Raises:
@@ -186,13 +191,24 @@ class CloudLLM:
 
         if self._tools and len(self._tools) > 0:
             logger.info(f"Binding {len(self._tools)} tool(s) to the model.")
+            from .reasoning import ChatOpenAIReasoning
+
             # Tools are bound to the model as it is, leaving it on its provider's default API
             # (chat completions on OpenAI-compatible endpoints). Switching it to the Responses
             # API here would break local runners such as genie and llama.cpp, which only serve
-            # ``/v1/chat/completions`` and answer 404 on ``/v1/responses``. The reasoning flow
-            # is unaffected: ``_get_reasoning_model`` derives its own client from
-            # ``_base_model``, enables the Responses API on it and binds the tools itself.
-            self._model = self._model.bind_tools(tools=self._tools)
+            # ``/v1/chat/completions`` and answer 404 on ``/v1/responses``.
+            #
+            # OpenAI's newer reasoning models reason by default and reject function tools while
+            # reasoning is active on chat completions ("Function tools with reasoning_effort are
+            # not supported [...] in /v1/chat/completions"), so reasoning is explicitly turned
+            # off on the tool-bound client. Reasoning together with tools stays available
+            # through the reasoning flow: ``_get_reasoning_model`` derives its own client from
+            # the untouched ``_base_model``, enables the Responses API on it (which does accept
+            # tools while reasoning) and binds the tools itself.
+            tools_model = self._model
+            if isinstance(tools_model, ChatOpenAIReasoning) and self._openai_supports_effort_none(getattr(tools_model, "model_name", "")):
+                tools_model = tools_model.model_copy(update={"reasoning_effort": "none"})
+            self._model = tools_model.bind_tools(tools=self._tools)
 
         # Memory management
         self.with_memory(DEFAULT_MEMORY)
@@ -460,7 +476,9 @@ class CloudLLM:
 
         The stream always comes from the plain model (chat completions on OpenAI) and each
         yielded item is plain answer text: a `reasoning_effort` configured on the brick does
-        not apply here. Use `chat_stream_reasoning` to stream the chain-of-thought.
+        not apply here, and on OpenAI reasoning models from gpt-5.1 onwards with tools bound
+        reasoning is turned off (chat completions rejects tools while reasoning). Use
+        `chat_stream_reasoning` to stream the chain-of-thought.
 
         Args:
             message (str): The input text prompt from the user.
@@ -706,6 +724,33 @@ class CloudLLM:
         if reasoning_effort is not None:
             reasoning["effort"] = self._resolve_effort_level(reasoning_effort).value
         return {"reasoning": reasoning}
+
+    @staticmethod
+    def _openai_supports_effort_none(model_name: str) -> bool:
+        """Returns True when an OpenAI model accepts ``reasoning_effort='none'``.
+
+        From gpt-5.1 onwards, OpenAI reasoning models reason by default and refuse function
+        tools while reasoning is active on ``/v1/chat/completions``; passing ``'none'`` turns
+        reasoning off so tools can be used there. Earlier models are left untouched, either
+        because they accept tools while reasoning and reject the ``'none'`` value (``gpt-5``,
+        ``gpt-5-mini``, the ``o`` series) or because they do not reason at all (``*-chat*``
+        variants, non-OpenAI models served through an OpenAI-compatible endpoint).
+
+        Args:
+            model_name (str): The model identifier (e.g. ``gpt-5.1-mini``).
+
+        Returns:
+            bool: True if ``reasoning_effort='none'`` should be sent with bound tools.
+        """
+        name = (model_name or "").lower()
+        if "chat" in name:
+            return False
+        match = re.match(r"gpt-(\d+)(?:\.(\d+))?", name)
+        if not match:
+            return False
+        major = int(match.group(1))
+        minor = int(match.group(2) or 0)
+        return major > 5 or (major == 5 and minor >= 1)
 
     def _gemini_effort_update(self, model: BaseChatModel, reasoning_effort: Union["ReasoningEffort", str, int, None]) -> dict:
         """Builds the model-copy update applying reasoning effort for Gemini models.
