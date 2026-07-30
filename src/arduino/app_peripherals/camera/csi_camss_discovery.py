@@ -28,7 +28,7 @@ def camss_driver_present() -> bool:
 
 # GSTREAMER PLUGIN FILTERING
 #
-# The qtiqmmfsrc plugin aborts at load time when cam-server is absent, crashing 
+# The qtiqmmfsrc plugin aborts at load time when cam-server is absent, crashing
 # GStreamer's plugin scanner and leaving a core dump on every registry rebuild.
 # On CAMSS hosts it can never work, so GStreamer is pointed to a filtered
 # view of the plugin directories that omits it.
