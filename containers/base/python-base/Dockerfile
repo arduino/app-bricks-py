@@ -10,8 +10,8 @@ FROM ghcr.io/astral-sh/uv:0.12.21@sha256:a7aed3216253ee804de3e2d8afa5073baa1a177
 FROM python:3.13-slim-trixie@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS builder
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG OPENCV_WHL_URL=https://github.com/arduino/app-bricks-py/releases/download/opencv%2F4.13.0.92-20260610/opencv_python_headless-4.13.0+1ddb20b-cp313-cp313-linux_aarch64.whl
-ARG OPENCV_WHL_DIGEST=sha256:8d5e8319df040b93a07c91155afea515e3629fcb55510d4eee4716fc165b9c0a
+ARG OPENCV_WHL_URL=https://github.com/robgee86/app-bricks-py/releases/download/media-stack%2F1.0.0/opencv_python_headless-4.13.0+1ddb20b-cp313-cp313-linux_aarch64.whl
+ARG OPENCV_WHL_DIGEST=sha256:750482bd34eb67e8795e3612ed6728d1709d6cdca91618c93846b0418865c8ad
 ARG PYGOBJECT_VERSION=3.58.0
 
 COPY ./pyproject.toml ./uv.lock /tmp/deps/
@@ -137,8 +137,11 @@ RUN set -ex; \
         /usr/share/man/* \
         /usr/share/locale/* \
         /var/cache/debconf/* \
-        /var/lib/dpkg/info/* \
         /var/cache/apt/*.bin; \
+    # keep the rest of /var/lib/dpkg/info, or derived images cannot apt-get upgrade
+    rm -fr /var/lib/dpkg/info/*.symbols \
+        /var/lib/dpkg/info/*.shlibs \
+        /var/lib/dpkg/info/*.templates; \
     find /usr/share/doc -type f ! -name 'copyright' -delete; \
     find /usr/share/doc -type d -empty -delete; \
     # precompile python files to .pyc to speed up startup time
