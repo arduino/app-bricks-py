@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import Iterator, List, Optional, Union, Any, Sequence, Callable
 
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage, AIMessage, ToolCall
+from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage, AIMessage, ToolCall, message_chunk_to_message
 from langchain_core.tools import BaseTool, StructuredTool
 
 from arduino.app_utils import brick
@@ -110,20 +110,26 @@ class CloudLLM:
                 provider's own default is used; this also avoids errors on models that
                 deprecated ``temperature`` (e.g. Anthropic Claude Sonnet 5+).
             reasoning_effort (ReasoningEffort | str | int | None): Optional default reasoning
-                effort applied to every ``chat``/``chat_stream``/``chat_stream_reasoning``
-                call that does not pass its own. When ``None`` (default) nothing is added and
-                the plain model is used. When set, the reasoning-capable client (Responses
-                API for OpenAI) is used so it works with tools. It is never forwarded as a raw
-                model argument (which would break tool calling on OpenAI chat completions).
-                Accepts a discrete level (`ReasoningEffort` / 'minimal'/'low'/'medium'/'high')
-                or an integer token budget.
+                effort applied to every ``chat``/``chat_stream_reasoning`` call that does not
+                pass its own. ``chat_stream`` is never affected: it always streams from the
+                plain model (chat completions on OpenAI) and yields answer text only. When
+                ``None`` (default) nothing is added and the plain model is used. When set, the
+                reasoning-capable client (Responses API for OpenAI) is used so it works with
+                tools. It is never forwarded as a raw model argument (which would break tool
+                calling on OpenAI chat completions). Accepts a discrete level (`ReasoningEffort`
+                / 'minimal'/'low'/'medium'/'high') or an integer token budget.
             max_tool_loops (int): The maximum number of consecutive tool-call loops
                 allowed during a single chat interaction. Defaults to 8.
             timeout (Optional[int]): The maximum duration in seconds to wait for a response before
                 timing out. Defaults to None.
             callbacks (Any): Optional callbacks for monitoring generation events.
             tools (Sequence[ToolLike]): BaseTool objects (from @tool or MCPClient.get_tools()) or plain
-                callables (auto-wrapped into tools). Defaults to None.
+                callables (auto-wrapped into tools). Defaults to None. On OpenAI reasoning models
+                from gpt-5.1 onwards, binding tools turns reasoning off on the plain path
+                (``chat`` without an effort, ``chat_stream``), since chat completions rejects
+                function tools while reasoning is active. To reason with tools, pass a
+                ``reasoning_effort`` or use ``chat_stream_reasoning``, which go through the
+                Responses API.
             **kwargs: Additional arguments passed to the model constructor
 
         Raises:
@@ -187,12 +193,22 @@ class CloudLLM:
             logger.info(f"Binding {len(self._tools)} tool(s) to the model.")
             from .reasoning import ChatOpenAIReasoning
 
-            # OpenAI reasoning models (e.g. gpt-5.x) reason by default and reject function
-            # tools combined with reasoning in /v1/chat/completions. The Responses API
-            # supports both, so switch the OpenAI client to it before binding tools.
-            if isinstance(self._model, ChatOpenAIReasoning):
-                self._model = self._model.model_copy(update={"use_responses_api": True, "output_version": "responses/v1"})
-            self._model = self._model.bind_tools(tools=self._tools)
+            # Tools are bound to the model as it is, leaving it on its provider's default API
+            # (chat completions on OpenAI-compatible endpoints). Switching it to the Responses
+            # API here would break local runners such as genie and llama.cpp, which only serve
+            # ``/v1/chat/completions`` and answer 404 on ``/v1/responses``.
+            #
+            # OpenAI's newer reasoning models reason by default and reject function tools while
+            # reasoning is active on chat completions ("Function tools with reasoning_effort are
+            # not supported [...] in /v1/chat/completions"), so reasoning is explicitly turned
+            # off on the tool-bound client. Reasoning together with tools stays available
+            # through the reasoning flow: ``_get_reasoning_model`` derives its own client from
+            # the untouched ``_base_model``, enables the Responses API on it (which does accept
+            # tools while reasoning) and binds the tools itself.
+            tools_model = self._model
+            if isinstance(tools_model, ChatOpenAIReasoning) and self._openai_supports_effort_none(getattr(tools_model, "model_name", "")):
+                tools_model = tools_model.model_copy(update={"reasoning_effort": "none"})
+            self._model = tools_model.bind_tools(tools=self._tools)
 
         # Memory management
         self.with_memory(DEFAULT_MEMORY)
@@ -313,6 +329,38 @@ class CloudLLM:
 
         # Return updated message scope for further processing
         return input_messages
+
+    def _run_tool_exchange(
+        self,
+        assistant_message: BaseMessage,
+        tool_calls: list[ToolCall],
+        input_messages: List[BaseMessage],
+    ) -> List[BaseMessage]:
+        """Runs the requested tool calls and records the whole exchange in history.
+
+        The assistant message carrying the tool calls and the resulting tool messages are
+        added to the conversation history, so the next turn resends the same conversation
+        the model has already seen. Collapsing a tool round-trip into its final answer
+        rewrites past turns, which breaks local runners that keep session state and diff
+        the incoming messages against it: the genie runner answers
+        ``400 No new messages to process`` on the turn that follows a tool call.
+
+        Args:
+            assistant_message (BaseMessage): The assistant message holding the tool calls.
+            tool_calls (list[ToolCall]): The tool calls requested by the model.
+            input_messages (List[BaseMessage]): The current message scope including history.
+
+        Returns:
+            List[BaseMessage]: Updated message scope, with the assistant message and the
+                tool results appended.
+        """
+        # Streamed messages arrive as chunks: store (and resend) the assembled message.
+        input_messages.append(message_chunk_to_message(assistant_message))
+        updated = self._process_tool_calls(tool_calls, input_messages.copy())
+        # Everything from the assistant message onwards is new: the tool results were
+        # appended by _process_tool_calls.
+        self._history.add_messages(updated[len(input_messages) - 1 :])
+        return updated
 
     def _image_to_base64(self, path: str | bytes) -> str:
         """Encodes an image file to a base64 string.
@@ -445,8 +493,7 @@ class CloudLLM:
             if loops > self._max_tool_loops:
                 raise RuntimeError(f"Too many consecutive tool-call loops ({self._max_tool_loops}). Possible tool loop.")
 
-            input_messages.append(message)
-            input_messages = self._process_tool_calls(tool_calls, input_messages.copy())
+            input_messages = self._run_tool_exchange(message, tool_calls, input_messages)
 
         # Add the AI message to long term history
         self._history.add_messages([message])
@@ -457,6 +504,12 @@ class CloudLLM:
 
         This allows for processing or displaying the response in real-time (streaming).
         The generation can be interrupted by calling `stop_stream()`.
+
+        The stream always comes from the plain model (chat completions on OpenAI) and each
+        yielded item is plain answer text: a `reasoning_effort` configured on the brick does
+        not apply here, and on OpenAI reasoning models from gpt-5.1 onwards with tools bound
+        reasoning is turned off (chat completions rejects tools while reasoning). Use
+        `chat_stream_reasoning` to stream the chain-of-thought.
 
         Args:
             message (str): The input text prompt from the user.
@@ -509,34 +562,45 @@ class CloudLLM:
             raise AlreadyGenerating("A streaming response is already in progress. Please stop it before starting a new one.")
         assistant_chunks: list[str] = []
 
-        # A configured default reasoning effort routes the plain stream through the
-        # reasoning-capable client (Responses API for OpenAI); only content is yielded here.
-        model = self._model if self._reasoning_effort_default is None else self._get_reasoning_model(self._reasoning_effort_default)
-
         try:
             self._keep_streaming.set()
             input_messages = self._get_message_with_history(message, images)
+            loops = 0
 
-            tool_calls = []
-            for token in model.stream(input_messages):
-                if not self._keep_streaming.is_set():
-                    break  # This stops the iteration and halts further token generation
-                if token.tool_calls and len(token.tool_calls) > 0:
-                    tool_calls.extend(token.tool_calls)
-                else:
-                    if token.content and len(token.content) > 0:
-                        assistant_chunks.append(token.content)
-                        yield token.content
-
-            # If there were tool calls, process them
-            if len(tool_calls) > 0:
-                input_messages = self._process_tool_calls(tool_calls, input_messages.copy())
-                for token in model.stream(input=input_messages, config={"callbacks": self._callbacks}):
+            while True:
+                gathered = None
+                for token in self._model.stream(input=input_messages, config={"callbacks": self._callbacks}):
                     if not self._keep_streaming.is_set():
-                        break
-                    if token.content and len(token.content) > 0:
-                        assistant_chunks.append(token.content)
-                        yield token.content
+                        break  # This stops the iteration and halts further token generation
+
+                    # Providers may stream content as a list of blocks (Gemini, and OpenAI
+                    # via the Responses API) instead of a plain string
+                    content = self._content_to_text(token.content)
+                    if content:
+                        assistant_chunks.append(content)
+                        yield content
+
+                    # Accumulate the chunks carrying tool calls so they can be assembled:
+                    # a single chunk only holds a fragment of the arguments JSON.
+                    if getattr(token, "tool_call_chunks", None) or getattr(token, "tool_calls", None):
+                        gathered = token if gathered is None else gathered + token
+
+                if not self._keep_streaming.is_set():
+                    break
+
+                tool_calls = getattr(gathered, "tool_calls", None) or [] if gathered is not None else []
+                if not tool_calls:
+                    break
+
+                loops += 1
+                if loops > self._max_tool_loops:
+                    raise RuntimeError(f"Too many consecutive tool-call loops ({self._max_tool_loops}). Possible tool loop.")
+
+                input_messages = self._run_tool_exchange(gathered, tool_calls, input_messages)
+                # The text streamed alongside the tool calls is already part of the
+                # recorded assistant message: only the answer that follows the tool
+                # results is persisted below.
+                assistant_chunks.clear()
 
         finally:
             self._keep_streaming.clear()
@@ -694,6 +758,33 @@ class CloudLLM:
         if reasoning_effort is not None:
             reasoning["effort"] = self._resolve_effort_level(reasoning_effort).value
         return {"reasoning": reasoning}
+
+    @staticmethod
+    def _openai_supports_effort_none(model_name: str) -> bool:
+        """Returns True when an OpenAI model accepts ``reasoning_effort='none'``.
+
+        From gpt-5.1 onwards, OpenAI reasoning models reason by default and refuse function
+        tools while reasoning is active on ``/v1/chat/completions``; passing ``'none'`` turns
+        reasoning off so tools can be used there. Earlier models are left untouched, either
+        because they accept tools while reasoning and reject the ``'none'`` value (``gpt-5``,
+        ``gpt-5-mini``, the ``o`` series) or because they do not reason at all (``*-chat*``
+        variants, non-OpenAI models served through an OpenAI-compatible endpoint).
+
+        Args:
+            model_name (str): The model identifier (e.g. ``gpt-5.1-mini``).
+
+        Returns:
+            bool: True if ``reasoning_effort='none'`` should be sent with bound tools.
+        """
+        name = (model_name or "").lower()
+        if "chat" in name:
+            return False
+        match = re.match(r"gpt-(\d+)(?:\.(\d+))?", name)
+        if not match:
+            return False
+        major = int(match.group(1))
+        minor = int(match.group(2) or 0)
+        return major > 5 or (major == 5 and minor >= 1)
 
     def _gemini_effort_update(self, model: BaseChatModel, reasoning_effort: Union["ReasoningEffort", str, int, None]) -> dict:
         """Builds the model-copy update applying reasoning effort for Gemini models.
@@ -934,17 +1025,12 @@ class CloudLLM:
         Args:
             message (str): The input text prompt from the user.
             images (List[str | bytes]): Optional list of image file paths or raw bytes to include in the prompt.
-            reasoning_effort (ReasoningEffort | str | int | None): Controls how much
-                the model reasons. Pass a discrete level (`ReasoningEffort` or one of
-                'minimal'/'low'/'medium'/'high') or an explicit integer token budget
-                (`-1` dynamic/unrestricted, `0` off, `N>0` token budget). The value
-                is mapped to the provider's native knob (OpenAI `reasoning_effort`,
-                Gemini `thinking_level`/`thinking_budget`, Anthropic `thinking` budget_tokens
-                on legacy models or `output_config.effort` with adaptive thinking on newer
-                ones (Opus 4.7+/Sonnet 5+), llama.cpp `thinking_budget_tokens`). `None` uses
-                the model default (for Anthropic, a default thinking budget is applied since
-                Claude does not think by default). A bool or a numeric string (e.g. '64') is
-                rejected to avoid confusion with an integer budget.
+            reasoning_effort (ReasoningEffort | str | int | None): How much the model
+                reasons. Pass a level ('minimal'/'low'/'medium'/'high') or an integer
+                token budget (`-1` unrestricted, `0` off, `N` tokens); either one is
+                mapped to the provider's own reasoning setting. `None` uses the model
+                default (Anthropic models get a default budget, since Claude does not
+                reason unless asked). Bools and numeric strings (e.g. '64') are rejected.
 
         Yields:
             ReasoningStreamChunk: A `ReasoningChunk` or `ContentChunk` holding a `content` text fragment.
@@ -954,6 +1040,15 @@ class CloudLLM:
             ValueError: If `reasoning_effort` is not a supported level or budget.
             TypeError: If `reasoning_effort` is not a ReasoningEffort, str, int, or None.
             AlreadyGenerating: If a streaming session is already active.
+
+        Example:
+            ```python
+            for chunk in llm.chat_stream_reasoning("Why is the sky blue?"):
+                if isinstance(chunk, ReasoningChunk):
+                    print(f"[thinking] {chunk.content}", end="", flush=True)
+                else:
+                    print(chunk.content, end="", flush=True)
+            ```
         """
         try:
             yield from self._chat_stream_reasoning_invoke(message, images, reasoning_effort)
@@ -1027,8 +1122,11 @@ class CloudLLM:
                 if loops > self._max_tool_loops:
                     raise RuntimeError(f"Too many consecutive tool-call loops ({self._max_tool_loops}). Possible tool loop.")
 
-                input_messages.append(gathered)
-                input_messages = self._process_tool_calls(tool_calls, input_messages.copy())
+                input_messages = self._run_tool_exchange(gathered, tool_calls, input_messages)
+                # The text streamed alongside the tool calls is already part of the
+                # recorded assistant message: only the answer that follows the tool
+                # results is persisted below.
+                assistant_chunks.clear()
 
         finally:
             self._keep_streaming.clear()

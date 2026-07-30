@@ -350,6 +350,71 @@ def test_reasoning_effort_openai_level_and_budget(make_llm):
     }
 
 
+def _openai_llm_with_tool(monkeypatch, model_name: str) -> CloudLLM:
+    """Build a CloudLLM over a real ``ChatOpenAIReasoning`` with one tool bound."""
+
+    @tool
+    def get_weather(city: str) -> str:
+        """Return the weather for a city."""
+        return f"sunny in {city}"
+
+    monkeypatch.setattr(
+        cloud_llm_module,
+        "model_factory",
+        lambda *a, **k: ChatOpenAIReasoning(model=model_name, api_key="x"),
+    )
+    return CloudLLM(api_key="test-key", model=f"openai:{model_name}", tools=[get_weather])
+
+
+def test_tools_disable_reasoning_on_openai_chat_completions(monkeypatch):
+    # gpt-5.1+ reasons by default and rejects function tools while reasoning on
+    # /v1/chat/completions, so the tool-bound client must send reasoning_effort='none'.
+    llm = _openai_llm_with_tool(monkeypatch, "gpt-5.6-terra")
+
+    assert llm._model.bound.reasoning_effort == "none"
+    # The base model stays untouched, so the reasoning flow is unaffected.
+    assert llm._base_model.reasoning_effort is None
+
+
+def test_tools_keep_reasoning_available_through_responses_api(monkeypatch):
+    llm = _openai_llm_with_tool(monkeypatch, "gpt-5.6-terra")
+
+    reasoning_model = llm._get_reasoning_model("high")
+
+    assert reasoning_model.bound.use_responses_api is True
+    assert reasoning_model.bound.reasoning == {"effort": "high", "summary": "auto"}
+    assert reasoning_model.bound.reasoning_effort is None
+
+
+@pytest.mark.parametrize(
+    "model_name",
+    [
+        "gpt-5",  # accepts tools while reasoning, rejects the 'none' value
+        "gpt-5-mini",
+        "gpt-5.1-chat-latest",  # chat variants do not reason
+        "qwen3",  # local runner behind an OpenAI-compatible endpoint
+    ],
+)
+def test_tools_keep_default_reasoning_on_other_openai_models(monkeypatch, model_name):
+    llm = _openai_llm_with_tool(monkeypatch, model_name)
+
+    assert llm._model.bound.reasoning_effort is None
+
+
+def test_openai_supports_effort_none_version_detection():
+    supports = CloudLLM._openai_supports_effort_none
+
+    assert supports("gpt-5.1") is True
+    assert supports("gpt-5.6-terra") is True
+    assert supports("gpt-6") is True
+    assert supports("gpt-5") is False
+    assert supports("gpt-5-mini") is False
+    assert supports("gpt-5-chat") is False
+    assert supports("gpt-4o") is False
+    assert supports("o3-mini") is False
+    assert supports("") is False
+
+
 def test_reasoning_effort_gemini3_uses_thinking_level(make_llm):
     from langchain_google_genai import ChatGoogleGenerativeAI
     from arduino.app_bricks.cloud_llm import ReasoningEffort
