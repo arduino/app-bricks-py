@@ -43,7 +43,7 @@ class LargeLanguageModel(CloudLLM):
         """Initializes the LargeLanguageModel brick with the specified provider and configuration.
 
         Args:
-            model (str): The specific model name or identifier to use (e.g., "genie:qwen3-4b").
+            model (str): The specific model name or identifier to use (e.g., "genie:qwen3_4b_instruct_2507").
                 If not provided, model will be determined from app configuration or default brick configuration.
             system_prompt (str): A system-level instruction that defines the AI's persona
                 and constraints (e.g., "You are a helpful assistant"). Defaults to empty.
