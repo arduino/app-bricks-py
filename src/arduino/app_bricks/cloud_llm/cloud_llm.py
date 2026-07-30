@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import Iterator, List, Optional, Union, Any, Sequence, Callable
 
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage, AIMessage, ToolCall
+from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage, AIMessage, ToolCall, message_chunk_to_message
 from langchain_core.tools import BaseTool, StructuredTool
 
 from arduino.app_utils import brick
@@ -330,6 +330,38 @@ class CloudLLM:
         # Return updated message scope for further processing
         return input_messages
 
+    def _run_tool_exchange(
+        self,
+        assistant_message: BaseMessage,
+        tool_calls: list[ToolCall],
+        input_messages: List[BaseMessage],
+    ) -> List[BaseMessage]:
+        """Runs the requested tool calls and records the whole exchange in history.
+
+        The assistant message carrying the tool calls and the resulting tool messages are
+        added to the conversation history, so the next turn resends the same conversation
+        the model has already seen. Collapsing a tool round-trip into its final answer
+        rewrites past turns, which breaks local runners that keep session state and diff
+        the incoming messages against it: the genie runner answers
+        ``400 No new messages to process`` on the turn that follows a tool call.
+
+        Args:
+            assistant_message (BaseMessage): The assistant message holding the tool calls.
+            tool_calls (list[ToolCall]): The tool calls requested by the model.
+            input_messages (List[BaseMessage]): The current message scope including history.
+
+        Returns:
+            List[BaseMessage]: Updated message scope, with the assistant message and the
+                tool results appended.
+        """
+        # Streamed messages arrive as chunks: store (and resend) the assembled message.
+        input_messages.append(message_chunk_to_message(assistant_message))
+        updated = self._process_tool_calls(tool_calls, input_messages.copy())
+        # Everything from the assistant message onwards is new: the tool results were
+        # appended by _process_tool_calls.
+        self._history.add_messages(updated[len(input_messages) - 1 :])
+        return updated
+
     def _image_to_base64(self, path: str | bytes) -> str:
         """Encodes an image file to a base64 string.
         Args:
@@ -461,8 +493,7 @@ class CloudLLM:
             if loops > self._max_tool_loops:
                 raise RuntimeError(f"Too many consecutive tool-call loops ({self._max_tool_loops}). Possible tool loop.")
 
-            input_messages.append(message)
-            input_messages = self._process_tool_calls(tool_calls, input_messages.copy())
+            input_messages = self._run_tool_exchange(message, tool_calls, input_messages)
 
         # Add the AI message to long term history
         self._history.add_messages([message])
@@ -565,8 +596,11 @@ class CloudLLM:
                 if loops > self._max_tool_loops:
                     raise RuntimeError(f"Too many consecutive tool-call loops ({self._max_tool_loops}). Possible tool loop.")
 
-                input_messages.append(gathered)
-                input_messages = self._process_tool_calls(tool_calls, input_messages.copy())
+                input_messages = self._run_tool_exchange(gathered, tool_calls, input_messages)
+                # The text streamed alongside the tool calls is already part of the
+                # recorded assistant message: only the answer that follows the tool
+                # results is persisted below.
+                assistant_chunks.clear()
 
         finally:
             self._keep_streaming.clear()
@@ -1084,8 +1118,11 @@ class CloudLLM:
                 if loops > self._max_tool_loops:
                     raise RuntimeError(f"Too many consecutive tool-call loops ({self._max_tool_loops}). Possible tool loop.")
 
-                input_messages.append(gathered)
-                input_messages = self._process_tool_calls(tool_calls, input_messages.copy())
+                input_messages = self._run_tool_exchange(gathered, tool_calls, input_messages)
+                # The text streamed alongside the tool calls is already part of the
+                # recorded assistant message: only the answer that follows the tool
+                # results is persisted below.
+                assistant_chunks.clear()
 
         finally:
             self._keep_streaming.clear()

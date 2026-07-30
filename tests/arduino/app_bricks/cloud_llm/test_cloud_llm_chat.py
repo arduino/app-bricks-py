@@ -375,6 +375,61 @@ def test_chat_runs_tool_calls_then_returns_final_answer(make_llm, fake_model):
     assert seen == ["Turin"]
 
 
+# The tool exchange (the assistant message holding the tool calls plus the tool results)
+# must stay in the conversation history. Collapsing it into the final answer rewrites past
+# turns, and local runners that keep session state diff the next request against what they
+# already processed: the genie runner answers `400 No new messages to process` on the turn
+# that follows a tool call.
+
+
+def test_chat_records_the_tool_exchange_in_history(make_llm, fake_model):
+    @tool
+    def get_weather(city: str) -> str:
+        """Return the weather for a city."""
+        return f"sunny in {city}"
+
+    fake_model.queue_invoke(
+        _tool_message("get_weather", {"city": "Turin"}, "call-1"),
+        AIMessage(content="It's sunny in Turin."),
+    )
+    llm = make_llm(tools=[get_weather])
+
+    llm.chat("weather in Turin?")
+
+    history = llm._history.get_messages()
+    assert [type(m).__name__ for m in history] == ["HumanMessage", "AIMessage", "ToolMessage", "AIMessage"]
+    assert [tc["id"] for tc in history[1].tool_calls] == ["call-1"]
+    assert history[2].tool_call_id == "call-1"
+    assert history[2].content == "sunny in Turin"
+    assert history[3].content == "It's sunny in Turin."
+
+
+def test_chat_next_turn_resends_the_recorded_tool_exchange(make_llm, fake_model):
+    @tool
+    def get_weather(city: str) -> str:
+        """Return the weather for a city."""
+        return f"sunny in {city}"
+
+    fake_model.queue_invoke(
+        _tool_message("get_weather", {"city": "Turin"}, "call-1"),
+        AIMessage(content="It's sunny in Turin."),
+        AIMessage(content="You're welcome."),
+    )
+    llm = make_llm(tools=[get_weather])
+
+    llm.chat("weather in Turin?")
+    llm.chat("thanks")
+
+    sent = fake_model.invoke_inputs[-1]
+    assert [type(m).__name__ for m in sent] == [
+        "HumanMessage",
+        "AIMessage",
+        "ToolMessage",
+        "AIMessage",
+        "HumanMessage",
+    ]
+
+
 def test_chat_raises_when_tool_loop_limit_exceeded(make_llm, fake_model):
     @tool
     def loop_tool(x: int) -> str:
@@ -541,6 +596,53 @@ def test_chat_stream_sends_the_tool_call_message_before_the_tool_results(make_ll
     assert isinstance(follow_up[-1], ToolMessage)
     assert follow_up[-1].tool_call_id == "c1"
     assert [tc["id"] for tc in follow_up[-2].tool_calls] == ["c1"]
+
+
+def test_chat_stream_records_the_tool_exchange_in_history(make_llm, fake_model):
+    @tool
+    def get_current_weather(location: str) -> str:
+        """Return the weather for a location."""
+        return f"sunny in {location}"
+
+    fake_model.queue_stream(
+        [_tool_call_delta(name="get_current_weather", args='{"location": "Rome"}', call_id="c1")],
+        [_text_chunk("Rome is sunny.")],
+    )
+    llm = make_llm(tools=[get_current_weather])
+
+    list(llm.chat_stream("weather in Rome?"))
+
+    history = llm._history.get_messages()
+    assert [m.type for m in history] == ["human", "ai", "tool", "ai"]
+    assert [tc["id"] for tc in history[1].tool_calls] == ["c1"]
+    assert history[2].tool_call_id == "c1"
+    assert history[3].content == "Rome is sunny."
+
+
+def test_chat_stream_does_not_duplicate_text_streamed_with_the_tool_call(make_llm, fake_model):
+    # Text emitted alongside the tool call already belongs to the recorded assistant
+    # message: the final answer message must not repeat it.
+    @tool
+    def get_current_weather(location: str) -> str:
+        """Return the weather for a location."""
+        return f"sunny in {location}"
+
+    fake_model.queue_stream(
+        [
+            AIMessageChunk(
+                content="Let me check. ",
+                tool_call_chunks=[{"name": "get_current_weather", "args": '{"location": "Rome"}', "id": "c1", "index": 0, "type": "tool_call_chunk"}],
+            )
+        ],
+        [_text_chunk("Rome is sunny.")],
+    )
+    llm = make_llm(tools=[get_current_weather])
+
+    assert "".join(llm.chat_stream("weather in Rome?")) == "Let me check. Rome is sunny."
+
+    history = llm._history.get_messages()
+    assert history[1].content == "Let me check. "
+    assert history[-1].content == "Rome is sunny."
 
 
 def test_chat_stream_raises_when_tool_loop_limit_exceeded(make_llm, fake_model):
