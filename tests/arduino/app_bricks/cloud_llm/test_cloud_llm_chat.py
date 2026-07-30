@@ -13,6 +13,7 @@ slice of the BaseChatModel surface the brick relies on (`invoke`, `stream`,
 """
 
 import base64
+import inspect
 from types import SimpleNamespace
 
 import pytest
@@ -60,6 +61,28 @@ class FakeChatModel:
 
 def _text_chunk(text: str) -> SimpleNamespace:
     return SimpleNamespace(content=text, tool_calls=[])
+
+
+def _chunk(content) -> SimpleNamespace:
+    """A streamed chunk carrying `content` verbatim (a string or a list of content blocks)."""
+    return SimpleNamespace(content=content, tool_calls=[])
+
+
+# The `content` shapes real providers emit while streaming. Anything but a bare string
+# must be flattened to answer text before `chat_stream` yields it.
+CONTENT_SHAPES = [
+    pytest.param(lambda text: text, id="string"),
+    pytest.param(lambda text: [{"type": "text", "text": text, "index": 0}], id="gemini-blocks"),
+    pytest.param(lambda text: [{"type": "text", "text": text}], id="anthropic-blocks"),
+    pytest.param(lambda text: [{"type": "text", "text": text, "annotations": [], "index": 0}], id="openai-responses-blocks"),
+    pytest.param(lambda text: [text], id="bare-string-blocks"),
+    pytest.param(lambda text: [{"type": "text", "text": text[:1], "index": 0}, {"type": "text", "text": text[1:], "index": 1}], id="split-blocks"),
+]
+
+
+def _assert_plain_text(chunks: list) -> None:
+    """Fails when any yielded chunk is not a bare `str` (e.g. a raw block list/dict)."""
+    assert all(type(c) is str for c in chunks), f"chat_stream must yield plain strings, got {chunks!r}"
 
 
 def _tool_chunk(name: str, args: dict, call_id: str) -> SimpleNamespace:
@@ -395,6 +418,140 @@ def test_chat_stream_processes_tool_calls(make_llm, fake_model):
 
     assert "".join(llm.chat_stream("weather in Rome?")) == "Rome is sunny."
     assert seen == ["Rome"]
+
+
+# --- chat_stream contract: plain text, chat completions -----------------------
+#
+# `chat_stream` is documented as an `Iterator[str]` of answer text. Two things must
+# never happen again:
+#   1. leaking a provider's raw content-block structure (list of dicts) to the caller,
+#   2. routing the stream through the reasoning client / Responses API.
+
+
+@pytest.mark.parametrize("as_content", CONTENT_SHAPES)
+def test_chat_stream_yields_plain_text_for_every_provider_content_shape(make_llm, fake_model, as_content):
+    fake_model.queue_stream([_chunk(as_content("Hel")), _chunk(as_content("lo"))])
+    llm = make_llm()
+
+    out = list(llm.chat_stream("hi"))
+
+    assert out == ["Hel", "lo"]
+    _assert_plain_text(out)
+
+
+@pytest.mark.parametrize("as_content", CONTENT_SHAPES)
+def test_chat_stream_records_plain_text_history_for_every_content_shape(make_llm, fake_model, as_content):
+    # The `finally` block joins the accumulated chunks: non-flattened content would
+    # either raise TypeError here or persist block dicts into the conversation history.
+    fake_model.queue_stream([_chunk(as_content("Hel")), _chunk(as_content("lo"))])
+    llm = make_llm()
+
+    list(llm.chat_stream("hi"))
+
+    recorded = llm._history.get_messages()[-1]
+    assert isinstance(recorded, AIMessage)
+    assert recorded.content == "Hello"
+    assert type(recorded.content) is str
+
+
+@pytest.mark.parametrize("as_content", CONTENT_SHAPES)
+def test_chat_stream_yields_plain_text_after_tool_calls(make_llm, fake_model, as_content):
+    # The second stream (after tool results) is a separate loop and must flatten too.
+    @tool
+    def get_weather(city: str) -> str:
+        """Return the weather for a city."""
+        return f"sunny in {city}"
+
+    fake_model.queue_stream(
+        [_tool_chunk("get_weather", {"city": "Rome"}, "c1")],
+        [_chunk(as_content("Rome is sunny."))],
+    )
+    llm = make_llm(tools=[get_weather])
+
+    out = list(llm.chat_stream("weather in Rome?"))
+
+    assert out == ["Rome is sunny."]
+    _assert_plain_text(out)
+
+
+@pytest.mark.parametrize(
+    "blocks",
+    [
+        pytest.param([{"type": "thinking", "thinking": "hmm", "index": 0}], id="anthropic-gemini-thinking"),
+        pytest.param([{"type": "reasoning", "summary": [{"type": "summary_text", "text": "hmm"}]}], id="openai-reasoning"),
+    ],
+)
+def test_chat_stream_drops_reasoning_blocks(make_llm, fake_model, blocks):
+    """Chain-of-thought is exclusive to `chat_stream_reasoning`; `chat_stream` yields answers only."""
+    fake_model.queue_stream([_chunk(blocks), _chunk("Hello")])
+    llm = make_llm()
+
+    assert list(llm.chat_stream("hi")) == ["Hello"]
+
+
+def test_chat_stream_keeps_only_text_from_mixed_blocks(make_llm, fake_model):
+    # A single chunk can carry reasoning and answer blocks together.
+    fake_model.queue_stream([
+        _chunk([
+            {"type": "thinking", "thinking": "hmm", "index": 0},
+            {"type": "text", "text": "Hello", "index": 1},
+        ])
+    ])
+    llm = make_llm()
+
+    assert list(llm.chat_stream("hi")) == ["Hello"]
+
+
+def test_chat_stream_skips_chunks_without_text(make_llm, fake_model):
+    # Empty strings, empty block lists and text-less blocks must not surface as chunks.
+    fake_model.queue_stream([
+        _chunk(""),
+        _chunk([]),
+        _chunk([{"type": "text", "text": "", "index": 0}]),
+        _chunk("Hello"),
+    ])
+    llm = make_llm()
+
+    assert list(llm.chat_stream("hi")) == ["Hello"]
+
+
+@pytest.mark.parametrize("effort", ["high", "minimal", 1024, -1, 0])
+def test_chat_stream_never_uses_the_reasoning_client(make_llm, fake_model, monkeypatch, effort):
+    """A `reasoning_effort` on the brick must not move `chat_stream` off chat completions."""
+    monkeypatch.setattr(
+        CloudLLM,
+        "_get_reasoning_model",
+        lambda self, reasoning_effort=None: pytest.fail("chat_stream must not route through the reasoning client"),
+    )
+    fake_model.queue_stream([_text_chunk("Hel"), _text_chunk("lo")])
+    llm = make_llm(reasoning_effort=effort)
+
+    assert list(llm.chat_stream("hi")) == ["Hel", "lo"]
+
+
+def test_chat_stream_never_uses_the_reasoning_client_after_tool_calls(make_llm, fake_model, monkeypatch):
+    @tool
+    def get_weather(city: str) -> str:
+        """Return the weather for a city."""
+        return f"sunny in {city}"
+
+    monkeypatch.setattr(
+        CloudLLM,
+        "_get_reasoning_model",
+        lambda self, reasoning_effort=None: pytest.fail("chat_stream must not route through the reasoning client"),
+    )
+    fake_model.queue_stream(
+        [_tool_chunk("get_weather", {"city": "Rome"}, "c1")],
+        [_text_chunk("Rome is sunny.")],
+    )
+    llm = make_llm(reasoning_effort="high", tools=[get_weather])
+
+    assert list(llm.chat_stream("weather in Rome?")) == ["Rome is sunny."]
+
+
+def test_chat_stream_has_no_reasoning_effort_parameter():
+    # Guards the public signature: reasoning is opt-in through `chat_stream_reasoning`.
+    assert "reasoning_effort" not in inspect.signature(CloudLLM.chat_stream).parameters
 
 
 # --- image encoding ----------------------------------------------------------

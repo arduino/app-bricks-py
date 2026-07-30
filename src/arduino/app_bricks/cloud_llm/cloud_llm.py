@@ -110,13 +110,14 @@ class CloudLLM:
                 provider's own default is used; this also avoids errors on models that
                 deprecated ``temperature`` (e.g. Anthropic Claude Sonnet 5+).
             reasoning_effort (ReasoningEffort | str | int | None): Optional default reasoning
-                effort applied to every ``chat``/``chat_stream``/``chat_stream_reasoning``
-                call that does not pass its own. When ``None`` (default) nothing is added and
-                the plain model is used. When set, the reasoning-capable client (Responses
-                API for OpenAI) is used so it works with tools. It is never forwarded as a raw
-                model argument (which would break tool calling on OpenAI chat completions).
-                Accepts a discrete level (`ReasoningEffort` / 'minimal'/'low'/'medium'/'high')
-                or an integer token budget.
+                effort applied to every ``chat``/``chat_stream_reasoning`` call that does not
+                pass its own. ``chat_stream`` is never affected: it always streams from the
+                plain model (chat completions on OpenAI) and yields answer text only. When
+                ``None`` (default) nothing is added and the plain model is used. When set, the
+                reasoning-capable client (Responses API for OpenAI) is used so it works with
+                tools. It is never forwarded as a raw model argument (which would break tool
+                calling on OpenAI chat completions). Accepts a discrete level (`ReasoningEffort`
+                / 'minimal'/'low'/'medium'/'high') or an integer token budget.
             max_tool_loops (int): The maximum number of consecutive tool-call loops
                 allowed during a single chat interaction. Defaults to 8.
             timeout (Optional[int]): The maximum duration in seconds to wait for a response before
@@ -458,6 +459,10 @@ class CloudLLM:
         This allows for processing or displaying the response in real-time (streaming).
         The generation can be interrupted by calling `stop_stream()`.
 
+        The stream always comes from the plain model (chat completions on OpenAI) and each
+        yielded item is plain answer text: a `reasoning_effort` configured on the brick does
+        not apply here. Use `chat_stream_reasoning` to stream the chain-of-thought.
+
         Args:
             message (str): The input text prompt from the user.
             images (List[str | bytes]): Optional list of image file paths or raw bytes to include in the prompt.
@@ -509,34 +514,34 @@ class CloudLLM:
             raise AlreadyGenerating("A streaming response is already in progress. Please stop it before starting a new one.")
         assistant_chunks: list[str] = []
 
-        # A configured default reasoning effort routes the plain stream through the
-        # reasoning-capable client (Responses API for OpenAI); only content is yielded here.
-        model = self._model if self._reasoning_effort_default is None else self._get_reasoning_model(self._reasoning_effort_default)
-
         try:
             self._keep_streaming.set()
             input_messages = self._get_message_with_history(message, images)
 
             tool_calls = []
-            for token in model.stream(input_messages):
+            for token in self._model.stream(input_messages):
                 if not self._keep_streaming.is_set():
                     break  # This stops the iteration and halts further token generation
                 if token.tool_calls and len(token.tool_calls) > 0:
                     tool_calls.extend(token.tool_calls)
                 else:
-                    if token.content and len(token.content) > 0:
-                        assistant_chunks.append(token.content)
-                        yield token.content
+                    # Providers may stream content as a list of blocks (Gemini, and OpenAI
+                    # via the Responses API) instead of a plain string
+                    content = self._content_to_text(token.content)
+                    if content:
+                        assistant_chunks.append(content)
+                        yield content
 
             # If there were tool calls, process them
             if len(tool_calls) > 0:
                 input_messages = self._process_tool_calls(tool_calls, input_messages.copy())
-                for token in model.stream(input=input_messages, config={"callbacks": self._callbacks}):
+                for token in self._model.stream(input=input_messages, config={"callbacks": self._callbacks}):
                     if not self._keep_streaming.is_set():
                         break
-                    if token.content and len(token.content) > 0:
-                        assistant_chunks.append(token.content)
-                        yield token.content
+                    content = self._content_to_text(token.content)
+                    if content:
+                        assistant_chunks.append(content)
+                        yield content
 
         finally:
             self._keep_streaming.clear()
