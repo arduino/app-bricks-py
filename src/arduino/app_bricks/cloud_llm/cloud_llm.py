@@ -1025,17 +1025,12 @@ class CloudLLM:
         Args:
             message (str): The input text prompt from the user.
             images (List[str | bytes]): Optional list of image file paths or raw bytes to include in the prompt.
-            reasoning_effort (ReasoningEffort | str | int | None): Controls how much
-                the model reasons. Pass a discrete level (`ReasoningEffort` or one of
-                'minimal'/'low'/'medium'/'high') or an explicit integer token budget
-                (`-1` dynamic/unrestricted, `0` off, `N>0` token budget). The value
-                is mapped to the provider's native knob (OpenAI `reasoning_effort`,
-                Gemini `thinking_level`/`thinking_budget`, Anthropic `thinking` budget_tokens
-                on legacy models or `output_config.effort` with adaptive thinking on newer
-                ones (Opus 4.7+/Sonnet 5+), llama.cpp `thinking_budget_tokens`). `None` uses
-                the model default (for Anthropic, a default thinking budget is applied since
-                Claude does not think by default). A bool or a numeric string (e.g. '64') is
-                rejected to avoid confusion with an integer budget.
+            reasoning_effort (ReasoningEffort | str | int | None): How much the model
+                reasons. Pass a level ('minimal'/'low'/'medium'/'high') or an integer
+                token budget (`-1` unrestricted, `0` off, `N` tokens); either one is
+                mapped to the provider's own reasoning setting. `None` uses the model
+                default (Anthropic models get a default budget, since Claude does not
+                reason unless asked). Bools and numeric strings (e.g. '64') are rejected.
 
         Yields:
             ReasoningStreamChunk: A `ReasoningChunk` or `ContentChunk` holding a `content` text fragment.
@@ -1045,6 +1040,15 @@ class CloudLLM:
             ValueError: If `reasoning_effort` is not a supported level or budget.
             TypeError: If `reasoning_effort` is not a ReasoningEffort, str, int, or None.
             AlreadyGenerating: If a streaming session is already active.
+
+        Example:
+            ```python
+            for chunk in llm.chat_stream_reasoning("Why is the sky blue?"):
+                if isinstance(chunk, ReasoningChunk):
+                    print(f"[thinking] {chunk.content}", end="", flush=True)
+                else:
+                    print(chunk.content, end="", flush=True)
+            ```
         """
         try:
             yield from self._chat_stream_reasoning_invoke(message, images, reasoning_effort)
