@@ -76,6 +76,33 @@ def _make_instance(monkeypatch: pytest.MonkeyPatch, **kwargs):
 
 
 # ---------------------------------------------------------------------------
+# Constructor tests
+# ---------------------------------------------------------------------------
+
+
+class TestConstructorWarnings:
+    def test_confidence_below_runner_floor_warns(self, monkeypatch: pytest.MonkeyPatch):
+        fake_compose = {"services": {"pose-runner": {}}}
+        monkeypatch.setattr(
+            "arduino.app_bricks.pose_estimation.pose_estimation.load_brick_compose_file",
+            lambda cls: fake_compose,
+        )
+        monkeypatch.setattr(
+            "arduino.app_bricks.pose_estimation.pose_estimation.resolve_address",
+            lambda host: "127.0.0.1",
+        )
+        mock_logger = MagicMock()
+        monkeypatch.setattr("arduino.app_bricks.pose_estimation.pose_estimation.logger", mock_logger)
+
+        PoseEstimation(camera=MagicMock(), confidence=0.1)
+        mock_logger.warning.assert_called_once()
+
+        mock_logger.reset_mock()
+        PoseEstimation(camera=MagicMock(), confidence=0.4)
+        mock_logger.warning.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
 # Detection parsing tests
 # ---------------------------------------------------------------------------
 

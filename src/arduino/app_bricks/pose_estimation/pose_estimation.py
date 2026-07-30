@@ -22,6 +22,8 @@ from arduino.app_internal.core.module import load_brick_compose_file, resolve_ad
 
 logger = Logger("PoseEstimation")
 
+_RUNNER_MIN_POSE_SCORE = 0.25
+
 """Names of the 17 body keypoints detected for each person, in model output order."""
 KEYPOINT_NAMES: tuple[str, ...] = (
     "nose",
@@ -117,6 +119,8 @@ class PoseEstimation:
                 camera will be initialized. Pass the same instance shared with other bricks to reuse
                 a single camera.
             confidence (float): Minimum pose score for a detected person to be reported. Default is 0.25.
+                Values below 0.25 have no additional effect: the model runner never emits poses
+                scoring less than that.
             debounce_sec (float): Minimum seconds a presence or people-count change must be stable
                 before `on_enter`/`on_exit`/`on_count_change` fire again. Filters out detection
                 flicker. Default is 0 (no debounce).
@@ -127,6 +131,12 @@ class PoseEstimation:
         self._camera = camera if camera else Camera(fps=30)
         self._confidence = confidence
         self._debounce_sec = debounce_sec
+
+        if confidence < _RUNNER_MIN_POSE_SCORE:
+            logger.warning(
+                f"confidence={confidence} is below the model runner's decode floor ({_RUNNER_MIN_POSE_SCORE}): "
+                f"poses scoring less are never emitted, so this setting behaves like {_RUNNER_MIN_POSE_SCORE}"
+            )
 
         # Callbacks
         self._callbacks: dict[str, Callable] = {}
