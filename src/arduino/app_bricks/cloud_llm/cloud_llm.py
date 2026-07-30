@@ -186,13 +186,12 @@ class CloudLLM:
 
         if self._tools and len(self._tools) > 0:
             logger.info(f"Binding {len(self._tools)} tool(s) to the model.")
-            from .reasoning import ChatOpenAIReasoning
-
-            # OpenAI reasoning models (e.g. gpt-5.x) reason by default and reject function
-            # tools combined with reasoning in /v1/chat/completions. The Responses API
-            # supports both, so switch the OpenAI client to it before binding tools.
-            if isinstance(self._model, ChatOpenAIReasoning):
-                self._model = self._model.model_copy(update={"use_responses_api": True, "output_version": "responses/v1"})
+            # Tools are bound to the model as it is, leaving it on its provider's default API
+            # (chat completions on OpenAI-compatible endpoints). Switching it to the Responses
+            # API here would break local runners such as genie and llama.cpp, which only serve
+            # ``/v1/chat/completions`` and answer 404 on ``/v1/responses``. The reasoning flow
+            # is unaffected: ``_get_reasoning_model`` derives its own client from
+            # ``_base_model``, enables the Responses API on it and binds the tools itself.
             self._model = self._model.bind_tools(tools=self._tools)
 
         # Memory management

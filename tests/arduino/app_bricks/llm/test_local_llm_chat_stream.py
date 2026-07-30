@@ -18,6 +18,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import arduino.app_bricks.llm.local_llm as local_llm_module
 from arduino.app_bricks.cloud_llm import CloudLLM
 from arduino.app_bricks.llm.local_llm import LargeLanguageModel
 
@@ -127,3 +128,33 @@ def test_chat_stream_streams_from_the_configured_model():
 
 def test_chat_stream_has_no_reasoning_effort_parameter():
     assert "reasoning_effort" not in inspect.signature(LargeLanguageModel.chat_stream).parameters
+
+
+# --- transport: local runners only serve /v1/chat/completions -----------------
+
+
+@pytest.mark.parametrize("tools", [None, "with-tools"])
+def test_local_model_stays_on_chat_completions(monkeypatch, tools):
+    """Regression: binding tools used to switch the client to the Responses API, which the
+    genie and llama.cpp runners do not expose, so every `chat()` failed with a 404.
+    """
+
+    def get_weather(location: str) -> str:
+        """Get the weather."""
+        return "sunny"
+
+    monkeypatch.setattr(local_llm_module, "resolve_address", lambda host: host)
+    monkeypatch.setattr(LargeLanguageModel, "list_models", lambda self: ["qwen3_4b_instruct_2507"])
+
+    llm = LargeLanguageModel(
+        model="genie:qwen3_4b_instruct_2507",
+        tools=[get_weather] if tools else None,
+    )
+
+    # `chat()` and `chat_stream()` both invoke `self._model`; unwrap the tool binding to
+    # reach the client that picks the endpoint.
+    inner = getattr(llm._model, "bound", llm._model)
+    assert inner._use_responses_api({}) is False, "local runners have no /v1/responses endpoint"
+    assert inner.use_responses_api is None
+    assert inner.output_version != "responses/v1"
+    assert str(inner.openai_api_base) == "http://genie-models-runner:9001/v1"

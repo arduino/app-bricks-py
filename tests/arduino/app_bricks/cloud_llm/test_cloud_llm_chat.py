@@ -255,9 +255,9 @@ def test_chat_without_reasoning_effort_default_uses_base_model(make_llm, fake_mo
     assert llm.chat("hi") == "base"
 
 
-def test_init_openai_with_tools_uses_responses_api():
-    # OpenAI reasoning models reject function tools + reasoning on /v1/chat/completions;
-    # binding tools must switch the client to the Responses API so tool calling works.
+def test_init_openai_with_tools_stays_on_chat_completions():
+    # Binding tools must NOT move the model to the Responses API: local runners (genie,
+    # llama.cpp) only serve /v1/chat/completions and answer 404 on /v1/responses.
     @tool
     def get_weather(location: str) -> str:
         """Get the weather."""
@@ -266,7 +266,9 @@ def test_init_openai_with_tools_uses_responses_api():
     llm = CloudLLM(model="openai:gpt-5.6-terra", api_key="x", tools=[get_weather])
 
     inner = getattr(llm._model, "bound", llm._model)
-    assert inner._use_responses_api({}) is True
+    assert inner._use_responses_api({}) is False
+    assert inner.use_responses_api is None
+    assert inner.output_version != "responses/v1"
 
 
 def test_init_openai_without_tools_uses_chat_completions():
@@ -274,6 +276,37 @@ def test_init_openai_without_tools_uses_chat_completions():
     llm = CloudLLM(model="openai:gpt-5.6-terra", api_key="x")
 
     assert llm._model._use_responses_api({}) is False
+
+
+def test_init_with_tools_keeps_the_base_model_unbound_for_the_reasoning_flow():
+    # `_get_reasoning_model` derives its client from `_base_model`, so that reference must
+    # stay the plain, unbound model even when tools are bound to `_model`.
+    @tool
+    def get_weather(location: str) -> str:
+        """Get the weather."""
+        return "sunny"
+
+    llm = CloudLLM(model="openai:gpt-5.6-terra", api_key="x", tools=[get_weather])
+
+    assert llm._base_model is not llm._model
+    assert getattr(llm._base_model, "bound", None) is None
+    assert llm._base_model._use_responses_api({}) is False
+
+
+def test_reasoning_model_uses_responses_api_with_tools_bound():
+    # Reasoning still needs the Responses API, and the reasoning client binds the tools itself.
+    @tool
+    def get_weather(location: str) -> str:
+        """Get the weather."""
+        return "sunny"
+
+    llm = CloudLLM(model="openai:gpt-5.6-terra", api_key="x", tools=[get_weather])
+
+    reasoning_model = llm._get_reasoning_model("high")
+
+    inner = getattr(reasoning_model, "bound", reasoning_model)
+    assert inner._use_responses_api({}) is True
+    assert getattr(reasoning_model, "bound", None) is not None, "tools must be bound to the reasoning client"
 
 
 @pytest.mark.parametrize("model", ["openai:gpt-x", "anthropic:claude-x", "google:gemini-x"])
