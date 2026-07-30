@@ -17,7 +17,7 @@ import inspect
 from types import SimpleNamespace
 
 import pytest
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
 
 import arduino.app_bricks.cloud_llm.cloud_llm as cloud_llm_module
 from arduino.app_bricks.cloud_llm import CloudLLM, CloudModel, tool
@@ -34,6 +34,7 @@ class FakeChatModel:
         self._invoke_queue: list = []
         self._stream_queue: list = []
         self.invoke_inputs: list = []
+        self.stream_inputs: list = []
         self.bound_tools = None
 
     def queue_invoke(self, *messages):
@@ -55,6 +56,7 @@ class FakeChatModel:
         return self._invoke_queue.pop(0)
 
     def stream(self, input, config=None):
+        self.stream_inputs.append(list(input))
         for chunk in self._stream_queue.pop(0):
             yield chunk
 
@@ -87,6 +89,14 @@ def _assert_plain_text(chunks: list) -> None:
 
 def _tool_chunk(name: str, args: dict, call_id: str) -> SimpleNamespace:
     return SimpleNamespace(content="", tool_calls=[{"name": name, "args": args, "id": call_id, "type": "tool_call"}])
+
+
+def _tool_call_delta(name: str = None, args: str = "", call_id: str = None, index: int = 0) -> AIMessageChunk:
+    """One streamed tool-call delta, as providers emit them: the arguments JSON arrives in fragments."""
+    return AIMessageChunk(
+        content="",
+        tool_call_chunks=[{"name": name, "args": args, "id": call_id, "index": index, "type": "tool_call_chunk"}],
+    )
 
 
 def _tool_message(name: str, args: dict, call_id: str) -> AIMessage:
@@ -451,6 +461,99 @@ def test_chat_stream_processes_tool_calls(make_llm, fake_model):
 
     assert "".join(llm.chat_stream("weather in Rome?")) == "Rome is sunny."
     assert seen == ["Rome"]
+
+
+# --- chat_stream contract: streamed tool calls must be reassembled -------------
+#
+# A streamed tool call arrives as several deltas: the first carries the name and an
+# empty arguments string, the following ones carry fragments of the arguments JSON.
+# Reading `tool_calls` off a single delta yields partially parsed args (`{}` for the
+# first one), so the chunks must be merged before the tool is dispatched.
+
+
+def test_chat_stream_assembles_tool_call_arguments_split_across_chunks(make_llm, fake_model):
+    seen = []
+
+    @tool
+    def get_current_weather(location: str) -> str:
+        """Return the weather for a location."""
+        seen.append(location)
+        return f"sunny in {location}"
+
+    fake_model.queue_stream(
+        [
+            _tool_call_delta(name="get_current_weather", args="", call_id="c1"),
+            _tool_call_delta(args='{"loca'),
+            _tool_call_delta(args='tion": "Rome"}'),
+        ],
+        [_text_chunk("Rome is sunny.")],
+    )
+    llm = make_llm(tools=[get_current_weather])
+
+    assert "".join(llm.chat_stream("weather in Rome?")) == "Rome is sunny."
+    assert seen == ["Rome"], "each delta must not be dispatched as a tool call of its own"
+
+
+def test_chat_stream_assembles_parallel_tool_calls_by_index(make_llm, fake_model):
+    seen = []
+
+    @tool
+    def get_current_weather(location: str) -> str:
+        """Return the weather for a location."""
+        seen.append(location)
+        return f"sunny in {location}"
+
+    fake_model.queue_stream(
+        [
+            _tool_call_delta(name="get_current_weather", args="", call_id="c1", index=0),
+            _tool_call_delta(name="get_current_weather", args="", call_id="c2", index=1),
+            _tool_call_delta(args='{"location": "Rome"}', index=0),
+            _tool_call_delta(args='{"location": "Turin"}', index=1),
+        ],
+        [_text_chunk("Both are sunny.")],
+    )
+    llm = make_llm(tools=[get_current_weather])
+
+    assert "".join(llm.chat_stream("weather in Rome and Turin?")) == "Both are sunny."
+    assert seen == ["Rome", "Turin"]
+
+
+def test_chat_stream_sends_the_tool_call_message_before_the_tool_results(make_llm, fake_model):
+    # Providers reject tool results that are not preceded by the assistant message
+    # holding the matching tool_calls.
+    @tool
+    def get_current_weather(location: str) -> str:
+        """Return the weather for a location."""
+        return f"sunny in {location}"
+
+    fake_model.queue_stream(
+        [
+            _tool_call_delta(name="get_current_weather", args="", call_id="c1"),
+            _tool_call_delta(args='{"location": "Rome"}'),
+        ],
+        [_text_chunk("Rome is sunny.")],
+    )
+    llm = make_llm(tools=[get_current_weather])
+
+    list(llm.chat_stream("weather in Rome?"))
+
+    follow_up = fake_model.stream_inputs[1]
+    assert isinstance(follow_up[-1], ToolMessage)
+    assert follow_up[-1].tool_call_id == "c1"
+    assert [tc["id"] for tc in follow_up[-2].tool_calls] == ["c1"]
+
+
+def test_chat_stream_raises_when_tool_loop_limit_exceeded(make_llm, fake_model):
+    @tool
+    def loop_tool(x: int) -> str:
+        """A tool that never lets the model settle."""
+        return "again"
+
+    fake_model.queue_stream(*[[_tool_call_delta(name="loop_tool", args='{"x": 1}', call_id=f"c{i}")] for i in range(5)])
+    llm = make_llm(tools=[loop_tool], max_tool_loops=2)
+
+    with pytest.raises(RuntimeError, match="Too many consecutive tool-call loops"):
+        list(llm.chat_stream("go"))
 
 
 # --- chat_stream contract: plain text, chat completions -----------------------

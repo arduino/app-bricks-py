@@ -516,14 +516,14 @@ class CloudLLM:
         try:
             self._keep_streaming.set()
             input_messages = self._get_message_with_history(message, images)
+            loops = 0
 
-            tool_calls = []
-            for token in self._model.stream(input_messages):
-                if not self._keep_streaming.is_set():
-                    break  # This stops the iteration and halts further token generation
-                if token.tool_calls and len(token.tool_calls) > 0:
-                    tool_calls.extend(token.tool_calls)
-                else:
+            while True:
+                gathered = None
+                for token in self._model.stream(input=input_messages, config={"callbacks": self._callbacks}):
+                    if not self._keep_streaming.is_set():
+                        break  # This stops the iteration and halts further token generation
+
                     # Providers may stream content as a list of blocks (Gemini, and OpenAI
                     # via the Responses API) instead of a plain string
                     content = self._content_to_text(token.content)
@@ -531,16 +531,24 @@ class CloudLLM:
                         assistant_chunks.append(content)
                         yield content
 
-            # If there were tool calls, process them
-            if len(tool_calls) > 0:
+                    # Accumulate the chunks carrying tool calls so they can be assembled:
+                    # a single chunk only holds a fragment of the arguments JSON.
+                    if getattr(token, "tool_call_chunks", None) or getattr(token, "tool_calls", None):
+                        gathered = token if gathered is None else gathered + token
+
+                if not self._keep_streaming.is_set():
+                    break
+
+                tool_calls = getattr(gathered, "tool_calls", None) or [] if gathered is not None else []
+                if not tool_calls:
+                    break
+
+                loops += 1
+                if loops > self._max_tool_loops:
+                    raise RuntimeError(f"Too many consecutive tool-call loops ({self._max_tool_loops}). Possible tool loop.")
+
+                input_messages.append(gathered)
                 input_messages = self._process_tool_calls(tool_calls, input_messages.copy())
-                for token in self._model.stream(input=input_messages, config={"callbacks": self._callbacks}):
-                    if not self._keep_streaming.is_set():
-                        break
-                    content = self._content_to_text(token.content)
-                    if content:
-                        assistant_chunks.append(content)
-                        yield content
 
         finally:
             self._keep_streaming.clear()
