@@ -1,15 +1,15 @@
 {
   "SPDXID": "SPDXRef-DOCUMENT",
   "creationInfo": {
-    "created": "2026-07-07T07:24:11Z",
+    "created": "2026-07-29T10:06:23Z",
     "creators": [
       "Organization: Anchore, Inc",
-      "Tool: syft-1.46.0"
+      "Tool: syft-1.50.0"
     ],
     "licenseListVersion": "3.28"
   },
   "dataLicense": "CC0-1.0",
-  "documentNamespace": "https://anchore.com/syft/image/ghcr.io/arduino/app-bricks/ei-models-runner-1dbc65f7-3370-4e7a-9f4e-19c4236aab8b",
+  "documentNamespace": "https://anchore.com/syft/image/ghcr.io/arduino/app-bricks/ei-models-runner-4e6e8856-0ba0-46a1-b0f3-5529698e900a",
   "files": [
     {
       "SPDXID": "SPDXRef-File-...-aws-crypto-crc32-package.json-772f2f9f2384e320",
@@ -21203,14 +21203,14 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...concrete-crack-anomaly-detection.eim-c7cc0aa34a5ddcdb",
+      "SPDXID": "SPDXRef-File-...concrete-crack-anomaly-detection.eim-e958a6cb328fa828",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:d9cd925da3123449a994038889b29a342bad28dff9e749a7ef873c6942934c4a",
+      "comment": "layerID: sha256:5a64dca5f39b491dc151be9bd6cb5c80c9313a3c3560d2628dd444fbf10b6fb8",
       "copyrightText": "NOASSERTION",
       "fileName": "models/ootb/ei/concrete-crack-anomaly-detection.eim",
       "licenseConcluded": "NOASSERTION",
@@ -21219,14 +21219,14 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...ootb-ei-fan-anomaly-detection.eim-6158dc5f1596321e",
+      "SPDXID": "SPDXRef-File-...ootb-ei-fan-anomaly-detection.eim-3112e07ac5a393a9",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:d9cd925da3123449a994038889b29a342bad28dff9e749a7ef873c6942934c4a",
+      "comment": "layerID: sha256:5a64dca5f39b491dc151be9bd6cb5c80c9313a3c3560d2628dd444fbf10b6fb8",
       "copyrightText": "NOASSERTION",
       "fileName": "models/ootb/ei/fan-anomaly-detection.eim",
       "licenseConcluded": "NOASSERTION",
@@ -21235,14 +21235,14 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-models-ootb-ei-glass-breaking.eim-5ec2a12ac6659fa4",
+      "SPDXID": "SPDXRef-File-models-ootb-ei-glass-breaking.eim-2c33b43e9f92e04f",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:d9cd925da3123449a994038889b29a342bad28dff9e749a7ef873c6942934c4a",
+      "comment": "layerID: sha256:5a64dca5f39b491dc151be9bd6cb5c80c9313a3c3560d2628dd444fbf10b6fb8",
       "copyrightText": "NOASSERTION",
       "fileName": "models/ootb/ei/glass-breaking.eim",
       "licenseConcluded": "NOASSERTION",
@@ -21251,14 +21251,14 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-models-ootb-ei-hand-gestures.eim-fbe8eb1bdc7a4030",
+      "SPDXID": "SPDXRef-File-models-ootb-ei-hand-gestures.eim-75d59c5fe0cadcbf",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:d9cd925da3123449a994038889b29a342bad28dff9e749a7ef873c6942934c4a",
+      "comment": "layerID: sha256:5a64dca5f39b491dc151be9bd6cb5c80c9313a3c3560d2628dd444fbf10b6fb8",
       "copyrightText": "NOASSERTION",
       "fileName": "models/ootb/ei/hand-gestures.eim",
       "licenseConcluded": "NOASSERTION",
@@ -21267,14 +21267,14 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...ei-keyword-spotting-hey-arduino.eim-43faf7da0fdf1c41",
+      "SPDXID": "SPDXRef-File-...ei-keyword-spotting-hey-arduino.eim-51e8f5b4a10ffbd2",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:d9cd925da3123449a994038889b29a342bad28dff9e749a7ef873c6942934c4a",
+      "comment": "layerID: sha256:5a64dca5f39b491dc151be9bd6cb5c80c9313a3c3560d2628dd444fbf10b6fb8",
       "copyrightText": "NOASSERTION",
       "fileName": "models/ootb/ei/keyword-spotting-hey-arduino.eim",
       "licenseConcluded": "NOASSERTION",
@@ -21283,14 +21283,14 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-models-ootb-ei-lw-face-det.eim-24f94a4dec6de966",
+      "SPDXID": "SPDXRef-File-models-ootb-ei-lw-face-det.eim-976b466112bd1b49",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:d9cd925da3123449a994038889b29a342bad28dff9e749a7ef873c6942934c4a",
+      "comment": "layerID: sha256:5a64dca5f39b491dc151be9bd6cb5c80c9313a3c3560d2628dd444fbf10b6fb8",
       "copyrightText": "NOASSERTION",
       "fileName": "models/ootb/ei/lw-face-det.eim",
       "licenseConcluded": "NOASSERTION",
@@ -21299,14 +21299,14 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-models-ootb-ei-mobilenet-v2-224px.eim-c3250553cb420728",
+      "SPDXID": "SPDXRef-File-models-ootb-ei-mobilenet-v2-224px.eim-2678a8050c33ce13",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:d9cd925da3123449a994038889b29a342bad28dff9e749a7ef873c6942934c4a",
+      "comment": "layerID: sha256:5a64dca5f39b491dc151be9bd6cb5c80c9313a3c3560d2628dd444fbf10b6fb8",
       "copyrightText": "NOASSERTION",
       "fileName": "models/ootb/ei/mobilenet-v2-224px.eim",
       "licenseConcluded": "NOASSERTION",
@@ -21315,14 +21315,14 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...ootb-ei-person-classification.eim-c626d6e6fb7bafc5",
+      "SPDXID": "SPDXRef-File-...ootb-ei-person-classification.eim-417174d88213721e",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:d9cd925da3123449a994038889b29a342bad28dff9e749a7ef873c6942934c4a",
+      "comment": "layerID: sha256:5a64dca5f39b491dc151be9bd6cb5c80c9313a3c3560d2628dd444fbf10b6fb8",
       "copyrightText": "NOASSERTION",
       "fileName": "models/ootb/ei/person-classification.eim",
       "licenseConcluded": "NOASSERTION",
@@ -21331,14 +21331,14 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...ei-updown-wave-motion-detection.eim-623077ccb3191c09",
+      "SPDXID": "SPDXRef-File-...ei-updown-wave-motion-detection.eim-ab1f860ed21a5e56",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:d9cd925da3123449a994038889b29a342bad28dff9e749a7ef873c6942934c4a",
+      "comment": "layerID: sha256:5a64dca5f39b491dc151be9bd6cb5c80c9313a3c3560d2628dd444fbf10b6fb8",
       "copyrightText": "NOASSERTION",
       "fileName": "models/ootb/ei/updown-wave-motion-detection.eim",
       "licenseConcluded": "NOASSERTION",
@@ -21347,14 +21347,14 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-models-ootb-ei-yolo-x-nano.eim-1c62bf4f87d1ed50",
+      "SPDXID": "SPDXRef-File-models-ootb-ei-yolo-x-nano.eim-4f2d36e415125d1b",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:d9cd925da3123449a994038889b29a342bad28dff9e749a7ef873c6942934c4a",
+      "comment": "layerID: sha256:5a64dca5f39b491dc151be9bd6cb5c80c9313a3c3560d2628dd444fbf10b6fb8",
       "copyrightText": "NOASSERTION",
       "fileName": "models/ootb/ei/yolo-x-nano.eim",
       "licenseConcluded": "NOASSERTION",
@@ -303549,42 +303549,7 @@
       "externalRefs": [
         {
           "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:beaugunderson:ip-address:10.1.0:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:beaugunderson:ip_address:10.1.0:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:ip-address:ip-address:10.1.0:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:ip-address:ip_address:10.1.0:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:ip_address:ip-address:10.1.0:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:ip_address:ip_address:10.1.0:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:ip:ip-address:10.1.0:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:ip:ip_address:10.1.0:*:*:*:*:*:*:*",
+          "referenceLocator": "cpe:2.3:a:beaugunderson:ip-address:10.1.0:*:*:*:*:node.js:*:*",
           "referenceType": "cpe23Type"
         },
         {
@@ -303610,42 +303575,7 @@
       "externalRefs": [
         {
           "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:beaugunderson:ip-address:9.0.5:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:beaugunderson:ip_address:9.0.5:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:ip-address:ip-address:9.0.5:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:ip-address:ip_address:9.0.5:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:ip_address:ip-address:9.0.5:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:ip_address:ip_address:9.0.5:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:ip:ip-address:9.0.5:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:ip:ip_address:9.0.5:*:*:*:*:*:*:*",
+          "referenceLocator": "cpe:2.3:a:beaugunderson:ip-address:9.0.5:*:*:*:*:node.js:*:*",
           "referenceType": "cpe23Type"
         },
         {
@@ -328935,6 +328865,11 @@
         },
         {
           "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:tar_project:tar:6.2.1:*:*:*:*:rust:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "SECURITY",
           "referenceLocator": "cpe:2.3:a:isaacs:tar:6.2.1:*:*:*:*:node.js:*:*",
           "referenceType": "cpe23Type"
         },
@@ -328962,6 +328897,11 @@
         {
           "referenceCategory": "SECURITY",
           "referenceLocator": "cpe:2.3:a:tar_project:tar:6.2.1:*:*:*:*:node.js:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:tar_project:tar:6.2.1:*:*:*:*:rust:*:*",
           "referenceType": "cpe23Type"
         },
         {
@@ -328997,6 +328937,11 @@
         },
         {
           "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:tar_project:tar:7.4.3:*:*:*:*:rust:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "SECURITY",
           "referenceLocator": "cpe:2.3:a:isaacs:tar:7.4.3:*:*:*:*:node.js:*:*",
           "referenceType": "cpe23Type"
         },
@@ -329024,6 +328969,11 @@
         {
           "referenceCategory": "SECURITY",
           "referenceLocator": "cpe:2.3:a:tar_project:tar:7.4.3:*:*:*:*:node.js:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:tar_project:tar:7.4.3:*:*:*:*:rust:*:*",
           "referenceType": "cpe23Type"
         },
         {
@@ -329601,12 +329551,7 @@
       "externalRefs": [
         {
           "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:raszi:tmp:0.0.33:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:tmp:tmp:0.0.33:*:*:*:*:*:*:*",
+          "referenceLocator": "cpe:2.3:a:raszi:tmp:0.0.33:*:*:*:*:node.js:*:*",
           "referenceType": "cpe23Type"
         },
         {
@@ -332977,7 +332922,7 @@
       "checksums": [
         {
           "algorithm": "SHA256",
-          "checksumValue": "cb2ee6e650887bf6a84ab3167a82e7f478f715d21cfffe37ce11b2587ac69c83"
+          "checksumValue": "276a61c1fbf7dd601e6a62c89bebc79733765f9ee2822e4d8ac252792c9a2f4b"
         }
       ],
       "copyrightText": "NOASSERTION",
@@ -332985,7 +332930,7 @@
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:oci/ghcr.io%2Farduino%2Fapp-bricks%2Fei-models-runner@sha256%3Acb2ee6e650887bf6a84ab3167a82e7f478f715d21cfffe37ce11b2587ac69c83?arch=arm64&tag=0.11.2",
+          "referenceLocator": "pkg:oci/ghcr.io%2Farduino%2Fapp-bricks%2Fei-models-runner@sha256%3A276a61c1fbf7dd601e6a62c89bebc79733765f9ee2822e4d8ac252792c9a2f4b?arch=arm64&tag=0.12.1",
           "referenceType": "purl"
         }
       ],
@@ -332995,7 +332940,7 @@
       "name": "ghcr.io/arduino/app-bricks/ei-models-runner",
       "primaryPackagePurpose": "CONTAINER",
       "supplier": "NOASSERTION",
-      "versionInfo": "0.11.2"
+      "versionInfo": "0.12.1"
     }
   ],
   "relationships": [

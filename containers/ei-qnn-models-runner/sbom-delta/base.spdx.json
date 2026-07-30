@@ -1,15 +1,15 @@
 {
   "SPDXID": "SPDXRef-DOCUMENT",
   "creationInfo": {
-    "created": "2026-07-07T07:24:20Z",
+    "created": "2026-07-29T10:06:13Z",
     "creators": [
       "Organization: Anchore, Inc",
-      "Tool: syft-1.46.0"
+      "Tool: syft-1.50.0"
     ],
     "licenseListVersion": "3.28"
   },
   "dataLicense": "CC0-1.0",
-  "documentNamespace": "https://anchore.com/syft/image/public.ecr.aws/z9b3d4t5/inference-container-qnn-6ce0961b-022e-48ce-8712-6490375519af",
+  "documentNamespace": "https://anchore.com/syft/image/public.ecr.aws/z9b3d4t5/inference-container-qnn-2ad1047a-93be-4415-b1fc-767c264990e2",
   "files": [
     {
       "SPDXID": "SPDXRef-File-...-aws-crypto-crc32-package.json-7e4709c6fcf9f86d",
@@ -285331,7 +285331,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/adduser@3.152?arch=all&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/adduser@3.152?arch=all&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -285659,7 +285659,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/alsa-topology-conf@1.2.5.1-3?arch=all&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/alsa-topology-conf@1.2.5.1-3?arch=all&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -285731,7 +285731,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/alsa-ucm-conf@1.2.14-1?arch=all&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/alsa-ucm-conf@1.2.14-1?arch=all&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -285783,7 +285783,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/alsa-utils@1.2.14-1?arch=arm64&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/alsa-utils@1.2.14-1?arch=arm64&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -286580,7 +286580,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/apt@3.0.3?arch=arm64&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/apt@3.0.3?arch=arm64&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -287448,7 +287448,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/base-files@13.8%2Bdeb13u4?arch=arm64&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/base-files@13.8%2Bdeb13u4?arch=arm64&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -287501,7 +287501,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/base-passwd@3.6.7?arch=arm64&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/base-passwd@3.6.7?arch=arm64&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -287620,7 +287620,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/bash@5.2.37-2%2Bb8?arch=arm64&distro=debian-13&upstream=bash%405.2.37-2",
+          "referenceLocator": "pkg:deb/debian/bash@5.2.37-2%2Bb8?arch=arm64&distro=debian-13.4&upstream=bash%405.2.37-2",
           "referenceType": "purl"
         }
       ],
@@ -287673,7 +287673,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/bash-completion@1%3A2.16.0-7?arch=all&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/bash-completion@1%3A2.16.0-7?arch=all&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -288435,7 +288435,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/bsdutils@1%3A2.41-5?arch=arm64&distro=debian-13&upstream=util-linux%402.41-5",
+          "referenceLocator": "pkg:deb/debian/bsdutils@1%3A2.41-5?arch=arm64&distro=debian-13.4&upstream=util-linux%402.41-5",
           "referenceType": "purl"
         }
       ],
@@ -288700,7 +288700,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/ca-certificates@20250419?arch=all&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/ca-certificates@20250419?arch=all&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -291028,7 +291028,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/coreutils@9.7-3?arch=arm64&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/coreutils@9.7-3?arch=arm64&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -291288,7 +291288,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/curl@8.14.1-2%2Bdeb13u2?arch=arm64&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/curl@8.14.1-2%2Bdeb13u2?arch=arm64&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -291315,7 +291315,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/dash@0.5.12-12?arch=arm64&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/dash@0.5.12-12?arch=arm64&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -291343,7 +291343,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/dbus@1.16.2-2?arch=arm64&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/dbus@1.16.2-2?arch=arm64&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -291395,7 +291395,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/dbus-bin@1.16.2-2?arch=arm64&distro=debian-13&upstream=dbus",
+          "referenceLocator": "pkg:deb/debian/dbus-bin@1.16.2-2?arch=arm64&distro=debian-13.4&upstream=dbus",
           "referenceType": "purl"
         }
       ],
@@ -291447,7 +291447,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/dbus-daemon@1.16.2-2?arch=arm64&distro=debian-13&upstream=dbus",
+          "referenceLocator": "pkg:deb/debian/dbus-daemon@1.16.2-2?arch=arm64&distro=debian-13.4&upstream=dbus",
           "referenceType": "purl"
         }
       ],
@@ -291539,7 +291539,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/dbus-session-bus-common@1.16.2-2?arch=all&distro=debian-13&upstream=dbus",
+          "referenceLocator": "pkg:deb/debian/dbus-session-bus-common@1.16.2-2?arch=all&distro=debian-13.4&upstream=dbus",
           "referenceType": "purl"
         }
       ],
@@ -291631,7 +291631,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/dbus-system-bus-common@1.16.2-2?arch=all&distro=debian-13&upstream=dbus",
+          "referenceLocator": "pkg:deb/debian/dbus-system-bus-common@1.16.2-2?arch=all&distro=debian-13.4&upstream=dbus",
           "referenceType": "purl"
         }
       ],
@@ -291703,7 +291703,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/dbus-user-session@1.16.2-2?arch=arm64&distro=debian-13&upstream=dbus",
+          "referenceLocator": "pkg:deb/debian/dbus-user-session@1.16.2-2?arch=arm64&distro=debian-13.4&upstream=dbus",
           "referenceType": "purl"
         }
       ],
@@ -291775,7 +291775,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/dconf-gsettings-backend@0.40.0-5?arch=arm64&distro=debian-13&upstream=dconf",
+          "referenceLocator": "pkg:deb/debian/dconf-gsettings-backend@0.40.0-5?arch=arm64&distro=debian-13.4&upstream=dconf",
           "referenceType": "purl"
         }
       ],
@@ -291827,7 +291827,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/dconf-service@0.40.0-5?arch=arm64&distro=debian-13&upstream=dconf",
+          "referenceLocator": "pkg:deb/debian/dconf-service@0.40.0-5?arch=arm64&distro=debian-13.4&upstream=dconf",
           "referenceType": "purl"
         }
       ],
@@ -291854,7 +291854,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/debconf@1.5.91?arch=all&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/debconf@1.5.91?arch=all&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -291926,7 +291926,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/debian-archive-keyring@2025.1?arch=all&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/debian-archive-keyring@2025.1?arch=all&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -291953,7 +291953,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/debianutils@5.23.2?arch=arm64&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/debianutils@5.23.2?arch=arm64&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -292645,7 +292645,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/diffutils@1%3A3.10-4?arch=arm64&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/diffutils@1%3A3.10-4?arch=arm64&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -292724,7 +292724,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/dmsetup@2%3A1.02.205-2?arch=arm64&distro=debian-13&upstream=lvm2%402.03.31-2",
+          "referenceLocator": "pkg:deb/debian/dmsetup@2%3A1.02.205-2?arch=arm64&distro=debian-13.4&upstream=lvm2%402.03.31-2",
           "referenceType": "purl"
         }
       ],
@@ -292782,7 +292782,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/dpkg@1.22.22?arch=arm64&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/dpkg@1.22.22?arch=arm64&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -296676,7 +296676,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/findutils@4.10.0-3?arch=arm64&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/findutils@4.10.0-3?arch=arm64&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -296819,7 +296819,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/fontconfig@2.15.0-2.3?arch=arm64&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/fontconfig@2.15.0-2.3?arch=arm64&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -296871,7 +296871,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/fontconfig-config@2.15.0-2.3?arch=arm64&distro=debian-13&upstream=fontconfig",
+          "referenceLocator": "pkg:deb/debian/fontconfig-config@2.15.0-2.3?arch=arm64&distro=debian-13.4&upstream=fontconfig",
           "referenceType": "purl"
         }
       ],
@@ -296943,7 +296943,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/fonts-dejavu-core@2.37-8?arch=all&distro=debian-13&upstream=fonts-dejavu",
+          "referenceLocator": "pkg:deb/debian/fonts-dejavu-core@2.37-8?arch=all&distro=debian-13.4&upstream=fonts-dejavu",
           "referenceType": "purl"
         }
       ],
@@ -297015,7 +297015,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/fonts-dejavu-mono@2.37-8?arch=all&distro=debian-13&upstream=fonts-dejavu",
+          "referenceLocator": "pkg:deb/debian/fonts-dejavu-mono@2.37-8?arch=all&distro=debian-13.4&upstream=fonts-dejavu",
           "referenceType": "purl"
         }
       ],
@@ -297751,7 +297751,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/gcc-14-base@14.2.0-19?arch=arm64&distro=debian-13&upstream=gcc-14",
+          "referenceLocator": "pkg:deb/debian/gcc-14-base@14.2.0-19?arch=arm64&distro=debian-13.4&upstream=gcc-14",
           "referenceType": "purl"
         }
       ],
@@ -298141,7 +298141,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/glib-networking@2.80.1-1?arch=arm64&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/glib-networking@2.80.1-1?arch=arm64&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -298213,7 +298213,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/glib-networking-common@2.80.1-1?arch=all&distro=debian-13&upstream=glib-networking",
+          "referenceLocator": "pkg:deb/debian/glib-networking-common@2.80.1-1?arch=all&distro=debian-13.4&upstream=glib-networking",
           "referenceType": "purl"
         }
       ],
@@ -298285,7 +298285,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/glib-networking-services@2.80.1-1?arch=arm64&distro=debian-13&upstream=glib-networking",
+          "referenceLocator": "pkg:deb/debian/glib-networking-services@2.80.1-1?arch=arm64&distro=debian-13.4&upstream=glib-networking",
           "referenceType": "purl"
         }
       ],
@@ -298641,7 +298641,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/grep@3.11-4%2Bb1?arch=arm64&distro=debian-13&upstream=grep%403.11-4",
+          "referenceLocator": "pkg:deb/debian/grep@3.11-4%2Bb1?arch=arm64&distro=debian-13.4&upstream=grep%403.11-4",
           "referenceType": "purl"
         }
       ],
@@ -298739,7 +298739,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/gsettings-desktop-schemas@48.0-1?arch=all&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/gsettings-desktop-schemas@48.0-1?arch=all&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -298811,7 +298811,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/gstreamer1.0-plugins-base@1.26.2-1%2Bdeb13u1?arch=arm64&distro=debian-13&upstream=gst-plugins-base1.0",
+          "referenceLocator": "pkg:deb/debian/gstreamer1.0-plugins-base@1.26.2-1%2Bdeb13u1?arch=arm64&distro=debian-13.4&upstream=gst-plugins-base1.0",
           "referenceType": "purl"
         }
       ],
@@ -298903,7 +298903,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/gstreamer1.0-plugins-base-apps@1.26.2-1%2Bdeb13u1?arch=arm64&distro=debian-13&upstream=gst-plugins-base1.0",
+          "referenceLocator": "pkg:deb/debian/gstreamer1.0-plugins-base-apps@1.26.2-1%2Bdeb13u1?arch=arm64&distro=debian-13.4&upstream=gst-plugins-base1.0",
           "referenceType": "purl"
         }
       ],
@@ -298975,7 +298975,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/gstreamer1.0-plugins-good@1.26.2-1?arch=arm64&distro=debian-13&upstream=gst-plugins-good1.0",
+          "referenceLocator": "pkg:deb/debian/gstreamer1.0-plugins-good@1.26.2-1?arch=arm64&distro=debian-13.4&upstream=gst-plugins-good1.0",
           "referenceType": "purl"
         }
       ],
@@ -299027,7 +299027,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/gstreamer1.0-tools@1.26.2-2?arch=arm64&distro=debian-13&upstream=gstreamer1.0",
+          "referenceLocator": "pkg:deb/debian/gstreamer1.0-tools@1.26.2-2?arch=arm64&distro=debian-13.4&upstream=gstreamer1.0",
           "referenceType": "purl"
         }
       ],
@@ -299079,7 +299079,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/gstreamer1.0-x@1.26.2-1%2Bdeb13u1?arch=arm64&distro=debian-13&upstream=gst-plugins-base1.0",
+          "referenceLocator": "pkg:deb/debian/gstreamer1.0-x@1.26.2-1%2Bdeb13u1?arch=arm64&distro=debian-13.4&upstream=gst-plugins-base1.0",
           "referenceType": "purl"
         }
       ],
@@ -299106,7 +299106,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/gzip@1.13-1?arch=arm64&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/gzip@1.13-1?arch=arm64&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -299649,7 +299649,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/hostname@3.25?arch=arm64&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/hostname@3.25?arch=arm64&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -300738,7 +300738,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/init-system-helpers@1.69~deb13u1?arch=all&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/init-system-helpers@1.69~deb13u1?arch=all&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -300932,42 +300932,7 @@
       "externalRefs": [
         {
           "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:beaugunderson:ip-address:10.1.0:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:beaugunderson:ip_address:10.1.0:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:ip-address:ip-address:10.1.0:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:ip-address:ip_address:10.1.0:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:ip_address:ip-address:10.1.0:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:ip_address:ip_address:10.1.0:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:ip:ip-address:10.1.0:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:ip:ip_address:10.1.0:*:*:*:*:*:*:*",
+          "referenceLocator": "cpe:2.3:a:beaugunderson:ip-address:10.1.0:*:*:*:*:node.js:*:*",
           "referenceType": "cpe23Type"
         },
         {
@@ -300993,42 +300958,7 @@
       "externalRefs": [
         {
           "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:beaugunderson:ip-address:9.0.5:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:beaugunderson:ip_address:9.0.5:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:ip-address:ip-address:9.0.5:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:ip-address:ip_address:9.0.5:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:ip_address:ip-address:9.0.5:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:ip_address:ip_address:9.0.5:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:ip:ip-address:9.0.5:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:ip:ip_address:9.0.5:*:*:*:*:*:*:*",
+          "referenceLocator": "cpe:2.3:a:beaugunderson:ip-address:9.0.5:*:*:*:*:node.js:*:*",
           "referenceType": "cpe23Type"
         },
         {
@@ -302361,7 +302291,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/iso-codes@4.18.0-1?arch=all&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/iso-codes@4.18.0-1?arch=all&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -303349,7 +303279,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/kmod@34.2-2?arch=arm64&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/kmod@34.2-2?arch=arm64&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -303434,7 +303364,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/krb5-locales@1.21.3-5?arch=all&distro=debian-13&upstream=krb5",
+          "referenceLocator": "pkg:deb/debian/krb5-locales@1.21.3-5?arch=all&distro=debian-13.4&upstream=krb5",
           "referenceType": "purl"
         }
       ],
@@ -303494,7 +303424,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libaa1@1.4p5-51.1%2Bb1?arch=arm64&distro=debian-13&upstream=aalib%401.4p5-51.1",
+          "referenceLocator": "pkg:deb/debian/libaa1@1.4p5-51.1%2Bb1?arch=arm64&distro=debian-13.4&upstream=aalib%401.4p5-51.1",
           "referenceType": "purl"
         }
       ],
@@ -303522,7 +303452,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libacl1@2.3.2-2%2Bb1?arch=arm64&distro=debian-13&upstream=acl%402.3.2-2",
+          "referenceLocator": "pkg:deb/debian/libacl1@2.3.2-2%2Bb1?arch=arm64&distro=debian-13.4&upstream=acl%402.3.2-2",
           "referenceType": "purl"
         }
       ],
@@ -303550,7 +303480,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libapparmor1@4.1.0-1?arch=arm64&distro=debian-13&upstream=apparmor",
+          "referenceLocator": "pkg:deb/debian/libapparmor1@4.1.0-1?arch=arm64&distro=debian-13.4&upstream=apparmor",
           "referenceType": "purl"
         }
       ],
@@ -303602,7 +303532,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libapt-pkg7.0@3.0.3?arch=arm64&distro=debian-13&upstream=apt",
+          "referenceLocator": "pkg:deb/debian/libapt-pkg7.0@3.0.3?arch=arm64&distro=debian-13.4&upstream=apt",
           "referenceType": "purl"
         }
       ],
@@ -303654,7 +303584,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libasound2-data@1.2.14-1?arch=all&distro=debian-13&upstream=alsa-lib",
+          "referenceLocator": "pkg:deb/debian/libasound2-data@1.2.14-1?arch=all&distro=debian-13.4&upstream=alsa-lib",
           "referenceType": "purl"
         }
       ],
@@ -303681,7 +303611,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libasound2t64@1.2.14-1?arch=arm64&distro=debian-13&upstream=alsa-lib",
+          "referenceLocator": "pkg:deb/debian/libasound2t64@1.2.14-1?arch=arm64&distro=debian-13.4&upstream=alsa-lib",
           "referenceType": "purl"
         }
       ],
@@ -303708,7 +303638,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libasyncns0@0.8-6%2Bb5?arch=arm64&distro=debian-13&upstream=libasyncns%400.8-6",
+          "referenceLocator": "pkg:deb/debian/libasyncns0@0.8-6%2Bb5?arch=arm64&distro=debian-13.4&upstream=libasyncns%400.8-6",
           "referenceType": "purl"
         }
       ],
@@ -303736,7 +303666,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libatomic1@14.2.0-19?arch=arm64&distro=debian-13&upstream=gcc-14",
+          "referenceLocator": "pkg:deb/debian/libatomic1@14.2.0-19?arch=arm64&distro=debian-13.4&upstream=gcc-14",
           "referenceType": "purl"
         }
       ],
@@ -303763,7 +303693,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libatopology2t64@1.2.14-1?arch=arm64&distro=debian-13&upstream=alsa-lib",
+          "referenceLocator": "pkg:deb/debian/libatopology2t64@1.2.14-1?arch=arm64&distro=debian-13.4&upstream=alsa-lib",
           "referenceType": "purl"
         }
       ],
@@ -303790,7 +303720,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libattr1@1%3A2.5.2-3?arch=arm64&distro=debian-13&upstream=attr",
+          "referenceLocator": "pkg:deb/debian/libattr1@1%3A2.5.2-3?arch=arm64&distro=debian-13.4&upstream=attr",
           "referenceType": "purl"
         }
       ],
@@ -303843,7 +303773,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libaudit-common@1%3A4.0.2-2?arch=all&distro=debian-13&upstream=audit",
+          "referenceLocator": "pkg:deb/debian/libaudit-common@1%3A4.0.2-2?arch=all&distro=debian-13.4&upstream=audit",
           "referenceType": "purl"
         }
       ],
@@ -303871,7 +303801,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libaudit1@1%3A4.0.2-2%2Bb2?arch=arm64&distro=debian-13&upstream=audit%401%3A4.0.2-2",
+          "referenceLocator": "pkg:deb/debian/libaudit1@1%3A4.0.2-2%2Bb2?arch=arm64&distro=debian-13.4&upstream=audit%401%3A4.0.2-2",
           "referenceType": "purl"
         }
       ],
@@ -303924,7 +303854,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libavc1394-0@0.5.4-5%2Bb2?arch=arm64&distro=debian-13&upstream=libavc1394%400.5.4-5",
+          "referenceLocator": "pkg:deb/debian/libavc1394-0@0.5.4-5%2Bb2?arch=arm64&distro=debian-13.4&upstream=libavc1394%400.5.4-5",
           "referenceType": "purl"
         }
       ],
@@ -303951,7 +303881,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libblkid1@2.41-5?arch=arm64&distro=debian-13&upstream=util-linux",
+          "referenceLocator": "pkg:deb/debian/libblkid1@2.41-5?arch=arm64&distro=debian-13.4&upstream=util-linux",
           "referenceType": "purl"
         }
       ],
@@ -303979,7 +303909,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libbrotli1@1.1.0-2%2Bb7?arch=arm64&distro=debian-13&upstream=brotli%401.1.0-2",
+          "referenceLocator": "pkg:deb/debian/libbrotli1@1.1.0-2%2Bb7?arch=arm64&distro=debian-13.4&upstream=brotli%401.1.0-2",
           "referenceType": "purl"
         }
       ],
@@ -304007,7 +303937,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libbsd0@0.12.2-2?arch=arm64&distro=debian-13&upstream=libbsd",
+          "referenceLocator": "pkg:deb/debian/libbsd0@0.12.2-2?arch=arm64&distro=debian-13.4&upstream=libbsd",
           "referenceType": "purl"
         }
       ],
@@ -304060,7 +303990,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libbz2-1.0@1.0.8-6?arch=arm64&distro=debian-13&upstream=bzip2",
+          "referenceLocator": "pkg:deb/debian/libbz2-1.0@1.0.8-6?arch=arm64&distro=debian-13.4&upstream=bzip2",
           "referenceType": "purl"
         }
       ],
@@ -304113,7 +304043,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libc-bin@2.41-12%2Bdeb13u2?arch=arm64&distro=debian-13&upstream=glibc",
+          "referenceLocator": "pkg:deb/debian/libc-bin@2.41-12%2Bdeb13u2?arch=arm64&distro=debian-13.4&upstream=glibc",
           "referenceType": "purl"
         }
       ],
@@ -304140,7 +304070,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libc6@2.41-12%2Bdeb13u2?arch=arm64&distro=debian-13&upstream=glibc",
+          "referenceLocator": "pkg:deb/debian/libc6@2.41-12%2Bdeb13u2?arch=arm64&distro=debian-13.4&upstream=glibc",
           "referenceType": "purl"
         }
       ],
@@ -304167,7 +304097,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libcaca0@0.99.beta20-5?arch=arm64&distro=debian-13&upstream=libcaca",
+          "referenceLocator": "pkg:deb/debian/libcaca0@0.99.beta20-5?arch=arm64&distro=debian-13.4&upstream=libcaca",
           "referenceType": "purl"
         }
       ],
@@ -304219,7 +304149,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libcairo-gobject2@1.18.4-1%2Bb1?arch=arm64&distro=debian-13&upstream=cairo%401.18.4-1",
+          "referenceLocator": "pkg:deb/debian/libcairo-gobject2@1.18.4-1%2Bb1?arch=arm64&distro=debian-13.4&upstream=cairo%401.18.4-1",
           "referenceType": "purl"
         }
       ],
@@ -304246,7 +304176,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libcairo2@1.18.4-1%2Bb1?arch=arm64&distro=debian-13&upstream=cairo%401.18.4-1",
+          "referenceLocator": "pkg:deb/debian/libcairo2@1.18.4-1%2Bb1?arch=arm64&distro=debian-13.4&upstream=cairo%401.18.4-1",
           "referenceType": "purl"
         }
       ],
@@ -304298,7 +304228,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libcap-ng0@0.8.5-4%2Bb1?arch=arm64&distro=debian-13&upstream=libcap-ng%400.8.5-4",
+          "referenceLocator": "pkg:deb/debian/libcap-ng0@0.8.5-4%2Bb1?arch=arm64&distro=debian-13.4&upstream=libcap-ng%400.8.5-4",
           "referenceType": "purl"
         }
       ],
@@ -304326,7 +304256,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libcap2@1%3A2.75-10%2Bb8?arch=arm64&distro=debian-13&upstream=libcap2%401%3A2.75-10",
+          "referenceLocator": "pkg:deb/debian/libcap2@1%3A2.75-10%2Bb8?arch=arm64&distro=debian-13.4&upstream=libcap2%401%3A2.75-10",
           "referenceType": "purl"
         }
       ],
@@ -304379,7 +304309,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libcap2-bin@1%3A2.75-10%2Bb8?arch=arm64&distro=debian-13&upstream=libcap2%401%3A2.75-10",
+          "referenceLocator": "pkg:deb/debian/libcap2-bin@1%3A2.75-10%2Bb8?arch=arm64&distro=debian-13.4&upstream=libcap2%401%3A2.75-10",
           "referenceType": "purl"
         }
       ],
@@ -304407,7 +304337,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libcdparanoia0@3.10.2%2Bdebian-14%2Bb1?arch=arm64&distro=debian-13&upstream=cdparanoia%403.10.2%2Bdebian-14",
+          "referenceLocator": "pkg:deb/debian/libcdparanoia0@3.10.2%2Bdebian-14%2Bb1?arch=arm64&distro=debian-13.4&upstream=cdparanoia%403.10.2%2Bdebian-14",
           "referenceType": "purl"
         }
       ],
@@ -304459,7 +304389,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libcom-err2@1.47.2-3%2Bb10?arch=arm64&distro=debian-13&upstream=e2fsprogs%401.47.2-3",
+          "referenceLocator": "pkg:deb/debian/libcom-err2@1.47.2-3%2Bb10?arch=arm64&distro=debian-13.4&upstream=e2fsprogs%401.47.2-3",
           "referenceType": "purl"
         }
       ],
@@ -304487,7 +304417,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libcrypt1@1%3A4.4.38-1?arch=arm64&distro=debian-13&upstream=libxcrypt",
+          "referenceLocator": "pkg:deb/debian/libcrypt1@1%3A4.4.38-1?arch=arm64&distro=debian-13.4&upstream=libxcrypt",
           "referenceType": "purl"
         }
       ],
@@ -304515,7 +304445,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libcryptsetup12@2%3A2.7.5-2?arch=arm64&distro=debian-13&upstream=cryptsetup",
+          "referenceLocator": "pkg:deb/debian/libcryptsetup12@2%3A2.7.5-2?arch=arm64&distro=debian-13.4&upstream=cryptsetup",
           "referenceType": "purl"
         }
       ],
@@ -304567,7 +304497,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libcurl3t64-gnutls@8.14.1-2%2Bdeb13u2?arch=arm64&distro=debian-13&upstream=curl",
+          "referenceLocator": "pkg:deb/debian/libcurl3t64-gnutls@8.14.1-2%2Bdeb13u2?arch=arm64&distro=debian-13.4&upstream=curl",
           "referenceType": "purl"
         }
       ],
@@ -304594,7 +304524,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libcurl4t64@8.14.1-2%2Bdeb13u2?arch=arm64&distro=debian-13&upstream=curl",
+          "referenceLocator": "pkg:deb/debian/libcurl4t64@8.14.1-2%2Bdeb13u2?arch=arm64&distro=debian-13.4&upstream=curl",
           "referenceType": "purl"
         }
       ],
@@ -304621,7 +304551,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libdatrie1@0.2.13-3%2Bb1?arch=arm64&distro=debian-13&upstream=libdatrie%400.2.13-3",
+          "referenceLocator": "pkg:deb/debian/libdatrie1@0.2.13-3%2Bb1?arch=arm64&distro=debian-13.4&upstream=libdatrie%400.2.13-3",
           "referenceType": "purl"
         }
       ],
@@ -304649,7 +304579,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libdb5.3t64@5.3.28%2Bdfsg2-9?arch=arm64&distro=debian-13&upstream=db5.3",
+          "referenceLocator": "pkg:deb/debian/libdb5.3t64@5.3.28%2Bdfsg2-9?arch=arm64&distro=debian-13.4&upstream=db5.3",
           "referenceType": "purl"
         }
       ],
@@ -304721,7 +304651,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libdbus-1-3@1.16.2-2?arch=arm64&distro=debian-13&upstream=dbus",
+          "referenceLocator": "pkg:deb/debian/libdbus-1-3@1.16.2-2?arch=arm64&distro=debian-13.4&upstream=dbus",
           "referenceType": "purl"
         }
       ],
@@ -304748,7 +304678,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libdconf1@0.40.0-5?arch=arm64&distro=debian-13&upstream=dconf",
+          "referenceLocator": "pkg:deb/debian/libdconf1@0.40.0-5?arch=arm64&distro=debian-13.4&upstream=dconf",
           "referenceType": "purl"
         }
       ],
@@ -304775,7 +304705,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libdebconfclient0@0.280?arch=arm64&distro=debian-13&upstream=cdebconf",
+          "referenceLocator": "pkg:deb/debian/libdebconfclient0@0.280?arch=arm64&distro=debian-13.4&upstream=cdebconf",
           "referenceType": "purl"
         }
       ],
@@ -304802,7 +304732,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libdeflate0@1.23-2?arch=arm64&distro=debian-13&upstream=libdeflate",
+          "referenceLocator": "pkg:deb/debian/libdeflate0@1.23-2?arch=arm64&distro=debian-13.4&upstream=libdeflate",
           "referenceType": "purl"
         }
       ],
@@ -304829,7 +304759,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libdevmapper1.02.1@2%3A1.02.205-2?arch=arm64&distro=debian-13&upstream=lvm2%402.03.31-2",
+          "referenceLocator": "pkg:deb/debian/libdevmapper1.02.1@2%3A1.02.205-2?arch=arm64&distro=debian-13.4&upstream=lvm2%402.03.31-2",
           "referenceType": "purl"
         }
       ],
@@ -304881,7 +304811,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libdrm-common@2.4.124-2?arch=all&distro=debian-13&upstream=libdrm",
+          "referenceLocator": "pkg:deb/debian/libdrm-common@2.4.124-2?arch=all&distro=debian-13.4&upstream=libdrm",
           "referenceType": "purl"
         }
       ],
@@ -304908,7 +304838,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libdrm2@2.4.124-2?arch=arm64&distro=debian-13&upstream=libdrm",
+          "referenceLocator": "pkg:deb/debian/libdrm2@2.4.124-2?arch=arm64&distro=debian-13.4&upstream=libdrm",
           "referenceType": "purl"
         }
       ],
@@ -304935,7 +304865,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libduktape207@2.7.0-2%2Bb2?arch=arm64&distro=debian-13&upstream=duktape%402.7.0-2",
+          "referenceLocator": "pkg:deb/debian/libduktape207@2.7.0-2%2Bb2?arch=arm64&distro=debian-13.4&upstream=duktape%402.7.0-2",
           "referenceType": "purl"
         }
       ],
@@ -304962,7 +304892,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libdv4t64@1.0.0-17.1%2Bb1?arch=arm64&distro=debian-13&upstream=libdv%401.0.0-17.1",
+          "referenceLocator": "pkg:deb/debian/libdv4t64@1.0.0-17.1%2Bb1?arch=arm64&distro=debian-13.4&upstream=libdv%401.0.0-17.1",
           "referenceType": "purl"
         }
       ],
@@ -304989,7 +304919,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libexpat1@2.7.1-2?arch=arm64&distro=debian-13&upstream=expat",
+          "referenceLocator": "pkg:deb/debian/libexpat1@2.7.1-2?arch=arm64&distro=debian-13.4&upstream=expat",
           "referenceType": "purl"
         }
       ],
@@ -305016,7 +304946,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libffi8@3.4.8-2?arch=arm64&distro=debian-13&upstream=libffi",
+          "referenceLocator": "pkg:deb/debian/libffi8@3.4.8-2?arch=arm64&distro=debian-13.4&upstream=libffi",
           "referenceType": "purl"
         }
       ],
@@ -305068,7 +304998,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libfftw3-single3@3.3.10-2%2Bb1?arch=arm64&distro=debian-13&upstream=fftw3%403.3.10-2",
+          "referenceLocator": "pkg:deb/debian/libfftw3-single3@3.3.10-2%2Bb1?arch=arm64&distro=debian-13.4&upstream=fftw3%403.3.10-2",
           "referenceType": "purl"
         }
       ],
@@ -305095,7 +305025,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libflac14@1.5.0%2Bds-2?arch=arm64&distro=debian-13&upstream=flac",
+          "referenceLocator": "pkg:deb/debian/libflac14@1.5.0%2Bds-2?arch=arm64&distro=debian-13.4&upstream=flac",
           "referenceType": "purl"
         }
       ],
@@ -305122,7 +305052,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libfontconfig1@2.15.0-2.3?arch=arm64&distro=debian-13&upstream=fontconfig",
+          "referenceLocator": "pkg:deb/debian/libfontconfig1@2.15.0-2.3?arch=arm64&distro=debian-13.4&upstream=fontconfig",
           "referenceType": "purl"
         }
       ],
@@ -305149,7 +305079,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libfreetype6@2.13.3%2Bdfsg-1%2Bdeb13u1?arch=arm64&distro=debian-13&upstream=freetype",
+          "referenceLocator": "pkg:deb/debian/libfreetype6@2.13.3%2Bdfsg-1%2Bdeb13u1?arch=arm64&distro=debian-13.4&upstream=freetype",
           "referenceType": "purl"
         }
       ],
@@ -305177,7 +305107,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libfribidi0@1.0.16-1?arch=arm64&distro=debian-13&upstream=fribidi",
+          "referenceLocator": "pkg:deb/debian/libfribidi0@1.0.16-1?arch=arm64&distro=debian-13.4&upstream=fribidi",
           "referenceType": "purl"
         }
       ],
@@ -305229,7 +305159,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libgcc-s1@14.2.0-19?arch=arm64&distro=debian-13&upstream=gcc-14",
+          "referenceLocator": "pkg:deb/debian/libgcc-s1@14.2.0-19?arch=arm64&distro=debian-13.4&upstream=gcc-14",
           "referenceType": "purl"
         }
       ],
@@ -305321,7 +305251,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libgdk-pixbuf-2.0-0@2.42.12%2Bdfsg-4%2Bdeb13u1?arch=arm64&distro=debian-13&upstream=gdk-pixbuf",
+          "referenceLocator": "pkg:deb/debian/libgdk-pixbuf-2.0-0@2.42.12%2Bdfsg-4%2Bdeb13u1?arch=arm64&distro=debian-13.4&upstream=gdk-pixbuf",
           "referenceType": "purl"
         }
       ],
@@ -305393,7 +305323,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libgdk-pixbuf2.0-bin@2.42.12%2Bdfsg-4%2Bdeb13u1?arch=arm64&distro=debian-13&upstream=gdk-pixbuf",
+          "referenceLocator": "pkg:deb/debian/libgdk-pixbuf2.0-bin@2.42.12%2Bdfsg-4%2Bdeb13u1?arch=arm64&distro=debian-13.4&upstream=gdk-pixbuf",
           "referenceType": "purl"
         }
       ],
@@ -305465,7 +305395,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libgdk-pixbuf2.0-common@2.42.12%2Bdfsg-4%2Bdeb13u1?arch=all&distro=debian-13&upstream=gdk-pixbuf",
+          "referenceLocator": "pkg:deb/debian/libgdk-pixbuf2.0-common@2.42.12%2Bdfsg-4%2Bdeb13u1?arch=all&distro=debian-13.4&upstream=gdk-pixbuf",
           "referenceType": "purl"
         }
       ],
@@ -305517,7 +305447,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libglib2.0-0t64@2.84.4-3~deb13u2?arch=arm64&distro=debian-13&upstream=glib2.0",
+          "referenceLocator": "pkg:deb/debian/libglib2.0-0t64@2.84.4-3~deb13u2?arch=arm64&distro=debian-13.4&upstream=glib2.0",
           "referenceType": "purl"
         }
       ],
@@ -305569,7 +305499,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libglib2.0-data@2.84.4-3~deb13u2?arch=all&distro=debian-13&upstream=glib2.0",
+          "referenceLocator": "pkg:deb/debian/libglib2.0-data@2.84.4-3~deb13u2?arch=all&distro=debian-13.4&upstream=glib2.0",
           "referenceType": "purl"
         }
       ],
@@ -305596,7 +305526,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libgmp10@2%3A6.3.0%2Bdfsg-3?arch=arm64&distro=debian-13&upstream=gmp",
+          "referenceLocator": "pkg:deb/debian/libgmp10@2%3A6.3.0%2Bdfsg-3?arch=arm64&distro=debian-13.4&upstream=gmp",
           "referenceType": "purl"
         }
       ],
@@ -305623,7 +305553,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libgnutls30t64@3.8.9-3%2Bdeb13u2?arch=arm64&distro=debian-13&upstream=gnutls28",
+          "referenceLocator": "pkg:deb/debian/libgnutls30t64@3.8.9-3%2Bdeb13u2?arch=arm64&distro=debian-13.4&upstream=gnutls28",
           "referenceType": "purl"
         }
       ],
@@ -305650,7 +305580,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libgomp1@14.2.0-19?arch=arm64&distro=debian-13&upstream=gcc-14",
+          "referenceLocator": "pkg:deb/debian/libgomp1@14.2.0-19?arch=arm64&distro=debian-13.4&upstream=gcc-14",
           "referenceType": "purl"
         }
       ],
@@ -305677,7 +305607,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libgpm2@1.20.7-11%2Bb2?arch=arm64&distro=debian-13&upstream=gpm%401.20.7-11",
+          "referenceLocator": "pkg:deb/debian/libgpm2@1.20.7-11%2Bb2?arch=arm64&distro=debian-13.4&upstream=gpm%401.20.7-11",
           "referenceType": "purl"
         }
       ],
@@ -305730,7 +305660,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libgraphite2-3@1.3.14-2%2Bb1?arch=arm64&distro=debian-13&upstream=graphite2%401.3.14-2",
+          "referenceLocator": "pkg:deb/debian/libgraphite2-3@1.3.14-2%2Bb1?arch=arm64&distro=debian-13.4&upstream=graphite2%401.3.14-2",
           "referenceType": "purl"
         }
       ],
@@ -305757,7 +305687,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libgsm1@1.0.22-1%2Bb2?arch=arm64&distro=debian-13&upstream=libgsm%401.0.22-1",
+          "referenceLocator": "pkg:deb/debian/libgsm1@1.0.22-1%2Bb2?arch=arm64&distro=debian-13.4&upstream=libgsm%401.0.22-1",
           "referenceType": "purl"
         }
       ],
@@ -305829,7 +305759,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libgssapi-krb5-2@1.21.3-5?arch=arm64&distro=debian-13&upstream=krb5",
+          "referenceLocator": "pkg:deb/debian/libgssapi-krb5-2@1.21.3-5?arch=arm64&distro=debian-13.4&upstream=krb5",
           "referenceType": "purl"
         }
       ],
@@ -305922,7 +305852,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libgstreamer-plugins-base1.0-0@1.26.2-1%2Bdeb13u1?arch=arm64&distro=debian-13&upstream=gst-plugins-base1.0",
+          "referenceLocator": "pkg:deb/debian/libgstreamer-plugins-base1.0-0@1.26.2-1%2Bdeb13u1?arch=arm64&distro=debian-13.4&upstream=gst-plugins-base1.0",
           "referenceType": "purl"
         }
       ],
@@ -305974,7 +305904,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libgstreamer1.0-0@1.26.2-2?arch=arm64&distro=debian-13&upstream=gstreamer1.0",
+          "referenceLocator": "pkg:deb/debian/libgstreamer1.0-0@1.26.2-2?arch=arm64&distro=debian-13.4&upstream=gstreamer1.0",
           "referenceType": "purl"
         }
       ],
@@ -306046,7 +305976,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libgudev-1.0-0@238-6?arch=arm64&distro=debian-13&upstream=libgudev",
+          "referenceLocator": "pkg:deb/debian/libgudev-1.0-0@238-6?arch=arm64&distro=debian-13.4&upstream=libgudev",
           "referenceType": "purl"
         }
       ],
@@ -306073,7 +306003,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libharfbuzz0b@10.2.0-1%2Bb1?arch=arm64&distro=debian-13&upstream=harfbuzz%4010.2.0-1",
+          "referenceLocator": "pkg:deb/debian/libharfbuzz0b@10.2.0-1%2Bb1?arch=arm64&distro=debian-13.4&upstream=harfbuzz%4010.2.0-1",
           "referenceType": "purl"
         }
       ],
@@ -306100,7 +306030,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libhogweed6t64@3.10.1-1?arch=arm64&distro=debian-13&upstream=nettle",
+          "referenceLocator": "pkg:deb/debian/libhogweed6t64@3.10.1-1?arch=arm64&distro=debian-13.4&upstream=nettle",
           "referenceType": "purl"
         }
       ],
@@ -306153,7 +306083,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libidn2-0@2.3.8-2?arch=arm64&distro=debian-13&upstream=libidn2",
+          "referenceLocator": "pkg:deb/debian/libidn2-0@2.3.8-2?arch=arm64&distro=debian-13.4&upstream=libidn2",
           "referenceType": "purl"
         }
       ],
@@ -306206,7 +306136,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libiec61883-0@1.2.0-7?arch=arm64&distro=debian-13&upstream=libiec61883",
+          "referenceLocator": "pkg:deb/debian/libiec61883-0@1.2.0-7?arch=arm64&distro=debian-13.4&upstream=libiec61883",
           "referenceType": "purl"
         }
       ],
@@ -306233,7 +306163,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libjbig0@2.1-6.1%2Bb2?arch=arm64&distro=debian-13&upstream=jbigkit%402.1-6.1",
+          "referenceLocator": "pkg:deb/debian/libjbig0@2.1-6.1%2Bb2?arch=arm64&distro=debian-13.4&upstream=jbigkit%402.1-6.1",
           "referenceType": "purl"
         }
       ],
@@ -306286,7 +306216,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libjpeg62-turbo@1%3A2.1.5-4?arch=arm64&distro=debian-13&upstream=libjpeg-turbo",
+          "referenceLocator": "pkg:deb/debian/libjpeg62-turbo@1%3A2.1.5-4?arch=arm64&distro=debian-13.4&upstream=libjpeg-turbo",
           "referenceType": "purl"
         }
       ],
@@ -306339,7 +306269,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libjson-c5@0.18%2Bds-1?arch=arm64&distro=debian-13&upstream=json-c",
+          "referenceLocator": "pkg:deb/debian/libjson-c5@0.18%2Bds-1?arch=arm64&distro=debian-13.4&upstream=json-c",
           "referenceType": "purl"
         }
       ],
@@ -306367,7 +306297,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libk5crypto3@1.21.3-5?arch=arm64&distro=debian-13&upstream=krb5",
+          "referenceLocator": "pkg:deb/debian/libk5crypto3@1.21.3-5?arch=arm64&distro=debian-13.4&upstream=krb5",
           "referenceType": "purl"
         }
       ],
@@ -306395,7 +306325,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libkeyutils1@1.6.3-6?arch=arm64&distro=debian-13&upstream=keyutils",
+          "referenceLocator": "pkg:deb/debian/libkeyutils1@1.6.3-6?arch=arm64&distro=debian-13.4&upstream=keyutils",
           "referenceType": "purl"
         }
       ],
@@ -306423,7 +306353,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libkmod2@34.2-2?arch=arm64&distro=debian-13&upstream=kmod",
+          "referenceLocator": "pkg:deb/debian/libkmod2@34.2-2?arch=arm64&distro=debian-13.4&upstream=kmod",
           "referenceType": "purl"
         }
       ],
@@ -306476,7 +306406,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libkrb5-3@1.21.3-5?arch=arm64&distro=debian-13&upstream=krb5",
+          "referenceLocator": "pkg:deb/debian/libkrb5-3@1.21.3-5?arch=arm64&distro=debian-13.4&upstream=krb5",
           "referenceType": "purl"
         }
       ],
@@ -306504,7 +306434,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libkrb5support0@1.21.3-5?arch=arm64&distro=debian-13&upstream=krb5",
+          "referenceLocator": "pkg:deb/debian/libkrb5support0@1.21.3-5?arch=arm64&distro=debian-13.4&upstream=krb5",
           "referenceType": "purl"
         }
       ],
@@ -306557,7 +306487,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/liblastlog2-2@2.41-5?arch=arm64&distro=debian-13&upstream=util-linux",
+          "referenceLocator": "pkg:deb/debian/liblastlog2-2@2.41-5?arch=arm64&distro=debian-13.4&upstream=util-linux",
           "referenceType": "purl"
         }
       ],
@@ -306610,7 +306540,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libldap-common@2.6.10%2Bdfsg-1?arch=all&distro=debian-13&upstream=openldap",
+          "referenceLocator": "pkg:deb/debian/libldap-common@2.6.10%2Bdfsg-1?arch=all&distro=debian-13.4&upstream=openldap",
           "referenceType": "purl"
         }
       ],
@@ -306637,7 +306567,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libldap2@2.6.10%2Bdfsg-1?arch=arm64&distro=debian-13&upstream=openldap",
+          "referenceLocator": "pkg:deb/debian/libldap2@2.6.10%2Bdfsg-1?arch=arm64&distro=debian-13.4&upstream=openldap",
           "referenceType": "purl"
         }
       ],
@@ -306664,7 +306594,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/liblerc4@4.0.0%2Bds-5?arch=arm64&distro=debian-13&upstream=lerc",
+          "referenceLocator": "pkg:deb/debian/liblerc4@4.0.0%2Bds-5?arch=arm64&distro=debian-13.4&upstream=lerc",
           "referenceType": "purl"
         }
       ],
@@ -306691,7 +306621,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libltdl7@2.5.4-4?arch=arm64&distro=debian-13&upstream=libtool",
+          "referenceLocator": "pkg:deb/debian/libltdl7@2.5.4-4?arch=arm64&distro=debian-13.4&upstream=libtool",
           "referenceType": "purl"
         }
       ],
@@ -306744,7 +306674,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/liblz4-1@1.10.0-4?arch=arm64&distro=debian-13&upstream=lz4",
+          "referenceLocator": "pkg:deb/debian/liblz4-1@1.10.0-4?arch=arm64&distro=debian-13.4&upstream=lz4",
           "referenceType": "purl"
         }
       ],
@@ -306772,7 +306702,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/liblzma5@5.8.1-1?arch=arm64&distro=debian-13&upstream=xz-utils",
+          "referenceLocator": "pkg:deb/debian/liblzma5@5.8.1-1?arch=arm64&distro=debian-13.4&upstream=xz-utils",
           "referenceType": "purl"
         }
       ],
@@ -306825,7 +306755,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libmagic-mgc@1%3A5.46-5?arch=arm64&distro=debian-13&upstream=file",
+          "referenceLocator": "pkg:deb/debian/libmagic-mgc@1%3A5.46-5?arch=arm64&distro=debian-13.4&upstream=file",
           "referenceType": "purl"
         }
       ],
@@ -306852,7 +306782,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libmagic1t64@1%3A5.46-5?arch=arm64&distro=debian-13&upstream=file",
+          "referenceLocator": "pkg:deb/debian/libmagic1t64@1%3A5.46-5?arch=arm64&distro=debian-13.4&upstream=file",
           "referenceType": "purl"
         }
       ],
@@ -306879,7 +306809,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libmd0@1.1.0-2%2Bb1?arch=arm64&distro=debian-13&upstream=libmd%401.1.0-2",
+          "referenceLocator": "pkg:deb/debian/libmd0@1.1.0-2%2Bb1?arch=arm64&distro=debian-13.4&upstream=libmd%401.1.0-2",
           "referenceType": "purl"
         }
       ],
@@ -306907,7 +306837,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libmount1@2.41-5?arch=arm64&distro=debian-13&upstream=util-linux",
+          "referenceLocator": "pkg:deb/debian/libmount1@2.41-5?arch=arm64&distro=debian-13.4&upstream=util-linux",
           "referenceType": "purl"
         }
       ],
@@ -306935,7 +306865,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libmp3lame0@3.100-6%2Bb3?arch=arm64&distro=debian-13&upstream=lame%403.100-6",
+          "referenceLocator": "pkg:deb/debian/libmp3lame0@3.100-6%2Bb3?arch=arm64&distro=debian-13.4&upstream=lame%403.100-6",
           "referenceType": "purl"
         }
       ],
@@ -306987,7 +306917,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libmpg123-0t64@1.32.10-1%2Bdeb13u1?arch=arm64&distro=debian-13&upstream=mpg123",
+          "referenceLocator": "pkg:deb/debian/libmpg123-0t64@1.32.10-1%2Bdeb13u1?arch=arm64&distro=debian-13.4&upstream=mpg123",
           "referenceType": "purl"
         }
       ],
@@ -307014,7 +306944,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libncurses6@6.5%2B20250216-2?arch=arm64&distro=debian-13&upstream=ncurses",
+          "referenceLocator": "pkg:deb/debian/libncurses6@6.5%2B20250216-2?arch=arm64&distro=debian-13.4&upstream=ncurses",
           "referenceType": "purl"
         }
       ],
@@ -307041,7 +306971,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libncursesw6@6.5%2B20250216-2?arch=arm64&distro=debian-13&upstream=ncurses",
+          "referenceLocator": "pkg:deb/debian/libncursesw6@6.5%2B20250216-2?arch=arm64&distro=debian-13.4&upstream=ncurses",
           "referenceType": "purl"
         }
       ],
@@ -307068,7 +306998,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libnettle8t64@3.10.1-1?arch=arm64&distro=debian-13&upstream=nettle",
+          "referenceLocator": "pkg:deb/debian/libnettle8t64@3.10.1-1?arch=arm64&distro=debian-13.4&upstream=nettle",
           "referenceType": "purl"
         }
       ],
@@ -307121,7 +307051,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libnghttp2-14@1.64.0-1.1?arch=arm64&distro=debian-13&upstream=nghttp2",
+          "referenceLocator": "pkg:deb/debian/libnghttp2-14@1.64.0-1.1?arch=arm64&distro=debian-13.4&upstream=nghttp2",
           "referenceType": "purl"
         }
       ],
@@ -307174,7 +307104,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libnghttp3-9@1.8.0-1?arch=arm64&distro=debian-13&upstream=nghttp3",
+          "referenceLocator": "pkg:deb/debian/libnghttp3-9@1.8.0-1?arch=arm64&distro=debian-13.4&upstream=nghttp3",
           "referenceType": "purl"
         }
       ],
@@ -307226,7 +307156,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libngtcp2-16@1.11.0-1?arch=arm64&distro=debian-13&upstream=ngtcp2",
+          "referenceLocator": "pkg:deb/debian/libngtcp2-16@1.11.0-1?arch=arm64&distro=debian-13.4&upstream=ngtcp2",
           "referenceType": "purl"
         }
       ],
@@ -307298,7 +307228,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libngtcp2-crypto-gnutls8@1.11.0-1?arch=arm64&distro=debian-13&upstream=ngtcp2",
+          "referenceLocator": "pkg:deb/debian/libngtcp2-crypto-gnutls8@1.11.0-1?arch=arm64&distro=debian-13.4&upstream=ngtcp2",
           "referenceType": "purl"
         }
       ],
@@ -307641,7 +307571,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libnss-systemd@257.9-1~deb13u1?arch=arm64&distro=debian-13&upstream=systemd",
+          "referenceLocator": "pkg:deb/debian/libnss-systemd@257.9-1~deb13u1?arch=arm64&distro=debian-13.4&upstream=systemd",
           "referenceType": "purl"
         }
       ],
@@ -307668,7 +307598,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libogg0@1.3.5-3%2Bb2?arch=arm64&distro=debian-13&upstream=libogg%401.3.5-3",
+          "referenceLocator": "pkg:deb/debian/libogg0@1.3.5-3%2Bb2?arch=arm64&distro=debian-13.4&upstream=libogg%401.3.5-3",
           "referenceType": "purl"
         }
       ],
@@ -307720,7 +307650,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libopencore-amrnb0@0.1.6-1%2Bb2?arch=arm64&distro=debian-13&upstream=opencore-amr%400.1.6-1",
+          "referenceLocator": "pkg:deb/debian/libopencore-amrnb0@0.1.6-1%2Bb2?arch=arm64&distro=debian-13.4&upstream=opencore-amr%400.1.6-1",
           "referenceType": "purl"
         }
       ],
@@ -307772,7 +307702,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libopencore-amrwb0@0.1.6-1%2Bb2?arch=arm64&distro=debian-13&upstream=opencore-amr%400.1.6-1",
+          "referenceLocator": "pkg:deb/debian/libopencore-amrwb0@0.1.6-1%2Bb2?arch=arm64&distro=debian-13.4&upstream=opencore-amr%400.1.6-1",
           "referenceType": "purl"
         }
       ],
@@ -307799,7 +307729,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libopus0@1.5.2-2?arch=arm64&distro=debian-13&upstream=opus",
+          "referenceLocator": "pkg:deb/debian/libopus0@1.5.2-2?arch=arm64&distro=debian-13.4&upstream=opus",
           "referenceType": "purl"
         }
       ],
@@ -307871,7 +307801,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/liborc-0.4-0t64@1%3A0.4.41-1?arch=arm64&distro=debian-13&upstream=orc",
+          "referenceLocator": "pkg:deb/debian/liborc-0.4-0t64@1%3A0.4.41-1?arch=arm64&distro=debian-13.4&upstream=orc",
           "referenceType": "purl"
         }
       ],
@@ -307923,7 +307853,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libp11-kit0@0.25.5-3?arch=arm64&distro=debian-13&upstream=p11-kit",
+          "referenceLocator": "pkg:deb/debian/libp11-kit0@0.25.5-3?arch=arm64&distro=debian-13.4&upstream=p11-kit",
           "referenceType": "purl"
         }
       ],
@@ -307975,7 +307905,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libpam-cap@1%3A2.75-10%2Bb8?arch=arm64&distro=debian-13&upstream=libcap2%401%3A2.75-10",
+          "referenceLocator": "pkg:deb/debian/libpam-cap@1%3A2.75-10%2Bb8?arch=arm64&distro=debian-13.4&upstream=libcap2%401%3A2.75-10",
           "referenceType": "purl"
         }
       ],
@@ -308028,7 +307958,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libpam-modules@1.7.0-5?arch=arm64&distro=debian-13&upstream=pam",
+          "referenceLocator": "pkg:deb/debian/libpam-modules@1.7.0-5?arch=arm64&distro=debian-13.4&upstream=pam",
           "referenceType": "purl"
         }
       ],
@@ -308101,7 +308031,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libpam-modules-bin@1.7.0-5?arch=arm64&distro=debian-13&upstream=pam",
+          "referenceLocator": "pkg:deb/debian/libpam-modules-bin@1.7.0-5?arch=arm64&distro=debian-13.4&upstream=pam",
           "referenceType": "purl"
         }
       ],
@@ -308154,7 +308084,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libpam-runtime@1.7.0-5?arch=all&distro=debian-13&upstream=pam",
+          "referenceLocator": "pkg:deb/debian/libpam-runtime@1.7.0-5?arch=all&distro=debian-13.4&upstream=pam",
           "referenceType": "purl"
         }
       ],
@@ -308207,7 +308137,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libpam-systemd@257.9-1~deb13u1?arch=arm64&distro=debian-13&upstream=systemd",
+          "referenceLocator": "pkg:deb/debian/libpam-systemd@257.9-1~deb13u1?arch=arm64&distro=debian-13.4&upstream=systemd",
           "referenceType": "purl"
         }
       ],
@@ -308234,7 +308164,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libpam0g@1.7.0-5?arch=arm64&distro=debian-13&upstream=pam",
+          "referenceLocator": "pkg:deb/debian/libpam0g@1.7.0-5?arch=arm64&distro=debian-13.4&upstream=pam",
           "referenceType": "purl"
         }
       ],
@@ -308307,7 +308237,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libpango-1.0-0@1.56.3-1?arch=arm64&distro=debian-13&upstream=pango1.0",
+          "referenceLocator": "pkg:deb/debian/libpango-1.0-0@1.56.3-1?arch=arm64&distro=debian-13.4&upstream=pango1.0",
           "referenceType": "purl"
         }
       ],
@@ -308379,7 +308309,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libpangocairo-1.0-0@1.56.3-1?arch=arm64&distro=debian-13&upstream=pango1.0",
+          "referenceLocator": "pkg:deb/debian/libpangocairo-1.0-0@1.56.3-1?arch=arm64&distro=debian-13.4&upstream=pango1.0",
           "referenceType": "purl"
         }
       ],
@@ -308451,7 +308381,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libpangoft2-1.0-0@1.56.3-1?arch=arm64&distro=debian-13&upstream=pango1.0",
+          "referenceLocator": "pkg:deb/debian/libpangoft2-1.0-0@1.56.3-1?arch=arm64&distro=debian-13.4&upstream=pango1.0",
           "referenceType": "purl"
         }
       ],
@@ -308523,7 +308453,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libpcre2-8-0@10.46-1~deb13u1?arch=arm64&distro=debian-13&upstream=pcre2",
+          "referenceLocator": "pkg:deb/debian/libpcre2-8-0@10.46-1~deb13u1?arch=arm64&distro=debian-13.4&upstream=pcre2",
           "referenceType": "purl"
         }
       ],
@@ -308596,7 +308526,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libpixman-1-0@0.44.0-3?arch=arm64&distro=debian-13&upstream=pixman",
+          "referenceLocator": "pkg:deb/debian/libpixman-1-0@0.44.0-3?arch=arm64&distro=debian-13.4&upstream=pixman",
           "referenceType": "purl"
         }
       ],
@@ -308648,7 +308578,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libpng16-16t64@1.6.48-1%2Bdeb13u4?arch=arm64&distro=debian-13&upstream=libpng1.6",
+          "referenceLocator": "pkg:deb/debian/libpng16-16t64@1.6.48-1%2Bdeb13u4?arch=arm64&distro=debian-13.4&upstream=libpng1.6",
           "referenceType": "purl"
         }
       ],
@@ -308700,7 +308630,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libproc2-0@2%3A4.0.4-9?arch=arm64&distro=debian-13&upstream=procps",
+          "referenceLocator": "pkg:deb/debian/libproc2-0@2%3A4.0.4-9?arch=arm64&distro=debian-13.4&upstream=procps",
           "referenceType": "purl"
         }
       ],
@@ -308728,7 +308658,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libproxy1v5@0.5.9-1?arch=arm64&distro=debian-13&upstream=libproxy",
+          "referenceLocator": "pkg:deb/debian/libproxy1v5@0.5.9-1?arch=arm64&distro=debian-13.4&upstream=libproxy",
           "referenceType": "purl"
         }
       ],
@@ -308755,7 +308685,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libpsl5t64@0.21.2-1.1%2Bb1?arch=arm64&distro=debian-13&upstream=libpsl%400.21.2-1.1",
+          "referenceLocator": "pkg:deb/debian/libpsl5t64@0.21.2-1.1%2Bb1?arch=arm64&distro=debian-13.4&upstream=libpsl%400.21.2-1.1",
           "referenceType": "purl"
         }
       ],
@@ -308783,7 +308713,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libpulse0@17.0%2Bdfsg1-2%2Bb1?arch=arm64&distro=debian-13&upstream=pulseaudio%4017.0%2Bdfsg1-2",
+          "referenceLocator": "pkg:deb/debian/libpulse0@17.0%2Bdfsg1-2%2Bb1?arch=arm64&distro=debian-13.4&upstream=pulseaudio%4017.0%2Bdfsg1-2",
           "referenceType": "purl"
         }
       ],
@@ -308835,7 +308765,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libpython3-stdlib@3.13.5-1?arch=arm64&distro=debian-13&upstream=python3-defaults",
+          "referenceLocator": "pkg:deb/debian/libpython3-stdlib@3.13.5-1?arch=arm64&distro=debian-13.4&upstream=python3-defaults",
           "referenceType": "purl"
         }
       ],
@@ -308888,7 +308818,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libpython3.13-minimal@3.13.5-2?arch=arm64&distro=debian-13&upstream=python3.13",
+          "referenceLocator": "pkg:deb/debian/libpython3.13-minimal@3.13.5-2?arch=arm64&distro=debian-13.4&upstream=python3.13",
           "referenceType": "purl"
         }
       ],
@@ -308941,7 +308871,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libpython3.13-stdlib@3.13.5-2?arch=arm64&distro=debian-13&upstream=python3.13",
+          "referenceLocator": "pkg:deb/debian/libpython3.13-stdlib@3.13.5-2?arch=arm64&distro=debian-13.4&upstream=python3.13",
           "referenceType": "purl"
         }
       ],
@@ -308994,7 +308924,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libraw1394-11@2.1.2-2%2Bb2?arch=arm64&distro=debian-13&upstream=libraw1394%402.1.2-2",
+          "referenceLocator": "pkg:deb/debian/libraw1394-11@2.1.2-2%2Bb2?arch=arm64&distro=debian-13.4&upstream=libraw1394%402.1.2-2",
           "referenceType": "purl"
         }
       ],
@@ -309022,7 +308952,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libreadline8t64@8.2-6?arch=arm64&distro=debian-13&upstream=readline",
+          "referenceLocator": "pkg:deb/debian/libreadline8t64@8.2-6?arch=arm64&distro=debian-13.4&upstream=readline",
           "referenceType": "purl"
         }
       ],
@@ -309050,7 +308980,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/librtmp1@2.4%2B20151223.gitfa8646d.1-2%2Bb5?arch=arm64&distro=debian-13&upstream=rtmpdump%402.4%2B20151223.gitfa8646d.1-2",
+          "referenceLocator": "pkg:deb/debian/librtmp1@2.4%2B20151223.gitfa8646d.1-2%2Bb5?arch=arm64&distro=debian-13.4&upstream=rtmpdump%402.4%2B20151223.gitfa8646d.1-2",
           "referenceType": "purl"
         }
       ],
@@ -309077,7 +309007,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libsamplerate0@0.2.2-4%2Bb2?arch=arm64&distro=debian-13&upstream=libsamplerate%400.2.2-4",
+          "referenceLocator": "pkg:deb/debian/libsamplerate0@0.2.2-4%2Bb2?arch=arm64&distro=debian-13.4&upstream=libsamplerate%400.2.2-4",
           "referenceType": "purl"
         }
       ],
@@ -309129,7 +309059,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libsasl2-2@2.1.28%2Bdfsg1-9?arch=arm64&distro=debian-13&upstream=cyrus-sasl2",
+          "referenceLocator": "pkg:deb/debian/libsasl2-2@2.1.28%2Bdfsg1-9?arch=arm64&distro=debian-13.4&upstream=cyrus-sasl2",
           "referenceType": "purl"
         }
       ],
@@ -309181,7 +309111,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libsasl2-modules@2.1.28%2Bdfsg1-9?arch=arm64&distro=debian-13&upstream=cyrus-sasl2",
+          "referenceLocator": "pkg:deb/debian/libsasl2-modules@2.1.28%2Bdfsg1-9?arch=arm64&distro=debian-13.4&upstream=cyrus-sasl2",
           "referenceType": "purl"
         }
       ],
@@ -309253,7 +309183,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libsasl2-modules-db@2.1.28%2Bdfsg1-9?arch=arm64&distro=debian-13&upstream=cyrus-sasl2",
+          "referenceLocator": "pkg:deb/debian/libsasl2-modules-db@2.1.28%2Bdfsg1-9?arch=arm64&distro=debian-13.4&upstream=cyrus-sasl2",
           "referenceType": "purl"
         }
       ],
@@ -309280,7 +309210,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libseccomp2@2.6.0-2?arch=arm64&distro=debian-13&upstream=libseccomp",
+          "referenceLocator": "pkg:deb/debian/libseccomp2@2.6.0-2?arch=arm64&distro=debian-13.4&upstream=libseccomp",
           "referenceType": "purl"
         }
       ],
@@ -309308,7 +309238,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libselinux1@3.8.1-1?arch=arm64&distro=debian-13&upstream=libselinux",
+          "referenceLocator": "pkg:deb/debian/libselinux1@3.8.1-1?arch=arm64&distro=debian-13.4&upstream=libselinux",
           "referenceType": "purl"
         }
       ],
@@ -309360,7 +309290,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libsemanage-common@3.8.1-1?arch=all&distro=debian-13&upstream=libsemanage",
+          "referenceLocator": "pkg:deb/debian/libsemanage-common@3.8.1-1?arch=all&distro=debian-13.4&upstream=libsemanage",
           "referenceType": "purl"
         }
       ],
@@ -309387,7 +309317,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libsemanage2@3.8.1-1?arch=arm64&distro=debian-13&upstream=libsemanage",
+          "referenceLocator": "pkg:deb/debian/libsemanage2@3.8.1-1?arch=arm64&distro=debian-13.4&upstream=libsemanage",
           "referenceType": "purl"
         }
       ],
@@ -309414,7 +309344,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libsepol2@3.8.1-1?arch=arm64&distro=debian-13&upstream=libsepol",
+          "referenceLocator": "pkg:deb/debian/libsepol2@3.8.1-1?arch=arm64&distro=debian-13.4&upstream=libsepol",
           "referenceType": "purl"
         }
       ],
@@ -309441,7 +309371,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libsharpyuv0@1.5.0-0.1?arch=arm64&distro=debian-13&upstream=libwebp",
+          "referenceLocator": "pkg:deb/debian/libsharpyuv0@1.5.0-0.1?arch=arm64&distro=debian-13.4&upstream=libwebp",
           "referenceType": "purl"
         }
       ],
@@ -309469,7 +309399,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libshout3@2.4.6-1%2Bb3?arch=arm64&distro=debian-13&upstream=libshout%402.4.6-1",
+          "referenceLocator": "pkg:deb/debian/libshout3@2.4.6-1%2Bb3?arch=arm64&distro=debian-13.4&upstream=libshout%402.4.6-1",
           "referenceType": "purl"
         }
       ],
@@ -309496,7 +309426,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libslang2@2.3.3-5%2Bb2?arch=arm64&distro=debian-13&upstream=slang2%402.3.3-5",
+          "referenceLocator": "pkg:deb/debian/libslang2@2.3.3-5%2Bb2?arch=arm64&distro=debian-13.4&upstream=slang2%402.3.3-5",
           "referenceType": "purl"
         }
       ],
@@ -309524,7 +309454,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libsmartcols1@2.41-5?arch=arm64&distro=debian-13&upstream=util-linux",
+          "referenceLocator": "pkg:deb/debian/libsmartcols1@2.41-5?arch=arm64&distro=debian-13.4&upstream=util-linux",
           "referenceType": "purl"
         }
       ],
@@ -309552,7 +309482,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libsndfile1@1.2.2-2%2Bdeb13u1?arch=arm64&distro=debian-13&upstream=libsndfile",
+          "referenceLocator": "pkg:deb/debian/libsndfile1@1.2.2-2%2Bdeb13u1?arch=arm64&distro=debian-13.4&upstream=libsndfile",
           "referenceType": "purl"
         }
       ],
@@ -309624,7 +309554,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libsoup-3.0-0@3.6.5-3?arch=arm64&distro=debian-13&upstream=libsoup3",
+          "referenceLocator": "pkg:deb/debian/libsoup-3.0-0@3.6.5-3?arch=arm64&distro=debian-13.4&upstream=libsoup3",
           "referenceType": "purl"
         }
       ],
@@ -309696,7 +309626,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libsoup-3.0-common@3.6.5-3?arch=all&distro=debian-13&upstream=libsoup3",
+          "referenceLocator": "pkg:deb/debian/libsoup-3.0-common@3.6.5-3?arch=all&distro=debian-13.4&upstream=libsoup3",
           "referenceType": "purl"
         }
       ],
@@ -309768,7 +309698,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libsox-fmt-alsa@14.4.2%2Bgit20190427-5%2Bb3?arch=arm64&distro=debian-13&upstream=sox%4014.4.2%2Bgit20190427-5",
+          "referenceLocator": "pkg:deb/debian/libsox-fmt-alsa@14.4.2%2Bgit20190427-5%2Bb3?arch=arm64&distro=debian-13.4&upstream=sox%4014.4.2%2Bgit20190427-5",
           "referenceType": "purl"
         }
       ],
@@ -309840,7 +309770,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libsox-fmt-base@14.4.2%2Bgit20190427-5%2Bb3?arch=arm64&distro=debian-13&upstream=sox%4014.4.2%2Bgit20190427-5",
+          "referenceLocator": "pkg:deb/debian/libsox-fmt-base@14.4.2%2Bgit20190427-5%2Bb3?arch=arm64&distro=debian-13.4&upstream=sox%4014.4.2%2Bgit20190427-5",
           "referenceType": "purl"
         }
       ],
@@ -309867,7 +309797,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libsox3@14.4.2%2Bgit20190427-5%2Bb3?arch=arm64&distro=debian-13&upstream=sox%4014.4.2%2Bgit20190427-5",
+          "referenceLocator": "pkg:deb/debian/libsox3@14.4.2%2Bgit20190427-5%2Bb3?arch=arm64&distro=debian-13.4&upstream=sox%4014.4.2%2Bgit20190427-5",
           "referenceType": "purl"
         }
       ],
@@ -309894,7 +309824,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libspeex1@1.2.1-3?arch=arm64&distro=debian-13&upstream=speex",
+          "referenceLocator": "pkg:deb/debian/libspeex1@1.2.1-3?arch=arm64&distro=debian-13.4&upstream=speex",
           "referenceType": "purl"
         }
       ],
@@ -309946,7 +309876,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libsqlite3-0@3.46.1-7%2Bdeb13u1?arch=arm64&distro=debian-13&upstream=sqlite3",
+          "referenceLocator": "pkg:deb/debian/libsqlite3-0@3.46.1-7%2Bdeb13u1?arch=arm64&distro=debian-13.4&upstream=sqlite3",
           "referenceType": "purl"
         }
       ],
@@ -309998,7 +309928,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libssh2-1t64@1.11.1-1?arch=arm64&distro=debian-13&upstream=libssh2",
+          "referenceLocator": "pkg:deb/debian/libssh2-1t64@1.11.1-1?arch=arm64&distro=debian-13.4&upstream=libssh2",
           "referenceType": "purl"
         }
       ],
@@ -310026,7 +309956,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libssl3t64@3.5.5-1~deb13u2?arch=arm64&distro=debian-13&upstream=openssl",
+          "referenceLocator": "pkg:deb/debian/libssl3t64@3.5.5-1~deb13u2?arch=arm64&distro=debian-13.4&upstream=openssl",
           "referenceType": "purl"
         }
       ],
@@ -310053,7 +309983,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libstdc%2B%2B6@14.2.0-19?arch=arm64&distro=debian-13&upstream=gcc-14",
+          "referenceLocator": "pkg:deb/debian/libstdc%2B%2B6@14.2.0-19?arch=arm64&distro=debian-13.4&upstream=gcc-14",
           "referenceType": "purl"
         }
       ],
@@ -310105,7 +310035,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libsystemd-shared@257.9-1~deb13u1?arch=arm64&distro=debian-13&upstream=systemd",
+          "referenceLocator": "pkg:deb/debian/libsystemd-shared@257.9-1~deb13u1?arch=arm64&distro=debian-13.4&upstream=systemd",
           "referenceType": "purl"
         }
       ],
@@ -310132,7 +310062,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libsystemd0@257.9-1~deb13u1?arch=arm64&distro=debian-13&upstream=systemd",
+          "referenceLocator": "pkg:deb/debian/libsystemd0@257.9-1~deb13u1?arch=arm64&distro=debian-13.4&upstream=systemd",
           "referenceType": "purl"
         }
       ],
@@ -310159,7 +310089,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libtag2@2.0.2-2?arch=arm64&distro=debian-13&upstream=taglib",
+          "referenceLocator": "pkg:deb/debian/libtag2@2.0.2-2?arch=arm64&distro=debian-13.4&upstream=taglib",
           "referenceType": "purl"
         }
       ],
@@ -310211,7 +310141,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libtasn1-6@4.20.0-2?arch=arm64&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/libtasn1-6@4.20.0-2?arch=arm64&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -310263,7 +310193,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libthai-data@0.1.29-2?arch=all&distro=debian-13&upstream=libthai",
+          "referenceLocator": "pkg:deb/debian/libthai-data@0.1.29-2?arch=all&distro=debian-13.4&upstream=libthai",
           "referenceType": "purl"
         }
       ],
@@ -310291,7 +310221,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libthai0@0.1.29-2%2Bb1?arch=arm64&distro=debian-13&upstream=libthai%400.1.29-2",
+          "referenceLocator": "pkg:deb/debian/libthai0@0.1.29-2%2Bb1?arch=arm64&distro=debian-13.4&upstream=libthai%400.1.29-2",
           "referenceType": "purl"
         }
       ],
@@ -310319,7 +310249,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libtheora0@1.2.0~alpha1%2Bdfsg-6?arch=arm64&distro=debian-13&upstream=libtheora",
+          "referenceLocator": "pkg:deb/debian/libtheora0@1.2.0~alpha1%2Bdfsg-6?arch=arm64&distro=debian-13.4&upstream=libtheora",
           "referenceType": "purl"
         }
       ],
@@ -310346,7 +310276,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libtheoradec1@1.2.0~alpha1%2Bdfsg-6?arch=arm64&distro=debian-13&upstream=libtheora",
+          "referenceLocator": "pkg:deb/debian/libtheoradec1@1.2.0~alpha1%2Bdfsg-6?arch=arm64&distro=debian-13.4&upstream=libtheora",
           "referenceType": "purl"
         }
       ],
@@ -310373,7 +310303,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libtheoraenc1@1.2.0~alpha1%2Bdfsg-6?arch=arm64&distro=debian-13&upstream=libtheora",
+          "referenceLocator": "pkg:deb/debian/libtheoraenc1@1.2.0~alpha1%2Bdfsg-6?arch=arm64&distro=debian-13.4&upstream=libtheora",
           "referenceType": "purl"
         }
       ],
@@ -310400,7 +310330,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libtiff6@4.7.0-3%2Bdeb13u2?arch=arm64&distro=debian-13&upstream=tiff",
+          "referenceLocator": "pkg:deb/debian/libtiff6@4.7.0-3%2Bdeb13u2?arch=arm64&distro=debian-13.4&upstream=tiff",
           "referenceType": "purl"
         }
       ],
@@ -310427,7 +310357,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libtinfo6@6.5%2B20250216-2?arch=arm64&distro=debian-13&upstream=ncurses",
+          "referenceLocator": "pkg:deb/debian/libtinfo6@6.5%2B20250216-2?arch=arm64&distro=debian-13.4&upstream=ncurses",
           "referenceType": "purl"
         }
       ],
@@ -310454,7 +310384,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libtwolame0@0.4.0-2%2Bb2?arch=arm64&distro=debian-13&upstream=twolame%400.4.0-2",
+          "referenceLocator": "pkg:deb/debian/libtwolame0@0.4.0-2%2Bb2?arch=arm64&distro=debian-13.4&upstream=twolame%400.4.0-2",
           "referenceType": "purl"
         }
       ],
@@ -310481,7 +310411,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libudev1@257.9-1~deb13u1?arch=arm64&distro=debian-13&upstream=systemd",
+          "referenceLocator": "pkg:deb/debian/libudev1@257.9-1~deb13u1?arch=arm64&distro=debian-13.4&upstream=systemd",
           "referenceType": "purl"
         }
       ],
@@ -310508,7 +310438,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libunistring5@1.3-2?arch=arm64&distro=debian-13&upstream=libunistring",
+          "referenceLocator": "pkg:deb/debian/libunistring5@1.3-2?arch=arm64&distro=debian-13.4&upstream=libunistring",
           "referenceType": "purl"
         }
       ],
@@ -310536,7 +310466,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libuuid1@2.41-5?arch=arm64&distro=debian-13&upstream=util-linux",
+          "referenceLocator": "pkg:deb/debian/libuuid1@2.41-5?arch=arm64&distro=debian-13.4&upstream=util-linux",
           "referenceType": "purl"
         }
       ],
@@ -310589,7 +310519,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libv4l-0t64@1.30.1-1?arch=arm64&distro=debian-13&upstream=v4l-utils",
+          "referenceLocator": "pkg:deb/debian/libv4l-0t64@1.30.1-1?arch=arm64&distro=debian-13.4&upstream=v4l-utils",
           "referenceType": "purl"
         }
       ],
@@ -310617,7 +310547,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libv4lconvert0t64@1.30.1-1?arch=arm64&distro=debian-13&upstream=v4l-utils",
+          "referenceLocator": "pkg:deb/debian/libv4lconvert0t64@1.30.1-1?arch=arm64&distro=debian-13.4&upstream=v4l-utils",
           "referenceType": "purl"
         }
       ],
@@ -310690,7 +310620,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libvisual-0.4-0@0.4.2-2%2Bb2?arch=arm64&distro=debian-13&upstream=libvisual%400.4.2-2",
+          "referenceLocator": "pkg:deb/debian/libvisual-0.4-0@0.4.2-2%2Bb2?arch=arm64&distro=debian-13.4&upstream=libvisual%400.4.2-2",
           "referenceType": "purl"
         }
       ],
@@ -310717,7 +310647,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libvorbis0a@1.3.7-3?arch=arm64&distro=debian-13&upstream=libvorbis",
+          "referenceLocator": "pkg:deb/debian/libvorbis0a@1.3.7-3?arch=arm64&distro=debian-13.4&upstream=libvorbis",
           "referenceType": "purl"
         }
       ],
@@ -310744,7 +310674,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libvorbisenc2@1.3.7-3?arch=arm64&distro=debian-13&upstream=libvorbis",
+          "referenceLocator": "pkg:deb/debian/libvorbisenc2@1.3.7-3?arch=arm64&distro=debian-13.4&upstream=libvorbis",
           "referenceType": "purl"
         }
       ],
@@ -310771,7 +310701,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libvorbisfile3@1.3.7-3?arch=arm64&distro=debian-13&upstream=libvorbis",
+          "referenceLocator": "pkg:deb/debian/libvorbisfile3@1.3.7-3?arch=arm64&distro=debian-13.4&upstream=libvorbis",
           "referenceType": "purl"
         }
       ],
@@ -310798,7 +310728,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libvpx9@1.15.0-2.1%2Bdeb13u1?arch=arm64&distro=debian-13&upstream=libvpx",
+          "referenceLocator": "pkg:deb/debian/libvpx9@1.15.0-2.1%2Bdeb13u1?arch=arm64&distro=debian-13.4&upstream=libvpx",
           "referenceType": "purl"
         }
       ],
@@ -310825,7 +310755,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libwavpack1@5.8.1-1?arch=arm64&distro=debian-13&upstream=wavpack",
+          "referenceLocator": "pkg:deb/debian/libwavpack1@5.8.1-1?arch=arm64&distro=debian-13.4&upstream=wavpack",
           "referenceType": "purl"
         }
       ],
@@ -310852,7 +310782,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libwebp7@1.5.0-0.1?arch=arm64&distro=debian-13&upstream=libwebp",
+          "referenceLocator": "pkg:deb/debian/libwebp7@1.5.0-0.1?arch=arm64&distro=debian-13.4&upstream=libwebp",
           "referenceType": "purl"
         }
       ],
@@ -310905,7 +310835,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libx11-6@2%3A1.8.12-1?arch=arm64&distro=debian-13&upstream=libx11",
+          "referenceLocator": "pkg:deb/debian/libx11-6@2%3A1.8.12-1?arch=arm64&distro=debian-13.4&upstream=libx11",
           "referenceType": "purl"
         }
       ],
@@ -310957,7 +310887,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libx11-data@2%3A1.8.12-1?arch=all&distro=debian-13&upstream=libx11",
+          "referenceLocator": "pkg:deb/debian/libx11-data@2%3A1.8.12-1?arch=all&distro=debian-13.4&upstream=libx11",
           "referenceType": "purl"
         }
       ],
@@ -311009,7 +310939,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libx11-xcb1@2%3A1.8.12-1?arch=arm64&distro=debian-13&upstream=libx11",
+          "referenceLocator": "pkg:deb/debian/libx11-xcb1@2%3A1.8.12-1?arch=arm64&distro=debian-13.4&upstream=libx11",
           "referenceType": "purl"
         }
       ],
@@ -311036,7 +310966,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libxau6@1%3A1.0.11-1?arch=arm64&distro=debian-13&upstream=libxau",
+          "referenceLocator": "pkg:deb/debian/libxau6@1%3A1.0.11-1?arch=arm64&distro=debian-13.4&upstream=libxau",
           "referenceType": "purl"
         }
       ],
@@ -311088,7 +311018,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libxcb-render0@1.17.0-2%2Bb1?arch=arm64&distro=debian-13&upstream=libxcb%401.17.0-2",
+          "referenceLocator": "pkg:deb/debian/libxcb-render0@1.17.0-2%2Bb1?arch=arm64&distro=debian-13.4&upstream=libxcb%401.17.0-2",
           "referenceType": "purl"
         }
       ],
@@ -311140,7 +311070,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libxcb-shm0@1.17.0-2%2Bb1?arch=arm64&distro=debian-13&upstream=libxcb%401.17.0-2",
+          "referenceLocator": "pkg:deb/debian/libxcb-shm0@1.17.0-2%2Bb1?arch=arm64&distro=debian-13.4&upstream=libxcb%401.17.0-2",
           "referenceType": "purl"
         }
       ],
@@ -311167,7 +311097,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libxcb1@1.17.0-2%2Bb1?arch=arm64&distro=debian-13&upstream=libxcb%401.17.0-2",
+          "referenceLocator": "pkg:deb/debian/libxcb1@1.17.0-2%2Bb1?arch=arm64&distro=debian-13.4&upstream=libxcb%401.17.0-2",
           "referenceType": "purl"
         }
       ],
@@ -311194,7 +311124,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libxdamage1@1%3A1.1.6-1%2Bb2?arch=arm64&distro=debian-13&upstream=libxdamage%401%3A1.1.6-1",
+          "referenceLocator": "pkg:deb/debian/libxdamage1@1%3A1.1.6-1%2Bb2?arch=arm64&distro=debian-13.4&upstream=libxdamage%401%3A1.1.6-1",
           "referenceType": "purl"
         }
       ],
@@ -311221,7 +311151,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libxdmcp6@1%3A1.1.5-1?arch=arm64&distro=debian-13&upstream=libxdmcp",
+          "referenceLocator": "pkg:deb/debian/libxdmcp6@1%3A1.1.5-1?arch=arm64&distro=debian-13.4&upstream=libxdmcp",
           "referenceType": "purl"
         }
       ],
@@ -311248,7 +311178,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libxext6@2%3A1.3.4-1%2Bb3?arch=arm64&distro=debian-13&upstream=libxext%402%3A1.3.4-1",
+          "referenceLocator": "pkg:deb/debian/libxext6@2%3A1.3.4-1%2Bb3?arch=arm64&distro=debian-13.4&upstream=libxext%402%3A1.3.4-1",
           "referenceType": "purl"
         }
       ],
@@ -311275,7 +311205,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libxfixes3@1%3A6.0.0-2%2Bb4?arch=arm64&distro=debian-13&upstream=libxfixes%401%3A6.0.0-2",
+          "referenceLocator": "pkg:deb/debian/libxfixes3@1%3A6.0.0-2%2Bb4?arch=arm64&distro=debian-13.4&upstream=libxfixes%401%3A6.0.0-2",
           "referenceType": "purl"
         }
       ],
@@ -311302,7 +311232,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libxi6@2%3A1.8.2-1?arch=arm64&distro=debian-13&upstream=libxi",
+          "referenceLocator": "pkg:deb/debian/libxi6@2%3A1.8.2-1?arch=arm64&distro=debian-13.4&upstream=libxi",
           "referenceType": "purl"
         }
       ],
@@ -311329,7 +311259,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libxml2@2.12.7%2Bdfsg%2Breally2.9.14-2.1%2Bdeb13u2?arch=arm64&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/libxml2@2.12.7%2Bdfsg%2Breally2.9.14-2.1%2Bdeb13u2?arch=arm64&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -311356,7 +311286,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libxrender1@1%3A0.9.12-1?arch=arm64&distro=debian-13&upstream=libxrender",
+          "referenceLocator": "pkg:deb/debian/libxrender1@1%3A0.9.12-1?arch=arm64&distro=debian-13.4&upstream=libxrender",
           "referenceType": "purl"
         }
       ],
@@ -311383,7 +311313,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libxtst6@2%3A1.2.5-1?arch=arm64&distro=debian-13&upstream=libxtst",
+          "referenceLocator": "pkg:deb/debian/libxtst6@2%3A1.2.5-1?arch=arm64&distro=debian-13.4&upstream=libxtst",
           "referenceType": "purl"
         }
       ],
@@ -311410,7 +311340,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libxv1@2%3A1.0.11-1.1%2Bb3?arch=arm64&distro=debian-13&upstream=libxv%402%3A1.0.11-1.1",
+          "referenceLocator": "pkg:deb/debian/libxv1@2%3A1.0.11-1.1%2Bb3?arch=arm64&distro=debian-13.4&upstream=libxv%402%3A1.0.11-1.1",
           "referenceType": "purl"
         }
       ],
@@ -311437,7 +311367,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libxxhash0@0.8.3-2?arch=arm64&distro=debian-13&upstream=xxhash",
+          "referenceLocator": "pkg:deb/debian/libxxhash0@0.8.3-2?arch=arm64&distro=debian-13.4&upstream=xxhash",
           "referenceType": "purl"
         }
       ],
@@ -311465,7 +311395,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/libzstd1@1.5.7%2Bdfsg-1?arch=arm64&distro=debian-13&upstream=libzstd",
+          "referenceLocator": "pkg:deb/debian/libzstd1@1.5.7%2Bdfsg-1?arch=arm64&distro=debian-13.4&upstream=libzstd",
           "referenceType": "purl"
         }
       ],
@@ -311537,7 +311467,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/linux-sysctl-defaults@4.12.1?arch=all&distro=debian-13&upstream=linux-base",
+          "referenceLocator": "pkg:deb/debian/linux-sysctl-defaults@4.12.1?arch=all&distro=debian-13.4&upstream=linux-base",
           "referenceType": "purl"
         }
       ],
@@ -311807,7 +311737,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/login@1%3A4.16.0-2%2Breally2.41-5?arch=arm64&distro=debian-13&upstream=util-linux%402.41-5",
+          "referenceLocator": "pkg:deb/debian/login@1%3A4.16.0-2%2Breally2.41-5?arch=arm64&distro=debian-13.4&upstream=util-linux%402.41-5",
           "referenceType": "purl"
         }
       ],
@@ -311835,7 +311765,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/login.defs@1%3A4.17.4-2?arch=all&distro=debian-13&upstream=shadow",
+          "referenceLocator": "pkg:deb/debian/login.defs@1%3A4.17.4-2?arch=all&distro=debian-13.4&upstream=shadow",
           "referenceType": "purl"
         }
       ],
@@ -312252,7 +312182,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/mawk@1.3.4.20250131-1?arch=arm64&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/mawk@1.3.4.20250131-1?arch=arm64&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -312356,7 +312286,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/media-types@13.0.0?arch=all&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/media-types@13.0.0?arch=all&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -314447,7 +314377,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/mount@2.41-5?arch=arm64&distro=debian-13&upstream=util-linux",
+          "referenceLocator": "pkg:deb/debian/mount@2.41-5?arch=arm64&distro=debian-13.4&upstream=util-linux",
           "referenceType": "purl"
         }
       ],
@@ -315066,7 +314996,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/ncurses-base@6.5%2B20250216-2?arch=all&distro=debian-13&upstream=ncurses",
+          "referenceLocator": "pkg:deb/debian/ncurses-base@6.5%2B20250216-2?arch=all&distro=debian-13.4&upstream=ncurses",
           "referenceType": "purl"
         }
       ],
@@ -315118,7 +315048,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/ncurses-bin@6.5%2B20250216-2?arch=arm64&distro=debian-13&upstream=ncurses",
+          "referenceLocator": "pkg:deb/debian/ncurses-bin@6.5%2B20250216-2?arch=arm64&distro=debian-13.4&upstream=ncurses",
           "referenceType": "purl"
         }
       ],
@@ -315195,7 +315125,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/netbase@6.5?arch=all&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/netbase@6.5?arch=all&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -315654,7 +315584,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/nodejs@22.15.1-1nodesource1?arch=arm64&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/nodejs@22.15.1-1nodesource1?arch=arm64&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -316961,7 +316891,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/openssl@3.5.5-1~deb13u2?arch=arm64&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/openssl@3.5.5-1~deb13u2?arch=arm64&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -317033,7 +316963,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/openssl-provider-legacy@3.5.5-1~deb13u2?arch=arm64&distro=debian-13&upstream=openssl",
+          "referenceLocator": "pkg:deb/debian/openssl-provider-legacy@3.5.5-1~deb13u2?arch=arm64&distro=debian-13.4&upstream=openssl",
           "referenceType": "purl"
         }
       ],
@@ -317779,7 +317709,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/passwd@1%3A4.17.4-2?arch=arm64&distro=debian-13&upstream=shadow",
+          "referenceLocator": "pkg:deb/debian/passwd@1%3A4.17.4-2?arch=arm64&distro=debian-13.4&upstream=shadow",
           "referenceType": "purl"
         }
       ],
@@ -318320,7 +318250,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/perl-base@5.40.1-6?arch=arm64&distro=debian-13&upstream=perl",
+          "referenceLocator": "pkg:deb/debian/perl-base@5.40.1-6?arch=arm64&distro=debian-13.4&upstream=perl",
           "referenceType": "purl"
         }
       ],
@@ -318834,7 +318764,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/procps@2%3A4.0.4-9?arch=arm64&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/procps@2%3A4.0.4-9?arch=arm64&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -319371,7 +319301,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/psmisc@23.7-2?arch=arm64&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/psmisc@23.7-2?arch=arm64&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -319399,7 +319329,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/publicsuffix@20250328.1952-0.1?arch=all&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/publicsuffix@20250328.1952-0.1?arch=all&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -319490,7 +319420,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/python3@3.13.5-1?arch=arm64&distro=debian-13&upstream=python3-defaults",
+          "referenceLocator": "pkg:deb/debian/python3@3.13.5-1?arch=arm64&distro=debian-13.4&upstream=python3-defaults",
           "referenceType": "purl"
         }
       ],
@@ -319543,7 +319473,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/python3-minimal@3.13.5-1?arch=arm64&distro=debian-13&upstream=python3-defaults",
+          "referenceLocator": "pkg:deb/debian/python3-minimal@3.13.5-1?arch=arm64&distro=debian-13.4&upstream=python3-defaults",
           "referenceType": "purl"
         }
       ],
@@ -319571,7 +319501,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/python3.13@3.13.5-2?arch=arm64&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/python3.13@3.13.5-2?arch=arm64&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -319624,7 +319554,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/python3.13-minimal@3.13.5-2?arch=arm64&distro=debian-13&upstream=python3.13",
+          "referenceLocator": "pkg:deb/debian/python3.13-minimal@3.13.5-2?arch=arm64&distro=debian-13.4&upstream=python3.13",
           "referenceType": "purl"
         }
       ],
@@ -320373,7 +320303,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/readline-common@8.2-6?arch=all&distro=debian-13&upstream=readline",
+          "referenceLocator": "pkg:deb/debian/readline-common@8.2-6?arch=all&distro=debian-13.4&upstream=readline",
           "referenceType": "purl"
         }
       ],
@@ -321717,7 +321647,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/sed@4.9-2%2Bb1?arch=arm64&distro=debian-13&upstream=sed%404.9-2",
+          "referenceLocator": "pkg:deb/debian/sed@4.9-2%2Bb1?arch=arm64&distro=debian-13.4&upstream=sed%404.9-2",
           "referenceType": "purl"
         }
       ],
@@ -321982,7 +321912,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/shared-mime-info@2.4-5%2Bb2?arch=arm64&distro=debian-13&upstream=shared-mime-info%402.4-5",
+          "referenceLocator": "pkg:deb/debian/shared-mime-info@2.4-5%2Bb2?arch=arm64&distro=debian-13.4&upstream=shared-mime-info%402.4-5",
           "referenceType": "purl"
         }
       ],
@@ -323385,7 +323315,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/sox@14.4.2%2Bgit20190427-5%2Bb3?arch=arm64&distro=debian-13&upstream=sox%4014.4.2%2Bgit20190427-5",
+          "referenceLocator": "pkg:deb/debian/sox@14.4.2%2Bgit20190427-5%2Bb3?arch=arm64&distro=debian-13.4&upstream=sox%4014.4.2%2Bgit20190427-5",
           "referenceType": "purl"
         }
       ],
@@ -323890,7 +323820,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/sqv@1.3.0-3%2Bb2?arch=arm64&distro=debian-13&upstream=rust-sequoia-sqv%401.3.0-3",
+          "referenceLocator": "pkg:deb/debian/sqv@1.3.0-3%2Bb2?arch=arm64&distro=debian-13.4&upstream=rust-sequoia-sqv%401.3.0-3",
           "referenceType": "purl"
         }
       ],
@@ -325698,7 +325628,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/systemd@257.9-1~deb13u1?arch=arm64&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/systemd@257.9-1~deb13u1?arch=arm64&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -325750,7 +325680,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/systemd-cryptsetup@257.9-1~deb13u1?arch=arm64&distro=debian-13&upstream=systemd",
+          "referenceLocator": "pkg:deb/debian/systemd-cryptsetup@257.9-1~deb13u1?arch=arm64&distro=debian-13.4&upstream=systemd",
           "referenceType": "purl"
         }
       ],
@@ -325802,7 +325732,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/systemd-sysv@257.9-1~deb13u1?arch=arm64&distro=debian-13&upstream=systemd",
+          "referenceLocator": "pkg:deb/debian/systemd-sysv@257.9-1~deb13u1?arch=arm64&distro=debian-13.4&upstream=systemd",
           "referenceType": "purl"
         }
       ],
@@ -325854,7 +325784,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/systemd-timesyncd@257.9-1~deb13u1?arch=arm64&distro=debian-13&upstream=systemd",
+          "referenceLocator": "pkg:deb/debian/systemd-timesyncd@257.9-1~deb13u1?arch=arm64&distro=debian-13.4&upstream=systemd",
           "referenceType": "purl"
         }
       ],
@@ -325906,7 +325836,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/sysvinit-utils@3.14-4?arch=arm64&distro=debian-13&upstream=sysvinit",
+          "referenceLocator": "pkg:deb/debian/sysvinit-utils@3.14-4?arch=arm64&distro=debian-13.4&upstream=sysvinit",
           "referenceType": "purl"
         }
       ],
@@ -325933,7 +325863,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/tar@1.35%2Bdfsg-3.1?arch=arm64&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/tar@1.35%2Bdfsg-3.1?arch=arm64&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -325958,6 +325888,11 @@
         {
           "referenceCategory": "SECURITY",
           "referenceLocator": "cpe:2.3:a:tar_project:tar:6.2.1:*:*:*:*:node.js:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:tar_project:tar:6.2.1:*:*:*:*:rust:*:*",
           "referenceType": "cpe23Type"
         },
         {
@@ -325993,6 +325928,11 @@
         },
         {
           "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:tar_project:tar:6.2.1:*:*:*:*:rust:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "SECURITY",
           "referenceLocator": "cpe:2.3:a:isaacs:tar:6.2.1:*:*:*:*:node.js:*:*",
           "referenceType": "cpe23Type"
         },
@@ -326024,6 +325964,11 @@
         },
         {
           "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:tar_project:tar:7.4.3:*:*:*:*:rust:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "SECURITY",
           "referenceLocator": "cpe:2.3:a:isaacs:tar:7.4.3:*:*:*:*:node.js:*:*",
           "referenceType": "cpe23Type"
         },
@@ -326051,6 +325996,11 @@
         {
           "referenceCategory": "SECURITY",
           "referenceLocator": "cpe:2.3:a:tar_project:tar:7.4.3:*:*:*:*:node.js:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:tar_project:tar:7.4.3:*:*:*:*:rust:*:*",
           "referenceType": "cpe23Type"
         },
         {
@@ -326628,12 +326578,7 @@
       "externalRefs": [
         {
           "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:raszi:tmp:0.0.33:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:tmp:tmp:0.0.33:*:*:*:*:*:*:*",
+          "referenceLocator": "cpe:2.3:a:raszi:tmp:0.0.33:*:*:*:*:node.js:*:*",
           "referenceType": "cpe23Type"
         },
         {
@@ -327522,7 +327467,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/tzdata@2026a-0%2Bdeb13u1?arch=all&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/tzdata@2026a-0%2Bdeb13u1?arch=all&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -327900,7 +327845,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/unzip@6.0-29?arch=arm64&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/unzip@6.0-29?arch=arm64&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -328104,7 +328049,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/util-linux@2.41-5?arch=arm64&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/util-linux@2.41-5?arch=arm64&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -328760,7 +328705,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/wget@1.25.0-2?arch=arm64&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/wget@1.25.0-2?arch=arm64&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -329410,7 +329355,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/x11-common@1%3A7.7%2B24%2Bdeb13u1?arch=all&distro=debian-13&upstream=xorg",
+          "referenceLocator": "pkg:deb/debian/x11-common@1%3A7.7%2B24%2Bdeb13u1?arch=all&distro=debian-13.4&upstream=xorg",
           "referenceType": "purl"
         }
       ],
@@ -329482,7 +329427,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/xdg-user-dirs@0.18-2?arch=arm64&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/xdg-user-dirs@0.18-2?arch=arm64&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -329540,7 +329485,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/xxd@2%3A9.1.1230-2?arch=arm64&distro=debian-13&upstream=vim",
+          "referenceLocator": "pkg:deb/debian/xxd@2%3A9.1.1230-2?arch=arm64&distro=debian-13.4&upstream=vim",
           "referenceType": "purl"
         }
       ],
@@ -329880,7 +329825,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/zip@3.0-15?arch=arm64&distro=debian-13",
+          "referenceLocator": "pkg:deb/debian/zip@3.0-15?arch=arm64&distro=debian-13.4",
           "referenceType": "purl"
         }
       ],
@@ -329908,7 +329853,7 @@
         },
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:deb/debian/zlib1g@1%3A1.3.dfsg%2Breally1.3.1-1%2Bb1?arch=arm64&distro=debian-13&upstream=zlib%401%3A1.3.dfsg%2Breally1.3.1-1",
+          "referenceLocator": "pkg:deb/debian/zlib1g@1%3A1.3.dfsg%2Breally1.3.1-1%2Bb1?arch=arm64&distro=debian-13.4&upstream=zlib%401%3A1.3.dfsg%2Breally1.3.1-1",
           "referenceType": "purl"
         }
       ],

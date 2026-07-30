@@ -9,6 +9,8 @@ ARG BASE_IMAGE_VERSION=latest
 
 FROM ${REGISTRY}app-bricks/qairt-common-base:${BASE_IMAGE_VERSION}
 
+ARG DEBIAN_FRONTEND=noninteractive
+
 COPY requirements-base.txt .
 
 ENV PYTHONUNBUFFERED=1

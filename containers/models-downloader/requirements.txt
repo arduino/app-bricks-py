@@ -1,6 +1,7 @@
-qai-hub-models-cli>=0.57.1
-requests
-huggingface_hub
-tqdm
-stream-unzip
-pyyaml
+qai-hub-models-cli==0.59.0
+requests==2.33.1
+huggingface_hub==1.25.1
+hf_xet==1.5.2
+tqdm==4.67.3
+stream-unzip==0.0.101
+pyyaml==6.0.3

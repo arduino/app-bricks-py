@@ -7,6 +7,8 @@ ARG BASE_IMAGE_VERSION=latest
 
 FROM ${REGISTRY}app-bricks/aihub-models-runner:${BASE_IMAGE_VERSION}
 
+ARG DEBIAN_FRONTEND=noninteractive
+
 COPY . .
 
 RUN python -m pip install --no-cache-dir -r requirements.txt \

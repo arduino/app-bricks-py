@@ -4,6 +4,8 @@
 
 FROM python:3.13-slim-trixie AS production
 
+ARG DEBIAN_FRONTEND=noninteractive
+
 RUN set -ex; \
     apt-get update -y; \
     apt-get upgrade -y; \

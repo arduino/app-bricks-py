@@ -4,6 +4,8 @@
 
 FROM public.ecr.aws/g7a8t7v6/inference-container:v1.92.3
 
+ARG DEBIAN_FRONTEND=noninteractive
+
 # Create the user and group needed to run the container as non-root
 RUN set -ex; \
     groupadd -g 1000 arduino || true; \
