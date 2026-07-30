@@ -249,7 +249,6 @@ jobs:
           git fetch --depth 1 origin "$COMMIT"
           git checkout "$COMMIT"
           git submodule update --init --recursive --depth 1
-          export OPENCV_VERSION="${{ needs.setup.outputs.stack_version }}"
           export ENABLE_CONTRIB=0
           export ENABLE_HEADLESS=1
           export CMAKE_BUILD_PARALLEL_LEVEL=$(nproc)
@@ -305,11 +304,12 @@ jobs:
           EOF
           )
           
-          # Collect all files for release
+          # Collect release assets: the wheel, the runtime FFmpeg libs tarball and
+          # the plugins-good deb. Build byproducts (-extra, -dev, dbgsym, disabled
+          # plugin stubs) are intentionally left out.
           mkdir release-assets
           cp artifacts/opencv-wheel/*.whl release-assets/
-          cp artifacts/ffmpeg-debs/*.deb release-assets/
-          cp artifacts/gstreamer-debs/*.deb release-assets/
+          cp artifacts/gstreamer-debs/gstreamer1.0-plugins-good_*.deb release-assets/
 
           FFMPEG_VERSION_SAFE="${FFMPEG_VERSION##*:}"  # strip Debian epoch (e.g. 7:) for the filename
           mkdir ffmpeg-libs
