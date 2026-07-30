@@ -21,6 +21,7 @@ def test_chat_stream_logs_errors_raised_during_iteration():
     llm._model = FailingStreamModel()
     llm._keep_streaming = threading.Event()
     llm._reasoning_effort_default = None
+    llm._callbacks = None
     llm._get_message_with_history = lambda *_args, **_kwargs: []
 
     with patch.object(cloud_llm_module.logger, "error") as log_error:

@@ -2,9 +2,9 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-ARG DEBIAN_FRONTEND=noninteractive
-
 FROM ubuntu:24.04
+
+ARG DEBIAN_FRONTEND=noninteractive
 
 COPY requirements-base.txt .
 

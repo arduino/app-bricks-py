@@ -5,7 +5,7 @@
 import json
 from typing import List, Optional, Protocol, runtime_checkable
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, messages_from_dict, messages_to_dict
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage, messages_from_dict, messages_to_dict
 
 from arduino.app_bricks.dbstorage_sqlstore import SQLStore
 from .utils import logger
@@ -143,13 +143,17 @@ class WindowedChatMessageHistory:
         if len(self._messages) > self.k:
             start = len(self._messages) - self.k
 
-            # Ensure we do not start the window with an AIMessage that has tool calls, as that would be not accepted by providers.
-            if isinstance(self._messages[start], AIMessage) and len(getattr(self._messages[start], "tool_calls", None) or []) > 0:
-                logger.debug("Adjusting memory window to avoid starting with AIMessage(tool_calls).")
+            # Ensure we do not start the window in the middle of a tool exchange: an AIMessage
+            # with tool calls whose results fall outside the window, or a ToolMessage whose
+            # AIMessage(tool_calls) does, would not be accepted by providers.
+            first = self._messages[start]
+            starts_tool_call = isinstance(first, AIMessage) and len(getattr(first, "tool_calls", None) or []) > 0
+            if starts_tool_call or isinstance(first, ToolMessage):
+                logger.debug("Adjusting memory window to avoid starting in the middle of a tool exchange.")
                 while start >= 0 and not isinstance(self._messages[start], HumanMessage):
                     start -= 1
                 if start < 0:
-                    raise RuntimeError("Inconsistent state: window starts with AIMessage(tool_calls) but no HumanMessage exists before it.")
+                    raise RuntimeError("Inconsistent state: window starts inside a tool exchange but no HumanMessage exists before it.")
 
             self._messages = self._messages[start:]
 
