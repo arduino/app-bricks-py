@@ -68,7 +68,7 @@ class CloudASR:
             self._owns_mic = False
         else:
             logger.info("No microphone provided, using default Microphone.")
-            self._mic = Microphone()
+            self._mic = Microphone(0)  # First plugged mic, shared with other consumers
             self._owns_mic = True
 
         self._language = language

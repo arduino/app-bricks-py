@@ -776,7 +776,7 @@ class AutomaticSpeechRecognition(BaseASR):
 
     def _build_source(self, source) -> tuple:
         if source is None:
-            return Microphone(), True
+            return Microphone(0), True  # First plugged mic, shared with other consumers
         if isinstance(source, BaseMicrophone):
             return source, False
         raise TypeError(f"Unsupported source type: {type(source)!r}")
