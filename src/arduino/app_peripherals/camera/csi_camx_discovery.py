@@ -65,6 +65,10 @@ _GList._fields_ = [("data", ctypes.c_void_p), ("next", ctypes.POINTER(_GList)), 
 # CAMX BACKEND INTERFACE (used by CSICamera)
 
 
+def setup_gstreamer() -> None:
+    """No-op: on CamX hosts every shipped GStreamer plugin is usable as-is."""
+
+
 def list_camera_ids() -> list[int]:
     """List available CamX camera ids using the qtiqmmfsrc GStreamer plugin."""
     Gst = _gst()

@@ -12,7 +12,7 @@ import numpy as np
 
 from .base_microphone import BaseMicrophone, FormatPlain, FormatPacked
 from .errors import MicrophoneError, MicrophoneOpenError, MicrophoneReadError, MicrophoneConfigError
-from .utils import has_media_carrier, list_audio_sources, nth_plugged_microphone, node_description
+from .utils import has_media_carrier, list_audio_sources, _nth_plugged_microphone, node_description
 from arduino.app_utils.logger import Logger
 
 logger = Logger("ALSAMicrophone")
@@ -154,10 +154,8 @@ class ALSAMicrophone(BaseMicrophone):
             logger.error(f"Error listing jack microphones: {e}")
             return []
 
-        if not builtin_sources:
-            return []
-        node_name = builtin_sources[0].get("info", {}).get("props", {}).get("node.name")
-        return [f"pipewire:NODE={node_name}"] if node_name else []
+        node_names = (source.get("info", {}).get("props", {}).get("node.name") for source in builtin_sources)
+        return [f"pipewire:NODE={name}" for name in node_names if name]
 
     def _resolve_stable_ref(self, identifier: str | int) -> str:
         """
@@ -184,7 +182,7 @@ class ALSAMicrophone(BaseMicrophone):
 
         # An ordinal index selects the n-th plugged microphone
         if isinstance(identifier, int) or (isinstance(identifier, str) and identifier.isdigit()):
-            identifier = nth_plugged_microphone(int(identifier))  # -> "usb:X" / "jack:X"
+            identifier = _nth_plugged_microphone(int(identifier))  # -> "usb:X" / "jack:X"
 
         # Complete device strings are opened as given
         if isinstance(identifier, str):
