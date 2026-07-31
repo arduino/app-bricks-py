@@ -426,7 +426,11 @@ class VideoObjectDetection:
         if not value or not isinstance(value, (int, float)):
             raise TypeError("Invalid types for value.")
 
-        if self._model_info is None or self._model_info.thresholds is None or len(self._model_info.thresholds) == 0:
+        if getattr(self, "_model_info", None) is None:
+            logger.warning("Model information is not available. Cannot override threshold.")
+            return  # Model info is not available, cannot override threshold
+
+        if self._model_info.thresholds is None or len(self._model_info.thresholds) == 0:
             raise RuntimeError("Model information is not available or does not support threshold override.")
 
         # Get first threshold and extract id. Then override it with the new confidence value.
