@@ -30,12 +30,6 @@ RUN set -ex; \
     python -m compileall /usr/local/bin; \
     python -m compileall /usr/local/lib
 
-RUN set -ex; \
-    groupadd -g 1000 arduino || true; \
-    useradd -u 1000 -g arduino -ms /bin/bash arduino; \
-    mkdir /app; \
-    chown arduino:arduino -R /app
-
 COPY --chown=arduino:arduino --chmod=755 ./requirements.txt /app/requirements.txt
 
 COPY --chown=arduino:arduino --chmod=755 ./src /app
