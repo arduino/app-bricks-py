@@ -1819,6 +1819,8 @@ models:
     supported_boards: ["ventunoq"]
     bricks:
       - id: "arduino:llm"
+        model_configuration:
+          GGML_HEXAGON_NDEV: 1      
     deployment:
       handler: "hf-handler"
       platforms:
