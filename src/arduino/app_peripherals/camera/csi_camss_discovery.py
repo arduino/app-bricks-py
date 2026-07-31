@@ -7,6 +7,8 @@ import fcntl
 import glob
 import os
 import re
+import tempfile
+import threading
 
 from .errors import CameraOpenError
 from .utils import resolve_camera_name
@@ -22,6 +24,73 @@ _PLATFORM_DRIVERS = "/sys/bus/platform/drivers"
 def camss_driver_present() -> bool:
     """True if the mainline qcom-camss platform driver is bound on the host."""
     return os.path.isdir(os.path.join(_PLATFORM_DRIVERS, "qcom-camss"))
+
+
+# GSTREAMER PLUGIN FILTERING
+#
+# The qtiqmmfsrc plugin aborts at load time when cam-server is absent, crashing
+# GStreamer's plugin scanner and leaving a core dump on every registry rebuild.
+# On CAMSS hosts it can never work, so GStreamer is pointed to a filtered
+# view of the plugin directories that omits it.
+
+_CAMX_ONLY_PLUGINS = ("libgstqtiqmmfsrc",)
+_GST_PLUGIN_DIR_GLOBS = (
+    "/usr/lib/gstreamer-1.0",
+    "/usr/lib/*/gstreamer-1.0",
+    "/usr/local/lib/gstreamer-1.0",
+    "/usr/local/lib/*/gstreamer-1.0",
+)
+
+_setup_lock = threading.Lock()
+_setup_done = False
+
+
+def _is_camx_only(filename: str) -> bool:
+    return any(filename.startswith(name) for name in _CAMX_ONLY_PLUGINS)
+
+
+def _gst_plugin_dirs() -> list[str]:
+    """Return the directories GStreamer scans for plugins."""
+    env_path = os.environ.get("GST_PLUGIN_SYSTEM_PATH_1_0") or os.environ.get("GST_PLUGIN_SYSTEM_PATH")
+    if env_path:
+        return [d for d in env_path.split(os.pathsep) if d]
+    dirs = []
+    for pattern in _GST_PLUGIN_DIR_GLOBS:
+        dirs.extend(sorted(glob.glob(pattern)))
+    return dirs
+
+
+def setup_gstreamer() -> None:
+    """
+    Exclude CamX-only plugins from GStreamer's plugin search path.
+
+    Idempotent and best-effort: if no CamX-only plugin is installed, the
+    environment is left untouched.
+    """
+    global _setup_done
+    with _setup_lock:
+        if _setup_done:
+            return
+        _setup_done = True
+
+        plugins = {}  # filename -> full path, first directory wins as in GStreamer
+        for directory in _gst_plugin_dirs():
+            try:
+                entries = sorted(os.listdir(directory))
+            except OSError:
+                continue
+            for entry in entries:
+                if entry.endswith(".so"):
+                    plugins.setdefault(entry, os.path.join(directory, entry))
+
+        if not any(_is_camx_only(name) for name in plugins):
+            return
+
+        filtered_dir = tempfile.mkdtemp(prefix="camss-gst-plugins-")
+        for name, path in plugins.items():
+            if not _is_camx_only(name):
+                os.symlink(path, os.path.join(filtered_dir, name))
+        os.environ["GST_PLUGIN_SYSTEM_PATH_1_0"] = filtered_dir
 
 
 # QCOM-CAMSS MEDIA DEVICE DISCOVERY
