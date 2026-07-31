@@ -19,7 +19,7 @@ from arduino.app_utils import brick, Logger
 logger = Logger("TextToSpeech")
 
 TTS_MAX_CHARS = 1024
-TTS_MAX_QUEUE_SIZE = 32
+TTS_MAX_QUEUE_SIZE = 128
 
 _SPEECH_QUEUE_STOP = object()
 
