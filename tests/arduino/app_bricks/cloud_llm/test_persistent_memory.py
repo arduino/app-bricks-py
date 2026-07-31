@@ -220,6 +220,22 @@ def test_history_k_zero_disables_memory_and_persistence(sql_store):
     assert rows[0]["c"] == 0
 
 
+@pytest.mark.parametrize("k", [2, 3])
+def test_history_window_never_starts_inside_a_tool_exchange(k):
+    # Providers reject a conversation that opens with an orphaned AIMessage(tool_calls) or
+    # ToolMessage, so the window backs up to the HumanMessage that started the exchange.
+    history = WindowedChatMessageHistory(k=k)
+    history.add_messages([
+        HumanMessage(content="weather in Turin?"),
+        AIMessage(content="", tool_calls=[{"name": "get_weather", "args": {"city": "Turin"}, "id": "call-1", "type": "tool_call"}]),
+        ToolMessage(content="sunny in Turin", tool_call_id="call-1"),
+        AIMessage(content="It's sunny in Turin."),
+    ])
+
+    msgs = history.get_messages()
+    assert [m.type for m in msgs] == ["human", "ai", "tool", "ai"]
+
+
 def test_history_without_store_is_in_memory_only():
     history = WindowedChatMessageHistory(k=10)
     history.add_messages([HumanMessage(content="hi"), AIMessage(content="hello")])

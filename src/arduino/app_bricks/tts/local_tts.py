@@ -70,7 +70,7 @@ class TextToSpeech:
         if max_queue_size <= 0:
             raise ValueError("max_queue_size must be greater than 0.")
 
-        self._speaker = speaker or Speaker(sample_rate=Speaker.RATE_44K, shared=True)
+        self._speaker = speaker or Speaker(0, sample_rate=Speaker.RATE_44K, shared=True)
 
         # API configuration
         self.api_host = resolve_address(self._APP_SERVICE_NAME)

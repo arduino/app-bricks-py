@@ -34,6 +34,13 @@ def detect_camera_stack() -> str:
     raise RuntimeError("No supported camera stack detected. Please ensure either CAMSS or CAMX is available.")
 
 
+def _get_backend():
+    """Resolve the host camera stack backend and prepare GStreamer for it."""
+    backend = _BACKENDS[detect_camera_stack()]
+    backend.setup_gstreamer()
+    return backend
+
+
 class CSICamera(BaseCamera):
     """
     CSI (Camera Serial Interface) camera implementation for physically connected cameras.
@@ -66,7 +73,7 @@ class CSICamera(BaseCamera):
         """
         super().__init__(resolution, fps, adjustments, auto_reconnect)
 
-        self._backend = _BACKENDS[detect_camera_stack()]
+        self._backend = _get_backend()
         self._camera_id = self._resolve_camera_id(device)
         self.csi_path = self._backend.get_camera_identifier(self._camera_id)
         self.name = f"csi:{self.csi_path}"  # Override parent name with a human-readable name
@@ -85,7 +92,7 @@ class CSICamera(BaseCamera):
             list[int]: List of CSI camera indices.
         """
         try:
-            backend = _BACKENDS[detect_camera_stack()]
+            backend = _get_backend()
             return backend.list_camera_ids()
         except Exception as e:
             logger.error(f"Error listing available cameras: {e}")
@@ -100,7 +107,7 @@ class CSICamera(BaseCamera):
             list[str]: List of CSI camera device paths.
         """
         try:
-            backend = _BACKENDS[detect_camera_stack()]
+            backend = _get_backend()
             return [backend.get_camera_identifier(camera_id) for camera_id in backend.list_camera_ids()]
         except Exception as e:
             logger.error(f"Error listing available cameras: {e}")

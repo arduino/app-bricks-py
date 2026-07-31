@@ -4,6 +4,7 @@
 
 FROM python:3.13-slim AS builder
 
+ARG DEBIAN_FRONTEND=noninteractive
 ARG OPENCV_WHL_URL
 ARG OPENCV_WHL_DIGEST
 
@@ -23,6 +24,7 @@ RUN set -ex; \
     # Install Python dependencies (requirements file + prefetched OpenCV wheel)
     pip install --no-cache-dir uv; \
     uv pip install --system --no-cache-dir -r /app/requirements.txt /tmp/opencv-wheel/*.whl; \
+    printf 'opencv-python-headless==%s\n' "$(python -c 'from importlib.metadata import version; print(version("opencv-python-headless"))')" > /etc/uv-constraints.txt; \
     rm -rf /app/requirements.txt /tmp/opencv-wheel; \
     # Build PyGObject without cairo support
     uv pip install --system --no-cache-dir meson-python ninja; \
@@ -40,6 +42,7 @@ RUN set -ex; \
 
 FROM python:3.13-slim AS production
 
+ARG DEBIAN_FRONTEND=noninteractive
 ARG LIBCAMERA_DEB_URL
 ARG LIBCAMERA_DEB_DIGEST
 ARG LIBCAMERA_IPA_DEB_URL
@@ -61,6 +64,10 @@ ADD https://raw.githubusercontent.com/googlefonts/opensans/main/fonts/ttf/OpenSa
 # Copy the installed dependencies from the 'builder' stage
 COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
+COPY --from=builder /etc/uv-constraints.txt /etc/uv-constraints.txt
+
+ENV UV_CONSTRAINT=/etc/uv-constraints.txt
+ENV PIP_CONSTRAINT=/etc/uv-constraints.txt
 
 RUN set -ex; \
     groupadd -g 1000 arduino || true; \

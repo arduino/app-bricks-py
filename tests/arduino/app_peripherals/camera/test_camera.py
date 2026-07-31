@@ -5,9 +5,9 @@
 
 import pytest
 
-from arduino.app_peripherals.camera import Camera, V4LCamera, IPCamera, WebSocketCamera, CameraConfigError
+from arduino.app_peripherals.camera import Camera, V4LCamera, IPCamera, WebSocketCamera, CameraConfigError, CameraOpenError
 
-from conftest import v4l_device_argument  # noqa: F401
+from conftest import two_v4l_cameras, usb_camera_with_metadata_node, v4l_device_argument  # noqa: F401
 
 
 def test_camera_factory_with_v4l_device(v4l_device_argument):
@@ -16,6 +16,73 @@ def test_camera_factory_with_v4l_device(v4l_device_argument):
     camera = Camera(v4l_device_argument)
     assert isinstance(camera, V4LCamera)
     assert camera.v4l_path == "/dev/v4l/by-id/usb-Camera-video-index0"
+
+
+def test_auto_selection_assigns_distinct_cameras(two_v4l_cameras):
+    """Auto-selected cameras must not contend for the same device."""
+    cam1 = Camera()
+    cam2 = Camera()
+    assert cam1.v4l_path == "/dev/v4l/by-id/usb-CamA-video-index0"
+    assert cam2.v4l_path == "/dev/v4l/by-id/usb-CamB-video-index0"
+
+
+def test_auto_selection_raises_when_all_cameras_are_in_use(two_v4l_cameras):
+    """Auto-selection never reuses a camera assigned to another instance."""
+    cam1, cam2 = Camera(), Camera()
+    assert cam1.v4l_path != cam2.v4l_path
+
+    with pytest.raises(CameraOpenError):
+        Camera()
+
+
+def test_auto_selection_releases_camera_when_instance_is_dropped(two_v4l_cameras):
+    """A camera claimed by a dropped instance becomes available again."""
+    import gc
+
+    cam = Camera()
+    first_path = cam.v4l_path
+    del cam
+    gc.collect()
+
+    assert Camera().v4l_path == first_path
+
+
+def test_auto_selection_skips_explicitly_selected_cameras(two_v4l_cameras):
+    """Auto-selection routes around cameras claimed by explicit selections."""
+    explicit = Camera(0)
+    auto = Camera()
+    assert explicit.v4l_path == "/dev/v4l/by-id/usb-CamA-video-index0"
+    assert auto.v4l_path == "/dev/v4l/by-id/usb-CamB-video-index0"
+
+
+def test_explicit_selection_reuses_a_camera_already_in_use(two_v4l_cameras):
+    """Explicit selection tolerates reuse: contention only surfaces at start()."""
+    cam1 = Camera(0)
+    cam2 = Camera(0)
+    assert cam2.v4l_path == cam1.v4l_path
+
+
+def test_non_capture_nodes_are_not_listed_as_cameras(usb_camera_with_metadata_node):
+    """A UVC metadata node must not be enumerated as a camera."""
+    assert V4LCamera.list_devices() == [10]
+
+
+def test_auto_selection_never_selects_non_capture_nodes(usb_camera_with_metadata_node):
+    """A claimed camera leaves only its metadata node behind: not a selectable camera."""
+    cam1 = Camera()
+    assert cam1.v4l_path == "/dev/v4l/by-id/usb-Cam-video-index0"
+
+    with pytest.raises(CameraOpenError):
+        Camera()
+
+
+def test_explicit_index_selects_nth_plugged_camera(two_v4l_cameras):
+    """An explicit index counts the plugged cameras, in use or not."""
+    auto = Camera()
+    assert auto.v4l_path == "/dev/v4l/by-id/usb-CamA-video-index0"
+
+    cam2 = Camera(1)
+    assert cam2.v4l_path == "/dev/v4l/by-id/usb-CamB-video-index0"
 
 
 def test_camera_factory_with_rtsp_url():

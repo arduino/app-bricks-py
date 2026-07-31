@@ -99,7 +99,7 @@ class Microphone:
 
     def __new__(
         cls,
-        device: str | int = 0,
+        device: str | int | None = None,
         sample_rate: int = RATE_16K,
         channels: int = CHANNELS_MONO,
         format: FormatPlain | FormatPacked = np.int16,
@@ -110,15 +110,20 @@ class Microphone:
         Create a microphone instance based on the device type.
 
         Args:
-            device (Union[str, int]): Microphone device identifier. Supports:
-                - int | str: Auto-select the n-th available plugged microphone
-                    (e.g., 0, 1, "0", "1", ...), giving priority to USB microphones,
-                    then jack microphones if supported by the platform
+            device (str | int | None): Microphone device identifier. Supports:
+                - None: Auto-select the first available plugged microphone, i.e.
+                    not already in use by another instance, giving priority to USB
+                    microphones, then jack ones if supported by the platform.
+                    Raises if every plugged microphone is already in use
+                - int | str: Select the n-th plugged microphone (e.g., 0, 1, "0",
+                    "1", ...) counting USB microphones first, then jack ones,
+                    regardless of whether it is already in use: contention on a
+                    reused microphone is only discovered when starting it
                 - str: ALSA device name (e.g., "plughw:CARD=MyCard,DEV=0", "hw:0,0", "CARD=MyCard,DEV=0")
                 - str: ALSA device file path (e.g., "/dev/snd/by-id/usb-My-Device-00")
                 - str: Microphone.USB_MIC_x / Microphone.JACK_MIC_x macros
                 - str: WebSocket URL for audio streams (e.g., "ws://0.0.0.0:8080")
-                Default: 0.
+                Default: None.
             sample_rate (int): Sample rate in Hz. Default: 16000
             channels (int): Number of audio channels. Default: 1
             format (FormatPlain | FormatPacked): Audio format as one of:
@@ -160,12 +165,15 @@ class Microphone:
 
             ```python
             microphone = Microphone(sample_rate=16000, channels=1)  # First plugged microphone
-            microphone = Microphone(USB_MIC_1, sample_rate=16000, channels=1)  # First USB microphone
+            microphone = Microphone(Microphone.USB_MIC_1, sample_rate=16000, channels=1)  # First USB microphone
+            microphone = Microphone(Microphone.JACK_MIC_1)  # First built-in (jack) microphone
             microphone = Microphone(1)  # Second plugged microphone
             microphone = Microphone("CARD=MyCard,DEV=0", format="S16_LE")
             microphone = Microphone("plughw:CARD=MyCard,DEV=0")
             microphone = Microphone("hw:0,0")
             microphone = Microphone("/dev/snd/by-id/usb-My-Device-00")  # Using device file path
+            microphone = Microphone("pipewire")  # To use default PipeWire microphone (if available)
+            microphone = Microphone("pipewire:NODE=MyPipewireNode")  # Using PipeWire node name
             ```
 
             WebSocket Microphone:
@@ -175,48 +183,35 @@ class Microphone:
             microphone = Microphone("ws://0.0.0.0:8080", secret="topsecret", encrypt=True)
             ```
         """
+        from .utils import _microphone_registry
+
+        if device is None:
+            # Auto-selection: claim the first available microphone so other instances don't select it
+            from .utils import _claim_first_available_microphone
+
+            device = _claim_first_available_microphone()
+            try:
+                mic = _create_microphone(device, sample_rate, channels, format, buffer_size, **kwargs)
+            except BaseException:
+                _microphone_registry.release(device)
+                raise
+            _microphone_registry.bind(device, mic)
+            return mic
+
         if not isinstance(device, (str, int)):
             from .errors import MicrophoneConfigError
 
             raise MicrophoneConfigError(f"Invalid device type: {type(device)}")
 
-        if isinstance(device, int) or (isinstance(device, str) and device.isdigit()):
-            # Select the n-th plugged microphone (resolves to "usb:X"/"jack:X")
-            from .utils import nth_plugged_microphone
+        mic = _create_microphone(device, sample_rate, channels, format, buffer_size, **kwargs)
 
-            device = nth_plugged_microphone(int(device))
+        from .alsa_microphone import ALSAMicrophone
 
-        from urllib.parse import urlparse
-
-        parsed = urlparse(device)
-        if parsed.scheme in ["ws", "wss"]:
-            from .websocket_microphone import WebSocketMicrophone  # Imported here to avoid circular dependency
-
-            # WebSocket Microphone
-            port = parsed.port if parsed.port is not None else 8080
-            mic = WebSocketMicrophone(
-                port=port,
-                sample_rate=sample_rate,
-                channels=channels,
-                format=format,
-                buffer_size=buffer_size,
-                **kwargs,
-            )
-            if parsed.hostname != "0.0.0.0":
-                mic.logger.warning(f"Ignoring bind addresses other than '0.0.0.0' ({parsed.hostname}).")
-            return mic
-        else:
-            from .alsa_microphone import ALSAMicrophone  # Imported here to avoid circular dependency
-
-            # ALSA Microphone
-            return ALSAMicrophone(
-                device=device,
-                sample_rate=sample_rate,
-                channels=channels,
-                format=format,
-                buffer_size=buffer_size,
-                **kwargs,
-            )
+        if isinstance(mic, ALSAMicrophone):
+            # Claim local devices so auto-selection doesn't pick them
+            _microphone_registry.claim(mic.device_stable_ref)
+            _microphone_registry.bind(mic.device_stable_ref, mic)
+        return mic
 
     @staticmethod
     def record_pcm(duration: float, sample_rate: int, channels: int, format: FormatPlain | FormatPacked, device: str | int = 0) -> np.ndarray:
@@ -233,9 +228,10 @@ class Microphone:
                 - Strings: 'int16', '<i2', '>f4', 'float32'
                 - Tuple of (format, is_packed): to specify if the format is packed (e.g. 24-bit audio)
             device (Union[str, int]): Microphone device identifier. Supports:
-                - int | str: Auto-select the n-th available plugged microphone
-                    (e.g., 0, 1, "0", "1", ...), giving priority to USB microphones,
-                    then jack microphones if supported by the platform
+                - int | str: Select the n-th plugged microphone (e.g., 0, 1, "0",
+                    "1", ...) counting USB microphones first, then jack ones if
+                    supported by the platform. The device is shared with other
+                    instances using it
                 - str: ALSA device name (e.g., "plughw:CARD=MyCard,DEV=0", "hw:0,0", "CARD=MyCard,DEV=0")
                 - str: ALSA device file path (e.g., "/dev/snd/by-id/usb-My-Device-00")
                 - str: Microphone.USB_MIC_x / Microphone.JACK_MIC_x macros
@@ -275,9 +271,10 @@ class Microphone:
                 - Strings: 'int16', '<i2', '>f4', 'float32'
                 - Tuple of (format, is_packed): to specify if the format is packed (e.g. 24-bit audio)
             device (Union[str, int], optional): Microphone device identifier. Supports:
-                - int | str: Auto-select the n-th available plugged microphone
-                    (e.g., 0, 1, "0", "1", ...), giving priority to USB microphones,
-                    then jack microphones if supported by the platform
+                - int | str: Select the n-th plugged microphone (e.g., 0, 1, "0",
+                    "1", ...) counting USB microphones first, then jack ones if
+                    supported by the platform. The device is shared with other
+                    instances using it
                 - str: ALSA device name (e.g., "plughw:CARD=MyCard,DEV=0", "hw:0,0", "CARD=MyCard,DEV=0")
                 - str: ALSA device file path (e.g., "/dev/snd/by-id/usb-My-Device-00")
                 - str: Microphone.USB_MIC_x / Microphone.JACK_MIC_x macros
@@ -300,3 +297,45 @@ class Microphone:
             format=format,
         ) as mic:
             return mic.record_wav(duration=duration)
+
+
+def _create_microphone(
+    device: str | int,
+    sample_rate: int,
+    channels: int,
+    format: FormatPlain | FormatPacked,
+    buffer_size: int,
+    **kwargs,
+) -> BaseMicrophone:
+    """Create the microphone implementation matching the given device identifier."""
+    from urllib.parse import urlparse
+
+    parsed = urlparse(device) if isinstance(device, str) else None
+    if parsed is not None and parsed.scheme in ["ws", "wss"]:
+        from .websocket_microphone import WebSocketMicrophone  # Imported here to avoid circular dependency
+
+        # WebSocket Microphone
+        port = parsed.port if parsed.port is not None else 8080
+        mic = WebSocketMicrophone(
+            port=port,
+            sample_rate=sample_rate,
+            channels=channels,
+            format=format,
+            buffer_size=buffer_size,
+            **kwargs,
+        )
+        if parsed.hostname != "0.0.0.0":
+            mic.logger.warning(f"Ignoring bind addresses other than '0.0.0.0' ({parsed.hostname}).")
+        return mic
+    else:
+        from .alsa_microphone import ALSAMicrophone  # Imported here to avoid circular dependency
+
+        # ALSA Microphone
+        return ALSAMicrophone(
+            device=device,
+            sample_rate=sample_rate,
+            channels=channels,
+            format=format,
+            buffer_size=buffer_size,
+            **kwargs,
+        )

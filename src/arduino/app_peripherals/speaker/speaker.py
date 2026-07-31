@@ -98,7 +98,7 @@ class Speaker:
 
     def __new__(
         cls,
-        device: str | int = 0,
+        device: str | int | None = None,
         sample_rate: int = RATE_16K,
         channels: int = CHANNELS_MONO,
         format: FormatPlain | FormatPacked = np.int16,
@@ -109,14 +109,19 @@ class Speaker:
         Create a speaker instance based on the device type.
 
         Args:
-            device (Union[str, int]): Speaker device identifier. Supports:
-                - int | str: Auto-select the n-th available plugged speaker
-                    (e.g., 0, 1, "0", "1", ...), giving priority to USB speakers,
-                    then jack speakers if supported by the platform
+            device (str | int | None): Speaker device identifier. Supports:
+                - None: Auto-select the first available plugged speaker, i.e. not
+                    already in use by another instance, giving priority to USB
+                    speakers, then jack ones if supported by the platform.
+                    Raises if every plugged speaker is already in use
+                - int | str: Select the n-th plugged speaker (e.g., 0, 1, "0",
+                    "1", ...) counting USB speakers first, then jack ones,
+                    regardless of whether it is already in use: contention on a
+                    reused speaker is only discovered when starting it
                 - str: ALSA device name (e.g., "plughw:CARD=MyCard,DEV=0", "hw:0,0", "CARD=MyCard,DEV=0")
                 - str: ALSA device file path (e.g., "/dev/snd/by-id/usb-My-Device-00")
                 - str: Speaker.USB_SPEAKER_x / Speaker.JACK_SPEAKER_x macros
-                Default: 0.
+                Default: None.
             sample_rate (int): Sample rate in Hz. Default: 16000.
             channels (int): Number of audio channels. Default: 1.
             format (FormatPlain | FormatPacked): Audio format as one of:
@@ -146,35 +151,43 @@ class Speaker:
 
             ```python
             speaker = Speaker(sample_rate=16000, channels=1)  # First plugged speaker
-            speaker = Speaker(USB_SPEAKER_1, sample_rate=16000, channels=1)  # First USB speaker
+            speaker = Speaker(Speaker.USB_SPEAKER_1, sample_rate=16000, channels=1)  # First USB speaker
+            speaker = Speaker(Speaker.JACK_SPEAKER_1)  # First built-in (jack) speaker
             speaker = Speaker(1)  # Second plugged speaker
             speaker = Speaker("CARD=USB,DEV=0", format="S16_LE")
             speaker = Speaker("plughw:CARD=USB,DEV=0")
             speaker = Speaker("hw:0,0", buffer_size=2048)
             speaker = Speaker("/dev/snd/by-id/usb-My-Device-00")  # Using device file path
+            speaker = Speaker("pipewire")  # To use default PipeWire speaker (if available)
+            speaker = Speaker("pipewire:NODE=MyPipewireNode")  # Using PipeWire node name
             ```
         """
+        from .utils import _speaker_registry
+
+        if device is None:
+            # Auto-selection: claim the first available speaker so other instances don't select it
+            from .utils import _claim_first_available_speaker
+
+            device = _claim_first_available_speaker()
+            try:
+                speaker = _create_speaker(device, sample_rate, channels, format, buffer_size, **kwargs)
+            except BaseException:
+                _speaker_registry.release(device)
+                raise
+            _speaker_registry.bind(device, speaker)
+            return speaker
+
         if not isinstance(device, (str, int)):
             from .errors import SpeakerConfigError
 
             raise SpeakerConfigError(f"Invalid device type: {type(device)}")
 
-        if isinstance(device, int) or (isinstance(device, str) and device.isdigit()):
-            # Select the n-th plugged speaker (resolves to "usb:X"/"jack:X")
-            from .utils import nth_plugged_speaker
+        speaker = _create_speaker(device, sample_rate, channels, format, buffer_size, **kwargs)
 
-            device = nth_plugged_speaker(int(device))
-
-        from .alsa_speaker import ALSASpeaker  # Imported here to avoid circular dependency
-
-        return ALSASpeaker(
-            device=device,
-            sample_rate=sample_rate,
-            channels=channels,
-            format=format,
-            buffer_size=buffer_size,
-            **kwargs,
-        )
+        # Claim the device so auto-selection doesn't pick it
+        _speaker_registry.claim(speaker.device_stable_ref)
+        _speaker_registry.bind(speaker.device_stable_ref, speaker)
+        return speaker
 
     @staticmethod
     def play_pcm(
@@ -197,9 +210,10 @@ class Speaker:
                 - Strings: 'int16', '<i2', '>f4', 'float32'
                 - Tuple of (format, is_packed): to specify if the format is packed (e.g. 24-bit audio)
             device (Union[str, int], optional): Speaker device identifier. Supports:
-                - int | str: Auto-select the n-th available plugged speaker
-                    (e.g., 0, 1, "0", "1", ...), giving priority to USB speakers,
-                    then jack speakers if supported by the platform
+                - int | str: Select the n-th plugged speaker (e.g., 0, 1, "0",
+                    "1", ...) counting USB speakers first, then jack ones if
+                    supported by the platform. The device is shared with other
+                    instances using it
                 - str: ALSA device name (e.g., "plughw:CARD=MyCard,DEV=0", "hw:0,0", "CARD=MyCard,DEV=0")
                 - str: ALSA device file path (e.g., "/dev/snd/by-id/usb-My-Device-00")
                 - str: Speaker.USB_SPEAKER_x / Speaker.JACK_SPEAKER_x macros
@@ -223,9 +237,10 @@ class Speaker:
         Args:
             wav_audio (np.ndarray): WAV format audio data (including header).
             device (Union[str, int], optional): Speaker device identifier. Supports:
-                - int | str: Auto-select the n-th available plugged speaker
-                    (e.g., 0, 1, "0", "1", ...), giving priority to USB speakers,
-                    then jack speakers if supported by the platform
+                - int | str: Select the n-th plugged speaker (e.g., 0, 1, "0",
+                    "1", ...) counting USB speakers first, then jack ones if
+                    supported by the platform. The device is shared with other
+                    instances using it
                 - str: ALSA device name (e.g., "plughw:CARD=MyCard,DEV=0", "hw:0,0", "CARD=MyCard,DEV=0")
                 - str: ALSA device file path (e.g., "/dev/snd/by-id/usb-My-Device-00")
                 - str: Speaker.USB_SPEAKER_x / Speaker.JACK_SPEAKER_x macros
@@ -270,3 +285,24 @@ class Speaker:
         # Initialize speaker with WAV file parameters
         with Speaker(device=device, sample_rate=wav_framerate, channels=wav_channels, format=format) as speaker:
             speaker.play_wav(wav_audio)
+
+
+def _create_speaker(
+    device: str | int,
+    sample_rate: int,
+    channels: int,
+    format: FormatPlain | FormatPacked,
+    buffer_size: int,
+    **kwargs,
+) -> BaseSpeaker:
+    """Create the speaker implementation matching the given device identifier."""
+    from .alsa_speaker import ALSASpeaker  # Imported here to avoid circular dependency
+
+    return ALSASpeaker(
+        device=device,
+        sample_rate=sample_rate,
+        channels=channels,
+        format=format,
+        buffer_size=buffer_size,
+        **kwargs,
+    )

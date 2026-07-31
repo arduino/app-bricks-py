@@ -89,7 +89,7 @@ class TestALSASpeakerDeviceResolution:
     @pytest.mark.parametrize(
         "device, message",
         [
-            (5, "No available speakers found"),  # Ordinal beyond the plugged speakers
+            (5, "No speaker found at index 5"),  # Ordinal beyond the plugged speakers
             ("CARD=Ghost,DEV=0", "not found among available"),  # Well-formed but disconnected
         ],
     )
@@ -391,6 +391,25 @@ class TestALSASpeakerJackResolution:
 
         assert ALSASpeaker.list_devices() == ["plughw:CARD=SomeCard,DEV=0", "pipewire:NODE=alsa_output.platform-sound.Sink-52"]
 
+    def test_list_jack_devices_returns_all_builtin_nodes(self, mock_pw_dump, media_carrier):
+        mock_pw_dump(usb_ids=(), builtin_ids=(52, 54))
+
+        assert ALSASpeaker.list_jack_devices() == [
+            "pipewire:NODE=alsa_output.platform-sound.Sink-52",
+            "pipewire:NODE=alsa_output.platform-sound.Sink-54",
+        ]
+
+    def test_list_jack_devices_excludes_bluetooth_and_hdmi(self, mock_pw_dump, media_carrier):
+        mock_pw_dump(builtin_ids=(54,), bluetooth_ids=(50,), hdmi_ids=(52,))
+
+        assert ALSASpeaker.list_jack_devices() == ["pipewire:NODE=alsa_output.platform-sound.Sink-54"]
+
+    def test_second_jack_resolves_to_second_builtin_node(self, mock_pw_dump, media_carrier):
+        mock_pw_dump(usb_ids=(), builtin_ids=(52, 54))
+
+        spkr = ALSASpeaker(device="jack:2")
+        assert spkr.device_stable_ref == "pipewire:NODE=alsa_output.platform-sound.Sink-54"
+
     def test_jack_resolves_to_pipewire_node(self, mock_pw_dump, media_carrier):
         mock_pw_dump(usb_ids=(), builtin_ids=(52,))
 
@@ -448,3 +467,22 @@ class TestALSASpeakerJackResolution:
 
         spkr.start()
         assert pcm_registry.get_last_instance().device == "pipewire:NODE=unknown.node"
+
+    @pytest.mark.parametrize(
+        "device",
+        [
+            "pipewire",  # Bare default PipeWire device
+            "pipewire:NODE=unknown.node",  # Explicit PipeWire node
+        ],
+    )
+    def test_pipewire_opens_as_direct_device(self, pcm_registry, device):
+        """Both the bare 'pipewire' string and 'pipewire:NODE=...' open as-is without runtime resolution."""
+        spkr = ALSASpeaker(device=device)
+        assert spkr.device_stable_ref == device
+
+        spkr.start()
+
+        # The stable ref is handed to ALSA verbatim, no plug_card_* remapping.
+        assert pcm_registry.get_last_instance().device == device
+        # PipeWire devices are always considered present.
+        assert spkr._is_device_disconnected() is False

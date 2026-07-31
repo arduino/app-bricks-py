@@ -19,7 +19,7 @@ class Frame:
 
         Args:
             arr (numpy.ndarray): numpy array of shape (8, 13) with integer values
-            brightness_levels (int): number of brightness levels (default 255)
+            brightness_levels (int): number of brightness levels (default 256)
         """
         self.height = 8
         self.width = 13

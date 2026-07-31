@@ -12,7 +12,7 @@ import numpy as np
 
 from .base_speaker import BaseSpeaker, FormatPlain, FormatPacked
 from .errors import SpeakerError, SpeakerOpenError, SpeakerWriteError, SpeakerConfigError
-from .utils import has_media_carrier, list_audio_sinks, nth_plugged_speaker, node_description
+from .utils import has_media_carrier, list_audio_sinks, _nth_plugged_speaker, node_description
 from arduino.app_utils.logger import Logger
 
 logger = Logger("ALSASpeaker")
@@ -155,10 +155,8 @@ class ALSASpeaker(BaseSpeaker):
             logger.error(f"Error listing jack speakers: {e}")
             return []
 
-        if not builtin_sinks:
-            return []
-        node_name = builtin_sinks[0].get("info", {}).get("props", {}).get("node.name")
-        return [f"pipewire:NODE={node_name}"] if node_name else []
+        node_names = (sink.get("info", {}).get("props", {}).get("node.name") for sink in builtin_sinks)
+        return [f"pipewire:NODE={name}" for name in node_names if name]
 
     def _resolve_stable_ref(self, identifier: str | int) -> str:
         """
@@ -185,11 +183,11 @@ class ALSASpeaker(BaseSpeaker):
 
         # An ordinal index selects the n-th plugged speaker
         if isinstance(identifier, int) or (isinstance(identifier, str) and identifier.isdigit()):
-            identifier = nth_plugged_speaker(int(identifier))  # -> "usb:X" / "jack:X"
+            identifier = _nth_plugged_speaker(int(identifier))  # -> "usb:X" / "jack:X"
 
         # Complete device strings are opened as given
         if isinstance(identifier, str):
-            if identifier.startswith("pipewire:"):
+            if identifier.startswith("pipewire"):
                 return identifier
             if identifier.startswith("jack:"):
                 return self._resolve_jack_ref(identifier)
@@ -335,6 +333,8 @@ class ALSASpeaker(BaseSpeaker):
             SpeakerOpenError: If the device name can't be resolved
         """
         if isinstance(device_ref, str):
+            if device_ref == "pipewire":
+                return "pipewire"
             if device_ref.startswith("pipewire:"):
                 node_match = re.match(r"^pipewire:NODE=(.+)$", device_ref)
                 if node_match:
@@ -388,7 +388,7 @@ class ALSASpeaker(BaseSpeaker):
         logger.debug(f"Opening PCM device: {self.device_stable_ref}")
 
         try:
-            direct_match = re.match(r"^pipewire:|^(plughw:|hw:)[^,]+,\d+,\d+$", self.device_stable_ref)
+            direct_match = re.match(r"^pipewire($|:)|^(plughw:|hw:)[^,]+,\d+,\d+$", self.device_stable_ref)
 
             if direct_match:
                 device = self.device_stable_ref
@@ -496,7 +496,7 @@ class ALSASpeaker(BaseSpeaker):
 
     def _is_device_disconnected(self) -> bool:
         """Check if the device is still in the available devices list."""
-        if self.device_stable_ref.startswith("pipewire:"):
+        if self.device_stable_ref.startswith("pipewire"):
             # Built-in devices are always present
             return False
 

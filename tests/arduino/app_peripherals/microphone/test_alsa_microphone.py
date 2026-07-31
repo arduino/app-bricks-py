@@ -89,7 +89,7 @@ class TestALSAMicrophoneDeviceResolution:
     @pytest.mark.parametrize(
         "device, message",
         [
-            (5, "No available microphones found"),  # Ordinal beyond the plugged microphones
+            (5, "No microphone found at index 5"),  # Ordinal beyond the plugged microphones
             ("CARD=Ghost,DEV=0", "not found among available"),  # Well-formed but disconnected
         ],
     )
@@ -371,6 +371,25 @@ class TestALSAMicrophoneJackResolution:
 
         assert ALSAMicrophone.list_devices() == ["plughw:CARD=SomeCard,DEV=0", "pipewire:NODE=alsa_input.platform-sound.Source-52"]
 
+    def test_list_jack_devices_returns_all_builtin_nodes(self, mock_pw_dump, media_carrier):
+        mock_pw_dump(usb_ids=(), builtin_ids=(52, 54))
+
+        assert ALSAMicrophone.list_jack_devices() == [
+            "pipewire:NODE=alsa_input.platform-sound.Source-52",
+            "pipewire:NODE=alsa_input.platform-sound.Source-54",
+        ]
+
+    def test_list_jack_devices_excludes_bluetooth_and_hdmi(self, mock_pw_dump, media_carrier):
+        mock_pw_dump(builtin_ids=(54,), bluetooth_ids=(50,), hdmi_ids=(52,))
+
+        assert ALSAMicrophone.list_jack_devices() == ["pipewire:NODE=alsa_input.platform-sound.Source-54"]
+
+    def test_second_jack_resolves_to_second_builtin_node(self, mock_pw_dump, media_carrier):
+        mock_pw_dump(usb_ids=(), builtin_ids=(52, 54))
+
+        mic = ALSAMicrophone(device="jack:2")
+        assert mic.device_stable_ref == "pipewire:NODE=alsa_input.platform-sound.Source-54"
+
     def test_jack_resolves_to_pipewire_node(self, mock_pw_dump, media_carrier):
         mock_pw_dump(usb_ids=(), builtin_ids=(52,))
 
@@ -428,3 +447,22 @@ class TestALSAMicrophoneJackResolution:
 
         mic.start()
         assert pcm_registry.get_last_instance().device == "pipewire:NODE=unknown.node"
+
+    @pytest.mark.parametrize(
+        "device",
+        [
+            "pipewire",  # Bare default PipeWire device
+            "pipewire:NODE=unknown.node",  # Explicit PipeWire node
+        ],
+    )
+    def test_pipewire_opens_as_direct_device(self, pcm_registry, device):
+        """Both the bare 'pipewire' string and 'pipewire:NODE=...' open as-is without runtime resolution."""
+        mic = ALSAMicrophone(device=device)
+        assert mic.device_stable_ref == device
+
+        mic.start()
+
+        # The stable ref is handed to ALSA verbatim, no plug_card_* remapping.
+        assert pcm_registry.get_last_instance().device == device
+        # PipeWire devices are always considered present.
+        assert mic._is_device_disconnected() is False

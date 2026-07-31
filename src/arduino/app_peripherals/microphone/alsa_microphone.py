@@ -12,7 +12,7 @@ import numpy as np
 
 from .base_microphone import BaseMicrophone, FormatPlain, FormatPacked
 from .errors import MicrophoneError, MicrophoneOpenError, MicrophoneReadError, MicrophoneConfigError
-from .utils import has_media_carrier, list_audio_sources, nth_plugged_microphone, node_description
+from .utils import has_media_carrier, list_audio_sources, _nth_plugged_microphone, node_description
 from arduino.app_utils.logger import Logger
 
 logger = Logger("ALSAMicrophone")
@@ -154,10 +154,8 @@ class ALSAMicrophone(BaseMicrophone):
             logger.error(f"Error listing jack microphones: {e}")
             return []
 
-        if not builtin_sources:
-            return []
-        node_name = builtin_sources[0].get("info", {}).get("props", {}).get("node.name")
-        return [f"pipewire:NODE={node_name}"] if node_name else []
+        node_names = (source.get("info", {}).get("props", {}).get("node.name") for source in builtin_sources)
+        return [f"pipewire:NODE={name}" for name in node_names if name]
 
     def _resolve_stable_ref(self, identifier: str | int) -> str:
         """
@@ -184,11 +182,11 @@ class ALSAMicrophone(BaseMicrophone):
 
         # An ordinal index selects the n-th plugged microphone
         if isinstance(identifier, int) or (isinstance(identifier, str) and identifier.isdigit()):
-            identifier = nth_plugged_microphone(int(identifier))  # -> "usb:X" / "jack:X"
+            identifier = _nth_plugged_microphone(int(identifier))  # -> "usb:X" / "jack:X"
 
         # Complete device strings are opened as given
         if isinstance(identifier, str):
-            if identifier.startswith("pipewire:"):
+            if identifier.startswith("pipewire"):
                 return identifier
             if identifier.startswith("jack:"):
                 return self._resolve_jack_ref(identifier)
@@ -334,6 +332,8 @@ class ALSAMicrophone(BaseMicrophone):
             MicrophoneOpenError: If the device name can't be resolved
         """
         if isinstance(device_ref, str):
+            if device_ref == "pipewire":
+                return "pipewire"
             if device_ref.startswith("pipewire:"):
                 node_match = re.match(r"^pipewire:NODE=(.+)$", device_ref)
                 if node_match:
@@ -387,7 +387,7 @@ class ALSAMicrophone(BaseMicrophone):
         logger.debug(f"Opening PCM device: {self.device_stable_ref}")
 
         try:
-            direct_match = re.match(r"^pipewire:|^(plughw:|hw:)[^,]+,\d+,\d+$", self.device_stable_ref)
+            direct_match = re.match(r"^pipewire($|:)|^(plughw:|hw:)[^,]+,\d+,\d+$", self.device_stable_ref)
 
             if direct_match:
                 device = self.device_stable_ref
@@ -500,7 +500,7 @@ class ALSAMicrophone(BaseMicrophone):
 
     def _is_device_disconnected(self) -> bool:
         """Check if the device is still in the available devices list."""
-        if self.device_stable_ref.startswith("pipewire:"):
+        if self.device_stable_ref.startswith("pipewire"):
             # Built-in devices are always present
             return False
 

@@ -37,7 +37,7 @@ dev = [
     "docstring_parser>=0.16",
     "arduino_app_bricks[all]",
     "deepeval",
-    "mcp",
+    "mcp<2",
     "langchain_mcp_adapters",
     "langchain_ollama",
 ]
@@ -51,9 +51,9 @@ folderwatcher = [
     "watchdog>=6.0.0",
 ]
 usb_camera = [
-    # The .* suffix prevents pulling what's available from PyPI and forces uv
-    # to install our custom built wheel.
-    "opencv-python-headless==4.13.0.*",
+    # Upper bound keeps us on the 4.13 ABI; the exact build is enforced by
+    # the container's uv-constraint.txt file.
+    "opencv-python-headless>=4.13,<4.14"
 ]
 microphone = [
     "pyalsaaudio==0.11.0; sys_platform == 'linux'",
@@ -85,7 +85,8 @@ cloud_llm = [
     "langchain-google-genai >=4.1.3",
 ]
 mcp_client = [
-    "langchain-mcp-adapters >=0.2.1",
+    "langchain-mcp-adapters==0.3.1",
+    "mcp==1.29.0",
 ]
 cloud_asr = [
     "websocket-client",
