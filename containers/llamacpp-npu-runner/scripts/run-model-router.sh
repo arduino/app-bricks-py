@@ -33,9 +33,19 @@ for ((i=0; i<NDEV; i++)); do
   fi
 done
 
+# NPU offloading can be turned off with LLAMACPP_DISABLE_NPU_SUPPORT=true, which keeps
+# every layer on the CPU (-ngl 0). Any other value (default) offloads to the NPU.
+if [ "${LLAMACPP_DISABLE_NPU_SUPPORT,,}" = "true" ]; then
+  NGL=0
+  echo "LLAMACPP_DISABLE_NPU_SUPPORT=true: NPU support disabled, running on CPU (-ngl 0)"
+else
+  NGL=100
+  echo "NPU support enabled (-ngl ${NGL})"
+fi
+
 LLAMA_ARGS=(
   --device "$DEVICE_LIST"
-  -ngl 100
+  -ngl "$NGL"
   --no-mmap
   --models-preset /models/models.ini
 )
