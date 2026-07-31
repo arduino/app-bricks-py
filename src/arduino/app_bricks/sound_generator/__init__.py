@@ -572,7 +572,7 @@ class SoundGenerator(SoundGeneratorStreamer):
             self.external_speaker = False
             # Use shared mode by default so multiple SoundGenerator instances can
             # overlap playback on the same speaker.
-            self._output_device = Speaker(sample_rate=Speaker.RATE_32K, format=np.float32, buffer_size=Speaker.BUFFER_SIZE_SAFE, shared=True)
+            self._output_device = Speaker(0, sample_rate=Speaker.RATE_32K, format=np.float32, buffer_size=Speaker.BUFFER_SIZE_SAFE, shared=True)
         else:
             self.external_speaker = True
             self._output_device = output_device

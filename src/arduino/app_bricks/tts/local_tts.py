@@ -61,7 +61,7 @@ class TextToSpeech:
         Args:
             speaker (BaseSpeaker, optional): Speaker instance to use for audio output. If not provided, a default Speaker will be used.
         """
-        self._speaker = speaker or Speaker(sample_rate=Speaker.RATE_44K, shared=True)
+        self._speaker = speaker or Speaker(0, sample_rate=Speaker.RATE_44K, shared=True)
 
         # API configuration
         self.api_host = resolve_address(self._APP_SERVICE_NAME)
