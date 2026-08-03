@@ -536,6 +536,29 @@ def test_main_never_emits_internal_variables(monkeypatch, capsys, tmp_path):
     assert all("variables" not in m for m in models)
 
 
+def test_main_lists_an_unlisted_model_with_its_metadata(monkeypatch, capsys, tmp_path):
+    """A Hugging Face model downloaded ad hoc, with no models-list.yaml entry.
+
+    Any repository can be pulled by --model-key / --model-repo-id / --model-url, so
+    the listing must surface it from the filesystem, carry its record, and say
+    nothing about whether it is outdated (there is no declaration to compare to).
+    """
+    models_dir, _models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
+    repo = os.path.join(str(models_dir), "llamacpp", "TheBloke", "Mistral-7B-Instruct-v0.2-GGUF")
+    _make_gguf(os.path.join(repo, "mistral.Q4_0.gguf"))
+    _write_metadata_file(repo, "schema_version: 1\nhandler: hf-handler\nmodel_id: null\nmodel_id_source: unresolved\n")
+
+    _models_dir, models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
+    entries = [m for m in models if m["id"] == "llamacpp:mistral.Q4_0"]
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry["installed"] is True
+    assert entry["downloaded_metadata"]["model_id_source"] == "unresolved"
+    assert "outdated" not in entry
+    # The models-list.yaml entries are unaffected.
+    assert _gemma_entry(models)["installed"] is False
+
+
 def test_find_llamacpp_attaches_metadata(tmp_path):
     base = tmp_path / "models"
     repo = os.path.join(str(base), *GEMMA_REPO)

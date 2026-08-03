@@ -17,7 +17,14 @@ import os
 import pytest
 
 from common.model_metadata import METADATA_NAME
-from hugging_face.hf_downloader import JsonProgress, delete_matched_files, has_model_content, matches_pattern, prune_emptied_repo_dir
+from hugging_face.hf_downloader import (
+    JsonProgress,
+    delete_matched_files,
+    has_model_content,
+    matches_pattern,
+    parse_model_key,
+    prune_emptied_repo_dir,
+)
 
 
 def read_events(capsys) -> list[dict]:
@@ -156,6 +163,52 @@ def test_xet_download_routes_both_counters_into_a_single_bar():
 )
 def test_matches_pattern(path, pattern, expected):
     assert matches_pattern(path, pattern) is expected
+
+
+# --------------------------------------------------------------------------- #
+# parse_model_key
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize(
+    ("key", "expected"),
+    [
+        # Two fields: no model_type, llama.cpp's "-hf <repo>:<quant>" form.
+        ("Qwen/Qwen3-8B-GGUF:Q8_0", ("", "Qwen/Qwen3-8B-GGUF", "Q8_0", None)),
+        ("unsloth/gemma-4-E2B-it-GGUF:Q4_0", ("", "unsloth/gemma-4-E2B-it-GGUF", "Q4_0", None)),
+        # Three fields: the historical form, still accepted.
+        ("llamacpp:Qwen/Qwen3-8B-GGUF:Q8_0", ("llamacpp", "Qwen/Qwen3-8B-GGUF", "Q8_0", None)),
+        # Four fields: with an mmproj quantization.
+        ("llamacpp:unsloth/gemma-4-E4B-it-GGUF:Q4_0:BF16", ("llamacpp", "unsloth/gemma-4-E4B-it-GGUF", "Q4_0", "BF16")),
+        # A trailing empty mmproj field means "no mmproj".
+        ("llamacpp:org/repo:Q4_0:", ("llamacpp", "org/repo", "Q4_0", None)),
+        # Repos without an org are fine: the field count decides, not the "/".
+        ("bert-base-uncased:Q8_0", ("", "bert-base-uncased", "Q8_0", None)),
+    ],
+)
+def test_parse_model_key(key, expected):
+    assert parse_model_key(key) == expected
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "Qwen/Qwen3-8B-GGUF",  # no quantization: one field
+        "",  # empty key
+        "llamacpp:org/repo:Q4_0:BF16:extra",  # five fields
+    ],
+)
+def test_parse_model_key_rejects_wrong_field_count(key):
+    with pytest.raises(ValueError, match="Invalid model key"):
+        parse_model_key(key)
+
+
+def test_parse_model_key_rejects_empty_repo_id():
+    with pytest.raises(ValueError, match="repo_id cannot be empty"):
+        parse_model_key(":Q4_0")
+
+
+def test_parse_model_key_rejects_empty_quantization():
+    with pytest.raises(ValueError, match="quantization cannot be empty"):
+        parse_model_key("org/repo:")
 
 
 # --------------------------------------------------------------------------- #

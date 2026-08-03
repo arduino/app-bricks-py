@@ -194,6 +194,33 @@ def test_identify_model_unresolved_when_no_entry_matches(tmp_path):
     assert identity == {"model_id": None, "model_id_source": "unresolved"}
 
 
+def test_identify_model_needs_the_derived_model_directory(tmp_path):
+    """models_list.yaml declares model_directory, so an env missing it cannot match.
+
+    The Hugging Face handler derives it from the repo id (a substring of the model
+    URL) before writing the record — this is what that derivation buys.
+    """
+    models_list = _models_list(tmp_path)
+    without = {key: value for key, value in HF_ENV.items() if key != "model_directory"}
+    assert identify_model(without, models_list)["model_id"] is None
+
+    derived = {**without, "model_directory": "google/gemma-4-E2B-it-qat-q4_0-gguf"}
+    assert identify_model(derived, models_list)["model_id"] == "llamacpp:gemma-4-E2B_q4_0-it"
+
+
+def test_inputs_record_the_derived_model_directory(tmp_path):
+    without = {key: value for key, value in HF_ENV.items() if key != "model_directory"}
+    write_metadata(
+        str(tmp_path),
+        "hf-handler",
+        env={**without, "model_directory": "google/gemma-4-E2B-it-qat-q4_0-gguf"},
+        models_list_path=_models_list(tmp_path),
+    )
+    data = read_metadata(str(tmp_path))
+    assert data["inputs"]["model_directory"] == "google/gemma-4-E2B-it-qat-q4_0-gguf"
+    assert data["model_id"] == "llamacpp:gemma-4-E2B_q4_0-it"
+
+
 # --------------------------------------------------------------------------- #
 # dir_stats
 # --------------------------------------------------------------------------- #
@@ -416,6 +443,41 @@ def test_payload_hugging_face(tmp_path):
     assert data["resolved"]["revision"] == "1894d1fc"
     assert data["resolved"]["revision_source"] == "url"
     assert "mmproj_allow_pattern" not in data["resolved"]
+
+
+def test_payload_for_a_repo_absent_from_models_list(tmp_path):
+    """An ad-hoc Hugging Face download is fully supported, just unidentified.
+
+    Any repository can be pulled with --model-key / --model-repo-id / --model-url
+    without a models-list.yaml entry, so the record must still be written: the
+    identity is reported as unresolved and everything else is intact.
+    """
+    model_dir = tmp_path / "TheBloke" / "Mistral-7B-Instruct-v0.2-GGUF"
+    model_dir.mkdir(parents=True)
+    (model_dir / "mistral.Q4_0.gguf").write_bytes(b"\0" * 40)
+    env = {
+        "model_key": "llamacpp:TheBloke/Mistral-7B-Instruct-v0.2-GGUF:Q4_0",
+        "models_repository": "llamacpp",
+        "model_directory": "TheBloke/Mistral-7B-Instruct-v0.2-GGUF",
+    }
+    path = write_metadata(
+        str(model_dir),
+        "hf-handler",
+        resolved={"repo_id": "TheBloke/Mistral-7B-Instruct-v0.2-GGUF", "revision": "abc123", "revision_source": "api", **dir_stats(str(model_dir))},
+        env=env,
+        models_list_path=_models_list(tmp_path),
+    )
+    assert path is not None
+    data = read_metadata(str(model_dir))
+    assert data["model_id"] is None
+    assert data["model_id_source"] == "unresolved"
+    # No entry to borrow a name or source from.
+    assert "name" not in data
+    assert "source" not in data
+    # The download is still fully described.
+    assert data["inputs"] == env
+    assert data["resolved"]["repo_id"] == "TheBloke/Mistral-7B-Instruct-v0.2-GGUF"
+    assert data["resolved"]["size_bytes"] == 40
 
 
 def test_written_file_is_plain_safe_yaml(tmp_path):

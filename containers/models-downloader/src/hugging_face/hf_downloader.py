@@ -13,9 +13,9 @@ that indexes all downloaded models for use by downstream runners.
 
 Usage — three modes
 --------------------
-1. Compact key::
+1. Compact key (``model_type`` optional, so llama.cpp's ``-hf`` form works as-is)::
 
-       hf_downloader --model-key llamacpp:<repo_id>:<quantization>[:<mmproj_quantization>]
+       hf_downloader --model-key [<model_type>:]<repo_id>:<quantization>[:<mmproj_quantization>]
 
 2. Explicit names::
 
@@ -270,6 +270,42 @@ def parse_hf_url(url: str) -> tuple[str, str, str]:
     return repo_id, filename, revision
 
 
+def parse_model_key(model_key: str) -> tuple[str, str, str, str | None]:
+    """Parse a model key into ``(model_type, repo_id, quantization, mmproj_quantization)``.
+
+    Accepted forms, colon-separated::
+
+        <repo_id>:<quantization>                                    # llama.cpp -hf style
+        <model_type>:<repo_id>:<quantization>
+        <model_type>:<repo_id>:<quantization>:<mmproj_quantization>
+
+    ``model_type`` is optional and purely informative — nothing selects on it — so a
+    two-field key is accepted and reads like llama.cpp's ``-hf Qwen/Qwen3-8B-GGUF:Q8_0``.
+    The field count alone disambiguates, because the quantization is always required.
+
+    Raises:
+        ValueError: when the field count is wrong, or repo_id/quantization are empty.
+    """
+    parts = model_key.split(":")
+    if len(parts) == 2:
+        model_type, repo_id, quantization, mmproj_quantization = "", parts[0], parts[1], None
+    elif len(parts) == 3:
+        model_type, repo_id, quantization, mmproj_quantization = parts[0], parts[1], parts[2], None
+    elif len(parts) == 4:
+        model_type, repo_id, quantization, mmproj_quantization = parts
+    else:
+        raise ValueError(
+            f"Invalid model key: {model_key}\n"
+            "Expected format: [<model_type>:]<repo_id>:<quantization>[:<mmproj_quantization>] "
+            "(e.g. Qwen/Qwen3-8B-GGUF:Q8_0 or llamacpp:Qwen/Qwen3-8B-GGUF:Q8_0)"
+        )
+    if repo_id == "":
+        raise ValueError("repo_id cannot be empty")
+    if quantization == "":
+        raise ValueError("quantization cannot be empty")
+    return model_type, repo_id, quantization, mmproj_quantization or None
+
+
 def matches_pattern(path: str, pattern: str) -> bool:
     """fnmatch a repo-relative *path* against *pattern*.
 
@@ -379,8 +415,8 @@ def main():
         "--model-key",
         type=str,
         metavar="KEY",
-        help="model key (e.g. llamacpp:unsloth/gemma-4-E4B-it-GGUF:Q4_0:BF16). "
-        "The format is: <model_type>:<repo_id>:<quantization>:<optional mmproj quantization>.",
+        help="model key (e.g. Qwen/Qwen3-8B-GGUF:Q8_0 or llamacpp:unsloth/gemma-4-E4B-it-GGUF:Q4_0:BF16). "
+        "The format is: [<model_type>:]<repo_id>:<quantization>[:<mmproj_quantization>]; model_type is optional.",
     )
     parser.add_argument(
         "--model-url",
@@ -473,22 +509,23 @@ def main():
                 emit_json_info(f"MMProj Revision: {mmproj_url_revision}")
 
     elif args.model_key and args.model_key != "":
-        model_type, repo_id, quantization, *mmproj_quantization = args.model_key.split(":")
-        if repo_id == "":
-            raise ValueError("repo_id cannot be empty")
-        if quantization == "":
-            raise ValueError("quantization cannot be empty")
+        try:
+            model_type, repo_id, quantization, mmproj_quantization = parse_model_key(args.model_key)
+        except ValueError as exc:
+            emit_json_error(str(exc))
+            raise SystemExit(1) from exc
 
         if args.verbose:
             emit_json_info(f"Repository ID: {repo_id}")
             emit_json_info(f"Model key: {args.model_key}")
-            emit_json_info(f"Model type: {model_type}")
+            if model_type:
+                emit_json_info(f"Model type: {model_type}")
             emit_json_info(f"Quantization: {quantization}")
             if mmproj_quantization:
-                emit_json_info(f"MMProj Quantization: {mmproj_quantization[0]}")
+                emit_json_info(f"MMProj Quantization: {mmproj_quantization}")
 
         allow_pattern = f"*{quantization}*.gguf"
-        mmproj_allow_pattern = f"*mmproj*{mmproj_quantization[0]}*.gguf" if mmproj_quantization else None
+        mmproj_allow_pattern = f"*mmproj*{mmproj_quantization}*.gguf" if mmproj_quantization else None
     else:
         if not args.model_repo_id or not args.model_name:
             raise ValueError("If --model-key is not provided, both --model-repo-id and --model-name must be specified")
@@ -579,12 +616,22 @@ def main():
             emit_json_info(f"Removing incomplete previous download: {repo_id}")
             remove_model_dir(output_dir, args.output_dir)
 
+        # The model directory is the repo id: the download always lands in
+        # <output_dir>/<repo_id>. models-list.yaml usually spells it out, but it is
+        # redundant — repo_id is a substring of the model URL (and of the model key),
+        # so derive it when the variable is not set rather than recording nothing.
+        model_directory = os.environ.get("model_directory") or repo_id
+        # Environment the metadata record is built from, with model_directory filled
+        # in: it feeds both the "inputs" block and the models-list.yaml lookup that
+        # identifies the model.
+        metadata_env = {**os.environ, "model_directory": model_directory}
+
         os.makedirs(output_dir, exist_ok=True)
         write_marker(
             output_dir,
             handler="hf-handler",
             models_repository=os.environ.get("models_repository", ""),
-            model_directory=os.environ.get("model_directory", "") or repo_id,
+            model_directory=model_directory,
             model_url=args.model_url or "",
         )
 
@@ -663,6 +710,7 @@ def main():
         write_metadata(
             output_dir,
             handler="hf-handler",
+            env=metadata_env,
             resolved={
                 "repo_id": repo_id,
                 "revision": revision,

@@ -38,6 +38,12 @@ Contracts callers must honour:
   and the function returns None.
 - The file is therefore **optional**. Its absence means "unknown / legacy install",
   never "up to date": models downloaded before this file existed have none.
+- ``model_id: null`` with ``model_id_source: unresolved`` is a **normal, supported
+  state, not an error**. Any Hugging Face repository can be downloaded ad hoc via
+  ``--model-key`` / ``--model-repo-id`` / ``--model-url`` without a models-list.yaml
+  entry; such a download is recorded in full, only unidentified. Consumers must not
+  treat a null model_id as a failure, and outdated-detection simply does not apply
+  (there is no declaration to compare against).
 - It is a **snapshot** taken when the download finished. ``size_bytes`` and
   ``file_count`` are not live disk state.
 - The Hugging Face handler downloads into a per-*repository* directory, so two
