@@ -26,6 +26,18 @@ services:
     ports:
       - ${BIND_ADDRESS:-127.0.0.1}:9999:9999
       - ${BIND_ADDRESS_IPV6:-[::1]}:9999:9999
+    # Add capability to allow process to modify resource limits
+    cap_add:
+      - SYS_RESOURCE
+    # Memory and resource limits for VLM model loading
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    oom_score_adj: -500      
     mem_limit: 10g
     memswap_limit: 10g
     shm_size: 2g
