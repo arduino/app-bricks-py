@@ -32,7 +32,7 @@ on:
         type: string
         required: true
       tag_ref:
-        description: "Full tag ref (e.g. release/1.2.3)"
+        description: "Full tag ref (e.g. bricks/1.2.3)"
         type: string
         required: true
       prerelease:
@@ -88,7 +88,11 @@ jobs:
             echo "::error::Expected exactly one containers/*/${{ matrix.container }}/ci.json, found: ${MATCHES[*]}"
             exit 1
           fi
-          echo "path=$(dirname "${MATCHES[0]}")" >> $GITHUB_OUTPUT
+          CONTAINER_DIR="$(dirname "${MATCHES[0]}")"
+          echo "path=$CONTAINER_DIR" >> $GITHUB_OUTPUT
+          # The group is also the container's tag prefix: containers/ai/<name> is
+          # released by an ai/X.Y.Z tag.
+          echo "group=$(basename "$(dirname "$CONTAINER_DIR")")" >> $GITHUB_OUTPUT
 
       - name: Read container config
         id: config
@@ -97,7 +101,6 @@ jobs:
           echo "build_whl=$(jq -r '.build_whl // false' "$CI_JSON")" >> $GITHUB_OUTPUT
           echo "update_compose=$(jq -r '.update_compose // false' "$CI_JSON")" >> $GITHUB_OUTPUT
           echo "tag_latest=$(jq -r '.tag_latest // false' "$CI_JSON")" >> $GITHUB_OUTPUT
-          echo "tag_prefix=$(jq -r '.tag_prefix' "$CI_JSON")" >> $GITHUB_OUTPUT
           echo "watch_paths=$(jq -r '.watch_paths | join(" ")' "$CI_JSON")" >> $GITHUB_OUTPUT
           BUILD_ARGS=$(jq -r '.build_args // {} | to_entries | map("\(.key)=\(.value)") | join("\n")' "$CI_JSON")
           echo "build_args<<EOF" >> $GITHUB_OUTPUT
@@ -133,7 +136,9 @@ jobs:
             exit 0
           fi
 
-          TAG_PREFIX="${{ steps.config.outputs.tag_prefix }}"
+          # A container's own tag prefix is its group, so the previous release to
+          # compare against is the previous tag of that group.
+          TAG_PREFIX="${{ steps.dir.outputs.group }}"
           CURRENT_TAG="${TAG_PREFIX}/${{ inputs.version }}"
           git fetch --tags
           PREV_TAG=$(git tag --sort=-version:refname | grep "^${TAG_PREFIX}/" | grep -v "^${CURRENT_TAG}$" | head -1)

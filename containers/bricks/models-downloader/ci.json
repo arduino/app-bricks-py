@@ -1,7 +1,6 @@
 {
-  "tag_prefix": "release",
   "watch_paths": [
-    "containers/main/models-downloader/",
+    "containers/bricks/models-downloader/",
     "src/",
     "models/"
   ],

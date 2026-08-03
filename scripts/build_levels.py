@@ -6,8 +6,9 @@
 
 """Compute the multi-level build plan for container images.
 
-Containers live in ``containers/<group>/<name>/`` — the group (``base``, ``ai``,
-``main``) is documentation only: a container is always identified by its leaf
+Containers live in ``containers/<group>/<name>/``. The group is what a release
+tag selects: pushing ``ai/0.12.0`` releases every container under
+``containers/ai/``. A container is otherwise always identified by its leaf
 directory name, which is also its image name.
 
 The dependency graph is declared in ``containers/*/*/ci.json`` via the
@@ -67,7 +68,7 @@ class Graph:
         """Load every ``containers/*/*/ci.json`` and build the edge maps."""
         self.children: dict[str, list[str]] = {}
         self.parents: dict[str, list[str]] = {}
-        self.tag_prefix: dict[str, str] = {}
+        self.group: dict[str, str] = {}
         self.base_image: dict[str, bool] = {}
         self.directory: dict[str, Path] = {}
 
@@ -86,7 +87,7 @@ class Graph:
             self.directory[name] = ci_json.parent
             self.children.setdefault(name, [])
             self.parents.setdefault(name, [])
-            self.tag_prefix[name] = str(config.get("tag_prefix", ""))
+            self.group[name] = ci_json.parent.parent.name
             self.base_image[name] = bool(config.get("base_image", False))
 
         # Second pass: wire edges now that every node is known.
@@ -105,6 +106,11 @@ class Graph:
     def containers(self) -> set[str]:
         """All known container names."""
         return set(self.children)
+
+    @property
+    def groups(self) -> set[str]:
+        """All known container groups (the ``containers/`` sub-folders)."""
+        return set(self.group.values())
 
 
 def _closure(seeds: set[str], edges: dict[str, list[str]]) -> set[str]:
@@ -149,16 +155,21 @@ def resolve_dev_build_set(graph: Graph, select: str) -> set[str]:
     return resolve_build_set(graph, seeds)
 
 
-def resolve_release_build_set(graph: Graph, tag_prefix: str) -> set[str]:
+def resolve_release_build_set(graph: Graph, group: str) -> set[str]:
     """Resolve the containers to build for the RELEASE workflow.
 
-    Seeds are the containers whose ``tag_prefix`` matches the pushed tag prefix,
-    excluding those flagged ``base_image`` (common bases are never a direct
-    release target). The build set then adds their descendants *and* ancestors,
-    so a shared base image is rebuilt as a dependency even though it is not
-    itself a release target.
+    ``group`` is the prefix of the pushed tag, which *is* the ``containers/``
+    sub-folder to release: ``ai/0.12.0`` seeds every container under
+    ``containers/ai/``. Containers flagged ``base_image`` are excluded from the
+    seeds — a shared base is never a direct release target, so tagging the
+    ``base`` group alone builds nothing. The build set then adds the seeds'
+    descendants *and* ancestors, so every image being released sits on a freshly
+    built base even though that base is not itself a release target.
     """
-    seeds = {name for name, prefix in graph.tag_prefix.items() if prefix == tag_prefix and not graph.base_image[name]}
+    if group not in graph.groups:
+        raise BuildLevelsError(f"Unknown container group '{group}'. Known groups: {', '.join(sorted(graph.groups))}.")
+
+    seeds = {name for name, name_group in graph.group.items() if name_group == group and not graph.base_image[name]}
     return resolve_build_set(graph, seeds)
 
 
@@ -229,7 +240,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mode", required=True, choices=["dev", "release"], help="Which workflow is requesting the plan.")
     parser.add_argument("--select", default="all", help="dev mode: 'all' or comma-separated container names.")
-    parser.add_argument("--tag-prefix", default="", help="release mode: tag prefix that selects the seed containers.")
+    parser.add_argument("--group", default="", help="release mode: container group to release (the pushed tag's prefix).")
     return parser
 
 
@@ -242,9 +253,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.mode == "dev":
             build_set = resolve_dev_build_set(graph, args.select)
         else:
-            if not args.tag_prefix:
-                raise BuildLevelsError("--tag-prefix is required in release mode.")
-            build_set = resolve_release_build_set(graph, args.tag_prefix)
+            if not args.group:
+                raise BuildLevelsError("--group is required in release mode.")
+            build_set = resolve_release_build_set(graph, args.group)
 
         emit_outputs(build_plan(graph, build_set), build_set)
     except BuildLevelsError as exc:

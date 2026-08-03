@@ -145,19 +145,22 @@ If it is needed to use a different version, override it via 'APPSLAB_VERSION' en
 
 ## Release
 
-Release is based on tags pushed to `main`. A single workflow (`docker-github-publish.yml`) handles all container releases and detects which container to build from the tag prefix defined in each container's `ci.json`.
+Release is based on tags pushed to `main`. A single workflow (`docker-publish.yml`) handles all container
+releases: **the tag prefix is the `containers/` sub-folder to release**.
 
 | Tag | What it releases |
 |---|---|
-| `base/X.Y.Z` | `python-base` base image |
-| `release/X.Y.Z` | `python-apps-base` container + Python `.whl` uploaded to GitHub Release |
-| `ai/X.Y.Z` | `ei-models-runner` AI container |
+| `bricks/X.Y.Z` | everything in `containers/bricks/` (`python-apps-base`, `models-downloader`) + Python `.whl` uploaded to GitHub Release |
+| `ai/X.Y.Z` | everything in `containers/ai/` (the model runners) |
 
-Release cycles for AI containers and Bricks are independent — they use separate tag prefixes and can be released at any time without affecting each other.
+Release cycles for AI containers and Bricks are independent — they use separate folders and tag prefixes,
+and can be released at any time without affecting each other.
 
 After releasing a new version of AI containers, compose files that use AI containers are updated automatically via a generated PR.
 
-**Downstream cascade**: when `python-base` is released, the workflow automatically triggers a rebuild of `python-apps-base` (and any other container declared as a downstream dependency). No manual step required.
+**Dependencies**: base images in `containers/base/` are not released on their own. Whatever a tagged
+group depends on is rebuilt first, in dependency order, and tagged with the same version — releasing
+`bricks/X.Y.Z` builds `python-slim` and `python-base` before `python-apps-base`. No manual step required.
 
 For development, the dev build pipeline (`docker-github-build.yml`) rebuilds only the containers whose source files changed on the branch. Dependent containers are built in the correct order — downstream containers wait for their upstream to finish and use the freshly built image.
 
@@ -165,8 +168,10 @@ See [`.github/README.md`](.github/README.md) for full CI documentation.
 
 ### Container layers
 
-Library containers are based on a set of pre-defined Python base images that are updated with a different frequency wrt library release.
-Base images are built by tagging `base/X.Y.Z`. This should be done only when base image dependencies or infrastructure change.
+Library containers are based on a set of pre-defined Python base images, in `containers/base/`, that are
+updated with a different frequency wrt library release.
+Base images are never released on their own: they are rebuilt as a dependency of whichever group is being
+released, and tagged with that release version.
 
 Base images are required to:
 * reduce the amount of updated layers during a single library update
@@ -182,7 +187,7 @@ See [LICENSE](./LICENSE.txt) file for details.
 Each container includes an SBOM file listing all installed packages, their versions, and licenses:
 
 - `containers/ai/ei-models-runner/sbom.spdx.json`
-- `containers/main/python-apps-base/sbom.spdx.json`
+- `containers/bricks/python-apps-base/sbom.spdx.json`
 
 Each SBOM file is generated in SPDX format, which is a standard format for SBOMs.
 

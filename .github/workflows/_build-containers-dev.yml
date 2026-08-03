@@ -68,8 +68,9 @@ jobs:
       - name: Build wheel in debian:trixie
         if: matrix.container == 'python-apps-base'
         run: |
-          # Remove tags that setuptools_scm can't parse (only ai/* and release/* are valid)
-          git tag -l | grep -v -E '^(ai|release)/' | xargs -r git tag -d
+          # Remove tags that setuptools_scm can't parse (see tag_regex in pyproject.toml:
+          # bricks/* is the current library release prefix, release/* the historical one)
+          git tag -l | grep -v -E '^(ai|bricks|release)/' | xargs -r git tag -d
 
           docker run --rm \
             -v "${{ github.workspace }}:/${{ github.workspace }}" \

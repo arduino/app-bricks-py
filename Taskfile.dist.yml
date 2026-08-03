@@ -247,7 +247,7 @@ tasks:
         vars:
           IMAGE: 'public.ecr.aws/arduino/app-bricks/python-apps-base'
           TAG: '{{.BRICKS_TAG}}'
-          DIR: './containers/main/python-apps-base'
+          DIR: './containers/bricks/python-apps-base'
       - task: sbom:update:internal
         vars:
           IMAGE: 'public.ecr.aws/arduino/app-bricks/ei-models-runner'

@@ -1,5 +1,4 @@
 {
-  "tag_prefix": "base",
   "base_image": true,
   "watch_paths": ["containers/base/python-base/"],
   "tag_latest": true,

@@ -30,17 +30,15 @@ from scripts.build_levels import (  # noqa: E402
 def make_containers_dir(tmp_path: Path, spec: dict[str, dict]) -> Path:
     """Create a temporary ``containers/<group>/<name>/`` tree from a ``{name: attrs}`` spec.
 
-    ``attrs`` may set ``downstream``, ``tag_prefix``, ``base_image`` and
-    ``group`` (the sub-folder the container is filed under, ``main`` by default).
+    ``attrs`` may set ``downstream``, ``base_image`` and ``group`` (the sub-folder
+    the container is filed under — and therefore the tag that releases it,
+    ``bricks`` by default).
     """
     containers_dir = tmp_path / "containers"
     for name, attrs in spec.items():
-        ci_dir = containers_dir / attrs.get("group", "main") / name
+        ci_dir = containers_dir / attrs.get("group", "bricks") / name
         ci_dir.mkdir(parents=True)
-        payload = {
-            "tag_prefix": attrs.get("tag_prefix", "release"),
-            "downstream": attrs.get("downstream", []),
-        }
+        payload = {"downstream": attrs.get("downstream", [])}
         if attrs.get("base_image"):
             payload["base_image"] = True
         (ci_dir / "ci.json").write_text(json.dumps(payload), encoding="utf-8")
@@ -56,11 +54,11 @@ def make_graph(tmp_path: Path, spec: dict[str, dict]) -> Graph:
 #   qairt -> aihub -> gesture
 #   qairt -> llamacpp-npu
 CHAIN = {
-    "qairt-common-base": {"group": "base", "tag_prefix": "ai", "downstream": ["aihub-models-runner", "llamacpp-npu-runner"]},
-    "aihub-models-runner": {"group": "ai", "tag_prefix": "ai", "downstream": ["gesture-recognition-runner"]},
-    "gesture-recognition-runner": {"group": "ai", "tag_prefix": "gesture", "downstream": []},
-    "llamacpp-npu-runner": {"group": "ai", "tag_prefix": "llamacpp", "downstream": []},
-    "standalone": {"group": "main", "tag_prefix": "release", "downstream": []},
+    "qairt-common-base": {"group": "base", "base_image": True, "downstream": ["aihub-models-runner", "llamacpp-npu-runner"]},
+    "aihub-models-runner": {"group": "ai", "downstream": ["gesture-recognition-runner"]},
+    "gesture-recognition-runner": {"group": "ai", "downstream": []},
+    "llamacpp-npu-runner": {"group": "ai", "downstream": []},
+    "standalone": {"group": "bricks", "downstream": []},
 }
 
 
@@ -76,10 +74,10 @@ def test_containers_are_discovered_across_groups(tmp_path):
 def test_duplicate_container_name_across_groups_raises(tmp_path):
     """The same leaf name in two groups is ambiguous: it maps to one image name."""
     containers_dir = tmp_path / "containers"
-    for group in ("ai", "main"):
+    for group in ("ai", "bricks"):
         ci_dir = containers_dir / group / "twin"
         ci_dir.mkdir(parents=True)
-        (ci_dir / "ci.json").write_text(json.dumps({"tag_prefix": "release"}), encoding="utf-8")
+        (ci_dir / "ci.json").write_text(json.dumps({"downstream": []}), encoding="utf-8")
     with pytest.raises(BuildLevelsError, match="Duplicate container name"):
         Graph(containers_dir)
 
@@ -128,45 +126,63 @@ def test_node_without_parents_is_level_zero(tmp_path):
     assert waves[0] == ["standalone"]
 
 
-def test_release_seeds_by_tag_prefix_with_descendants(tmp_path):
-    """Release seeds match tag_prefix, then pull descendants regardless of prefix."""
+def test_release_seeds_the_whole_tagged_group(tmp_path):
+    """An ``ai/X.Y.Z`` tag releases every container under ``containers/ai/``."""
     graph = make_graph(tmp_path, CHAIN)
     build_set = resolve_release_build_set(graph, "ai")
-    # qairt+aihub match 'ai'; their descendants (gesture, llamacpp-npu) come along.
+    # The three ai containers, plus qairt-common-base pulled in as their base.
     assert build_set == {
         "qairt-common-base",
         "aihub-models-runner",
         "gesture-recognition-runner",
         "llamacpp-npu-runner",
     }
-    # standalone has tag_prefix 'release' and is unrelated -> excluded.
+    # standalone lives in the bricks group -> excluded.
     assert "standalone" not in build_set
 
-
-def test_release_pulls_ancestors(tmp_path):
-    """Releasing a leaf must rebuild its ancestor bases first."""
-    graph = make_graph(tmp_path, CHAIN)
-    build_set = resolve_release_build_set(graph, "gesture")
-    assert build_set == {"qairt-common-base", "aihub-models-runner", "gesture-recognition-runner"}
     waves = build_plan(graph, build_set)
     assert waves[0] == ["qairt-common-base"]
-    assert waves[1] == ["aihub-models-runner"]
+    assert waves[1] == ["aihub-models-runner", "llamacpp-npu-runner"]
     assert waves[2] == ["gesture-recognition-runner"]
 
 
+def test_release_of_one_group_pulls_bases_from_another(tmp_path):
+    """A dependency is built even when it lives in a group that was not tagged."""
+    graph = make_graph(tmp_path, CHAIN)
+    build_set = resolve_release_build_set(graph, "bricks")
+    # Only 'standalone' is in bricks and it has no dependencies.
+    assert build_set == {"standalone"}
+
+    spec = dict(CHAIN)
+    spec["standalone"] = {"group": "bricks", "downstream": []}
+    spec["shared-base"] = {"group": "base", "base_image": True, "downstream": ["standalone"]}
+    graph = make_graph(tmp_path / "second", spec)
+    build_set = resolve_release_build_set(graph, "bricks")
+    assert build_set == {"shared-base", "standalone"}
+    waves = build_plan(graph, build_set)
+    assert waves[0] == ["shared-base"]
+    assert waves[1] == ["standalone"]
+
+
+def test_release_of_base_group_alone_builds_nothing(tmp_path):
+    """Base images are dependency-only: tagging the base group is a no-op."""
+    graph = make_graph(tmp_path, CHAIN)
+    assert resolve_release_build_set(graph, "base") == set()
+
+
 def test_release_excludes_base_image_from_seeds_but_builds_it_as_ancestor(tmp_path):
-    """A base_image is never a direct seed, but is rebuilt when a release child needs it."""
+    """A base_image is never a direct seed, but is rebuilt when a released child needs it."""
     spec = {
-        "common-base": {"tag_prefix": "release", "base_image": True, "downstream": ["app-a", "app-b"]},
-        "app-a": {"tag_prefix": "release", "downstream": []},
-        "app-b": {"tag_prefix": "release", "downstream": []},
-        "orphan-base": {"tag_prefix": "release", "base_image": True, "downstream": []},
+        "common-base": {"group": "base", "base_image": True, "downstream": ["app-a", "app-b"]},
+        "app-a": {"group": "bricks", "downstream": []},
+        "app-b": {"group": "bricks", "downstream": []},
+        "orphan-base": {"group": "base", "base_image": True, "downstream": []},
     }
     graph = make_graph(tmp_path, spec)
-    build_set = resolve_release_build_set(graph, "release")
-    # common-base is pulled in as the ancestor of the two release apps...
+    build_set = resolve_release_build_set(graph, "bricks")
+    # common-base is pulled in as the ancestor of the two released apps...
     assert build_set == {"common-base", "app-a", "app-b"}
-    # ...but orphan-base (base_image, no release dependents) is never built.
+    # ...but orphan-base (base_image, no released dependents) is never built.
     assert "orphan-base" not in build_set
 
     waves = build_plan(graph, build_set)
@@ -177,19 +193,26 @@ def test_release_excludes_base_image_from_seeds_but_builds_it_as_ancestor(tmp_pa
 def test_release_diamond_pulls_all_parents(tmp_path):
     """Seeding one branch of a diamond must still rebuild the other parent of a shared child."""
     spec = {
-        "base": {"tag_prefix": "base", "base_image": True, "downstream": ["a", "b"]},
-        "a": {"tag_prefix": "rel", "downstream": ["c"]},
-        "b": {"tag_prefix": "other", "downstream": ["c"]},
-        "c": {"tag_prefix": "leaf", "downstream": []},
+        "base": {"group": "base", "base_image": True, "downstream": ["a", "b"]},
+        "a": {"group": "bricks", "downstream": ["c"]},
+        "b": {"group": "ai", "downstream": ["c"]},
+        "c": {"group": "ai", "downstream": []},
     }
     graph = make_graph(tmp_path, spec)
-    build_set = resolve_release_build_set(graph, "rel")
+    build_set = resolve_release_build_set(graph, "bricks")
     # Seeding only 'a' pulls c (descendant), then b (c's other parent) and base.
     assert build_set == {"base", "a", "b", "c"}
     waves = build_plan(graph, build_set)
     assert waves[0] == ["base"]
     assert waves[1] == ["a", "b"]
     assert waves[2] == ["c"]
+
+
+def test_unknown_release_group_raises(tmp_path):
+    """A typo'd tag prefix must fail loudly instead of silently building nothing."""
+    graph = make_graph(tmp_path, CHAIN)
+    with pytest.raises(BuildLevelsError, match="Unknown container group 'release'"):
+        resolve_release_build_set(graph, "release")
 
 
 def test_unknown_selected_container_raises(tmp_path):
