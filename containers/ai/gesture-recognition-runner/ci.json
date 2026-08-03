@@ -1,6 +1,6 @@
 {
   "tag_prefix": "ai",
-  "watch_paths": ["containers/gesture-recognition-runner/"],
+  "watch_paths": ["containers/ai/gesture-recognition-runner/"],
   "tag_latest": false,
   "build_whl": false,
   "update_compose": true,

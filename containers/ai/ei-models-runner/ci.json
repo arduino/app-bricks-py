@@ -1,6 +1,6 @@
 {
   "tag_prefix": "ai",
-  "watch_paths": ["containers/ei-models-runner/"],
+  "watch_paths": ["containers/ai/ei-models-runner/"],
   "tag_latest": false,
   "build_whl": false,
   "update_compose": true,

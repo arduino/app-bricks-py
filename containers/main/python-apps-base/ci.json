@@ -1,7 +1,7 @@
 {
   "tag_prefix": "release",
   "watch_paths": [
-    "containers/python-apps-base/",
+    "containers/main/python-apps-base/",
     "src/",
     "pyproject.toml",
     "Taskfile.dist.yml"

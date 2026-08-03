@@ -1,6 +1,6 @@
 {
   "tag_prefix": "ai",
-  "watch_paths": ["containers/llamacpp-npu-runner/"],
+  "watch_paths": ["containers/ai/llamacpp-npu-runner/"],
   "tag_latest": false,
   "build_whl": false,
   "update_compose": true,

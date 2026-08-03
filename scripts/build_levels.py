@@ -6,7 +6,11 @@
 
 """Compute the multi-level build plan for container images.
 
-The dependency graph is declared in ``containers/*/ci.json`` via the
+Containers live in ``containers/<group>/<name>/`` — the group (``base``, ``ai``,
+``main``) is documentation only: a container is always identified by its leaf
+directory name, which is also its image name.
+
+The dependency graph is declared in ``containers/*/*/ci.json`` via the
 ``downstream`` attribute (parent -> children edges). This module walks that
 graph, resolves the full set of containers to (re)build for a given selection
 and assigns each of them a topological level (build wave), so that a base image
@@ -28,6 +32,10 @@ from typing import Any
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+# Containers are grouped in sub-folders (containers/<group>/<name>/), so a
+# container is discovered one level deeper than the containers/ root.
+CI_JSON_GLOB = "*/*/ci.json"
 
 # Maximum number of build waves supported by the caller workflows
 # (jobs build-l0 .. build-l{MAX_LEVELS - 1}). Bump this together with the
@@ -56,27 +64,34 @@ class Graph:
     """The container dependency graph built from all ``ci.json`` files."""
 
     def __init__(self, containers_dir: Path):
-        """Load every ``containers/*/ci.json`` and build the edge maps."""
+        """Load every ``containers/*/*/ci.json`` and build the edge maps."""
         self.children: dict[str, list[str]] = {}
         self.parents: dict[str, list[str]] = {}
         self.tag_prefix: dict[str, str] = {}
         self.base_image: dict[str, bool] = {}
+        self.directory: dict[str, Path] = {}
 
-        ci_files = sorted(containers_dir.glob("*/ci.json"))
+        ci_files = sorted(containers_dir.glob(CI_JSON_GLOB))
         if not ci_files:
-            raise BuildLevelsError(f"No containers found (looked for ci.json under {containers_dir}).")
+            raise BuildLevelsError(f"No containers found (looked for {CI_JSON_GLOB} under {containers_dir}).")
 
         for ci_json in ci_files:
             name = ci_json.parent.name
+            if name in self.directory:
+                raise BuildLevelsError(
+                    f"Duplicate container name '{name}': {self.directory[name]} and {ci_json.parent}. "
+                    f"Container names must be unique across groups (the name is also the image name)."
+                )
             config = load_json(ci_json)
+            self.directory[name] = ci_json.parent
             self.children.setdefault(name, [])
             self.parents.setdefault(name, [])
             self.tag_prefix[name] = str(config.get("tag_prefix", ""))
             self.base_image[name] = bool(config.get("base_image", False))
 
         # Second pass: wire edges now that every node is known.
-        for ci_json in ci_files:
-            name = ci_json.parent.name
+        for name, ci_dir in self.directory.items():
+            ci_json = ci_dir / "ci.json"
             downstream = load_json(ci_json).get("downstream") or []
             if not isinstance(downstream, list):
                 raise BuildLevelsError(f"Expected 'downstream' to be a JSON array in {ci_json}.")

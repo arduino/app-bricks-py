@@ -23,6 +23,10 @@ from typing import Any
 VARIABLE_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
+# Containers are grouped in sub-folders (containers/<group>/<name>/), so a
+# container is discovered one level deeper than the containers/ root.
+CI_JSON_GLOB = "*/*/ci.json"
+
 
 class SbomDeltaError(RuntimeError):
     """Raised when SBOM delta input or configuration is invalid."""
@@ -48,9 +52,20 @@ def load_json(path: Path) -> dict[str, Any]:
     return payload
 
 
+def resolve_container_dir(containers_dir: Path, container: str) -> Path:
+    """Locate a container directory by name, whatever group it is filed under."""
+    matches = sorted(ci_json.parent for ci_json in containers_dir.glob(f"*/{container}/ci.json"))
+    if not matches:
+        raise SbomDeltaError(f"Container '{container}' not found under {containers_dir} (no <group>/{container}/ci.json).")
+    if len(matches) > 1:
+        found = ", ".join(str(match) for match in matches)
+        raise SbomDeltaError(f"Duplicate container name '{container}': {found}.")
+    return matches[0]
+
+
 def load_container_config(containers_dir: Path, container: str) -> dict[str, Any]:
     """Load ``ci.json`` metadata for a container."""
-    return load_json(containers_dir / container / "ci.json")
+    return load_json(resolve_container_dir(containers_dir, container) / "ci.json")
 
 
 def build_resolution_context(
@@ -446,7 +461,7 @@ def require_command(command: str, install_hint: str) -> None:
 
 def discover_containers(containers_dir: Path) -> list[str]:
     """Discover containers by looking for ``ci.json`` files."""
-    return sorted(p.parent.name for p in containers_dir.glob("*/ci.json") if p.is_file())
+    return sorted(p.parent.name for p in containers_dir.glob(CI_JSON_GLOB) if p.is_file())
 
 
 def build_container_image(registry: str, container: str, version: str) -> str:
@@ -527,7 +542,7 @@ def run_generate(args: argparse.Namespace) -> int:
     containers_dir = REPO_ROOT / "containers"
     containers = list(args.containers) if args.containers else discover_containers(containers_dir)
     if not containers:
-        raise SbomDeltaError(f"No containers found (looked for ci.json under {containers_dir}).")
+        raise SbomDeltaError(f"No containers found (looked for {CI_JSON_GLOB} under {containers_dir}).")
 
     registry = normalize_registry(args.registry)
 
@@ -537,8 +552,8 @@ def run_generate(args: argparse.Namespace) -> int:
 
     failed: list[str] = []
     for container in containers:
-        output_dir = containers_dir / container / "sbom-delta"
         try:
+            output_dir = resolve_container_dir(containers_dir, container) / "sbom-delta"
             generate_delta_for_container(
                 containers_dir=containers_dir,
                 output_dir=output_dir,

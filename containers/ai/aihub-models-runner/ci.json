@@ -1,6 +1,6 @@
 {
-  "tag_prefix": "aihub-models-runner",
-  "watch_paths": ["containers/aihub-models-runner/"],
+  "tag_prefix": "ai",
+  "watch_paths": ["containers/ai/aihub-models-runner/"],
   "tag_latest": false,
   "build_whl": false,
   "update_compose": false,

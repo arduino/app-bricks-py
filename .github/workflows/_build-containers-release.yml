@@ -78,10 +78,22 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Resolve container directory
+        id: dir
+        run: |
+          # Containers are grouped in sub-folders (containers/<group>/<name>/);
+          # the group is documentation only, the leaf name identifies the image.
+          MATCHES=(containers/*/${{ matrix.container }}/ci.json)
+          if [[ ${#MATCHES[@]} -ne 1 || ! -f "${MATCHES[0]}" ]]; then
+            echo "::error::Expected exactly one containers/*/${{ matrix.container }}/ci.json, found: ${MATCHES[*]}"
+            exit 1
+          fi
+          echo "path=$(dirname "${MATCHES[0]}")" >> $GITHUB_OUTPUT
+
       - name: Read container config
         id: config
         run: |
-          CI_JSON="containers/${{ matrix.container }}/ci.json"
+          CI_JSON="${{ steps.dir.outputs.path }}/ci.json"
           echo "build_whl=$(jq -r '.build_whl // false' "$CI_JSON")" >> $GITHUB_OUTPUT
           echo "update_compose=$(jq -r '.update_compose // false' "$CI_JSON")" >> $GITHUB_OUTPUT
           echo "tag_latest=$(jq -r '.tag_latest // false' "$CI_JSON")" >> $GITHUB_OUTPUT
@@ -97,7 +109,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: whl
-          path: ./containers/${{ matrix.container }}/
+          path: ./${{ steps.dir.outputs.path }}/
 
       - name: Log into registry ${{ env.GHCR_REGISTRY }}
         uses: docker/login-action@v4
@@ -195,14 +207,14 @@ jobs:
 
       - name: Copy models-list.yaml into build context
         if: steps.rebuild_check.outputs.needs_build == 'true' && matrix.container == 'models-downloader'
-        run: cp models/models-list.yaml containers/models-downloader/models-list.yaml
+        run: cp models/models-list.yaml ${{ steps.dir.outputs.path }}/models-list.yaml
 
       - name: Build and push Docker image
         if: steps.rebuild_check.outputs.needs_build == 'true'
         uses: docker/build-push-action@v7
         with:
-          context: ./containers/${{ matrix.container }}
-          file: ./containers/${{ matrix.container }}/Dockerfile
+          context: ./${{ steps.dir.outputs.path }}
+          file: ./${{ steps.dir.outputs.path }}/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -219,6 +231,7 @@ jobs:
         uses: ./.github/actions/sbom-delta
         with:
           container: ${{ matrix.container }}
+          container_dir: ${{ steps.dir.outputs.path }}
           version: ${{ inputs.version }}
           registry: ${{ env.GHCR_DESTINATION_ORG }}
 

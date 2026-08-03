@@ -27,14 +27,15 @@ from scripts.build_levels import (  # noqa: E402
 )
 
 
-def make_graph(tmp_path: Path, spec: dict[str, dict]) -> Graph:
-    """Create a temporary ``containers/`` tree from a ``{name: attrs}`` spec.
+def make_containers_dir(tmp_path: Path, spec: dict[str, dict]) -> Path:
+    """Create a temporary ``containers/<group>/<name>/`` tree from a ``{name: attrs}`` spec.
 
-    ``attrs`` may set ``downstream``, ``tag_prefix`` and ``base_image``.
+    ``attrs`` may set ``downstream``, ``tag_prefix``, ``base_image`` and
+    ``group`` (the sub-folder the container is filed under, ``main`` by default).
     """
     containers_dir = tmp_path / "containers"
     for name, attrs in spec.items():
-        ci_dir = containers_dir / name
+        ci_dir = containers_dir / attrs.get("group", "main") / name
         ci_dir.mkdir(parents=True)
         payload = {
             "tag_prefix": attrs.get("tag_prefix", "release"),
@@ -43,19 +44,52 @@ def make_graph(tmp_path: Path, spec: dict[str, dict]) -> Graph:
         if attrs.get("base_image"):
             payload["base_image"] = True
         (ci_dir / "ci.json").write_text(json.dumps(payload), encoding="utf-8")
-    return Graph(containers_dir)
+    return containers_dir
 
 
-# The real chain under test:
+def make_graph(tmp_path: Path, spec: dict[str, dict]) -> Graph:
+    """Build a ``Graph`` over a temporary ``containers/`` tree."""
+    return Graph(make_containers_dir(tmp_path, spec))
+
+
+# The real chain under test, spread over the container groups as in the repo:
 #   qairt -> aihub -> gesture
 #   qairt -> llamacpp-npu
 CHAIN = {
-    "qairt-common-base": {"tag_prefix": "ai", "downstream": ["aihub-models-runner", "llamacpp-npu-runner"]},
-    "aihub-models-runner": {"tag_prefix": "ai", "downstream": ["gesture-recognition-runner"]},
-    "gesture-recognition-runner": {"tag_prefix": "gesture", "downstream": []},
-    "llamacpp-npu-runner": {"tag_prefix": "llamacpp", "downstream": []},
-    "standalone": {"tag_prefix": "release", "downstream": []},
+    "qairt-common-base": {"group": "base", "tag_prefix": "ai", "downstream": ["aihub-models-runner", "llamacpp-npu-runner"]},
+    "aihub-models-runner": {"group": "ai", "tag_prefix": "ai", "downstream": ["gesture-recognition-runner"]},
+    "gesture-recognition-runner": {"group": "ai", "tag_prefix": "gesture", "downstream": []},
+    "llamacpp-npu-runner": {"group": "ai", "tag_prefix": "llamacpp", "downstream": []},
+    "standalone": {"group": "main", "tag_prefix": "release", "downstream": []},
 }
+
+
+def test_containers_are_discovered_across_groups(tmp_path):
+    """A container is identified by its leaf name, whatever group it is filed under."""
+    containers_dir = make_containers_dir(tmp_path, CHAIN)
+    graph = Graph(containers_dir)
+    assert graph.containers == set(CHAIN)
+    assert graph.directory["qairt-common-base"] == containers_dir / "base" / "qairt-common-base"
+    assert graph.directory["gesture-recognition-runner"] == containers_dir / "ai" / "gesture-recognition-runner"
+
+
+def test_duplicate_container_name_across_groups_raises(tmp_path):
+    """The same leaf name in two groups is ambiguous: it maps to one image name."""
+    containers_dir = tmp_path / "containers"
+    for group in ("ai", "main"):
+        ci_dir = containers_dir / group / "twin"
+        ci_dir.mkdir(parents=True)
+        (ci_dir / "ci.json").write_text(json.dumps({"tag_prefix": "release"}), encoding="utf-8")
+    with pytest.raises(BuildLevelsError, match="Duplicate container name"):
+        Graph(containers_dir)
+
+
+def test_empty_containers_dir_raises(tmp_path):
+    """A flat containers/ tree (pre-reorg layout) yields no containers."""
+    (tmp_path / "containers" / "python-base").mkdir(parents=True)
+    (tmp_path / "containers" / "python-base" / "ci.json").write_text("{}", encoding="utf-8")
+    with pytest.raises(BuildLevelsError, match="No containers found"):
+        Graph(tmp_path / "containers")
 
 
 def test_three_level_chain_from_root(tmp_path):

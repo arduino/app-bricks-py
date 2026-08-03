@@ -181,8 +181,8 @@ See [LICENSE](./LICENSE.txt) file for details.
 ## SBOM (Software Bill of Materials)
 Each container includes an SBOM file listing all installed packages, their versions, and licenses:
 
-- `containers/ei-models-runner/sbom.spdx.json`
-- `containers/python-apps-base/sbom.spdx.json`
+- `containers/ai/ei-models-runner/sbom.spdx.json`
+- `containers/main/python-apps-base/sbom.spdx.json`
 
 Each SBOM file is generated in SPDX format, which is a standard format for SBOMs.
 

@@ -2,23 +2,45 @@
 
 ## Container Images
 
-The repo produces container images, each with its own Dockerfile under `containers/`. Each container is described by a `ci.json` file in its directory that drives CI behaviour — no workflow changes are needed when adding a new container.
+The repo produces container images, each with its own Dockerfile under `containers/<group>/<name>/`. Each container is described by a `ci.json` file in its directory that drives CI behaviour — no workflow changes are needed when adding a new container.
 
-| Image | Base | Purpose |
-|---|---|---|
-| **python-base** | `python:3.13-slim` | Foundation layer — system deps, user/group setup, fonts |
-| **python-apps-base** | `python-base` | App runtime — installs the Arduino App Bricks `.whl`, Streamlit config |
-| **ei-models-runner** | Edge Impulse inference image | AI/ML model inference with OOTB models |
+### Layout
+
+Containers are filed under three groups, which exist purely to make the purpose of each image obvious:
+
+| Group | Contains |
+|---|---|
+| `containers/base/` | Shared base images other containers derive `FROM` (`base_image: true`) |
+| `containers/ai/` | AI/ML model runners |
+| `containers/main/` | Images shipping the library itself and its supporting tooling |
+
+The group is **not** part of a container's identity: a container is always referred to by its leaf
+directory name, which is also its image name (`ghcr.io/arduino/app-bricks/<name>`) and the value used
+in `downstream`, in the build matrices and in the `containers` input of the dev workflow. CI locates a
+container by globbing `containers/*/<name>/ci.json`, so moving a container between groups requires no
+workflow change — only its own `watch_paths`. Leaf names must therefore stay unique across groups; the
+build planner fails loudly if two groups declare the same name.
+
+| Image | Group | Base | Purpose |
+|---|---|---|---|
+| **python-slim** | `base` | `python:3.13-slim-trixie` | Minimal Python layer shared by every image |
+| **python-base** | `base` | `python-slim` | Foundation layer — system deps, user/group setup, fonts |
+| **qairt-common-base** | `base` | `python:3.13-slim-trixie` | Qualcomm AI Runtime deps shared by the NPU runners |
+| **python-apps-base** | `main` | `python-base` | App runtime — installs the Arduino App Bricks `.whl`, Streamlit config |
+| **models-downloader** | `main` | `python-slim` | Fetches the models declared in `models/models-list.yaml` |
+| **ei-models-runner** | `ai` | Edge Impulse inference image | AI/ML model inference with OOTB models |
 
 ## Release Triggers (Tag-Based)
 
-A single workflow (`docker-github-publish.yml`) handles all container releases. It is triggered by any `prefix/X.Y.Z` tag. The prefix is matched against each container's `ci.json` to determine what to build.
+A single workflow (`docker-publish.yml`) handles all container releases. It is triggered by a `release/X.Y.Z` or `ai/X.Y.Z` tag. The prefix is matched against each container's `ci.json` to determine what to build.
 
-| Tag pattern | Container | Extra behaviour |
+| Tag pattern | Containers | Extra behaviour |
 |---|---|---|
-| `base/X.Y.Z` | `python-base:X.Y.Z` + `:latest` | Automatically triggers a rebuild of downstream containers |
-| `release/X.Y.Z` | `python-apps-base:X.Y.Z` | Builds and uploads `.whl` to GitHub Release (displayed as `X.Y.Z`) |
-| `ai/X.Y.Z` | `ei-models-runner:X.Y.Z` | Auto-creates a PR to update compose file references |
+| `release/X.Y.Z` | every container with `tag_prefix: release` (e.g. `python-apps-base`) | Builds and uploads `.whl` to GitHub Release (displayed as `X.Y.Z`) |
+| `ai/X.Y.Z` | every container with `tag_prefix: ai` (the model runners) | Auto-creates a PR to update compose file references |
+
+Containers flagged `base_image` are never a direct release target: they carry `tag_prefix: base`, and are
+rebuilt (and tagged with the triggering release version) only as a dependency of an image being released.
 
 If the pushed tag prefix does not match any container's `ci.json`, the workflow exits cleanly with no build.
 
@@ -32,13 +54,13 @@ The dispatch only happens after the upstream build completes successfully.
 
 ## Adding a New Container
 
-1. Create `containers/my-container/Dockerfile`
-2. Create `containers/my-container/ci.json`:
+1. Create `containers/<group>/my-container/Dockerfile` (pick the group that matches its purpose — see [Layout](#layout))
+2. Create `containers/<group>/my-container/ci.json`:
 
 ```json
 {
   "tag_prefix": "my-prefix",
-  "watch_paths": ["containers/my-container/"],
+  "watch_paths": ["containers/<group>/my-container/"],
   "tag_latest": false,
   "build_whl": false,
   "update_compose": false,
@@ -64,7 +86,8 @@ No workflow file changes required.
 | Field | Type | Description |
 |---|---|---|
 | `tag_prefix` | string | Tag namespace that triggers this container's release (e.g. `release`) |
-| `watch_paths` | string[] | Paths checked by the skip-rebuild logic and dev build change detection |
+| `watch_paths` | string[] | Repo-relative paths checked by the skip-rebuild logic — must include the container's own directory |
+| `base_image` | bool | Shared base image: never a direct release target, only rebuilt as a dependency |
 | `tag_latest` | bool | Also push a `:latest` tag on release |
 | `build_whl` | bool | Build and upload the Python `.whl` before the Docker build |
 | `update_compose` | bool | After release, open a PR updating `brick_compose.yaml` references |

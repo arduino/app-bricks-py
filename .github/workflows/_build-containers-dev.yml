@@ -53,6 +53,18 @@ jobs:
           ref: ${{ inputs.branch }}
           fetch-depth: 0
 
+      - name: Resolve container directory
+        id: dir
+        run: |
+          # Containers are grouped in sub-folders (containers/<group>/<name>/);
+          # the group is documentation only, the leaf name identifies the image.
+          MATCHES=(containers/*/${{ matrix.container }}/ci.json)
+          if [[ ${#MATCHES[@]} -ne 1 || ! -f "${MATCHES[0]}" ]]; then
+            echo "::error::Expected exactly one containers/*/${{ matrix.container }}/ci.json, found: ${MATCHES[*]}"
+            exit 1
+          fi
+          echo "path=$(dirname "${MATCHES[0]}")" >> $GITHUB_OUTPUT
+
       - name: Build wheel in debian:trixie
         if: matrix.container == 'python-apps-base'
         run: |
@@ -75,13 +87,13 @@ jobs:
               pip install go-task-bin==${{ env.TASKFILE_VERSION }}
               task init:ci
               task build-dev
-              cp ./dist/arduino*.whl ./containers/python-apps-base/
+              cp ./dist/arduino*.whl ./${{ steps.dir.outputs.path }}/
             "
 
       - name: Read container config
         id: config
         run: |
-          CI_JSON="containers/${{ matrix.container }}/ci.json"
+          CI_JSON="${{ steps.dir.outputs.path }}/ci.json"
           BUILD_ARGS=$(jq -r '.build_args // {} | to_entries | map("\(.key)=\(.value)") | join("\n")' "$CI_JSON")
           echo "build_args<<EOF" >> $GITHUB_OUTPUT
           echo "$BUILD_ARGS" >> $GITHUB_OUTPUT
@@ -122,13 +134,13 @@ jobs:
 
       - name: Copy models-list.yaml into build context
         if: matrix.container == 'models-downloader'
-        run: cp models/models-list.yaml containers/models-downloader/models-list.yaml
+        run: cp models/models-list.yaml ${{ steps.dir.outputs.path }}/models-list.yaml
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v7
         with:
-          context: ./containers/${{ matrix.container }}
-          file: ./containers/${{ matrix.container }}/Dockerfile
+          context: ./${{ steps.dir.outputs.path }}
+          file: ./${{ steps.dir.outputs.path }}/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -145,5 +157,6 @@ jobs:
         uses: ./.github/actions/sbom-delta
         with:
           container: ${{ matrix.container }}
+          container_dir: ${{ steps.dir.outputs.path }}
           version: ${{ inputs.image_tag }}
           registry: ${{ env.DEV_REGISTRY_PATH }}
