@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import HumanMessage
 
 from arduino.app_bricks.cloud_llm import CloudLLM, CloudModelProvider
 from arduino.app_bricks.cloud_llm.cloud_llm import DEFAULT_MEMORY, ToolLike
@@ -215,6 +216,24 @@ class LargeLanguageModel(CloudLLM):
             raise RuntimeError(error_msg) from e
         else:
             raise
+
+    def init(self) -> None:
+        """Initializes the internal chain for the LLM.
+
+        This method can be called before any chat or streaming operations.
+        Pre load the model to ensure it's ready for use. If the model is not responsive or misconfigured,
+        this method will raise a RuntimeError.
+
+        Raises:
+            RuntimeError: If initialization fails due to misconfiguration or API errors.
+        """
+        try:
+            # Canary call to force the model load and ensure the runner is responsive.
+            if self._base_model is None:
+                raise RuntimeError("Internal model is not initialized. Please check the configuration.")
+            self._base_model.invoke([HumanMessage(content="ping")], max_tokens=1)
+        except (BadRequestError, APIError) as e:
+            self._handle_api_error(logger, e)
 
     def chat(self, message: str, images: List[str | bytes] = None) -> str:
         """Sends a message to the AI and blocks until the complete response is received.
