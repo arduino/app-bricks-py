@@ -53,6 +53,7 @@ import json
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from common.download_marker import write_marker
+from common.model_metadata import dir_stats, is_bookkeeping_name, write_metadata
 
 
 def emit_json_info(description: str, artifacts: list[str] | None = None, downloading: bool | None = None):
@@ -88,6 +89,49 @@ def remove_model_dir(output_dir: str, base_dir: str) -> None:
         except OSError:
             break
         parent = os.path.dirname(parent)
+
+
+def has_model_content(output_dir: str) -> bool:
+    """True when *output_dir* holds a downloaded file, ignoring bookkeeping entries.
+
+    The ".download" marker, ".arduino_metadata.yaml" and huggingface_hub's ".cache"
+    tree are not model content: a directory holding only those is a leftover from an
+    interrupted or deleted download, not an installed model.
+    """
+    base = Path(output_dir)
+    if not base.is_dir():
+        return False
+    return any(p.is_file() and not is_bookkeeping_name(p.name) and ".cache" not in p.parts for p in base.rglob("*"))
+
+
+def prune_emptied_repo_dir(output_dir: str, base_dir: str) -> bool:
+    """Drop *output_dir* once its last GGUF is gone; return whether it was removed.
+
+    ``delete_matched_files`` unlinks the model files and prunes empty directories, but
+    the ".arduino_metadata.yaml" record it knows nothing about would keep the repo
+    directory alive as a ghost. Removing the whole directory only when no GGUF is left
+    means a sibling quantization is never touched.
+    """
+    if not os.path.isdir(output_dir):
+        return False
+    if any(p.suffix == ".gguf" for p in Path(output_dir).rglob("*")):
+        return False
+    remove_model_dir(output_dir, base_dir)
+    return True
+
+
+def resolve_revision(repo_id: str, url_revision: str | None) -> tuple[str | None, str | None]:
+    """Return ``(commit revision, how it was obtained)`` for the metadata record.
+
+    A pinned URL already names the revision; otherwise it is asked of the Hub so the
+    metadata records the commit that was actually downloaded.
+    """
+    if url_revision:
+        return url_revision, "url"
+    try:
+        return HfApi().model_info(repo_id).sha, "api"
+    except Exception:  # noqa: BLE001 - metadata only, never fail the download
+        return None, None
 
 
 def install_signal_handlers() -> None:
@@ -514,18 +558,26 @@ def main():
                 emit_json_info(f"Deleting mmproj files matching '{mmproj_allow_pattern}' in {output_dir}")
             delete_matched_files(output_dir, args.output_dir, mmproj_allow_pattern, args.verbose)
 
+        if prune_emptied_repo_dir(output_dir, args.output_dir) and args.verbose:
+            emit_json_info(f"Removed empty model directory: {output_dir}")
+
         # Generate models.ini file
         generate_models_ini(Path(args.output_dir))
     else:
         # Per-repo ".download" marker: present => prior run killed mid-download,
-        # wipe and retry; absent but dir exists => already complete.
+        # wipe and retry; absent but model files present => already complete.
         marker = Path(output_dir) / ".download"
         if marker.is_file():
             emit_json_info(f"Removing incomplete previous download: {repo_id}")
             remove_model_dir(output_dir, args.output_dir)
-        elif os.path.isdir(output_dir):
+        elif has_model_content(output_dir):
             emit_json_info(f"Model exists: {repo_id}")
             return
+        elif os.path.isdir(output_dir):
+            # Bookkeeping-only leftover (e.g. killed between makedirs and the marker
+            # write, or a deleted model): wipe it so the download starts clean.
+            emit_json_info(f"Removing incomplete previous download: {repo_id}")
+            remove_model_dir(output_dir, args.output_dir)
 
         os.makedirs(output_dir, exist_ok=True)
         write_marker(
@@ -603,7 +655,25 @@ def main():
         downloaded = sorted(str(p.resolve()) for p in Path(output_dir).rglob("*.gguf"))
         emit_json_info(f"Downloaded to: {output_dir}", artifacts=downloaded)
 
-        # Download finished successfully: clear the in-progress marker.
+        # Record what was downloaded, then clear the in-progress marker: while the
+        # marker is still there the repo directory counts as incomplete, so a crash
+        # in between makes the next run retry instead of leaving it unrecorded.
+        revision, revision_source = resolve_revision(repo_id, url_revision)
+        base = Path(output_dir).resolve()
+        write_metadata(
+            output_dir,
+            handler="hf-handler",
+            resolved={
+                "repo_id": repo_id,
+                "revision": revision,
+                "revision_source": revision_source,
+                "allow_pattern": allow_pattern,
+                "mmproj_allow_pattern": mmproj_allow_pattern,
+                "files": [Path(p).relative_to(base).as_posix() for p in downloaded],
+                **dir_stats(output_dir),
+            },
+        )
+
         marker = Path(output_dir) / ".download"
         if marker.exists():
             marker.unlink()

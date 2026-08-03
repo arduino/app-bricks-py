@@ -9,7 +9,9 @@ model_path="/models/${model_directory}"
 if [ -f "${model_path}/.download" ]; then
     echo "{\"event\": \"info\", \"description\": \"Model downloading: ${model_directory}\", \"downloading\": true}"
     exit 0
-elif [ -d "${model_path}" ]; then
+# A directory holding only the ".arduino_metadata.yaml" record and no model content
+# is a leftover, not an installed model.
+elif [ -d "${model_path}" ] && [ -n "$(find "${model_path}" -mindepth 1 ! -name '.arduino_metadata.yaml*' -print -quit 2>/dev/null)" ]; then
     echo "{\"event\": \"info\", \"description\": \"Model exists: ${model_directory}\", \"downloading\": false}"
     exit 0
 else

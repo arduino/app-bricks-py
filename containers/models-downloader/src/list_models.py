@@ -22,6 +22,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common.download_marker import read_marker
+from common.model_metadata import METADATA_NAME, is_bookkeeping_name, read_metadata
 from common.models_list import load_models_list, MODELS_LIST_PATH
 
 
@@ -88,6 +89,8 @@ def get_model_info(model_entry):
                         "model_size_mb": model_size_mb,
                         "pre_loaded": False,
                         "supported_boards": supported_boards,
+                        # Kept for the outdated check; never part of the output.
+                        "variables": variables,
                     })
 
     return results
@@ -183,6 +186,27 @@ def _scandir_cached(search_dir):
     return entries
 
 
+def model_search_dir(model_info, models_base_dir):
+    """Return the directory that holds the model folder, per its models_repository."""
+    subdir = get_model_subdir(model_info.get("models_repository", ""))
+    return os.path.join(models_base_dir, subdir) if subdir else models_base_dir
+
+
+def _has_model_content(path):
+    """True when *path* is a file, or a directory holding more than bookkeeping files.
+
+    A folder left with only a ".download" marker or a ".arduino_metadata.yaml" record
+    (model files deleted, or a download that never got started) is not an install.
+    """
+    if os.path.isfile(path):
+        return True
+    try:
+        with os.scandir(path) as it:
+            return any(not is_bookkeeping_name(entry.name) for entry in it)
+    except OSError:
+        return False
+
+
 def check_model_exists(model_info, models_base_dir):
     """Check if a model exists on the filesystem."""
     model_directory = model_info.get("model_directory") or ""
@@ -190,11 +214,7 @@ def check_model_exists(model_info, models_base_dir):
         return False, ""
 
     # Build full path using models_repository subfolder
-    subdir = get_model_subdir(model_info.get("models_repository", ""))
-    if subdir:
-        search_dir = os.path.join(models_base_dir, subdir)
-    else:
-        search_dir = models_base_dir
+    search_dir = model_search_dir(model_info, models_base_dir)
 
     full_path = os.path.join(search_dir, model_directory)
     entries = _scandir_cached(search_dir)
@@ -204,7 +224,7 @@ def check_model_exists(model_info, models_base_dir):
     # Exact match first (directory or file)
     for name, _is_dir in entries:
         if name == model_directory:
-            return True, full_path
+            return _has_model_content(full_path), full_path
 
     # Check for directories that start with model_directory (e.g. _proxy suffix)
     # Also normalize hyphens/underscores for fuzzy matching
@@ -213,7 +233,8 @@ def check_model_exists(model_info, models_base_dir):
         if not is_dir:
             continue
         if name.startswith(model_directory) or name.replace("-", "_").startswith(normalized):
-            return True, os.path.join(search_dir, name)
+            matched = os.path.join(search_dir, name)
+            return _has_model_content(matched), matched
 
     return False, full_path
 
@@ -225,8 +246,7 @@ def model_is_downloading(model_info, models_base_dir):
     (<dir>/.download) for AI Hub, HF and Edge Impulse alike. Its presence means
     a download is in progress or was interrupted before completing.
     """
-    subdir = get_model_subdir(model_info.get("models_repository", ""))
-    search_dir = os.path.join(models_base_dir, subdir) if subdir else models_base_dir
+    search_dir = model_search_dir(model_info, models_base_dir)
     model_directory = model_info.get("model_directory") or ""
     candidates = []
     if model_directory:
@@ -236,6 +256,40 @@ def model_is_downloading(model_info, models_base_dir):
         if data is not None:
             return data
     return None
+
+
+def model_metadata(model_info, models_base_dir, path=None):
+    """Return the model's ".arduino_metadata.yaml" as a dict, or None when absent.
+
+    Written by the downloaders once a download completes, so its absence means the
+    model was installed before this record existed (or is not installed at all) —
+    never that it is up to date.
+
+    The canonical folder built from the models-list.yaml variables is tried first,
+    because it is the only one that resolves for the nested model_directory of a
+    Hugging Face model; *path* covers the folder actually matched on disk, whose
+    name may differ (e.g. a "_proxy" suffix).
+    """
+    model_directory = model_info.get("model_directory") or ""
+    if model_directory:
+        data = read_metadata(os.path.join(model_search_dir(model_info, models_base_dir), model_directory))
+        if data is not None:
+            return data
+    if path:
+        return read_metadata(path if os.path.isdir(path) else os.path.dirname(path))
+    return None
+
+
+def outdated_fields(model_info, metadata):
+    """Return the download variables that changed in models-list.yaml since download.
+
+    A non-empty result means the installed model no longer matches its declaration
+    (a bumped AI Hub ``version``, a new Hugging Face revision in ``model_url``, a new
+    Edge Impulse impulse id, ...) and should be downloaded again.
+    """
+    variables = model_info.get("variables") or {}
+    inputs = metadata.get("inputs") or {}
+    return sorted(key for key, value in variables.items() if str(value) != inputs.get(key))
 
 
 LLAMACPP_SUBDIR = "llamacpp"
@@ -281,6 +335,7 @@ def find_llamacpp_models(models_base_dir):
         mmproj_files = [f for f in gguf_files if "mmproj" in f]
         marker = read_marker(os.path.join(root, ".download"))
         downloading = marker is not None
+        metadata = read_metadata(os.path.join(root, METADATA_NAME))
 
         emitted = False
         for f in gguf_files:
@@ -305,6 +360,8 @@ def find_llamacpp_models(models_base_dir):
             }
             if mmproj_files:
                 entry["mmproj"] = os.path.join(root, mmproj_files[0])
+            if metadata is not None:
+                entry["downloaded_metadata"] = metadata
             results.append(entry)
             emitted = True
 
@@ -312,14 +369,17 @@ def find_llamacpp_models(models_base_dir):
         # pending model from the marker so it still shows up in the listing.
         if marker is not None and not emitted:
             model_name = llamacpp_name_from_marker(marker, root)
-            results.append({
+            entry = {
                 "id": f"llamacpp:{model_name}",
                 "name": model_name,
                 "handler": "llamacpp",
                 "path": root,
                 "installed": False,
                 "downloading": True,
-            })
+            }
+            if metadata is not None:
+                entry["downloaded_metadata"] = metadata
+            results.append(entry)
     return results
 
 
@@ -402,6 +462,16 @@ def main():
             if exists:
                 entry["path"] = path
                 entry["disk_size_mb"] = get_dir_size_mb(path)
+            # Read the record regardless of `exists`: check_model_exists() cannot
+            # resolve the nested model_directory of a Hugging Face model, whose
+            # status is only fixed up by the llamacpp merge below.
+            metadata = model_metadata(model_info, args.models_dir, path if exists else None)
+            if metadata is not None:
+                entry["downloaded_metadata"] = metadata
+                stale = outdated_fields(model_info, metadata)
+                entry["outdated"] = bool(stale)
+                if stale:
+                    entry["outdated_fields"] = stale
 
         results.append(entry)
 
@@ -423,6 +493,8 @@ def main():
                 existing["disk_size_mb"] = m["disk_size_mb"]
             if "mmproj" in m:
                 existing["mmproj"] = m["mmproj"]
+            if "downloaded_metadata" in m and "downloaded_metadata" not in existing:
+                existing["downloaded_metadata"] = m["downloaded_metadata"]
         else:
             results.append(m)
             by_id[m["id"]] = m

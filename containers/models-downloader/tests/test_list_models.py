@@ -11,6 +11,7 @@ import pytest
 
 import list_models
 from common.download_marker import write_marker
+from common.model_metadata import METADATA_NAME
 
 
 # --------------------------------------------------------------------------- #
@@ -20,6 +21,12 @@ def _make_gguf(path, size_bytes=1024):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "wb") as f:
         f.write(b"\0" * size_bytes)
+
+
+def _write_metadata_file(directory, text):
+    os.makedirs(directory, exist_ok=True)
+    with open(os.path.join(directory, METADATA_NAME), "w") as f:
+        f.write(text)
 
 
 # --------------------------------------------------------------------------- #
@@ -91,7 +98,9 @@ def test_check_model_exists_no_model_directory():
 
 def test_check_model_exists_exact_match(tmp_path):
     base = tmp_path / "models"
-    (base / "edge-impulse" / "my-model").mkdir(parents=True)
+    model_dir = base / "edge-impulse" / "my-model"
+    model_dir.mkdir(parents=True)
+    (model_dir / "my-model.eim").write_bytes(b"\0")
     model_info = {"model_directory": "my-model", "models_repository": "edge-impulse"}
     exists, path = list_models.check_model_exists(model_info, str(base))
     assert exists is True
@@ -101,7 +110,9 @@ def test_check_model_exists_exact_match(tmp_path):
 def test_check_model_exists_fuzzy_underscore_match(tmp_path):
     base = tmp_path / "models"
     # On disk the folder uses underscores; the YAML model_directory uses hyphens.
-    (base / "my_model_proxy").mkdir(parents=True)
+    model_dir = base / "my_model_proxy"
+    model_dir.mkdir(parents=True)
+    (model_dir / "weights.bin").write_bytes(b"\0")
     model_info = {"model_directory": "my-model", "models_repository": ""}
     exists, path = list_models.check_model_exists(model_info, str(base))
     assert exists is True
@@ -361,6 +372,190 @@ def test_main_not_installed_when_no_files(monkeypatch, capsys, tmp_path):
     gemma = [m for m in models if m["id"] == "llamacpp:gemma-4-E2B_q4_0-it"]
     assert len(gemma) == 1
     assert gemma[0]["installed"] is False
+
+
+# --------------------------------------------------------------------------- #
+# _has_model_content
+# --------------------------------------------------------------------------- #
+def test_check_model_exists_ignores_metadata_only_dir(tmp_path):
+    base = tmp_path / "models"
+    _write_metadata_file(str(base / "edge-impulse" / "my-model"), "schema_version: 1\n")
+    model_info = {"model_directory": "my-model", "models_repository": "edge-impulse"}
+    exists, _path = list_models.check_model_exists(model_info, str(base))
+    assert exists is False
+
+
+def test_check_model_exists_ignores_marker_only_dir(tmp_path):
+    base = tmp_path / "models"
+    model_dir = base / "edge-impulse" / "my-model"
+    model_dir.mkdir(parents=True)
+    write_marker(str(model_dir), handler="ei-handler")
+    model_info = {"model_directory": "my-model", "models_repository": "edge-impulse"}
+    exists, _path = list_models.check_model_exists(model_info, str(base))
+    assert exists is False
+
+
+def test_check_model_exists_matches_a_file(tmp_path):
+    base = tmp_path / "models"
+    base.mkdir()
+    (base / "model.eim").write_bytes(b"\0")
+    model_info = {"model_directory": "model.eim", "models_repository": ""}
+    exists, _path = list_models.check_model_exists(model_info, str(base))
+    assert exists is True
+
+
+# --------------------------------------------------------------------------- #
+# model_metadata / outdated_fields
+# --------------------------------------------------------------------------- #
+AI_HUB_INFO = {
+    "model_directory": "qwen-genie-w4a16",
+    "models_repository": "models/audio-analytics/tts",
+    "variables": {"model_directory": "qwen-genie-w4a16", "version": "0.57.1"},
+}
+
+
+def test_model_metadata_reads_from_nested_repository(tmp_path):
+    base = tmp_path / "models"
+    _write_metadata_file(str(base / "audio-analytics" / "tts" / "qwen-genie-w4a16"), "schema_version: 1\nmodel_id: genie:x\n")
+    data = list_models.model_metadata(AI_HUB_INFO, str(base))
+    assert data["model_id"] == "genie:x"
+
+
+def test_model_metadata_absent_returns_none(tmp_path):
+    assert list_models.model_metadata(AI_HUB_INFO, str(tmp_path / "models")) is None
+
+
+def test_model_metadata_falls_back_to_the_matched_path(tmp_path):
+    base = tmp_path / "models"
+    # The folder on disk carries a "_proxy" suffix, so the canonical path misses it.
+    matched = base / "qwen_genie_w4a16_proxy"
+    _write_metadata_file(str(matched), "model_id: genie:fuzzy\n")
+    model_info = {"model_directory": "qwen-genie-w4a16", "models_repository": ""}
+    data = list_models.model_metadata(model_info, str(base), path=str(matched))
+    assert data["model_id"] == "genie:fuzzy"
+
+
+def test_outdated_fields_detects_changed_variables():
+    metadata = {"inputs": {"model_directory": "qwen-genie-w4a16", "version": "0.51.0"}}
+    assert list_models.outdated_fields(AI_HUB_INFO, metadata) == ["version"]
+
+
+def test_outdated_fields_empty_when_inputs_match():
+    metadata = {"inputs": {"model_directory": "qwen-genie-w4a16", "version": "0.57.1"}}
+    assert list_models.outdated_fields(AI_HUB_INFO, metadata) == []
+
+
+def test_outdated_fields_reports_missing_inputs():
+    assert list_models.outdated_fields(AI_HUB_INFO, {}) == ["model_directory", "version"]
+
+
+# --------------------------------------------------------------------------- #
+# main(): downloaded_metadata and the outdated flag
+# --------------------------------------------------------------------------- #
+GEMMA_REPO = ("llamacpp", "google", "gemma-4-E2B-it-qat-q4_0-gguf")
+
+CURRENT_METADATA = """\
+schema_version: 1
+downloaded_at: '2026-08-03T09:41:12Z'
+handler: hf-handler
+model_id: llamacpp:gemma-4-E2B_q4_0-it
+model_id_source: models-list
+inputs:
+  model_url: "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf/blob/main/gemma-4-E2B_q4_0-it.gguf"
+  models_repository: llamacpp
+  model_directory: google/gemma-4-E2B-it-qat-q4_0-gguf
+resolved:
+  revision: main
+"""
+
+
+def _install_gemma(models_dir, metadata_text=None):
+    repo = os.path.join(str(models_dir), *GEMMA_REPO)
+    _make_gguf(os.path.join(repo, "gemma-4-E2B_q4_0-it.gguf"))
+    if metadata_text is not None:
+        _write_metadata_file(repo, metadata_text)
+    return repo
+
+
+def _gemma_entry(models):
+    entries = [m for m in models if m["id"] == "llamacpp:gemma-4-E2B_q4_0-it"]
+    assert len(entries) == 1
+    return entries[0]
+
+
+def test_main_surfaces_downloaded_metadata(monkeypatch, capsys, tmp_path):
+    models_dir, _models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
+    _install_gemma(models_dir, CURRENT_METADATA)
+
+    _models_dir, models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
+    entry = _gemma_entry(models)
+    assert entry["installed"] is True
+    assert entry["downloaded_metadata"]["model_id"] == "llamacpp:gemma-4-E2B_q4_0-it"
+    assert entry["downloaded_metadata"]["resolved"]["revision"] == "main"
+    # The declaration is unchanged since the download.
+    assert entry["outdated"] is False
+    assert "outdated_fields" not in entry
+
+
+def test_main_flags_outdated_when_inputs_differ(monkeypatch, capsys, tmp_path):
+    models_dir, _models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
+    # Downloaded from a different (older) revision than the YAML now declares.
+    _install_gemma(models_dir, CURRENT_METADATA.replace("/blob/main/", "/blob/0ldsha/"))
+
+    _models_dir, models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
+    entry = _gemma_entry(models)
+    assert entry["installed"] is True
+    assert entry["outdated"] is True
+    assert entry["outdated_fields"] == ["model_url"]
+
+
+def test_main_no_metadata_key_when_absent(monkeypatch, capsys, tmp_path):
+    models_dir, _models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
+    _install_gemma(models_dir)
+
+    _models_dir, models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
+    entry = _gemma_entry(models)
+    assert entry["installed"] is True
+    # A legacy install: unknown, not "up to date".
+    assert "downloaded_metadata" not in entry
+    assert "outdated" not in entry
+
+
+def test_main_corrupt_metadata_is_ignored(monkeypatch, capsys, tmp_path):
+    models_dir, _models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
+    _install_gemma(models_dir, "a: b: c\n")
+
+    _models_dir, models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
+    entry = _gemma_entry(models)
+    assert entry["installed"] is True
+    assert "downloaded_metadata" not in entry
+
+
+def test_main_never_emits_internal_variables(monkeypatch, capsys, tmp_path):
+    _models_dir, models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
+    assert all("variables" not in m for m in models)
+
+
+def test_find_llamacpp_attaches_metadata(tmp_path):
+    base = tmp_path / "models"
+    repo = os.path.join(str(base), *GEMMA_REPO)
+    _make_gguf(os.path.join(repo, "gemma-4-E2B_q4_0-it.gguf"))
+    _write_metadata_file(repo, CURRENT_METADATA)
+    results = list_models.find_llamacpp_models(str(base))
+    assert len(results) == 1
+    assert results[0]["downloaded_metadata"]["handler"] == "hf-handler"
+
+
+def test_find_llamacpp_attaches_metadata_to_marker_only_entry(tmp_path):
+    base = tmp_path / "models"
+    repo = base.joinpath(*GEMMA_REPO)
+    repo.mkdir(parents=True)
+    write_marker(str(repo), handler="hf-handler", model_url="https://hf/repo/gemma-4-E2B_q4_0-it.gguf")
+    _write_metadata_file(str(repo), CURRENT_METADATA)
+    results = list_models.find_llamacpp_models(str(base))
+    assert len(results) == 1
+    assert results[0]["downloading"] is True
+    assert results[0]["downloaded_metadata"]["handler"] == "hf-handler"
 
 
 def test_main_supported_board_filter(monkeypatch, capsys, tmp_path):

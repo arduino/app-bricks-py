@@ -46,7 +46,7 @@ fi
 LLAMA_ARGS=(
   --device "$DEVICE_LIST"
   -ngl "$NGL"
-  --no-mmap
+  --load-mode mmap
   --models-preset /models/models.ini
 )
 

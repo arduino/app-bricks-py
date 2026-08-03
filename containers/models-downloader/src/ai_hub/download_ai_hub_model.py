@@ -14,6 +14,17 @@ import requests
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from common.download_marker import write_marker
 from common.http_download import download, download_and_extract, emit_json_error, install_signal_handlers
+from common.model_metadata import dir_stats, write_metadata
+
+
+def _qai_hub_models_version() -> str | None:
+    """Version of the qai_hub_models CLI that resolved the download URL, if known."""
+    from importlib.metadata import version
+
+    try:
+        return version("qai-hub-models-cli")
+    except Exception:  # noqa: BLE001 - metadata only, never fail the download
+        return None
 
 
 def _wipe_model_dir(model_dir: str, base_dir: str) -> None:
@@ -21,7 +32,7 @@ def _wipe_model_dir(model_dir: str, base_dir: str) -> None:
     failed or interrupted download. Never removes *base_dir* itself, which is the
     mounted ``/models`` directory and cannot be deleted from inside the container.
     """
-    if os.path.abspath(model_dir) == os.path.abspath(base_dir):
+    if not model_dir or os.path.abspath(model_dir) == os.path.abspath(base_dir):
         return
     shutil.rmtree(model_dir, ignore_errors=True)
 
@@ -86,14 +97,21 @@ def main():
     # marker is cleared; on interrupt or error the whole model directory (marker
     # + partial files) is removed so the next run starts fresh and the listing
     # tool never sees a phantom (empty) model directory.
-    model_dir = os.path.join(args.output_dir, os.environ.get("model_directory", ""))
-    marker = write_marker(
-        model_dir,
-        handler="ai-hub-handler",
-        models_repository=os.environ.get("models_repository", ""),
-        model_directory=os.environ.get("model_directory", ""),
-        model_url=os.environ.get("model_url", ""),
-    )
+    #
+    # Without model_directory there is no per-model directory to write into:
+    # output_dir is the /models mount shared by every model of the repository, so
+    # the marker and the metadata record are skipped rather than dropped there.
+    model_directory = os.environ.get("model_directory", "")
+    model_dir = os.path.join(args.output_dir, model_directory) if model_directory else ""
+    marker = ""
+    if model_dir:
+        marker = write_marker(
+            model_dir,
+            handler="ai-hub-handler",
+            models_repository=os.environ.get("models_repository", ""),
+            model_directory=model_directory,
+            model_url=os.environ.get("model_url", ""),
+        )
 
     # Build the qai_hub_models fetch command to retrieve the download URL.
     # model_name, model_type, quantization and chipset are mandatory;
@@ -130,8 +148,22 @@ def main():
             download(url, args.output_dir, True)
         else:
             download_and_extract(url, args.output_dir, True)
-        # Download finished successfully: clear the in-progress marker.
-        if os.path.exists(marker):
+        # Record what was downloaded, then clear the in-progress marker: while the
+        # marker is still there the directory counts as incomplete, so a crash in
+        # between makes the next run retry instead of leaving it unrecorded.
+        if model_dir:
+            write_metadata(
+                model_dir,
+                handler="ai-hub-handler",
+                resolved={
+                    "download_url": url,
+                    "fetch_command": " ".join(cmd),
+                    "qai_hub_models_version": _qai_hub_models_version(),
+                    "extracted": not args.no_unzip,
+                    **dir_stats(model_dir),
+                },
+            )
+        if marker and os.path.exists(marker):
             os.remove(marker)
     except requests.HTTPError as exc:
         msg = f"HTTP error: {exc.response.status_code} {exc.response.reason}"
