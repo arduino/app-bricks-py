@@ -25,18 +25,16 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common.download_marker import read_marker
-from common.model_metadata import METADATA_NAME, is_bookkeeping_name, read_metadata
+from common.model_metadata import METADATA_NAME, SOURCE_MODELS_LIST, SOURCE_USER_CONFIGURED, is_bookkeeping_name, read_metadata
 from common.models_list import load_models_list, MODELS_LIST_PATH
 
 
 MODELS_BASE_DIR = "/models"
 
-# Where a listed model comes from, reported as "model_source". A model declared in
-# models-list.yaml is curated and its variables can be compared against to detect an
-# outdated install; one found only on disk was downloaded ad hoc (any Hugging Face
-# repository can be, without an entry) and there is nothing to compare it to.
-SOURCE_MODELS_LIST = "models_list"
-SOURCE_USER_CONFIGURED = "user_configured"
+# "model_source" says where a listed model comes from, using the same two values the
+# ".arduino_metadata.yaml" record does. A model declared in models-list.yaml is curated
+# and its variables can be compared against to detect an outdated install; one found
+# only on disk was downloaded ad hoc and there is nothing to compare it to.
 
 
 def get_model_info(model_entry):
@@ -374,7 +372,7 @@ def find_llamacpp_models(models_base_dir):
             if mmproj_files:
                 entry["mmproj"] = os.path.join(root, mmproj_files[0])
             if metadata is not None:
-                entry["downloaded_metadata"] = metadata
+                entry["download_metadata"] = metadata
             results.append(entry)
             emitted = True
 
@@ -392,7 +390,7 @@ def find_llamacpp_models(models_base_dir):
                 "downloading": True,
             }
             if metadata is not None:
-                entry["downloaded_metadata"] = metadata
+                entry["download_metadata"] = metadata
             results.append(entry)
     return results
 
@@ -483,7 +481,7 @@ def main():
             # status is only fixed up by the llamacpp merge below.
             metadata = model_metadata(model_info, args.models_dir, path if exists else None)
             if metadata is not None:
-                entry["downloaded_metadata"] = metadata
+                entry["download_metadata"] = metadata
                 stale = outdated_fields(model_info, metadata)
                 entry["outdated"] = bool(stale)
                 if stale:
@@ -510,8 +508,8 @@ def main():
                 existing["disk_size_mb"] = m["disk_size_mb"]
             if "mmproj" in m:
                 existing["mmproj"] = m["mmproj"]
-            if "downloaded_metadata" in m and "downloaded_metadata" not in existing:
-                existing["downloaded_metadata"] = m["downloaded_metadata"]
+            if "download_metadata" in m and "download_metadata" not in existing:
+                existing["download_metadata"] = m["download_metadata"]
         else:
             results.append(m)
             by_id[m["id"]] = m

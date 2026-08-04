@@ -379,7 +379,7 @@ def test_main_not_installed_when_no_files(monkeypatch, capsys, tmp_path):
 # --------------------------------------------------------------------------- #
 def test_check_model_exists_ignores_metadata_only_dir(tmp_path):
     base = tmp_path / "models"
-    _write_metadata_file(str(base / "edge-impulse" / "my-model"), "schema_version: 1\n")
+    _write_metadata_file(str(base / "edge-impulse" / "my-model"), "handler: ei-handler\n")
     model_info = {"model_directory": "my-model", "models_repository": "edge-impulse"}
     exists, _path = list_models.check_model_exists(model_info, str(base))
     assert exists is False
@@ -416,7 +416,7 @@ AI_HUB_INFO = {
 
 def test_model_metadata_reads_from_nested_repository(tmp_path):
     base = tmp_path / "models"
-    _write_metadata_file(str(base / "audio-analytics" / "tts" / "qwen-genie-w4a16"), "schema_version: 1\nmodel_id: genie:x\n")
+    _write_metadata_file(str(base / "audio-analytics" / "tts" / "qwen-genie-w4a16"), "model_id: genie:x\n")
     data = list_models.model_metadata(AI_HUB_INFO, str(base))
     assert data["model_id"] == "genie:x"
 
@@ -450,16 +450,15 @@ def test_outdated_fields_reports_missing_inputs():
 
 
 # --------------------------------------------------------------------------- #
-# main(): downloaded_metadata and the outdated flag
+# main(): download_metadata and the outdated flag
 # --------------------------------------------------------------------------- #
 GEMMA_REPO = ("llamacpp", "google", "gemma-4-E2B-it-qat-q4_0-gguf")
 
 CURRENT_METADATA = """\
-schema_version: 1
 downloaded_at: '2026-08-03T09:41:12Z'
 handler: hf-handler
 model_id: llamacpp:gemma-4-E2B_q4_0-it
-model_id_source: models-list
+model_source: models_list
 inputs:
   model_url: "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf/blob/main/gemma-4-E2B_q4_0-it.gguf"
   models_repository: llamacpp
@@ -481,15 +480,15 @@ def _gemma_entry(models):
     return entries[0]
 
 
-def test_main_surfaces_downloaded_metadata(monkeypatch, capsys, tmp_path):
+def test_main_surfaces_download_metadata(monkeypatch, capsys, tmp_path):
     models_dir, _models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
     _install_gemma(models_dir, CURRENT_METADATA)
 
     _models_dir, models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
     entry = _gemma_entry(models)
     assert entry["installed"] is True
-    assert entry["downloaded_metadata"]["model_id"] == "llamacpp:gemma-4-E2B_q4_0-it"
-    assert entry["downloaded_metadata"]["inputs"]["models_repository"] == "llamacpp"
+    assert entry["download_metadata"]["model_id"] == "llamacpp:gemma-4-E2B_q4_0-it"
+    assert entry["download_metadata"]["inputs"]["models_repository"] == "llamacpp"
     # The declaration is unchanged since the download.
     assert entry["outdated"] is False
     assert "outdated_fields" not in entry
@@ -515,7 +514,7 @@ def test_main_no_metadata_key_when_absent(monkeypatch, capsys, tmp_path):
     entry = _gemma_entry(models)
     assert entry["installed"] is True
     # A legacy install: unknown, not "up to date".
-    assert "downloaded_metadata" not in entry
+    assert "download_metadata" not in entry
     assert "outdated" not in entry
 
 
@@ -526,7 +525,7 @@ def test_main_corrupt_metadata_is_ignored(monkeypatch, capsys, tmp_path):
     _models_dir, models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
     entry = _gemma_entry(models)
     assert entry["installed"] is True
-    assert "downloaded_metadata" not in entry
+    assert "download_metadata" not in entry
 
 
 def test_main_never_emits_internal_variables(monkeypatch, capsys, tmp_path):
@@ -544,7 +543,7 @@ def test_main_lists_an_unlisted_model_with_its_metadata(monkeypatch, capsys, tmp
     models_dir, _models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
     repo = os.path.join(str(models_dir), "llamacpp", "TheBloke", "Mistral-7B-Instruct-v0.2-GGUF")
     _make_gguf(os.path.join(repo, "mistral.Q4_0.gguf"))
-    _write_metadata_file(repo, "schema_version: 1\nhandler: hf-handler\nmodel_id: null\nmodel_id_source: unresolved\n")
+    _write_metadata_file(repo, "handler: hf-handler\nmodel_id: llamacpp:mistral.Q4_0\nmodel_source: user_configured\n")
 
     _models_dir, models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
     entries = [m for m in models if m["id"] == "llamacpp:mistral.Q4_0"]
@@ -552,7 +551,7 @@ def test_main_lists_an_unlisted_model_with_its_metadata(monkeypatch, capsys, tmp
     entry = entries[0]
     assert entry["installed"] is True
     assert entry["model_source"] == "user_configured"
-    assert entry["downloaded_metadata"]["model_id_source"] == "unresolved"
+    assert entry["download_metadata"]["model_source"] == "user_configured"
     assert "outdated" not in entry
     # The models-list.yaml entries are unaffected.
     assert _gemma_entry(models)["installed"] is False
@@ -611,7 +610,7 @@ def test_find_llamacpp_attaches_metadata(tmp_path):
     _write_metadata_file(repo, CURRENT_METADATA)
     results = list_models.find_llamacpp_models(str(base))
     assert len(results) == 1
-    assert results[0]["downloaded_metadata"]["handler"] == "hf-handler"
+    assert results[0]["download_metadata"]["handler"] == "hf-handler"
 
 
 def test_find_llamacpp_attaches_metadata_to_marker_only_entry(tmp_path):
@@ -623,7 +622,7 @@ def test_find_llamacpp_attaches_metadata_to_marker_only_entry(tmp_path):
     results = list_models.find_llamacpp_models(str(base))
     assert len(results) == 1
     assert results[0]["downloading"] is True
-    assert results[0]["downloaded_metadata"]["handler"] == "hf-handler"
+    assert results[0]["download_metadata"]["handler"] == "hf-handler"
 
 
 def test_main_supported_board_filter(monkeypatch, capsys, tmp_path):

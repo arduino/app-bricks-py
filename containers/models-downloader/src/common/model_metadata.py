@@ -10,11 +10,10 @@ in-progress ``.download`` marker is deleted once the download succeeds — so wi
 this file nothing on disk would record *what* was downloaded. It is written inside
 the model directory after a successful download and stays there:
 
-    schema_version: 1
     downloaded_at: '2026-08-03T09:41:12Z'
     handler: hf-handler
     model_id: llamacpp:gemma-4-E2B_q4_0-it
-    model_id_source: models_list
+    model_source: models_list
     inputs:                     # the download variables, verbatim from the environment
       models_repository: llamacpp
       model_directory: google/gemma-4-E2B-it-qat-q4_0-gguf
@@ -28,13 +27,17 @@ Contracts callers must honour:
   and the function returns None.
 - The file is therefore **optional**. Its absence means "unknown / legacy install",
   never "up to date": models downloaded before this file existed have none.
-- ``model_id: null`` with ``model_id_source: unresolved`` is a **normal, supported
-  state, not an error**. Any Hugging Face repository can be downloaded ad hoc by
-  putting its URL or compact key in ``model_url``, with no models-list.yaml entry;
-  such a download is recorded in full, only unidentified. Consumers must not treat a
-  null model_id as a failure, and outdated-detection simply does not apply (there is
-  no declaration to compare against). The listing reports these as
-  ``model_source: user_configured``.
+- ``model_source`` says where the model comes from, not where its id was read from:
+  ``models_list`` for a model models-list.yaml declares, ``user_configured`` for one
+  downloaded ad hoc. Any Hugging Face repository can be fetched by putting its URL or
+  compact key in ``model_url`` with no entry in the list, so ``user_configured`` is a
+  **normal, supported state, not an error**. Only that outdated-detection does not
+  apply to it: there is no declaration to compare against. The listing reports the
+  same field with the same two values.
+- ``model_id`` is always set for a model that downloaded successfully, curated or not.
+  A user-configured model has no entry key to borrow, so the handler supplies a
+  ``fallback_model_id`` derived from what it fetched, matching the id the listing
+  reports for the same files.
 - Nothing else is copied out of models-list.yaml. ``model_id`` points back at the
   entry, and every other field of it (name, description, source, model_size_mb, ...)
   is read from models-list.yaml itself rather than duplicated — and left to go stale —
@@ -55,7 +58,6 @@ import yaml
 from common.models_list import MODELS_LIST_PATH, find_matching_model, load_models_list
 
 METADATA_NAME = ".arduino_metadata.yaml"
-SCHEMA_VERSION = 1
 
 _HEADER = (
     "# Written by the Arduino models-downloader after a successful download.\n"
@@ -84,6 +86,11 @@ INPUT_VARIABLES = (
 
 # Credentials are never persisted, whatever the environment holds.
 SECRET_VARIABLES = frozenset({"hf_token", "HF_TOKEN", "HF_HUB_TOKEN", "EI_API_KEY"})
+
+# Where a model comes from, reported as "model_source" both here and in the listing
+# (list_models.py imports these, so the two can never drift apart).
+SOURCE_MODELS_LIST = "models_list"
+SOURCE_USER_CONFIGURED = "user_configured"
 
 
 def utc_now_iso():
@@ -118,45 +125,49 @@ def collect_inputs(env=None, extra_keys=()):
     return inputs
 
 
-def identify_model(env=None, models_list_path=MODELS_LIST_PATH):
-    """Identify which models-list.yaml entry *env* describes.
+def identify_model(env=None, models_list_path=MODELS_LIST_PATH, fallback_model_id=None):
+    """Identify the model *env* describes, and say where that model comes from.
 
-    The host does not pass the entry's map key as an environment variable, so it is
-    recovered by matching the download variables against the models-list.yaml baked
-    into the image. A ``model_id`` variable is honoured first, so the day the host
+    The host does not pass the entry's map key as an environment variable, so a curated
+    model is recognised by matching the download variables against the models-list.yaml
+    baked into the image. A ``model_id`` variable is honoured first, so the day the host
     starts providing one this lookup is bypassed.
 
+    No match means the model is not curated — a user-configured download — which is a
+    normal outcome, not a failure. Such a model still needs an id to be referred to by,
+    so *fallback_model_id* (derived by the handler from what it actually fetched) is
+    used instead of leaving it null.
+
     Returns:
-        A dict with ``model_id`` (None when unidentified) and ``model_id_source``
-        ("env", "models_list" or "unresolved"). Nothing else is taken from the entry:
-        the id is the pointer back to it, see the module docstring.
+        A dict with ``model_id`` and ``model_source``, the latter being
+        ``SOURCE_MODELS_LIST`` or ``SOURCE_USER_CONFIGURED``.
     """
     env = env if env is not None else os.environ
 
     explicit = env.get("model_id")
     if explicit:
-        return {"model_id": explicit, "model_id_source": "env"}
+        # Only models-list.yaml can tell the host an id, so this is a curated model.
+        return {"model_id": explicit, "model_source": SOURCE_MODELS_LIST}
 
     try:
         models = load_models_list(models_list_path)
         model_id, _model_data, _platform = find_matching_model(models, env, board=env.get("BOARD_NAME"))
     except Exception:  # noqa: BLE001 - a missing or broken models-list.yaml must not matter
-        return {"model_id": None, "model_id_source": "unresolved"}
+        model_id = None
 
-    if not model_id:
-        return {"model_id": None, "model_id_source": "unresolved"}
-    return {"model_id": model_id, "model_id_source": "models_list"}
+    if model_id:
+        return {"model_id": model_id, "model_source": SOURCE_MODELS_LIST}
+    return {"model_id": fallback_model_id, "model_source": SOURCE_USER_CONFIGURED}
 
 
 def metadata_payload(handler, inputs=None, identity=None, downloaded_at=None):
     """Build the metadata document, dropping empty ``inputs`` entries."""
     identity = identity or {}
     payload = {
-        "schema_version": SCHEMA_VERSION,
         "downloaded_at": downloaded_at or utc_now_iso(),
         "handler": handler or "",
         "model_id": identity.get("model_id"),
-        "model_id_source": identity.get("model_id_source", "unresolved"),
+        "model_source": identity.get("model_source", SOURCE_USER_CONFIGURED),
     }
     kept = {k: v for k, v in (inputs or {}).items() if v is not None and v != ""}
     if kept:
@@ -164,13 +175,16 @@ def metadata_payload(handler, inputs=None, identity=None, downloaded_at=None):
     return payload
 
 
-def write_metadata(model_dir, handler, env=None, models_list_path=MODELS_LIST_PATH, extra_input_keys=()):
+def write_metadata(model_dir, handler, env=None, models_list_path=MODELS_LIST_PATH, extra_input_keys=(), fallback_model_id=None):
     """Write ``<model_dir>/.arduino_metadata.yaml`` atomically; return its path or None.
 
     Called after a successful download and *before* clearing the ``.download``
     marker: if this process dies in between, the marker still marks the directory as
     incomplete and the next run wipes and retries, so no directory can end up
     installed-but-unrecorded. Never raises — see the module docstring.
+
+    *fallback_model_id* names the model when models-list.yaml does not declare it; pass
+    one whenever the handler can download something the list has never heard of.
     """
     path = os.path.join(model_dir, METADATA_NAME)
     tmp = path + ".tmp"
@@ -178,7 +192,7 @@ def write_metadata(model_dir, handler, env=None, models_list_path=MODELS_LIST_PA
         payload = metadata_payload(
             handler,
             inputs=collect_inputs(env, extra_input_keys),
-            identity=identify_model(env, models_list_path),
+            identity=identify_model(env, models_list_path, fallback_model_id),
         )
         os.makedirs(model_dir, exist_ok=True)
         with open(tmp, "w") as f:
@@ -204,8 +218,9 @@ def read_metadata(path):
     """Parse a metadata file into a dict, or None if it is missing / unusable.
 
     *path* may be the file itself or the model directory containing it. Anything
-    unreadable, malformed or not a mapping yields None, and ``schema_version`` is
-    deliberately not checked so a newer file never breaks an older reader.
+    unreadable, malformed or not a mapping yields None. Whatever keys the mapping holds
+    are returned as they are, so a file written by a newer version — with fields this
+    reader knows nothing about — never breaks it.
     """
     if os.path.isdir(path):
         path = os.path.join(path, METADATA_NAME)

@@ -21,12 +21,14 @@ host has a single variable to set whatever the model is::
                   [--model-mmproj-url https://huggingface.co/<org>/<repo>/blob/<revision>/mmproj-<q>.gguf]
 
     # 2. Compact key, as llama.cpp's "-hf": downloads whatever matches the
-    #    quantization, at the tip of the default branch. model_type is optional.
-    hf_downloader --model-url [<model_type>:]<repo_id>:<quantization>[:<mmproj_quantization>]
+    #    quantization, at the tip of the default branch. model_type is optional, and
+    #    so is the quantization — a bare repository defaults to Q4_0.
+    hf_downloader --model-url [<model_type>:]<repo_id>[:<quantization>[:<mmproj_quantization>]]
 
 A leading ``http://``/``https://`` selects form 1; anything else is parsed as a key.
 The quantization field also accepts a full file name or an explicit glob, so a single
-file can be pinned by name without a URL.
+file can be pinned by name without a URL. When nothing in the repository matches, the
+error lists the GGUF files that are there.
 
 Key options
 -----------
@@ -50,6 +52,7 @@ from huggingface_hub import HfApi, hf_hub_download
 from huggingface_hub.hf_api import RepoFile
 import argparse
 import configparser
+from collections import ChainMap
 from pathlib import Path
 from tqdm.auto import tqdm
 import json
@@ -57,6 +60,10 @@ import json
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from common.download_marker import write_marker
 from common.model_metadata import is_bookkeeping_name, write_metadata
+
+# Quantization used when a model key names only a repository. Q4_0 is the quantization
+# every llama.cpp GGUF repository publishes and the one all curated entries use.
+DEFAULT_QUANTIZATION = "Q4_0"
 
 
 def emit_json_info(description: str, artifacts: list[str] | None = None, downloading: bool | None = None):
@@ -264,19 +271,25 @@ def parse_model_key(model_key: str) -> tuple[str, str, str, str | None]:
 
     Accepted forms, colon-separated::
 
+        <repo_id>                                                   # quantization defaults to Q4_0
         <repo_id>:<quantization>                                    # llama.cpp -hf style
         <model_type>:<repo_id>:<quantization>
         <model_type>:<repo_id>:<quantization>:<mmproj_quantization>
 
     ``model_type`` is optional and purely informative — nothing selects on it — so a
     two-field key is accepted and reads like llama.cpp's ``-hf Qwen/Qwen3-8B-GGUF:Q8_0``.
-    The field count alone disambiguates, because the quantization is always required.
+    The field count alone disambiguates: a lone field can only be a repository, and a
+    pair can only be repository plus quantization, since ``model_type`` never appears
+    without one. Callers detect the defaulted quantization by the absence of a ``:``
+    and should report it — a silently substituted quantization would be surprising.
 
     Raises:
-        ValueError: when the field count is wrong, or repo_id/quantization are empty.
+        ValueError: when there are more than four fields, or repo_id/quantization are empty.
     """
     parts = model_key.split(":")
-    if len(parts) == 2:
+    if len(parts) == 1:
+        model_type, repo_id, quantization, mmproj_quantization = "", parts[0], DEFAULT_QUANTIZATION, None
+    elif len(parts) == 2:
         model_type, repo_id, quantization, mmproj_quantization = "", parts[0], parts[1], None
     elif len(parts) == 3:
         model_type, repo_id, quantization, mmproj_quantization = parts[0], parts[1], parts[2], None
@@ -285,8 +298,8 @@ def parse_model_key(model_key: str) -> tuple[str, str, str, str | None]:
     else:
         raise ValueError(
             f"Invalid model key: {model_key}\n"
-            "Expected format: [<model_type>:]<repo_id>:<quantization>[:<mmproj_quantization>] "
-            "(e.g. Qwen/Qwen3-8B-GGUF:Q8_0 or llamacpp:Qwen/Qwen3-8B-GGUF:Q8_0)"
+            "Expected format: [<model_type>:]<repo_id>[:<quantization>[:<mmproj_quantization>]] "
+            "(e.g. unsloth/Qwen3-0.6B-GGUF, Qwen/Qwen3-8B-GGUF:Q8_0 or llamacpp:Qwen/Qwen3-8B-GGUF:Q8_0)"
         )
     if repo_id == "":
         raise ValueError("repo_id cannot be empty")
@@ -342,7 +355,8 @@ def resolve_model_source(model_url: str, model_mmproj_url: str | None = None) ->
         raise ValueError(
             "model_url is required. Give either a Hugging Face file URL "
             "(https://huggingface.co/<org>/<repo>/blob/<revision>/<file>.gguf) or a compact key "
-            "([<model_type>:]<repo_id>:<quantization>[:<mmproj_quantization>], e.g. Qwen/Qwen3-8B-GGUF:Q8_0)"
+            "([<model_type>:]<repo_id>[:<quantization>[:<mmproj_quantization>]], e.g. unsloth/Qwen3-0.6B-GGUF "
+            f"which defaults to {DEFAULT_QUANTIZATION}, or Qwen/Qwen3-8B-GGUF:Q8_0)"
         )
 
     source = {
@@ -354,6 +368,8 @@ def resolve_model_source(model_url: str, model_mmproj_url: str | None = None) ->
         "mmproj_url_filename": None,
         "mmproj_url_revision": None,
         "model_type": "",
+        "quantization": None,
+        "quantization_defaulted": False,
     }
 
     if is_hf_url(model_url):
@@ -373,6 +389,10 @@ def resolve_model_source(model_url: str, model_mmproj_url: str | None = None) ->
     model_type, repo_id, quantization, mmproj_quantization = parse_model_key(model_url)
     source["model_type"] = model_type
     source["repo_id"] = repo_id
+    source["quantization"] = quantization
+    # No colon means the key named only a repository, so the quantization above is the
+    # default rather than a choice the caller made. main() reports it.
+    source["quantization_defaulted"] = ":" not in model_url
     source["allow_pattern"] = gguf_pattern(quantization)
     if mmproj_quantization:
         source["mmproj_allow_pattern"] = gguf_pattern(mmproj_quantization, mmproj=True)
@@ -398,6 +418,40 @@ def list_repo_matches(repo_id: str, patterns: list[str], ignore_pattern: str | N
     return matched
 
 
+def fallback_model_id(model_type: str, downloaded: list[str]) -> str | None:
+    """Name a model that no models-list.yaml entry declares, from the files fetched.
+
+    Built as ``<namespace>:<gguf stem>`` to be the *same* id ``list_models.py`` derives
+    for those files when it scans the filesystem, so the record and the listing agree on
+    what to call an ad-hoc download. mmproj files belong to the main GGUF and never name
+    the model.
+    """
+    main_gguf = next((p for p in sorted(downloaded) if "mmproj" not in os.path.basename(p)), None)
+    if not main_gguf:
+        return None
+    # The key's model_type is the namespace when given; llamacpp is where GGUF models
+    # live, and the prefix list_models.py uses (see its LLAMACPP_SUBDIR).
+    return f"{model_type or 'llamacpp'}:{Path(main_gguf).stem}"
+
+
+def no_match_message(repo_id: str, pattern: str) -> str:
+    """Explain that nothing matched *pattern*, listing the GGUF files the repo does have.
+
+    Asking the Hub what is actually there turns "no file matching '*Q4_0*.gguf'" into an
+    actionable message — which matters most when the quantization was defaulted rather
+    than chosen. Runs only on the failure path, and degrades to the bare statement if
+    the extra listing call fails.
+    """
+    message = f"No file matching '{pattern}' found in repository '{repo_id}'."
+    try:
+        available = sorted(f.path for f in list_repo_matches(repo_id, ["*.gguf"]))
+    except Exception:  # noqa: BLE001 - improving an error message must not raise a new one
+        return message
+    if not available:
+        return f"{message} The repository contains no GGUF files at all."
+    return f"{message} Available GGUF files: {', '.join(available)}"
+
+
 def download_matched_files(
     repo_id: str,
     allow_pattern: str,
@@ -417,7 +471,7 @@ def download_matched_files(
     """
     matched = list_repo_matches(repo_id, [allow_pattern], ignore_pattern=ignore_pattern)
     if not matched:
-        raise FileNotFoundError(f"No file matching '{allow_pattern}' found in repository '{repo_id}'")
+        raise FileNotFoundError(no_match_message(repo_id, allow_pattern))
     for file in matched:
         if verbose:
             emit_json_info(f"Downloading '{file.path}' from {repo_id}")
@@ -491,8 +545,9 @@ def main():
         metavar="URL_OR_KEY",
         help="The model to download, as either a Hugging Face file URL "
         "(e.g. https://huggingface.co/org/repo/blob/<revision>/model.gguf; /resolve/ works too) "
-        "or a compact key [<model_type>:]<repo_id>:<quantization>[:<mmproj_quantization>] "
-        "(e.g. Qwen/Qwen3-8B-GGUF:Q8_0, llamacpp:unsloth/gemma-4-E4B-it-GGUF:Q4_0:BF16).",
+        "or a compact key [<model_type>:]<repo_id>[:<quantization>[:<mmproj_quantization>]] "
+        "(e.g. unsloth/Qwen3-0.6B-GGUF which defaults to Q4_0, Qwen/Qwen3-8B-GGUF:Q8_0, "
+        "llamacpp:unsloth/gemma-4-E4B-it-GGUF:Q4_0:BF16).",
     )
     parser.add_argument(
         "--model-mmproj-url",
@@ -551,6 +606,11 @@ def main():
     mmproj_url_filename = source["mmproj_url_filename"]
     mmproj_url_revision = source["mmproj_url_revision"]
 
+    # Always reported, not only under --verbose: the caller named a repository without
+    # a quantization, so they need to see which one they are getting.
+    if source["quantization_defaulted"]:
+        emit_json_info(f"No quantization given for '{repo_id}', defaulting to {DEFAULT_QUANTIZATION}. Specify another as '{repo_id}:<quantization>'.")
+
     if args.verbose:
         emit_json_info(f"Repository ID: {repo_id}")
         if url_filename:
@@ -578,6 +638,10 @@ def main():
         if mmproj_allow_pattern:
             patterns.append(mmproj_allow_pattern)
         matched_files = [{"file": f.path, "size": f.size} for f in list_repo_matches(repo_id, patterns) if f.size]
+        if not matched_files:
+            # Reporting a 0-byte total would read as "this model is free to download".
+            emit_json_error(no_match_message(repo_id, allow_pattern))
+            raise SystemExit(1)
         total_bytes = sum(f["size"] for f in matched_files)
         print(
             json.dumps({
@@ -640,8 +704,10 @@ def main():
         model_directory = os.environ.get("model_directory") or repo_id
         # Environment the metadata record is built from, with model_directory filled
         # in: it feeds both the "inputs" block and the models-list.yaml lookup that
-        # identifies the model.
-        metadata_env = {**os.environ, "model_directory": model_directory}
+        # identifies the model. ChainMap rather than {**os.environ, ...} because on
+        # Windows os.environ upper-cases its keys when copied, which would drop every
+        # lowercase download variable; chaining delegates the lookup instead.
+        metadata_env = ChainMap({"model_directory": model_directory}, os.environ)
 
         os.makedirs(output_dir, exist_ok=True)
         write_marker(
@@ -722,7 +788,14 @@ def main():
         # Record what was downloaded, then clear the in-progress marker: while the
         # marker is still there the repo directory counts as incomplete, so a crash
         # in between makes the next run retry instead of leaving it unrecorded.
-        write_metadata(output_dir, handler="hf-handler", env=metadata_env)
+        write_metadata(
+            output_dir,
+            handler="hf-handler",
+            env=metadata_env,
+            # Any repository can be downloaded without a models-list.yaml entry, so name
+            # it after the file that arrived rather than leaving it unidentified.
+            fallback_model_id=fallback_model_id(source["model_type"], downloaded),
+        )
 
         marker = Path(output_dir) / ".download"
         if marker.exists():

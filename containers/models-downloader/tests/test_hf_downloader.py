@@ -20,10 +20,13 @@ from common.model_metadata import METADATA_NAME
 from hugging_face.hf_downloader import (
     JsonProgress,
     delete_matched_files,
+    download_matched_files,
+    fallback_model_id,
     gguf_pattern,
     has_model_content,
     is_hf_url,
     matches_pattern,
+    no_match_message,
     parse_model_key,
     prune_emptied_repo_dir,
     resolve_model_source,
@@ -174,6 +177,8 @@ def test_matches_pattern(path, pattern, expected):
 @pytest.mark.parametrize(
     ("key", "expected"),
     [
+        # One field: a bare repository, quantization defaults to Q4_0.
+        ("unsloth/Qwen3-0.6B-GGUF", ("", "unsloth/Qwen3-0.6B-GGUF", "Q4_0", None)),
         # Two fields: no model_type, llama.cpp's "-hf <repo>:<quant>" form.
         ("Qwen/Qwen3-8B-GGUF:Q8_0", ("", "Qwen/Qwen3-8B-GGUF", "Q8_0", None)),
         ("unsloth/gemma-4-E2B-it-GGUF:Q4_0", ("", "unsloth/gemma-4-E2B-it-GGUF", "Q4_0", None)),
@@ -191,22 +196,15 @@ def test_parse_model_key(key, expected):
     assert parse_model_key(key) == expected
 
 
-@pytest.mark.parametrize(
-    "key",
-    [
-        "Qwen/Qwen3-8B-GGUF",  # no quantization: one field
-        "",  # empty key
-        "llamacpp:org/repo:Q4_0:BF16:extra",  # five fields
-    ],
-)
-def test_parse_model_key_rejects_wrong_field_count(key):
+def test_parse_model_key_rejects_too_many_fields():
     with pytest.raises(ValueError, match="Invalid model key"):
-        parse_model_key(key)
+        parse_model_key("llamacpp:org/repo:Q4_0:BF16:extra")
 
 
-def test_parse_model_key_rejects_empty_repo_id():
+@pytest.mark.parametrize("key", ["", ":Q4_0"])
+def test_parse_model_key_rejects_empty_repo_id(key):
     with pytest.raises(ValueError, match="repo_id cannot be empty"):
-        parse_model_key(":Q4_0")
+        parse_model_key(key)
 
 
 def test_parse_model_key_rejects_empty_quantization():
@@ -299,14 +297,116 @@ def test_resolve_rejects_an_empty_model_url():
         resolve_model_source("")
 
 
-def test_resolve_rejects_a_bare_repo_id():
-    with pytest.raises(ValueError, match="Invalid model key"):
-        resolve_model_source("Qwen/Qwen3-8B-GGUF")
+def test_resolve_bare_repo_id_defaults_the_quantization():
+    source = resolve_model_source("unsloth/Qwen3-0.6B-GGUF")
+    assert source["repo_id"] == "unsloth/Qwen3-0.6B-GGUF"
+    assert source["quantization"] == "Q4_0"
+    assert source["allow_pattern"] == "*Q4_0*.gguf"
+    # Flagged so main() can report the substitution rather than applying it silently.
+    assert source["quantization_defaulted"] is True
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "Qwen/Qwen3-8B-GGUF:Q8_0",
+        "llamacpp:Qwen/Qwen3-8B-GGUF:Q8_0",
+        "llamacpp:Qwen/Qwen3-8B-GGUF:Q8_0:BF16",
+    ],
+)
+def test_resolve_does_not_flag_an_explicit_quantization(key):
+    assert resolve_model_source(key)["quantization_defaulted"] is False
+
+
+def test_resolve_url_syntax_never_flags_a_default():
+    source = resolve_model_source(GEMMA_URL)
+    assert source["quantization_defaulted"] is False
+    assert source["quantization"] is None
 
 
 def test_resolve_rejects_a_non_hf_url():
     with pytest.raises(ValueError, match="Invalid Hugging Face URL"):
         resolve_model_source("https://example.com/some/file.gguf")
+
+
+# --------------------------------------------------------------------------- #
+# fallback_model_id
+# --------------------------------------------------------------------------- #
+def test_fallback_model_id_from_the_downloaded_gguf():
+    assert fallback_model_id("", ["/models/llamacpp/TheBloke/Mistral-GGUF/mistral.Q4_0.gguf"]) == "llamacpp:mistral.Q4_0"
+
+
+def test_fallback_model_id_uses_the_key_model_type_as_namespace():
+    assert fallback_model_id("llamacpp", ["/models/llamacpp/org/repo/m-Q8_0.gguf"]) == "llamacpp:m-Q8_0"
+
+
+def test_fallback_model_id_ignores_mmproj():
+    """The mmproj belongs to the main GGUF and must never name the model."""
+    files = ["/models/llamacpp/org/repo/mmproj-BF16.gguf", "/models/llamacpp/org/repo/model-Q4_0.gguf"]
+    assert fallback_model_id("", files) == "llamacpp:model-Q4_0"
+
+
+def test_fallback_model_id_without_any_gguf():
+    assert fallback_model_id("", []) is None
+    assert fallback_model_id("", ["/models/llamacpp/org/repo/mmproj-BF16.gguf"]) is None
+
+
+def test_fallback_model_id_matches_what_the_listing_derives(tmp_path):
+    """The record and the listing must agree on what to call an ad-hoc download."""
+    import list_models
+
+    gguf = tmp_path / "llamacpp" / "TheBloke" / "Mistral-GGUF" / "mistral.Q4_0.gguf"
+    gguf.parent.mkdir(parents=True)
+    gguf.write_bytes(b"\0")
+
+    listed = list_models.find_llamacpp_models(str(tmp_path))
+    assert len(listed) == 1
+    assert fallback_model_id("", [str(gguf)]) == listed[0]["id"]
+
+
+# --------------------------------------------------------------------------- #
+# no_match_message
+# --------------------------------------------------------------------------- #
+class _RepoFile:
+    """Stand-in for huggingface_hub's RepoFile, which only needs a .path here."""
+
+    def __init__(self, path):
+        self.path = path
+
+
+def test_no_match_message_lists_the_available_gguf_files(monkeypatch):
+    files = [_RepoFile("Qwen3-0.6B-Q8_0.gguf"), _RepoFile("Qwen3-0.6B-BF16.gguf")]
+    monkeypatch.setattr("hugging_face.hf_downloader.list_repo_matches", lambda *a, **k: files)
+    message = no_match_message("unsloth/Qwen3-0.6B-GGUF", "*Q4_0*.gguf")
+    assert "No file matching '*Q4_0*.gguf' found in repository 'unsloth/Qwen3-0.6B-GGUF'" in message
+    # Sorted, so the caller can see what to ask for instead.
+    assert "Available GGUF files: Qwen3-0.6B-BF16.gguf, Qwen3-0.6B-Q8_0.gguf" in message
+
+
+def test_no_match_message_when_the_repo_has_no_gguf(monkeypatch):
+    monkeypatch.setattr("hugging_face.hf_downloader.list_repo_matches", lambda *a, **k: [])
+    assert "contains no GGUF files at all" in no_match_message("org/repo", "*Q4_0*.gguf")
+
+
+def test_no_match_message_degrades_when_the_hub_is_unreachable(monkeypatch):
+    def _boom(*_a, **_k):
+        raise OSError("no network")
+
+    monkeypatch.setattr("hugging_face.hf_downloader.list_repo_matches", _boom)
+    message = no_match_message("org/repo", "*Q4_0*.gguf")
+    assert message == "No file matching '*Q4_0*.gguf' found in repository 'org/repo'."
+
+
+def test_download_matched_files_reports_what_is_available(monkeypatch):
+    """A defaulted Q4_0 that the repo does not carry must fail actionably."""
+
+    def _list(_repo_id, patterns, **_kwargs):
+        # Nothing matches the requested quantization; the repo does hold a Q8_0.
+        return [] if "Q4_0" in patterns[0] else [_RepoFile("m-Q8_0.gguf")]
+
+    monkeypatch.setattr("hugging_face.hf_downloader.list_repo_matches", _list)
+    with pytest.raises(FileNotFoundError, match="Available GGUF files: m-Q8_0.gguf"):
+        download_matched_files("org/repo", "*Q4_0*.gguf", "/tmp/out", JsonProgress)
 
 
 # --------------------------------------------------------------------------- #
@@ -326,7 +426,7 @@ def test_has_model_content_with_gguf(tmp_path):
 
 def test_has_model_content_ignores_metadata_only_dir(tmp_path):
     repo = _repo_dir(tmp_path)
-    (repo / METADATA_NAME).write_text("schema_version: 1\n")
+    (repo / METADATA_NAME).write_text("handler: hf-handler\n")
     assert has_model_content(str(repo)) is False
 
 
@@ -356,7 +456,7 @@ def test_delete_removes_metadata_and_prunes_repo_dir(tmp_path):
     repo = base / "google" / "gemma-4-E2B-it-qat-q4_0-gguf"
     repo.mkdir(parents=True)
     (repo / "gemma-4-E2B_q4_0-it.gguf").write_bytes(b"\0")
-    (repo / METADATA_NAME).write_text("schema_version: 1\n")
+    (repo / METADATA_NAME).write_text("handler: hf-handler\n")
 
     delete_matched_files(str(repo), str(base), "gemma-4-E2B_q4_0-it.gguf")
     # The metadata record kept the repo directory alive; the prune drops it.
@@ -374,7 +474,7 @@ def test_prune_keeps_dir_when_a_sibling_gguf_remains(tmp_path):
     repo.mkdir(parents=True)
     (repo / "gemma-3-1b-it-Q4_0.gguf").write_bytes(b"\0")
     (repo / "gemma-3-1b-it-Q8_0.gguf").write_bytes(b"\0")
-    (repo / METADATA_NAME).write_text("schema_version: 1\n")
+    (repo / METADATA_NAME).write_text("handler: hf-handler\n")
 
     delete_matched_files(str(repo), str(base), "gemma-3-1b-it-Q4_0.gguf")
     assert prune_emptied_repo_dir(str(repo), str(base)) is False
