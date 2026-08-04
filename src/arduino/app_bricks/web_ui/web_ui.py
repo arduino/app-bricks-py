@@ -41,7 +41,7 @@ class WebUI:
         use_tls: bool = False,
         use_ssl: bool | None = None,  # Deprecated alias for use_tls
         cors_origins: str = "*",
-    ):
+    ) -> None:
         """Initialize the web server.
 
         Args:

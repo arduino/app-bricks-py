@@ -23,7 +23,7 @@ logger = Logger("SoundGenerator")
 class LRUDict(OrderedDict):
     """A dictionary-like object with a fixed size that evicts the least recently used items."""
 
-    def __init__(self, maxsize=128, *args, **kwargs):
+    def __init__(self, maxsize=128, *args, **kwargs) -> None:
         self.maxsize = maxsize
         super().__init__(*args, **kwargs)
 
@@ -32,7 +32,7 @@ class LRUDict(OrderedDict):
         self.move_to_end(key)
         return value
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key, value) -> None:
         if key in self:
             self.move_to_end(key)
 
@@ -92,7 +92,7 @@ class SoundGeneratorStreamer:
         wave_form: str = "sine",
         master_volume: float = 1.0,
         sound_effects: list = None,
-    ):
+    ) -> None:
         """Initialize the SoundGeneratorStreamer. Generates sound blocks for streaming, without internal playback.
         Args:
             bpm (int): The tempo in beats per minute for note duration calculations.
@@ -540,7 +540,7 @@ class SoundGenerator(SoundGeneratorStreamer):
         wave_form: str = "sine",
         master_volume: float = 1.0,
         sound_effects: list = None,
-    ):
+    ) -> None:
         """Initialize the SoundGenerator.
 
         Args:

@@ -93,7 +93,7 @@ class ASREvent:
 class TranscriptionStream[T](AbstractContextManager["TranscriptionStream[T]"], Iterator[T]):
     """Iterator wrapper that guarantees proper teardown on context exit."""
 
-    def __init__(self, generator: Generator[T]):
+    def __init__(self, generator: Generator[T]) -> None:
         self._generator = generator
 
     def __enter__(self) -> "TranscriptionStream[T]":
@@ -139,7 +139,7 @@ class BaseASR:
     _FLUSH_INTERVAL_SECONDS = 5
     _DEFAULT_VAD_MS = 700
 
-    def __init__(self, source, language: str | None = None):
+    def __init__(self, source, language: str | None = None) -> None:
         # API configuration
         self.api_host = resolve_address(self._APP_SERVICE_NAME)
         if not self.api_host:
@@ -750,7 +750,7 @@ class AutomaticSpeechRecognition(BaseASR):
         self,
         mic: BaseMicrophone | None = None,
         language: str | None = None,
-    ):
+    ) -> None:
         """
         ASR brick that transcribes a live audio stream from a microphone.
 

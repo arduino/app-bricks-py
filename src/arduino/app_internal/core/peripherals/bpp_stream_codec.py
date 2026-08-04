@@ -27,7 +27,7 @@ class BPPStreamCodec:
     - BPP Packet: The actual BPP-encoded packet as per BPPCodec.
     """
 
-    def __init__(self, codec: BPPCodec):
+    def __init__(self, codec: BPPCodec) -> None:
         self.codec = codec
         self._buffer = bytearray()
 

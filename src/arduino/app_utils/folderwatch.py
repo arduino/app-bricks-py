@@ -9,7 +9,7 @@ import queue
 
 # TODO: add support to event types other than file creation
 class FolderWatcher:
-    def __init__(self, path, patterns=["*"], ignore_patterns=[]):
+    def __init__(self, path, patterns=["*"], ignore_patterns=[]) -> None:
         self._path = path
         self._observer = Observer()
         self._handler = FolderEventHandler(patterns=patterns, ignore_patterns=ignore_patterns, ignore_directories=True)
@@ -33,7 +33,7 @@ class FolderWatcher:
 
 
 class FolderEventHandler(PatternMatchingEventHandler):
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.queue = queue.Queue()
 

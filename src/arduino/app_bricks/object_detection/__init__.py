@@ -21,7 +21,7 @@ class ObjectDetection(EdgeImpulseRunnerFacade):
     - Confidence scores for each detection
     """
 
-    def __init__(self, confidence: float = 0.3):
+    def __init__(self, confidence: float = 0.3) -> None:
         """Initialize the ObjectDetection module.
 
         Args:

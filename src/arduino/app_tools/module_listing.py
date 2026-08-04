@@ -52,7 +52,7 @@ class ArduinoBrick:
         ai_frameworks_compatibility: list[str] = None,
         model_by_boards: list[dict[str, str]] = None,
         model_configuration_variables: list[str] = None,
-    ):
+    ) -> None:
         self.id = id
         self.name = name
         self.brick_description = brick_description
@@ -126,7 +126,7 @@ class ArduinoBrick:
             return str(readme_file)
         return None
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"Name: {self.name}\nDescription: {self.brick_description}\nPath: {self.path}\nCompose file: {self.get_compose_file()}\n"
 
 
@@ -141,7 +141,7 @@ class ArduinoService:
         env_variables: dict[str, str] = None,
         supported_boards: list[str] = None,
         root_path: str = None,
-    ):
+    ) -> None:
         self.service_id = service_id
         self.name = name
         self.brick_description = brick_description
@@ -186,7 +186,7 @@ class ArduinoService:
             return str(compose_file)
         return None
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"Name: {self.name}\nDescription: {self.brick_description}\nPath: {self.path}\nCompose file: {self.get_compose_file()}\n"
 
 

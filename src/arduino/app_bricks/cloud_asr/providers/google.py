@@ -48,7 +48,7 @@ class GoogleSpeech:
         api_key: str,
         language: str = DEFAULT_LANGUAGE,
         sample_rate: int = 16000,
-    ):
+    ) -> None:
         if not api_key:
             raise RuntimeError("Google Speech requires an API key; set API_KEY for this cloud provider.")
         self._api_key = api_key

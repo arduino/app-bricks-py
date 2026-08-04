@@ -103,7 +103,7 @@ class MQTT:
         password: str | None = None,
         topics: list[str] = None,
         client_id: str = None,
-    ):
+    ) -> None:
         """Initialize the MQTT Publisher.
 
         Args:

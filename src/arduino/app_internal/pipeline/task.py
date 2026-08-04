@@ -18,7 +18,7 @@ logger = Logger("pipeline.task")
 class PipelineTask:
     """Hierarchy root for classes that adapt bricks to the asyncio's tasks API."""
 
-    def __init__(self, adapter: AsyncBrickAdapter):
+    def __init__(self, adapter: AsyncBrickAdapter) -> None:
         self.adapter = adapter
         self._loop: asyncio.AbstractEventLoop | None = None
         self._task: asyncio.Task | None = None
@@ -60,7 +60,7 @@ class PipelineTask:
 
 
 class SourceTask[T_OUT](PipelineTask):
-    def __init__(self, adapter: AsyncBrickAdapter, queue_size: int = 1):
+    def __init__(self, adapter: AsyncBrickAdapter, queue_size: int = 1) -> None:
         super().__init__(adapter)
         self.adapter: AsyncBrickAdapter = adapter
         self.output_queue = asyncio.Queue(queue_size)
@@ -95,7 +95,7 @@ class SourceTask[T_OUT](PipelineTask):
 
 
 class ProcessorTask[T_IN, T_OUT](PipelineTask):
-    def __init__(self, adapter: AsyncProcessorAdapter, queue_size: int = 1):
+    def __init__(self, adapter: AsyncProcessorAdapter, queue_size: int = 1) -> None:
         super().__init__(adapter)
         self.adapter: AsyncProcessorAdapter = adapter
         self.input_queue: asyncio.Queue[T_IN] | None = None
@@ -138,7 +138,7 @@ class ProcessorTask[T_IN, T_OUT](PipelineTask):
 
 
 class SinkTask[T_IN](PipelineTask):
-    def __init__(self, adapter: AsyncSinkAdapter, queue_size: int = 1):
+    def __init__(self, adapter: AsyncSinkAdapter, queue_size: int = 1) -> None:
         super().__init__(adapter)
         self.adapter: AsyncSinkAdapter = adapter
         self.input_queue: asyncio.Queue[T_IN] | None = None

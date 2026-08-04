@@ -92,7 +92,7 @@ class CloudObject:
       as ``on_read``, unconditionally.
     """
 
-    def __init__(self, name: str, **kwargs: Any):
+    def __init__(self, name: str, **kwargs: Any) -> None:
         self.name = name
         self.on_read = kwargs.pop("on_read", None)
         self.on_write = kwargs.pop("on_write", None)
@@ -170,7 +170,7 @@ class CloudObject:
             return value[attr].value
         raise AttributeError(f"'{type(self).__name__}' object has no attribute '{attr}'")
 
-    def __setattr__(self, attr: str, value: Any):
+    def __setattr__(self, attr: str, value: Any) -> None:
         existing = self.__dict__.get("_value", None)
         if isinstance(existing, dict) and attr in existing:
             existing[attr].set_local(value)  # clight.hue = 5 → push "clight:hue"
@@ -367,29 +367,29 @@ class CloudObject:
 
 
 class Location(CloudObject):
-    def __init__(self, name: str, **kwargs: Any):
+    def __init__(self, name: str, **kwargs: Any) -> None:
         super().__init__(name, keys=("lat", "lon"), **kwargs)
 
 
 class Color(CloudObject):
-    def __init__(self, name: str, **kwargs: Any):
+    def __init__(self, name: str, **kwargs: Any) -> None:
         super().__init__(name, keys=("hue", "sat", "bri"), **kwargs)
 
 
 class ColoredLight(CloudObject):
-    def __init__(self, name: str, **kwargs: Any):
+    def __init__(self, name: str, **kwargs: Any) -> None:
         super().__init__(name, keys=("swi", "hue", "sat", "bri"), **kwargs)
 
 
 class DimmedLight(CloudObject):
-    def __init__(self, name: str, **kwargs: Any):
+    def __init__(self, name: str, **kwargs: Any) -> None:
         super().__init__(name, keys=("swi", "bri"), **kwargs)
 
 
 class Schedule(CloudObject):
     """A cloud schedule (frm/to/len/msk). Computes its active state in on_run."""
 
-    def __init__(self, name: str, **kwargs: Any):
+    def __init__(self, name: str, **kwargs: Any) -> None:
         self.on_active = kwargs.pop("on_active", None)
         self.active = False
         kwargs["on_run"] = self._on_run

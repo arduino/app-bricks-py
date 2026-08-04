@@ -31,7 +31,7 @@ class TTSBusyError(TTSError):
 class SynthesisStream(AbstractContextManager["SynthesisStream"], Iterator[bytes]):
     """Iterator wrapper that guarantees proper teardown on context exit."""
 
-    def __init__(self, generator: Generator[bytes]):
+    def __init__(self, generator: Generator[bytes]) -> None:
         self._generator = generator
 
     def __enter__(self) -> "SynthesisStream":
@@ -56,7 +56,7 @@ class TextToSpeech:
 
     _APP_SERVICE_NAME = "audio-analytics-runner"
 
-    def __init__(self, speaker: BaseSpeaker | None = None):
+    def __init__(self, speaker: BaseSpeaker | None = None) -> None:
         """Initialize the TextToSpeech brick.
         Args:
             speaker (BaseSpeaker, optional): Speaker instance to use for audio output. If not provided, a default Speaker will be used.

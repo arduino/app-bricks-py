@@ -33,7 +33,7 @@ class VibrationAnomalyDetection(EdgeImpulseRunnerFacade):
         - A single callback is supported at a time (thread-safe registration).
     """
 
-    def __init__(self, anomaly_detection_threshold: float = 1.0):
+    def __init__(self, anomaly_detection_threshold: float = 1.0) -> None:
         """Initialize the vibration anomaly detector.
 
         Args:

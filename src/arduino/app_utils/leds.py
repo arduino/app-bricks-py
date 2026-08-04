@@ -57,7 +57,7 @@ class Leds:
     ]
 
     @staticmethod
-    def _write_led_file(led_file, value: bool):
+    def _write_led_file(led_file, value: bool) -> None:
         try:
             with open(led_file, "w") as f:
                 f.write(f"{int(value)}\n")
@@ -65,7 +65,7 @@ class Leds:
             logger.exception(f"Error writing to {led_file}: {e}")
 
     @staticmethod
-    def set_led1_color(r: bool, g: bool, b: bool):
+    def set_led1_color(r: bool, g: bool, b: bool) -> None:
         # check if /dev/leds/builtin/led1_r exists, if yes use compatible files, otherwise use legacy files
         if all(os.path.exists(f) for f in Leds._led1_brightness_files):
             Leds._write_led_file(Leds._led1_brightness_files[0], r)
@@ -79,7 +79,7 @@ class Leds:
             raise FileNotFoundError("No compatible LED files found for LED1.")
 
     @staticmethod
-    def set_led2_color(r: bool, g: bool, b: bool):
+    def set_led2_color(r: bool, g: bool, b: bool) -> None:
         # check if /dev/leds/builtin/led2_r exists, if yes use compatible files, otherwise use legacy files
         if all(os.path.exists(f) for f in Leds._led2_brightness_files):
             Leds._write_led_file(Leds._led2_brightness_files[0], r)

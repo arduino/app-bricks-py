@@ -23,7 +23,7 @@ class AudioClassificationException(Exception):
 class AudioClassification(AudioDetector):
     """AudioClassification module for detecting sounds and classifying audio using a specified model."""
 
-    def __init__(self, mic: Microphone = None, confidence: float = 0.8):
+    def __init__(self, mic: Microphone = None, confidence: float = 0.8) -> None:
         """Initialize the AudioClassification class.
 
         Args:

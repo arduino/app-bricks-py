@@ -23,7 +23,7 @@ from urllib3.connectionpool import HTTPConnectionPool
 
 
 class _UnixHTTPConnection(HTTPConnection):
-    def __init__(self, socket_path: str, **kwargs):
+    def __init__(self, socket_path: str, **kwargs) -> None:
         # The host is irrelevant for an AF_UNIX socket, but urllib3 requires one.
         super().__init__("localhost", **kwargs)
         self._unix_socket_path = socket_path
@@ -39,7 +39,7 @@ class _UnixHTTPConnection(HTTPConnection):
 
 
 class _UnixHTTPConnectionPool(HTTPConnectionPool):
-    def __init__(self, socket_path: str, **kwargs):
+    def __init__(self, socket_path: str, **kwargs) -> None:
         super().__init__("localhost", **kwargs)
         self._unix_socket_path = socket_path
 
@@ -50,7 +50,7 @@ class _UnixHTTPConnectionPool(HTTPConnectionPool):
 class UnixHTTPAdapter(HTTPAdapter):
     """Routes ``http+unix://`` requests over a fixed AF_UNIX socket path."""
 
-    def __init__(self, socket_path: str, **kwargs):
+    def __init__(self, socket_path: str, **kwargs) -> None:
         self._unix_socket_path = socket_path
         self._pool = None
         super().__init__(**kwargs)

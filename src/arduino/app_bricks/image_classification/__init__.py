@@ -18,7 +18,7 @@ class ImageClassification(EdgeImpulseRunnerFacade):
 
     """
 
-    def __init__(self, confidence: float = 0.3):
+    def __init__(self, confidence: float = 0.3) -> None:
         """Initialize the ImageClassification module.
 
         Args:

@@ -311,7 +311,7 @@ def _accumulate_docker_compose_variables(discovered_vars, value):
 
 
 class ModuleVariable:
-    def __init__(self, name: str, description: str, default_value: str = None):
+    def __init__(self, name: str, description: str, default_value: str = None) -> None:
         """Represents a variable in a Docker Compose file."""
         self.name = name
         self.default_value = default_value
@@ -326,12 +326,12 @@ class ModuleVariable:
             del dict_out["description"]
         return dict_out
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"Name: {self.name}, Default value: {self.default_value}, Description: {self.description}"
 
 
 class EnvVariable:
-    def __init__(self, name: str, description: str, default_value: str = None, hidden: bool = False, secret: bool = False):
+    def __init__(self, name: str, description: str, default_value: str = None, hidden: bool = False, secret: bool = False) -> None:
         """Represents a variable in brick_config file."""
         self.name = name
         self.default_value = default_value
@@ -358,7 +358,7 @@ class EnvVariable:
             del dict_out["secret"]
         return dict_out
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"Name: {self.name}, Default value: {self.default_value}, Description: {self.description}"
 
 

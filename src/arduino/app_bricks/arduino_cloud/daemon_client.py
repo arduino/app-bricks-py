@@ -80,7 +80,7 @@ def parse_timestamp(value) -> float | None:
 class DaemonClient:
     """Thin client for the daemon REST/SSE API."""
 
-    def __init__(self, base_url: str):
+    def __init__(self, base_url: str) -> None:
         self._base = base_url.rstrip("/")
         # If the URL uses the http+unix:// scheme, every session must mount the
         # UNIX-socket adapter; the socket path is the percent-encoded host part.

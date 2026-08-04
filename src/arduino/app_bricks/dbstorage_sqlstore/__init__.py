@@ -32,7 +32,7 @@ class SQLStore:
     It is designed to be thread-safe and can be used in multi-threaded applications.
     """
 
-    def __init__(self, database_name: str = "arduino.db"):
+    def __init__(self, database_name: str = "arduino.db") -> None:
         """Initialize the SQLStore client with automatic directory setup.
 
         Creates the database file in the `/app/data`. If the filename doesn't end with `.db`, the extension

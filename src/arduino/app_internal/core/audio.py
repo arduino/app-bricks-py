@@ -19,7 +19,7 @@ logger = Logger("AudioDetector")
 class AudioDetector(EdgeImpulseRunnerFacade):
     """AudioDetector module for detecting sounds and classifying audio using a specified model."""
 
-    def __init__(self, mic: BaseMicrophone | None = None, confidence: float = 0.8, debounce_sec: float = 2.0):
+    def __init__(self, mic: BaseMicrophone | None = None, confidence: float = 0.8, debounce_sec: float = 2.0) -> None:
         """Initialize the AudioDetector class.
 
         Args:

@@ -35,7 +35,7 @@ class ALSASpeaker(BaseSpeaker):
         buffer_size: int = Speaker.BUFFER_SIZE_BALANCED,
         shared: bool = True,
         auto_reconnect: bool = True,
-    ):
+    ) -> None:
         """
         Initialize ALSA speaker.
 

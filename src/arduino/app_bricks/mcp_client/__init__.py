@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 class HTTPEndpoint:
     """A class to communicate with remote MCP server via HTTP protocol to perform various tasks."""
 
-    def __init__(self, name: str, url: str, headers: dict | None = None, token: str | None = None, auth: "httpx.Auth | None" = None):
+    def __init__(self, name: str, url: str, headers: dict | None = None, token: str | None = None, auth: "httpx.Auth | None" = None) -> None:
         """Initialize the HTTPEndpoint with the given name, URL, and optional authentication.
         Configure url to point to the /mcp endpoint of the remote MCP server.
 
@@ -68,7 +68,7 @@ class HTTPEndpoint:
 class MCPClient:
     """A class to communicate with the MCP server to perform various tasks."""
 
-    def __init__(self, endpoints: list[HTTPEndpoint], tool_name_prefix: bool = True, **kwargs):
+    def __init__(self, endpoints: list[HTTPEndpoint], tool_name_prefix: bool = True, **kwargs) -> None:
         """Initialize the MCPClient with a MultiServerMCPClient.
 
         Args:

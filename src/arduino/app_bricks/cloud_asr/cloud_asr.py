@@ -62,7 +62,7 @@ class CloudASR:
         mic: BaseMicrophone | None = None,
         language: str = os.getenv("LANGUAGE", ""),
         silence_timeout: float = 10.0,
-    ):
+    ) -> None:
         if mic is not None:
             logger.debug(f"Using provided microphone: {mic.name}")
             self._mic = mic

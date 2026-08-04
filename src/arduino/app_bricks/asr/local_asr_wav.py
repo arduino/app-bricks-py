@@ -30,7 +30,7 @@ class InMemoryAudioSource:
     _DEFAULT_CHANNELS = 1
     _DEFAULT_BUFFER_SIZE = 1024
 
-    def __init__(self, samples: bytes | np.ndarray):
+    def __init__(self, samples: bytes | np.ndarray) -> None:
         if isinstance(samples, (bytes, bytearray)):
             with wave.open(io.BytesIO(bytes(samples)), "rb") as wf:
                 self.sample_rate = wf.getframerate()
@@ -84,7 +84,7 @@ class WAVAutomaticSpeechRecognition(BaseASR):
         self,
         wav: np.ndarray | bytes,
         language: str | None = None,
-    ):
+    ) -> None:
         """
         ASR brick that transcribes a finite in-memory audio buffer.
 

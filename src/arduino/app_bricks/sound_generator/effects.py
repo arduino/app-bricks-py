@@ -18,7 +18,7 @@ class SoundEffect:
         """
 
         class SoundEffectOverdrive:
-            def __init__(self, drive: float = 1.0):
+            def __init__(self, drive: float = 1.0) -> None:
                 pass
 
             def apply(self, signal: np.ndarray) -> np.ndarray:
@@ -42,7 +42,7 @@ class SoundEffect:
         """
 
         class SoundEffectChorus:
-            def __init__(self, depth_ms: int = 10, rate_hz: float = 0.25, mix: float = 0.5):
+            def __init__(self, depth_ms: int = 10, rate_hz: float = 0.25, mix: float = 0.5) -> None:
                 self.fs = 16000  # sample rate
                 self.depth_ms = depth_ms
                 self.rate_hz = rate_hz
@@ -80,7 +80,7 @@ class SoundEffect:
         """
 
         class SoundEffectADSR:
-            def __init__(self, attack: float = 0.015, decay: float = 0.2, sustain: float = 0.5, release: float = 0.35):
+            def __init__(self, attack: float = 0.015, decay: float = 0.2, sustain: float = 0.5, release: float = 0.35) -> None:
                 """
                 Initialize ADSR effect.
                 Args:
@@ -121,7 +121,7 @@ class SoundEffect:
     @staticmethod
     def tremolo(depth: float = 0.5, rate: float = 5.0):
         class SoundEffectTremolo:
-            def __init__(self, depth: float = 0.5, rate: float = 5.0):
+            def __init__(self, depth: float = 0.5, rate: float = 5.0) -> None:
                 """
                 Tremolo effect block-local.
                 Args:
@@ -147,7 +147,7 @@ class SoundEffect:
     @staticmethod
     def vibrato(depth: float = 0.02, rate: float = 0.5):
         class SoundEffectVibrato:
-            def __init__(self, depth: float = 0.02, rate: float = 2.0):
+            def __init__(self, depth: float = 0.02, rate: float = 2.0) -> None:
                 """
                 Vibrato effect
                 Args:
@@ -174,7 +174,7 @@ class SoundEffect:
     @staticmethod
     def bitcrusher(bits: int = 4, reduction: int = 6):
         class SoundEffectBitcrusher:
-            def __init__(self, bits: int = 4, reduction: int = 4):
+            def __init__(self, bits: int = 4, reduction: int = 4) -> None:
                 """
                 Bitcrusher effect.
                 Args:
@@ -201,7 +201,7 @@ class SoundEffect:
     @staticmethod
     def octaver(oct_up: bool = True, oct_down: bool = False):
         class SoundEffectOctaver:
-            def __init__(self, oct_up: bool = True, oct_down: bool = True):
+            def __init__(self, oct_up: bool = True, oct_down: bool = True) -> None:
                 """
                 Octaver effect.
                 Args:

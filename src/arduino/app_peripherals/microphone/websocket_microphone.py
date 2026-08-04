@@ -62,7 +62,7 @@ class WebSocketMicrophone(BaseMicrophone):
         format: FormatPlain | FormatPacked = np.int16,
         buffer_size: int = Microphone.BUFFER_SIZE_BALANCED,
         auto_reconnect: bool = True,
-    ):
+    ) -> None:
         """
         Initialize WebSocket microphone server.
 

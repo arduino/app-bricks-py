@@ -14,7 +14,7 @@ class Frame:
     brightness levels in range [0, brightness_levels-1].
     """
 
-    def __init__(self, arr: np.ndarray, brightness_levels: int = 256):
+    def __init__(self, arr: np.ndarray, brightness_levels: int = 256) -> None:
         """Create a Frame from a numpy array.
 
         Args:
@@ -27,7 +27,7 @@ class Frame:
         self._arr = arr
         self._validate()
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """Return the array as representation of the Frame."""
         return self.arr.__repr__()
 
@@ -282,7 +282,7 @@ class FrameDesigner:
     provides helpers to make transformations of a `Frame` instance.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the FrameDesigner instance with board defaults.
 
         These attributes define brightness levels used by application helpers.

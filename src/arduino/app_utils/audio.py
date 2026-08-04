@@ -21,7 +21,7 @@ class SineGenerator:
         glide (float): Glide time for frequency smoothing in seconds.
     """
 
-    def __init__(self, sample_rate: int):
+    def __init__(self, sample_rate: int) -> None:
         """Create a new SineGenerator.
 
         Args:

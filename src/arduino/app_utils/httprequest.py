@@ -22,7 +22,7 @@ class HttpClient:
         backoff_factor: int = 1,
         status_forcelist: frozenset = (411, 500, 502, 503, 504),
         allowed_methods: frozenset = frozenset(["GET", "POST", "PUT", "DELETE"]),
-    ):
+    ) -> None:
         self.__total_retries = total_retries
         self.__backoff_factor = backoff_factor
         self.__status_forcelist = status_forcelist

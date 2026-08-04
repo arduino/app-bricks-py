@@ -37,7 +37,7 @@ class BaseMicrophone(ABC):
         format: FormatPlain | FormatPacked,
         buffer_size: int,
         auto_reconnect: bool,
-    ):
+    ) -> None:
         """
         Initialize the microphone base.
 

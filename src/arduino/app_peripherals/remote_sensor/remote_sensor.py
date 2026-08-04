@@ -55,7 +55,7 @@ class RemoteSensor:
         secret: str | None = None,
         encrypt: bool = False,
         auto_reconnect: bool = True,
-    ):
+    ) -> None:
         """
         Initialize RemoteSensor WebSocket server.
 

@@ -44,7 +44,7 @@ class SQLMessagePersistence:
         sql_store: SQLStore | None = None,
         thread_id: str = DEFAULT_THREAD_ID,
         table_name: str = DEFAULT_HISTORY_TABLE,
-    ):
+    ) -> None:
         """Initialize the store backend.
 
         Args:
@@ -122,7 +122,7 @@ class WindowedChatMessageHistory:
 
     k: int
 
-    def __init__(self, k: int, system_message: str = "", store: MessagePersistence | None = None):
+    def __init__(self, k: int, system_message: str = "", store: MessagePersistence | None = None) -> None:
         self.k = k
         self._messages: list[BaseMessage] = []
         self._system_message = SystemMessage(content=system_message) if system_message else None

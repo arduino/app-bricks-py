@@ -15,7 +15,7 @@ logger = Logger(__name__)
 class EdgeImpulseModelInfo:
     """Class to hold Edge Impulse model information."""
 
-    def __init__(self, model_info: dict):
+    def __init__(self, model_info: dict) -> None:
         """Initialize the EdgeImpulseModelInfo with model information."""
         if not model_info:
             raise ValueError("Model information cannot be empty.")
@@ -42,7 +42,7 @@ class EdgeImpulseModelInfo:
 class EdgeImpulseRunnerFacade:
     """Facade for Edge Impulse Object Detection and Classification."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the EdgeImpulseRunnerFacade with the API path.
 
         Raises:
@@ -246,7 +246,7 @@ class EdgeImpulseRunnerFacade:
         return None
 
     @classmethod
-    def _get_ei_url(cls):
+    def _get_ei_url(cls) -> str:
         infra = load_brick_compose_file(cls)
         if not infra or "services" not in infra:
             raise RuntimeError("Cannot load Brick Compose file to resolve Edge Impulse runner address.")

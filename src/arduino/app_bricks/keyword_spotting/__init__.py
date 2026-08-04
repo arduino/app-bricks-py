@@ -19,7 +19,7 @@ class KeywordSpotting(AudioDetector):
     trained on Edge Impulse platform.
     """
 
-    def __init__(self, mic: BaseMicrophone | None = None, confidence: float = 0.8, debounce_sec: float = 2.0):
+    def __init__(self, mic: BaseMicrophone | None = None, confidence: float = 0.8, debounce_sec: float = 2.0) -> None:
         """Initialize the KeywordSpotting class.
 
         Args:

@@ -18,7 +18,7 @@ logger = Logger("MotionDetection")
 class MotionDetection(EdgeImpulseRunnerFacade):
     """This Motion Detection module classifies motion patterns using accelerometer data."""
 
-    def __init__(self, confidence: float = 0.4):
+    def __init__(self, confidence: float = 0.4) -> None:
         """Initialize the MotionDetection module.
 
         Args:

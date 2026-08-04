@@ -40,7 +40,7 @@ class _InfluxDBHandler:
         It is intended to be subclassed for specific database operations. Use TimeSeriesStore for time series operations.
     """
 
-    def __init__(self, host: str = base_influx_host, port: int = base_influx_port, retention_days: int = 7):
+    def __init__(self, host: str = base_influx_host, port: int = base_influx_port, retention_days: int = 7) -> None:
         """Initialize the InfluxDB client with the provided host and port.
 
         Args:
@@ -149,7 +149,7 @@ class TimeSeriesStore(_InfluxDBHandler):
     It allows writing and reading individual measurements with their values and timestamps.
     """
 
-    def __init__(self, host: str = base_influx_host, port: int = base_influx_port, retention_days: int = 7):
+    def __init__(self, host: str = base_influx_host, port: int = base_influx_port, retention_days: int = 7) -> None:
         """Initialize the InfluxDB persistence handler.
 
         Args:

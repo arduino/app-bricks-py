@@ -65,7 +65,7 @@ class WebSocketCamera(BaseCamera):
         fps: int = 10,
         adjustments: Callable[[np.ndarray], np.ndarray] | None = None,
         auto_reconnect: bool = True,
-    ):
+    ) -> None:
         """
         Initialize WebSocket camera server with security options.
 

@@ -29,7 +29,7 @@ GENERIC_ERR = 0xFF
 
 class Bridge:
     @staticmethod
-    def notify(method_name: str, *params):
+    def notify(method_name: str, *params) -> None:
         """Sends a notification to the microcontroller without waiting for a response.
 
         Args:
@@ -64,7 +64,7 @@ class Bridge:
         return ClientServer().call(method_name, *params, timeout=timeout)
 
     @staticmethod
-    def provide(method_name: str, handler: callable):
+    def provide(method_name: str, handler: callable) -> None:
         """Makes a method available to the microcontroller, so it can call it remotely.
         The handler should be a callable that can take arguments.
 
@@ -86,7 +86,7 @@ class Bridge:
         ClientServer().provide(method_name, handler)
 
     @staticmethod
-    def unprovide(method_name: str):
+    def unprovide(method_name: str) -> None:
         """Makes a method no more available to the microcontroller.
 
         Args:
@@ -280,7 +280,7 @@ class _ClientServer:
     both methods are idempotent. It can also be used as a context manager.
     """
 
-    def __init__(self, address: str = "unix:///var/run/arduino-router.sock"):
+    def __init__(self, address: str = "unix:///var/run/arduino-router.sock") -> None:
         self.next_msgid = 0
         self.next_msgid_lock = threading.Lock()
         self.callbacks = {}  # msgid -> (on_result, on_error)
@@ -692,6 +692,6 @@ class _ClientServer:
 class ClientServer(_ClientServer, metaclass=SingletonMeta):
     """Process-wide singleton bridge connection."""
 
-    def __init__(self, address: str = "unix:///var/run/arduino-router.sock"):
+    def __init__(self, address: str = "unix:///var/run/arduino-router.sock") -> None:
         super().__init__(address)
         self.start()

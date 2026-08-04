@@ -54,7 +54,7 @@ class CSICamera(BaseCamera):
         fps: int = 30,
         adjustments: Callable[[np.ndarray], np.ndarray] | None = None,
         auto_reconnect: bool = True,
-    ):
+    ) -> None:
         """
         Initialize CSI camera.
 

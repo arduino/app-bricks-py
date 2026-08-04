@@ -34,7 +34,7 @@ class VisionLanguageModel(LargeLanguageModel):
         tools: list[Callable[..., Any]] = None,
         model: str = None,
         **kwargs,
-    ):
+    ) -> None:
         """Initializes the VisionLanguageModel brick with the specified provider and configuration.
 
         Args:

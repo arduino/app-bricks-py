@@ -10,7 +10,7 @@ logger = Logger("ColorDetectorServer")
 
 @brick
 class ColorDetectorServer:
-    def __init__(self, color):
+    def __init__(self, color) -> None:
         self.color = color
 
     def start(self):

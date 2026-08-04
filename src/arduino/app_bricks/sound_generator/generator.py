@@ -14,7 +14,7 @@ class WaveSamplesBuilder:
         sample_rate (int): Audio sample rate in Hz.
     """
 
-    def __init__(self, wave_form: str = "sine", sample_rate: int = 16000):
+    def __init__(self, wave_form: str = "sine", sample_rate: int = 16000) -> None:
         """Create a new WaveGenerator.
 
         Args:

@@ -39,7 +39,7 @@ class V4LCamera(BaseCamera):
         adjustments: Callable[[np.ndarray], np.ndarray] | None = None,
         auto_reconnect: bool = True,
         codec: Literal["", "YUVY", "MJPG", "H264"] = "",
-    ):
+    ) -> None:
         """
         Initialize V4L camera.
 

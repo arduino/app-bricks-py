@@ -196,7 +196,7 @@ class Speaker:
         channels: int,
         format: FormatPlain | FormatPacked,
         device: str | int = 0,
-    ):
+    ) -> None:
         """
         Play raw PCM audio data.
 
@@ -229,7 +229,7 @@ class Speaker:
             speaker.play_pcm(pcm_audio)
 
     @staticmethod
-    def play_wav(wav_audio: np.ndarray, device: str | int = 0):
+    def play_wav(wav_audio: np.ndarray, device: str | int = 0) -> None:
         """
         Play audio from WAV format data.
         Note: Only uncompressed PCM WAV files are supported.

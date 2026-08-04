@@ -47,7 +47,7 @@ class VideoObjectDetection:
         confidence: float = 0.3,
         debounce_sec: float = 0.0,
         camera_preview: bool = False,
-    ):
+    ) -> None:
         """Initialize the VideoObjectDetection class.
 
         Args:

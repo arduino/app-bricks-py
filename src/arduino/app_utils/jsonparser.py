@@ -9,7 +9,7 @@ logger = Logger("JSONParser")
 
 
 class JSONParser:
-    def __init__(self, silent: bool = False):
+    def __init__(self, silent: bool = False) -> None:
         self.silent = silent
 
     def parse(self, item: str) -> dict:

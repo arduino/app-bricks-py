@@ -20,7 +20,7 @@ logger = Logger("pipeline.adapter")
 class AsyncBrickAdapter:
     """Base class for brick adapters, normalizing to an async API."""
 
-    def __init__(self, original_brick: Any, rate_limit: int | None = None):
+    def __init__(self, original_brick: Any, rate_limit: int | None = None) -> None:
         self.original_brick = original_brick
         self.rate_limit = rate_limit
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -59,7 +59,7 @@ class AsyncBrickAdapter:
 class AsyncSourceAdapter(AsyncBrickAdapter):
     """Adapter for async sources."""
 
-    def __init__(self, original_brick: Any, rate_limit: int | None = None):
+    def __init__(self, original_brick: Any, rate_limit: int | None = None) -> None:
         super().__init__(original_brick, rate_limit)
 
         self._produce_method = getattr(self.original_brick, "produce", None)
@@ -79,7 +79,7 @@ class AsyncBlockingSourceAdapter(AsyncBrickAdapter):
     Manages a daemon thread internally to avoid blocking the event loop.
     """
 
-    def __init__(self, original_brick: Any, rate_limit: int | None = None):
+    def __init__(self, original_brick: Any, rate_limit: int | None = None) -> None:
         super().__init__(original_brick, rate_limit)
 
         self._produce_method = getattr(self.original_brick, "produce", None)
@@ -195,7 +195,7 @@ class AsyncBlockingSourceAdapter(AsyncBrickAdapter):
 
 
 class AsyncProcessorAdapter(AsyncBrickAdapter):
-    def __init__(self, original_brick: Any, rate_limit: int | None = None):
+    def __init__(self, original_brick: Any, rate_limit: int | None = None) -> None:
         super().__init__(original_brick, rate_limit)
 
         self._process_method = getattr(self.original_brick, "process", None)
@@ -219,7 +219,7 @@ class AsyncProcessorAdapter(AsyncBrickAdapter):
 
 
 class AsyncSinkAdapter(AsyncBrickAdapter):
-    def __init__(self, original_brick: Any, rate_limit: int | None = None):
+    def __init__(self, original_brick: Any, rate_limit: int | None = None) -> None:
         super().__init__(original_brick, rate_limit)
 
         self._consume_method = getattr(self.original_brick, "consume", None)

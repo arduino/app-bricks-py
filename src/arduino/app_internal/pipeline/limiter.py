@@ -9,7 +9,7 @@ import time
 class AsyncRateLimiter:
     """Helper class for async rate limiting."""
 
-    def __init__(self, calls_per_second: int):
+    def __init__(self, calls_per_second: int) -> None:
         if calls_per_second <= 0:
             raise ValueError("calls_per_second must be greater than 0")
         self._min_interval = 1.0 / calls_per_second

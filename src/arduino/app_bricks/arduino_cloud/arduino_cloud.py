@@ -66,7 +66,7 @@ class ArduinoCloud:
         server: str = _DEPRECATED,
         port: int = _DEPRECATED,
         daemon_url: str = None,
-    ):
+    ) -> None:
         """Initialize the Arduino Cloud client.
 
         Args:
@@ -378,7 +378,7 @@ class ArduinoCloud:
             return record if record.is_complex else record.value
         raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
 
-    def __setattr__(self, name: str, value: Any):
+    def __setattr__(self, name: str, value: Any) -> None:
         """Intercept assignment to cloud variables as natural attributes."""
         if name.startswith("_"):
             super().__setattr__(name, value)

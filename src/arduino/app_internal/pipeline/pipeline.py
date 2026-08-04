@@ -15,7 +15,7 @@ logger = Logger("pipeline.main")
 
 
 class Pipeline:
-    def __init__(self, debug: bool = False):
+    def __init__(self, debug: bool = False) -> None:
         if debug:
             logger.setLevel(logging.DEBUG)
         self._steps: list[PipelineTask] = []

@@ -27,7 +27,7 @@ class AppController:
     When App.run() exits, all bricks, including those started manually, will be stopped to ensure a clean shutdown.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._waiting_queue = deque()
         self._running_queue = deque()
         self._brick_states: dict[any, list[tuple[threading.Thread, threading.Event]]] = {}
@@ -166,7 +166,7 @@ class AppController:
         """
 
         class SignalReceived(BaseException):
-            def __init__(self, signum):
+            def __init__(self, signum) -> None:
                 self.signum = signum
 
         def handle_signal(signum, frame):

@@ -35,7 +35,7 @@ class WaveGenerator:
         attack: float = 0.01,
         release: float = 0.03,
         glide: float = 0.02,
-    ):
+    ) -> None:
         """
         Initialize the WaveGenerator brick.
 

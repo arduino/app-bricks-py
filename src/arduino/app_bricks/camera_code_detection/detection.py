@@ -58,7 +58,7 @@ class CameraCodeDetection:
         camera: BaseCamera = None,
         detect_qr: bool = True,
         detect_barcode: bool = True,
-    ):
+    ) -> None:
         """Initialize the CameraCodeDetection brick."""
         if detect_qr is False and detect_barcode is False:
             raise ValueError("At least one of 'detect_qr' or 'detect_barcode' must be True.")

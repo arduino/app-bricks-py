@@ -92,7 +92,7 @@ class CloudLLM:
         tools: Sequence[ToolLike] | None = None,
         callbacks: Any = None,
         **kwargs,
-    ):
+    ) -> None:
         """Initializes the CloudLLM brick with the specified provider and configuration.
 
         Args:

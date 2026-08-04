@@ -39,7 +39,7 @@ class LargeLanguageModel(CloudLLM):
         tools: Sequence[ToolLike] | None = None,
         model: str | None = None,
         **kwargs,
-    ):
+    ) -> None:
         """Initializes the LargeLanguageModel brick with the specified provider and configuration.
 
         Args:

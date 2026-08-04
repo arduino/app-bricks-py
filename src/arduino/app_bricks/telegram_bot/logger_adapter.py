@@ -36,7 +36,7 @@ class TelegramLoggerAdapter(logging.LoggerAdapter):
         user_id: int | None = None,
         message_id: int | None = None,
         chat_id: int | None = None,
-    ):
+    ) -> None:
         extra = {}
         if user_id is not None:
             extra["user"] = user_id

@@ -22,7 +22,7 @@ class PipeableFunction:
     This allows functions to be composed using the | operator in a left-to-right manner.
     """
 
-    def __init__(self, func: Callable, *args, **kwargs):
+    def __init__(self, func: Callable, *args, **kwargs) -> None:
         """
         Initialize a pipeable function.
 
@@ -77,7 +77,7 @@ class PipeableFunction:
 
         return PipeableFunction(composed)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """String representation of the pipeable function."""
         # Get function name safely
         func_name = getattr(self.func, "__name__", None)

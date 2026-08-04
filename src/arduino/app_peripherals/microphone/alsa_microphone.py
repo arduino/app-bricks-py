@@ -35,7 +35,7 @@ class ALSAMicrophone(BaseMicrophone):
         buffer_size: int = Microphone.BUFFER_SIZE_BALANCED,
         shared: bool = True,
         auto_reconnect: bool = True,
-    ):
+    ) -> None:
         """
         Initialize ALSA microphone.
 

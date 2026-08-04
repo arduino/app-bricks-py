@@ -22,7 +22,7 @@ class VisualAnomalyDetection(EdgeImpulseRunnerFacade):
           does not contain expected anomaly fields.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
 
     def detect_from_file(self, image_path: str) -> dict:

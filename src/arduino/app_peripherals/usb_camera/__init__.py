@@ -30,7 +30,7 @@ class USBCamera:
         fps: int = 10,
         compression: bool = False,
         letterbox: bool = False,
-    ):
+    ) -> None:
         """Initialize the USB camera.
 
         Args:
