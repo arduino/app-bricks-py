@@ -262,7 +262,7 @@ class CloudLLM:
             images (List[str | bytes]): Optional list of image file paths or raw bytes to include in the prompt.
 
         Returns:
-            List[BaseMessage]: The list of messages in the conversation history,
+            list[BaseMessage]: The list of messages in the conversation history,
                 including system prompt if set.
         """
 
@@ -294,10 +294,10 @@ class CloudLLM:
 
         Args:
             tool_calls (list[ToolCall]): The list of tool calls requested by the model.
-            input_messages (List[BaseMessage]): The current message scope including history.
+            input_messages (list[BaseMessage]): The current message scope including history.
 
         Returns:
-            List[BaseMessage]: Updated message scope after processing tool calls.
+            list[BaseMessage]: Updated message scope after processing tool calls.
         """
 
         if len(tool_calls) == 0:
@@ -335,8 +335,8 @@ class CloudLLM:
         self,
         assistant_message: BaseMessage,
         tool_calls: list[ToolCall],
-        input_messages: List[BaseMessage],
-    ) -> List[BaseMessage]:
+        input_messages: list[BaseMessage],
+    ) -> list[BaseMessage]:
         """Runs the requested tool calls and records the whole exchange in history.
 
         The assistant message carrying the tool calls and the resulting tool messages are
@@ -349,10 +349,10 @@ class CloudLLM:
         Args:
             assistant_message (BaseMessage): The assistant message holding the tool calls.
             tool_calls (list[ToolCall]): The tool calls requested by the model.
-            input_messages (List[BaseMessage]): The current message scope including history.
+            input_messages (list[BaseMessage]): The current message scope including history.
 
         Returns:
-            List[BaseMessage]: Updated message scope, with the assistant message and the
+            list[BaseMessage]: Updated message scope, with the assistant message and the
                 tool results appended.
         """
         # Streamed messages arrive as chunks: store (and resend) the assembled message.

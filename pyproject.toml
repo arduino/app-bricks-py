@@ -152,6 +152,7 @@ select = [
     "D417",    # Missing argument descriptions in the docstring
     "D419",    # Missing return description in the docstring
     "F401",    # imported but unused
+    "F821",    # undefined name
     "F841",    # local variable 'x' is assigned to but never used
     "E302",    # expected 2 blank lines, found 1
     "E303",    # too many blank lines (3)
