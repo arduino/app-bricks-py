@@ -12,8 +12,16 @@ external tools can match the in-progress model back to models-list.yaml:
       "status": "downloading",
       "handler": "hf-handler",
       "models_repository": "llamacpp",
-      "model_directory": "google/gemma-4-E2B-it-qat-q4_0-gguf"
+      "model_directory": "google/gemma-4-E2B-it-qat-q4_0-gguf",
+      "file_patterns": ["*Q4_0*.gguf"]
     }
+
+``file_patterns`` names the files being downloaded, and matters when the directory can
+hold more than one model: a Hugging Face repository directory is shared by every
+quantization ever downloaded from that repository, so the bare presence of a marker there
+does not mean that all of them are in progress. It is optional — a handler whose model
+directory holds exactly one model has nothing to disambiguate, and a marker written
+before the field existed carries none — and its absence means the whole directory.
 """
 
 import json
@@ -22,10 +30,11 @@ import os
 MARKER_NAME = ".download"
 
 
-def marker_payload(handler="", models_repository="", model_directory="", model_url=""):
+def marker_payload(handler="", models_repository="", model_directory="", model_url="", file_patterns=None):
     """Build the marker dict from the fields that match a models-list.yaml entry.
 
-    ``model_url`` is included only when set (some handlers download by URL).
+    ``model_url`` is included only when set (some handlers download by URL), and so is
+    ``file_patterns`` (only handlers sharing a directory between models need it).
     """
     payload = {
         "status": "downloading",
@@ -35,15 +44,17 @@ def marker_payload(handler="", models_repository="", model_directory="", model_u
     }
     if model_url:
         payload["model_url"] = model_url
+    if file_patterns:
+        payload["file_patterns"] = list(file_patterns)
     return payload
 
 
-def write_marker(model_dir, handler="", models_repository="", model_directory="", model_url=""):
+def write_marker(model_dir, handler="", models_repository="", model_directory="", model_url="", file_patterns=None):
     """Create ``<model_dir>/.download`` with the JSON payload and return its path."""
     os.makedirs(model_dir, exist_ok=True)
     path = os.path.join(model_dir, MARKER_NAME)
     with open(path, "w") as f:
-        json.dump(marker_payload(handler, models_repository, model_directory, model_url), f)
+        json.dump(marker_payload(handler, models_repository, model_directory, model_url, file_patterns), f)
         f.write("\n")
     return path
 

@@ -57,6 +57,16 @@ Key options
                         repositories can be downloaded.
 --verbose               Print resolved parameters before downloading.
 
+Where the files land
+--------------------
+Everything is downloaded into ``<output-dir>/<repo-id>/``, so the quantizations of one
+repository share a directory and coexist there. Only the files a request actually names
+decide whether it is already installed: a ``Q4_0`` on disk does not make ``Q3_K_S``
+present, and asking for the second one downloads it next to the first instead of
+reporting the repository as complete. The cleanup paths honour the same rule — an
+interrupted or failed download only discards the files it was fetching, never a sibling
+quantization that finished earlier.
+
 After all files are downloaded, ``models.ini`` is written to ``<output-dir>``
 mapping each model stem to its GGUF path (and mmproj path where present).
 """
@@ -85,7 +95,7 @@ from urllib.parse import unquote, urlsplit
 import json
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from common.download_marker import write_marker
+from common.download_marker import MARKER_NAME, write_marker
 from common.model_metadata import is_bookkeeping_name, write_metadata
 
 # Quantization used when a model key names only a repository. Q4_0 is the quantization
@@ -150,8 +160,8 @@ def remove_model_dir(output_dir: str, base_dir: str) -> None:
         parent = os.path.dirname(parent)
 
 
-def has_model_content(output_dir: str) -> bool:
-    """True when *output_dir* holds a downloaded file, ignoring bookkeeping entries.
+def model_files(output_dir: str) -> list[Path]:
+    """The downloaded files under *output_dir*, ignoring bookkeeping entries.
 
     The ".download" marker, ".arduino_metadata.yaml" and huggingface_hub's ".cache"
     tree are not model content: a directory holding only those is a leftover from an
@@ -159,8 +169,60 @@ def has_model_content(output_dir: str) -> bool:
     """
     base = Path(output_dir)
     if not base.is_dir():
-        return False
-    return any(p.is_file() and not is_bookkeeping_name(p.name) and ".cache" not in p.parts for p in base.rglob("*"))
+        return []
+    return sorted(p for p in base.rglob("*") if p.is_file() and not is_bookkeeping_name(p.name) and ".cache" not in p.parts)
+
+
+def has_model_content(output_dir: str) -> bool:
+    """True when *output_dir* holds a downloaded file of any kind (see ``model_files``)."""
+    return bool(model_files(output_dir))
+
+
+def matching_files(output_dir: str, patterns: list[str]) -> list[Path]:
+    """The files of *output_dir* named by any of *patterns*.
+
+    Matched the way ``matches_pattern`` matches them on the Hub — against the
+    repository-relative path as well as the file name — so the quantization of a
+    repository that nests its files in per-quantization folders is recognised on disk
+    under the same pattern that selected it for download.
+    """
+    base = Path(output_dir)
+    return [p for p in model_files(output_dir) if any(matches_pattern(p.relative_to(base).as_posix(), pattern) for pattern in patterns)]
+
+
+def is_installed(output_dir: str, patterns: list[str]) -> bool:
+    """True when every pattern of the request is satisfied inside *output_dir*.
+
+    A repository directory holds every quantization ever downloaded from that repository,
+    so "is this model here" can only be answered against the files the request names —
+    ``every`` pattern, not any: a model whose mmproj companion is missing is not installed,
+    and neither is a ``Q3_K_S`` in a directory that only holds the ``Q4_0``.
+    """
+    return bool(patterns) and all(matching_files(output_dir, [pattern]) for pattern in patterns)
+
+
+def discard_incomplete_download(output_dir: str, base_dir: str, patterns: list[str]) -> None:
+    """Undo an interrupted download of *patterns*, keeping the rest of *output_dir*.
+
+    A killed or failed run leaves the ".download" marker behind and huggingface_hub's
+    partial bytes under "<output_dir>/.cache"; the next run starts the transfer over
+    rather than resuming it, so both go, along with any file the request names — a file
+    that did land is not necessarily one this process finished writing.
+
+    The repository directory is shared by every quantization of the repository, though, so
+    it is only removed outright when nothing else lives in it. A sibling quantization
+    downloaded earlier is a complete model and must survive both the deletion and the
+    parent-pruning ``remove_model_dir`` does.
+    """
+    requested = set(matching_files(output_dir, patterns))
+    if not [p for p in model_files(output_dir) if p not in requested]:
+        remove_model_dir(output_dir, base_dir)
+        return
+    shutil.rmtree(Path(output_dir) / ".cache", ignore_errors=True)
+    for path in requested:
+        path.unlink()
+    # The marker would otherwise keep flagging the surviving models as in progress.
+    (Path(output_dir) / MARKER_NAME).unlink(missing_ok=True)
 
 
 def prune_emptied_repo_dir(output_dir: str, base_dir: str) -> bool:
@@ -533,6 +595,16 @@ def resolve_model_source(model_url: str, model_mmproj_url: str | None = None) ->
     return source
 
 
+def source_patterns(source: dict) -> list[str]:
+    """The GGUF patterns *source* names: the model's, plus the mmproj's when it has one.
+
+    This is the whole of what a request asks for, and what the filesystem is asked about:
+    the same list decides whether the model is installed, what an interrupted download
+    has to discard, and how big the download is.
+    """
+    return [pattern for pattern in (source["allow_pattern"], source["mmproj_allow_pattern"]) if pattern]
+
+
 def matches_pattern(path: str, pattern: str) -> bool:
     """fnmatch a repo-relative *path* against *pattern*.
 
@@ -847,6 +919,9 @@ def main():
     repo_id = source["repo_id"]
     allow_pattern = source["allow_pattern"]
     mmproj_allow_pattern = source["mmproj_allow_pattern"]
+    # Everything this run is about, and the only thing the repository directory is
+    # queried for: the other quantizations sharing it belong to other requests.
+    patterns = source_patterns(source)
     # Set only for the URL syntax; they select the single-file download path.
     url_filename = source["url_filename"]
     url_revision = source["url_revision"]
@@ -882,9 +957,6 @@ def main():
 
     if args.info:
         validate_hub_source_or_exit(source, args.hf_token)
-        patterns = [allow_pattern]
-        if mmproj_allow_pattern:
-            patterns.append(mmproj_allow_pattern)
         matched_files = [{"file": f.path, "size": f.size} for f in list_repo_matches(repo_id, patterns) if f.size]
         if not matched_files:
             # Reporting a 0-byte total would read as "this model is free to download".
@@ -902,19 +974,17 @@ def main():
             flush=True,
         )
     elif args.check:
-        base = Path(output_dir)
-        # A ".download" marker means a download is in progress or was interrupted
-        if (base / ".download").is_file():
+        # Files first, marker second: the marker is per repository, but a repository
+        # directory holds several quantizations, so a download in progress there says
+        # nothing about the one being asked for — which may well be installed already.
+        if is_installed(output_dir, patterns):
+            emit_json_info(f"Model exists: {allow_pattern}", downloading=False)
+        elif (Path(output_dir) / MARKER_NAME).is_file():
+            # A ".download" marker means a download is in progress or was interrupted
             emit_json_info(f"Model downloading: {repo_id}", downloading=True)
         else:
-            matched = [f for f in base.rglob("*") if f.is_file() and fnmatch.fnmatch(f.name, allow_pattern)] if base.exists() else []
-            if mmproj_allow_pattern:
-                matched += [f for f in base.rglob("*") if f.is_file() and fnmatch.fnmatch(f.name, mmproj_allow_pattern)] if base.exists() else []
-            if matched:
-                emit_json_info(f"Model exists: {allow_pattern}", downloading=False)
-            else:
-                emit_json_error(f"Model does not exist: {allow_pattern}", downloading=False)
-                raise SystemExit(1)
+            emit_json_error(f"Model does not exist: {allow_pattern}", downloading=False)
+            raise SystemExit(1)
     elif args.delete:
         if args.verbose:
             emit_json_info(f"Deleting files matching '{allow_pattern}' in {output_dir}")
@@ -930,20 +1000,23 @@ def main():
         # Generate models.ini file
         generate_models_ini(Path(args.output_dir))
     else:
-        # Per-repo ".download" marker: present => prior run killed mid-download,
-        # wipe and retry; absent but model files present => already complete.
-        marker = Path(output_dir) / ".download"
+        # Per-repo ".download" marker: present => prior run killed mid-download, discard
+        # what it left and retry; absent but the requested files present => complete.
+        marker = Path(output_dir) / MARKER_NAME
         if marker.is_file():
             emit_json_info(f"Removing incomplete previous download: {repo_id}")
-            remove_model_dir(output_dir, args.output_dir)
-        elif has_model_content(output_dir):
-            emit_json_info(f"Model exists: {repo_id}")
+            discard_incomplete_download(output_dir, args.output_dir, patterns)
+        elif is_installed(output_dir, patterns):
+            installed = ", ".join(p.name for p in matching_files(output_dir, patterns))
+            emit_json_info(f"Model exists: {repo_id} ({installed})")
             return
-        elif os.path.isdir(output_dir):
+        elif os.path.isdir(output_dir) and not has_model_content(output_dir):
             # Bookkeeping-only leftover (e.g. killed between makedirs and the marker
             # write, or a deleted model): wipe it so the download starts clean.
             emit_json_info(f"Removing incomplete previous download: {repo_id}")
             remove_model_dir(output_dir, args.output_dir)
+        # Anything else the directory holds is another quantization of the same
+        # repository: the requested files are downloaded alongside it.
 
         # Nothing has been written yet, and the model URL or key comes from the host
         # configuration: check what it points at before creating a directory for it.
@@ -968,6 +1041,9 @@ def main():
             models_repository=os.environ.get("models_repository", ""),
             model_directory=model_directory,
             model_url=args.model_url or "",
+            # Which files of a shared repository directory this download is for, so a
+            # quantization already installed there is not reported as in progress.
+            file_patterns=patterns,
         )
 
         emit_json_info(f"Downloading to: {os.path.abspath(output_dir)}", artifacts=[os.path.abspath(output_dir)])
@@ -1017,9 +1093,10 @@ def main():
                     download_matched_files(repo_id, mmproj_allow_pattern, output_dir, tqdm_class, verbose=args.verbose)
         except BaseException as exc:
             # Network/extraction errors and SIGINT/SIGTERM-driven KeyboardInterrupt
-            # leave a partial repo directory; remove it before exiting.
+            # leave a partial download behind; discard it before exiting, without
+            # taking another quantization of the same repository down with it.
             if os.path.isdir(output_dir):
-                remove_model_dir(output_dir, args.output_dir)
+                discard_incomplete_download(output_dir, args.output_dir, patterns)
             if not isinstance(exc, KeyboardInterrupt):
                 # KeyboardInterrupt gets its own event from the top-level handler.
                 emit_json_error(f"Download failed: {exc}")
@@ -1033,8 +1110,10 @@ def main():
         # Generate models.ini file
         generate_models_ini(Path(args.output_dir))
 
-        # Report the absolute path(s) of the downloaded model file(s).
-        downloaded = sorted(str(p.resolve()) for p in Path(output_dir).rglob("*.gguf"))
+        # Report the absolute path(s) of the downloaded model file(s): the files this
+        # request named, not every quantization the shared repository directory holds —
+        # a sibling was not downloaded now, and must not name this model either.
+        downloaded = sorted(str(p.resolve()) for p in matching_files(output_dir, patterns) if p.suffix == ".gguf")
         emit_json_info(f"Downloaded to: {output_dir}", artifacts=downloaded)
 
         # Record what was downloaded, then clear the in-progress marker: while the
@@ -1049,7 +1128,7 @@ def main():
             fallback_model_id=fallback_model_id(source["model_type"], downloaded),
         )
 
-        marker = Path(output_dir) / ".download"
+        marker = Path(output_dir) / MARKER_NAME
         if marker.exists():
             marker.unlink()
 

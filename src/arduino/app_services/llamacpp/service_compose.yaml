@@ -17,10 +17,6 @@ services:
       - LLAMA_ARG_FLASH_ATTN=${LLAMA_ARG_FLASH_ATTN:-on}
       - LLAMA_ARG_MODELS_MAX=${LLAMA_ARG_MODELS_MAX:-2}
       - LLAMA_ARG_CTX_SIZE=${LLAMA_ARG_CTX_SIZE:-16384}
-      # --reasoning off only injects enable_thinking=false in the chat template: it's a no-op on
-      # templates that keep the thinking block always open. THINK_BUDGET is the guard for those:
-      # the sampler forces the end-of-thinking tag after N tokens, so a model can never burn the
-      # whole context inside <think> and never answer. Upstream default is -1 (no limit at all).
       - LLAMA_ARG_REASONING=${LLAMA_ARG_REASONING:-off}
       - LLAMA_ARG_THINK_BUDGET=${LLAMA_ARG_THINK_BUDGET:-128}
       - LLAMA_ARG_THREADS=${LLAMA_ARG_THREADS:-4}
@@ -42,7 +38,7 @@ services:
       nofile:
         soft: 65536
         hard: 65536
-    oom_score_adj: -500      
+    oom_score_adj: -500
     mem_limit: 10g
     memswap_limit: 10g
     shm_size: 2g

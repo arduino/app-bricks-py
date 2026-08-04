@@ -13,6 +13,8 @@ an installed model, and what the delete path leaves behind.
 
 import json
 import os
+import sys
+from pathlib import Path
 
 import pytest
 
@@ -23,22 +25,28 @@ from huggingface_hub.errors import (
     RevisionNotFoundError,
 )
 
+from common.download_marker import MARKER_NAME, read_marker
 from common.model_metadata import METADATA_NAME
+from hugging_face import hf_downloader
 from hugging_face.hf_downloader import (
     JsonProgress,
     delete_matched_files,
+    discard_incomplete_download,
     download_matched_files,
     fallback_model_id,
     gguf_pattern,
     has_model_content,
     is_hf_url,
+    is_installed,
     matches_pattern,
+    matching_files,
     no_match_message,
     parse_hf_url,
     parse_model_key,
     prune_emptied_repo_dir,
     public_repo_files,
     resolve_model_source,
+    source_patterns,
     validate_hub_source,
     validate_repo_id,
 )
@@ -779,3 +787,202 @@ def test_prune_keeps_dir_when_a_sibling_gguf_remains(tmp_path):
 def test_prune_is_a_noop_for_a_missing_dir(tmp_path):
     assert prune_emptied_repo_dir(str(tmp_path / "absent"), str(tmp_path)) is False
     assert os.path.isdir(tmp_path)
+
+
+# --------------------------------------------------------------------------- #
+# quantizations sharing a repository directory
+#
+# One Hugging Face repository publishes many quantizations and they all land in the same
+# <output-dir>/<repo-id>, so "is this model installed" and "what does an interrupted
+# download throw away" can only be answered against the files the request names.
+# --------------------------------------------------------------------------- #
+def _qwen_repo(tmp_path, *files):
+    """Build a repo directory holding *files*; return the models mount and that directory."""
+    models_dir = tmp_path / "models" / "llamacpp"
+    repo = models_dir / "unsloth" / "Qwen3-0.6B-GGUF"
+    repo.mkdir(parents=True)
+    for name in files:
+        path = repo / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"\0")
+    return models_dir, repo
+
+
+def test_matching_files_selects_only_the_requested_quantization(tmp_path):
+    _models_dir, repo = _qwen_repo(tmp_path, "Qwen3-0.6B-Q4_0.gguf", "Qwen3-0.6B-Q3_K_S.gguf")
+    assert [p.name for p in matching_files(str(repo), ["*Q3_K_S*.gguf"])] == ["Qwen3-0.6B-Q3_K_S.gguf"]
+
+
+def test_matching_files_ignores_bookkeeping_and_cache_entries(tmp_path):
+    _models_dir, repo = _qwen_repo(tmp_path, "Qwen3-0.6B-Q4_0.gguf", ".cache/huggingface/download/x.Q4_0.gguf")
+    (repo / MARKER_NAME).write_text("{}")
+    assert [p.name for p in matching_files(str(repo), ["*"])] == ["Qwen3-0.6B-Q4_0.gguf"]
+
+
+def test_matching_files_finds_a_quantization_kept_in_its_own_folder(tmp_path):
+    """Some repos nest their files per quantization, which the pattern matches as a path."""
+    _models_dir, repo = _qwen_repo(tmp_path, "Q3_K_S/model.gguf")
+    assert [p.name for p in matching_files(str(repo), ["*Q3_K_S*.gguf"])] == ["model.gguf"]
+
+
+def test_is_installed_ignores_another_quantization_of_the_same_repo(tmp_path):
+    _models_dir, repo = _qwen_repo(tmp_path, "Qwen3-0.6B-Q4_0.gguf")
+    assert is_installed(str(repo), ["*Q4_0*.gguf"]) is True
+    assert is_installed(str(repo), ["*Q3_K_S*.gguf"]) is False
+
+
+def test_is_installed_requires_the_mmproj_file_too(tmp_path):
+    _models_dir, repo = _qwen_repo(tmp_path, "model-Q4_0.gguf")
+    patterns = ["*Q4_0*.gguf", "*mmproj*BF16*.gguf"]
+    assert is_installed(str(repo), patterns) is False
+    (repo / "mmproj-BF16.gguf").write_bytes(b"\0")
+    assert is_installed(str(repo), patterns) is True
+
+
+def test_source_patterns_covers_the_model_and_its_mmproj():
+    assert source_patterns(resolve_model_source("unsloth/Qwen3-0.6B-GGUF:Q3_K_S")) == ["*Q3_K_S*.gguf"]
+    source = resolve_model_source("llamacpp:unsloth/gemma-4-E4B-it-GGUF:Q4_0:BF16")
+    assert source_patterns(source) == ["*Q4_0*.gguf", "*mmproj*BF16*.gguf"]
+
+
+def test_discard_removes_the_repo_dir_when_it_holds_nothing_else(tmp_path):
+    models_dir, repo = _qwen_repo(tmp_path, "Qwen3-0.6B-Q3_K_S.gguf")
+    (repo / MARKER_NAME).write_text("{}")
+
+    discard_incomplete_download(str(repo), str(models_dir), ["*Q3_K_S*.gguf"])
+    assert not repo.exists()
+    # The emptied owner directory goes too, but never the models mount.
+    assert not repo.parent.exists()
+    assert models_dir.is_dir()
+
+
+def test_discard_keeps_a_sibling_quantization(tmp_path):
+    models_dir, repo = _qwen_repo(tmp_path, "Qwen3-0.6B-Q4_0.gguf", ".cache/huggingface/download/partial.incomplete")
+    (repo / MARKER_NAME).write_text("{}")
+    (repo / METADATA_NAME).write_text("handler: hf-handler\n")
+
+    discard_incomplete_download(str(repo), str(models_dir), ["*Q3_K_S*.gguf"])
+    assert (repo / "Qwen3-0.6B-Q4_0.gguf").is_file()
+    assert (repo / METADATA_NAME).is_file()
+    # The partial bytes go, and so does the marker that would flag the survivor.
+    assert not (repo / ".cache").exists()
+    assert not (repo / MARKER_NAME).exists()
+
+
+def test_discard_drops_a_requested_file_that_landed_before_the_kill(tmp_path):
+    """A file being there does not mean the killed process finished writing it."""
+    models_dir, repo = _qwen_repo(tmp_path, "Qwen3-0.6B-Q4_0.gguf", "Qwen3-0.6B-Q3_K_S.gguf")
+    discard_incomplete_download(str(repo), str(models_dir), ["*Q3_K_S*.gguf"])
+    assert not (repo / "Qwen3-0.6B-Q3_K_S.gguf").exists()
+    assert (repo / "Qwen3-0.6B-Q4_0.gguf").is_file()
+
+
+# --------------------------------------------------------------------------- #
+# main(): a second quantization into an occupied repository directory
+# --------------------------------------------------------------------------- #
+def _run_main(monkeypatch, *argv):
+    monkeypatch.setattr(sys, "argv", ["hf_downloader.py", *argv])
+    hf_downloader.main()
+
+
+@pytest.fixture
+def stub_download(monkeypatch):
+    """Stub the Hub out: record the patterns asked for, and create the files they name.
+
+    The returned list is what distinguishes a real download from an early return.
+    """
+    requested: list[str] = []
+
+    def _download(_repo_id, allow_pattern, output_dir, _tqdm_class, ignore_pattern=None, verbose=False):
+        requested.append(allow_pattern)
+        Path(output_dir, allow_pattern.replace("*", "")).write_bytes(b"\0")
+
+    monkeypatch.setattr(hf_downloader, "validate_hub_source", lambda *args, **kwargs: None)
+    monkeypatch.setattr(hf_downloader, "download_matched_files", _download)
+    return requested
+
+
+def test_download_adds_a_quantization_next_to_the_one_already_there(tmp_path, monkeypatch, stub_download, capsys):
+    """The reported bug: a repo directory holding Q4_0 must not answer for Q3_K_S."""
+    models_dir, repo = _qwen_repo(tmp_path, "Qwen3-0.6B-Q4_0.gguf")
+
+    _run_main(monkeypatch, "--model-url", "llamacpp:unsloth/Qwen3-0.6B-GGUF:Q3_K_S", "--output-dir", str(models_dir))
+
+    assert stub_download == ["*Q3_K_S*.gguf"]
+    assert (repo / "Q3_K_S.gguf").is_file()
+    # The quantization that was already installed is untouched, and no marker is left.
+    assert (repo / "Qwen3-0.6B-Q4_0.gguf").is_file()
+    assert not (repo / MARKER_NAME).exists()
+    # Only the file this run asked for is reported as downloaded.
+    ggufs = [a for event in read_events(capsys) for a in event.get("artifacts", []) if a.endswith(".gguf")]
+    assert [os.path.basename(a) for a in ggufs] == ["Q3_K_S.gguf"]
+
+
+def test_download_skips_the_quantization_that_is_already_installed(tmp_path, monkeypatch, stub_download, capsys):
+    models_dir, _repo = _qwen_repo(tmp_path, "Qwen3-0.6B-Q4_0.gguf")
+
+    _run_main(monkeypatch, "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q4_0", "--output-dir", str(models_dir))
+
+    assert stub_download == []
+    descriptions = [event["description"] for event in read_events(capsys)]
+    assert any(d.startswith("Model exists:") and "Qwen3-0.6B-Q4_0.gguf" in d for d in descriptions)
+
+
+def test_download_marker_names_the_files_it_is_downloading(tmp_path, monkeypatch, stub_download):
+    """The marker is per repository, so it has to say which quantization it stands for."""
+    models_dir, repo = _qwen_repo(tmp_path)
+    seen: list[dict] = []
+    monkeypatch.setattr(
+        hf_downloader,
+        "download_matched_files",
+        lambda *args, **kwargs: seen.append(read_marker(str(repo / MARKER_NAME))),
+    )
+
+    _run_main(monkeypatch, "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q3_K_S", "--output-dir", str(models_dir))
+
+    assert seen[0]["file_patterns"] == ["*Q3_K_S*.gguf"]
+
+
+def test_a_failed_download_does_not_take_the_installed_quantization_with_it(tmp_path, monkeypatch, stub_download):
+    models_dir, repo = _qwen_repo(tmp_path, "Qwen3-0.6B-Q4_0.gguf")
+
+    def _boom(*_args, **_kwargs):
+        raise OSError("connection reset")
+
+    monkeypatch.setattr(hf_downloader, "download_matched_files", _boom)
+    with pytest.raises(OSError, match="connection reset"):
+        _run_main(monkeypatch, "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q3_K_S", "--output-dir", str(models_dir))
+
+    assert (repo / "Qwen3-0.6B-Q4_0.gguf").is_file()
+    assert not (repo / MARKER_NAME).exists()
+
+
+def test_an_interrupted_download_is_retried_without_losing_a_sibling(tmp_path, monkeypatch, stub_download, capsys):
+    models_dir, repo = _qwen_repo(tmp_path, "Qwen3-0.6B-Q4_0.gguf")
+    (repo / MARKER_NAME).write_text("{}")
+
+    _run_main(monkeypatch, "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q3_K_S", "--output-dir", str(models_dir))
+
+    assert stub_download == ["*Q3_K_S*.gguf"]
+    assert (repo / "Qwen3-0.6B-Q4_0.gguf").is_file()
+    descriptions = [event["description"] for event in read_events(capsys)]
+    assert "Removing incomplete previous download: unsloth/Qwen3-0.6B-GGUF" in descriptions
+
+
+def test_check_answers_for_the_requested_quantization_only(tmp_path, monkeypatch, capsys):
+    models_dir, repo = _qwen_repo(tmp_path, "Qwen3-0.6B-Q4_0.gguf")
+
+    # Installed, even though the repository directory carries a marker for another file.
+    (repo / MARKER_NAME).write_text("{}")
+    _run_main(monkeypatch, "--check", "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q4_0", "--output-dir", str(models_dir))
+    assert read_events(capsys)[-1] == {"event": "info", "description": "Model exists: *Q4_0*.gguf", "downloading": False}
+
+    # The quantization the marker stands for is the one still on its way.
+    _run_main(monkeypatch, "--check", "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q3_K_S", "--output-dir", str(models_dir))
+    assert read_events(capsys)[-1]["downloading"] is True
+
+    # Without a marker, a quantization that is not there is simply missing.
+    (repo / MARKER_NAME).unlink()
+    with pytest.raises(SystemExit):
+        _run_main(monkeypatch, "--check", "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q3_K_S", "--output-dir", str(models_dir))
+    assert read_events(capsys)[-1] == {"event": "error", "description": "Model does not exist: *Q3_K_S*.gguf", "downloading": False}

@@ -18,6 +18,7 @@ Usage:
 """
 
 import argparse
+import fnmatch
 import json
 import os
 import stat
@@ -323,6 +324,22 @@ def llamacpp_name_from_marker(marker, root):
     return os.path.basename(root.rstrip(os.sep))
 
 
+def marker_covers_file(marker, filename):
+    """True when *marker* describes an in-progress download of *filename*.
+
+    The marker sits in the model directory, which for Hugging Face is the whole
+    repository — and one repository publishes several quantizations, all downloaded into
+    that same directory. Only the files ``file_patterns`` names are being downloaded, so
+    a quantization installed earlier keeps counting as installed while another one is
+    fetched next to it. A marker without the field — another handler, or one written
+    before it existed — covers its whole directory, as it always did.
+    """
+    patterns = marker.get("file_patterns")
+    if not isinstance(patterns, list) or not patterns:
+        return True
+    return any(isinstance(p, str) and fnmatch.fnmatch(filename, p) for p in patterns)
+
+
 def find_llamacpp_models(models_base_dir):
     """Scan for .gguf models under the llamacpp directory.
 
@@ -330,8 +347,9 @@ def find_llamacpp_models(models_base_dir):
     files are not standalone models but the multimodal projection belonging to
     the main GGUF in the same directory, so they are not listed separately.
 
-    A directory that only holds a ".download" marker (download in progress, no
-    GGUF on disk yet) is still surfaced, using the marker info for the entry.
+    A download with no GGUF on disk yet (only a ".download" marker) is still surfaced,
+    using the marker info for the entry — including when the directory does hold other
+    GGUFs, since those are other quantizations rather than the pending model.
     """
     llamacpp_dir = os.path.join(models_base_dir, LLAMACPP_SUBDIR)
     results = []
@@ -342,13 +360,16 @@ def find_llamacpp_models(models_base_dir):
         gguf_files = sorted(f for f in files if f.endswith(".gguf"))
         mmproj_files = [f for f in gguf_files if "mmproj" in f]
         marker = read_marker(os.path.join(root, ".download"))
-        downloading = marker is not None
         metadata = read_metadata(os.path.join(root, METADATA_NAME))
 
-        emitted = False
+        # Whether the marker was accounted for by a GGUF listed below; if it was not, the
+        # download it stands for has nothing on disk yet and is reported on its own.
+        marker_listed = False
         for f in gguf_files:
             if "mmproj" in f:
                 continue
+            downloading = marker is not None and marker_covers_file(marker, f)
+            marker_listed = marker_listed or downloading
             full_path = os.path.join(root, f)
             model_name = os.path.splitext(f)[0]
             disk_size_mb = get_dir_size_mb(full_path)
@@ -374,11 +395,10 @@ def find_llamacpp_models(models_base_dir):
             if metadata is not None:
                 entry["download_metadata"] = metadata
             results.append(entry)
-            emitted = True
 
         # Download in progress but no main GGUF on disk yet: surface the
         # pending model from the marker so it still shows up in the listing.
-        if marker is not None and not emitted:
+        if marker is not None and not marker_listed:
             model_name = llamacpp_name_from_marker(marker, root)
             entry = {
                 "id": f"llamacpp:{model_name}",

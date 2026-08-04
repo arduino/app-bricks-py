@@ -234,6 +234,47 @@ def test_find_llamacpp_empty_folder_with_marker(tmp_path):
     assert entry["downloading"] is True
 
 
+def test_marker_covers_only_the_files_it_names():
+    marker = {"file_patterns": ["*Q3_K_S*.gguf"]}
+    assert list_models.marker_covers_file(marker, "Qwen3-0.6B-Q3_K_S.gguf") is True
+    assert list_models.marker_covers_file(marker, "Qwen3-0.6B-Q4_0.gguf") is False
+    # No field (another handler, or a marker written before it existed): the whole folder.
+    assert list_models.marker_covers_file({}, "Qwen3-0.6B-Q4_0.gguf") is True
+    assert list_models.marker_covers_file({"file_patterns": "*.gguf"}, "Qwen3-0.6B-Q4_0.gguf") is True
+
+
+def test_find_llamacpp_marker_leaves_another_quantization_installed(tmp_path):
+    """One repository directory holds every quantization downloaded from that repository."""
+    base = tmp_path / "models"
+    repo = base / "llamacpp" / "unsloth" / "Qwen3-0.6B-GGUF"
+    _make_gguf(str(repo / "Qwen3-0.6B-Q4_0.gguf"))
+    write_marker(
+        str(repo),
+        handler="hf-handler",
+        model_url="https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/blob/main/Qwen3-0.6B-Q3_K_S.gguf",
+        file_patterns=["*Q3_K_S*.gguf"],
+    )
+
+    results = {entry["id"]: entry for entry in list_models.find_llamacpp_models(str(base))}
+    assert results["llamacpp:Qwen3-0.6B-Q4_0"]["installed"] is True
+    assert results["llamacpp:Qwen3-0.6B-Q4_0"]["downloading"] is False
+    # The one on its way is still surfaced from the marker, next to the installed one.
+    assert results["llamacpp:Qwen3-0.6B-Q3_K_S"]["installed"] is False
+    assert results["llamacpp:Qwen3-0.6B-Q3_K_S"]["downloading"] is True
+
+
+def test_find_llamacpp_marker_for_a_gguf_on_disk_lists_it_once(tmp_path):
+    base = tmp_path / "models"
+    repo = base / "llamacpp" / "unsloth" / "Qwen3-0.6B-GGUF"
+    _make_gguf(str(repo / "Qwen3-0.6B-Q3_K_S.gguf"))
+    write_marker(str(repo), handler="hf-handler", file_patterns=["*Q3_K_S*.gguf"])
+
+    results = list_models.find_llamacpp_models(str(base))
+    assert len(results) == 1
+    assert results[0]["id"] == "llamacpp:Qwen3-0.6B-Q3_K_S"
+    assert results[0]["downloading"] is True
+
+
 def test_find_llamacpp_no_directory(tmp_path):
     assert list_models.find_llamacpp_models(str(tmp_path / "models")) == []
 

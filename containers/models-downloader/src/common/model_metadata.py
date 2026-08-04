@@ -44,9 +44,11 @@ Contracts callers must honour:
   here. The record holds only what models-list.yaml cannot tell you: which variables
   this install was actually downloaded with, and when.
 - The Hugging Face handler downloads into a per-*repository* directory, so two
-  models-list.yaml entries pulling different quantizations out of the same repo would
-  share one metadata file (the last download wins). The ``.download`` marker and the
-  "Model exists" early return have the same limitation today.
+  models-list.yaml entries pulling different quantizations out of the same repo share
+  one metadata file: the last download wins, and the quantization downloaded first is
+  left described by a record naming the other one. Only this file is shared — whether a
+  model is installed, and what an interrupted download discards, are decided per
+  quantization, and the ``.download`` marker says which files it stands for.
 """
 
 import json
