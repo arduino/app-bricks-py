@@ -8,14 +8,14 @@ from arduino.app_utils import *
 
 
 @provide()
-def add_numbers(a: int, b: int):
+def add_numbers(a: int, b: int) -> int:
     """Performs a sum operation named 'add_numbers'."""
     print(f"'add_numbers' called with: {a}, {b}")
     return a + b
 
 
 @provide("math.subtract")  # Uses 'math.subtract' as the RPC method name
-def subtract_numbers(a: int, b: int):
+def subtract_numbers(a: int, b: int) -> int:
     """Performs a subtraction operation named 'math.subtract'."""
     print(f"'math.subtract' called with: {a}, {b}")
     return a - b

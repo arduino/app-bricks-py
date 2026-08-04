@@ -13,6 +13,7 @@ with numpy arrays (array | function) is not supported. Use function(array) inste
 """
 
 from collections.abc import Callable
+from typing import Any
 
 
 class PipeableFunction:
@@ -22,7 +23,7 @@ class PipeableFunction:
     This allows functions to be composed using the | operator in a left-to-right manner.
     """
 
-    def __init__(self, func: Callable, *args, **kwargs) -> None:
+    def __init__(self, func: Callable, *args: Any, **kwargs: Any) -> None:
         """
         Initialize a pipeable function.
 
@@ -35,13 +36,13 @@ class PipeableFunction:
         self.args = args
         self.kwargs = kwargs
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """Call the wrapped function with combined arguments."""
         combined_args = self.args + args
         combined_kwargs = {**self.kwargs, **kwargs}
         return self.func(*combined_args, **combined_kwargs)
 
-    def __ror__(self, other):
+    def __ror__(self, other: object) -> Any:
         """
         Right-hand side of pipe operator (|).
 
@@ -55,7 +56,7 @@ class PipeableFunction:
         """
         return self(other)
 
-    def __or__(self, other):
+    def __or__(self, other: Callable[..., Any]) -> "PipeableFunction":
         """
         Left-hand side of pipe operator (|).
 
@@ -72,7 +73,7 @@ class PipeableFunction:
             # This prevents Python from trying the reverse operation for nothing
             raise TypeError(f"unsupported operand type(s) for |: '{type(self).__name__}' and '{type(other).__name__}'")
 
-        def composed(value):
+        def composed(value: object) -> Any:
             return other(self(value))
 
         return PipeableFunction(composed)

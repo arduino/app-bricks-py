@@ -48,11 +48,11 @@ class HttpClient:
         self,
         url: str,
         method: str = "GET",
-        data: dict | str = None,
-        json: dict = None,
-        headers: dict = None,
+        data: dict | str | None = None,
+        json: dict | None = None,
+        headers: dict | None = None,
         timeout: int = 5,
-    ):
+    ) -> requests.Response | None:
         """Performs a GET or POST request to a given URL with a retry mechanism using requests.
 
         Session and urllib3's Retry utility for built-in exponential backoff.

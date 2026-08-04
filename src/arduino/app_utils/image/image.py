@@ -28,7 +28,7 @@ FONT_PATH = "/home/app/.fonts/OpenSans.ttf"
 
 # Get the color for a given confidence value based on the defined ranges.
 # If the confidence is outside the defined ranges, it defaults to green.
-def get_box_color(confid):
+def get_box_color(confid: float) -> str:
     for (low, high), color in CONFIDENCE_MAP.items():
         if low <= confid <= high:
             return color

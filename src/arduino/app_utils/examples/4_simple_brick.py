@@ -10,7 +10,7 @@ logger = Logger("ColorDetectorServer")
 
 @brick
 class Greeter:
-    def __init__(self, name="World") -> None:
+    def __init__(self, name: str = "World") -> None:
         self.name = name
 
     def start(self) -> None:

@@ -10,7 +10,9 @@ import time
 
 from .utils import _has_callable_method, _brick_name
 from .logger import Logger
-from typing import Never
+from collections.abc import Callable
+from types import FrameType
+from typing import Any, Never
 
 logger = Logger("App")
 
@@ -35,7 +37,7 @@ class AppController:
         self._app_lock = threading.Lock()
         self._running = False
 
-    def register(self, brick) -> None:
+    def register(self, brick: object) -> None:
         """Registers a brick for being managed automatically by the AppController.
 
         If the brick is not running, it will be auto-started when App.run() will be called.
@@ -49,7 +51,7 @@ class AppController:
                 self._waiting_queue.append(brick)
                 logger.debug(f"Registered brick '{_brick_name(brick)}' to start on next App.run().")
 
-    def unregister(self, brick) -> None:
+    def unregister(self, brick: object) -> None:
         """Unregisters a brick from being managed automatically by the AppController.
 
         If the brick is not running, it won't be auto-started anymore when App.run() will be called.
@@ -72,7 +74,7 @@ class AppController:
         """
         self._start_managed_bricks()
 
-    def start_brick(self, brick) -> None:
+    def start_brick(self, brick: object) -> None:
         """Immediately starts a single brick and all its runnable methods.
 
         This brick should be manually managed by the user by calling App.stop_brick().
@@ -86,7 +88,7 @@ class AppController:
         """Stops the application and all running bricks."""
         self._stop_all_bricks()
 
-    def stop_brick(self, brick) -> None:
+    def stop_brick(self, brick: object) -> None:
         """Immediately stops a single running brick."""
         with self._app_lock:
             self._stop(brick)
@@ -167,10 +169,10 @@ class AppController:
         """
 
         class SignalReceived(BaseException):
-            def __init__(self, signum) -> None:
+            def __init__(self, signum: int) -> None:
                 self.signum = signum
 
-        def handle_signal(signum, frame) -> Never:
+        def handle_signal(signum: int, frame: FrameType | None) -> Never:
             raise SignalReceived(signum)
 
         if threading.current_thread() is threading.main_thread():
@@ -210,7 +212,7 @@ class AppController:
                 self._stop(brick)
         logger.debug("All bricks stopped")
 
-    def _discover_runnable_methods(self, brick):
+    def _discover_runnable_methods(self, brick: object) -> list[tuple[Callable[..., object], str]]:
         """Discovers and validates all methods marked with @loop/@execute or named loop/execute."""
         methods = []
         processed_names = set()
@@ -235,7 +237,7 @@ class AppController:
 
         return methods
 
-    def _start(self, brick) -> None:
+    def _start(self, brick: Any) -> None:
         """Starts a single brick and its worker threads. Must be called while holding _app_lock."""
         if brick in self._running_queue:
             # TODO: we should raise an exception here
@@ -270,7 +272,7 @@ class AppController:
             # TODO: we should raise an exception here
             logger.exception(f"Failed to start brick '{_brick_name(brick)}': {e}")
 
-    def _stop(self, brick) -> None:
+    def _stop(self, brick: Any) -> None:
         """Stops a single brick and its worker threads. Must be called while holding _app_lock."""
         if brick not in self._running_queue:
             # TODO: we should raise an exception here
@@ -300,7 +302,7 @@ class AppController:
 
         logger.debug(f"Brick '{_brick_name(brick)}' stopped successfully")
 
-    def _method_runner(self, brick, method, method_type, brick_is_running) -> None:
+    def _method_runner(self, brick: object, method: Callable[..., object], method_type: str, brick_is_running: threading.Event) -> None:
         """Target function for worker threads, running a brick's method."""
         try:
             if method_type == "execute":

@@ -57,7 +57,7 @@ class Leds:
     ]
 
     @staticmethod
-    def _write_led_file(led_file, value: bool) -> None:
+    def _write_led_file(led_file: str, value: bool) -> None:
         try:
             with open(led_file, "w") as f:
                 f.write(f"{int(value)}\n")

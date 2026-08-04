@@ -38,9 +38,9 @@ class Logger(logging.Logger):
         self.handlers = []  # Remove inherited handlers
         self.addHandler(handler)
 
-    def process(self, msg):
+    def process[T](self, msg: T) -> T:
         self.info(msg)
         return msg
 
-    def consume(self, msg) -> None:
+    def consume(self, msg: object) -> None:
         self.info(msg)

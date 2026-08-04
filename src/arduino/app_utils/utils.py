@@ -6,7 +6,7 @@ import inspect
 import os
 
 
-def _has_callable_method(obj_or_cls, method_name) -> bool:
+def _has_callable_method(obj_or_cls: object, method_name: str) -> bool:
     """Checks if an object or class has a callable method with the correct signature.
     The method must only accept the `self` parameter.
     This function correctly handles both bound methods (on instances) and
@@ -66,7 +66,7 @@ def _has_callable_method(obj_or_cls, method_name) -> bool:
         )
 
 
-def _brick_name(brick) -> str:
+def _brick_name(brick: object) -> str:
     return type(brick).__name__
 
 

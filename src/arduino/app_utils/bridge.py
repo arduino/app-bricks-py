@@ -2,8 +2,11 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+from collections.abc import Callable
 from functools import wraps
 import inspect
+from types import TracebackType
+from typing import Any, Protocol, Self, cast
 import queue
 import socket
 import threading
@@ -13,6 +16,18 @@ from urllib.parse import urlparse
 from .logger import Logger
 
 logger = Logger("Bridge")
+
+
+class _NotifyDecorator(Protocol):
+    def __call__[**P](self, func: Callable[P, object]) -> Callable[P, None]: ...
+
+
+class _CallDecorator(Protocol):
+    def __call__[R](self, func: Callable[..., R]) -> Callable[..., R]: ...
+
+
+class _ProvideDecorator(Protocol):
+    def __call__[F: Callable[..., object]](self, func: F) -> F: ...
 
 
 _reconnect_delay = 3.0  # seconds
@@ -29,7 +44,7 @@ GENERIC_ERR = 0xFF
 
 class Bridge:
     @staticmethod
-    def notify(method_name: str, *params) -> None:
+    def notify(method_name: str, *params: object) -> None:
         """Sends a notification to the microcontroller without waiting for a response.
 
         Args:
@@ -43,7 +58,7 @@ class Bridge:
         ClientServer().notify(method_name, *params)
 
     @staticmethod
-    def call(method_name: str, *params, timeout: int = 10):
+    def call(method_name: str, *params: object, timeout: int = 10) -> Any:
         """Calls a method on the microcontroller and waits for a response.
         Raises an exception if the call fails or times out.
 
@@ -64,7 +79,7 @@ class Bridge:
         return ClientServer().call(method_name, *params, timeout=timeout)
 
     @staticmethod
-    def provide(method_name: str, handler: callable) -> None:
+    def provide(method_name: str, handler: Callable[..., object]) -> None:
         """Makes a method available to the microcontroller, so it can call it remotely.
         The handler should be a callable that can take arguments.
 
@@ -101,7 +116,7 @@ class Bridge:
         ClientServer().unprovide(method_name)
 
 
-def notify(method_name: str = None, address: str = "unix:///var/run/arduino-router.sock"):
+def notify(method_name: str | None = None, address: str = "unix:///var/run/arduino-router.sock") -> _NotifyDecorator:
     """Decorator that transforms a function into a notification for the microcontroller.
 
     When the decorated function is called, an RPC 'notify' (fire-and-forget) is sent
@@ -127,7 +142,7 @@ def notify(method_name: str = None, address: str = "unix:///var/run/arduino-rout
     """
     instance = ClientServer(address)
 
-    def decorator(func):
+    def decorator[**P](func: Callable[P, object]) -> Callable[P, None]:
         actual_method_name = method_name if method_name is not None else func.__name__
 
         func_is_unsupported = _is_unbound_or_class_method(func)
@@ -135,7 +150,7 @@ def notify(method_name: str = None, address: str = "unix:///var/run/arduino-rout
             raise TypeError(f"'{func.__name__}' is expected to be a function but is a method or a classmethod.")
 
         @wraps(func)
-        def wrapper(*args, **kwargs) -> None:
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> None:
             # Any kwargs passed to the decorated function are unexpected.
             if kwargs:
                 raise TypeError(f"Unexpected {list(kwargs.keys())} keyword args: only positional args are supported.")
@@ -147,7 +162,7 @@ def notify(method_name: str = None, address: str = "unix:///var/run/arduino-rout
     return decorator
 
 
-def call(method_name: str = None, timeout: int | None = 10, address: str = "unix:///var/run/arduino-router.sock"):
+def call(method_name: str | None = None, timeout: int | None = 10, address: str = "unix:///var/run/arduino-router.sock") -> _CallDecorator:
     """Decorator that transforms a function into an RPC notification.
 
     When the decorated function is called, an RPC 'call' (request and response) is sent
@@ -179,11 +194,11 @@ def call(method_name: str = None, timeout: int | None = 10, address: str = "unix
     """
     instance = ClientServer(address)
 
-    def decorator(func):
+    def decorator[R](func: Callable[..., R]) -> Callable[..., R]:
         actual_method_name = method_name if method_name is not None else func.__name__
 
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> R:
             # Check if the first argument is a timeout and use it if so
             actual_timeout = kwargs.pop("timeout", timeout)
 
@@ -205,7 +220,7 @@ def call(method_name: str = None, timeout: int | None = 10, address: str = "unix
     return decorator
 
 
-def provide(method_name=None, address: str = "unix:///var/run/arduino-router.sock"):
+def provide(method_name: str | None = None, address: str = "unix:///var/run/arduino-router.sock") -> _ProvideDecorator:
     """Decorator that makes a method available to the microcontroller, so it can call it remotely.
 
     The decorated function is automatically registered using its own name as method name,
@@ -231,7 +246,7 @@ def provide(method_name=None, address: str = "unix:///var/run/arduino-router.soc
     """
     instance = ClientServer(address)
 
-    def decorator(func):
+    def decorator[F: Callable[..., object]](func: F) -> F:
         actual_method_name = method_name if method_name is not None else func.__name__
 
         try:
@@ -246,7 +261,7 @@ def provide(method_name=None, address: str = "unix:///var/run/arduino-router.soc
 
 
 # Helper that implements a heuristic to determine if a function is a method (unbound) or @classmethod
-def _is_unbound_or_class_method(func):
+def _is_unbound_or_class_method(func: Callable[..., object]) -> bool:
     try:
         sig = inspect.signature(func)
         params = list(sig.parameters.values())
@@ -265,7 +280,7 @@ class SingletonMeta(type):
     _instance = None
     _instance_lock = threading.Lock()
 
-    def __call__(cls, *args, **kwargs):
+    def __call__(cls, *args: Any, **kwargs: Any) -> Any:
         with cls._instance_lock:
             if cls._instance is None:
                 cls._instance = super().__call__(*args, **kwargs)
@@ -340,14 +355,14 @@ class _ClientServer:
 
         self._fail_pending_callbacks(ConnectionError("Bridge connection stopped."))
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
         self.start()
         return self
 
-    def __exit__(self, exc_type, exc, tb):
+    def __exit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None) -> None:
         self.stop()
 
-    def notify(self, method_name: str, *params) -> None:
+    def notify(self, method_name: str, *params: object) -> None:
         """Sends a notification to the server without waiting for a response."""
         request = [2, method_name, params]
         try:
@@ -358,17 +373,17 @@ class _ClientServer:
         except Exception as e:
             logger.error(f"Failed to send notification for method '{method_name}': {e}")
 
-    def call(self, method_name: str, *params, timeout: int = 10):
+    def call(self, method_name: str, *params: object, timeout: int = 10) -> Any:
         """Calls a method on the server and waits for a response."""
         msgid = self._increment_next_msgid()
         request = [0, msgid, method_name, params]
 
         resp_queue = queue.Queue(maxsize=1)
 
-        def on_result(result) -> None:
+        def on_result(result: object) -> None:
             resp_queue.put((True, result))
 
-        def on_error(error) -> None:
+        def on_error(error: object) -> None:
             resp_queue.put((False, error))
 
         with self.callbacks_lock:
@@ -402,7 +417,7 @@ class _ClientServer:
                 self.callbacks.pop(msgid, None)
             raise
 
-    def provide(self, method_name: str, handler) -> None:
+    def provide(self, method_name: str, handler: Callable[..., object]) -> None:
         """Makes a method available to the microcontroller, so it can call it remotely.
         The handler should be a callable that can take arguments.
         """
@@ -434,7 +449,7 @@ class _ClientServer:
         except KeyError:
             return  # Method was already unregistered
 
-    def _increment_next_msgid(self):
+    def _increment_next_msgid(self) -> int:
         """Increments the next message ID, ensuring it is unique and within bounds."""
         with self.next_msgid_lock:
             self.next_msgid = (self.next_msgid + 1) % (2**32)
@@ -483,7 +498,7 @@ class _ClientServer:
                         self._conn = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                         self._conn.connect(self._peer_addr)
                     elif self.socket_type == "tcp":
-                        self._conn = socket.create_connection(self._peer_addr, timeout=5)
+                        self._conn = socket.create_connection(cast("tuple[str, int]", self._peer_addr), timeout=5)
                 self._conn.settimeout(None)  # Set blocking recv
                 self._is_connected_flag.set()
 
@@ -653,7 +668,7 @@ class _ClientServer:
                         logger.error(f"Failed to run 'on_error' callback: {e}")
             self.callbacks.clear()
 
-    def _send_response(self, msgid: int, error, response) -> None:
+    def _send_response(self, msgid: int, error: BaseException | None, response: object) -> None:
         """Helper to pack and send a response message."""
         err = None
         if error is not None:

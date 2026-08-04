@@ -54,7 +54,7 @@ class Frame:
         super().__setattr__(name, value)
 
     @property
-    def shape(self):
+    def shape(self) -> tuple[int, ...]:
         """Return the (height, width) shape of the frame as a tuple of ints."""
         return self.arr.shape
 

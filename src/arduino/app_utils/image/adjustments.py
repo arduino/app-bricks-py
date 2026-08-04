@@ -509,7 +509,7 @@ def letterboxed(
     target_size: tuple[int, int] | None = None,
     color: tuple[int, int, int] | tuple[int, int, int, int] = (114, 114, 114),
     interpolation: int = cv2.INTER_LINEAR,
-):
+) -> PipeableFunction:
     """
     Pipeable letterbox function - apply letterboxing with pipe operator support.
 
@@ -528,7 +528,7 @@ def letterboxed(
     return PipeableFunction(letterbox, target_size=target_size, color=color, interpolation=interpolation)
 
 
-def resized(target_size: tuple[int, int], maintain_ratio: bool = False, interpolation: int = cv2.INTER_LINEAR):
+def resized(target_size: tuple[int, int], maintain_ratio: bool = False, interpolation: int = cv2.INTER_LINEAR) -> PipeableFunction:
     """
     Pipeable resize function - resize frame with pipe operator support.
 
@@ -547,7 +547,7 @@ def resized(target_size: tuple[int, int], maintain_ratio: bool = False, interpol
     return PipeableFunction(resize, target_size=target_size, maintain_ratio=maintain_ratio, interpolation=interpolation)
 
 
-def flipped_h():
+def flipped_h() -> PipeableFunction:
     """
     Pipeable horizontal flip function - flip frame horizontally with pipe operator support.
 
@@ -557,7 +557,7 @@ def flipped_h():
     return PipeableFunction(flip_h)
 
 
-def flipped_v():
+def flipped_v() -> PipeableFunction:
     """
     Pipeable vertical flip function - flip frame vertically with pipe operator support.
 
@@ -567,7 +567,7 @@ def flipped_v():
     return PipeableFunction(flip_v)
 
 
-def cropped(width: int, height: int, x: int | None = None, y: int | None = None):
+def cropped(width: int, height: int, x: int | None = None, y: int | None = None) -> PipeableFunction:
     """
     Pipeable crop function - crop frame with pipe operator support.
     If x and y are not provided, the crop is centered.
@@ -591,7 +591,7 @@ def cropped(width: int, height: int, x: int | None = None, y: int | None = None)
     return PipeableFunction(crop, width=width, height=height, x=x, y=y)
 
 
-def cropped_to_aspect_ratio(aspect_ratio: tuple[int, int], x: int | None = None, y: int | None = None):
+def cropped_to_aspect_ratio(aspect_ratio: tuple[int, int], x: int | None = None, y: int | None = None) -> PipeableFunction:
     """
     Pipeable crop to aspect ratio function - crop frame to aspect ratio with
     pipe operator support.
@@ -621,7 +621,7 @@ def rotated(
     expand: bool = False,
     color: tuple[int, int, int] | tuple[int, int, int, int] = (0, 0, 0),
     interpolation: int = cv2.INTER_LINEAR,
-):
+) -> PipeableFunction:
     """
     Pipeable rotate function - rotate frame with pipe operator support.
     If center is not provided, rotates around the image center.
@@ -646,7 +646,7 @@ def rotated(
     return PipeableFunction(rotate, angle=angle, center=center, expand=expand, color=color, interpolation=interpolation)
 
 
-def adjusted(brightness: float = 0.0, contrast: float = 1.0, saturation: float = 1.0, gamma: float = 1.0):
+def adjusted(brightness: float = 0.0, contrast: float = 1.0, saturation: float = 1.0, gamma: float = 1.0) -> PipeableFunction:
     """
     Pipeable adjust function - apply image adjustments with pipe operator support.
 
@@ -666,7 +666,7 @@ def adjusted(brightness: float = 0.0, contrast: float = 1.0, saturation: float =
     return PipeableFunction(adjust, brightness=brightness, contrast=contrast, saturation=saturation, gamma=gamma)
 
 
-def greyscaled():
+def greyscaled() -> PipeableFunction:
     """
     Pipeable greyscale function - convert frame to greyscale with pipe operator support.
 
@@ -680,7 +680,7 @@ def greyscaled():
     return PipeableFunction(greyscale)
 
 
-def compressed_to_jpeg(quality: int = 80):
+def compressed_to_jpeg(quality: int = 80) -> PipeableFunction:
     """
     Pipeable JPEG compression function - compress frame to JPEG with pipe operator support.
 
@@ -697,7 +697,7 @@ def compressed_to_jpeg(quality: int = 80):
     return PipeableFunction(compress_to_jpeg, quality=quality)
 
 
-def compressed_to_png(compression_level: int = 6):
+def compressed_to_png(compression_level: int = 6) -> PipeableFunction:
     """
     Pipeable PNG compression function - compress frame to PNG with pipe operator support.
 

@@ -104,7 +104,7 @@ class SineGenerator:
         self.release = float(max(0.0, release))
         self.glide = float(max(0.0, glide))
 
-    def generate_block(self, freq: float, amp_target: float, block_dur: float, master_volume: float):
+    def generate_block(self, freq: float, amp_target: float, block_dur: float, master_volume: float) -> np.ndarray:
         """Generate a block of float32 audio samples.
 
         The generator keeps internal phase continuity across calls. Amplitude is
