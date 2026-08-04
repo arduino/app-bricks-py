@@ -13,7 +13,6 @@ import yaml
 from common.model_metadata import (
     METADATA_NAME,
     collect_inputs,
-    dir_stats,
     identify_model,
     is_bookkeeping_name,
     metadata_payload,
@@ -161,15 +160,9 @@ def test_collect_inputs_empty_environment():
 # identify_model
 # --------------------------------------------------------------------------- #
 def test_identify_model_from_models_list(tmp_path):
+    """Only the id is taken from the entry; its name/source/... are not duplicated."""
     identity = identify_model(AI_HUB_ENV, _models_list(tmp_path))
-    assert identity == {
-        "model_id": "genie:qwen3_4b_instruct_2507",
-        "model_id_source": "models-list",
-        "name": "Qwen 3-4B Instruct",
-        "source": "qualcomm-ai-hub",
-        "source_model_id": "qwen3_4b_instruct_2507",
-        "source_model_url": "https://aihub.qualcomm.com/models/qwen3_4b_instruct_2507",
-    }
+    assert identity == {"model_id": "genie:qwen3_4b_instruct_2507", "model_id_source": "models-list"}
 
 
 def test_identify_model_prefers_model_id_env(tmp_path):
@@ -222,53 +215,42 @@ def test_inputs_record_the_derived_model_directory(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
-# dir_stats
-# --------------------------------------------------------------------------- #
-def test_dir_stats_excludes_marker_metadata_and_cache(tmp_path):
-    (tmp_path / "model.gguf").write_bytes(b"\0" * 100)
-    (tmp_path / "nested").mkdir()
-    (tmp_path / "nested" / "weights.bin").write_bytes(b"\0" * 50)
-    (tmp_path / ".download").write_text("{}")
-    (tmp_path / METADATA_NAME).write_text("schema_version: 1\n")
-    (tmp_path / (METADATA_NAME + ".tmp")).write_text("partial")
-    (tmp_path / ".cache").mkdir()
-    (tmp_path / ".cache" / "blob").write_bytes(b"\0" * 999)
-    assert dir_stats(str(tmp_path)) == {"file_count": 2, "size_bytes": 150}
-
-
-def test_dir_stats_missing_dir():
-    assert dir_stats("/definitely/not/here") == {"file_count": 0, "size_bytes": 0}
-
-
-# --------------------------------------------------------------------------- #
 # metadata_payload
 # --------------------------------------------------------------------------- #
 def test_metadata_payload_drops_empty_values():
     payload = metadata_payload(
         "hf-handler",
-        inputs={"model_name": "x", "quantization": ""},
-        resolved={"revision": None, "file_count": 0, "extracted": False},
-        identity={"model_id": "a:b", "model_id_source": "models-list", "name": "N", "source": None},
+        inputs={"model_name": "x", "quantization": "", "version": None},
+        identity={"model_id": "a:b", "model_id_source": "models-list"},
     )
     assert payload["inputs"] == {"model_name": "x"}
-    # 0 and False are real values and must survive; None and "" must not.
-    assert payload["resolved"] == {"file_count": 0, "extracted": False}
-    assert "source" not in payload
-    assert payload["name"] == "N"
+    assert payload["model_id"] == "a:b"
 
 
-def test_metadata_payload_omits_empty_blocks():
+def test_metadata_payload_omits_empty_inputs():
     payload = metadata_payload("ei-handler")
     assert list(payload) == ["schema_version", "downloaded_at", "handler", "model_id", "model_id_source"]
     assert payload["model_id"] is None
     assert payload["model_id_source"] == "unresolved"
 
 
+def test_metadata_payload_copies_nothing_else_from_the_entry():
+    """Only the id points back at models-list.yaml; its other fields are not duplicated."""
+    payload = metadata_payload(
+        "ai-hub-handler",
+        inputs={"model_name": "x"},
+        identity={"model_id": "genie:x", "model_id_source": "models-list"},
+    )
+    assert list(payload) == ["schema_version", "downloaded_at", "handler", "model_id", "model_id_source", "inputs"]
+    for copied in ("name", "source", "source_model_id", "source_model_url", "model_size_mb", "resolved"):
+        assert copied not in payload
+
+
 # --------------------------------------------------------------------------- #
 # write_metadata / read_metadata
 # --------------------------------------------------------------------------- #
 def test_write_read_roundtrip(tmp_path):
-    path = write_metadata(str(tmp_path), "ai-hub-handler", resolved={"download_url": "https://x/y.zip"}, env=AI_HUB_ENV, models_list_path="")
+    path = write_metadata(str(tmp_path), "ai-hub-handler", env=AI_HUB_ENV, models_list_path="")
     assert path == str(tmp_path / METADATA_NAME)
     # Exactly one file: the atomic ".tmp" sibling must be gone.
     assert os.listdir(tmp_path) == [METADATA_NAME]
@@ -276,7 +258,6 @@ def test_write_read_roundtrip(tmp_path):
     assert data["schema_version"] == 1
     assert data["handler"] == "ai-hub-handler"
     assert data["inputs"] == AI_HUB_ENV
-    assert data["resolved"] == {"download_url": "https://x/y.zip"}
 
 
 def test_write_starts_with_comment_header(tmp_path):
@@ -293,10 +274,10 @@ def test_write_creates_missing_dir(tmp_path):
 
 
 def test_write_overwrites_previous_record(tmp_path):
-    write_metadata(str(tmp_path), "hf-handler", resolved={"revision": "old"}, env=HF_ENV, models_list_path="")
-    write_metadata(str(tmp_path), "hf-handler", resolved={"revision": "new"}, env=HF_ENV, models_list_path="")
+    write_metadata(str(tmp_path), "hf-handler", env=dict(HF_ENV, model_directory="old/repo"), models_list_path="")
+    write_metadata(str(tmp_path), "hf-handler", env=dict(HF_ENV, model_directory="new/repo"), models_list_path="")
     assert os.listdir(tmp_path) == [METADATA_NAME]
-    assert read_metadata(str(tmp_path))["resolved"]["revision"] == "new"
+    assert read_metadata(str(tmp_path))["inputs"]["model_directory"] == "new/repo"
 
 
 def test_write_returns_none_and_does_not_raise_on_failure(monkeypatch, capsys, tmp_path):
@@ -346,103 +327,45 @@ def test_read_ignores_unknown_schema_version(tmp_path):
 # --------------------------------------------------------------------------- #
 # End-to-end payload shape, per handler
 # --------------------------------------------------------------------------- #
+PAYLOAD_KEYS = ["schema_version", "downloaded_at", "handler", "model_id", "model_id_source", "inputs"]
+
+
 def test_payload_ai_hub(tmp_path):
     model_dir = tmp_path / "model"
     model_dir.mkdir()
-    (model_dir / "weights.bin").write_bytes(b"\0" * 10)
-    write_metadata(
-        str(model_dir),
-        "ai-hub-handler",
-        resolved={
-            "download_url": "https://qaihub/x.zip",
-            "fetch_command": "qai_hub_models fetch qwen3_4b_instruct_2507 -r genie -p w4a16 -c qualcomm-qcs8275 -v 0.51.0 --url-only",
-            "qai_hub_models_version": "0.59.0",
-            "extracted": True,
-            **dir_stats(str(model_dir)),
-        },
-        env=AI_HUB_ENV,
-        models_list_path=_models_list(tmp_path),
-    )
+    write_metadata(str(model_dir), "ai-hub-handler", env=AI_HUB_ENV, models_list_path=_models_list(tmp_path))
     data = read_metadata(str(model_dir))
-    assert list(data) == [
-        "schema_version",
-        "downloaded_at",
-        "handler",
-        "model_id",
-        "model_id_source",
-        "name",
-        "source",
-        "source_model_id",
-        "source_model_url",
-        "inputs",
-        "resolved",
-    ]
+    assert list(data) == PAYLOAD_KEYS
     assert data["handler"] == "ai-hub-handler"
     assert data["model_id"] == "genie:qwen3_4b_instruct_2507"
     assert data["model_id_source"] == "models-list"
     assert data["inputs"] == AI_HUB_ENV
-    assert data["resolved"]["extracted"] is True
-    assert data["resolved"]["file_count"] == 1
-    assert data["resolved"]["size_bytes"] == 10
 
 
 def test_payload_edge_impulse(tmp_path):
     model_dir = tmp_path / "efficientnet-b4-qnn"
     model_dir.mkdir()
-    (model_dir / "efficientnet-b4-qnn.eim").write_bytes(b"\0" * 20)
-    write_metadata(
-        str(model_dir),
-        "ei-handler",
-        resolved={
-            "download_url": "https://studio.edgeimpulse.com/v1/api/948887/deployment/download?type=runner-linux-aarch64-qnn&impulseId=10",
-            "ei_project_id": 948887,
-            "ei_impulse_id": 10,
-            "target": "runner-linux-aarch64-qnn",
-            "quantization": None,
-            "files": ["efficientnet-b4-qnn.eim"],
-            **dir_stats(str(model_dir)),
-        },
-        env=EI_ENV,
-        models_list_path=_models_list(tmp_path),
-    )
+    write_metadata(str(model_dir), "ei-handler", env=EI_ENV, models_list_path=_models_list(tmp_path))
     data = read_metadata(str(model_dir))
+    assert list(data) == PAYLOAD_KEYS
     assert data["model_id"] == "ei:efficientnet-b4"
-    assert data["source"] == "edgeimpulse"
-    assert "source_model_url" not in data  # absent from the entry's metadata
     assert data["inputs"] == EI_ENV
-    # "resolved" holds the parsed ints actually sent, "inputs" the raw environment.
-    assert data["resolved"]["ei_project_id"] == 948887
+    # YAML ints arrive as strings and are recorded verbatim.
     assert data["inputs"]["ei_project_id"] == "948887"
-    assert "quantization" not in data["resolved"]
-    assert data["resolved"]["files"] == ["efficientnet-b4-qnn.eim"]
+    # quantization is not set for this model: the key is omitted, not written empty.
+    assert "quantization" not in data["inputs"]
 
 
 def test_payload_hugging_face(tmp_path):
     model_dir = tmp_path / "google" / "gemma-4-E2B-it-qat-q4_0-gguf"
     model_dir.mkdir(parents=True)
-    (model_dir / "gemma-4-E2B_q4_0-it.gguf").write_bytes(b"\0" * 30)
-    write_metadata(
-        str(model_dir),
-        "hf-handler",
-        resolved={
-            "repo_id": "google/gemma-4-E2B-it-qat-q4_0-gguf",
-            "revision": "1894d1fc",
-            "revision_source": "url",
-            "allow_pattern": "gemma-4-E2B_q4_0-it.gguf",
-            "mmproj_allow_pattern": None,
-            "files": ["gemma-4-E2B_q4_0-it.gguf"],
-            **dir_stats(str(model_dir)),
-        },
-        env=HF_ENV,
-        models_list_path=_models_list(tmp_path),
-    )
+    write_metadata(str(model_dir), "hf-handler", env=HF_ENV, models_list_path=_models_list(tmp_path))
     data = read_metadata(str(model_dir))
+    assert list(data) == PAYLOAD_KEYS
     assert data["model_id"] == "llamacpp:gemma-4-E2B_q4_0-it"
-    assert data["name"] == "Gemma 4 E2B"
     assert data["inputs"] == HF_ENV
-    assert data["resolved"]["revision"] == "1894d1fc"
-    assert data["resolved"]["revision_source"] == "url"
-    assert "mmproj_allow_pattern" not in data["resolved"]
+    # The pinned commit is already in the recorded model_url.
+    assert "1894d1fc" in data["inputs"]["model_url"]
 
 
 def test_payload_for_a_repo_absent_from_models_list(tmp_path):
@@ -454,35 +377,25 @@ def test_payload_for_a_repo_absent_from_models_list(tmp_path):
     """
     model_dir = tmp_path / "TheBloke" / "Mistral-7B-Instruct-v0.2-GGUF"
     model_dir.mkdir(parents=True)
-    (model_dir / "mistral.Q4_0.gguf").write_bytes(b"\0" * 40)
     env = {
-        "model_key": "llamacpp:TheBloke/Mistral-7B-Instruct-v0.2-GGUF:Q4_0",
+        # model_url in its compact-key syntax.
+        "model_url": "TheBloke/Mistral-7B-Instruct-v0.2-GGUF:Q4_0",
         "models_repository": "llamacpp",
         "model_directory": "TheBloke/Mistral-7B-Instruct-v0.2-GGUF",
     }
-    path = write_metadata(
-        str(model_dir),
-        "hf-handler",
-        resolved={"repo_id": "TheBloke/Mistral-7B-Instruct-v0.2-GGUF", "revision": "abc123", "revision_source": "api", **dir_stats(str(model_dir))},
-        env=env,
-        models_list_path=_models_list(tmp_path),
-    )
+    path = write_metadata(str(model_dir), "hf-handler", env=env, models_list_path=_models_list(tmp_path))
     assert path is not None
     data = read_metadata(str(model_dir))
+    assert list(data) == PAYLOAD_KEYS
     assert data["model_id"] is None
     assert data["model_id_source"] == "unresolved"
-    # No entry to borrow a name or source from.
-    assert "name" not in data
-    assert "source" not in data
-    # The download is still fully described.
+    # The download is still fully described by its own variables.
     assert data["inputs"] == env
-    assert data["resolved"]["repo_id"] == "TheBloke/Mistral-7B-Instruct-v0.2-GGUF"
-    assert data["resolved"]["size_bytes"] == 40
 
 
 def test_written_file_is_plain_safe_yaml(tmp_path):
     """No python-specific tags: the file must be readable by any YAML parser."""
-    write_metadata(str(tmp_path), "hf-handler", resolved={"files": ["a.gguf", "b.gguf"]}, env=HF_ENV, models_list_path="")
+    write_metadata(str(tmp_path), "hf-handler", env=HF_ENV, models_list_path="")
     text = (tmp_path / METADATA_NAME).read_text()
     assert "!!python" not in text
-    assert yaml.safe_load(text)["resolved"]["files"] == ["a.gguf", "b.gguf"]
+    assert yaml.safe_load(text)["inputs"] == HF_ENV

@@ -4,30 +4,13 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-if [ -n "${model_key}" ]; then
-    python /app/hugging_face/hf_downloader.py \
-        --model-key "${model_key}" \
-        --output-dir /models \
-        --check
-elif [ -n "${model_url}" ]; then
-    args=(
-        --model-url "${model_url}"
-        --output-dir /models
-        --check
-    )
-    if [ -n "${model_mmproj_url}" ]; then
-        args+=(--model-mmproj-url "${model_mmproj_url}")
-    fi
-    python /app/hugging_face/hf_downloader.py "${args[@]}"
-else
-    args=(
-        --model-repo-id "${model_repo_id}"
-        --model-name "${model_name}"
-        --output-dir /models
-        --check
-    )
-    if [ -n "${model_mmproj_name}" ]; then
-        args+=(--model-mmproj-name "${model_mmproj_name}")
-    fi
-    python /app/hugging_face/hf_downloader.py "${args[@]}"
+args=(
+    --model-url "${model_url}"
+    --output-dir /models
+    --check
+)
+if [ -n "${model_mmproj_url}" ]; then
+    args+=(--model-mmproj-url "${model_mmproj_url}")
 fi
+
+python /app/hugging_face/hf_downloader.py "${args[@]}"

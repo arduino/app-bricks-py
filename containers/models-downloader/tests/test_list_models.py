@@ -464,8 +464,6 @@ inputs:
   model_url: "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf/blob/main/gemma-4-E2B_q4_0-it.gguf"
   models_repository: llamacpp
   model_directory: google/gemma-4-E2B-it-qat-q4_0-gguf
-resolved:
-  revision: main
 """
 
 
@@ -491,7 +489,7 @@ def test_main_surfaces_downloaded_metadata(monkeypatch, capsys, tmp_path):
     entry = _gemma_entry(models)
     assert entry["installed"] is True
     assert entry["downloaded_metadata"]["model_id"] == "llamacpp:gemma-4-E2B_q4_0-it"
-    assert entry["downloaded_metadata"]["resolved"]["revision"] == "main"
+    assert entry["downloaded_metadata"]["inputs"]["models_repository"] == "llamacpp"
     # The declaration is unchanged since the download.
     assert entry["outdated"] is False
     assert "outdated_fields" not in entry

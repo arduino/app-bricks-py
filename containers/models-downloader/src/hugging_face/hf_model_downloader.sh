@@ -4,28 +4,15 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-if [ -n "${model_key}" ]; then
-    args=(
-        --model-key "${model_key}"
-        --output-dir /models
-    )
-elif [ -n "${model_url}" ]; then
-    args=(
-        --model-url "${model_url}"
-        --output-dir /models
-    )
-    if [ -n "${model_mmproj_url}" ]; then
-        args+=(--model-mmproj-url "${model_mmproj_url}")
-    fi
-else
-    args=(
-        --model-repo-id "${model_repo_id}"
-        --model-name "${model_name}"
-        --output-dir /models
-    )
-    if [ -n "${model_mmproj_name}" ]; then
-        args+=(--model-mmproj-name "${model_mmproj_name}")
-    fi
+# model_url names the model in either syntax: a Hugging Face file URL, or the compact
+# "[<model_type>:]<repo_id>:<quantization>[:<mmproj_quantization>]" key. One variable
+# covers every case; hf_downloader.py decides which syntax it is.
+args=(
+    --model-url "${model_url}"
+    --output-dir /models
+)
+if [ -n "${model_mmproj_url}" ]; then
+    args+=(--model-mmproj-url "${model_mmproj_url}")
 fi
 
 # exec so python becomes PID 1 and receives SIGINT/SIGTERM. hf_downloader.py

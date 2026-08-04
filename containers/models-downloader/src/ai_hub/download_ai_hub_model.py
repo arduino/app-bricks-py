@@ -14,17 +14,7 @@ import requests
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from common.download_marker import write_marker
 from common.http_download import download, download_and_extract, emit_json_error, install_signal_handlers
-from common.model_metadata import dir_stats, write_metadata
-
-
-def _qai_hub_models_version() -> str | None:
-    """Version of the qai_hub_models CLI that resolved the download URL, if known."""
-    from importlib.metadata import version
-
-    try:
-        return version("qai-hub-models-cli")
-    except Exception:  # noqa: BLE001 - metadata only, never fail the download
-        return None
+from common.model_metadata import write_metadata
 
 
 def _wipe_model_dir(model_dir: str, base_dir: str) -> None:
@@ -152,17 +142,7 @@ def main():
         # marker is still there the directory counts as incomplete, so a crash in
         # between makes the next run retry instead of leaving it unrecorded.
         if model_dir:
-            write_metadata(
-                model_dir,
-                handler="ai-hub-handler",
-                resolved={
-                    "download_url": url,
-                    "fetch_command": " ".join(cmd),
-                    "qai_hub_models_version": _qai_hub_models_version(),
-                    "extracted": not args.no_unzip,
-                    **dir_stats(model_dir),
-                },
-            )
+            write_metadata(model_dir, handler="ai-hub-handler")
         if marker and os.path.exists(marker):
             os.remove(marker)
     except requests.HTTPError as exc:

@@ -20,10 +20,13 @@ from common.model_metadata import METADATA_NAME
 from hugging_face.hf_downloader import (
     JsonProgress,
     delete_matched_files,
+    gguf_pattern,
     has_model_content,
+    is_hf_url,
     matches_pattern,
     parse_model_key,
     prune_emptied_repo_dir,
+    resolve_model_source,
 )
 
 
@@ -209,6 +212,101 @@ def test_parse_model_key_rejects_empty_repo_id():
 def test_parse_model_key_rejects_empty_quantization():
     with pytest.raises(ValueError, match="quantization cannot be empty"):
         parse_model_key("org/repo:")
+
+
+# --------------------------------------------------------------------------- #
+# is_hf_url / gguf_pattern
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize(
+    ("spec", "expected"),
+    [
+        ("https://huggingface.co/org/repo/blob/main/m.gguf", True),
+        ("http://huggingface.co/org/repo/blob/main/m.gguf", True),
+        ("Qwen/Qwen3-8B-GGUF:Q8_0", False),
+        ("llamacpp:Qwen/Qwen3-8B-GGUF:Q8_0", False),
+    ],
+)
+def test_is_hf_url(spec, expected):
+    assert is_hf_url(spec) is expected
+
+
+@pytest.mark.parametrize(
+    ("spec", "mmproj", "expected"),
+    [
+        # A bare quantization is widened and anchored to .gguf.
+        ("Q4_0", False, "*Q4_0*.gguf"),
+        ("Q4_0", True, "*mmproj*Q4_0*.gguf"),
+        # A full file name pins one specific file.
+        ("gemma-4-E2B-it-Q4_0.gguf", False, "gemma-4-E2B-it-Q4_0.gguf"),
+        ("mmproj-F16.gguf", True, "mmproj-F16.gguf"),
+        # An explicit glob is left alone.
+        ("*UD-Q4_0*", False, "*UD-Q4_0*"),
+    ],
+)
+def test_gguf_pattern(spec, mmproj, expected):
+    assert gguf_pattern(spec, mmproj=mmproj) == expected
+
+
+# --------------------------------------------------------------------------- #
+# resolve_model_source — one input, two syntaxes
+# --------------------------------------------------------------------------- #
+GEMMA_URL = "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf/blob/1894d1fc/gemma-4-E2B_q4_0-it.gguf"
+
+
+def test_resolve_url_syntax():
+    source = resolve_model_source(GEMMA_URL)
+    assert source["repo_id"] == "google/gemma-4-E2B-it-qat-q4_0-gguf"
+    assert source["url_filename"] == "gemma-4-E2B_q4_0-it.gguf"
+    assert source["url_revision"] == "1894d1fc"
+    # The basename doubles as the pattern, so check/delete/info behave as for a key.
+    assert source["allow_pattern"] == "gemma-4-E2B_q4_0-it.gguf"
+    assert source["mmproj_allow_pattern"] is None
+
+
+def test_resolve_url_syntax_with_mmproj_url():
+    source = resolve_model_source(GEMMA_URL, "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf/blob/1894d1fc/mmproj-BF16.gguf")
+    assert source["mmproj_url_filename"] == "mmproj-BF16.gguf"
+    assert source["mmproj_url_revision"] == "1894d1fc"
+    assert source["mmproj_allow_pattern"] == "mmproj-BF16.gguf"
+
+
+def test_resolve_key_syntax_llamacpp_style():
+    source = resolve_model_source("Qwen/Qwen3-8B-GGUF:Q8_0")
+    assert source["repo_id"] == "Qwen/Qwen3-8B-GGUF"
+    assert source["allow_pattern"] == "*Q8_0*.gguf"
+    # No URL was given, so the single-file download path stays off.
+    assert source["url_filename"] is None
+    assert source["url_revision"] is None
+
+
+def test_resolve_key_syntax_with_model_type_and_mmproj():
+    source = resolve_model_source("llamacpp:unsloth/gemma-4-E4B-it-GGUF:Q4_0:BF16")
+    assert source["model_type"] == "llamacpp"
+    assert source["repo_id"] == "unsloth/gemma-4-E4B-it-GGUF"
+    assert source["allow_pattern"] == "*Q4_0*.gguf"
+    assert source["mmproj_allow_pattern"] == "*mmproj*BF16*.gguf"
+
+
+def test_resolve_key_syntax_pins_an_exact_file_name():
+    """What the removed --model-repo-id/--model-name pair used to be for."""
+    source = resolve_model_source("unsloth/gemma-4-E2B-it-GGUF:gemma-4-E2B-it-Q4_0.gguf")
+    assert source["repo_id"] == "unsloth/gemma-4-E2B-it-GGUF"
+    assert source["allow_pattern"] == "gemma-4-E2B-it-Q4_0.gguf"
+
+
+def test_resolve_rejects_an_empty_model_url():
+    with pytest.raises(ValueError, match="model_url is required"):
+        resolve_model_source("")
+
+
+def test_resolve_rejects_a_bare_repo_id():
+    with pytest.raises(ValueError, match="Invalid model key"):
+        resolve_model_source("Qwen/Qwen3-8B-GGUF")
+
+
+def test_resolve_rejects_a_non_hf_url():
+    with pytest.raises(ValueError, match="Invalid Hugging Face URL"):
+        resolve_model_source("https://example.com/some/file.gguf")
 
 
 # --------------------------------------------------------------------------- #

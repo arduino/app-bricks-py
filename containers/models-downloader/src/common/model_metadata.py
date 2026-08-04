@@ -15,20 +15,10 @@ the model directory after a successful download and stays there:
     handler: hf-handler
     model_id: llamacpp:gemma-4-E2B_q4_0-it
     model_id_source: models-list
-    name: Gemma 4 E2B
-    source: huggingface
-    source_model_id: gemma-4-E2B-it-qat-q4_0-gguf
-    source_model_url: https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf
     inputs:                     # the download variables, verbatim from the environment
       models_repository: llamacpp
       model_directory: google/gemma-4-E2B-it-qat-q4_0-gguf
       model_url: https://huggingface.co/google/...
-    resolved:                   # what the handler actually fetched
-      repo_id: google/gemma-4-E2B-it-qat-q4_0-gguf
-      revision: 1894d1fc0a19d86697abd40483f5983c867df03f
-      files: [gemma-4-E2B_q4_0-it.gguf]
-      file_count: 1
-      size_bytes: 3596128000
 
 Contracts callers must honour:
 
@@ -44,8 +34,11 @@ Contracts callers must honour:
   entry; such a download is recorded in full, only unidentified. Consumers must not
   treat a null model_id as a failure, and outdated-detection simply does not apply
   (there is no declaration to compare against).
-- It is a **snapshot** taken when the download finished. ``size_bytes`` and
-  ``file_count`` are not live disk state.
+- Nothing else is copied out of models-list.yaml. ``model_id`` points back at the
+  entry, and every other field of it (name, description, source, model_size_mb, ...)
+  is read from models-list.yaml itself rather than duplicated — and left to go stale —
+  here. The record holds only what models-list.yaml cannot tell you: which variables
+  this install was actually downloaded with, and when.
 - The Hugging Face handler downloads into a per-*repository* directory, so two
   models-list.yaml entries pulling different quantizations out of the same repo would
   share one metadata file (the last download wins). The ``.download`` marker and the
@@ -83,20 +76,13 @@ INPUT_VARIABLES = (
     "ei_project_id",
     "ei_impulse_id",
     "target",
-    # hugging face
+    # hugging face — model_url carries either a file URL or a compact model key
     "model_url",
-    "model_key",
-    "model_repo_id",
     "model_mmproj_url",
-    "model_mmproj_name",
 )
 
 # Credentials are never persisted, whatever the environment holds.
 SECRET_VARIABLES = frozenset({"hf_token", "HF_TOKEN", "HF_HUB_TOKEN", "EI_API_KEY"})
-
-# Directory entries that are bookkeeping rather than model content.
-_IGNORED_NAMES = (METADATA_NAME, ".download")
-_IGNORED_DIRS = (".cache",)
 
 
 def utc_now_iso():
@@ -140,9 +126,9 @@ def identify_model(env=None, models_list_path=MODELS_LIST_PATH):
     starts providing one this lookup is bypassed.
 
     Returns:
-        A dict with ``model_id`` (None when unidentified), ``model_id_source``
-        ("env", "models-list" or "unresolved") and, when identified, the entry's
-        ``name`` and ``source``/``source_model_id``/``source_model_url`` metadata.
+        A dict with ``model_id`` (None when unidentified) and ``model_id_source``
+        ("env", "models-list" or "unresolved"). Nothing else is taken from the entry:
+        the id is the pointer back to it, see the module docstring.
     """
     env = env if env is not None else os.environ
 
@@ -152,47 +138,17 @@ def identify_model(env=None, models_list_path=MODELS_LIST_PATH):
 
     try:
         models = load_models_list(models_list_path)
-        model_id, model_data, _platform = find_matching_model(models, env, board=env.get("BOARD_NAME"))
+        model_id, _model_data, _platform = find_matching_model(models, env, board=env.get("BOARD_NAME"))
     except Exception:  # noqa: BLE001 - a missing or broken models-list.yaml must not matter
         return {"model_id": None, "model_id_source": "unresolved"}
 
     if not model_id:
         return {"model_id": None, "model_id_source": "unresolved"}
-
-    metadata = model_data.get("metadata") or {}
-    return {
-        "model_id": model_id,
-        "model_id_source": "models-list",
-        "name": model_data.get("name"),
-        "source": metadata.get("source"),
-        "source_model_id": metadata.get("source-model-id"),
-        "source_model_url": metadata.get("source-model-url"),
-    }
+    return {"model_id": model_id, "model_id_source": "models-list"}
 
 
-def dir_stats(model_dir):
-    """Return ``{"file_count", "size_bytes"}`` for the model content of *model_dir*.
-
-    Bookkeeping files and huggingface_hub's ".cache" tree are not model content and
-    are left out, so the numbers describe what was actually downloaded.
-    """
-    file_count = 0
-    size_bytes = 0
-    for root, dirs, files in os.walk(model_dir):
-        dirs[:] = [d for d in dirs if d not in _IGNORED_DIRS]
-        for name in files:
-            if is_bookkeeping_name(name):
-                continue
-            try:
-                size_bytes += os.stat(os.path.join(root, name), follow_symlinks=False).st_size
-            except OSError:
-                continue
-            file_count += 1
-    return {"file_count": file_count, "size_bytes": size_bytes}
-
-
-def metadata_payload(handler, inputs=None, resolved=None, identity=None, downloaded_at=None):
-    """Build the metadata document, dropping empty ``inputs``/``resolved`` entries."""
+def metadata_payload(handler, inputs=None, identity=None, downloaded_at=None):
+    """Build the metadata document, dropping empty ``inputs`` entries."""
     identity = identity or {}
     payload = {
         "schema_version": SCHEMA_VERSION,
@@ -201,17 +157,13 @@ def metadata_payload(handler, inputs=None, resolved=None, identity=None, downloa
         "model_id": identity.get("model_id"),
         "model_id_source": identity.get("model_id_source", "unresolved"),
     }
-    for key in ("name", "source", "source_model_id", "source_model_url"):
-        if identity.get(key):
-            payload[key] = identity[key]
-    for block, values in (("inputs", inputs), ("resolved", resolved)):
-        kept = {k: v for k, v in (values or {}).items() if v is not None and v != ""}
-        if kept:
-            payload[block] = kept
+    kept = {k: v for k, v in (inputs or {}).items() if v is not None and v != ""}
+    if kept:
+        payload["inputs"] = kept
     return payload
 
 
-def write_metadata(model_dir, handler, resolved=None, env=None, models_list_path=MODELS_LIST_PATH, extra_input_keys=()):
+def write_metadata(model_dir, handler, env=None, models_list_path=MODELS_LIST_PATH, extra_input_keys=()):
     """Write ``<model_dir>/.arduino_metadata.yaml`` atomically; return its path or None.
 
     Called after a successful download and *before* clearing the ``.download``
@@ -225,7 +177,6 @@ def write_metadata(model_dir, handler, resolved=None, env=None, models_list_path
         payload = metadata_payload(
             handler,
             inputs=collect_inputs(env, extra_input_keys),
-            resolved=resolved,
             identity=identify_model(env, models_list_path),
         )
         os.makedirs(model_dir, exist_ok=True)
