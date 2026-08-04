@@ -46,7 +46,7 @@ class SineGenerator:
         self._freq_last = 440.0
         self._phase = 0.0
 
-    def reset(self):
+    def reset(self) -> None:
         """Reset internal generator state.
 
         Resets phase, last frequency and current amplitude to silence. Useful

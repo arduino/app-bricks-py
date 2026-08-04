@@ -44,7 +44,7 @@ def _load_client(client_id: str, username: str | None, password: str | None, top
     # Configure automatic reconnection
     client.reconnect_delay_set(min_delay=1, max_delay=60)
 
-    def on_connect(client, userdata, flags, reason_code, properties):
+    def on_connect(client, userdata, flags, reason_code, properties) -> None:
         """Callback function for when the client connects to the MQTT broker."""
         if reason_code != 0:
             logger.error(f"Failed to connect: {mqtt.error_string(reason_code)}")
@@ -60,14 +60,14 @@ def _load_client(client_id: str, username: str | None, password: str | None, top
                 except Exception as e:
                     logger.error("Failed to subscribe to topic %s: %s", t, e)
 
-    def on_disconnect(client, userdata, flags, reason_code, properties):
+    def on_disconnect(client, userdata, flags, reason_code, properties) -> None:
         """Callback function for when the client disconnects from the MQTT broker."""
         if reason_code == 0:
             logger.debug("Client disconnected gracefully")
         else:
             logger.warning("Reconnecting after connection lost: (%s)...", mqtt.error_string(reason_code))
 
-    def on_subscribe(client, userdata, mid, granted_qos, properties=None):
+    def on_subscribe(client, userdata, mid, granted_qos, properties=None) -> None:
         """Callback function for when the client successfully subscribes to a topic."""
         logger.info("Subscription successful to topic")
 
@@ -77,7 +77,7 @@ def _load_client(client_id: str, username: str | None, password: str | None, top
     return client
 
 
-def _default_on_message(client, userdata, msg):
+def _default_on_message(client, userdata, msg) -> None:
     """A default callback function for when a message is received from the subscribed topic.
 
     Args:
@@ -121,7 +121,7 @@ class MQTT:
         self.client = _load_client(client_id, username, password, topics)
         self.client.on_message = _default_on_message
 
-    def start(self):
+    def start(self) -> None:
         """Start the MQTT client and connect to the broker."""
         try:
             if not self.client.is_connected():
@@ -132,7 +132,7 @@ class MQTT:
         except Exception as e:
             logger.error("Error during MQTT client startup: %s", e)
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop the MQTT client and disconnect from the broker."""
         try:
             self.client.loop_stop()
@@ -143,7 +143,7 @@ class MQTT:
         except Exception as e:
             logger.error("Error during MQTT client shutdown: %s", e)
 
-    def publish(self, topic: str, message: str | dict):
+    def publish(self, topic: str, message: str | dict) -> None:
         """Publish a message to the MQTT topic.
 
         Args:
@@ -169,7 +169,7 @@ class MQTT:
         except Exception as e:
             raise RuntimeError(f"Failed to publish message to topic {topic}: {e}")
 
-    def subscribe(self, topic: str):
+    def subscribe(self, topic: str) -> None:
         """Subscribe to a specified MQTT topic.
 
         Args:
@@ -189,7 +189,7 @@ class MQTT:
         except Exception as e:
             raise RuntimeError(f"Failed to subscribe to topic {topic}: {e}")
 
-    def on_message(self, topic: str, fn: Callable[[mqtt.Client, object, mqtt.MQTTMessage], None]):
+    def on_message(self, topic: str, fn: Callable[[mqtt.Client, object, mqtt.MQTTMessage], None]) -> None:
         """Set the callback function for handling incoming messages on a specific topic.
 
         Args:

@@ -43,13 +43,13 @@ class MotionDetection(EdgeImpulseRunnerFacade):
 
         self._buffer = SlidingWindowBuffer(window_size=model_info.input_features_count, slide_amount=int(model_info.input_features_count))
 
-    def start(self):
+    def start(self) -> None:
         self._buffer.flush()
 
-    def stop(self):
+    def stop(self) -> None:
         self._buffer.flush()
 
-    def on_movement_detection(self, movement: str, callback: callable):
+    def on_movement_detection(self, movement: str, callback: callable) -> None:
         """Register a callback function to be invoked when a specific motion pattern is detected.
 
         Args:
@@ -61,7 +61,7 @@ class MotionDetection(EdgeImpulseRunnerFacade):
                 logger.warning(f"Handler for movement '{movement}' already exists. Overwriting.")
             self._handlers[movement] = callback
 
-    def accumulate_samples(self, accelerometer_samples: tuple[float, float, float]):
+    def accumulate_samples(self, accelerometer_samples: tuple[float, float, float]) -> None:
         """Accumulate accelerometer samples for motion detection.
 
         Args:
@@ -126,7 +126,7 @@ class MotionDetection(EdgeImpulseRunnerFacade):
         return detected_class, detected_class_confidence, classification_dict
 
     @brick.loop
-    def _detection_loop(self):
+    def _detection_loop(self) -> None:
         """Main loop for motion detection, processing sensor data and invoking callbacks when movements are detected."""
         features = self._buffer.pull()
         if features is None or len(features) == 0:

@@ -63,13 +63,13 @@ class GestureRecognition:
         self._ws_send_url = f"ws://{self._host}:5000"
         self._ws_recv_url = f"ws://{self._host}:5001"
 
-    def start(self):
+    def start(self) -> None:
         """Start the capture thread and asyncio event loop."""
         self._executor = ThreadPoolExecutor()
         self._camera.start()
         self._is_running = True
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop all tracking and close connections."""
         self._is_running = False
         self._camera.stop()
@@ -77,7 +77,7 @@ class GestureRecognition:
             self._executor.shutdown(wait=False, cancel_futures=True)
             self._executor = None
 
-    def on_gesture(self, gesture: str, callback: Callable[[dict], None], hand: Literal["left", "right", "both"] = "both"):
+    def on_gesture(self, gesture: str, callback: Callable[[dict], None], hand: Literal["left", "right", "both"] = "both") -> None:
         """
         Register or unregister a gesture callback.
 
@@ -110,7 +110,7 @@ class GestureRecognition:
                 if key not in self._callback_locks:
                     self._callback_locks[key] = threading.Lock()
 
-    def on_enter(self, callback: Callable[[], None]):
+    def on_enter(self, callback: Callable[[], None]) -> None:
         """
         Register a callback for when hands become visible.
 
@@ -124,7 +124,7 @@ class GestureRecognition:
             else:
                 self._callback_locks.pop("enter", None)
 
-    def on_exit(self, callback: Callable[[], None]):
+    def on_exit(self, callback: Callable[[], None]) -> None:
         """
         Register a callback for when hands are no longer visible.
 
@@ -138,7 +138,7 @@ class GestureRecognition:
             else:
                 self._callback_locks.pop("exit", None)
 
-    def on_frame(self, callback: Callable[[np.ndarray], None]):
+    def on_frame(self, callback: Callable[[np.ndarray], None]) -> None:
         """
         Register a callback that receives each camera frame.
 
@@ -149,7 +149,7 @@ class GestureRecognition:
             self._frame_callback = callback
 
     @brick.loop
-    def _capture_loop(self):
+    def _capture_loop(self) -> None:
         """Continuously capture frames from camera (runs in dedicated thread)."""
         try:
             frame = self._camera.capture()
@@ -185,7 +185,7 @@ class GestureRecognition:
                 logger.error(f"Error capturing frame: {e}")
 
     @brick.execute
-    def _send_receive_loop(self):
+    def _send_receive_loop(self) -> None:
         """Run the asyncio event loop in a dedicated thread."""
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -199,7 +199,7 @@ class GestureRecognition:
         finally:
             loop.close()
 
-    async def _send_frames_task(self):
+    async def _send_frames_task(self) -> None:
         """Send frames to the processing container via WebSocket."""
         while self._is_running:
             try:
@@ -220,7 +220,7 @@ class GestureRecognition:
                     logger.error(f"Error in send frames task: {e}. Reconnecting...")
                     await asyncio.sleep(3)
 
-    async def _receive_detections_task(self):
+    async def _receive_detections_task(self) -> None:
         """Receive detection results and dispatch events."""
         while self._is_running:
             try:
@@ -239,7 +239,7 @@ class GestureRecognition:
                     logger.error(f"Error in receive detections task: {e}. Reconnecting...")
                     await asyncio.sleep(3)
 
-    def _process_detection(self, metadata: dict):
+    def _process_detection(self, metadata: dict) -> None:
         """Process detection data and dispatch appropriate events."""
         hands_data = metadata.get("hands", [])
         has_hands = bool(hands_data)
@@ -260,7 +260,7 @@ class GestureRecognition:
             if hand in ("left", "right") and gesture and confidence >= self._confidence:
                 self._dispatch_gesture(gesture, hand, metadata)
 
-    def _dispatch_enter(self):
+    def _dispatch_enter(self) -> None:
         """Dispatch hand enter event."""
         with self._callbacks_lock:
             callback = self._enter_callback
@@ -268,7 +268,7 @@ class GestureRecognition:
         if callback:
             self._submit_callback("enter", callback)
 
-    def _dispatch_exit(self):
+    def _dispatch_exit(self) -> None:
         """Dispatch hand exit event."""
         with self._callbacks_lock:
             callback = self._exit_callback
@@ -276,7 +276,7 @@ class GestureRecognition:
         if callback:
             self._submit_callback("exit", callback)
 
-    def _dispatch_gesture(self, gesture: str, hand: Literal["left", "right"], metadata: dict):
+    def _dispatch_gesture(self, gesture: str, hand: Literal["left", "right"], metadata: dict) -> None:
         """Dispatch gesture event to registered callbacks."""
         with self._callbacks_lock:
             exact_key = (gesture, hand)
@@ -286,7 +286,7 @@ class GestureRecognition:
         for key, callback in keys_and_callbacks:
             self._submit_callback(key, callback, metadata)
 
-    def _submit_callback(self, key: str | tuple, callback: Callable, *args):
+    def _submit_callback(self, key: str | tuple, callback: Callable, *args) -> None:
         """Acquire the per-callback lock and submit callback to the executor.
 
         If the lock is already held (callback still running), the event is discarded.
@@ -298,7 +298,7 @@ class GestureRecognition:
             return
         self._executor.submit(self._run_callback, lock, callback, *args)
 
-    def _run_callback(self, lock: threading.Lock, callback: Callable, *args):
+    def _run_callback(self, lock: threading.Lock, callback: Callable, *args) -> None:
         """Run a callback and release its lock when done."""
         try:
             callback(*args)

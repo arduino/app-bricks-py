@@ -36,7 +36,7 @@ class AudioClassification(AudioDetector):
         """
         super().__init__(mic=mic, confidence=confidence)
 
-    def on_detect(self, class_name: str, callback: Callable[[], None]):
+    def on_detect(self, class_name: str, callback: Callable[[], None]) -> None:
         """Register a callback function to be invoked when a specific class is detected.
 
         Args:
@@ -51,7 +51,7 @@ class AudioClassification(AudioDetector):
         """
         super().on_detect(class_name, callback)
 
-    def start(self):
+    def start(self) -> None:
         """Start real-time audio classification.
 
         Begins capturing audio from the configured microphone and
@@ -59,7 +59,7 @@ class AudioClassification(AudioDetector):
         """
         super().start()
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop real-time audio classification.
 
         Terminates audio capture and releases any associated resources.

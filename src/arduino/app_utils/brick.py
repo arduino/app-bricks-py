@@ -25,7 +25,7 @@ class BrickDecorator:
         original_init = user_class.__init__
 
         @wraps(original_init)
-        def new_init(self, *args, **kwargs):
+        def new_init(self, *args, **kwargs) -> None:
             # We need to import 'app' here to avoid circular dependencies
             import arduino.app_utils.app as app
 

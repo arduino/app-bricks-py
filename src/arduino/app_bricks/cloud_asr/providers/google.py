@@ -113,7 +113,7 @@ class GoogleSpeech:
 
             yield StreamingRecognizeRequest(audio_content=chunk)
 
-    def _asr_worker(self):
+    def _asr_worker(self) -> None:
         """
         ASR worker thread that streams audio to Google Speech and emits transcription events.
 

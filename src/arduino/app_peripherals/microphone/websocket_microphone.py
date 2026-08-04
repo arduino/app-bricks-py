@@ -358,7 +358,7 @@ class WebSocketMicrophone(BaseMicrophone):
         except queue.Empty:
             pass
 
-    async def _disconnect_and_stop(self):
+    async def _disconnect_and_stop(self) -> None:
         """Cleanly disconnect client with goodbye message and stop the server."""
         async with self._client_lock:
             if self._client:
@@ -383,7 +383,7 @@ class WebSocketMicrophone(BaseMicrophone):
         except queue.Empty:
             return None
 
-    async def _send_to_client(self, message: bytes | str, client: websockets.ServerConnection | None = None):
+    async def _send_to_client(self, message: bytes | str, client: websockets.ServerConnection | None = None) -> None:
         """Send a message to the connected client."""
         if isinstance(message, str):
             message = message.encode()

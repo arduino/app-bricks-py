@@ -350,7 +350,7 @@ def list_installed_packages_pkg_resources() -> tuple[dict[str, list[ArduinoBrick
     return checked_paths, services_folder
 
 
-def save_compose_file(module: ArduinoBrick, output_dir: str, appslab_version: str):
+def save_compose_file(module: ArduinoBrick, output_dir: str, appslab_version: str) -> None:
     """Save the compose file to the specified output directory."""
     if not module.require_container:
         return
@@ -386,7 +386,7 @@ def save_compose_file(module: ArduinoBrick, output_dir: str, appslab_version: st
             _update_compose_release_version_by_platform(compose_file_path=output_file_name, release_version=appslab_version)
 
 
-def save_readme_file(module: ArduinoBrick, output_dir: str):
+def save_readme_file(module: ArduinoBrick, output_dir: str) -> None:
     """Save the readme file to the specified output directory."""
     if not module.readme_file:
         return
@@ -406,12 +406,12 @@ def save_readme_file(module: ArduinoBrick, output_dir: str):
             f_dest.write(chunk)
 
 
-def save_api_docs_files(output_dir: str):
+def save_api_docs_files(output_dir: str) -> None:
     """Save the API docs files to the specified output directory."""
     shutil.copytree("docs/", output_dir, dirs_exist_ok=True)
 
 
-def save_services_files(services_folder: str, output_dir: str):
+def save_services_files(services_folder: str, output_dir: str) -> None:
     """Save the services files to the specified output directory."""
     print(f"Saving services files from {services_folder} to {output_dir}...")
     if not services_folder:
@@ -425,7 +425,7 @@ def library_provisioning(
     services_folder: str = None,
     buildtime: bool = False,
     arduino_bricks_version: str = None,
-):
+) -> None:
     print(f"Provisioning compose files. File: {out_path} | Buildtime: {buildtime} | Version: {arduino_bricks_version}")
 
     compose_output_dir = f"{out_path}/compose"
@@ -465,7 +465,7 @@ def library_provisioning(
                     f.write(updated_content)
 
 
-def release():
+def release() -> None:
     discovered_modules, services_folder = list_installed_packages_pkg_resources()
 
     parser = argparse.ArgumentParser(description="Process AppLab modules release.")
@@ -543,7 +543,7 @@ def release():
         print(mod_string)
 
 
-def update_ai_container_references():
+def update_ai_container_references() -> None:
     discovered_modules, services_folder = list_installed_packages_pkg_resources()
 
     parser = argparse.ArgumentParser(description="Update AI container references.")
@@ -578,7 +578,7 @@ def update_ai_container_references():
                 )
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Process AppLab modules.")
 
     parser.add_argument("-p", "--provision-compose", action="store_true", help="Provision compose files for app execution.")

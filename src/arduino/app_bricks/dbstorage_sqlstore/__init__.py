@@ -50,7 +50,7 @@ class SQLStore:
         self.conn = None
         self.conn_lock = threading.RLock()
 
-    def _connect(self):
+    def _connect(self) -> None:
         """Establish a thread-safe connection to the SQLite database.
 
         Sets up the connection with named column access using sqlite3.Row factory
@@ -91,7 +91,7 @@ class SQLStore:
                 self._connect()
             return self.conn
 
-    def start(self):
+    def start(self) -> None:
         """Open the SQLite database connection.
 
         This method establishes the database connection and should be called before
@@ -105,7 +105,7 @@ class SQLStore:
             if not self.conn:
                 self._connect()
 
-    def stop(self):
+    def stop(self) -> None:
         """Close the SQLite database connection.
 
         Raises:
@@ -118,7 +118,7 @@ class SQLStore:
                 except sqlite3.Error as e:
                     raise DBStorageSQLStoreError(f"Error stopping SQLite connection: {e}")
 
-    def create_table(self, table: str, columns: dict[str, str]):
+    def create_table(self, table: str, columns: dict[str, str]) -> None:
         """Create a table in the SQLite database if it does not already exist.
 
         Args:
@@ -145,7 +145,7 @@ class SQLStore:
         except sqlite3.Error as e:
             raise DBStorageSQLStoreError(f"Error creating table {table}: {e}")
 
-    def drop_table(self, table: str):
+    def drop_table(self, table: str) -> None:
         """Remove a table and all its data from the database. This permanently deletes the table and all its data.
 
         Args:
@@ -169,7 +169,7 @@ class SQLStore:
         except sqlite3.Error as e:
             raise DBStorageSQLStoreError(f"Error dropping table {table}: {e}")
 
-    def store(self, table: str, data: dict[str, Any], create_table: bool = True):
+    def store(self, table: str, data: dict[str, Any], create_table: bool = True) -> None:
         """Store data in the specified table with automatic table creation. By default, it creates the table if it doesn't exist.
 
         Args:
@@ -267,7 +267,7 @@ class SQLStore:
                 return []
             raise DBStorageSQLStoreError(f"Error reading data from {table}: {e}")
 
-    def update(self, table: str, data: dict[str, Any], condition: str | None = ""):
+    def update(self, table: str, data: dict[str, Any], condition: str | None = "") -> None:
         """Update data or records in the specified table.
 
         Args:
@@ -297,7 +297,7 @@ class SQLStore:
         except sqlite3.Error as e:
             raise DBStorageSQLStoreError(f"Error updating data in {table}: {e}")
 
-    def delete(self, table: str, condition: str | None = ""):
+    def delete(self, table: str, condition: str | None = "") -> None:
         """Delete data from the specified table. If no condition is provided, this will delete ALL records from the table.
 
         Args:
@@ -361,7 +361,7 @@ class SQLStore:
         except sqlite3.Error as e:
             raise DBStorageSQLStoreError(f"Error executing SQL command: {e}")
 
-    def create_or_replace_table(self, table: str, columns: dict[str, str], force_drop_table: bool = False):
+    def create_or_replace_table(self, table: str, columns: dict[str, str], force_drop_table: bool = False) -> None:
         """Create or update a table in the SQLite database to match the provided schema.
 
         All schema changes (adding/removing/changing columns) are performed within a single transaction.

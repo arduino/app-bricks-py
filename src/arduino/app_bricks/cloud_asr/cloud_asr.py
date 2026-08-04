@@ -85,14 +85,14 @@ class CloudASR:
         self._active_session_lock = threading.Lock()
         self._active_session: SessionInfo | None = None
 
-    def start(self):
+    def start(self) -> None:
         """Start the ASR service by initializing the microphone."""
         self._shutdown.clear()
         # Not guarded for retrocompatibility, but generally if the mic is externally
         # managed it should also be externally started
         self._mic.start()
 
-    def stop(self):
+    def stop(self) -> None:
         """
         Stop the ASR service: signal in-flight transcriptions and release
         the mic if owned.
@@ -257,7 +257,7 @@ class CloudASR:
         """
         messages: queue.Queue[ASRProviderEvent | BaseException] = queue.Queue()
 
-        def _send():
+        def _send() -> None:
             try:
                 for chunk in self._mic.stream():
                     if session.cancelled.is_set() or self._shutdown.is_set():
@@ -274,7 +274,7 @@ class CloudASR:
 
         partial_buffer = ""
 
-        def _recv():
+        def _recv() -> None:
             nonlocal partial_buffer
             try:
                 while not session.cancelled.is_set() and not self._shutdown.is_set():

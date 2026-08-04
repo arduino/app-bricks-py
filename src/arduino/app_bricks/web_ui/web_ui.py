@@ -122,7 +122,7 @@ class WebUI:
         """
         return f"{self._protocol}://{os.getenv('HOST_IP') or self._addr}:{self._port}"
 
-    def start(self):
+    def start(self) -> None:
         """Start the web server asynchronously.
 
         This sets up static file routing and WebSocket event handlers, configures TLS if enabled, and launches the server using Uvicorn.
@@ -153,7 +153,7 @@ class WebUI:
 
         self._server = uvicorn.Server(config)
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop the web server gracefully.
 
         Waits up to 5 seconds for current requests to finish before terminating.
@@ -162,7 +162,7 @@ class WebUI:
         if self._server:
             self._server.should_exit = True  # Ask to stop the server
 
-    def execute(self):
+    def execute(self) -> None:
         logger.debug(f"Serving static web files from {self._assets_dir_path}")
         if self._use_tls:
             logger.debug(f"Using TLS certificates from {self._certs_dir_path}")
@@ -180,7 +180,7 @@ class WebUI:
         except Exception as e:
             logger.exception(f"Error running server: {e}")
 
-    def expose_api(self, method: str, path: str, function: Callable):
+    def expose_api(self, method: str, path: str, function: Callable) -> None:
         """Register a route with the specified HTTP method and path.
 
         The path will be prefixed with the api_path_prefix configured during initialization.
@@ -192,7 +192,7 @@ class WebUI:
         """
         self.app.add_api_route(self._api_path_prefix + path, function, methods=[method])
 
-    def expose_camera(self, path: str, camera: BaseCamera, jpeg_quality: int = 80):
+    def expose_camera(self, path: str, camera: BaseCamera, jpeg_quality: int = 80) -> None:
         """
         Expose a camera stream at the specified URL path in MJPEG format.
 
@@ -230,7 +230,7 @@ class WebUI:
 
         self.expose_api("GET", path, stream_route)
 
-    def on_connect(self, callback: Callable[[str], None]):
+    def on_connect(self, callback: Callable[[str], None]) -> None:
         """Register a callback for WebSocket connection events.
 
         The callback should accept a single argument: the session ID (sid) of the connected client.
@@ -241,7 +241,7 @@ class WebUI:
         """
         self._on_connect_cb = callback
 
-    def on_disconnect(self, callback: Callable[[str], None]):
+    def on_disconnect(self, callback: Callable[[str], None]) -> None:
         """Register a callback for WebSocket disconnection events.
 
         The callback should accept a single argument: the session ID (sid) of the disconnected client.
@@ -252,7 +252,7 @@ class WebUI:
         """
         self._on_disconnect_cb = callback
 
-    def on_message(self, message_type: str, callback: Callable[[str, Any], Any]):
+    def on_message(self, message_type: str, callback: Callable[[str, Any], Any]) -> None:
         """Register a callback function for a specific WebSocket message type received by clients.
 
         The client should send messages named as message_type for this callback to be triggered.
@@ -272,7 +272,7 @@ class WebUI:
             self._on_message_cbs[message_type] = callback
         logger.debug(f"Registered listener for message '{message_type}'")
 
-    def send_message(self, message_type: str, message: dict | str, room: str | None = None):
+    def send_message(self, message_type: str, message: dict | str, room: str | None = None) -> None:
         """Send a message to connected WebSocket clients.
 
         Args:
@@ -291,14 +291,14 @@ class WebUI:
         except Exception as e:
             logger.exception(f"Failed to send WebSocket message '{message_type}': {e}")
 
-    async def _on_startup(self):
+    async def _on_startup(self) -> None:
         """
         This function is called by uvicorn when the server starts up, it is necessary to capture the running
         asyncio event loop and reuse it later for emitting socket.io events as it requires an asyncio context.
         """
         self._server_loop = asyncio.get_running_loop()
 
-    def _init_static_routes(self):
+    def _init_static_routes(self) -> None:
         from .cache import NonCachedStaticFiles
 
         url_path = self._ui_path_prefix.removesuffix("/") + "/"
@@ -310,9 +310,9 @@ class WebUI:
         )
         self.app.mount(url_path, NonCachedStaticFiles(directory=self._assets_dir_path, html=True), name="static")
 
-    def _init_socketio(self):
+    def _init_socketio(self) -> None:
         @self.sio.on("connect")
-        async def handle_connect(sid: str, environ: dict, auth: str):
+        async def handle_connect(sid: str, environ: dict, auth: str) -> None:
             logger.debug(f"Client connected: {sid}")
             if self._on_connect_cb:
                 try:
@@ -321,7 +321,7 @@ class WebUI:
                     logger.exception(f"Error in 'on_connect' callback for {sid}: {e}")
 
         @self.sio.on("disconnect")
-        async def handle_disconnect(sid: str, reason: str):
+        async def handle_disconnect(sid: str, reason: str) -> None:
             logger.debug(f"Client disconnected ({reason}): {sid}")
             if self._on_disconnect_cb:
                 try:
@@ -330,17 +330,17 @@ class WebUI:
                     logger.exception(f"Error in 'on_disconnect' callback for {sid}: {e}")
 
         @self.sio.on("enter_room")
-        async def handle_enter_room(sid: str, room: str):
+        async def handle_enter_room(sid: str, room: str) -> None:
             logger.debug(f"Client {sid} entering room {room}")
             await self.sio.enter_room(sid, room)
 
         @self.sio.on("leave_room")
-        async def handle_leave_room(sid: str, room: str):
+        async def handle_leave_room(sid: str, room: str) -> None:
             logger.debug(f"Client {sid} leaving room {room}")
             await self.sio.leave_room(sid, room)
 
         @self.sio.on("*")
-        async def handle_generic_event(event: str, sid: str, data: dict):
+        async def handle_generic_event(event: str, sid: str, data: dict) -> None:
             """Handles generic messages from clients intended for the registered callbacks."""
             logger.debug(f"Received event'{event}' from {sid} containing: {data}")
 
@@ -349,7 +349,7 @@ class WebUI:
 
             if callback:
 
-                async def run_callback_async():
+                async def run_callback_async() -> None:
                     try:
                         # Assuming the callback expects the payload as its argument
                         result = await asyncio.to_thread(callback, sid, data)

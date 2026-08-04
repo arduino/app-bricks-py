@@ -78,15 +78,15 @@ class CameraCodeDetection:
 
         self.already_seen_codes = set()
 
-    def start(self):
+    def start(self) -> None:
         """Start the detector and begin scanning for codes."""
         self._camera.start()
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop the detector and release resources."""
         self._camera.stop()
 
-    def on_detect(self, callback: Callable[[Image, list[Detection]], None] | Callable[[Image, Detection], None] | None):
+    def on_detect(self, callback: Callable[[Image, list[Detection]], None] | Callable[[Image, Detection], None] | None) -> None:
         """Registers or removes a callback to be triggered on code detection.
 
         When a QR code or barcode is detected in the camera feed, the provided callback function will be invoked.
@@ -120,7 +120,7 @@ class CameraCodeDetection:
                 if len(params) >= 2 and params[1].annotation == list[Detection]:
                     self._on_detect_cb_expects_list = True
 
-    def on_frame(self, callback: Callable[[Image], None] | None):
+    def on_frame(self, callback: Callable[[Image], None] | None) -> None:
         """Registers a callback function to be called when a new camera frame is captured.
 
         The callback function should accept the Image frame.
@@ -132,7 +132,7 @@ class CameraCodeDetection:
         """
         self._on_frame_cb = callback
 
-    def on_error(self, callback: Callable[[Exception], None] | None):
+    def on_error(self, callback: Callable[[Exception], None] | None) -> None:
         """Registers a callback function to be called when an error occurs in the detector.
 
         The callback function should accept the exception as an argument.
@@ -144,7 +144,7 @@ class CameraCodeDetection:
         """
         self._on_error_cb = callback
 
-    def loop(self):
+    def loop(self) -> None:
         """Main loop to capture frames and detect codes."""
         try:
             frame = self._camera.capture()
@@ -162,7 +162,7 @@ class CameraCodeDetection:
         detections = self._scan_frame(gs_frame)
         self._on_detect(pil_frame, detections)
 
-    def _on_frame(self, frame: Image):
+    def _on_frame(self, frame: Image) -> None:
         if self._on_frame_cb:
             try:
                 self._on_frame_cb(frame)
@@ -198,7 +198,7 @@ class CameraCodeDetection:
 
         return detections
 
-    def _on_detect(self, frame: Image, detections: list[Detection]):
+    def _on_detect(self, frame: Image, detections: list[Detection]) -> None:
         with self._on_detect_cb_lock:
             if self._on_detect_cb and len(detections) > 0:
                 try:
@@ -211,7 +211,7 @@ class CameraCodeDetection:
                     logger.error(f"Failed to run on_detect callback: {e}")
                     self._on_error(e)
 
-    def _on_error(self, exception: Exception):
+    def _on_error(self, exception: Exception) -> None:
         if self._on_error_cb:
             try:
                 self._on_error_cb(exception)

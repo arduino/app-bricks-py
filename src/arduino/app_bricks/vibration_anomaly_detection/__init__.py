@@ -115,7 +115,7 @@ class VibrationAnomalyDetection(EdgeImpulseRunnerFacade):
         if not self._buffer.push(chunk):
             logger.debug(f"Samples not pushed to the buffer. Buffer is full or has insufficient capacity.")
 
-    def on_anomaly(self, callback: callable):
+    def on_anomaly(self, callback: callable) -> None:
         """Register a handler to be invoked when an anomaly is detected.
 
         The callback signature can be one of:
@@ -139,7 +139,7 @@ class VibrationAnomalyDetection(EdgeImpulseRunnerFacade):
         finally:
             self._handler_lock.release()
 
-    def loop(self):
+    def loop(self) -> None:
         """Non-blocking processing step; run this periodically.
 
         Behavior:
@@ -196,7 +196,7 @@ class VibrationAnomalyDetection(EdgeImpulseRunnerFacade):
             logger.error(f"Error {e}")
             time.sleep(1)  # Sleep briefly to avoid tight loop in case of errors
 
-    def start(self):
+    def start(self) -> None:
         """Prepare the detector for a new session.
 
         Notes:
@@ -205,7 +205,7 @@ class VibrationAnomalyDetection(EdgeImpulseRunnerFacade):
         """
         self._buffer.flush()
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop the detector and release transient resources.
 
         Notes:
@@ -213,7 +213,7 @@ class VibrationAnomalyDetection(EdgeImpulseRunnerFacade):
         """
         self._clear()
 
-    def _clear(self):
+    def _clear(self) -> None:
         """Internal helper: flush the sensor data buffer and log the action.
 
         Notes:

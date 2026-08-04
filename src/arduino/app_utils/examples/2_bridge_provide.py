@@ -22,7 +22,7 @@ def subtract_numbers(a: int, b: int):
 
 
 @provide()
-def print_result(message: str):
+def print_result(message: str) -> None:
     """Prints a text message."""
     print(f"'print_result' called with: {message}")
 

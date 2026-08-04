@@ -56,7 +56,7 @@ class AudioDetector(EdgeImpulseRunnerFacade):
         self.handlers = {}  # Dictionary to hold handlers for different keywords
         self.handlers_lock = threading.Lock()
 
-    def on_detect(self, keyword: str, callback: Callable[[], None]):
+    def on_detect(self, keyword: str, callback: Callable[[], None]) -> None:
         """Register a callback function to be invoked when a specific keyword is detected.
 
         Args:
@@ -79,11 +79,11 @@ class AudioDetector(EdgeImpulseRunnerFacade):
                 logger.warning(f"Handler for keyword '{keyword}' already exists. Overwriting.")
             self.handlers[keyword] = callback
 
-    def start(self):
+    def start(self) -> None:
         self._buffer.flush()
         self._mic.start()
 
-    def stop(self):
+    def stop(self) -> None:
         self._mic.stop()
         self._buffer.flush()
 
@@ -122,7 +122,7 @@ class AudioDetector(EdgeImpulseRunnerFacade):
         return best_matched_keyword, best_matched_keyword_confidence
 
     @brick.loop
-    def _read_mic_loop(self):
+    def _read_mic_loop(self) -> None:
         try:
             for chunk in self._mic.stream():
                 if chunk is None:
@@ -135,7 +135,7 @@ class AudioDetector(EdgeImpulseRunnerFacade):
             raise
 
     @brick.loop
-    def _inference_loop(self):
+    def _inference_loop(self) -> None:
         now = time.time()
         # If in debounce period, skip the inference
         if hasattr(self, "_debounce_until") and now < self._debounce_until:

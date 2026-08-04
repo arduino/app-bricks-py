@@ -17,7 +17,7 @@ class FolderWatcher:
     def wait_for_event(self):
         return self._handler.wait_for_event()
 
-    def start(self):
+    def start(self) -> None:
         self._observer.schedule(self._handler, self._path, recursive=True)
         self._observer.start()
 
@@ -27,7 +27,7 @@ class FolderWatcher:
         except Exception:
             return None
 
-    def stop(self):
+    def stop(self) -> None:
         self._observer.stop()
         self._observer.join()
 
@@ -37,7 +37,7 @@ class FolderEventHandler(PatternMatchingEventHandler):
         super().__init__(**kwargs)
         self.queue = queue.Queue()
 
-    def on_created(self, event):
+    def on_created(self, event) -> None:
         try:
             with open(event.src_path, "rb") as file:
                 file_contents = file.read()
@@ -49,7 +49,7 @@ class FolderEventHandler(PatternMatchingEventHandler):
     def wait_for_event(self):
         return self.queue.get()
 
-    def stop(self):
+    def stop(self) -> None:
         while not self.queue.empty():
             try:
                 self.queue.get_nowait()

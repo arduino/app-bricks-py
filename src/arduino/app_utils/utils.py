@@ -6,7 +6,7 @@ import inspect
 import os
 
 
-def _has_callable_method(obj_or_cls, method_name):
+def _has_callable_method(obj_or_cls, method_name) -> bool:
     """Checks if an object or class has a callable method with the correct signature.
     The method must only accept the `self` parameter.
     This function correctly handles both bound methods (on instances) and

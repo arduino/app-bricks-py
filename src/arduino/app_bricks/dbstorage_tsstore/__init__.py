@@ -60,7 +60,7 @@ class _InfluxDBHandler:
         self.client: InfluxDBClient = None
         self.retention_days = retention_days
 
-    def start(self):
+    def start(self) -> None:
         """Establish a connection to the InfluxDB server.
 
         This method creates the InfluxDB client connection, initializes write and query APIs,
@@ -83,7 +83,7 @@ class _InfluxDBHandler:
         except Exception as e:
             raise TimeSeriesStoreError(f"Error connecting to InfluxDB: {e}") from e
 
-    def stop(self):
+    def stop(self) -> None:
         """Close the InfluxDB database connection.
 
         Properly closes the client connection and releases associated resources.
@@ -162,7 +162,7 @@ class TimeSeriesStore(_InfluxDBHandler):
         """
         super().__init__(host, port, retention_days)
 
-    def write_sample(self, measure: str, value: Any, ts: int = 0, measurement_name: str = "arduino"):
+    def write_sample(self, measure: str, value: Any, ts: int = 0, measurement_name: str = "arduino") -> None:
         """Write a time series sample to the InfluxDB database.
 
         Stores a single data point with the specified measurement field, value, and timestamp.

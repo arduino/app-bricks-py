@@ -42,5 +42,5 @@ class Logger(logging.Logger):
         self.info(msg)
         return msg
 
-    def consume(self, msg):
+    def consume(self, msg) -> None:
         self.info(msg)

@@ -25,7 +25,7 @@ class AsyncBrickAdapter:
         self.rate_limit = rate_limit
         self._loop: asyncio.AbstractEventLoop | None = None
 
-    def set_loop(self, loop: asyncio.AbstractEventLoop):
+    def set_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         self._loop = loop
 
     async def start(self):
@@ -94,7 +94,7 @@ class AsyncBlockingSourceAdapter(AsyncBrickAdapter):
         self._stop_event = threading.Event()
         self._producer_thread: threading.Thread | None = None
 
-    async def start(self):
+    async def start(self) -> None:
         """Start the original brick and the internal blocking producer thread."""
         await super().start()
 
@@ -112,7 +112,7 @@ class AsyncBlockingSourceAdapter(AsyncBrickAdapter):
             self._producer_thread.start()
             logger.debug(f"Started internal producer thread for {type(self.original_brick).__name__}")
 
-    async def stop(self):
+    async def stop(self) -> None:
         """Signal the producer thread and the original brick to stop."""
         # Signal producer thread to stop and unblock consumer task
         self.unblock_producer()
@@ -124,7 +124,7 @@ class AsyncBlockingSourceAdapter(AsyncBrickAdapter):
         # Stop the original brick using base class method (will run in executor)
         await super().stop()
 
-    def unblock_producer(self):
+    def unblock_producer(self) -> None:
         """Signals the producer thread and injects sentinel to unblock consumer."""
         if not self._stop_event.is_set() and self._producer_thread and self._producer_thread.is_alive():
             logger.debug(f"Adapter for {type(self.original_brick).__name__}: signaling stop event and injecting sentinel.")
@@ -166,7 +166,7 @@ class AsyncBlockingSourceAdapter(AsyncBrickAdapter):
 
     # TODO: we can probably avoid propagating the _SHUTDOWN sentinel and simply return.
     # self._producer_thread.is_alive() in produce() should take care of this situation.
-    def _producer_loop(self):
+    def _producer_loop(self) -> None:
         """Target for the internal daemon thread. Transfers data from the blocking produce method to the async one."""
         try:
             while not self._stop_event.is_set():

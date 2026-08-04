@@ -226,7 +226,7 @@ class TelegramBot:
             Async handler compatible with python-telegram-bot
         """
 
-        async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             sender = Sender(
                 chat_id=update.message.chat_id,
                 user_id=update.effective_user.id,
@@ -262,7 +262,7 @@ class TelegramBot:
             Async handler compatible with python-telegram-bot
         """
 
-        async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             sender = Sender(
                 chat_id=update.message.chat_id,
                 user_id=update.effective_user.id,
@@ -871,7 +871,7 @@ class TelegramBot:
         if task_id is None:
             task_id = f"schedule_{chat_id}_{int(time.time())}"
 
-        def send_and_reschedule():
+        def send_and_reschedule() -> None:
             """Send message and schedule next occurrence."""
             if not self._running:
                 return
@@ -926,7 +926,7 @@ class TelegramBot:
         # Only register /start if user hasn't defined custom handler
         if "start" not in self._commands_registry:
 
-            async def builtin_start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+            async def builtin_start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 """Built-in handler for /start command."""
                 user = update.effective_user
                 chat_id = update.message.chat_id
@@ -960,7 +960,7 @@ class TelegramBot:
             logger.info("Registered built-in /start command handler")
 
         # Always register my_chat_member handler to detect unblock events
-        async def my_chat_member_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        async def my_chat_member_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             """Handler for my_chat_member updates (bot blocked/unblocked)."""
             chat_member_update = update.my_chat_member
 

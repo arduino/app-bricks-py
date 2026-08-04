@@ -301,7 +301,7 @@ class BaseCamera(ABC):
         """Check if the camera has been started."""
         return self._is_started
 
-    def on_status_changed(self, callback: Callable[[str, dict], None] | None):
+    def on_status_changed(self, callback: Callable[[str, dict], None] | None) -> None:
         """Registers or removes a callback to be triggered on camera lifecycle events.
 
         When a camera status changes, the provided callback function will be invoked.
@@ -329,7 +329,7 @@ class BaseCamera(ABC):
             self._on_status_changed_cb = None
         else:
 
-            def _callback_wrapper(new_status: str, data: dict):
+            def _callback_wrapper(new_status: str, data: dict) -> None:
                 try:
                     callback(new_status, data)
                 except Exception as e:

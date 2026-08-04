@@ -290,7 +290,7 @@ def parse_docker_compose_variable(variable_string) -> list[tuple[str, str]] | st
         return variable_string
 
 
-def _accumulate_docker_compose_variables(discovered_vars, value):
+def _accumulate_docker_compose_variables(discovered_vars, value) -> None:
     if isinstance(value, str):
         tp = parse_docker_compose_variable(value)
         if tp and isinstance(tp, list):
@@ -432,7 +432,7 @@ def _update_compose_release_version_by_platform(
     append_suffix: bool = False,
     only_ai_containers: bool = False,
     registry: str = None,
-):
+) -> None:
     """Update all compose files that are present in the same directory of the provided compose_file_path.
     For examples, alongside brick_compose.yaml, if there are brick_compose.ventunoq.yaml and brick_compose.unoq.yaml,
     they will be updated as well with the same release version.

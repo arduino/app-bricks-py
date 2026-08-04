@@ -80,11 +80,11 @@ class USBCamera:
             return None
         return frame.tobytes()
 
-    def start(self):
+    def start(self) -> None:
         """Starts the camera capture."""
         self._wrapped_camera.start()
 
-    def stop(self):
+    def stop(self) -> None:
         """Stops the camera and releases its resources."""
         self._wrapped_camera.stop()
 

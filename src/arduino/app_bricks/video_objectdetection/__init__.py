@@ -93,7 +93,7 @@ class VideoObjectDetection:
         self._uri = f"ws://{self._host}:4912"
         logger.info(f"[{self.__class__.__name__}] Host: {self._host} - URL: {self._uri}")
 
-    def on_detect(self, object: str, callback: Callable[[], None]):
+    def on_detect(self, object: str, callback: Callable[[], None]) -> None:
         """Register a callback invoked when a **specific label** is detected.
 
         Args:
@@ -112,7 +112,7 @@ class VideoObjectDetection:
                 logger.warning(f"Handler for object '{object}' already exists. Overwriting.")
             self._handlers[object] = callback
 
-    def on_detect_all(self, callback: Callable[[dict], None]):
+    def on_detect_all(self, callback: Callable[[dict], None]) -> None:
         """Register a callback invoked for **every detection event**.
 
         This is useful to receive a consolidated dictionary of detections for each frame.
@@ -131,19 +131,19 @@ class VideoObjectDetection:
         with self._handlers_lock:
             self._handlers[self.ALL_HANDLERS_KEY] = callback
 
-    def start(self):
+    def start(self) -> None:
         """Start the video object detection process."""
         self._camera.start()
         self._is_running.set()
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop the video object detection process and release resources."""
         self._is_running.clear()
         self._camera.stop()
         self._executor.shutdown(wait=False, cancel_futures=True)
 
     @brick.execute
-    def object_detection_loop(self):
+    def object_detection_loop(self) -> None:
         """Object detection main loop.
 
         Maintains WebSocket connection to the model runner and processes object detection messages.
@@ -180,7 +180,7 @@ class VideoObjectDetection:
                 time.sleep(2)
 
     @brick.execute
-    def camera_loop(self):
+    def camera_loop(self) -> None:
         """Camera main loop.
 
         Captures images from the camera and forwards them over the TCP connection.
@@ -223,7 +223,7 @@ class VideoObjectDetection:
                 logger.exception(f"Unexpected error in TCP loop: {e}")
                 time.sleep(2)
 
-    def _process_message(self, ws: Connection, message: str):
+    def _process_message(self, ws: Connection, message: str) -> None:
         jmsg = json.loads(message)
         if jmsg.get("type") == "hello":
             # Parse hello message to extract model info if needed
@@ -344,7 +344,7 @@ class VideoObjectDetection:
                 self._detection_locks[detection] = threading.Lock()
             return self._detection_locks[detection]
 
-    def _execute_handler(self, key: str, payload: dict | None = None, frame: bytes | None = None):
+    def _execute_handler(self, key: str, payload: dict | None = None, frame: bytes | None = None) -> None:
         """Execute the handler registered for the given key.
 
         Args:
@@ -373,7 +373,7 @@ class VideoObjectDetection:
             detection_lock.release()
             return
 
-        def _run():
+        def _run() -> None:
             try:
                 logger.debug(f"Detected: {key}, invoking handler.")
                 sig_args = inspect.signature(handler).parameters
@@ -393,13 +393,13 @@ class VideoObjectDetection:
             # Executor was shut down before the task could be submitted
             detection_lock.release()
 
-    def _send_ws_message(self, ws: Connection, message: dict):
+    def _send_ws_message(self, ws: Connection, message: dict) -> None:
         try:
             ws.send(json.dumps(message))
         except Exception as e:
             logger.error(f"Failed to send message over WebSocket: {e}")
 
-    def override_threshold(self, value: float):
+    def override_threshold(self, value: float) -> None:
         """Override the threshold for object detection model.
 
         Args:
@@ -412,7 +412,7 @@ class VideoObjectDetection:
         with connect(self._uri) as ws:
             self._override_threshold(ws, value)
 
-    def _override_threshold(self, ws: Connection, value: float):
+    def _override_threshold(self, ws: Connection, value: float) -> None:
         """Override the threshold for object detection model.
 
         Args:
@@ -443,7 +443,7 @@ class VideoObjectDetection:
         # Update local confidence value
         self._confidence = value
 
-    def _toogle_camera_preview(self, ws: Connection, enabled: bool):
+    def _toogle_camera_preview(self, ws: Connection, enabled: bool) -> None:
         """Toggle the camera preview on the model runner's web server.
 
         Args:

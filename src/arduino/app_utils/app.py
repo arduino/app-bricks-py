@@ -10,6 +10,7 @@ import time
 
 from .utils import _has_callable_method, _brick_name
 from .logger import Logger
+from typing import Never
 
 logger = Logger("App")
 
@@ -34,7 +35,7 @@ class AppController:
         self._app_lock = threading.Lock()
         self._running = False
 
-    def register(self, brick):
+    def register(self, brick) -> None:
         """Registers a brick for being managed automatically by the AppController.
 
         If the brick is not running, it will be auto-started when App.run() will be called.
@@ -48,7 +49,7 @@ class AppController:
                 self._waiting_queue.append(brick)
                 logger.debug(f"Registered brick '{_brick_name(brick)}' to start on next App.run().")
 
-    def unregister(self, brick):
+    def unregister(self, brick) -> None:
         """Unregisters a brick from being managed automatically by the AppController.
 
         If the brick is not running, it won't be auto-started anymore when App.run() will be called.
@@ -62,7 +63,7 @@ class AppController:
                 self._waiting_queue.remove(brick)
                 logger.debug(f"Unregistered brick '{_brick_name(brick)}' from starting on next App.run().")
 
-    def start_bricks(self):
+    def start_bricks(self) -> None:
         """Starts the application and all registered bricks.
 
         Use this method if you don't want to block the main thread and handle it as you wish.
@@ -71,7 +72,7 @@ class AppController:
         """
         self._start_managed_bricks()
 
-    def start_brick(self, brick):
+    def start_brick(self, brick) -> None:
         """Immediately starts a single brick and all its runnable methods.
 
         This brick should be manually managed by the user by calling App.stop_brick().
@@ -81,16 +82,16 @@ class AppController:
         with self._app_lock:
             self._start(brick)
 
-    def stop_bricks(self):
+    def stop_bricks(self) -> None:
         """Stops the application and all running bricks."""
         self._stop_all_bricks()
 
-    def stop_brick(self, brick):
+    def stop_brick(self, brick) -> None:
         """Immediately stops a single running brick."""
         with self._app_lock:
             self._stop(brick)
 
-    def run(self, user_loop: callable = None):
+    def run(self, user_loop: callable = None) -> None:
         """Starts all registered bricks and keeps the main thread alive, waiting for a shutdown signal (Ctrl+C).
 
         If a user_loop callable is provided, it will be executed instead of the default infinite loop.
@@ -120,7 +121,7 @@ class AppController:
         if exit_code:
             sys.exit(exit_code)
 
-    def _shutdown(self):
+    def _shutdown(self) -> None:
         """Performs a clean shutdown of all bricks."""
         if not self._running:
             return
@@ -169,7 +170,7 @@ class AppController:
             def __init__(self, signum) -> None:
                 self.signum = signum
 
-        def handle_signal(signum, frame):
+        def handle_signal(signum, frame) -> Never:
             raise SignalReceived(signum)
 
         if threading.current_thread() is threading.main_thread():
@@ -195,14 +196,14 @@ class AppController:
             logger.exception("Unhandled exception in application loop")
             return 1
 
-    def _start_managed_bricks(self):
+    def _start_managed_bricks(self) -> None:
         with self._app_lock:
             while self._waiting_queue:
                 brick = self._waiting_queue.popleft()
                 self._start(brick)
         logger.debug("All managed bricks started")
 
-    def _stop_all_bricks(self):
+    def _stop_all_bricks(self) -> None:
         with self._app_lock:
             bricks_to_stop = list(self._running_queue)
             for brick in reversed(bricks_to_stop):
@@ -234,7 +235,7 @@ class AppController:
 
         return methods
 
-    def _start(self, brick):
+    def _start(self, brick) -> None:
         """Starts a single brick and its worker threads. Must be called while holding _app_lock."""
         if brick in self._running_queue:
             # TODO: we should raise an exception here
@@ -269,7 +270,7 @@ class AppController:
             # TODO: we should raise an exception here
             logger.exception(f"Failed to start brick '{_brick_name(brick)}': {e}")
 
-    def _stop(self, brick):
+    def _stop(self, brick) -> None:
         """Stops a single brick and its worker threads. Must be called while holding _app_lock."""
         if brick not in self._running_queue:
             # TODO: we should raise an exception here
@@ -299,7 +300,7 @@ class AppController:
 
         logger.debug(f"Brick '{_brick_name(brick)}' stopped successfully")
 
-    def _method_runner(self, brick, method, method_type, brick_is_running):
+    def _method_runner(self, brick, method, method_type, brick_is_running) -> None:
         """Target function for worker threads, running a brick's method."""
         try:
             if method_type == "execute":

@@ -16,7 +16,7 @@ class AsyncRateLimiter:
         self._lock = asyncio.Lock()
         self._last_call_time = 0.0
 
-    async def wait(self):
+    async def wait(self) -> None:
         """Wait if necessary to maintain the desired rate."""
         async with self._lock:
             current_time = time.monotonic()

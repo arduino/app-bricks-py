@@ -178,7 +178,7 @@ class CloudObject:
             super().__setattr__(attr, value)
 
     # ── transport binding ─────────────────────────────────────────────────────
-    def bind(self, push):
+    def bind(self, push) -> None:
         """Wire the daemon push callback into every scalar leaf of this object."""
         if self.is_complex:
             for sub in self._value.values():
@@ -193,7 +193,7 @@ class CloudObject:
         return [self]
 
     # ── local (device → cloud) changes ─────────────────────────────────────────
-    def set_local(self, value: Any):
+    def set_local(self, value: Any) -> None:
         """Record a value set by the application; it is published by ``pump()``.
 
         This no longer publishes directly: the outbound value is sent by the
@@ -220,7 +220,7 @@ class CloudObject:
         self._has_local_source = True
         self._dirty = True  # pump() publishes it per policy (skipped while pending)
 
-    def _do_push(self, now: float):
+    def _do_push(self, now: float) -> None:
         """Publish the current value to the cloud now and update publish state.
 
         The single low-level send used by both the loop's ``pump()`` (policy
@@ -234,7 +234,7 @@ class CloudObject:
         self._has_pushed_once = True
         self._dirty = False
 
-    def pump(self, now: float, interval: float):
+    def pump(self, now: float, interval: float) -> None:
         """Publish the local value to the cloud per the update policy.
 
         Called from the brick loop for each scalar leaf. ``interval`` is the
@@ -262,7 +262,7 @@ class CloudObject:
             if self._has_local_source and (now - self._last_push_ts) >= interval:
                 self._do_push(now)
 
-    def _warn_local_only(self, now: float):
+    def _warn_local_only(self, now: float) -> None:
         """Warn that a local change cannot be synced because no thing is assigned.
 
         Called from ``pump`` while ``_pending``. Fires only on a real local change
@@ -326,7 +326,7 @@ class CloudObject:
         self._dirty = False  # cloud value adopted; discard any pending local push
         return True
 
-    def apply_missing(self):
+    def apply_missing(self) -> None:
         """Resolve a ``lastvalue_missing`` sync frame: the cloud has no stored
         value for this variable, so the local value wins and is pushed up so the
         cloud converges. Applies to every sync policy. No-op if there is no local
@@ -336,7 +336,7 @@ class CloudObject:
             self._do_push(_now())
 
     # ── loop execution ─────────────────────────────────────────────────────────
-    def run_sync(self, client):
+    def run_sync(self, client) -> None:
         """Run this object's device→cloud callbacks once (called from the brick
         loop every ``interval`` seconds).
 
@@ -351,7 +351,7 @@ class CloudObject:
         if self.on_read is not None:
             self.set_local(self.on_read(client))
 
-    def fire_on_write(self, client):
+    def fire_on_write(self, client) -> None:
         """Invoke this object's ``on_write`` callback with the current value.
 
         Called synchronously from the SSE handler the moment a cloud update is
@@ -398,7 +398,7 @@ class Schedule(CloudObject):
     def _initialized(self) -> bool:
         return all(sub.value is not None for sub in self._value.values())
 
-    def _on_run(self, client, args=None):
+    def _on_run(self, client, args=None) -> None:
         if not self._initialized():
             return
         ts = int(_now()) + (client.get("tz_offset", 0) if client is not None else 0)

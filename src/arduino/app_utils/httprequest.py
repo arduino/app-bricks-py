@@ -89,7 +89,7 @@ class HttpClient:
             logger.error(f"Request failed after all retries: {e}")
             return None
 
-    def close(self):
+    def close(self) -> None:
         """Close the HTTP session."""
         self.__http_session.close()
         logger.debug("HTTP session closed.")

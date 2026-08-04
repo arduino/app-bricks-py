@@ -61,7 +61,7 @@ class ReplayProtection:
 
         return True
 
-    def _prune(self, now: int):
+    def _prune(self, now: int) -> None:
         # Remove expired entries
         expired_keys = [k for k, v in self.cache.items() if now > v]
         for k in expired_keys:

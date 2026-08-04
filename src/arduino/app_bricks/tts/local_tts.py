@@ -87,17 +87,17 @@ class TextToSpeech:
         self._active_session_lock = threading.Lock()
         self._cancelled: threading.Event | None = None
 
-    def start(self):
+    def start(self) -> None:
         """Start the TextToSpeech brick by initializing the speaker."""
         self._speaker.start()
         self._warmup()
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop the TextToSpeech brick by stopping the speaker."""
         self.cancel()
         self._speaker.stop()
 
-    def cancel(self):
+    def cancel(self) -> None:
         """Cancel active speech playback, if any, without stopping the speaker."""
         cancelled = self._cancelled
         if cancelled is None:
@@ -107,7 +107,7 @@ class TextToSpeech:
         cancelled.set()
         self._cancel_remote_tts()
 
-    def speak(self, text: str):
+    def speak(self, text: str) -> None:
         """
         Synthesize speech from text and play it through the provided speaker.
         Long text is split into 1024-character chunks before synthesis.

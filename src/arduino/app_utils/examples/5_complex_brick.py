@@ -13,33 +13,33 @@ class ColorDetectorServer:
     def __init__(self, color) -> None:
         self.color = color
 
-    def start(self):
+    def start(self) -> None:
         logger.info(f"Starting ColorDetectorServer for color: {self.color}")
 
-    def stop(self):
+    def stop(self) -> None:
         logger.info(f"Stopping ColorDetectorServer for color: {self.color}")
 
     # This is a blocking method that will be run in a separate thread
-    def execute(self):
+    def execute(self) -> None:
         logger.info("Execute: Starting bluetooth server (simulated 5s task)...")
         time.sleep(5)
         logger.info("Execute: Bluetooth server task finished.")
 
     # This is an additional blocking method that will be run in a separate thread
     @brick.execute
-    def another_execute(self):
+    def another_execute(self) -> None:
         logger.info("Execute: Starting web server (simulated 5s task)...")
         time.sleep(5)
         logger.info("Execute: Web server task finished.")
 
     # This is a non-blocking method that will be called repeatedly
-    def loop(self):
+    def loop(self) -> None:
         logger.info("Loop: Reading from webcam.")
         time.sleep(1)
 
     # This is an additional non-blocking method that will be called repeatedly
     @brick.loop
-    def another_loop(self):
+    def another_loop(self) -> None:
         logger.info("Loop: Running AI inference.")
         time.sleep(1)
 

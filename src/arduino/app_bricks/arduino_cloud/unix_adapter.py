@@ -28,7 +28,7 @@ class _UnixHTTPConnection(HTTPConnection):
         super().__init__("localhost", **kwargs)
         self._unix_socket_path = socket_path
 
-    def connect(self):
+    def connect(self) -> None:
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         # urllib3 sets self.timeout to the per-request connect timeout before
         # calling connect(); honour it when it is a concrete value.
@@ -72,7 +72,7 @@ class UnixHTTPAdapter(HTTPAdapter):
         # "GET /v1/variables/led HTTP/1.1" rather than the http+unix:// URL.
         return request.path_url
 
-    def close(self):
+    def close(self) -> None:
         if self._pool is not None:
             self._pool.close()
             self._pool = None

@@ -135,7 +135,7 @@ def notify(method_name: str = None, address: str = "unix:///var/run/arduino-rout
             raise TypeError(f"'{func.__name__}' is expected to be a function but is a method or a classmethod.")
 
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args, **kwargs) -> None:
             # Any kwargs passed to the decorated function are unexpected.
             if kwargs:
                 raise TypeError(f"Unexpected {list(kwargs.keys())} keyword args: only positional args are supported.")
@@ -303,7 +303,7 @@ class _ClientServer:
         self._stop_event = threading.Event()
         self._read_thread = None
 
-    def start(self):
+    def start(self) -> None:
         """Connects to the router and starts the background read/reconnect loop.
         A no-op if the background loop is already running.
         """
@@ -314,7 +314,7 @@ class _ClientServer:
         self._read_thread = threading.Thread(target=self._conn_manager, name="Bridge.read_loop", daemon=True)
         self._read_thread.start()
 
-    def stop(self):
+    def stop(self) -> None:
         """Stops the background loop, closes the connection and releases resources.
         Idempotent and safe to call even if ``start()`` was never called.
         """
@@ -347,7 +347,7 @@ class _ClientServer:
     def __exit__(self, exc_type, exc, tb):
         self.stop()
 
-    def notify(self, method_name: str, *params):
+    def notify(self, method_name: str, *params) -> None:
         """Sends a notification to the server without waiting for a response."""
         request = [2, method_name, params]
         try:
@@ -365,10 +365,10 @@ class _ClientServer:
 
         resp_queue = queue.Queue(maxsize=1)
 
-        def on_result(result):
+        def on_result(result) -> None:
             resp_queue.put((True, result))
 
-        def on_error(error):
+        def on_error(error) -> None:
             resp_queue.put((False, error))
 
         with self.callbacks_lock:
@@ -402,7 +402,7 @@ class _ClientServer:
                 self.callbacks.pop(msgid, None)
             raise
 
-    def provide(self, method_name: str, handler):
+    def provide(self, method_name: str, handler) -> None:
         """Makes a method available to the microcontroller, so it can call it remotely.
         The handler should be a callable that can take arguments.
         """
@@ -417,7 +417,7 @@ class _ClientServer:
         with self.handlers_lock:
             self.handlers[method_name] = handler
 
-    def unprovide(self, method_name: str):
+    def unprovide(self, method_name: str) -> None:
         """Makes a method no more available to the microcontroller."""
         with self.handlers_lock:
             if method_name not in self.handlers:
@@ -442,7 +442,7 @@ class _ClientServer:
                 self.next_msgid = (self.next_msgid + 1) % (2**32)
             return self.next_msgid
 
-    def _conn_manager(self):
+    def _conn_manager(self) -> None:
         """Manages connection and reconnection attempts. Once the connection is established, delegates to the read loop."""
         while not self._stop_event.is_set():
             # Ensure we're connected to the router
@@ -454,7 +454,7 @@ class _ClientServer:
                 break
             self._stop_event.wait(_reconnect_delay)
 
-    def _connect(self):
+    def _connect(self) -> None:
         """Makes sure we're connected to the router by retrying periodically until we have a clean connection.
         This method **must be** the only one allowed to set _is_connected_flag, this allows us to use a
         lockless algorithm for connection management, in particular for recv calls.
@@ -488,7 +488,7 @@ class _ClientServer:
                 self._is_connected_flag.set()
 
                 # Run this function in a separate thread for receiving the call response as it would block waiting for the response
-                def register_methods_on_reconnect():
+                def register_methods_on_reconnect() -> None:
                     with self.handlers_lock:
                         for method in self.handlers.keys():
                             try:
@@ -527,7 +527,7 @@ class _ClientServer:
             logger.error(f"Unexpected error while checking socket status: {e}")
             return False  # Assume the socket is broken for any other exception
 
-    def _read_loop(self):
+    def _read_loop(self) -> None:
         """The core loop that reads and processes messages from the active socket."""
         unpacker = msgpack.Unpacker()
         try:
@@ -562,7 +562,7 @@ class _ClientServer:
         else:
             raise ValueError(f"Invalid method name type: {type(method_name)}. Expected str or bytes.")
 
-    def _handle_msg(self, msg: list):
+    def _handle_msg(self, msg: list) -> None:
         """Processes a single deserialized MessagePack-RPC message."""
         if not msg or not isinstance(msg, list):
             logger.warning("Invalid RPC message received (must be a non-empty list).")
@@ -642,7 +642,7 @@ class _ClientServer:
         except Exception as e:
             logger.error(f"Unexpected error while handling message: {e}")
 
-    def _fail_pending_callbacks(self, reason: Exception):
+    def _fail_pending_callbacks(self, reason: Exception) -> None:
         """Invokes error callbacks for all pending requests and clears their callbacks."""
         with self.callbacks_lock:
             for _, (_, on_error) in list(self.callbacks.items()):
@@ -653,7 +653,7 @@ class _ClientServer:
                         logger.error(f"Failed to run 'on_error' callback: {e}")
             self.callbacks.clear()
 
-    def _send_response(self, msgid: int, error, response):
+    def _send_response(self, msgid: int, error, response) -> None:
         """Helper to pack and send a response message."""
         err = None
         if error is not None:
@@ -673,7 +673,7 @@ class _ClientServer:
         except Exception as e:  # e.g., msgpack encoding error
             logger.error(f"Failed to pack/send response: {e}")
 
-    def _send_bytes(self, packed_data: bytes):
+    def _send_bytes(self, packed_data: bytes) -> None:
         """Sends packed data, handling connection waits and errors."""
         if not self._is_connected_flag.is_set():
             # Wait hoping for an auto-reconnection by _conn_manager

@@ -172,7 +172,7 @@ class BaseASR:
         self._active_session_lock = threading.Lock()
         self._active_session: SessionInfo | None = None
 
-    def start(self):
+    def start(self) -> None:
         """Prepare the ASR for transcription. Starts the owned mic if applicable."""
         logger.debug("Starting ASR and preparing resources...")
         self._stop_worker.clear()
@@ -182,7 +182,7 @@ class BaseASR:
             self._source.start()
         self._warmup()
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop the ASR and clean up resources. Stops the owned mic if applicable."""
         logger.debug("Stopping ASR and cleaning up resources...")
         self._stop_worker.set()
@@ -192,7 +192,7 @@ class BaseASR:
             self._source.stop()
         logger.debug("Stopped ASR and cleaned up resources.")
 
-    def cancel(self):
+    def cancel(self) -> None:
         """Cancel the active transcription session, if any."""
         active = self._active_session
         if active is None:
@@ -244,14 +244,14 @@ class BaseASR:
         return ""
 
     @brick.execute
-    def _asyncio_loop(self):
+    def _asyncio_loop(self) -> None:
         """Dedicated thread for the asyncio event loop hosting session coroutines."""
         logger.debug("Asyncio event loop starting")
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         self._worker_loop.set_result(loop)
 
-        async def keep_alive():
+        async def keep_alive() -> None:
             while not self._stop_worker.is_set():
                 await asyncio.sleep(0.1)
 
@@ -428,7 +428,7 @@ class BaseASR:
 
         return session_id
 
-    async def _transcription_session_handler(self, session_info: SessionInfo):
+    async def _transcription_session_handler(self, session_info: SessionInfo) -> None:
         session_id = session_info.session_id
 
         reader = threading.Thread(
@@ -550,7 +550,7 @@ class BaseASR:
                     continue
             logger.debug(f"Reader thread exited for session {session_id}")
 
-    async def _await_connection_established(self, websocket, label):
+    async def _await_connection_established(self, websocket, label) -> None:
         try:
             raw = await asyncio.wait_for(websocket.recv(), timeout=5.0)
         except (TimeoutError, ConnectionClosed) as e:

@@ -200,7 +200,7 @@ class RemoteSensor:
         """Check if the sensor is started and running."""
         return self._is_started
 
-    def on_status_changed(self, callback: Callable[[str, dict], None] | None):
+    def on_status_changed(self, callback: Callable[[str, dict], None] | None) -> None:
         """Registers or removes a callback to be triggered on camera lifecycle events.
 
         When a camera status changes, the provided callback function will be invoked.
@@ -228,7 +228,7 @@ class RemoteSensor:
             self._on_status_changed_cb = None
         else:
 
-            def _callback_wrapper(new_status: str, data: dict):
+            def _callback_wrapper(new_status: str, data: dict) -> None:
                 try:
                     callback(new_status, data)
                 except Exception as e:
@@ -466,7 +466,7 @@ class RemoteSensor:
         if self._server_thread and self._server_thread.is_alive():
             self._server_thread.join(timeout=10.0)
 
-    async def _disconnect_and_stop(self):
+    async def _disconnect_and_stop(self) -> None:
         """Cleanly disconnect client with goodbye message and stop the server."""
         async with self._client_lock:
             if self._client:
@@ -484,7 +484,7 @@ class RemoteSensor:
         if self._server:
             self._server.close()
 
-    async def _send_to_client(self, message: bytes | str, client: websockets.ServerConnection | None = None):
+    async def _send_to_client(self, message: bytes | str, client: websockets.ServerConnection | None = None) -> None:
         """Send a message to the connected client."""
         if isinstance(message, str):
             message = message.encode()

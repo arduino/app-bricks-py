@@ -7,6 +7,7 @@ from concurrent.futures import CancelledError as FutureCancelledError
 from .constants import _SHUTDOWN
 from .adapter import AsyncBrickAdapter, AsyncProcessorAdapter, AsyncSinkAdapter
 from arduino.app_utils import Logger
+from typing import Never
 
 logger = Logger("pipeline.task")
 
@@ -23,7 +24,7 @@ class PipelineTask:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._task: asyncio.Task | None = None
 
-    def set_loop(self, loop: asyncio.AbstractEventLoop):
+    def set_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         self._loop = loop
         self.adapter.set_loop(loop)
 
@@ -42,7 +43,7 @@ class PipelineTask:
 
         return self._task
 
-    async def stop(self):
+    async def stop(self) -> None:
         """Stops the task gracefully ."""
         if self._task and not self._task.done():
             try:
@@ -55,7 +56,7 @@ class PipelineTask:
         logger.debug(f"Stopping user brick via adapter {type(self.adapter.original_brick).__name__}")
         await self.adapter.stop()
 
-    async def _run(self):
+    async def _run(self) -> Never:
         raise NotImplementedError
 
 
@@ -65,7 +66,7 @@ class SourceTask[T_OUT](PipelineTask):
         self.adapter: AsyncBrickAdapter = adapter
         self.output_queue = asyncio.Queue(queue_size)
 
-    async def _run(self):
+    async def _run(self) -> None:
         brick_name = type(self.adapter.original_brick).__name__
         logger.info(f"Source task run loop started for {brick_name}.")
         if not self._loop:
@@ -101,7 +102,7 @@ class ProcessorTask[T_IN, T_OUT](PipelineTask):
         self.input_queue: asyncio.Queue[T_IN] | None = None
         self.output_queue: asyncio.Queue[T_OUT] = asyncio.Queue(queue_size)
 
-    async def _run(self):
+    async def _run(self) -> None:
         brick_name = type(self.adapter.original_brick).__name__
         if not self.input_queue:
             logger.error(f"Input queue not set for processor {brick_name}")
@@ -143,7 +144,7 @@ class SinkTask[T_IN](PipelineTask):
         self.adapter: AsyncSinkAdapter = adapter
         self.input_queue: asyncio.Queue[T_IN] | None = None
 
-    async def _run(self):
+    async def _run(self) -> None:
         brick_name = type(self.adapter.original_brick).__name__
         if not self.input_queue:
             logger.error(f"Input queue not set for sink {brick_name}")

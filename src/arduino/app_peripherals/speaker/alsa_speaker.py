@@ -454,7 +454,7 @@ class ALSASpeaker(BaseSpeaker):
             finally:
                 self._pcm = None
 
-    def _write_audio(self, audio_chunk: np.ndarray):
+    def _write_audio(self, audio_chunk: np.ndarray) -> None:
         """
         Write a single audio chunk to the ALSA speaker.
 

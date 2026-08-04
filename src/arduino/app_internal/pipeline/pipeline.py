@@ -77,7 +77,7 @@ class Pipeline:
 
         return self
 
-    def start(self):
+    def start(self) -> None:
         """Starts the pipeline in a background thread."""
         if self._running:
             logger.warning("Pipeline is already running.")
@@ -112,7 +112,7 @@ class Pipeline:
         self._running = True
         logger.debug("Pipeline started successfully.")
 
-    def stop(self):
+    def stop(self) -> None:
         """Stops the pipeline gracefully."""
         if not self._running or not self._loop_thread or not self._loop_thread.is_alive() or not self._loop:
             logger.warning("Pipeline is not running or already stopped.")
@@ -152,7 +152,7 @@ class Pipeline:
         self._pipeline_future = None
         logger.debug("Pipeline stopped.")
 
-    def _run_loop(self, loop_ready_event: threading.Event):
+    def _run_loop(self, loop_ready_event: threading.Event) -> None:
         """Main loop."""
         try:
             self._loop = asyncio.new_event_loop()
@@ -185,7 +185,7 @@ class Pipeline:
                 self._loop = None
                 logger.debug("Internal event loop stopped.")
 
-    async def _async_run_pipeline(self):
+    async def _async_run_pipeline(self) -> None:
         """The main async logic using Adapters."""
         if not self._loop:
             raise RuntimeError("Pipeline internal loop not available.")
@@ -234,7 +234,7 @@ class Pipeline:
                     logger.exception(f"Error while stopping {type(step.adapter.original_brick).__name__}: {e}")
             logger.debug("Final cleanup phase completed.")
 
-    async def _async_stop_pipeline(self):
+    async def _async_stop_pipeline(self) -> None:
         """Coroutine scheduled by stop() to ensure pipeline finishes.
         Unblocks source if needed and ensures the main gather future completes.
         Final cleanup is handled by _async_run_pipeline's finally block.

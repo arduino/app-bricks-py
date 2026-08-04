@@ -111,7 +111,7 @@ class ArduinoCloud:
         return "http+unix://" + quote(socket_path, safe="")
 
     # ── lifecycle (managed by the App framework) ────────────────────────────────
-    def start(self):
+    def start(self) -> None:
         """Mark the brick started and ensure every registered leaf is subscribed.
 
         Subscription and the synchronous initial seed already happen in
@@ -122,7 +122,7 @@ class ArduinoCloud:
             self._started = True
         self._ensure_subscribed()
 
-    def loop(self):
+    def loop(self) -> None:
         """Sample device→cloud callbacks (on_run / on_read) and publish per policy.
 
         Each pass, for every registered object: run its poll callbacks when due
@@ -156,7 +156,7 @@ class ArduinoCloud:
                 logger.exception(f"Callback error for '{record.name}': {e}")
         time.sleep(_LOOP_INTERVAL)
 
-    def _fire_pending_on_write(self, record: CloudObject):
+    def _fire_pending_on_write(self, record: CloudObject) -> None:
         """Fire a complex object's coalesced on_write once, if one is owed.
 
         Checks and clears the pending flag under the lock, then invokes the
@@ -172,7 +172,7 @@ class ArduinoCloud:
         if fire:
             record.fire_on_write(self)
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop the brick and tear down the SSE listener threads."""
         with self._lock:
             threads = list(self._listeners.values())
@@ -190,7 +190,7 @@ class ArduinoCloud:
         return record.last_poll == 0.0 or (now - record.last_poll) >= record.interval
 
     # ── registration ─────────────────────────────────────────────────────────
-    def register(self, aiotobj: str | Any, **kwargs: Any):
+    def register(self, aiotobj: str | Any, **kwargs: Any) -> None:
         """Register a variable or object with the Arduino Cloud client.
 
         Args:
@@ -236,7 +236,7 @@ class ArduinoCloud:
         return default if value is None else value
 
     # ── SSE subscription ───────────────────────────────────────────────────────
-    def _subscribe_leaf(self, leaf: CloudObject, wait_ready: bool = False):
+    def _subscribe_leaf(self, leaf: CloudObject, wait_ready: bool = False) -> None:
         """Start (once) the single SSE listener thread for a scalar leaf.
 
         The listener's first frame seeds the leaf (resolving the local value per
@@ -274,7 +274,7 @@ class ArduinoCloud:
                 _SEED_TIMEOUT,
             )
 
-    def _ensure_subscribed(self):
+    def _ensure_subscribed(self) -> None:
         """(Re)subscribe any registered leaf whose SSE listener is missing or dead.
 
         Normally every leaf is subscribed in ``register``; this recovers a leaf
@@ -313,7 +313,7 @@ class ArduinoCloud:
         held by other listeners and the poll loop.
         """
 
-        def handle(event: str, payload: dict):
+        def handle(event: str, payload: dict) -> None:
             owner_to_fire = None
             with self._lock:
                 if event == EVENT_THING_UNAVAILABLE:
