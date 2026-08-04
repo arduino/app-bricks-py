@@ -33,7 +33,7 @@ def camx_socket_available() -> bool:
 # loaded lazily here rather than at module import time.
 
 
-def _gst() -> Any:
+def _gst() -> Any:  # noqa: ANN401
     """Import and initialize GStreamer's Python bindings on first use."""
     import gi
 

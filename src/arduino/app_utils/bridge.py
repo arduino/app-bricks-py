@@ -58,7 +58,7 @@ class Bridge:
         ClientServer().notify(method_name, *params)
 
     @staticmethod
-    def call(method_name: str, *params: object, timeout: int = 10) -> Any:
+    def call(method_name: str, *params: object, timeout: int = 10) -> Any:  # noqa: ANN401
         """Calls a method on the microcontroller and waits for a response.
         Raises an exception if the call fails or times out.
 
@@ -280,7 +280,7 @@ class SingletonMeta(type):
     _instance = None
     _instance_lock = threading.Lock()
 
-    def __call__(cls, *args: Any, **kwargs: Any) -> Any:
+    def __call__(cls, *args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
         with cls._instance_lock:
             if cls._instance is None:
                 cls._instance = super().__call__(*args, **kwargs)
@@ -373,7 +373,7 @@ class _ClientServer:
         except Exception as e:
             logger.error(f"Failed to send notification for method '{method_name}': {e}")
 
-    def call(self, method_name: str, *params: object, timeout: int = 10) -> Any:
+    def call(self, method_name: str, *params: object, timeout: int = 10) -> Any:  # noqa: ANN401
         """Calls a method on the server and waits for a response."""
         msgid = self._increment_next_msgid()
         request = [0, msgid, method_name, params]

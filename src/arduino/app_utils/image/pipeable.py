@@ -36,13 +36,13 @@ class PipeableFunction:
         self.args = args
         self.kwargs = kwargs
 
-    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
         """Call the wrapped function with combined arguments."""
         combined_args = self.args + args
         combined_kwargs = {**self.kwargs, **kwargs}
         return self.func(*combined_args, **combined_kwargs)
 
-    def __ror__(self, other: object) -> Any:
+    def __ror__(self, other: object) -> Any:  # noqa: ANN401
         """
         Right-hand side of pipe operator (|).
 
@@ -73,7 +73,7 @@ class PipeableFunction:
             # This prevents Python from trying the reverse operation for nothing
             raise TypeError(f"unsupported operand type(s) for |: '{type(self).__name__}' and '{type(other).__name__}'")
 
-        def composed(value: object) -> Any:
+        def composed(value: object) -> Any:  # noqa: ANN401
             return other(self(value))
 
         return PipeableFunction(composed)

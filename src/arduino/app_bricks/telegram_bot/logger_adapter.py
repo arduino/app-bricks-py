@@ -49,7 +49,7 @@ class TelegramLoggerAdapter(logging.LoggerAdapter):
 
         super().__init__(logger, extra)
 
-    def process(self, msg: Any, kwargs: MutableMapping[str, Any]) -> tuple[str, MutableMapping[str, Any]]:
+    def process(self, msg: Any, kwargs: MutableMapping[str, Any]) -> tuple[str, MutableMapping[str, Any]]:  # noqa: ANN401
         """Prepend context information to log message.
 
         Args:

@@ -31,7 +31,7 @@ class Frame:
         """Return the array as representation of the Frame."""
         return self.arr.__repr__()
 
-    def __setattr__(self, name: str, value: Any) -> None:
+    def __setattr__(self, name: str, value: Any) -> None:  # noqa: ANN401
         """Intercept setting of certain attributes.
 
         Public `arr` is exposed as a read-only property; to replace the

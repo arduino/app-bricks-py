@@ -90,7 +90,7 @@ class CloudLLM:
         max_tool_loops: int = 8,
         timeout: int | None = None,
         tools: Sequence[ToolLike] | None = None,
-        callbacks: Any = None,
+        callbacks: Any = None,  # noqa: ANN401
         **kwargs: Any,
     ) -> None:
         """Initializes the CloudLLM brick with the specified provider and configuration.
@@ -380,7 +380,7 @@ class CloudLLM:
             with open(path, "rb") as f:
                 return base64.b64encode(f.read()).decode()
 
-    def _content_to_text(self, content: Any) -> str:
+    def _content_to_text(self, content: Any) -> str:  # noqa: ANN401
         if isinstance(content, str):
             return content
 

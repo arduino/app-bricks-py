@@ -237,7 +237,7 @@ class AppController:
 
         return methods
 
-    def _start(self, brick: Any) -> None:
+    def _start(self, brick: Any) -> None:  # noqa: ANN401
         """Starts a single brick and its worker threads. Must be called while holding _app_lock."""
         if brick in self._running_queue:
             # TODO: we should raise an exception here
@@ -272,7 +272,7 @@ class AppController:
             # TODO: we should raise an exception here
             logger.exception(f"Failed to start brick '{_brick_name(brick)}': {e}")
 
-    def _stop(self, brick: Any) -> None:
+    def _stop(self, brick: Any) -> None:  # noqa: ANN401
         """Stops a single brick and its worker threads. Must be called while holding _app_lock."""
         if brick not in self._running_queue:
             # TODO: we should raise an exception here

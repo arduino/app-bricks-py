@@ -191,7 +191,7 @@ class ArduinoCloud:
         return record.last_poll == 0.0 or (now - record.last_poll) >= record.interval
 
     # ── registration ─────────────────────────────────────────────────────────
-    def register(self, aiotobj: str | Any, **kwargs: Any) -> None:
+    def register(self, aiotobj: str | Any, **kwargs: Any) -> None:  # noqa: ANN401
         """Register a variable or object with the Arduino Cloud client.
 
         Args:
@@ -227,7 +227,7 @@ class ArduinoCloud:
         # on_write with the fully-seeded object rather than one per sub-property.
         self._fire_pending_on_write(aiotobj)
 
-    def get(self, name: str, default: Any = None) -> Any:
+    def get(self, name: str, default: Any = None) -> Any:  # noqa: ANN401
         """Return a registered variable's value, or default if unset/unknown."""
         with self._lock:
             record = self._records.get(name)
@@ -371,7 +371,7 @@ class ArduinoCloud:
         return handle
 
     # ── attribute-style variable access ─────────────────────────────────────────
-    def __getattr__(self, name: str) -> Any:
+    def __getattr__(self, name: str) -> Any:  # noqa: ANN401
         """Intercept access to cloud variables as natural attributes."""
         records = self.__dict__.get("_records")
         if records is not None and name in records:
@@ -379,7 +379,7 @@ class ArduinoCloud:
             return record if record.is_complex else record.value
         raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
 
-    def __setattr__(self, name: str, value: Any) -> None:
+    def __setattr__(self, name: str, value: Any) -> None:  # noqa: ANN401
         """Intercept assignment to cloud variables as natural attributes."""
         if name.startswith("_"):
             super().__setattr__(name, value)

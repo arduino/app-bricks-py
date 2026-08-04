@@ -161,13 +161,13 @@ class CloudObject:
         return isinstance(self._value, dict)
 
     @property
-    def value(self) -> Any:
+    def value(self) -> Any:  # noqa: ANN401
         return self._value
 
     def __contains__(self, key: str) -> bool:
         return self.is_complex and key in self._value
 
-    def __getattr__(self, attr: str) -> Any:
+    def __getattr__(self, attr: str) -> Any:  # noqa: ANN401
         # Reached only for names not found normally — sub-record access on a
         # complex object (e.g. clight.hue).
         value = self.__dict__.get("_value", None)
@@ -175,7 +175,7 @@ class CloudObject:
             return value[attr].value
         raise AttributeError(f"'{type(self).__name__}' object has no attribute '{attr}'")
 
-    def __setattr__(self, attr: str, value: Any) -> None:
+    def __setattr__(self, attr: str, value: Any) -> None:  # noqa: ANN401
         existing = self.__dict__.get("_value", None)
         if isinstance(existing, dict) and attr in existing:
             existing[attr].set_local(value)  # clight.hue = 5 → push "clight:hue"
@@ -198,7 +198,7 @@ class CloudObject:
         return [self]
 
     # ── local (device → cloud) changes ─────────────────────────────────────────
-    def set_local(self, value: Any) -> None:
+    def set_local(self, value: Any) -> None:  # noqa: ANN401
         """Record a value set by the application; it is published by ``pump()``.
 
         This no longer publishes directly: the outbound value is sent by the
@@ -287,7 +287,7 @@ class CloudObject:
             self._last_warn_ts = now
             self._dirty = False
 
-    def _coerce(self, value: Any) -> Any:
+    def _coerce(self, value: Any) -> Any:  # noqa: ANN401
         # Workaround for the cloud int/float ambiguity: keep a float variable a
         # float even when assigned an int.
         if isinstance(self._value, float) and isinstance(value, int) and not isinstance(value, bool):
@@ -295,7 +295,7 @@ class CloudObject:
         return value
 
     # ── cloud (cloud → device) changes ──────────────────────────────────────────
-    def apply_cloud(self, value: Any, cloud_ts: float) -> bool:
+    def apply_cloud(self, value: Any, cloud_ts: float) -> bool:  # noqa: ANN401
         """Apply an incoming cloud value according to the sync policy.
 
         Returns True if the local value changed (so the caller schedules

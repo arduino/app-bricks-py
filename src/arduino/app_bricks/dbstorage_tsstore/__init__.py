@@ -162,7 +162,7 @@ class TimeSeriesStore(_InfluxDBHandler):
         """
         super().__init__(host, port, retention_days)
 
-    def write_sample(self, measure: str, value: Any, ts: int = 0, measurement_name: str = "arduino") -> None:
+    def write_sample(self, measure: str, value: Any, ts: int = 0, measurement_name: str = "arduino") -> None:  # noqa: ANN401
         """Write a time series sample to the InfluxDB database.
 
         Stores a single data point with the specified measurement field, value, and timestamp.

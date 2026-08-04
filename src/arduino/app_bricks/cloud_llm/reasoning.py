@@ -157,7 +157,7 @@ class ChatOpenAIReasoning(ChatOpenAI):
 
     def _convert_responses_stream_chunk(
         self,
-        chunk: Any,
+        chunk: Any,  # noqa: ANN401
         state: _ResponsesStreamState,
         headers: dict,
     ) -> ChatGenerationChunk | None:
