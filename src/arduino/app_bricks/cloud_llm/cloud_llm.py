@@ -31,7 +31,7 @@ from .memory import MessagePersistence, SQLMessagePersistence, WindowedChatMessa
 
 DEFAULT_MEMORY = 10
 
-ToolLike = Union[BaseTool, Callable[..., Any]]
+ToolLike = BaseTool | Callable[..., Any]
 
 
 class AlreadyGenerating(Exception):

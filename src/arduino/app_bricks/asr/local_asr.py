@@ -11,7 +11,8 @@ import time
 from collections.abc import Generator, Iterator
 from concurrent.futures import CancelledError, Future
 from dataclasses import dataclass
-from typing import ContextManager, Generic, Literal, TypeVar
+from contextlib import AbstractContextManager
+from typing import Literal
 
 import numpy as np
 import requests
@@ -89,10 +90,7 @@ class ASREvent:
     data: str
 
 
-T = TypeVar("T")
-
-
-class TranscriptionStream(Generic[T], ContextManager["TranscriptionStream[T]"], Iterator[T]):
+class TranscriptionStream[T](AbstractContextManager["TranscriptionStream[T]"], Iterator[T]):
     """Iterator wrapper that guarantees proper teardown on context exit."""
 
     def __init__(self, generator: Generator[T]):

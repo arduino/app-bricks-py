@@ -6,7 +6,7 @@ import re
 import threading
 import time
 from collections.abc import Generator, Iterator
-from typing import ContextManager
+from contextlib import AbstractContextManager
 
 import numpy as np
 import requests
@@ -28,7 +28,7 @@ class TTSBusyError(TTSError):
     """Raised when this TTS instance already has an active speech session."""
 
 
-class SynthesisStream(ContextManager["SynthesisStream"], Iterator[bytes]):
+class SynthesisStream(AbstractContextManager["SynthesisStream"], Iterator[bytes]):
     """Iterator wrapper that guarantees proper teardown on context exit."""
 
     def __init__(self, generator: Generator[bytes]):

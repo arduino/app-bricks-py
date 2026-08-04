@@ -3,9 +3,8 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import asyncio
-from typing import Generic
 from concurrent.futures import CancelledError as FutureCancelledError
-from .constants import _SHUTDOWN, T_IN, T_OUT
+from .constants import _SHUTDOWN
 from .adapter import AsyncBrickAdapter, AsyncProcessorAdapter, AsyncSinkAdapter
 from arduino.app_utils import Logger
 
@@ -60,7 +59,7 @@ class PipelineTask:
         raise NotImplementedError
 
 
-class SourceTask(PipelineTask, Generic[T_OUT]):
+class SourceTask[T_OUT](PipelineTask):
     def __init__(self, adapter: AsyncBrickAdapter, queue_size: int = 1):
         super().__init__(adapter)
         self.adapter: AsyncBrickAdapter = adapter
@@ -95,7 +94,7 @@ class SourceTask(PipelineTask, Generic[T_OUT]):
             await self.output_queue.put(_SHUTDOWN)
 
 
-class ProcessorTask(PipelineTask, Generic[T_IN, T_OUT]):
+class ProcessorTask[T_IN, T_OUT](PipelineTask):
     def __init__(self, adapter: AsyncProcessorAdapter, queue_size: int = 1):
         super().__init__(adapter)
         self.adapter: AsyncProcessorAdapter = adapter
@@ -138,7 +137,7 @@ class ProcessorTask(PipelineTask, Generic[T_IN, T_OUT]):
             await self.output_queue.put(_SHUTDOWN)
 
 
-class SinkTask(PipelineTask, Generic[T_IN]):
+class SinkTask[T_IN](PipelineTask):
     def __init__(self, adapter: AsyncSinkAdapter, queue_size: int = 1):
         super().__init__(adapter)
         self.adapter: AsyncSinkAdapter = adapter
