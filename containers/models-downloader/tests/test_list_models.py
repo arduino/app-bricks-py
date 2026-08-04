@@ -551,10 +551,57 @@ def test_main_lists_an_unlisted_model_with_its_metadata(monkeypatch, capsys, tmp
     assert len(entries) == 1
     entry = entries[0]
     assert entry["installed"] is True
+    assert entry["model_source"] == "user_configured"
     assert entry["downloaded_metadata"]["model_id_source"] == "unresolved"
     assert "outdated" not in entry
     # The models-list.yaml entries are unaffected.
     assert _gemma_entry(models)["installed"] is False
+
+
+# --------------------------------------------------------------------------- #
+# model_source
+# --------------------------------------------------------------------------- #
+def test_main_marks_declared_models_as_models_list(monkeypatch, capsys, tmp_path):
+    _models_dir, models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
+    assert models
+    assert all(m["model_source"] == "models_list" for m in models)
+
+
+def test_main_keeps_models_list_source_after_the_filesystem_merge(monkeypatch, capsys, tmp_path):
+    """A declared model found on disk stays curated; the merge must not relabel it."""
+    models_dir, _models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
+    _install_gemma(models_dir, CURRENT_METADATA)
+
+    _models_dir, models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
+    entry = _gemma_entry(models)
+    assert entry["installed"] is True
+    assert entry["model_source"] == "models_list"
+
+
+def test_main_pre_loaded_models_are_models_list(monkeypatch, capsys, tmp_path):
+    yaml_text = 'models:\n - "builtin:asr":\n    name: "Builtin ASR"\n    deployment:\n      handler: "ai-hub-handler"\n      pre-loaded: true\n'
+    _models_dir, models = _run_main(monkeypatch, capsys, tmp_path, yaml_text)
+    assert models[0]["model_source"] == "models_list"
+
+
+def test_find_llamacpp_models_are_user_configured(tmp_path):
+    base = tmp_path / "models"
+    _make_gguf(os.path.join(str(base), "llamacpp", "TheBloke", "Mistral-GGUF", "mistral.Q4_0.gguf"))
+    results = list_models.find_llamacpp_models(str(base))
+    assert len(results) == 1
+    assert results[0]["model_source"] == "user_configured"
+
+
+def test_table_shows_the_source_column(monkeypatch, capsys, tmp_path):
+    yaml_path = tmp_path / "models-list.yaml"
+    yaml_path.write_text(SAMPLE_YAML)
+    models_dir = tmp_path / "models"
+    models_dir.mkdir(exist_ok=True)
+    monkeypatch.setattr("sys.argv", ["list_models.py", "--models-dir", str(models_dir), "--model-list", str(yaml_path)])
+    list_models.main()
+    out = capsys.readouterr().out
+    assert "SOURCE" in out
+    assert "models_list" in out
 
 
 def test_find_llamacpp_attaches_metadata(tmp_path):

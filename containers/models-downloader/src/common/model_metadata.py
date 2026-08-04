@@ -14,7 +14,7 @@ the model directory after a successful download and stays there:
     downloaded_at: '2026-08-03T09:41:12Z'
     handler: hf-handler
     model_id: llamacpp:gemma-4-E2B_q4_0-it
-    model_id_source: models-list
+    model_id_source: models_list
     inputs:                     # the download variables, verbatim from the environment
       models_repository: llamacpp
       model_directory: google/gemma-4-E2B-it-qat-q4_0-gguf
@@ -29,11 +29,12 @@ Contracts callers must honour:
 - The file is therefore **optional**. Its absence means "unknown / legacy install",
   never "up to date": models downloaded before this file existed have none.
 - ``model_id: null`` with ``model_id_source: unresolved`` is a **normal, supported
-  state, not an error**. Any Hugging Face repository can be downloaded ad hoc via
-  ``--model-key`` / ``--model-repo-id`` / ``--model-url`` without a models-list.yaml
-  entry; such a download is recorded in full, only unidentified. Consumers must not
-  treat a null model_id as a failure, and outdated-detection simply does not apply
-  (there is no declaration to compare against).
+  state, not an error**. Any Hugging Face repository can be downloaded ad hoc by
+  putting its URL or compact key in ``model_url``, with no models-list.yaml entry;
+  such a download is recorded in full, only unidentified. Consumers must not treat a
+  null model_id as a failure, and outdated-detection simply does not apply (there is
+  no declaration to compare against). The listing reports these as
+  ``model_source: user_configured``.
 - Nothing else is copied out of models-list.yaml. ``model_id`` points back at the
   entry, and every other field of it (name, description, source, model_size_mb, ...)
   is read from models-list.yaml itself rather than duplicated — and left to go stale —
@@ -127,7 +128,7 @@ def identify_model(env=None, models_list_path=MODELS_LIST_PATH):
 
     Returns:
         A dict with ``model_id`` (None when unidentified) and ``model_id_source``
-        ("env", "models-list" or "unresolved"). Nothing else is taken from the entry:
+        ("env", "models_list" or "unresolved"). Nothing else is taken from the entry:
         the id is the pointer back to it, see the module docstring.
     """
     env = env if env is not None else os.environ
@@ -144,7 +145,7 @@ def identify_model(env=None, models_list_path=MODELS_LIST_PATH):
 
     if not model_id:
         return {"model_id": None, "model_id_source": "unresolved"}
-    return {"model_id": model_id, "model_id_source": "models-list"}
+    return {"model_id": model_id, "model_id_source": "models_list"}
 
 
 def metadata_payload(handler, inputs=None, identity=None, downloaded_at=None):

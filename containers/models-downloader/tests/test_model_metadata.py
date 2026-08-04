@@ -162,7 +162,7 @@ def test_collect_inputs_empty_environment():
 def test_identify_model_from_models_list(tmp_path):
     """Only the id is taken from the entry; its name/source/... are not duplicated."""
     identity = identify_model(AI_HUB_ENV, _models_list(tmp_path))
-    assert identity == {"model_id": "genie:qwen3_4b_instruct_2507", "model_id_source": "models-list"}
+    assert identity == {"model_id": "genie:qwen3_4b_instruct_2507", "model_id_source": "models_list"}
 
 
 def test_identify_model_prefers_model_id_env(tmp_path):
@@ -221,7 +221,7 @@ def test_metadata_payload_drops_empty_values():
     payload = metadata_payload(
         "hf-handler",
         inputs={"model_name": "x", "quantization": "", "version": None},
-        identity={"model_id": "a:b", "model_id_source": "models-list"},
+        identity={"model_id": "a:b", "model_id_source": "models_list"},
     )
     assert payload["inputs"] == {"model_name": "x"}
     assert payload["model_id"] == "a:b"
@@ -239,7 +239,7 @@ def test_metadata_payload_copies_nothing_else_from_the_entry():
     payload = metadata_payload(
         "ai-hub-handler",
         inputs={"model_name": "x"},
-        identity={"model_id": "genie:x", "model_id_source": "models-list"},
+        identity={"model_id": "genie:x", "model_id_source": "models_list"},
     )
     assert list(payload) == ["schema_version", "downloaded_at", "handler", "model_id", "model_id_source", "inputs"]
     for copied in ("name", "source", "source_model_id", "source_model_url", "model_size_mb", "resolved"):
@@ -338,7 +338,7 @@ def test_payload_ai_hub(tmp_path):
     assert list(data) == PAYLOAD_KEYS
     assert data["handler"] == "ai-hub-handler"
     assert data["model_id"] == "genie:qwen3_4b_instruct_2507"
-    assert data["model_id_source"] == "models-list"
+    assert data["model_id_source"] == "models_list"
     assert data["inputs"] == AI_HUB_ENV
 
 

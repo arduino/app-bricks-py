@@ -5,7 +5,10 @@
 """List all models and their presence on the filesystem.
 
 Reads models-list.yaml and checks whether each model with a deployment
-section is present under /models (or a custom base path).
+section is present under /models (or a custom base path). GGUF models found under
+/models/llamacpp that no entry declares are listed too, since any Hugging Face
+repository can be downloaded ad hoc; ``model_source`` says which of the two a listed
+model is ("models_list" or "user_configured").
 
 Usage:
     python list_models.py
@@ -27,6 +30,13 @@ from common.models_list import load_models_list, MODELS_LIST_PATH
 
 
 MODELS_BASE_DIR = "/models"
+
+# Where a listed model comes from, reported as "model_source". A model declared in
+# models-list.yaml is curated and its variables can be compared against to detect an
+# outdated install; one found only on disk was downloaded ad hoc (any Hugging Face
+# repository can be, without an entry) and there is nothing to compare it to.
+SOURCE_MODELS_LIST = "models_list"
+SOURCE_USER_CONFIGURED = "user_configured"
 
 
 def get_model_info(model_entry):
@@ -353,6 +363,9 @@ def find_llamacpp_models(models_base_dir):
                 "id": f"llamacpp:{model_name}",
                 "name": model_name,
                 "handler": "llamacpp",
+                # Found on disk. main() overrides this when the id matches a
+                # models-list.yaml entry, which makes it a curated model instead.
+                "model_source": SOURCE_USER_CONFIGURED,
                 "path": full_path,
                 "installed": not downloading,
                 "downloading": downloading,
@@ -373,6 +386,7 @@ def find_llamacpp_models(models_base_dir):
                 "id": f"llamacpp:{model_name}",
                 "name": model_name,
                 "handler": "llamacpp",
+                "model_source": SOURCE_USER_CONFIGURED,
                 "path": root,
                 "installed": False,
                 "downloading": True,
@@ -442,6 +456,7 @@ def main():
                 "id": model_info["id"],
                 "name": model_info["name"],
                 "handler": model_info["handler"],
+                "model_source": SOURCE_MODELS_LIST,
                 "installed": True,
             }
             if model_info.get("model_size_mb") is not None:
@@ -454,6 +469,7 @@ def main():
                 "id": model_info["id"],
                 "name": model_info["name"],
                 "handler": model_info["handler"],
+                "model_source": SOURCE_MODELS_LIST,
                 "installed": exists and not downloading,
                 "downloading": downloading,
             }
@@ -483,8 +499,9 @@ def main():
     for m in find_llamacpp_models(args.models_dir):
         existing = by_id.get(m["id"])
         if existing is not None:
-            # Keep the canonical YAML name/handler/model_size_mb; take the
-            # filesystem-derived status and on-disk details.
+            # Keep the canonical YAML name/handler/model_size_mb/model_source (the id
+            # is declared, so it is not user-configured); take the filesystem-derived
+            # status and on-disk details.
             existing["installed"] = m["installed"]
             existing["downloading"] = m["downloading"]
             if "path" in m:
@@ -511,8 +528,8 @@ def main():
         installed_count = sum(1 for r in results if r["installed"])
         total_count = len(results)
         print(f"Models: {installed_count}/{total_count} installed\n")
-        print(f"{'STATUS':<12} {'SIZE (MB)':<12} {'ID':<45} {'NAME':<40} {'PATH'}")
-        print("-" * 152)
+        print(f"{'STATUS':<12} {'SOURCE':<16} {'SIZE (MB)':<12} {'ID':<45} {'NAME':<40} {'PATH'}")
+        print("-" * 169)
         for r in results:
             status = "DOWNLOADING" if r.get("downloading") else ("INSTALLED" if r["installed"] else "NOT FOUND")
             size = (
@@ -521,7 +538,8 @@ def main():
                 else (f"{r['model_size_mb']}" if r.get("model_size_mb") is not None else "-")
             )
             path = r.get("path", "")
-            print(f"{status:<12} {size:<12} {r['id']:<45} {r['name']:<40} {path}")
+            source = r.get("model_source", "")
+            print(f"{status:<12} {source:<16} {size:<12} {r['id']:<45} {r['name']:<40} {path}")
 
 
 if __name__ == "__main__":
