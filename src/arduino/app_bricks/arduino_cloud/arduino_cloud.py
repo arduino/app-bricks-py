@@ -6,6 +6,7 @@ import os
 import threading
 import time
 import warnings
+from collections.abc import Callable
 from typing import Any
 from urllib.parse import quote
 
@@ -292,7 +293,7 @@ class ArduinoCloud:
                     logger.warning("ArduinoCloud: '%s' has no live SSE listener; re-subscribing", leaf.name)
                     self._subscribe_leaf(leaf)
 
-    def _make_handler(self, leaf: CloudObject):
+    def _make_handler(self, leaf: CloudObject) -> Callable[[str, dict], None]:
         """Build the SSE event handler for a leaf.
 
         Dispatches on the event name (see daemon_client): the sync frames
@@ -370,7 +371,7 @@ class ArduinoCloud:
         return handle
 
     # ── attribute-style variable access ─────────────────────────────────────────
-    def __getattr__(self, name: str):
+    def __getattr__(self, name: str) -> Any:
         """Intercept access to cloud variables as natural attributes."""
         records = self.__dict__.get("_records")
         if records is not None and name in records:

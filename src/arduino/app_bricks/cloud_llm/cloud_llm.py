@@ -91,7 +91,7 @@ class CloudLLM:
         timeout: int | None = None,
         tools: Sequence[ToolLike] | None = None,
         callbacks: Any = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Initializes the CloudLLM brick with the specified provider and configuration.
 
@@ -1153,7 +1153,7 @@ class CloudLLM:
             self._history.clear()
 
 
-def model_factory(model_name: CloudModel, **kwargs) -> BaseChatModel:
+def model_factory(model_name: CloudModel, **kwargs: Any) -> BaseChatModel:
     """Factory function to instantiate the specific LangChain chat model.
 
     This function maps the supported `CloudModel` enum values to their respective

@@ -26,6 +26,11 @@ carries a sync policy mirroring the C++ ``ArduinoIoTCloud`` semantics:
 """
 
 import time
+from collections.abc import Callable
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .arduino_cloud import ArduinoCloud
 from typing import Any
 
 from arduino.app_utils import Logger
@@ -178,7 +183,7 @@ class CloudObject:
             super().__setattr__(attr, value)
 
     # ── transport binding ─────────────────────────────────────────────────────
-    def bind(self, push) -> None:
+    def bind(self, push: Callable[[str, object], None]) -> None:
         """Wire the daemon push callback into every scalar leaf of this object."""
         if self.is_complex:
             for sub in self._value.values():
@@ -336,7 +341,7 @@ class CloudObject:
             self._do_push(_now())
 
     # ── loop execution ─────────────────────────────────────────────────────────
-    def run_sync(self, client) -> None:
+    def run_sync(self, client: "ArduinoCloud | None") -> None:
         """Run this object's device→cloud callbacks once (called from the brick
         loop every ``interval`` seconds).
 
@@ -351,7 +356,7 @@ class CloudObject:
         if self.on_read is not None:
             self.set_local(self.on_read(client))
 
-    def fire_on_write(self, client) -> None:
+    def fire_on_write(self, client: "ArduinoCloud | None") -> None:
         """Invoke this object's ``on_write`` callback with the current value.
 
         Called synchronously from the SSE handler the moment a cloud update is
@@ -398,7 +403,7 @@ class Schedule(CloudObject):
     def _initialized(self) -> bool:
         return all(sub.value is not None for sub in self._value.values())
 
-    def _on_run(self, client, args=None) -> None:
+    def _on_run(self, client: "ArduinoCloud | None", args: object = None) -> None:
         if not self._initialized():
             return
         ts = int(_now()) + (client.get("tz_offset", 0) if client is not None else 0)

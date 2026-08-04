@@ -51,7 +51,7 @@ class ObjectDetection(EdgeImpulseRunnerFacade):
         ret = super().infer_from_file(image_path)
         return self._extract_detection(ret, confidence)
 
-    def detect(self, image_bytes, image_type: str = "jpg", confidence: float = None) -> dict[str, list[Any]] | None:
+    def detect(self, image_bytes: bytes | Image.Image, image_type: str = "jpg", confidence: float = None) -> dict[str, list[Any]] | None:
         """Process an in-memory image to detect and identify objects.
 
         Args:
@@ -88,7 +88,7 @@ class ObjectDetection(EdgeImpulseRunnerFacade):
             shape = Shape.CIRCLE
         return draw_bounding_boxes(image, detections, shape=shape)
 
-    def _extract_detection(self, item, confidence: float = None):
+    def _extract_detection(self, item: dict | None, confidence: float = None) -> dict[str, list[Any]] | None:
         if not item:
             return None
 
@@ -125,7 +125,7 @@ class ObjectDetection(EdgeImpulseRunnerFacade):
 
         return None
 
-    def process(self, item):
+    def process(self, item: str | dict) -> dict[str, list[Any]] | None:
         """Process an item to detect objects in an image.
 
         This method supports two input formats:

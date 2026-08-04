@@ -286,7 +286,7 @@ class GestureRecognition:
         for key, callback in keys_and_callbacks:
             self._submit_callback(key, callback, metadata)
 
-    def _submit_callback(self, key: str | tuple, callback: Callable, *args) -> None:
+    def _submit_callback(self, key: str | tuple, callback: Callable, *args: object) -> None:
         """Acquire the per-callback lock and submit callback to the executor.
 
         If the lock is already held (callback still running), the event is discarded.
@@ -298,7 +298,7 @@ class GestureRecognition:
             return
         self._executor.submit(self._run_callback, lock, callback, *args)
 
-    def _run_callback(self, lock: threading.Lock, callback: Callable, *args) -> None:
+    def _run_callback(self, lock: threading.Lock, callback: Callable, *args: object) -> None:
         """Run a callback and release its lock when done."""
         try:
             callback(*args)

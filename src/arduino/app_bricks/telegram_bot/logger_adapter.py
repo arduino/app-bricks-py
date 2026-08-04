@@ -3,6 +3,8 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import logging
+from collections.abc import MutableMapping
+from typing import Any
 
 
 class TelegramLoggerAdapter(logging.LoggerAdapter):
@@ -47,7 +49,7 @@ class TelegramLoggerAdapter(logging.LoggerAdapter):
 
         super().__init__(logger, extra)
 
-    def process(self, msg, kwargs):
+    def process(self, msg: Any, kwargs: MutableMapping[str, Any]) -> tuple[str, MutableMapping[str, Any]]:
         """Prepend context information to log message.
 
         Args:

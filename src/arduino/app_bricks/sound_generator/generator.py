@@ -26,7 +26,7 @@ class WaveSamplesBuilder:
         self.wave_form = wave_form.lower()
         self.sample_rate = int(sample_rate)
 
-    def generate_block(self, freq: float, block_dur: float, master_volume: float = 1.0):
+    def generate_block(self, freq: float, block_dur: float, master_volume: float = 1.0) -> np.ndarray:
         """Generate a block of float32 audio samples.
 
         Returned buffer is a NumPy view (float32) into an internal preallocated array and is valid

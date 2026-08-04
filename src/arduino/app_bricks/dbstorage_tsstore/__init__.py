@@ -92,7 +92,7 @@ class _InfluxDBHandler:
         """
         self.client.close()
 
-    def load_default_infra(self):
+    def load_default_infra(self) -> dict | None:
         """Load the default InfluxDB compose file for the brick.
 
         This method looks for a YAML file named 'module_compose.yaml' in the current module's directory.

@@ -103,7 +103,7 @@ class WAVAutomaticSpeechRecognition(BaseASR):
         """
         super().__init__(source=wav, language=language)  # type: ignore[arg-type]
 
-    def _build_source(self, source) -> tuple:
+    def _build_source(self, source: object) -> tuple:
         if not isinstance(source, (np.ndarray, bytes, bytearray)):
             raise TypeError(f"Unsupported source type: {type(source)!r}")
         return InMemoryAudioSource(source), False

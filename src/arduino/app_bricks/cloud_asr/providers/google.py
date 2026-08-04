@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Generator
 import queue
 import threading
 
@@ -97,7 +98,7 @@ class GoogleSpeech:
         self._thread = threading.Thread(target=self._asr_worker, daemon=True)
         self._thread.start()
 
-    def _request_loop(self, session_end: threading.Event):
+    def _request_loop(self, session_end: threading.Event) -> Generator[StreamingRecognizeRequest]:
         while not self._stop_event.is_set() and not session_end.is_set():
             try:
                 chunk = self._audio_q.get(timeout=0.1)

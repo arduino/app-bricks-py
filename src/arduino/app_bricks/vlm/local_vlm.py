@@ -33,7 +33,7 @@ class VisionLanguageModel(LargeLanguageModel):
         timeout: int | None = None,
         tools: list[Callable[..., Any]] = None,
         model: str = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Initializes the VisionLanguageModel brick with the specified provider and configuration.
 

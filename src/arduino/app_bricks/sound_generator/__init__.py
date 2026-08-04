@@ -9,6 +9,7 @@ from collections.abc import Iterable
 import numpy as np
 import time
 from pathlib import Path
+from typing import Any
 from collections import OrderedDict
 import math
 
@@ -20,19 +21,19 @@ from .composition import MusicComposition as MusicComposition
 logger = Logger("SoundGenerator")
 
 
-class LRUDict(OrderedDict):
+class LRUDict[K, V](OrderedDict[K, V]):
     """A dictionary-like object with a fixed size that evicts the least recently used items."""
 
-    def __init__(self, maxsize=128, *args, **kwargs) -> None:
+    def __init__(self, maxsize: int = 128, *args: Any, **kwargs: Any) -> None:
         self.maxsize = maxsize
         super().__init__(*args, **kwargs)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: K) -> V:
         value = super().__getitem__(key)
         self.move_to_end(key)
         return value
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: K, value: V) -> None:
         if key in self:
             self.move_to_end(key)
 
@@ -1029,7 +1030,7 @@ class SoundGenerator(SoundGeneratorStreamer):
         with self._sequence_lock:
             return self._sequence_thread is not None and self._sequence_thread.is_alive()
 
-    def _render_sequence_step(self, notes: list[str], note_duration: float | str, volume: float):
+    def _render_sequence_step(self, notes: list[str], note_duration: float | str, volume: float) -> bytes:
         """Render a single sequence step to a float32 audio buffer."""
         if notes and len(notes) > 0:
             if len(notes) == 1:

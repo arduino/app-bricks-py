@@ -4,6 +4,8 @@
 
 from langchain_core.language_models import BaseChatModel
 
+from typing import Any
+
 from arduino.app_bricks.cloud_llm import CloudLLM, CloudModelProvider
 from arduino.app_bricks.cloud_llm.cloud_llm import DEFAULT_MEMORY, ToolLike
 from arduino.app_bricks.cloud_llm.memory import MessagePersistence
@@ -38,7 +40,7 @@ class LargeLanguageModel(CloudLLM):
         timeout: int | None = None,
         tools: Sequence[ToolLike] | None = None,
         model: str | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Initializes the LargeLanguageModel brick with the specified provider and configuration.
 

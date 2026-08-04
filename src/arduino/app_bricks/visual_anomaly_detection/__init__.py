@@ -2,6 +2,8 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+from PIL import Image
+
 from arduino.app_internal.core import EdgeImpulseRunnerFacade
 from arduino.app_utils import brick, Logger
 
@@ -55,7 +57,7 @@ class VisualAnomalyDetection(EdgeImpulseRunnerFacade):
         ret = super().infer_from_file(image_path)
         return self._extract_anomalies(ret)
 
-    def detect(self, image_bytes, image_type: str = "jpg") -> dict:
+    def detect(self, image_bytes: bytes | Image.Image, image_type: str = "jpg") -> dict:
         """Process an in-memory image to detect anomalies.
 
         Args:
@@ -74,7 +76,7 @@ class VisualAnomalyDetection(EdgeImpulseRunnerFacade):
         ret = super().infer_from_image(image_bytes, image_type)
         return self._extract_anomalies(ret)
 
-    def _extract_anomalies(self, item):
+    def _extract_anomalies(self, item: dict | None) -> dict | None:
         if not item:
             return None
         out_result = {}
@@ -113,7 +115,7 @@ class VisualAnomalyDetection(EdgeImpulseRunnerFacade):
 
         return None
 
-    def process(self, item):
+    def process(self, item: str | dict) -> dict | None:
         """Process an item to detect anomalies (file path or in-memory image).
 
         This method supports two input formats:

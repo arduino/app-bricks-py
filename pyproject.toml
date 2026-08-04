@@ -178,6 +178,10 @@ ignore = [
     "D206",    # Docstring should be indented with 4 spaces
 ]
 
+[tool.ruff.lint.flake8-annotations]
+# Passthrough *args/**kwargs may be typed as Any without triggering ANN401.
+allow-star-arg-any = true
+
 [tool.ruff.lint.per-file-ignores]
 # Type annotations are enforced only on the packaged library (wheel content).
 "!src/**" = ["ANN"]

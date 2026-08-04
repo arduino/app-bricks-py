@@ -7,7 +7,7 @@ import asyncio
 import threading
 from contextlib import asynccontextmanager
 from typing import Any
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable, Iterator
 
 import uvicorn
 from fastapi import FastAPI
@@ -62,7 +62,7 @@ class WebUI:
             use_tls = use_ssl
 
         @asynccontextmanager
-        async def lifespan(app):
+        async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await self._on_startup()
             yield
 
@@ -83,7 +83,7 @@ class WebUI:
 
         self._addr = addr
 
-        def pick_free_port():
+        def pick_free_port() -> int:
             import socket
 
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -209,7 +209,7 @@ class WebUI:
         if not camera.is_started:
             camera.start()
 
-        def generate_frames():
+        def generate_frames() -> Iterator[bytes]:
             try:
                 while True:
                     frame = camera.capture()
@@ -222,7 +222,7 @@ class WebUI:
             except Exception as e:
                 logger.error(f"Terminating stream on camera error: {e}")
 
-        def stream_route():
+        def stream_route() -> StreamingResponse:
             return StreamingResponse(
                 generate_frames(),
                 media_type="multipart/x-mixed-replace; boundary=frame",

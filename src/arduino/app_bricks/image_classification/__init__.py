@@ -2,6 +2,8 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+from PIL import Image
+
 from arduino.app_internal.core import EdgeImpulseRunnerFacade
 from arduino.app_utils import brick, Logger
 
@@ -44,7 +46,7 @@ class ImageClassification(EdgeImpulseRunnerFacade):
         ret = super().infer_from_file(image_path)
         return self._extract_classification(ret, confidence or self._confidence)
 
-    def classify(self, image_bytes, image_type: str = "jpg", confidence: float = None) -> dict | None:
+    def classify(self, image_bytes: bytes | Image.Image, image_type: str = "jpg", confidence: float = None) -> dict | None:
         """Process an in-memory image to be classified.
 
         Args:
@@ -60,7 +62,7 @@ class ImageClassification(EdgeImpulseRunnerFacade):
         ret = super().infer_from_image(image_bytes, image_type)
         return self._extract_classification(ret, confidence or self._confidence)
 
-    def process(self, item):
+    def process(self, item: str | dict) -> dict | None:
         """Process an item to classify objects in an image.
 
         This method supports two input formats:

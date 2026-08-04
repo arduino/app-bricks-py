@@ -7,6 +7,7 @@ import threading
 import time
 from collections.abc import Generator, Iterator
 from contextlib import AbstractContextManager
+from types import TracebackType
 
 import numpy as np
 import requests
@@ -37,7 +38,7 @@ class SynthesisStream(AbstractContextManager["SynthesisStream"], Iterator[bytes]
     def __enter__(self) -> "SynthesisStream":
         return self
 
-    def __exit__(self, exc_type, exc, tb) -> None:
+    def __exit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None) -> None:
         self.close()
 
     def __iter__(self) -> "SynthesisStream":

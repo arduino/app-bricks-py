@@ -3,10 +3,15 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import os
+from typing import TYPE_CHECKING
+
 from arduino.app_bricks.streamlit_ui import st
 
+if TYPE_CHECKING:
+    from streamlit.delta_generator import DeltaGenerator
 
-def arduino_header(title: str):
+
+def arduino_header(title: str) -> "DeltaGenerator":
     """Arduino custom header.
 
     Render a minimal Arduino header: left-aligned title, right-aligned logo SVG, styled. SVG logo loaded by file.

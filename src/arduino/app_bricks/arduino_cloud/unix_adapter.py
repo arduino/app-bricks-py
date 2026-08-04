@@ -16,14 +16,17 @@ connection transport is swapped — everything else is standard urllib3.
 """
 
 import socket
+from collections.abc import Mapping
+from typing import Any
 
+from requests import PreparedRequest
 from requests.adapters import HTTPAdapter
 from urllib3.connection import HTTPConnection
 from urllib3.connectionpool import HTTPConnectionPool
 
 
 class _UnixHTTPConnection(HTTPConnection):
-    def __init__(self, socket_path: str, **kwargs) -> None:
+    def __init__(self, socket_path: str, **kwargs: Any) -> None:
         # The host is irrelevant for an AF_UNIX socket, but urllib3 requires one.
         super().__init__("localhost", **kwargs)
         self._unix_socket_path = socket_path
@@ -39,18 +42,18 @@ class _UnixHTTPConnection(HTTPConnection):
 
 
 class _UnixHTTPConnectionPool(HTTPConnectionPool):
-    def __init__(self, socket_path: str, **kwargs) -> None:
+    def __init__(self, socket_path: str, **kwargs: Any) -> None:
         super().__init__("localhost", **kwargs)
         self._unix_socket_path = socket_path
 
-    def _new_conn(self):
+    def _new_conn(self) -> _UnixHTTPConnection:
         return _UnixHTTPConnection(self._unix_socket_path, timeout=self.timeout)
 
 
 class UnixHTTPAdapter(HTTPAdapter):
     """Routes ``http+unix://`` requests over a fixed AF_UNIX socket path."""
 
-    def __init__(self, socket_path: str, **kwargs) -> None:
+    def __init__(self, socket_path: str, **kwargs: Any) -> None:
         self._unix_socket_path = socket_path
         self._pool = None
         super().__init__(**kwargs)
@@ -61,13 +64,19 @@ class UnixHTTPAdapter(HTTPAdapter):
         return self._pool
 
     # requests >= 2.32 calls this; older versions call get_connection.
-    def get_connection_with_tls_context(self, request, verify, proxies=None, cert=None):
+    def get_connection_with_tls_context(
+        self,
+        request: PreparedRequest,
+        verify: bool | str | None,
+        proxies: Mapping[str, str] | None = None,
+        cert: tuple[str, str] | str | None = None,
+    ) -> _UnixHTTPConnectionPool:
         return self._pool_for()
 
-    def get_connection(self, url, proxies=None):
+    def get_connection(self, url: str | bytes, proxies: Mapping[str, str] | None = None) -> _UnixHTTPConnectionPool:
         return self._pool_for()
 
-    def request_url(self, request, proxies):
+    def request_url(self, request: PreparedRequest, proxies: Mapping[str, str] | None) -> str:
         # Use the path (and query) only, so the request line is
         # "GET /v1/variables/led HTTP/1.1" rather than the http+unix:// URL.
         return request.path_url

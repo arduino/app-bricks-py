@@ -11,6 +11,7 @@ import time
 from collections.abc import Generator, Iterator
 from concurrent.futures import CancelledError, Future
 from dataclasses import dataclass
+from types import TracebackType
 from contextlib import AbstractContextManager
 from typing import Literal
 
@@ -99,7 +100,7 @@ class TranscriptionStream[T](AbstractContextManager["TranscriptionStream[T]"], I
     def __enter__(self) -> "TranscriptionStream[T]":
         return self
 
-    def __exit__(self, exc_type, exc, tb) -> None:
+    def __exit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None) -> None:
         self.close()
 
     def __iter__(self) -> "TranscriptionStream[T]":
@@ -139,7 +140,7 @@ class BaseASR:
     _FLUSH_INTERVAL_SECONDS = 5
     _DEFAULT_VAD_MS = 700
 
-    def __init__(self, source, language: str | None = None) -> None:
+    def __init__(self, source: object, language: str | None = None) -> None:
         # API configuration
         self.api_host = resolve_address(self._APP_SERVICE_NAME)
         if not self.api_host:
@@ -210,7 +211,7 @@ class BaseASR:
         """
         return self._active_session is not None
 
-    def _build_source(self, source) -> tuple:
+    def _build_source(self, source: object) -> tuple:
         """Bind the audio source. Subclasses must override."""
         raise NotImplementedError("Subclasses must override _build_source")
 
@@ -550,7 +551,7 @@ class BaseASR:
                     continue
             logger.debug(f"Reader thread exited for session {session_id}")
 
-    async def _await_connection_established(self, websocket, label) -> None:
+    async def _await_connection_established(self, websocket: websockets.ClientConnection, label: str) -> None:
         try:
             raw = await asyncio.wait_for(websocket.recv(), timeout=5.0)
         except (TimeoutError, ConnectionClosed) as e:
@@ -772,7 +773,7 @@ class AutomaticSpeechRecognition(BaseASR):
         """
         super().__init__(source=mic, language=language)
 
-    def _build_source(self, source) -> tuple:
+    def _build_source(self, source: object) -> tuple:
         if source is None:
             return Microphone(0), True  # First plugged mic, shared with other consumers
         if isinstance(source, BaseMicrophone):

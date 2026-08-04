@@ -221,7 +221,7 @@ class AirQualityLookupError(Exception):
         self.message = message
 
     @classmethod
-    def from_api_response(cls, data: dict):
+    def from_api_response(cls, data: dict) -> "AirQualityLookupError":
         """AirQualityLookupError error handling based on response provided by AQI API.
 
         Documented errors:

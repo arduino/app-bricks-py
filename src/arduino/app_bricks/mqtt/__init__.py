@@ -3,6 +3,9 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import paho.mqtt.client as mqtt
+from paho.mqtt.client import ConnectFlags, DisconnectFlags, MQTTMessage
+from paho.mqtt.properties import Properties
+from paho.mqtt.reasoncodes import ReasonCode
 import json
 import uuid
 from collections.abc import Callable
@@ -13,7 +16,7 @@ logger = Logger("MQTT")
 DEFAULT_CLIENT_ID_PREFIX = "arduino"
 
 
-def _generate_client_id(name: str):
+def _generate_client_id(name: str) -> str:
     """Generate a unique client ID for MQTT clients.
 
     Args:
@@ -44,10 +47,10 @@ def _load_client(client_id: str, username: str | None, password: str | None, top
     # Configure automatic reconnection
     client.reconnect_delay_set(min_delay=1, max_delay=60)
 
-    def on_connect(client, userdata, flags, reason_code, properties) -> None:
+    def on_connect(client: mqtt.Client, userdata: object, flags: ConnectFlags, reason_code: ReasonCode, properties: Properties | None) -> None:
         """Callback function for when the client connects to the MQTT broker."""
         if reason_code != 0:
-            logger.error(f"Failed to connect: {mqtt.error_string(reason_code)}")
+            logger.error(f"Failed to connect: {reason_code}")
             return
 
         logger.info("Client connected")
@@ -60,14 +63,14 @@ def _load_client(client_id: str, username: str | None, password: str | None, top
                 except Exception as e:
                     logger.error("Failed to subscribe to topic %s: %s", t, e)
 
-    def on_disconnect(client, userdata, flags, reason_code, properties) -> None:
+    def on_disconnect(client: mqtt.Client, userdata: object, flags: DisconnectFlags, reason_code: ReasonCode, properties: Properties | None) -> None:
         """Callback function for when the client disconnects from the MQTT broker."""
         if reason_code == 0:
             logger.debug("Client disconnected gracefully")
         else:
-            logger.warning("Reconnecting after connection lost: (%s)...", mqtt.error_string(reason_code))
+            logger.warning("Reconnecting after connection lost: (%s)...", reason_code)
 
-    def on_subscribe(client, userdata, mid, granted_qos, properties=None) -> None:
+    def on_subscribe(client: mqtt.Client, userdata: object, mid: int, granted_qos: list[ReasonCode], properties: Properties | None = None) -> None:
         """Callback function for when the client successfully subscribes to a topic."""
         logger.info("Subscription successful to topic")
 
@@ -77,7 +80,7 @@ def _load_client(client_id: str, username: str | None, password: str | None, top
     return client
 
 
-def _default_on_message(client, userdata, msg) -> None:
+def _default_on_message(client: mqtt.Client, userdata: object, msg: MQTTMessage) -> None:
     """A default callback function for when a message is received from the subscribed topic.
 
     Args:

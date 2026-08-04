@@ -5,7 +5,7 @@
 
 import asyncio
 from fnmatch import fnmatchcase
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from collections.abc import Iterable
 
 from langchain_core.tools import BaseTool
@@ -68,7 +68,7 @@ class HTTPEndpoint:
 class MCPClient:
     """A class to communicate with the MCP server to perform various tasks."""
 
-    def __init__(self, endpoints: list[HTTPEndpoint], tool_name_prefix: bool = True, **kwargs) -> None:
+    def __init__(self, endpoints: list[HTTPEndpoint], tool_name_prefix: bool = True, **kwargs: Any) -> None:
         """Initialize the MCPClient with a MultiServerMCPClient.
 
         Args:
