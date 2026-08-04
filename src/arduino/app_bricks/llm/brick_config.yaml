@@ -18,6 +18,6 @@ ai_frameworks_compatibility:
   - genie
   - llamacpp
 variables:
-- name: X_LLAMA_ARG_CTX_SIZE
+- name: LLAMA_ARG_CTX_SIZE
   description: Context size (LLama.cpp only)
   default_value: 16384
