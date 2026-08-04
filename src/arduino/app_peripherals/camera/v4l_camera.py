@@ -250,7 +250,7 @@ class V4LCamera(BaseCamera):
 
             if self.codec:
 
-                def fourcc_to_str(fourcc_int):
+                def fourcc_to_str(fourcc_int: float) -> str:
                     return "".join([chr((int(fourcc_int) >> 8 * i) & 0xFF) for i in range(4)])
 
                 self._cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*self.codec))

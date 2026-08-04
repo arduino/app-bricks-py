@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 from collections.abc import Callable
+from typing import Any
 from urllib.parse import urlparse
 
 import numpy as np
@@ -35,7 +36,7 @@ class Camera:
         resolution: tuple[int, int] = (640, 480),
         fps: int = 10,
         adjustments: Callable[[np.ndarray], np.ndarray] | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> BaseCamera:
         """
         Create a camera instance based on the source type.
@@ -172,7 +173,7 @@ def _create_camera(
     resolution: tuple[int, int],
     fps: int,
     adjustments: Callable[[np.ndarray], np.ndarray] | None,
-    **kwargs,
+    **kwargs: Any,
 ) -> BaseCamera:
     """Create the camera implementation matching the given source identifier."""
     if source.startswith("usb:"):

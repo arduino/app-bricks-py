@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import ctypes
+from typing import Any
 import os
 import re
 import stat
@@ -32,7 +33,7 @@ def camx_socket_available() -> bool:
 # loaded lazily here rather than at module import time.
 
 
-def _gst():
+def _gst() -> Any:
     """Import and initialize GStreamer's Python bindings on first use."""
     import gi
 
@@ -43,7 +44,7 @@ def _gst():
     return Gst
 
 
-def _glib_hash_table_keys():
+def _glib_hash_table_keys() -> ctypes.CDLL:
     """Bind the libglib GHashTable functions needed to read qtiqmmfsrc's static-metas property.
 
     Direct ctypes access is required because PyGObject can't read an opaque GHashTable.

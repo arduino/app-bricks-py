@@ -10,7 +10,8 @@ import time
 import websockets
 import asyncio
 from urllib.parse import urlparse, parse_qs
-from typing import Literal
+from types import TracebackType
+from typing import Literal, Self
 from collections.abc import Callable
 from concurrent.futures import CancelledError, ThreadPoolExecutor, Future
 
@@ -505,12 +506,12 @@ class RemoteSensor:
         except Exception:
             raise
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
         """Context manager entry."""
         self.start()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> bool:
         """Context manager exit."""
         self.stop()
         return False

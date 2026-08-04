@@ -6,8 +6,9 @@ import threading
 import time
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
-from typing import Literal
-from collections.abc import Callable
+from types import TracebackType
+from typing import Literal, Self
+from collections.abc import Callable, Iterator
 import numpy as np
 
 from arduino.app_utils import Logger
@@ -174,7 +175,7 @@ class BaseCamera(ABC):
 
             return frame
 
-    def stream(self):
+    def stream(self) -> Iterator[np.ndarray]:
         """
         Continuously capture frames from the camera.
 
@@ -195,7 +196,7 @@ class BaseCamera(ABC):
             if frame is not None:
                 yield frame
 
-    def record(self, duration) -> np.ndarray:
+    def record(self, duration: float) -> np.ndarray:
         """
         Record video for a specified duration and return it as a numpy array of raw frames.
 
@@ -240,7 +241,7 @@ class BaseCamera(ABC):
 
         return frames[:count]
 
-    def record_avi(self, duration) -> np.ndarray:
+    def record_avi(self, duration: float) -> np.ndarray:
         """
         Record video for a specified duration and return as MJPEG in AVI container.
 
@@ -401,17 +402,17 @@ class BaseCamera(ABC):
             if self._on_status_changed_cb is not None:
                 self._event_executor.submit(self._on_status_changed_cb, new_status, data if data is not None else {})
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
         """Context manager entry."""
         self.start()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> None:
         """Context manager exit."""
         self.stop()
 
 
-def _to_uint8(frame) -> np.ndarray:
+def _to_uint8(frame: np.ndarray) -> np.ndarray:
     """Normalize and convert to uint8."""
     if np.issubdtype(frame.dtype, np.floating):
         # We adopt the OpenCV convention: float images are in [0, 1]

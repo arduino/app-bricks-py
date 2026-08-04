@@ -2,6 +2,8 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+from typing import Any
+
 import numpy as np
 
 from .base_microphone import BaseMicrophone, FormatPlain, FormatPacked
@@ -104,7 +106,7 @@ class Microphone:
         channels: int = CHANNELS_MONO,
         format: FormatPlain | FormatPacked = np.int16,
         buffer_size: int = BUFFER_SIZE_BALANCED,
-        **kwargs,
+        **kwargs: Any,
     ) -> BaseMicrophone:
         """
         Create a microphone instance based on the device type.
@@ -305,7 +307,7 @@ def _create_microphone(
     channels: int,
     format: FormatPlain | FormatPacked,
     buffer_size: int,
-    **kwargs,
+    **kwargs: Any,
 ) -> BaseMicrophone:
     """Create the microphone implementation matching the given device identifier."""
     from urllib.parse import urlparse

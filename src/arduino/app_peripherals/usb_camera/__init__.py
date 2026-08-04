@@ -88,6 +88,6 @@ class USBCamera:
         """Stops the camera and releases its resources."""
         self._wrapped_camera.stop()
 
-    def produce(self):
+    def produce(self) -> Image.Image | None:
         """Alias for capture method."""
         return self.capture()

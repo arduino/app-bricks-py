@@ -4,9 +4,10 @@
 
 import time
 import threading
-from typing import Literal
+from types import TracebackType
+from typing import Literal, Self
 from abc import ABC, abstractmethod
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
@@ -217,7 +218,7 @@ class BaseMicrophone(ABC):
 
             return audio_chunk
 
-    def stream(self):
+    def stream(self) -> Iterator[np.ndarray]:
         """
         Continuously capture audio chunks from the microphone.
 
@@ -493,12 +494,12 @@ class BaseMicrophone(ABC):
             if self._on_status_changed_cb is not None:
                 self._event_executor.submit(self._on_status_changed_cb, new_status, data if data is not None else {})
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
         """Context manager entry."""
         self.start()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> None:
         """Context manager exit."""
         self.stop()
 

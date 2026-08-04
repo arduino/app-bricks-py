@@ -4,7 +4,8 @@
 
 import time
 import threading
-from typing import Literal
+from types import TracebackType
+from typing import Literal, Self
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -417,17 +418,17 @@ class BaseSpeaker(ABC):
             self._on_status_changed_cb = _callback_wrapper
 
     @abstractmethod
-    def _open_speaker(self):
+    def _open_speaker(self) -> None:
         """Open the speaker connection. Must be implemented by subclasses."""
         pass
 
     @abstractmethod
-    def _close_speaker(self):
+    def _close_speaker(self) -> None:
         """Close the speaker connection. Must be implemented by subclasses."""
         pass
 
     @abstractmethod
-    def _write_audio(self, audio_chunk: np.ndarray):
+    def _write_audio(self, audio_chunk: np.ndarray) -> None:
         """Write a single audio chunk to the speaker. Must be implemented by subclasses."""
         pass
 
@@ -464,12 +465,12 @@ class BaseSpeaker(ABC):
             if self._on_status_changed_cb is not None:
                 self._event_executor.submit(self._on_status_changed_cb, new_status, data if data is not None else {})
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
         """Context manager entry."""
         self.start()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> None:
         """Context manager exit."""
         self.stop()
 
