@@ -178,8 +178,8 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-# Type annotations are not required in tests.
-"tests/**" = ["ANN"]
+# Type annotations are enforced only on the packaged library (wheel content).
+"!src/**" = ["ANN"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
