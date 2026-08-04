@@ -16,6 +16,13 @@ import os
 
 import pytest
 
+from huggingface_hub.errors import (
+    DisabledRepoError,
+    GatedRepoError,
+    RepositoryNotFoundError,
+    RevisionNotFoundError,
+)
+
 from common.model_metadata import METADATA_NAME
 from hugging_face.hf_downloader import (
     JsonProgress,
@@ -27,9 +34,13 @@ from hugging_face.hf_downloader import (
     is_hf_url,
     matches_pattern,
     no_match_message,
+    parse_hf_url,
     parse_model_key,
     prune_emptied_repo_dir,
+    public_repo_files,
     resolve_model_source,
+    validate_hub_source,
+    validate_repo_id,
 )
 
 
@@ -246,6 +257,150 @@ def test_gguf_pattern(spec, mmproj, expected):
 
 
 # --------------------------------------------------------------------------- #
+# parse_hf_url — the model URL is host configuration, so it is validated
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        # The canonical form, as models-list.yaml writes it.
+        (
+            "https://huggingface.co/unsloth/gemma-3-1b-it-GGUF/blob/f0b45be0aac41bd6a100a4b5734cad5f67255bfb/gemma-3-1b-it-Q4_0.gguf",
+            ("unsloth/gemma-3-1b-it-GGUF", "gemma-3-1b-it-Q4_0.gguf", "f0b45be0aac41bd6a100a4b5734cad5f67255bfb"),
+        ),
+        # /resolve/ is the download path of the same file.
+        (
+            "https://huggingface.co/org/repo/resolve/main/model.gguf",
+            ("org/repo", "model.gguf", "main"),
+        ),
+        # A repository without an owner: canonical models live at the root of the Hub.
+        (
+            "https://huggingface.co/bert-base-uncased/resolve/main/model.gguf",
+            ("bert-base-uncased", "model.gguf", "main"),
+        ),
+        # Files nested in a per-quantization folder.
+        (
+            "https://huggingface.co/org/repo/blob/main/UD-Q4_0/model-Q4_0.gguf",
+            ("org/repo", "UD-Q4_0/model-Q4_0.gguf", "main"),
+        ),
+        # What the Hub's own download button produces, and a fragment: neither names the file.
+        (
+            "https://huggingface.co/org/repo/resolve/main/model.gguf?download=true#anchor",
+            ("org/repo", "model.gguf", "main"),
+        ),
+        # Percent escapes are decoded, so the file name matches what the repository holds.
+        (
+            "https://huggingface.co/org/repo/resolve/main/model%20final.gguf",
+            ("org/repo", "model final.gguf", "main"),
+        ),
+        # The host is case-insensitive, as hosts are.
+        (
+            "https://HuggingFace.CO/org/repo/resolve/main/model.gguf",
+            ("org/repo", "model.gguf", "main"),
+        ),
+    ],
+)
+def test_parse_hf_url_accepts_canonical_urls(url, expected):
+    assert parse_hf_url(url) == expected
+
+
+@pytest.mark.parametrize(
+    ("url", "reason"),
+    [
+        # Another host entirely.
+        ("https://example.com/org/repo/resolve/main/model.gguf", "not huggingface.co"),
+        # A lookalike domain that a prefix match would have accepted.
+        ("https://huggingface.co.example.com/org/repo/resolve/main/model.gguf", "not huggingface.co"),
+        # Credentials, which put the real host after the '@'.
+        ("https://huggingface.co@example.com/org/repo/resolve/main/model.gguf", "not huggingface.co"),
+        # A port on the right host still is not the Hub.
+        ("https://huggingface.co:8443/org/repo/resolve/main/model.gguf", "not huggingface.co"),
+        # Schemes that are not an HTTP download.
+        ("file:///etc/passwd", "Unsupported scheme"),
+        ("ftp://huggingface.co/org/repo/resolve/main/model.gguf", "Unsupported scheme"),
+        # Hub sections that are not model repositories.
+        ("https://huggingface.co/datasets/org/repo/resolve/main/model.gguf", "not a model repository owner"),
+        ("https://huggingface.co/spaces/org/repo/resolve/main/model.gguf", "not a model repository owner"),
+        # Shapes that do not name a repository, a revision and a file.
+        ("https://huggingface.co/org/repo", "does not name a repository"),
+        ("https://huggingface.co/org/repo/blob/main", "does not name a repository"),
+        ("https://huggingface.co/org/repo/tree/main/model.gguf", "does not name a repository"),
+        ("https://huggingface.co/a/b/c/resolve/main/model.gguf", "does not name a repository"),
+        # A revision no Hub ref could be named.
+        ("https://huggingface.co/org/repo/resolve/-main/model.gguf", "is not a branch, tag or commit sha"),
+        # Formats this downloader cannot install.
+        ("https://huggingface.co/org/repo/resolve/main/README.md", "is not a GGUF file"),
+        ("https://huggingface.co/org/repo/resolve/main/model.safetensors", "is not a GGUF file"),
+    ],
+)
+def test_parse_hf_url_rejects_anything_else(url, reason):
+    with pytest.raises(ValueError, match="Invalid Hugging Face URL") as excinfo:
+        parse_hf_url(url)
+    assert reason in str(excinfo.value)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        # A traversing file path would be written outside the output directory.
+        "https://huggingface.co/org/repo/resolve/main/../../../etc/cron.d/x.gguf",
+        # The same, hidden in percent escapes: the check runs on the decoded path.
+        "https://huggingface.co/org/repo/resolve/main/%2e%2e/%2e%2e/etc/x.gguf",
+        # A backslash is a directory separator once the path reaches a Windows host.
+        "https://huggingface.co/org/repo/resolve/main/..\\..\\x.gguf",
+    ],
+)
+def test_parse_hf_url_rejects_paths_that_escape_the_output_directory(url):
+    with pytest.raises(ValueError, match="Invalid Hugging Face URL"):
+        parse_hf_url(url)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://huggingface.co/-org/repo/resolve/main/model.gguf",
+        "https://huggingface.co/org/.repo/resolve/main/model.gguf",
+        "https://huggingface.co/o%2Frg/repo/resolve/main/model.gguf",
+    ],
+)
+def test_parse_hf_url_rejects_repo_ids_the_hub_could_not_have_issued(url):
+    with pytest.raises(ValueError, match="Invalid Hugging Face (URL|repository id)"):
+        parse_hf_url(url)
+
+
+# --------------------------------------------------------------------------- #
+# validate_repo_id — also guards the directory the repo id becomes
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize("repo_id", ["unsloth/Qwen3-0.6B-GGUF", "bert-base-uncased", "org/repo.v2", "a/b_c-d.e"])
+def test_validate_repo_id_accepts_hub_names(repo_id):
+    assert validate_repo_id(repo_id) is None
+
+
+@pytest.mark.parametrize(
+    "repo_id",
+    [
+        "../../etc",  # would escape the models directory --delete removes
+        "..",
+        "org/repo/extra",
+        "org/",
+        "/repo",
+        "-org/repo",
+        "org/re po",
+        "org/repo\nid",
+        "a" * 97,
+    ],
+)
+def test_validate_repo_id_rejects_everything_else(repo_id):
+    with pytest.raises(ValueError, match="Invalid Hugging Face repository id"):
+        validate_repo_id(repo_id)
+
+
+def test_parse_model_key_rejects_a_traversing_repo_id():
+    """The key syntax reaches the same directory the URL syntax does."""
+    with pytest.raises(ValueError, match="Invalid Hugging Face repository id"):
+        parse_model_key("../../../etc:Q4_0")
+
+
+# --------------------------------------------------------------------------- #
 # resolve_model_source — one input, two syntaxes
 # --------------------------------------------------------------------------- #
 GEMMA_URL = "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf/blob/1894d1fc/gemma-4-E2B_q4_0-it.gguf"
@@ -327,6 +482,145 @@ def test_resolve_url_syntax_never_flags_a_default():
 def test_resolve_rejects_a_non_hf_url():
     with pytest.raises(ValueError, match="Invalid Hugging Face URL"):
         resolve_model_source("https://example.com/some/file.gguf")
+
+
+def test_resolve_rejects_an_mmproj_url_from_another_repository():
+    """The mmproj is fetched from the model's repository, so a second one cannot be honoured."""
+    with pytest.raises(ValueError, match="Both files must live in the same Hugging Face repository"):
+        resolve_model_source(GEMMA_URL, "https://huggingface.co/other/repo/blob/main/mmproj-BF16.gguf")
+
+
+# --------------------------------------------------------------------------- #
+# validate_hub_source — what the URL points at, not just how it is written
+# --------------------------------------------------------------------------- #
+class _FakeResponse:
+    """The minimum ``HfHubHTTPError`` reads off a response to build itself."""
+
+    headers: dict = {}
+    request = None
+
+
+def _hub_error(error_class):
+    return error_class("hub says no", response=_FakeResponse())
+
+
+class _FakeSibling:
+    def __init__(self, rfilename):
+        self.rfilename = rfilename
+
+
+class _FakeModelInfo:
+    def __init__(self, files=(), private=False, gated=False, disabled=False):
+        self.siblings = [_FakeSibling(name) for name in files]
+        self.private = private
+        self.gated = gated
+        self.disabled = disabled
+
+
+def fake_hub(monkeypatch, info=None, error=None):
+    """Replace HfApi with a stub, and return the log of model_info() calls it received."""
+    calls: list[dict] = []
+
+    class _FakeApi:
+        def model_info(self, repo_id, *, revision=None, token=None):
+            calls.append({"repo_id": repo_id, "revision": revision, "token": token})
+            if error is not None:
+                raise error
+            return info
+
+    monkeypatch.setattr("hugging_face.hf_downloader.HfApi", _FakeApi)
+    return calls
+
+
+def test_validate_hub_source_accepts_a_public_file(monkeypatch):
+    calls = fake_hub(monkeypatch, _FakeModelInfo(files=["gemma-4-E2B_q4_0-it.gguf", "README.md"]))
+
+    assert validate_hub_source(resolve_model_source(GEMMA_URL)) is None
+    assert calls == [{"repo_id": "google/gemma-4-E2B-it-qat-q4_0-gguf", "revision": "1894d1fc", "token": False}]
+
+
+def test_validate_hub_source_asks_anonymously_unless_a_token_is_given(monkeypatch):
+    """A token lying around in the environment must not make a private repo downloadable."""
+    calls = fake_hub(monkeypatch, _FakeModelInfo(files=["m-Q4_0.gguf"]))
+
+    validate_hub_source(resolve_model_source("org/repo:Q4_0"))
+    assert calls[-1]["token"] is False
+    # The compact key downloads from the default branch, so no revision is pinned.
+    assert calls[-1]["revision"] is None
+
+    validate_hub_source(resolve_model_source("org/repo:Q4_0"), token="hf_explicit")
+    assert calls[-1]["token"] == "hf_explicit"
+
+
+@pytest.mark.parametrize(
+    ("error_class", "reason"),
+    [
+        (GatedRepoError, "is gated"),
+        (RepositoryNotFoundError, "does not exist, or is not public"),
+        (RevisionNotFoundError, "Revision '1894d1fc' does not exist"),
+        (DisabledRepoError, "has been disabled"),
+    ],
+)
+def test_validate_hub_source_reports_why_a_repo_cannot_be_used(monkeypatch, error_class, reason):
+    fake_hub(monkeypatch, error=_hub_error(error_class))
+
+    with pytest.raises(ValueError, match=reason):
+        validate_hub_source(resolve_model_source(GEMMA_URL))
+
+
+@pytest.mark.parametrize(
+    ("flag", "reason"),
+    [({"private": True}, "is private"), ({"gated": "manual"}, "is gated"), ({"disabled": True}, "has been disabled")],
+)
+def test_validate_hub_source_rejects_a_repo_that_is_not_freely_downloadable(monkeypatch, flag, reason):
+    """With --hf-token the repo answers instead of 404ing, so the fields are checked too."""
+    fake_hub(monkeypatch, _FakeModelInfo(files=["gemma-4-E2B_q4_0-it.gguf"], **flag))
+
+    with pytest.raises(ValueError, match=reason):
+        validate_hub_source(resolve_model_source(GEMMA_URL), token="hf_explicit")
+
+
+def test_validate_hub_source_reports_an_unreachable_hub_without_blaming_the_url(monkeypatch):
+    fake_hub(monkeypatch, error=OSError("no network"))
+
+    with pytest.raises(ValueError, match="Could not verify Hugging Face repository 'google/"):
+        validate_hub_source(resolve_model_source(GEMMA_URL))
+
+
+def test_validate_hub_source_lists_alternatives_for_a_file_that_is_not_there(monkeypatch):
+    fake_hub(monkeypatch, _FakeModelInfo(files=["gemma-4-E2B_q8_0-it.gguf", "README.md"]))
+
+    with pytest.raises(ValueError, match="Available GGUF files: gemma-4-E2B_q8_0-it.gguf") as excinfo:
+        validate_hub_source(resolve_model_source(GEMMA_URL))
+    assert "at revision '1894d1fc'" in str(excinfo.value)
+
+
+def test_validate_hub_source_checks_the_mmproj_file_too(monkeypatch):
+    fake_hub(monkeypatch, _FakeModelInfo(files=["gemma-4-E2B_q4_0-it.gguf"]))
+    source = resolve_model_source(
+        GEMMA_URL,
+        "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf/blob/1894d1fc/mmproj-BF16.gguf",
+    )
+
+    with pytest.raises(ValueError, match="File 'mmproj-BF16.gguf' does not exist"):
+        validate_hub_source(source)
+
+
+def test_validate_hub_source_looks_up_a_second_revision_only_when_it_differs(monkeypatch):
+    calls = fake_hub(monkeypatch, _FakeModelInfo(files=["gemma-4-E2B_q4_0-it.gguf", "mmproj-BF16.gguf"]))
+    source = resolve_model_source(
+        GEMMA_URL,
+        "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf/blob/main/mmproj-BF16.gguf",
+    )
+
+    validate_hub_source(source)
+    assert [call["revision"] for call in calls] == ["1894d1fc", "main"]
+
+
+def test_public_repo_files_returns_the_repo_listing(monkeypatch):
+    fake_hub(monkeypatch, _FakeModelInfo(files=["a.gguf", "sub/b.gguf"]))
+
+    assert public_repo_files("org/repo") == {"a.gguf", "sub/b.gguf"}
 
 
 # --------------------------------------------------------------------------- #
