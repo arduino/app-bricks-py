@@ -28,12 +28,12 @@ class AsyncBrickAdapter:
     def set_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         self._loop = loop
 
-    async def start(self):
+    async def start(self) -> Any:
         """Normalized async start method."""
         logger.debug(f"Running start method for {type(self.original_brick).__name__}")
         return await self._execute_maybe_sync("start")
 
-    async def stop(self):
+    async def stop(self) -> Any:
         """Normalized async stop method."""
         logger.debug(f"Starting stop method for {type(self.original_brick).__name__}")
         return await self._execute_maybe_sync("stop")

@@ -47,7 +47,7 @@ def get_app_config() -> dict | None:
     return None
 
 
-def get_brick_config(cls) -> dict | None:
+def get_brick_config(cls: type) -> dict | None:
     """Gets resolved brick_config.yaml file."""
     config_file = get_brick_linked_resource_file(cls, config_file_name)
     if config_file and os.path.exists(config_file):
@@ -57,17 +57,17 @@ def get_brick_config(cls) -> dict | None:
     return None
 
 
-def get_brick_config_file(cls) -> str | None:
+def get_brick_config_file(cls: type) -> str | None:
     """Gets the full path of the brick_config.yaml file."""
     return get_brick_linked_resource_file(cls, config_file_name)
 
 
-def get_brick_compose_file(cls) -> str | None:
+def get_brick_compose_file(cls: type) -> str | None:
     """Gets the full path of the brick_compose.yaml file, if present."""
     return get_brick_linked_resource_file(cls, compose_config_file_name)
 
 
-def load_brick_compose_file(cls) -> dict | None:
+def load_brick_compose_file(cls: type) -> dict | None:
     """Loads the brick_compose.yaml file and returns its content."""
     pathfile = get_brick_compose_file(cls)
     if pathfile:
@@ -78,7 +78,7 @@ def load_brick_compose_file(cls) -> dict | None:
         return None
 
 
-def get_brick_linked_resource_file(cls, resource_file_name) -> str | None:
+def get_brick_linked_resource_file(cls: type, resource_file_name: str) -> str | None:
     """Gets the full path to a config file in the directory containing a class."""
     try:
         module = cls.__module__
@@ -262,7 +262,7 @@ def get_brick_configured_model(brick_id: str, brick_config: dict = None) -> str 
     return None
 
 
-def parse_docker_compose_variable(variable_string) -> list[tuple[str, str]] | str:
+def parse_docker_compose_variable(variable_string: str) -> list[tuple[str, str]] | str:
     """Parses a Docker Compose-style environment variable string, including nested variables.
 
     Args:
@@ -290,7 +290,7 @@ def parse_docker_compose_variable(variable_string) -> list[tuple[str, str]] | st
         return variable_string
 
 
-def _accumulate_docker_compose_variables(discovered_vars, value) -> None:
+def _accumulate_docker_compose_variables(discovered_vars: list[tuple[str, str | None]], value: object) -> None:
     if isinstance(value, str):
         tp = parse_docker_compose_variable(value)
         if tp and isinstance(tp, list):

@@ -172,7 +172,7 @@ class AudioDetector(EdgeImpulseRunnerFacade):
             time.sleep(1)  # Sleep briefly to avoid tight loop in case of errors
 
 
-def _extract_classification(item, confidence: float) -> list | None:
+def _extract_classification(item: dict | None, confidence: float) -> list | None:
     if not item:
         return None
 

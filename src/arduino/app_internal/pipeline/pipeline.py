@@ -25,7 +25,7 @@ class Pipeline:
         self._pipeline_future: Future | None = None  # Represents the overall pipeline task
         self._running = False
 
-    def add_source(self, brick: Any, rate_limit: int | None = None, queue_size: int = 1):
+    def add_source(self, brick: Any, rate_limit: int | None = None, queue_size: int = 1) -> "Pipeline":
         if self._running:
             raise RuntimeError("Cannot add bricks while pipeline is running.")
         if self._steps:
@@ -41,7 +41,7 @@ class Pipeline:
 
         return self
 
-    def add_processor(self, brick: Any, rate_limit: int | None = None, queue_size: int = 1):
+    def add_processor(self, brick: Any, rate_limit: int | None = None, queue_size: int = 1) -> "Pipeline":
         if self._running:
             raise RuntimeError("Cannot add bricks while pipeline is running.")
         if not self._steps:
@@ -59,7 +59,7 @@ class Pipeline:
 
         return self
 
-    def add_sink(self, brick: Any, rate_limit: int | None = None, queue_size: int = 1):
+    def add_sink(self, brick: Any, rate_limit: int | None = None, queue_size: int = 1) -> "Pipeline":
         if self._running:
             raise RuntimeError("Cannot add bricks while pipeline is running.")
         if not self._steps:
