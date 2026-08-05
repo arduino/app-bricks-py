@@ -162,42 +162,42 @@ def test_collect_inputs_empty_environment():
 def test_identify_model_from_models_list(tmp_path):
     """Only the id is taken from the entry; its name/source/... are not duplicated."""
     identity = identify_model(AI_HUB_ENV, _models_list(tmp_path))
-    assert identity == {"model_id": "genie:qwen3_4b_instruct_2507", "model_source": "models_list"}
+    assert identity == {"model_id": "genie:qwen3_4b_instruct_2507", "model_origin": "builtin"}
 
 
 def test_identify_model_prefers_model_id_env(tmp_path):
     env = dict(AI_HUB_ENV, model_id="host:provided")
     identity = identify_model(env, _models_list(tmp_path))
-    assert identity == {"model_id": "host:provided", "model_source": "models_list"}
+    assert identity == {"model_id": "host:provided", "model_origin": "builtin"}
 
 
 def test_identify_model_user_configured_when_yaml_missing(tmp_path):
     identity = identify_model(AI_HUB_ENV, str(tmp_path / "nope.yaml"))
-    assert identity == {"model_id": None, "model_source": "user_configured"}
+    assert identity == {"model_id": None, "model_origin": "user_configured"}
 
 
 def test_identify_model_user_configured_when_yaml_is_broken(tmp_path):
     broken = tmp_path / "models-list.yaml"
     broken.write_text("models: [unclosed\n")
-    assert identify_model(AI_HUB_ENV, str(broken))["model_source"] == "user_configured"
+    assert identify_model(AI_HUB_ENV, str(broken))["model_origin"] == "user_configured"
 
 
 def test_identify_model_user_configured_when_no_entry_matches(tmp_path):
     identity = identify_model({"model_name": "something-else"}, _models_list(tmp_path))
-    assert identity == {"model_id": None, "model_source": "user_configured"}
+    assert identity == {"model_id": None, "model_origin": "user_configured"}
 
 
 def test_identify_model_uses_the_fallback_id_when_not_curated(tmp_path):
     """An ad-hoc download still needs an id: nothing can refer to a null one."""
     env = {"model_url": "TheBloke/Mistral-7B-Instruct-v0.2-GGUF:Q4_0", "models_repository": "llamacpp"}
     identity = identify_model(env, _models_list(tmp_path), fallback_model_id="llamacpp:mistral.Q4_0")
-    assert identity == {"model_id": "llamacpp:mistral.Q4_0", "model_source": "user_configured"}
+    assert identity == {"model_id": "llamacpp:mistral.Q4_0", "model_origin": "user_configured"}
 
 
 def test_identify_model_ignores_the_fallback_when_curated(tmp_path):
     """A declared model keeps its entry key; the fallback is only for the other case."""
     identity = identify_model(AI_HUB_ENV, _models_list(tmp_path), fallback_model_id="should:not:be:used")
-    assert identity == {"model_id": "genie:qwen3_4b_instruct_2507", "model_source": "models_list"}
+    assert identity == {"model_id": "genie:qwen3_4b_instruct_2507", "model_origin": "builtin"}
 
 
 def test_identify_model_needs_the_derived_model_directory(tmp_path):
@@ -234,7 +234,7 @@ def test_metadata_payload_drops_empty_values():
     payload = metadata_payload(
         "hf-handler",
         inputs={"model_name": "x", "quantization": "", "version": None},
-        identity={"model_id": "a:b", "model_source": "models_list"},
+        identity={"model_id": "a:b", "model_origin": "builtin"},
     )
     assert payload["inputs"] == {"model_name": "x"}
     assert payload["model_id"] == "a:b"
@@ -242,9 +242,9 @@ def test_metadata_payload_drops_empty_values():
 
 def test_metadata_payload_omits_empty_inputs():
     payload = metadata_payload("ei-handler")
-    assert list(payload) == ["downloaded_at", "handler", "model_id", "model_source"]
+    assert list(payload) == ["downloaded_at", "handler", "model_id", "model_origin"]
     assert payload["model_id"] is None
-    assert payload["model_source"] == "user_configured"
+    assert payload["model_origin"] == "user_configured"
 
 
 def test_metadata_payload_copies_nothing_else_from_the_entry():
@@ -252,9 +252,9 @@ def test_metadata_payload_copies_nothing_else_from_the_entry():
     payload = metadata_payload(
         "ai-hub-handler",
         inputs={"model_name": "x"},
-        identity={"model_id": "genie:x", "model_source": "models_list"},
+        identity={"model_id": "genie:x", "model_origin": "builtin"},
     )
-    assert list(payload) == ["downloaded_at", "handler", "model_id", "model_source", "inputs"]
+    assert list(payload) == ["downloaded_at", "handler", "model_id", "model_origin", "inputs"]
     for copied in ("name", "source", "source_model_id", "source_model_url", "model_size_mb", "resolved"):
         assert copied not in payload
 
@@ -342,7 +342,7 @@ def test_read_keeps_unknown_keys(tmp_path):
 # --------------------------------------------------------------------------- #
 # End-to-end payload shape, per handler
 # --------------------------------------------------------------------------- #
-PAYLOAD_KEYS = ["downloaded_at", "handler", "model_id", "model_source", "inputs"]
+PAYLOAD_KEYS = ["downloaded_at", "handler", "model_id", "model_origin", "inputs"]
 
 
 def test_payload_ai_hub(tmp_path):
@@ -353,7 +353,7 @@ def test_payload_ai_hub(tmp_path):
     assert list(data) == PAYLOAD_KEYS
     assert data["handler"] == "ai-hub-handler"
     assert data["model_id"] == "genie:qwen3_4b_instruct_2507"
-    assert data["model_source"] == "models_list"
+    assert data["model_origin"] == "builtin"
     assert data["inputs"] == AI_HUB_ENV
 
 
@@ -409,7 +409,7 @@ def test_payload_for_a_repo_absent_from_models_list(tmp_path):
     data = read_metadata(str(model_dir))
     assert list(data) == PAYLOAD_KEYS
     assert data["model_id"] == "llamacpp:mistral-7b-instruct-v0.2.Q4_0"
-    assert data["model_source"] == "user_configured"
+    assert data["model_origin"] == "user_configured"
     # The download is still fully described by its own variables.
     assert data["inputs"] == env
 

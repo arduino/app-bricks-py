@@ -13,7 +13,7 @@ the model directory after a successful download and stays there:
     downloaded_at: '2026-08-03T09:41:12Z'
     handler: hf-handler
     model_id: llamacpp:gemma-4-E2B_q4_0-it
-    model_source: models_list
+    model_origin: builtin
     inputs:                     # the download variables, verbatim from the environment
       models_repository: llamacpp
       model_directory: google/gemma-4-E2B-it-qat-q4_0-gguf
@@ -27,8 +27,8 @@ Contracts callers must honour:
   and the function returns None.
 - The file is therefore **optional**. Its absence means "unknown / legacy install",
   never "up to date": models downloaded before this file existed have none.
-- ``model_source`` says where the model comes from, not where its id was read from:
-  ``models_list`` for a model models-list.yaml declares, ``user_configured`` for one
+- ``model_origin`` says where the model comes from, not where its id was read from:
+  ``builtin`` for a model models-list.yaml declares, ``user_configured`` for one
   downloaded ad hoc. Any Hugging Face repository can be fetched by putting its URL or
   compact key in ``model_url`` with no entry in the list, so ``user_configured`` is a
   **normal, supported state, not an error**. Only that outdated-detection does not
@@ -89,10 +89,10 @@ INPUT_VARIABLES = (
 # Credentials are never persisted, whatever the environment holds.
 SECRET_VARIABLES = frozenset({"hf_token", "HF_TOKEN", "HF_HUB_TOKEN", "EI_API_KEY"})
 
-# Where a model comes from, reported as "model_source" both here and in the listing
+# Where a model comes from, reported as "model_origin" both here and in the listing
 # (list_models.py imports these, so the two can never drift apart).
-SOURCE_MODELS_LIST = "models_list"
-SOURCE_USER_CONFIGURED = "user_configured"
+ORIGIN_BUILTIN = "builtin"
+ORIGIN_USER_CONFIGURED = "user_configured"
 
 
 def utc_now_iso():
@@ -141,15 +141,15 @@ def identify_model(env=None, models_list_path=MODELS_LIST_PATH, fallback_model_i
     used instead of leaving it null.
 
     Returns:
-        A dict with ``model_id`` and ``model_source``, the latter being
-        ``SOURCE_MODELS_LIST`` or ``SOURCE_USER_CONFIGURED``.
+        A dict with ``model_id`` and ``model_origin``, the latter being
+        ``ORIGIN_BUILTIN`` or ``ORIGIN_USER_CONFIGURED``.
     """
     env = env if env is not None else os.environ
 
     explicit = env.get("model_id")
     if explicit:
         # Only models-list.yaml can tell the host an id, so this is a curated model.
-        return {"model_id": explicit, "model_source": SOURCE_MODELS_LIST}
+        return {"model_id": explicit, "model_origin": ORIGIN_BUILTIN}
 
     try:
         models = load_models_list(models_list_path)
@@ -158,8 +158,8 @@ def identify_model(env=None, models_list_path=MODELS_LIST_PATH, fallback_model_i
         model_id = None
 
     if model_id:
-        return {"model_id": model_id, "model_source": SOURCE_MODELS_LIST}
-    return {"model_id": fallback_model_id, "model_source": SOURCE_USER_CONFIGURED}
+        return {"model_id": model_id, "model_origin": ORIGIN_BUILTIN}
+    return {"model_id": fallback_model_id, "model_origin": ORIGIN_USER_CONFIGURED}
 
 
 def metadata_payload(handler, inputs=None, identity=None, downloaded_at=None):
@@ -169,7 +169,7 @@ def metadata_payload(handler, inputs=None, identity=None, downloaded_at=None):
         "downloaded_at": downloaded_at or utc_now_iso(),
         "handler": handler or "",
         "model_id": identity.get("model_id"),
-        "model_source": identity.get("model_source", SOURCE_USER_CONFIGURED),
+        "model_origin": identity.get("model_origin", ORIGIN_USER_CONFIGURED),
     }
     kept = {k: v for k, v in (inputs or {}).items() if v is not None and v != ""}
     if kept:
