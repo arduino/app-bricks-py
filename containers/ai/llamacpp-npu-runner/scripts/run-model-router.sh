@@ -9,11 +9,31 @@ python3 /generate_models_ini.py /models
 
 echo "Starting LLama server..."
 export LD_LIBRARY_PATH=/opt/pkg-snapdragon/lib
-# Include both, llama.cpp libs and skel files from qairt
-export ADSP_LIBRARY_PATH="/opt/pkg-snapdragon/lib;/usr/lib/rfsa/adsp"
+export ADSP_LIBRARY_PATH=/opt/pkg-snapdragon/lib
 
-# Build --device argument from GGML_HEXAGON_NDEV (default: 1)
-NDEV="${GGML_HEXAGON_NDEV:-1}"
+# Number of Hexagon sessions required by the installed models: 2 means at least one big
+# model (>= 4B parameters) is installed.
+DETECTED_NDEV="$(python3 /generate_models_ini.py /models --print-ndev)"
+DETECTED_NDEV="${DETECTED_NDEV:-1}"
+
+# Build --device argument from GGML_HEXAGON_NDEV, falling back to the value detected
+# from the installed models (default: 1)
+if [ -n "${GGML_HEXAGON_NDEV}" ]; then
+  NDEV="${GGML_HEXAGON_NDEV}"
+  echo "Using externally configured GGML_HEXAGON_NDEV=${NDEV}"
+else
+  NDEV="${DETECTED_NDEV}"
+  export GGML_HEXAGON_NDEV="${NDEV}"
+  echo "GGML_HEXAGON_NDEV not set: auto-detected ${NDEV} session(s) from installed models"
+fi
+
+# Big models leave little room for the KV cache on the NPU: cap their context size.
+BIG_MODEL_MAX_CTX_SIZE=8192
+if [ "${DETECTED_NDEV}" -ge 2 ] && [[ "${LLAMA_ARG_CTX_SIZE}" =~ ^[0-9]+$ ]] && [ "${LLAMA_ARG_CTX_SIZE}" -gt "${BIG_MODEL_MAX_CTX_SIZE}" ]; then
+  echo "Model with >= 4B parameters installed: forcing LLAMA_ARG_CTX_SIZE=${BIG_MODEL_MAX_CTX_SIZE} (was ${LLAMA_ARG_CTX_SIZE})"
+  export LLAMA_ARG_CTX_SIZE="${BIG_MODEL_MAX_CTX_SIZE}"
+fi
+
 echo "Configuring ${NDEV} session(s)..."
 DEVICE_LIST=""
 for ((i=0; i<NDEV; i++)); do
@@ -24,9 +44,19 @@ for ((i=0; i<NDEV; i++)); do
   fi
 done
 
+# NPU offloading can be turned off with LLAMACPP_DISABLE_NPU_SUPPORT=true, which keeps
+# every layer on the CPU (-ngl 0). Any other value (default) offloads to the NPU.
+if [ "${LLAMACPP_DISABLE_NPU_SUPPORT,,}" = "true" ]; then
+  NGL=0
+  echo "LLAMACPP_DISABLE_NPU_SUPPORT=true: NPU support disabled, running on CPU (-ngl 0)"
+else
+  NGL=100
+  echo "NPU support enabled (-ngl ${NGL})"
+fi
+
 LLAMA_ARGS=(
   --device "$DEVICE_LIST"
-  -ngl 100
+  -ngl "$NGL"
   --no-mmap
   --models-preset /models/models.ini
 )

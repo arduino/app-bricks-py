@@ -21,6 +21,7 @@ import requests
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from common.download_marker import write_marker
 from common.http_download import check, download, emit_json_error, install_signal_handlers
+from common.model_metadata import write_metadata
 
 
 BASE_URL = "https://studio.edgeimpulse.com/v1/api/{project_id}/deployment/download?type={target}&impulseId={impulse_id}"
@@ -126,7 +127,10 @@ def main():
             out_file = download(url, args.output_dir, True, output_name=args.output_name)
             if os.path.isfile(out_file):
                 os.chmod(out_file, 0o755)  # Ensure the file is executable
-            # Download finished successfully: clear the in-progress marker.
+            # Record what was downloaded, then clear the in-progress marker: while
+            # the marker is still there the folder counts as incomplete, so a crash
+            # in between makes the next run retry instead of leaving it unrecorded.
+            write_metadata(args.output_dir, handler="ei-handler")
             if os.path.exists(marker):
                 os.remove(marker)
     except requests.HTTPError as exc:

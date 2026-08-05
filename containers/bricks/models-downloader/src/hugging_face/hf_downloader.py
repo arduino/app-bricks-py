@@ -11,26 +11,61 @@ quantization variants and optional multimodal projection (mmproj) files.
 After downloading, it auto-generates a ``models.ini`` configuration file
 that indexes all downloaded models for use by downstream runners.
 
-Usage — three modes
---------------------
-1. Compact key::
+Usage — one input, two syntaxes
+------------------------------
+``--model-url`` is the only way to name a model, and it accepts either form, so the
+host has a single variable to set whatever the model is::
 
-       hf_downloader --model-key llamacpp:<repo_id>:<quantization>[:<mmproj_quantization>]
+    # 1. File URL: downloads that exact file at that exact commit (reproducible).
+    hf_downloader --model-url https://huggingface.co/<org>/<repo>/blob/<revision>/<file>.gguf
+                  [--model-mmproj-url https://huggingface.co/<org>/<repo>/blob/<revision>/mmproj-<q>.gguf]
 
-2. Explicit names::
+    # 2. Compact key, as llama.cpp's "-hf": downloads whatever matches the
+    #    quantization, at the tip of the default branch. model_type is optional, and
+    #    so is the quantization — a bare repository defaults to Q4_0.
+    hf_downloader --model-url [<model_type>:]<repo_id>[:<quantization>[:<mmproj_quantization>]]
 
-       hf_downloader --model-repo-id <repo_id> --model-name <file> [--model-mmproj-name <file>]
+A leading ``<scheme>://`` selects form 1; anything else is parsed as a key.
+The quantization field also accepts a full file name or an explicit glob, so a single
+file can be pinned by name without a URL. When nothing in the repository matches, the
+error lists the GGUF files that are there.
 
-3. Direct URL::
+What is accepted
+----------------
+``model_url`` is host configuration: whoever installs an app can point it anywhere, so it
+is validated in two steps instead of being taken at face value.
 
-       hf_downloader --model-url https://huggingface.co/<org>/<repo>/resolve/main/<file>
+Form 1 must be a canonical Hugging Face model file URL and nothing else — host
+huggingface.co with no userinfo or port, path
+``/<owner>/<repo>/{resolve,blob}/<revision>/<file>.gguf``, names the Hub could have issued,
+and a repo-relative ``.gguf`` path that cannot climb out of the output directory
+(``parse_hf_url``). Form 2 gets the same check on its repository id, which also becomes a
+directory under the models mount.
+
+Then the Hub is asked what the target actually is (``validate_hub_source``): the repository
+must exist and be readable *anonymously* — a private or gated repository is refused, and a
+token found in the environment cannot change that — and a URL, which pins one exact file at
+one exact commit, must name a file that is really in the repository. Only ``--hf-token``,
+which the operator has to pass explicitly, opens gated and private repositories. ``--check``
+and ``--delete`` skip this step: they only read the filesystem and stay usable offline.
 
 Key options
 -----------
 --output-dir DIR        Destination directory (default: current directory).
                         Files are saved under ``<output-dir>/<repo-id>/``.
---hf-token KEY          Hugging Face API token for gated/private repositories.
+--hf-token KEY          Hugging Face API token. Without it only public, non-gated
+                        repositories can be downloaded.
 --verbose               Print resolved parameters before downloading.
+
+Where the files land
+--------------------
+Everything is downloaded into ``<output-dir>/<repo-id>/``, so the quantizations of one
+repository share a directory and coexist there. Only the files a request actually names
+decide whether it is already installed: a ``Q4_0`` on disk does not make ``Q3_K_S``
+present, and asking for the second one downloads it next to the first instead of
+reporting the repository as complete. The cleanup paths honour the same rule — an
+interrupted or failed download only discards the files it was fetching, never a sibling
+quantization that finished earlier.
 
 After all files are downloaded, ``models.ini`` is written to ``<output-dir>``
 mapping each model stem to its GGUF path (and mmproj path where present).
@@ -44,15 +79,50 @@ import sys
 import time
 
 from huggingface_hub import HfApi, hf_hub_download
+from huggingface_hub.errors import (
+    DisabledRepoError,
+    GatedRepoError,
+    RepositoryNotFoundError,
+    RevisionNotFoundError,
+)
 from huggingface_hub.hf_api import RepoFile
 import argparse
 import configparser
+from collections import ChainMap
 from pathlib import Path
 from tqdm.auto import tqdm
+from urllib.parse import unquote, urlsplit
 import json
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from common.download_marker import write_marker
+from common.download_marker import MARKER_NAME, write_marker
+from common.model_metadata import is_bookkeeping_name, write_metadata
+
+# Quantization used when a model key names only a repository. Q4_0 is the quantization
+# every llama.cpp GGUF repository publishes and the one all curated entries use.
+DEFAULT_QUANTIZATION = "Q4_0"
+
+# The only host a model may come from. The whole netloc is compared against it, so a
+# lookalike domain ("huggingface.co.example.com"), embedded credentials that hide the real
+# host ("https://huggingface.co@example.com/...") or an explicit port are all rejected.
+HF_NETLOC = "huggingface.co"
+
+# Top-level Hub sections that are not repository owners. Recognised only to say so: they
+# would otherwise be reported as a malformed path.
+HF_NON_MODEL_SECTIONS = frozenset({"datasets", "spaces", "collections", "papers", "blog", "docs", "posts", "models"})
+
+# Owners and repository names, as the Hub itself accepts them: an alphanumeric first
+# character, then letters, digits, '-', '_' or '.', up to 96 characters.
+HF_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,95}")
+
+# A branch, tag or commit sha. Slashes are excluded because in a file URL the revision is
+# a single path segment: "refs/pr/1" could not be told apart from a directory name.
+HF_REVISION_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,255}")
+
+# The path segments that introduce the revision and file part of a file URL.
+HF_FILE_MARKERS = ("resolve", "blob")
+
+URL_FORMAT_HINT = "Expected format: https://huggingface.co/<owner>/<repo>/resolve/<revision>/<file>.gguf (/blob/ also works)"
 
 
 def emit_json_info(description: str, artifacts: list[str] | None = None, downloading: bool | None = None):
@@ -88,6 +158,87 @@ def remove_model_dir(output_dir: str, base_dir: str) -> None:
         except OSError:
             break
         parent = os.path.dirname(parent)
+
+
+def model_files(output_dir: str) -> list[Path]:
+    """The downloaded files under *output_dir*, ignoring bookkeeping entries.
+
+    The ".download" marker, ".arduino_metadata.yaml" and huggingface_hub's ".cache"
+    tree are not model content: a directory holding only those is a leftover from an
+    interrupted or deleted download, not an installed model.
+    """
+    base = Path(output_dir)
+    if not base.is_dir():
+        return []
+    return sorted(p for p in base.rglob("*") if p.is_file() and not is_bookkeeping_name(p.name) and ".cache" not in p.parts)
+
+
+def has_model_content(output_dir: str) -> bool:
+    """True when *output_dir* holds a downloaded file of any kind (see ``model_files``)."""
+    return bool(model_files(output_dir))
+
+
+def matching_files(output_dir: str, patterns: list[str]) -> list[Path]:
+    """The files of *output_dir* named by any of *patterns*.
+
+    Matched the way ``matches_pattern`` matches them on the Hub — against the
+    repository-relative path as well as the file name — so the quantization of a
+    repository that nests its files in per-quantization folders is recognised on disk
+    under the same pattern that selected it for download.
+    """
+    base = Path(output_dir)
+    return [p for p in model_files(output_dir) if any(matches_pattern(p.relative_to(base).as_posix(), pattern) for pattern in patterns)]
+
+
+def is_installed(output_dir: str, patterns: list[str]) -> bool:
+    """True when every pattern of the request is satisfied inside *output_dir*.
+
+    A repository directory holds every quantization ever downloaded from that repository,
+    so "is this model here" can only be answered against the files the request names —
+    ``every`` pattern, not any: a model whose mmproj companion is missing is not installed,
+    and neither is a ``Q3_K_S`` in a directory that only holds the ``Q4_0``.
+    """
+    return bool(patterns) and all(matching_files(output_dir, [pattern]) for pattern in patterns)
+
+
+def discard_incomplete_download(output_dir: str, base_dir: str, patterns: list[str]) -> None:
+    """Undo an interrupted download of *patterns*, keeping the rest of *output_dir*.
+
+    A killed or failed run leaves the ".download" marker behind and huggingface_hub's
+    partial bytes under "<output_dir>/.cache"; the next run starts the transfer over
+    rather than resuming it, so both go, along with any file the request names — a file
+    that did land is not necessarily one this process finished writing.
+
+    The repository directory is shared by every quantization of the repository, though, so
+    it is only removed outright when nothing else lives in it. A sibling quantization
+    downloaded earlier is a complete model and must survive both the deletion and the
+    parent-pruning ``remove_model_dir`` does.
+    """
+    requested = set(matching_files(output_dir, patterns))
+    if not [p for p in model_files(output_dir) if p not in requested]:
+        remove_model_dir(output_dir, base_dir)
+        return
+    shutil.rmtree(Path(output_dir) / ".cache", ignore_errors=True)
+    for path in requested:
+        path.unlink()
+    # The marker would otherwise keep flagging the surviving models as in progress.
+    (Path(output_dir) / MARKER_NAME).unlink(missing_ok=True)
+
+
+def prune_emptied_repo_dir(output_dir: str, base_dir: str) -> bool:
+    """Drop *output_dir* once its last GGUF is gone; return whether it was removed.
+
+    ``delete_matched_files`` unlinks the model files and prunes empty directories, but
+    the ".arduino_metadata.yaml" record it knows nothing about would keep the repo
+    directory alive as a ghost. Removing the whole directory only when no GGUF is left
+    means a sibling quantization is never touched.
+    """
+    if not os.path.isdir(output_dir):
+        return False
+    if any(p.suffix == ".gguf" for p in Path(output_dir).rglob("*")):
+        return False
+    remove_model_dir(output_dir, base_dir)
+    return True
 
 
 def install_signal_handlers() -> None:
@@ -207,23 +358,251 @@ class JsonProgress(tqdm):
         pass
 
 
-def parse_hf_url(url: str) -> tuple[str, str, str]:
-    """Parse a Hugging Face URL and return (repo_id, filename, revision).
+def invalid_url_error(url: str, reason: str) -> ValueError:
+    """Build the one error every URL rejection raises, so callers can match on it."""
+    return ValueError(f"Invalid Hugging Face URL: {url}\n{reason}\n{URL_FORMAT_HINT}")
 
-    Supports URLs like:
-      https://huggingface.co/<org>/<repo>/resolve/<revision>/<filename>
-      https://huggingface.co/<org>/<repo>/blob/<revision>/<filename>
+
+def validate_repo_id(repo_id: str) -> None:
+    """Check *repo_id* is a name the Hub could have issued: ``<owner>/<repo>`` or ``<repo>``.
+
+    Besides rejecting nonsense before it reaches the network, this is what keeps the repo id
+    safe to use as a path: every command derives ``<output-dir>/<repo_id>`` from it, and
+    ``--delete`` removes that directory tree, so a value such as ``../../etc`` must never
+    get that far.
+
+    Raises:
+        ValueError: when the id has more than two parts, or a part is empty or carries
+            characters no Hub name can contain.
     """
-    match = re.match(
-        r"https?://huggingface\.co/([^/]+/[^/]+)/(?:resolve|blob)/([^/]+)/(.+?)(?:\?.*)?$",
-        url,
-    )
-    if not match:
-        raise ValueError(f"Invalid Hugging Face URL: {url}\nExpected format: https://huggingface.co/<org>/<repo>/resolve/<revision>/<filename>")
-    repo_id = match.group(1)
-    revision = match.group(2)
-    filename = match.group(3)
+    parts = repo_id.split("/")
+    if len(parts) > 2 or not all(HF_NAME_RE.fullmatch(part) for part in parts):
+        raise ValueError(
+            f"Invalid Hugging Face repository id: '{repo_id}'\n"
+            "Expected '<owner>/<repo>' (or '<repo>' for a canonical model), where each part starts with a "
+            "letter or a digit and holds only letters, digits, '-', '_' and '.'"
+        )
+
+
+def validate_repo_file_path(url: str, filename: str) -> None:
+    """Check *filename* is a repo-relative path to a GGUF file, and only that.
+
+    The path is joined onto the output directory by ``hf_hub_download``, so a traversing
+    segment would write outside it — hence no ``.``/``..``/empty segment, no backslash (a
+    directory separator once the path reaches a Windows host) and no control character.
+    GGUF is also the only format this downloader can install: ``models.ini`` indexes
+    ``*.gguf`` and llama.cpp loads nothing else, so a URL naming a README or a safetensors
+    file is a configuration mistake worth reporting rather than a download worth starting.
+    """
+    for segment in filename.split("/"):
+        if segment in ("", ".", ".."):
+            raise invalid_url_error(url, f"'{filename}' is not a file path inside the repository.")
+        if "\\" in segment or any(ord(char) < 32 for char in segment):
+            raise invalid_url_error(url, f"'{filename}' contains characters that cannot appear in a repository file name.")
+    if not filename.lower().endswith(".gguf"):
+        raise invalid_url_error(url, f"'{filename}' is not a GGUF file; only .gguf model files can be downloaded.")
+
+
+def parse_hf_url(url: str) -> tuple[str, str, str]:
+    """Parse a canonical Hugging Face file URL into ``(repo_id, filename, revision)``.
+
+    Accepted, and nothing else::
+
+        https://huggingface.co/<owner>/<repo>/{resolve,blob}/<revision>/<path/to/file>.gguf
+        https://huggingface.co/<repo>/{resolve,blob}/<revision>/<path/to/file>.gguf   # canonical repos
+
+    The URL is host configuration — whoever installs the app sets ``model_url`` — so it is
+    validated rather than pattern matched: the host must be huggingface.co itself, the path
+    must have the shape above, owner, repository and revision must be names the Hub could
+    have issued, and the file must be a GGUF (see ``validate_repo_file_path``). Percent
+    escapes are decoded before those checks, so a ``..`` written as ``%2e%2e`` is caught
+    too. A query string or fragment is dropped: ``?download=true`` is what the Hub's own
+    download button produces, and neither part names the file.
+
+    Raises:
+        ValueError: when the URL is not a canonical Hugging Face model file URL.
+    """
+    parts = urlsplit(url)
+    if parts.scheme not in ("http", "https"):
+        raise invalid_url_error(url, f"Unsupported scheme '{parts.scheme}': only http(s) URLs can be downloaded.")
+    # netloc, not hostname: userinfo and port must be absent, not merely ignored.
+    if parts.netloc.lower() != HF_NETLOC:
+        raise invalid_url_error(url, f"'{parts.netloc}' is not {HF_NETLOC}: models can only be downloaded from Hugging Face.")
+
+    segments = [unquote(segment) for segment in parts.path.split("/") if segment]
+    if segments and segments[0] in HF_NON_MODEL_SECTIONS:
+        raise invalid_url_error(url, f"'/{segments[0]}/' is a Hugging Face section, not a model repository owner.")
+
+    # The marker separates the repo id from the revision, so its position gives the id: one
+    # segment before it for a canonical model ("bert-base-uncased"), two for "<owner>/<repo>".
+    marker = next((i for i, segment in enumerate(segments) if segment in HF_FILE_MARKERS), -1)
+    if marker not in (1, 2) or len(segments) < marker + 3:
+        raise invalid_url_error(url, "The path does not name a repository, a revision and a file.")
+
+    repo_id = "/".join(segments[:marker])
+    revision = segments[marker + 1]
+    filename = "/".join(segments[marker + 2 :])
+    validate_repo_id(repo_id)
+    if not HF_REVISION_RE.fullmatch(revision):
+        raise invalid_url_error(url, f"'{revision}' is not a branch, tag or commit sha.")
+    validate_repo_file_path(url, filename)
     return repo_id, filename, revision
+
+
+def parse_model_key(model_key: str) -> tuple[str, str, str, str | None]:
+    """Parse a model key into ``(model_type, repo_id, quantization, mmproj_quantization)``.
+
+    Accepted forms, colon-separated::
+
+        <repo_id>                                                   # quantization defaults to Q4_0
+        <repo_id>:<quantization>                                    # llama.cpp -hf style
+        <model_type>:<repo_id>:<quantization>
+        <model_type>:<repo_id>:<quantization>:<mmproj_quantization>
+
+    ``model_type`` is optional and purely informative — nothing selects on it — so a
+    two-field key is accepted and reads like llama.cpp's ``-hf Qwen/Qwen3-8B-GGUF:Q8_0``.
+    The field count alone disambiguates: a lone field can only be a repository, and a
+    pair can only be repository plus quantization, since ``model_type`` never appears
+    without one. Callers detect the defaulted quantization by the absence of a ``:``
+    and should report it — a silently substituted quantization would be surprising.
+
+    Raises:
+        ValueError: when there are more than four fields, or repo_id/quantization are empty.
+    """
+    parts = model_key.split(":")
+    if len(parts) == 1:
+        model_type, repo_id, quantization, mmproj_quantization = "", parts[0], DEFAULT_QUANTIZATION, None
+    elif len(parts) == 2:
+        model_type, repo_id, quantization, mmproj_quantization = "", parts[0], parts[1], None
+    elif len(parts) == 3:
+        model_type, repo_id, quantization, mmproj_quantization = parts[0], parts[1], parts[2], None
+    elif len(parts) == 4:
+        model_type, repo_id, quantization, mmproj_quantization = parts
+    else:
+        raise ValueError(
+            f"Invalid model key: {model_key}\n"
+            "Expected format: [<model_type>:]<repo_id>[:<quantization>[:<mmproj_quantization>]] "
+            "(e.g. unsloth/Qwen3-0.6B-GGUF, Qwen/Qwen3-8B-GGUF:Q8_0 or llamacpp:Qwen/Qwen3-8B-GGUF:Q8_0)"
+        )
+    if repo_id == "":
+        raise ValueError("repo_id cannot be empty")
+    if quantization == "":
+        raise ValueError("quantization cannot be empty")
+    # The key is host configuration just as a URL is, and its repo id ends up as a path
+    # under the models directory, so it gets the same check the URL form gets.
+    validate_repo_id(repo_id)
+    return model_type, repo_id, quantization, mmproj_quantization or None
+
+
+def is_hf_url(spec: str) -> bool:
+    """True when *spec* is a URL rather than a compact model key.
+
+    Checked before any ``:`` splitting, since ``https://...`` would otherwise parse
+    as a two-field key with repo_id ``https``. Any scheme counts, not only http(s): a
+    ``ftp://`` or ``file://`` spec is a URL the user got wrong, and reporting that is
+    more useful than parsing it as a repository named "ftp".
+    """
+    return re.match(r"[A-Za-z][A-Za-z0-9+.-]*://", spec) is not None
+
+
+def gguf_pattern(spec: str, mmproj: bool = False) -> str:
+    """Turn a quantization or file name *spec* into an fnmatch pattern for GGUF files.
+
+    A bare quantization is widened (``Q4_0`` -> ``*Q4_0*.gguf``); an explicit glob or
+    a full file name is taken as it stands, which is how a single specific file can be
+    pinned without a URL (``gemma-4-E2B-it-Q4_0.gguf``).
+    """
+    if "*" in spec or spec.endswith(".gguf"):
+        return spec
+    return f"*mmproj*{spec}*.gguf" if mmproj else f"*{spec}*.gguf"
+
+
+def resolve_model_source(model_url: str, model_mmproj_url: str | None = None) -> dict:
+    """Resolve *model_url* into everything needed to fetch, check or delete the model.
+
+    Two syntaxes are accepted, so a single variable covers every case:
+
+    1. A Hugging Face file URL — ``https://huggingface.co/<org>/<repo>/{blob,resolve}/<revision>/<file>``.
+       Downloads exactly that file at that revision, which is the reproducible form:
+       the commit is pinned in the URL itself. The companion mmproj file is given as a
+       second URL in *model_mmproj_url*.
+    2. A compact key — ``[<model_type>:]<repo_id>:<quantization>[:<mmproj_quantization>]``,
+       matching llama.cpp's ``-hf`` form. Downloads whatever files of the repository
+       match the quantization, at the tip of the default branch.
+
+    Returns:
+        A dict with ``repo_id``, ``allow_pattern`` and ``mmproj_allow_pattern`` (used by
+        check/delete/info in both cases), plus ``url_filename``/``url_revision`` and
+        their mmproj counterparts, which are set only for syntax 1 and select the
+        single-file download path.
+
+    Raises:
+        ValueError: when *model_url* is empty or neither syntax parses.
+    """
+    if not model_url:
+        raise ValueError(
+            "model_url is required. Give either a Hugging Face file URL "
+            "(https://huggingface.co/<org>/<repo>/blob/<revision>/<file>.gguf) or a compact key "
+            "([<model_type>:]<repo_id>[:<quantization>[:<mmproj_quantization>]], e.g. unsloth/Qwen3-0.6B-GGUF "
+            f"which defaults to {DEFAULT_QUANTIZATION}, or Qwen/Qwen3-8B-GGUF:Q8_0)"
+        )
+
+    source = {
+        "repo_id": "",
+        "allow_pattern": None,
+        "mmproj_allow_pattern": None,
+        "url_filename": None,
+        "url_revision": None,
+        "mmproj_url_filename": None,
+        "mmproj_url_revision": None,
+        "model_type": "",
+        "quantization": None,
+        "quantization_defaulted": False,
+    }
+
+    if is_hf_url(model_url):
+        repo_id, url_filename, url_revision = parse_hf_url(model_url)
+        source["repo_id"] = repo_id
+        source["url_filename"] = url_filename
+        source["url_revision"] = url_revision
+        # Basename as the pattern, so check/delete/info work the same as for a key.
+        source["allow_pattern"] = url_filename.split("/")[-1]
+        if model_mmproj_url:
+            mmproj_repo_id, mmproj_filename, mmproj_revision = parse_hf_url(model_mmproj_url)
+            # The mmproj file is fetched from the model's own repository, so a URL naming a
+            # different one does not do what it says: it would either download a same-named
+            # file from the model repository or fail with a puzzling "not found".
+            if mmproj_repo_id != repo_id:
+                raise ValueError(
+                    f"The mmproj URL names repository '{mmproj_repo_id}', but the model comes from '{repo_id}'.\n"
+                    "Both files must live in the same Hugging Face repository."
+                )
+            source["mmproj_url_filename"] = mmproj_filename
+            source["mmproj_url_revision"] = mmproj_revision
+            source["mmproj_allow_pattern"] = mmproj_filename.split("/")[-1]
+        return source
+
+    model_type, repo_id, quantization, mmproj_quantization = parse_model_key(model_url)
+    source["model_type"] = model_type
+    source["repo_id"] = repo_id
+    source["quantization"] = quantization
+    # No colon means the key named only a repository, so the quantization above is the
+    # default rather than a choice the caller made. main() reports it.
+    source["quantization_defaulted"] = ":" not in model_url
+    source["allow_pattern"] = gguf_pattern(quantization)
+    if mmproj_quantization:
+        source["mmproj_allow_pattern"] = gguf_pattern(mmproj_quantization, mmproj=True)
+    return source
+
+
+def source_patterns(source: dict) -> list[str]:
+    """The GGUF patterns *source* names: the model's, plus the mmproj's when it has one.
+
+    This is the whole of what a request asks for, and what the filesystem is asked about:
+    the same list decides whether the model is installed, what an interrupted download
+    has to discard, and how big the download is.
+    """
+    return [pattern for pattern in (source["allow_pattern"], source["mmproj_allow_pattern"]) if pattern]
 
 
 def matches_pattern(path: str, pattern: str) -> bool:
@@ -245,6 +624,137 @@ def list_repo_matches(repo_id: str, patterns: list[str], ignore_pattern: str | N
     return matched
 
 
+def public_repo_files(repo_id: str, revision: str | None = None, token: str | None = None) -> set[str]:
+    """List the files of *repo_id* at *revision*, or explain why it cannot be downloaded.
+
+    The call is unauthenticated unless *token* is given, so a private repository answers
+    404 exactly as it does for an anonymous visitor: a token that merely happens to sit in
+    the environment (``HF_TOKEN``, a cached login) cannot turn a repository nobody else can
+    read into a valid model source. An explicit ``--hf-token`` is the one way in, because
+    passing it is a deliberate act of whoever runs the downloader rather than something a
+    model URL can arrange by itself.
+
+    Returns:
+        The repo-relative paths of every file in the repository at *revision*.
+
+    Raises:
+        ValueError: when the repository does not exist, is private, gated or disabled, when
+            *revision* is not in it, or when the Hub cannot be reached to tell.
+    """
+    try:
+        info = HfApi().model_info(repo_id, revision=revision, token=token or False)
+    except GatedRepoError as exc:  # a subclass of RepositoryNotFoundError: must come first
+        raise ValueError(
+            f"Hugging Face repository '{repo_id}' is gated: its files are only served after its conditions "
+            "are accepted on huggingface.co. Only freely downloadable models can be configured."
+        ) from exc
+    except RevisionNotFoundError as exc:
+        raise ValueError(f"Revision '{revision}' does not exist in Hugging Face repository '{repo_id}'.") from exc
+    except RepositoryNotFoundError as exc:
+        raise ValueError(
+            f"Hugging Face model repository '{repo_id}' does not exist, or is not public. Only public model repositories can be downloaded."
+        ) from exc
+    except DisabledRepoError as exc:
+        raise ValueError(f"Hugging Face repository '{repo_id}' has been disabled by its authors.") from exc
+    except Exception as exc:  # noqa: BLE001 - HTTP, DNS and proxy failures all land here
+        raise ValueError(f"Could not verify Hugging Face repository '{repo_id}': {exc}") from exc
+
+    # The 404 above already covers a private repository seen anonymously; these fields are
+    # what remains once --hf-token makes it visible, and are checked so the token widens
+    # access to gated models the operator has accepted, not to repositories at large.
+    if info.private:
+        raise ValueError(f"Hugging Face repository '{repo_id}' is private. Only public model repositories can be downloaded.")
+    if info.gated:
+        raise ValueError(
+            f"Hugging Face repository '{repo_id}' is gated: its files are only served after its conditions "
+            "are accepted on huggingface.co. Only freely downloadable models can be configured."
+        )
+    if info.disabled:
+        raise ValueError(f"Hugging Face repository '{repo_id}' has been disabled by its authors.")
+    return {sibling.rfilename for sibling in info.siblings or []}
+
+
+def missing_file_message(repo_id: str, filename: str, revision: str | None, available: set[str]) -> str:
+    """Explain that *filename* is not in the repository, listing the GGUF files that are.
+
+    The URL syntax pins one exact file, so a typo or a file renamed by a new commit ends as
+    "not found" with nothing to act on. The listing is already in hand from the validation
+    call, so naming the alternatives costs nothing.
+    """
+    where = f"Hugging Face repository '{repo_id}' at revision '{revision}'" if revision else f"Hugging Face repository '{repo_id}'"
+    ggufs = sorted(path for path in available if path.lower().endswith(".gguf"))
+    if not ggufs:
+        return f"File '{filename}' does not exist in {where}, which contains no GGUF files at all."
+    return f"File '{filename}' does not exist in {where}. Available GGUF files: {', '.join(ggufs)}"
+
+
+def validate_hub_source(source: dict, token: str | None = None) -> None:
+    """Confirm on the Hub that *source* names a model that can actually be downloaded.
+
+    Parsing only proves the model URL or key is well formed; it says nothing about what it
+    points at. This is the other half: the repository must exist and be publicly readable
+    (see ``public_repo_files``), and a URL — which pins one exact file at one exact commit —
+    must name a file that is really there. Applies to both syntaxes, since a compact key
+    names a repository just as freely as a URL does.
+
+    Only the file existence check is skipped for a key: the quantization is a pattern, and
+    ``download_matched_files`` already fails with the repository's GGUF listing when nothing
+    matches it.
+
+    Raises:
+        ValueError: with a message meant for the user, on anything that makes the model
+            unusable.
+    """
+    repo_id = source["repo_id"]
+    # None for the compact key syntax, which downloads from the default branch.
+    revision = source["url_revision"]
+    files = public_repo_files(repo_id, revision, token)
+    for filename, file_revision in (
+        (source["url_filename"], revision),
+        (source["mmproj_url_filename"], source["mmproj_url_revision"]),
+    ):
+        if not filename:
+            continue
+        # The two URLs may pin different commits of the same repository.
+        present = files if file_revision == revision else public_repo_files(repo_id, file_revision, token)
+        if filename not in present:
+            raise ValueError(missing_file_message(repo_id, filename, file_revision, present))
+
+
+def fallback_model_id(model_type: str, downloaded: list[str]) -> str | None:
+    """Name a model that no models-list.yaml entry declares, from the files fetched.
+
+    Built as ``<namespace>:<gguf stem>`` to be the *same* id ``list_models.py`` derives
+    for those files when it scans the filesystem, so the record and the listing agree on
+    what to call an ad-hoc download. mmproj files belong to the main GGUF and never name
+    the model.
+    """
+    main_gguf = next((p for p in sorted(downloaded) if "mmproj" not in os.path.basename(p)), None)
+    if not main_gguf:
+        return None
+    # The key's model_type is the namespace when given; llamacpp is where GGUF models
+    # live, and the prefix list_models.py uses (see its LLAMACPP_SUBDIR).
+    return f"{model_type or 'llamacpp'}:{Path(main_gguf).stem}"
+
+
+def no_match_message(repo_id: str, pattern: str) -> str:
+    """Explain that nothing matched *pattern*, listing the GGUF files the repo does have.
+
+    Asking the Hub what is actually there turns "no file matching '*Q4_0*.gguf'" into an
+    actionable message — which matters most when the quantization was defaulted rather
+    than chosen. Runs only on the failure path, and degrades to the bare statement if
+    the extra listing call fails.
+    """
+    message = f"No file matching '{pattern}' found in repository '{repo_id}'."
+    try:
+        available = sorted(f.path for f in list_repo_matches(repo_id, ["*.gguf"]))
+    except Exception:  # noqa: BLE001 - improving an error message must not raise a new one
+        return message
+    if not available:
+        return f"{message} The repository contains no GGUF files at all."
+    return f"{message} Available GGUF files: {', '.join(available)}"
+
+
 def download_matched_files(
     repo_id: str,
     allow_pattern: str,
@@ -264,7 +774,7 @@ def download_matched_files(
     """
     matched = list_repo_matches(repo_id, [allow_pattern], ignore_pattern=ignore_pattern)
     if not matched:
-        raise FileNotFoundError(f"No file matching '{allow_pattern}' found in repository '{repo_id}'")
+        raise FileNotFoundError(no_match_message(repo_id, allow_pattern))
     for file in matched:
         if verbose:
             emit_json_info(f"Downloading '{file.path}' from {repo_id}")
@@ -329,46 +839,40 @@ def generate_models_ini(models_dir: Path):
     emit_json_info(f"Generated models.ini with {len(config.sections())} model(s)", artifacts=[str(output_path)])
 
 
+def validate_hub_source_or_exit(source: dict, token: str | None = None) -> None:
+    """``validate_hub_source``, reported as an error event and a non-zero exit.
+
+    Called from the commands that talk to the Hub anyway (``--info`` and the download), so
+    ``--check`` and ``--delete`` keep working on a box with no network: they only read the
+    filesystem, and refusing to report an installed model because the Hub is unreachable
+    would be worse than not re-verifying it.
+    """
+    try:
+        validate_hub_source(source, token)
+    except ValueError as exc:
+        emit_json_error(str(exc))
+        raise SystemExit(1) from exc
+
+
 def main():
     parser = argparse.ArgumentParser(description="Download an Hugging Face model via HF download API")
     parser.add_argument(
-        "--model-key",
-        type=str,
-        metavar="KEY",
-        help="model key (e.g. llamacpp:unsloth/gemma-4-E4B-it-GGUF:Q4_0:BF16). "
-        "The format is: <model_type>:<repo_id>:<quantization>:<optional mmproj quantization>.",
-    )
-    parser.add_argument(
         "--model-url",
         type=str,
-        metavar="URL",
-        help="Direct Hugging Face file URL (e.g. https://huggingface.co/org/repo/resolve/main/model.gguf). "
-        "Supports both /resolve/ and /blob/ URL formats.",
+        required=True,
+        metavar="URL_OR_KEY",
+        help="The model to download, as either a Hugging Face file URL "
+        "(e.g. https://huggingface.co/org/repo/blob/<revision>/model.gguf; /resolve/ works too) "
+        "or a compact key [<model_type>:]<repo_id>[:<quantization>[:<mmproj_quantization>]] "
+        "(e.g. unsloth/Qwen3-0.6B-GGUF which defaults to Q4_0, Qwen/Qwen3-8B-GGUF:Q8_0, "
+        "llamacpp:unsloth/gemma-4-E4B-it-GGUF:Q4_0:BF16).",
     )
     parser.add_argument(
         "--model-mmproj-url",
         type=str,
         metavar="URL",
         help="Direct Hugging Face URL for the mmproj file (e.g. https://huggingface.co/org/repo/resolve/main/mmproj-BF16.gguf). "
-        "Only used with --model-url.",
-    )
-    parser.add_argument(
-        "--model-repo-id",
-        type=str,
-        metavar="KEY",
-        help="model repository ID (e.g. llamacpp:unsloth/gemma-4-E4B-it-GGUF). Only used if --model-key is not provided.",
-    )
-    parser.add_argument(
-        "--model-name",
-        type=str,
-        metavar="KEY",
-        help="model name (e.g. gemma-4-E2B-it-Q4_0.gguf). Only used if --model-key is not provided.",
-    )
-    parser.add_argument(
-        "--model-mmproj-name",
-        type=str,
-        metavar="KEY",
-        help="model mmproj name (e.g. mmproj-F16.gguf). Only used if --model-key is not provided.",
+        "Only used when --model-url is a URL; with a key, give the mmproj quantization as its fourth field.",
     )
     parser.add_argument(
         "--output-dir",
@@ -380,7 +884,8 @@ def main():
         "--hf-token",
         type=str,
         metavar="KEY",
-        help="Hugging Face API token for authentication.",
+        help="Hugging Face API token. Without it, only public and non-gated repositories can be downloaded: "
+        "the access check is made anonymously, so a token present in the environment does not widen it.",
     )
     parser.add_argument(
         "--verbose",
@@ -405,68 +910,43 @@ def main():
 
     args = parser.parse_args()
 
-    allow_pattern = None
-    mmproj_allow_pattern = None
-    url_filename = None  # set when --model-url is used (single-file download)
-    url_revision = None
-    mmproj_url_filename = None
-    mmproj_url_revision = None
+    try:
+        source = resolve_model_source(args.model_url, args.model_mmproj_url)
+    except ValueError as exc:
+        emit_json_error(str(exc))
+        raise SystemExit(1) from exc
 
-    if args.model_url and args.model_url != "":
-        repo_id, url_filename, url_revision = parse_hf_url(args.model_url)
-        allow_pattern = url_filename.split("/")[-1]  # use basename as pattern for check/delete
+    repo_id = source["repo_id"]
+    allow_pattern = source["allow_pattern"]
+    mmproj_allow_pattern = source["mmproj_allow_pattern"]
+    # Everything this run is about, and the only thing the repository directory is
+    # queried for: the other quantizations sharing it belong to other requests.
+    patterns = source_patterns(source)
+    # Set only for the URL syntax; they select the single-file download path.
+    url_filename = source["url_filename"]
+    url_revision = source["url_revision"]
+    mmproj_url_filename = source["mmproj_url_filename"]
+    mmproj_url_revision = source["mmproj_url_revision"]
 
-        if args.model_mmproj_url and args.model_mmproj_url != "":
-            _, mmproj_url_filename, mmproj_url_revision = parse_hf_url(args.model_mmproj_url)
-            mmproj_allow_pattern = mmproj_url_filename.split("/")[-1]
+    # Always reported, not only under --verbose: the caller named a repository without
+    # a quantization, so they need to see which one they are getting.
+    if source["quantization_defaulted"]:
+        emit_json_info(f"No quantization given for '{repo_id}', defaulting to {DEFAULT_QUANTIZATION}. Specify another as '{repo_id}:<quantization>'.")
 
-        if args.verbose:
-            emit_json_info(f"Parsed URL — Repository ID: {repo_id}")
+    if args.verbose:
+        emit_json_info(f"Repository ID: {repo_id}")
+        if url_filename:
             emit_json_info(f"Filename: {url_filename}")
             emit_json_info(f"Revision: {url_revision}")
             if mmproj_url_filename:
                 emit_json_info(f"MMProj Filename: {mmproj_url_filename}")
                 emit_json_info(f"MMProj Revision: {mmproj_url_revision}")
-
-    elif args.model_key and args.model_key != "":
-        model_type, repo_id, quantization, *mmproj_quantization = args.model_key.split(":")
-        if repo_id == "":
-            raise ValueError("repo_id cannot be empty")
-        if quantization == "":
-            raise ValueError("quantization cannot be empty")
-
-        if args.verbose:
-            emit_json_info(f"Repository ID: {repo_id}")
-            emit_json_info(f"Model key: {args.model_key}")
-            emit_json_info(f"Model type: {model_type}")
-            emit_json_info(f"Quantization: {quantization}")
-            if mmproj_quantization:
-                emit_json_info(f"MMProj Quantization: {mmproj_quantization[0]}")
-
-        allow_pattern = f"*{quantization}*.gguf"
-        mmproj_allow_pattern = f"*mmproj*{mmproj_quantization[0]}*.gguf" if mmproj_quantization else None
-    else:
-        if not args.model_repo_id or not args.model_name:
-            raise ValueError("If --model-key is not provided, both --model-repo-id and --model-name must be specified")
-
-        repo_id = args.model_repo_id
-
-        allow_pattern = args.model_name
-        if allow_pattern == "":
-            raise ValueError("model name cannot be empty")
-        if "*" not in allow_pattern and not allow_pattern.endswith(".gguf"):
-            allow_pattern = f"*{allow_pattern}*"
-
-        if args.model_mmproj_name and args.model_mmproj_name != "":
-            mmproj_allow_pattern = args.model_mmproj_name
-            if "*" not in mmproj_allow_pattern and not mmproj_allow_pattern.endswith(".gguf"):
-                mmproj_allow_pattern = f"*{mmproj_allow_pattern}*"
-
-        if args.verbose:
-            emit_json_info(f"Repository ID: {repo_id}")
-            emit_json_info(f"Model identifier: {allow_pattern}")
+        else:
+            if source["model_type"]:
+                emit_json_info(f"Model type: {source['model_type']}")
+            emit_json_info(f"Pattern: {allow_pattern}")
             if mmproj_allow_pattern:
-                emit_json_info(f"MMProj file: {mmproj_allow_pattern}")
+                emit_json_info(f"MMProj pattern: {mmproj_allow_pattern}")
 
     if args.hf_token and args.hf_token != "":
         # huggingface_hub reads the token from HF_TOKEN; HF_HUB_TOKEN is not a name it knows.
@@ -476,10 +956,12 @@ def main():
     output_dir = f"{args.output_dir}/{repo_id}"
 
     if args.info:
-        patterns = [allow_pattern]
-        if mmproj_allow_pattern:
-            patterns.append(mmproj_allow_pattern)
+        validate_hub_source_or_exit(source, args.hf_token)
         matched_files = [{"file": f.path, "size": f.size} for f in list_repo_matches(repo_id, patterns) if f.size]
+        if not matched_files:
+            # Reporting a 0-byte total would read as "this model is free to download".
+            emit_json_error(no_match_message(repo_id, allow_pattern))
+            raise SystemExit(1)
         total_bytes = sum(f["size"] for f in matched_files)
         print(
             json.dumps({
@@ -492,19 +974,17 @@ def main():
             flush=True,
         )
     elif args.check:
-        base = Path(output_dir)
-        # A ".download" marker means a download is in progress or was interrupted
-        if (base / ".download").is_file():
+        # Files first, marker second: the marker is per repository, but a repository
+        # directory holds several quantizations, so a download in progress there says
+        # nothing about the one being asked for — which may well be installed already.
+        if is_installed(output_dir, patterns):
+            emit_json_info(f"Model exists: {allow_pattern}", downloading=False)
+        elif (Path(output_dir) / MARKER_NAME).is_file():
+            # A ".download" marker means a download is in progress or was interrupted
             emit_json_info(f"Model downloading: {repo_id}", downloading=True)
         else:
-            matched = [f for f in base.rglob("*") if f.is_file() and fnmatch.fnmatch(f.name, allow_pattern)] if base.exists() else []
-            if mmproj_allow_pattern:
-                matched += [f for f in base.rglob("*") if f.is_file() and fnmatch.fnmatch(f.name, mmproj_allow_pattern)] if base.exists() else []
-            if matched:
-                emit_json_info(f"Model exists: {allow_pattern}", downloading=False)
-            else:
-                emit_json_error(f"Model does not exist: {allow_pattern}", downloading=False)
-                raise SystemExit(1)
+            emit_json_error(f"Model does not exist: {allow_pattern}", downloading=False)
+            raise SystemExit(1)
     elif args.delete:
         if args.verbose:
             emit_json_info(f"Deleting files matching '{allow_pattern}' in {output_dir}")
@@ -514,26 +994,56 @@ def main():
                 emit_json_info(f"Deleting mmproj files matching '{mmproj_allow_pattern}' in {output_dir}")
             delete_matched_files(output_dir, args.output_dir, mmproj_allow_pattern, args.verbose)
 
+        if prune_emptied_repo_dir(output_dir, args.output_dir) and args.verbose:
+            emit_json_info(f"Removed empty model directory: {output_dir}")
+
         # Generate models.ini file
         generate_models_ini(Path(args.output_dir))
     else:
-        # Per-repo ".download" marker: present => prior run killed mid-download,
-        # wipe and retry; absent but dir exists => already complete.
-        marker = Path(output_dir) / ".download"
+        # Per-repo ".download" marker: present => prior run killed mid-download, discard
+        # what it left and retry; absent but the requested files present => complete.
+        marker = Path(output_dir) / MARKER_NAME
         if marker.is_file():
             emit_json_info(f"Removing incomplete previous download: {repo_id}")
-            remove_model_dir(output_dir, args.output_dir)
-        elif os.path.isdir(output_dir):
-            emit_json_info(f"Model exists: {repo_id}")
+            discard_incomplete_download(output_dir, args.output_dir, patterns)
+        elif is_installed(output_dir, patterns):
+            installed = ", ".join(p.name for p in matching_files(output_dir, patterns))
+            emit_json_info(f"Model exists: {repo_id} ({installed})")
             return
+        elif os.path.isdir(output_dir) and not has_model_content(output_dir):
+            # Bookkeeping-only leftover (e.g. killed between makedirs and the marker
+            # write, or a deleted model): wipe it so the download starts clean.
+            emit_json_info(f"Removing incomplete previous download: {repo_id}")
+            remove_model_dir(output_dir, args.output_dir)
+        # Anything else the directory holds is another quantization of the same
+        # repository: the requested files are downloaded alongside it.
+
+        # Nothing has been written yet, and the model URL or key comes from the host
+        # configuration: check what it points at before creating a directory for it.
+        validate_hub_source_or_exit(source, args.hf_token)
+
+        # The model directory is the repo id: the download always lands in
+        # <output_dir>/<repo_id>. models-list.yaml usually spells it out, but it is
+        # redundant — repo_id is a substring of the model URL (and of the model key),
+        # so derive it when the variable is not set rather than recording nothing.
+        model_directory = os.environ.get("model_directory") or repo_id
+        # Environment the metadata record is built from, with model_directory filled
+        # in: it feeds both the "inputs" block and the models-list.yaml lookup that
+        # identifies the model. ChainMap rather than {**os.environ, ...} because on
+        # Windows os.environ upper-cases its keys when copied, which would drop every
+        # lowercase download variable; chaining delegates the lookup instead.
+        metadata_env = ChainMap({"model_directory": model_directory}, os.environ)
 
         os.makedirs(output_dir, exist_ok=True)
         write_marker(
             output_dir,
             handler="hf-handler",
             models_repository=os.environ.get("models_repository", ""),
-            model_directory=os.environ.get("model_directory", "") or repo_id,
+            model_directory=model_directory,
             model_url=args.model_url or "",
+            # Which files of a shared repository directory this download is for, so a
+            # quantization already installed there is not reported as in progress.
+            file_patterns=patterns,
         )
 
         emit_json_info(f"Downloading to: {os.path.abspath(output_dir)}", artifacts=[os.path.abspath(output_dir)])
@@ -583,9 +1093,10 @@ def main():
                     download_matched_files(repo_id, mmproj_allow_pattern, output_dir, tqdm_class, verbose=args.verbose)
         except BaseException as exc:
             # Network/extraction errors and SIGINT/SIGTERM-driven KeyboardInterrupt
-            # leave a partial repo directory; remove it before exiting.
+            # leave a partial download behind; discard it before exiting, without
+            # taking another quantization of the same repository down with it.
             if os.path.isdir(output_dir):
-                remove_model_dir(output_dir, args.output_dir)
+                discard_incomplete_download(output_dir, args.output_dir, patterns)
             if not isinstance(exc, KeyboardInterrupt):
                 # KeyboardInterrupt gets its own event from the top-level handler.
                 emit_json_error(f"Download failed: {exc}")
@@ -599,12 +1110,25 @@ def main():
         # Generate models.ini file
         generate_models_ini(Path(args.output_dir))
 
-        # Report the absolute path(s) of the downloaded model file(s).
-        downloaded = sorted(str(p.resolve()) for p in Path(output_dir).rglob("*.gguf"))
+        # Report the absolute path(s) of the downloaded model file(s): the files this
+        # request named, not every quantization the shared repository directory holds —
+        # a sibling was not downloaded now, and must not name this model either.
+        downloaded = sorted(str(p.resolve()) for p in matching_files(output_dir, patterns) if p.suffix == ".gguf")
         emit_json_info(f"Downloaded to: {output_dir}", artifacts=downloaded)
 
-        # Download finished successfully: clear the in-progress marker.
-        marker = Path(output_dir) / ".download"
+        # Record what was downloaded, then clear the in-progress marker: while the
+        # marker is still there the repo directory counts as incomplete, so a crash
+        # in between makes the next run retry instead of leaving it unrecorded.
+        write_metadata(
+            output_dir,
+            handler="hf-handler",
+            env=metadata_env,
+            # Any repository can be downloaded without a models-list.yaml entry, so name
+            # it after the file that arrived rather than leaving it unidentified.
+            fallback_model_id=fallback_model_id(source["model_type"], downloaded),
+        )
+
+        marker = Path(output_dir) / MARKER_NAME
         if marker.exists():
             marker.unlink()
 

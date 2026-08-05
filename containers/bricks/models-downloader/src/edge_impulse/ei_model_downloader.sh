@@ -16,10 +16,11 @@ fi
 model_folder="${model_name%.*}"
 model_path="/models/${model_folder}"
 
-# A ".download" marker, or a leftover folder that is empty / only contains that
-# marker, means a previous run was killed mid-download and must be wiped and
-# retried; absent but the file exists => already complete.
-if [ -f "${model_path}/.download" ] || { [ -d "${model_path}" ] && [ -z "$(find "${model_path}" -mindepth 1 ! -name '.download' -print -quit 2>/dev/null)" ]; }; then
+# A ".download" marker, or a leftover folder holding no model content (only the
+# marker and/or the ".arduino_metadata.yaml" record), means a previous run was
+# killed mid-download and must be wiped and retried; absent but the file exists
+# => already complete.
+if [ -f "${model_path}/.download" ] || { [ -d "${model_path}" ] && [ -z "$(find "${model_path}" -mindepth 1 ! -name '.download' ! -name '.arduino_metadata.yaml*' -print -quit 2>/dev/null)" ]; }; then
     echo "{\"event\": \"info\", \"description\": \"Removing incomplete previous download: ${model_folder}\"}"
     rm -rf "${model_path:?}"
 elif [ -f "${model_path}/${model_name}" ]; then

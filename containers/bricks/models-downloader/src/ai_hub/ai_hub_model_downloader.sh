@@ -10,10 +10,11 @@ cd /models
 model_path="/models/${model_directory}"
 
 # Decide whether a usable model is already present. A ".download" marker, or a
-# leftover directory that is empty / only contains that marker, means a previous
-# run was interrupted (e.g. SIGKILL) and must be wiped and retried rather than
-# reported as "Model exists".
-if [ -f "${model_path}/.download" ] || { [ -d "${model_path}" ] && [ -z "$(find "${model_path}" -mindepth 1 ! -name '.download' -print -quit 2>/dev/null)" ]; }; then
+# leftover directory holding no model content (only the marker and/or the
+# ".arduino_metadata.yaml" record, including the ".tmp" sibling of an interrupted
+# atomic write), means a previous run was interrupted (e.g. SIGKILL) and must be
+# wiped and retried rather than reported as "Model exists".
+if [ -f "${model_path}/.download" ] || { [ -d "${model_path}" ] && [ -z "$(find "${model_path}" -mindepth 1 ! -name '.download' ! -name '.arduino_metadata.yaml*' -print -quit 2>/dev/null)" ]; }; then
     echo "{\"event\": \"info\", \"description\": \"Removing incomplete previous download: ${model_directory}\"}"
     rm -rf "${model_path:?}"
 elif [ -d "${model_path}" ]; then
