@@ -20,8 +20,8 @@ RUN apt-get update && \
         /var/cache/apt/archives/partial/*.deb \
         /usr/share/man/* \
         /usr/share/locale/* \
-        /var/cache/debconf/* \
-        /var/lib/dpkg/info/* \
+        /var/lib/dpkg/info/*.md5sums \
+        /var/lib/dpkg/*-old \
         /var/cache/apt/*.bin; \
     find /usr/share/doc -type f ! -name 'copyright' -delete; \
     find /usr/share/doc -type d -empty -delete; \
@@ -151,6 +151,8 @@ COPY --from=native-libs /mnt/work/deploy/usr /usr
 # Copy fastrpc libs built from source
 COPY --from=fastrpc-builder /usr/lib/libcdsprpc* /usr/lib/
 COPY --from=fastrpc-builder /usr/lib/libadsprpc* /usr/lib/
+
+RUN ldconfig
 
 # Bake fastrpc DSP path config for all supported devices.
 # The entrypoint copies this to /usr/share/qcom/conf.d/ at runtime

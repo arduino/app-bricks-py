@@ -111,6 +111,7 @@ RUN set -ex; \
     # HACK: Remove VPX plugin
     rm -f /usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstvpx.so; \
     # Ensure libvpx and libx265 are not present
-    dpkg -r --force-depends libx265-215 libvpx9
+    dpkg -r --force-depends libx265-215 libvpx9; \
+    ldconfig
 
 COPY libcamera.yaml /etc/libcamera/configuration.yaml

@@ -28,7 +28,8 @@ RUN set -ex; \
     find /usr/share/doc -type d -empty -delete; \
     # precompile python files to .pyc to speed up startup time
     python -m compileall /usr/local/bin; \
-    python -m compileall /usr/local/lib
+    python -m compileall /usr/local/lib; \
+    ldconfig
 
 COPY --chown=arduino:arduino --chmod=755 ./requirements.txt /app/requirements.txt
 

@@ -19,8 +19,8 @@ RUN set -ex; \
         /var/cache/apt/archives/partial/*.deb \
         /usr/share/man/* \
         /usr/share/locale/* \
-        /var/cache/debconf/* \
-        /var/lib/dpkg/info/* \
+        /var/lib/dpkg/info/*.md5sums \
+        /var/lib/dpkg/*-old \
         /var/cache/apt/*.bin; \
     find /usr/share/doc -type f ! -name 'copyright' -delete; \
     find /usr/share/doc -type d -empty -delete; \

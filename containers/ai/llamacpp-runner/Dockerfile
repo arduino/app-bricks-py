@@ -39,7 +39,8 @@ RUN set -x; \
     find /usr/share/doc -type d -empty -delete; \
     # precompile python files to .pyc to speed up startup time
     python -m compileall /usr/local/bin; \
-    python -m compileall /usr/local/lib    
+    python -m compileall /usr/local/lib; \
+    ldconfig
 
 EXPOSE 9999
 
