@@ -16,9 +16,11 @@ The Arduino Cloud Brick lets your application exchange variable values with Ardu
 
 ## Prerequisites
 
-The board must be provisioned and associated with a Thing in Arduino Cloud, and the `arduino-cloud-connector` daemon must be running locally. The daemon owns the device identity and credentials, so the application no longer needs to supply a `device_id` / `secret` to exchange variables.
+The board must be connected to Arduino Cloud and associated with a Thing, and the `arduino-cloud-connector` daemon must be running locally. The daemon owns the device identity and credentials, so the application no longer needs to supply a `device_id` / `secret` to exchange variables.
 
-By default the Brick connects to the daemon at `http://127.0.0.1:5683`. Override it with the `ARDUINO_CLOUD_CONNECTOR_URL` environment variable (or `ARDUINO_CLOUD_CONNECTOR__PORT` to change just the port), or by passing `daemon_url=...` to the constructor.
+To connect the board, open the Arduino App Lab **Settings**, find the **Arduino Cloud** section and click on **"Connect device"**: sign in with your Arduino account, select the Cloud space where you want to add the board and wait until the status shows **"Connected"**. Launching an App that uses this Brick on a board not yet connected shows a **"Provisioning required"** dialog leading to the same setup flow.
+
+By default the Brick reaches the daemon through its UNIX socket (`/run/arduino-cloud-connector/daemon.sock`). Override the socket path with the `ARDUINO_CLOUD_CONNECTOR_SOCKET` environment variable, or point the Brick to a different endpoint with `ARDUINO_CLOUD_CONNECTOR_URL` (e.g. `http://127.0.0.1:5683`) or by passing `daemon_url=...` to the constructor.
 
 ## Code Example and Usage
 
