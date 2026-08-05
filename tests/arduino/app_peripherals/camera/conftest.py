@@ -73,6 +73,29 @@ def usb_camera_with_metadata_node(monkeypatch):
     )
 
 
+class _FakeCSIBackend:
+    """Stand-in for a CSI camera stack backend exposing two cameras."""
+
+    @staticmethod
+    def list_camera_ids():
+        return [0, 1]
+
+    @staticmethod
+    def get_camera_identifier(camera_id):
+        return f"CAMERA{camera_id}"
+
+    @staticmethod
+    def gstreamer_source(camera_id):
+        return f"fakesrc camera={camera_id}"
+
+
+@pytest.fixture
+def two_csi_cameras_only(monkeypatch):
+    """Simulate a platform with two CSI cameras (CAMERA0, CAMERA1) and no USB camera."""
+    monkeypatch.setattr("arduino.app_peripherals.camera.v4l_camera.V4LCamera._scan_stable_links", staticmethod(lambda: []))
+    monkeypatch.setattr("arduino.app_peripherals.camera.csi_camera._get_backend", lambda: _FakeCSIBackend)
+
+
 @pytest.fixture(
     params=["/dev/video0", 0, "0", "/dev/v4l/by-path/platform-xhci-hcd.2.auto-usb-0:1.3:1.0-video-index0", "/dev/v4l/by-id/usb-Camera-video-index0"]
 )
