@@ -126,6 +126,7 @@ class LargeLanguageModel(CloudLLM):
             **kwargs,
         )
         self._model_name = local_model_name
+        self._runner_host = host
 
         available_models = self.list_models()
         if plain_model_name not in available_models:
@@ -187,6 +188,18 @@ class LargeLanguageModel(CloudLLM):
         """
         return self._model
 
+    @staticmethod
+    def _is_model_load_failure(server_msg: str) -> bool:
+        """Tells whether a server error message reports a failure while loading the model.
+
+        Args:
+            server_msg (str): The error message returned by the local models runner.
+
+        Returns:
+            bool: True if the runner failed to load the model.
+        """
+        return "failed to load" in (server_msg or "").lower()
+
     def _handle_api_error(self, ilogger: Logger, e: Exception) -> None:
         """Handles OpenAI API errors by logging details and raising RuntimeError.
 
@@ -208,10 +221,17 @@ class LargeLanguageModel(CloudLLM):
                     pass
             raise RuntimeError(error_msg) from e
         elif isinstance(e, APIError):
+            server_msg = e.message if hasattr(e, "message") else str(e)
             if e.code == 503:
-                error_msg = f"Cannot load model due to a potential memory exhaustion. message={e.message if hasattr(e, 'message') else str(e)}"
+                error_msg = f"Cannot load model due to a potential memory exhaustion on NPU sessions. message={server_msg}"
+            elif self._is_model_load_failure(server_msg):
+                ilogger.error(f"Model runner reported a load failure: status_code={e.code}, message={server_msg}")
+                error_msg = (
+                    f"Could not load model '{self._model_name}'. This could be due to a potential memory exhaustion on NPU sessions."
+                    f" Please check the logs of the models runner '{getattr(self, '_runner_host', 'unknown')}' for details."
+                )
             else:
-                error_msg = f"Error: status_code={e.code}, message={e.message if hasattr(e, 'message') else str(e)}"
+                error_msg = f"Error: status_code={e.code}, message={server_msg}"
             ilogger.error(error_msg)
             raise RuntimeError(error_msg) from e
         else:
