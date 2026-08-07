@@ -95,7 +95,7 @@ from urllib.parse import unquote, urlsplit
 import json
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from common.download_marker import MARKER_NAME, write_marker
+from common.download_marker import MARKER_NAME, read_marker, write_marker
 from common.model_metadata import is_bookkeeping_name, write_metadata
 
 # Quantization used when a model key names only a repository. Q4_0 is the quantization
@@ -201,13 +201,37 @@ def is_installed(output_dir: str, patterns: list[str]) -> bool:
     return bool(patterns) and all(matching_files(output_dir, [pattern]) for pattern in patterns)
 
 
+def interrupted_patterns(marker_path: Path) -> list[str]:
+    """The patterns the download *behind the marker* was fetching.
+
+    Which is not the same thing as the patterns of the request that finds the marker:
+    the repository directory is shared by every quantization, so a marker left there by
+    an interrupted Q3_K_S says nothing about the Q4_0 asked for next, and cleaning up
+    with the caller's patterns would delete a model that is installed and complete.
+
+    Empty when the marker records no ``file_patterns`` — a legacy marker, or one written
+    before the field existed — because then there is no way to tell which quantization it
+    stood for. Deleting nothing keeps the ".cache" partials and the marker itself going
+    (that much is scratch either way) while leaving complete files where they are: a
+    truncated file gets caught on load and can be fetched again, whereas an installed
+    model deleted on an offline board is gone for good.
+    """
+    patterns = (read_marker(str(marker_path)) or {}).get("file_patterns")
+    if isinstance(patterns, list) and all(isinstance(p, str) for p in patterns):
+        return patterns
+    return []
+
+
 def discard_incomplete_download(output_dir: str, base_dir: str, patterns: list[str]) -> None:
     """Undo an interrupted download of *patterns*, keeping the rest of *output_dir*.
 
     A killed or failed run leaves the ".download" marker behind and huggingface_hub's
     partial bytes under "<output_dir>/.cache"; the next run starts the transfer over
-    rather than resuming it, so both go, along with any file the request names — a file
-    that did land is not necessarily one this process finished writing.
+    rather than resuming it, so both go, along with any file *patterns* names — a file
+    that did land is not necessarily one the killed process finished writing.
+
+    *patterns* must be the interrupted download's own (``interrupted_patterns``), never
+    the patterns of whichever request happens to be running the cleanup.
 
     The repository directory is shared by every quantization of the repository, though, so
     it is only removed outright when nothing else lives in it. A sibling quantization
@@ -1002,15 +1026,17 @@ def main():
     else:
         # Per-repo ".download" marker: present => prior run killed mid-download, discard
         # what it left and retry; absent but the requested files present => complete.
+        # Marker first, files second — the reverse of --check, because the leftovers of
+        # the interrupted run have to go before the directory can be judged.
         marker = Path(output_dir) / MARKER_NAME
         if marker.is_file():
             emit_json_info(f"Removing incomplete previous download: {repo_id}")
-            discard_incomplete_download(output_dir, args.output_dir, patterns)
-        elif is_installed(output_dir, patterns):
+            discard_incomplete_download(output_dir, args.output_dir, interrupted_patterns(marker))
+        if is_installed(output_dir, patterns):
             installed = ", ".join(p.name for p in matching_files(output_dir, patterns))
             emit_json_info(f"Model exists: {repo_id} ({installed})")
             return
-        elif os.path.isdir(output_dir) and not has_model_content(output_dir):
+        if os.path.isdir(output_dir) and not has_model_content(output_dir):
             # Bookkeeping-only leftover (e.g. killed between makedirs and the marker
             # write, or a deleted model): wipe it so the download starts clean.
             emit_json_info(f"Removing incomplete previous download: {repo_id}")

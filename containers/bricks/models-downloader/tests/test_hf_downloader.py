@@ -36,6 +36,7 @@ from hugging_face.hf_downloader import (
     fallback_model_id,
     gguf_pattern,
     has_model_content,
+    interrupted_patterns,
     is_hf_url,
     is_installed,
     matches_pattern,
@@ -967,6 +968,50 @@ def test_an_interrupted_download_is_retried_without_losing_a_sibling(tmp_path, m
     assert (repo / "Qwen3-0.6B-Q4_0.gguf").is_file()
     descriptions = [event["description"] for event in read_events(capsys)]
     assert "Removing incomplete previous download: unsloth/Qwen3-0.6B-GGUF" in descriptions
+
+
+def test_a_stale_marker_does_not_destroy_the_installed_quantization(tmp_path, monkeypatch, stub_download, capsys):
+    """Requesting Q4_0 while a killed Q3_K_S left its marker behind must not delete Q4_0.
+
+    The cleanup has to go by what the marker says was in flight, not by what the caller
+    is asking for — otherwise it wipes a complete model, and on an offline board the
+    re-download that was supposed to follow never happens.
+    """
+    models_dir, repo = _qwen_repo(tmp_path, "Qwen3-0.6B-Q4_0.gguf")
+    (repo / MARKER_NAME).write_text(json.dumps({"status": "downloading", "file_patterns": ["*Q3_K_S*.gguf"]}))
+
+    _run_main(monkeypatch, "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q4_0", "--output-dir", str(models_dir))
+
+    assert (repo / "Qwen3-0.6B-Q4_0.gguf").is_file()
+    # Installed and complete: nothing to download, and the stale marker is cleared.
+    assert stub_download == []
+    assert not (repo / MARKER_NAME).exists()
+    descriptions = [event["description"] for event in read_events(capsys)]
+    assert any(d.startswith("Model exists:") and "Qwen3-0.6B-Q4_0.gguf" in d for d in descriptions)
+
+
+def test_a_stale_marker_still_discards_its_own_partial_files(tmp_path, monkeypatch, stub_download):
+    """The other half: what the marker does name is scratch and goes, siblings and all."""
+    models_dir, repo = _qwen_repo(tmp_path, "Qwen3-0.6B-Q4_0.gguf", "Qwen3-0.6B-Q3_K_S.gguf")
+    (repo / MARKER_NAME).write_text(json.dumps({"status": "downloading", "file_patterns": ["*Q3_K_S*.gguf"]}))
+
+    _run_main(monkeypatch, "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q3_K_S", "--output-dir", str(models_dir))
+
+    assert stub_download == ["*Q3_K_S*.gguf"]
+    assert (repo / "Qwen3-0.6B-Q4_0.gguf").is_file()
+
+
+def test_interrupted_patterns_reads_what_the_marker_recorded(tmp_path):
+    marker = tmp_path / MARKER_NAME
+    marker.write_text(json.dumps({"file_patterns": ["*Q3_K_S*.gguf"]}))
+    assert interrupted_patterns(marker) == ["*Q3_K_S*.gguf"]
+
+    # No field, unusable field, or no marker at all: nothing is known to be scratch.
+    marker.write_text("{}")
+    assert interrupted_patterns(marker) == []
+    marker.write_text(json.dumps({"file_patterns": "*.gguf"}))
+    assert interrupted_patterns(marker) == []
+    assert interrupted_patterns(tmp_path / "absent") == []
 
 
 def test_check_answers_for_the_requested_quantization_only(tmp_path, monkeypatch, capsys):

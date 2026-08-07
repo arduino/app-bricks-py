@@ -90,9 +90,6 @@ jobs:
           fi
           CONTAINER_DIR="$(dirname "${MATCHES[0]}")"
           echo "path=$CONTAINER_DIR" >> $GITHUB_OUTPUT
-          # The group is also the container's tag prefix: containers/ai/<name> is
-          # released by an ai/X.Y.Z tag.
-          echo "group=$(basename "$(dirname "$CONTAINER_DIR")")" >> $GITHUB_OUTPUT
 
       - name: Read container config
         id: config
@@ -136,9 +133,12 @@ jobs:
             exit 0
           fi
 
-          # A container's own tag prefix is its group, so the previous release to
-          # compare against is the previous tag of that group.
-          TAG_PREFIX="${{ steps.dir.outputs.group }}"
+          # Compare against the previous tag of the series being released, NOT of
+          # the container's own group: shared bases live under containers/base/
+          # but are only ever released by an ai/* or bricks/* tag, so their group
+          # is not a tag prefix at all.
+          TAG_REF="${{ inputs.tag_ref }}"
+          TAG_PREFIX="${TAG_REF%%/*}"
           CURRENT_TAG="${TAG_PREFIX}/${{ inputs.version }}"
           git fetch --tags
           PREV_TAG=$(git tag --sort=-version:refname | grep "^${TAG_PREFIX}/" | grep -v "^${CURRENT_TAG}$" | head -1)

@@ -115,7 +115,7 @@ There is no `tag_prefix` field: the container's directory decides which tag rele
 
 ## Skip-Rebuild Logic
 
-For `level_0` containers only, the release checks whether the container's `watch_paths` actually changed since the previous tag of its own group:
+For `level_0` containers only, the release checks whether the container's `watch_paths` actually changed since the previous tag of the series being released (the pushed tag's prefix — not the container's own group, since shared bases under `containers/base/` are never released by a `base/*` tag):
 
 - **Changed** → full Docker build and push
 - **Unchanged** → `crane copy` re-tags the existing image to the new version (instant, no rebuild)
