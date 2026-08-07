@@ -4,56 +4,50 @@
 
 import argparse
 import configparser
-import re
 import sys
 from pathlib import Path
 
-# Parameter count as written in the model name: "4B", "0.8B", "E4B" -> 4.0, 0.8, 4.0.
-# The lookahead skips version numbers ("gemma-4-", "Qwen3.5") and quantization tags ("Q4_0");
-# \b cannot be used because "E4B_q4_0" has a word character right after the "B".
-_PARAMS_RE = re.compile(r"(\d+(?:\.\d+)?)b(?![a-z0-9.])", re.IGNORECASE)
+# A Hexagon session can map about 1.8 GiB of repacked weights, so the number of sessions a
+# model needs is driven by how much of it lands on the NPU, not by its parameter count: the
+# repacked size ranges from 44% to 103% of the GGUF depending on the architecture (token
+# embeddings stay on the CPU, matformer models share a lot of weights). The parameter count
+# is wrong in both directions, so size the sessions on the GGUF size instead.
+#
+# Number of sessions by GGUF size, ordered from the largest threshold down: the first entry a
+# model exceeds wins. GB here means 10^9 bytes. The table never under-allocates on the models
+# we ship (it over-allocates one session on a few of them, which costs ~3% per token); models
+# with a known-good value should carry an explicit GGML_HEXAGON_NDEV instead.
+NDEV_BY_GGUF_GB = ((5.0, 4), (3.5, 3), (1.5, 2))
 
-# Number of Hexagon sessions needed to run a model on the NPU, by parameter count (in
-# billions). Ordered from the largest threshold down: the first entry a model reaches wins.
-NDEV_BY_PARAMS_B = ((8.0, 4),)
 
-# Models with at least this many billion parameters need more than 1 Hexagon session.
-BIG_MODEL_PARAMS_B = NDEV_BY_PARAMS_B[-1][0]
-
-
-def model_ndev(params_b: float) -> int:
-    """Return the number of Hexagon sessions required by a model of params_b billion parameters."""
-    for threshold, ndev in NDEV_BY_PARAMS_B:
-        if params_b >= threshold:
+def model_ndev(gguf_bytes: int) -> int:
+    """Return the number of Hexagon sessions required by a GGUF file of gguf_bytes bytes."""
+    gguf_gb = gguf_bytes / 1e9
+    for threshold, ndev in NDEV_BY_GGUF_GB:
+        if gguf_gb > threshold:
             return ndev
     return 1
 
 
-def model_params_b(model_name: str):
-    """Return the parameter count (in billions) read from a model name, or None if unknown."""
-    matches = _PARAMS_RE.findall(model_name)
-    if not matches:
-        return None
-    return max(float(m) for m in matches)
-
-
-def detect_hexagon_ndev(model_names):
+def detect_hexagon_ndev(models):
     """Return the number of Hexagon sessions required by the installed models.
 
     Diagnostics go to stderr so that stdout can carry just the number.
     """
     ndev = 1
-    for name in sorted(model_names):
-        params = model_params_b(name)
-        if params is None:
-            print(f"  {name}: unknown parameter count, assuming it fits 1 session", file=sys.stderr)
+    for name, entry in sorted(models.items()):
+        try:
+            gguf_bytes = Path(entry["model"]).stat().st_size
+        except OSError as e:
+            print(f"  {name}: cannot read size ({e}), assuming it fits 1 session", file=sys.stderr)
             continue
 
-        required = model_ndev(params)
+        required = model_ndev(gguf_bytes)
+        gguf_gb = gguf_bytes / 1e9
         if required == 1:
-            print(f"  {name}: {params}B parameters, fits 1 session", file=sys.stderr)
+            print(f"  {name}: {gguf_gb:.2f} GB, fits 1 session", file=sys.stderr)
         else:
-            print(f"  {name}: {params}B parameters, requires {required} sessions", file=sys.stderr)
+            print(f"  {name}: {gguf_gb:.2f} GB, requires {required} sessions", file=sys.stderr)
         ndev = max(ndev, required)
 
     return ndev

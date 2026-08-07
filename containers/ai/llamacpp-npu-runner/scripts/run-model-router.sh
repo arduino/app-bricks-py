@@ -11,8 +11,8 @@ echo "Starting LLama server..."
 export LD_LIBRARY_PATH=/opt/pkg-snapdragon/lib
 export ADSP_LIBRARY_PATH=/opt/pkg-snapdragon/lib
 
-# Number of Hexagon sessions required by the installed models: more than 1 means at least
-# one big model (>= 8B parameters, which needs 4 sessions) is installed.
+# Number of Hexagon sessions required by the installed models, estimated from the size of
+# their GGUF files: more than 1 means at least one model too big for a single session.
 DETECTED_NDEV="$(python3 /generate_models_ini.py /models --print-ndev)"
 DETECTED_NDEV="${DETECTED_NDEV:-1}"
 
@@ -27,10 +27,12 @@ else
   echo "GGML_HEXAGON_NDEV not set: auto-detected ${NDEV} session(s) from installed models"
 fi
 
-# Big models leave little room for the KV cache on the NPU: cap their context size.
-BIG_MODEL_MAX_CTX_SIZE=8192
-if [ "${DETECTED_NDEV}" -ge 2 ] && [[ "${LLAMA_ARG_CTX_SIZE}" =~ ^[0-9]+$ ]] && [ "${LLAMA_ARG_CTX_SIZE}" -gt "${BIG_MODEL_MAX_CTX_SIZE}" ]; then
-  echo "Model with >= 8B parameters installed: forcing LLAMA_ARG_CTX_SIZE=${BIG_MODEL_MAX_CTX_SIZE} (was ${LLAMA_ARG_CTX_SIZE})"
+# Big models leave little room for the KV cache on the NPU: cap their context size. Three or
+# more sessions means a GGUF larger than 3.5 GB, which is where the cap starts to be needed.
+BIG_MODEL_MIN_NDEV=3
+BIG_MODEL_MAX_CTX_SIZE=16384
+if [ "${DETECTED_NDEV}" -ge "${BIG_MODEL_MIN_NDEV}" ] && [[ "${LLAMA_ARG_CTX_SIZE}" =~ ^[0-9]+$ ]] && [ "${LLAMA_ARG_CTX_SIZE}" -gt "${BIG_MODEL_MAX_CTX_SIZE}" ]; then
+  echo "Big model installed (${DETECTED_NDEV} sessions): forcing LLAMA_ARG_CTX_SIZE=${BIG_MODEL_MAX_CTX_SIZE} (was ${LLAMA_ARG_CTX_SIZE})"
   export LLAMA_ARG_CTX_SIZE="${BIG_MODEL_MAX_CTX_SIZE}"
 fi
 
