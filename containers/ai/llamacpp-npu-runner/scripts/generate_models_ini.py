@@ -13,8 +13,20 @@ from pathlib import Path
 # \b cannot be used because "E4B_q4_0" has a word character right after the "B".
 _PARAMS_RE = re.compile(r"(\d+(?:\.\d+)?)b(?![a-z0-9.])", re.IGNORECASE)
 
-# Models with at least this many billion parameters need 2 Hexagon sessions to run on the NPU.
-BIG_MODEL_PARAMS_B = 4.0
+# Number of Hexagon sessions needed to run a model on the NPU, by parameter count (in
+# billions). Ordered from the largest threshold down: the first entry a model reaches wins.
+NDEV_BY_PARAMS_B = ((8.0, 4),)
+
+# Models with at least this many billion parameters need more than 1 Hexagon session.
+BIG_MODEL_PARAMS_B = NDEV_BY_PARAMS_B[-1][0]
+
+
+def model_ndev(params_b: float) -> int:
+    """Return the number of Hexagon sessions required by a model of params_b billion parameters."""
+    for threshold, ndev in NDEV_BY_PARAMS_B:
+        if params_b >= threshold:
+            return ndev
+    return 1
 
 
 def model_params_b(model_name: str):
@@ -35,11 +47,14 @@ def detect_hexagon_ndev(model_names):
         params = model_params_b(name)
         if params is None:
             print(f"  {name}: unknown parameter count, assuming it fits 1 session", file=sys.stderr)
-        elif params >= BIG_MODEL_PARAMS_B:
-            print(f"  {name}: {params}B parameters, requires 2 sessions", file=sys.stderr)
-            ndev = 2
-        else:
+            continue
+
+        required = model_ndev(params)
+        if required == 1:
             print(f"  {name}: {params}B parameters, fits 1 session", file=sys.stderr)
+        else:
+            print(f"  {name}: {params}B parameters, requires {required} sessions", file=sys.stderr)
+        ndev = max(ndev, required)
 
     return ndev
 

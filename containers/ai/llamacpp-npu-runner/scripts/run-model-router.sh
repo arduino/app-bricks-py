@@ -11,8 +11,8 @@ echo "Starting LLama server..."
 export LD_LIBRARY_PATH=/opt/pkg-snapdragon/lib
 export ADSP_LIBRARY_PATH=/opt/pkg-snapdragon/lib
 
-# Number of Hexagon sessions required by the installed models: 2 means at least one big
-# model (>= 4B parameters) is installed.
+# Number of Hexagon sessions required by the installed models: more than 1 means at least
+# one big model (>= 8B parameters, which needs 4 sessions) is installed.
 DETECTED_NDEV="$(python3 /generate_models_ini.py /models --print-ndev)"
 DETECTED_NDEV="${DETECTED_NDEV:-1}"
 
@@ -30,7 +30,7 @@ fi
 # Big models leave little room for the KV cache on the NPU: cap their context size.
 BIG_MODEL_MAX_CTX_SIZE=8192
 if [ "${DETECTED_NDEV}" -ge 2 ] && [[ "${LLAMA_ARG_CTX_SIZE}" =~ ^[0-9]+$ ]] && [ "${LLAMA_ARG_CTX_SIZE}" -gt "${BIG_MODEL_MAX_CTX_SIZE}" ]; then
-  echo "Model with >= 4B parameters installed: forcing LLAMA_ARG_CTX_SIZE=${BIG_MODEL_MAX_CTX_SIZE} (was ${LLAMA_ARG_CTX_SIZE})"
+  echo "Model with >= 8B parameters installed: forcing LLAMA_ARG_CTX_SIZE=${BIG_MODEL_MAX_CTX_SIZE} (was ${LLAMA_ARG_CTX_SIZE})"
   export LLAMA_ARG_CTX_SIZE="${BIG_MODEL_MAX_CTX_SIZE}"
 fi
 
@@ -57,7 +57,7 @@ fi
 LLAMA_ARGS=(
   --device "$DEVICE_LIST"
   -ngl "$NGL"
-  --no-mmap
+  --load-mode none
   --models-preset /models/models.ini
 )
 
