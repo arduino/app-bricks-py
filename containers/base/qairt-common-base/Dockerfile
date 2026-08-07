@@ -36,6 +36,7 @@ FROM base AS native-libs
 
 # QAIRT version to download and install
 ENV QNP_VER=2.46.0.260424
+ENV QNP_SDK_SHA256=2db536eac7556368f4e89663bd26aa0af189cf16360d74ae48324a5281f9a4e1
 
 # Tools for download/unzip
 RUN apt-get update && \
@@ -52,12 +53,6 @@ ENV QNP_SDK=v${QNP_VER}.zip
 ENV QNN_ROOT=${DOWNLOAD_DIR}/qairt/${QNP_VER}
 ENV QNN_LIB_PATH=${QNN_ROOT}/lib
 
-# Show variables
-RUN echo "QNP_VER=${QNP_VER}" && \
-    echo "QNP_SDK=${QNP_SDK}" && \
-    echo "QNN_ROOT=${QNN_ROOT}" && \
-    echo "QNN_LIB_PATH=${QNN_LIB_PATH}"
-
 # Ensure structure for downstream COPY
 RUN mkdir -p ${DEPLOY_DIR}/usr/lib ${ADSP_DIR} /usr/include /usr/lib ${DOWNLOAD_DIR}
 
@@ -70,6 +65,9 @@ RUN set -eu && \
     echo "==> Download QAIRT ${QNP_VER}"; \
     wget -t 3 -T 300 -P "${DOWNLOAD_DIR}" \
       "https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/${QNP_VER}/${QNP_SDK}"; \
+    \
+    echo "==> Verify SDK checksum"; \
+    echo "${QNP_SDK_SHA256}  ${DOWNLOAD_DIR}/${QNP_SDK}" | sha256sum -c -; \
     \
     echo "==> Unzip SDK"; \
     cd "${DOWNLOAD_DIR}" && unzip -q "${QNP_SDK}" && rm -f "${QNP_SDK}"; \
