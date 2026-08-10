@@ -19,9 +19,17 @@ from pathlib import Path
 # with a known-good value should carry an explicit GGML_HEXAGON_NDEV instead.
 NDEV_BY_GGUF_GB = ((5.0, 4), (3.5, 3), (1.5, 2))
 
+# Models that must stay on a single session no matter their size: splitting across sessions
+# happens layer by layer, and these have too few layers to fill more than one. Matched as a
+# substring of the model name (the GGUF file stem), so a match covers every quantization.
+SINGLE_SESSION_MODELS = ("gemma-4-E2B",)
 
-def model_ndev(gguf_bytes: int) -> int:
-    """Return the number of Hexagon sessions required by a GGUF file of gguf_bytes bytes."""
+
+def model_ndev(name: str, gguf_bytes: int) -> int:
+    """Return the number of Hexagon sessions required by model name, sized gguf_bytes bytes."""
+    if any(single in name for single in SINGLE_SESSION_MODELS):
+        return 1
+
     gguf_gb = gguf_bytes / 1e9
     for threshold, ndev in NDEV_BY_GGUF_GB:
         if gguf_gb > threshold:
@@ -42,9 +50,11 @@ def detect_hexagon_ndev(models):
             print(f"  {name}: cannot read size ({e}), assuming it fits 1 session", file=sys.stderr)
             continue
 
-        required = model_ndev(gguf_bytes)
+        required = model_ndev(name, gguf_bytes)
         gguf_gb = gguf_bytes / 1e9
-        if required == 1:
+        if any(single in name for single in SINGLE_SESSION_MODELS):
+            print(f"  {name}: {gguf_gb:.2f} GB, pinned to 1 session (too few layers to split)", file=sys.stderr)
+        elif required == 1:
             print(f"  {name}: {gguf_gb:.2f} GB, fits 1 session", file=sys.stderr)
         else:
             print(f"  {name}: {gguf_gb:.2f} GB, requires {required} sessions", file=sys.stderr)

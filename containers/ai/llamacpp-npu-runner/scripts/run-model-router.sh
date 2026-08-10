@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 echo "Generating models.ini..."
-python3 /generate_models_ini.py /models
+python3 /configure-llamacpp.py /models
 
 echo "Starting LLama server..."
 export LD_LIBRARY_PATH=/opt/pkg-snapdragon/lib
@@ -13,7 +13,7 @@ export ADSP_LIBRARY_PATH=/opt/pkg-snapdragon/lib
 
 # Number of Hexagon sessions required by the installed models, estimated from the size of
 # their GGUF files: more than 1 means at least one model too big for a single session.
-DETECTED_NDEV="$(python3 /generate_models_ini.py /models --print-ndev)"
+DETECTED_NDEV="$(python3 /configure-llamacpp.py /models --print-ndev)"
 DETECTED_NDEV="${DETECTED_NDEV:-1}"
 
 # Build --device argument from GGML_HEXAGON_NDEV, falling back to the value detected

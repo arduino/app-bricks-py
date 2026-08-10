@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 echo "Generating models.ini..."
-python3 /generate_models_ini.py /models
+python3 /configure-llamacpp.py /models
 
 echo "Starting LLama server..."
 export LD_LIBRARY_PATH=/opt/pkg-cpu/lib
