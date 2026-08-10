@@ -10,6 +10,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Literal
 
 import numpy as np
@@ -20,28 +21,19 @@ from arduino.app_utils import brick, Logger
 from arduino.app_utils.image.adjustments import compress_to_jpeg
 from arduino.app_internal.core.module import load_brick_compose_file, resolve_address
 
+from .pose_classifier import (
+    ANCHOR_JOINTS,
+    MIN_ANCHOR_SCORE,
+    EmaHysteresis,
+    KEYPOINT_NAMES,
+    embed,
+    load_pose_classifier,
+    normalize_pose,
+)
+
 logger = Logger("PoseEstimation")
 
-"""Names of the 17 body keypoints detected for each person, in model output order."""
-KEYPOINT_NAMES: tuple[str, ...] = (
-    "nose",
-    "left_eye",
-    "right_eye",
-    "left_ear",
-    "right_ear",
-    "left_shoulder",
-    "right_shoulder",
-    "left_elbow",
-    "right_elbow",
-    "left_wrist",
-    "right_wrist",
-    "left_hip",
-    "right_hip",
-    "left_knee",
-    "right_knee",
-    "left_ankle",
-    "right_ankle",
-)
+_POSE_CLASSIFIER_PATH = Path(__file__).resolve().parent / "assets" / "pose_classifier.npz"
 
 
 @dataclass
@@ -81,11 +73,11 @@ class Person:
 class Pose:
     """A pose classification event for a single person.
 
-    Delivered by `on_pose` callbacks. Not implemented yet: pose classification
-    with built-in pose names will be added in a future version of this brick.
+    Delivered by `on_pose` callbacks when the tracked person assumes or leaves
+    a built-in pose.
 
     Attributes:
-        name (str): Built-in pose name, e.g. "arms_up".
+        name (str): Built-in pose name, e.g. "sitting".
         event (Literal["enter", "exit"]): "enter" when the person assumes the
             pose, "exit" when they leave it.
         confidence (float): Classification confidence in [0.0, 1.0] at the event edge.
@@ -163,6 +155,15 @@ class PoseEstimation:
         self._ws_send_url = f"ws://{self._host}:5000"
         self._ws_recv_url = f"ws://{self._host}:5001"
 
+        # Built-in pose classification: the shipped reference database and the
+        # dials it was tuned with travel together inside the asset.
+        load_start = time.monotonic()
+        self._pose_knn, self._pose_label_weights, self._pose_names = load_pose_classifier(_POSE_CLASSIFIER_PATH)
+        logger.info(f"pose classifier ready in {time.monotonic() - load_start:.2f}s (poses: {', '.join(self._pose_names)})")
+        self._pose_ema = EmaHysteresis(classes=self._pose_names)
+        self._pose_last_ts: float | None = None
+        self._pose_last_person: Person | None = None
+
     def start(self):
         """Start the capture thread and asyncio event loop."""
         self._executor = ThreadPoolExecutor()
@@ -176,6 +177,10 @@ class PoseEstimation:
         if self._executor is not None:
             self._executor.shutdown(wait=False, cancel_futures=True)
             self._executor = None
+        # Reset the temporal state so a restart begins from a clean slate
+        self._pose_ema = EmaHysteresis(classes=self._pose_names)
+        self._pose_last_ts = None
+        self._pose_last_person = None
 
     def on_keypoints(self, callback: Callable[[Person], None] | None):
         """Register a callback invoked once per detected person, for every processed frame.
@@ -190,22 +195,27 @@ class PoseEstimation:
         self._register_callback("keypoints", callback)
 
     def on_pose(self, pose: str, callback: Callable[[Pose], None] | None):
-        """Register a callback for a named pose (e.g. "arms_up").
+        """Register a callback for a built-in pose (e.g. "sitting").
 
-        Not implemented yet: pose classification with built-in pose names will
-        be added in a future version of this brick. The callback will receive a
-        `Pose` event when a person assumes the named pose (event="enter") and
-        when they leave it (event="exit").
+        The classifier follows ONE person: the largest bounding box in the
+        frame, normally the closest to the camera. Other people stay visible
+        through `on_keypoints` but do not fire pose events. Per-frame
+        classifications are smoothed over time with hysteresis, so the
+        callback receives stable edges: a `Pose` with event="enter" when the
+        tracked person assumes the pose, event="exit" when they leave it.
 
         Args:
-            pose (str): Name of the pose to detect.
-            callback (Callable[[Pose], None]): Function to call with the pose event.
-                None to unregister.
+            pose (str): One of the built-in pose names: "left_arm_raised",
+                "right_arm_raised", "sitting", "standing".
+            callback (Callable[[Pose], None]): Function to call with the pose
+                event. None to unregister.
 
         Raises:
-            NotImplementedError: Always, in this version of the brick.
+            ValueError: If `pose` is not one of the built-in pose names.
         """
-        raise NotImplementedError("Pose classification will be added in a future version of this brick.")
+        if pose not in self._pose_names:
+            raise ValueError(f"unknown pose {pose!r} (available: {', '.join(self._pose_names)})")
+        self._register_callback(f"pose:{pose}", callback)
 
     def on_enter(self, callback: Callable[[], None] | None):
         """Register a callback for when the first person enters the scene.
@@ -415,6 +425,67 @@ class PoseEstimation:
         # Dispatch keypoint events (not debounced: they are the raw detection stream)
         if people:
             self._submit_callback("keypoints", people, unroll=True)
+
+        self._update_pose_classification(people, now)
+
+    def _update_pose_classification(self, people: list[Person], now: float):
+        """Classify the tracked person (largest box) and dispatch pose edges."""
+        dt = 0.0 if self._pose_last_ts is None else now - self._pose_last_ts
+        self._pose_last_ts = now
+
+        tracked: Person | None = None
+        probs: dict[str, float] | None = None
+        if people:
+            tracked = max(people, key=lambda person: self._box_area(person.bounding_box_xyxy))
+            self._pose_last_person = tracked
+            probs = self._classify_person(tracked)
+
+        events = self._pose_ema.update(probs, dt, person_present=bool(people))
+        if not events:
+            return
+        # An exit can fire after the person left the frame (grace decay): the
+        # event then carries the last skeleton the pose was read from.
+        subject = tracked or self._pose_last_person
+        keypoints = subject.keypoints if subject else {}
+        bbox = subject.bounding_box_xyxy if subject else (0, 0, 0, 0)
+        for event, name in events:
+            self._submit_callback(
+                f"pose:{name}",
+                Pose(
+                    name=name,
+                    event=event,
+                    confidence=self._pose_ema.smoothed[name],
+                    keypoints=keypoints,
+                    bounding_box_xyxy=bbox,
+                ),
+            )
+
+    @staticmethod
+    def _box_area(box: tuple[int, int, int, int]) -> int:
+        return max(0, box[2] - box[0]) * max(0, box[3] - box[1])
+
+    def _classify_person(self, person: Person) -> dict[str, float] | None:
+        """Per-frame pose probabilities for one person, or None when unreadable.
+
+        None means "no evidence" (weak anchor joints, missing joints, collapsed
+        torso) and freezes the temporal layer; an all-zeros dict from the
+        classifier means "read fine, looks like nothing we know" and makes any
+        active pose decay.
+        """
+        for name in ANCHOR_JOINTS:
+            keypoint = person.keypoints.get(name)
+            if keypoint is None or keypoint.score < MIN_ANCHOR_SCORE:
+                return None
+        if any(name not in person.keypoints for name in KEYPOINT_NAMES):
+            return None
+        xy = np.asarray(
+            [[person.keypoints[name].x, person.keypoints[name].y] for name in KEYPOINT_NAMES],
+            dtype=np.float32,
+        )
+        norm = normalize_pose(xy)
+        if norm is None:
+            return None
+        return self._pose_knn.classify(embed(norm), label_weights=self._pose_label_weights)
 
     def _dispatch_error(self, error: Exception):
         callback = self._get_callback("error")
