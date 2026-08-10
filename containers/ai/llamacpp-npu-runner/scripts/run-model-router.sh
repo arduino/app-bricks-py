@@ -27,9 +27,9 @@ else
   echo "GGML_HEXAGON_NDEV not set: auto-detected ${NDEV} session(s) from installed models"
 fi
 
-# Big models leave little room for the KV cache on the NPU: cap their context size. Three or
-# more sessions means a GGUF larger than 3.5 GB, which is where the cap starts to be needed.
-BIG_MODEL_MIN_NDEV=3
+# Big models leave little room for the KV cache on the NPU: cap their context size. Four
+# sessions means a GGUF larger than 3.5 GB, which is where the cap starts to be needed.
+BIG_MODEL_MIN_NDEV=4
 BIG_MODEL_MAX_CTX_SIZE=16384
 if [ "${DETECTED_NDEV}" -ge "${BIG_MODEL_MIN_NDEV}" ] && [[ "${LLAMA_ARG_CTX_SIZE}" =~ ^[0-9]+$ ]] && [ "${LLAMA_ARG_CTX_SIZE}" -gt "${BIG_MODEL_MAX_CTX_SIZE}" ]; then
   echo "Big model installed (${DETECTED_NDEV} sessions): forcing LLAMA_ARG_CTX_SIZE=${BIG_MODEL_MAX_CTX_SIZE} (was ${LLAMA_ARG_CTX_SIZE})"

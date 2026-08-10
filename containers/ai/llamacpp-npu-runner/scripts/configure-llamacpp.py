@@ -13,11 +13,17 @@ from pathlib import Path
 # embeddings stay on the CPU, matformer models share a lot of weights). The parameter count
 # is wrong in both directions, so size the sessions on the GGUF size instead.
 #
+# The weights are not the only thing on the DSP domains: the KV cache is allocated there too,
+# as a single buffer (768 MiB at a 16k context), so the domain that hosts it has room for
+# noticeably fewer weights than the others. That is why 3 sessions are never enough in
+# practice: Qwen3-8B-Q4_0 (4.79 GB) maps its weights fine over 3 sessions but then fails to
+# allocate the KV cache, and needs 4.
+#
 # Number of sessions by GGUF size, ordered from the largest threshold down: the first entry a
-# model exceeds wins. GB here means 10^9 bytes. The table never under-allocates on the models
-# we ship (it over-allocates one session on a few of them, which costs ~3% per token); models
-# with a known-good value should carry an explicit GGML_HEXAGON_NDEV instead.
-NDEV_BY_GGUF_GB = ((5.0, 4), (3.5, 3), (1.5, 2))
+# model exceeds wins. GB here means 10^9 bytes. The table is deliberately conservative — it
+# over-allocates a session on some models, which costs ~3% per token, rather than failing to
+# load; models with a known-good value should carry an explicit GGML_HEXAGON_NDEV instead.
+NDEV_BY_GGUF_GB = ((3.5, 4), (1.5, 2))
 
 # Models that must stay on a single session no matter their size: splitting across sessions
 # happens layer by layer, and these have too few layers to fill more than one. Matched as a

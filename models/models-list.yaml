@@ -1844,7 +1844,7 @@ models:
     bricks:
       - id: "arduino:llm"
         model_configuration:
-          GGML_HEXAGON_NDEV: 2
+          GGML_HEXAGON_NDEV: 3
     deployment:
       handler: "hf-handler"
       platforms:
