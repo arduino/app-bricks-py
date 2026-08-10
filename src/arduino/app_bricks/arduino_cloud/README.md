@@ -10,7 +10,7 @@ The Arduino Cloud Brick lets your application exchange variable values with Ardu
 
 - Exchanges variable values with Arduino Cloud through the local daemon
 - Natural attribute access to variables (`cloud.my_var = 42`)
-- `on_write` / `on_read` / `on_run` callbacks
+- Callbacks for different cases such as `on_write`, `on_read` and `on_run`
 - Use cloud specific structured objects: `Location`, `Color`, `ColoredLight`, `DimmedLight`, `Schedule`
 - Per-variable conflict resolution policy: `DEVICE_WINS`, `CLOUD_WINS`, `MOST_RECENT_WINS`
 
