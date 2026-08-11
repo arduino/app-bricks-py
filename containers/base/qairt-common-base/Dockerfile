@@ -7,7 +7,7 @@
 FROM python:3.13-slim-trixie AS base
 
 # Install common dependencies
-RUN apt-get update && \
+RUN set -ex && apt-get update && \
     apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
       curl libyaml-0-2 libbsd0 libmd0 libatomic1 strace netcat-openbsd && \
@@ -39,7 +39,7 @@ ENV QNP_VER=2.45.41.260507
 ENV QNP_SDK_SHA256=8a4afa4e87d6653ba227fd0988f8ee51651e800669654a94d09cbc0a6fe9f9b2
 
 # Tools for download/unzip
-RUN apt-get update && \
+RUN set -ex && apt-get update && \
     apt-get install -y wget unzip && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
@@ -114,7 +114,7 @@ FROM base AS fastrpc-builder
 # fastrpc version to build (git tag) as per QAIRT framework
 ENV FASTRPC_VER=1.0.6
 
-RUN apt-get update && \
+RUN set -ex && apt-get update && \
     apt-get install -y --no-install-recommends \
       git ca-certificates \
       autoconf automake libtool make gcc pkg-config \
@@ -122,7 +122,7 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-RUN git clone --depth 1 --branch v${FASTRPC_VER} https://github.com/quic/fastrpc.git \
+RUN set -ex && git clone --depth 1 --branch v${FASTRPC_VER} https://github.com/quic/fastrpc.git \
     && cd fastrpc \
     && autoreconf -is \
     && CFLAGS='-UMACHINE_NAME_PATH -DMACHINE_NAME_PATH=\"/run/device-model\"' \
