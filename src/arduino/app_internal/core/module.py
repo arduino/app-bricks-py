@@ -218,7 +218,7 @@ def get_brick_configured_model(brick_id: str, brick_config: Dict = None) -> Opti
 
     bricks:
     - arduino:llm:
-        model: genie:qwen3-4b
+        model: genie:qwen3_4b_instruct_2507
 
     Args:
         brick_id (str): The identifier of the brick for which to retrieve the model configuration.

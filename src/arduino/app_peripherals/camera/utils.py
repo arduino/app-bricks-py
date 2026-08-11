@@ -2,39 +2,75 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+from ..device_registry import DeviceRegistry
 from .errors import CameraOpenError
 
+_camera_registry = DeviceRegistry()
+"""Tracks the cameras assigned to auto-selected Camera instances."""
 
-def nth_plugged_camera(idx: int) -> str:
+
+def _claim_first_available_camera() -> tuple[str, str]:
     """
-    Find the n-th available physically connected camera.
-    The precedence is USB cameras first, then CSI cameras, if supported
-    by the current platform.
+    Find and claim the first plugged camera not assigned to another instance.
+
+    USB cameras take precedence over CSI ones, if supported by the current
+    platform. The claim is keyed on the camera's stable identity so it survives
+    device reordering, and must be released back to _camera_registry, either
+    explicitly or by binding it to its owner.
+
+    Returns:
+        tuple[str, str]: The claimed camera as (source, claim key), where
+            source is a Camera factory source string and claim key is the
+            camera's stable identity.
+
+    Raises:
+        CameraOpenError: If no camera is plugged or all are already in use.
+    """
+    from .v4l_camera import V4LCamera
+
+    path = _camera_registry.select(V4LCamera._list_stable_paths)
+    if path is not None:
+        return f"usb:{path}", path
+
+    from .csi_camera import CSICamera
+
+    names = CSICamera.list_device_names()
+    name = _camera_registry.select(lambda: names)
+    if name is not None:
+        return f"csi:{names.index(name)}", name
+
+    raise CameraOpenError("No available cameras found: either none is plugged or all are already in use")
+
+
+def _nth_plugged_camera(idx: int) -> str:
+    """
+    Find the n-th plugged camera, regardless of whether it is already in use.
+
+    The index spans USB cameras first, then CSI cameras, if supported by the
+    current platform.
 
     Args:
         idx (int): Index of the camera to select (0-based).
 
     Returns:
-        str | int: Identifier of the n-th available camera
+        str: Identifier of the n-th plugged camera ("usb:X" or "csi:X").
 
     Raises:
-        CameraOpenError: If no cameras are found or index is out of range
+        CameraOpenError: If no camera is plugged at the given index.
     """
     from .v4l_camera import V4LCamera
 
-    usb_cameras = V4LCamera.list_devices()
-    if len(usb_cameras) > 0:
-        if idx < len(usb_cameras):
-            return "usb:" + str(idx)
+    usb_count = len(V4LCamera.list_devices())
+    if idx < usb_count:
+        return f"usb:{idx}"
 
     from .csi_camera import CSICamera
 
-    csi_cameras = CSICamera.list_devices()
-    if len(csi_cameras) > 0:
-        if idx < len(csi_cameras):
-            return "csi:" + str(idx)
+    csi_count = len(CSICamera.list_devices())
+    if idx - usb_count < csi_count:
+        return f"csi:{idx - usb_count}"
 
-    raise CameraOpenError("No available cameras found")
+    raise CameraOpenError(f"No camera found at index {idx}: only {usb_count + csi_count} camera(s) plugged")
 
 
 def resolve_camera_name(i2c_addr: str) -> str:

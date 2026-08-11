@@ -5,6 +5,9 @@ inputs:
   container:
     description: Container name to scan
     required: true
+  container_dir:
+    description: Repo-relative directory of the container (e.g. containers/ai/llamacpp-runner)
+    required: true
   version:
     description: Image tag or version
     required: true
@@ -39,4 +42,4 @@ runs:
       uses: actions/upload-artifact@v4
       with:
         name: sbom-delta-${{ inputs.container }}
-        path: ./containers/${{ inputs.container }}/sbom-delta/
+        path: ./${{ inputs.container_dir }}/sbom-delta/

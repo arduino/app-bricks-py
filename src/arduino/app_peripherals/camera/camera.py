@@ -2,14 +2,19 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import inspect
 from collections.abc import Callable
 from urllib.parse import urlparse
 
 import numpy as np
 
+from arduino.app_utils import Logger
+
 from .base_camera import BaseCamera
 from .errors import CameraConfigError
-from .utils import nth_plugged_camera
+from .utils import _camera_registry, _claim_first_available_camera, _nth_plugged_camera
+
+logger = Logger("Camera")
 
 
 class Camera:
@@ -31,7 +36,7 @@ class Camera:
 
     def __new__(
         cls,
-        source: str | int = 0,
+        source: str | int | None = None,
         resolution: tuple[int, int] = (640, 480),
         fps: int = 10,
         adjustments: Callable[[np.ndarray], np.ndarray] | None = None,
@@ -41,10 +46,15 @@ class Camera:
         Create a camera instance based on the source type.
 
         Args:
-            source (Union[str, int]): Camera source identifier. Supports:
-                - int | str: Auto-select the n-th available plugged camera
-                    (e.g., 0, 1, "0", "1", ...), giving priority to USB cameras,
-                    then CSI cameras if supported by the platform
+            source (str | int | None): Camera source identifier. Supports:
+                - None: Auto-select the first available plugged camera, i.e. not
+                    already in use by another instance, giving priority to USB
+                    cameras, then CSI cameras if supported by the platform.
+                    Raises if every plugged camera is already in use
+                - int | str: Select the n-th plugged camera (e.g., 0, 1, "0", "1",
+                    ...) counting USB cameras first, then CSI ones, regardless of
+                    whether it is already in use: contention on a reused camera
+                    is only discovered when starting it
                 - str: V4L camera ordinal index (e.g., "usb:0", "usb:1")
                 - str: V4L camera device path (e.g., "usb:/dev/video0",
                     "usb:/dev/v4l/by-id/...", "usb:/dev/v4l/by-path/...
@@ -53,13 +63,13 @@ class Camera:
                 - str: CSI camera name (e.g., "csi:CAMERA0", "csi:CAMERA1")
                 - str: URL for IP cameras (e.g., "rtsp://...", "http://...")
                 - str: WebSocket URL for input streams (e.g., "ws://0.0.0.0:8080")
-                Default: 0.
+                Default: None.
             resolution (tuple[int, int]): Frame resolution as (width, height).
                 Default: (640, 480).
             fps (int): Target frames per second. Default: 10.
             adjustments (callable, optional): Function pipeline to adjust frames
                 that takes a numpy array and returns a numpy array. Default: None.
-            **kwargs: Camera-specific configuration parameters grouped by type:
+            **kwargs: Camera-specific configuration parameters grouped by type.
                 V4L Camera Parameters:
                     device (int | str): V4L device. Default: 0.
                     codec (str, optional): Video codec to use (FourCC). Options: "YUVY",
@@ -122,44 +132,109 @@ class Camera:
             camera = Camera("ws://0.0.0.0:8080", use_tls=True, certs_dir_path="/path/to/certs")
             ```
         """
+        if source is None:
+            # Auto-selection: claim the first available camera so other instances don't select it
+            source, key = _claim_first_available_camera()
+            try:
+                camera = _create_camera(source, resolution, fps, adjustments, **kwargs)
+            except BaseException:
+                _camera_registry.release(key)
+                raise
+            _camera_registry.bind(key, camera)
+            return camera
+
         if not isinstance(source, (str, int)):
-            raise CameraConfigError(f"Invalid source type: {type(source)}. Must be str or int.")
+            raise CameraConfigError(f"Invalid source type: {type(source)}. Must be str, int or None.")
 
         if isinstance(source, int) or (isinstance(source, str) and source.isdigit()):
-            # Select the n-th available camera
-            idx = int(source) if isinstance(source, str) else source
-            source = nth_plugged_camera(idx)
+            # Positional selection of the n-th plugged camera
+            source = _nth_plugged_camera(int(source))
 
-        if source.startswith("usb:"):
+        camera = _create_camera(source, resolution, fps, adjustments, **kwargs)
+
+        # Claim local devices so auto-selection doesn't pick them
+        key = _claim_key(camera)
+        if key is not None:
+            _camera_registry.claim(key)
+            _camera_registry.bind(key, camera)
+        return camera
+
+
+def _claim_key(camera: BaseCamera) -> str | None:
+    """Return the stable identity of the local device held by the camera, if any."""
+    from .csi_camera import CSICamera
+    from .v4l_camera import V4LCamera
+
+    if isinstance(camera, V4LCamera):
+        return camera.v4l_path
+    if isinstance(camera, CSICamera):
+        return camera.csi_path
+    return None
+
+
+def _supported_kwargs(camera_cls: type[BaseCamera], kwargs: dict) -> dict:
+    """
+    Keep only the keyword arguments supported by the target camera implementation.
+
+    The factory forwards **kwargs verbatim, so options that only apply to another
+    camera type (e.g. the V4L-only codec) would otherwise break the construction,
+    most notably when auto-selection picks a CSI camera.
+
+    Args:
+        camera_cls (type[BaseCamera]): Camera implementation the arguments are meant for.
+        kwargs (dict): Keyword arguments to forward to camera_cls.
+
+    Returns:
+        dict: The keyword arguments accepted by camera_cls.
+    """
+    supported = inspect.signature(camera_cls.__init__).parameters
+    dropped = sorted(name for name in kwargs if name not in supported)
+    if not dropped:
+        return kwargs
+
+    logger.warning(f"Ignoring argument(s) {', '.join(dropped)}: not supported by {camera_cls.__name__}")
+    return {name: value for name, value in kwargs.items() if name not in dropped}
+
+
+def _create_camera(
+    source: str,
+    resolution: tuple[int, int],
+    fps: int,
+    adjustments: Callable[[np.ndarray], np.ndarray] | None,
+    **kwargs,
+) -> BaseCamera:
+    """Create the camera implementation matching the given source identifier."""
+    if source.startswith("usb:"):
+        from .v4l_camera import V4LCamera
+
+        v4l_source = source[4:]  # Remove "usb:" prefix
+        return V4LCamera(v4l_source, resolution=resolution, fps=fps, adjustments=adjustments, **kwargs)
+
+    elif source.startswith("csi:"):
+        from .csi_camera import CSICamera
+
+        csi_source = source[4:]  # Remove "csi:" prefix
+        kwargs = _supported_kwargs(CSICamera, kwargs)
+        return CSICamera(csi_source, resolution=resolution, fps=fps, adjustments=adjustments, **kwargs)
+
+    # All other cases are handled by URL parsing
+    else:
+        parsed = urlparse(source)
+        if parsed.scheme in ["http", "https", "rtsp"]:
+            # IP Camera
+            from .ip_camera import IPCamera
+
+            return IPCamera(source, resolution=resolution, fps=fps, adjustments=adjustments, **kwargs)
+        elif parsed.scheme in ["ws", "wss"]:
+            # WebSocket Camera - extract host and port from URL
+            from .websocket_camera import WebSocketCamera
+
+            port = parsed.port or 8080
+            return WebSocketCamera(port=port, resolution=resolution, fps=fps, adjustments=adjustments, **kwargs)
+        elif source.startswith("/dev/video") or source.startswith("/dev/v4l/by-id/") or source.startswith("/dev/v4l/by-path/"):
+            # V4L device path, by-id, or by-path
             from .v4l_camera import V4LCamera
 
-            v4l_source = source[4:]  # Remove "usb:" prefix
-            return V4LCamera(v4l_source, resolution=resolution, fps=fps, adjustments=adjustments, **kwargs)
-
-        elif source.startswith("csi:"):
-            from .csi_camera import CSICamera
-
-            csi_source = source[4:]  # Remove "csi:" prefix
-            return CSICamera(csi_source, resolution=resolution, fps=fps, adjustments=adjustments, **kwargs)
-
-        # All other cases are handled by URL parsing
+            return V4LCamera(source, resolution=resolution, fps=fps, adjustments=adjustments, **kwargs)
         else:
-            parsed = urlparse(source)
-            if parsed.scheme in ["http", "https", "rtsp"]:
-                # IP Camera
-                from .ip_camera import IPCamera
-
-                return IPCamera(source, resolution=resolution, fps=fps, adjustments=adjustments, **kwargs)
-            elif parsed.scheme in ["ws", "wss"]:
-                # WebSocket Camera - extract host and port from URL
-                from .websocket_camera import WebSocketCamera
-
-                port = parsed.port or 8080
-                return WebSocketCamera(port=port, resolution=resolution, fps=fps, adjustments=adjustments, **kwargs)
-            elif source.startswith("/dev/video") or source.startswith("/dev/v4l/by-id/") or source.startswith("/dev/v4l/by-path/"):
-                # V4L device path, by-id, or by-path
-                from .v4l_camera import V4LCamera
-
-                return V4LCamera(source, resolution=resolution, fps=fps, adjustments=adjustments, **kwargs)
-            else:
-                raise CameraConfigError(f"Unsupported camera source: {source}")
+            raise CameraConfigError(f"Unsupported camera source: {source}")

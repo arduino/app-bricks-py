@@ -51,9 +51,9 @@ folderwatcher = [
     "watchdog>=6.0.0",
 ]
 usb_camera = [
-    # The .* suffix prevents pulling what's available from PyPI and forces uv
-    # to install our custom built wheel.
-    "opencv-python-headless==4.13.0.*",
+    # Upper bound keeps us on the 4.13 ABI; the exact build is enforced by
+    # the container's uv-constraint.txt file.
+    "opencv-python-headless>=4.13,<4.14"
 ]
 microphone = [
     "pyalsaaudio==0.11.0; sys_platform == 'linux'",
@@ -85,8 +85,8 @@ cloud_llm = [
     "langchain-google-genai >=4.1.3",
 ]
 mcp_client = [
-    "langchain-mcp-adapters >=0.2.1",
-    "mcp<2",
+    "langchain-mcp-adapters==0.3.1",
+    "mcp==1.29.0",
 ]
 cloud_asr = [
     "websocket-client",
@@ -127,7 +127,9 @@ include = ["*"]
 
 
 [tool.setuptools_scm]
-tag_regex = '^(?:ai|release)/(?P<version>v?\d+(?:\.\d+)*(?:rc\d+)?)$'
+# bricks/* is the library release prefix (the containers/bricks group); release/* is
+# kept so the pre-reorg tag history stays parseable for dev builds.
+tag_regex = '^(?:ai|bricks|release)/(?P<version>v?\d+(?:\.\d+)*(?:rc\d+)?)$'
 write_to = "src/arduino/_version.py"
 root = "."
 version_scheme = "only-version"

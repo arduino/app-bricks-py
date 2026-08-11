@@ -47,7 +47,7 @@ class AudioDetector(EdgeImpulseRunnerFacade):
             raise ValueError("Model parameters are missing or incomplete in the retrieved model information.")
         self.model_info = model_info
 
-        self._mic = mic if mic else Microphone(sample_rate=model_info.frequency, channels=model_info.axis_count)
+        self._mic = mic if mic else Microphone(0, sample_rate=model_info.frequency, channels=model_info.axis_count)
 
         self._window_size = int(model_info.input_features_count / model_info.axis_count)
         self._duration = model_info.input_features_count / model_info.axis_count * model_info.interval_ms
