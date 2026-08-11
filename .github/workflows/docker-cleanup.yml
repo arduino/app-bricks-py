@@ -29,8 +29,8 @@ jobs:
           TAG: ${{ steps.branch.outputs.tag }}
           OWNER: ${{ github.repository_owner }}
         run: |
-          # Discover packages from containers/ directory
-          mapfile -t PACKAGES < <(ls -d containers/*/ | xargs -I{} basename {} | sed 's|^|app-bricks/|' | jq -Rr @uri)
+          # Discover packages from containers/<group>/<name>/ directories
+          mapfile -t PACKAGES < <(ls -d containers/*/*/ | xargs -I{} basename {} | sed 's|^|app-bricks/|' | jq -Rr @uri)
 
           for PKG in "${PACKAGES[@]}"; do
             echo "Processing package: $PKG (tag: $TAG)"

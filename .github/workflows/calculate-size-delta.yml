@@ -57,7 +57,7 @@ jobs:
           export PATH="${{ env.TASKFILE_PATH }}:$PATH"
           task init:ci
           task build-dev
-          cp ./dist/arduino*.whl ./containers/python-apps-base/
+          cp ./dist/arduino*.whl ./containers/bricks/python-apps-base/
 
       - name: Setup Docker buildx
         uses: docker/setup-buildx-action@v3
@@ -67,8 +67,8 @@ jobs:
       - name: Build the base Docker image
         uses: docker/build-push-action@v6
         with:
-          context: ./containers/python-base
-          file: ./containers/python-base/Dockerfile
+          context: ./containers/base/python-base
+          file: ./containers/base/python-base/Dockerfile
           tags: localhost:5000/app-bricks/python-base:latest
           push: true
           cache-from: type=gha
@@ -77,8 +77,8 @@ jobs:
       - name: Build the apps base Docker image
         uses: docker/build-push-action@v6
         with:
-          context: ./containers/python-apps-base
-          file: ./containers/python-apps-base/Dockerfile
+          context: ./containers/bricks/python-apps-base
+          file: ./containers/bricks/python-apps-base/Dockerfile
           tags: localhost:5000/app-bricks/python-apps-base:latest
           push: true
           build-args: |

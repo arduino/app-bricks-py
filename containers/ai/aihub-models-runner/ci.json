@@ -1,0 +1,11 @@
+{
+  "watch_paths": ["containers/ai/aihub-models-runner/"],
+  "tag_latest": false,
+  "build_whl": false,
+  "update_compose": false,
+  "build_args": {},
+  "sbom": {
+    "runtime_base": "${REGISTRY}app-bricks/qairt-common-base:${BASE_IMAGE_VERSION}"
+  },
+  "downstream": ["gesture-recognition-runner"]
+}

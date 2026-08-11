@@ -1,0 +1,77 @@
+#!/bin/bash
+
+# SPDX-FileCopyrightText: Copyright (C) Arduino s.r.l. and/or its affiliated companies
+#
+# SPDX-License-Identifier: MPL-2.0
+
+echo "Generating models.ini..."
+python3 /configure-llamacpp.py /models
+
+echo "Starting LLama server..."
+export LD_LIBRARY_PATH=/opt/pkg-snapdragon/lib
+export ADSP_LIBRARY_PATH=/opt/pkg-snapdragon/lib
+
+# Number of Hexagon sessions required by the installed models, estimated from the size of
+# their GGUF files: more than 1 means at least one model too big for a single session. The
+# KV cache lives on the DSP domains together with the weights, so the sizing depends on the
+# context: at 4k and below the models are measured to need fewer sessions.
+DETECTED_NDEV="$(python3 /configure-llamacpp.py /models --print-ndev --ctx "${LLAMA_ARG_CTX_SIZE:-0}")"
+DETECTED_NDEV="${DETECTED_NDEV:-1}"
+
+# Big models leave little room for the KV cache on the NPU: cap their context size. Four
+# sessions means a GGUF larger than 3.5 GB, which is where the cap starts to be needed.
+BIG_MODEL_MIN_NDEV=4
+BIG_MODEL_MAX_CTX_SIZE=4096
+if [ "${DETECTED_NDEV}" -ge "${BIG_MODEL_MIN_NDEV}" ] && [[ "${LLAMA_ARG_CTX_SIZE}" =~ ^[0-9]+$ ]] && [ "${LLAMA_ARG_CTX_SIZE}" -gt "${BIG_MODEL_MAX_CTX_SIZE}" ]; then
+  echo "Big model installed (${DETECTED_NDEV} sessions): forcing LLAMA_ARG_CTX_SIZE=${BIG_MODEL_MAX_CTX_SIZE} (was ${LLAMA_ARG_CTX_SIZE})"
+  export LLAMA_ARG_CTX_SIZE="${BIG_MODEL_MAX_CTX_SIZE}"
+
+  # The capped context needs a smaller KV cache, which leaves room for more weights on each
+  # session: size them again for the context the server will actually run at.
+  DETECTED_NDEV="$(python3 /configure-llamacpp.py /models --print-ndev --ctx "${LLAMA_ARG_CTX_SIZE}")"
+  DETECTED_NDEV="${DETECTED_NDEV:-1}"
+fi
+
+# Build --device argument from GGML_HEXAGON_NDEV, falling back to the value detected
+# from the installed models (default: 1)
+if [ -n "${GGML_HEXAGON_NDEV}" ]; then
+  NDEV="${GGML_HEXAGON_NDEV}"
+  echo "Using externally configured GGML_HEXAGON_NDEV=${NDEV}"
+else
+  NDEV="${DETECTED_NDEV}"
+  export GGML_HEXAGON_NDEV="${NDEV}"
+  echo "GGML_HEXAGON_NDEV not set: auto-detected ${NDEV} session(s) from installed models"
+fi
+
+echo "Configuring ${NDEV} session(s)..."
+DEVICE_LIST=""
+for ((i=0; i<NDEV; i++)); do
+  if [ -z "$DEVICE_LIST" ]; then
+    DEVICE_LIST="HTP${i}"
+  else
+    DEVICE_LIST="${DEVICE_LIST},HTP${i}"
+  fi
+done
+
+# NPU offloading can be turned off with LLAMACPP_DISABLE_NPU_SUPPORT=true, which keeps
+# every layer on the CPU (-ngl 0). Any other value (default) offloads to the NPU.
+if [ "${LLAMACPP_DISABLE_NPU_SUPPORT,,}" = "true" ]; then
+  NGL=0
+  echo "LLAMACPP_DISABLE_NPU_SUPPORT=true: NPU support disabled, running on CPU (-ngl 0)"
+else
+  NGL=100
+  echo "NPU support enabled (-ngl ${NGL})"
+fi
+
+LLAMA_ARGS=(
+  --device "$DEVICE_LIST"
+  -ngl "$NGL"
+  --load-mode none
+  --models-preset /models/models.ini
+)
+
+if [ "${LLAMA_SERVER_SILENT}" = "1" ]; then
+  LLAMA_ARGS+=(--log-disable)
+fi
+
+exec /opt/pkg-snapdragon/bin/llama-server "${LLAMA_ARGS[@]}"

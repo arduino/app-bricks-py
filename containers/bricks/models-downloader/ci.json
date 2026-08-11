@@ -1,0 +1,14 @@
+{
+  "watch_paths": [
+    "containers/bricks/models-downloader/",
+    "src/",
+    "models/"
+  ],
+  "tag_latest": false,
+  "build_whl": false,
+  "update_compose": false,
+  "build_args": { },
+  "sbom": {
+    "runtime_base": "${REGISTRY}app-bricks/python-slim:${BASE_IMAGE_VERSION}"
+  }  
+}
