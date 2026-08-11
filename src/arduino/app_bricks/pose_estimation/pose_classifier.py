@@ -60,6 +60,13 @@ EMBEDDING_PAIRS = (
 
 EMBEDDING_SIZE = len(EMBEDDING_PAIRS) * 2 + 2  # pairs (dx, dy) + shoulder-center vector
 
+EMBEDDING_JOINTS = tuple(sorted({name for pair in EMBEDDING_PAIRS for name in pair}))
+
+# A joint reported beyond the frame bounds (plus this tolerance of the frame
+# size) is extrapolated, not observed: the pose model's offset refinement can
+# place occluded limbs far outside the image.
+OUT_OF_FRAME_TOLERANCE = 0.1
+
 # Live-frame gate on the normalization anchors only: weak non-anchor joints
 # are still usable evidence, while a discarded frame stalls the temporal layer.
 ANCHOR_JOINTS = ("left_shoulder", "right_shoulder", "left_hip", "right_hip")

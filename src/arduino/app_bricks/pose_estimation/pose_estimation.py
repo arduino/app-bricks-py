@@ -23,7 +23,9 @@ from arduino.app_internal.core.module import load_brick_compose_file, resolve_ad
 
 from .pose_classifier import (
     ANCHOR_JOINTS,
+    EMBEDDING_JOINTS,
     MIN_ANCHOR_SCORE,
+    OUT_OF_FRAME_TOLERANCE,
     EmaHysteresis,
     KEYPOINT_NAMES,
     embed,
@@ -126,6 +128,8 @@ class PoseEstimation:
         # Callbacks
         self._callbacks: dict[str, Callable] = {}
         self._callbacks_lock = threading.Lock()
+
+        self._frame_hw: tuple[int, int] | None = None
 
         # State tracking
         self._person_present = False
@@ -298,6 +302,7 @@ class PoseEstimation:
             if frame is None:
                 time.sleep(0.01)
                 return
+            self._frame_hw = frame.shape[:2]
 
             frame_cb = self._get_callback("frame")
             if frame_cb:
@@ -467,10 +472,10 @@ class PoseEstimation:
     def _classify_person(self, person: Person) -> dict[str, float] | None:
         """Per-frame pose probabilities for one person, or None when unreadable.
 
-        None means "no evidence" (weak anchor joints, missing joints, collapsed
-        torso) and freezes the temporal layer; an all-zeros dict from the
-        classifier means "read fine, looks like nothing we know" and makes any
-        active pose decay.
+        None means "no evidence" (weak anchor joints, missing joints,
+        out-of-frame joints, collapsed torso) and freezes the temporal layer;
+        an all-zeros dict from the classifier means "read fine, looks like
+        nothing we know" and makes any active pose decay.
         """
         for name in ANCHOR_JOINTS:
             keypoint = person.keypoints.get(name)
@@ -478,6 +483,14 @@ class PoseEstimation:
                 return None
         if any(name not in person.keypoints for name in KEYPOINT_NAMES):
             return None
+        if self._frame_hw is not None:
+            frame_h, frame_w = self._frame_hw
+            margin_x = OUT_OF_FRAME_TOLERANCE * frame_w
+            margin_y = OUT_OF_FRAME_TOLERANCE * frame_h
+            for name in EMBEDDING_JOINTS:
+                keypoint = person.keypoints[name]
+                if not (-margin_x <= keypoint.x <= frame_w + margin_x and -margin_y <= keypoint.y <= frame_h + margin_y):
+                    return None
         xy = np.asarray(
             [[person.keypoints[name].x, person.keypoints[name].y] for name in KEYPOINT_NAMES],
             dtype=np.float32,

@@ -287,6 +287,19 @@ class TestPoseEvents:
             pe._update_pose_classification(people, now)
         return now
 
+    def test_out_of_frame_joints_make_the_frame_unreadable(self, pe: PoseEstimation):
+        pe._frame_hw = (480, 640)
+        assert pe._classify_person(_person()) is not None
+
+        hallucinated = _person()
+        for name in ("left_knee", "right_knee", "left_ankle", "right_ankle"):
+            kp = hallucinated.keypoints[name]
+            hallucinated.keypoints[name] = Keypoint(name=name, x=kp.x, y=kp.y + 400, score=0.02)
+        assert pe._classify_person(hallucinated) is None
+
+        pe._frame_hw = None
+        assert pe._classify_person(hallucinated) is not None
+
     def test_enter_then_exit_fire_with_stable_classifications(self, pe: PoseEstimation, monkeypatch):
         events = []
         got_enter, got_exit = threading.Event(), threading.Event()
