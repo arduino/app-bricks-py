@@ -4,6 +4,8 @@
 
 from pathlib import Path
 
+import json
+
 import numpy as np
 import pytest
 
@@ -80,7 +82,7 @@ class TestPoseKNN:
         assert all(p == 0.0 for p in probs.values())
 
     def test_rejection_distance_is_calibrated_from_db(self):
-        knn = PoseKNN(k=5, reject_factor=1.5)
+        knn = PoseKNN(k=5, reject_factor=1.5, metric="euclidean")
         knn.fit(_cluster(0.0), ["a"] * 40)
         assert 0.0 < knn.reject_distance < 1.0  # tight cluster -> tight threshold
 
@@ -91,9 +93,9 @@ class TestPoseKNN:
         labels = ["a"] * len(both)
         mask = np.array([True] * len(real) + [False] * len(augmented))
 
-        naive = PoseKNN(k=5)
+        naive = PoseKNN(k=5, metric="euclidean")
         naive.fit(both, labels)
-        masked = PoseKNN(k=5)
+        masked = PoseKNN(k=5, metric="euclidean")
         masked.fit(both, labels, calibration_mask=mask)
         assert masked.reject_distance > naive.reject_distance * 5
 
@@ -109,7 +111,7 @@ class TestPoseKNN:
         labels = ["standing", "sitting"]
         query = np.zeros(4, np.float32)
 
-        knn_l2 = PoseKNN(k=1, reject_factor=100.0)
+        knn_l2 = PoseKNN(k=1, reject_factor=100.0, metric="euclidean")
         knn_l2.fit(emb, labels)
         assert knn_l2.classify(query)["standing"] == pytest.approx(1.0)
 
@@ -122,7 +124,7 @@ class TestPoseKNN:
         labels = ["standing", "sitting", "sitting", "standing"]
         query = np.asarray([0.0, 0.5], np.float32)
 
-        knn_l2 = PoseKNN(k=1, reject_factor=100.0)
+        knn_l2 = PoseKNN(k=1, reject_factor=100.0, metric="euclidean")
         knn_l2.fit(emb, labels)
         assert knn_l2.classify(query)["standing"] == pytest.approx(1.0)
 
@@ -132,13 +134,40 @@ class TestPoseKNN:
 
     def test_knn_label_weights_scale_votes(self):
         emb = np.asarray([[0.0], [0.1], [0.2], [0.3]], np.float32)
-        knn = PoseKNN(k=4, reject_factor=100.0)
+        knn = PoseKNN(k=4, reject_factor=100.0, vote_weighting="uniform")
         knn.fit(emb, ["sitting", "sitting", "other", "other"])
         plain = knn.classify(np.asarray([0.15], np.float32))
         assert plain["sitting"] == pytest.approx(0.5)
         weighted = knn.classify(np.asarray([0.15], np.float32), label_weights={"other": 0.5})
         assert weighted["sitting"] == pytest.approx(2 / 3)
         assert weighted["other"] == pytest.approx(1 / 3)
+
+    def test_knn_distance_weighting_lets_closer_neighbors_speak_louder(self):
+        emb = np.asarray([[0.0], [0.1], [0.2], [0.3]], np.float32)
+        labels = ["sitting", "sitting", "other", "other"]
+        query = np.asarray([0.05], np.float32)
+
+        uniform = PoseKNN(k=4, reject_factor=100.0, vote_weighting="uniform")
+        uniform.fit(emb, labels)
+        assert uniform.classify(query)["sitting"] == pytest.approx(0.5)
+
+        weighted = PoseKNN(k=4, reject_factor=100.0, vote_weighting="distance")
+        weighted.fit(emb, labels)
+        assert weighted.classify(query)["sitting"] == pytest.approx(15 / 19)
+
+    def test_rejection_threshold_lives_in_the_chosen_metric_space(self):
+        rng = np.random.default_rng(42)
+        emb = np.column_stack([rng.normal(0.0, 1.0, 40), rng.normal(0.0, 0.01, 40)]).astype(np.float32)
+        labels = ["a"] * 40
+        query = np.asarray([0.0, 0.1], np.float32)  # 10 sigmas away on the quiet feature
+
+        loose = PoseKNN(k=5, metric="euclidean")
+        loose.fit(emb, labels)
+        assert loose.classify(query)["a"] == pytest.approx(1.0)
+
+        strict = PoseKNN(k=5, metric="seuclidean")
+        strict.fit(emb, labels)
+        assert all(p == 0.0 for p in strict.classify(query).values())
 
 
 # ---------------------------------------------------------------------------
@@ -188,6 +217,14 @@ class TestShippedDatabase:
         assert set(knn.classes) == {*pose_names, "other"}
         assert 0.0 < knn.reject_distance < float("inf")
         assert label_weights is None or set(label_weights) == {"other"}
+
+    def test_constructor_defaults_mirror_the_shipped_dials(self):
+        dials = json.loads(str(np.load(ASSET)["dials_json"]))
+        knn = PoseKNN()
+        assert knn.k == dials["k"]
+        assert knn.metric == dials["metric"]
+        assert knn.vote_weighting == dials["vote_weighting"]
+        assert knn.reject_factor == dials["reject_factor"]
 
     def test_a_database_row_classifies_to_a_full_distribution(self):
         knn, label_weights, _ = load_pose_classifier(ASSET)

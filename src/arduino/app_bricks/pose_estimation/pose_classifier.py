@@ -114,14 +114,17 @@ class PoseKNN:
     per-feature std scaling over the calibration rows). vote_weighting:
     "uniform" or "distance" (votes scale with 1/distance). The rejection
     threshold is calibrated in the chosen metric's space.
+
+    Constructor defaults mirror the shipped database's tuned dials; every
+    production path still passes the dials explicitly.
     """
 
     def __init__(
         self,
-        k: int = 10,
+        k: int = 19,
         reject_factor: float = 1.5,
-        metric: str = "euclidean",
-        vote_weighting: str = "uniform",
+        metric: str = "seuclidean",
+        vote_weighting: str = "distance",
     ):
         if metric not in _METRICS:
             raise ValueError(f"unknown metric {metric!r} (use one of {_METRICS})")
