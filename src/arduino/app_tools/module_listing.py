@@ -78,7 +78,6 @@ class ArduinoBrick:
             "id": self.id,
             "name": self.name,
             "description": self.brick_description,
-            "require_container": self.compose_file is not None and self.compose_file != "",
             "mount_devices_into_container": self.mount_devices_into_container,
             "ports": self.ports,
             "category": self.category,
