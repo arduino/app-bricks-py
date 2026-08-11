@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import threading
 import time
 import numpy as np
 import pytest
@@ -377,11 +378,19 @@ class TestV4LCameraRecovery:
     def test_exponential_backoff_on_open(self, mock_videocapture, mock_successful_connect, mock_failed_connect_open, mock_failed_connect_read):
         """Test that exponential backoff is used during camera opening."""
         sleep_calls = []
+        test_thread = threading.get_ident()
 
         def spy_sleep(seconds):
-            sleep_calls.append(seconds)
+            # Only what `camera.start()` sleeps on this thread. The patch below cannot be
+            # scoped to one module — `v4l_camera.time` *is* the stdlib time module, so
+            # replacing its `sleep` replaces it process-wide — and a background thread
+            # parked in `time.sleep()` spins as fast as the no-op mock returns for as long
+            # as the patch is up, flooding this list with sleeps that are not ours.
+            if threading.get_ident() == test_thread:
+                sleep_calls.append(seconds)
 
-        # Patch time.sleep in the v4l_camera module only for this test
+        # Patched via v4l_camera, but the backoff being measured is base_camera.start()'s;
+        # both modules share the one time module, so either name reaches it.
         with patch("arduino.app_peripherals.camera.v4l_camera.time.sleep", side_effect=spy_sleep):
             # Fail, attempt 5 times, succeed at last one
             mock_videocapture.side_effect = [

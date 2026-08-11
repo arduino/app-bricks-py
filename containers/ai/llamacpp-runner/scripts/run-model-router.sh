@@ -1,0 +1,14 @@
+#!/bin/bash
+
+# SPDX-FileCopyrightText: Copyright (C) Arduino s.r.l. and/or its affiliated companies
+#
+# SPDX-License-Identifier: MPL-2.0
+
+echo "Generating models.ini..."
+python3 /configure-llamacpp.py /models
+
+echo "Starting LLama server..."
+export LD_LIBRARY_PATH=/opt/pkg-cpu/lib
+exec /opt/pkg-cpu/bin/llama-server \
+  --device none \
+  --models-preset /models/models.ini

@@ -1,0 +1,273 @@
+name: (reusable) RELEASE build one wave of containers
+
+# Reusable workflow that builds one topological "wave" (a matrix of container
+# names) for the RELEASE pipeline. The caller (docker-publish.yml) invokes it
+# once per level, chaining the invocations with `needs`.
+#
+# `allow_retag` MUST only be true for the root wave (level 0). A root image has
+# no base being rebuilt in this run, so when its own sources are unchanged it
+# can be safely re-tagged from the previous release. Derived images (level >= 1)
+# sit on top of a freshly built base and must always be rebuilt.
+#
+# Two independent reuse mechanisms are in play:
+#   1. `crane copy` (root wave only, see above) skips the build entirely when a
+#      root image is bit-for-bit the same as the previous release.
+#   2. A BuildKit registry cache (`<container>:buildcache` on GHCR) speeds up
+#      every build that does run. The cache is content-addressed, so a change to
+#      the Dockerfile, to a file in the build context, to a `ci.json` build arg
+#      or to the digest of the base image invalidates the layers from that point
+#      on; earlier layers stay cached. `skip_cache` forces a cold rebuild, which
+#      is the way to refresh layers whose content never changes but whose result
+#      does (e.g. `apt-get upgrade`).
+
+on:
+  workflow_call:
+    inputs:
+      containers:
+        description: "JSON array of container names to build in this wave"
+        type: string
+        required: true
+      version:
+        description: "Release version (tag without prefix)"
+        type: string
+        required: true
+      tag_ref:
+        description: "Full tag ref (e.g. bricks/1.2.3)"
+        type: string
+        required: true
+      prerelease:
+        description: "Whether this is a prerelease"
+        type: string
+        required: true
+      allow_retag:
+        description: "Allow re-tagging unchanged images (root wave only)"
+        type: boolean
+        required: false
+        default: false
+      skip_cache:
+        description: "Rebuild without cache"
+        type: boolean
+        required: false
+        default: false
+
+env:
+  GHCR_REGISTRY: ghcr.io
+  GHCR_DESTINATION_ORG: ghcr.io/${{ github.repository_owner }}
+  GH_DESTINATION_REPO: https://github.com/${{ github.repository }}
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+  pull-requests: write
+  actions: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    env:
+      PYTHON_VERSION: "3.13"
+      TASKFILE_VERSION: "3.45.4"
+    strategy:
+      fail-fast: false
+      matrix:
+        container: ${{ fromJson(inputs.containers) }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Resolve container directory
+        id: dir
+        run: |
+          # Containers are grouped in sub-folders (containers/<group>/<name>/);
+          # the group is documentation only, the leaf name identifies the image.
+          MATCHES=(containers/*/${{ matrix.container }}/ci.json)
+          if [[ ${#MATCHES[@]} -ne 1 || ! -f "${MATCHES[0]}" ]]; then
+            echo "::error::Expected exactly one containers/*/${{ matrix.container }}/ci.json, found: ${MATCHES[*]}"
+            exit 1
+          fi
+          CONTAINER_DIR="$(dirname "${MATCHES[0]}")"
+          echo "path=$CONTAINER_DIR" >> $GITHUB_OUTPUT
+
+      - name: Read container config
+        id: config
+        run: |
+          CI_JSON="${{ steps.dir.outputs.path }}/ci.json"
+          echo "build_whl=$(jq -r '.build_whl // false' "$CI_JSON")" >> $GITHUB_OUTPUT
+          echo "update_compose=$(jq -r '.update_compose // false' "$CI_JSON")" >> $GITHUB_OUTPUT
+          echo "tag_latest=$(jq -r '.tag_latest // false' "$CI_JSON")" >> $GITHUB_OUTPUT
+          echo "watch_paths=$(jq -r '.watch_paths | join(" ")' "$CI_JSON")" >> $GITHUB_OUTPUT
+          BUILD_ARGS=$(jq -r '.build_args // {} | to_entries | map("\(.key)=\(.value)") | join("\n")' "$CI_JSON")
+          echo "build_args<<EOF" >> $GITHUB_OUTPUT
+          echo "$BUILD_ARGS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Download wheel artifact
+        if: steps.config.outputs.build_whl == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: whl
+          path: ./${{ steps.dir.outputs.path }}/
+
+      - name: Log into registry ${{ env.GHCR_REGISTRY }}
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.GHCR_REGISTRY }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install crane
+        uses: imjasonh/setup-crane@v0.4
+
+      - name: Check if rebuild required
+        id: rebuild_check
+        run: |
+          # Derived images (non-root waves) always rebuild against the freshly
+          # built base; only root images may be re-tagged when unchanged.
+          if [[ "${{ inputs.allow_retag }}" != "true" ]]; then
+            echo "Derived image (non-root wave) — full build required"
+            echo "needs_build=true" >> $GITHUB_OUTPUT
+            echo "prev_version=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Compare against the previous tag of the series being released, NOT of
+          # the container's own group: shared bases live under containers/base/
+          # but are only ever released by an ai/* or bricks/* tag, so their group
+          # is not a tag prefix at all.
+          TAG_REF="${{ inputs.tag_ref }}"
+          TAG_PREFIX="${TAG_REF%%/*}"
+          CURRENT_TAG="${TAG_PREFIX}/${{ inputs.version }}"
+          git fetch --tags
+          PREV_TAG=$(git tag --sort=-version:refname | grep "^${TAG_PREFIX}/" | grep -v "^${CURRENT_TAG}$" | head -1)
+
+          if [[ -z "$PREV_TAG" ]]; then
+            echo "No previous tag found for ${{ matrix.container }} — full build required"
+            echo "needs_build=true" >> $GITHUB_OUTPUT
+            echo "prev_version=" >> $GITHUB_OUTPUT
+          else
+            PREV_VERSION="${PREV_TAG#${TAG_PREFIX}/}"
+            echo "prev_version=$PREV_VERSION" >> $GITHUB_OUTPUT
+            CHANGED=$(git diff --name-only "$PREV_TAG" HEAD -- ${{ steps.config.outputs.watch_paths }})
+            if [[ -n "$CHANGED" ]]; then
+              echo "Sources changed since $PREV_TAG — full build required"
+              echo "$CHANGED"
+              echo "needs_build=true" >> $GITHUB_OUTPUT
+            elif ! crane manifest ${{ env.GHCR_DESTINATION_ORG }}/app-bricks/${{ matrix.container }}:${PREV_VERSION} > /dev/null 2>&1; then
+              echo "Previous image ${PREV_VERSION} not found in registry — full build required"
+              echo "needs_build=true" >> $GITHUB_OUTPUT
+            else
+              echo "No source changes and previous image exists — will re-tag from ${PREV_VERSION}"
+              echo "needs_build=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - name: Re-tag image
+        if: steps.rebuild_check.outputs.needs_build == 'false'
+        run: |
+          echo "Re-tagging ${{ matrix.container }} from ${{ steps.rebuild_check.outputs.prev_version }} to ${{ inputs.version }}"
+          crane copy \
+            ${{ env.GHCR_DESTINATION_ORG }}/app-bricks/${{ matrix.container }}:${{ steps.rebuild_check.outputs.prev_version }} \
+            ${{ env.GHCR_DESTINATION_ORG }}/app-bricks/${{ matrix.container }}:${{ inputs.version }}
+          if [[ "${{ steps.config.outputs.tag_latest }}" == "true" ]] && [[ "${{ inputs.prerelease }}" == "false" ]]; then
+            crane copy \
+              ${{ env.GHCR_DESTINATION_ORG }}/app-bricks/${{ matrix.container }}:${{ steps.rebuild_check.outputs.prev_version }} \
+              ${{ env.GHCR_DESTINATION_ORG }}/app-bricks/${{ matrix.container }}:latest
+          fi
+
+      - name: Setup Docker buildx
+        if: steps.rebuild_check.outputs.needs_build == 'true'
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build cache configuration
+        id: cache
+        if: steps.rebuild_check.outputs.needs_build == 'true'
+        run: |
+          # Stable per-container cache tag. BuildKit is content-addressed, so the
+          # layers invalidate themselves whenever the Dockerfile, a file in the
+          # build context, a build arg or the base image digest changes.
+          CACHE_REF="ghcr.io/${{ github.repository_owner }}/app-bricks/${{ matrix.container }}:buildcache"
+          if [ "${{ inputs.skip_cache }}" != "true" ]; then
+            echo "cache_from=type=registry,ref=${CACHE_REF}" >> $GITHUB_OUTPUT
+          else
+            echo "cache_from=" >> $GITHUB_OUTPUT
+          fi
+          # Always exported, so a forced clean release re-seeds a correct cache.
+          echo "cache_to=type=registry,ref=${CACHE_REF},mode=max" >> $GITHUB_OUTPUT
+
+      - name: Extract Docker metadata
+        if: steps.rebuild_check.outputs.needs_build == 'true'
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          tags: |
+            type=raw,value=${{ inputs.version }}
+            type=raw,value=latest,enable=${{ steps.config.outputs.tag_latest == 'true' && inputs.prerelease == 'false' }}
+          images: ${{ env.GHCR_DESTINATION_ORG }}/app-bricks/${{ matrix.container }}
+          labels: |
+            org.opencontainers.image.source=${{ env.GH_DESTINATION_REPO }}
+            org.opencontainers.image.url=${{ env.GH_DESTINATION_REPO }}
+
+      - name: Copy models-list.yaml into build context
+        if: steps.rebuild_check.outputs.needs_build == 'true' && matrix.container == 'models-downloader'
+        run: cp models/models-list.yaml ${{ steps.dir.outputs.path }}/models-list.yaml
+
+      - name: Build and push Docker image
+        if: steps.rebuild_check.outputs.needs_build == 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: ./${{ steps.dir.outputs.path }}
+          file: ./${{ steps.dir.outputs.path }}/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/arm64
+          cache-from: ${{ steps.cache.outputs.cache_from }}
+          cache-to: ${{ steps.cache.outputs.cache_to }}
+          provenance: false
+          build-args: |
+            ${{ steps.config.outputs.build_args }}
+            BASE_IMAGE_VERSION=${{ inputs.version }}
+            REGISTRY=${{ env.GHCR_DESTINATION_ORG }}/
+
+      - name: SBOM Delta
+        uses: ./.github/actions/sbom-delta
+        with:
+          container: ${{ matrix.container }}
+          container_dir: ${{ steps.dir.outputs.path }}
+          version: ${{ inputs.version }}
+          registry: ${{ env.GHCR_DESTINATION_ORG }}
+
+      - name: Update compose file references
+        if: steps.config.outputs.update_compose == 'true'
+        env:
+          CONTAINER: ${{ matrix.container }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          find src \( -name "brick_compose*.yaml" -o -name "service_compose*.yaml" \) | while read f; do
+            if grep -q "$CONTAINER" "$f"; then
+              echo "  Updating: $f"
+              sed -i -E "s|${CONTAINER}:[^ \"']+|${CONTAINER}:${VERSION}|g" "$f"
+            fi
+          done
+
+      - name: Configure Git
+        if: steps.config.outputs.update_compose == 'true'
+        run: |
+          git config user.name "AppLab Actions Bot"
+          git config user.email "bot@arduino.cc"
+
+      - name: Create Pull Request
+        if: steps.config.outputs.update_compose == 'true'
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "feat: update ${{ matrix.container }} image references"
+          title: "[RELEASE BOT] Update ${{ matrix.container }} image references"
+          body: |
+            This PR was automatically generated after releasing `${{ matrix.container }}:${{ inputs.version }}`.
+          branch: "container-release-${{ matrix.container }}-${{ inputs.version }}"
+          base: main
+          draft: true

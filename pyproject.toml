@@ -127,7 +127,9 @@ include = ["*"]
 
 
 [tool.setuptools_scm]
-tag_regex = '^(?:ai|release)/(?P<version>v?\d+(?:\.\d+)*(?:rc\d+)?)$'
+# bricks/* is the library release prefix (the containers/bricks group); release/* is
+# kept so the pre-reorg tag history stays parseable for dev builds.
+tag_regex = '^(?:ai|bricks|release)/(?P<version>v?\d+(?:\.\d+)*(?:rc\d+)?)$'
 write_to = "src/arduino/_version.py"
 root = "."
 version_scheme = "only-version"
