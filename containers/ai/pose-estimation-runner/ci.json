@@ -1,6 +1,7 @@
 {
-  "tag_prefix": "pose",
-  "watch_paths": ["containers/pose-estimation-runner/"],
+  "watch_paths": [
+    "containers/ai/pose-estimation-runner/"
+  ],
   "tag_latest": false,
   "build_whl": false,
   "update_compose": true,
