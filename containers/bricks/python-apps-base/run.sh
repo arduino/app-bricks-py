@@ -169,6 +169,7 @@ case "$1" in
     arduino-bricks-list-modules --provision-compose
     ;;
   prepare)
+    set -e
     install_streamlit
     if [ "$DEPS_FAILED" -ne 0 ]; then
       echo "======== App preparation failed ====================="
