@@ -5,7 +5,7 @@
 import numpy as np
 from ai_edge_litert.interpreter import Interpreter
 
-from utils.constants import INPUT_HEIGHT, INPUT_WIDTH, MIN_KEYPOINT_SCORE
+from utils.constants import INPUT_HEIGHT, INPUT_WIDTH, MIN_KEYPOINT_SCORE, MIN_PERSON_SCORE
 from utils.tf import load_qnn_delegate
 from utils.image_processing import resize_pad
 from utils.model_io_processing import decode_multiple_persons, dequantize, quantize
@@ -21,6 +21,18 @@ posenet.allocate_tensors()
 
 posenet_input = posenet.get_input_details()
 posenet_output = posenet.get_output_details()
+
+# Runtime-tunable settings, updated by client config messages (wired in the
+# base image's main.py).
+_config = {"min_person_score": MIN_PERSON_SCORE}
+
+
+def apply_config(config: dict) -> None:
+    """Apply a client configuration payload; unknown keys are ignored."""
+    value = config.get("min_person_score")
+    if value is not None:
+        _config["min_person_score"] = max(0.0, min(1.0, float(value)))
+        print(f"config: min_person_score set to {_config['min_person_score']}", flush=True)
 
 
 # Person-tracking crop: instead of the full frame, the model gets a window cut
@@ -167,6 +179,7 @@ def _run_model(frame: np.ndarray, dx: int, dy: int) -> tuple[np.ndarray, np.ndar
         displacement_fwd,
         displacement_bwd,
         max_vals,
+        min_person_score=_config["min_person_score"],
     )
 
     # Map (y, x) keypoint coordinates from network space back to full-frame pixels
