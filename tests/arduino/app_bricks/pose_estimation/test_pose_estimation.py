@@ -80,28 +80,6 @@ def _make_instance(monkeypatch: pytest.MonkeyPatch, **kwargs):
 # ---------------------------------------------------------------------------
 
 
-class TestConstructorWarnings:
-    def test_confidence_below_runner_floor_warns(self, monkeypatch: pytest.MonkeyPatch):
-        fake_compose = {"services": {"pose-runner": {}}}
-        monkeypatch.setattr(
-            "arduino.app_bricks.pose_estimation.pose_estimation.load_brick_compose_file",
-            lambda cls: fake_compose,
-        )
-        monkeypatch.setattr(
-            "arduino.app_bricks.pose_estimation.pose_estimation.resolve_address",
-            lambda host: "127.0.0.1",
-        )
-        mock_logger = MagicMock()
-        monkeypatch.setattr("arduino.app_bricks.pose_estimation.pose_estimation.logger", mock_logger)
-
-        PoseEstimation(camera=MagicMock(), confidence=0.1)
-        mock_logger.warning.assert_called_once()
-
-        mock_logger.reset_mock()
-        PoseEstimation(camera=MagicMock(), confidence=0.4)
-        mock_logger.warning.assert_not_called()
-
-
 # ---------------------------------------------------------------------------
 # Detection parsing tests
 # ---------------------------------------------------------------------------
@@ -291,3 +269,19 @@ class TestOnPoseStub:
     def test_on_pose_raises_not_implemented(self, pe: PoseEstimation):
         with pytest.raises(NotImplementedError):
             pe.on_pose("arms_up", lambda pose: None)
+
+
+class TestSetConfidence:
+    def test_updates_the_filter_and_validates_input(self, pe: PoseEstimation):
+        pe.set_confidence(0.8)
+        assert pe._confidence == 0.8
+
+        with pytest.raises(ValueError):
+            pe.set_confidence(1.5)
+        with pytest.raises(ValueError):
+            pe.set_confidence(-0.1)
+        with pytest.raises(ValueError):
+            pe.set_confidence("high")
+        with pytest.raises(ValueError):
+            pe.set_confidence(True)
+        assert pe._confidence == 0.8

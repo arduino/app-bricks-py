@@ -22,8 +22,6 @@ from arduino.app_internal.core.module import load_brick_compose_file, resolve_ad
 
 logger = Logger("PoseEstimation")
 
-_RUNNER_MIN_PERSON_SCORE = 0.25
-
 """Names of the 17 body keypoints detected for each person, in model output order."""
 KEYPOINT_NAMES: tuple[str, ...] = (
     "nose",
@@ -118,9 +116,10 @@ class PoseEstimation:
             camera (BaseCamera): The camera instance to use for capturing video. If None, a default
                 camera will be initialized. Pass the same instance shared with other bricks to reuse
                 a single camera.
-            confidence (float): Minimum detection score for a person to be reported. Default is 0.25.
-                Values below 0.25 have no additional effect: the model runner never emits persons
-                scoring less than that.
+            confidence (float): Minimum detection score for a person to be reported. The score is
+                the mean of the person's 17 keypoint scores, so partly visible people score lower.
+                Applied by the model runner, so detections below it are neither emitted nor drawn
+                on the overlay. Changeable at runtime with `set_confidence()`.
             debounce_sec (float): Minimum seconds a presence or people-count change must be stable
                 before `on_enter`/`on_exit`/`on_count_change` fire again. Filters out detection
                 flicker. Default is 0 (no debounce).
@@ -131,12 +130,6 @@ class PoseEstimation:
         self._camera = camera if camera else Camera(fps=30)
         self._confidence = confidence
         self._debounce_sec = debounce_sec
-
-        if confidence < _RUNNER_MIN_PERSON_SCORE:
-            logger.warning(
-                f"confidence={confidence} is below the model runner's decode floor ({_RUNNER_MIN_PERSON_SCORE}): "
-                f"persons scoring less are never emitted, so this setting behaves like {_RUNNER_MIN_PERSON_SCORE}"
-            )
 
         # Callbacks
         self._callbacks: dict[str, Callable] = {}
@@ -241,6 +234,20 @@ class PoseEstimation:
         """
         self._register_callback("count", callback)
 
+    def set_confidence(self, confidence: float):
+        """Change the minimum detection score for a person, effective immediately.
+
+        Args:
+            confidence (float): New threshold in [0.0, 1.0], forwarded to the model runner.
+
+        Raises:
+            ValueError: If confidence is not a number in [0.0, 1.0].
+        """
+        if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not 0.0 <= float(confidence) <= 1.0:
+            raise ValueError(f"confidence must be a number in [0.0, 1.0], got {confidence!r}")
+        self._confidence = float(confidence)
+        logger.info(f"detection confidence set to {self._confidence}")
+
     def on_frame(self, callback: Callable[[np.ndarray], None] | None):
         """Register a callback that receives each raw camera frame.
 
@@ -328,7 +335,11 @@ class PoseEstimation:
         while self._is_running:
             try:
                 async with websockets.connect(self._ws_send_url) as ws:
+                    sent_confidence: float | None = None
                     while self._is_running:
+                        if self._confidence != sent_confidence:
+                            await ws.send(json.dumps({"config": {"min_person_score": self._confidence}}))
+                            sent_confidence = self._confidence
                         try:
                             frame = await asyncio.get_event_loop().run_in_executor(None, self._camera_frame_queue.get, True, 0.1)
                         except queue.Empty:

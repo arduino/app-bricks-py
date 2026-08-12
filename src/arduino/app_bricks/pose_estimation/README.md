@@ -15,8 +15,23 @@ Integration highlights:
   declared in this version but not implemented yet, it will be backed by built-in pose
   classification in a future release.
 - `on_enter` / `on_exit` / `on_count_change` enable presence and people-counting automations.
+- `set_confidence` changes the minimum person detection score at runtime; the value is
+  applied by the model runner itself, so the skeleton overlay only ever shows what the
+  API reports.
 - The skeleton overlay is drawn by the model runner, which serves the annotated video as an
   MJPEG stream on port 5002.
+
+The 17 keypoints reported for every person, by name: nose, left_eye, right_eye,
+left_ear, right_ear, left_shoulder, right_shoulder, left_elbow, right_elbow,
+left_wrist, right_wrist, left_hip, right_hip, left_knee, right_knee, left_ankle,
+right_ankle.
+
+Detection score: the `confidence` threshold (constructor and `set_confidence`) compares
+against the average of a person's 17 keypoint scores, so it rises with how complete the
+skeleton is as well as with how confident each keypoint is — a fully visible person scores
+far higher than a half-framed one whose visible joints are perfect. Below that threshold,
+one limit stays: a person is not detected at all unless at least one of their keypoints
+scores 0.25 or more, the value the runner uses to start assembling a skeleton.
 
 Runner note: the model runner performs an internal person-tracking crop before inference
 (people far from the camera would otherwise be too small in the model's letterboxed input
