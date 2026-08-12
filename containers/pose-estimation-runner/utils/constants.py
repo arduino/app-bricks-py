@@ -13,11 +13,11 @@ INPUT_WIDTH = 257
 OUTPUT_STRIDE = 16
 
 # Decode parameters
-MAX_POSE_DETECTIONS = 10
-SCORE_THRESHOLD = 0.25
+MAX_PERSON_DETECTIONS = 10
+MIN_KEYPOINT_CANDIDATE_SCORE = 0.25
 NMS_RADIUS = 20
-MIN_POSE_SCORE = 0.25
-MIN_PART_SCORE = 0.1
+MIN_PERSON_SCORE = 0.25
+MIN_KEYPOINT_SCORE = 0.1
 
 KEYPOINT_NAMES = [
     "nose",
@@ -43,9 +43,9 @@ NUM_KEYPOINTS = len(KEYPOINT_NAMES)
 
 KEYPOINT_IDS = {name: idx for idx, name in enumerate(KEYPOINT_NAMES)}
 
-# Edges traversed when decoding a pose from a root keypoint (a minimum spanning
+# Edges traversed when decoding a person's skeleton from a root keypoint (a minimum spanning
 # tree over the keypoints).
-POSE_CHAIN = [
+SKELETON_CHAIN = [
     ("nose", "left_eye"),
     ("left_eye", "left_ear"),
     ("nose", "right_eye"),
@@ -64,7 +64,7 @@ POSE_CHAIN = [
     ("right_knee", "right_ankle"),
 ]
 
-PARENT_CHILD_TUPLES = [(KEYPOINT_IDS[parent], KEYPOINT_IDS[child]) for parent, child in POSE_CHAIN]
+PARENT_CHILD_TUPLES = [(KEYPOINT_IDS[parent], KEYPOINT_IDS[child]) for parent, child in SKELETON_CHAIN]
 
 # Edges drawn as the skeleton overlay.
 SKELETON_CONNECTIONS = [

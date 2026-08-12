@@ -11,13 +11,13 @@ Numpy port of the multi-pose decoder from the Qualcomm AI Hub
 import numpy as np
 
 from utils.constants import (
-    MAX_POSE_DETECTIONS,
-    MIN_POSE_SCORE,
+    MAX_PERSON_DETECTIONS,
+    MIN_PERSON_SCORE,
     NMS_RADIUS,
     NUM_KEYPOINTS,
     OUTPUT_STRIDE,
     PARENT_CHILD_TUPLES,
-    SCORE_THRESHOLD,
+    MIN_KEYPOINT_CANDIDATE_SCORE,
 )
 
 
@@ -56,17 +56,17 @@ def traverse_to_targ_keypoint(
     Parameters
     ----------
     edge_id
-        Index of the edge being considered. Equivalent to the index in `POSE_CHAIN`.
+        Index of the edge being considered. Equivalent to the index in `SKELETON_CHAIN`.
     source_keypoint
         (y, x) coordinates of the keypoint.
     target_keypoint_id
         Which body part type of the 17 this keypoint is.
     scores
-        See `decode_multiple_poses`.
+        See `decode_multiple_persons`.
     offsets
-        See `decode_multiple_poses`.
+        See `decode_multiple_persons`.
     displacements
-        See `decode_multiple_poses`.
+        See `decode_multiple_persons`.
 
     Returns
     -------
@@ -120,13 +120,13 @@ def decode_pose(
     root_image_coord
         (y, x) coordinates of the keypoint.
     scores
-        See `decode_multiple_poses`.
+        See `decode_multiple_persons`.
     offsets
-        See `decode_multiple_poses`.
+        See `decode_multiple_persons`.
     displacements_fwd
-        See `decode_multiple_poses`.
+        See `decode_multiple_persons`.
     displacements_bwd
-        See `decode_multiple_poses`.
+        See `decode_multiple_persons`.
 
     Returns
     -------
@@ -233,20 +233,20 @@ def get_instance_score_fast(
     return float(not_overlapped_scores / len(keypoint_scores))
 
 
-def build_part_with_score(score_threshold: float, max_vals: np.ndarray, scores: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def build_keypoint_candidates(min_keypoint_candidate_score: float, max_vals: np.ndarray, scores: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """
     Get candidate keypoints to be considered the root for a pose. Score for the
     keypoint must be >= all neighboring scores (i.e. equal to the max-pooled
-    value) and above `score_threshold`.
+    value) and above `min_keypoint_candidate_score`.
 
     Parameters
     ----------
-    score_threshold
+    min_keypoint_candidate_score
         Minimum score for a keypoint to be considered as a root.
     max_vals
-        See `decode_multiple_poses`.
+        See `decode_multiple_persons`.
     scores
-        See `decode_multiple_poses`.
+        See `decode_multiple_persons`.
 
     Returns
     -------
@@ -256,27 +256,27 @@ def build_part_with_score(score_threshold: float, max_vals: np.ndarray, scores: 
         Indices of the considered keypoints. Shape (N, 3) where the 3 indices
         map to the dimensions of the scores tensor with shape (17, h, w).
     """
-    max_loc = (scores == max_vals) & (scores >= score_threshold)
+    max_loc = (scores == max_vals) & (scores >= min_keypoint_candidate_score)
     max_loc_idx = np.argwhere(max_loc)
     scores_vec = scores[max_loc]
     sort_idx = np.argsort(scores_vec)[::-1]
     return scores_vec[sort_idx], max_loc_idx[sort_idx]
 
 
-def decode_multiple_poses(
+def decode_multiple_persons(
     scores: np.ndarray,
     offsets: np.ndarray,
     displacements_fwd: np.ndarray,
     displacements_bwd: np.ndarray,
     max_vals: np.ndarray,
-    max_pose_detections: int = MAX_POSE_DETECTIONS,
-    score_threshold: float = SCORE_THRESHOLD,
+    max_person_detections: int = MAX_PERSON_DETECTIONS,
+    min_keypoint_candidate_score: float = MIN_KEYPOINT_CANDIDATE_SCORE,
     nms_radius: int = NMS_RADIUS,
-    min_pose_score: float = MIN_POSE_SCORE,
+    min_person_score: float = MIN_PERSON_SCORE,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Convert raw model outputs into keypoint coordinates. Can detect multiple
-    poses in the same image, up to `max_pose_detections`. This model has 17
+    poses in the same image, up to `max_person_detections`. This model has 17
     candidate keypoints it predicts. In this docstring, (h, w) correspond to
     height and width of the grid and are roughly equal to input image size
     divided by `OUTPUT_STRIDE`.
@@ -299,26 +299,26 @@ def decode_multiple_poses(
         in the opposite direction.
     max_vals
         Same as scores except with a max pool applied with kernel size 3.
-    max_pose_detections
+    max_person_detections
         Maximum number of distinct poses to detect in a single image.
-    score_threshold
+    min_keypoint_candidate_score
         Minimum score for a keypoint to be considered the root for a pose.
     nms_radius
         If two candidate keypoints for the same body part are within this distance,
         they are considered the same, and the lower confidence one discarded.
-    min_pose_score
+    min_person_score
         Minimum confidence that a pose exists for it to be displayed.
 
     Returns
     -------
-    pose_scores : np.ndarray
+    person_scores : np.ndarray
         Numpy array of pose confidence scores.
     pose_keypoint_scores : np.ndarray
         Numpy array of keypoint confidence scores.
     pose_keypoint_coords : np.ndarray
         Numpy array of keypoint coordinates in (y, x) format.
     """
-    part_scores, part_idx = build_part_with_score(score_threshold, max_vals, scores)
+    candidate_scores, candidate_idx = build_keypoint_candidates(min_keypoint_candidate_score, max_vals, scores)
 
     height = scores.shape[1]
     width = scores.shape[2]
@@ -328,11 +328,11 @@ def decode_multiple_poses(
     displacements_bwd = displacements_bwd.reshape(2, -1, height, width).transpose((1, 2, 3, 0))
 
     pose_count = 0
-    pose_scores = np.zeros(max_pose_detections)
-    pose_keypoint_scores = np.zeros((max_pose_detections, NUM_KEYPOINTS))
-    pose_keypoint_coords = np.zeros((max_pose_detections, NUM_KEYPOINTS, 2))
+    person_scores = np.zeros(max_person_detections)
+    pose_keypoint_scores = np.zeros((max_person_detections, NUM_KEYPOINTS))
+    pose_keypoint_coords = np.zeros((max_person_detections, NUM_KEYPOINTS, 2))
 
-    for root_score, (root_id, root_coord_y, root_coord_x) in zip(part_scores, part_idx, strict=False):
+    for root_score, (root_id, root_coord_y, root_coord_x) in zip(candidate_scores, candidate_idx, strict=False):
         root_coord = np.array([root_coord_y, root_coord_x])
         root_image_coords = root_coord * OUTPUT_STRIDE + offsets[root_id, root_coord_y, root_coord_x]
 
@@ -353,21 +353,21 @@ def decode_multiple_poses(
             displacements_bwd=displacements_bwd,
         )
 
-        pose_score = get_instance_score_fast(
+        person_score = get_instance_score_fast(
             pose_keypoint_coords[:pose_count, :, :],
             nms_radius,
             keypoint_scores,
             keypoint_coords,
         )
 
-        # Set min_pose_score to 0.0 to accept every decoded pose.
-        if pose_score >= min_pose_score:
-            pose_scores[pose_count] = pose_score
+        # Set min_person_score to 0.0 to accept every decoded pose.
+        if person_score >= min_person_score:
+            person_scores[pose_count] = person_score
             pose_keypoint_scores[pose_count, :] = keypoint_scores
             pose_keypoint_coords[pose_count, :, :] = keypoint_coords
             pose_count += 1
 
-        if pose_count >= max_pose_detections:
+        if pose_count >= max_person_detections:
             break
 
-    return pose_scores, pose_keypoint_scores, pose_keypoint_coords
+    return person_scores, pose_keypoint_scores, pose_keypoint_coords

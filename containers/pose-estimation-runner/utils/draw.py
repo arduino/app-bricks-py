@@ -7,7 +7,7 @@ import numpy as np
 
 from utils.constants import (
     KEYPOINT_NAMES,
-    MIN_PART_SCORE,
+    MIN_KEYPOINT_SCORE,
     SKELETON_CONNECTION_INDICES,
 )
 
@@ -145,9 +145,9 @@ def draw_connections(
     )
 
 
-def draw_poses(
+def draw_persons(
     frame: np.ndarray,
-    pose_scores: np.ndarray,
+    person_scores: np.ndarray,
     keypoint_scores: np.ndarray,
     keypoint_coords_xy: np.ndarray,
 ) -> dict:
@@ -158,7 +158,7 @@ def draw_poses(
     ----------
     frame
         Image array (H, W, C) in RGB, modified in place.
-    pose_scores
+    person_scores
         Pose confidence scores, shape (max_detections,). Poses are filled in
         order, so the first zero score marks the end of the detections.
     keypoint_scores
@@ -170,19 +170,19 @@ def draw_poses(
     Returns
     -------
     dict
-        Dictionary with a 'poses' key containing one dict per detected person:
+        Dictionary with a 'persons' key containing one dict per detected person:
         - 'score': float, pose confidence
         - 'keypoints': list of 17 dicts with 'name', 'x', 'y', 'score'
         - 'bounding_box_xyxy': [x1, y1, x2, y2] enclosing the confident keypoints
     """
     height, width = frame.shape[:2]
-    poses_metadata = []
+    persons_metadata = []
 
-    for pose_score, kp_scores, kp_coords in zip(pose_scores, keypoint_scores, keypoint_coords_xy, strict=False):
-        if pose_score == 0.0:
+    for person_score, kp_scores, kp_coords in zip(person_scores, keypoint_scores, keypoint_coords_xy, strict=False):
+        if person_score == 0.0:
             break
 
-        confident = kp_scores >= MIN_PART_SCORE
+        confident = kp_scores >= MIN_KEYPOINT_SCORE
 
         edges = [(a, b) for a, b in SKELETON_CONNECTION_INDICES if confident[a] and confident[b]]
         if edges:
@@ -195,8 +195,8 @@ def draw_poses(
         x_min, y_min = bbox_coords.min(axis=0)
         x_max, y_max = bbox_coords.max(axis=0)
 
-        poses_metadata.append({
-            "score": float(pose_score),
+        persons_metadata.append({
+            "score": float(person_score),
             "keypoints": [
                 {
                     "name": KEYPOINT_NAMES[i],
@@ -214,4 +214,4 @@ def draw_poses(
             ],
         })
 
-    return {"poses": poses_metadata}
+    return {"persons": persons_metadata}

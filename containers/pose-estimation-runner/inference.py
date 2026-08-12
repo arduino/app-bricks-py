@@ -5,22 +5,22 @@
 import numpy as np
 from ai_edge_litert.interpreter import Interpreter
 
-from utils.constants import INPUT_HEIGHT, INPUT_WIDTH, MIN_PART_SCORE
+from utils.constants import INPUT_HEIGHT, INPUT_WIDTH, MIN_KEYPOINT_SCORE
 from utils.tf import load_qnn_delegate
 from utils.image_processing import resize_pad
-from utils.model_io_processing import decode_multiple_poses, dequantize, quantize
-from utils.draw import draw_poses
+from utils.model_io_processing import decode_multiple_persons, dequantize, quantize
+from utils.draw import draw_persons
 
 
 # Load model
-pose_detector = Interpreter(
+posenet = Interpreter(
     "models/posenet_mobilenet_w8a8.tflite",
     experimental_delegates=load_qnn_delegate(),
 )
-pose_detector.allocate_tensors()
+posenet.allocate_tensors()
 
-detector_input = pose_detector.get_input_details()
-detector_output = pose_detector.get_output_details()
+posenet_input = posenet.get_input_details()
+posenet_output = posenet.get_output_details()
 
 
 # Person-tracking crop: instead of the full frame, the model gets a window cut
@@ -64,13 +64,13 @@ def _crop_rect(img_h: int, img_w: int, bbox: tuple[int, int, int, int]) -> tuple
     return cx1, cy1, cx2, cy2
 
 
-def _union_bbox(pose_scores: np.ndarray, keypoint_scores: np.ndarray, coords_xy: np.ndarray) -> tuple[int, int, int, int] | None:
+def _union_bbox(person_scores: np.ndarray, keypoint_scores: np.ndarray, coords_xy: np.ndarray) -> tuple[int, int, int, int] | None:
     """Bounding box around all detected people (confident keypoints only)."""
     boxes = []
-    for pose_score, kp_scores, kp_xy in zip(pose_scores, keypoint_scores, coords_xy, strict=False):
-        if pose_score == 0.0:
+    for person_score, kp_scores, kp_xy in zip(person_scores, keypoint_scores, coords_xy, strict=False):
+        if person_score == 0.0:
             break
-        confident = kp_scores >= MIN_PART_SCORE
+        confident = kp_scores >= MIN_KEYPOINT_SCORE
         pts = kp_xy[confident] if confident.any() else kp_xy
         boxes.append((pts[:, 0].min(), pts[:, 1].min(), pts[:, 0].max(), pts[:, 1].max()))
     if not boxes:
@@ -98,7 +98,7 @@ def _set_input(rgb_input: np.ndarray) -> None:
     Args:
         rgb_input: Preprocessed RGB image of shape [1, H, W, 3], dtype uint8 in range [0, 255].
     """
-    detail = detector_input[0]
+    detail = posenet_input[0]
     if np.issubdtype(detail["dtype"], np.integer):
         # Quantized model: the input range is normalized [0, 1].
         normalized = rgb_input.astype(np.float32) / 255.0
@@ -110,7 +110,7 @@ def _set_input(rgb_input: np.ndarray) -> None:
     else:
         # Float model expects RGB in [0, 1].
         input_val = (rgb_input.astype(np.float32) / 255.0).astype(detail["dtype"])
-    pose_detector.set_tensor(detail["index"], input_val)
+    posenet.set_tensor(detail["index"], input_val)
 
 
 def _get_output(detail: dict) -> np.ndarray:
@@ -120,12 +120,12 @@ def _get_output(detail: dict) -> np.ndarray:
     batch dimension is dropped to yield (C, H, W) as expected by the decoder.
 
     Args:
-        detail: A single entry from pose_detector.get_output_details().
+        detail: A single entry from posenet.get_output_details().
 
     Returns:
         np.ndarray: Output tensor with shape (C, H, W).
     """
-    tensor = pose_detector.get_tensor(detail["index"])
+    tensor = posenet.get_tensor(detail["index"])
     if np.issubdtype(detail["dtype"], np.integer):
         tensor = dequantize(
             tensor,
@@ -137,7 +137,7 @@ def _get_output(detail: dict) -> np.ndarray:
 
 
 def _run_model(frame: np.ndarray, dx: int, dy: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Run the pose detector on `frame` and return scores and full-frame (x, y) coordinates.
+    """Run PoseNet on `frame` and return scores and full-frame (x, y) coordinates.
 
     Parameters
     ----------
@@ -151,17 +151,17 @@ def _run_model(frame: np.ndarray, dx: int, dy: int) -> tuple[np.ndarray, np.ndar
     input_val = np.expand_dims(input_val, axis=0)
 
     _set_input(input_val)
-    pose_detector.invoke()
+    posenet.invoke()
 
     # Outputs follow the model's export order:
     #   heatmaps, offsets, displacement_fwd, displacement_bwd, max_vals
-    heatmaps = _get_output(detector_output[0])
-    offsets = _get_output(detector_output[1])
-    displacement_fwd = _get_output(detector_output[2])
-    displacement_bwd = _get_output(detector_output[3])
-    max_vals = _get_output(detector_output[4])
+    heatmaps = _get_output(posenet_output[0])
+    offsets = _get_output(posenet_output[1])
+    displacement_fwd = _get_output(posenet_output[2])
+    displacement_bwd = _get_output(posenet_output[3])
+    max_vals = _get_output(posenet_output[4])
 
-    pose_scores, keypoint_scores, keypoint_coords = decode_multiple_poses(
+    person_scores, keypoint_scores, keypoint_coords = decode_multiple_persons(
         heatmaps,
         offsets,
         displacement_fwd,
@@ -175,7 +175,7 @@ def _run_model(frame: np.ndarray, dx: int, dy: int) -> tuple[np.ndarray, np.ndar
     keypoint_coords[..., 0] = (keypoint_coords[..., 0] - pad_top) / scale + dy
     keypoint_coords[..., 1] = (keypoint_coords[..., 1] - pad_left) / scale + dx
 
-    return pose_scores, keypoint_scores, keypoint_coords[..., ::-1]
+    return person_scores, keypoint_scores, keypoint_coords[..., ::-1]
 
 
 def inference_callback(rgb_frame: np.ndarray) -> tuple[np.ndarray, dict]:
@@ -187,7 +187,7 @@ def inference_callback(rgb_frame: np.ndarray) -> tuple[np.ndarray, dict]:
 
     Returns:
         tuple[np.ndarray, dict]: contains (annotated_frame, metadata), where metadata contains:
-            - 'poses': list of dicts, one per detected person, each containing:
+            - 'persons': list of dicts, one per detected person, each containing:
                 - 'score': float (pose confidence)
                 - 'keypoints': list of 17 dicts with 'name', 'x', 'y', 'score',
                   where x, y are pixel coordinates in the frame
@@ -208,8 +208,8 @@ def inference_callback(rgb_frame: np.ndarray) -> tuple[np.ndarray, dict]:
             dx, dy = x1, y1
             crop_window = [x1, y1, x2, y2]
 
-    pose_scores, keypoint_scores, coords_xy = _run_model(frame, dx, dy)
-    tracked = _union_bbox(pose_scores, keypoint_scores, coords_xy)
+    person_scores, keypoint_scores, coords_xy = _run_model(frame, dx, dy)
+    tracked = _union_bbox(person_scores, keypoint_scores, coords_xy)
 
     # Periodic full-frame pass, tracker-only: discovers people entering the
     # scene outside the crop window without touching the emitted results
@@ -220,7 +220,7 @@ def inference_callback(rgb_frame: np.ndarray) -> tuple[np.ndarray, dict]:
     _last_union_bbox = tracked
 
     # Draw predictions on the full frame and get metadata; coordinates in (x, y) format
-    metadata = draw_poses(rgb_frame, pose_scores, keypoint_scores, coords_xy)
+    metadata = draw_persons(rgb_frame, person_scores, keypoint_scores, coords_xy)
     metadata["crop_window"] = crop_window
 
     return rgb_frame, metadata
