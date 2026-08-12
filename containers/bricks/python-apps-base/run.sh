@@ -17,7 +17,7 @@ if [ -z "$PYTHONUNBUFFERED" ]; then
 fi
 
 BASE_DIR="/app"
-CACHE_DIR="${APP_CACHE_DIR:-$BASE_DIR/.cache}"
+CACHE_DIR="$BASE_DIR/.cache"
 APP_YAML="$BASE_DIR/app.yaml"
 PYTHON_SCRIPT="$BASE_DIR/python/main.py"
 REQUIREMENTS_FILE="$BASE_DIR/python/requirements.txt"
@@ -175,12 +175,14 @@ case "$1" in
       echo "======== App preparation failed ====================="
       exit 1
     fi
-    # Byte-compile the app sources: turns a syntax error into a prepare
-    # failure instead of a crash on the first start.
+    # Validate the app sources: turns a syntax error into a prepare failure
+    # instead of a crash on the first start. The cache prefix sends the
+    # bytecode to a throwaway directory, leaving the app folder untouched.
+    PYCHECK_DIR="$(mktemp -d)"
     if [ -d "$BASE_DIR/bricks" ]; then
-      python -m compileall -q "$BASE_DIR/python" "$BASE_DIR/bricks"
+      PYTHONPYCACHEPREFIX="$PYCHECK_DIR" python -m compileall -q "$BASE_DIR/python" "$BASE_DIR/bricks"
     else
-      python -m compileall -q "$BASE_DIR/python"
+      PYTHONPYCACHEPREFIX="$PYCHECK_DIR" python -m compileall -q "$BASE_DIR/python"
     fi
     ;;
   *)
