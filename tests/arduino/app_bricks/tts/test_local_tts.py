@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import threading
+import time
 
 import numpy as np
 import pytest
@@ -64,7 +65,7 @@ class BlockingSpeaker(BaseSpeaker):
             self.release_first_chunk.wait(timeout=2)
 
 
-def make_tts(monkeypatch, speaker, post_response, cancel_response=None):
+def make_tts(monkeypatch, speaker, post_response, cancel_response=None, **tts_kwargs):
     models = [
         {
             # The runner reports the name from the model's config.json (underscore
@@ -90,7 +91,7 @@ def make_tts(monkeypatch, speaker, post_response, cancel_response=None):
     monkeypatch.setattr("arduino.app_bricks.tts.local_tts.requests.get", lambda url: FakeResponse(json_data=models))
     monkeypatch.setattr("arduino.app_bricks.tts.local_tts.requests.post", post)
 
-    tts = TextToSpeech(speaker=speaker)
+    tts = TextToSpeech(speaker=speaker, **tts_kwargs)
     App.unregister(tts)
     speaker.start()
     return tts
@@ -332,3 +333,151 @@ def test_speak_raises_when_busy(monkeypatch):
     speak_thread.join(timeout=2)
 
     assert speak_thread.is_alive() is False
+
+
+def wait_until(condition, timeout=2.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if condition():
+            return True
+        time.sleep(0.01)
+    return condition()
+
+
+def test_speak_non_blocking_returns_before_playback_completes(monkeypatch):
+    speaker = BlockingSpeaker(buffer_size=4)
+    pcm_audio = np.arange(12, dtype=np.int16)
+    tts = make_tts(monkeypatch, speaker, lambda url, json, **kwargs: FakeResponse(content=pcm_audio.tobytes()))
+
+    tts.speak("hello", block=False)
+
+    assert speaker.first_chunk_written.wait(timeout=2)
+    assert tts.is_speaking() is True
+
+    speaker.release_first_chunk.set()
+
+    assert wait_until(lambda: not tts.is_speaking())
+    assert len(speaker.chunks_written) == 3
+    np.testing.assert_array_equal(np.concatenate(speaker.chunks_written), pcm_audio)
+
+
+def test_speak_non_blocking_queues_sequential_playback(monkeypatch):
+    speaker = BlockingSpeaker(buffer_size=4)
+    speaker.release_first_chunk.set()
+    post_calls = []
+
+    def post_response(url, json, **kwargs):
+        post_calls.append(json["text"])
+        return FakeResponse(content=np.arange(4, dtype=np.int16).tobytes())
+
+    tts = make_tts(monkeypatch, speaker, post_response)
+
+    tts.speak("first", block=False)
+    worker_thread = tts._speak_thread
+    tts.speak("second", block=False)
+
+    assert tts._speak_thread is worker_thread
+
+    assert wait_until(lambda: not tts.is_speaking())
+    assert post_calls == ["first", "second"]
+    assert len(speaker.chunks_written) == 2
+
+
+def test_speak_non_blocking_raises_when_queue_full(monkeypatch):
+    speaker = BlockingSpeaker(buffer_size=4)
+    pcm_audio = np.arange(12, dtype=np.int16)
+    tts = make_tts(monkeypatch, speaker, lambda url, json, **kwargs: FakeResponse(content=pcm_audio.tobytes()), max_queue_size=1)
+
+    tts.speak("first", block=False)
+    # The worker dequeues "first" and blocks on the first written chunk, leaving the queue empty.
+    assert speaker.first_chunk_written.wait(timeout=2)
+    tts.speak("second", block=False)
+
+    with pytest.raises(TTSBusyError):
+        tts.speak("third", block=False)
+
+    speaker.release_first_chunk.set()
+
+    assert wait_until(lambda: not tts.is_speaking())
+    assert len(speaker.chunks_written) == 6  # "first" and "second" played, "third" rejected
+
+
+def test_max_queue_size_must_be_positive(monkeypatch):
+    speaker = BlockingSpeaker(buffer_size=4)
+
+    with pytest.raises(ValueError):
+        make_tts(monkeypatch, speaker, lambda url, json, **kwargs: FakeResponse(content=b""), max_queue_size=0)
+
+
+def test_speak_blocking_raises_when_background_playback_active(monkeypatch):
+    speaker = BlockingSpeaker(buffer_size=4)
+    pcm_audio = np.arange(12, dtype=np.int16)
+    tts = make_tts(monkeypatch, speaker, lambda url, json, **kwargs: FakeResponse(content=pcm_audio.tobytes()))
+
+    tts.speak("hello", block=False)
+    assert speaker.first_chunk_written.wait(timeout=2)
+
+    with pytest.raises(TTSBusyError):
+        tts.speak("second")
+
+    tts.cancel()
+    speaker.release_first_chunk.set()
+    assert wait_until(lambda: not tts.is_speaking())
+
+
+def test_speak_non_blocking_cancel_stops_playback_and_drops_queued_speech(monkeypatch):
+    speaker = BlockingSpeaker(buffer_size=4)
+    pcm_audio = np.arange(12, dtype=np.int16)
+    post_calls = []
+
+    def post_response(url, json, **kwargs):
+        post_calls.append(json["text"])
+        return FakeResponse(content=pcm_audio.tobytes())
+
+    tts = make_tts(monkeypatch, speaker, post_response)
+
+    tts.speak("first", block=False)
+    assert speaker.first_chunk_written.wait(timeout=2)
+    tts.speak("second", block=False)
+
+    tts.cancel()
+    speaker.release_first_chunk.set()
+
+    assert wait_until(lambda: not tts.is_speaking())
+    assert post_calls == ["first"]
+    assert len(speaker.chunks_written) == 1
+    assert speaker.is_started() is True
+
+
+def test_speak_non_blocking_logs_synthesis_errors(monkeypatch):
+    speaker = BlockingSpeaker(buffer_size=4)
+    error_response = FakeResponse(status_code=500, json_data={"error": {"message": "synthesis boom"}})
+    tts = make_tts(monkeypatch, speaker, lambda url, json, **kwargs: error_response)
+
+    logged_errors = []
+    monkeypatch.setattr("arduino.app_bricks.tts.local_tts.logger.error", lambda msg, *args, **kwargs: logged_errors.append(msg))
+
+    tts.speak("hello", block=False)
+
+    assert wait_until(lambda: not tts.is_speaking())
+    assert speaker.chunks_written == []
+    assert any("synthesis boom" in msg for msg in logged_errors)
+
+
+def test_stop_terminates_background_worker(monkeypatch):
+    speaker = BlockingSpeaker(buffer_size=4)
+    pcm_audio = np.arange(12, dtype=np.int16)
+    tts = make_tts(monkeypatch, speaker, lambda url, json, **kwargs: FakeResponse(content=pcm_audio.tobytes()))
+
+    tts.speak("hello", block=False)
+    worker_thread = tts._speak_thread
+
+    assert speaker.first_chunk_written.wait(timeout=2)
+    speaker.release_first_chunk.set()
+    tts.stop()
+
+    worker_thread.join(timeout=2)
+    assert worker_thread.is_alive() is False
+    assert tts._speak_thread is None
+    assert tts.is_speaking() is False
+    assert speaker.close_called is True

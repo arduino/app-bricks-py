@@ -10,17 +10,17 @@ The Arduino Cloud Brick lets your application exchange variable values with Ardu
 
 - Exchanges variable values with Arduino Cloud through the local daemon
 - Natural attribute access to variables (`cloud.my_var = 42`)
-- `on_write` / `on_read` / `on_run` callbacks
-- Structured objects: `Location`, `Color`, `ColoredLight`, `DimmedLight`, `Schedule`
+- Callbacks for different cases such as `on_write`, `on_read` and `on_run`
+- Use cloud specific structured objects: `Location`, `Color`, `ColoredLight`, `DimmedLight`, `Schedule`
 - Per-variable conflict resolution policy: `DEVICE_WINS`, `CLOUD_WINS`, `MOST_RECENT_WINS`
 
 ## Prerequisites
 
 The board must be connected to Arduino Cloud and associated with a Thing, and the `arduino-cloud-connector` daemon must be running locally. The daemon owns the device identity and credentials, so the application no longer needs to supply a `device_id` / `secret` to exchange variables.
 
-To connect the board, open the Arduino App Lab **Settings**, find the **Arduino Cloud** section and click on **"Connect device"**: sign in with your Arduino account, select the Cloud space where you want to add the board and wait until the status shows **"Connected"**. Launching an App that uses this Brick on a board not yet connected shows a **"Provisioning required"** dialog leading to the same setup flow.
+To connect the board, open the Arduino App Lab **Settings**, find the **Arduino Cloud** section and click on **"Connect device"**.
 
-By default the Brick reaches the daemon through its UNIX socket (`/run/arduino-cloud-connector/daemon.sock`). Override the socket path with the `ARDUINO_CLOUD_CONNECTOR_SOCKET` environment variable, or point the Brick to a different endpoint with `ARDUINO_CLOUD_CONNECTOR_URL` (e.g. `http://127.0.0.1:5683`) or by passing `daemon_url=...` to the constructor.
+Sign in with your Arduino account, select the Cloud space where you want to add the board and wait until the status shows **"Connected"**. Launching an App that uses this Brick on a board not yet connected shows a **"Provisioning required"** dialog leading to the same setup flow.
 
 ## Code Example and Usage
 
@@ -41,6 +41,8 @@ iot_cloud.register("led", value=False, on_write=led_callback)
 
 App.run()
 ```
+
+By default the Brick reaches the daemon through its UNIX socket (`/run/arduino-cloud-connector/daemon.sock`). You can override the socket path with the `ARDUINO_CLOUD_CONNECTOR_SOCKET` environment variable, or point the Brick to a different endpoint with `ARDUINO_CLOUD_CONNECTOR_URL` (e.g. `http://127.0.0.1:5683`) or by passing `daemon_url=...` to the constructor.
 
 ### Conflict resolution (sync policy)
 
