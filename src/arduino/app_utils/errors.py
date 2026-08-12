@@ -54,20 +54,25 @@ def _find_user_frame(tb) -> traceback.FrameSummary | None:
 
 
 def _app_excepthook(exc_type, exc, tb):
-    if not isinstance(exc, AppError):
+    if not isinstance(exc, Exception):
+        # BaseExceptions like KeyboardInterrupt keep the standard behavior
         _previous_excepthook(exc_type, exc, tb)
         return
 
     out = sys.stderr
     frame = _find_user_frame(tb)
     location = f" in {os.path.basename(frame.filename)}, line {frame.lineno}" if frame else ""
-    message = str(exc) or exc_type.__name__
 
     print(_banner("App failed to start"), file=out)
-    print(f"Error{location}:", file=out)
-    print(f"  {message}", file=out)
-    if exc.hint:
-        print(f"\nHint: {exc.hint}", file=out)
+    if isinstance(exc, AppError):
+        print(f"Error{location}:", file=out)
+        print(f"  {str(exc) or exc_type.__name__}", file=out)
+        if exc.hint:
+            print(f"\nHint: {exc.hint}", file=out)
+    else:
+        detail = f"{exc_type.__name__}: {exc}" if str(exc) else exc_type.__name__
+        print(f"Unexpected error{location}:", file=out)
+        print(f"  {detail}", file=out)
     print("\nTrace:", file=out)
     traceback.print_exception(exc_type, exc, tb, file=out)
     print(_banner(), file=out, flush=True)
@@ -77,10 +82,12 @@ _previous_excepthook = sys.__excepthook__
 
 
 def install_excepthook():
-    """Installs the AppError-aware excepthook. Idempotent.
+    """Installs the global app excepthook. Idempotent.
 
-    Uncaught AppError exceptions are reported with a clean, user-readable
-    message before the traceback; any other exception is handled by the
+    Every uncaught Exception is reported with a clean, user-readable message
+    before the full traceback. AppErrors are shown with their message and
+    optional hint; any other exception is reported as unexpected, with its
+    class name. BaseExceptions (e.g. KeyboardInterrupt) are handled by the
     previously installed hook.
     """
     global _previous_excepthook

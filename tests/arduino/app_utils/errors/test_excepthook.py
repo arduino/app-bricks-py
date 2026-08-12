@@ -52,11 +52,27 @@ def test_app_error_subclass_is_reported(capsys):
     assert "device is missing" in err
 
 
-def test_other_exceptions_are_delegated(monkeypatch):
+def test_unexpected_exceptions_are_reported_with_class_name(capsys):
+    exc_info = _capture(ValueError("a user bug"))
+    _app_excepthook(*exc_info)
+
+    err = capsys.readouterr().err
+    assert "======== App failed to start " in err
+    assert "Unexpected error in test_excepthook.py, line" in err
+    assert "  ValueError: a user bug" in err
+    assert "Hint:" not in err
+    assert "Trace:" in err
+    assert "Traceback (most recent call last):" in err
+
+
+def test_base_exceptions_are_delegated(monkeypatch):
     delegated = []
     monkeypatch.setattr(errors, "_previous_excepthook", lambda *args: delegated.append(args))
 
-    exc_info = _capture(ValueError("a user bug"))
+    try:
+        raise KeyboardInterrupt()
+    except KeyboardInterrupt:
+        exc_info = sys.exc_info()
     _app_excepthook(*exc_info)
 
     assert delegated == [exc_info]
