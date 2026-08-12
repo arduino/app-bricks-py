@@ -3,7 +3,10 @@
 # SPDX-License-Identifier: MPL-2.0
 
 
-class SpeakerError(Exception):
+from arduino.app_utils.errors import AppError
+
+
+class SpeakerError(AppError):
     """Base exception for Speaker-related errors."""
 
     pass

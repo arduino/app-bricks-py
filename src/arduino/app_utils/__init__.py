@@ -6,6 +6,8 @@ from .app import *
 from .audio import *
 from .brick import *
 from .bridge import *
+from .errors import *
+from .errors import install_excepthook as _install_excepthook
 from .folderwatch import *
 from .httprequest import *
 from .jsonparser import *
@@ -16,6 +18,7 @@ from .leds import *
 
 __all__ = [
     "App",
+    "AppError",
     "brick",
     "Bridge",
     "notify",
@@ -31,3 +34,6 @@ __all__ = [
     "SlidingWindowBuffer",
     "Leds",
 ]
+
+# Report uncaught AppErrors with a user-readable message instead of a bare traceback
+_install_excepthook()

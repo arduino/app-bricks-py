@@ -71,7 +71,10 @@ def _nth_plugged_microphone(idx: int) -> str:
     if idx - usb_count < jack_count:
         return f"jack:{idx - usb_count + 1}"
 
-    raise MicrophoneOpenError(f"No microphone found at index {idx}: only {usb_count + jack_count} microphone(s) plugged")
+    raise MicrophoneOpenError(
+        f"No microphone found at index {idx}: only {usb_count + jack_count} microphone(s) plugged",
+        hint="Connect a microphone (or check the audio configuration) and restart the app.",
+    )
 
 
 def list_audio_sources() -> tuple[list[dict], list[dict]]:

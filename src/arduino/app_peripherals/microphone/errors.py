@@ -3,7 +3,10 @@
 # SPDX-License-Identifier: MPL-2.0
 
 
-class MicrophoneError(Exception):
+from arduino.app_utils.errors import AppError
+
+
+class MicrophoneError(AppError):
     """Base exception for microphone-related errors."""
 
     pass
