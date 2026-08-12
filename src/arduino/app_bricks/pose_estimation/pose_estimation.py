@@ -22,7 +22,7 @@ from arduino.app_internal.core.module import load_brick_compose_file, resolve_ad
 
 logger = Logger("PoseEstimation")
 
-_RUNNER_MIN_POSE_SCORE = 0.25
+_RUNNER_MIN_PERSON_SCORE = 0.25
 
 """Names of the 17 body keypoints detected for each person, in model output order."""
 KEYPOINT_NAMES: tuple[str, ...] = (
@@ -118,8 +118,8 @@ class PoseEstimation:
             camera (BaseCamera): The camera instance to use for capturing video. If None, a default
                 camera will be initialized. Pass the same instance shared with other bricks to reuse
                 a single camera.
-            confidence (float): Minimum pose score for a detected person to be reported. Default is 0.25.
-                Values below 0.25 have no additional effect: the model runner never emits poses
+            confidence (float): Minimum detection score for a person to be reported. Default is 0.25.
+                Values below 0.25 have no additional effect: the model runner never emits persons
                 scoring less than that.
             debounce_sec (float): Minimum seconds a presence or people-count change must be stable
                 before `on_enter`/`on_exit`/`on_count_change` fire again. Filters out detection
@@ -132,10 +132,10 @@ class PoseEstimation:
         self._confidence = confidence
         self._debounce_sec = debounce_sec
 
-        if confidence < _RUNNER_MIN_POSE_SCORE:
+        if confidence < _RUNNER_MIN_PERSON_SCORE:
             logger.warning(
-                f"confidence={confidence} is below the model runner's decode floor ({_RUNNER_MIN_POSE_SCORE}): "
-                f"poses scoring less are never emitted, so this setting behaves like {_RUNNER_MIN_POSE_SCORE}"
+                f"confidence={confidence} is below the model runner's decode floor ({_RUNNER_MIN_PERSON_SCORE}): "
+                f"persons scoring less are never emitted, so this setting behaves like {_RUNNER_MIN_PERSON_SCORE}"
             )
 
         # Callbacks
@@ -366,7 +366,7 @@ class PoseEstimation:
         """Process detection data and dispatch appropriate events."""
         try:
             people: list[Person] = []
-            for entry in metadata.get("poses", []):
+            for entry in metadata.get("persons", []):
                 if float(entry.get("score", 0.0)) < self._confidence:
                     continue
                 keypoints = {

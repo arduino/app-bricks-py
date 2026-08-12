@@ -27,7 +27,7 @@ def _pose_dict(score: float = 0.8, x: int = 100, y: int = 50) -> dict:
 
 
 def _detection_with(poses: list[dict]) -> dict:
-    return {"poses": poses}
+    return {"persons": poses}
 
 
 def _wait(event: threading.Event, msg: str = ""):
@@ -140,7 +140,7 @@ class TestDetectionParsing:
 
         pe.on_keypoints(on_kps)
 
-        pe._process_detection({"poses": [{"score": 0.9}]})
+        pe._process_detection({"persons": [{"score": 0.9}]})
 
         _wait(done, "keypoints callback")
         assert received[0].keypoints == {}
