@@ -14,7 +14,7 @@ import requests
 
 from arduino.app_peripherals.speaker import Speaker, BaseSpeaker
 from arduino.app_internal.core import resolve_address, get_brick_config, get_brick_configured_model
-from arduino.app_utils import brick, Logger
+from arduino.app_utils import brick, AppError, Logger
 
 logger = Logger("TextToSpeech")
 
@@ -24,7 +24,7 @@ TTS_MAX_QUEUE_SIZE = 128
 _SPEECH_QUEUE_STOP = object()
 
 
-class TTSError(Exception):
+class TTSError(AppError):
     """Base class for TTS errors."""
 
 
