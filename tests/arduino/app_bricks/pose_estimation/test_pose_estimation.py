@@ -291,14 +291,30 @@ class TestPoseEvents:
         pe._frame_hw = (480, 640)
         assert pe._classify_person(_person()) is not None
 
-        hallucinated = _person()
-        for name in ("left_knee", "right_knee", "left_ankle", "right_ankle"):
-            kp = hallucinated.keypoints[name]
-            hallucinated.keypoints[name] = Keypoint(name=name, x=kp.x, y=kp.y + 400, score=0.02)
-        assert pe._classify_person(hallucinated) is None
+        far_out = _person()
+        for name in ("left_ankle", "right_ankle"):
+            kp = far_out.keypoints[name]
+            far_out.keypoints[name] = Keypoint(name=name, x=kp.x, y=kp.y + 400, score=kp.score)
+        assert pe._classify_person(far_out) is None
 
         pe._frame_hw = None
-        assert pe._classify_person(hallucinated) is not None
+        assert pe._classify_person(far_out) is not None
+
+    def test_a_tip_extrapolated_from_a_seen_joint_is_still_readable(self, pe: PoseEstimation):
+        pe._frame_hw = (480, 640)
+        sitting_close = _person()
+        for name in ("left_ankle", "right_ankle"):
+            kp = sitting_close.keypoints[name]
+            sitting_close.keypoints[name] = Keypoint(name=name, x=kp.x, y=kp.y + 100, score=0.01)
+        assert pe._classify_person(sitting_close) is not None
+
+    def test_a_limb_with_nothing_observed_makes_the_frame_unreadable(self, pe: PoseEstimation):
+        pe._frame_hw = (480, 640)
+        invented_legs = _person()
+        for name in ("left_knee", "right_knee", "left_ankle", "right_ankle"):
+            kp = invented_legs.keypoints[name]
+            invented_legs.keypoints[name] = Keypoint(name=name, x=kp.x, y=kp.y, score=0.03)
+        assert pe._classify_person(invented_legs) is None
 
     def test_enter_then_exit_fire_with_stable_classifications(self, pe: PoseEstimation, monkeypatch):
         events = []

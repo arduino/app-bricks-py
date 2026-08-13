@@ -197,7 +197,12 @@ class TestEmaHysteresis:
     def test_invalid_frames_freeze_while_person_present(self):
         ema = EmaHysteresis(classes=("sitting",))
         _run(ema, {"sitting": 1.0}, steps=20)
-        assert _run(ema, None, steps=100, person_present=True) == []
+        assert _run(ema, None, steps=20, person_present=True) == []
+
+    def test_a_frozen_pose_expires_when_the_person_stays_unreadable(self):
+        ema = EmaHysteresis(classes=("sitting",))
+        _run(ema, {"sitting": 1.0}, steps=20)
+        assert _run(ema, None, steps=100, person_present=True) == [("exit", "sitting")]
 
     def test_invalid_frames_decay_after_grace_when_person_absent(self):
         ema = EmaHysteresis(classes=("sitting",))

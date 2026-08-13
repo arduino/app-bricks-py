@@ -62,10 +62,19 @@ EMBEDDING_SIZE = len(EMBEDDING_PAIRS) * 2 + 2  # pairs (dx, dy) + shoulder-cente
 
 EMBEDDING_JOINTS = tuple(sorted({name for pair in EMBEDDING_PAIRS for name in pair}))
 
-# A joint reported beyond the frame bounds (plus this tolerance of the frame
-# size) is extrapolated, not observed: the pose model's offset refinement can
-# place occluded limbs far outside the image.
-OUT_OF_FRAME_TOLERANCE = 0.1
+# A joint reported this far beyond the frame bounds, as a fraction of the frame
+# size, is a wild extrapolation.
+OUT_OF_FRAME_TOLERANCE = 0.25
+
+# Middle and tip of each limb. Both unobserved means the whole limb was placed
+# by the decoder with nothing real to hang on to.
+LIMB_CHAINS = (
+    ("left_elbow", "left_wrist"),
+    ("right_elbow", "right_wrist"),
+    ("left_knee", "left_ankle"),
+    ("right_knee", "right_ankle"),
+)
+MIN_OBSERVED_SCORE = 0.1
 
 # Live-frame gate on the normalization anchors only: weak non-anchor joints
 # are still usable evidence, while a discarded frame stalls the temporal layer.
@@ -255,7 +264,8 @@ class EmaHysteresis:
     dt, so behavior does not change with the pipeline frame rate.
 
     Invalid frames are passed as probs=None; person_present tells them apart:
-    - person detected but joints unreadable: the smoothed values freeze;
+    - person detected but joints unreadable: the smoothed values freeze, then
+      decay after stale_seconds;
     - person not detected: freeze for grace_seconds, then decay as zeros.
     """
 
@@ -264,6 +274,7 @@ class EmaHysteresis:
     enter_threshold: float = 0.65
     exit_threshold: float = 0.45
     grace_seconds: float = 0.7
+    stale_seconds: float = 3.0
     smoothed: dict[str, float] = field(init=False)
     active: dict[str, bool] = field(init=False)
     _invalid_time: float = field(init=False, default=0.0)
@@ -279,10 +290,8 @@ class EmaHysteresis:
         person_present cases). Returns [("enter"|"exit", class), ...].
         """
         if probs is None:
-            if person_present:
-                return []
             self._invalid_time += dt
-            if self._invalid_time <= self.grace_seconds:
+            if self._invalid_time <= (self.stale_seconds if person_present else self.grace_seconds):
                 return []
             probs = dict.fromkeys(self.classes, 0.0)
         else:

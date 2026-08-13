@@ -24,7 +24,9 @@ from arduino.app_internal.core.module import load_brick_compose_file, resolve_ad
 from .pose_classifier import (
     ANCHOR_JOINTS,
     EMBEDDING_JOINTS,
+    LIMB_CHAINS,
     MIN_ANCHOR_SCORE,
+    MIN_OBSERVED_SCORE,
     OUT_OF_FRAME_TOLERANCE,
     EmaHysteresis,
     KEYPOINT_NAMES,
@@ -472,8 +474,9 @@ class PoseEstimation:
     def _classify_person(self, person: Person) -> dict[str, float] | None:
         """Per-frame pose probabilities for one person, or None when unreadable.
 
-        None means "no evidence" (weak anchor joints, missing joints,
-        out-of-frame joints, collapsed torso) and freezes the temporal layer;
+        None means "no evidence" (weak anchor joints, missing joints, a limb
+        placed with nothing observed to hang on to, joints far outside the
+        frame, collapsed torso) and freezes the temporal layer;
         an all-zeros dict from the classifier means "read fine, looks like
         nothing we know" and makes any active pose decay.
         """
@@ -483,6 +486,9 @@ class PoseEstimation:
                 return None
         if any(name not in person.keypoints for name in KEYPOINT_NAMES):
             return None
+        for middle, tip in LIMB_CHAINS:
+            if person.keypoints[middle].score < MIN_OBSERVED_SCORE and person.keypoints[tip].score < MIN_OBSERVED_SCORE:
+                return None
         if self._frame_hw is not None:
             frame_h, frame_w = self._frame_hw
             margin_x = OUT_OF_FRAME_TOLERANCE * frame_w
