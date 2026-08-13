@@ -124,18 +124,16 @@ So releasing `bricks/X.Y.Z` when nothing under `containers/base/python-slim/` ch
 
 ## Dev Build Workflow
 
-`docker-github-build.yml` triggers on every push to non-`main` branches and builds only the containers whose `watch_paths` changed (detected via `git diff` against the previous commit). Images are tagged with the sanitized branch name (e.g. `feat/my-feature` → `feat-my-feature`) plus a run-number suffix (e.g. `feat-my-feature-42`).
+`docker-build.yml` ("DEV - Build & Publish Branch Containers") is triggered manually via `workflow_dispatch` with:
 
-**Dependency ordering**: the detect job splits containers into two groups:
-
-- **Base containers** (`build` job): containers with no upstream being built in the same run — these build in parallel.
-- **Downstream containers** (`build-downstream` job): containers whose upstream is also being built — these wait for the `build` job to complete before starting, and receive `BASE_IMAGE_VERSION=<branch-tag>` as a build arg so they use the freshly built upstream image.
-
-The grouping is driven entirely by the `downstream` field in ci.json — no hardcoded container names in the workflow.
-
-Can also be triggered manually via `workflow_dispatch` with:
-- `containers` — comma-separated list of containers to build, or `all`
+- `branch` — branch to build (defaults to the branch the workflow is run from)
+- `containers` — comma-separated list of containers to build, or `all` (default)
 - `tag` — optional custom image tag
+- `skip_cache` — rebuild without cache
+
+Images are tagged `dev-<branch-name>` (branch name lowercased and sanitized, e.g. `feat/My-Feature` → `dev-feat-my-feature`), plus a run-number-suffixed alias (e.g. `dev-feat-my-feature-42`), unless a custom `tag` is provided.
+
+**Dependency ordering**: the same topological planner as the release (`scripts/build_levels.py`, in `--mode dev`) expands the selection with its ancestors and descendants and splits it into waves — `build-l0`, `build-l1`, `build-l2` — where each wave waits for the previous one and receives `BASE_IMAGE_VERSION=<image-tag>` as a build arg so it uses the freshly built upstream images. The ordering is driven entirely by the `downstream` field in ci.json — no hardcoded container names in the workflow.
 
 ## Build Characteristics
 
