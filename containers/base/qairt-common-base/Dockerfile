@@ -152,9 +152,21 @@ COPY --from=fastrpc-builder /usr/lib/libadsprpc* /usr/lib/
 
 RUN ldconfig
 
+# Shared entrypoint wrapper: builds a merged /usr/share/qcom view (host DSP
+# payload symlinked from the read-only /run/host-qcom mount, conf.d populated
+# with host yamls plus the baked default) without ever writing to the host.
+# Child images prepend it to their ENTRYPOINT.
+COPY --chmod=755 qairt-entrypoint.sh /qairt-entrypoint.sh
+
+# Pre-create the merged view root, owned by arduino so images running as the
+# non-root user (e.g. llamacpp-npu-runner) can populate it at startup.
+RUN mkdir -p /usr/share/qcom/conf.d && chown -R arduino:arduino /usr/share/qcom
+
 # Bake fastrpc DSP path config for all supported devices.
-# The entrypoint copies this to /usr/share/qcom/conf.d/ at runtime
-# after the bind-mount is in place, so fastrpc_shell resolves from the host.
+# /qairt-entrypoint.sh copies this to /usr/share/qcom/conf.d/ at runtime as
+# 00-arduino-dsp-binaries.yaml: the fastrpc parser keeps the last alphabetical
+# match, so this file sorts first and acts as a fallback that any yaml
+# provided by the host overrides.
 RUN mkdir -p /etc/fastrpc && \
     { \
       echo '# SPDX-FileCopyrightText: Copyright (C) Arduino s.r.l. and/or its affiliated companies'; \
