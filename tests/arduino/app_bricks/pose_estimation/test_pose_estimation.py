@@ -261,14 +261,103 @@ class TestKeypointCallbacks:
 
 
 # ---------------------------------------------------------------------------
-# on_pose stub tests
+# on_pose event tests
 # ---------------------------------------------------------------------------
 
 
-class TestOnPoseStub:
-    def test_on_pose_raises_not_implemented(self, pe: PoseEstimation):
-        with pytest.raises(NotImplementedError):
-            pe.on_pose("arms_up", lambda pose: None)
+def _skeleton_keypoints(score: float = 0.9) -> dict:
+    """A plausible upright person: distinct shoulder/hip heights, sided joints."""
+    height = {"nose": 20, "eye": 18, "ear": 22, "shoulder": 60, "elbow": 100, "wrist": 140, "hip": 140, "knee": 210, "ankle": 280}
+    keypoints = {}
+    for name in KEYPOINT_NAMES:
+        side = -20 if name.startswith("left") else 20 if name.startswith("right") else 0
+        keypoints[name] = Keypoint(name=name, x=100 + side, y=height[name.split("_")[-1]], score=score)
+    return keypoints
+
+
+def _person(bbox=(60, 0, 140, 300), score: float = 0.9) -> Person:
+    return Person(keypoints=_skeleton_keypoints(score), bounding_box_xyxy=bbox)
+
+
+class TestPoseEvents:
+    def _feed(self, pe: PoseEstimation, people: list[Person], steps: int, start: float) -> float:
+        now = start
+        for _ in range(steps):
+            now += 0.1
+            pe._update_pose_classification(people, now)
+        return now
+
+    def test_out_of_frame_joints_make_the_frame_unreadable(self, pe: PoseEstimation):
+        pe._frame_hw = (480, 640)
+        assert pe._classify_person(_person()) is not None
+
+        hallucinated = _person()
+        for name in ("left_knee", "right_knee", "left_ankle", "right_ankle"):
+            kp = hallucinated.keypoints[name]
+            hallucinated.keypoints[name] = Keypoint(name=name, x=kp.x, y=kp.y + 400, score=0.02)
+        assert pe._classify_person(hallucinated) is None
+
+        pe._frame_hw = None
+        assert pe._classify_person(hallucinated) is not None
+
+    def test_enter_then_exit_fire_with_stable_classifications(self, pe: PoseEstimation, monkeypatch):
+        events = []
+        got_enter, got_exit = threading.Event(), threading.Event()
+
+        def on_sitting(pose):
+            events.append(pose)
+            (got_enter if pose.event == "enter" else got_exit).set()
+
+        pe.on_pose("sitting", on_sitting)
+        person = _person()
+
+        monkeypatch.setattr(pe, "_classify_person", lambda p: {"sitting": 1.0})
+        now = self._feed(pe, [person], steps=20, start=0.0)
+        _wait(got_enter, "pose enter")
+        time.sleep(0.1)  # let the enter callback finish so exit is not busy-discarded
+
+        monkeypatch.setattr(pe, "_classify_person", lambda p: {"sitting": 0.0})
+        self._feed(pe, [person], steps=20, start=now)
+        _wait(got_exit, "pose exit")
+
+        assert [pose.event for pose in events] == ["enter", "exit"]
+        enter = events[0]
+        assert enter.name == "sitting"
+        assert 0.0 < enter.confidence <= 1.0
+        assert enter.bounding_box_xyxy == person.bounding_box_xyxy
+        assert enter.keypoints is person.keypoints
+
+    def test_the_largest_person_is_the_tracked_subject(self, pe: PoseEstimation, monkeypatch):
+        seen = []
+        monkeypatch.setattr(pe, "_classify_person", lambda p: seen.append(p))
+        small = Person(keypoints={}, bounding_box_xyxy=(0, 0, 50, 50))
+        big = Person(keypoints={}, bounding_box_xyxy=(200, 0, 400, 300))
+
+        pe._update_pose_classification([small, big], now=1.0)
+
+        assert seen == [big]
+
+    def test_weak_anchor_joints_make_the_frame_unreadable(self, pe: PoseEstimation):
+        assert pe._classify_person(_person(score=0.05)) is None
+
+    def test_a_readable_skeleton_yields_a_probability_dict(self, pe: PoseEstimation):
+        probs = pe._classify_person(_person())
+        assert isinstance(probs, dict)
+        assert set(probs) == set(pe._pose_knn.classes)
+
+    def test_unknown_pose_name_raises(self, pe: PoseEstimation):
+        with pytest.raises(ValueError, match="unknown pose"):
+            pe.on_pose("jumping", lambda pose: None)
+
+    def test_unregister_stops_events(self, pe: PoseEstimation, monkeypatch):
+        called = threading.Event()
+        pe.on_pose("standing", lambda pose: called.set())
+        pe.on_pose("standing", None)
+
+        monkeypatch.setattr(pe, "_classify_person", lambda p: {"standing": 1.0})
+        self._feed(pe, [_person()], steps=20, start=0.0)
+
+        assert not called.wait(timeout=0.3)
 
 
 class TestSetConfidence:
