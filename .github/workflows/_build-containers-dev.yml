@@ -76,7 +76,7 @@ jobs:
             -v "${{ github.workspace }}:/${{ github.workspace }}" \
             -w "${{ github.workspace }}" \
             -e SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)" \
-            -e PUBLIC_IMAGE_REGISTRY_BASE="${{ env.DEV_REGISTRY_PATH }}/" \
+            -e PUBLIC_IMAGE_REGISTRY_BASE="${{ env.DEV_REGISTRY_PATH }}" \
             -e DEV_TAG_VERSION="${{ inputs.image_tag }}" \
             debian:trixie bash -c "
               set -e

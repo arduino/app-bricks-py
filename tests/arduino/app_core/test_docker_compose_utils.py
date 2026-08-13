@@ -371,6 +371,23 @@ def test_by_platform_with_registry_override(tmp_path):
         assert "${DOCKER_REGISTRY_BASE:-arduino.io/}" in content
 
 
+def test_registry_override_normalizes_trailing_slashes(tmp_path):
+    """Registry is written with exactly one trailing slash, whether the caller
+    passes none, one, or a duplicated one (dev builds passed 'ghcr.io/owner//')."""
+    for registry in ["ghcr.io/owner", "ghcr.io/owner/", "ghcr.io/owner//"]:
+        _write(tmp_path / "brick_compose.yaml", BRICK_COMPOSE_CONTENT)
+
+        _update_compose_release_version(
+            compose_file_path=str(tmp_path / "brick_compose.yaml"),
+            release_version="1.2.3",
+            registry=registry,
+        )
+
+        content = _read(tmp_path / "brick_compose.yaml")
+        assert "${DOCKER_REGISTRY_BASE:-ghcr.io/owner/}" in content
+        assert "owner//" not in content
+
+
 def test_by_platform_ignores_non_compose_yaml_files(tmp_path):
     """Test that non-compose yaml files in the same directory are not touched."""
     _write(tmp_path / "brick_compose.yaml", BRICK_COMPOSE_CONTENT)
