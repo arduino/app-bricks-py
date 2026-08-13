@@ -82,13 +82,17 @@ App.run(chat_loop)
 
 The Brick is initialized with the following parameters:
 
-| Parameter       | Type                  | Default                       | Description                                                                                                                              |
-| :-------------- | :-------------------- | :---------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------- |
-| `api_key`       | `str`                 | `os.getenv("API_KEY")`        | The authentication key for the LLM provider. **Recommended:** Set this via the **Brick Configuration** menu in App Lab instead of code. |
-| `model`         | `str` \| `CloudModel` | `CloudModel.ANTHROPIC_CLAUDE` | The specific model to use. Accepts a `CloudModel` enum or its string value.                                                              |
-| `system_prompt` | `str`                 | `""`                          | A base instruction that defines the AI's behavior and persona.                                                                           |
-| `temperature`   | `float`               | `None`                        | Controls randomness. `0.0` is deterministic, `1.0` is creative. When `None` the provider default is used and no temperature is sent (required by models that deprecated it, e.g. Claude Sonnet 5+). |
-| `timeout`       | `int`                 | `30`                          | Maximum time (in seconds) to wait for a response.                                                                                        |
+| Parameter          | Type                  | Default                       | Description                                                                                                                              |
+| :----------------- | :-------------------- | :---------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------- |
+| `api_key`          | `str`                 | `os.getenv("API_KEY", "")`    | The authentication key for the LLM provider. **Recommended:** Set this via the **Brick Configuration** menu in App Lab instead of code. |
+| `model`            | `str` \| `CloudModel` | `CloudModel.ANTHROPIC_CLAUDE` | The specific model to use. Accepts a `CloudModel` enum or its string value. String values need a provider prefix (`openai:`, `anthropic:` or `google:`, e.g. `'openai:gpt-5-mini'`); without a prefix, an OpenAI-compatible endpoint is assumed. |
+| `system_prompt`    | `str`                 | `""`                          | A base instruction that defines the AI's behavior and persona.                                                                           |
+| `temperature`      | `float`               | `None`                        | Controls randomness. `0.0` is deterministic, `1.0` is creative. When `None` the provider default is used and no temperature is sent (required by models that deprecated it, e.g. Claude Sonnet 5+). |
+| `reasoning_effort` | `ReasoningEffort` \| `str` \| `int` | `None`          | Default reasoning effort applied to every `chat`/`chat_stream_reasoning` call that does not pass its own.                                |
+| `max_tool_loops`   | `int`                 | `8`                           | Maximum number of consecutive tool-call loops allowed during a single chat interaction.                                                  |
+| `timeout`          | `int`                 | `None`                        | Maximum time (in seconds) to wait for a response.                                                                                        |
+| `tools`            | `Sequence[ToolLike]`  | `None`                        | `BaseTool` objects (from `@tool` or `MCPClient.get_tools()`) or plain callables (auto-wrapped into tools).                               |
+| `callbacks`        | `Any`                 | `None`                        | Optional callbacks for monitoring generation events.                                                                                     |
 
 ### Supported Models
 
@@ -96,15 +100,15 @@ You can select a model using the `CloudModel` enum or by passing the correspondi
 
 | Enum Constant                 | Raw String ID              | Provider Documentation                                                      |
 | :---------------------------- | :------------------------- | :-------------------------------------------------------------------------- |
-| `CloudModel.ANTHROPIC_CLAUDE` | `claude-sonnet-4.6`        | [Anthropic Models](https://docs.anthropic.com/en/docs/about-claude/models)  |
-| `CloudModel.OPENAI_GPT`       | `gpt-5.4-mini`             | [OpenAI Models](https://platform.openai.com/docs/models)                    |
-| `CloudModel.GOOGLE_GEMINI`    | `gemini-2.5-flash`         | [Google Gemini Models](https://ai.google.dev/gemini-api/docs/models/gemini) |
+| `CloudModel.ANTHROPIC_CLAUDE` | `claude-sonnet-5`          | [Anthropic Models](https://docs.anthropic.com/en/docs/about-claude/models)  |
+| `CloudModel.OPENAI_GPT`       | `gpt-5.6-terra`            | [OpenAI Models](https://platform.openai.com/docs/models)                    |
+| `CloudModel.GOOGLE_GEMINI`    | `gemini-3.6-flash`         | [Google Gemini Models](https://ai.google.dev/gemini-api/docs/models/gemini) |
 
 ## Methods
 
-- **`chat(message, reasoning_effort=None)`**: Sends a message and returns the complete response string. Blocks until generation is finished. When `reasoning_effort` is left as `None` (default) the behavior is unchanged; when set (a discrete level or an integer token budget, same values as `chat_stream_reasoning`) the model reasons with that effort but only the final answer text is returned (the chain-of-thought is not included). Requires a reasoning model.
-- **`chat_stream(message)`**: Returns a generator yielding response tokens as they arrive.
-- **`chat_stream_reasoning(message, reasoning_effort=None)`**: Streams both the model's reasoning (chain-of-thought) and its final answer, yielding `ReasoningChunk` and `ContentChunk` items. Supported on OpenAI-compatible, Google Gemini, and Anthropic Claude reasoning models. `reasoning_effort` accepts a discrete level (`ReasoningEffort` / `'minimal'`/`'low'`/`'medium'`/`'high'`) or an integer token budget, mapped to each provider's native knob.
+- **`chat(message, images=None, reasoning_effort=None)`**: Sends a message and returns the complete response string. Blocks until generation is finished. `images` optionally accepts a list of image file paths or raw bytes to include in the prompt. When `reasoning_effort` is left as `None` (default) the behavior is unchanged; when set (a discrete level or an integer token budget, same values as `chat_stream_reasoning`) the model reasons with that effort but only the final answer text is returned (the chain-of-thought is not included). Requires a reasoning model.
+- **`chat_stream(message, images=None)`**: Returns a generator yielding response tokens as they arrive.
+- **`chat_stream_reasoning(message, images=None, reasoning_effort=None)`**: Streams both the model's reasoning (chain-of-thought) and its final answer, yielding `ReasoningChunk` and `ContentChunk` items. Supported on OpenAI-compatible, Google Gemini, and Anthropic Claude reasoning models. `reasoning_effort` accepts a discrete level (`ReasoningEffort` / `'minimal'`/`'low'`/`'medium'`/`'high'`) or an integer token budget, mapped to each provider's native knob.
 - **`stop_stream()`**: Interrupts an active streaming generation.
 - **`with_memory(max_messages, persistence=None)`**: Enables history tracking. `max_messages` is the window size sent to the model; tool exchanges (the assistant message holding the tool calls and the tool results) are kept in history and count towards it. `persistence=True` enables persistence with a dedicated default database/thread; pass a `MessagePersistence` (e.g. `SQLMessagePersistence`) for full control.
 - **`clear_memory()`**: Resets the conversation history (also deletes persisted rows for the active thread when a persistence backend is configured).

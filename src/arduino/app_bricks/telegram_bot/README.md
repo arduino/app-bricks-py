@@ -9,7 +9,7 @@ The Telegram Bot Brick allows you to:
 - Create Telegram bots with a simple synchronous API (no async/await needed)
 - Handle commands, text messages, and media files (photos, audio, video, documents)
 - Reply to users without manually tracking chat IDs using convenient `sender.reply*()` methods
-- Schedule messages and manage user authorization via whitelist
+- Schedule recurring messages and manage user authorization via whitelist
 - Automatically welcome users with built-in `/start` command and unblock detection
 
 ## Features
@@ -19,7 +19,7 @@ The Telegram Bot Brick allows you to:
 - **Media support**: Automatically download and process photos, audio, video, documents
 - **Built-in welcome system**: Automatic `/start` command and unblock detection with smart cooldown
 - **User authorization**: Whitelist specific Telegram user IDs to restrict bot access
-- **Message scheduling**: Schedule messages to be sent after a delay
+- **Message scheduling**: Schedule recurring messages sent at regular intervals
 - **Contextual logging**: Track user interactions with automatic log prefixing
 - **Robust error handling**: Automatic retries with configurable timeouts
 
@@ -91,7 +91,7 @@ The Brick is initialized with the following parameters:
 
 | Parameter                | Type           | Default                          | Description                                                                                          |
 | :----------------------- | :------------- | :------------------------------- | :--------------------------------------------------------------------------------------------------- |
-| `token`                  | `str \| None`  | `os.getenv("TELEGRAM_BOT_TOKEN")` | Telegram bot API token. **Recommended:** set via environment variable.                               |
+| `token`                  | `str \| None`  | `None` (falls back to `TELEGRAM_BOT_TOKEN` env var) | Telegram bot API token. **Recommended:** set via environment variable.             |
 | `message_timeout`        | `int`          | `30`                             | Timeout in seconds for text message operations.                                                      |
 | `media_timeout`          | `int`          | `60`                             | Timeout in seconds for media operations (photos, videos, etc.).                                       |
 | `max_retries`            | `int`          | `3`                              | Maximum retry attempts for failed operations.                                                        |
@@ -118,11 +118,11 @@ For cases where you need to send messages outside of reply context:
 - **`send_photo(chat_id, photo_bytes, caption="")`**: Send photo to specific chat
 - **`send_audio(chat_id, audio_bytes, caption="", filename="audio.mp3")`**: Send audio file
 - **`send_video(chat_id, video_bytes, caption="", filename="video.mp4", supports_streaming=True)`**: Send video file
-- **`send_document(chat_id, doc_bytes, filename, caption="")`**: Send document file
+- **`send_document(chat_id, document_bytes, filename="document", caption="")`**: Send document file
 
 ### Scheduling
 
-- **`schedule_message(task_id, chat_id, message_text, delay_seconds)`**: Schedule a message to be sent after delay
+- **`schedule_message(chat_id, message_text, interval_seconds, task_id=None)`**: Schedule a recurring message sent every `interval_seconds`. Returns the task ID (auto-generated when `task_id` is not provided)
 - **`cancel_scheduled_message(task_id)`**: Cancel a previously scheduled message
 
 ## Reply Helpers (Recommended)
@@ -133,7 +133,7 @@ The `Sender` object passed to callbacks includes convenient reply methods:
 - **`sender.reply_photo(photo_bytes, caption="")`**: Reply with photo
 - **`sender.reply_audio(audio_bytes, caption="", filename="audio.mp3")`**: Reply with audio
 - **`sender.reply_video(video_bytes, caption="", filename="video.mp4")`**: Reply with video
-- **`sender.reply_document(doc_bytes, filename, caption="")`**: Reply with document
+- **`sender.reply_document(document_bytes, filename="document", caption="")`**: Reply with document
 
 **Why use reply methods?** They eliminate the need to manually track `chat_id`, making your callback code cleaner and more intuitive for chatbot logic.
 

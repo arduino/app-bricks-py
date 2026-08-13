@@ -31,11 +31,11 @@ You need a free API token from AQICN:
 ## Code example and usage
 
 ```python
-from arduino.app_bricks.air_quality_monitor import AirQualityMonitor
+from arduino.app_bricks.air_quality_monitoring import AirQualityMonitoring
 
 API_TOKEN = "your_token_here"
 
-aqm = AirQualityMonitor(API_TOKEN)
+aqm = AirQualityMonitoring(token=API_TOKEN)
 data = aqm.get_air_quality_by_city("Torino")
 print(f"AQI in {data.city}: {data.aqi}")
 print(f"Dominant pollutant: {data.dominantpol}")
@@ -58,8 +58,10 @@ The dominant pollutant refers to the specific type of pollution, like PM2.5, ozo
 Individual pollutants (IAQI) provide separate measurements for each type of pollutant, which is useful for detailed analysis and understanding the complete picture of air quality.
 
 ## Brick Functions
-| Function                                          | Example                                    |
-| ------------------------------------------------- | ------------------------------------------ |
-| get_air_quality_by_city(city:string)              | get_air_quality_by_city("Torino")          |
-| get_air_quality_by_coords(lat:float,long:float)   | get_air_quality_by_coords("31.2","121.4")  |
-| get_air_quality_by_ip()                           | get_air_quality_by_ip()                    |
+| Function                                                    | Example                                   |
+| ----------------------------------------------------------- | ----------------------------------------- |
+| get_air_quality_by_city(city: str)                          | get_air_quality_by_city("Torino")         |
+| get_air_quality_by_coords(latitude: float, longitude: float) | get_air_quality_by_coords(31.2, 121.4)   |
+| get_air_quality_by_ip()                                     | get_air_quality_by_ip()                   |
+
+All functions return an `AirQualityData` object and raise `AirQualityLookupError` if the API request fails. The static helper `AirQualityMonitoring.map_aqi_level(aqi)` maps a numeric AQI value to its `AQILevel` category (e.g. `Good`, `Moderate`).

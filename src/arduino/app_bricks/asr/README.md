@@ -1,12 +1,12 @@
 # Automatic Speech Recognition Brick
 
-The `AutomaticSpeechRecognition` brick provides on-device automatic speech recognition (ASR) capabilities for audio streams and files. It offers a high-level interface for transcribing audio using a local model, with support for both real-time microphone capture and in-memory audio (WAV bytes or raw PCM arrays). With the possibility to use multiple languages.
+The ASR brick provides on-device automatic speech recognition (ASR) capabilities for audio streams and files. It offers a high-level interface for transcribing audio using a local model, with support for both real-time microphone capture (`AutomaticSpeechRecognition`) and in-memory audio (`WAVAutomaticSpeechRecognition`). With the possibility to use multiple languages.
 
 ## Features
 
 - **Offline Operation:** All transcriptions are performed locally, ensuring data privacy and eliminating network dependencies.
-- **Multi-Language Support:** Supports the transcription of multiple spoken languages.
-- **Flexible Audio Input:** The constructor accepts a `BaseMicrophone` instance, a `bytes` WAV container, a raw `np.ndarray` of PCM samples, or `None` to use a default `Microphone()`.
+- **Multi-Language Support:** Supports the transcription of multiple spoken languages. Language is auto-detected by default and can be overridden with the `language` constructor argument (e.g. `"en"`).
+- **Flexible Audio Input:** `AutomaticSpeechRecognition` accepts a `BaseMicrophone` instance or `None` to use a default `Microphone()`. `WAVAutomaticSpeechRecognition` accepts a `bytes` WAV container or a raw `np.ndarray` of PCM samples (16 kHz mono).
 - **Single-Session Semantics:** Each instance handles one transcription session at a time. For concurrent transcriptions on different microphones, create multiple `AutomaticSpeechRecognition` instances.
 
 ## Prerequisites
@@ -21,39 +21,54 @@ Tips:
 - Use a USB-C® Hub with USB-A connectors to support commercial USB cameras with microphone. Note that the USB-C® Hub must have Power Delivery Support (PD).
 - Microphones included in USB cameras/webcams are generally supported
 
-## LocalASR Class Features
-
-- All transcriptions are performed locally, ensuring data privacy and eliminating network dependencies.
-- Supports the transcription of multiple spoken languages.
-- Works with the Microphone peripheral as well as WAV and PCM audio files.
-- Limits the number of simultaneous transcription sessions to avoid resource exhaustion.
-
 ## Code Example and Usage
 
-This example transcribes audio captured from the microphone for 5 seconds. The brick automatically uses the microphone and handles the start and stop functions.
+This example transcribes audio captured from the microphone for 5 seconds at a time. The brick automatically uses the default microphone and handles its start and stop functions.
 
 ```python
-from arduino.app_bricks.asr import AutomaticSpeechRecognition
-from arduino.app_peripherals.microphone import Microphone
-
-asr = AutomaticSpeechRecognition()
-text = asr.transcribe_mic(mic, duration=5)
-print(f"Transcription: {text}")
-
-mic.stop()
-```
-
-This example transcribes audio from a file.
-
-```python
+from arduino.app_utils import App
 from arduino.app_bricks.asr import AutomaticSpeechRecognition
 
-
 asr = AutomaticSpeechRecognition()
-with open("recording_01.wav", "rb") as wav_file:
-    text = asr.transcribe_wav(wav_file.read())
+
+print("Please start speaking for transcription...")
+
+
+def transcribe():
+    text = asr.transcribe(duration=5)
     print(f"Transcription: {text}")
+
+
+App.run(user_loop=transcribe)
 ```
+
+This example transcribes audio from a WAV file.
+
+```python
+from arduino.app_utils import App
+from arduino.app_bricks.asr import WAVAutomaticSpeechRecognition
+
+with open("recording_01.wav", "rb") as wav_file:
+    audio_bytes = wav_file.read()
+    asr = WAVAutomaticSpeechRecognition(audio_bytes)
+    App.start_brick(asr)
+    text = asr.transcribe()
+    print(f"Transcription: {text}")
+
+App.run()
+```
+
+## Methods
+
+Both classes share the same transcription API (durations/timeouts apply to the microphone class; the WAV class always consumes the whole buffer):
+
+- `transcribe(duration=60) -> str`: transcribes audio and returns the final text (`WAVAutomaticSpeechRecognition.transcribe()` takes no arguments).
+- `transcribe_stream(duration=0) -> TranscriptionStream[ASREvent]`: yields intermediate transcription events; use it in a `with` block.
+- `transcribe_sentence(timeout=0) -> str`: transcribes until the first complete sentence is detected.
+- `transcribe_sentence_stream(timeout=0) -> TranscriptionStream[ASREvent]`: streams events until the first complete sentence.
+- `transcribe_until_cancelled() -> TranscriptionStream[ASREvent]`: streams events until `cancel()` is called.
+- `cancel()`: cancels the active transcription session, if any.
+- `is_transcribing() -> bool`: returns whether a session is currently active.
 
 ## Errors
 
@@ -64,6 +79,6 @@ with open("recording_01.wav", "rb") as wav_file:
 
 ## Source Ownership
 
-- When `source` is `None`, ASR constructs a default `Microphone()` and manages its lifecycle through `asr.start()` / `asr.stop()`.
-- When `source` is a `BaseMicrophone` you pass in, **you** own its lifecycle — call `mic.start()` before transcribing and `mic.stop()` when done.
-- In-memory sources (`bytes`, `np.ndarray`) have no device lifecycle.
+- When `mic` is `None`, `AutomaticSpeechRecognition` constructs a default `Microphone()` and manages its lifecycle through `asr.start()` / `asr.stop()` (called automatically by `App.run()`).
+- When `mic` is a `BaseMicrophone` you pass in, **you** own its lifecycle — call `mic.start()` before transcribing and `mic.stop()` when done.
+- In-memory sources (`bytes`, `np.ndarray` passed to `WAVAutomaticSpeechRecognition`) have no device lifecycle.

@@ -68,7 +68,9 @@ App.run(ask_prompt)
 
 ## Methods
 
-- **`chat(message)`**: Sends a message and returns the complete response string. Blocks until generation is finished.
-- **`chat_stream(message)`**: Returns a generator yielding response tokens as they arrive.
+- **`chat(message, images=None)`**: Sends a message (with optional image file paths or raw bytes) and returns the complete response string. Blocks until generation is finished.
+- **`chat_stream(message, images=None)`**: Returns a generator yielding response tokens as they arrive.
 - **`stop_stream()`**: Interrupts an active streaming generation.
-- **`with_memory(max_messages, persistence=None)`**: Enables history tracking. `max_messages` is the window size sent to the model. `persistence=True` enables persistence with a dedicated default database/thread; pass a `MessagePersistence` (e.g. `SQLMessagePersistence`) for full control.
+- **`with_memory(max_messages=10, persistence=None)`**: Enables history tracking. `max_messages` is the window size sent to the model. `persistence=True` enables persistence with a dedicated default database/thread; pass a `MessagePersistence` (e.g. `SQLMessagePersistence`) for full control.
+- **`clear_memory()`**: Resets the conversation history (also deletes persisted rows for the active thread when a persistence backend is configured).
+- **`list_models()`**: Returns the model identifiers available on the local inference service.

@@ -63,7 +63,7 @@ The Brick is initialized with the following parameters:
 | :---------------- | :----------------------- | :------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------- |
 | `api_key`         | `str`                    | `os.getenv("API_KEY", "")`             | API key for the selected provider. **Recommended:** set via the **Brick Configuration** menu in App Lab instead of code.          |
 | `provider`        | `CloudProvider`          | `CloudProvider.OPENAI_TRANSCRIBE`      | Cloud provider to use for transcription.                                                                                           |
-| `mic`             | `Microphone \| None`     | `None`                                 | Optional microphone instance. If not provided, a `Microphone()` peripheral is created.                                             |
+| `mic`             | `BaseMicrophone \| None` | `None`                                 | Optional microphone instance. If not provided, a `Microphone()` peripheral is created.                                             |
 | `language`        | `str`                    | `os.getenv("LANGUAGE", "")`            | Language code for transcription (e.g., `en`, `it`). If empty, the provider falls back to its default (typically English).         |
 | `silence_timeout` | `float`                  | `10.0`                                 | Stops the session if no speech (partial or final text) is detected for this many seconds.                                         |
 
@@ -83,5 +83,7 @@ You can select a provider using the `CloudProvider` enum or by passing its raw s
 - **`transcribe_sentence(timeout=60.0)`**: Returns the first sentence as a string. Stops at the provider's sentence boundary (VAD) or when `timeout` elapses.
 - **`transcribe_sentence_stream(timeout=60.0)`**: Yields `ASREvent` items for a single sentence; the stream ends after the first `text` event.
 - **`transcribe_until_cancelled()`**: Yields one sentence (`str`) per `text` event; runs until `cancel()` or silence timeout.
+
+The `*_stream` methods and `transcribe_until_cancelled` are context managers: use them in a `with` block (as in the example above) to ensure the session is properly closed.
 - **`cancel()`**: Cancels the active transcription session, if any.
 - **`is_transcribing()`**: Returns `True` if a transcription session is currently active.

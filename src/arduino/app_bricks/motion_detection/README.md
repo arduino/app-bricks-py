@@ -29,31 +29,32 @@ It analyzes accelerometer samples in real-time to classify motion patterns such 
 
 ```python
 from arduino.app_bricks.motion_detection import MotionDetection
-from arduino.app_utils import App
+from arduino.app_utils import App, Bridge
 
 motion_detection = MotionDetection(confidence=0.4)
 
 # Register function to receive samples from sketch
 def record_sensor_movement(x: float, y: float, z: float):
-  # Acceleration from sensor is in g. While we need m/s^2.
-  x = x * 9.81
-  y = y * 9.81
-  z = z * 9.81
-  
-  # Append the values to the sensor buffer. These samples will be sent to the model.
-  global motion_detection
-  motion_detection.accumulate_samples((x, y, z))
+    # Acceleration from sensor is in g. While we need m/s^2.
+    x = x * 9.81
+    y = y * 9.81
+    z = z * 9.81
+
+    # Append the values to the sensor buffer. These samples will be sent to the model.
+    motion_detection.accumulate_samples((x, y, z))
 
 Bridge.provide("record_sensor_movement", record_sensor_movement)
 
 # Register action to take after successful detection
 def on_updown_movement_detected(classification: dict):
-    print(f"updown movement detected!")
+    print("updown movement detected!")
 
 motion_detection.on_movement_detection('updown', on_updown_movement_detected)
 
 App.run()
 ```
+
+Note: callbacks registered with `on_movement_detection(movement, callback)` must be plain functions (not lambdas or bound methods). A callback with no parameters is simply invoked; a callback with a single parameter receives the full classification dict (`{class_name: confidence}`). The samples accumulated so far can be inspected with `get_sensor_samples()`.
 
 Samples can be provided by accelerometer connected to microcontroller.
 
