@@ -28,11 +28,11 @@ The Audio Classification Brick allows you to:
 ## Code example and usage
 
 ```python
-from arduino.app_bricks.audio_classifier import AudioClassifier
+from arduino.app_bricks.audio_classification import AudioClassification
 from arduino.app_utils import App
 
-classifier = AudioClassifier()
-classifier.on_detect("Glass_Breaking", lambda: print(f"Glass breaking sound detected!"))
+classifier = AudioClassification()
+classifier.on_detect("Glass_Breaking", lambda: print("Glass breaking sound detected!"))
 
 App.run()
 ```
@@ -40,12 +40,13 @@ App.run()
 or using an existing audio file:
 
 ```python
-from arduino.app_bricks.audio_classifier import AudioClassifier
+from arduino.app_bricks.audio_classification import AudioClassification
 
-classifier = AudioClassifier()
-classification = classifier.classify_from_file("glass_breaking.wav")
+classification = AudioClassification.classify_from_file("glass_breaking.wav")
 print("Result:", classification)
 ```
+
+The constructor accepts an optional microphone and a confidence threshold: `AudioClassification(mic=None, confidence=0.8)`. `classify_from_file(audio_path, confidence=0.8)` is a static method that returns a `{"class_name": ..., "confidence": ...}` dict, or `None` when nothing exceeds the threshold.
 
 ## Audio Classification Working Principle
 

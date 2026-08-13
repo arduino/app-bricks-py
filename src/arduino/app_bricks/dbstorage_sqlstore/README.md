@@ -43,9 +43,9 @@ To create a new table:
 ```python
 # Create a table
 columns = {
-    "id": "INTEGER PRIMARY KEY",
-    "name": "TEXT",
-    "age": "INTEGER"
+    "id": "INTEGER PRIMARY KEY",
+    "name": "TEXT",
+    "age": "INTEGER"
 }
 db.create_table("users", columns)
 ```
@@ -55,14 +55,30 @@ Insert new data in a table:
 ```python
 # Insert data
 data = {
-    "name": "Alice",
-    "age": 30
+    "name": "Alice",
+    "age": 30
 }
 db.store("users", data)
 ```
 
+Query, update and delete records:
+
+```python
+# Read rows (columns, condition, order_by and limit are optional)
+rows = db.read("users", condition="age > 18", order_by="name ASC", limit=10)
+
+# Update rows matching a condition
+db.update("users", {"age": 31}, condition="name = 'Alice'")
+
+# Delete rows matching a condition (without a condition ALL records are deleted)
+db.delete("users", condition="name = 'Alice'")
+
+# Raw SQL for advanced operations
+result = db.execute_sql("SELECT COUNT(*) FROM users")
+```
+
 ## Understanding Database Operations
 
-The SQLStore automatically creates a directory structure for database storage, placing files in `data/dbstorage_sqlstore/` within your application directory. The brick supports automatic type inference when creating tables, mapping Python types (*int*, *float*, *str*, *bytes*) to corresponding SQLite column types (*INTEGER*, *REAL*, *TEXT*, *BLOB*).
+The SQLStore automatically creates the database file inside the `/app/data` directory of your application. The brick supports automatic type inference when creating tables, mapping Python types (*int*, *float*, *str*, *bytes*) to corresponding SQLite column types (*INTEGER*, *REAL*, *TEXT*, *BLOB*).
 
 The `store()` method can automatically create tables if they don't exist by analyzing the data types of the provided values. This makes it easy to get started without defining schemas upfront, while still allowing explicit table creation for more control over column definitions and constraints.

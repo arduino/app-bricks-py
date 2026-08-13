@@ -40,5 +40,13 @@ client = MQTT(
     broker_address="127.0.0.1", broker_port=1883, username="admin", password="password", topics=["test/topic"]
 )
 
+# Register a handler to process the messages received on a topic
+def handle_message(client, userdata, message):
+    print(f"Received on {message.topic}: {message.payload.decode()}")
+
+client.on_message("test/topic", handle_message)
+
 App.run()
 ```
+
+Topics passed to the constructor are subscribed automatically at startup; additional topics can be subscribed at runtime with `client.subscribe(topic)`. Without an `on_message` handler, received messages are only written to the log.

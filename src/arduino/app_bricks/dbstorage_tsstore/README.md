@@ -39,12 +39,22 @@ db.write_sample("temp", 21)
 db.write_sample("hum", 45)
 time.sleep(1)
 
+# read_last_sample returns a (field_name, timestamp_iso, value) tuple, or None if no data is found
 last_temp = db.read_last_sample("temp")
-last_hum = db.read_last_sample("hum")
-print(f"Last temperature: {last_temp}")
-print(f"Last humidity: {last_hum}")
+if last_temp is not None:
+    _, timestamp, value = last_temp
+    print(f"Last temperature: {value} (at {timestamp})")
 
 db.stop()
+```
+
+You can also read multiple samples with time-range filtering and aggregation:
+
+```python
+# List of (field_name, timestamp_iso, value) tuples, hourly averages over the last day
+samples = db.read_samples("temp", start_from="-1d", aggr_window="1h", aggr_func="mean")
+for _, timestamp, value in samples:
+    print(f"{timestamp}: {value}")
 ```
 
 ## Understanding Time Series Operations

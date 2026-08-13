@@ -56,7 +56,7 @@ App.run()
 
 `App.run()` does not need to be cached — it is already idempotent and returns immediately on subsequent re-runs.
 
-See the `examples/` folder for complete examples.
+See the [examples repository](https://github.com/arduino/app-bricks-examples/tree/main/bricks/arduino/streamlit_ui) for complete examples.
 
 ## Code example and usage
 
