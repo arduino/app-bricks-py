@@ -150,6 +150,7 @@ def draw_persons(
     person_scores: np.ndarray,
     keypoint_scores: np.ndarray,
     keypoint_coords_xy: np.ndarray,
+    draw_uncertain: bool = True,
 ) -> dict:
     """
     Draw the skeleton overlay for each detected pose and build the detection metadata.
@@ -166,6 +167,10 @@ def draw_persons(
     keypoint_coords_xy
         Keypoint coordinates in (x, y) format mapped to the frame space,
         shape (max_detections, 17, 2).
+    draw_uncertain
+        Mark keypoints below MIN_KEYPOINT_SCORE too, as small hollow dots
+        joined by darker lines. Set it to False for an overlay that
+        shows only the confident keypoints and connections.
 
     Returns
     -------
@@ -187,6 +192,13 @@ def draw_persons(
         edges = [(a, b) for a, b in SKELETON_CONNECTION_INDICES if confident[a] and confident[b]]
         if edges:
             draw_connections(frame, kp_coords, edges, (255, 255, 255), 2)
+
+        if draw_uncertain and not confident.all():
+            uncertain_edges = [(a, b) for a, b in SKELETON_CONNECTION_INDICES if not (confident[a] and confident[b])]
+            if uncertain_edges:
+                draw_connections(frame, kp_coords, uncertain_edges, (120, 120, 255), 1)
+            draw_points(frame, kp_coords[~confident], (60, 60, 200), 3, (200, 200, 255))
+
         if confident.any():
             draw_points(frame, kp_coords[confident], (90, 250, 34), 7, (255, 255, 255))
 

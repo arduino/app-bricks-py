@@ -24,7 +24,7 @@ posenet_output = posenet.get_output_details()
 
 # Runtime-tunable settings, updated by client config messages (wired in the
 # base image's main.py).
-_config = {"min_person_score": MIN_PERSON_SCORE}
+_config = {"min_person_score": MIN_PERSON_SCORE, "draw_uncertain": True}
 
 
 def apply_config(config: dict) -> None:
@@ -33,6 +33,10 @@ def apply_config(config: dict) -> None:
     if value is not None:
         _config["min_person_score"] = max(0.0, min(1.0, float(value)))
         print(f"config: min_person_score set to {_config['min_person_score']}", flush=True)
+    value = config.get("draw_uncertain")
+    if value is not None:
+        _config["draw_uncertain"] = bool(value)
+        print(f"config: draw_uncertain set to {_config['draw_uncertain']}", flush=True)
 
 
 # Person-tracking crop: instead of the full frame, the model gets a window cut
@@ -233,7 +237,7 @@ def inference_callback(rgb_frame: np.ndarray) -> tuple[np.ndarray, dict]:
     _last_union_bbox = tracked
 
     # Draw predictions on the full frame and get metadata; coordinates in (x, y) format
-    metadata = draw_persons(rgb_frame, person_scores, keypoint_scores, coords_xy)
+    metadata = draw_persons(rgb_frame, person_scores, keypoint_scores, coords_xy, _config["draw_uncertain"])
     metadata["crop_window"] = crop_window
 
     return rgb_frame, metadata
