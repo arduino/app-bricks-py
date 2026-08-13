@@ -4,7 +4,6 @@ description: |
   Brick for object detection using a pre-trained model. It processes images and returns the predicted class label, bounding-boxes and confidence score.
   Brick is designed to work with pre-trained models provided by framework or with custom object detection models trained on Edge Impulse platform. 
 category: video
-requires_container: true
 ai_frameworks_compatibility:
   - edgeimpulse
 model_by_boards:

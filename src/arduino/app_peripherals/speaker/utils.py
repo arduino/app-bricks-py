@@ -71,7 +71,10 @@ def _nth_plugged_speaker(idx: int) -> str:
     if idx - usb_count < jack_count:
         return f"jack:{idx - usb_count + 1}"
 
-    raise SpeakerOpenError(f"No speaker found at index {idx}: only {usb_count + jack_count} speaker(s) plugged")
+    raise SpeakerOpenError(
+        f"No speaker found at index {idx}: only {usb_count + jack_count} speaker(s) plugged",
+        hint="Connect a speaker (or check the audio configuration) and restart the app.",
+    )
 
 
 def list_audio_sinks() -> tuple[list[dict], list[dict]]:

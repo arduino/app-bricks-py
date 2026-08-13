@@ -28,15 +28,13 @@ This example shows how to convert text into spoken audio, which will be played o
 ```python
 from arduino.app_bricks.tts import TextToSpeech
 from arduino.app_utils import App
-import time
 
 
 tts = TextToSpeech()
 
 
 def runner():
-    tts.speak("Hello world, Arduino!")
-    time.sleep(5)  # Wait for the speech to finish before ending the app
+    tts.speak("Hello world, Arduino!")  # Blocks until playback completes
 
 
 App.run(user_loop=runner)
@@ -78,6 +76,10 @@ wav = tts.synthesize_wav("Hello, Arduino world!")
 with open("synthesized_speech.wav", "wb") as f:
     f.write(wav)
 ```
+
+## Configuration
+
+`TextToSpeech(speaker=None, max_queue_size=128)`: pass a `Speaker` instance to control the audio output device (a default shared `Speaker` is used otherwise); `max_queue_size` bounds the number of pending `speak(block=False)` requests.
 
 ## Errors
 

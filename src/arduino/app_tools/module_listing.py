@@ -61,7 +61,6 @@ class ArduinoBrick:
         self.path = fs_path
         self.compose_file: Optional[str] = self.get_compose_file()
         self.readme_file: Optional[str] = self.get_readme_file()
-        self.require_container: bool = self.compose_file is not None
         self.model_name: str = model_name
         self.category = category
         self.mount_devices_into_container: bool = mount_devices_into_container
@@ -79,7 +78,6 @@ class ArduinoBrick:
             "id": self.id,
             "name": self.name,
             "description": self.brick_description,
-            "require_container": self.require_container,
             "mount_devices_into_container": self.mount_devices_into_container,
             "ports": self.ports,
             "category": self.category,
@@ -148,7 +146,6 @@ class ArduinoService:
         self.brick_description = brick_description
         self.path = fs_path
         self.compose_file: Optional[str] = self.get_compose_file()
-        self.require_container: bool = self.compose_file is not None
         self.category = category
         self.env_variables: Optional[Dict[str, str]] = env_variables
         self.supported_boards: Optional[List[str]] = supported_boards
@@ -353,7 +350,7 @@ def list_installed_packages_pkg_resources() -> tuple[Dict[str, List[ArduinoBrick
 
 def save_compose_file(module: ArduinoBrick, output_dir: str, appslab_version: str):
     """Save the compose file to the specified output directory."""
-    if not module.require_container:
+    if not module.compose_file:
         return
 
     # We cannot save a folder containing the `:`, therefore we split and save it
@@ -503,7 +500,7 @@ def release():
         for module in module_list:
             modules.append(module.to_dict())
             # Update the compose file with the release version
-            if module.require_container:
+            if module.compose_file and module.compose_file != "":
                 print(f"Processing compose file {module.compose_file} for arduino bricks version {arduino_bricks_version}")
                 _update_compose_release_version_by_platform(
                     compose_file_path=module.compose_file,
@@ -569,7 +566,7 @@ def update_ai_container_references():
         for module in module_list:
             modules.append(module.to_dict())
             # Update the compose file with the release version
-            if module.require_container:
+            if module.compose_file and module.compose_file != "":
                 _update_compose_release_version_by_platform(
                     compose_file_path=module.compose_file,
                     release_version=arduino_bricks_version,

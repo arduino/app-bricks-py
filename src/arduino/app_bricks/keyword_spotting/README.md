@@ -7,7 +7,7 @@ Brick for keyword spotting using a pre-trained model that processes a continuous
 The Keyword Spotting brick allows you to:
 
 - Detect specific keywords in real-time audio streams
-- Use pre-trained models provided by the framework  
+- Use pre-trained models provided by the framework  
 - Integrate custom audio classification models trained on the Edge Impulse platform
 - Configure detection confidence levels and debounce timing
 - Register callback functions for keyword detection events
@@ -28,7 +28,7 @@ Tips:
 
 - Real-time audio processing with continuous stream analysis
 - Configurable confidence thresholds for detection accuracy
-- Debounce functionality to prevent repeated detections  
+- Debounce functionality to prevent repeated detections  
 - Callback-based event handling for detected keywords
 - Support for custom Edge Impulse trained models
 - Default microphone initialization when no mic specified

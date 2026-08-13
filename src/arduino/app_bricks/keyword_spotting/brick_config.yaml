@@ -6,7 +6,6 @@ description: |
 category: audio
 required_devices:
   - microphone
-requires_container: true
 ai_frameworks_compatibility:
   - edgeimpulse
 model: keyword-spotting-hey-arduino

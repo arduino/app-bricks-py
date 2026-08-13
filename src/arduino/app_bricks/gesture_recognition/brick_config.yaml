@@ -5,7 +5,6 @@ description: |
   The output is a video stream featuring gesture recognition as overlay, with the added capability to
   trigger actions based on these detections.
 category: video
-requires_container: true
 model: gesture-recognition
 supported_boards: ["ventunoq"]
 required_devices:
