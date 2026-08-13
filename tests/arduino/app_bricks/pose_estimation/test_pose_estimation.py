@@ -347,7 +347,7 @@ class TestPoseEvents:
 
     def test_unknown_pose_name_raises(self, pe: PoseEstimation):
         with pytest.raises(ValueError, match="unknown pose"):
-            pe.on_pose("arms_up", lambda pose: None)
+            pe.on_pose("jumping", lambda pose: None)
 
     def test_unregister_stops_events(self, pe: PoseEstimation, monkeypatch):
         called = threading.Event()

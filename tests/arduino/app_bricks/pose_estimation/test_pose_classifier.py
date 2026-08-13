@@ -184,25 +184,25 @@ def _run(ema: EmaHysteresis, probs, steps: int, dt: float = 0.1, person_present:
 
 class TestEmaHysteresis:
     def test_enter_fires_once_and_exit_on_decay(self):
-        ema = EmaHysteresis(classes=("arms_up",))
-        assert _run(ema, {"arms_up": 1.0}, steps=20) == [("enter", "arms_up")]
-        assert _run(ema, {"arms_up": 0.0}, steps=20) == [("exit", "arms_up")]
+        ema = EmaHysteresis(classes=("sitting",))
+        assert _run(ema, {"sitting": 1.0}, steps=20) == [("enter", "sitting")]
+        assert _run(ema, {"sitting": 0.0}, steps=20) == [("exit", "sitting")]
 
     def test_hysteresis_gap_prevents_flicker(self):
-        ema = EmaHysteresis(classes=("arms_up",))
-        _run(ema, {"arms_up": 1.0}, steps=20)
-        assert _run(ema, {"arms_up": 0.55}, steps=20) == []
-        assert ema.active["arms_up"]
+        ema = EmaHysteresis(classes=("sitting",))
+        _run(ema, {"sitting": 1.0}, steps=20)
+        assert _run(ema, {"sitting": 0.55}, steps=20) == []
+        assert ema.active["sitting"]
 
     def test_invalid_frames_freeze_while_person_present(self):
-        ema = EmaHysteresis(classes=("arms_up",))
-        _run(ema, {"arms_up": 1.0}, steps=20)
+        ema = EmaHysteresis(classes=("sitting",))
+        _run(ema, {"sitting": 1.0}, steps=20)
         assert _run(ema, None, steps=100, person_present=True) == []
 
     def test_invalid_frames_decay_after_grace_when_person_absent(self):
-        ema = EmaHysteresis(classes=("arms_up",))
-        _run(ema, {"arms_up": 1.0}, steps=20)
-        assert _run(ema, None, steps=30, person_present=False) == [("exit", "arms_up")]
+        ema = EmaHysteresis(classes=("sitting",))
+        _run(ema, {"sitting": 1.0}, steps=20)
+        assert _run(ema, None, steps=30, person_present=False) == [("exit", "sitting")]
 
 
 # ---------------------------------------------------------------------------
