@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import time
-from typing import Callable, List
+from typing import Callable, List, Optional
 
 import numpy as np
 
@@ -37,6 +37,7 @@ class AIHubApp:
         inference_cb: Callable[[np.ndarray], tuple[np.ndarray, dict]],
         input_type: str = "gstreamer",
         output_types: List[str] = ["mjpeg"],
+        config_cb: Optional[Callable[[dict], None]] = None,
         **kwargs,
     ):
         """
@@ -48,6 +49,8 @@ class AIHubApp:
             input_type: Input source type ("gstreamer" or "websocket").
             output_types: List of output sink types (accepted values are "mjpeg",
                 "websocket"). Defaults to ["mjpeg"].
+            config_cb: Callback for config messages from the websocket input
+                (other input types have no config channel). None ignores them.
             **kwargs: Forwarded to input/output constructors based on prefix:
                 - gst_* -> GStreamer input
                 - ws_input_* -> WebSocket input
@@ -57,6 +60,7 @@ class AIHubApp:
         self._inference_cb = inference_cb
         self._input_type = input_type
         self._output_types = output_types
+        self._config_cb = config_cb
         self._kwargs = kwargs
 
         self._input_source = None
@@ -106,6 +110,7 @@ class AIHubApp:
             input_kwargs = self._extract_kwargs("gst_")
         elif self._input_type == "websocket":
             input_kwargs = self._extract_kwargs("ws_input_")
+            input_kwargs["on_config_cb"] = self._config_cb
         else:
             input_kwargs = {}
 
