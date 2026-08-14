@@ -1,0 +1,14 @@
+id: arduino:pose_estimation
+name: Pose Estimation
+description: |
+  This pose estimation brick analyzes a camera video stream and detects the body poses of up
+  to 10 people at a time, locating 17 keypoints per person (eyes, ears, nose, shoulders,
+  elbows, wrists, hips, knees, ankles). The output is a video stream featuring the skeleton
+  overlay, with the added capability to trigger actions based on the detected poses, people
+  presence and people count.
+category: video
+requires_container: true
+model: pose-estimation
+supported_boards: ["ventunoq"]
+required_devices:
+  - camera

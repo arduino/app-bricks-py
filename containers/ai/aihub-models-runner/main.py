@@ -2,12 +2,16 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import inference
 from aihub import AIHubApp, parse_args
-from inference import inference_callback
 
 
 args = parse_args()
 
-# Create and run the application
-app = AIHubApp(inference_cb=inference_callback, **args)
+# Create and run the application. apply_config is optional for a runner to define.
+app = AIHubApp(
+    inference_cb=inference.inference_callback,
+    config_cb=getattr(inference, "apply_config", None),
+    **args,
+)
 app.run()

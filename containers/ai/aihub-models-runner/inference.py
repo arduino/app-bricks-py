@@ -12,3 +12,12 @@ def inference_callback(rgb_frame: np.ndarray) -> tuple[np.ndarray, dict]:
     """
 
     return rgb_frame, {}
+
+
+def apply_config(config: dict) -> None:
+    """
+    This is a dummy runtime-config handler, optional for a runner to define.
+    It will be replaced with the actual implementation at boot time.
+    """
+
+    print(f"config ignored by this runner: {config}", flush=True)
