@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: Copyright (C) Arduino s.r.l. and/or its affiliated companies
+#
+# SPDX-License-Identifier: MPL-2.0
+
+ARG REGISTRY
+ARG BASE_IMAGE_VERSION=latest
+
+FROM ${REGISTRY}app-bricks/aihub-models-runner:${BASE_IMAGE_VERSION}
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+COPY . .
+
+RUN python -m pip install --no-cache-dir -r requirements.txt \
+    && python -m compileall /opt/venv \
+    && rm requirements.txt

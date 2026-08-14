@@ -23,8 +23,11 @@ class WebSocketInput(InputSource):
     """
     WebSocket server that receives frames from connecting clients.
 
-    Expects frames as JSON messages with base64-encoded JPEG data:
+    Expects JSON messages, discriminated by their top-level key.
+    Frames, as base64-encoded JPEG data:
     {"frame": "<base64-encoded-jpeg>", "width": W, "height": H}
+    Runtime configuration, applied from the next frame onwards:
+    {"config": {"<setting>": <value>, ...}}
     """
 
     def __init__(
@@ -32,6 +35,7 @@ class WebSocketInput(InputSource):
         on_frame_cb: Callable[[np.ndarray], None],
         host: str = "0.0.0.0",
         port: int = 5000,
+        on_config_cb: Optional[Callable[[dict], None]] = None,
         **kwargs,
     ):
         """
@@ -39,11 +43,14 @@ class WebSocketInput(InputSource):
 
         Args:
             on_frame_cb: Callback for each received frame.
+            on_config_cb: Callback for each received config payload; None
+                ignores config messages.
             host: Host to bind the server to.
             port: Port for the WebSocket server.
             kwargs: Additional keyword arguments.
         """
         self._on_frame_cb = on_frame_cb
+        self._on_config_cb = on_config_cb
         self._frame_queue: queue.Queue = queue.Queue(maxsize=4)
 
         self._host = host
@@ -121,6 +128,9 @@ class WebSocketInput(InputSource):
 
                 try:
                     data = json.loads(message)
+                    if "config" in data:
+                        self._apply_config(data["config"])
+                        continue
                     frame = self._decode_frame(data)
                     if frame is not None:
                         # Queue frame for main thread processing
@@ -136,6 +146,19 @@ class WebSocketInput(InputSource):
             logger.warning(f"WebSocket input client error: {e}")
         finally:
             logger.debug("WebSocket input client disconnected")
+
+    def _apply_config(self, config) -> None:
+        """Hand a config payload to the registered callback."""
+        if not isinstance(config, dict):
+            logger.warning("Ignoring config message: payload is not an object")
+            return
+        if self._on_config_cb is None:
+            logger.debug("Config message received but no config handler is set; ignored")
+            return
+        try:
+            self._on_config_cb(config)
+        except Exception as e:
+            logger.warning(f"Error applying config: {e}")
 
     def _decode_frame(self, data: dict) -> Optional[np.ndarray]:
         """Decode a frame from the message payload."""
