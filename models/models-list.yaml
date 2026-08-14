@@ -2364,3 +2364,29 @@ models:
     deployment:
       handler: "ai-hub-handler"
       pre-loaded: true
+ - "llamacpp:SmolVLM2-500M-Video-Instruct-Q8_0":
+    name : "SmolVLM2-500M-Video-Instruct"
+    description: >-
+      SmolVLM2 500M Video Instruct is a compact vision-language model developed by Hugging Face.
+      With 500 million parameters, it understands images and short video clips alongside text,
+      making it suitable for visual question answering, image captioning and scene description
+      directly on edge devices.
+    supported_boards: ["unoq", "ventunoq"]
+    bricks:
+      - id: "arduino:llm"
+        model_configuration:
+          GGML_HEXAGON_NDEV: 1      
+    deployment:
+      handler: "hf-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              model_url: "https://huggingface.co/ggml-org/SmolVLM2-500M-Video-Instruct-GGUF/blob/134047fb1ff095a8ab6e31e0e096574deb7eb094/SmolVLM2-500M-Video-Instruct-Q8_0.gguf"
+              model_mmproj_url: "https://huggingface.co/ggml-org/SmolVLM2-500M-Video-Instruct-GGUF/blob/134047fb1ff095a8ab6e31e0e096574deb7eb094/SmolVLM2-500M-Video-Instruct-f16.gguf"
+              models_repository: "llamacpp"
+              model_directory: "ggml-org/SmolVLM2-500M-Video-Instruct-GGUF"
+    metadata:
+      model_size_mb: 1257
+      source: "huggingface"
+      source-model-id: "SmolVLM2-500M-Video-Instruct-Q8_0"
+      source-model-url: "https://huggingface.co/ggml-org/SmolVLM2-500M-Video-Instruct-GGUF/blob/134047fb1ff095a8ab6e31e0e096574deb7eb094/SmolVLM2-500M-Video-Instruct-Q8_0.gguf"
