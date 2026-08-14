@@ -35,4 +35,4 @@ RUN mkdir -p /app
 WORKDIR /app
 COPY main.py inference.py requirements.txt ./
 
-ENTRYPOINT [ "python", "main.py", "--input", "websocket", "--output", "mjpeg", "websocket" ]
+ENTRYPOINT [ "/qairt-entrypoint.sh", "python", "main.py", "--input", "websocket", "--output", "mjpeg", "websocket" ]

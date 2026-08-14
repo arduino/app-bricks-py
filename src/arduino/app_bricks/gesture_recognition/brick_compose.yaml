@@ -15,7 +15,8 @@ services:
     volumes:
       # Mount hexagon firmware
       - /sys/firmware/devicetree/base/model:/run/device-model
-      - ${HOST_DSP_INSTALLATION_PATH:-/usr/share/qcom}:/usr/share/qcom
+      # Read-only: /qairt-entrypoint.sh merges it into /usr/share/qcom in the container layer
+      - ${HOST_DSP_INSTALLATION_PATH:-/usr/share/qcom}:/run/host-qcom:ro
     healthcheck:
       test: [ "CMD-SHELL", "nc -zv gesture_recognition 5002 || exit 1" ]
       interval: 1s

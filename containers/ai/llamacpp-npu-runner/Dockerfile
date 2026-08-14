@@ -34,4 +34,4 @@ ENV USER=arduino
 ENV LD_LIBRARY_PATH=/opt/pkg-snapdragon/lib
 ENV ADSP_LIBRARY_PATH=/opt/pkg-snapdragon/lib
 
-ENTRYPOINT ["/run-model-router.sh"]
+ENTRYPOINT ["/qairt-entrypoint.sh", "/run-model-router.sh"]
