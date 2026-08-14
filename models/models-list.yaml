@@ -2373,7 +2373,7 @@ models:
       directly on edge devices.
     supported_boards: ["unoq", "ventunoq"]
     bricks:
-      - id: "arduino:llm"
+      - id: "arduino:vlm"
         model_configuration:
           GGML_HEXAGON_NDEV: 1      
     deployment:
