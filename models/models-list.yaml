@@ -2382,11 +2382,11 @@ models:
         - ventunoq:
             variables:
               model_url: "https://huggingface.co/ggml-org/SmolVLM2-500M-Video-Instruct-GGUF/blob/134047fb1ff095a8ab6e31e0e096574deb7eb094/SmolVLM2-500M-Video-Instruct-Q8_0.gguf"
-              model_mmproj_url: "https://huggingface.co/ggml-org/SmolVLM2-500M-Video-Instruct-GGUF/blob/134047fb1ff095a8ab6e31e0e096574deb7eb094/SmolVLM2-500M-Video-Instruct-f16.gguf"
+              model_mmproj_url: "https://huggingface.co/ggml-org/SmolVLM2-500M-Video-Instruct-GGUF/blob/ccd7aae53bcb1997355c2f094959e72b3642ce17/mmproj-SmolVLM2-500M-Video-Instruct-Q8_0.gguf"
               models_repository: "llamacpp"
               model_directory: "ggml-org/SmolVLM2-500M-Video-Instruct-GGUF"
     metadata:
-      model_size_mb: 1257
+      model_size_mb: 546
       source: "huggingface"
       source-model-id: "SmolVLM2-500M-Video-Instruct-Q8_0"
-      source-model-url: "https://huggingface.co/ggml-org/SmolVLM2-500M-Video-Instruct-GGUF/blob/134047fb1ff095a8ab6e31e0e096574deb7eb094/SmolVLM2-500M-Video-Instruct-Q8_0.gguf"
+      source-model-url: "https://huggingface.co/ggml-org/SmolVLM2-500M-Video-Instruct-GGUF"
