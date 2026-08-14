@@ -48,7 +48,8 @@ services:
     volumes:
       # Mount hexagon firmware
       - /sys/firmware/devicetree/base/model:/run/device-model
-      - ${HOST_DSP_INSTALLATION_PATH:-/usr/share/qcom}:/usr/share/qcom
+      # Read-only: /qairt-entrypoint.sh merges it into /usr/share/qcom in the container layer
+      - ${HOST_DSP_INSTALLATION_PATH:-/usr/share/qcom}:/run/host-qcom:ro
       - /var/lib/arduino-app-cli/models/llamacpp/:/models/
     # Pin on cores 0-3 for performance reasons: it's like using --cpu-mask 0x0f on llama-cli/server. Then set LLAMA_ARG_THREADS to 4 to use all those cores.
     cpuset: "0-3"
