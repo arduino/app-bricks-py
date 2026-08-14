@@ -8,8 +8,12 @@ requires_services:
   - id: arduino:llamacpp
     when:
       model: "llamacpp:*"
-model: genie:qwen3_vl_4b_instruct
-supported_boards: ["ventunoq"]
+model_by_boards:
+    - platform: ventunoq
+      model: genie:qwen3_vl_4b_instruct
+    - platform: unoq
+      model: llamacpp:SmolVLM2-500M-Video-Instruct-Q8_0
+supported_boards: ["unoq", "ventunoq"]
 ai_frameworks_compatibility:
   - genie
   - llamacpp
