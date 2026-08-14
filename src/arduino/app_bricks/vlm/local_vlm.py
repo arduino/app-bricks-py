@@ -32,7 +32,7 @@ class VisionLanguageModel(LargeLanguageModel):
     def __init__(
         self,
         system_prompt: str = "",
-        temperature: float | None = 0.7,
+        temperature: float | None = 0.0,
         max_tokens: int = 512,
         timeout: int | None = None,
         tools: Sequence[ToolLike] | None = None,
@@ -50,7 +50,11 @@ class VisionLanguageModel(LargeLanguageModel):
                 and constraints (e.g., "You are a helpful assistant"). Defaults to empty.
             temperature (Optional[float]): The sampling temperature between 0.0 and 1.0.
                 Higher values make output more random/creative; lower values make it more
-                deterministic. Defaults to 0.7.
+                deterministic. Defaults to 0.0 (greedy decoding): typical VLM tasks are
+                perception tasks (object detection, counting, OCR, constrained YES/NO
+                answers) where reproducibility matters and sampling noise flips answers
+                between runs, especially on small models. Pass a higher value (e.g. 0.7)
+                for creative image descriptions.
             max_tokens (int): The maximum number of tokens to generate in the response.
                 Defaults to 256.
             timeout (Optional[int]): The maximum duration in seconds to wait for a response before

@@ -116,7 +116,7 @@ The Brick is initialized with the following parameters:
 | Parameter | Type | Default | Description |
 | :-- | :-- | :-- | :-- |
 | `system_prompt` | `str` | `""` | System-level instruction that defines the assistant behavior. |
-| `temperature` | `float` \| `None` | `0.7` | Controls randomness. Lower values are more deterministic; higher values are more varied. |
+| `temperature` | `float` \| `None` | `0.0` | Controls randomness. Defaults to greedy decoding for reproducible answers on perception tasks (detection, counting, OCR); raise it (e.g. `0.7`) for more varied image descriptions. |
 | `max_tokens` | `int` | `512` | Maximum number of tokens to generate in the response. |
 | `timeout` | `int` \| `None` | `None` | Maximum time in seconds to wait for a response. |
 | `tools` | `Sequence[ToolLike]` \| `None` | `None` | Optional tools the model can call: `BaseTool` objects declared with the `@tool` decorator exported by the Brick, or plain callables (auto-wrapped into tools). |
