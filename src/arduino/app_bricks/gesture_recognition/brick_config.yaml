@@ -6,6 +6,8 @@ description: |
   trigger actions based on these detections.
 category: video
 model: gesture-recognition
+ai_frameworks_compatibility:
+  - qnn
 supported_boards: ["ventunoq"]
 required_devices:
   - camera

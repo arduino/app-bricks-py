@@ -7,7 +7,8 @@ description: |
   overlay, with the added capability to trigger actions based on the detected poses, people
   presence and people count.
 category: video
-requires_container: true
+ai_frameworks_compatibility:
+  - qnn
 model: pose-estimation
 supported_boards: ["ventunoq"]
 required_devices:
