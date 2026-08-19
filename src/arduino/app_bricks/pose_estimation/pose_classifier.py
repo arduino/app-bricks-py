@@ -66,20 +66,10 @@ EMBEDDING_JOINTS = tuple(sorted({name for pair in EMBEDDING_PAIRS for name in pa
 # size, is a wild extrapolation.
 OUT_OF_FRAME_TOLERANCE = 0.25
 
-# Middle and tip of each limb. Both unobserved means the whole limb was placed
-# by the decoder with nothing real to hang on to.
-LIMB_CHAINS = (
-    ("left_elbow", "left_wrist"),
-    ("right_elbow", "right_wrist"),
-    ("left_knee", "left_ankle"),
-    ("right_knee", "right_ankle"),
-)
-MIN_OBSERVED_SCORE = 0.1
-
-# Live-frame gate on the normalization anchors only: weak non-anchor joints
-# are still usable evidence, while a discarded frame stalls the temporal layer.
+# Live-frame gate on the normalization anchors: the frame is refused only when
+# ALL four are guessed: a reference frame with zero observed corners.
 ANCHOR_JOINTS = ("left_shoulder", "right_shoulder", "left_hip", "right_hip")
-MIN_ANCHOR_SCORE = 0.2
+MIN_OBSERVED_SCORE = 0.1  # mirrors the runner's MIN_KEYPOINT_SCORE
 
 _METRICS = ("euclidean", "cosine", "manhattan", "seuclidean")
 _VOTE_WEIGHTINGS = ("uniform", "distance")
