@@ -80,6 +80,16 @@ def _make_instance(monkeypatch: pytest.MonkeyPatch, **kwargs):
 # ---------------------------------------------------------------------------
 
 
+def test_stop_resets_the_temporal_state_with_the_asset_thresholds(pe):
+    pe._pose_ema.update({"sitting": 1.0}, dt=1.0)
+    pe.stop()
+    pe._executor = ThreadPoolExecutor(max_workers=1)  # the fixture teardown shuts one down
+
+    assert pe._pose_ema.smoothed["sitting"] == 0.0
+    assert pe._pose_ema.enter_threshold == pe._pose_thresholds["enter"]
+    assert pe._pose_ema.exit_threshold == pe._pose_thresholds["exit"]
+
+
 # ---------------------------------------------------------------------------
 # Detection parsing tests
 # ---------------------------------------------------------------------------

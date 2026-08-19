@@ -159,12 +159,15 @@ class PoseEstimation:
         self._ws_send_url = f"ws://{self._host}:5000"
         self._ws_recv_url = f"ws://{self._host}:5001"
 
-        # Built-in pose classification: the shipped reference database and the
-        # dials it was tuned with travel together inside the asset.
+        # Built-in pose classification: the shipped reference database, the
+        # dials and the operating point it was tuned with travel together
+        # inside the asset.
         load_start = time.monotonic()
-        self._pose_knn, self._pose_label_weights, self._pose_names = load_pose_classifier(_POSE_CLASSIFIER_PATH)
+        self._pose_knn, self._pose_label_weights, self._pose_names, self._pose_thresholds = load_pose_classifier(_POSE_CLASSIFIER_PATH)
         logger.info(f"pose classifier ready in {time.monotonic() - load_start:.2f}s (poses: {', '.join(self._pose_names)})")
-        self._pose_ema = EmaHysteresis(classes=self._pose_names)
+        self._pose_ema = EmaHysteresis(
+            classes=self._pose_names, enter_threshold=self._pose_thresholds["enter"], exit_threshold=self._pose_thresholds["exit"]
+        )
         self._pose_last_ts: float | None = None
         self._pose_last_person: Person | None = None
 
@@ -190,7 +193,9 @@ class PoseEstimation:
             self._executor.shutdown(wait=False, cancel_futures=True)
             self._executor = None
         # Reset the temporal state so a restart begins from a clean slate
-        self._pose_ema = EmaHysteresis(classes=self._pose_names)
+        self._pose_ema = EmaHysteresis(
+            classes=self._pose_names, enter_threshold=self._pose_thresholds["enter"], exit_threshold=self._pose_thresholds["exit"]
+        )
         self._pose_last_ts = None
         self._pose_last_person = None
 
