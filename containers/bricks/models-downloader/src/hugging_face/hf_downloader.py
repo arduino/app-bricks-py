@@ -96,7 +96,7 @@ import json
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from common.download_marker import MARKER_NAME, read_marker, write_marker
-from common.model_metadata import identify_model, is_bookkeeping_name, write_metadata
+from common.model_metadata import ORIGIN_BUILTIN, identify_model, is_bookkeeping_name, read_metadata, write_metadata
 
 # Quantization used when a model key names only a repository. Q4_0 is the quantization
 # every llama.cpp GGUF repository publishes and the one all curated entries use.
@@ -1062,13 +1062,39 @@ def main():
         # what it left and retry; absent but the requested files present => complete.
         # Marker first, files second — the reverse of --check, because the leftovers of
         # the interrupted run have to go before the directory can be judged.
+        # The model directory is the repo id: the download always lands in
+        # <output_dir>/<repo_id>. models-list.yaml usually spells it out, but it is
+        # redundant — repo_id is a substring of the model URL (and of the model key),
+        # so derive it when the variable is not set rather than recording nothing.
+        model_directory = os.environ.get("model_directory") or repo_id
+        # Environment the metadata record is built from, with model_directory filled
+        # in: it feeds both the "inputs" block and the models-list.yaml lookup that
+        # identifies the model. ChainMap rather than {**os.environ, ...} because on
+        # Windows os.environ upper-cases its keys when copied, which would drop every
+        # lowercase download variable; chaining delegates the lookup instead.
+        metadata_env = ChainMap({"model_directory": model_directory}, os.environ)
+
         marker = Path(output_dir) / MARKER_NAME
         if marker.is_file():
             emit_json_info(f"Removing incomplete previous download: {repo_id}")
             discard_incomplete_download(output_dir, args.output_dir, interrupted_patterns(marker))
         if is_installed(output_dir, patterns):
-            installed = ", ".join(p.name for p in matching_files(output_dir, patterns))
-            emit_json_info(f"Model exists: {repo_id} ({installed})")
+            present = sorted(str(p.resolve()) for p in matching_files(output_dir, patterns) if p.suffix == ".gguf")
+            installed = ", ".join(Path(p).name for p in present)
+            # Named here as well as after a transfer: a caller asking for a model by URL
+            # gets its id back whether this run had to fetch anything or not. Derived from
+            # the files this request matched, the same way the download path derives it, so
+            # the two cannot disagree about a repository holding several quantizations.
+            identity = identify_model(metadata_env, fallback_model_id=fallback_model_id(source["model_type"], present))
+            # An undeclared model is listed only through its record, so name it only when
+            # that record is on disk - again the rule the download path applies.
+            named = identity["model_origin"] == ORIGIN_BUILTIN or read_metadata(output_dir) is not None
+            emit_json_info(
+                f"Model exists: {repo_id} ({installed})",
+                artifacts=present,
+                model_id=identity["model_id"] if named else None,
+                size_mb=downloaded_size_mb(present),
+            )
             return
         if os.path.isdir(output_dir) and not has_model_content(output_dir):
             # Bookkeeping-only leftover (e.g. killed between makedirs and the marker
@@ -1081,18 +1107,6 @@ def main():
         # Nothing has been written yet, and the model URL or key comes from the host
         # configuration: check what it points at before creating a directory for it.
         validate_hub_source_or_exit(source, args.hf_token)
-
-        # The model directory is the repo id: the download always lands in
-        # <output_dir>/<repo_id>. models-list.yaml usually spells it out, but it is
-        # redundant — repo_id is a substring of the model URL (and of the model key),
-        # so derive it when the variable is not set rather than recording nothing.
-        model_directory = os.environ.get("model_directory") or repo_id
-        # Environment the metadata record is built from, with model_directory filled
-        # in: it feeds both the "inputs" block and the models-list.yaml lookup that
-        # identifies the model. ChainMap rather than {**os.environ, ...} because on
-        # Windows os.environ upper-cases its keys when copied, which would drop every
-        # lowercase download variable; chaining delegates the lookup instead.
-        metadata_env = ChainMap({"model_directory": model_directory}, os.environ)
 
         os.makedirs(output_dir, exist_ok=True)
         write_marker(
