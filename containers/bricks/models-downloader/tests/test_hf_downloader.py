@@ -1059,14 +1059,18 @@ def test_downloaded_size_mb_when_a_file_cannot_be_read(tmp_path):
 
 
 def test_downloaded_size_mb_matches_what_the_listing_reports(tmp_path):
-    """A caller must not see the size change just because a listing ran."""
+    """A caller must not see the size change just because a listing ran.
+
+    Sizes deliberately not whole megabytes: rounding the byte total once instead of per
+    file agrees with the listing on round numbers and drifts on everything else.
+    """
     import list_models
 
     gguf = tmp_path / "llamacpp" / "org" / "repo" / "model-Q4_0.gguf"
     gguf.parent.mkdir(parents=True)
-    gguf.write_bytes(b"\0" * (1024 * 1024))
+    gguf.write_bytes(b"\0" * (1024 * 1024 + 5243))
     mmproj = gguf.parent / "mmproj-BF16.gguf"
-    mmproj.write_bytes(b"\0" * (512 * 1024))
+    mmproj.write_bytes(b"\0" * (512 * 1024 + 5243))
 
     listed = list_models.find_llamacpp_models(str(tmp_path))
     assert len(listed) == 1

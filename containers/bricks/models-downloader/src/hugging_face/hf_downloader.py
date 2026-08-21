@@ -783,16 +783,21 @@ def downloaded_size_mb(downloaded: list[str]) -> float | None:
     Counts the mmproj file along with the main GGUF, which is what ``list_models.py``
     reports as ``disk_size_mb`` for the same model, so the size a caller is told on
     completion matches the one a later listing gives it.
+
+    Rounded per file and then again on the sum, which is what the listing does. Rounding
+    the byte total once instead differs by up to a hundredth of a megabyte per file - a
+    difference of nothing in itself, but enough to make a caller see the size change the
+    first time a listing runs.
     """
     if not downloaded:
         return None
-    total = 0
+    total = 0.0
     for path in downloaded:
         try:
-            total += os.stat(path).st_size
+            total += round(os.stat(path).st_size / 1024 / 1024, 2)
         except OSError:
             return None
-    return round(total / 1024 / 1024, 2)
+    return round(total, 2)
 
 
 def no_match_message(repo_id: str, pattern: str) -> str:
