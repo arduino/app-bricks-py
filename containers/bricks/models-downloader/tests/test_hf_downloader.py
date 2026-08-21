@@ -33,6 +33,8 @@ from hugging_face.hf_downloader import (
     delete_matched_files,
     discard_incomplete_download,
     download_matched_files,
+    downloaded_size_mb,
+    emit_json_info,
     fallback_model_id,
     gguf_pattern,
     has_model_content,
@@ -1031,3 +1033,64 @@ def test_check_answers_for_the_requested_quantization_only(tmp_path, monkeypatch
     with pytest.raises(SystemExit):
         _run_main(monkeypatch, "--check", "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q3_K_S", "--output-dir", str(models_dir))
     assert read_events(capsys)[-1] == {"event": "error", "description": "Model does not exist: *Q3_K_S*.gguf", "downloading": False}
+
+
+# --------------------------------------------------------------------------- #
+# downloaded_size_mb
+# --------------------------------------------------------------------------- #
+def test_downloaded_size_mb_sums_the_files(tmp_path):
+    main = tmp_path / "model-Q4_0.gguf"
+    main.write_bytes(b"\0" * (2 * 1024 * 1024))
+    mmproj = tmp_path / "mmproj-BF16.gguf"
+    mmproj.write_bytes(b"\0" * (1024 * 1024))
+
+    assert downloaded_size_mb([str(main), str(mmproj)]) == 3.0
+
+
+def test_downloaded_size_mb_without_files():
+    assert downloaded_size_mb([]) is None
+
+
+def test_downloaded_size_mb_when_a_file_cannot_be_read(tmp_path):
+    """Better no size than a total that silently omits part of the model."""
+    present = tmp_path / "model-Q4_0.gguf"
+    present.write_bytes(b"\0")
+    assert downloaded_size_mb([str(present), str(tmp_path / "gone.gguf")]) is None
+
+
+def test_downloaded_size_mb_matches_what_the_listing_reports(tmp_path):
+    """A caller must not see the size change just because a listing ran."""
+    import list_models
+
+    gguf = tmp_path / "llamacpp" / "org" / "repo" / "model-Q4_0.gguf"
+    gguf.parent.mkdir(parents=True)
+    gguf.write_bytes(b"\0" * (1024 * 1024))
+    mmproj = gguf.parent / "mmproj-BF16.gguf"
+    mmproj.write_bytes(b"\0" * (512 * 1024))
+
+    listed = list_models.find_llamacpp_models(str(tmp_path))
+    assert len(listed) == 1
+    assert downloaded_size_mb([str(gguf), str(mmproj)]) == listed[0]["disk_size_mb"]
+
+
+# --------------------------------------------------------------------------- #
+# emit_json_info
+# --------------------------------------------------------------------------- #
+def test_emit_json_info_reports_the_model_id_and_size(capsys):
+    emit_json_info("Downloaded to: /models", artifacts=["/models/m.gguf"], model_id="llamacpp:m", size_mb=12.5)
+
+    assert read_events(capsys) == [
+        {
+            "event": "info",
+            "description": "Downloaded to: /models",
+            "artifacts": ["/models/m.gguf"],
+            "model_id": "llamacpp:m",
+            "size_mb": 12.5,
+        }
+    ]
+
+
+def test_emit_json_info_omits_what_it_was_not_given(capsys):
+    """A plain progress message must not grow null fields the host would have to skip."""
+    emit_json_info("Downloading")
+    assert read_events(capsys) == [{"event": "info", "description": "Downloading"}]

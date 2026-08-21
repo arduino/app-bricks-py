@@ -96,7 +96,7 @@ import json
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from common.download_marker import MARKER_NAME, read_marker, write_marker
-from common.model_metadata import is_bookkeeping_name, write_metadata
+from common.model_metadata import identify_model, is_bookkeeping_name, write_metadata
 
 # Quantization used when a model key names only a repository. Q4_0 is the quantization
 # every llama.cpp GGUF repository publishes and the one all curated entries use.
@@ -125,12 +125,28 @@ HF_FILE_MARKERS = ("resolve", "blob")
 URL_FORMAT_HINT = "Expected format: https://huggingface.co/<owner>/<repo>/resolve/<revision>/<file>.gguf (/blob/ also works)"
 
 
-def emit_json_info(description: str, artifacts: list[str] | None = None, downloading: bool | None = None):
+def emit_json_info(
+    description: str,
+    artifacts: list[str] | None = None,
+    downloading: bool | None = None,
+    model_id: str | None = None,
+    size_mb: float | None = None,
+):
+    """Print an ``info`` event.
+
+    ``model_id`` and ``size_mb`` are what the host would otherwise have to re-derive from
+    the artifact filenames or read back with a listing run, so a completed download
+    reports them here instead.
+    """
     data: dict = {"event": "info", "description": description}
     if artifacts is not None:
         data["artifacts"] = artifacts
     if downloading is not None:
         data["downloading"] = downloading
+    if model_id is not None:
+        data["model_id"] = model_id
+    if size_mb is not None:
+        data["size_mb"] = size_mb
     print(json.dumps(data), flush=True)
 
 
@@ -761,6 +777,24 @@ def fallback_model_id(model_type: str, downloaded: list[str]) -> str | None:
     return f"{model_type or 'llamacpp'}:{Path(main_gguf).stem}"
 
 
+def downloaded_size_mb(downloaded: list[str]) -> float | None:
+    """Total size in MB of the files a download wrote, or None if any cannot be read.
+
+    Counts the mmproj file along with the main GGUF, which is what ``list_models.py``
+    reports as ``disk_size_mb`` for the same model, so the size a caller is told on
+    completion matches the one a later listing gives it.
+    """
+    if not downloaded:
+        return None
+    total = 0
+    for path in downloaded:
+        try:
+            total += os.stat(path).st_size
+        except OSError:
+            return None
+    return round(total / 1024 / 1024, 2)
+
+
 def no_match_message(repo_id: str, pattern: str) -> str:
     """Explain that nothing matched *pattern*, listing the GGUF files the repo does have.
 
@@ -1136,22 +1170,30 @@ def main():
         # Generate models.ini file
         generate_models_ini(Path(args.output_dir))
 
-        # Report the absolute path(s) of the downloaded model file(s): the files this
-        # request named, not every quantization the shared repository directory holds —
-        # a sibling was not downloaded now, and must not name this model either.
+        # The absolute path(s) of the downloaded model file(s): the files this request
+        # named, not every quantization the shared repository directory holds — a sibling
+        # was not downloaded now, and must not name this model either.
         downloaded = sorted(str(p.resolve()) for p in matching_files(output_dir, patterns) if p.suffix == ".gguf")
-        emit_json_info(f"Downloaded to: {output_dir}", artifacts=downloaded)
+
+        # Resolved once and used for both the record and the event, so the id the host is
+        # told is the id on disk. Any repository can be downloaded without a
+        # models-list.yaml entry, so name it after the file that arrived rather than
+        # leaving it unidentified.
+        identity = identify_model(metadata_env, fallback_model_id=fallback_model_id(source["model_type"], downloaded))
 
         # Record what was downloaded, then clear the in-progress marker: while the
         # marker is still there the repo directory counts as incomplete, so a crash
         # in between makes the next run retry instead of leaving it unrecorded.
-        write_metadata(
-            output_dir,
-            handler="hf-handler",
-            env=metadata_env,
-            # Any repository can be downloaded without a models-list.yaml entry, so name
-            # it after the file that arrived rather than leaving it unidentified.
-            fallback_model_id=fallback_model_id(source["model_type"], downloaded),
+        recorded = write_metadata(output_dir, handler="hf-handler", env=metadata_env, identity=identity)
+
+        emit_json_info(
+            f"Downloaded to: {output_dir}",
+            artifacts=downloaded,
+            # Named only once the record is on disk. A model no models-list.yaml entry
+            # declares is reconstructed from that record, so without it the model cannot
+            # be listed and reporting an id here would promise one nothing resolves.
+            model_id=identity["model_id"] if recorded else None,
+            size_mb=downloaded_size_mb(downloaded),
         )
 
         marker = Path(output_dir) / MARKER_NAME

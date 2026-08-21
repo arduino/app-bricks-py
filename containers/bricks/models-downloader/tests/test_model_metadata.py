@@ -12,6 +12,7 @@ import yaml
 
 from common.model_metadata import (
     METADATA_NAME,
+    ORIGIN_USER_CONFIGURED,
     collect_inputs,
     identify_model,
     is_bookkeeping_name,
@@ -420,3 +421,18 @@ def test_written_file_is_plain_safe_yaml(tmp_path):
     text = (tmp_path / METADATA_NAME).read_text()
     assert "!!python" not in text
     assert yaml.safe_load(text)["inputs"] == HF_ENV
+
+
+def test_write_uses_a_passed_identity(tmp_path):
+    """A handler reporting the id to the host records the same one, without re-resolving."""
+    identity = {"model_id": "llamacpp:from-caller", "model_origin": ORIGIN_USER_CONFIGURED}
+    write_metadata(str(tmp_path), "hf-handler", env=HF_ENV, models_list_path="", identity=identity)
+
+    data = read_metadata(str(tmp_path))
+    assert data["model_id"] == "llamacpp:from-caller"
+    assert data["model_origin"] == ORIGIN_USER_CONFIGURED
+
+
+def test_write_resolves_the_identity_when_none_is_passed(tmp_path):
+    write_metadata(str(tmp_path), "hf-handler", env=HF_ENV, models_list_path="", fallback_model_id="llamacpp:derived")
+    assert read_metadata(str(tmp_path))["model_id"] == "llamacpp:derived"

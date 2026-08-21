@@ -177,7 +177,15 @@ def metadata_payload(handler, inputs=None, identity=None, downloaded_at=None):
     return payload
 
 
-def write_metadata(model_dir, handler, env=None, models_list_path=MODELS_LIST_PATH, extra_input_keys=(), fallback_model_id=None):
+def write_metadata(
+    model_dir,
+    handler,
+    env=None,
+    models_list_path=MODELS_LIST_PATH,
+    extra_input_keys=(),
+    fallback_model_id=None,
+    identity=None,
+):
     """Write ``<model_dir>/.arduino_metadata.yaml`` atomically; return its path or None.
 
     Called after a successful download and *before* clearing the ``.download``
@@ -187,6 +195,10 @@ def write_metadata(model_dir, handler, env=None, models_list_path=MODELS_LIST_PA
 
     *fallback_model_id* names the model when models-list.yaml does not declare it; pass
     one whenever the handler can download something the list has never heard of.
+
+    *identity* is an already-resolved ``identify_model`` result. A handler that reports
+    the id to the host as well as recording it here passes the same dict to both, so the
+    two can never name the model differently; leave it out to have it resolved here.
     """
     path = os.path.join(model_dir, METADATA_NAME)
     tmp = path + ".tmp"
@@ -194,7 +206,7 @@ def write_metadata(model_dir, handler, env=None, models_list_path=MODELS_LIST_PA
         payload = metadata_payload(
             handler,
             inputs=collect_inputs(env, extra_input_keys),
-            identity=identify_model(env, models_list_path, fallback_model_id),
+            identity=identity if identity is not None else identify_model(env, models_list_path, fallback_model_id),
         )
         os.makedirs(model_dir, exist_ok=True)
         with open(tmp, "w") as f:
