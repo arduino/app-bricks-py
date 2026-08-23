@@ -4,17 +4,20 @@
 
 import argparse
 import configparser
+from collections import Counter
 from pathlib import Path
 
 
 def generate_models_ini(models_dir: Path):
     config = configparser.ConfigParser()
 
-    for gguf_file in sorted(models_dir.rglob("*.gguf")):
-        if "mmproj" in gguf_file.name:
-            continue
-
-        section = gguf_file.stem
+    gguf_files = [p for p in sorted(models_dir.rglob("*.gguf")) if "mmproj" not in p.name]
+    stems = Counter(p.stem for p in gguf_files)
+    for gguf_file in gguf_files:
+        if stems[gguf_file.stem] == 1:
+            section = gguf_file.stem
+        else:
+            section = gguf_file.relative_to(models_dir).with_suffix("").as_posix()
         config[section] = {}
         config[section]["model"] = str(gguf_file.as_posix())
 

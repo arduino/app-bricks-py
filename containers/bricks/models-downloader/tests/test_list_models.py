@@ -712,6 +712,121 @@ def test_main_installed_only_filter(monkeypatch, capsys, tmp_path):
     assert all(m["installed"] for m in models)
 
 
+# --------------------------------------------------------------------------- #
+# Identical GGUF file names from different repositories
+# --------------------------------------------------------------------------- #
+def test_find_llamacpp_same_file_name_in_two_repos_lists_two_models(tmp_path):
+    """Two repositories publishing the same file name are two models, not one.
+
+    Each gets a path-qualified id with its own path, size and download record —
+    the file-stem id would alias them, and delete/status/size would act on
+    whichever file happened to win.
+    """
+    base = tmp_path / "models"
+    unsloth = base / "llamacpp" / "unsloth" / "SmolLM2-GGUF"
+    bartowski = base / "llamacpp" / "bartowski" / "SmolLM2-GGUF"
+    _make_gguf(str(unsloth / "SmolLM2-Q4_K_M.gguf"), size_bytes=1024 * 1024)
+    _make_gguf(str(bartowski / "SmolLM2-Q4_K_M.gguf"), size_bytes=2 * 1024 * 1024)
+    _write_metadata_file(str(unsloth), "inputs:\n  model_url: llamacpp:unsloth/SmolLM2-GGUF:Q4_K_M\n")
+    _write_metadata_file(str(bartowski), "inputs:\n  model_url: llamacpp:bartowski/SmolLM2-GGUF:Q4_K_M\n")
+
+    results = {entry["id"]: entry for entry in list_models.find_llamacpp_models(str(base))}
+
+    assert set(results) == {
+        "llamacpp:unsloth/SmolLM2-GGUF/SmolLM2-Q4_K_M",
+        "llamacpp:bartowski/SmolLM2-GGUF/SmolLM2-Q4_K_M",
+    }
+    for owner, size in (("unsloth", 1.0), ("bartowski", 2.0)):
+        entry = results[f"llamacpp:{owner}/SmolLM2-GGUF/SmolLM2-Q4_K_M"]
+        assert entry["path"].endswith(f"{owner}/SmolLM2-GGUF/SmolLM2-Q4_K_M.gguf")
+        assert entry["disk_size_mb"] == size
+        # Each entry carries its own download record, never the other repository's.
+        assert owner in entry["download_metadata"]["inputs"]["model_url"]
+
+
+def test_main_lists_same_named_ad_hoc_downloads_separately(monkeypatch, capsys, tmp_path):
+    """The reported bug: two ad-hoc downloads sharing a file name merged into one entry."""
+    models_dir, _models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
+    _make_gguf(str(models_dir / "llamacpp" / "unsloth" / "SmolLM2-GGUF" / "SmolLM2-Q4_K_M.gguf"))
+    _make_gguf(str(models_dir / "llamacpp" / "bartowski" / "SmolLM2-GGUF" / "SmolLM2-Q4_K_M.gguf"))
+
+    _models_dir, models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
+    smol = sorted(m["id"] for m in models if "SmolLM2" in m["id"])
+    assert smol == [
+        "llamacpp:bartowski/SmolLM2-GGUF/SmolLM2-Q4_K_M",
+        "llamacpp:unsloth/SmolLM2-GGUF/SmolLM2-Q4_K_M",
+    ]
+
+
+def test_main_ad_hoc_download_cannot_masquerade_as_a_declared_model(monkeypatch, capsys, tmp_path):
+    """A file named like a curated model, from another repository, is not that model.
+
+    The declared entry stays not-installed and the ad-hoc file is listed under a
+    path-qualified id: merging them would let delete/status act on the wrong files.
+    """
+    models_dir, _models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
+    _make_gguf(str(models_dir / "llamacpp" / "bartowski" / "gemma-clone-GGUF" / "gemma-4-E2B_q4_0-it.gguf"))
+
+    _models_dir, models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
+    assert _gemma_entry(models)["installed"] is False
+    clones = [m for m in models if m["id"] == "llamacpp:bartowski/gemma-clone-GGUF/gemma-4-E2B_q4_0-it"]
+    assert len(clones) == 1
+    assert clones[0]["installed"] is True
+    assert clones[0]["model_origin"] == "user_configured"
+
+
+def test_main_declared_model_merges_next_to_its_same_named_clone(monkeypatch, capsys, tmp_path):
+    """With both the declared file and a same-named clone on disk, each keeps its identity."""
+    models_dir, _models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
+    _install_gemma(models_dir)
+    _make_gguf(str(models_dir / "llamacpp" / "bartowski" / "gemma-clone-GGUF" / "gemma-4-E2B_q4_0-it.gguf"))
+
+    _models_dir, models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
+    gemma = _gemma_entry(models)
+    assert gemma["installed"] is True
+    assert gemma["path"].endswith("google/gemma-4-E2B-it-qat-q4_0-gguf/gemma-4-E2B_q4_0-it.gguf")
+    clones = [m for m in models if m["id"] == "llamacpp:bartowski/gemma-clone-GGUF/gemma-4-E2B_q4_0-it"]
+    assert len(clones) == 1
+
+
+def test_main_merges_a_pending_declared_download_by_location(monkeypatch, capsys, tmp_path):
+    """A curated download in progress (marker, no GGUF yet) folds into its entry."""
+    models_dir, _models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
+    repo = os.path.join(str(models_dir), *GEMMA_REPO)
+    os.makedirs(repo)
+    write_marker(
+        str(repo),
+        handler="hf-handler",
+        model_url="https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf/blob/main/gemma-4-E2B_q4_0-it.gguf",
+    )
+
+    _models_dir, models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
+    entry = _gemma_entry(models)
+    assert entry["installed"] is False
+    assert entry["downloading"] is True
+    assert entry["model_origin"] == "builtin"
+
+
+def test_main_never_emits_location_keys(monkeypatch, capsys, tmp_path):
+    models_dir, _models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
+    _install_gemma(models_dir)
+    _make_gguf(str(models_dir / "llamacpp" / "TheBloke" / "Mistral-GGUF" / "mistral.Q4_0.gguf"))
+
+    _models_dir, models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
+    assert all(not key.startswith("_") for m in models for key in m)
+
+
+def test_gguf_basename():
+    url = "https://huggingface.co/org/repo/blob/main/model-Q4_0.gguf"
+    assert list_models.gguf_basename(url) == "model-Q4_0.gguf"
+    assert list_models.gguf_basename(url + "?download=true") == "model-Q4_0.gguf"
+    # A compact key pins a file only when its quantization field names one.
+    assert list_models.gguf_basename("llamacpp:org/repo:model-Q4_0.gguf") == "model-Q4_0.gguf"
+    assert list_models.gguf_basename("llamacpp:org/repo:Q4_K_M") is None
+    assert list_models.gguf_basename("org/repo") is None
+    assert list_models.gguf_basename("") is None
+
+
 def test_main_missing_yaml_exits(monkeypatch, capsys, tmp_path):
     monkeypatch.setattr(
         "sys.argv",

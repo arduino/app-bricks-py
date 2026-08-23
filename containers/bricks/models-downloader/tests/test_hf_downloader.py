@@ -34,6 +34,7 @@ from hugging_face.hf_downloader import (
     discard_incomplete_download,
     download_matched_files,
     fallback_model_id,
+    generate_models_ini,
     gguf_pattern,
     has_model_content,
     interrupted_patterns,
@@ -635,36 +636,118 @@ def test_public_repo_files_returns_the_repo_listing(monkeypatch):
 # --------------------------------------------------------------------------- #
 # fallback_model_id
 # --------------------------------------------------------------------------- #
-def test_fallback_model_id_from_the_downloaded_gguf():
-    assert fallback_model_id("", ["/models/llamacpp/TheBloke/Mistral-GGUF/mistral.Q4_0.gguf"]) == "llamacpp:mistral.Q4_0"
+def _place_gguf(models_dir, rel_path):
+    """Create an empty GGUF at models_dir/rel_path and return its absolute path."""
+    path = models_dir / rel_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"\0")
+    return str(path)
 
 
-def test_fallback_model_id_uses_the_key_model_type_as_namespace():
-    assert fallback_model_id("llamacpp", ["/models/llamacpp/org/repo/m-Q8_0.gguf"]) == "llamacpp:m-Q8_0"
+def test_fallback_model_id_from_the_downloaded_gguf(tmp_path):
+    gguf = _place_gguf(tmp_path, "TheBloke/Mistral-GGUF/mistral.Q4_0.gguf")
+    assert fallback_model_id("", [gguf], str(tmp_path)) == "llamacpp:mistral.Q4_0"
 
 
-def test_fallback_model_id_ignores_mmproj():
+def test_fallback_model_id_uses_the_key_model_type_as_namespace(tmp_path):
+    gguf = _place_gguf(tmp_path, "org/repo/m-Q8_0.gguf")
+    assert fallback_model_id("llamacpp", [gguf], str(tmp_path)) == "llamacpp:m-Q8_0"
+
+
+def test_fallback_model_id_ignores_mmproj(tmp_path):
     """The mmproj belongs to the main GGUF and must never name the model."""
-    files = ["/models/llamacpp/org/repo/mmproj-BF16.gguf", "/models/llamacpp/org/repo/model-Q4_0.gguf"]
-    assert fallback_model_id("", files) == "llamacpp:model-Q4_0"
+    files = [
+        _place_gguf(tmp_path, "org/repo/mmproj-BF16.gguf"),
+        _place_gguf(tmp_path, "org/repo/model-Q4_0.gguf"),
+    ]
+    assert fallback_model_id("", files, str(tmp_path)) == "llamacpp:model-Q4_0"
 
 
-def test_fallback_model_id_without_any_gguf():
-    assert fallback_model_id("", []) is None
-    assert fallback_model_id("", ["/models/llamacpp/org/repo/mmproj-BF16.gguf"]) is None
+def test_fallback_model_id_without_any_gguf(tmp_path):
+    assert fallback_model_id("", [], str(tmp_path)) is None
+    mmproj = _place_gguf(tmp_path, "org/repo/mmproj-BF16.gguf")
+    assert fallback_model_id("", [mmproj], str(tmp_path)) is None
+
+
+def test_fallback_model_id_qualifies_a_file_name_another_repository_also_uses(tmp_path):
+    """Two repositories publishing the same file name must never share one id."""
+    _place_gguf(tmp_path, "unsloth/SmolLM2-GGUF/SmolLM2-Q4_K_M.gguf")
+    gguf = _place_gguf(tmp_path, "bartowski/SmolLM2-GGUF/SmolLM2-Q4_K_M.gguf")
+    assert fallback_model_id("", [gguf], str(tmp_path)) == "llamacpp:bartowski/SmolLM2-GGUF/SmolLM2-Q4_K_M"
 
 
 def test_fallback_model_id_matches_what_the_listing_derives(tmp_path):
-    """The record and the listing must agree on what to call an ad-hoc download."""
+    """The record and the listing must agree on what to call an ad-hoc download.
+
+    Including when two repositories publish the same file name: the downloader sees
+    the llamacpp directory as its models root, the listing sees its parent.
+    """
     import list_models
 
-    gguf = tmp_path / "llamacpp" / "TheBloke" / "Mistral-GGUF" / "mistral.Q4_0.gguf"
-    gguf.parent.mkdir(parents=True)
-    gguf.write_bytes(b"\0")
+    models_dir = tmp_path / "llamacpp"
+    first = _place_gguf(models_dir, "TheBloke/Mistral-GGUF/mistral.Q4_0.gguf")
 
     listed = list_models.find_llamacpp_models(str(tmp_path))
     assert len(listed) == 1
-    assert fallback_model_id("", [str(gguf)]) == listed[0]["id"]
+    assert fallback_model_id("", [first], str(models_dir)) == listed[0]["id"]
+
+    second = _place_gguf(models_dir, "bartowski/Mistral-GGUF/mistral.Q4_0.gguf")
+    listed = {entry["path"]: entry["id"] for entry in list_models.find_llamacpp_models(str(tmp_path))}
+    assert fallback_model_id("", [first], str(models_dir)) == listed[first]
+    assert fallback_model_id("", [second], str(models_dir)) == listed[second]
+
+
+# --------------------------------------------------------------------------- #
+# generate_models_ini
+# --------------------------------------------------------------------------- #
+def _read_models_ini(models_dir):
+    import configparser
+
+    config = configparser.ConfigParser()
+    config.read(models_dir / "models.ini")
+    return config
+
+
+def test_models_ini_sections_are_the_file_stems(tmp_path, capsys):
+    _place_gguf(tmp_path, "unsloth/Qwen3-GGUF/Qwen3-Q4_0.gguf")
+    _place_gguf(tmp_path, "moondream/moondream2-gguf/moondream2-f16.gguf")
+    _place_gguf(tmp_path, "moondream/moondream2-gguf/moondream2-mmproj-f16.gguf")
+
+    generate_models_ini(tmp_path)
+
+    config = _read_models_ini(tmp_path)
+    assert sorted(config.sections()) == ["Qwen3-Q4_0", "moondream2-f16"]
+    assert config["moondream2-f16"]["model"].endswith("moondream2-f16.gguf")
+    assert config["moondream2-f16"]["mmproj"].endswith("moondream2-mmproj-f16.gguf")
+
+
+def test_models_ini_keeps_a_section_per_repository_for_a_shared_file_name(tmp_path, capsys):
+    """Two repositories publishing the same file name: neither may shadow the other."""
+    _place_gguf(tmp_path, "unsloth/SmolLM2-GGUF/SmolLM2-Q4_K_M.gguf")
+    _place_gguf(tmp_path, "bartowski/SmolLM2-GGUF/SmolLM2-Q4_K_M.gguf")
+
+    generate_models_ini(tmp_path)
+
+    config = _read_models_ini(tmp_path)
+    assert sorted(config.sections()) == [
+        "bartowski/SmolLM2-GGUF/SmolLM2-Q4_K_M",
+        "unsloth/SmolLM2-GGUF/SmolLM2-Q4_K_M",
+    ]
+    for section in config.sections():
+        assert config[section]["model"].endswith(f"{section}.gguf")
+
+
+def test_models_ini_returns_to_the_stem_once_the_duplicate_is_gone(tmp_path, capsys):
+    """models.ini is regenerated on every download and delete; names must follow."""
+    _place_gguf(tmp_path, "unsloth/SmolLM2-GGUF/SmolLM2-Q4_K_M.gguf")
+    duplicate = tmp_path / "bartowski/SmolLM2-GGUF/SmolLM2-Q4_K_M.gguf"
+    _place_gguf(tmp_path, "bartowski/SmolLM2-GGUF/SmolLM2-Q4_K_M.gguf")
+
+    generate_models_ini(tmp_path)
+    duplicate.unlink()
+    generate_models_ini(tmp_path)
+
+    assert _read_models_ini(tmp_path).sections() == ["SmolLM2-Q4_K_M"]
 
 
 # --------------------------------------------------------------------------- #

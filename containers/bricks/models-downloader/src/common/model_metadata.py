@@ -37,7 +37,10 @@ Contracts callers must honour:
 - ``model_id`` is always set for a model that downloaded successfully, curated or not.
   A user-configured model has no entry key to borrow, so the handler supplies a
   ``fallback_model_id`` derived from what it fetched, matching the id the listing
-  reports for the same files.
+  reports for the same files. That id is a snapshot: if a same-named file is later
+  downloaded from another repository, the listing path-qualifies both ids (see
+  ``common/gguf_naming.py``) and the recorded one goes stale. The listing, derived
+  from the filesystem, is the authority.
 - Nothing else is copied out of models-list.yaml. ``model_id`` points back at the
   entry, and every other field of it (name, description, source, model_size_mb, ...)
   is read from models-list.yaml itself rather than duplicated — and left to go stale —

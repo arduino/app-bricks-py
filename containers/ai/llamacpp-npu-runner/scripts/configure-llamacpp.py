@@ -19,6 +19,7 @@ Usage:
 import argparse
 import configparser
 import sys
+from collections import Counter
 from pathlib import Path
 from typing import NamedTuple
 
@@ -191,10 +192,9 @@ def find_models(models_dir: Path):
     """Return {model name: {"model": path, "mmproj": path}} for every model in models_dir."""
     models = {}
 
-    for gguf_file in sorted(models_dir.rglob("*.gguf")):
-        if "mmproj" in gguf_file.name:
-            continue
-
+    gguf_files = [p for p in sorted(models_dir.rglob("*.gguf")) if "mmproj" not in p.name]
+    stems = Counter(p.stem for p in gguf_files)
+    for gguf_file in gguf_files:
         entry = {"model": gguf_file.as_posix()}
 
         # Look for mmproj file in the same directory
@@ -202,7 +202,11 @@ def find_models(models_dir: Path):
         if mmproj_files:
             entry["mmproj"] = mmproj_files[0].as_posix()
 
-        models[gguf_file.stem] = entry
+        if stems[gguf_file.stem] == 1:
+            name = gguf_file.stem
+        else:
+            name = gguf_file.relative_to(models_dir).with_suffix("").as_posix()
+        models[name] = entry
 
     return models
 
