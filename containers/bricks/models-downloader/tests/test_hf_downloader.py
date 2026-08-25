@@ -644,14 +644,19 @@ def _place_gguf(models_dir, rel_path):
     return str(path)
 
 
-def test_fallback_model_id_from_the_downloaded_gguf(tmp_path):
+def test_fallback_model_id_is_the_path_qualified_name(tmp_path):
+    """An ad-hoc download is named by its repository-qualified path, from birth.
+
+    Stable for the whole life of the install, and never shared with a same-named
+    file from another repository.
+    """
     gguf = _place_gguf(tmp_path, "TheBloke/Mistral-GGUF/mistral.Q4_0.gguf")
-    assert fallback_model_id("", [gguf], str(tmp_path)) == "llamacpp:mistral.Q4_0"
+    assert fallback_model_id("", [gguf], str(tmp_path)) == "llamacpp:TheBloke/Mistral-GGUF/mistral.Q4_0"
 
 
 def test_fallback_model_id_uses_the_key_model_type_as_namespace(tmp_path):
     gguf = _place_gguf(tmp_path, "org/repo/m-Q8_0.gguf")
-    assert fallback_model_id("llamacpp", [gguf], str(tmp_path)) == "llamacpp:m-Q8_0"
+    assert fallback_model_id("llamacpp", [gguf], str(tmp_path)) == "llamacpp:org/repo/m-Q8_0"
 
 
 def test_fallback_model_id_ignores_mmproj(tmp_path):
@@ -660,7 +665,7 @@ def test_fallback_model_id_ignores_mmproj(tmp_path):
         _place_gguf(tmp_path, "org/repo/mmproj-BF16.gguf"),
         _place_gguf(tmp_path, "org/repo/model-Q4_0.gguf"),
     ]
-    assert fallback_model_id("", files, str(tmp_path)) == "llamacpp:model-Q4_0"
+    assert fallback_model_id("", files, str(tmp_path)) == "llamacpp:org/repo/model-Q4_0"
 
 
 def test_fallback_model_id_without_any_gguf(tmp_path):
@@ -669,11 +674,11 @@ def test_fallback_model_id_without_any_gguf(tmp_path):
     assert fallback_model_id("", [mmproj], str(tmp_path)) is None
 
 
-def test_fallback_model_id_qualifies_a_file_name_another_repository_also_uses(tmp_path):
-    """Two repositories publishing the same file name must never share one id."""
-    _place_gguf(tmp_path, "unsloth/SmolLM2-GGUF/SmolLM2-Q4_K_M.gguf")
-    gguf = _place_gguf(tmp_path, "bartowski/SmolLM2-GGUF/SmolLM2-Q4_K_M.gguf")
-    assert fallback_model_id("", [gguf], str(tmp_path)) == "llamacpp:bartowski/SmolLM2-GGUF/SmolLM2-Q4_K_M"
+def test_fallback_model_id_keeps_the_stem_for_a_catalog_declared_file(tmp_path, monkeypatch):
+    """A file downloaded at the location the baked catalog declares is that curated model."""
+    monkeypatch.setattr(hf_downloader, "catalog_gguf_declarations", lambda: [("org/repo", "model-Q4_0.gguf", "llamacpp:model-Q4_0")])
+    gguf = _place_gguf(tmp_path, "org/repo/model-Q4_0.gguf")
+    assert fallback_model_id("", [gguf], str(tmp_path)) == "llamacpp:model-Q4_0"
 
 
 def test_fallback_model_id_matches_what_the_listing_derives(tmp_path):
@@ -708,15 +713,17 @@ def _read_models_ini(models_dir):
     return config
 
 
-def test_models_ini_sections_are_the_file_stems(tmp_path, capsys):
-    _place_gguf(tmp_path, "unsloth/Qwen3-GGUF/Qwen3-Q4_0.gguf")
+def test_models_ini_names_declared_files_by_stem_and_ad_hoc_files_by_path(tmp_path, capsys):
+    """Curated files serve under the stem their fixed id uses; ad-hoc under their path."""
     _place_gguf(tmp_path, "moondream/moondream2-gguf/moondream2-f16.gguf")
     _place_gguf(tmp_path, "moondream/moondream2-gguf/moondream2-mmproj-f16.gguf")
+    _place_gguf(tmp_path, "unsloth/Qwen3-GGUF/Qwen3-Q4_0.gguf")
+    declarations = [("moondream/moondream2-gguf", "moondream2-f16.gguf", "llamacpp:moondream2-f16")]
 
-    generate_models_ini(tmp_path)
+    generate_models_ini(tmp_path, declarations)
 
     config = _read_models_ini(tmp_path)
-    assert sorted(config.sections()) == ["Qwen3-Q4_0", "moondream2-f16"]
+    assert sorted(config.sections()) == ["moondream2-f16", "unsloth/Qwen3-GGUF/Qwen3-Q4_0"]
     assert config["moondream2-f16"]["model"].endswith("moondream2-f16.gguf")
     assert config["moondream2-f16"]["mmproj"].endswith("moondream2-mmproj-f16.gguf")
 
@@ -737,8 +744,22 @@ def test_models_ini_keeps_a_section_per_repository_for_a_shared_file_name(tmp_pa
         assert config[section]["model"].endswith(f"{section}.gguf")
 
 
-def test_models_ini_returns_to_the_stem_once_the_duplicate_is_gone(tmp_path, capsys):
-    """models.ini is regenerated on every download and delete; names must follow."""
+def test_models_ini_keeps_the_curated_stem_next_to_a_same_named_impostor(tmp_path, capsys):
+    """A file named like a curated model, from another repository, never answers to its name."""
+    _place_gguf(tmp_path, "google/gemma-gguf/gemma-Q4_0.gguf")
+    _place_gguf(tmp_path, "bartowski/gemma-clone-GGUF/gemma-Q4_0.gguf")
+    declarations = [("google/gemma-gguf", "gemma-Q4_0.gguf", "llamacpp:gemma-Q4_0")]
+
+    generate_models_ini(tmp_path, declarations)
+
+    config = _read_models_ini(tmp_path)
+    assert sorted(config.sections()) == ["bartowski/gemma-clone-GGUF/gemma-Q4_0", "gemma-Q4_0"]
+    # The curated name serves the curated file, whatever else is installed.
+    assert config["gemma-Q4_0"]["model"].endswith("google/gemma-gguf/gemma-Q4_0.gguf")
+
+
+def test_models_ini_ad_hoc_names_are_stable_across_regenerations(tmp_path, capsys):
+    """models.ini is regenerated on every download and delete; ad-hoc names never move."""
     _place_gguf(tmp_path, "unsloth/SmolLM2-GGUF/SmolLM2-Q4_K_M.gguf")
     duplicate = tmp_path / "bartowski/SmolLM2-GGUF/SmolLM2-Q4_K_M.gguf"
     _place_gguf(tmp_path, "bartowski/SmolLM2-GGUF/SmolLM2-Q4_K_M.gguf")
@@ -747,7 +768,7 @@ def test_models_ini_returns_to_the_stem_once_the_duplicate_is_gone(tmp_path, cap
     duplicate.unlink()
     generate_models_ini(tmp_path)
 
-    assert _read_models_ini(tmp_path).sections() == ["SmolLM2-Q4_K_M"]
+    assert _read_models_ini(tmp_path).sections() == ["unsloth/SmolLM2-GGUF/SmolLM2-Q4_K_M"]
 
 
 # --------------------------------------------------------------------------- #

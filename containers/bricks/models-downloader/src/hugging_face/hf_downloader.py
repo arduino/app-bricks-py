@@ -68,7 +68,9 @@ interrupted or failed download only discards the files it was fetching, never a 
 quantization that finished earlier.
 
 After all files are downloaded, ``models.ini`` is written to ``<output-dir>``
-mapping each model stem to its GGUF path (and mmproj path where present).
+mapping each model name to its GGUF path (and mmproj path where present); names
+follow ``common/gguf_naming.py`` — the file stem for models the curated catalog
+declares, the output-dir-relative path for ad-hoc downloads.
 """
 
 import fnmatch
@@ -96,7 +98,7 @@ import json
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from common.download_marker import MARKER_NAME, read_marker, write_marker
-from common.gguf_naming import gguf_model_names
+from common.gguf_naming import catalog_gguf_declarations, gguf_model_name
 from common.model_metadata import is_bookkeeping_name, write_metadata
 
 # Quantization used when a model key names only a repository. Q4_0 is the quantization
@@ -750,21 +752,20 @@ def fallback_model_id(model_type: str, downloaded: list[str], models_dir: str) -
     """Name a model that no models-list.yaml entry declares, from the files fetched.
 
     Built as ``<namespace>:<model name>`` with the naming ``list_models.py`` and
-    models.ini share, so the record and the listing agree on what to call an ad-hoc
-    download. mmproj files belong to the main GGUF and never name the model.
+    models.ini share (``gguf_model_name`` against the catalog baked into the image),
+    so the record and the listing agree on what to call an ad-hoc download. mmproj
+    files belong to the main GGUF and never name the model.
     """
     main_gguf = next((p for p in sorted(downloaded) if "mmproj" not in os.path.basename(p)), None)
     if not main_gguf:
         return None
-    base = Path(models_dir).resolve()
-    all_ggufs = [p for p in sorted(base.rglob("*.gguf")) if "mmproj" not in p.name]
-    names = gguf_model_names([p.relative_to(base).as_posix() for p in all_ggufs])
     try:
-        name = names[Path(main_gguf).resolve().relative_to(base).as_posix()]
-    except (KeyError, ValueError):  # not under models_dir: name it by its stem alone
+        rel = Path(main_gguf).resolve().relative_to(Path(models_dir).resolve()).as_posix()
+        name = gguf_model_name(rel, catalog_gguf_declarations())
+    except ValueError:  # not under models_dir: name it by its stem alone
         name = Path(main_gguf).stem
     # The key's model_type is the namespace when given; llamacpp is where GGUF models
-    # live, and the prefix list_models.py uses (see its LLAMACPP_SUBDIR).
+    # live, and the prefix list_models.py uses (see common/gguf_naming.py).
     return f"{model_type or 'llamacpp'}:{name}"
 
 
@@ -847,20 +848,22 @@ def delete_matched_files(output_dir: str, models_base: str, allow_pattern: str, 
             d.rmdir()
 
 
-def generate_models_ini(models_dir: Path):
+def generate_models_ini(models_dir: Path, declarations=None):
     """Write the models.ini indexing every GGUF under *models_dir*.
 
-    Sections are the names ``gguf_model_names`` assigns — the file stem, or the
-    models_dir-relative path when two repositories publish the same file name — so
-    every file keeps its own section instead of one silently shadowing the other,
-    and each section matches the listing id of the same file.
+    Sections are the names ``gguf_model_name`` assigns — the file stem for a model
+    the curated catalog declares, the models_dir-relative path for an ad-hoc one —
+    so every file keeps its own section instead of one silently shadowing the
+    other, and each section matches the listing id of the same file. *declarations*
+    defaults to the catalog baked into the image.
     """
+    if declarations is None:
+        declarations = catalog_gguf_declarations()
     config = configparser.ConfigParser()
 
     gguf_files = [p for p in sorted(models_dir.rglob("*.gguf")) if "mmproj" not in p.name]
-    names = gguf_model_names([p.relative_to(models_dir).as_posix() for p in gguf_files])
     for gguf_file in gguf_files:
-        section = names[gguf_file.relative_to(models_dir).as_posix()]
+        section = gguf_model_name(gguf_file.relative_to(models_dir).as_posix(), declarations)
         config[section] = {}
         config[section]["model"] = str(gguf_file.as_posix())
 

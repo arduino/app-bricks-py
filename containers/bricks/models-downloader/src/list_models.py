@@ -26,9 +26,9 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common.download_marker import read_marker
-from common.gguf_naming import gguf_model_names
+from common.gguf_naming import LLAMACPP_SUBDIR, declaration_covers, declared_gguf_files, gguf_basename, gguf_model_name
 from common.model_metadata import METADATA_NAME, ORIGIN_BUILTIN, ORIGIN_USER_CONFIGURED, is_bookkeeping_name, read_metadata
-from common.models_list import load_models_list, MODELS_LIST_PATH
+from common.models_list import get_model_subdir, load_models_list, MODELS_LIST_PATH
 
 
 MODELS_BASE_DIR = "/models"
@@ -104,27 +104,6 @@ def get_model_info(model_entry):
                     })
 
     return results
-
-
-def get_model_subdir(models_repository):
-    """Extract the relative subfolder from models_repository path.
-
-    e.g. "/var/lib/arduino-app-cli/models/audio-analytics/tts" -> "audio-analytics/tts"
-         "/var/lib/arduino-app-cli/models/genai" -> "genai"
-         "models/genai" -> "genai"
-         "models/audio-analytics/asr" -> "audio-analytics/asr"
-    """
-    marker = "/models/"
-    idx = models_repository.rfind(marker)
-    if idx != -1:
-        return models_repository[idx + len(marker) :]
-    # Handle relative paths like "models/genai" or "models/audio-analytics/asr"
-    if models_repository.startswith("models/"):
-        return models_repository[len("models/") :]
-    # Bare repository name (e.g. "edge-impulse", "genai") => use as-is
-    if models_repository:
-        return models_repository
-    return ""
 
 
 def build_model_directory(variables):
@@ -302,9 +281,6 @@ def outdated_fields(model_info, metadata):
     return sorted(key for key, value in variables.items() if str(value) != inputs.get(key))
 
 
-LLAMACPP_SUBDIR = "llamacpp"
-
-
 def llamacpp_name_from_marker(marker, root):
     """Derive a model name for an in-progress llamacpp download from its marker.
 
@@ -325,17 +301,6 @@ def llamacpp_name_from_marker(marker, root):
     return os.path.basename(root.rstrip(os.sep))
 
 
-def gguf_basename(model_url):
-    """The GGUF file name *model_url* pins, or None when it does not pin one.
-
-    Works on both syntaxes hf_downloader accepts: the basename of a file URL, or a
-    compact key whose quantization field is a full file name
-    ("org/repo:model-Q4_0.gguf"). A key naming only a quantization pins no file.
-    """
-    base = (model_url or "").split("?")[0].rstrip("/").rsplit("/", 1)[-1].rsplit(":", 1)[-1]
-    return base if base.endswith(".gguf") else None
-
-
 def marker_covers_file(marker, filename):
     """True when *marker* describes an in-progress download of *filename*.
 
@@ -352,31 +317,31 @@ def marker_covers_file(marker, filename):
     return any(isinstance(p, str) and fnmatch.fnmatch(filename, p) for p in patterns)
 
 
-def find_llamacpp_models(models_base_dir):
+def find_llamacpp_models(models_base_dir, declarations=()):
     """Scan for .gguf models under the llamacpp directory.
 
     Mirrors the grouping used when generating models.ini: ``*mmproj*.gguf``
     files are not standalone models but the multimodal projection belonging to
     the main GGUF in the same directory, so they are not listed separately.
 
-    Models are named with ``gguf_model_names``, mirroring the models.ini sections: the
-    file stem, path-qualified when two repositories publish the same file name — each
-    file is one model with its own id, path and size, never merged with a same-named
-    stranger.
+    Models are named with ``gguf_model_name`` against *declarations*
+    (``declared_gguf_files`` of models-list.yaml), mirroring the models.ini sections:
+    the file stem for a declared file, the path-qualified name for an ad-hoc one —
+    each file is one model with its own id, path and size, never merged with a
+    same-named stranger.
 
     A download with no GGUF on disk yet (only a ".download" marker) is still surfaced,
     using the marker info for the entry — including when the directory does hold other
     GGUFs, since those are other quantizations rather than the pending model.
+
+    Every entry carries the private ``_rel_dir``/``_filename`` location keys main()
+    matches against the models-list.yaml declarations and strips before output.
     """
     llamacpp_dir = os.path.join(models_base_dir, LLAMACPP_SUBDIR)
     results = []
     if not os.path.isdir(llamacpp_dir):
         return results
 
-    # First pass over the whole tree, so a file name two repositories share is seen
-    # and both models get path-qualified names.
-    found = []
-    rel_paths = []
     for root, _dirs, files in os.walk(llamacpp_dir):
         gguf_files = sorted(f for f in files if f.endswith(".gguf"))
         marker = read_marker(os.path.join(root, ".download"))
@@ -384,11 +349,6 @@ def find_llamacpp_models(models_base_dir):
             continue
         rel_dir = os.path.relpath(root, llamacpp_dir).replace(os.sep, "/")
         rel_dir = "" if rel_dir == "." else rel_dir
-        found.append((root, rel_dir, gguf_files, marker))
-        rel_paths.extend(f"{rel_dir}/{f}" if rel_dir else f for f in gguf_files if "mmproj" not in f)
-    names = gguf_model_names(rel_paths)
-
-    for root, rel_dir, gguf_files, marker in found:
         mmproj_files = [f for f in gguf_files if "mmproj" in f]
         metadata = read_metadata(os.path.join(root, METADATA_NAME))
 
@@ -401,7 +361,7 @@ def find_llamacpp_models(models_base_dir):
             downloading = marker is not None and marker_covers_file(marker, f)
             marker_listed = marker_listed or downloading
             full_path = os.path.join(root, f)
-            model_name = names[f"{rel_dir}/{f}" if rel_dir else f]
+            model_name = gguf_model_name(f"{rel_dir}/{f}" if rel_dir else f, declarations)
             disk_size_mb = get_dir_size_mb(full_path)
             # The mmproj file in the same directory is part of this model.
             if mmproj_files:
@@ -432,6 +392,12 @@ def find_llamacpp_models(models_base_dir):
         # pending model from the marker so it still shows up in the listing.
         if marker is not None and not marker_listed:
             model_name = llamacpp_name_from_marker(marker, root)
+            filename = gguf_basename(marker.get("model_url"))
+            # Same naming as an installed file: declared downloads keep the marker
+            # name (main() merges them into their entry), ad-hoc ones are qualified
+            # by location so the id matches the one the finished install will get.
+            if not any(declaration_covers(d, n, rel_dir, filename) for d, n, _mid in declarations):
+                model_name = f"{rel_dir}/{model_name}" if rel_dir else model_name
             entry = {
                 "id": f"llamacpp:{model_name}",
                 "name": model_name,
@@ -441,7 +407,7 @@ def find_llamacpp_models(models_base_dir):
                 "installed": False,
                 "downloading": True,
                 "_rel_dir": rel_dir,
-                "_filename": gguf_basename(marker.get("model_url")),
+                "_filename": filename,
             }
             if metadata is not None:
                 entry["download_metadata"] = metadata
@@ -449,37 +415,18 @@ def find_llamacpp_models(models_base_dir):
     return results
 
 
-def curated_gguf_declarations(all_models, models_base_dir):
-    """The file location each llamacpp-backed models-list.yaml entry declares.
-
-    Returns:
-        ``(model_directory, filename, model_id)`` tuples, deduplicated across the
-        per-board platform repeats. ``filename`` is None when the entry's model_url
-        pins no file (a compact key naming a quantization); any GGUF inside the
-        directory then counts as the model.
-    """
-    llamacpp_dir = os.path.normpath(os.path.join(models_base_dir, LLAMACPP_SUBDIR))
-    declarations = []
-    for info in all_models:
-        if info.get("pre_loaded") or not info.get("model_directory"):
-            continue
-        if os.path.normpath(model_search_dir(info, models_base_dir)) != llamacpp_dir:
-            continue
-        filename = gguf_basename((info.get("variables") or {}).get("model_url", ""))
-        declaration = (info["model_directory"].strip("/"), filename, info["id"])
-        if declaration not in declarations:
-            declarations.append(declaration)
-    return declarations
-
-
 def declared_model_id(declarations, rel_dir, filename, taken):
-    """The id of the models-list.yaml entry declaring the GGUF at *rel_dir*/*filename*."""
+    """The id of the models-list.yaml entry declaring the GGUF at *rel_dir*/*filename*.
+
+    A declaration matches at most one file per listing — *taken* holds the ids
+    already matched — so a directory-level declaration cannot absorb every
+    quantization sharing the repository directory. None when no entry declares the
+    file: an ad-hoc download.
+    """
     for directory, declared_name, model_id in declarations:
         if model_id in taken:
             continue
-        if rel_dir != directory and not rel_dir.startswith(directory + "/"):
-            continue
-        if declared_name is None or declared_name == filename:
+        if declaration_covers(directory, declared_name, rel_dir, filename):
             return model_id
     return None
 
@@ -584,9 +531,9 @@ def main():
     # filesystem status is merged into that entry instead of listing the model twice.
     # Anything else is an ad-hoc download and is listed as its own entry.
     by_id = {entry["id"]: entry for entry in results}
-    declarations = curated_gguf_declarations(all_models, args.models_dir)
+    declarations = declared_gguf_files(models_list)
     merged_ids = set()
-    for m in find_llamacpp_models(args.models_dir):
+    for m in find_llamacpp_models(args.models_dir, declarations):
         rel_dir = m.pop("_rel_dir")
         filename = m.pop("_filename")
         declared_id = declared_model_id(declarations, rel_dir, filename, merged_ids)

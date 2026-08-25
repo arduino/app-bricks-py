@@ -17,6 +17,27 @@ def load_models_list(yaml_path):
     return data.get("models", [])
 
 
+def get_model_subdir(models_repository):
+    """Extract the relative subfolder from a models_repository path.
+
+    e.g. "/var/lib/arduino-app-cli/models/audio-analytics/tts" -> "audio-analytics/tts"
+         "/var/lib/arduino-app-cli/models/genai" -> "genai"
+         "models/genai" -> "genai"
+         "models/audio-analytics/asr" -> "audio-analytics/asr"
+    """
+    marker = "/models/"
+    idx = models_repository.rfind(marker)
+    if idx != -1:
+        return models_repository[idx + len(marker) :]
+    # Handle relative paths like "models/genai" or "models/audio-analytics/asr"
+    if models_repository.startswith("models/"):
+        return models_repository[len("models/") :]
+    # Bare repository name (e.g. "edge-impulse", "genai") => use as-is
+    if models_repository:
+        return models_repository
+    return ""
+
+
 def _iter_platform_variables(models):
     """Yield ``(model_id, model_data, platform_name, variables)`` for every deployment platform."""
     for entry in models:

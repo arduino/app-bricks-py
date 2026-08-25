@@ -176,17 +176,29 @@ def test_name_from_marker_root_fallback():
 # find_llamacpp_models
 # --------------------------------------------------------------------------- #
 def test_find_llamacpp_single_model(tmp_path):
+    """An ad-hoc model is named by its path — stable, and unique by construction."""
     base = tmp_path / "models"
     _make_gguf(str(base / "llamacpp" / "repo" / "model-a.gguf"))
     results = list_models.find_llamacpp_models(str(base))
     assert len(results) == 1
     entry = results[0]
-    assert entry["id"] == "llamacpp:model-a"
-    assert entry["name"] == "model-a"
+    assert entry["id"] == "llamacpp:repo/model-a"
+    assert entry["name"] == "repo/model-a"
     assert entry["handler"] == "llamacpp"
     assert entry["installed"] is True
     assert entry["downloading"] is False
     assert "mmproj" not in entry
+
+
+def test_find_llamacpp_declared_model_keeps_its_stem_name(tmp_path):
+    """A file at a location models-list.yaml declares keeps the stem the entry's id uses."""
+    base = tmp_path / "models"
+    _make_gguf(str(base / "llamacpp" / "repo" / "model-a.gguf"))
+    declarations = [("repo", "model-a.gguf", "llamacpp:model-a")]
+    results = list_models.find_llamacpp_models(str(base), declarations)
+    assert len(results) == 1
+    assert results[0]["id"] == "llamacpp:model-a"
+    assert results[0]["name"] == "model-a"
 
 
 def test_find_llamacpp_groups_mmproj(tmp_path):
@@ -198,7 +210,7 @@ def test_find_llamacpp_groups_mmproj(tmp_path):
     # The mmproj file is grouped into the text model, not listed separately.
     assert len(results) == 1
     entry = results[0]
-    assert entry["name"] == "moondream2-text-model-f16"
+    assert entry["name"] == "moondream/moondream2-gguf/moondream2-text-model-f16"
     assert entry["mmproj"].endswith("moondream2-mmproj-f16.gguf")
     # disk size is the sum of both files (1 MB + 0.5 MB).
     assert entry["disk_size_mb"] == 1.5
@@ -227,9 +239,10 @@ def test_find_llamacpp_empty_folder_with_marker(tmp_path):
     results = list_models.find_llamacpp_models(str(base))
     assert len(results) == 1
     entry = results[0]
-    # Name comes from the .gguf filename in the marker url.
-    assert entry["id"] == "llamacpp:gemma-4-E2B_q4_0-it"
-    assert entry["name"] == "gemma-4-E2B_q4_0-it"
+    # Ad-hoc pending download: the .gguf filename from the marker url, qualified by
+    # location — the same id the finished install will get.
+    assert entry["id"] == "llamacpp:google/gemma-4-E2B-it-qat-q4_0-gguf/gemma-4-E2B_q4_0-it"
+    assert entry["name"] == "google/gemma-4-E2B-it-qat-q4_0-gguf/gemma-4-E2B_q4_0-it"
     assert entry["installed"] is False
     assert entry["downloading"] is True
 
@@ -256,11 +269,13 @@ def test_find_llamacpp_marker_leaves_another_quantization_installed(tmp_path):
     )
 
     results = {entry["id"]: entry for entry in list_models.find_llamacpp_models(str(base))}
-    assert results["llamacpp:Qwen3-0.6B-Q4_0"]["installed"] is True
-    assert results["llamacpp:Qwen3-0.6B-Q4_0"]["downloading"] is False
+    installed = results["llamacpp:unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q4_0"]
+    assert installed["installed"] is True
+    assert installed["downloading"] is False
     # The one on its way is still surfaced from the marker, next to the installed one.
-    assert results["llamacpp:Qwen3-0.6B-Q3_K_S"]["installed"] is False
-    assert results["llamacpp:Qwen3-0.6B-Q3_K_S"]["downloading"] is True
+    pending = results["llamacpp:unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q3_K_S"]
+    assert pending["installed"] is False
+    assert pending["downloading"] is True
 
 
 def test_find_llamacpp_marker_for_a_gguf_on_disk_lists_it_once(tmp_path):
@@ -271,7 +286,7 @@ def test_find_llamacpp_marker_for_a_gguf_on_disk_lists_it_once(tmp_path):
 
     results = list_models.find_llamacpp_models(str(base))
     assert len(results) == 1
-    assert results[0]["id"] == "llamacpp:Qwen3-0.6B-Q3_K_S"
+    assert results[0]["id"] == "llamacpp:unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q3_K_S"
     assert results[0]["downloading"] is True
 
 
@@ -587,7 +602,7 @@ def test_main_lists_an_unlisted_model_with_its_metadata(monkeypatch, capsys, tmp
     _write_metadata_file(repo, "handler: hf-handler\nmodel_id: llamacpp:mistral.Q4_0\nmodel_origin: user_configured\n")
 
     _models_dir, models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
-    entries = [m for m in models if m["id"] == "llamacpp:mistral.Q4_0"]
+    entries = [m for m in models if m["id"] == "llamacpp:TheBloke/Mistral-7B-Instruct-v0.2-GGUF/mistral.Q4_0"]
     assert len(entries) == 1
     entry = entries[0]
     assert entry["installed"] is True
