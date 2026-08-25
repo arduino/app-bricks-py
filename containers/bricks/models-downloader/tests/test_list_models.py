@@ -831,6 +831,64 @@ def test_main_never_emits_location_keys(monkeypatch, capsys, tmp_path):
     assert all(not key.startswith("_") for m in models for key in m)
 
 
+MULTI_BOARD_YAML = """\
+models:
+ - "llamacpp:multi-Q4_0":
+    name: "Multi board"
+    supported_boards: ["ventunoq", "unoq"]
+    deployment:
+      handler: "hf-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              model_url: "https://huggingface.co/org/multi-gguf/blob/ventunosha/multi-Q4_0.gguf"
+              models_repository: "llamacpp"
+              model_directory: "org/multi-gguf"
+        - unoq:
+            variables:
+              model_url: "https://huggingface.co/org/multi-gguf/blob/unosha/multi-Q4_0.gguf"
+              models_repository: "llamacpp"
+              model_directory: "org/multi-gguf"
+"""
+
+
+def test_main_lists_a_multi_platform_entry_once(monkeypatch, capsys, tmp_path):
+    """An entry declaring several board platforms is one model, not one row per board."""
+    models_dir, models = _run_main(monkeypatch, capsys, tmp_path, MULTI_BOARD_YAML)
+    assert [m["id"] for m in models] == ["llamacpp:multi-Q4_0"]
+
+    # And the single row is the one the filesystem merge updates.
+    _make_gguf(str(models_dir / "llamacpp" / "org" / "multi-gguf" / "multi-Q4_0.gguf"))
+    _models_dir, models = _run_main(monkeypatch, capsys, tmp_path, MULTI_BOARD_YAML)
+    assert len(models) == 1
+    assert models[0]["installed"] is True
+
+
+def test_main_dedup_prefers_the_platform_of_the_listed_board(monkeypatch, capsys, tmp_path):
+    """When per-board variables differ, the outdated check must use this board's."""
+    models_dir, _models = _run_main(monkeypatch, capsys, tmp_path, MULTI_BOARD_YAML)
+    repo = models_dir / "llamacpp" / "org" / "multi-gguf"
+    _make_gguf(str(repo / "multi-Q4_0.gguf"))
+    # Downloaded from the revision the unoq platform declares.
+    _write_metadata_file(
+        str(repo),
+        "inputs:\n"
+        '  model_url: "https://huggingface.co/org/multi-gguf/blob/unosha/multi-Q4_0.gguf"\n'
+        "  models_repository: llamacpp\n"
+        "  model_directory: org/multi-gguf\n",
+    )
+
+    monkeypatch.setenv("BOARD_NAME", "unoq")
+    _models_dir, models = _run_main(monkeypatch, capsys, tmp_path, MULTI_BOARD_YAML)
+    assert models[0]["outdated"] is False
+
+    monkeypatch.setenv("BOARD_NAME", "ventunoq")
+    list_models._SEARCH_DIR_CACHE.clear()
+    _models_dir, models = _run_main(monkeypatch, capsys, tmp_path, MULTI_BOARD_YAML)
+    assert models[0]["outdated"] is True
+    assert models[0]["outdated_fields"] == ["model_url"]
+
+
 def test_gguf_basename():
     url = "https://huggingface.co/org/repo/blob/main/model-Q4_0.gguf"
     assert list_models.gguf_basename(url) == "model-Q4_0.gguf"

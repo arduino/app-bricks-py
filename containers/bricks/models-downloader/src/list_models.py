@@ -99,8 +99,8 @@ def get_model_info(model_entry):
                         "model_size_mb": model_size_mb,
                         "pre_loaded": False,
                         "supported_boards": supported_boards,
-                        # Kept for the outdated check; never part of the output.
-                        "variables": variables,
+                        "platform": platform_name,  # Kept for the per-board dedup; never part of the output.
+                        "variables": variables,  # Kept for the outdated check; never part of the output.
                     })
 
     return results
@@ -481,6 +481,15 @@ def main():
     # Filter by supported board
     if args.supported_board:
         all_models = [m for m in all_models if not m["supported_boards"] or args.supported_board in m["supported_boards"]]
+
+    # Keep the platform of the board being listed (its variables drive the outdated check); the first one otherwise
+    board = args.supported_board or os.environ.get("BOARD_NAME", "")
+    deduped = {}
+    for info in all_models:
+        current = deduped.get(info["id"])
+        if current is None or (board and info.get("platform") == board and current.get("platform") != board):
+            deduped[info["id"]] = info
+    all_models = list(deduped.values())
 
     results = []
     for model_info in all_models:
