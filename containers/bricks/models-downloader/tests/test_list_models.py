@@ -831,6 +831,60 @@ def test_main_never_emits_location_keys(monkeypatch, capsys, tmp_path):
     assert all(not key.startswith("_") for m in models for key in m)
 
 
+def test_main_supports_promoting_an_ad_hoc_model_to_the_curated_list(monkeypatch, capsys, tmp_path):
+    """An ad-hoc install adopted by a later catalog release becomes that curated model.
+
+    Nothing on the board changes — the same files and record are re-read against the
+    new catalog: the entry lists as installed under its curated id (the old path
+    id disappears), and the recorded inputs, made against no declaration, flag it
+    outdated so the host can offer the pinned re-download.
+    """
+    promoted_yaml = (
+        SAMPLE_YAML
+        + """\
+ - "llamacpp:SmolLM2-135M-Instruct-Q4_K_M":
+    name: "SmolLM2 135M"
+    supported_boards: ["ventunoq"]
+    deployment:
+      handler: "hf-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              model_url: "https://huggingface.co/unsloth/SmolLM2-135M-Instruct-GGUF/blob/pinned0sha/SmolLM2-135M-Instruct-Q4_K_M.gguf"
+              models_repository: "llamacpp"
+              model_directory: "unsloth/SmolLM2-135M-Instruct-GGUF"
+"""
+    )
+    # Release N: downloaded ad hoc, no catalog entry.
+    models_dir, _models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
+    repo = models_dir / "llamacpp" / "unsloth" / "SmolLM2-135M-Instruct-GGUF"
+    _make_gguf(str(repo / "SmolLM2-135M-Instruct-Q4_K_M.gguf"))
+    _write_metadata_file(
+        str(repo),
+        "model_origin: user_configured\n"
+        "model_id: llamacpp:unsloth/SmolLM2-135M-Instruct-GGUF/SmolLM2-135M-Instruct-Q4_K_M\n"
+        "inputs:\n"
+        "  model_url: llamacpp:unsloth/SmolLM2-135M-Instruct-GGUF:Q4_K_M\n"
+        "  models_repository: llamacpp\n"
+        "  model_directory: unsloth/SmolLM2-135M-Instruct-GGUF\n",
+    )
+    _models_dir, models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
+    assert [m["id"] for m in models if "SmolLM2" in m["id"]] == ["llamacpp:unsloth/SmolLM2-135M-Instruct-GGUF/SmolLM2-135M-Instruct-Q4_K_M"]
+
+    # Release N+1: the catalog now declares the same location.
+    list_models._SEARCH_DIR_CACHE.clear()
+    _models_dir, models = _run_main(monkeypatch, capsys, tmp_path, promoted_yaml)
+    smol = [m for m in models if "SmolLM2" in m["id"]]
+    assert len(smol) == 1
+    entry = smol[0]
+    assert entry["id"] == "llamacpp:SmolLM2-135M-Instruct-Q4_K_M"
+    assert entry["model_origin"] == "builtin"
+    assert entry["installed"] is True
+    # Downloaded with the ad-hoc inputs, not the pinned URL the entry declares.
+    assert entry["outdated"] is True
+    assert entry["outdated_fields"] == ["model_url"]
+
+
 MULTI_BOARD_YAML = """\
 models:
  - "llamacpp:multi-Q4_0":

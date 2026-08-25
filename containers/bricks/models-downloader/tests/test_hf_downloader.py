@@ -1135,3 +1135,34 @@ def test_check_answers_for_the_requested_quantization_only(tmp_path, monkeypatch
     with pytest.raises(SystemExit):
         _run_main(monkeypatch, "--check", "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q3_K_S", "--output-dir", str(models_dir))
     assert read_events(capsys)[-1] == {"event": "error", "description": "Model does not exist: *Q3_K_S*.gguf", "downloading": False}
+
+
+# --------------------------------------------------------------------------- #
+# main(): the metadata record is required for an installed model
+# --------------------------------------------------------------------------- #
+def test_download_writes_the_metadata_record(tmp_path, monkeypatch, stub_download):
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+
+    _run_main(monkeypatch, "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q4_0", "--output-dir", str(models_dir))
+
+    repo = models_dir / "unsloth" / "Qwen3-0.6B-GGUF"
+    assert (repo / METADATA_NAME).is_file()
+    assert not (repo / MARKER_NAME).exists()
+
+
+def test_download_fails_when_the_record_cannot_be_written(tmp_path, monkeypatch, stub_download, capsys):
+    """The host deletes an ad-hoc model by the recorded inputs, so a download whose
+    record cannot be written must fail and be retried, never leave an unmanageable
+    install. The kept ".download" marker is what makes the next run discard and retry.
+    """
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    monkeypatch.setattr(hf_downloader, "write_metadata", lambda *args, **kwargs: None)
+
+    with pytest.raises(SystemExit) as exc:
+        _run_main(monkeypatch, "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q4_0", "--output-dir", str(models_dir))
+
+    assert exc.value.code == 1
+    assert read_events(capsys)[-1]["event"] == "error"
+    assert (models_dir / "unsloth" / "Qwen3-0.6B-GGUF" / MARKER_NAME).is_file()

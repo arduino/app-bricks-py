@@ -21,12 +21,25 @@ the model directory after a successful download and stays there:
 
 Contracts callers must honour:
 
-- ``write_metadata`` never raises and never fails a download. Bookkeeping must not
-  turn a completed multi-GB transfer into a failure, so a write error is reported as
-  an ``info`` event (not ``error``, which the host would read as a failed download)
-  and the function returns None.
-- The file is therefore **optional**. Its absence means "unknown / legacy install",
-  never "up to date": models downloaded before this file existed have none.
+- ``write_metadata`` never raises: a write error is reported as an ``info`` event and
+  the function returns None. Whether that fails the download is the caller's decision,
+  and the two kinds of handler decide it differently:
+
+  * The Hugging Face handler treats None as **fatal** — it keeps the ".download"
+    marker (so the next run discards and retries) and exits non-zero. This reverses
+    the original "bookkeeping must never fail a completed multi-GB transfer" stance,
+    deliberately: an ad-hoc model is deleted through the API by the ``inputs``
+    recorded here, so an installed-but-unrecorded ad-hoc model would be permanently
+    unmanageable, while a lost transfer can simply be repeated. The reversal happened
+    before ad-hoc models went GA, which is what makes the next bullet possible.
+  * The AI Hub and Edge Impulse handlers keep it best-effort: their models are all
+    declared in models-list.yaml, so the host can always manage them from the
+    declaration alone and the record only feeds outdated-detection.
+
+- For **readers** the file stays optional — installs made before it existed, or by a
+  best-effort handler, have none, and its absence means "unknown / legacy install",
+  never "up to date". But every ad-hoc model installed by a current downloader is
+  guaranteed to carry one.
 - ``model_origin`` says where the model comes from, not where its id was read from:
   ``builtin`` for a model models-list.yaml declares, ``user_configured`` for one
   downloaded ad hoc. Any Hugging Face repository can be fetched by putting its URL or

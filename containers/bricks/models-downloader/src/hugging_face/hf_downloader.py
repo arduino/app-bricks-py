@@ -1161,7 +1161,7 @@ def main():
         # Record what was downloaded, then clear the in-progress marker: while the
         # marker is still there the repo directory counts as incomplete, so a crash
         # in between makes the next run retry instead of leaving it unrecorded.
-        write_metadata(
+        recorded = write_metadata(
             output_dir,
             handler="hf-handler",
             env=metadata_env,
@@ -1169,6 +1169,13 @@ def main():
             # it after the file that arrived rather than leaving it unidentified.
             fallback_model_id=fallback_model_id(source["model_type"], downloaded, args.output_dir),
         )
+        if recorded is None:
+            # The record is required, not best-effort: the host deletes an ad-hoc model
+            # by the inputs recorded here, so an installed-but-unrecorded model could
+            # never be removed through the API. Keeping the marker makes the next
+            # run discard and retry.
+            emit_json_error(f"Downloaded {repo_id}, but its metadata record could not be written; the download will be retried")
+            raise SystemExit(1)
 
         marker = Path(output_dir) / MARKER_NAME
         if marker.exists():
