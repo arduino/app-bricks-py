@@ -432,6 +432,20 @@ class TestSetDrawBboxes:
         assert pe._draw_bboxes is True
 
 
+class TestSetDrawUncertain:
+    def test_updates_the_flag_and_validates_input(self, pe: PoseEstimation):
+        assert pe._draw_uncertain is True
+
+        pe.set_draw_uncertain(False)
+        assert pe._draw_uncertain is False
+
+        with pytest.raises(ValueError):
+            pe.set_draw_uncertain(0)
+        with pytest.raises(ValueError):
+            pe.set_draw_uncertain("off")
+        assert pe._draw_uncertain is False
+
+
 class TestSetBboxPadding:
     def test_replaces_the_padding_and_validates_input(self, pe: PoseEstimation):
         assert pe._bbox_padding == (0.0, 0.0, 0.0, 0.0)

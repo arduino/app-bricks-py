@@ -106,6 +106,7 @@ class PoseEstimation:
         confidence: float = 0.25,
         debounce_sec: float = 0.0,
         draw_bboxes: bool = False,
+        draw_uncertain: bool = True,
         bbox_padding: float | tuple[float, float, float, float] = 0.0,
     ):
         """Initialize the PoseEstimation brick.
@@ -124,6 +125,10 @@ class PoseEstimation:
             draw_bboxes (bool): Draw each detected person's bounding box on the skeleton overlay
                 served by the model runner. Off by default. Changeable at runtime with
                 `set_draw_bboxes()`.
+            draw_uncertain (bool): Mark low-confidence keypoints on the overlay too, as small
+                hollow dots joined by darker lines. On by default; set to False for an overlay
+                that shows only the confident keypoints. Changeable at runtime with
+                `set_draw_uncertain()`.
             bbox_padding (float | tuple[float, float, float, float]): Expand every reported
                 and drawn bounding box, CSS style: a single number applies to all sides, a
                 4-tuple is (top, right, bottom, left). Top/bottom are fractions of the box
@@ -137,6 +142,7 @@ class PoseEstimation:
         self._confidence = confidence
         self._debounce_sec = debounce_sec
         self._draw_bboxes = draw_bboxes
+        self._draw_uncertain = draw_uncertain
         self._bbox_padding = self._validate_bbox_padding(bbox_padding)
 
         # Callbacks
@@ -304,6 +310,21 @@ class PoseEstimation:
         self._draw_bboxes = draw_bboxes
         logger.debug(f"bbox overlay {'enabled' if draw_bboxes else 'disabled'}")
 
+    def set_draw_uncertain(self, draw_uncertain: bool):
+        """Show or hide low-confidence keypoints on the overlay, effective immediately.
+
+        Args:
+            draw_uncertain (bool): True to mark low-confidence keypoints too, False for an
+                overlay that shows only the confident keypoints and connections.
+
+        Raises:
+            ValueError: If draw_uncertain is not a boolean.
+        """
+        if not isinstance(draw_uncertain, bool):
+            raise ValueError(f"draw_uncertain must be a boolean, got {draw_uncertain!r}")
+        self._draw_uncertain = draw_uncertain
+        logger.debug(f"uncertain keypoints overlay {'enabled' if draw_uncertain else 'disabled'}")
+
     def set_bbox_padding(self, padding: float | tuple[float, float, float, float]):
         """Expand every reported and drawn bounding box, effective immediately.
 
@@ -426,6 +447,7 @@ class PoseEstimation:
                         config = {
                             "min_person_score": self._confidence,
                             "draw_bboxes": self._draw_bboxes,
+                            "draw_uncertain": self._draw_uncertain,
                             "bbox_padding_top": top,
                             "bbox_padding_right": right,
                             "bbox_padding_bottom": bottom,

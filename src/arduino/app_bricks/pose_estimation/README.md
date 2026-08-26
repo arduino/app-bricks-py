@@ -27,6 +27,8 @@ Integration highlights:
   API reports.
 - `set_draw_bboxes` (or `draw_bboxes=True` in the constructor) draws every detected person's
   bounding box on the overlay; off by default.
+- `set_draw_uncertain` (or `draw_uncertain=False` in the constructor) shows or hides the
+  low-confidence keypoint marks on the overlay; shown by default.
 - `set_bbox_padding` (or `bbox_padding` in the constructor) expands every bounding box, CSS
   style: one number for all sides or a (top, right, bottom, left) tuple — top/bottom as a
   fraction of the box height, left/right of its width. It applies to both the reported
