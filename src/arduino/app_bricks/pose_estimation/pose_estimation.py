@@ -293,7 +293,7 @@ class PoseEstimation:
         if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not 0.0 <= float(confidence) <= 1.0:
             raise ValueError(f"confidence must be a number in [0.0, 1.0], got {confidence!r}")
         self._confidence = float(confidence)
-        logger.info(f"detection confidence set to {self._confidence}")
+        logger.debug(f"detection confidence set to {self._confidence}")
 
     def set_draw_bboxes(self, draw_bboxes: bool):
         """Show or hide each detected person's bounding box on the overlay, effective immediately.
