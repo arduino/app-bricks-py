@@ -24,8 +24,6 @@ from arduino.app_internal.core.module import load_brick_compose_file, resolve_ad
 from .pose_classifier import (
     ANCHOR_JOINTS,
     EMBEDDING_JOINTS,
-    LIMB_CHAINS,
-    MIN_ANCHOR_SCORE,
     MIN_OBSERVED_SCORE,
     OUT_OF_FRAME_TOLERANCE,
     EmaHysteresis,
@@ -161,14 +159,25 @@ class PoseEstimation:
         self._ws_send_url = f"ws://{self._host}:5000"
         self._ws_recv_url = f"ws://{self._host}:5001"
 
-        # Built-in pose classification: the shipped reference database and the
-        # dials it was tuned with travel together inside the asset.
+        # Built-in pose classification: the shipped reference database, the
+        # dials and the operating point it was tuned with travel together
+        # inside the asset.
         load_start = time.monotonic()
-        self._pose_knn, self._pose_label_weights, self._pose_names = load_pose_classifier(_POSE_CLASSIFIER_PATH)
+        self._pose_knn, self._pose_label_weights, self._pose_names, self._pose_thresholds = load_pose_classifier(_POSE_CLASSIFIER_PATH)
         logger.info(f"pose classifier ready in {time.monotonic() - load_start:.2f}s (poses: {', '.join(self._pose_names)})")
-        self._pose_ema = EmaHysteresis(classes=self._pose_names)
+        self._pose_ema = EmaHysteresis(
+            classes=self._pose_names, enter_threshold=self._pose_thresholds["enter"], exit_threshold=self._pose_thresholds["exit"]
+        )
         self._pose_last_ts: float | None = None
         self._pose_last_person: Person | None = None
+
+        # Frame-gate accounting: which rule refuses frames, and how often.
+        # Written only by the receive thread; readers get GIL-atomic snapshots.
+        self._gate_counts: dict[str, int] = dict.fromkeys(("classified", "anchors", "missing", "out_of_frame", "torso"), 0)
+        self._gate_last: tuple[str, float] = ("none", 0.0)
+        self._pose_last_probs: dict[str, float] | None = None
+        self._gate_log_ts = time.monotonic()
+        self._gate_log_counts = dict(self._gate_counts)
 
     def start(self):
         """Start the capture thread and asyncio event loop."""
@@ -184,7 +193,9 @@ class PoseEstimation:
             self._executor.shutdown(wait=False, cancel_futures=True)
             self._executor = None
         # Reset the temporal state so a restart begins from a clean slate
-        self._pose_ema = EmaHysteresis(classes=self._pose_names)
+        self._pose_ema = EmaHysteresis(
+            classes=self._pose_names, enter_threshold=self._pose_thresholds["enter"], exit_threshold=self._pose_thresholds["exit"]
+        )
         self._pose_last_ts = None
         self._pose_last_person = None
 
@@ -446,6 +457,7 @@ class PoseEstimation:
             tracked = max(people, key=lambda person: self._box_area(person.bounding_box_xyxy))
             self._pose_last_person = tracked
             probs = self._classify_person(tracked)
+            self._pose_last_probs = probs
 
         events = self._pose_ema.update(probs, dt, person_present=bool(people))
         if not events:
@@ -471,24 +483,36 @@ class PoseEstimation:
     def _box_area(box: tuple[int, int, int, int]) -> int:
         return max(0, box[2] - box[0]) * max(0, box[3] - box[1])
 
+    def _gate(self, outcome: str) -> None:
+        """Record one frame-gate outcome and, at most every 15 s, log the tally."""
+        self._gate_counts[outcome] += 1
+        self._gate_last = (outcome, time.monotonic())
+        now = time.monotonic()
+        if now - self._gate_log_ts >= 15.0:
+            delta = {key: self._gate_counts[key] - self._gate_log_counts[key] for key in self._gate_counts}
+            if any(count for key, count in delta.items() if key != "classified"):
+                logger.debug("frame gates (15s): " + " ".join(f"{key}={count}" for key, count in delta.items()))
+            self._gate_log_ts = now
+            self._gate_log_counts = dict(self._gate_counts)
+
     def _classify_person(self, person: Person) -> dict[str, float] | None:
         """Per-frame pose probabilities for one person, or None when unreadable.
 
-        None means "no evidence" (weak anchor joints, missing joints, a limb
-        placed with nothing observed to hang on to, joints far outside the
-        frame, collapsed torso) and freezes the temporal layer;
+        None means "no evidence" (every anchor guessed, missing joints,
+        joints far outside the frame, collapsed torso) and freezes the
+        temporal layer.
         an all-zeros dict from the classifier means "read fine, looks like
         nothing we know" and makes any active pose decay.
         """
-        for name in ANCHOR_JOINTS:
-            keypoint = person.keypoints.get(name)
-            if keypoint is None or keypoint.score < MIN_ANCHOR_SCORE:
-                return None
-        if any(name not in person.keypoints for name in KEYPOINT_NAMES):
+        anchors_observed = any(
+            (keypoint := person.keypoints.get(name)) is not None and keypoint.score >= MIN_OBSERVED_SCORE for name in ANCHOR_JOINTS
+        )
+        if not anchors_observed:
+            self._gate("anchors")
             return None
-        for middle, tip in LIMB_CHAINS:
-            if person.keypoints[middle].score < MIN_OBSERVED_SCORE and person.keypoints[tip].score < MIN_OBSERVED_SCORE:
-                return None
+        if any(name not in person.keypoints for name in KEYPOINT_NAMES):
+            self._gate("missing")
+            return None
         if self._frame_hw is not None:
             frame_h, frame_w = self._frame_hw
             margin_x = OUT_OF_FRAME_TOLERANCE * frame_w
@@ -496,6 +520,7 @@ class PoseEstimation:
             for name in EMBEDDING_JOINTS:
                 keypoint = person.keypoints[name]
                 if not (-margin_x <= keypoint.x <= frame_w + margin_x and -margin_y <= keypoint.y <= frame_h + margin_y):
+                    self._gate("out_of_frame")
                     return None
         xy = np.asarray(
             [[person.keypoints[name].x, person.keypoints[name].y] for name in KEYPOINT_NAMES],
@@ -503,7 +528,9 @@ class PoseEstimation:
         )
         norm = normalize_pose(xy)
         if norm is None:
+            self._gate("torso")
             return None
+        self._gate("classified")
         return self._pose_knn.classify(embed(norm), label_weights=self._pose_label_weights)
 
     def _dispatch_error(self, error: Exception):

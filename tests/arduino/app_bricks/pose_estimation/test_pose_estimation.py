@@ -80,6 +80,16 @@ def _make_instance(monkeypatch: pytest.MonkeyPatch, **kwargs):
 # ---------------------------------------------------------------------------
 
 
+def test_stop_resets_the_temporal_state_with_the_asset_thresholds(pe):
+    pe._pose_ema.update({"sitting": 1.0}, dt=1.0)
+    pe.stop()
+    pe._executor = ThreadPoolExecutor(max_workers=1)  # the fixture teardown shuts one down
+
+    assert pe._pose_ema.smoothed["sitting"] == 0.0
+    assert pe._pose_ema.enter_threshold == pe._pose_thresholds["enter"]
+    assert pe._pose_ema.exit_threshold == pe._pose_thresholds["exit"]
+
+
 # ---------------------------------------------------------------------------
 # Detection parsing tests
 # ---------------------------------------------------------------------------
@@ -300,21 +310,29 @@ class TestPoseEvents:
         pe._frame_hw = None
         assert pe._classify_person(far_out) is not None
 
-    def test_a_tip_extrapolated_from_a_seen_joint_is_still_readable(self, pe: PoseEstimation):
+    def test_a_tip_extrapolated_outside_from_a_seen_joint_is_still_readable(self, pe: PoseEstimation):
         pe._frame_hw = (480, 640)
         sitting_close = _person()
         for name in ("left_ankle", "right_ankle"):
             kp = sitting_close.keypoints[name]
-            sitting_close.keypoints[name] = Keypoint(name=name, x=kp.x, y=kp.y + 100, score=0.01)
+            sitting_close.keypoints[name] = Keypoint(name=name, x=kp.x, y=560, score=0.01)
         assert pe._classify_person(sitting_close) is not None
 
-    def test_a_limb_with_nothing_observed_makes_the_frame_unreadable(self, pe: PoseEstimation):
+    def test_uncertain_joints_inside_the_image_still_classify(self, pe: PoseEstimation):
         pe._frame_hw = (480, 640)
-        invented_legs = _person()
+        guessed_legs = _person()
         for name in ("left_knee", "right_knee", "left_ankle", "right_ankle"):
-            kp = invented_legs.keypoints[name]
-            invented_legs.keypoints[name] = Keypoint(name=name, x=kp.x, y=kp.y, score=0.03)
-        assert pe._classify_person(invented_legs) is None
+            kp = guessed_legs.keypoints[name]
+            guessed_legs.keypoints[name] = Keypoint(name=name, x=kp.x, y=kp.y, score=0.03)
+        assert pe._classify_person(guessed_legs) is not None
+
+    def test_every_gate_outcome_is_counted(self, pe: PoseEstimation):
+        pe._frame_hw = (480, 640)
+        assert pe._classify_person(_person()) is not None
+        assert pe._classify_person(_person(score=0.01)) is None
+        assert pe._gate_counts["classified"] == 1
+        assert pe._gate_counts["anchors"] == 1
+        assert pe._gate_last[0] == "anchors"
 
     def test_enter_then_exit_fire_with_stable_classifications(self, pe: PoseEstimation, monkeypatch):
         events = []
@@ -353,8 +371,14 @@ class TestPoseEvents:
 
         assert seen == [big]
 
-    def test_weak_anchor_joints_make_the_frame_unreadable(self, pe: PoseEstimation):
-        assert pe._classify_person(_person(score=0.05)) is None
+    def test_a_fully_guessed_torso_makes_the_frame_unreadable(self, pe: PoseEstimation):
+        assert pe._classify_person(_person(score=0.01)) is None
+
+    def test_one_observed_anchor_is_enough_to_classify(self, pe: PoseEstimation):
+        person = _person(score=0.01)
+        kp = person.keypoints["left_shoulder"]
+        person.keypoints["left_shoulder"] = Keypoint(name="left_shoulder", x=kp.x, y=kp.y, score=0.5)
+        assert pe._classify_person(person) is not None
 
     def test_a_readable_skeleton_yields_a_probability_dict(self, pe: PoseEstimation):
         probs = pe._classify_person(_person())

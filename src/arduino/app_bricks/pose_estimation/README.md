@@ -16,10 +16,11 @@ Integration highlights:
   the largest bounding box in view, normally the closest to the camera — and smooths
   per-frame classifications over time with hysteresis, so callbacks receive stable
   `Pose` edges: `event="enter"` when the tracked person assumes the pose, `"exit"`
-  when they leave it (thresholds 0.65/0.45 on an exponential moving average with a
-  0.31 s time constant; when the person disappears, active poses exit after a 0.7 s
-  grace period). Other people stay visible through `on_keypoints` but do not fire
-  pose events.
+  when they leave it (per-pose enter/exit thresholds shipped inside the classifier
+  asset — 0.60/0.40 for the arms, 0.80/0.60 for standing, 0.55/0.35 for sitting —
+  applied on an exponential moving average with a 0.31 s time constant; when the
+  person disappears, active poses exit after a 0.7 s grace period). Other people
+  stay visible through `on_keypoints` but do not fire pose events.
 - `on_enter` / `on_exit` / `on_count_change` enable presence and people-counting automations.
 - `set_confidence` changes the minimum person detection score at runtime; the value is
   applied by the model runner itself, so the skeleton overlay only ever shows what the
@@ -41,8 +42,8 @@ scores 0.25 or more, the value the runner uses to start assembling a skeleton.
 
 Classification note: the pose classifier is a k-NN over a reference database of labeled examples
 shipped with the brick (`assets/pose_classifier.npz`, ~0.6 MB) together with the exact
-dials it was tuned with. The brick reads everything it needs (examples, dials,
-calibration mask) from the file itself.
+dials and per-pose thresholds it was tuned with. The brick reads everything it needs
+(examples, dials, thresholds, calibration mask) from the file itself.
 
 Runner note: the model runner performs an internal person-tracking crop before inference
 (people far from the camera would otherwise be too small in the model's letterboxed input

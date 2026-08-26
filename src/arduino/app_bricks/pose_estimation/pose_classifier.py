@@ -6,7 +6,7 @@
 
 One person's 17 keypoints in, per-class probabilities and stable enter/exit
 events out. The reference database ships with the brick (assets/pose_classifier.npz)
-together with the dials it was tuned with.
+together with the dials and per-pose thresholds it was tuned with.
 """
 
 import functools
@@ -66,20 +66,10 @@ EMBEDDING_JOINTS = tuple(sorted({name for pair in EMBEDDING_PAIRS for name in pa
 # size, is a wild extrapolation.
 OUT_OF_FRAME_TOLERANCE = 0.25
 
-# Middle and tip of each limb. Both unobserved means the whole limb was placed
-# by the decoder with nothing real to hang on to.
-LIMB_CHAINS = (
-    ("left_elbow", "left_wrist"),
-    ("right_elbow", "right_wrist"),
-    ("left_knee", "left_ankle"),
-    ("right_knee", "right_ankle"),
-)
-MIN_OBSERVED_SCORE = 0.1
-
-# Live-frame gate on the normalization anchors only: weak non-anchor joints
-# are still usable evidence, while a discarded frame stalls the temporal layer.
+# Live-frame gate on the normalization anchors: the frame is refused only when
+# ALL four are guessed: a reference frame with zero observed corners.
 ANCHOR_JOINTS = ("left_shoulder", "right_shoulder", "left_hip", "right_hip")
-MIN_ANCHOR_SCORE = 0.2
+MIN_OBSERVED_SCORE = 0.1  # mirrors the runner's MIN_KEYPOINT_SCORE
 
 _METRICS = ("euclidean", "cosine", "manhattan", "seuclidean")
 _VOTE_WEIGHTINGS = ("uniform", "distance")
@@ -137,7 +127,7 @@ class PoseKNN:
 
     def __init__(
         self,
-        k: int = 19,
+        k: int = 9,
         reject_factor: float = 1.5,
         metric: str = "seuclidean",
         vote_weighting: str = "distance",
@@ -258,7 +248,7 @@ class PoseKNN:
 class EmaHysteresis:
     """Turn noisy per-frame probabilities into stable enter/exit events.
 
-    Per-class exponential moving average with thermostat-style thresholds:
+    Per-class exponential moving average with thermostat-style thresholds (single numbers or per-class dicts):
     active above enter_threshold, inactive again only below exit_threshold.
     All time constants are in seconds: the caller passes the frame interval
     dt, so behavior does not change with the pipeline frame rate.
@@ -271,8 +261,8 @@ class EmaHysteresis:
 
     classes: tuple[str, ...]
     smoothing_tau: float = 0.31  # seconds
-    enter_threshold: float = 0.65
-    exit_threshold: float = 0.45
+    enter_threshold: float | dict[str, float] = 0.60
+    exit_threshold: float | dict[str, float] = 0.40
     grace_seconds: float = 0.7
     stale_seconds: float = 3.0
     smoothed: dict[str, float] = field(init=False)
@@ -282,6 +272,10 @@ class EmaHysteresis:
     def __post_init__(self):
         self.smoothed = dict.fromkeys(self.classes, 0.0)
         self.active = dict.fromkeys(self.classes, False)
+
+    @staticmethod
+    def _threshold(spec: float | dict[str, float], cls: str) -> float:
+        return spec[cls] if isinstance(spec, dict) else spec
 
     def update(self, probs: dict[str, float] | None, dt: float, person_present: bool = True) -> list[tuple[str, str]]:
         """Feed one frame of probabilities observed dt seconds after the previous one.
@@ -302,27 +296,28 @@ class EmaHysteresis:
         for cls in self.classes:
             p = probs.get(cls, 0.0)
             self.smoothed[cls] = alpha * p + (1.0 - alpha) * self.smoothed[cls]
-            if not self.active[cls] and self.smoothed[cls] >= self.enter_threshold:
+            if not self.active[cls] and self.smoothed[cls] >= self._threshold(self.enter_threshold, cls):
                 self.active[cls] = True
                 events.append(("enter", cls))
-            elif self.active[cls] and self.smoothed[cls] < self.exit_threshold:
+            elif self.active[cls] and self.smoothed[cls] < self._threshold(self.exit_threshold, cls):
                 self.active[cls] = False
                 events.append(("exit", cls))
         return events
 
 
 @functools.lru_cache(maxsize=2)
-def load_pose_classifier(path: Path) -> tuple[PoseKNN, dict[str, float] | None, tuple[str, ...]]:
+def load_pose_classifier(path: Path) -> tuple[PoseKNN, dict[str, float] | None, tuple[str, ...], dict[str, dict[str, float]]]:
     """Load the shipped reference database and build the classifier it was tuned as.
 
-    The npz carries the examples, the real-example calibration mask and the
-    dials (dials_json), so nothing is hand-copied. Returns (fitted classifier,
-    label weights for classify(), the pose names on_pose accepts — every class
-    except the "other" guards). Cached per path and shared across brick
+    The npz carries the examples, the real-example calibration mask, the dials
+    (dials_json) and the per-pose enter/exit thresholds (thresholds_json), so
+    nothing is hand-copied. Returns (fitted classifier, label weights for
+    classify(), the pose names on_pose accepts — every class except the
+    "other" guards, the thresholds). Cached per path and shared across brick
     instances; treat it as read-only.
     """
     data = np.load(path)
-    for name in ("embeddings", "labels", "real", "dials_json"):
+    for name in ("embeddings", "labels", "real", "dials_json", "thresholds_json"):
         if name not in data:
             raise ValueError(f"{path} is not a pose classifier database: missing {name!r}")
     dials = json.loads(str(data["dials_json"]))
@@ -336,4 +331,11 @@ def load_pose_classifier(path: Path) -> tuple[PoseKNN, dict[str, float] | None, 
     other_weight = float(dials.get("other_weight", 1.0))
     label_weights = {"other": other_weight} if other_weight != 1.0 else None
     pose_names = tuple(sorted(str(cls) for cls in set(knn.classes) - {"other"}))
-    return knn, label_weights, pose_names
+    thresholds = json.loads(str(data["thresholds_json"]))
+    enter, exits = thresholds.get("enter"), thresholds.get("exit")
+    if not isinstance(enter, dict) or not isinstance(exits, dict):
+        raise ValueError(f"{path}: thresholds must hold 'enter' and 'exit' mappings")
+    missing = [pose for pose in pose_names if pose not in enter or pose not in exits]
+    if missing:
+        raise ValueError(f"{path}: no enter/exit thresholds for {', '.join(missing)}")
+    return knn, label_weights, pose_names, thresholds
