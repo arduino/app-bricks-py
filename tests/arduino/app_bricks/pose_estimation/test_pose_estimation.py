@@ -414,3 +414,42 @@ class TestSetConfidence:
         with pytest.raises(ValueError):
             pe.set_confidence(True)
         assert pe._confidence == 0.8
+
+
+class TestSetDrawBboxes:
+    def test_updates_the_flag_and_validates_input(self, pe: PoseEstimation):
+        assert pe._draw_bboxes is False
+
+        pe.set_draw_bboxes(True)
+        assert pe._draw_bboxes is True
+
+        with pytest.raises(ValueError):
+            pe.set_draw_bboxes(1)
+        with pytest.raises(ValueError):
+            pe.set_draw_bboxes("on")
+        with pytest.raises(ValueError):
+            pe.set_draw_bboxes(None)
+        assert pe._draw_bboxes is True
+
+
+class TestSetBboxPadding:
+    def test_replaces_the_padding_and_validates_input(self, pe: PoseEstimation):
+        assert pe._bbox_padding == (0.0, 0.0, 0.0, 0.0)
+
+        pe.set_bbox_padding((0.15, 0.20, 0.15, 0.20))  # (top, right, bottom, left), come CSS
+        assert pe._bbox_padding == (0.15, 0.20, 0.15, 0.20)
+
+        pe.set_bbox_padding(0.1)  # scalare: tutti i lati
+        assert pe._bbox_padding == (0.1, 0.1, 0.1, 0.1)
+
+        with pytest.raises(ValueError):
+            pe.set_bbox_padding(1.5)
+        with pytest.raises(ValueError):
+            pe.set_bbox_padding((0.1, 0.2))
+        with pytest.raises(ValueError):
+            pe.set_bbox_padding((0.1, 0.2, 0.3, -0.1))
+        with pytest.raises(ValueError):
+            pe.set_bbox_padding("high")
+        with pytest.raises(ValueError):
+            pe.set_bbox_padding(True)
+        assert pe._bbox_padding == (0.1, 0.1, 0.1, 0.1)

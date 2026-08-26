@@ -24,7 +24,15 @@ posenet_output = posenet.get_output_details()
 
 # Runtime-tunable settings, updated by client config messages (wired in the
 # base image's main.py).
-_config = {"min_person_score": MIN_PERSON_SCORE, "draw_uncertain": True}
+_config = {
+    "min_person_score": MIN_PERSON_SCORE,
+    "draw_uncertain": True,
+    "draw_bboxes": False,
+    "bbox_padding_top": 0.0,
+    "bbox_padding_right": 0.0,
+    "bbox_padding_bottom": 0.0,
+    "bbox_padding_left": 0.0,
+}
 
 
 def apply_config(config: dict) -> None:
@@ -37,6 +45,15 @@ def apply_config(config: dict) -> None:
     if value is not None:
         _config["draw_uncertain"] = bool(value)
         print(f"config: draw_uncertain set to {_config['draw_uncertain']}", flush=True)
+    value = config.get("draw_bboxes")
+    if value is not None:
+        _config["draw_bboxes"] = bool(value)
+        print(f"config: draw_bboxes set to {_config['draw_bboxes']}", flush=True)
+    for key in ("bbox_padding_top", "bbox_padding_right", "bbox_padding_bottom", "bbox_padding_left"):
+        value = config.get(key)
+        if value is not None:
+            _config[key] = max(0.0, min(1.0, float(value)))
+            print(f"config: {key} set to {_config[key]}", flush=True)
 
 
 # Person-tracking crop: instead of the full frame, the model gets a window cut
@@ -237,7 +254,18 @@ def inference_callback(rgb_frame: np.ndarray) -> tuple[np.ndarray, dict]:
     _last_union_bbox = tracked
 
     # Draw predictions on the full frame and get metadata; coordinates in (x, y) format
-    metadata = draw_persons(rgb_frame, person_scores, keypoint_scores, coords_xy, _config["draw_uncertain"])
+    metadata = draw_persons(
+        rgb_frame,
+        person_scores,
+        keypoint_scores,
+        coords_xy,
+        _config["draw_uncertain"],
+        _config["draw_bboxes"],
+        _config["bbox_padding_top"],
+        _config["bbox_padding_right"],
+        _config["bbox_padding_bottom"],
+        _config["bbox_padding_left"],
+    )
     metadata["crop_window"] = crop_window
 
     return rgb_frame, metadata

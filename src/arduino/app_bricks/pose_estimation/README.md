@@ -25,6 +25,12 @@ Integration highlights:
 - `set_confidence` changes the minimum person detection score at runtime; the value is
   applied by the model runner itself, so the skeleton overlay only ever shows what the
   API reports.
+- `set_draw_bboxes` (or `draw_bboxes=True` in the constructor) draws every detected person's
+  bounding box on the overlay; off by default.
+- `set_bbox_padding` (or `bbox_padding` in the constructor) expands every bounding box, CSS
+  style: one number for all sides or a (top, right, bottom, left) tuple — top/bottom as a
+  fraction of the box height, left/right of its width. It applies to both the reported
+  `bounding_box_xyxy` and the drawn one; none by default.
 - The skeleton overlay is drawn by the model runner, which serves the annotated video as an
   MJPEG stream on port 5002.
 

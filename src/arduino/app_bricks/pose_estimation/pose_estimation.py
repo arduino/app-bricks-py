@@ -64,7 +64,8 @@ class Person:
             keypoint name (see `KEYPOINT_NAMES`). Low-confidence keypoints are
             included; filter by their score.
         bounding_box_xyxy (tuple[int, int, int, int]): (x1, y1, x2, y2) box
-            enclosing the person's confident keypoints, in frame coordinates.
+            enclosing the person's confident keypoints, expanded by the
+            configured bbox padding (none by default), in frame coordinates.
     """
 
     keypoints: dict[str, Keypoint]
@@ -86,7 +87,8 @@ class Pose:
         keypoints (dict[str, Keypoint]): The person's 17 keypoints, keyed by
             keypoint name (see `KEYPOINT_NAMES`).
         bounding_box_xyxy (tuple[int, int, int, int]): (x1, y1, x2, y2) box
-            enclosing the person's confident keypoints, in frame coordinates.
+            enclosing the person's confident keypoints, expanded by the
+            configured bbox padding (none by default), in frame coordinates.
     """
 
     name: str
@@ -103,6 +105,8 @@ class PoseEstimation:
         camera: BaseCamera | None = None,
         confidence: float = 0.25,
         debounce_sec: float = 0.0,
+        draw_bboxes: bool = False,
+        bbox_padding: float | tuple[float, float, float, float] = 0.0,
     ):
         """Initialize the PoseEstimation brick.
 
@@ -117,6 +121,14 @@ class PoseEstimation:
             debounce_sec (float): Minimum seconds a presence or people-count change must be stable
                 before `on_enter`/`on_exit`/`on_count_change` fire again. Filters out detection
                 flicker. Default is 0 (no debounce).
+            draw_bboxes (bool): Draw each detected person's bounding box on the skeleton overlay
+                served by the model runner. Off by default. Changeable at runtime with
+                `set_draw_bboxes()`.
+            bbox_padding (float | tuple[float, float, float, float]): Expand every reported
+                and drawn bounding box, CSS style: a single number applies to all sides, a
+                4-tuple is (top, right, bottom, left). Top/bottom are fractions of the box
+                height, left/right of its width, each in [0.0, 1.0]. Default is 0 (no
+                expansion). Changeable at runtime with `set_bbox_padding()`.
 
         Raises:
             RuntimeError: If the model runner host address could not be resolved.
@@ -124,6 +136,8 @@ class PoseEstimation:
         self._camera = camera if camera else Camera(fps=30)
         self._confidence = confidence
         self._debounce_sec = debounce_sec
+        self._draw_bboxes = draw_bboxes
+        self._bbox_padding = self._validate_bbox_padding(bbox_padding)
 
         # Callbacks
         self._callbacks: dict[str, Callable] = {}
@@ -275,6 +289,49 @@ class PoseEstimation:
         self._confidence = float(confidence)
         logger.info(f"detection confidence set to {self._confidence}")
 
+    def set_draw_bboxes(self, draw_bboxes: bool):
+        """Show or hide each detected person's bounding box on the overlay, effective immediately.
+
+        Args:
+            draw_bboxes (bool): True to draw every detected person's bounding box on the
+                skeleton overlay served by the model runner, False to hide the boxes.
+
+        Raises:
+            ValueError: If draw_bboxes is not a boolean.
+        """
+        if not isinstance(draw_bboxes, bool):
+            raise ValueError(f"draw_bboxes must be a boolean, got {draw_bboxes!r}")
+        self._draw_bboxes = draw_bboxes
+        logger.debug(f"bbox overlay {'enabled' if draw_bboxes else 'disabled'}")
+
+    def set_bbox_padding(self, padding: float | tuple[float, float, float, float]):
+        """Expand every reported and drawn bounding box, effective immediately.
+
+        The value passed replaces the current padding entirely.
+
+        Args:
+            padding (float | tuple[float, float, float, float]): CSS style: a single number
+                applies to all sides, a 4-tuple is (top, right, bottom, left). Top/bottom are
+                fractions of the box height, left/right of its width, each in [0.0, 1.0].
+
+        Raises:
+            ValueError: If padding is not a number in [0.0, 1.0] or a 4-tuple of them.
+        """
+        self._bbox_padding = self._validate_bbox_padding(padding)
+        top, right, bottom, left = self._bbox_padding
+        logger.debug(f"bbox padding set to top={top}, right={right}, bottom={bottom}, left={left}")
+
+    @staticmethod
+    def _validate_bbox_padding(padding: float | tuple[float, float, float, float]) -> tuple[float, float, float, float]:
+        """Normalize a CSS-style padding value to a (top, right, bottom, left) tuple."""
+        values = padding if isinstance(padding, (tuple, list)) else (padding, padding, padding, padding)
+        if len(values) != 4:
+            raise ValueError(f"padding must be a number or a (top, right, bottom, left) tuple, got {padding!r}")
+        for value in values:
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0.0 <= float(value) <= 1.0:
+                raise ValueError(f"padding values must be numbers in [0.0, 1.0], got {value!r}")
+        return tuple(float(value) for value in values)
+
     def on_frame(self, callback: Callable[[np.ndarray], None] | None):
         """Register a callback that receives each raw camera frame.
 
@@ -363,11 +420,20 @@ class PoseEstimation:
         while self._is_running:
             try:
                 async with websockets.connect(self._ws_send_url) as ws:
-                    sent_confidence: float | None = None
+                    sent_config: dict | None = None
                     while self._is_running:
-                        if self._confidence != sent_confidence:
-                            await ws.send(json.dumps({"config": {"min_person_score": self._confidence}}))
-                            sent_confidence = self._confidence
+                        top, right, bottom, left = self._bbox_padding
+                        config = {
+                            "min_person_score": self._confidence,
+                            "draw_bboxes": self._draw_bboxes,
+                            "bbox_padding_top": top,
+                            "bbox_padding_right": right,
+                            "bbox_padding_bottom": bottom,
+                            "bbox_padding_left": left,
+                        }
+                        if config != sent_config:
+                            await ws.send(json.dumps({"config": config}))
+                            sent_config = config
                         try:
                             frame = await asyncio.get_event_loop().run_in_executor(None, self._camera_frame_queue.get, True, 0.1)
                         except queue.Empty:
