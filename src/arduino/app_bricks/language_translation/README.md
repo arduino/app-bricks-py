@@ -7,14 +7,14 @@ The `LanguageTranslation` brick provides a completely offline text-to-text trans
 - **Offline Operation:** All translations are performed locally by the device's translation service.
 - **Simple API:** With a fixed-pair model (e.g. OpusMT, the default) the language pair is imposed by the model, so `translate()` needs only the text. Models supporting multiple language pairs take the pair from the constructor or per call.
 - **Batch Translation:** `translate_batch()` translates a list of texts and returns the results index-aligned with the input. Large batches are automatically split into multiple requests to stay within the service timeout.
-- **Model Selection:** The translation model is configured in `brick_config.yaml` and can be overridden per-app in `app.yaml` (e.g. `opusmt-en-zh` for English to Chinese). Use `supported_language_pairs()` to see what the configured model offers.
+- **Model Selection:** The translation model is configured in `brick_config.yaml` and can be overridden per-app in `app.yaml` (e.g. `opus-en-zh` for English to Chinese). Use `supported_language_pairs()` to see what the configured model offers.
 - **Model Preloading:** The translation model is loaded at brick start so the first `translate()` call is fast.
 
 Fixed-pair models like the OpusMT family translate a single language pair in one direction (e.g. English to Chinese).
 
 ## Code Example and Usage
 
-This example translates text from English to Chinese using the default `opusmt-en-zh` model.
+This example translates text from English to Chinese using the default `opus-en-zh` model.
 
 ```python
 from arduino.app_bricks.language_translation import LanguageTranslation

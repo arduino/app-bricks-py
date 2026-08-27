@@ -17,13 +17,13 @@ from arduino.app_utils import App
 # (the OpusMT family) have a single entry each.
 MODELS = [
     {
-        "name": "opus_mt_en_es",
+        "name": "opus-en-es",
         "source_language": {"code": "en", "name": "English"},
         "target_language": {"code": "es", "name": "Spanish"},
         "parameters": {"max_text_length": 512, "max_batch_size": 2},
     },
     {
-        "name": "opus_mt_es_en",
+        "name": "opus-es-en",
         "source_language": {"code": "es", "name": "Spanish"},
         "target_language": {"code": "en", "name": "English"},
     },
@@ -76,7 +76,7 @@ def echo_translation(url, json, **kwargs):
     return FakeResponse(json_data={"translations": translations})
 
 
-def make_translator(monkeypatch, model="opusmt-en-es", models=MODELS, post_response=echo_translation, **kwargs):
+def make_translator(monkeypatch, model="opus-en-es", models=MODELS, post_response=echo_translation, **kwargs):
     get_calls = []
     post_calls = []
 
@@ -104,13 +104,12 @@ def make_translator(monkeypatch, model="opusmt-en-es", models=MODELS, post_respo
 def test_translate_uses_pair_imposed_by_fixed_pair_model(monkeypatch):
     translator, _, post_calls = make_translator(monkeypatch)
 
-    # No languages configured anywhere: the configured model determines the pair,
-    # and the request carries the runner-reported name, not the catalog id.
+    # No languages configured anywhere: the configured model determines the pair.
     result = translator.translate("Hello world")
 
     assert result == "es:Hello world"
     payload = post_calls[0]["json"]
-    assert payload["model"] == "opus_mt_en_es"
+    assert payload["model"] == "opus-en-es"
     assert payload["source_language"] == "en"
     assert payload["target_language"] == "es"
     assert payload["keep_alive"] is True
@@ -134,7 +133,7 @@ def test_translate_rejects_pair_not_served_by_configured_model(monkeypatch):
 
 
 def test_translate_with_unknown_configured_model_refreshes_once_then_raises(monkeypatch):
-    translator, get_calls, _ = make_translator(monkeypatch, model="opusmt-en-fr")
+    translator, get_calls, _ = make_translator(monkeypatch, model="opus-en-fr")
 
     with pytest.raises(TranslationError, match="not available"):
         translator.translate("Hello")
@@ -174,13 +173,13 @@ def test_multilingual_model_accepts_partial_pair_when_unambiguous(monkeypatch):
 def test_duplicate_entries_for_same_pair_resolve_to_first_without_error(monkeypatch):
     duplicated = [
         {
-            "name": "opus_mt_en_es",
+            "name": "opus-en-es",
             "source_language": {"code": "en", "name": "English"},
             "target_language": {"code": "es", "name": "Spanish"},
             "parameters": {"max_batch_size": 2},
         },
         {
-            "name": "opus_mt_en_es",
+            "name": "opus-en-es",
             "source_language": {"code": "en", "name": "English"},
             "target_language": {"code": "es", "name": "Spanish"},
             "parameters": {"max_batch_size": 5},
@@ -300,7 +299,7 @@ def test_start_warms_up_fixed_pair_model_without_configured_languages(monkeypatc
     translator.start()
 
     assert len(post_calls) == 1
-    assert post_calls[0]["json"]["model"] == "opus_mt_en_es"
+    assert post_calls[0]["json"]["model"] == "opus-en-es"
 
 
 def test_start_skips_warmup_when_pair_is_undetermined(monkeypatch):
@@ -348,9 +347,9 @@ def test_stop_closes_remote_session_and_tolerates_plain_text_response(monkeypatc
 def test_second_brick_skips_warmup_when_another_model_is_resident(monkeypatch):
     first, _, first_posts = make_translator(monkeypatch)
     first.start()
-    assert [call["json"]["model"] for call in first_posts] == ["opus_mt_en_es"]
+    assert [call["json"]["model"] for call in first_posts] == ["opus-en-es"]
 
-    second, _, second_posts = make_translator(monkeypatch, model="opusmt-es-en")
+    second, _, second_posts = make_translator(monkeypatch, model="opus-es-en")
     second.start()
 
     assert second_posts == []  # Warming up would evict the first brick's model
@@ -363,12 +362,12 @@ def test_second_brick_with_same_model_still_warms_up(monkeypatch):
     second, _, second_posts = make_translator(monkeypatch)
     second.start()
 
-    assert [call["json"]["model"] for call in second_posts] == ["opus_mt_en_es"]
+    assert [call["json"]["model"] for call in second_posts] == ["opus-en-es"]
 
 
 def test_engine_is_released_only_when_last_brick_stops(monkeypatch):
     first, _, first_posts = make_translator(monkeypatch)
-    second, _, second_posts = make_translator(monkeypatch, model="opusmt-es-en")
+    second, _, second_posts = make_translator(monkeypatch, model="opus-es-en")
     first.start()
     second.start()
 
@@ -381,7 +380,7 @@ def test_engine_is_released_only_when_last_brick_stops(monkeypatch):
 
 def test_stop_is_idempotent_and_does_not_release_for_other_started_bricks(monkeypatch):
     first, _, first_posts = make_translator(monkeypatch)
-    second, _, _ = make_translator(monkeypatch, model="opusmt-es-en")
+    second, _, _ = make_translator(monkeypatch, model="opus-es-en")
     first.start()
     second.start()
 

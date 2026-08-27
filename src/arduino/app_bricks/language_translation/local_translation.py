@@ -205,9 +205,9 @@ class LanguageTranslation:
 
     @staticmethod
     def _normalize_model_name(name: str) -> str:
-        """Catalog ids and runner-reported names differ only by separators
-        (e.g. catalog `opusmt-en-zh` vs runner `opus_mt_en_zh`), so compare them
-        stripped of `-` and `_`."""
+        """Catalog ids and runner-reported names may differ by separators
+        (e.g. a catalog `opus-en-zh` vs a runner-reported `opus_en_zh`), so compare
+        them stripped of `-` and `_`."""
         return name.replace("-", "").replace("_", "").lower()
 
     def _model_entries(self) -> list[dict]:
