@@ -107,7 +107,7 @@ class PoseEstimation:
         self,
         camera: BaseCamera | None = None,
         confidence: float = 0.25,
-        debounce_sec: float = 0.0,
+        count_debounce_sec: float = 0.0,
         draw_bboxes: bool = False,
         draw_uncertain: bool = True,
         bbox_padding: float | tuple[float, float, float, float] = 0.0,
@@ -122,9 +122,10 @@ class PoseEstimation:
                 the mean of the person's 17 keypoint scores, so partly visible people score lower.
                 Applied by the model runner, so detections below it are neither emitted nor drawn
                 on the overlay. Changeable at runtime with `set_confidence()`.
-            debounce_sec (float): Minimum seconds a presence or people-count change must be stable
-                before `on_enter`/`on_exit`/`on_count_change` fire again. Filters out detection
-                flicker. Default is 0 (no debounce).
+            count_debounce_sec (float): Minimum seconds a presence or people-count change must
+                be stable before `on_enter`/`on_exit`/`on_count_change` fire again. Filters out
+                detection flicker. Default is 0 (no debounce). Pose events are not affected: they
+                have their own temporal smoothing.
             draw_bboxes (bool): Draw each detected person's bounding box on the skeleton overlay
                 served by the model runner. Off by default. Changeable at runtime with
                 `set_draw_bboxes()`.
@@ -143,7 +144,7 @@ class PoseEstimation:
         """
         self._camera = camera if camera else Camera(fps=30)
         self._confidence = confidence
-        self._debounce_sec = debounce_sec
+        self._count_debounce_sec = count_debounce_sec
         self._draw_bboxes = draw_bboxes
         self._draw_uncertain = draw_uncertain
         self._bbox_padding = self._validate_bbox_padding(bbox_padding)
@@ -520,13 +521,13 @@ class PoseEstimation:
 
         # Dispatch person enter/exit events, debounced to filter out detection flicker
         present = count > 0
-        if present != self._person_present and (now - self._presence_change_ts) >= self._debounce_sec:
+        if present != self._person_present and (now - self._presence_change_ts) >= self._count_debounce_sec:
             self._person_present = present
             self._presence_change_ts = now
             self._submit_callback("enter" if present else "exit")
 
         # Dispatch people count change events, debounced as well
-        if count != self._person_count and (now - self._count_change_ts) >= self._debounce_sec:
+        if count != self._person_count and (now - self._count_change_ts) >= self._count_debounce_sec:
             self._person_count = count
             self._count_change_ts = now
             self._submit_callback("count", count)

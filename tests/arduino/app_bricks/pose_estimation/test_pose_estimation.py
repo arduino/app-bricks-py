@@ -48,7 +48,7 @@ def pe(monkeypatch: pytest.MonkeyPatch):
 @pytest.fixture()
 def pe_debounced(monkeypatch: pytest.MonkeyPatch):
     """Return a PoseEstimation instance with a 0.3s debounce."""
-    yield from _make_instance(monkeypatch, debounce_sec=0.3)
+    yield from _make_instance(monkeypatch, count_debounce_sec=0.3)
 
 
 def _make_instance(monkeypatch: pytest.MonkeyPatch, **kwargs):
