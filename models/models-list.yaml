@@ -1794,6 +1794,110 @@ models:
       source: "qualcomm-ai-hub"
       source-model-id: "pipertts_en"
       source-model-url: "https://aihub.qualcomm.com/models/pipertts_en"
+ - opus-en-zh:
+    name : "OpusMT (English to Chinese)"
+    description: >-
+      OpusMT English to Chinese neural machine translation model based on the MarianMT
+      transformer architecture, optimized for edge inference with split encoder and
+      decoder components.
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:language_translation"
+    deployment:
+      handler: "ai-hub-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              model_type: "voice_ai"
+              model_name: "opus_mt_en_zh"
+              models_repository: "audio-analytics/translation"
+              model_directory: "opus_mt_en_zh-voice_ai-float-qualcomm_qcs8275"
+              quantization: "float"
+              chipset: "qualcomm-qcs8275"
+              version: "0.57.1"
+    metadata:
+      model_size_mb: 297
+      source: "qualcomm-ai-hub"
+      source-model-id: "opus_mt_en_zh"
+      source-model-url: "https://aihub.qualcomm.com/models/opus_mt_en_zh"
+ - opus-zh-en:
+    name : "OpusMT (Chinese to English)"
+    description: >-
+      OpusMT Chinese to English neural machine translation model based on the MarianMT
+      transformer architecture, optimized for edge inference with split encoder and
+      decoder components.
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:language_translation"
+    deployment:
+      handler: "ai-hub-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              model_type: "voice_ai"
+              model_name: "opus_mt_zh_en"
+              models_repository: "audio-analytics/translation"
+              model_directory: "opus_mt_zh_en-voice_ai-float-qualcomm_qcs8275"
+              quantization: "float"
+              chipset: "qualcomm-qcs8275"
+              version: "0.57.1"
+    metadata:
+      model_size_mb: 297
+      source: "qualcomm-ai-hub"
+      source-model-id: "opus_mt_zh_en"
+      source-model-url: "https://aihub.qualcomm.com/models/opus_mt_zh_en"
+ - opus-en-es:
+    name : "OpusMT (English to Spanish)"
+    description: >-
+      OpusMT English to Spanish neural machine translation model based on the MarianMT
+      transformer architecture, optimized for edge inference with split encoder and
+      decoder components.
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:language_translation"
+    deployment:
+      handler: "ai-hub-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              model_type: "voice_ai"
+              model_name: "opus_mt_en_es"
+              models_repository: "audio-analytics/translation"
+              model_directory: "opus_mt_en_es-voice_ai-float-qualcomm_qcs8275"
+              quantization: "float"
+              chipset: "qualcomm-qcs8275"
+              version: "0.57.1"
+    metadata:
+      model_size_mb: 298
+      source: "qualcomm-ai-hub"
+      source-model-id: "opus_mt_en_es"
+      source-model-url: "https://aihub.qualcomm.com/models/opus_mt_en_es"
+ - opus-es-en:
+    name : "OpusMT (Spanish to English)"
+    description: >-
+      OpusMT Spanish to English neural machine translation model based on the MarianMT
+      transformer architecture, optimized for edge inference with split encoder and
+      decoder components.
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:language_translation"
+    deployment:
+      handler: "ai-hub-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              model_type: "voice_ai"
+              model_name: "opus_mt_es_en"
+              models_repository: "audio-analytics/translation"
+              model_directory: "opus_mt_es_en-voice_ai-float-qualcomm_qcs8275"
+              quantization: "float"
+              chipset: "qualcomm-qcs8275"
+              version: "0.57.1"
+    metadata:
+      model_size_mb: 298
+      source: "qualcomm-ai-hub"
+      source-model-id: "opus_mt_es_en"
+      source-model-url: "https://aihub.qualcomm.com/models/opus_mt_es_en"
  - "ei:efficientnet-b4":
     name : "General purpose object classification - EfficientNet-B4"
     description: "EfficientNetB4 is a machine learning model that can classify images from the Imagenet dataset. It can also be used as a backbone in building more complex models for specific use cases. This version of the model is optimized for NPU acceleration on supported devices, providing faster inference times while maintaining accuracy."
