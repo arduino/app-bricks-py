@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from arduino.app_bricks.pose_estimation import KEYPOINT_NAMES, Keypoint, Person, PoseEstimation
+from arduino.app_bricks.pose_estimation import KEYPOINT_NAMES, POSE_NAMES, Keypoint, Person, PoseEstimation
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -93,6 +93,10 @@ def test_stop_resets_the_temporal_state_with_the_asset_thresholds(pe):
 # ---------------------------------------------------------------------------
 # Detection parsing tests
 # ---------------------------------------------------------------------------
+
+
+def test_pose_names_lists_the_asset_poses():
+    assert POSE_NAMES == ("left_arm_raised", "right_arm_raised", "sitting", "standing")
 
 
 class TestDetectionParsing:

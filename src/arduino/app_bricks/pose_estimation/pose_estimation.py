@@ -37,6 +37,9 @@ logger = Logger("PoseEstimation")
 
 _POSE_CLASSIFIER_PATH = Path(__file__).resolve().parent / "assets" / "pose_classifier.npz"
 
+"""Names of the built-in poses accepted by `on_pose`."""
+POSE_NAMES: tuple[str, ...] = load_pose_classifier(_POSE_CLASSIFIER_PATH)[2]
+
 
 @dataclass
 class Keypoint:

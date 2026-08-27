@@ -4,6 +4,7 @@
 
 from arduino.app_bricks.pose_estimation.pose_estimation import (
     KEYPOINT_NAMES,
+    POSE_NAMES,
     Keypoint,
     Person,
     Pose,
@@ -12,6 +13,7 @@ from arduino.app_bricks.pose_estimation.pose_estimation import (
 
 __all__ = [
     "KEYPOINT_NAMES",
+    "POSE_NAMES",
     "Keypoint",
     "Person",
     "Pose",
