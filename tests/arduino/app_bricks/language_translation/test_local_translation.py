@@ -44,6 +44,13 @@ MULTILINGUAL_MODELS = [
 ]
 
 
+@pytest.fixture(autouse=True)
+def reset_shared_engine_state(monkeypatch):
+    """Bricks coordinate on class-level state; isolate it per test."""
+    monkeypatch.setattr(LanguageTranslation, "_started_instances", 0)
+    monkeypatch.setattr(LanguageTranslation, "_resident_model", None)
+
+
 class FakeResponse:
     def __init__(self, status_code=200, json_data=None, text=""):
         self.status_code = status_code
@@ -123,7 +130,7 @@ def test_translate_rejects_pair_not_served_by_configured_model(monkeypatch):
     translator, _, _ = make_translator(monkeypatch)
 
     with pytest.raises(TranslationNotSupportedError):
-        translator.translate("Adiós", source="es", target="en")  # Served by another model, not this one
+        translator.translate("Adiós", source="es", target="en")  # Served by another model, not the configured one
 
 
 def test_translate_with_unknown_configured_model_refreshes_once_then_raises(monkeypatch):
@@ -336,3 +343,49 @@ def test_stop_closes_remote_session_and_tolerates_plain_text_response(monkeypatc
     translator.stop()
 
     assert [call["url"] for call in post_calls] == [translator.api_base_url + "/translations/close"]
+
+
+def test_second_brick_skips_warmup_when_another_model_is_resident(monkeypatch):
+    first, _, first_posts = make_translator(monkeypatch)
+    first.start()
+    assert [call["json"]["model"] for call in first_posts] == ["opus_mt_en_es"]
+
+    second, _, second_posts = make_translator(monkeypatch, model="opusmt-es-en")
+    second.start()
+
+    assert second_posts == []  # Warming up would evict the first brick's model
+
+
+def test_second_brick_with_same_model_still_warms_up(monkeypatch):
+    first, _, _ = make_translator(monkeypatch)
+    first.start()
+
+    second, _, second_posts = make_translator(monkeypatch)
+    second.start()
+
+    assert [call["json"]["model"] for call in second_posts] == ["opus_mt_en_es"]
+
+
+def test_engine_is_released_only_when_last_brick_stops(monkeypatch):
+    first, _, first_posts = make_translator(monkeypatch)
+    second, _, second_posts = make_translator(monkeypatch, model="opusmt-es-en")
+    first.start()
+    second.start()
+
+    first.stop()
+    assert not any(call["url"].endswith("/translations/close") for call in first_posts)
+
+    second.stop()
+    assert [call["url"] for call in second_posts if call["url"].endswith("/translations/close")] == [second.api_base_url + "/translations/close"]
+
+
+def test_stop_is_idempotent_and_does_not_release_for_other_started_bricks(monkeypatch):
+    first, _, first_posts = make_translator(monkeypatch)
+    second, _, _ = make_translator(monkeypatch, model="opusmt-es-en")
+    first.start()
+    second.start()
+
+    first.stop()
+    first.stop()  # Repeated stop must not decrement the count below the started bricks
+
+    assert not any(call["url"].endswith("/translations/close") for call in first_posts)

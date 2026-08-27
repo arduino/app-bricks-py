@@ -39,6 +39,15 @@ class LanguageTranslation:
 
     _APP_SERVICE_NAME = "audio-analytics-runner"
 
+    # The device runs a single translation engine shared by every brick in the app,
+    # so requests, warmup and engine release are coordinated across instances:
+    # concurrent requests would queue server-side while wasting their own socket
+    # timeout, and /translations/close unloads the engine for everyone.
+    _request_lock = threading.Lock()
+    _shared_state_lock = threading.Lock()
+    _started_instances = 0
+    _resident_model: str | None = None
+
     def __init__(self, source: str | None = None, target: str | None = None):
         """Initialize the LanguageTranslation brick.
 
@@ -73,19 +82,34 @@ class LanguageTranslation:
         self.source = source.lower() if source else None
         self.target = target.lower() if target else None
 
-        # The translation engine is a server-side singleton: concurrent requests queue
-        # there while wasting their own socket timeout, so serialize them client-side.
-        self._request_lock = threading.Lock()
         self._models_lock = threading.Lock()
         self._models: list[dict] | None = None
+        self._started = False
 
     def start(self):
         """Start the LanguageTranslation brick, preloading the translation model when the language pair is determined."""
+        with LanguageTranslation._shared_state_lock:
+            LanguageTranslation._started_instances += 1
+            self._started = True
         self._warmup()
 
     def stop(self):
-        """Stop the LanguageTranslation brick, releasing the translation model on the device."""
-        self._close_remote_session()
+        """Stop the LanguageTranslation brick.
+
+        The translation model is released on the device only when this is the last
+        started LanguageTranslation brick, since the engine is shared by all of them.
+        """
+        with LanguageTranslation._shared_state_lock:
+            if self._started:
+                self._started = False
+                LanguageTranslation._started_instances -= 1
+            release = LanguageTranslation._started_instances == 0
+            if release:
+                LanguageTranslation._resident_model = None
+        if release:
+            self._close_remote_session()
+        else:
+            logger.debug("Keeping the translation engine loaded: other LanguageTranslation bricks are still started")
 
     def translate(self, text: str, source: str | None = None, target: str | None = None) -> str:
         """
@@ -177,13 +201,7 @@ class LanguageTranslation:
             TranslationError: If the model is not available on the device or the service
                 fails to list the models.
         """
-        pairs = []
-        for entry in self._model_entries():
-            source = (entry.get("source_language") or {}).get("code")
-            target = (entry.get("target_language") or {}).get("code")
-            if source and target:
-                pairs.append((source, target))
-        return pairs
+        return self._collect_pairs(self._model_entries())
 
     @staticmethod
     def _normalize_model_name(name: str) -> str:
@@ -213,17 +231,16 @@ class LanguageTranslation:
     def _resolve_request(self, source: str | None, target: str | None) -> tuple[str, str, str, int]:
         """Resolve the runner model name, language pair and batch size for a translate call.
 
-        The requested pair narrows down the model's entries; when the model declares a
-        single pair no languages are needed. Entries without language codes act as
-        wildcards and require an explicitly specified pair.
+        The requested pair narrows down the configured model's entries; when the model
+        declares a single pair no languages are needed. Entries without language codes
+        act as wildcards and require a fully specified pair.
         """
         source = (source or self.source or "").lower() or None
         target = (target or self.target or "").lower() or None
 
         matches = []
         for entry in self._model_entries():
-            entry_source = (entry.get("source_language") or {}).get("code")
-            entry_target = (entry.get("target_language") or {}).get("code")
+            entry_source, entry_target = self._pair_codes(entry)
             if entry_source and entry_target:
                 if (source is None or source == entry_source) and (target is None or target == entry_target):
                     matches.append((entry, entry_source, entry_target))
@@ -245,6 +262,22 @@ class LanguageTranslation:
         entry, source, target = matches[0]
         max_batch_size = (entry.get("parameters") or {}).get("max_batch_size") or DEFAULT_MAX_BATCH_SIZE
         return entry["name"], source, target, max_batch_size
+
+    @staticmethod
+    def _pair_codes(entry: dict) -> tuple[str | None, str | None]:
+        return (
+            (entry.get("source_language") or {}).get("code"),
+            (entry.get("target_language") or {}).get("code"),
+        )
+
+    @staticmethod
+    def _collect_pairs(models: list[dict]) -> list[tuple[str, str]]:
+        pairs = []
+        for entry in models:
+            source, target = LanguageTranslation._pair_codes(entry)
+            if source and target and (source, target) not in pairs:
+                pairs.append((source, target))
+        return pairs
 
     def _get_models(self) -> list[dict]:
         with self._models_lock:
@@ -297,6 +330,9 @@ class LanguageTranslation:
         if len(translations) != len(texts):
             raise TranslationError(f"Translation API returned {len(translations)} result(s) for {len(texts)} text(s).")
 
+        with LanguageTranslation._shared_state_lock:
+            LanguageTranslation._resident_model = self._normalize_model_name(model_name)
+
         return [entry.get("translated_text", "") for entry in translations]
 
     @staticmethod
@@ -311,13 +347,29 @@ class LanguageTranslation:
 
     def _warmup(self) -> None:
         """Best-effort warmup: translate a short text so the inference container loads
-        the translation model before the first real translate()."""
-        started_at = time.perf_counter()
+        the translation model before the first real translate().
+
+        Skipped when another brick's model is already loaded on the device: warming up
+        would evict it, and this brick's first translate() pays the load anyway.
+        """
         try:
-            self.translate("ok")
+            model_name, source, target, _ = self._resolve_request(None, None)
         except ValueError:
             logger.debug("Skipping translation warmup: the language pair is not determined")
             return
+        except Exception as e:
+            logger.warning(f"Translation warmup failed: {e}")
+            return
+
+        with LanguageTranslation._shared_state_lock:
+            resident = LanguageTranslation._resident_model
+        if resident is not None and resident != self._normalize_model_name(model_name):
+            logger.debug("Skipping translation warmup: another brick's model is loaded on the device")
+            return
+
+        started_at = time.perf_counter()
+        try:
+            self._translate_request(["ok"], model_name, source, target)
         except Exception as e:
             logger.warning(f"Translation warmup failed: {e}")
             return

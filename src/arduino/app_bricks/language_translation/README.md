@@ -10,7 +10,7 @@ The `LanguageTranslation` brick provides a completely offline text-to-text trans
 - **Model Selection:** The translation model is configured in `brick_config.yaml` and can be overridden per-app in `app.yaml` (e.g. `opusmt-en-zh` for English to Chinese). Use `supported_language_pairs()` to see what the configured model offers.
 - **Model Preloading:** The translation model is loaded at brick start so the first `translate()` call is fast.
 
-Fixed-pair models like the OpusMT family translate a single language pair in one direction (e.g. English to Chinese). Bidirectional translation requires two bricks configured with the two opposite models.
+Fixed-pair models like the OpusMT family translate a single language pair in one direction (e.g. English to Chinese).
 
 ## Code Example and Usage
 
@@ -55,6 +55,10 @@ translator.translate("Adiós", source="es", target="en")    # Per-call pair: "Go
 
 Note: switching the language pair between calls makes the device unload and reload the translation engine, adding around a second of latency. Group calls by language pair when possible.
 
+### Multiple translation bricks
+
+Several `LanguageTranslation` bricks in the same app coordinate on the device's single translation engine: requests are serialized across bricks, the engine is released only when the last brick stops, and only one model is loaded at a time — each model or pair switch reloads the engine, adding around a second of latency.
+
 ### Discover the supported language pairs
 
 ```python
@@ -72,7 +76,7 @@ The model is set by the `model` field in `brick_config.yaml` and can be overridd
 
 ## Interaction with ASR and TTS
 
-The translation service shares the device's audio pipeline with the ASR and TTS bricks. A translation request takes over the pipeline, so avoid translating while a live transcription or speech session must stay active. The translation model stays resident in device memory once loaded; it is released when the brick is stopped.
+The translation service shares the device's audio pipeline with the ASR and TTS bricks. A translation request takes over the pipeline, so avoid translating while a live transcription or speech session must stay active. The translation model stays resident in device memory once loaded; it is released when the last `LanguageTranslation` brick is stopped.
 
 ## Errors
 
