@@ -180,6 +180,15 @@ class TestPresenceCallbacks:
         _wait(done, "count change callbacks")
         assert counts == [1, 2]
 
+    def test_people_count_property_holds_the_reported_count(self, pe: PoseEstimation):
+        assert pe.people_count == 0
+
+        pe._process_detection(_detection_with([_pose_dict(), _pose_dict(x=300)]))
+        assert pe.people_count == 2
+
+        pe._process_detection(_detection_with([]))
+        assert pe.people_count == 0
+
     def test_low_confidence_poses_are_filtered(self, pe: PoseEstimation):
         entered = threading.Event()
         got_keypoints = threading.Event()

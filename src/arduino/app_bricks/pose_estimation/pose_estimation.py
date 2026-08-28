@@ -312,6 +312,11 @@ class PoseEstimation:
         """Whether the tracked person's pose can be read right now."""
         return self._readable
 
+    @property
+    def people_count(self) -> int:
+        """How many people are in view right now, the value `on_count_change` last reported."""
+        return self._person_count
+
     def set_confidence(self, confidence: float):
         """Change the minimum detection score for a person, effective immediately.
 

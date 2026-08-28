@@ -25,6 +25,8 @@ Integration highlights:
 - `on_readable_change` reports whether the tracked person's skeleton can be read at all:
   while it cannot, no pose event is emitted, so it is the cue to ask the user to step back
   into full view.
+- `readable` and `people_count` hold the current value of those two states, for clients that
+  connect after the last change and would otherwise wait for the next one.
 - `POSE_NAMES` lists the built-in pose names `on_pose` accepts.
 - `set_confidence` changes the minimum person detection score at runtime; the value is
   applied by the model runner itself, so the skeleton overlay only ever shows what the
