@@ -110,6 +110,7 @@ class PoseEstimation:
         camera: BaseCamera | None = None,
         confidence: float = 0.25,
         count_debounce_sec: float = 0.0,
+        out_of_frame_tolerance: float = OUT_OF_FRAME_TOLERANCE,
         draw_bboxes: bool = False,
         draw_uncertain: bool = True,
         bbox_padding: float | tuple[float, float, float, float] = 0.0,
@@ -129,6 +130,10 @@ class PoseEstimation:
                 dropped detection frame cannot fake it. People appearing are always reported at
                 once. Default is 0 (no debounce). Pose events are not affected: they have their
                 own temporal smoothing.
+            out_of_frame_tolerance (float): How far past the frame edges a joint may be
+                extrapolated before the skeleton counts as unreadable, as a fraction of the
+                frame size: no pose is classified and `on_readable_change` reports False.
+                Default is 0.25; 0 demands every joint inside the picture.
             draw_bboxes (bool): Draw each detected person's bounding box on the skeleton overlay
                 served by the model runner. Off by default. Changeable at runtime with
                 `set_draw_bboxes()`.
@@ -148,6 +153,7 @@ class PoseEstimation:
         self._camera = camera if camera else Camera(fps=30)
         self._confidence = confidence
         self._count_debounce_sec = count_debounce_sec
+        self._out_of_frame_tolerance = out_of_frame_tolerance
         self._draw_bboxes = draw_bboxes
         self._draw_uncertain = draw_uncertain
         self._bbox_padding = self._validate_bbox_padding(bbox_padding)
@@ -664,8 +670,8 @@ class PoseEstimation:
             return None
         if self._frame_hw is not None:
             frame_h, frame_w = self._frame_hw
-            margin_x = OUT_OF_FRAME_TOLERANCE * frame_w
-            margin_y = OUT_OF_FRAME_TOLERANCE * frame_h
+            margin_x = self._out_of_frame_tolerance * frame_w
+            margin_y = self._out_of_frame_tolerance * frame_h
             for name in EMBEDDING_JOINTS:
                 keypoint = person.keypoints[name]
                 if not (-margin_x <= keypoint.x <= frame_w + margin_x and -margin_y <= keypoint.y <= frame_h + margin_y):

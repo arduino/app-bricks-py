@@ -51,6 +51,12 @@ def pe_debounced(monkeypatch: pytest.MonkeyPatch):
     yield from _make_instance(monkeypatch, count_debounce_sec=0.3)
 
 
+@pytest.fixture()
+def pe_strict(monkeypatch: pytest.MonkeyPatch):
+    """Return a PoseEstimation instance that refuses any joint outside the frame."""
+    yield from _make_instance(monkeypatch, out_of_frame_tolerance=0.0)
+
+
 def _make_instance(monkeypatch: pytest.MonkeyPatch, **kwargs):
     fake_compose = {"services": {"pose-runner": {}}}
     monkeypatch.setattr(
@@ -358,6 +364,15 @@ class TestPoseEvents:
 
         pe._frame_hw = None
         assert pe._classify_person(far_out) is not None
+
+    def test_zero_tolerance_demands_every_joint_inside_the_frame(self, pe_strict: PoseEstimation):
+        pe_strict._frame_hw = (480, 640)
+        assert pe_strict._classify_person(_person()) is not None
+
+        just_outside = _person()
+        kp = just_outside.keypoints["left_ankle"]
+        just_outside.keypoints["left_ankle"] = Keypoint(name=kp.name, x=kp.x, y=481, score=kp.score)
+        assert pe_strict._classify_person(just_outside) is None
 
     def test_a_tip_extrapolated_outside_from_a_seen_joint_is_still_readable(self, pe: PoseEstimation):
         pe._frame_hw = (480, 640)

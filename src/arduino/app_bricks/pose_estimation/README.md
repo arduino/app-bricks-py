@@ -27,6 +27,9 @@ Integration highlights:
   into full view.
 - `readable` and `people_count` hold the current value of those two states, for clients that
   connect after the last change and would otherwise wait for the next one.
+- `out_of_frame_tolerance` sets how far past the frame edges a joint may be extrapolated
+  before the skeleton counts as unreadable, as a fraction of the frame size: 0.25 by
+  default, 0 to demand a person entirely inside the picture.
 - `POSE_NAMES` lists the built-in pose names `on_pose` accepts.
 - `set_confidence` changes the minimum person detection score at runtime; the value is
   applied by the model runner itself, so the skeleton overlay only ever shows what the
