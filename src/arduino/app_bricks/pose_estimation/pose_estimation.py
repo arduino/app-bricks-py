@@ -37,6 +37,8 @@ logger = Logger("PoseEstimation")
 
 _POSE_CLASSIFIER_PATH = Path(__file__).resolve().parent / "assets" / "pose_classifier.npz"
 
+_UNREADABLE_HOLD_SEC = 0.5
+
 """Names of the built-in poses accepted by `on_pose`."""
 POSE_NAMES: tuple[str, ...] = load_pose_classifier(_POSE_CLASSIFIER_PATH)[2]
 
@@ -162,6 +164,8 @@ class PoseEstimation:
         self._person_count = 0
         self._count_candidate: int | None = None
         self._count_since = 0.0
+        self._readable = False
+        self._readable_since: float | None = None
         self._is_running = False
 
         self._camera_frame_queue = queue.Queue(maxsize=2)
@@ -224,6 +228,8 @@ class PoseEstimation:
         )
         self._pose_last_ts = None
         self._pose_last_person = None
+        self._readable = False
+        self._readable_since = None
 
     def on_keypoints(self, callback: Callable[[Person], None] | None):
         """Register a callback invoked once per detected person, for every processed frame.
@@ -286,6 +292,25 @@ class PoseEstimation:
                 None to unregister.
         """
         self._register_callback("count", callback)
+
+    def on_readable_change(self, callback: Callable[[bool], None] | None):
+        """Register a callback for when the tracked person becomes readable, or stops being.
+
+        The pose classifier needs the skeleton to be complete enough to judge: joints
+        wildly outside the frame, guessed anchors or a collapsed torso make the frame
+        unreadable, and no pose event is emitted while it stays that way. Becoming
+        readable is reported at once, losing it only when it holds.
+
+        Args:
+            callback (Callable[[bool], None]): Function to call with True when the tracked
+                person's pose can be read, False when it cannot. None to unregister.
+        """
+        self._register_callback("readable", callback)
+
+    @property
+    def readable(self) -> bool:
+        """Whether the tracked person's pose can be read right now."""
+        return self._readable
 
     def set_confidence(self, confidence: float):
         """Change the minimum detection score for a person, effective immediately.
@@ -564,6 +589,8 @@ class PoseEstimation:
             probs = self._classify_person(tracked)
             self._pose_last_probs = probs
 
+        self._update_readable(probs is not None, now)
+
         events = self._pose_ema.update(probs, dt, person_present=bool(people))
         if not events:
             return
@@ -583,6 +610,18 @@ class PoseEstimation:
                     bounding_box_xyxy=bbox,
                 ),
             )
+
+    def _update_readable(self, readable: bool, now: float):
+        """Dispatch readability changes: gained at once, lost only when it holds."""
+        if readable == self._readable:
+            self._readable_since = None
+            return
+        if self._readable_since is None:
+            self._readable_since = now
+        if readable or (now - self._readable_since) >= _UNREADABLE_HOLD_SEC:
+            self._readable = readable
+            self._readable_since = None
+            self._submit_callback("readable", readable)
 
     @staticmethod
     def _box_area(box: tuple[int, int, int, int]) -> int:

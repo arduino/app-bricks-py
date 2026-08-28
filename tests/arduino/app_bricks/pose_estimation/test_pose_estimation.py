@@ -440,6 +440,63 @@ class TestPoseEvents:
         assert not called.wait(timeout=0.3)
 
 
+class TestReadableCallback:
+    def _feed(self, pe: PoseEstimation, steps: int, start: float) -> float:
+        now = start
+        for _ in range(steps):
+            now += 0.1
+            pe._update_pose_classification([_person()], now)
+        return now
+
+    def test_readable_is_gained_at_once_and_lost_on_hold(self, pe: PoseEstimation, monkeypatch):
+        states = []
+        gained, lost = threading.Event(), threading.Event()
+
+        def on_readable(value: bool):
+            states.append(value)
+            (gained if value else lost).set()
+
+        pe.on_readable_change(on_readable)
+
+        monkeypatch.setattr(pe, "_classify_person", lambda p: {"standing": 1.0})
+        now = self._feed(pe, steps=2, start=0.0)
+        _wait(gained, "readable")
+        time.sleep(0.1)
+
+        monkeypatch.setattr(pe, "_classify_person", lambda p: None)
+        self._feed(pe, steps=10, start=now)
+        _wait(lost, "unreadable")
+
+        assert states == [True, False]
+
+    def test_the_property_holds_the_reported_state(self, pe: PoseEstimation, monkeypatch):
+        assert pe.readable is False
+
+        monkeypatch.setattr(pe, "_classify_person", lambda p: {"standing": 1.0})
+        now = self._feed(pe, steps=2, start=0.0)
+        assert pe.readable is True
+
+        monkeypatch.setattr(pe, "_classify_person", lambda p: None)
+        self._feed(pe, steps=10, start=now)
+        assert pe.readable is False
+
+    def test_a_single_unreadable_frame_is_ignored(self, pe: PoseEstimation, monkeypatch):
+        states = []
+        pe.on_readable_change(states.append)
+
+        monkeypatch.setattr(pe, "_classify_person", lambda p: {"standing": 1.0})
+        now = self._feed(pe, steps=2, start=0.0)
+        time.sleep(0.1)
+
+        monkeypatch.setattr(pe, "_classify_person", lambda p: None)
+        now = self._feed(pe, steps=1, start=now)
+        monkeypatch.setattr(pe, "_classify_person", lambda p: {"standing": 1.0})
+        self._feed(pe, steps=3, start=now)
+
+        time.sleep(0.2)
+        assert states == [True]
+
+
 class TestSetConfidence:
     def test_updates_the_filter_and_validates_input(self, pe: PoseEstimation):
         pe.set_confidence(0.8)

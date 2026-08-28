@@ -22,6 +22,9 @@ Integration highlights:
   person disappears, active poses exit after a 0.7 s grace period). Other people
   stay visible through `on_keypoints` but do not fire pose events.
 - `on_enter` / `on_exit` / `on_count_change` enable presence and people-counting automations.
+- `on_readable_change` reports whether the tracked person's skeleton can be read at all:
+  while it cannot, no pose event is emitted, so it is the cue to ask the user to step back
+  into full view.
 - `POSE_NAMES` lists the built-in pose names `on_pose` accepts.
 - `set_confidence` changes the minimum person detection score at runtime; the value is
   applied by the model runner itself, so the skeleton overlay only ever shows what the
