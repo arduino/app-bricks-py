@@ -122,10 +122,11 @@ class PoseEstimation:
                 the mean of the person's 17 keypoint scores, so partly visible people score lower.
                 Applied by the model runner, so detections below it are neither emitted nor drawn
                 on the overlay. Changeable at runtime with `set_confidence()`.
-            count_debounce_sec (float): Minimum seconds a presence or people-count change must
-                be stable before `on_enter`/`on_exit`/`on_count_change` fire again. Filters out
-                detection flicker. Default is 0 (no debounce). Pose events are not affected: they
-                have their own temporal smoothing.
+            count_debounce_sec (float): Minimum seconds a person leaving, or the people count
+                dropping, must hold before `on_exit`/`on_count_change` report it, so that a
+                dropped detection frame cannot fake it. People appearing are always reported at
+                once. Default is 0 (no debounce). Pose events are not affected: they have their
+                own temporal smoothing.
             draw_bboxes (bool): Draw each detected person's bounding box on the skeleton overlay
                 served by the model runner. Off by default. Changeable at runtime with
                 `set_draw_bboxes()`.
@@ -157,9 +158,10 @@ class PoseEstimation:
 
         # State tracking
         self._person_present = False
-        self._presence_change_ts = 0.0
+        self._presence_since: float | None = None
         self._person_count = 0
-        self._count_change_ts = 0.0
+        self._count_candidate: int | None = None
+        self._count_since = 0.0
         self._is_running = False
 
         self._camera_frame_queue = queue.Queue(maxsize=2)
@@ -521,16 +523,27 @@ class PoseEstimation:
 
         # Dispatch person enter/exit events, debounced to filter out detection flicker
         present = count > 0
-        if present != self._person_present and (now - self._presence_change_ts) >= self._count_debounce_sec:
-            self._person_present = present
-            self._presence_change_ts = now
-            self._submit_callback("enter" if present else "exit")
+        if present == self._person_present:
+            self._presence_since = None
+        else:
+            if self._presence_since is None:
+                self._presence_since = now
+            if present or (now - self._presence_since) >= self._count_debounce_sec:
+                self._person_present = present
+                self._presence_since = None
+                self._submit_callback("enter" if present else "exit")
 
         # Dispatch people count change events, debounced as well
-        if count != self._person_count and (now - self._count_change_ts) >= self._count_debounce_sec:
-            self._person_count = count
-            self._count_change_ts = now
-            self._submit_callback("count", count)
+        if count == self._person_count:
+            self._count_candidate = None
+        else:
+            if self._count_candidate != count:
+                self._count_candidate = count
+                self._count_since = now
+            if count > self._person_count or (now - self._count_since) >= self._count_debounce_sec:
+                self._person_count = count
+                self._count_candidate = None
+                self._submit_callback("count", count)
 
         # Dispatch keypoint events (not debounced: they are the raw detection stream)
         if people:

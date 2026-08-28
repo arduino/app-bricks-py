@@ -207,6 +207,42 @@ class TestPresenceCallbacks:
         pe_debounced._process_detection(_detection_with([]))
         _wait(exited, "debounced exit callback")
 
+    def test_dropped_detection_frame_never_fires_exit(self, pe_debounced: PoseEstimation):
+        exited = threading.Event()
+        pe_debounced.on_exit(lambda: exited.set())
+
+        pe_debounced._process_detection(_detection_with([_pose_dict()]))
+        pe_debounced._process_detection(_detection_with([]))
+        pe_debounced._process_detection(_detection_with([_pose_dict()]))
+
+        time.sleep(0.4)
+        pe_debounced._process_detection(_detection_with([_pose_dict()]))
+
+        assert not exited.wait(timeout=0.1), "a dropped frame must not fire exit"
+
+    def test_people_count_grows_at_once_and_drops_on_hold(self, pe_debounced: PoseEstimation):
+        counts = []
+        dropped = threading.Event()
+
+        def on_count(count: int):
+            counts.append(count)
+            if counts == [1, 2, 1]:
+                dropped.set()
+
+        pe_debounced.on_count_change(on_count)
+
+        pe_debounced._process_detection(_detection_with([_pose_dict()]))
+        time.sleep(0.1)  # Let the first callback complete to avoid the busy-discard
+        pe_debounced._process_detection(_detection_with([_pose_dict(), _pose_dict(x=300)]))
+        time.sleep(0.1)
+        pe_debounced._process_detection(_detection_with([_pose_dict()]))
+
+        assert counts == [1, 2], "a growing count is immediate, a dropping one is not"
+
+        time.sleep(0.3)
+        pe_debounced._process_detection(_detection_with([_pose_dict()]))
+        _wait(dropped, "debounced count drop")
+
 
 # ---------------------------------------------------------------------------
 # Keypoint stream callback tests
