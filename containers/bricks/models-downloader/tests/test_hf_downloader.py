@@ -33,6 +33,7 @@ from hugging_face.hf_downloader import (
     delete_matched_files,
     discard_incomplete_download,
     download_matched_files,
+    downloaded_size_mb,
     fallback_model_id,
     generate_models_ini,
     gguf_pattern,
@@ -1166,3 +1167,73 @@ def test_download_fails_when_the_record_cannot_be_written(tmp_path, monkeypatch,
     assert exc.value.code == 1
     assert read_events(capsys)[-1]["event"] == "error"
     assert (models_dir / "unsloth" / "Qwen3-0.6B-GGUF" / MARKER_NAME).is_file()
+
+
+# --------------------------------------------------------------------------- #
+# downloaded_size_mb
+# --------------------------------------------------------------------------- #
+def test_downloaded_size_mb_sums_the_files_like_the_listing(tmp_path):
+    main = tmp_path / "model-Q4_0.gguf"
+    main.write_bytes(b"\0" * (2 * 1024 * 1024))
+    mmproj = tmp_path / "mmproj-BF16.gguf"
+    mmproj.write_bytes(b"\0" * (1024 * 1024))
+
+    assert downloaded_size_mb([str(main), str(mmproj)]) == 3.0
+
+
+def test_downloaded_size_mb_without_files_or_with_unreadable_ones(tmp_path):
+    assert downloaded_size_mb([]) is None
+    assert downloaded_size_mb([str(tmp_path / "gone.gguf")]) is None
+
+
+# --------------------------------------------------------------------------- #
+# main(): the completion events name and size the model
+# --------------------------------------------------------------------------- #
+def test_download_event_reports_the_model_id_and_size(tmp_path, monkeypatch, stub_download, capsys):
+    """The host learns the id and size on completion, instead of re-deriving them or
+    running a listing container right after a multi-GB transfer. The id is the one
+    the listing derives for the same file: path-qualified for an ad-hoc download.
+    """
+    import list_models
+
+    base = tmp_path / "models"
+    models_dir = base / "llamacpp"
+    models_dir.mkdir(parents=True)
+
+    _run_main(monkeypatch, "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q3_K_S", "--output-dir", str(models_dir))
+
+    done = read_events(capsys)[-1]
+    assert done["description"].startswith("Downloaded to:")
+    assert done["model_id"] == "llamacpp:unsloth/Qwen3-0.6B-GGUF/Q3_K_S"
+    assert done["size_mb"] == 0.0  # the stub writes a 1-byte file
+    listed = list_models.find_llamacpp_models(str(base))
+    assert [m["id"] for m in listed] == [done["model_id"]]
+
+
+def test_download_event_reports_the_curated_id_for_a_declared_location(tmp_path, monkeypatch, stub_download, capsys):
+    """A file landing where the catalog declares it is that curated model, whatever
+    variables the request carried."""
+    monkeypatch.setattr(hf_downloader, "catalog_gguf_declarations", lambda: [("unsloth/Qwen3-0.6B-GGUF", None, "llamacpp:Qwen3-0.6B-Q3_K_S")])
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+
+    _run_main(monkeypatch, "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q3_K_S", "--output-dir", str(models_dir))
+
+    assert read_events(capsys)[-1]["model_id"] == "llamacpp:Q3_K_S"
+
+
+def test_already_installed_request_reports_the_same_identity(tmp_path, monkeypatch, stub_download, capsys):
+    """Asking again for an installed model returns its id and size without a transfer."""
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    _run_main(monkeypatch, "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q3_K_S", "--output-dir", str(models_dir))
+    downloaded_event = read_events(capsys)[-1]
+
+    _run_main(monkeypatch, "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q3_K_S", "--output-dir", str(models_dir))
+
+    exists_event = read_events(capsys)[-1]
+    assert exists_event["description"].startswith("Model exists:")
+    assert stub_download == ["*Q3_K_S*.gguf"]  # the second run transferred nothing
+    assert exists_event["model_id"] == downloaded_event["model_id"]
+    assert exists_event["size_mb"] == downloaded_event["size_mb"]
+    assert exists_event["artifacts"] == downloaded_event["artifacts"]
