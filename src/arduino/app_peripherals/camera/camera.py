@@ -2,15 +2,20 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import inspect
 from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlparse
 
 import numpy as np
 
+from arduino.app_utils import Logger
+
 from .base_camera import BaseCamera
 from .errors import CameraConfigError
 from .utils import _camera_registry, _claim_first_available_camera, _nth_plugged_camera
+
+logger = Logger("Camera")
 
 
 class Camera:
@@ -65,7 +70,7 @@ class Camera:
             fps (int): Target frames per second. Default: 10.
             adjustments (callable, optional): Function pipeline to adjust frames
                 that takes a numpy array and returns a numpy array. Default: None.
-            **kwargs: Camera-specific configuration parameters grouped by type:
+            **kwargs: Camera-specific configuration parameters grouped by type.
                 V4L Camera Parameters:
                     device (int | str): V4L device. Default: 0.
                     codec (str, optional): Video codec to use (FourCC). Options: "YUVY",
@@ -168,6 +173,30 @@ def _claim_key(camera: BaseCamera) -> str | None:
     return None
 
 
+def _supported_kwargs(camera_cls: type[BaseCamera], kwargs: dict) -> dict:
+    """
+    Keep only the keyword arguments supported by the target camera implementation.
+
+    The factory forwards **kwargs verbatim, so options that only apply to another
+    camera type (e.g. the V4L-only codec) would otherwise break the construction,
+    most notably when auto-selection picks a CSI camera.
+
+    Args:
+        camera_cls (type[BaseCamera]): Camera implementation the arguments are meant for.
+        kwargs (dict): Keyword arguments to forward to camera_cls.
+
+    Returns:
+        dict: The keyword arguments accepted by camera_cls.
+    """
+    supported = inspect.signature(camera_cls.__init__).parameters
+    dropped = sorted(name for name in kwargs if name not in supported)
+    if not dropped:
+        return kwargs
+
+    logger.warning(f"Ignoring argument(s) {', '.join(dropped)}: not supported by {camera_cls.__name__}")
+    return {name: value for name, value in kwargs.items() if name not in dropped}
+
+
 def _create_camera(
     source: str,
     resolution: tuple[int, int],
@@ -186,6 +215,7 @@ def _create_camera(
         from .csi_camera import CSICamera
 
         csi_source = source[4:]  # Remove "csi:" prefix
+        kwargs = _supported_kwargs(CSICamera, kwargs)
         return CSICamera(csi_source, resolution=resolution, fps=fps, adjustments=adjustments, **kwargs)
 
     # All other cases are handled by URL parsing

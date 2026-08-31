@@ -70,7 +70,10 @@ def _nth_plugged_camera(idx: int) -> str:
     if idx - usb_count < csi_count:
         return f"csi:{idx - usb_count}"
 
-    raise CameraOpenError(f"No camera found at index {idx}: only {usb_count + csi_count} camera(s) plugged")
+    raise CameraOpenError(
+        f"No camera found at index {idx}: only {usb_count + csi_count} camera(s) plugged",
+        hint="Connect a camera (or check the camera configuration) and restart the app.",
+    )
 
 
 def resolve_camera_name(i2c_addr: str) -> str:

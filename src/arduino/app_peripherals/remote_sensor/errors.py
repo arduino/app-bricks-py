@@ -3,7 +3,10 @@
 # SPDX-License-Identifier: MPL-2.0
 
 
-class RemoteSensorError(Exception):
+from arduino.app_utils.errors import AppError
+
+
+class RemoteSensorError(AppError):
     """Base exception for remote sensor-related errors."""
 
     pass

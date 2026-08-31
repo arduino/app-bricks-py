@@ -14,28 +14,28 @@ apps:
     sources:
       pip: true
     python:
-      virtual_env_dir: "containers/python-base/.licensed-venv"
+      virtual_env_dir: "containers/base/python-base/.licensed-venv"
 
   - name: aihub-models-runner
     source_path: .
     sources:
       pip: true
     python:
-      virtual_env_dir: "containers/aihub-models-runner/.licensed-venv"
+      virtual_env_dir: "containers/ai/aihub-models-runner/.licensed-venv"
 
   - name: gesture-recognition-runner
     source_path: .
     sources:
       pip: true
     python:
-      virtual_env_dir: "containers/gesture-recognition-runner/.licensed-venv"
+      virtual_env_dir: "containers/ai/gesture-recognition-runner/.licensed-venv"
 
   - name: python-apps-base
     source_path: .
     sources:
       pip: true
     python:
-      virtual_env_dir: "containers/python-apps-base/.licensed-venv"
+      virtual_env_dir: "containers/bricks/python-apps-base/.licensed-venv"
 
 stale_records_action: error
 
@@ -47,6 +47,16 @@ ignored:
     - uv
     - arduino-app-bricks
     - arduino_app_bricks
+
+# Packages whose wheel metadata licensee cannot classify (missing or
+# unrecognized license text in the distribution); licenses verified manually.
+reviewed:
+  pip:
+    - defusedxml        # PSF-2.0
+    - langchain-core    # MIT
+    - langsmith         # MIT
+    - ai-edge-litert    # Apache-2.0
+    - tzdata            # Apache-2.0
 
 allowed:
   - mpl-2.0

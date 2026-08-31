@@ -23,12 +23,12 @@ from websockets.exceptions import ConnectionClosed, ConnectionClosedOK
 from arduino.app_internal.core import resolve_address
 from arduino.app_internal.core.module import get_brick_config, get_brick_configured_model
 from arduino.app_peripherals.microphone import BaseMicrophone, Microphone
-from arduino.app_utils import Logger, brick
+from arduino.app_utils import AppError, Logger, brick
 
 logger = Logger("ASR")
 
 
-class ASRError(Exception):
+class ASRError(AppError):
     """Base class for ASR errors."""
 
 

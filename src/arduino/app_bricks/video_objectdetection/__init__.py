@@ -118,8 +118,9 @@ class VideoObjectDetection:
         This is useful to receive a consolidated dictionary of detections for each frame.
 
         Args:
-            callback (Callable[[dict], None]): A function that accepts **one dict argument** with
-                the shape `{label: confidence, ...}`.
+            callback (Callable[[dict], None]): A function that accepts **one dict argument** mapping
+                each detected label to the list of its detections, with the shape
+                `{label: [{"confidence": float, "bounding_box_xyxy": (x1, y1, x2, y2)}, ...], ...}`.
 
         Raises:
             TypeError: If `callback` is not a function.

@@ -34,10 +34,12 @@ fur_elise = [
     ("E4", 1/4), ("C5", 1/4),  ("B4", 1/4),  ("A4", 1.0),
 ]
 for note, duration in fur_elise:
-    player.play(note, duration)
+    player.play(note, duration, block=True)
 
 App.run()
 ```
+
+`play()` is non-blocking by default: it enqueues the note and returns immediately. Pass `block=True` (as above) to wait for each note and play the melody in tempo. For sequenced playback the brick also offers higher-level methods such as `play_step_sequence()` and `play_composition()`.
 
 Waveform can be customized to change the sound character. For example, for a retro-gaming sound, you can configure "square" wave form.
 

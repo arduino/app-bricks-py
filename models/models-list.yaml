@@ -1506,6 +1506,22 @@ models:
     deployment:
       handler: "ai-hub-handler"
       pre-loaded: true
+ - pose-estimation:
+    name : "PoseNet MobileNet Pose Estimation"
+    description: >-
+      PoseNet performs real-time multi-person pose estimation, detecting up to 10 people
+      per frame and locating 17 body keypoints (nose, eyes, ears, shoulders, elbows,
+      wrists, hips, knees, ankles) for each person.
+    bricks:
+      - id: "arduino:pose_estimation"
+    metadata:
+      model_size_mb: 4
+      source: "qualcomm-ai-hub"
+      source-model-id: "posenet_mobilenet"
+      source-model-url: "https://aihub.qualcomm.com/models/posenet_mobilenet"
+    deployment:
+      handler: "ai-hub-handler"
+      pre-loaded: true
  - whisper-small-quantized:
     name : "Whisper Small (quantized)"
     description: >-
@@ -1819,6 +1835,8 @@ models:
     supported_boards: ["ventunoq"]
     bricks:
       - id: "arduino:llm"
+        model_configuration:
+          GGML_HEXAGON_NDEV: 1      
     deployment:
       handler: "hf-handler"
       platforms:
@@ -1863,6 +1881,8 @@ models:
      supported_boards: ["ventunoq", "unoq"]
      bricks:
        - id: "arduino:llm"
+         model_configuration:
+           GGML_HEXAGON_NDEV: 1       
      deployment:
        handler: "hf-handler"
        platforms:
@@ -1890,6 +1910,8 @@ models:
      supported_boards: ["ventunoq", "unoq"]
      bricks:
        - id: "arduino:llm"
+         model_configuration:
+           GGML_HEXAGON_NDEV: 1       
      deployment:
        handler: "hf-handler"
        platforms:

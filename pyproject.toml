@@ -71,6 +71,10 @@ streamlit_ui = [
 mood_detector = [
     "nltk",
 ]
+pose_estimation = [
+    "numpy",
+    "websockets",
+]
 stream = [
     "websockets",
 ]
@@ -102,6 +106,7 @@ all = [
     "arduino_app_bricks[web_ui]",
     "arduino_app_bricks[streamlit_ui]",
     "arduino_app_bricks[mood_detector]",
+    "arduino_app_bricks[pose_estimation]",
     "arduino_app_bricks[stream]",
     "arduino_app_bricks[arduino_cloud]",
     "arduino_app_bricks[telegram_bot]",
@@ -127,7 +132,9 @@ include = ["*"]
 
 
 [tool.setuptools_scm]
-tag_regex = '^(?:ai|release)/(?P<version>v?\d+(?:\.\d+)*(?:rc\d+)?)$'
+# bricks/* is the library release prefix (the containers/bricks group); release/* is
+# kept so the pre-reorg tag history stays parseable for dev builds.
+tag_regex = '^(?:ai|bricks|release)/(?P<version>v?\d+(?:\.\d+)*(?:rc\d+)?)$'
 write_to = "src/arduino/_version.py"
 root = "."
 version_scheme = "only-version"

@@ -27,7 +27,7 @@ The Video Object Detection Brick allows you to:
 - Two callback styles:
   - `on_detect("<label>", callback)` → React to a specific label.
   - `on_detect_all(callback)` → React to all detections at once.
-- Configurable confidence threshold (default: `0.3`) and debounce time between repeated detections (default: `2.0s`)
+- Configurable confidence threshold (default: `0.3`) and debounce time between repeated detections (default: `0s`, i.e. no debounce)
 - Runtime threshold override with `override_threshold(value)`
 - Clean lifecycle control with `start()` / `stop()` and integration with `App.run()`.
 
@@ -46,15 +46,15 @@ from arduino.app_bricks.video_objectdetection import VideoObjectDetection
 # Initialize detector with custom confidence and debounce settings
 video_detector = VideoObjectDetection(confidence=0.4, debounce_sec=1.5)
 
-# Callback when a "person" is detected (no arguments allowed)
+# Callback when a "person" is detected
 def on_person_detected():
     print("🚨 Person detected in the video stream!")
 
 video_detector.on_detect("person", on_person_detected)
 
-# Callback for all detections (must take one dict argument)
+# Callback for all detections (takes one dict argument)
 def on_all_detections(detections: dict):
-    # Example: {"person": 0.87, "bicycle": 0.66}
+    # Example: {"person": [{"confidence": 0.87, "bounding_box_xyxy": (10, 20, 110, 220)}]}
     print("All detections:", detections)
 
 video_detector.on_detect_all(on_all_detections)
@@ -62,3 +62,11 @@ video_detector.on_detect_all(on_all_detections)
 # Run the application (keeps the video detection loop active)
 App.run()
 ```
+
+Callback signatures:
+
+- `on_detect(label, callback)`: the callback must be a plain function. With no parameters it is simply invoked; with one parameter it receives the detection details dict `{"confidence": float, "bounding_box_xyxy": (x1, y1, x2, y2)}`.
+- `on_detect_all(callback)`: the callback receives one dict argument mapping each detected label to the list of its detections: `{label: [{"confidence": float, "bounding_box_xyxy": (x1, y1, x2, y2)}, ...], ...}`.
+- With `VideoObjectDetection(camera_preview=True)`, a callback that declares a `frame` parameter (e.g. `def cb(detections, frame)`) also receives the current camera frame as raw JPEG bytes.
+
+The constructor also accepts a `camera` parameter (`BaseCamera`) to use a specific camera instead of the default one.

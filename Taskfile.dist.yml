@@ -125,7 +125,7 @@ tasks:
         .licensed-venv/bin/python -m pip install --upgrade pip -q
         SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0 .licensed-venv/bin/pip install -q ".[all]"
       - |
-        for d in containers/*/; do
+        for d in containers/*/*/; do
           venv_path="$d.licensed-venv"
           reqs=()
           [ -f "$d/requirements-base.txt" ] && reqs+=("$d/requirements-base.txt")
@@ -157,7 +157,7 @@ tasks:
     internal: true
     cmds:
       - rm -rf .licensed-venv
-      - rm -rf containers/*/.licensed-venv
+      - rm -rf containers/*/*/.licensed-venv
 
   install:licensed:
     desc: Install or verify licensed Ruby gem
@@ -247,12 +247,12 @@ tasks:
         vars:
           IMAGE: 'public.ecr.aws/arduino/app-bricks/python-apps-base'
           TAG: '{{.BRICKS_TAG}}'
-          DIR: './containers/python-apps-base'
+          DIR: './containers/bricks/python-apps-base'
       - task: sbom:update:internal
         vars:
           IMAGE: 'public.ecr.aws/arduino/app-bricks/ei-models-runner'
           TAG: '{{.EI_TAG}}'
-          DIR: './containers/ei-models-runner'
+          DIR: './containers/ai/ei-models-runner'
 
   sbom:delta:
     desc: Generate delta SBOMs for containers (requires syft and registry access)

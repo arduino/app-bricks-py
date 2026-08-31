@@ -5,9 +5,9 @@
 
 import pytest
 
-from arduino.app_peripherals.camera import Camera, V4LCamera, IPCamera, WebSocketCamera, CameraConfigError, CameraOpenError
+from arduino.app_peripherals.camera import Camera, CSICamera, V4LCamera, IPCamera, WebSocketCamera, CameraConfigError, CameraOpenError
 
-from conftest import two_v4l_cameras, usb_camera_with_metadata_node, v4l_device_argument  # noqa: F401
+from conftest import two_csi_cameras_only, two_v4l_cameras, usb_camera_with_metadata_node, v4l_device_argument  # noqa: F401
 
 
 def test_camera_factory_with_v4l_device(v4l_device_argument):
@@ -83,6 +83,34 @@ def test_explicit_index_selects_nth_plugged_camera(two_v4l_cameras):
 
     cam2 = Camera(1)
     assert cam2.v4l_path == "/dev/v4l/by-id/usb-CamB-video-index0"
+
+
+def test_csi_source_ignores_unsupported_kwargs(two_csi_cameras_only):
+    """A kwarg CSICamera does not support must not break its construction."""
+    camera = Camera("csi:0", resolution=(1280, 960), fps=30, codec="MJPG", bogus=1)
+    assert isinstance(camera, CSICamera)
+    assert not hasattr(camera, "codec")
+    assert not hasattr(camera, "bogus")
+
+
+def test_csi_source_keeps_shared_kwargs(two_csi_cameras_only):
+    """Kwargs supported by both camera types are still forwarded to CSI cameras."""
+    camera = Camera("csi:0", auto_reconnect=False, codec="MJPG")
+    assert isinstance(camera, CSICamera)
+    assert camera.auto_reconnect is False
+
+
+def test_auto_selected_csi_camera_ignores_v4l_only_kwargs(two_csi_cameras_only):
+    """Auto-selection falling back to CSI must tolerate V4L-only kwargs."""
+    camera = Camera(resolution=(1280, 960), fps=30, codec="MJPG")
+    assert isinstance(camera, CSICamera)
+    assert camera.csi_path == "CAMERA0"
+
+
+def test_v4l_source_still_rejects_unknown_kwargs(v4l_device_argument):
+    """Filtering is CSI-specific: a USB camera still rejects unknown kwargs."""
+    with pytest.raises(TypeError):
+        Camera(v4l_device_argument, bogus=1)
 
 
 def test_camera_factory_with_rtsp_url():

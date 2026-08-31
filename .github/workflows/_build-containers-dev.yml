@@ -1,0 +1,163 @@
+name: (reusable) DEV build one wave of containers
+
+# Reusable workflow that builds one topological "wave" (a matrix of container
+# names) for the DEV pipeline. The caller (docker-build.yml) invokes it once per
+# level, chaining the invocations with `needs` so bases are built before the
+# images that derive FROM them.
+
+on:
+  workflow_call:
+    inputs:
+      containers:
+        description: "JSON array of container names to build in this wave"
+        type: string
+        required: true
+      branch:
+        description: "Branch to check out"
+        type: string
+        required: true
+      image_tag:
+        description: "Image tag to publish"
+        type: string
+        required: true
+      skip_cache:
+        description: "Rebuild without cache"
+        type: boolean
+        required: false
+        default: false
+
+env:
+  REGISTRY: ghcr.io
+  DEV_REGISTRY_PATH: ghcr.io/${{ github.repository_owner }}/
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    env:
+      PYTHON_VERSION: "3.13"
+      TASKFILE_VERSION: "3.45.4"
+    strategy:
+      fail-fast: false
+      matrix:
+        container: ${{ fromJson(inputs.containers) }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.branch }}
+          fetch-depth: 0
+
+      - name: Resolve container directory
+        id: dir
+        run: |
+          # Containers are grouped in sub-folders (containers/<group>/<name>/);
+          # the group is documentation only, the leaf name identifies the image.
+          MATCHES=(containers/*/${{ matrix.container }}/ci.json)
+          if [[ ${#MATCHES[@]} -ne 1 || ! -f "${MATCHES[0]}" ]]; then
+            echo "::error::Expected exactly one containers/*/${{ matrix.container }}/ci.json, found: ${MATCHES[*]}"
+            exit 1
+          fi
+          echo "path=$(dirname "${MATCHES[0]}")" >> $GITHUB_OUTPUT
+
+      - name: Build wheel in debian:trixie
+        if: matrix.container == 'python-apps-base'
+        run: |
+          # Remove tags that setuptools_scm can't parse (see tag_regex in pyproject.toml:
+          # bricks/* is the current library release prefix, release/* the historical one)
+          git tag -l | grep -v -E '^(ai|bricks|release)/' | xargs -r git tag -d
+
+          docker run --rm \
+            -v "${{ github.workspace }}:/${{ github.workspace }}" \
+            -w "${{ github.workspace }}" \
+            -e SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)" \
+            -e PUBLIC_IMAGE_REGISTRY_BASE="${{ env.DEV_REGISTRY_PATH }}" \
+            -e DEV_TAG_VERSION="${{ inputs.image_tag }}" \
+            debian:trixie bash -c "
+              set -e
+              apt-get update
+              apt-get install -y --no-install-recommends --no-install-suggests sudo git ca-certificates python3-dev python3-pip build-essential pkg-config
+              echo '[global]' > /etc/pip.conf
+              echo 'break-system-packages = true' >> /etc/pip.conf
+              git config --global --add safe.directory '*'
+              pip install go-task-bin==${{ env.TASKFILE_VERSION }}
+              task init:ci
+              task build-dev
+              cp ./dist/arduino*.whl ./${{ steps.dir.outputs.path }}/
+            "
+
+      - name: Read container config
+        id: config
+        run: |
+          CI_JSON="${{ steps.dir.outputs.path }}/ci.json"
+          BUILD_ARGS=$(jq -r '.build_args // {} | to_entries | map("\(.key)=\(.value)") | join("\n")' "$CI_JSON")
+          echo "build_args<<EOF" >> $GITHUB_OUTPUT
+          echo "$BUILD_ARGS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Setup Docker buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log into registry ${{ env.REGISTRY }}
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build cache configuration
+        id: cache
+        run: |
+          CACHE_TAG="${{ inputs.image_tag }}-buildcache"
+          if [ "${{ inputs.skip_cache }}" != "true" ]; then
+            echo "cache_from=type=registry,ref=ghcr.io/${{ github.repository_owner }}/app-bricks/${{ matrix.container }}:${CACHE_TAG}" >> $GITHUB_OUTPUT
+          else
+            echo "cache_from=" >> $GITHUB_OUTPUT
+          fi
+          echo "cache_to=type=registry,ref=ghcr.io/${{ github.repository_owner }}/app-bricks/${{ matrix.container }}:${CACHE_TAG},mode=max" >> $GITHUB_OUTPUT
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          tags: |
+            type=raw,value=${{ inputs.image_tag }}
+            type=raw,value=${{ inputs.image_tag }}-${{ github.run_number }}
+          images: ghcr.io/${{ github.repository_owner }}/app-bricks/${{ matrix.container }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.url=https://github.com/${{ github.repository }}
+
+      - name: Copy models-list.yaml into build context
+        if: contains(fromJSON('["models-downloader", "llamacpp-runner", "llamacpp-npu-runner"]'), matrix.container)
+        run: cp models/models-list.yaml ${{ steps.dir.outputs.path }}/models-list.yaml
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v7
+        with:
+          context: ./${{ steps.dir.outputs.path }}
+          file: ./${{ steps.dir.outputs.path }}/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/arm64
+          cache-from: ${{ steps.cache.outputs.cache_from }}
+          cache-to: ${{ steps.cache.outputs.cache_to }}
+          provenance: false
+          build-args: |
+            ${{ steps.config.outputs.build_args }}
+            REGISTRY=${{ env.DEV_REGISTRY_PATH }}
+            BASE_IMAGE_VERSION=${{ inputs.image_tag }}
+
+      - name: SBOM Delta
+        uses: ./.github/actions/sbom-delta
+        with:
+          container: ${{ matrix.container }}
+          container_dir: ${{ steps.dir.outputs.path }}
+          version: ${{ inputs.image_tag }}
+          registry: ${{ env.DEV_REGISTRY_PATH }}

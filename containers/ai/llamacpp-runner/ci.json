@@ -1,0 +1,14 @@
+{
+  "watch_paths": ["containers/ai/llamacpp-runner/", "models/"],
+  "tag_latest": false,
+  "build_whl": false,
+  "update_compose": true,
+  "build_args": {
+    "LLAMA_CPP_URL": "https://github.com/arduino/app-bricks-py/releases/download/llamacpp%2F20260804/llamacpp-cpu-20260804.tar.gz",
+    "LLAMA_CPP_DIGEST": "sha256:6418d7cd3eba32472c812bcc1c1537b43753d4708f6e74866d29e4131830eb0c"
+  },
+  "sbom": {
+    "runtime_base": "${REGISTRY}app-bricks/python-slim:${BASE_IMAGE_VERSION}"
+  },
+  "downstream": []
+}

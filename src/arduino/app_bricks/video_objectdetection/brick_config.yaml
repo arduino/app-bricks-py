@@ -6,7 +6,6 @@ description: |
   The output is a video stream featuring bounding boxes around detected objects, with the added capability to trigger actions based on these detections.
   It supports pre-trained models provided by the framework and custom object detection models trained on the Edge Impulse platform.
 category: video
-requires_container: true
 required_devices:
   - camera
 model_by_boards:

@@ -476,6 +476,9 @@ def _update_compose_release_version(
     updated_content = re.sub(r"\${APPSLAB_VERSION}", substitution, updated_content)
 
     if registry and registry != "":
+        # Normalize to exactly one trailing slash: callers pass the registry base
+        # both with and without it, and images are concatenated as <registry><image>
+        registry = registry.rstrip("/") + "/"
         substitution = "${DOCKER_REGISTRY_BASE:-" + registry + "}"
         updated_content = re.sub(r"\${DOCKER_REGISTRY_BASE:\-([^}]+)?}", substitution, updated_content)
         updated_content = re.sub(r"\${DOCKER_REGISTRY_BASE}", substitution, updated_content)

@@ -22,8 +22,12 @@ def run_preprocessing(dev_mode: bool = False) -> None:
     if dev_mode:
         version = os.getenv("DEV_TAG_VERSION", "dev-latest")
     else:
+        # Keep in sync with [tool.setuptools_scm] tag_regex in pyproject.toml: the explicit
+        # kwargs here bypass the pyproject configuration entirely.
         version = get_version(
-            version_scheme="only-version", local_scheme="no-local-version", tag_regex=r"^(?:ai|release)/(?P<version>v?\d+(?:\.\d+)*(?:rc\d+)?)$"
+            version_scheme="only-version",
+            local_scheme="no-local-version",
+            tag_regex=r"^(?:ai|bricks|release)/(?P<version>v?\d+(?:\.\d+)*(?:rc\d+)?)$",
         )
 
     cache_folder_path = "src/arduino/app_bricks/static"

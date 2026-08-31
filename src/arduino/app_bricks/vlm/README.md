@@ -112,13 +112,12 @@ The Brick is initialized with the following parameters:
 
 | Parameter | Type | Default | Description |
 | :-- | :-- | :-- | :-- |
-| `api_key` | `str` | `os.getenv("LOCAL_LLM_API_KEY", "api_key")` | API key value passed to the local OpenAI-compatible model service. The default placeholder is enough for normal local use. |
-| `model` | `str` | App Lab configured model | Local model identifier configured for `arduino:vlm` in App Lab. |
 | `system_prompt` | `str` | `""` | System-level instruction that defines the assistant behavior. |
 | `temperature` | `float` \| `None` | `0.7` | Controls randomness. Lower values are more deterministic; higher values are more varied. |
 | `max_tokens` | `int` | `512` | Maximum number of tokens to generate in the response. |
 | `timeout` | `int` \| `None` | `None` | Maximum time in seconds to wait for a response. |
 | `tools` | `list[Callable]` | `None` | Optional LangChain-compatible tool functions available to the model. |
+| `model` | `str` \| `None` | App Lab configured model | Local model identifier configured for `arduino:vlm` in App Lab. |
 | `**kwargs` | `dict` | `{}` | Additional keyword arguments passed to the underlying model constructor. |
 
 The Brick configuration declares that `arduino:vlm` requires a local model service and a compatible model:
@@ -136,7 +135,7 @@ supported_boards: ["ventunoq"]
 - **`chat(message, images=None)`**: Sends a prompt and optional images, then returns the complete generated response as a string.
 - **`chat_stream(message, images=None)`**: Sends a prompt and optional images, then yields generated text chunks as they arrive.
 - **`stop_stream()`**: Requests cancellation of the active streaming response.
-- **`with_memory(max_messages=0, persistence=None)`**: Enables conversational memory for the instance. `persistence=True` enables persistence with a default database/thread; pass a `MessagePersistence` for full control. Pass `max_messages=0` to disable history.
+- **`with_memory(max_messages=0, persistence=None)`**: Enables conversational memory for the instance. `persistence=True` enables persistence with a default database/thread; pass a `MessagePersistence` (importable as `from arduino.app_bricks.cloud_llm.memory import MessagePersistence`) for full control. Pass `max_messages=0` to disable history.
 - **`clear_memory()`**: Clears the active conversation history.
 - **`get_client()`**: Returns the underlying LangChain `BaseChatModel` instance.
 

@@ -1,6 +1,6 @@
 # Arduino Apps Brick Library
 
-Library is composed by configurable and reusable 'Bricks', based on optional infrastructure (executed via Docker Compose) and wrapping Python® code (to simplify code usage). 
+The library is composed of configurable and reusable 'Bricks', based on optional infrastructure (executed via Docker Compose) and wrapping Python® code (to simplify code usage).
 
 ## What is a Brick?
 
@@ -92,7 +92,7 @@ To improve the development experience in VS Code, we recommend adding a `.vscode
     "python.testing.unittestEnabled": false,
     "python.testing.pytestEnabled": true,
 
-    // Linting and fromatting settings on save
+    // Linting and formatting settings on save
     "[python]": {
         // 1) use ruff as the default formatter
         "editor.defaultFormatter": "charliermarsh.ruff",
@@ -136,37 +136,42 @@ task test:arduino/app_bricks
 
 Modules can use LOCAL_DEV=true env variable to set development specific configurations.
 
-For development purposes, it is possible to change docker registry path using variable:
+For development purposes, it is possible to point to development containers (instead of the released ones) using two variables:
 ```sh
-DOCKER_REGISTRY_BASE=ghcr.io/arduino/
+export DOCKER_REGISTRY_BASE=ghcr.io/<githubuser>/
+export DOCKER_PYTHON_BASE_IMAGE=app-bricks/python-apps-base:dev-pose-classification
 ```
-For containers built as part of this library, 'dev-latest' tag is used to point to latest development container.
-If it is needed to use a different version, override it via 'APPSLAB_VERSION' env variable.
+Development containers are published by the dev CI (`docker-build.yml`) tagged as `dev-<branch-name>` (e.g. branch `pose-classification` → tag `dev-pose-classification`).
 
 ## Release
 
-Release is based on tags pushed to `main`. A single workflow (`docker-github-publish.yml`) handles all container releases and detects which container to build from the tag prefix defined in each container's `ci.json`.
+Release is based on tags pushed to `main`. A single workflow (`docker-publish.yml`) handles all container
+releases: **the tag prefix is the `containers/` sub-folder to release**.
 
 | Tag | What it releases |
 |---|---|
-| `base/X.Y.Z` | `python-base` base image |
-| `release/X.Y.Z` | `python-apps-base` container + Python `.whl` uploaded to GitHub Release |
-| `ai/X.Y.Z` | `ei-models-runner` AI container |
+| `bricks/X.Y.Z` | everything in `containers/bricks/` (`python-apps-base`, `models-downloader`) + Python `.whl` uploaded to GitHub Release |
+| `ai/X.Y.Z` | everything in `containers/ai/` (the model runners) |
 
-Release cycles for AI containers and Bricks are independent — they use separate tag prefixes and can be released at any time without affecting each other.
+Release cycles for AI containers and Bricks are independent — they use separate folders and tag prefixes,
+and can be released at any time without affecting each other.
 
 After releasing a new version of AI containers, compose files that use AI containers are updated automatically via a generated PR.
 
-**Downstream cascade**: when `python-base` is released, the workflow automatically triggers a rebuild of `python-apps-base` (and any other container declared as a downstream dependency). No manual step required.
+**Dependencies**: base images in `containers/base/` are not released on their own. Whatever a tagged
+group depends on is rebuilt first, in dependency order, and tagged with the same version — releasing
+`bricks/X.Y.Z` builds `python-slim` and `python-base` before `python-apps-base`. No manual step required.
 
-For development, the dev build pipeline (`docker-github-build.yml`) rebuilds only the containers whose source files changed on the branch. Dependent containers are built in the correct order — downstream containers wait for their upstream to finish and use the freshly built image.
+For development, the dev build pipeline (`docker-build.yml`) is triggered manually (`workflow_dispatch`) on a branch and builds the selected containers (or all of them), tagging the images as `dev-<branch-name>`. Dependent containers are built in the correct order — downstream containers wait for their upstream to finish and use the freshly built image.
 
 See [`.github/README.md`](.github/README.md) for full CI documentation.
 
 ### Container layers
 
-Library containers are based on a set of pre-defined Python base images that are updated with a different frequency wrt library release.
-Base images are built by tagging `base/X.Y.Z`. This should be done only when base image dependencies or infrastructure change.
+Library containers are based on a set of pre-defined Python base images, in `containers/base/`, that are
+updated with a different frequency wrt library release.
+Base images are never released on their own: they are rebuilt as a dependency of whichever group is being
+released, and tagged with that release version.
 
 Base images are required to:
 * reduce the amount of updated layers during a single library update
@@ -179,24 +184,19 @@ Non-base images should start from common base images for performance and disk us
 See [LICENSE](./LICENSE.txt) file for details.
 
 ## SBOM (Software Bill of Materials)
-Each container includes an SBOM file listing all installed packages, their versions, and licenses:
+Each container ships its SBOM files, in SPDX format, under its `sbom-delta/` directory (e.g. `containers/ai/ei-models-runner/sbom-delta/`):
 
-- `containers/ei-models-runner/sbom.spdx.json`
-- `containers/python-apps-base/sbom.spdx.json`
+- `base.spdx.json` — packages of the base image the container derives `FROM` (declared as `sbom.runtime_base` in the container's `ci.json`)
+- `full.spdx.json` — complete package list of the container image
+- `delta.spdx.json` — packages added by the container on top of its base image
 
-Each SBOM file is generated in SPDX format, which is a standard format for SBOMs.
-
-To generate SBOM files, run:
+Delta SBOMs are produced at build time and attached to the GitHub Release. To (re)generate them locally, run:
 ```sh
-task sbom EI_TAG= BRICKS_TAG=
+task sbom:delta
 ```
-where `EI_TAG` and `BRICKS_TAG` represent the versions of the `ei-models-runner` and `python-apps-base` containers, 
-respectively.
-
-Example:
+optionally passing container names and the image tag to scan, e.g.:
 ```sh
-task sbom EI_TAG=1.0.0 BRICKS_TAG=1.0.0
+task sbom:delta -- python-apps-base --version 1.0.0
 ```
 
-**Note**: To run this task, you need to have Docker installed and running on your machine 
-and the Docker sbom plugin installed.
+**Note**: To run this task, you need `syft` installed and access to the container registry.

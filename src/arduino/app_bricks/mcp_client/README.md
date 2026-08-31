@@ -62,11 +62,11 @@ def ask():
 App.run(ask)
 ```
 
-Here the model answers by calling the `get_current_datetime` tool of the MCP server bundled with the app (see [Bundle an MCP server with your app](#bundle-an-mcp-server-with-your-app) below); `examples/02_with_custom_brick_and_llm` is the complete, runnable version. The same `tools=mcp.get_tools()` also works with the on-device `LargeLanguageModel` brick.
+Here the model answers by calling the `get_current_datetime` tool of the MCP server bundled with the app (see [Bundle an MCP server with your app](#bundle-an-mcp-server-with-your-app) below); [`03_with_custom_brick_and_llm`](https://github.com/arduino/app-bricks-examples/tree/main/bricks/arduino/mcp_client/03_with_custom_brick_and_llm) in the examples repository is the complete, runnable version. The same `tools=mcp.get_tools()` also works with the on-device `LargeLanguageModel` brick.
 
 ### Bundle an MCP server with your app
 
-An app can ship its own MCP server as a **custom brick backed by a Docker container**: declare the container in a local brick's `brick_compose.yaml`, and App Lab deploys it automatically alongside the app — no external setup needed. The container can be a **prebuilt image** — `examples/01_with_custom_brick_basic_usage` runs the [Docker MCP Gateway](https://hub.docker.com/r/docker/mcp-gateway), which serves the MCP servers of the [Docker MCP catalog](https://hub.docker.com/catalogs/mcp) over HTTP — or an image **built from a Dockerfile shipped with the brick**, as in `examples/02_with_custom_brick_and_llm`:
+An app can ship its own MCP server as a **custom brick backed by a Docker container**: declare the container in a local brick's `brick_compose.yaml`, and App Lab deploys it automatically alongside the app — no external setup needed. The container can be a **prebuilt image** — [`02_with_custom_brick`](https://github.com/arduino/app-bricks-examples/tree/main/bricks/arduino/mcp_client/02_with_custom_brick) in the examples repository runs the [Docker MCP Gateway](https://hub.docker.com/r/docker/mcp-gateway), which serves the MCP servers of the [Docker MCP catalog](https://hub.docker.com/catalogs/mcp) over HTTP — or an image **built from a Dockerfile shipped with the brick**, as in [`03_with_custom_brick_and_llm`](https://github.com/arduino/app-bricks-examples/tree/main/bricks/arduino/mcp_client/03_with_custom_brick_and_llm):
 
 ```
 my-app/
