@@ -10,7 +10,8 @@ from arduino.app_utils import Logger, brick
 from arduino.app_internal.core import get_brick_config, get_brick_configured_model
 
 import openai
-from typing import Iterator, List, Optional, Any, Callable, Union
+from typing import Any
+from collections.abc import Iterator, Callable
 
 logger = Logger("VisionLanguageModel")
 
@@ -27,13 +28,13 @@ class VisionLanguageModel(LargeLanguageModel):
     def __init__(
         self,
         system_prompt: str = "",
-        temperature: Optional[float] = 0.7,
+        temperature: float | None = 0.7,
         max_tokens: int = 512,
-        timeout: Optional[int] = None,
-        tools: List[Callable[..., Any]] = None,
+        timeout: int | None = None,
+        tools: list[Callable[..., Any]] = None,
         model: str = None,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> None:
         """Initializes the VisionLanguageModel brick with the specified provider and configuration.
 
         Args:
@@ -84,7 +85,7 @@ class VisionLanguageModel(LargeLanguageModel):
         """
         return self._model
 
-    def chat(self, message: str, images: List[str | bytes] = None) -> str:
+    def chat(self, message: str, images: list[str | bytes] = None) -> str:
         """Sends a message to the AI and blocks until the complete response is received.
 
         This method automatically manages conversation history if memory is enabled.
@@ -104,7 +105,7 @@ class VisionLanguageModel(LargeLanguageModel):
         except (openai.BadRequestError, openai.APIError) as e:
             self._handle_api_error(logger, e)
 
-    def chat_stream(self, message: str, images: List[str | bytes] = None) -> Iterator[str]:
+    def chat_stream(self, message: str, images: list[str | bytes] = None) -> Iterator[str]:
         """Sends a message to the AI and yields response tokens as they are generated.
 
         This allows for processing or displaying the response in real-time (streaming).
@@ -145,7 +146,7 @@ class VisionLanguageModel(LargeLanguageModel):
     def with_memory(
         self,
         max_messages: int = 0,
-        persistence: Union[bool, MessagePersistence, None] = None,
+        persistence: bool | MessagePersistence | None = None,
     ) -> "VisionLanguageModel":
         """Enables conversational memory for this instance.
 

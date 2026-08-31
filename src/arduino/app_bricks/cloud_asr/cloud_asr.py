@@ -9,7 +9,8 @@ import threading
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Generator, Iterator, Union, cast
+from typing import cast
+from collections.abc import Generator, Iterator
 
 import numpy as np
 
@@ -61,7 +62,7 @@ class CloudASR:
         mic: BaseMicrophone | None = None,
         language: str = os.getenv("LANGUAGE", ""),
         silence_timeout: float = 10.0,
-    ):
+    ) -> None:
         if mic is not None:
             logger.debug(f"Using provided microphone: {mic.name}")
             self._mic = mic
@@ -84,14 +85,14 @@ class CloudASR:
         self._active_session_lock = threading.Lock()
         self._active_session: SessionInfo | None = None
 
-    def start(self):
+    def start(self) -> None:
         """Start the ASR service by initializing the microphone."""
         self._shutdown.clear()
         # Not guarded for retrocompatibility, but generally if the mic is externally
         # managed it should also be externally started
         self._mic.start()
 
-    def stop(self):
+    def stop(self) -> None:
         """
         Stop the ASR service: signal in-flight transcriptions and release
         the mic if owned.
@@ -184,7 +185,7 @@ class CloudASR:
         """
         with self._session_scope(duration=_normalize_duration(timeout)) as session:
 
-            def sentence_gen() -> Generator[ASREvent, None, None]:
+            def sentence_gen() -> Generator[ASREvent]:
                 inner = self._transcribe_stream(session)
                 try:
                     for event in inner:
@@ -211,7 +212,7 @@ class CloudASR:
         """
         with self._session_scope(duration=math.inf) as session:
 
-            def sentence_gen() -> Generator[str, None, None]:
+            def sentence_gen() -> Generator[str]:
                 inner = self._transcribe_stream(session)
                 try:
                     for event in inner:
@@ -245,7 +246,7 @@ class CloudASR:
             self._active_session = None
             self._active_session_lock.release()
 
-    def _transcribe_stream(self, session: SessionInfo) -> Generator[ASREvent, None, None]:
+    def _transcribe_stream(self, session: SessionInfo) -> Generator[ASREvent]:
         """
         Perform continuous speech-to-text recognition with detailed events.
 
@@ -254,9 +255,9 @@ class CloudASR:
             {"event": ("speech_start|partial_text|text|error|speech_stop"), "data": "<payload>"}
             messages.
         """
-        messages: queue.Queue[Union[ASRProviderEvent, BaseException]] = queue.Queue()
+        messages: queue.Queue[ASRProviderEvent | BaseException] = queue.Queue()
 
-        def _send():
+        def _send() -> None:
             try:
                 for chunk in self._mic.stream():
                     if session.cancelled.is_set() or self._shutdown.is_set():
@@ -273,7 +274,7 @@ class CloudASR:
 
         partial_buffer = ""
 
-        def _recv():
+        def _recv() -> None:
             nonlocal partial_buffer
             try:
                 while not session.cancelled.is_set() and not self._shutdown.is_set():

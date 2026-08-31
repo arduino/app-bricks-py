@@ -23,7 +23,7 @@ class Logger(logging.Logger):
         logger.print('This will always be printed, regardless of the level')
     """
 
-    def __init__(self, name: str, level: int = logging.INFO):
+    def __init__(self, name: str, level: int = logging.INFO) -> None:
         override_log_level = os.getenv("APP_BRICKS_LOG_LEVEL")
         if override_log_level is not None:
             level = getattr(logging, override_log_level.upper(), logging.INFO)
@@ -38,9 +38,9 @@ class Logger(logging.Logger):
         self.handlers = []  # Remove inherited handlers
         self.addHandler(handler)
 
-    def process(self, msg):
+    def process[T](self, msg: T) -> T:
         self.info(msg)
         return msg
 
-    def consume(self, msg):
+    def consume(self, msg: object) -> None:
         self.info(msg)

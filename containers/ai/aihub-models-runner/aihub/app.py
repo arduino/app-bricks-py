@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import time
-from typing import Callable, List, Optional
+from collections.abc import Callable
 
 import numpy as np
 
@@ -36,8 +36,8 @@ class AIHubApp:
         self,
         inference_cb: Callable[[np.ndarray], tuple[np.ndarray, dict]],
         input_type: str = "gstreamer",
-        output_types: List[str] = ["mjpeg"],
-        config_cb: Optional[Callable[[dict], None]] = None,
+        output_types: list[str] = ["mjpeg"],
+        config_cb: Callable[[dict], None] | None = None,
         **kwargs,
     ):
         """
@@ -64,7 +64,7 @@ class AIHubApp:
         self._kwargs = kwargs
 
         self._input_source = None
-        self._output_sinks: List = []
+        self._output_sinks: list = []
         self._is_running = False
 
         # Setup logging

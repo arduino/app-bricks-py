@@ -26,6 +26,11 @@ carries a sync policy mirroring the C++ ``ArduinoIoTCloud`` semantics:
 """
 
 import time
+from collections.abc import Callable
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .arduino_cloud import ArduinoCloud
 from typing import Any
 
 from arduino.app_utils import Logger
@@ -92,7 +97,7 @@ class CloudObject:
       as ``on_read``, unconditionally.
     """
 
-    def __init__(self, name: str, **kwargs: Any):
+    def __init__(self, name: str, **kwargs: Any) -> None:
         self.name = name
         self.on_read = kwargs.pop("on_read", None)
         self.on_write = kwargs.pop("on_write", None)
@@ -156,13 +161,13 @@ class CloudObject:
         return isinstance(self._value, dict)
 
     @property
-    def value(self) -> Any:
+    def value(self) -> Any:  # noqa: ANN401
         return self._value
 
     def __contains__(self, key: str) -> bool:
         return self.is_complex and key in self._value
 
-    def __getattr__(self, attr: str) -> Any:
+    def __getattr__(self, attr: str) -> Any:  # noqa: ANN401
         # Reached only for names not found normally — sub-record access on a
         # complex object (e.g. clight.hue).
         value = self.__dict__.get("_value", None)
@@ -170,7 +175,7 @@ class CloudObject:
             return value[attr].value
         raise AttributeError(f"'{type(self).__name__}' object has no attribute '{attr}'")
 
-    def __setattr__(self, attr: str, value: Any):
+    def __setattr__(self, attr: str, value: Any) -> None:  # noqa: ANN401
         existing = self.__dict__.get("_value", None)
         if isinstance(existing, dict) and attr in existing:
             existing[attr].set_local(value)  # clight.hue = 5 → push "clight:hue"
@@ -178,7 +183,7 @@ class CloudObject:
             super().__setattr__(attr, value)
 
     # ── transport binding ─────────────────────────────────────────────────────
-    def bind(self, push):
+    def bind(self, push: Callable[[str, object], None]) -> None:
         """Wire the daemon push callback into every scalar leaf of this object."""
         if self.is_complex:
             for sub in self._value.values():
@@ -193,7 +198,7 @@ class CloudObject:
         return [self]
 
     # ── local (device → cloud) changes ─────────────────────────────────────────
-    def set_local(self, value: Any):
+    def set_local(self, value: Any) -> None:  # noqa: ANN401
         """Record a value set by the application; it is published by ``pump()``.
 
         This no longer publishes directly: the outbound value is sent by the
@@ -220,7 +225,7 @@ class CloudObject:
         self._has_local_source = True
         self._dirty = True  # pump() publishes it per policy (skipped while pending)
 
-    def _do_push(self, now: float):
+    def _do_push(self, now: float) -> None:
         """Publish the current value to the cloud now and update publish state.
 
         The single low-level send used by both the loop's ``pump()`` (policy
@@ -234,7 +239,7 @@ class CloudObject:
         self._has_pushed_once = True
         self._dirty = False
 
-    def pump(self, now: float, interval: float):
+    def pump(self, now: float, interval: float) -> None:
         """Publish the local value to the cloud per the update policy.
 
         Called from the brick loop for each scalar leaf. ``interval`` is the
@@ -262,7 +267,7 @@ class CloudObject:
             if self._has_local_source and (now - self._last_push_ts) >= interval:
                 self._do_push(now)
 
-    def _warn_local_only(self, now: float):
+    def _warn_local_only(self, now: float) -> None:
         """Warn that a local change cannot be synced because no thing is assigned.
 
         Called from ``pump`` while ``_pending``. Fires only on a real local change
@@ -282,7 +287,7 @@ class CloudObject:
             self._last_warn_ts = now
             self._dirty = False
 
-    def _coerce(self, value: Any) -> Any:
+    def _coerce(self, value: Any) -> Any:  # noqa: ANN401
         # Workaround for the cloud int/float ambiguity: keep a float variable a
         # float even when assigned an int.
         if isinstance(self._value, float) and isinstance(value, int) and not isinstance(value, bool):
@@ -290,7 +295,7 @@ class CloudObject:
         return value
 
     # ── cloud (cloud → device) changes ──────────────────────────────────────────
-    def apply_cloud(self, value: Any, cloud_ts: float) -> bool:
+    def apply_cloud(self, value: Any, cloud_ts: float) -> bool:  # noqa: ANN401
         """Apply an incoming cloud value according to the sync policy.
 
         Returns True if the local value changed (so the caller schedules
@@ -326,7 +331,7 @@ class CloudObject:
         self._dirty = False  # cloud value adopted; discard any pending local push
         return True
 
-    def apply_missing(self):
+    def apply_missing(self) -> None:
         """Resolve a ``lastvalue_missing`` sync frame: the cloud has no stored
         value for this variable, so the local value wins and is pushed up so the
         cloud converges. Applies to every sync policy. No-op if there is no local
@@ -336,7 +341,7 @@ class CloudObject:
             self._do_push(_now())
 
     # ── loop execution ─────────────────────────────────────────────────────────
-    def run_sync(self, client):
+    def run_sync(self, client: "ArduinoCloud | None") -> None:
         """Run this object's device→cloud callbacks once (called from the brick
         loop every ``interval`` seconds).
 
@@ -351,7 +356,7 @@ class CloudObject:
         if self.on_read is not None:
             self.set_local(self.on_read(client))
 
-    def fire_on_write(self, client):
+    def fire_on_write(self, client: "ArduinoCloud | None") -> None:
         """Invoke this object's ``on_write`` callback with the current value.
 
         Called synchronously from the SSE handler the moment a cloud update is
@@ -367,29 +372,29 @@ class CloudObject:
 
 
 class Location(CloudObject):
-    def __init__(self, name: str, **kwargs: Any):
+    def __init__(self, name: str, **kwargs: Any) -> None:
         super().__init__(name, keys=("lat", "lon"), **kwargs)
 
 
 class Color(CloudObject):
-    def __init__(self, name: str, **kwargs: Any):
+    def __init__(self, name: str, **kwargs: Any) -> None:
         super().__init__(name, keys=("hue", "sat", "bri"), **kwargs)
 
 
 class ColoredLight(CloudObject):
-    def __init__(self, name: str, **kwargs: Any):
+    def __init__(self, name: str, **kwargs: Any) -> None:
         super().__init__(name, keys=("swi", "hue", "sat", "bri"), **kwargs)
 
 
 class DimmedLight(CloudObject):
-    def __init__(self, name: str, **kwargs: Any):
+    def __init__(self, name: str, **kwargs: Any) -> None:
         super().__init__(name, keys=("swi", "bri"), **kwargs)
 
 
 class Schedule(CloudObject):
     """A cloud schedule (frm/to/len/msk). Computes its active state in on_run."""
 
-    def __init__(self, name: str, **kwargs: Any):
+    def __init__(self, name: str, **kwargs: Any) -> None:
         self.on_active = kwargs.pop("on_active", None)
         self.active = False
         kwargs["on_run"] = self._on_run
@@ -398,7 +403,7 @@ class Schedule(CloudObject):
     def _initialized(self) -> bool:
         return all(sub.value is not None for sub in self._value.values())
 
-    def _on_run(self, client, args=None):
+    def _on_run(self, client: "ArduinoCloud | None", args: object = None) -> None:
         if not self._initialized():
             return
         ts = int(_now()) + (client.get("tz_offset", 0) if client is not None else 0)

@@ -5,6 +5,7 @@
 import math
 import requests
 import io
+from PIL import Image
 from arduino.app_internal.core import load_brick_compose_file, resolve_address
 from arduino.app_utils.image import get_image_bytes, get_image_type
 from arduino.app_utils import Logger, HttpClient
@@ -15,7 +16,7 @@ logger = Logger(__name__)
 class EdgeImpulseModelInfo:
     """Class to hold Edge Impulse model information."""
 
-    def __init__(self, model_info: dict):
+    def __init__(self, model_info: dict) -> None:
         """Initialize the EdgeImpulseModelInfo with model information."""
         if not model_info:
             raise ValueError("Model information cannot be empty.")
@@ -42,7 +43,7 @@ class EdgeImpulseModelInfo:
 class EdgeImpulseRunnerFacade:
     """Facade for Edge Impulse Object Detection and Classification."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the EdgeImpulseRunnerFacade with the API path.
 
         Raises:
@@ -61,9 +62,9 @@ class EdgeImpulseRunnerFacade:
                 logger.error(f"Error: {e}")
                 return None
 
-    def infer_from_image(self, image_bytes, image_type: str = "jpg") -> dict | None:
-        image_bytes = get_image_bytes(image_bytes)
-        if not image_bytes or not image_type:
+    def infer_from_image(self, image_bytes: bytes | Image.Image, image_type: str = "jpg") -> dict | None:
+        data = get_image_bytes(image_bytes)
+        if not data or not image_type:
             return None
 
         if image_type not in ["jpg", "jpeg", "png"]:
@@ -73,9 +74,9 @@ class EdgeImpulseRunnerFacade:
             image_type = "jpeg"
 
         try:
-            logger.debug(f"[{self.__class__.__name__}] Detecting image of type: {image_type} -> {len(image_bytes)} bytes")
+            logger.debug(f"[{self.__class__.__name__}] Detecting image of type: {image_type} -> {len(data)} bytes")
 
-            files = {"file": (f"image.{image_type}", io.BytesIO(image_bytes), f"image/{image_type}")}
+            files = {"file": (f"image.{image_type}", io.BytesIO(data), f"image/{image_type}")}
             response = requests.post(f"{self.url}/api/image", files=files)
 
         except Exception as e:
@@ -89,7 +90,7 @@ class EdgeImpulseRunnerFacade:
             logger.warning(f"[{self.__class__}] error: {response.status_code}. Message: {response.text}")
             return None
 
-    def process(self, item):
+    def process(self, item: str | dict) -> dict | None:
         """Process an item to detect objects in an image.
 
         Args:
@@ -188,7 +189,7 @@ class EdgeImpulseRunnerFacade:
         """
         return EdgeImpulseModelInfo(model_info)
 
-    def _extract_classification(self, item: dict, confidence: float = 0.0):
+    def _extract_classification(self, item: dict | None, confidence: float = 0.0) -> dict | None:
         """Extract classification results from the item.
 
         Args:
@@ -226,7 +227,7 @@ class EdgeImpulseRunnerFacade:
 
         return None
 
-    def _extract_anomaly_score(self, item: dict):
+    def _extract_anomaly_score(self, item: dict | None) -> float | None:
         """Extract anomaly score for anomaly detection use case.
 
         Args:
@@ -246,7 +247,7 @@ class EdgeImpulseRunnerFacade:
         return None
 
     @classmethod
-    def _get_ei_url(cls):
+    def _get_ei_url(cls) -> str:
         infra = load_brick_compose_file(cls)
         if not infra or "services" not in infra:
             raise RuntimeError("Cannot load Brick Compose file to resolve Edge Impulse runner address.")

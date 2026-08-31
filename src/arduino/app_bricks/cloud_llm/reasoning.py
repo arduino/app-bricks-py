@@ -3,7 +3,8 @@
 # SPDX-License-Identifier: MPL-2.0
 
 from dataclasses import dataclass
-from typing import Any, AsyncIterator, Iterator, List, Optional
+from typing import Any
+from collections.abc import AsyncIterator, Iterator
 
 from langchain_core.callbacks import AsyncCallbackManagerForLLMRun, CallbackManagerForLLMRun
 from langchain_core.messages import AIMessageChunk, BaseMessage
@@ -66,9 +67,9 @@ class ChatOpenAIReasoning(ChatOpenAI):
 
     def _stream_responses(
         self,
-        messages: List[BaseMessage],
-        stop: Optional[List[str]] = None,
-        run_manager: Optional[CallbackManagerForLLMRun] = None,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: CallbackManagerForLLMRun | None = None,
         **kwargs: Any,
     ) -> Iterator[ChatGenerationChunk]:
         """Stream Responses API output, surfacing reasoning delta events.
@@ -119,9 +120,9 @@ class ChatOpenAIReasoning(ChatOpenAI):
 
     async def _astream_responses(
         self,
-        messages: List[BaseMessage],
-        stop: Optional[List[str]] = None,
-        run_manager: Optional[AsyncCallbackManagerForLLMRun] = None,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: AsyncCallbackManagerForLLMRun | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[ChatGenerationChunk]:
         """Async counterpart of ``_stream_responses``, surfacing reasoning deltas."""
@@ -156,10 +157,10 @@ class ChatOpenAIReasoning(ChatOpenAI):
 
     def _convert_responses_stream_chunk(
         self,
-        chunk: Any,
+        chunk: Any,  # noqa: ANN401
         state: _ResponsesStreamState,
         headers: dict,
-    ) -> Optional[ChatGenerationChunk]:
+    ) -> ChatGenerationChunk | None:
         """Convert one raw Responses API event into a ``ChatGenerationChunk``.
 
         Reasoning delta events are surfaced via
