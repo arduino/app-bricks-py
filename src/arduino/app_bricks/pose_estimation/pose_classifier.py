@@ -131,7 +131,7 @@ class PoseKNN:
         reject_factor: float = 1.5,
         metric: str = "seuclidean",
         vote_weighting: str = "distance",
-    ):
+    ) -> None:
         if metric not in _METRICS:
             raise ValueError(f"unknown metric {metric!r} (use one of {_METRICS})")
         if vote_weighting not in _VOTE_WEIGHTINGS:
@@ -269,7 +269,7 @@ class EmaHysteresis:
     active: dict[str, bool] = field(init=False)
     _invalid_time: float = field(init=False, default=0.0)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.smoothed = dict.fromkeys(self.classes, 0.0)
         self.active = dict.fromkeys(self.classes, False)
 
