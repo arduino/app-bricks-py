@@ -26,7 +26,7 @@ posenet_output = posenet.get_output_details()
 # base image's main.py).
 _config = {
     "min_person_score": MIN_PERSON_SCORE,
-    "draw_uncertain": True,
+    "draw_low_confidence_points": True,
     "draw_bboxes": False,
     "bbox_padding_top": 0.0,
     "bbox_padding_right": 0.0,
@@ -41,10 +41,10 @@ def apply_config(config: dict) -> None:
     if value is not None:
         _config["min_person_score"] = max(0.0, min(1.0, float(value)))
         print(f"config: min_person_score set to {_config['min_person_score']}", flush=True)
-    value = config.get("draw_uncertain")
+    value = config.get("draw_low_confidence_points")
     if value is not None:
-        _config["draw_uncertain"] = bool(value)
-        print(f"config: draw_uncertain set to {_config['draw_uncertain']}", flush=True)
+        _config["draw_low_confidence_points"] = bool(value)
+        print(f"config: draw_low_confidence_points set to {_config['draw_low_confidence_points']}", flush=True)
     value = config.get("draw_bboxes")
     if value is not None:
         _config["draw_bboxes"] = bool(value)
@@ -262,7 +262,7 @@ def inference_callback(rgb_frame: np.ndarray) -> tuple[np.ndarray, dict]:
         person_scores,
         keypoint_scores,
         coords_xy,
-        _config["draw_uncertain"],
+        _config["draw_low_confidence_points"],
         _config["draw_bboxes"],
         _config["bbox_padding_top"],
         _config["bbox_padding_right"],

@@ -184,7 +184,7 @@ def draw_persons(
     person_scores: np.ndarray,
     keypoint_scores: np.ndarray,
     keypoint_coords_xy: np.ndarray,
-    draw_uncertain: bool = True,
+    draw_low_confidence_points: bool = True,
     draw_bboxes: bool = False,
     bbox_padding_top: float = 0.0,
     bbox_padding_right: float = 0.0,
@@ -206,7 +206,7 @@ def draw_persons(
     keypoint_coords_xy
         Keypoint coordinates in (x, y) format mapped to the frame space,
         shape (max_detections, 17, 2).
-    draw_uncertain
+    draw_low_confidence_points
         Mark keypoints below MIN_KEYPOINT_SCORE too, as small hollow dots
         joined by darker lines. Set it to False for an overlay that
         shows only the confident keypoints and connections.
@@ -264,7 +264,7 @@ def draw_persons(
         if edges:
             draw_connections(frame, kp_coords, edges, (255, 255, 255), 2)
 
-        if draw_uncertain and not confident.all():
+        if draw_low_confidence_points and not confident.all():
             uncertain_edges = [(a, b) for a, b in SKELETON_CONNECTION_INDICES if not (confident[a] and confident[b])]
             if uncertain_edges:
                 draw_connections(frame, kp_coords, uncertain_edges, (120, 120, 255), 1)
