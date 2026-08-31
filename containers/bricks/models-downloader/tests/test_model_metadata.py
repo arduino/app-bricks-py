@@ -16,7 +16,11 @@ from common.model_metadata import (
     identify_model,
     is_bookkeeping_name,
     metadata_payload,
+    metadata_records,
+    prune_metadata_records,
     read_metadata,
+    record_for_file,
+    record_for_model_id,
     utc_now_iso,
     write_metadata,
 )
@@ -222,9 +226,9 @@ def test_inputs_record_the_derived_model_directory(tmp_path):
         env={**without, "model_directory": "google/gemma-4-E2B-it-qat-q4_0-gguf"},
         models_list_path=_models_list(tmp_path),
     )
-    data = read_metadata(str(tmp_path))
-    assert data["inputs"]["model_directory"] == "google/gemma-4-E2B-it-qat-q4_0-gguf"
-    assert data["model_id"] == "llamacpp:gemma-4-E2B_q4_0-it"
+    record = metadata_records(read_metadata(str(tmp_path)))[0]
+    assert record["inputs"]["model_directory"] == "google/gemma-4-E2B-it-qat-q4_0-gguf"
+    assert record["model_id"] == "llamacpp:gemma-4-E2B_q4_0-it"
 
 
 # --------------------------------------------------------------------------- #
@@ -268,8 +272,11 @@ def test_write_read_roundtrip(tmp_path):
     # Exactly one file: the atomic ".tmp" sibling must be gone.
     assert os.listdir(tmp_path) == [METADATA_NAME]
     data = read_metadata(str(tmp_path))
-    assert data["handler"] == "ai-hub-handler"
-    assert data["inputs"] == AI_HUB_ENV
+    # One document shape for every handler: the records list and nothing else.
+    assert list(data) == ["records"]
+    record = metadata_records(data)[0]
+    assert record["handler"] == "ai-hub-handler"
+    assert record["inputs"] == AI_HUB_ENV
 
 
 def test_write_starts_with_comment_header(tmp_path):
@@ -289,7 +296,8 @@ def test_write_overwrites_previous_record(tmp_path):
     write_metadata(str(tmp_path), "hf-handler", env=dict(HF_ENV, model_directory="old/repo"), models_list_path="")
     write_metadata(str(tmp_path), "hf-handler", env=dict(HF_ENV, model_directory="new/repo"), models_list_path="")
     assert os.listdir(tmp_path) == [METADATA_NAME]
-    assert read_metadata(str(tmp_path))["inputs"]["model_directory"] == "new/repo"
+    records = metadata_records(read_metadata(str(tmp_path)))
+    assert [r["inputs"]["model_directory"] for r in records] == ["new/repo"]
 
 
 def test_write_returns_none_and_does_not_raise_on_failure(monkeypatch, capsys, tmp_path):
@@ -340,6 +348,219 @@ def test_read_keeps_unknown_keys(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
+# Multi-record files: several quantizations sharing one repository directory
+#
+# The Hugging Face handler downloads every quantization of a repository into the
+# same directory, so its ".arduino_metadata.yaml" must hold one record per
+# installed download instead of letting the last one overwrite the others.
+# --------------------------------------------------------------------------- #
+def _write_quant(model_dir, quantization, files, model_id=None):
+    """A download record the way hf_downloader writes one for *quantization*."""
+    return write_metadata(
+        str(model_dir),
+        "hf-handler",
+        env={
+            "model_url": f"unsloth/Qwen3-0.6B-GGUF:{quantization}",
+            "models_repository": "llamacpp",
+            "model_directory": "unsloth/Qwen3-0.6B-GGUF",
+        },
+        models_list_path="",
+        fallback_model_id=model_id or f"llamacpp:unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-{quantization}",
+        files=files,
+    )
+
+
+def test_each_download_keeps_its_own_record(tmp_path):
+    """The reported bug: downloading Q8_0 must not erase the record of the Q4_0."""
+    _write_quant(tmp_path, "Q4_0", ["Qwen3-0.6B-Q4_0.gguf"])
+    _write_quant(tmp_path, "Q8_0", ["Qwen3-0.6B-Q8_0.gguf"])
+
+    records = metadata_records(read_metadata(str(tmp_path)))
+    assert [r["files"] for r in records] == [["Qwen3-0.6B-Q4_0.gguf"], ["Qwen3-0.6B-Q8_0.gguf"]]
+    assert [r["inputs"]["model_url"] for r in records] == [
+        "unsloth/Qwen3-0.6B-GGUF:Q4_0",
+        "unsloth/Qwen3-0.6B-GGUF:Q8_0",
+    ]
+
+
+def test_multi_record_file_holds_nothing_but_the_records(tmp_path):
+    """No top-level copy of any record: a single top-level ``model_id`` would misread
+    as "the" model of a directory that deliberately holds several."""
+    _write_quant(tmp_path, "Q4_0", ["Qwen3-0.6B-Q4_0.gguf"])
+    _write_quant(tmp_path, "Q8_0", ["Qwen3-0.6B-Q8_0.gguf"])
+
+    data = read_metadata(str(tmp_path))
+    assert list(data) == ["records"]
+    assert [r["model_id"] for r in metadata_records(data)] == [
+        "llamacpp:unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q4_0",
+        "llamacpp:unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q8_0",
+    ]
+
+
+def test_redownload_replaces_only_its_own_record(tmp_path):
+    _write_quant(tmp_path, "Q4_0", ["Qwen3-0.6B-Q4_0.gguf"])
+    _write_quant(tmp_path, "Q8_0", ["Qwen3-0.6B-Q8_0.gguf"])
+    _write_quant(tmp_path, "Q4_0", ["Qwen3-0.6B-Q4_0.gguf"])
+
+    records = metadata_records(read_metadata(str(tmp_path)))
+    assert [r["files"] for r in records] == [["Qwen3-0.6B-Q8_0.gguf"], ["Qwen3-0.6B-Q4_0.gguf"]]
+
+
+def test_a_new_id_claiming_the_same_file_replaces_the_stale_record(tmp_path):
+    """Two records must never both claim the same main file: whichever download
+    produced the file last is the one that describes it."""
+    _write_quant(tmp_path, "Q4_0", ["Qwen3-0.6B-Q4_0.gguf"], model_id="llamacpp:old-name")
+    _write_quant(tmp_path, "Q4_0", ["Qwen3-0.6B-Q4_0.gguf"], model_id="llamacpp:new-name")
+
+    records = metadata_records(read_metadata(str(tmp_path)))
+    assert [r["model_id"] for r in records] == ["llamacpp:new-name"]
+
+
+def test_a_shared_mmproj_keeps_both_records(tmp_path):
+    """Quantizations of a multimodal repository share the mmproj companion, so its
+    file appearing in both records must not make one supersede the other."""
+    _write_quant(tmp_path, "Q4_0", ["gemma-Q4_0.gguf", "mmproj-F16.gguf"])
+    _write_quant(tmp_path, "Q8_0", ["gemma-Q8_0.gguf", "mmproj-F16.gguf"])
+
+    records = metadata_records(read_metadata(str(tmp_path)))
+    assert [r["files"] for r in records] == [
+        ["gemma-Q4_0.gguf", "mmproj-F16.gguf"],
+        ["gemma-Q8_0.gguf", "mmproj-F16.gguf"],
+    ]
+
+
+def test_merge_keeps_a_record_that_names_no_files(tmp_path):
+    """A record without ``files`` cannot be told apart from any download, so a
+    merge never drops it on its own initiative."""
+    write_metadata(
+        str(tmp_path),
+        "hf-handler",
+        env={"model_url": "unsloth/Qwen3-0.6B-GGUF:Q4_0", "models_repository": "llamacpp"},
+        models_list_path="",
+        fallback_model_id="llamacpp:fileless",
+    )
+    first = metadata_records(read_metadata(str(tmp_path)))[0]
+
+    _write_quant(tmp_path, "Q8_0", ["Qwen3-0.6B-Q8_0.gguf"])
+    records = metadata_records(read_metadata(str(tmp_path)))
+    assert records == [first, records[-1]]
+    assert records[-1]["files"] == ["Qwen3-0.6B-Q8_0.gguf"]
+
+
+def test_write_without_files_replaces_the_whole_file(tmp_path):
+    """The per-model-directory handlers (AI Hub, Edge Impulse) pass no files: their
+    directory holds one model, so the document becomes that one record — in the
+    same ``records`` shape every handler writes."""
+    _write_quant(tmp_path, "Q4_0", ["Qwen3-0.6B-Q4_0.gguf"])
+    write_metadata(str(tmp_path), "ai-hub-handler", env=AI_HUB_ENV, models_list_path="")
+
+    data = read_metadata(str(tmp_path))
+    assert list(data) == ["records"]
+    assert [r["handler"] for r in metadata_records(data)] == ["ai-hub-handler"]
+
+
+def test_metadata_records_accepts_nothing_but_the_records_list():
+    """A document without the list records nothing — same as a missing file."""
+    assert metadata_records({"handler": "hf-handler", "model_id": "llamacpp:x"}) == []
+    assert metadata_records(None) == []
+    assert metadata_records({"records": "not-a-list"}) == []
+    assert metadata_records({"records": [{"model_id": "llamacpp:x"}, "junk"]}) == [{"model_id": "llamacpp:x"}]
+
+
+def test_record_for_file_matches_by_path_or_basename(tmp_path):
+    """Patterns match a nested repo layout by path or by name; so must the lookup."""
+    _write_quant(tmp_path, "Q4_0", ["Q4_0/model.gguf"])
+    _write_quant(tmp_path, "Q8_0", ["Qwen3-0.6B-Q8_0.gguf"])
+    data = read_metadata(str(tmp_path))
+
+    assert record_for_file(data, "Q4_0/model.gguf")["files"] == ["Q4_0/model.gguf"]
+    assert record_for_file(data, "model.gguf")["files"] == ["Q4_0/model.gguf"]
+    assert record_for_file(data, "Qwen3-0.6B-Q8_0.gguf")["files"] == ["Qwen3-0.6B-Q8_0.gguf"]
+
+
+def test_record_for_file_unclaimed_file_is_unknown(tmp_path):
+    """A quantization no surviving record downloaded has no record — never a sibling's."""
+    _write_quant(tmp_path, "Q4_0", ["Qwen3-0.6B-Q4_0.gguf"])
+    data = read_metadata(str(tmp_path))
+    assert record_for_file(data, "Qwen3-0.6B-Q8_0.gguf") is None
+    assert record_for_file(None, "anything.gguf") is None
+
+
+def test_record_for_file_ignores_a_record_that_names_no_files():
+    """A record that says nothing about its files claims no file in particular."""
+    data = {"records": [{"handler": "hf-handler", "model_id": "llamacpp:x"}]}
+    assert record_for_file(data, "any.gguf") is None
+
+
+def test_record_for_model_id_selects_the_entrys_record(tmp_path):
+    _write_quant(tmp_path, "Q4_0", ["Qwen3-0.6B-Q4_0.gguf"], model_id="llamacpp:entry-a")
+    _write_quant(tmp_path, "Q8_0", ["Qwen3-0.6B-Q8_0.gguf"], model_id="llamacpp:entry-b")
+    data = read_metadata(str(tmp_path))
+
+    assert record_for_model_id(data, "llamacpp:entry-a")["files"] == ["Qwen3-0.6B-Q4_0.gguf"]
+    assert record_for_model_id(data, "llamacpp:entry-b")["files"] == ["Qwen3-0.6B-Q8_0.gguf"]
+    # A multi-record file answers strictly: no record with the id, no record.
+    assert record_for_model_id(data, "llamacpp:entry-c") is None
+    assert record_for_model_id(None, "llamacpp:entry-a") is None
+
+
+def test_record_for_model_id_ignores_a_document_without_records():
+    """No ``records`` list, no records — even when a stray top-level id matches."""
+    flat = {"handler": "hf-handler", "model_id": "llamacpp:whatever"}
+    assert record_for_model_id(flat, "llamacpp:whatever") is None
+
+
+def test_prune_drops_the_record_of_a_deleted_quantization(tmp_path):
+    _write_quant(tmp_path, "Q4_0", ["Qwen3-0.6B-Q4_0.gguf"])
+    _write_quant(tmp_path, "Q8_0", ["Qwen3-0.6B-Q8_0.gguf"])
+    (tmp_path / "Qwen3-0.6B-Q4_0.gguf").write_bytes(b"\0")  # Q8_0 was deleted
+
+    prune_metadata_records(str(tmp_path))
+
+    data = read_metadata(str(tmp_path))
+    assert list(data) == ["records"]
+    assert [r["files"] for r in metadata_records(data)] == [["Qwen3-0.6B-Q4_0.gguf"]]
+
+
+def test_prune_goes_by_the_main_file_not_the_shared_mmproj(tmp_path):
+    """The mmproj companion is shared: its presence must not keep a deleted
+    quantization's record alive, nor its deletion kill a surviving one's."""
+    _write_quant(tmp_path, "Q4_0", ["gemma-Q4_0.gguf", "mmproj-F16.gguf"])
+    _write_quant(tmp_path, "Q8_0", ["gemma-Q8_0.gguf", "mmproj-F16.gguf"])
+    (tmp_path / "gemma-Q4_0.gguf").write_bytes(b"\0")  # Q8_0 and the mmproj deleted
+
+    prune_metadata_records(str(tmp_path))
+
+    records = metadata_records(read_metadata(str(tmp_path)))
+    assert [r["files"] for r in records] == [["gemma-Q4_0.gguf", "mmproj-F16.gguf"]]
+
+
+def test_prune_removes_the_file_when_no_record_survives(tmp_path):
+    _write_quant(tmp_path, "Q4_0", ["Qwen3-0.6B-Q4_0.gguf"])
+    prune_metadata_records(str(tmp_path))
+    assert not (tmp_path / METADATA_NAME).exists()
+
+
+def test_prune_ignores_a_document_without_records(tmp_path):
+    """A file holding no ``records`` list records nothing, so nothing is pruned."""
+    (tmp_path / METADATA_NAME).write_text("handler: hf-handler\nmodel_id: llamacpp:x\n")
+    before = (tmp_path / METADATA_NAME).read_text()
+    prune_metadata_records(str(tmp_path))
+    assert (tmp_path / METADATA_NAME).read_text() == before
+
+
+def test_prune_is_a_noop_while_every_file_is_present(tmp_path):
+    _write_quant(tmp_path, "Q4_0", ["Qwen3-0.6B-Q4_0.gguf"])
+    _write_quant(tmp_path, "Q8_0", ["Qwen3-0.6B-Q8_0.gguf"])
+    (tmp_path / "Qwen3-0.6B-Q4_0.gguf").write_bytes(b"\0")
+    (tmp_path / "Qwen3-0.6B-Q8_0.gguf").write_bytes(b"\0")
+    before = (tmp_path / METADATA_NAME).read_text()
+
+    prune_metadata_records(str(tmp_path))
+    assert (tmp_path / METADATA_NAME).read_text() == before
+
+
+# --------------------------------------------------------------------------- #
 # End-to-end payload shape, per handler
 # --------------------------------------------------------------------------- #
 PAYLOAD_KEYS = ["downloaded_at", "handler", "model_id", "model_origin", "inputs"]
@@ -350,37 +571,39 @@ def test_payload_ai_hub(tmp_path):
     model_dir.mkdir()
     write_metadata(str(model_dir), "ai-hub-handler", env=AI_HUB_ENV, models_list_path=_models_list(tmp_path))
     data = read_metadata(str(model_dir))
-    assert list(data) == PAYLOAD_KEYS
-    assert data["handler"] == "ai-hub-handler"
-    assert data["model_id"] == "genie:qwen3_4b_instruct_2507"
-    assert data["model_origin"] == "builtin"
-    assert data["inputs"] == AI_HUB_ENV
+    assert list(data) == ["records"]
+    record = metadata_records(data)[0]
+    assert list(record) == PAYLOAD_KEYS
+    assert record["handler"] == "ai-hub-handler"
+    assert record["model_id"] == "genie:qwen3_4b_instruct_2507"
+    assert record["model_origin"] == "builtin"
+    assert record["inputs"] == AI_HUB_ENV
 
 
 def test_payload_edge_impulse(tmp_path):
     model_dir = tmp_path / "efficientnet-b4-qnn"
     model_dir.mkdir()
     write_metadata(str(model_dir), "ei-handler", env=EI_ENV, models_list_path=_models_list(tmp_path))
-    data = read_metadata(str(model_dir))
-    assert list(data) == PAYLOAD_KEYS
-    assert data["model_id"] == "ei:efficientnet-b4"
-    assert data["inputs"] == EI_ENV
+    record = metadata_records(read_metadata(str(model_dir)))[0]
+    assert list(record) == PAYLOAD_KEYS
+    assert record["model_id"] == "ei:efficientnet-b4"
+    assert record["inputs"] == EI_ENV
     # YAML ints arrive as strings and are recorded verbatim.
-    assert data["inputs"]["ei_project_id"] == "948887"
+    assert record["inputs"]["ei_project_id"] == "948887"
     # quantization is not set for this model: the key is omitted, not written empty.
-    assert "quantization" not in data["inputs"]
+    assert "quantization" not in record["inputs"]
 
 
 def test_payload_hugging_face(tmp_path):
     model_dir = tmp_path / "google" / "gemma-4-E2B-it-qat-q4_0-gguf"
     model_dir.mkdir(parents=True)
     write_metadata(str(model_dir), "hf-handler", env=HF_ENV, models_list_path=_models_list(tmp_path))
-    data = read_metadata(str(model_dir))
-    assert list(data) == PAYLOAD_KEYS
-    assert data["model_id"] == "llamacpp:gemma-4-E2B_q4_0-it"
-    assert data["inputs"] == HF_ENV
+    record = metadata_records(read_metadata(str(model_dir)))[0]
+    assert list(record) == PAYLOAD_KEYS
+    assert record["model_id"] == "llamacpp:gemma-4-E2B_q4_0-it"
+    assert record["inputs"] == HF_ENV
     # The pinned commit is already in the recorded model_url.
-    assert "1894d1fc" in data["inputs"]["model_url"]
+    assert "1894d1fc" in record["inputs"]["model_url"]
 
 
 def test_payload_for_a_repo_absent_from_models_list(tmp_path):
@@ -406,12 +629,12 @@ def test_payload_for_a_repo_absent_from_models_list(tmp_path):
         fallback_model_id="llamacpp:mistral-7b-instruct-v0.2.Q4_0",
     )
     assert path is not None
-    data = read_metadata(str(model_dir))
-    assert list(data) == PAYLOAD_KEYS
-    assert data["model_id"] == "llamacpp:mistral-7b-instruct-v0.2.Q4_0"
-    assert data["model_origin"] == "user_configured"
+    record = metadata_records(read_metadata(str(model_dir)))[0]
+    assert list(record) == PAYLOAD_KEYS
+    assert record["model_id"] == "llamacpp:mistral-7b-instruct-v0.2.Q4_0"
+    assert record["model_origin"] == "user_configured"
     # The download is still fully described by its own variables.
-    assert data["inputs"] == env
+    assert record["inputs"] == env
 
 
 def test_written_file_is_plain_safe_yaml(tmp_path):
@@ -419,4 +642,4 @@ def test_written_file_is_plain_safe_yaml(tmp_path):
     write_metadata(str(tmp_path), "hf-handler", env=HF_ENV, models_list_path="")
     text = (tmp_path / METADATA_NAME).read_text()
     assert "!!python" not in text
-    assert yaml.safe_load(text)["inputs"] == HF_ENV
+    assert yaml.safe_load(text)["records"][0]["inputs"] == HF_ENV

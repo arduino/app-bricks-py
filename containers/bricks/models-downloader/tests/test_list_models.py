@@ -11,7 +11,7 @@ import pytest
 
 import list_models
 from common.download_marker import write_marker
-from common.model_metadata import METADATA_NAME
+from common.model_metadata import METADATA_NAME, write_metadata
 
 
 # --------------------------------------------------------------------------- #
@@ -27,6 +27,18 @@ def _write_metadata_file(directory, text):
     os.makedirs(directory, exist_ok=True)
     with open(os.path.join(directory, METADATA_NAME), "w") as f:
         f.write(text)
+
+
+def _record_install(repo_dir, origin, files, model_id="llamacpp:whatever"):
+    """The ".arduino_metadata.yaml" record a download of *files* leaves in *repo_dir*."""
+    write_metadata(
+        str(repo_dir),
+        "hf-handler",
+        env={},
+        models_list_path="",
+        identity={"model_id": model_id, "model_origin": origin},
+        files=files,
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -176,9 +188,12 @@ def test_name_from_marker_root_fallback():
 # find_llamacpp_models
 # --------------------------------------------------------------------------- #
 def test_find_llamacpp_single_model(tmp_path):
-    """An ad-hoc model is named by its path — stable, and unique by construction."""
+    """An ad-hoc model (user-configured record) is named by its path — stable, and
+    unique by construction."""
     base = tmp_path / "models"
-    _make_gguf(str(base / "llamacpp" / "repo" / "model-a.gguf"))
+    repo = base / "llamacpp" / "repo"
+    _make_gguf(str(repo / "model-a.gguf"))
+    _record_install(repo, "user_configured", ["model-a.gguf"])
     results = list_models.find_llamacpp_models(str(base))
     assert len(results) == 1
     entry = results[0]
@@ -190,12 +205,23 @@ def test_find_llamacpp_single_model(tmp_path):
     assert "mmproj" not in entry
 
 
-def test_find_llamacpp_declared_model_keeps_its_stem_name(tmp_path):
-    """A file at a location models-list.yaml declares keeps the stem the entry's id uses."""
+def test_find_llamacpp_recordless_model_keeps_its_stem_name(tmp_path):
+    """The fallback: a GGUF with no download record is an out-of-the-box model."""
     base = tmp_path / "models"
     _make_gguf(str(base / "llamacpp" / "repo" / "model-a.gguf"))
-    declarations = [("repo", "model-a.gguf", "llamacpp:model-a")]
-    results = list_models.find_llamacpp_models(str(base), declarations)
+    results = list_models.find_llamacpp_models(str(base))
+    assert len(results) == 1
+    assert results[0]["id"] == "llamacpp:model-a"
+    assert results[0]["name"] == "model-a"
+
+
+def test_find_llamacpp_builtin_record_keeps_its_stem_name(tmp_path):
+    """A curated download serves under the stem its fixed entry id uses."""
+    base = tmp_path / "models"
+    repo = base / "llamacpp" / "repo"
+    _make_gguf(str(repo / "model-a.gguf"))
+    _record_install(repo, "builtin", ["model-a.gguf"], model_id="llamacpp:model-a")
+    results = list_models.find_llamacpp_models(str(base))
     assert len(results) == 1
     assert results[0]["id"] == "llamacpp:model-a"
     assert results[0]["name"] == "model-a"
@@ -210,7 +236,7 @@ def test_find_llamacpp_groups_mmproj(tmp_path):
     # The mmproj file is grouped into the text model, not listed separately.
     assert len(results) == 1
     entry = results[0]
-    assert entry["name"] == "moondream/moondream2-gguf/moondream2-text-model-f16"
+    assert entry["name"] == "moondream2-text-model-f16"
     assert entry["mmproj"].endswith("moondream2-mmproj-f16.gguf")
     # disk size is the sum of both files (1 MB + 0.5 MB).
     assert entry["disk_size_mb"] == 1.5
@@ -261,6 +287,7 @@ def test_find_llamacpp_marker_leaves_another_quantization_installed(tmp_path):
     base = tmp_path / "models"
     repo = base / "llamacpp" / "unsloth" / "Qwen3-0.6B-GGUF"
     _make_gguf(str(repo / "Qwen3-0.6B-Q4_0.gguf"))
+    _record_install(repo, "user_configured", ["Qwen3-0.6B-Q4_0.gguf"])
     write_marker(
         str(repo),
         handler="hf-handler",
@@ -464,6 +491,7 @@ def test_check_model_exists_matches_a_file(tmp_path):
 # model_metadata / outdated_fields
 # --------------------------------------------------------------------------- #
 AI_HUB_INFO = {
+    "id": "genie:x",
     "model_directory": "qwen-genie-w4a16",
     "models_repository": "models/audio-analytics/tts",
     "variables": {"model_directory": "qwen-genie-w4a16", "version": "0.57.1"},
@@ -472,7 +500,7 @@ AI_HUB_INFO = {
 
 def test_model_metadata_reads_from_nested_repository(tmp_path):
     base = tmp_path / "models"
-    _write_metadata_file(str(base / "audio-analytics" / "tts" / "qwen-genie-w4a16"), "model_id: genie:x\n")
+    _write_metadata_file(str(base / "audio-analytics" / "tts" / "qwen-genie-w4a16"), "records:\n- model_id: genie:x\n")
     data = list_models.model_metadata(AI_HUB_INFO, str(base))
     assert data["model_id"] == "genie:x"
 
@@ -485,8 +513,8 @@ def test_model_metadata_falls_back_to_the_matched_path(tmp_path):
     base = tmp_path / "models"
     # The folder on disk carries a "_proxy" suffix, so the canonical path misses it.
     matched = base / "qwen_genie_w4a16_proxy"
-    _write_metadata_file(str(matched), "model_id: genie:fuzzy\n")
-    model_info = {"model_directory": "qwen-genie-w4a16", "models_repository": ""}
+    _write_metadata_file(str(matched), "records:\n- model_id: genie:fuzzy\n")
+    model_info = {"id": "genie:fuzzy", "model_directory": "qwen-genie-w4a16", "models_repository": ""}
     data = list_models.model_metadata(model_info, str(base), path=str(matched))
     assert data["model_id"] == "genie:fuzzy"
 
@@ -511,14 +539,17 @@ def test_outdated_fields_reports_missing_inputs():
 GEMMA_REPO = ("llamacpp", "google", "gemma-4-E2B-it-qat-q4_0-gguf")
 
 CURRENT_METADATA = """\
-downloaded_at: '2026-08-03T09:41:12Z'
-handler: hf-handler
-model_id: llamacpp:gemma-4-E2B_q4_0-it
-model_origin: builtin
-inputs:
-  model_url: "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf/blob/main/gemma-4-E2B_q4_0-it.gguf"
-  models_repository: llamacpp
-  model_directory: google/gemma-4-E2B-it-qat-q4_0-gguf
+records:
+- downloaded_at: '2026-08-03T09:41:12Z'
+  handler: hf-handler
+  model_id: llamacpp:gemma-4-E2B_q4_0-it
+  model_origin: builtin
+  files:
+  - gemma-4-E2B_q4_0-it.gguf
+  inputs:
+    model_url: "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf/blob/main/gemma-4-E2B_q4_0-it.gguf"
+    models_repository: llamacpp
+    model_directory: google/gemma-4-E2B-it-qat-q4_0-gguf
 """
 
 
@@ -599,7 +630,10 @@ def test_main_lists_an_unlisted_model_with_its_metadata(monkeypatch, capsys, tmp
     models_dir, _models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
     repo = os.path.join(str(models_dir), "llamacpp", "TheBloke", "Mistral-7B-Instruct-v0.2-GGUF")
     _make_gguf(os.path.join(repo, "mistral.Q4_0.gguf"))
-    _write_metadata_file(repo, "handler: hf-handler\nmodel_id: llamacpp:mistral.Q4_0\nmodel_origin: user_configured\n")
+    _write_metadata_file(
+        repo,
+        "records:\n- handler: hf-handler\n  model_id: llamacpp:mistral.Q4_0\n  model_origin: user_configured\n  files: [mistral.Q4_0.gguf]\n",
+    )
 
     _models_dir, models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
     entries = [m for m in models if m["id"] == "llamacpp:TheBloke/Mistral-7B-Instruct-v0.2-GGUF/mistral.Q4_0"]
@@ -681,6 +715,72 @@ def test_find_llamacpp_attaches_metadata_to_marker_only_entry(tmp_path):
     assert results[0]["download_metadata"]["handler"] == "hf-handler"
 
 
+# --------------------------------------------------------------------------- #
+# Several quantizations sharing one repository directory, each with its record
+# --------------------------------------------------------------------------- #
+def _write_quant_record(repo, quantization, files, model_id=None):
+    """A record the way hf_downloader writes one: merged, naming its files."""
+    write_metadata(
+        repo,
+        "hf-handler",
+        env={"model_url": f"unsloth/Qwen3-0.6B-GGUF:{quantization}", "models_repository": "llamacpp"},
+        models_list_path="",
+        fallback_model_id=model_id or f"llamacpp:unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-{quantization}",
+        files=files,
+    )
+
+
+def test_find_llamacpp_attaches_each_quantizations_own_record(tmp_path):
+    """Two quantizations in one repository directory: each entry must carry the
+    record of its own download, not whichever download happened last."""
+    base = tmp_path / "models"
+    repo = os.path.join(str(base), "llamacpp", "unsloth", "Qwen3-0.6B-GGUF")
+    _make_gguf(os.path.join(repo, "Qwen3-0.6B-Q4_0.gguf"))
+    _make_gguf(os.path.join(repo, "Qwen3-0.6B-Q8_0.gguf"))
+    _write_quant_record(repo, "Q4_0", ["Qwen3-0.6B-Q4_0.gguf"])
+    _write_quant_record(repo, "Q8_0", ["Qwen3-0.6B-Q8_0.gguf"])
+
+    results = {entry["id"]: entry for entry in list_models.find_llamacpp_models(str(base))}
+
+    for quantization in ("Q4_0", "Q8_0"):
+        entry = results[f"llamacpp:unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-{quantization}"]
+        assert entry["download_metadata"]["files"] == [f"Qwen3-0.6B-{quantization}.gguf"]
+        assert entry["download_metadata"]["inputs"]["model_url"].endswith(f":{quantization}")
+
+
+def test_find_llamacpp_does_not_borrow_a_siblings_record(tmp_path):
+    """A quantization the records do not claim (installed by an older downloader,
+    say) is unknown — reporting a sibling's record would misdescribe it."""
+    base = tmp_path / "models"
+    repo = os.path.join(str(base), "llamacpp", "unsloth", "Qwen3-0.6B-GGUF")
+    _make_gguf(os.path.join(repo, "Qwen3-0.6B-Q4_0.gguf"))
+    _make_gguf(os.path.join(repo, "Qwen3-0.6B-Q8_0.gguf"))
+    _write_quant_record(repo, "Q4_0", ["Qwen3-0.6B-Q4_0.gguf"])
+
+    results = {entry["id"]: entry for entry in list_models.find_llamacpp_models(str(base))}
+
+    assert "download_metadata" in results["llamacpp:unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q4_0"]
+    # Unclaimed means unrecorded: out-of-the-box treatment — stem name, no record.
+    assert "download_metadata" not in results["llamacpp:Qwen3-0.6B-Q8_0"]
+
+
+def test_model_metadata_picks_the_entrys_own_record(tmp_path):
+    """Two curated entries share the repository directory; each reads its own record."""
+    base = tmp_path / "models"
+    repo = os.path.join(str(base), "llamacpp", "unsloth", "Qwen3-0.6B-GGUF")
+    _write_quant_record(repo, "Q4_0", ["Qwen3-0.6B-Q4_0.gguf"], model_id="llamacpp:entry-q4")
+    _write_quant_record(repo, "Q8_0", ["Qwen3-0.6B-Q8_0.gguf"], model_id="llamacpp:entry-q8")
+    model_info = {"model_directory": "unsloth/Qwen3-0.6B-GGUF", "models_repository": "llamacpp"}
+
+    q4 = list_models.model_metadata(dict(model_info, id="llamacpp:entry-q4"), str(base))
+    assert q4["files"] == ["Qwen3-0.6B-Q4_0.gguf"]
+    q8 = list_models.model_metadata(dict(model_info, id="llamacpp:entry-q8"), str(base))
+    assert q8["files"] == ["Qwen3-0.6B-Q8_0.gguf"]
+    # An entry none of the records name gets no record — never a sibling's, whose
+    # inputs would flag this model as outdated against the wrong download.
+    assert list_models.model_metadata(dict(model_info, id="llamacpp:entry-q2"), str(base)) is None
+
+
 def test_main_supported_board_filter(monkeypatch, capsys, tmp_path):
     yaml_text = (
         SAMPLE_YAML
@@ -742,8 +842,14 @@ def test_find_llamacpp_same_file_name_in_two_repos_lists_two_models(tmp_path):
     bartowski = base / "llamacpp" / "bartowski" / "SmolLM2-GGUF"
     _make_gguf(str(unsloth / "SmolLM2-Q4_K_M.gguf"), size_bytes=1024 * 1024)
     _make_gguf(str(bartowski / "SmolLM2-Q4_K_M.gguf"), size_bytes=2 * 1024 * 1024)
-    _write_metadata_file(str(unsloth), "inputs:\n  model_url: llamacpp:unsloth/SmolLM2-GGUF:Q4_K_M\n")
-    _write_metadata_file(str(bartowski), "inputs:\n  model_url: llamacpp:bartowski/SmolLM2-GGUF:Q4_K_M\n")
+    _write_metadata_file(
+        str(unsloth),
+        "records:\n- model_origin: user_configured\n  files: [SmolLM2-Q4_K_M.gguf]\n  inputs:\n    model_url: llamacpp:unsloth/SmolLM2-GGUF:Q4_K_M\n",
+    )
+    _write_metadata_file(
+        str(bartowski),
+        "records:\n- model_origin: user_configured\n  files: [SmolLM2-Q4_K_M.gguf]\n  inputs:\n    model_url: llamacpp:bartowski/SmolLM2-GGUF:Q4_K_M\n",
+    )
 
     results = {entry["id"]: entry for entry in list_models.find_llamacpp_models(str(base))}
 
@@ -764,6 +870,8 @@ def test_main_lists_same_named_ad_hoc_downloads_separately(monkeypatch, capsys, 
     models_dir, _models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
     _make_gguf(str(models_dir / "llamacpp" / "unsloth" / "SmolLM2-GGUF" / "SmolLM2-Q4_K_M.gguf"))
     _make_gguf(str(models_dir / "llamacpp" / "bartowski" / "SmolLM2-GGUF" / "SmolLM2-Q4_K_M.gguf"))
+    _record_install(models_dir / "llamacpp" / "unsloth" / "SmolLM2-GGUF", "user_configured", ["SmolLM2-Q4_K_M.gguf"])
+    _record_install(models_dir / "llamacpp" / "bartowski" / "SmolLM2-GGUF", "user_configured", ["SmolLM2-Q4_K_M.gguf"])
 
     _models_dir, models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
     smol = sorted(m["id"] for m in models if "SmolLM2" in m["id"])
@@ -861,12 +969,14 @@ def test_main_supports_promoting_an_ad_hoc_model_to_the_curated_list(monkeypatch
     _make_gguf(str(repo / "SmolLM2-135M-Instruct-Q4_K_M.gguf"))
     _write_metadata_file(
         str(repo),
-        "model_origin: user_configured\n"
-        "model_id: llamacpp:unsloth/SmolLM2-135M-Instruct-GGUF/SmolLM2-135M-Instruct-Q4_K_M\n"
-        "inputs:\n"
-        "  model_url: llamacpp:unsloth/SmolLM2-135M-Instruct-GGUF:Q4_K_M\n"
-        "  models_repository: llamacpp\n"
-        "  model_directory: unsloth/SmolLM2-135M-Instruct-GGUF\n",
+        "records:\n"
+        "- model_origin: user_configured\n"
+        "  model_id: llamacpp:unsloth/SmolLM2-135M-Instruct-GGUF/SmolLM2-135M-Instruct-Q4_K_M\n"
+        "  files: [SmolLM2-135M-Instruct-Q4_K_M.gguf]\n"
+        "  inputs:\n"
+        "    model_url: llamacpp:unsloth/SmolLM2-135M-Instruct-GGUF:Q4_K_M\n"
+        "    models_repository: llamacpp\n"
+        "    model_directory: unsloth/SmolLM2-135M-Instruct-GGUF\n",
     )
     _models_dir, models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
     assert [m["id"] for m in models if "SmolLM2" in m["id"]] == ["llamacpp:unsloth/SmolLM2-135M-Instruct-GGUF/SmolLM2-135M-Instruct-Q4_K_M"]
@@ -926,10 +1036,13 @@ def test_main_dedup_prefers_the_platform_of_the_listed_board(monkeypatch, capsys
     # Downloaded from the revision the unoq platform declares.
     _write_metadata_file(
         str(repo),
-        "inputs:\n"
-        '  model_url: "https://huggingface.co/org/multi-gguf/blob/unosha/multi-Q4_0.gguf"\n'
-        "  models_repository: llamacpp\n"
-        "  model_directory: org/multi-gguf\n",
+        "records:\n"
+        "- model_id: llamacpp:multi-Q4_0\n"
+        "  files: [multi-Q4_0.gguf]\n"
+        "  inputs:\n"
+        '    model_url: "https://huggingface.co/org/multi-gguf/blob/unosha/multi-Q4_0.gguf"\n'
+        "    models_repository: llamacpp\n"
+        "    model_directory: org/multi-gguf\n",
     )
 
     monkeypatch.setenv("BOARD_NAME", "unoq")

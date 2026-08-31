@@ -27,7 +27,14 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common.download_marker import read_marker
 from common.gguf_naming import LLAMACPP_SUBDIR, declaration_covers, declared_gguf_files, gguf_basename, gguf_model_name
-from common.model_metadata import METADATA_NAME, ORIGIN_BUILTIN, ORIGIN_USER_CONFIGURED, is_bookkeeping_name, read_metadata
+from common.model_metadata import (
+    ORIGIN_BUILTIN,
+    ORIGIN_USER_CONFIGURED,
+    file_record,
+    is_bookkeeping_name,
+    read_metadata,
+    record_for_model_id,
+)
 from common.models_list import get_model_subdir, load_models_list, MODELS_LIST_PATH
 
 
@@ -248,11 +255,14 @@ def model_is_downloading(model_info, models_base_dir):
 
 
 def model_metadata(model_info, models_base_dir, path=None):
-    """Return the model's ".arduino_metadata.yaml" as a dict, or None when absent.
+    """Return this model's download record from ".arduino_metadata.yaml", or None.
 
     Written by the downloaders once a download completes, so its absence means the
     model was installed before this record existed (or is not installed at all) —
-    never that it is up to date.
+    never that it is up to date. A Hugging Face repository directory holds one record
+    per downloaded quantization, so the entry's own record is picked by its model id
+    (``record_for_model_id``): a directory recording only other entries' downloads
+    says nothing about this one.
 
     The canonical folder built from the models-list.yaml variables is tried first,
     because it is the only one that resolves for the nested model_directory of a
@@ -263,9 +273,10 @@ def model_metadata(model_info, models_base_dir, path=None):
     if model_directory:
         data = read_metadata(os.path.join(model_search_dir(model_info, models_base_dir), model_directory))
         if data is not None:
-            return data
+            return record_for_model_id(data, model_info.get("id"))
     if path:
-        return read_metadata(path if os.path.isdir(path) else os.path.dirname(path))
+        data = read_metadata(path if os.path.isdir(path) else os.path.dirname(path))
+        return record_for_model_id(data, model_info.get("id"))
     return None
 
 
@@ -324,11 +335,13 @@ def find_llamacpp_models(models_base_dir, declarations=()):
     files are not standalone models but the multimodal projection belonging to
     the main GGUF in the same directory, so they are not listed separately.
 
-    Models are named with ``gguf_model_name`` against *declarations*
-    (``declared_gguf_files`` of models-list.yaml), mirroring the models.ini sections:
-    the file stem for a declared file, the path-qualified name for an ad-hoc one —
-    each file is one model with its own id, path and size, never merged with a
-    same-named stranger.
+    Models are named with ``gguf_model_name`` from their ".arduino_metadata.yaml"
+    download record, mirroring the models.ini sections: the path-qualified name for
+    a user-configured model, the file stem for everything else — each downloaded
+    file is one model with its own id, path and size, never merged with a
+    same-named stranger. *declarations* (``declared_gguf_files`` of models-list.yaml)
+    only name what has no record yet: a pending download, and a file landed by a
+    download still in flight.
 
     A download with no GGUF on disk yet (only a ".download" marker) is still surfaced,
     using the marker info for the entry — including when the directory does hold other
@@ -350,7 +363,6 @@ def find_llamacpp_models(models_base_dir, declarations=()):
         rel_dir = os.path.relpath(root, llamacpp_dir).replace(os.sep, "/")
         rel_dir = "" if rel_dir == "." else rel_dir
         mmproj_files = [f for f in gguf_files if "mmproj" in f]
-        metadata = read_metadata(os.path.join(root, METADATA_NAME))
 
         # Whether the marker was accounted for by a GGUF listed below; if it was not, the
         # download it stands for has nothing on disk yet and is reported on its own.
@@ -361,7 +373,19 @@ def find_llamacpp_models(models_base_dir, declarations=()):
             downloading = marker is not None and marker_covers_file(marker, f)
             marker_listed = marker_listed or downloading
             full_path = os.path.join(root, f)
-            model_name = gguf_model_name(f"{rel_dir}/{f}" if rel_dir else f, declarations)
+            rel_path = f"{rel_dir}/{f}" if rel_dir else f
+            # The record can sit above a nested per-quantization folder, so it is
+            # looked up from the file's directory up to the llamacpp root. The
+            # directory is shared by every quantization of a repository: the file is
+            # described by its own download's record, never a sibling's.
+            record = file_record(full_path, llamacpp_dir)
+            model_name = gguf_model_name(rel_path, record)
+            if record is None and downloading:
+                # Landed by a download still in flight: its record is written last,
+                # so predict the finished id the way the pending branch below does —
+                # a declared location keeps the stem, anything else is qualified.
+                if not any(declaration_covers(d, n, rel_dir, f) for d, n, _mid in declarations):
+                    model_name = rel_path[: -len(".gguf")]
             disk_size_mb = get_dir_size_mb(full_path)
             # The mmproj file in the same directory is part of this model.
             if mmproj_files:
@@ -384,8 +408,8 @@ def find_llamacpp_models(models_base_dir, declarations=()):
             }
             if mmproj_files:
                 entry["mmproj"] = os.path.join(root, mmproj_files[0])
-            if metadata is not None:
-                entry["download_metadata"] = metadata
+            if record is not None:
+                entry["download_metadata"] = record
             results.append(entry)
 
         # Download in progress but no main GGUF on disk yet: surface the
@@ -409,8 +433,11 @@ def find_llamacpp_models(models_base_dir, declarations=()):
                 "_rel_dir": rel_dir,
                 "_filename": filename,
             }
-            if metadata is not None:
-                entry["download_metadata"] = metadata
+            # A record for the file being fetched is a previous install of the same
+            # model (a re-download); a record naming only other files is a sibling's.
+            record = file_record(os.path.join(root, filename), llamacpp_dir) if filename else None
+            if record is not None:
+                entry["download_metadata"] = record
             results.append(entry)
     return results
 
@@ -540,6 +567,7 @@ def main():
     # filesystem status is merged into that entry instead of listing the model twice.
     # Anything else is an ad-hoc download and is listed as its own entry.
     by_id = {entry["id"]: entry for entry in results}
+    info_by_id = {info["id"]: info for info in all_models}
     declarations = declared_gguf_files(models_list)
     merged_ids = set()
     for m in find_llamacpp_models(args.models_dir, declarations):
@@ -561,7 +589,18 @@ def main():
             if "mmproj" in m:
                 existing["mmproj"] = m["mmproj"]
             if "download_metadata" in m and "download_metadata" not in existing:
+                # The record was matched by the file's location rather than by the
+                # entry's id — an ad-hoc install this catalog release adopted, whose
+                # recorded id is the old path-qualified snapshot. Its inputs are
+                # still what the install was downloaded with, so the outdated check
+                # runs on them here, as it does for an id-matched record above.
                 existing["download_metadata"] = m["download_metadata"]
+                info = info_by_id.get(declared_id)
+                if info is not None:
+                    stale = outdated_fields(info, m["download_metadata"])
+                    existing["outdated"] = bool(stale)
+                    if stale:
+                        existing["outdated_fields"] = stale
         else:
             if m["id"] in by_id:
                 # Same name as a model this file is not: qualify the id by location
