@@ -22,9 +22,9 @@ Integration highlights:
   person disappears, active poses exit after a 0.7 s grace period). Other people
   stay visible through `on_keypoints` but do not fire pose events.
 - `on_enter` / `on_exit` / `on_count_change` enable presence and people-counting automations.
-- `on_readable_change` reports whether the tracked person's skeleton can be read at all:
-  while it cannot, no pose event is emitted, so it is the cue to ask the user to step back
-  into full view.
+- `on_readable_change` reports whether the tracked person's skeleton can be classified: it
+  turns False when the normalization anchors are all guessed, when a joint lands far outside
+  the frame or when the torso collapses, and no pose event is emitted while it stays False.
 - `readable` and `people_count` hold the current value of those two states, for clients that
   connect after the last change and would otherwise wait for the next one.
 - `out_of_frame_tolerance` sets how far past the frame edges a joint may be extrapolated
