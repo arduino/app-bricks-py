@@ -14,8 +14,11 @@ ARG LLAMA_CPP_DIGEST
 ADD --checksum=${LLAMA_CPP_DIGEST} ${LLAMA_CPP_URL} /tmp/llamacpp.tar.gz
 
 COPY ./scripts/* /
+COPY ./models-list.yaml /models-list.yaml
 
 RUN set -ex; \
+    # pyyaml: configure-llamacpp.py parses /models-list.yaml
+    pip install --no-cache-dir pyyaml; \
     tar -xzf /tmp/llamacpp.tar.gz -C /opt; \
     rm /tmp/llamacpp.tar.gz; \
     chown -R arduino:arduino /opt/pkg-snapdragon; \
