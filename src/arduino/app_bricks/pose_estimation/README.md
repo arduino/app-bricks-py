@@ -52,10 +52,9 @@ right_ankle.
 
 Detection score: the `confidence` threshold (constructor and `set_confidence`) compares
 against the average of a person's 17 keypoint scores, so it rises with how complete the
-skeleton is as well as with how confident each keypoint is — a fully visible person scores
-far higher than a half-framed one whose visible joints are perfect. Below that threshold,
-one limit stays: a person is not detected at all unless at least one of their keypoints
-scores 0.25 or more, the value the runner uses to start assembling a skeleton.
+skeleton is as well as with how confident each keypoint is. Below that threshold, one limit
+stays: a person is not detected at all unless at least one of their keypoints scores 0.25 or
+more, the value the runner uses to start assembling a skeleton.
 
 Classification note: the pose classifier is a k-NN over a reference database of labeled examples
 shipped with the brick (`assets/pose_classifier.npz`, ~0.6 MB) together with the exact
