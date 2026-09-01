@@ -2,10 +2,17 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""Unit tests for the Hexagon session sizing of the llama.cpp NPU runner."""
+"""Unit tests for the llama.cpp runners' configure-llamacpp.py scripts.
+
+Covers the Hexagon session sizing of the NPU runner, and — for both runners, whose
+scripts deliberately duplicate the code — the served model names, which are derived
+from the ".arduino_metadata.yaml" download records rather than from a catalog baked
+into the images.
+"""
 
 from __future__ import annotations
 
+import configparser
 import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
@@ -13,12 +20,20 @@ from types import SimpleNamespace
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SCRIPT = REPO_ROOT / "containers" / "ai" / "llamacpp-npu-runner" / "scripts" / "configure-llamacpp.py"
+NPU_SCRIPT = REPO_ROOT / "containers" / "ai" / "llamacpp-npu-runner" / "scripts" / "configure-llamacpp.py"
+CPU_SCRIPT = REPO_ROOT / "containers" / "ai" / "llamacpp-runner" / "scripts" / "configure-llamacpp.py"
 
-# The script is not importable by name (it lives outside a package and has a dash in it).
-_spec = importlib.util.spec_from_file_location("configure_llamacpp", SCRIPT)
-configure_llamacpp = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(configure_llamacpp)
+
+def _load_script(script: Path, name: str):
+    # The scripts are not importable by name (they live outside a package and have a dash).
+    spec = importlib.util.spec_from_file_location(name, script)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+configure_llamacpp = _load_script(NPU_SCRIPT, "configure_llamacpp")
+configure_llamacpp_cpu = _load_script(CPU_SCRIPT, "configure_llamacpp_cpu")
 
 model_ndev = configure_llamacpp.model_ndev
 detect_hexagon_ndev = configure_llamacpp.detect_hexagon_ndev
@@ -179,3 +194,113 @@ def test_detect_hexagon_ndev_ignores_unreadable_models(monkeypatch, capsys):
 
     assert detect_hexagon_ndev(models, 4096) == 2
     assert "missing-model: cannot read size" in capsys.readouterr().err
+
+
+# --------------------------------------------------------------------------- #
+# Served model names, from the ".arduino_metadata.yaml" download records
+#
+# Both runner scripts carry the same (duplicated) naming code, so every test runs
+# against both: a divergence between the two images is itself a bug.
+# --------------------------------------------------------------------------- #
+@pytest.fixture(params=["npu-runner", "cpu-runner"])
+def runner(request):
+    return {"npu-runner": configure_llamacpp, "cpu-runner": configure_llamacpp_cpu}[request.param]
+
+
+def _gguf(path: Path) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"\0")
+    return path
+
+
+def _write_records(directory: Path, *records):
+    """A ".arduino_metadata.yaml" the way the models-downloader writes it."""
+    lines = ["models:"]
+    for origin, files in records:
+        lines.append(f"- model_origin: {origin}")
+        lines.append(f"  files: [{', '.join(files)}]")
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / ".arduino_metadata.yaml").write_text("\n".join(lines) + "\n")
+
+
+def test_a_file_without_a_record_keeps_its_stem(runner, tmp_path):
+    """The fallback: no ".arduino_metadata.yaml" means an out-of-the-box model."""
+    gguf = _gguf(tmp_path / "google" / "gemma-4-E2B-it-qat-q4_0-gguf" / "gemma-4-E2B_q4_0-it.gguf")
+    assert runner.gguf_model_name(gguf, tmp_path) == "gemma-4-E2B_q4_0-it"
+
+
+def test_a_curated_download_keeps_its_stem(runner, tmp_path):
+    repo = tmp_path / "google" / "gemma-4-E2B-it-qat-q4_0-gguf"
+    gguf = _gguf(repo / "gemma-4-E2B_q4_0-it.gguf")
+    _write_records(repo, ("built_in", ["gemma-4-E2B_q4_0-it.gguf"]))
+    assert runner.gguf_model_name(gguf, tmp_path) == "gemma-4-E2B_q4_0-it"
+
+
+def test_a_user_download_is_named_by_its_path(runner, tmp_path):
+    """Ad-hoc downloads carry the repository in the name, so two same-named files
+    from different owners never collide (mirrors the models-downloader listing id)."""
+    repo = tmp_path / "unsloth" / "Qwen3-0.6B-GGUF"
+    gguf = _gguf(repo / "Qwen3-0.6B-Q4_0.gguf")
+    _write_records(repo, ("user", ["Qwen3-0.6B-Q4_0.gguf"]))
+    assert runner.gguf_model_name(gguf, tmp_path) == "unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q4_0"
+
+
+def test_the_record_is_found_above_a_nested_quantization_folder(runner, tmp_path):
+    """Some repositories nest their files per quantization; the record stays at the
+    repository directory and lists the nested relative path."""
+    repo = tmp_path / "org" / "repo-GGUF"
+    gguf = _gguf(repo / "Q4_0" / "model.gguf")
+    _write_records(repo, ("user", ["Q4_0/model.gguf"]))
+    assert runner.gguf_model_name(gguf, tmp_path) == "org/repo-GGUF/Q4_0/model"
+
+
+def test_each_quantization_answers_to_its_own_record(runner, tmp_path):
+    """A curated and an ad-hoc quantization share the repository directory."""
+    repo = tmp_path / "unsloth" / "Qwen3-0.6B-GGUF"
+    q4 = _gguf(repo / "Qwen3-0.6B-Q4_0.gguf")
+    q8 = _gguf(repo / "Qwen3-0.6B-Q8_0.gguf")
+    _write_records(
+        repo,
+        ("built_in", ["Qwen3-0.6B-Q4_0.gguf"]),
+        ("user", ["Qwen3-0.6B-Q8_0.gguf"]),
+    )
+    assert runner.gguf_model_name(q4, tmp_path) == "Qwen3-0.6B-Q4_0"
+    assert runner.gguf_model_name(q8, tmp_path) == "unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q8_0"
+
+
+def test_an_unclaimed_sibling_counts_as_out_of_the_box(runner, tmp_path):
+    """A GGUF no record names (installed by something that recorded nothing) falls
+    back to the out-of-the-box naming, never to a sibling's record."""
+    repo = tmp_path / "unsloth" / "Qwen3-0.6B-GGUF"
+    q8 = _gguf(repo / "Qwen3-0.6B-Q8_0.gguf")
+    _write_records(repo, ("user", ["Qwen3-0.6B-Q4_0.gguf"]))
+    assert runner.gguf_model_name(q8, tmp_path) == "Qwen3-0.6B-Q8_0"
+
+
+def test_unreadable_metadata_degrades_to_out_of_the_box(runner, tmp_path):
+    repo = tmp_path / "unsloth" / "Qwen3-0.6B-GGUF"
+    gguf = _gguf(repo / "Qwen3-0.6B-Q4_0.gguf")
+    repo.joinpath(".arduino_metadata.yaml").write_text("a: b: c\n")
+    assert runner.gguf_model_name(gguf, tmp_path) == "Qwen3-0.6B-Q4_0"
+
+
+def test_models_ini_serves_each_model_under_its_derived_name(runner, tmp_path, capsys):
+    """End to end: one curated and one ad-hoc install become two sections, and the
+    mmproj companion in the ad-hoc repository is attached to its model."""
+    curated = tmp_path / "google" / "gemma-4-E2B-it-qat-q4_0-gguf"
+    _gguf(curated / "gemma-4-E2B_q4_0-it.gguf")
+    _write_records(curated, ("built_in", ["gemma-4-E2B_q4_0-it.gguf"]))
+    adhoc = tmp_path / "unsloth" / "gemma-4-E4B-it-GGUF"
+    _gguf(adhoc / "gemma-4-E4B-it-Q4_0.gguf")
+    _gguf(adhoc / "mmproj-BF16.gguf")
+    _write_records(adhoc, ("user", ["gemma-4-E4B-it-Q4_0.gguf", "mmproj-BF16.gguf"]))
+
+    runner.generate_models_ini(tmp_path)
+
+    config = configparser.ConfigParser()
+    config.read(tmp_path / "models.ini")
+    assert sorted(config.sections()) == [
+        "gemma-4-E2B_q4_0-it",
+        "unsloth/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q4_0",
+    ]
+    assert config["unsloth/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q4_0"]["mmproj"].endswith("mmproj-BF16.gguf")

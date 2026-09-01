@@ -1,5 +1,5 @@
 {
-  "watch_paths": ["containers/ai/llamacpp-runner/", "models/"],
+  "watch_paths": ["containers/ai/llamacpp-runner/"],
   "tag_latest": false,
   "build_whl": false,
   "update_compose": true,

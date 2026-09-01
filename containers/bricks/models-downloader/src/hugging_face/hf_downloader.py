@@ -65,7 +65,10 @@ decide whether it is already installed: a ``Q4_0`` on disk does not make ``Q3_K_
 present, and asking for the second one downloads it next to the first instead of
 reporting the repository as complete. The cleanup paths honour the same rule — an
 interrupted or failed download only discards the files it was fetching, never a sibling
-quantization that finished earlier.
+quantization that finished earlier. The shared ".arduino_metadata.yaml" follows suit:
+every download appends its own record (naming the files it fetched), and a delete drops
+only the records of the files it removed, so no quantization is ever described by
+another one's record.
 
 After all files are downloaded, ``models.ini`` is written to ``<output-dir>``
 mapping each model name to its GGUF path (and mmproj path where present); names
@@ -98,8 +101,17 @@ import json
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from common.download_marker import MARKER_NAME, read_marker, write_marker
-from common.gguf_naming import catalog_gguf_declarations, gguf_model_name
-from common.model_metadata import identify_model, is_bookkeeping_name, write_metadata
+from common.gguf_naming import catalog_gguf_declarations, declaration_covers, gguf_model_name
+from common.model_metadata import (
+    ORIGIN_BUILTIN,
+    ORIGIN_USER,
+    file_record,
+    identify_model,
+    is_bookkeeping_name,
+    prune_metadata_records,
+    write_metadata,
+)
+from common.models_list import MODELS_LIST_PATH, _iter_platform_variables, load_models_list
 
 # Quantization used when a model key names only a repository. Q4_0 is the quantization
 # every llama.cpp GGUF repository publishes and the one all curated entries use.
@@ -769,16 +781,17 @@ def fallback_model_id(model_type: str, downloaded: list[str], models_dir: str) -
     """Name a model that no models-list.yaml entry declares, from the files fetched.
 
     Built as ``<namespace>:<model name>`` with the naming ``list_models.py`` and
-    models.ini share (``gguf_model_name`` against the catalog baked into the image),
-    so the record and the listing agree on what to call an ad-hoc download. mmproj
-    files belong to the main GGUF and never name the model.
+    models.ini share: the fallback only applies when the record being written is
+    user-configured, and a user-configured model is named by its models_dir-relative
+    path (``gguf_model_name``), so the record and the listing agree on what to call
+    an ad-hoc download. mmproj files belong to the main GGUF and never name the model.
     """
     main_gguf = next((p for p in sorted(downloaded) if "mmproj" not in os.path.basename(p)), None)
     if not main_gguf:
         return None
     try:
         rel = Path(main_gguf).resolve().relative_to(Path(models_dir).resolve()).as_posix()
-        name = gguf_model_name(rel, catalog_gguf_declarations())
+        name = gguf_model_name(rel, {"model_origin": ORIGIN_USER})
     except ValueError:  # not under models_dir: name it by its stem alone
         name = Path(main_gguf).stem
     # The key's model_type is the namespace when given; llamacpp is where GGUF models
@@ -886,22 +899,108 @@ def delete_matched_files(output_dir: str, models_base: str, allow_pattern: str, 
             d.rmdir()
 
 
-def generate_models_ini(models_dir: Path, declarations=None):
+def catalog_entry_variables(model_id: str, board: str, models_list_path: str = MODELS_LIST_PATH) -> dict:
+    """The download variables the catalog declares for *model_id*.
+
+    The platform matching *board* wins; the entry's first platform otherwise. Empty
+    when the catalog is unreadable or does not declare the entry — the backfilled
+    record then carries no inputs, and the model reads as outdated until the host
+    re-downloads it with the declared ones.
+    """
+    try:
+        models = load_models_list(models_list_path)
+    except Exception:  # noqa: BLE001 - a broken catalog must not fail the scan
+        return {}
+    fallback = None
+    for entry_id, _model_data, platform, variables in _iter_platform_variables(models):
+        if entry_id != model_id or not isinstance(variables, dict):
+            continue
+        if platform == board:
+            return variables
+        if fallback is None:
+            fallback = variables
+    return fallback or {}
+
+
+def backfill_ootb_records(models_dir: Path, models_list_path: str = MODELS_LIST_PATH) -> None:
+    """Write the missing ".arduino_metadata.yaml" records of out-of-the-box models.
+
+    A GGUF can be on the filesystem without the downloader ever running — flashed
+    with the OS image, or shipped on the models partition — and such an install has
+    no record. The scan that regenerates models.ini backfills one by comparison with
+    the catalog: a recordless file at a location a models-list.yaml entry declares is
+    that curated model, and gets a ``built_in`` record naming the entry, with the
+    entry's variables as inputs — the record then reads as an install of the current
+    catalog, and a future catalog change flags it outdated exactly like a downloaded
+    model. A recordless file the catalog does not declare stays as it is: out of the
+    box by the fallback rule, with nothing known to record about it.
+
+    Each declaration claims at most one file, and a file that already carries a
+    record keeps whatever its record says — a backfill never rewrites history.
+    """
+    declarations = catalog_gguf_declarations(models_list_path)
+    if not declarations:
+        return
+    board = os.environ.get("BOARD_NAME", "")
+    taken = set()
+    for gguf_file in sorted(models_dir.rglob("*.gguf")):
+        if "mmproj" in gguf_file.name:
+            continue
+        record = file_record(str(gguf_file), str(models_dir))
+        if record is not None:
+            # A recorded file keeps its claim on the entry it names: a directory-level
+            # declaration must not hand the same id to a recordless sibling.
+            taken.add(record.get("model_id"))
+            continue
+        rel = gguf_file.relative_to(models_dir)
+        rel_dir = rel.parent.as_posix()
+        rel_dir = "" if rel_dir == "." else rel_dir
+        matched = next(
+            (
+                (directory, model_id)
+                for directory, declared_name, model_id in declarations
+                if model_id not in taken and declaration_covers(directory, declared_name, rel_dir, gguf_file.name)
+            ),
+            None,
+        )
+        if matched is None:
+            continue
+        directory, model_id = matched
+        taken.add(model_id)
+        # The record goes where the downloader would have written it: the declared
+        # model directory, above a possibly nested quantization folder.
+        record_dir = models_dir / directory
+        files = [gguf_file.relative_to(record_dir).as_posix()]
+        files += sorted(p.relative_to(record_dir).as_posix() for p in gguf_file.parent.glob("*mmproj*.gguf"))
+        variables = catalog_entry_variables(model_id, board, models_list_path)
+        recorded = write_metadata(
+            str(record_dir),
+            handler="hf-handler",
+            env={key: str(value) for key, value in variables.items()},
+            identity={"model_id": model_id, "model_origin": ORIGIN_BUILTIN},
+            files=files,
+        )
+        if recorded:
+            emit_json_info(f"Recorded out-of-the-box model {model_id}")
+
+
+def generate_models_ini(models_dir: Path, models_list_path: str = MODELS_LIST_PATH):
     """Write the models.ini indexing every GGUF under *models_dir*.
 
-    Sections are the names ``gguf_model_name`` assigns — the file stem for a model
-    the curated catalog declares, the models_dir-relative path for an ad-hoc one —
-    so every file keeps its own section instead of one silently shadowing the
-    other, and each section matches the listing id of the same file. *declarations*
-    defaults to the catalog baked into the image.
+    The scan first gives the models that have no ".arduino_metadata.yaml" record
+    theirs (``backfill_ootb_records``), then names every file from its record the
+    way ``gguf_model_name`` does everywhere — the models_dir-relative path for a
+    user-configured model, the file stem otherwise — so every ad-hoc file keeps its
+    own section instead of one silently shadowing the other, and each section
+    matches the listing id of the same file.
     """
-    if declarations is None:
-        declarations = catalog_gguf_declarations()
+    backfill_ootb_records(models_dir, models_list_path)
     config = configparser.ConfigParser()
 
     gguf_files = [p for p in sorted(models_dir.rglob("*.gguf")) if "mmproj" not in p.name]
     for gguf_file in gguf_files:
-        section = gguf_model_name(gguf_file.relative_to(models_dir).as_posix(), declarations)
+        record = file_record(str(gguf_file), str(models_dir))
+        section = gguf_model_name(gguf_file.relative_to(models_dir).as_posix(), record)
         config[section] = {}
         config[section]["model"] = str(gguf_file.as_posix())
 
@@ -1072,8 +1171,14 @@ def main():
                 emit_json_info(f"Deleting mmproj files matching '{mmproj_allow_pattern}' in {output_dir}")
             delete_matched_files(output_dir, args.output_dir, mmproj_allow_pattern, args.verbose)
 
-        if prune_emptied_repo_dir(output_dir, args.output_dir) and args.verbose:
-            emit_json_info(f"Removed empty model directory: {output_dir}")
+        if prune_emptied_repo_dir(output_dir, args.output_dir):
+            if args.verbose:
+                emit_json_info(f"Removed empty model directory: {output_dir}")
+        else:
+            # Another quantization survives in the shared repository directory: drop
+            # only the metadata records of the files this delete removed, so the
+            # survivors stay described by their own records.
+            prune_metadata_records(output_dir)
 
         # Generate models.ini file
         generate_models_ini(Path(args.output_dir))
@@ -1199,13 +1304,14 @@ def main():
         if cache_path.is_dir():
             shutil.rmtree(cache_path)
 
-        # Generate models.ini file
-        generate_models_ini(Path(args.output_dir))
-
         # The absolute path(s) of the downloaded model file(s): the files this request
         # named, not every quantization the shared repository directory holds — a
         # sibling was not downloaded now, and must not name this model either.
-        downloaded = sorted(str(p.resolve()) for p in matching_files(output_dir, patterns) if p.suffix == ".gguf")
+        matched_gguf = [p for p in matching_files(output_dir, patterns) if p.suffix == ".gguf"]
+        downloaded = sorted(str(p.resolve()) for p in matched_gguf)
+        # The same files relative to the repo directory, recorded in the metadata so
+        # each record of the shared directory says which quantization it stands for.
+        recorded_files = sorted(p.relative_to(Path(output_dir)).as_posix() for p in matched_gguf)
 
         # Resolved once and used for both the record and the completion event, so the
         # id the host is told is the id on disk. Any repository can be downloaded
@@ -1216,7 +1322,7 @@ def main():
         # Record what was downloaded, then clear the in-progress marker: while the
         # marker is still there the repo directory counts as incomplete, so a crash
         # in between makes the next run retry instead of leaving it unrecorded.
-        recorded = write_metadata(output_dir, handler="hf-handler", env=metadata_env, identity=identity)
+        recorded = write_metadata(output_dir, handler="hf-handler", env=metadata_env, identity=identity, files=recorded_files)
         if recorded is None:
             # The record is required, not best-effort: the host deletes an ad-hoc model
             # by the inputs recorded here, so an installed-but-unrecorded model could
@@ -1224,6 +1330,11 @@ def main():
             # run discard and retry.
             emit_json_error(f"Downloaded {repo_id}, but its metadata record could not be written; the download will be retried")
             raise SystemExit(1)
+
+        # After the record write on purpose: the scan names every file from its
+        # record, so the model downloaded just now needs its own to be indexed
+        # under the id reported below.
+        generate_models_ini(Path(args.output_dir))
 
         # Reported after the record write on purpose: a failed record fails the
         # download, and a completion event before the error would contradict it.

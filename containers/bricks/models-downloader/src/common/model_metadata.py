@@ -10,14 +10,23 @@ in-progress ``.download`` marker is deleted once the download succeeds — so wi
 this file nothing on disk would record *what* was downloaded. It is written inside
 the model directory after a successful download and stays there:
 
-    downloaded_at: '2026-08-03T09:41:12Z'
-    handler: hf-handler
-    model_id: llamacpp:gemma-4-E2B_q4_0-it
-    model_origin: builtin
-    inputs:                     # the download variables, verbatim from the environment
-      models_repository: llamacpp
-      model_directory: google/gemma-4-E2B-it-qat-q4_0-gguf
-      model_url: https://huggingface.co/google/...
+    models:                     # one record per installed download
+      - downloaded_at: '2026-08-03T09:41:12Z'
+        handler: hf-handler
+        model_id: llamacpp:gemma-4-E2B_q4_0-it
+        model_origin: built_in
+        files:                  # what this download fetched, relative to the directory
+          - gemma-4-E2B_q4_0-it.gguf
+        inputs:                 # the download variables, verbatim from the environment
+          models_repository: llamacpp
+          model_directory: google/gemma-4-E2B-it-qat-q4_0-gguf
+          model_url: https://huggingface.co/google/...
+
+The document is the ``models`` list and nothing else, for every handler. One whose
+directory holds a single model (AI Hub, Edge Impulse) writes exactly one record and
+replaces it wholesale on the next download; the Hugging Face handler downloads every
+quantization of a repository into the same directory, so each download appends its
+own record there, and ``files`` says which files it stands for (see the last bullet).
 
 Contracts callers must honour:
 
@@ -41,9 +50,9 @@ Contracts callers must honour:
   never "up to date". But every ad-hoc model installed by a current downloader is
   guaranteed to carry one.
 - ``model_origin`` says where the model comes from, not where its id was read from:
-  ``builtin`` for a model models-list.yaml declares, ``user_configured`` for one
+  ``built_in`` for a model models-list.yaml declares, ``user`` for one
   downloaded ad hoc. Any Hugging Face repository can be fetched by putting its URL or
-  compact key in ``model_url`` with no entry in the list, so ``user_configured`` is a
+  compact key in ``model_url`` with no entry in the list, so ``user`` is a
   **normal, supported state, not an error**. Only that outdated-detection does not
   apply to it: there is no declaration to compare against. The listing reports the
   same field with the same two values.
@@ -59,12 +68,15 @@ Contracts callers must honour:
   is read from models-list.yaml itself rather than duplicated — and left to go stale —
   here. The record holds only what models-list.yaml cannot tell you: which variables
   this install was actually downloaded with, and when.
-- The Hugging Face handler downloads into a per-*repository* directory, so two
-  models-list.yaml entries pulling different quantizations out of the same repo share
-  one metadata file: the last download wins, and the quantization downloaded first is
-  left described by a record naming the other one. Only this file is shared — whether a
-  model is installed, and what an interrupted download discards, are decided per
-  quantization, and the ``.download`` marker says which files it stands for.
+- The Hugging Face handler downloads into a per-*repository* directory, so several
+  downloads — one per quantization — share one metadata file: the ``models`` list
+  above, where every download appends its own record instead of overwriting the
+  previous one. Readers pick the right record with ``record_for_file`` (by the file a
+  listing entry stands for) or ``record_for_model_id`` (by the entry a curated model
+  matches), and a delete drops the records of the files it removed with
+  ``prune_metadata_records``. Only this file is shared — whether a model is installed,
+  and what an interrupted download discards, are decided per quantization, and the
+  ``.download`` marker says which files it stands for.
 """
 
 import json
@@ -107,8 +119,8 @@ SECRET_VARIABLES = frozenset({"hf_token", "HF_TOKEN", "HF_HUB_TOKEN", "EI_API_KE
 
 # Where a model comes from, reported as "model_origin" both here and in the listing
 # (list_models.py imports these, so the two can never drift apart).
-ORIGIN_BUILTIN = "builtin"
-ORIGIN_USER_CONFIGURED = "user_configured"
+ORIGIN_BUILTIN = "built_in"
+ORIGIN_USER = "user"
 
 
 def utc_now_iso():
@@ -158,7 +170,7 @@ def identify_model(env=None, models_list_path=MODELS_LIST_PATH, fallback_model_i
 
     Returns:
         A dict with ``model_id`` and ``model_origin``, the latter being
-        ``ORIGIN_BUILTIN`` or ``ORIGIN_USER_CONFIGURED``.
+        ``ORIGIN_BUILTIN`` or ``ORIGIN_USER``.
     """
     env = env if env is not None else os.environ
 
@@ -175,25 +187,157 @@ def identify_model(env=None, models_list_path=MODELS_LIST_PATH, fallback_model_i
 
     if model_id:
         return {"model_id": model_id, "model_origin": ORIGIN_BUILTIN}
-    return {"model_id": fallback_model_id, "model_origin": ORIGIN_USER_CONFIGURED}
+    return {"model_id": fallback_model_id, "model_origin": ORIGIN_USER}
 
 
-def metadata_payload(handler, inputs=None, identity=None, downloaded_at=None):
-    """Build the metadata document, dropping empty ``inputs`` entries."""
+def metadata_payload(handler, inputs=None, identity=None, downloaded_at=None, files=None):
+    """Build one download record, dropping empty ``inputs`` entries.
+
+    *files* is the model-dir-relative posix paths of the files the download fetched;
+    they are what ties the record to its model inside a directory that several
+    downloads share, so ``record_for_file`` can hand each file its own record.
+    """
     identity = identity or {}
     payload = {
         "downloaded_at": downloaded_at or utc_now_iso(),
         "handler": handler or "",
         "model_id": identity.get("model_id"),
-        "model_origin": identity.get("model_origin", ORIGIN_USER_CONFIGURED),
+        "model_origin": identity.get("model_origin", ORIGIN_USER),
     }
+    if files:
+        payload["files"] = list(files)
     kept = {k: v for k, v in (inputs or {}).items() if v is not None and v != ""}
     if kept:
         payload["inputs"] = kept
     return payload
 
 
-def write_metadata(model_dir, handler, env=None, models_list_path=MODELS_LIST_PATH, extra_input_keys=(), fallback_model_id=None, identity=None):
+def metadata_records(data):
+    """Every download record *data* (a ``read_metadata`` result) holds, newest last.
+
+    The records live under the document's one key, ``models``, for every handler.
+    Anything else — an unreadable file, or one without the list — yields no records,
+    which readers treat exactly like a missing file: an unknown install.
+    """
+    if not isinstance(data, dict) or not isinstance(data.get("models"), list):
+        return []
+    return [record for record in data["models"] if isinstance(record, dict)]
+
+
+def _record_files(record):
+    """The ``files`` a record names, as a list; empty when absent or malformed."""
+    files = record.get("files")
+    return [f for f in files if isinstance(f, str)] if isinstance(files, list) else []
+
+
+def _main_files(files):
+    """The files that identify a record's model: every quantization of a repository
+    downloads the same mmproj companion, so mmproj files never identify one."""
+    return [f for f in files if "mmproj" not in f.split("/")[-1]]
+
+
+def record_for_file(data, rel_path):
+    """The record describing the model file at *rel_path* (model-dir-relative, posix).
+
+    Matched against the record's ``files`` by full relative path or by basename —
+    the two ways download patterns match a file. None when no record names the file:
+    it was installed by something that recorded nothing about it, and no other
+    record's inputs may stand in for its own.
+    """
+    rel_path = rel_path or ""
+    name = rel_path.split("/")[-1]
+    for record in metadata_records(data):
+        if any(f == rel_path or f.split("/")[-1] == name for f in _record_files(record)):
+            return record
+    return None
+
+
+def file_record(model_file, base_dir):
+    """The download record describing *model_file*, or None when no record names it.
+
+    The record lives in the directory the download landed in — for Hugging Face the
+    repository directory, which can sit above a nested per-quantization folder — so
+    every directory from the file's own up to *base_dir* is tried, matching the
+    file's path relative to each (see ``record_for_file``). Only the path is looked
+    at, never the file itself. The llamacpp runners' configure-llamacpp.py scripts
+    replicate this lookup; keep them in sync.
+    """
+    path = os.path.abspath(model_file)
+    base = os.path.abspath(base_dir)
+    directory = os.path.dirname(path)
+    while True:
+        rel = os.path.relpath(path, directory).replace(os.sep, "/")
+        record = record_for_file(read_metadata(directory), rel)
+        if record is not None:
+            return record
+        parent = os.path.dirname(directory)
+        if directory == base or parent == directory:
+            return None
+        directory = parent
+
+
+def record_for_model_id(data, model_id):
+    """The record whose ``model_id`` is *model_id*, for the curated-model readers.
+
+    Strict on purpose: the entry's own record or None. A shared repository directory
+    holding only other models' records says nothing about this one, and answering
+    with a sibling's inputs would flag the model as outdated against the wrong
+    download.
+    """
+    for record in metadata_records(data):
+        if model_id and record.get("model_id") == model_id:
+            return record
+    return None
+
+
+def _document(records):
+    """The YAML document holding *records* — the list and nothing else, so nothing
+    at the top level can misread as "the" model of a directory holding several."""
+    return {"models": list(records)}
+
+
+def _write_document(model_dir, document):
+    """Atomically write *document* as ``<model_dir>/.arduino_metadata.yaml``.
+
+    Returns the file's path, or None on any failure — reported as an ``info`` event,
+    never raised (see the module docstring).
+    """
+    path = os.path.join(model_dir, METADATA_NAME)
+    tmp = path + ".tmp"
+    try:
+        os.makedirs(model_dir, exist_ok=True)
+        with open(tmp, "w") as f:
+            f.write(_HEADER)
+            # width: keep long URLs and commands on one line rather than folded.
+            yaml.safe_dump(document, f, sort_keys=False, default_flow_style=False, allow_unicode=True, width=4096)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+        return path
+    except Exception as exc:  # noqa: BLE001 - bookkeeping must never fail a completed download
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        # Deliberately "info": an "error" event would make the host report the
+        # finished download as failed.
+        print(json.dumps({"event": "info", "description": f"Could not write {METADATA_NAME}: {exc}"}), flush=True)
+        return None
+
+
+def _superseded(record, payload):
+    """Whether *record* describes the install *payload* re-records: the same model id,
+    or the same main model file(s). The shared mmproj companion is not identity —
+    two quantizations fetched with the same mmproj each keep their own record."""
+    if payload.get("model_id") and record.get("model_id") == payload["model_id"]:
+        return True
+    new_main = set(_main_files(payload.get("files") or []))
+    return bool(new_main & set(_record_files(record)))
+
+
+def write_metadata(
+    model_dir, handler, env=None, models_list_path=MODELS_LIST_PATH, extra_input_keys=(), fallback_model_id=None, identity=None, files=None
+):
     """Write ``<model_dir>/.arduino_metadata.yaml`` atomically; return its path or None.
 
     Called after a successful download and *before* clearing the ``.download``
@@ -208,33 +352,62 @@ def write_metadata(model_dir, handler, env=None, models_list_path=MODELS_LIST_PA
     the id to the host as well as recording it here passes the same dict to both, so
     the two can never name the model differently; leave it out to have it resolved
     here (then *fallback_model_id* applies).
+
+    *files* is the model-dir-relative paths of the files this download fetched. Passing
+    it makes the record *merge* into the existing document instead of replacing it —
+    one record per installed download, so the quantizations sharing a Hugging Face
+    repository directory each keep their own; only the record(s) of the same model
+    (same id, or same main files) are replaced. Without it the whole file becomes this
+    one record, which is right exactly when the directory holds a single model (AI
+    Hub, Edge Impulse). The written document has the same ``models`` shape either way.
     """
-    path = os.path.join(model_dir, METADATA_NAME)
-    tmp = path + ".tmp"
     try:
         payload = metadata_payload(
             handler,
             inputs=collect_inputs(env, extra_input_keys),
             identity=identity if identity is not None else identify_model(env, models_list_path, fallback_model_id),
+            files=files,
         )
-        os.makedirs(model_dir, exist_ok=True)
-        with open(tmp, "w") as f:
-            f.write(_HEADER)
-            # width: keep long URLs and commands on one line rather than folded.
-            yaml.safe_dump(payload, f, sort_keys=False, default_flow_style=False, allow_unicode=True, width=4096)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, path)
-        return path
+        if files is not None:
+            kept = [record for record in metadata_records(read_metadata(model_dir)) if not _superseded(record, payload)]
+            document = _document(kept + [payload])
+        else:
+            document = _document([payload])
     except Exception as exc:  # noqa: BLE001 - bookkeeping must never fail a completed download
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        # Deliberately "info": an "error" event would make the host report the
-        # finished download as failed.
         print(json.dumps({"event": "info", "description": f"Could not write {METADATA_NAME}: {exc}"}), flush=True)
         return None
+    return _write_document(model_dir, document)
+
+
+def prune_metadata_records(model_dir):
+    """Drop the records of model files no longer in *model_dir*; never raises.
+
+    Run after a delete: the deleted quantization's record must not keep describing it,
+    while the sibling records stay. A record is kept while any of its main files is
+    still on disk (the mmproj companion is shared, so it neither keeps nor kills one),
+    and a record listing no files is never dropped — there is no way to tell what it
+    covered. The whole file goes when no record remains; a file holding no ``models``
+    list at all records nothing, so there is nothing to prune from it.
+    """
+    try:
+        data = read_metadata(model_dir)
+        if not isinstance(data, dict) or not isinstance(data.get("models"), list):
+            return
+        records = metadata_records(data)
+        kept = []
+        for record in records:
+            files = _record_files(record)
+            probed = _main_files(files) or files
+            if not files or any(os.path.exists(os.path.join(model_dir, f)) for f in probed):
+                kept.append(record)
+        if kept == records:
+            return
+        if kept:
+            _write_document(model_dir, _document(kept))
+        else:
+            os.unlink(os.path.join(model_dir, METADATA_NAME))
+    except Exception as exc:  # noqa: BLE001 - cleanup bookkeeping must never fail a delete
+        print(json.dumps({"event": "info", "description": f"Could not prune {METADATA_NAME}: {exc}"}), flush=True)
 
 
 def read_metadata(path):

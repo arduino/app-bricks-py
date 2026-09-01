@@ -24,7 +24,15 @@ posenet_output = posenet.get_output_details()
 
 # Runtime-tunable settings, updated by client config messages (wired in the
 # base image's main.py).
-_config = {"min_person_score": MIN_PERSON_SCORE, "draw_uncertain": True}
+_config = {
+    "min_person_score": MIN_PERSON_SCORE,
+    "draw_low_confidence_points": True,
+    "draw_bboxes": False,
+    "bbox_padding_top": 0.0,
+    "bbox_padding_right": 0.0,
+    "bbox_padding_bottom": 0.0,
+    "bbox_padding_left": 0.0,
+}
 
 
 def apply_config(config: dict) -> None:
@@ -33,10 +41,19 @@ def apply_config(config: dict) -> None:
     if value is not None:
         _config["min_person_score"] = max(0.0, min(1.0, float(value)))
         print(f"config: min_person_score set to {_config['min_person_score']}", flush=True)
-    value = config.get("draw_uncertain")
+    value = config.get("draw_low_confidence_points")
     if value is not None:
-        _config["draw_uncertain"] = bool(value)
-        print(f"config: draw_uncertain set to {_config['draw_uncertain']}", flush=True)
+        _config["draw_low_confidence_points"] = bool(value)
+        print(f"config: draw_low_confidence_points set to {_config['draw_low_confidence_points']}", flush=True)
+    value = config.get("draw_bboxes")
+    if value is not None:
+        _config["draw_bboxes"] = bool(value)
+        print(f"config: draw_bboxes set to {_config['draw_bboxes']}", flush=True)
+    for key in ("bbox_padding_top", "bbox_padding_right", "bbox_padding_bottom", "bbox_padding_left"):
+        value = config.get(key)
+        if value is not None:
+            _config[key] = max(0.0, min(1.0, float(value)))
+            print(f"config: {key} set to {_config[key]}", flush=True)
 
 
 # Person-tracking crop: instead of the full frame, the model gets a window cut
@@ -48,6 +65,9 @@ def apply_config(config: dict) -> None:
 MIN_CROP_H = 466  # 513/1.1: avoid >10% upscaling blur, which drops joint scores
 MIN_CROP_W = 320  # narrower crops collapse elbow/wrist scores (measured on test images)
 REFRESH_EVERY = 10  # full-frame tracker refresh cadence while cropping (~0.35 s at 29 fps)
+MARGIN_X = 0.35  # lateral margin per side (fraction of box width): covers arms extending sideways
+MARGIN_TOP = 0.40  # top margin (fraction of box height): raised wrists go well above the head
+MARGIN_BOTTOM = 0.15  # bottom margin (fraction of box height)
 
 _last_union_bbox: tuple[int, int, int, int] | None = None
 _frame_count = 0
@@ -62,7 +82,7 @@ def _axis_window(center: float, size: float, limit: int) -> tuple[int, int]:
 
 
 def _crop_rect(img_h: int, img_w: int, bbox: tuple[int, int, int, int]) -> tuple[int, int, int, int] | None:
-    """Crop window around the tracked people, generous on top for raised arms.
+    """Crop window around the tracked people.
 
     Returns (x1, y1, x2, y2), or None when the window degenerates or would be
     the whole frame anyway.
@@ -71,8 +91,8 @@ def _crop_rect(img_h: int, img_w: int, bbox: tuple[int, int, int, int]) -> tuple
     bw, bh = x2 - x1, y2 - y1
     if bw <= 0 or bh <= 0:
         return None
-    mx1, mx2 = x1 - 0.30 * bw, x2 + 0.30 * bw
-    my1, my2 = y1 - 0.45 * bh, y2 + 0.15 * bh  # top bias: raised wrists go well above the head
+    mx1, mx2 = x1 - MARGIN_X * bw, x2 + MARGIN_X * bw
+    my1, my2 = y1 - MARGIN_TOP * bh, y2 + MARGIN_BOTTOM * bh
     cx1, cx2 = _axis_window((mx1 + mx2) / 2, max(mx2 - mx1, MIN_CROP_W), img_w)
     cy1, cy2 = _axis_window((my1 + my2) / 2, max(my2 - my1, MIN_CROP_H), img_h)
     if cx2 - cx1 < 48 or cy2 - cy1 < 48 or (cx2 - cx1 >= img_w and cy2 - cy1 >= img_h):
@@ -237,7 +257,18 @@ def inference_callback(rgb_frame: np.ndarray) -> tuple[np.ndarray, dict]:
     _last_union_bbox = tracked
 
     # Draw predictions on the full frame and get metadata; coordinates in (x, y) format
-    metadata = draw_persons(rgb_frame, person_scores, keypoint_scores, coords_xy, _config["draw_uncertain"])
+    metadata = draw_persons(
+        rgb_frame,
+        person_scores,
+        keypoint_scores,
+        coords_xy,
+        _config["draw_low_confidence_points"],
+        _config["draw_bboxes"],
+        _config["bbox_padding_top"],
+        _config["bbox_padding_right"],
+        _config["bbox_padding_bottom"],
+        _config["bbox_padding_left"],
+    )
     metadata["crop_window"] = crop_window
 
     return rgb_frame, metadata
