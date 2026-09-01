@@ -43,13 +43,15 @@ GB = 1e9
 # model exceeds wins. Both tables are deliberately conservative — they over-allocate a session
 # on some models, which costs ~3% per token, rather than failing to load; models with a
 # known-good value should carry an explicit GGML_HEXAGON_DEVICES instead.
+#
+# Before resizing these tables over a load failure, check the board's free RAM first: the DSP
+# buffers come from plain system memory (/dev/dma_heap/system), so "ggml-hex: fastrpc_mmap
+# failed" with error 0x1 on a buffer that used to fit usually means the board was out of RAM
+# at that moment — other models resident in the router, leftover instances — not that the
+# model needs more sessions. Measured on a 21q: a loaded model costs ~1.6x its GGUF in RAM.
 
-# Default table, for the context sizes the service runs at out of the box. The September
-# 2025 llama.cpp build shrank the per-session mapping budget: Qwen3.5-4B-Q4_0 (2.78 GB)
-# no longer loads on 2 sessions — fastrpc_mmap fails on its second ~0.9 GiB weights buffer
-# at 8k and 16k alike — so the middle bucket takes 3 sessions. Still below the 4 that
-# trigger the context cap, so these models keep the full context.
-NDEV_BY_GGUF_GB = ((3.5, 4), (1.5, 3))
+# Default table, for the context sizes the service runs at out of the box.
+NDEV_BY_GGUF_GB = ((3.5, 4), (1.5, 2))
 
 # Small-context table. A 4k KV cache leaves far more room on the domains. It was
 # originally measured on a ventunoq board (every installed model loaded at 1..4 sessions
@@ -59,10 +61,10 @@ NDEV_BY_GGUF_GB = ((3.5, 4), (1.5, 3))
 #   Qwen3-4B-2507-Q4_0   2.38 GB -> 1     Qwen3.5-9B-Q4_0      5.74 GB -> 2
 #   Qwen3.5-4B-Q4_0      2.78 GB -> 1     gemma-4-12b          6.98 GB -> 3
 #
-# The September 2025 llama.cpp build invalidated the multi-session rows: Qwen3-8B-Q4_0
-# no longer fastrpc-maps its per-domain buffer on 2 sessions and needs 4. The 1-session
-# rows still load, so every model above them takes everything the hardware has until the
-# bigger models are re-measured on the new build.
+# Qwen3-8B-Q4_0 has since failed to fastrpc-map its per-domain buffer on 2 sessions
+# (possibly RAM pressure rather than session sizing, see above — not re-measured yet),
+# so pending a re-measurement of the multi-session rows on a quiet board, every model
+# above the 1-session rows takes everything the hardware has.
 SMALL_CTX_SIZE = 4096
 NDEV_BY_GGUF_GB_SMALL_CTX = ((3.5, 4),)
 
