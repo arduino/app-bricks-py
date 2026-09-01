@@ -24,6 +24,10 @@ REQUIREMENTS_FILE="$BASE_DIR/python/requirements.txt"
 PYTHON_LIBS_DIR="$BASE_DIR/python-libraries"
 INSTALLED_REQUIREMENTS_FILE="$CACHE_DIR/installed_requirements.txt"
 
+# Set when a dependency install fails: only `prepare` acts on it, starting the
+# app stays best-effort as before.
+DEPS_FAILED=0
+
 export UV_CACHE_DIR="$CACHE_DIR/uv"
 
 # Remove core dumps left in the app directory by a previous run, unless they
@@ -65,7 +69,7 @@ if [ -d "$PYTHON_LIBS_DIR" ]; then
   # Iterate over each .whl file in the directory
   for whl_file in "$PYTHON_LIBS_DIR"/*.whl; do
     if [ -f "$whl_file" ]; then
-      uv pip install "$whl_file"
+      uv pip install --compile-bytecode "$whl_file"
       mv "$whl_file" "$whl_file".installed
     fi
   done
@@ -82,8 +86,10 @@ if [ -f "$REQUIREMENTS_FILE" ]; then
   fi
   if [ "$INSTALL_DEPS" -gt 0 ]; then
     if [ "$REQUIREMENTS_LINES" -ne 0 ]; then
-      if uv pip install -r "$REQUIREMENTS_FILE"; then
+      if uv pip install --compile-bytecode -r "$REQUIREMENTS_FILE"; then
         cp "$REQUIREMENTS_FILE" "$INSTALLED_REQUIREMENTS_FILE"
+      else
+        DEPS_FAILED=1
       fi
     else
       cp "$REQUIREMENTS_FILE" "$INSTALLED_REQUIREMENTS_FILE"
@@ -94,8 +100,8 @@ if [ -f "$REQUIREMENTS_FILE" ]; then
 fi
 
 # Install custom brick requirements with caching
-if [ -d "/app/bricks" ]; then
-  for brick_dir in /app/bricks/*; do
+if [ -d "$BASE_DIR/bricks" ]; then
+  for brick_dir in $BASE_DIR/bricks/*; do
     if [ -d "$brick_dir" ]; then
       brick_name=$(basename "$brick_dir")
       brick_requirements="${brick_dir}/requirements.txt"
@@ -118,8 +124,10 @@ if [ -d "/app/bricks" ]; then
         if [ "$INSTALL_BRICK_DEPS" -gt 0 ]; then
           if [ "$BRICK_REQUIREMENTS_LINES" -ne 0 ]; then
             echo "Installing requirements for brick: $brick_name"
-            if uv pip install -r "$brick_requirements"; then
+            if uv pip install --compile-bytecode -r "$brick_requirements"; then
               cp "$brick_requirements" "$brick_installed_requirements"
+            else
+              DEPS_FAILED=1
             fi
           else
             cp "$brick_requirements" "$brick_installed_requirements"
@@ -137,26 +145,54 @@ fi
 bash /provision-alsa-devices.sh
 
 # Load custom bricks if present
-if [ -d "/app/bricks" ]; then
+if [ -d "$BASE_DIR/bricks" ]; then
     if [ -z "$PYTHONPATH" ]; then
-        export PYTHONPATH="/app/bricks"
+        export PYTHONPATH="$BASE_DIR/bricks"
     else
-        export PYTHONPATH="$PYTHONPATH:/app/bricks"
+        export PYTHONPATH="$PYTHONPATH:$BASE_DIR/bricks"
     fi
 fi
 
-if [ "$1" = "provision" ]; then
-  arduino-bricks-list-modules --provision-compose
-else
-  if grep -q "arduino:streamlit_ui" "$APP_YAML"; then
-    if ! uv pip show streamlit > /dev/null 2>&1; then
-      echo "streamlit not found, installing..."
-      uv pip install --no-cache-dir --link-mode=copy pyarrow==20.0.0 streamlit
+check_streamlit_ui() {
+  grep -q "arduino:streamlit_ui" "$APP_YAML"
+}
+
+install_streamlit() {
+  if check_streamlit_ui && ! uv pip show streamlit > /dev/null 2>&1; then
+    echo "streamlit not found, installing..."
+    uv pip install --no-cache-dir --link-mode=copy --compile-bytecode pyarrow==20.0.0 streamlit
+  fi
+}
+
+case "$1" in
+  provision)
+    arduino-bricks-list-modules --provision-compose
+    ;;
+  prepare)
+    set -e
+    install_streamlit
+    if [ "$DEPS_FAILED" -ne 0 ]; then
+      echo "======== App preparation failed ====================="
+      exit 1
     fi
-    exec streamlit run --server.port 7000 "$PYTHON_SCRIPT"
-  else
+    # Validate the app sources: turns a syntax error into a prepare failure
+    # instead of a crash on the first start. The cache prefix sends the
+    # bytecode to a throwaway directory, leaving the app folder untouched.
+    PYCHECK_DIR="$(mktemp -d)"
+    if [ -d "$BASE_DIR/bricks" ]; then
+      PYTHONPYCACHEPREFIX="$PYCHECK_DIR" python -m compileall -q "$BASE_DIR/python" "$BASE_DIR/bricks"
+    else
+      PYTHONPYCACHEPREFIX="$PYCHECK_DIR" python -m compileall -q "$BASE_DIR/python"
+    fi
+    ;;
+  *)
+    install_streamlit
+    if check_streamlit_ui; then
+      exec streamlit run --server.port 7000 "$PYTHON_SCRIPT"
+    fi
+
     echo "======== App is starting ============================"
     cd $BASE_DIR # Change to the base directory
     exec python "$PYTHON_SCRIPT"
-  fi
-fi
+    ;;
+esac
