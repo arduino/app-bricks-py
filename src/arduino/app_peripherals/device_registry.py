@@ -25,7 +25,7 @@ class DeviceRegistry:
     released automatically when the owner is garbage collected.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._lock = threading.Lock()
         self._claims: dict[str, int] = {}
 

@@ -11,7 +11,9 @@ import time
 from collections.abc import Generator, Iterator
 from concurrent.futures import CancelledError, Future
 from dataclasses import dataclass
-from typing import ContextManager, Generic, Literal, TypeVar
+from types import TracebackType
+from contextlib import AbstractContextManager
+from typing import Literal
 
 import numpy as np
 import requests
@@ -89,19 +91,16 @@ class ASREvent:
     data: str
 
 
-T = TypeVar("T")
-
-
-class TranscriptionStream(Generic[T], ContextManager["TranscriptionStream[T]"], Iterator[T]):
+class TranscriptionStream[T](AbstractContextManager["TranscriptionStream[T]"], Iterator[T]):
     """Iterator wrapper that guarantees proper teardown on context exit."""
 
-    def __init__(self, generator: Generator[T, None, None]):
+    def __init__(self, generator: Generator[T]) -> None:
         self._generator = generator
 
     def __enter__(self) -> "TranscriptionStream[T]":
         return self
 
-    def __exit__(self, exc_type, exc, tb) -> None:
+    def __exit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None) -> None:
         self.close()
 
     def __iter__(self) -> "TranscriptionStream[T]":
@@ -141,7 +140,7 @@ class BaseASR:
     _FLUSH_INTERVAL_SECONDS = 5
     _DEFAULT_VAD_MS = 700
 
-    def __init__(self, source, language: str | None = None):
+    def __init__(self, source: object, language: str | None = None) -> None:
         # API configuration
         self.api_host = resolve_address(self._APP_SERVICE_NAME)
         if not self.api_host:
@@ -174,7 +173,7 @@ class BaseASR:
         self._active_session_lock = threading.Lock()
         self._active_session: SessionInfo | None = None
 
-    def start(self):
+    def start(self) -> None:
         """Prepare the ASR for transcription. Starts the owned mic if applicable."""
         logger.debug("Starting ASR and preparing resources...")
         self._stop_worker.clear()
@@ -184,7 +183,7 @@ class BaseASR:
             self._source.start()
         self._warmup()
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop the ASR and clean up resources. Stops the owned mic if applicable."""
         logger.debug("Stopping ASR and cleaning up resources...")
         self._stop_worker.set()
@@ -194,7 +193,7 @@ class BaseASR:
             self._source.stop()
         logger.debug("Stopped ASR and cleaned up resources.")
 
-    def cancel(self):
+    def cancel(self) -> None:
         """Cancel the active transcription session, if any."""
         active = self._active_session
         if active is None:
@@ -212,7 +211,7 @@ class BaseASR:
         """
         return self._active_session is not None
 
-    def _build_source(self, source) -> tuple:
+    def _build_source(self, source: object) -> tuple:
         """Bind the audio source. Subclasses must override."""
         raise NotImplementedError("Subclasses must override _build_source")
 
@@ -246,14 +245,14 @@ class BaseASR:
         return ""
 
     @brick.execute
-    def _asyncio_loop(self):
+    def _asyncio_loop(self) -> None:
         """Dedicated thread for the asyncio event loop hosting session coroutines."""
         logger.debug("Asyncio event loop starting")
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         self._worker_loop.set_result(loop)
 
-        async def keep_alive():
+        async def keep_alive() -> None:
             while not self._stop_worker.is_set():
                 await asyncio.sleep(0.1)
 
@@ -289,7 +288,7 @@ class BaseASR:
         elapsed_ms = (time.perf_counter() - started_at) * 1000
         logger.debug(f"ASR warmup completed in {elapsed_ms:.2f} ms")
 
-    def _transcribe_stream(self, duration: int = 0, vad_ms: int | None = None) -> Generator[ASREvent, None, None]:
+    def _transcribe_stream(self, duration: int = 0, vad_ms: int | None = None) -> Generator[ASREvent]:
         if self._stop_worker.is_set():
             raise RuntimeError("Brick is stopping or already stopped")
         try:
@@ -356,7 +355,7 @@ class BaseASR:
                     pass
             raise
 
-        except (TimeoutError, asyncio.TimeoutError):
+        except TimeoutError:
             raise
 
         except ASRError:
@@ -430,7 +429,7 @@ class BaseASR:
 
         return session_id
 
-    async def _transcription_session_handler(self, session_info: SessionInfo):
+    async def _transcription_session_handler(self, session_info: SessionInfo) -> None:
         session_id = session_info.session_id
 
         reader = threading.Thread(
@@ -552,10 +551,10 @@ class BaseASR:
                     continue
             logger.debug(f"Reader thread exited for session {session_id}")
 
-    async def _await_connection_established(self, websocket, label):
+    async def _await_connection_established(self, websocket: websockets.ClientConnection, label: str) -> None:
         try:
             raw = await asyncio.wait_for(websocket.recv(), timeout=5.0)
-        except (asyncio.TimeoutError, ConnectionClosed) as e:
+        except (TimeoutError, ConnectionClosed) as e:
             raise ASRUnavailableError(f"{label} handshake failed: {e}") from None
         msg = json.loads(raw)
         if msg.get("state") != "connection_established":
@@ -606,7 +605,7 @@ class BaseASR:
             while not self._stop_worker.is_set() and not session_info.cancelled.is_set():
                 try:
                     message = await asyncio.wait_for(websocket.recv(), timeout=1.0)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     continue
 
                 try:
@@ -675,7 +674,7 @@ class BaseASR:
             while not self._stop_worker.is_set() and not session_info.cancelled.is_set():
                 try:
                     message = await asyncio.wait_for(websocket.recv(), timeout=1.0)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     continue
 
                 try:
@@ -752,7 +751,7 @@ class AutomaticSpeechRecognition(BaseASR):
         self,
         mic: BaseMicrophone | None = None,
         language: str | None = None,
-    ):
+    ) -> None:
         """
         ASR brick that transcribes a live audio stream from a microphone.
 
@@ -774,7 +773,7 @@ class AutomaticSpeechRecognition(BaseASR):
         """
         super().__init__(source=mic, language=language)
 
-    def _build_source(self, source) -> tuple:
+    def _build_source(self, source: object) -> tuple:
         if source is None:
             return Microphone(0), True  # First plugged mic, shared with other consumers
         if isinstance(source, BaseMicrophone):
@@ -867,7 +866,7 @@ class AutomaticSpeechRecognition(BaseASR):
         """
         self._ensure_source_started()
 
-        def sentence_gen() -> Generator[ASREvent, None, None]:
+        def sentence_gen() -> Generator[ASREvent]:
             inner = self._transcribe_stream(duration=timeout)
             try:
                 for event in inner:

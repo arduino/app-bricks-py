@@ -7,7 +7,7 @@ import math
 import os
 import struct
 import time
-from typing import Literal, Optional
+from typing import Literal
 import cv2
 import numpy as np
 from collections.abc import Callable
@@ -36,10 +36,10 @@ class V4LCamera(BaseCamera):
         device: str | int = 0,
         resolution: tuple[int, int] = (640, 480),
         fps: int = 10,
-        adjustments: Optional[Callable[[np.ndarray], np.ndarray]] = None,
+        adjustments: Callable[[np.ndarray], np.ndarray] | None = None,
         auto_reconnect: bool = True,
         codec: Literal["", "YUVY", "MJPG", "H264"] = "",
-    ):
+    ) -> None:
         """
         Initialize V4L camera.
 
@@ -219,7 +219,7 @@ class V4LCamera(BaseCamera):
         try:
             sysfs_path = f"/sys/class/video4linux/{video_basename}/name"
             if os.path.exists(sysfs_path):
-                with open(sysfs_path, "r", encoding="utf-8", errors="ignore") as f:
+                with open(sysfs_path, encoding="utf-8", errors="ignore") as f:
                     name = f.read().strip()
                     if name:
                         return name
@@ -250,7 +250,7 @@ class V4LCamera(BaseCamera):
 
             if self.codec:
 
-                def fourcc_to_str(fourcc_int):
+                def fourcc_to_str(fourcc_int: float) -> str:
                     return "".join([chr((int(fourcc_int) >> 8 * i) & 0xFF) for i in range(4)])
 
                 self._cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*self.codec))

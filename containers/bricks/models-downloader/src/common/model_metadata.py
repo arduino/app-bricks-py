@@ -21,12 +21,25 @@ the model directory after a successful download and stays there:
 
 Contracts callers must honour:
 
-- ``write_metadata`` never raises and never fails a download. Bookkeeping must not
-  turn a completed multi-GB transfer into a failure, so a write error is reported as
-  an ``info`` event (not ``error``, which the host would read as a failed download)
-  and the function returns None.
-- The file is therefore **optional**. Its absence means "unknown / legacy install",
-  never "up to date": models downloaded before this file existed have none.
+- ``write_metadata`` never raises: a write error is reported as an ``info`` event and
+  the function returns None. Whether that fails the download is the caller's decision,
+  and the two kinds of handler decide it differently:
+
+  * The Hugging Face handler treats None as **fatal** — it keeps the ".download"
+    marker (so the next run discards and retries) and exits non-zero. This reverses
+    the original "bookkeeping must never fail a completed multi-GB transfer" stance,
+    deliberately: an ad-hoc model is deleted through the API by the ``inputs``
+    recorded here, so an installed-but-unrecorded ad-hoc model would be permanently
+    unmanageable, while a lost transfer can simply be repeated. The reversal happened
+    before ad-hoc models went GA, which is what makes the next bullet possible.
+  * The AI Hub and Edge Impulse handlers keep it best-effort: their models are all
+    declared in models-list.yaml, so the host can always manage them from the
+    declaration alone and the record only feeds outdated-detection.
+
+- For **readers** the file stays optional — installs made before it existed, or by a
+  best-effort handler, have none, and its absence means "unknown / legacy install",
+  never "up to date". But every ad-hoc model installed by a current downloader is
+  guaranteed to carry one.
 - ``model_origin`` says where the model comes from, not where its id was read from:
   ``builtin`` for a model models-list.yaml declares, ``user_configured`` for one
   downloaded ad hoc. Any Hugging Face repository can be fetched by putting its URL or
@@ -37,7 +50,10 @@ Contracts callers must honour:
 - ``model_id`` is always set for a model that downloaded successfully, curated or not.
   A user-configured model has no entry key to borrow, so the handler supplies a
   ``fallback_model_id`` derived from what it fetched, matching the id the listing
-  reports for the same files.
+  reports for the same files (``common/gguf_naming.py``). That id is a snapshot: if
+  the model is later added to the curated catalog its listing name changes to the
+  entry's stem-form id and the recorded one goes stale. The listing, derived from
+  the filesystem and the catalog, is the authority.
 - Nothing else is copied out of models-list.yaml. ``model_id`` points back at the
   entry, and every other field of it (name, description, source, model_size_mb, ...)
   is read from models-list.yaml itself rather than duplicated — and left to go stale —
@@ -53,7 +69,7 @@ Contracts callers must honour:
 
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 
 import yaml
 
@@ -97,7 +113,7 @@ ORIGIN_USER_CONFIGURED = "user_configured"
 
 def utc_now_iso():
     """Return the current UTC time as a second-resolution ISO-8601 string ("...Z")."""
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def is_bookkeeping_name(name):
@@ -177,7 +193,7 @@ def metadata_payload(handler, inputs=None, identity=None, downloaded_at=None):
     return payload
 
 
-def write_metadata(model_dir, handler, env=None, models_list_path=MODELS_LIST_PATH, extra_input_keys=(), fallback_model_id=None):
+def write_metadata(model_dir, handler, env=None, models_list_path=MODELS_LIST_PATH, extra_input_keys=(), fallback_model_id=None, identity=None):
     """Write ``<model_dir>/.arduino_metadata.yaml`` atomically; return its path or None.
 
     Called after a successful download and *before* clearing the ``.download``
@@ -187,6 +203,11 @@ def write_metadata(model_dir, handler, env=None, models_list_path=MODELS_LIST_PA
 
     *fallback_model_id* names the model when models-list.yaml does not declare it; pass
     one whenever the handler can download something the list has never heard of.
+
+    *identity* is an already-resolved ``identify_model`` result. A handler that reports
+    the id to the host as well as recording it here passes the same dict to both, so
+    the two can never name the model differently; leave it out to have it resolved
+    here (then *fallback_model_id* applies).
     """
     path = os.path.join(model_dir, METADATA_NAME)
     tmp = path + ".tmp"
@@ -194,7 +215,7 @@ def write_metadata(model_dir, handler, env=None, models_list_path=MODELS_LIST_PA
         payload = metadata_payload(
             handler,
             inputs=collect_inputs(env, extra_input_keys),
-            identity=identify_model(env, models_list_path, fallback_model_id),
+            identity=identity if identity is not None else identify_model(env, models_list_path, fallback_model_id),
         )
         os.makedirs(model_dir, exist_ok=True)
         with open(tmp, "w") as f:

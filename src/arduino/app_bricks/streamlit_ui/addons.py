@@ -3,10 +3,15 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import os
+from typing import TYPE_CHECKING
+
 from arduino.app_bricks.streamlit_ui import st
 
+if TYPE_CHECKING:
+    from streamlit.delta_generator import DeltaGenerator
 
-def arduino_header(title: str):
+
+def arduino_header(title: str) -> "DeltaGenerator":
     """Arduino custom header.
 
     Render a minimal Arduino header: left-aligned title, right-aligned logo SVG, styled. SVG logo loaded by file.
@@ -34,7 +39,7 @@ def arduino_header(title: str):
     svg_path = os.path.join(os.path.dirname(__file__), "assets", "RGB-Arduino-Logo-Color-Inline-Loop.svg")
     svg_path = os.path.abspath(svg_path)
     try:
-        with open(svg_path, "r", encoding="utf-8") as f:
+        with open(svg_path, encoding="utf-8") as f:
             svg_icon = f.read()
     except Exception as e:
         svg_icon = f"<span style='color:red'>Logo not found: {e}</span>"

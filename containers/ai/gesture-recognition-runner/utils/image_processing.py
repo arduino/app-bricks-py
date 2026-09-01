@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import math
-from typing import Tuple
 
 import cv2
 import numpy as np
@@ -13,9 +12,9 @@ from utils.constants import *
 
 def denormalize_coordinates(
     coordinates: np.ndarray,
-    input_img_size: Tuple[int, int],
+    input_img_size: tuple[int, int],
     scale: float = 1.0,
-    pad: Tuple[int, int] = (0, 0),
+    pad: tuple[int, int] = (0, 0),
 ) -> None:
     """
     Maps detection coordinates from normalized [0, 1] to absolute coordinates in
@@ -127,7 +126,7 @@ def compute_vector_rotation(
 
 def resize_pad(
     image: np.ndarray,
-    dst_size: Tuple[int, int],
+    dst_size: tuple[int, int],
 ) -> tuple[np.ndarray, float, tuple[int, int]]:
     """
     Resize and pad image to shape (dst_size[0], dst_size[1]) while preserving aspect ratio.

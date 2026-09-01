@@ -68,7 +68,9 @@ interrupted or failed download only discards the files it was fetching, never a 
 quantization that finished earlier.
 
 After all files are downloaded, ``models.ini`` is written to ``<output-dir>``
-mapping each model stem to its GGUF path (and mmproj path where present).
+mapping each model name to its GGUF path (and mmproj path where present); names
+follow ``common/gguf_naming.py`` — the file stem for models the curated catalog
+declares, the output-dir-relative path for ad-hoc downloads.
 """
 
 import fnmatch
@@ -96,7 +98,8 @@ import json
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from common.download_marker import MARKER_NAME, read_marker, write_marker
-from common.model_metadata import is_bookkeeping_name, write_metadata
+from common.gguf_naming import catalog_gguf_declarations, gguf_model_name
+from common.model_metadata import identify_model, is_bookkeeping_name, write_metadata
 
 # Quantization used when a model key names only a repository. Q4_0 is the quantization
 # every llama.cpp GGUF repository publishes and the one all curated entries use.
@@ -125,12 +128,29 @@ HF_FILE_MARKERS = ("resolve", "blob")
 URL_FORMAT_HINT = "Expected format: https://huggingface.co/<owner>/<repo>/resolve/<revision>/<file>.gguf (/blob/ also works)"
 
 
-def emit_json_info(description: str, artifacts: list[str] | None = None, downloading: bool | None = None):
+def emit_json_info(
+    description: str,
+    artifacts: list[str] | None = None,
+    downloading: bool | None = None,
+    model_id: str | None = None,
+    size_mb: float | None = None,
+):
+    """Print an ``info`` event.
+
+    ``model_id`` and ``size_mb`` are what the host would otherwise have to re-derive
+    from the artifact filenames or read back with a listing run, so a completed
+    download reports them here instead. Both are omitted when absent: an ordinary
+    progress message is unchanged, and an older host ignores them.
+    """
     data: dict = {"event": "info", "description": description}
     if artifacts is not None:
         data["artifacts"] = artifacts
     if downloading is not None:
         data["downloading"] = downloading
+    if model_id is not None:
+        data["model_id"] = model_id
+    if size_mb is not None:
+        data["size_mb"] = size_mb
     print(json.dumps(data), flush=True)
 
 
@@ -745,20 +765,46 @@ def validate_hub_source(source: dict, token: str | None = None) -> None:
             raise ValueError(missing_file_message(repo_id, filename, file_revision, present))
 
 
-def fallback_model_id(model_type: str, downloaded: list[str]) -> str | None:
+def fallback_model_id(model_type: str, downloaded: list[str], models_dir: str) -> str | None:
     """Name a model that no models-list.yaml entry declares, from the files fetched.
 
-    Built as ``<namespace>:<gguf stem>`` to be the *same* id ``list_models.py`` derives
-    for those files when it scans the filesystem, so the record and the listing agree on
-    what to call an ad-hoc download. mmproj files belong to the main GGUF and never name
-    the model.
+    Built as ``<namespace>:<model name>`` with the naming ``list_models.py`` and
+    models.ini share (``gguf_model_name`` against the catalog baked into the image),
+    so the record and the listing agree on what to call an ad-hoc download. mmproj
+    files belong to the main GGUF and never name the model.
     """
     main_gguf = next((p for p in sorted(downloaded) if "mmproj" not in os.path.basename(p)), None)
     if not main_gguf:
         return None
+    try:
+        rel = Path(main_gguf).resolve().relative_to(Path(models_dir).resolve()).as_posix()
+        name = gguf_model_name(rel, catalog_gguf_declarations())
+    except ValueError:  # not under models_dir: name it by its stem alone
+        name = Path(main_gguf).stem
     # The key's model_type is the namespace when given; llamacpp is where GGUF models
-    # live, and the prefix list_models.py uses (see its LLAMACPP_SUBDIR).
-    return f"{model_type or 'llamacpp'}:{Path(main_gguf).stem}"
+    # live, and the prefix list_models.py uses (see common/gguf_naming.py).
+    return f"{model_type or 'llamacpp'}:{name}"
+
+
+def downloaded_size_mb(downloaded: list[str]) -> float | None:
+    """Total size in MB of the files a download wrote, or None if any cannot be read.
+
+    Counts the mmproj file along with the main GGUF, which is what ``list_models.py``
+    reports as ``disk_size_mb`` for the same model, so the size a caller is told on
+    completion matches the one a later listing gives it. Rounded per file and then
+    again on the sum for the same reason: rounding the byte total once instead can
+    differ by a hundredth of a megabyte per file — nothing in itself, but enough to
+    make a caller see the size change the first time a listing runs.
+    """
+    if not downloaded:
+        return None
+    total = 0.0
+    for path in downloaded:
+        try:
+            total += round(os.stat(path).st_size / 1024 / 1024, 2)
+        except OSError:
+            return None
+    return round(total, 2)
 
 
 def no_match_message(repo_id: str, pattern: str) -> str:
@@ -826,7 +872,7 @@ def delete_matched_files(output_dir: str, models_base: str, allow_pattern: str, 
         f.unlink()
     # Remove empty subdirectories (deepest first), but never output_dir itself
     for d in sorted(dirs_to_check, key=lambda p: len(p.parts), reverse=True):
-        if d == models_base:
+        if d == models_base_path:
             continue
         if d.exists() and not any(d.iterdir()):
             if verbose:
@@ -840,14 +886,22 @@ def delete_matched_files(output_dir: str, models_base: str, allow_pattern: str, 
             d.rmdir()
 
 
-def generate_models_ini(models_dir: Path):
+def generate_models_ini(models_dir: Path, declarations=None):
+    """Write the models.ini indexing every GGUF under *models_dir*.
+
+    Sections are the names ``gguf_model_name`` assigns — the file stem for a model
+    the curated catalog declares, the models_dir-relative path for an ad-hoc one —
+    so every file keeps its own section instead of one silently shadowing the
+    other, and each section matches the listing id of the same file. *declarations*
+    defaults to the catalog baked into the image.
+    """
+    if declarations is None:
+        declarations = catalog_gguf_declarations()
     config = configparser.ConfigParser()
 
-    for gguf_file in sorted(models_dir.rglob("*.gguf")):
-        if "mmproj" in gguf_file.name:
-            continue
-
-        section = gguf_file.stem
+    gguf_files = [p for p in sorted(models_dir.rglob("*.gguf")) if "mmproj" not in p.name]
+    for gguf_file in gguf_files:
+        section = gguf_model_name(gguf_file.relative_to(models_dir).as_posix(), declarations)
         config[section] = {}
         config[section]["model"] = str(gguf_file.as_posix())
 
@@ -1024,6 +1078,18 @@ def main():
         # Generate models.ini file
         generate_models_ini(Path(args.output_dir))
     else:
+        # The model directory is the repo id: the download always lands in
+        # <output_dir>/<repo_id>. models-list.yaml usually spells it out, but it is
+        # redundant — repo_id is a substring of the model URL (and of the model key),
+        # so derive it when the variable is not set rather than recording nothing.
+        model_directory = os.environ.get("model_directory") or repo_id
+        # Environment the metadata record is built from, with model_directory filled
+        # in: it feeds both the "inputs" block and the models-list.yaml lookup that
+        # identifies the model. ChainMap rather than {**os.environ, ...} because on
+        # Windows os.environ upper-cases its keys when copied, which would drop every
+        # lowercase download variable; chaining delegates the lookup instead.
+        metadata_env = ChainMap({"model_directory": model_directory}, os.environ)
+
         # Per-repo ".download" marker: present => prior run killed mid-download, discard
         # what it left and retry; absent but the requested files present => complete.
         # Marker first, files second — the reverse of --check, because the leftovers of
@@ -1033,8 +1099,20 @@ def main():
             emit_json_info(f"Removing incomplete previous download: {repo_id}")
             discard_incomplete_download(output_dir, args.output_dir, interrupted_patterns(marker))
         if is_installed(output_dir, patterns):
-            installed = ", ".join(p.name for p in matching_files(output_dir, patterns))
-            emit_json_info(f"Model exists: {repo_id} ({installed})")
+            present = sorted(str(p.resolve()) for p in matching_files(output_dir, patterns) if p.suffix == ".gguf")
+            installed = ", ".join(Path(p).name for p in present)
+            # Named here as well as after a transfer: a caller asking for a model gets
+            # its id back whether this run had to fetch anything or not — derived from
+            # the files this request matched, the same way the download path derives
+            # it, so the two cannot disagree about a repository holding several
+            # quantizations.
+            identity = identify_model(metadata_env, fallback_model_id=fallback_model_id(source["model_type"], present, args.output_dir))
+            emit_json_info(
+                f"Model exists: {repo_id} ({installed})",
+                artifacts=present,
+                model_id=identity["model_id"],
+                size_mb=downloaded_size_mb(present),
+            )
             return
         if os.path.isdir(output_dir) and not has_model_content(output_dir):
             # Bookkeeping-only leftover (e.g. killed between makedirs and the marker
@@ -1047,18 +1125,6 @@ def main():
         # Nothing has been written yet, and the model URL or key comes from the host
         # configuration: check what it points at before creating a directory for it.
         validate_hub_source_or_exit(source, args.hf_token)
-
-        # The model directory is the repo id: the download always lands in
-        # <output_dir>/<repo_id>. models-list.yaml usually spells it out, but it is
-        # redundant — repo_id is a substring of the model URL (and of the model key),
-        # so derive it when the variable is not set rather than recording nothing.
-        model_directory = os.environ.get("model_directory") or repo_id
-        # Environment the metadata record is built from, with model_directory filled
-        # in: it feeds both the "inputs" block and the models-list.yaml lookup that
-        # identifies the model. ChainMap rather than {**os.environ, ...} because on
-        # Windows os.environ upper-cases its keys when copied, which would drop every
-        # lowercase download variable; chaining delegates the lookup instead.
-        metadata_env = ChainMap({"model_directory": model_directory}, os.environ)
 
         os.makedirs(output_dir, exist_ok=True)
         write_marker(
@@ -1136,22 +1202,36 @@ def main():
         # Generate models.ini file
         generate_models_ini(Path(args.output_dir))
 
-        # Report the absolute path(s) of the downloaded model file(s): the files this
-        # request named, not every quantization the shared repository directory holds —
-        # a sibling was not downloaded now, and must not name this model either.
+        # The absolute path(s) of the downloaded model file(s): the files this request
+        # named, not every quantization the shared repository directory holds — a
+        # sibling was not downloaded now, and must not name this model either.
         downloaded = sorted(str(p.resolve()) for p in matching_files(output_dir, patterns) if p.suffix == ".gguf")
-        emit_json_info(f"Downloaded to: {output_dir}", artifacts=downloaded)
+
+        # Resolved once and used for both the record and the completion event, so the
+        # id the host is told is the id on disk. Any repository can be downloaded
+        # without a models-list.yaml entry, so name it after the file that arrived
+        # rather than leaving it unidentified.
+        identity = identify_model(metadata_env, fallback_model_id=fallback_model_id(source["model_type"], downloaded, args.output_dir))
 
         # Record what was downloaded, then clear the in-progress marker: while the
         # marker is still there the repo directory counts as incomplete, so a crash
         # in between makes the next run retry instead of leaving it unrecorded.
-        write_metadata(
-            output_dir,
-            handler="hf-handler",
-            env=metadata_env,
-            # Any repository can be downloaded without a models-list.yaml entry, so name
-            # it after the file that arrived rather than leaving it unidentified.
-            fallback_model_id=fallback_model_id(source["model_type"], downloaded),
+        recorded = write_metadata(output_dir, handler="hf-handler", env=metadata_env, identity=identity)
+        if recorded is None:
+            # The record is required, not best-effort: the host deletes an ad-hoc model
+            # by the inputs recorded here, so an installed-but-unrecorded model could
+            # never be removed through the API. Keeping the marker makes the next
+            # run discard and retry.
+            emit_json_error(f"Downloaded {repo_id}, but its metadata record could not be written; the download will be retried")
+            raise SystemExit(1)
+
+        # Reported after the record write on purpose: a failed record fails the
+        # download, and a completion event before the error would contradict it.
+        emit_json_info(
+            f"Downloaded to: {output_dir}",
+            artifacts=downloaded,
+            model_id=identity["model_id"],
+            size_mb=downloaded_size_mb(downloaded),
         )
 
         marker = Path(output_dir) / MARKER_NAME

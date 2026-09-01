@@ -24,7 +24,7 @@ def sub_numbers(num1: int, num2: int) -> int:
 
 
 @notify()
-def print_result(message: str):
+def print_result(message: str) -> None:
     """Calls 'print_result' on the MCU, without waiting for a response."""
     ...
 

@@ -40,7 +40,7 @@ class _InfluxDBHandler:
         It is intended to be subclassed for specific database operations. Use TimeSeriesStore for time series operations.
     """
 
-    def __init__(self, host: str = base_influx_host, port: int = base_influx_port, retention_days: int = 7):
+    def __init__(self, host: str = base_influx_host, port: int = base_influx_port, retention_days: int = 7) -> None:
         """Initialize the InfluxDB client with the provided host and port.
 
         Args:
@@ -60,7 +60,7 @@ class _InfluxDBHandler:
         self.client: InfluxDBClient = None
         self.retention_days = retention_days
 
-    def start(self):
+    def start(self) -> None:
         """Establish a connection to the InfluxDB server.
 
         This method creates the InfluxDB client connection, initializes write and query APIs,
@@ -83,7 +83,7 @@ class _InfluxDBHandler:
         except Exception as e:
             raise TimeSeriesStoreError(f"Error connecting to InfluxDB: {e}") from e
 
-    def stop(self):
+    def stop(self) -> None:
         """Close the InfluxDB database connection.
 
         Properly closes the client connection and releases associated resources.
@@ -92,7 +92,7 @@ class _InfluxDBHandler:
         """
         self.client.close()
 
-    def load_default_infra(self):
+    def load_default_infra(self) -> dict | None:
         """Load the default InfluxDB compose file for the brick.
 
         This method looks for a YAML file named 'module_compose.yaml' in the current module's directory.
@@ -149,7 +149,7 @@ class TimeSeriesStore(_InfluxDBHandler):
     It allows writing and reading individual measurements with their values and timestamps.
     """
 
-    def __init__(self, host: str = base_influx_host, port: int = base_influx_port, retention_days: int = 7):
+    def __init__(self, host: str = base_influx_host, port: int = base_influx_port, retention_days: int = 7) -> None:
         """Initialize the InfluxDB persistence handler.
 
         Args:
@@ -162,7 +162,7 @@ class TimeSeriesStore(_InfluxDBHandler):
         """
         super().__init__(host, port, retention_days)
 
-    def write_sample(self, measure: str, value: Any, ts: int = 0, measurement_name: str = "arduino"):
+    def write_sample(self, measure: str, value: Any, ts: int = 0, measurement_name: str = "arduino") -> None:  # noqa: ANN401
         """Write a time series sample to the InfluxDB database.
 
         Stores a single data point with the specified measurement field, value, and timestamp.

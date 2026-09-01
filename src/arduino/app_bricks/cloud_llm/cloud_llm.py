@@ -8,7 +8,8 @@ import os
 import re
 import threading
 from dataclasses import dataclass
-from typing import Iterator, List, Optional, Union, Any, Sequence, Callable
+from typing import Optional, Union, Any
+from collections.abc import Iterator, Sequence, Callable
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage, AIMessage, ToolCall, message_chunk_to_message
@@ -30,7 +31,7 @@ from .memory import MessagePersistence, SQLMessagePersistence, WindowedChatMessa
 
 DEFAULT_MEMORY = 10
 
-ToolLike = Union[BaseTool, Callable[..., Any]]
+ToolLike = BaseTool | Callable[..., Any]
 
 
 class AlreadyGenerating(Exception):
@@ -82,16 +83,16 @@ class CloudLLM:
     def __init__(
         self,
         api_key: str = os.getenv("API_KEY", ""),
-        model: Union[str, CloudModel] = CloudModel.ANTHROPIC_CLAUDE,
+        model: str | CloudModel = CloudModel.ANTHROPIC_CLAUDE,
         system_prompt: str = "",
-        temperature: Optional[float] = None,
+        temperature: float | None = None,
         reasoning_effort: Union["ReasoningEffort", str, int, None] = None,
         max_tool_loops: int = 8,
-        timeout: Optional[int] = None,
-        tools: Optional[Sequence[ToolLike]] = None,
-        callbacks: Any = None,
-        **kwargs,
-    ):
+        timeout: int | None = None,
+        tools: Sequence[ToolLike] | None = None,
+        callbacks: Any = None,  # noqa: ANN401
+        **kwargs: Any,
+    ) -> None:
         """Initializes the CloudLLM brick with the specified provider and configuration.
 
         Args:
@@ -218,7 +219,7 @@ class CloudLLM:
     def with_memory(
         self,
         max_messages: int = DEFAULT_MEMORY,
-        persistence: Union[bool, MessagePersistence, None] = None,
+        persistence: bool | MessagePersistence | None = None,
     ) -> "CloudLLM":
         """Enables conversational memory for this instance.
 
@@ -238,7 +239,7 @@ class CloudLLM:
             CloudLLM: The current instance, allowing for method chaining.
         """
         if persistence is True:
-            store: Optional[MessagePersistence] = SQLMessagePersistence()
+            store: MessagePersistence | None = SQLMessagePersistence()
         elif persistence in (False, None):
             store = None
         else:
@@ -253,7 +254,7 @@ class CloudLLM:
 
         return self
 
-    def _get_message_with_history(self, user_input: str, images: List[str | bytes] = None) -> List[BaseMessage]:
+    def _get_message_with_history(self, user_input: str, images: list[str | bytes] = None) -> list[BaseMessage]:
         """Retrieves the current message history for the conversation, including the new user input.
 
         Args:
@@ -261,7 +262,7 @@ class CloudLLM:
             images (List[str | bytes]): Optional list of image file paths or raw bytes to include in the prompt.
 
         Returns:
-            List[BaseMessage]: The list of messages in the conversation history,
+            list[BaseMessage]: The list of messages in the conversation history,
                 including system prompt if set.
         """
 
@@ -288,15 +289,15 @@ class CloudLLM:
 
         return messages
 
-    def _process_tool_calls(self, tool_calls: list[ToolCall], input_messages: List[BaseMessage]) -> List[BaseMessage]:
+    def _process_tool_calls(self, tool_calls: list[ToolCall], input_messages: list[BaseMessage]) -> list[BaseMessage]:
         """Processes any tool calls requested by the model in its response.
 
         Args:
             tool_calls (list[ToolCall]): The list of tool calls requested by the model.
-            input_messages (List[BaseMessage]): The current message scope including history.
+            input_messages (list[BaseMessage]): The current message scope including history.
 
         Returns:
-            List[BaseMessage]: Updated message scope after processing tool calls.
+            list[BaseMessage]: Updated message scope after processing tool calls.
         """
 
         if len(tool_calls) == 0:
@@ -334,8 +335,8 @@ class CloudLLM:
         self,
         assistant_message: BaseMessage,
         tool_calls: list[ToolCall],
-        input_messages: List[BaseMessage],
-    ) -> List[BaseMessage]:
+        input_messages: list[BaseMessage],
+    ) -> list[BaseMessage]:
         """Runs the requested tool calls and records the whole exchange in history.
 
         The assistant message carrying the tool calls and the resulting tool messages are
@@ -348,10 +349,10 @@ class CloudLLM:
         Args:
             assistant_message (BaseMessage): The assistant message holding the tool calls.
             tool_calls (list[ToolCall]): The tool calls requested by the model.
-            input_messages (List[BaseMessage]): The current message scope including history.
+            input_messages (list[BaseMessage]): The current message scope including history.
 
         Returns:
-            List[BaseMessage]: Updated message scope, with the assistant message and the
+            list[BaseMessage]: Updated message scope, with the assistant message and the
                 tool results appended.
         """
         # Streamed messages arrive as chunks: store (and resend) the assembled message.
@@ -379,7 +380,7 @@ class CloudLLM:
             with open(path, "rb") as f:
                 return base64.b64encode(f.read()).decode()
 
-    def _content_to_text(self, content: Any) -> str:
+    def _content_to_text(self, content: Any) -> str:  # noqa: ANN401
         if isinstance(content, str):
             return content
 
@@ -408,7 +409,7 @@ class CloudLLM:
     def chat(
         self,
         message: str,
-        images: List[str | bytes] = None,
+        images: list[str | bytes] = None,
         reasoning_effort: Union["ReasoningEffort", str, int, None] = None,
     ) -> str:
         """Sends a message to the AI and blocks until the complete response is received.
@@ -451,7 +452,7 @@ class CloudLLM:
     def _chat_invoke(
         self,
         message: str,
-        images: List[str | bytes] = None,
+        images: list[str | bytes] = None,
         reasoning_effort: Union["ReasoningEffort", str, int, None] = None,
     ) -> str:
         """Internal method to perform the chat invocation with the model.
@@ -499,7 +500,7 @@ class CloudLLM:
         self._history.add_messages([message])
         return self._content_to_text(message.content)
 
-    def chat_stream(self, message: str, images: List[str | bytes] = None) -> Iterator[str]:
+    def chat_stream(self, message: str, images: list[str | bytes] = None) -> Iterator[str]:
         """Sends a message to the AI and yields response tokens as they are generated.
 
         This allows for processing or displaying the response in real-time (streaming).
@@ -539,7 +540,7 @@ class CloudLLM:
         self._logger.error(f"Response generation failed: {e}")
         raise RuntimeError(f"Response generation failed: {e}") from e
 
-    def _chat_stream_invoke(self, message: str, images: List[str | bytes] = None) -> Iterator[str]:
+    def _chat_stream_invoke(self, message: str, images: list[str | bytes] = None) -> Iterator[str]:
         """Internal method to perform the chat streaming invocation with the model.
 
         This is separated from `chat_stream()` to allow for better error handling and potential reuse
@@ -1008,7 +1009,7 @@ class CloudLLM:
     def chat_stream_reasoning(
         self,
         message: str,
-        images: List[str | bytes] = None,
+        images: list[str | bytes] = None,
         reasoning_effort: Union["ReasoningEffort", str, int, None] = None,
     ) -> Iterator[ReasoningStreamChunk]:
         """Sends a message and yields both reasoning and answer tokens as they are generated.
@@ -1061,7 +1062,7 @@ class CloudLLM:
     def _chat_stream_reasoning_invoke(
         self,
         message: str,
-        images: List[str | bytes] = None,
+        images: list[str | bytes] = None,
         reasoning_effort: Union["ReasoningEffort", str, int, None] = None,
     ) -> Iterator[ReasoningStreamChunk]:
         """Internal method to stream reasoning and answer tokens from the model.
@@ -1152,7 +1153,7 @@ class CloudLLM:
             self._history.clear()
 
 
-def model_factory(model_name: CloudModel, **kwargs) -> BaseChatModel:
+def model_factory(model_name: CloudModel, **kwargs: Any) -> BaseChatModel:
     """Factory function to instantiate the specific LangChain chat model.
 
     This function maps the supported `CloudModel` enum values to their respective

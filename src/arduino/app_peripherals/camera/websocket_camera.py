@@ -65,7 +65,7 @@ class WebSocketCamera(BaseCamera):
         fps: int = 10,
         adjustments: Callable[[np.ndarray], np.ndarray] | None = None,
         auto_reconnect: bool = True,
-    ):
+    ) -> None:
         """
         Initialize WebSocket camera server with security options.
 
@@ -322,7 +322,7 @@ class WebSocketCamera(BaseCamera):
         frame = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
         return frame
 
-    def _close_camera(self):
+    def _close_camera(self) -> None:
         """Stop the WebSocket server."""
         if self._loop and not self._loop.is_closed() and self._loop.is_running():
             try:
@@ -346,7 +346,7 @@ class WebSocketCamera(BaseCamera):
         except queue.Empty:
             pass
 
-    async def _disconnect_and_stop(self):
+    async def _disconnect_and_stop(self) -> None:
         """Cleanly disconnect client with goodbye message and stop the server."""
         async with self._client_lock:
             if self._client:
@@ -371,7 +371,7 @@ class WebSocketCamera(BaseCamera):
         except queue.Empty:
             return None
 
-    async def _send_to_client(self, message: bytes | str, client: websockets.ServerConnection | None = None):
+    async def _send_to_client(self, message: bytes | str, client: websockets.ServerConnection | None = None) -> None:
         """Send a message to the connected client."""
         if isinstance(message, str):
             message = message.encode()

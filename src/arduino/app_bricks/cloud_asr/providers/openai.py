@@ -53,7 +53,7 @@ class OpenAITranscribe:
         api_key: str,
         language: str = DEFAULT_LANGUAGE,
         sample_rate: int = 16000,
-    ):
+    ) -> None:
         if not api_key:
             raise ValueError("API key is required for OpenAI Realtime client.")
 

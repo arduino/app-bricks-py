@@ -3,41 +3,42 @@
 # SPDX-License-Identifier: MPL-2.0
 
 from watchdog.observers import Observer
-from watchdog.events import PatternMatchingEventHandler
+from watchdog.events import FileSystemEvent, PatternMatchingEventHandler
 import queue
+from typing import Any
 
 
 # TODO: add support to event types other than file creation
 class FolderWatcher:
-    def __init__(self, path, patterns=["*"], ignore_patterns=[]):
+    def __init__(self, path: str, patterns: list[str] = ["*"], ignore_patterns: list[str] = []) -> None:
         self._path = path
         self._observer = Observer()
         self._handler = FolderEventHandler(patterns=patterns, ignore_patterns=ignore_patterns, ignore_directories=True)
 
-    def wait_for_event(self):
+    def wait_for_event(self) -> bytes:
         return self._handler.wait_for_event()
 
-    def start(self):
+    def start(self) -> None:
         self._observer.schedule(self._handler, self._path, recursive=True)
         self._observer.start()
 
-    def produce(self):
+    def produce(self) -> bytes | None:
         try:
             return self.wait_for_event()
         except Exception:
             return None
 
-    def stop(self):
+    def stop(self) -> None:
         self._observer.stop()
         self._observer.join()
 
 
 class FolderEventHandler(PatternMatchingEventHandler):
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
-        self.queue = queue.Queue()
+        self.queue: queue.Queue[bytes] = queue.Queue()
 
-    def on_created(self, event):
+    def on_created(self, event: FileSystemEvent) -> None:
         try:
             with open(event.src_path, "rb") as file:
                 file_contents = file.read()
@@ -46,10 +47,10 @@ class FolderEventHandler(PatternMatchingEventHandler):
             print(f"Error reading file {event.src_path}: {e}")
             raise
 
-    def wait_for_event(self):
+    def wait_for_event(self) -> bytes:
         return self.queue.get()
 
-    def stop(self):
+    def stop(self) -> None:
         while not self.queue.empty():
             try:
                 self.queue.get_nowait()

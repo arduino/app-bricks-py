@@ -7,7 +7,8 @@ import re
 import threading
 import time
 from collections.abc import Generator, Iterator
-from typing import ContextManager
+from contextlib import AbstractContextManager
+from types import TracebackType
 
 import numpy as np
 import requests
@@ -32,16 +33,16 @@ class TTSBusyError(TTSError):
     """Raised when this TTS instance already has an active speech session."""
 
 
-class SynthesisStream(ContextManager["SynthesisStream"], Iterator[bytes]):
+class SynthesisStream(AbstractContextManager["SynthesisStream"], Iterator[bytes]):
     """Iterator wrapper that guarantees proper teardown on context exit."""
 
-    def __init__(self, generator: Generator[bytes, None, None]):
+    def __init__(self, generator: Generator[bytes]) -> None:
         self._generator = generator
 
     def __enter__(self) -> "SynthesisStream":
         return self
 
-    def __exit__(self, exc_type, exc, tb) -> None:
+    def __exit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None) -> None:
         self.close()
 
     def __iter__(self) -> "SynthesisStream":
@@ -60,7 +61,7 @@ class TextToSpeech:
 
     _APP_SERVICE_NAME = "audio-analytics-runner"
 
-    def __init__(self, speaker: BaseSpeaker | None = None, max_queue_size: int = TTS_MAX_QUEUE_SIZE):
+    def __init__(self, speaker: BaseSpeaker | None = None, max_queue_size: int = TTS_MAX_QUEUE_SIZE) -> None:
         """Initialize the TextToSpeech brick.
         Args:
             speaker (BaseSpeaker, optional): Speaker instance to use for audio output. If not provided, a default Speaker will be used.
@@ -101,12 +102,12 @@ class TextToSpeech:
         self._cancel_epoch = 0
         self._pending_speech = 0
 
-    def start(self):
+    def start(self) -> None:
         """Start the TextToSpeech brick by initializing the speaker."""
         self._speaker.start()
         self._warmup()
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop the TextToSpeech brick by stopping the speaker."""
         self.cancel()
         with self._worker_lock:
@@ -122,7 +123,7 @@ class TextToSpeech:
                 logger.warning("Background speech worker did not terminate in time")
         self._speaker.stop()
 
-    def cancel(self):
+    def cancel(self) -> None:
         """Cancel active speech playback and drop any queued speech, without stopping the speaker."""
         with self._worker_lock:
             self._cancel_epoch += 1
@@ -141,7 +142,7 @@ class TextToSpeech:
             pending = self._pending_speech
         return pending > 0 or self._active_session_lock.locked()
 
-    def speak(self, text: str, block: bool = True):
+    def speak(self, text: str, block: bool = True) -> None:
         """
         Synthesize speech from text and play it through the provided speaker.
         Long text is split into 1024-character chunks before synthesis.
@@ -311,7 +312,7 @@ class TextToSpeech:
             RuntimeError: If the synthesis fails.
         """
 
-        def locked_stream() -> Generator[bytes, None, None]:
+        def locked_stream() -> Generator[bytes]:
             if not self._active_session_lock.acquire(blocking=False):
                 raise TTSBusyError(
                     "A speech session is already active on this instance. Create a separate TextToSpeech instance for concurrent speech."

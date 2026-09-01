@@ -22,7 +22,7 @@ class HttpClient:
         backoff_factor: int = 1,
         status_forcelist: frozenset = (411, 500, 502, 503, 504),
         allowed_methods: frozenset = frozenset(["GET", "POST", "PUT", "DELETE"]),
-    ):
+    ) -> None:
         self.__total_retries = total_retries
         self.__backoff_factor = backoff_factor
         self.__status_forcelist = status_forcelist
@@ -48,11 +48,11 @@ class HttpClient:
         self,
         url: str,
         method: str = "GET",
-        data: dict | str = None,
-        json: dict = None,
-        headers: dict = None,
+        data: dict | str | None = None,
+        json: dict | None = None,
+        headers: dict | None = None,
         timeout: int = 5,
-    ):
+    ) -> requests.Response | None:
         """Performs a GET or POST request to a given URL with a retry mechanism using requests.
 
         Session and urllib3's Retry utility for built-in exponential backoff.
@@ -89,7 +89,7 @@ class HttpClient:
             logger.error(f"Request failed after all retries: {e}")
             return None
 
-    def close(self):
+    def close(self) -> None:
         """Close the HTTP session."""
         self.__http_session.close()
         logger.debug("HTTP session closed.")

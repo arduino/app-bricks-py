@@ -4,7 +4,7 @@
 
 import struct
 import wave
-from typing import Callable
+from collections.abc import Callable
 
 from arduino.app_internal.core.audio import AudioDetector
 from arduino.app_peripherals.microphone import Microphone
@@ -23,7 +23,7 @@ class AudioClassificationException(Exception):
 class AudioClassification(AudioDetector):
     """AudioClassification module for detecting sounds and classifying audio using a specified model."""
 
-    def __init__(self, mic: Microphone = None, confidence: float = 0.8):
+    def __init__(self, mic: Microphone = None, confidence: float = 0.8) -> None:
         """Initialize the AudioClassification class.
 
         Args:
@@ -36,7 +36,7 @@ class AudioClassification(AudioDetector):
         """
         super().__init__(mic=mic, confidence=confidence)
 
-    def on_detect(self, class_name: str, callback: Callable[[], None]):
+    def on_detect(self, class_name: str, callback: Callable[[], None]) -> None:
         """Register a callback function to be invoked when a specific class is detected.
 
         Args:
@@ -51,7 +51,7 @@ class AudioClassification(AudioDetector):
         """
         super().on_detect(class_name, callback)
 
-    def start(self):
+    def start(self) -> None:
         """Start real-time audio classification.
 
         Begins capturing audio from the configured microphone and
@@ -59,7 +59,7 @@ class AudioClassification(AudioDetector):
         """
         super().start()
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop real-time audio classification.
 
         Terminates audio capture and releases any associated resources.

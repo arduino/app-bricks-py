@@ -9,7 +9,7 @@ import threading
 import socket
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
-from typing import Callable
+from collections.abc import Callable
 
 from websockets.sync.client import connect
 from websockets.sync.connection import Connection
@@ -36,7 +36,7 @@ class VideoImageClassification:
 
     _DETECTION_LOCK_TO = 0.01  # Seconds to wait for a detection lock before discarding the detection signal
 
-    def __init__(self, camera: BaseCamera | None = None, confidence: float = 0.3, debounce_sec: float = 0.0):
+    def __init__(self, camera: BaseCamera | None = None, confidence: float = 0.3, debounce_sec: float = 0.0) -> None:
         """Initialize the VideoImageClassification class.
 
         Args:
@@ -92,7 +92,7 @@ class VideoImageClassification:
         self._uri = f"ws://{self._host}:4912"
         logger.info(f"[{self.__class__.__name__}] Host: {self._host} - URL: {self._uri}")
 
-    def on_detect_all(self, callback: Callable[[dict], None]):
+    def on_detect_all(self, callback: Callable[[dict], None]) -> None:
         """Register a callback invoked for **every classification event**.
 
         This callback is useful if you want to process all classified labels in a single
@@ -117,7 +117,7 @@ class VideoImageClassification:
         with self._handlers_lock:
             self._handlers[self.ALL_HANDLERS_KEY] = callback
 
-    def on_detect(self, object: str, callback: Callable[[], None]):
+    def on_detect(self, object: str, callback: Callable[[], None]) -> None:
         """Register a callback invoked when a **specific label** is classified.
 
         The callback is triggered whenever the given label appears in the classification
@@ -148,19 +148,19 @@ class VideoImageClassification:
                 logger.warning(f"Handler for label '{object}' already exists. Overwriting.")
             self._handlers[object] = callback
 
-    def start(self):
+    def start(self) -> None:
         """Start the classification."""
         self._camera.start()
         self._is_running.set()
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop the classification and release resources."""
         self._is_running.clear()
         self._camera.stop()
         self._executor.shutdown(wait=False, cancel_futures=True)
 
     @brick.execute
-    def classification_loop(self):
+    def classification_loop(self) -> None:
         """Classification main loop.
 
         Maintains WebSocket connection to the model runner and processes classification messages.
@@ -197,7 +197,7 @@ class VideoImageClassification:
                 time.sleep(2)
 
     @brick.execute
-    def camera_loop(self):
+    def camera_loop(self) -> None:
         """Camera main loop.
 
         Captures images from the camera and forwards them over the TCP connection.
@@ -240,7 +240,7 @@ class VideoImageClassification:
                 logger.exception(f"Unexpected error in TCP loop: {e}")
                 time.sleep(2)
 
-    def _process_message(self, ws: Connection, message: str):
+    def _process_message(self, ws: Connection, message: str) -> None:
         jmsg = json.loads(message)
         if jmsg.get("type") == "hello":
             # Parse hello message to extract model info if needed
@@ -298,7 +298,7 @@ class VideoImageClassification:
                 self._detection_locks[classification] = threading.Lock()
             return self._detection_locks[classification]
 
-    def _execute_handler(self, classification: str, classifications: dict | None = None):
+    def _execute_handler(self, classification: str, classifications: dict | None = None) -> None:
         """Execute the handler for the detected object if it exists.
 
         Args:
@@ -328,7 +328,7 @@ class VideoImageClassification:
             classification_lock.release()
             return
 
-        def _run():
+        def _run() -> None:
             try:
                 logger.debug(f"Classification: {classification}, invoking handler.")
                 if classifications is None:
@@ -344,7 +344,7 @@ class VideoImageClassification:
             # Executor was shut down before the task could be submitted
             classification_lock.release()
 
-    def override_threshold(self, value: float):
+    def override_threshold(self, value: float) -> None:
         """Override the threshold for image classification model.
 
         Args:
@@ -357,7 +357,7 @@ class VideoImageClassification:
         with connect(self._uri) as ws:
             self._override_threshold(ws, value)
 
-    def _override_threshold(self, ws: Connection, value: float):
+    def _override_threshold(self, ws: Connection, value: float) -> None:
         """Override the threshold for image classification model.
 
         Args:

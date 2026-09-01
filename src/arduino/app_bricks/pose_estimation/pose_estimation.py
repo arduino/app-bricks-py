@@ -11,7 +11,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Literal
+from typing import Any, Literal
+from collections.abc import Callable
 
 import numpy as np
 import websockets
@@ -114,7 +115,7 @@ class PoseEstimation:
         draw_bboxes: bool = False,
         draw_low_confidence_points: bool = True,
         bbox_padding: float | tuple[float, float, float, float] = 0.0,
-    ):
+    ) -> None:
         """Initialize the PoseEstimation brick.
 
         Args:
@@ -215,13 +216,13 @@ class PoseEstimation:
         self._gate_log_ts = time.monotonic()
         self._gate_log_counts = dict(self._gate_counts)
 
-    def start(self):
+    def start(self) -> None:
         """Start the capture thread and asyncio event loop."""
         self._executor = ThreadPoolExecutor()
         self._camera.start()
         self._is_running = True
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop all tracking and close connections."""
         self._is_running = False
         self._camera.stop()
@@ -237,7 +238,7 @@ class PoseEstimation:
         self._readable = False
         self._readable_since = None
 
-    def on_keypoints(self, callback: Callable[[Person], None] | None):
+    def on_keypoints(self, callback: Callable[[Person], None] | None) -> None:
         """Register a callback invoked once per detected person, for every processed frame.
 
         With several people in view, the callback is invoked once for each of
@@ -249,7 +250,7 @@ class PoseEstimation:
         """
         self._register_callback("keypoints", callback)
 
-    def on_pose(self, pose: str, callback: Callable[[Pose], None] | None):
+    def on_pose(self, pose: str, callback: Callable[[Pose], None] | None) -> None:
         """Register a callback for a built-in pose (e.g. "sitting").
 
         The classifier follows ONE person: the largest bounding box in the
@@ -272,7 +273,7 @@ class PoseEstimation:
             raise ValueError(f"unknown pose {pose!r} (available: {', '.join(self._pose_names)})")
         self._register_callback(f"pose:{pose}", callback)
 
-    def on_enter(self, callback: Callable[[], None] | None):
+    def on_enter(self, callback: Callable[[], None] | None) -> None:
         """Register a callback for when the first person enters the scene.
 
         Args:
@@ -281,7 +282,7 @@ class PoseEstimation:
         """
         self._register_callback("enter", callback)
 
-    def on_exit(self, callback: Callable[[], None] | None):
+    def on_exit(self, callback: Callable[[], None] | None) -> None:
         """Register a callback for when the last person leaves the scene.
 
         Args:
@@ -290,7 +291,7 @@ class PoseEstimation:
         """
         self._register_callback("exit", callback)
 
-    def on_count_change(self, callback: Callable[[int], None] | None):
+    def on_count_change(self, callback: Callable[[int], None] | None) -> None:
         """Register a callback for when the number of detected people changes.
 
         Args:
@@ -323,7 +324,7 @@ class PoseEstimation:
         """How many people are in view right now, the value `on_count_change` last reported."""
         return self._person_count
 
-    def set_confidence(self, confidence: float):
+    def set_confidence(self, confidence: float) -> None:
         """Change the minimum detection score for a person, effective immediately.
 
         Args:
@@ -395,7 +396,7 @@ class PoseEstimation:
                 raise ValueError(f"padding values must be numbers in [0.0, 1.0], got {value!r}")
         return tuple(float(value) for value in values)
 
-    def on_frame(self, callback: Callable[[np.ndarray], None] | None):
+    def on_frame(self, callback: Callable[[np.ndarray], None] | None) -> None:
         """Register a callback that receives each raw camera frame.
 
         Args:
@@ -404,7 +405,7 @@ class PoseEstimation:
         """
         self._register_callback("frame", callback)
 
-    def on_error(self, callback: Callable[[Exception], None] | None):
+    def on_error(self, callback: Callable[[Exception], None] | None) -> None:
         """Register a callback invoked when an error occurs while processing detections.
 
         Args:
@@ -413,7 +414,7 @@ class PoseEstimation:
         """
         self._register_callback("error", callback)
 
-    def _register_callback(self, key: str, callback: Callable | None):
+    def _register_callback(self, key: str, callback: Callable | None) -> None:
         with self._callbacks_lock:
             if callback is None:
                 self._callbacks.pop(key, None)
@@ -428,7 +429,7 @@ class PoseEstimation:
             return self._callbacks.get(key)
 
     @brick.loop
-    def _capture_loop(self):
+    def _capture_loop(self) -> None:
         """Continuously capture frames from camera (runs in dedicated thread)."""
         try:
             frame = self._camera.capture()
@@ -464,7 +465,7 @@ class PoseEstimation:
                 logger.error(f"Error capturing frame: {e}")
 
     @brick.execute
-    def _send_receive_loop(self):
+    def _send_receive_loop(self) -> None:
         """Run the asyncio event loop in a dedicated thread."""
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -478,7 +479,7 @@ class PoseEstimation:
         finally:
             loop.close()
 
-    async def _send_frames_task(self):
+    async def _send_frames_task(self) -> None:
         """Send frames to the processing container via WebSocket."""
         while self._is_running:
             try:
@@ -513,7 +514,7 @@ class PoseEstimation:
                     logger.error(f"Error in send frames task: {e}. Reconnecting...")
                     await asyncio.sleep(3)
 
-    async def _receive_detections_task(self):
+    async def _receive_detections_task(self) -> None:
         """Receive detection results and dispatch events."""
         while self._is_running:
             try:
@@ -531,7 +532,7 @@ class PoseEstimation:
                     logger.error(f"Error in receive detections task: {e}. Reconnecting...")
                     await asyncio.sleep(3)
 
-    def _process_detection(self, metadata: dict):
+    def _process_detection(self, metadata: dict) -> None:
         """Process detection data and dispatch appropriate events."""
         try:
             people: list[Person] = []
@@ -587,7 +588,7 @@ class PoseEstimation:
 
         self._update_pose_classification(people, now)
 
-    def _update_pose_classification(self, people: list[Person], now: float):
+    def _update_pose_classification(self, people: list[Person], now: float) -> None:
         """Classify the tracked person (largest box) and dispatch pose edges."""
         dt = 0.0 if self._pose_last_ts is None else now - self._pose_last_ts
         self._pose_last_ts = now
@@ -688,12 +689,12 @@ class PoseEstimation:
         self._gate("classified")
         return self._pose_knn.classify(embed(norm), label_weights=self._pose_label_weights)
 
-    def _dispatch_error(self, error: Exception):
+    def _dispatch_error(self, error: Exception) -> None:
         callback = self._get_callback("error")
         if callback:
             self._submit_callback("error", error)
 
-    def _submit_callback(self, key: str, *args, unroll: bool = False):
+    def _submit_callback(self, key: str, *args: Any, unroll: bool = False) -> None:
         """Acquire the per-callback lock and submit the callback to the executor.
 
         If the lock is already held (callback still running), the event is discarded.
@@ -711,7 +712,7 @@ class PoseEstimation:
             # Executor was shut down before the task could be submitted
             lock.release()
 
-    def _run_callback(self, lock: threading.Lock, callback: Callable, *args, unroll: bool = False):
+    def _run_callback(self, lock: threading.Lock, callback: Callable, *args: Any, unroll: bool = False) -> None:
         """Run a callback and release its lock when done.
 
         With `unroll=True` the first argument is a list and the callback is invoked once per item.

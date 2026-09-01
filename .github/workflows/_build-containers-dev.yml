@@ -134,7 +134,7 @@ jobs:
             org.opencontainers.image.url=https://github.com/${{ github.repository }}
 
       - name: Copy models-list.yaml into build context
-        if: matrix.container == 'models-downloader'
+        if: contains(fromJSON('["models-downloader", "llamacpp-runner", "llamacpp-npu-runner"]'), matrix.container)
         run: cp models/models-list.yaml ${{ steps.dir.outputs.path }}/models-list.yaml
 
       - name: Build and push Docker image

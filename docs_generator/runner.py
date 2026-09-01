@@ -28,7 +28,7 @@ def _extract_all_exports(tree: ast.AST) -> list[str] | None:
 
 def get_brick_id_from_yaml(yaml_path):
     try:
-        with open(yaml_path + "/brick_config.yaml", "r", encoding="utf-8") as f:
+        with open(yaml_path + "/brick_config.yaml", encoding="utf-8") as f:
             config = yaml.safe_load(f)
         id = config.get("id", None)
         return id.split(":")[1] if id and ":" in id else None
@@ -68,7 +68,7 @@ def process_app_bricks(src_root: str, output_dir: str):
             init_tree = None
             if os.path.exists(init_path):
                 try:
-                    with open(init_path, "r", encoding="utf-8") as f:
+                    with open(init_path, encoding="utf-8") as f:
                         source = f.read()
                     tree = ast.parse(source)
                     init_tree = tree
@@ -168,7 +168,7 @@ def process_app_peripherals(src_root: str, output_dir: str):
             all_exports = None
             if os.path.exists(init_path):
                 try:
-                    with open(init_path, "r", encoding="utf-8") as f:
+                    with open(init_path, encoding="utf-8") as f:
                         source = f.read()
                     tree = ast.parse(source)
                     all_exports = _extract_all_exports(tree)

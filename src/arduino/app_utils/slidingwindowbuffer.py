@@ -17,7 +17,7 @@ class SlidingWindowBuffer:
     is never repeated and only new data (with window_size length) is always available.
     """
 
-    def __init__(self, window_size: int, slide_amount: int, capacity: int = None):
+    def __init__(self, window_size: int, slide_amount: int, capacity: int = None) -> None:
         """Initializes the sliding window buffer.
 
         Args:

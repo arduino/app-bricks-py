@@ -190,8 +190,7 @@ class TestTranscribeUntilCancelled:
 
         def fake(duration=0, vad_ms=None):
             try:
-                for ev in [ASREvent("full_text", "one"), ASREvent("full_text", "two")]:
-                    yield ev
+                yield from [ASREvent("full_text", "one"), ASREvent("full_text", "two")]
             finally:
                 inner_closed.set()
 

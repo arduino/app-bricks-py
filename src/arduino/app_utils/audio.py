@@ -21,7 +21,7 @@ class SineGenerator:
         glide (float): Glide time for frequency smoothing in seconds.
     """
 
-    def __init__(self, sample_rate: int):
+    def __init__(self, sample_rate: int) -> None:
         """Create a new SineGenerator.
 
         Args:
@@ -46,7 +46,7 @@ class SineGenerator:
         self._freq_last = 440.0
         self._phase = 0.0
 
-    def reset(self):
+    def reset(self) -> None:
         """Reset internal generator state.
 
         Resets phase, last frequency and current amplitude to silence. Useful
@@ -104,7 +104,7 @@ class SineGenerator:
         self.release = float(max(0.0, release))
         self.glide = float(max(0.0, glide))
 
-    def generate_block(self, freq: float, amp_target: float, block_dur: float, master_volume: float):
+    def generate_block(self, freq: float, amp_target: float, block_dur: float, master_volume: float) -> np.ndarray:
         """Generate a block of float32 audio samples.
 
         The generator keeps internal phase continuity across calls. Amplitude is

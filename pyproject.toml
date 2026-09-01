@@ -151,12 +151,15 @@ docstring-code-line-length = 150
 
 [tool.ruff.lint]
 select = [
+    "UP",      # pyupgrade: modernize typing and syntax to the target Python version
+    "ANN",     # flake8-annotations: require type annotations
     "E501",    # line too long
     "D100",    # missing docstring in public module
     "D206",    # Docstring should be indented with 4 spaces
     "D417",    # Missing argument descriptions in the docstring
     "D419",    # Missing return description in the docstring
     "F401",    # imported but unused
+    "F821",    # undefined name
     "F841",    # local variable 'x' is assigned to but never used
     "E302",    # expected 2 blank lines, found 1
     "E303",    # too many blank lines (3)
@@ -181,6 +184,14 @@ ignore = [
     "D104",    # missing docstring in public package
     "D206",    # Docstring should be indented with 4 spaces
 ]
+
+[tool.ruff.lint.flake8-annotations]
+# Passthrough *args/**kwargs may be typed as Any without triggering ANN401.
+allow-star-arg-any = true
+
+[tool.ruff.lint.per-file-ignores]
+# Type annotations are enforced only on the packaged library (wheel content).
+"!src/**" = ["ANN"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
