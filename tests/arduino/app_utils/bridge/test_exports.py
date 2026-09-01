@@ -15,7 +15,7 @@ import unittest
 from contextlib import redirect_stderr
 from unittest.mock import patch
 
-from arduino.app_utils.logger import adopt_logger
+from arduino.app_utils.logger import _configure_library_logger
 
 
 class TestBridgeExports(unittest.TestCase):
@@ -28,8 +28,8 @@ class TestBridgeExports(unittest.TestCase):
         self.assertIs(call, bridge_module.call)
         self.assertIs(provide, bridge_module.provide)
 
-    def test_library_logger_is_adopted_on_import(self):
-        import arduino.app_utils  # noqa: F401  Importing the package adopts the library logger
+    def test_library_logger_is_configured_on_import(self):
+        import arduino.app_utils  # noqa: F401  Importing the package configures the library logger
 
         lib_logger = logging.getLogger("arduino.router_bridge")
         self.assertEqual(len(lib_logger.handlers), 1)
@@ -54,27 +54,27 @@ class TestBridgeExports(unittest.TestCase):
                     app.wait(timeout=10)
 
 
-class TestAdoptLogger(unittest.TestCase):
-    def _adopt_and_log(self, **kwargs):
+class TestConfigureLibraryLogger(unittest.TestCase):
+    def _configure_and_log(self, **kwargs):
         stderr = io.StringIO()
-        with redirect_stderr(stderr):  # The handler binds the redirected stream at adoption time
-            adopt_logger("some.test.lib", **kwargs)
+        with redirect_stderr(stderr):  # The handler binds the redirected stream at configuration time
+            _configure_library_logger("some.test.lib", **kwargs)
             logging.getLogger("some.test.lib.child").info("hello from lib")
         return stderr.getvalue()
 
     def test_applies_app_format(self):
-        output = self._adopt_and_log()
+        output = self._configure_and_log()
         self.assertIn("INFO", output)
         self.assertIn("some.test.lib.child:  hello from lib", output)
 
     def test_display_name_replaces_logger_name(self):
-        output = self._adopt_and_log(display_name="Nice")
+        output = self._configure_and_log(display_name="Nice")
         self.assertIn("Nice:  hello from lib", output)
         self.assertNotIn("some.test.lib", output)
 
     def test_honors_app_bricks_log_level(self):
         with patch.dict("os.environ", {"APP_BRICKS_LOG_LEVEL": "ERROR"}):
-            output = self._adopt_and_log()
+            output = self._configure_and_log()
         self.assertEqual(output, "")
 
 

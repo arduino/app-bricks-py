@@ -25,21 +25,13 @@ def _build_handler() -> logging.Handler:
     return handler
 
 
-def adopt_logger(name: str, display_name: str | None = None, level: int = logging.INFO):
-    """Routes a library's logger hierarchy through the app-standard format and log level.
-
-    Libraries following the standard `logging` conventions emit records under their
-    own logger name and leave configuration to the application; this function applies
-    the app-standard handler, format and level (including the APP_BRICKS_LOG_LEVEL
-    override) to such a logger.
+def _configure_library_logger(name: str, display_name: str | None = None, level: int = logging.INFO) -> None:
+    """Overrides the named logger's handler, format and log level with the ones used by the Bricks framework.
 
     Args:
         name (str): The library's logger name, e.g. "arduino.router_bridge".
         display_name (str, optional): Name shown in log records instead of the library's logger name.
         level (int): The logging level, subject to the APP_BRICKS_LOG_LEVEL override. Defaults to logging.INFO.
-
-    Examples:
-        adopt_logger("arduino.router_bridge", display_name="Bridge")
     """
     handler = _build_handler()
     if display_name is not None:
@@ -72,7 +64,7 @@ class Logger(logging.Logger):
         logger.print('This will always be printed, regardless of the level')
     """
 
-    def __init__(self, name: str, level: int = logging.INFO):
+    def __init__(self, name: str, level: int = logging.INFO) -> None:
         super().__init__(name, _resolve_level(level))
         self.handlers = []  # Remove inherited handlers
         self.addHandler(_build_handler())
