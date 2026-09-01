@@ -211,7 +211,7 @@ jobs:
             org.opencontainers.image.url=${{ env.GH_DESTINATION_REPO }}
 
       - name: Copy models-list.yaml into build context
-        if: steps.rebuild_check.outputs.needs_build == 'true' && contains(fromJSON('["models-downloader", "llamacpp-runner", "llamacpp-npu-runner"]'), matrix.container)
+        if: steps.rebuild_check.outputs.needs_build == 'true' && matrix.container == 'models-downloader'
         run: cp models/models-list.yaml ${{ steps.dir.outputs.path }}/models-list.yaml
 
       - name: Build and push Docker image
