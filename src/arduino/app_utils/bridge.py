@@ -2,13 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""App-wide singleton layer over the instance-based arduino-router-bridge library.
-
-Apps talk to the single router socket configured by the app environment (APP_SOCKET),
-so this module manages one shared connection and exposes the ergonomic API built on
-it: the `Bridge` facade and the `@notify`, `@call` and `@provide` decorators.
-"""
-
+from collections.abc import Callable
 from functools import wraps
 import inspect
 import os
@@ -24,7 +18,7 @@ _bridge_lock = threading.Lock()
 
 
 def _get_bridge() -> RouterBridge:
-    """Returns the app-wide shared bridge, creating it on first use and (re)connecting it when needed.
+    """Returns the app-wide shared bridge, creating it on first use and reconnecting it when needed.
     The router address is taken from the APP_SOCKET environment variable, falling back to the library default.
     """
     global _bridge
@@ -55,7 +49,7 @@ class Bridge:
         _get_bridge().notify(method_name, *params)
 
     @staticmethod
-    def call(method_name: str, *params, timeout: float | None = 10):
+    def call(method_name: str, *params: object, timeout: float | None = 10) -> object:
         """Calls a method on the microcontroller and waits for a response.
         Raises an exception if the call fails or times out.
 
@@ -77,7 +71,7 @@ class Bridge:
         return _get_bridge().call(method_name, *params, timeout=timeout)
 
     @staticmethod
-    def provide(method_name: str, handler):
+    def provide(method_name: str, handler: Callable[..., object]) -> None:
         """Makes a method available to the microcontroller, so it can call it remotely.
         The handler should be a callable that can take arguments.
 
@@ -115,7 +109,7 @@ class Bridge:
         _get_bridge().unprovide(method_name)
 
 
-def notify(method_name: str | None = None):
+def notify(method_name: str | None = None) -> Callable[[Callable[..., object]], Callable[..., None]]:
     """Decorator that transforms a function into a notification for the microcontroller.
 
     When the decorated function is called, an RPC 'notify' (fire-and-forget) is sent
@@ -147,7 +141,7 @@ def notify(method_name: str | None = None):
             raise TypeError(f"'{func.__name__}' is expected to be a function but is a method or a classmethod.")
 
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> None:
             # Any kwargs passed to the decorated function are unexpected
             if kwargs:
                 raise TypeError(f"Unexpected {list(kwargs.keys())} keyword args: only positional args are supported.")
@@ -159,7 +153,7 @@ def notify(method_name: str | None = None):
     return decorator
 
 
-def call(method_name: str | None = None, timeout: float | None = 10):
+def call(method_name: str | None = None, timeout: float | None = 10) -> Callable[[Callable[..., object]], Callable[..., object]]:
     """Decorator that transforms a function into an RPC call to the microcontroller.
 
     When the decorated function is called, an RPC 'call' (request and response) is sent
@@ -178,7 +172,7 @@ def call(method_name: str | None = None, timeout: float | None = 10):
         ValueError: If the method does not exist or the call fails.
         TimeoutError: If the call takes more time than the specified timeout.
         ConnectionError: If the connection drops while waiting for the response.
-        RuntimeError: If the call fails unexpectedly.
+        RuntimeError: If invoked from a provided handler (nested calls are not supported), or if the call fails unexpectedly.
 
     Examples:
         @call()
@@ -198,7 +192,7 @@ def call(method_name: str | None = None, timeout: float | None = 10):
             raise TypeError(f"'{func.__name__}' is expected to be a function but is a method or a classmethod.")
 
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: object, **kwargs: object) -> R:
             # An optional 'timeout' keyword overrides the decorator's default
             actual_timeout = kwargs.pop("timeout", timeout)
 
@@ -213,7 +207,7 @@ def call(method_name: str | None = None, timeout: float | None = 10):
     return decorator
 
 
-def provide(method_name: str | None = None):
+def provide(method_name: str | None = None) -> Callable[[Callable[..., object]], Callable[..., object]]:
     """Decorator that makes a method available to the microcontroller, so it can call it remotely.
 
     The decorated function is automatically registered using its own name as method name,
