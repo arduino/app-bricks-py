@@ -38,6 +38,11 @@ logger = Logger("PoseEstimation")
 
 _POSE_CLASSIFIER_PATH = Path(__file__).resolve().parent / "assets" / "pose_classifier.npz"
 
+_UNREADABLE_HOLD_SEC = 0.5
+
+"""Names of the built-in poses accepted by `on_pose`."""
+POSE_NAMES: tuple[str, ...] = load_pose_classifier(_POSE_CLASSIFIER_PATH)[2]
+
 
 @dataclass
 class Keypoint:
@@ -65,7 +70,8 @@ class Person:
             keypoint name (see `KEYPOINT_NAMES`). Low-confidence keypoints are
             included; filter by their score.
         bounding_box_xyxy (tuple[int, int, int, int]): (x1, y1, x2, y2) box
-            enclosing the person's confident keypoints, in frame coordinates.
+            enclosing the person's confident keypoints, expanded by the
+            configured bbox padding (none by default), in frame coordinates.
     """
 
     keypoints: dict[str, Keypoint]
@@ -87,7 +93,8 @@ class Pose:
         keypoints (dict[str, Keypoint]): The person's 17 keypoints, keyed by
             keypoint name (see `KEYPOINT_NAMES`).
         bounding_box_xyxy (tuple[int, int, int, int]): (x1, y1, x2, y2) box
-            enclosing the person's confident keypoints, in frame coordinates.
+            enclosing the person's confident keypoints, expanded by the
+            configured bbox padding (none by default), in frame coordinates.
     """
 
     name: str
@@ -103,7 +110,11 @@ class PoseEstimation:
         self,
         camera: BaseCamera | None = None,
         confidence: float = 0.25,
-        debounce_sec: float = 0.0,
+        count_debounce_sec: float = 0.0,
+        out_of_frame_tolerance: float = OUT_OF_FRAME_TOLERANCE,
+        draw_bboxes: bool = False,
+        draw_low_confidence_points: bool = True,
+        bbox_padding: float | tuple[float, float, float, float] = 0.0,
     ) -> None:
         """Initialize the PoseEstimation brick.
 
@@ -115,16 +126,38 @@ class PoseEstimation:
                 the mean of the person's 17 keypoint scores, so partly visible people score lower.
                 Applied by the model runner, so detections below it are neither emitted nor drawn
                 on the overlay. Changeable at runtime with `set_confidence()`.
-            debounce_sec (float): Minimum seconds a presence or people-count change must be stable
-                before `on_enter`/`on_exit`/`on_count_change` fire again. Filters out detection
-                flicker. Default is 0 (no debounce).
+            count_debounce_sec (float): Minimum seconds a person leaving, or the people count
+                dropping, must hold before `on_exit`/`on_count_change` report it, so that a
+                dropped detection frame cannot fake it. People appearing are always reported at
+                once. Default is 0 (no debounce). Pose events are not affected: they have their
+                own temporal smoothing.
+            out_of_frame_tolerance (float): How far past the frame edges a joint may be
+                extrapolated before the skeleton counts as unreadable, as a fraction of the
+                frame size: no pose is classified and `on_readable_change` reports False.
+                Default is 0.25; 0 demands every joint inside the picture.
+            draw_bboxes (bool): Draw each detected person's bounding box on the skeleton overlay
+                served by the model runner. Off by default. Changeable at runtime with
+                `set_draw_bboxes()`.
+            draw_low_confidence_points (bool): Mark low-confidence keypoints on the overlay too, as small
+                hollow dots joined by darker lines. On by default; set to False for an overlay
+                that shows only the confident keypoints. Changeable at runtime with
+                `set_draw_low_confidence_points()`.
+            bbox_padding (float | tuple[float, float, float, float]): Expand every reported
+                and drawn bounding box, CSS style: a single number applies to all sides, a
+                4-tuple is (top, right, bottom, left). Top/bottom are fractions of the box
+                height, left/right of its width, each in [0.0, 1.0]. Default is 0 (no
+                expansion). Changeable at runtime with `set_bbox_padding()`.
 
         Raises:
             RuntimeError: If the model runner host address could not be resolved.
         """
         self._camera = camera if camera else Camera(fps=30)
         self._confidence = confidence
-        self._debounce_sec = debounce_sec
+        self._count_debounce_sec = count_debounce_sec
+        self._out_of_frame_tolerance = out_of_frame_tolerance
+        self._draw_bboxes = draw_bboxes
+        self._draw_low_confidence_points = draw_low_confidence_points
+        self._bbox_padding = self._validate_bbox_padding(bbox_padding)
 
         # Callbacks
         self._callbacks: dict[str, Callable] = {}
@@ -134,9 +167,12 @@ class PoseEstimation:
 
         # State tracking
         self._person_present = False
-        self._presence_change_ts = 0.0
+        self._presence_since: float | None = None
         self._person_count = 0
-        self._count_change_ts = 0.0
+        self._count_candidate: int | None = None
+        self._count_since = 0.0
+        self._readable = False
+        self._readable_since: float | None = None
         self._is_running = False
 
         self._camera_frame_queue = queue.Queue(maxsize=2)
@@ -199,6 +235,8 @@ class PoseEstimation:
         )
         self._pose_last_ts = None
         self._pose_last_person = None
+        self._readable = False
+        self._readable_since = None
 
     def on_keypoints(self, callback: Callable[[Person], None] | None) -> None:
         """Register a callback invoked once per detected person, for every processed frame.
@@ -262,6 +300,30 @@ class PoseEstimation:
         """
         self._register_callback("count", callback)
 
+    def on_readable_change(self, callback: Callable[[bool], None] | None) -> None:
+        """Register a callback for when the tracked person becomes readable, or stops being.
+
+        The pose classifier needs the skeleton to be complete enough to judge: joints
+        wildly outside the frame, guessed anchors or a collapsed torso make the frame
+        unreadable, and no pose event is emitted while it stays that way. Becoming
+        readable is reported at once, losing it only when it holds.
+
+        Args:
+            callback (Callable[[bool], None]): Function to call with True when the tracked
+                person's pose can be read, False when it cannot. None to unregister.
+        """
+        self._register_callback("readable", callback)
+
+    @property
+    def readable(self) -> bool:
+        """Whether the tracked person's pose can be read right now."""
+        return self._readable
+
+    @property
+    def people_count(self) -> int:
+        """How many people are in view right now, the value `on_count_change` last reported."""
+        return self._person_count
+
     def set_confidence(self, confidence: float) -> None:
         """Change the minimum detection score for a person, effective immediately.
 
@@ -274,7 +336,65 @@ class PoseEstimation:
         if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not 0.0 <= float(confidence) <= 1.0:
             raise ValueError(f"confidence must be a number in [0.0, 1.0], got {confidence!r}")
         self._confidence = float(confidence)
-        logger.info(f"detection confidence set to {self._confidence}")
+        logger.debug(f"detection confidence set to {self._confidence}")
+
+    def set_draw_bboxes(self, draw_bboxes: bool) -> None:
+        """Show or hide each detected person's bounding box on the overlay, effective immediately.
+
+        Args:
+            draw_bboxes (bool): True to draw every detected person's bounding box on the
+                skeleton overlay served by the model runner, False to hide the boxes.
+
+        Raises:
+            ValueError: If draw_bboxes is not a boolean.
+        """
+        if not isinstance(draw_bboxes, bool):
+            raise ValueError(f"draw_bboxes must be a boolean, got {draw_bboxes!r}")
+        self._draw_bboxes = draw_bboxes
+        logger.debug(f"bbox overlay {'enabled' if draw_bboxes else 'disabled'}")
+
+    def set_draw_low_confidence_points(self, draw_low_confidence_points: bool) -> None:
+        """Show or hide low-confidence keypoints on the overlay, effective immediately.
+
+        Args:
+            draw_low_confidence_points (bool): True to mark low-confidence keypoints too, False for an
+                overlay that shows only the confident keypoints and connections.
+
+        Raises:
+            ValueError: If draw_low_confidence_points is not a boolean.
+        """
+        if not isinstance(draw_low_confidence_points, bool):
+            raise ValueError(f"draw_low_confidence_points must be a boolean, got {draw_low_confidence_points!r}")
+        self._draw_low_confidence_points = draw_low_confidence_points
+        logger.debug(f"uncertain keypoints overlay {'enabled' if draw_low_confidence_points else 'disabled'}")
+
+    def set_bbox_padding(self, padding: float | tuple[float, float, float, float]) -> None:
+        """Expand every reported and drawn bounding box, effective immediately.
+
+        The value passed replaces the current padding entirely.
+
+        Args:
+            padding (float | tuple[float, float, float, float]): CSS style: a single number
+                applies to all sides, a 4-tuple is (top, right, bottom, left). Top/bottom are
+                fractions of the box height, left/right of its width, each in [0.0, 1.0].
+
+        Raises:
+            ValueError: If padding is not a number in [0.0, 1.0] or a 4-tuple of them.
+        """
+        self._bbox_padding = self._validate_bbox_padding(padding)
+        top, right, bottom, left = self._bbox_padding
+        logger.debug(f"bbox padding set to top={top}, right={right}, bottom={bottom}, left={left}")
+
+    @staticmethod
+    def _validate_bbox_padding(padding: float | tuple[float, float, float, float]) -> tuple[float, float, float, float]:
+        """Normalize a CSS-style padding value to a (top, right, bottom, left) tuple."""
+        values = padding if isinstance(padding, (tuple, list)) else (padding, padding, padding, padding)
+        if len(values) != 4:
+            raise ValueError(f"padding must be a number or a (top, right, bottom, left) tuple, got {padding!r}")
+        for value in values:
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0.0 <= float(value) <= 1.0:
+                raise ValueError(f"padding values must be numbers in [0.0, 1.0], got {value!r}")
+        return tuple(float(value) for value in values)
 
     def on_frame(self, callback: Callable[[np.ndarray], None] | None) -> None:
         """Register a callback that receives each raw camera frame.
@@ -364,11 +484,21 @@ class PoseEstimation:
         while self._is_running:
             try:
                 async with websockets.connect(self._ws_send_url) as ws:
-                    sent_confidence: float | None = None
+                    sent_config: dict | None = None
                     while self._is_running:
-                        if self._confidence != sent_confidence:
-                            await ws.send(json.dumps({"config": {"min_person_score": self._confidence}}))
-                            sent_confidence = self._confidence
+                        top, right, bottom, left = self._bbox_padding
+                        config = {
+                            "min_person_score": self._confidence,
+                            "draw_bboxes": self._draw_bboxes,
+                            "draw_low_confidence_points": self._draw_low_confidence_points,
+                            "bbox_padding_top": top,
+                            "bbox_padding_right": right,
+                            "bbox_padding_bottom": bottom,
+                            "bbox_padding_left": left,
+                        }
+                        if config != sent_config:
+                            await ws.send(json.dumps({"config": config}))
+                            sent_config = config
                         try:
                             frame = await asyncio.get_event_loop().run_in_executor(None, self._camera_frame_queue.get, True, 0.1)
                         except queue.Empty:
@@ -430,16 +560,27 @@ class PoseEstimation:
 
         # Dispatch person enter/exit events, debounced to filter out detection flicker
         present = count > 0
-        if present != self._person_present and (now - self._presence_change_ts) >= self._debounce_sec:
-            self._person_present = present
-            self._presence_change_ts = now
-            self._submit_callback("enter" if present else "exit")
+        if present == self._person_present:
+            self._presence_since = None
+        else:
+            if self._presence_since is None:
+                self._presence_since = now
+            if present or (now - self._presence_since) >= self._count_debounce_sec:
+                self._person_present = present
+                self._presence_since = None
+                self._submit_callback("enter" if present else "exit")
 
         # Dispatch people count change events, debounced as well
-        if count != self._person_count and (now - self._count_change_ts) >= self._debounce_sec:
-            self._person_count = count
-            self._count_change_ts = now
-            self._submit_callback("count", count)
+        if count == self._person_count:
+            self._count_candidate = None
+        else:
+            if self._count_candidate != count:
+                self._count_candidate = count
+                self._count_since = now
+            if count > self._person_count or (now - self._count_since) >= self._count_debounce_sec:
+                self._person_count = count
+                self._count_candidate = None
+                self._submit_callback("count", count)
 
         # Dispatch keypoint events (not debounced: they are the raw detection stream)
         if people:
@@ -460,6 +601,8 @@ class PoseEstimation:
             probs = self._classify_person(tracked)
             self._pose_last_probs = probs
 
+        self._update_readable(probs is not None, now)
+
         events = self._pose_ema.update(probs, dt, person_present=bool(people))
         if not events:
             return
@@ -479,6 +622,18 @@ class PoseEstimation:
                     bounding_box_xyxy=bbox,
                 ),
             )
+
+    def _update_readable(self, readable: bool, now: float) -> None:
+        """Dispatch readability changes: gained at once, lost only when it holds."""
+        if readable == self._readable:
+            self._readable_since = None
+            return
+        if self._readable_since is None:
+            self._readable_since = now
+        if readable or (now - self._readable_since) >= _UNREADABLE_HOLD_SEC:
+            self._readable = readable
+            self._readable_since = None
+            self._submit_callback("readable", readable)
 
     @staticmethod
     def _box_area(box: tuple[int, int, int, int]) -> int:
@@ -516,8 +671,8 @@ class PoseEstimation:
             return None
         if self._frame_hw is not None:
             frame_h, frame_w = self._frame_hw
-            margin_x = OUT_OF_FRAME_TOLERANCE * frame_w
-            margin_y = OUT_OF_FRAME_TOLERANCE * frame_h
+            margin_x = self._out_of_frame_tolerance * frame_w
+            margin_y = self._out_of_frame_tolerance * frame_h
             for name in EMBEDDING_JOINTS:
                 keypoint = person.keypoints[name]
                 if not (-margin_x <= keypoint.x <= frame_w + margin_x and -margin_y <= keypoint.y <= frame_h + margin_y):
