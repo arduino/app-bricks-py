@@ -170,7 +170,7 @@ class TLSCertificateManager:
         organization_name: str,
         common_name: str,
         validity_days: int,
-    ):
+    ) -> None:
         # Generate a private key
         private_key = rsa.generate_private_key(
             public_exponent=65537,

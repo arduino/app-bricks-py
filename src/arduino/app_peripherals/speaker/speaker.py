@@ -2,6 +2,8 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+from typing import Any
+
 import numpy as np
 
 from .base_speaker import BaseSpeaker, FormatPlain, FormatPacked
@@ -103,7 +105,7 @@ class Speaker:
         channels: int = CHANNELS_MONO,
         format: FormatPlain | FormatPacked = np.int16,
         buffer_size: int = BUFFER_SIZE_BALANCED,
-        **kwargs,
+        **kwargs: Any,
     ) -> BaseSpeaker:
         """
         Create a speaker instance based on the device type.
@@ -196,7 +198,7 @@ class Speaker:
         channels: int,
         format: FormatPlain | FormatPacked,
         device: str | int = 0,
-    ):
+    ) -> None:
         """
         Play raw PCM audio data.
 
@@ -229,7 +231,7 @@ class Speaker:
             speaker.play_pcm(pcm_audio)
 
     @staticmethod
-    def play_wav(wav_audio: np.ndarray, device: str | int = 0):
+    def play_wav(wav_audio: np.ndarray, device: str | int = 0) -> None:
         """
         Play audio from WAV format data.
         Note: Only uncompressed PCM WAV files are supported.
@@ -293,7 +295,7 @@ def _create_speaker(
     channels: int,
     format: FormatPlain | FormatPacked,
     buffer_size: int,
-    **kwargs,
+    **kwargs: Any,
 ) -> BaseSpeaker:
     """Create the speaker implementation matching the given device identifier."""
     from .alsa_speaker import ALSASpeaker  # Imported here to avoid circular dependency

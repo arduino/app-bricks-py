@@ -2,7 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-from typing import List
 
 import numpy as np
 
@@ -12,9 +11,9 @@ from utils.image_processing import compute_vector_rotation
 
 
 def compute_object_roi(
-    batched_selected_boxes: List[np.ndarray],
-    batched_selected_keypoints: List[np.ndarray],
-) -> List[np.ndarray]:
+    batched_selected_boxes: list[np.ndarray],
+    batched_selected_keypoints: list[np.ndarray],
+) -> list[np.ndarray]:
     """
     From the provided bounding boxes and keypoints, compute the region of interest (ROI) that should be used
     as input to the landmark detection model.
@@ -56,7 +55,7 @@ def compute_object_roi(
 
     The behavior for the "empty" case mirrors the original (returns a 1-D empty array).
     """
-    batched_selected_roi: List[np.ndarray] = []
+    batched_selected_roi: list[np.ndarray] = []
 
     # If you're on Python < 3.10, remove `strict=False`
     for boxes, keypoints in zip(batched_selected_boxes, batched_selected_keypoints, strict=False):

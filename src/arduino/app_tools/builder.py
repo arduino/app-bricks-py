@@ -86,11 +86,11 @@ def run_preprocessing(dev_mode: bool = False) -> None:
             sys.path.remove(project_root)
 
 
-def build_wheel(wheel_directory, config_settings=None, metadata_directory=None):
+def build_wheel(wheel_directory: str, config_settings: dict | None = None, metadata_directory: str | None = None) -> str:
     return _orig_build_wheel(wheel_directory, config_settings, metadata_directory)
 
 
-def build_sdist(sdist_directory, config_settings=None):
+def build_sdist(sdist_directory: str, config_settings: dict | None = None) -> str:
     dev_mode = False
     if config_settings and "build_type" in config_settings:
         dev_mode = config_settings["build_type"] == "dev"
@@ -98,13 +98,13 @@ def build_sdist(sdist_directory, config_settings=None):
     return _orig_build_sdist(sdist_directory, config_settings)
 
 
-def build_editable(editable_build_directory, config_settings=None, metadata_directory=None):
+def build_editable(editable_build_directory: str, config_settings: dict | None = None, metadata_directory: str | None = None) -> str:
     return _orig_build_editable(editable_build_directory, config_settings, metadata_directory)
 
 
-def get_requires_for_build_editable(config_settings=None):
+def get_requires_for_build_editable(config_settings: dict | None = None) -> list[str]:
     return _orig_get_requires_for_build_editable(config_settings)
 
 
-def prepare_metadata_for_build_editable(metadata_directory, config_settings=None):
+def prepare_metadata_for_build_editable(metadata_directory: str, config_settings: dict | None = None) -> str:
     return _orig_prepare_metadata_for_build_editable(metadata_directory, config_settings)

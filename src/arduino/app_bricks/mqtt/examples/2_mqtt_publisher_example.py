@@ -13,7 +13,7 @@ client = MQTT(broker_address="127.0.0.1", broker_port=1883, username="admin", pa
 App.start_brick(client)
 
 
-def keep_publishing():
+def keep_publishing() -> None:
     client.publish("test/topic", "Hello Arduino")
     time.sleep(5)
 

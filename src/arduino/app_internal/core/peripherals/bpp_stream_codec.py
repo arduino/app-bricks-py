@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import struct
-from typing import Iterator
+from collections.abc import Iterator
 
 from .bpp_codec import BPPCodec
 
@@ -27,7 +27,7 @@ class BPPStreamCodec:
     - BPP Packet: The actual BPP-encoded packet as per BPPCodec.
     """
 
-    def __init__(self, codec: BPPCodec):
+    def __init__(self, codec: BPPCodec) -> None:
         self.codec = codec
         self._buffer = bytearray()
 

@@ -30,7 +30,7 @@ class USBCamera:
         fps: int = 10,
         compression: bool = False,
         letterbox: bool = False,
-    ):
+    ) -> None:
         """Initialize the USB camera.
 
         Args:
@@ -80,14 +80,14 @@ class USBCamera:
             return None
         return frame.tobytes()
 
-    def start(self):
+    def start(self) -> None:
         """Starts the camera capture."""
         self._wrapped_camera.start()
 
-    def stop(self):
+    def stop(self) -> None:
         """Stops the camera and releases its resources."""
         self._wrapped_camera.stop()
 
-    def produce(self):
+    def produce(self) -> Image.Image | None:
         """Alias for capture method."""
         return self.capture()

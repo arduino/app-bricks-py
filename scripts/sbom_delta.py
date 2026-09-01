@@ -15,7 +15,7 @@ import re
 import shutil
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any
 
@@ -372,8 +372,8 @@ def build_delta_report(
     added, updated, removed = compute_delta(base_sbom_path, full_sbom_path)
     print_delta_summary(added, updated, removed)
 
-    now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-    doc_namespace = f"https://arduino.cc/sbom/delta/{name}-{version}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
+    now = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    doc_namespace = f"https://arduino.cc/sbom/delta/{name}-{version}-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}"
 
     container_spdxid = "SPDXRef-Container"
     seen_ids: set[str] = {"SPDXRef-DOCUMENT", container_spdxid}

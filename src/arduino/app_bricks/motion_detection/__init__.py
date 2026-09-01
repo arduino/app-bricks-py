@@ -7,7 +7,7 @@ import queue
 import inspect
 import numpy as np
 import time
-from typing import Iterable, Tuple
+from collections.abc import Iterable
 from arduino.app_internal.core import EdgeImpulseRunnerFacade
 from arduino.app_utils import brick, Logger, SlidingWindowBuffer
 
@@ -18,7 +18,7 @@ logger = Logger("MotionDetection")
 class MotionDetection(EdgeImpulseRunnerFacade):
     """This Motion Detection module classifies motion patterns using accelerometer data."""
 
-    def __init__(self, confidence: float = 0.4):
+    def __init__(self, confidence: float = 0.4) -> None:
         """Initialize the MotionDetection module.
 
         Args:
@@ -43,13 +43,13 @@ class MotionDetection(EdgeImpulseRunnerFacade):
 
         self._buffer = SlidingWindowBuffer(window_size=model_info.input_features_count, slide_amount=int(model_info.input_features_count))
 
-    def start(self):
+    def start(self) -> None:
         self._buffer.flush()
 
-    def stop(self):
+    def stop(self) -> None:
         self._buffer.flush()
 
-    def on_movement_detection(self, movement: str, callback: callable):
+    def on_movement_detection(self, movement: str, callback: callable) -> None:
         """Register a callback function to be invoked when a specific motion pattern is detected.
 
         Args:
@@ -61,7 +61,7 @@ class MotionDetection(EdgeImpulseRunnerFacade):
                 logger.warning(f"Handler for movement '{movement}' already exists. Overwriting.")
             self._handlers[movement] = callback
 
-    def accumulate_samples(self, accelerometer_samples: Tuple[float, float, float]):
+    def accumulate_samples(self, accelerometer_samples: tuple[float, float, float]) -> None:
         """Accumulate accelerometer samples for motion detection.
 
         Args:
@@ -81,7 +81,7 @@ class MotionDetection(EdgeImpulseRunnerFacade):
             self._external_notification_queue.get_nowait()
         self._external_notification_queue.put_nowait(accelerometer_samples)
 
-    def get_sensor_samples(self) -> Iterable[Tuple[float, float, float]]:
+    def get_sensor_samples(self) -> Iterable[tuple[float, float, float]]:
         """Get the current sensor samples.
 
         Returns:
@@ -93,7 +93,7 @@ class MotionDetection(EdgeImpulseRunnerFacade):
                 continue
             yield acquired_samples
 
-    def _movement_spotted(self, item: dict) -> Tuple[str, float, dict] | None:
+    def _movement_spotted(self, item: dict) -> tuple[str, float, dict] | None:
         """Verify if a movement has been spotted.
 
         Args:
@@ -126,7 +126,7 @@ class MotionDetection(EdgeImpulseRunnerFacade):
         return detected_class, detected_class_confidence, classification_dict
 
     @brick.loop
-    def _detection_loop(self):
+    def _detection_loop(self) -> None:
         """Main loop for motion detection, processing sensor data and invoking callbacks when movements are detected."""
         features = self._buffer.pull()
         if features is None or len(features) == 0:

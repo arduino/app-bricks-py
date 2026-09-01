@@ -4,9 +4,10 @@
 
 import time
 import threading
-from typing import Literal
+from types import TracebackType
+from typing import Literal, Self
 from abc import ABC, abstractmethod
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
@@ -37,7 +38,7 @@ class BaseMicrophone(ABC):
         format: FormatPlain | FormatPacked,
         buffer_size: int,
         auto_reconnect: bool,
-    ):
+    ) -> None:
         """
         Initialize the microphone base.
 
@@ -120,7 +121,7 @@ class BaseMicrophone(ABC):
         return int(self._volume * 100)
 
     @volume.setter
-    def volume(self, volume: int):
+    def volume(self, volume: int) -> None:
         if not (0 <= volume <= 100):
             raise ValueError("Volume must be between 0 and 100.")
 
@@ -217,7 +218,7 @@ class BaseMicrophone(ABC):
 
             return audio_chunk
 
-    def stream(self):
+    def stream(self) -> Iterator[np.ndarray]:
         """
         Continuously capture audio chunks from the microphone.
 
@@ -238,7 +239,7 @@ class BaseMicrophone(ABC):
         """Check if the microphone is started."""
         return self._is_started
 
-    def on_status_changed(self, callback: Callable[[str, dict], None] | None):
+    def on_status_changed(self, callback: Callable[[str, dict], None] | None) -> None:
         """Registers or removes a callback to be triggered on microphone lifecycle events.
 
         When a microphone status changes, the provided callback function will be invoked.
@@ -267,7 +268,7 @@ class BaseMicrophone(ABC):
             self._on_status_changed_cb = None
         else:
 
-            def _callback_wrapper(new_status: str, data: dict):
+            def _callback_wrapper(new_status: str, data: dict) -> None:
                 try:
                     callback(new_status, data)
                 except Exception as e:
@@ -493,12 +494,12 @@ class BaseMicrophone(ABC):
             if self._on_status_changed_cb is not None:
                 self._event_executor.submit(self._on_status_changed_cb, new_status, data if data is not None else {})
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
         """Context manager entry."""
         self.start()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> None:
         """Context manager exit."""
         self.stop()
 

@@ -14,7 +14,6 @@ import glob
 import shutil
 import time
 from urllib.parse import urlparse
-from typing import List, Dict, Optional
 from arduino.app_internal.core.module import (
     _update_compose_release_version_by_platform,
     EnvVariable,
@@ -46,32 +45,32 @@ class ArduinoBrick:
         category: str = "miscellaneous",
         mount_devices_into_container: bool = False,
         requires_display: str = None,
-        required_device_classes: List[str] = None,
-        env_variables: Dict[str, str] = None,
-        supported_boards: List[str] = None,
-        requires_services: List[str] = None,
-        ai_frameworks_compatibility: List[str] = None,
-        model_by_boards: List[Dict[str, str]] = None,
-        model_configuration_variables: List[str] = None,
-    ):
+        required_device_classes: list[str] = None,
+        env_variables: dict[str, str] = None,
+        supported_boards: list[str] = None,
+        requires_services: list[str] = None,
+        ai_frameworks_compatibility: list[str] = None,
+        model_by_boards: list[dict[str, str]] = None,
+        model_configuration_variables: list[str] = None,
+    ) -> None:
         self.id = id
         self.name = name
         self.brick_description = brick_description
         self.ports = ports
         self.path = fs_path
-        self.compose_file: Optional[str] = self.get_compose_file()
-        self.readme_file: Optional[str] = self.get_readme_file()
+        self.compose_file: str | None = self.get_compose_file()
+        self.readme_file: str | None = self.get_readme_file()
         self.model_name: str = model_name
         self.category = category
         self.mount_devices_into_container: bool = mount_devices_into_container
-        self.requires_display: Optional[str] = requires_display
-        self.required_device_classes: Optional[List[str]] = required_device_classes
-        self.env_variables: Optional[Dict[str, str]] = env_variables
-        self.supported_boards: Optional[List[str]] = supported_boards
-        self.requires_services: Optional[List[str]] = requires_services
-        self.ai_frameworks_compatibility: Optional[List[str]] = ai_frameworks_compatibility
-        self.model_by_boards: Optional[List[Dict[str, str]]] = model_by_boards
-        self.model_configuration_variables: Optional[List[str]] = model_configuration_variables
+        self.requires_display: str | None = requires_display
+        self.required_device_classes: list[str] | None = required_device_classes
+        self.env_variables: dict[str, str] | None = env_variables
+        self.supported_boards: list[str] | None = supported_boards
+        self.requires_services: list[str] | None = requires_services
+        self.ai_frameworks_compatibility: list[str] | None = ai_frameworks_compatibility
+        self.model_by_boards: list[dict[str, str]] | None = model_by_boards
+        self.model_configuration_variables: list[str] | None = model_configuration_variables
 
     def to_dict(self) -> dict:
         out_dict: dict = {
@@ -99,7 +98,7 @@ class ArduinoBrick:
         if self.model_configuration_variables:
             out_dict["model_configuration_variables"] = self.model_configuration_variables
         if self.env_variables and len(self.env_variables) > 0:
-            additional_vars: List[EnvVariable] = []
+            additional_vars: list[EnvVariable] = []
             for var in self.env_variables:
                 name = var.get("name")
                 description = var.get("description", "")
@@ -113,19 +112,19 @@ class ArduinoBrick:
                 out_dict["variables"] = [var.to_dict() for var in additional_vars]
         return out_dict
 
-    def get_compose_file(self) -> Optional[str]:
+    def get_compose_file(self) -> str | None:
         compose_file: pathlib.Path = pathlib.Path(self.path) / compose_config_file_name
         if compose_file.is_file():
             return str(compose_file)
         return None
 
-    def get_readme_file(self) -> Optional[str]:
+    def get_readme_file(self) -> str | None:
         readme_file: pathlib.Path = pathlib.Path(self.path) / main_readme_file_name
         if readme_file.is_file():
             return str(readme_file)
         return None
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"Name: {self.name}\nDescription: {self.brick_description}\nPath: {self.path}\nCompose file: {self.get_compose_file()}\n"
 
 
@@ -137,18 +136,18 @@ class ArduinoService:
         brick_description: str,
         fs_path: str,
         category: str = "miscellaneous",
-        env_variables: Dict[str, str] = None,
-        supported_boards: List[str] = None,
+        env_variables: dict[str, str] = None,
+        supported_boards: list[str] = None,
         root_path: str = None,
-    ):
+    ) -> None:
         self.service_id = service_id
         self.name = name
         self.brick_description = brick_description
         self.path = fs_path
-        self.compose_file: Optional[str] = self.get_compose_file()
+        self.compose_file: str | None = self.get_compose_file()
         self.category = category
-        self.env_variables: Optional[Dict[str, str]] = env_variables
-        self.supported_boards: Optional[List[str]] = supported_boards
+        self.env_variables: dict[str, str] | None = env_variables
+        self.supported_boards: list[str] | None = supported_boards
         self.root_path = root_path
 
     def to_dict(self) -> dict:
@@ -164,7 +163,7 @@ class ArduinoService:
             out_dict["root_path"] = self.root_path
 
         if self.env_variables and len(self.env_variables) > 0:
-            additional_vars: List[EnvVariable] = []
+            additional_vars: list[EnvVariable] = []
             for var in self.env_variables:
                 name = var.get("name")
                 description = var.get("description", "")
@@ -178,17 +177,17 @@ class ArduinoService:
                 out_dict["variables"] = [var.to_dict() for var in additional_vars]
         return out_dict
 
-    def get_compose_file(self) -> Optional[str]:
+    def get_compose_file(self) -> str | None:
         compose_file: pathlib.Path = pathlib.Path(self.path) / compose_config_file_name
         if compose_file.is_file():
             return str(compose_file)
         return None
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"Name: {self.name}\nDescription: {self.brick_description}\nPath: {self.path}\nCompose file: {self.get_compose_file()}\n"
 
 
-def find_config_yaml(root_path: str) -> tuple[List[ArduinoBrick], List[ArduinoService]]:
+def find_config_yaml(root_path: str) -> tuple[list[ArduinoBrick], list[ArduinoService]]:
     """Scans all subfolders within the given root_path to find 'config.yaml'.
 
     Args:
@@ -197,8 +196,8 @@ def find_config_yaml(root_path: str) -> tuple[List[ArduinoBrick], List[ArduinoSe
     Returns:
         list: A list of paths to directories that contain 'config.yaml'.
     """
-    discovered_modules: List[ArduinoBrick] = []
-    discovered_services: List[ArduinoService] = []
+    discovered_modules: list[ArduinoBrick] = []
+    discovered_services: list[ArduinoService] = []
     root_path_obj: pathlib.Path = pathlib.Path(root_path)
 
     if not root_path_obj.is_dir():
@@ -270,7 +269,7 @@ def find_config_yaml(root_path: str) -> tuple[List[ArduinoBrick], List[ArduinoSe
                     logger.error(f"Error: {service_config_file} is not a valid YAML file.")
             elif editable_module.is_file():
                 try:
-                    with open(editable_module, "r") as editable_module_cfg:
+                    with open(editable_module) as editable_module_cfg:
                         content: dict = json.load(editable_module_cfg)
                         if "url" in content and "dir_info" in content:
                             editable_c: dict = content["dir_info"]
@@ -297,13 +296,13 @@ def find_config_yaml(root_path: str) -> tuple[List[ArduinoBrick], List[ArduinoSe
     return discovered_modules, discovered_services
 
 
-def list_installed_packages_pkg_resources() -> tuple[Dict[str, List[ArduinoBrick]], str]:
+def list_installed_packages_pkg_resources() -> tuple[dict[str, list[ArduinoBrick]], str]:
     """List all installed packages and find those containing 'brick_config.yaml'.
     Returns a dictionary where keys are package paths and values are lists of ArduinoBrick instances.
     """
     start = time.time() * 1000
-    checked_paths: Dict[str, List[ArduinoBrick]] = {}
-    checked_svc_paths: Dict[str, List[ArduinoService]] = {}
+    checked_paths: dict[str, list[ArduinoBrick]] = {}
+    checked_svc_paths: dict[str, list[ArduinoService]] = {}
 
     # Check standard site-packages and user site-packages directories
     paths = set(site.getsitepackages())
@@ -348,7 +347,7 @@ def list_installed_packages_pkg_resources() -> tuple[Dict[str, List[ArduinoBrick
     return checked_paths, services_folder
 
 
-def save_compose_file(module: ArduinoBrick, output_dir: str, appslab_version: str):
+def save_compose_file(module: ArduinoBrick, output_dir: str, appslab_version: str) -> None:
     """Save the compose file to the specified output directory."""
     if not module.compose_file:
         return
@@ -384,7 +383,7 @@ def save_compose_file(module: ArduinoBrick, output_dir: str, appslab_version: st
             _update_compose_release_version_by_platform(compose_file_path=output_file_name, release_version=appslab_version)
 
 
-def save_readme_file(module: ArduinoBrick, output_dir: str):
+def save_readme_file(module: ArduinoBrick, output_dir: str) -> None:
     """Save the readme file to the specified output directory."""
     if not module.readme_file:
         return
@@ -404,12 +403,12 @@ def save_readme_file(module: ArduinoBrick, output_dir: str):
             f_dest.write(chunk)
 
 
-def save_api_docs_files(output_dir: str):
+def save_api_docs_files(output_dir: str) -> None:
     """Save the API docs files to the specified output directory."""
     shutil.copytree("docs/", output_dir, dirs_exist_ok=True)
 
 
-def save_services_files(services_folder: str, output_dir: str):
+def save_services_files(services_folder: str, output_dir: str) -> None:
     """Save the services files to the specified output directory."""
     print(f"Saving services files from {services_folder} to {output_dir}...")
     if not services_folder:
@@ -419,11 +418,11 @@ def save_services_files(services_folder: str, output_dir: str):
 
 def library_provisioning(
     out_path: str = None,
-    modules: Dict[str, List[ArduinoBrick]] = None,
+    modules: dict[str, list[ArduinoBrick]] = None,
     services_folder: str = None,
     buildtime: bool = False,
     arduino_bricks_version: str = None,
-):
+) -> None:
     print(f"Provisioning compose files. File: {out_path} | Buildtime: {buildtime} | Version: {arduino_bricks_version}")
 
     compose_output_dir = f"{out_path}/compose"
@@ -452,7 +451,7 @@ def library_provisioning(
             # Update models-handlers.yaml container versions with arduino_bricks_version
             models_handlers_file = os.path.join(out_path, "models-handlers.yaml")
             if os.path.isfile(models_handlers_file):
-                with open(models_handlers_file, "r") as f:
+                with open(models_handlers_file) as f:
                     content = f.read()
                 updated_content = re.sub(
                     r"models-downloader:[^ \"'\n]+",
@@ -463,7 +462,7 @@ def library_provisioning(
                     f.write(updated_content)
 
 
-def release():
+def release() -> None:
     discovered_modules, services_folder = list_installed_packages_pkg_resources()
 
     parser = argparse.ArgumentParser(description="Process AppLab modules release.")
@@ -541,7 +540,7 @@ def release():
         print(mod_string)
 
 
-def update_ai_container_references():
+def update_ai_container_references() -> None:
     discovered_modules, services_folder = list_installed_packages_pkg_resources()
 
     parser = argparse.ArgumentParser(description="Update AI container references.")
@@ -576,7 +575,7 @@ def update_ai_container_references():
                 )
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Process AppLab modules.")
 
     parser.add_argument("-p", "--provision-compose", action="store_true", help="Provision compose files for app execution.")

@@ -14,7 +14,7 @@ from .errors import CameraOpenError
 from .utils import resolve_camera_name
 
 
-def _iowr(type_char, nr, size):
+def _iowr(type_char: str, nr: int, size: int) -> int:
     return (3 << 30) | (size << 16) | (ord(type_char) << 8) | nr
 
 
@@ -112,7 +112,7 @@ class MediaDeviceInfo(ctypes.Structure):
 MEDIA_IOC_DEVICE_INFO = _iowr("|", 0x00, ctypes.sizeof(MediaDeviceInfo))
 
 
-def get_media_device_info(path) -> MediaDeviceInfo:
+def get_media_device_info(path: str) -> MediaDeviceInfo:
     """Return MediaDeviceInfo for a /dev/mediaX node."""
     fd = os.open(path, os.O_RDONLY)
     try:
@@ -123,7 +123,7 @@ def get_media_device_info(path) -> MediaDeviceInfo:
         os.close(fd)
 
 
-def find_camss_media_device(expected_driver="qcom-camss") -> str:
+def find_camss_media_device(expected_driver: str = "qcom-camss") -> str:
     """Return the media device driven by qcom-camss."""
     for path in sorted(glob.glob("/dev/media*")):
         try:

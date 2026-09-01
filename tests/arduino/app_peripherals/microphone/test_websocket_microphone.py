@@ -433,11 +433,11 @@ class TestWebSocketClientEvents:
 
         try:
             await asyncio.wait_for(connected.wait(), timeout=5.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pytest.fail("Connection event was not emitted within timeout")
         try:
             await asyncio.wait_for(disconnected.wait(), timeout=5.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pytest.fail("Disconnection event was not emitted within timeout")
 
         await client  # Ensure client task is finished and check for errors

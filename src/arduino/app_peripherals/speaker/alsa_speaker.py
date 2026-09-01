@@ -5,7 +5,6 @@
 import os
 import re
 import time
-from typing import Optional
 
 import alsaaudio
 import numpy as np
@@ -36,7 +35,7 @@ class ALSASpeaker(BaseSpeaker):
         buffer_size: int = Speaker.BUFFER_SIZE_BALANCED,
         shared: bool = True,
         auto_reconnect: bool = True,
-    ):
+    ) -> None:
         """
         Initialize ALSA speaker.
 
@@ -86,7 +85,7 @@ class ALSASpeaker(BaseSpeaker):
         self.shared = shared
         self.logger = logger
 
-        self._pcm: Optional[alsaaudio.PCM] = None
+        self._pcm: alsaaudio.PCM | None = None
 
         self._last_reconnection_attempt = 0.0  # Used for auto-reconnection when _write_audio is called
 
@@ -455,7 +454,7 @@ class ALSASpeaker(BaseSpeaker):
             finally:
                 self._pcm = None
 
-    def _write_audio(self, audio_chunk: np.ndarray):
+    def _write_audio(self, audio_chunk: np.ndarray) -> None:
         """
         Write a single audio chunk to the ALSA speaker.
 

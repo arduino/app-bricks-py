@@ -5,6 +5,8 @@
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 
+from typing import Any
+
 from arduino.app_bricks.cloud_llm import CloudLLM, CloudModelProvider
 from arduino.app_bricks.cloud_llm.cloud_llm import DEFAULT_MEMORY, ToolLike
 from arduino.app_bricks.cloud_llm.memory import MessagePersistence
@@ -12,7 +14,7 @@ from arduino.app_utils import Logger, brick
 from arduino.app_internal.core import resolve_address, get_brick_config, get_brick_configured_model
 
 from openai import OpenAI, APIError, BadRequestError
-from typing import Iterator, List, Optional, Union, Sequence
+from collections.abc import Iterator, Sequence
 
 logger = Logger("LargeLanguageModel")
 
@@ -34,13 +36,13 @@ class LargeLanguageModel(CloudLLM):
     def __init__(
         self,
         system_prompt: str = "",
-        temperature: Optional[float] = 0.7,
+        temperature: float | None = 0.7,
         max_tokens: int = 512,
-        timeout: Optional[int] = None,
-        tools: Optional[Sequence[ToolLike]] = None,
-        model: Optional[str] = None,
-        **kwargs,
-    ):
+        timeout: int | None = None,
+        tools: Sequence[ToolLike] | None = None,
+        model: str | None = None,
+        **kwargs: Any,
+    ) -> None:
         """Initializes the LargeLanguageModel brick with the specified provider and configuration.
 
         Args:
@@ -135,7 +137,7 @@ class LargeLanguageModel(CloudLLM):
                 + " Please download the model or configure it correctly."
             )
 
-    def list_models(self) -> List[str]:
+    def list_models(self) -> list[str]:
         """Returns a list of supported local model identifiers.
 
         Note: LargeLanguageModel supports OpenAI-compatible API. This method uses the OpenAI client to query available models from the local server.
@@ -157,7 +159,7 @@ class LargeLanguageModel(CloudLLM):
     def with_memory(
         self,
         max_messages: int = DEFAULT_MEMORY,
-        persistence: Union[bool, MessagePersistence, None] = None,
+        persistence: bool | MessagePersistence | None = None,
     ) -> "LargeLanguageModel":
         """Enables conversational memory for this instance.
 
@@ -255,7 +257,7 @@ class LargeLanguageModel(CloudLLM):
         except (BadRequestError, APIError) as e:
             self._handle_api_error(logger, e)
 
-    def chat(self, message: str, images: List[str | bytes] = None) -> str:
+    def chat(self, message: str, images: list[str | bytes] = None) -> str:
         """Sends a message to the AI and blocks until the complete response is received.
 
         This method automatically manages conversation history if memory is enabled.
@@ -283,7 +285,7 @@ class LargeLanguageModel(CloudLLM):
         except (BadRequestError, APIError) as e:
             self._handle_api_error(logger, e)
 
-    def chat_stream(self, message: str, images: List[str | bytes] = None) -> Iterator[str]:
+    def chat_stream(self, message: str, images: list[str | bytes] = None) -> Iterator[str]:
         """Sends a message to the AI and yields response tokens as they are generated.
 
         This allows for processing or displaying the response in real-time (streaming).

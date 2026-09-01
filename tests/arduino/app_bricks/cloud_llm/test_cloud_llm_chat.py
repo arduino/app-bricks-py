@@ -57,8 +57,7 @@ class FakeChatModel:
 
     def stream(self, input, config=None):
         self.stream_inputs.append(list(input))
-        for chunk in self._stream_queue.pop(0):
-            yield chunk
+        yield from self._stream_queue.pop(0)
 
 
 def _text_chunk(text: str) -> SimpleNamespace:

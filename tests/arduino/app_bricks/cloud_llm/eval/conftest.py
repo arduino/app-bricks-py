@@ -6,7 +6,8 @@ from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor
 import json
 import glob
-from typing import cast, Callable
+from typing import cast
+from collections.abc import Callable
 import os
 import time
 import threading
@@ -51,7 +52,7 @@ def _load_cases() -> list[dict]:
     cases: list[dict] = []
     paths = sorted(p for p in glob.glob("tests/arduino/app_bricks/cloud_llm/eval/cases/*.json") if not os.path.basename(p).startswith("_"))
     for path in paths:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             c = json.load(f)
             if isinstance(c, list):
                 cases.extend(c)

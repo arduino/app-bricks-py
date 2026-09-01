@@ -81,7 +81,7 @@ Contracts callers must honour:
 
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 
 import yaml
 
@@ -125,7 +125,7 @@ ORIGIN_USER_CONFIGURED = "user_configured"
 
 def utc_now_iso():
     """Return the current UTC time as a second-resolution ISO-8601 string ("...Z")."""
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def is_bookkeeping_name(name):
