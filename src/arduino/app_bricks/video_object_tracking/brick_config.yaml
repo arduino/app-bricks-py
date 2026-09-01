@@ -5,12 +5,20 @@ description: |
   It identifies and tracks objects, returning their predicted class labels and item counts.
   The output is a video stream featuring bounding boxes around tracked objects, enabling object count.
   It supports pre-trained models provided by the framework and custom object detection models trained on the Edge Impulse platform.
-requires_model: true
-mount_devices_into_container: true
 required_devices:
   - camera
 ai_frameworks_compatibility:
   - edgeimpulse  
 model: yolox-object-tracking
+supported_boards: ["ventunoq"]
 model_configuration_variables:
-  - EI_OBJ_TRACKING_MODEL
+  - EI_V_OBJ_TRACKING_MODEL
+variables:
+- name: CUSTOM_MODEL_PATH
+  description: Path to the custom model directory
+  hidden: true
+  default_value: /home/arduino/.arduino-bricks/ei-models
+- name: BIND_ADDRESS
+  description: Bind address
+  hidden: true
+  default_value: 0.0.0.0
