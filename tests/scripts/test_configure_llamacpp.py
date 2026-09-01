@@ -77,8 +77,11 @@ def test_e4b_pinned_to_two_sessions(name, gguf_gb, ctx_size):
     "name, gguf_gb, ctx_size, expected",
     [
         # Default profile: sized by GGUF size, the pins do not leak onto other models.
+        # The 4B models take 3 sessions since the September 2025 llama.cpp build: on 2,
+        # fastrpc_mmap fails on Qwen3.5-4B's second weights buffer at 8k and 16k alike.
         ("Qwen3.5-0.8B-Q4_0", 0.51, 16384, 1),
-        ("Qwen3.5-4B-Q4_0", 2.78, 16384, 2),
+        ("Qwen3-4B-2507-Q4_0", 2.38, 16384, 3),
+        ("Qwen3.5-4B-Q4_0", 2.78, 16384, 3),
         ("gemma-4-12b-it-Q4_0", 6.98, 16384, 4),
         # Small-context profile: the 1-session measurements still hold; everything bigger
         # takes all 4 sessions since the September 2025 llama.cpp build (Qwen3-8B fails to
@@ -113,10 +116,11 @@ def _install_models(monkeypatch, sizes_gb: dict[str, float]) -> dict[str, dict]:
 
 
 def test_detect_hexagon_ndev_does_not_trigger_the_context_cap(monkeypatch, capsys):
-    """The set of models from the ventunoq board needs 2 sessions, not 4.
+    """The set of models from the ventunoq board needs 3 sessions, not 4.
 
-    Four sessions is what makes run-model-router.sh cap the context to 4k, so pinning E4B to
-    two sessions has to keep the whole set below that threshold at the default context.
+    Four sessions is what makes run-model-router.sh cap the context to 4k, so the 4B bucket
+    (3 sessions since the September 2025 llama.cpp build) and the E4B pin have to keep the
+    whole set below that threshold at the default context.
     """
     models = _install_models(
         monkeypatch,
@@ -128,9 +132,10 @@ def test_detect_hexagon_ndev_does_not_trigger_the_context_cap(monkeypatch, capsy
         },
     )
 
-    assert detect_hexagon_ndev(models, 16384) == 2
+    assert detect_hexagon_ndev(models, 16384) == 3
 
     diagnostics = capsys.readouterr().err
+    assert "Qwen_Qwen3.5-4B-Q4_0: 2.78 GB, requires 3 sessions" in diagnostics
     assert "gemma-4-E2B_q4_0-it: 3.35 GB, pinned to 1 session" in diagnostics
     assert "gemma-4-E4B_q4_0-it: 5.15 GB, pinned to 2 sessions" in diagnostics
 

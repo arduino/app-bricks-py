@@ -44,8 +44,12 @@ GB = 1e9
 # on some models, which costs ~3% per token, rather than failing to load; models with a
 # known-good value should carry an explicit GGML_HEXAGON_DEVICES instead.
 
-# Default table, for the context sizes the service runs at out of the box.
-NDEV_BY_GGUF_GB = ((3.5, 4), (1.5, 2))
+# Default table, for the context sizes the service runs at out of the box. The September
+# 2025 llama.cpp build shrank the per-session mapping budget: Qwen3.5-4B-Q4_0 (2.78 GB)
+# no longer loads on 2 sessions — fastrpc_mmap fails on its second ~0.9 GiB weights buffer
+# at 8k and 16k alike — so the middle bucket takes 3 sessions. Still below the 4 that
+# trigger the context cap, so these models keep the full context.
+NDEV_BY_GGUF_GB = ((3.5, 4), (1.5, 3))
 
 # Small-context table. A 4k KV cache leaves far more room on the domains. It was
 # originally measured on a ventunoq board (every installed model loaded at 1..4 sessions
