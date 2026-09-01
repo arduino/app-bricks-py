@@ -66,7 +66,7 @@ def test_declared_gguf_files_extracts_llamacpp_locations():
 
 def test_gguf_model_name_stems_curated_and_recordless_files():
     # A curated download keeps the stem its fixed entry id uses.
-    assert gguf_model_name("google/gemma-gguf/gemma-Q4_0.gguf", {"model_origin": "builtin"}) == "gemma-Q4_0"
+    assert gguf_model_name("google/gemma-gguf/gemma-Q4_0.gguf", {"model_origin": "built_in"}) == "gemma-Q4_0"
     # No record at all: an out-of-the-box model — the fallback — keeps its stem too.
     assert gguf_model_name("google/gemma-gguf/gemma-Q4_0.gguf", None) == "gemma-Q4_0"
     # An unusable record (no origin, or not a mapping) degrades the same way.
@@ -74,8 +74,8 @@ def test_gguf_model_name_stems_curated_and_recordless_files():
     assert gguf_model_name("google/gemma-gguf/gemma-Q4_0.gguf", "junk") == "gemma-Q4_0"
 
 
-def test_gguf_model_name_user_configured_files_are_path_qualified():
-    record = {"model_origin": "user_configured"}
+def test_gguf_model_name_user_files_are_path_qualified():
+    record = {"model_origin": "user"}
     # Same file name as a curated model, different repository: not that model.
     assert gguf_model_name("bartowski/gemma-clone/gemma-Q4_0.gguf", record) == "bartowski/gemma-clone/gemma-Q4_0"
     assert gguf_model_name("TheBloke/Mistral-GGUF/mistral.Q4_0.gguf", record) == "TheBloke/Mistral-GGUF/mistral.Q4_0"

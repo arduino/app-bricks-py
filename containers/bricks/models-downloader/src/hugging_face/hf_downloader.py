@@ -104,7 +104,7 @@ from common.download_marker import MARKER_NAME, read_marker, write_marker
 from common.gguf_naming import catalog_gguf_declarations, declaration_covers, gguf_model_name
 from common.model_metadata import (
     ORIGIN_BUILTIN,
-    ORIGIN_USER_CONFIGURED,
+    ORIGIN_USER,
     file_record,
     identify_model,
     is_bookkeeping_name,
@@ -791,7 +791,7 @@ def fallback_model_id(model_type: str, downloaded: list[str], models_dir: str) -
         return None
     try:
         rel = Path(main_gguf).resolve().relative_to(Path(models_dir).resolve()).as_posix()
-        name = gguf_model_name(rel, {"model_origin": ORIGIN_USER_CONFIGURED})
+        name = gguf_model_name(rel, {"model_origin": ORIGIN_USER})
     except ValueError:  # not under models_dir: name it by its stem alone
         name = Path(main_gguf).stem
     # The key's model_type is the namespace when given; llamacpp is where GGUF models
@@ -929,7 +929,7 @@ def backfill_ootb_records(models_dir: Path, models_list_path: str = MODELS_LIST_
     with the OS image, or shipped on the models partition — and such an install has
     no record. The scan that regenerates models.ini backfills one by comparison with
     the catalog: a recordless file at a location a models-list.yaml entry declares is
-    that curated model, and gets a ``builtin`` record naming the entry, with the
+    that curated model, and gets a ``built_in`` record naming the entry, with the
     entry's variables as inputs — the record then reads as an install of the current
     catalog, and a future catalog change flags it outdated exactly like a downloaded
     model. A recordless file the catalog does not declare stays as it is: out of the

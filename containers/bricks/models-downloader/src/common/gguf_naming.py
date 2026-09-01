@@ -11,13 +11,13 @@ would all act on whichever file happened to win.
 
 ``gguf_model_name`` names a file by its ".arduino_metadata.yaml" download record:
 
-- A **user-configured** model (its record says ``model_origin: user_configured``) is
+- A **user-configured** model (its record says ``model_origin: user``) is
   named by its tree-relative path without the extension, which carries the repository
   (e.g. "unsloth/SmolLM2-GGUF/SmolLM2-Q4_K_M"). The name is unique by construction
   and stable for the whole life of the install — it never changes when a same-named
   file is downloaded from another repository, and an impostor named like a curated
   model can never answer to the curated name.
-- Everything else keeps the file stem: a **curated** download (``builtin`` record,
+- Everything else keeps the file stem: a **curated** download (``built_in`` record,
   whose fixed ``llamacpp:<stem>`` id models-list.yaml declares and installed apps
   reference), and a file with **no record at all** — an out-of-the-box model, since
   records only exist for downloaded models. That fallback is what names the models
@@ -38,7 +38,7 @@ exists, and tells the models.ini scan which recordless files are out-of-the-box
 models to backfill.
 """
 
-from common.model_metadata import ORIGIN_USER_CONFIGURED
+from common.model_metadata import ORIGIN_USER
 from common.models_list import MODELS_LIST_PATH, _iter_platform_variables, get_model_subdir, load_models_list
 
 GGUF_SUFFIX = ".gguf"
@@ -111,6 +111,6 @@ def gguf_model_name(rel_path, record):
     main model files: mmproj companions belong to the model in the same directory and
     never name one.
     """
-    if isinstance(record, dict) and record.get("model_origin") == ORIGIN_USER_CONFIGURED:
+    if isinstance(record, dict) and record.get("model_origin") == ORIGIN_USER:
         return rel_path[: -len(GGUF_SUFFIX)]
     return rel_path.rpartition("/")[2][: -len(GGUF_SUFFIX)]

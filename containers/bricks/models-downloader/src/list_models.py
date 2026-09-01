@@ -8,7 +8,7 @@ Reads models-list.yaml and checks whether each model with a deployment
 section is present under /models (or a custom base path). GGUF models found under
 /models/llamacpp that no entry declares are listed too, since any Hugging Face
 repository can be downloaded ad hoc; ``model_origin`` says which of the two a listed
-model is ("builtin" or "user_configured").
+model is ("built_in" or "user").
 
 Usage:
     python list_models.py
@@ -29,7 +29,7 @@ from common.download_marker import read_marker
 from common.gguf_naming import LLAMACPP_SUBDIR, declaration_covers, declared_gguf_files, gguf_basename, gguf_model_name
 from common.model_metadata import (
     ORIGIN_BUILTIN,
-    ORIGIN_USER_CONFIGURED,
+    ORIGIN_USER,
     file_record,
     is_bookkeeping_name,
     read_metadata,
@@ -398,7 +398,7 @@ def find_llamacpp_models(models_base_dir, declarations=()):
                 "handler": "llamacpp",
                 # Found on disk. main() overrides this when the id matches a
                 # models-list.yaml entry, which makes it a curated model instead.
-                "model_origin": ORIGIN_USER_CONFIGURED,
+                "model_origin": ORIGIN_USER,
                 "path": full_path,
                 "installed": not downloading,
                 "downloading": downloading,
@@ -426,7 +426,7 @@ def find_llamacpp_models(models_base_dir, declarations=()):
                 "id": f"llamacpp:{model_name}",
                 "name": model_name,
                 "handler": "llamacpp",
-                "model_origin": ORIGIN_USER_CONFIGURED,
+                "model_origin": ORIGIN_USER,
                 "path": root,
                 "installed": False,
                 "downloading": True,

@@ -215,7 +215,7 @@ def _gguf(path: Path) -> Path:
 
 def _write_records(directory: Path, *records):
     """A ".arduino_metadata.yaml" the way the models-downloader writes it."""
-    lines = ["records:"]
+    lines = ["models:"]
     for origin, files in records:
         lines.append(f"- model_origin: {origin}")
         lines.append(f"  files: [{', '.join(files)}]")
@@ -232,16 +232,16 @@ def test_a_file_without_a_record_keeps_its_stem(runner, tmp_path):
 def test_a_curated_download_keeps_its_stem(runner, tmp_path):
     repo = tmp_path / "google" / "gemma-4-E2B-it-qat-q4_0-gguf"
     gguf = _gguf(repo / "gemma-4-E2B_q4_0-it.gguf")
-    _write_records(repo, ("builtin", ["gemma-4-E2B_q4_0-it.gguf"]))
+    _write_records(repo, ("built_in", ["gemma-4-E2B_q4_0-it.gguf"]))
     assert runner.gguf_model_name(gguf, tmp_path) == "gemma-4-E2B_q4_0-it"
 
 
-def test_a_user_configured_download_is_named_by_its_path(runner, tmp_path):
+def test_a_user_download_is_named_by_its_path(runner, tmp_path):
     """Ad-hoc downloads carry the repository in the name, so two same-named files
     from different owners never collide (mirrors the models-downloader listing id)."""
     repo = tmp_path / "unsloth" / "Qwen3-0.6B-GGUF"
     gguf = _gguf(repo / "Qwen3-0.6B-Q4_0.gguf")
-    _write_records(repo, ("user_configured", ["Qwen3-0.6B-Q4_0.gguf"]))
+    _write_records(repo, ("user", ["Qwen3-0.6B-Q4_0.gguf"]))
     assert runner.gguf_model_name(gguf, tmp_path) == "unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q4_0"
 
 
@@ -250,7 +250,7 @@ def test_the_record_is_found_above_a_nested_quantization_folder(runner, tmp_path
     repository directory and lists the nested relative path."""
     repo = tmp_path / "org" / "repo-GGUF"
     gguf = _gguf(repo / "Q4_0" / "model.gguf")
-    _write_records(repo, ("user_configured", ["Q4_0/model.gguf"]))
+    _write_records(repo, ("user", ["Q4_0/model.gguf"]))
     assert runner.gguf_model_name(gguf, tmp_path) == "org/repo-GGUF/Q4_0/model"
 
 
@@ -261,8 +261,8 @@ def test_each_quantization_answers_to_its_own_record(runner, tmp_path):
     q8 = _gguf(repo / "Qwen3-0.6B-Q8_0.gguf")
     _write_records(
         repo,
-        ("builtin", ["Qwen3-0.6B-Q4_0.gguf"]),
-        ("user_configured", ["Qwen3-0.6B-Q8_0.gguf"]),
+        ("built_in", ["Qwen3-0.6B-Q4_0.gguf"]),
+        ("user", ["Qwen3-0.6B-Q8_0.gguf"]),
     )
     assert runner.gguf_model_name(q4, tmp_path) == "Qwen3-0.6B-Q4_0"
     assert runner.gguf_model_name(q8, tmp_path) == "unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q8_0"
@@ -273,7 +273,7 @@ def test_an_unclaimed_sibling_counts_as_out_of_the_box(runner, tmp_path):
     back to the out-of-the-box naming, never to a sibling's record."""
     repo = tmp_path / "unsloth" / "Qwen3-0.6B-GGUF"
     q8 = _gguf(repo / "Qwen3-0.6B-Q8_0.gguf")
-    _write_records(repo, ("user_configured", ["Qwen3-0.6B-Q4_0.gguf"]))
+    _write_records(repo, ("user", ["Qwen3-0.6B-Q4_0.gguf"]))
     assert runner.gguf_model_name(q8, tmp_path) == "Qwen3-0.6B-Q8_0"
 
 
@@ -289,11 +289,11 @@ def test_models_ini_serves_each_model_under_its_derived_name(runner, tmp_path, c
     mmproj companion in the ad-hoc repository is attached to its model."""
     curated = tmp_path / "google" / "gemma-4-E2B-it-qat-q4_0-gguf"
     _gguf(curated / "gemma-4-E2B_q4_0-it.gguf")
-    _write_records(curated, ("builtin", ["gemma-4-E2B_q4_0-it.gguf"]))
+    _write_records(curated, ("built_in", ["gemma-4-E2B_q4_0-it.gguf"]))
     adhoc = tmp_path / "unsloth" / "gemma-4-E4B-it-GGUF"
     _gguf(adhoc / "gemma-4-E4B-it-Q4_0.gguf")
     _gguf(adhoc / "mmproj-BF16.gguf")
-    _write_records(adhoc, ("user_configured", ["gemma-4-E4B-it-Q4_0.gguf", "mmproj-BF16.gguf"]))
+    _write_records(adhoc, ("user", ["gemma-4-E4B-it-Q4_0.gguf", "mmproj-BF16.gguf"]))
 
     runner.generate_models_ini(tmp_path)
 

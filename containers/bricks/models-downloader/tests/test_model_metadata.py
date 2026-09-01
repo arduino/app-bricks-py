@@ -166,42 +166,42 @@ def test_collect_inputs_empty_environment():
 def test_identify_model_from_models_list(tmp_path):
     """Only the id is taken from the entry; its name/source/... are not duplicated."""
     identity = identify_model(AI_HUB_ENV, _models_list(tmp_path))
-    assert identity == {"model_id": "genie:qwen3_4b_instruct_2507", "model_origin": "builtin"}
+    assert identity == {"model_id": "genie:qwen3_4b_instruct_2507", "model_origin": "built_in"}
 
 
 def test_identify_model_prefers_model_id_env(tmp_path):
     env = dict(AI_HUB_ENV, model_id="host:provided")
     identity = identify_model(env, _models_list(tmp_path))
-    assert identity == {"model_id": "host:provided", "model_origin": "builtin"}
+    assert identity == {"model_id": "host:provided", "model_origin": "built_in"}
 
 
-def test_identify_model_user_configured_when_yaml_missing(tmp_path):
+def test_identify_model_user_when_yaml_missing(tmp_path):
     identity = identify_model(AI_HUB_ENV, str(tmp_path / "nope.yaml"))
-    assert identity == {"model_id": None, "model_origin": "user_configured"}
+    assert identity == {"model_id": None, "model_origin": "user"}
 
 
-def test_identify_model_user_configured_when_yaml_is_broken(tmp_path):
+def test_identify_model_user_when_yaml_is_broken(tmp_path):
     broken = tmp_path / "models-list.yaml"
     broken.write_text("models: [unclosed\n")
-    assert identify_model(AI_HUB_ENV, str(broken))["model_origin"] == "user_configured"
+    assert identify_model(AI_HUB_ENV, str(broken))["model_origin"] == "user"
 
 
-def test_identify_model_user_configured_when_no_entry_matches(tmp_path):
+def test_identify_model_user_when_no_entry_matches(tmp_path):
     identity = identify_model({"model_name": "something-else"}, _models_list(tmp_path))
-    assert identity == {"model_id": None, "model_origin": "user_configured"}
+    assert identity == {"model_id": None, "model_origin": "user"}
 
 
 def test_identify_model_uses_the_fallback_id_when_not_curated(tmp_path):
     """An ad-hoc download still needs an id: nothing can refer to a null one."""
     env = {"model_url": "TheBloke/Mistral-7B-Instruct-v0.2-GGUF:Q4_0", "models_repository": "llamacpp"}
     identity = identify_model(env, _models_list(tmp_path), fallback_model_id="llamacpp:mistral.Q4_0")
-    assert identity == {"model_id": "llamacpp:mistral.Q4_0", "model_origin": "user_configured"}
+    assert identity == {"model_id": "llamacpp:mistral.Q4_0", "model_origin": "user"}
 
 
 def test_identify_model_ignores_the_fallback_when_curated(tmp_path):
     """A declared model keeps its entry key; the fallback is only for the other case."""
     identity = identify_model(AI_HUB_ENV, _models_list(tmp_path), fallback_model_id="should:not:be:used")
-    assert identity == {"model_id": "genie:qwen3_4b_instruct_2507", "model_origin": "builtin"}
+    assert identity == {"model_id": "genie:qwen3_4b_instruct_2507", "model_origin": "built_in"}
 
 
 def test_identify_model_needs_the_derived_model_directory(tmp_path):
@@ -238,7 +238,7 @@ def test_metadata_payload_drops_empty_values():
     payload = metadata_payload(
         "hf-handler",
         inputs={"model_name": "x", "quantization": "", "version": None},
-        identity={"model_id": "a:b", "model_origin": "builtin"},
+        identity={"model_id": "a:b", "model_origin": "built_in"},
     )
     assert payload["inputs"] == {"model_name": "x"}
     assert payload["model_id"] == "a:b"
@@ -248,7 +248,7 @@ def test_metadata_payload_omits_empty_inputs():
     payload = metadata_payload("ei-handler")
     assert list(payload) == ["downloaded_at", "handler", "model_id", "model_origin"]
     assert payload["model_id"] is None
-    assert payload["model_origin"] == "user_configured"
+    assert payload["model_origin"] == "user"
 
 
 def test_metadata_payload_copies_nothing_else_from_the_entry():
@@ -256,7 +256,7 @@ def test_metadata_payload_copies_nothing_else_from_the_entry():
     payload = metadata_payload(
         "ai-hub-handler",
         inputs={"model_name": "x"},
-        identity={"model_id": "genie:x", "model_origin": "builtin"},
+        identity={"model_id": "genie:x", "model_origin": "built_in"},
     )
     assert list(payload) == ["downloaded_at", "handler", "model_id", "model_origin", "inputs"]
     for copied in ("name", "source", "source_model_id", "source_model_url", "model_size_mb", "resolved"):
@@ -273,7 +273,7 @@ def test_write_read_roundtrip(tmp_path):
     assert os.listdir(tmp_path) == [METADATA_NAME]
     data = read_metadata(str(tmp_path))
     # One document shape for every handler: the records list and nothing else.
-    assert list(data) == ["records"]
+    assert list(data) == ["models"]
     record = metadata_records(data)[0]
     assert record["handler"] == "ai-hub-handler"
     assert record["inputs"] == AI_HUB_ENV
@@ -390,7 +390,7 @@ def test_multi_record_file_holds_nothing_but_the_records(tmp_path):
     _write_quant(tmp_path, "Q8_0", ["Qwen3-0.6B-Q8_0.gguf"])
 
     data = read_metadata(str(tmp_path))
-    assert list(data) == ["records"]
+    assert list(data) == ["models"]
     assert [r["model_id"] for r in metadata_records(data)] == [
         "llamacpp:unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q4_0",
         "llamacpp:unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q8_0",
@@ -450,12 +450,12 @@ def test_merge_keeps_a_record_that_names_no_files(tmp_path):
 def test_write_without_files_replaces_the_whole_file(tmp_path):
     """The per-model-directory handlers (AI Hub, Edge Impulse) pass no files: their
     directory holds one model, so the document becomes that one record — in the
-    same ``records`` shape every handler writes."""
+    same ``models`` shape every handler writes."""
     _write_quant(tmp_path, "Q4_0", ["Qwen3-0.6B-Q4_0.gguf"])
     write_metadata(str(tmp_path), "ai-hub-handler", env=AI_HUB_ENV, models_list_path="")
 
     data = read_metadata(str(tmp_path))
-    assert list(data) == ["records"]
+    assert list(data) == ["models"]
     assert [r["handler"] for r in metadata_records(data)] == ["ai-hub-handler"]
 
 
@@ -463,8 +463,8 @@ def test_metadata_records_accepts_nothing_but_the_records_list():
     """A document without the list records nothing — same as a missing file."""
     assert metadata_records({"handler": "hf-handler", "model_id": "llamacpp:x"}) == []
     assert metadata_records(None) == []
-    assert metadata_records({"records": "not-a-list"}) == []
-    assert metadata_records({"records": [{"model_id": "llamacpp:x"}, "junk"]}) == [{"model_id": "llamacpp:x"}]
+    assert metadata_records({"models": "not-a-list"}) == []
+    assert metadata_records({"models": [{"model_id": "llamacpp:x"}, "junk"]}) == [{"model_id": "llamacpp:x"}]
 
 
 def test_record_for_file_matches_by_path_or_basename(tmp_path):
@@ -488,7 +488,7 @@ def test_record_for_file_unclaimed_file_is_unknown(tmp_path):
 
 def test_record_for_file_ignores_a_record_that_names_no_files():
     """A record that says nothing about its files claims no file in particular."""
-    data = {"records": [{"handler": "hf-handler", "model_id": "llamacpp:x"}]}
+    data = {"models": [{"handler": "hf-handler", "model_id": "llamacpp:x"}]}
     assert record_for_file(data, "any.gguf") is None
 
 
@@ -505,7 +505,7 @@ def test_record_for_model_id_selects_the_entrys_record(tmp_path):
 
 
 def test_record_for_model_id_ignores_a_document_without_records():
-    """No ``records`` list, no records — even when a stray top-level id matches."""
+    """No ``models`` list, no records — even when a stray top-level id matches."""
     flat = {"handler": "hf-handler", "model_id": "llamacpp:whatever"}
     assert record_for_model_id(flat, "llamacpp:whatever") is None
 
@@ -518,7 +518,7 @@ def test_prune_drops_the_record_of_a_deleted_quantization(tmp_path):
     prune_metadata_records(str(tmp_path))
 
     data = read_metadata(str(tmp_path))
-    assert list(data) == ["records"]
+    assert list(data) == ["models"]
     assert [r["files"] for r in metadata_records(data)] == [["Qwen3-0.6B-Q4_0.gguf"]]
 
 
@@ -542,7 +542,7 @@ def test_prune_removes_the_file_when_no_record_survives(tmp_path):
 
 
 def test_prune_ignores_a_document_without_records(tmp_path):
-    """A file holding no ``records`` list records nothing, so nothing is pruned."""
+    """A file holding no ``models`` list records nothing, so nothing is pruned."""
     (tmp_path / METADATA_NAME).write_text("handler: hf-handler\nmodel_id: llamacpp:x\n")
     before = (tmp_path / METADATA_NAME).read_text()
     prune_metadata_records(str(tmp_path))
@@ -571,12 +571,12 @@ def test_payload_ai_hub(tmp_path):
     model_dir.mkdir()
     write_metadata(str(model_dir), "ai-hub-handler", env=AI_HUB_ENV, models_list_path=_models_list(tmp_path))
     data = read_metadata(str(model_dir))
-    assert list(data) == ["records"]
+    assert list(data) == ["models"]
     record = metadata_records(data)[0]
     assert list(record) == PAYLOAD_KEYS
     assert record["handler"] == "ai-hub-handler"
     assert record["model_id"] == "genie:qwen3_4b_instruct_2507"
-    assert record["model_origin"] == "builtin"
+    assert record["model_origin"] == "built_in"
     assert record["inputs"] == AI_HUB_ENV
 
 
@@ -632,7 +632,7 @@ def test_payload_for_a_repo_absent_from_models_list(tmp_path):
     record = metadata_records(read_metadata(str(model_dir)))[0]
     assert list(record) == PAYLOAD_KEYS
     assert record["model_id"] == "llamacpp:mistral-7b-instruct-v0.2.Q4_0"
-    assert record["model_origin"] == "user_configured"
+    assert record["model_origin"] == "user"
     # The download is still fully described by its own variables.
     assert record["inputs"] == env
 
@@ -642,4 +642,4 @@ def test_written_file_is_plain_safe_yaml(tmp_path):
     write_metadata(str(tmp_path), "hf-handler", env=HF_ENV, models_list_path="")
     text = (tmp_path / METADATA_NAME).read_text()
     assert "!!python" not in text
-    assert yaml.safe_load(text)["records"][0]["inputs"] == HF_ENV
+    assert yaml.safe_load(text)["models"][0]["inputs"] == HF_ENV

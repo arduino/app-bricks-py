@@ -193,7 +193,7 @@ def test_find_llamacpp_single_model(tmp_path):
     base = tmp_path / "models"
     repo = base / "llamacpp" / "repo"
     _make_gguf(str(repo / "model-a.gguf"))
-    _record_install(repo, "user_configured", ["model-a.gguf"])
+    _record_install(repo, "user", ["model-a.gguf"])
     results = list_models.find_llamacpp_models(str(base))
     assert len(results) == 1
     entry = results[0]
@@ -220,7 +220,7 @@ def test_find_llamacpp_builtin_record_keeps_its_stem_name(tmp_path):
     base = tmp_path / "models"
     repo = base / "llamacpp" / "repo"
     _make_gguf(str(repo / "model-a.gguf"))
-    _record_install(repo, "builtin", ["model-a.gguf"], model_id="llamacpp:model-a")
+    _record_install(repo, "built_in", ["model-a.gguf"], model_id="llamacpp:model-a")
     results = list_models.find_llamacpp_models(str(base))
     assert len(results) == 1
     assert results[0]["id"] == "llamacpp:model-a"
@@ -287,7 +287,7 @@ def test_find_llamacpp_marker_leaves_another_quantization_installed(tmp_path):
     base = tmp_path / "models"
     repo = base / "llamacpp" / "unsloth" / "Qwen3-0.6B-GGUF"
     _make_gguf(str(repo / "Qwen3-0.6B-Q4_0.gguf"))
-    _record_install(repo, "user_configured", ["Qwen3-0.6B-Q4_0.gguf"])
+    _record_install(repo, "user", ["Qwen3-0.6B-Q4_0.gguf"])
     write_marker(
         str(repo),
         handler="hf-handler",
@@ -500,7 +500,7 @@ AI_HUB_INFO = {
 
 def test_model_metadata_reads_from_nested_repository(tmp_path):
     base = tmp_path / "models"
-    _write_metadata_file(str(base / "audio-analytics" / "tts" / "qwen-genie-w4a16"), "records:\n- model_id: genie:x\n")
+    _write_metadata_file(str(base / "audio-analytics" / "tts" / "qwen-genie-w4a16"), "models:\n- model_id: genie:x\n")
     data = list_models.model_metadata(AI_HUB_INFO, str(base))
     assert data["model_id"] == "genie:x"
 
@@ -513,7 +513,7 @@ def test_model_metadata_falls_back_to_the_matched_path(tmp_path):
     base = tmp_path / "models"
     # The folder on disk carries a "_proxy" suffix, so the canonical path misses it.
     matched = base / "qwen_genie_w4a16_proxy"
-    _write_metadata_file(str(matched), "records:\n- model_id: genie:fuzzy\n")
+    _write_metadata_file(str(matched), "models:\n- model_id: genie:fuzzy\n")
     model_info = {"id": "genie:fuzzy", "model_directory": "qwen-genie-w4a16", "models_repository": ""}
     data = list_models.model_metadata(model_info, str(base), path=str(matched))
     assert data["model_id"] == "genie:fuzzy"
@@ -539,11 +539,11 @@ def test_outdated_fields_reports_missing_inputs():
 GEMMA_REPO = ("llamacpp", "google", "gemma-4-E2B-it-qat-q4_0-gguf")
 
 CURRENT_METADATA = """\
-records:
+models:
 - downloaded_at: '2026-08-03T09:41:12Z'
   handler: hf-handler
   model_id: llamacpp:gemma-4-E2B_q4_0-it
-  model_origin: builtin
+  model_origin: built_in
   files:
   - gemma-4-E2B_q4_0-it.gguf
   inputs:
@@ -632,7 +632,7 @@ def test_main_lists_an_unlisted_model_with_its_metadata(monkeypatch, capsys, tmp
     _make_gguf(os.path.join(repo, "mistral.Q4_0.gguf"))
     _write_metadata_file(
         repo,
-        "records:\n- handler: hf-handler\n  model_id: llamacpp:mistral.Q4_0\n  model_origin: user_configured\n  files: [mistral.Q4_0.gguf]\n",
+        "models:\n- handler: hf-handler\n  model_id: llamacpp:mistral.Q4_0\n  model_origin: user\n  files: [mistral.Q4_0.gguf]\n",
     )
 
     _models_dir, models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
@@ -640,8 +640,8 @@ def test_main_lists_an_unlisted_model_with_its_metadata(monkeypatch, capsys, tmp
     assert len(entries) == 1
     entry = entries[0]
     assert entry["installed"] is True
-    assert entry["model_origin"] == "user_configured"
-    assert entry["download_metadata"]["model_origin"] == "user_configured"
+    assert entry["model_origin"] == "user"
+    assert entry["download_metadata"]["model_origin"] == "user"
     assert "outdated" not in entry
     # The models-list.yaml entries are unaffected.
     assert _gemma_entry(models)["installed"] is False
@@ -653,7 +653,7 @@ def test_main_lists_an_unlisted_model_with_its_metadata(monkeypatch, capsys, tmp
 def test_main_marks_declared_models_as_builtin(monkeypatch, capsys, tmp_path):
     _models_dir, models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
     assert models
-    assert all(m["model_origin"] == "builtin" for m in models)
+    assert all(m["model_origin"] == "built_in" for m in models)
 
 
 def test_main_keeps_builtin_origin_after_the_filesystem_merge(monkeypatch, capsys, tmp_path):
@@ -664,21 +664,21 @@ def test_main_keeps_builtin_origin_after_the_filesystem_merge(monkeypatch, capsy
     _models_dir, models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
     entry = _gemma_entry(models)
     assert entry["installed"] is True
-    assert entry["model_origin"] == "builtin"
+    assert entry["model_origin"] == "built_in"
 
 
 def test_main_pre_loaded_models_are_builtin(monkeypatch, capsys, tmp_path):
     yaml_text = 'models:\n - "builtin:asr":\n    name: "Builtin ASR"\n    deployment:\n      handler: "ai-hub-handler"\n      pre-loaded: true\n'
     _models_dir, models = _run_main(monkeypatch, capsys, tmp_path, yaml_text)
-    assert models[0]["model_origin"] == "builtin"
+    assert models[0]["model_origin"] == "built_in"
 
 
-def test_find_llamacpp_models_are_user_configured(tmp_path):
+def test_find_llamacpp_models_are_user(tmp_path):
     base = tmp_path / "models"
     _make_gguf(os.path.join(str(base), "llamacpp", "TheBloke", "Mistral-GGUF", "mistral.Q4_0.gguf"))
     results = list_models.find_llamacpp_models(str(base))
     assert len(results) == 1
-    assert results[0]["model_origin"] == "user_configured"
+    assert results[0]["model_origin"] == "user"
 
 
 def test_table_shows_the_origin_column(monkeypatch, capsys, tmp_path):
@@ -690,7 +690,7 @@ def test_table_shows_the_origin_column(monkeypatch, capsys, tmp_path):
     list_models.main()
     out = capsys.readouterr().out
     assert "ORIGIN" in out
-    assert "builtin" in out
+    assert "built_in" in out
 
 
 def test_find_llamacpp_attaches_metadata(tmp_path):
@@ -844,11 +844,11 @@ def test_find_llamacpp_same_file_name_in_two_repos_lists_two_models(tmp_path):
     _make_gguf(str(bartowski / "SmolLM2-Q4_K_M.gguf"), size_bytes=2 * 1024 * 1024)
     _write_metadata_file(
         str(unsloth),
-        "records:\n- model_origin: user_configured\n  files: [SmolLM2-Q4_K_M.gguf]\n  inputs:\n    model_url: llamacpp:unsloth/SmolLM2-GGUF:Q4_K_M\n",
+        "models:\n- model_origin: user\n  files: [SmolLM2-Q4_K_M.gguf]\n  inputs:\n    model_url: llamacpp:unsloth/SmolLM2-GGUF:Q4_K_M\n",
     )
     _write_metadata_file(
         str(bartowski),
-        "records:\n- model_origin: user_configured\n  files: [SmolLM2-Q4_K_M.gguf]\n  inputs:\n    model_url: llamacpp:bartowski/SmolLM2-GGUF:Q4_K_M\n",
+        "models:\n- model_origin: user\n  files: [SmolLM2-Q4_K_M.gguf]\n  inputs:\n    model_url: llamacpp:bartowski/SmolLM2-GGUF:Q4_K_M\n",
     )
 
     results = {entry["id"]: entry for entry in list_models.find_llamacpp_models(str(base))}
@@ -870,8 +870,8 @@ def test_main_lists_same_named_ad_hoc_downloads_separately(monkeypatch, capsys, 
     models_dir, _models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
     _make_gguf(str(models_dir / "llamacpp" / "unsloth" / "SmolLM2-GGUF" / "SmolLM2-Q4_K_M.gguf"))
     _make_gguf(str(models_dir / "llamacpp" / "bartowski" / "SmolLM2-GGUF" / "SmolLM2-Q4_K_M.gguf"))
-    _record_install(models_dir / "llamacpp" / "unsloth" / "SmolLM2-GGUF", "user_configured", ["SmolLM2-Q4_K_M.gguf"])
-    _record_install(models_dir / "llamacpp" / "bartowski" / "SmolLM2-GGUF", "user_configured", ["SmolLM2-Q4_K_M.gguf"])
+    _record_install(models_dir / "llamacpp" / "unsloth" / "SmolLM2-GGUF", "user", ["SmolLM2-Q4_K_M.gguf"])
+    _record_install(models_dir / "llamacpp" / "bartowski" / "SmolLM2-GGUF", "user", ["SmolLM2-Q4_K_M.gguf"])
 
     _models_dir, models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
     smol = sorted(m["id"] for m in models if "SmolLM2" in m["id"])
@@ -895,7 +895,7 @@ def test_main_ad_hoc_download_cannot_masquerade_as_a_declared_model(monkeypatch,
     clones = [m for m in models if m["id"] == "llamacpp:bartowski/gemma-clone-GGUF/gemma-4-E2B_q4_0-it"]
     assert len(clones) == 1
     assert clones[0]["installed"] is True
-    assert clones[0]["model_origin"] == "user_configured"
+    assert clones[0]["model_origin"] == "user"
 
 
 def test_main_declared_model_merges_next_to_its_same_named_clone(monkeypatch, capsys, tmp_path):
@@ -927,7 +927,7 @@ def test_main_merges_a_pending_declared_download_by_location(monkeypatch, capsys
     entry = _gemma_entry(models)
     assert entry["installed"] is False
     assert entry["downloading"] is True
-    assert entry["model_origin"] == "builtin"
+    assert entry["model_origin"] == "built_in"
 
 
 def test_main_never_emits_location_keys(monkeypatch, capsys, tmp_path):
@@ -969,8 +969,8 @@ def test_main_supports_promoting_an_ad_hoc_model_to_the_curated_list(monkeypatch
     _make_gguf(str(repo / "SmolLM2-135M-Instruct-Q4_K_M.gguf"))
     _write_metadata_file(
         str(repo),
-        "records:\n"
-        "- model_origin: user_configured\n"
+        "models:\n"
+        "- model_origin: user\n"
         "  model_id: llamacpp:unsloth/SmolLM2-135M-Instruct-GGUF/SmolLM2-135M-Instruct-Q4_K_M\n"
         "  files: [SmolLM2-135M-Instruct-Q4_K_M.gguf]\n"
         "  inputs:\n"
@@ -988,7 +988,7 @@ def test_main_supports_promoting_an_ad_hoc_model_to_the_curated_list(monkeypatch
     assert len(smol) == 1
     entry = smol[0]
     assert entry["id"] == "llamacpp:SmolLM2-135M-Instruct-Q4_K_M"
-    assert entry["model_origin"] == "builtin"
+    assert entry["model_origin"] == "built_in"
     assert entry["installed"] is True
     # Downloaded with the ad-hoc inputs, not the pinned URL the entry declares.
     assert entry["outdated"] is True
@@ -1036,7 +1036,7 @@ def test_main_dedup_prefers_the_platform_of_the_listed_board(monkeypatch, capsys
     # Downloaded from the revision the unoq platform declares.
     _write_metadata_file(
         str(repo),
-        "records:\n"
+        "models:\n"
         "- model_id: llamacpp:multi-Q4_0\n"
         "  files: [multi-Q4_0.gguf]\n"
         "  inputs:\n"

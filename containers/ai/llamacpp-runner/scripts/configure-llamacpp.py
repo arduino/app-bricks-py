@@ -15,7 +15,7 @@ METADATA_NAME = ".arduino_metadata.yaml"
 def downloaded_records(directory: Path):
     """The download records of *directory*'s ".arduino_metadata.yaml", newest last.
 
-    The document is ``records: [...]``, one record per model downloaded into the
+    The document is ``models: [...]``, one record per model downloaded into the
     directory (see the models-downloader's common/model_metadata.py). A missing or
     unusable file yields no records — the models there are then out-of-the-box.
 
@@ -29,7 +29,7 @@ def downloaded_records(directory: Path):
             data = yaml.safe_load(f)
     except Exception:
         return []
-    records = data.get("records") if isinstance(data, dict) else None
+    records = data.get("models") if isinstance(data, dict) else None
     if not isinstance(records, list):
         return []
     return [record for record in records if isinstance(record, dict)]
@@ -61,7 +61,7 @@ def gguf_model_name(gguf_file: Path, models_dir: Path) -> str:
 
     Decided by the file's download record: a user-configured model (downloaded ad
     hoc) is named by its models_dir-relative path, so same-named files from different
-    repositories never collide; a curated download (model_origin "builtin") keeps its
+    repositories never collide; a curated download (model_origin "built_in") keeps its
     file stem. A file with no record at all is an out-of-the-box model and keeps its
     stem too — that is the fallback, records only exist for downloaded models.
 
@@ -71,7 +71,7 @@ def gguf_model_name(gguf_file: Path, models_dir: Path) -> str:
     images.
     """
     record = file_record(gguf_file, models_dir)
-    if record is not None and record.get("model_origin") == "user_configured":
+    if record is not None and record.get("model_origin") == "user":
         return gguf_file.relative_to(models_dir).with_suffix("").as_posix()
     return gguf_file.stem
 

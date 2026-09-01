@@ -706,14 +706,14 @@ def test_fallback_model_id_matches_what_the_listing_derives(tmp_path):
 
     models_dir = tmp_path / "llamacpp"
     first = _place_gguf(models_dir, "TheBloke/Mistral-GGUF/mistral.Q4_0.gguf")
-    _record_install(models_dir, "TheBloke/Mistral-GGUF", "user_configured", ["mistral.Q4_0.gguf"])
+    _record_install(models_dir, "TheBloke/Mistral-GGUF", "user", ["mistral.Q4_0.gguf"])
 
     listed = list_models.find_llamacpp_models(str(tmp_path))
     assert len(listed) == 1
     assert fallback_model_id("", [first], str(models_dir)) == listed[0]["id"]
 
     second = _place_gguf(models_dir, "bartowski/Mistral-GGUF/mistral.Q4_0.gguf")
-    _record_install(models_dir, "bartowski/Mistral-GGUF", "user_configured", ["mistral.Q4_0.gguf"])
+    _record_install(models_dir, "bartowski/Mistral-GGUF", "user", ["mistral.Q4_0.gguf"])
     listed = {entry["path"]: entry["id"] for entry in list_models.find_llamacpp_models(str(tmp_path))}
     assert fallback_model_id("", [first], str(models_dir)) == listed[first]
     assert fallback_model_id("", [second], str(models_dir)) == listed[second]
@@ -736,8 +736,8 @@ def test_models_ini_names_curated_files_by_stem_and_ad_hoc_files_by_path(tmp_pat
     _place_gguf(tmp_path, "moondream/moondream2-gguf/moondream2-f16.gguf")
     _place_gguf(tmp_path, "moondream/moondream2-gguf/moondream2-mmproj-f16.gguf")
     _place_gguf(tmp_path, "unsloth/Qwen3-GGUF/Qwen3-Q4_0.gguf")
-    _record_install(tmp_path, "moondream/moondream2-gguf", "builtin", ["moondream2-f16.gguf", "moondream2-mmproj-f16.gguf"])
-    _record_install(tmp_path, "unsloth/Qwen3-GGUF", "user_configured", ["Qwen3-Q4_0.gguf"])
+    _record_install(tmp_path, "moondream/moondream2-gguf", "built_in", ["moondream2-f16.gguf", "moondream2-mmproj-f16.gguf"])
+    _record_install(tmp_path, "unsloth/Qwen3-GGUF", "user", ["Qwen3-Q4_0.gguf"])
 
     generate_models_ini(tmp_path)
 
@@ -760,8 +760,8 @@ def test_models_ini_keeps_a_section_per_repository_for_a_shared_file_name(tmp_pa
     """Two repositories publishing the same file name: neither may shadow the other."""
     _place_gguf(tmp_path, "unsloth/SmolLM2-GGUF/SmolLM2-Q4_K_M.gguf")
     _place_gguf(tmp_path, "bartowski/SmolLM2-GGUF/SmolLM2-Q4_K_M.gguf")
-    _record_install(tmp_path, "unsloth/SmolLM2-GGUF", "user_configured", ["SmolLM2-Q4_K_M.gguf"])
-    _record_install(tmp_path, "bartowski/SmolLM2-GGUF", "user_configured", ["SmolLM2-Q4_K_M.gguf"])
+    _record_install(tmp_path, "unsloth/SmolLM2-GGUF", "user", ["SmolLM2-Q4_K_M.gguf"])
+    _record_install(tmp_path, "bartowski/SmolLM2-GGUF", "user", ["SmolLM2-Q4_K_M.gguf"])
 
     generate_models_ini(tmp_path)
 
@@ -778,8 +778,8 @@ def test_models_ini_keeps_the_curated_stem_next_to_a_same_named_impostor(tmp_pat
     """A file named like a curated model, from another repository, never answers to its name."""
     _place_gguf(tmp_path, "google/gemma-gguf/gemma-Q4_0.gguf")
     _place_gguf(tmp_path, "bartowski/gemma-clone-GGUF/gemma-Q4_0.gguf")
-    _record_install(tmp_path, "google/gemma-gguf", "builtin", ["gemma-Q4_0.gguf"], model_id="llamacpp:gemma-Q4_0")
-    _record_install(tmp_path, "bartowski/gemma-clone-GGUF", "user_configured", ["gemma-Q4_0.gguf"])
+    _record_install(tmp_path, "google/gemma-gguf", "built_in", ["gemma-Q4_0.gguf"], model_id="llamacpp:gemma-Q4_0")
+    _record_install(tmp_path, "bartowski/gemma-clone-GGUF", "user", ["gemma-Q4_0.gguf"])
 
     generate_models_ini(tmp_path)
 
@@ -794,8 +794,8 @@ def test_models_ini_ad_hoc_names_are_stable_across_regenerations(tmp_path, capsy
     _place_gguf(tmp_path, "unsloth/SmolLM2-GGUF/SmolLM2-Q4_K_M.gguf")
     duplicate = tmp_path / "bartowski/SmolLM2-GGUF/SmolLM2-Q4_K_M.gguf"
     _place_gguf(tmp_path, "bartowski/SmolLM2-GGUF/SmolLM2-Q4_K_M.gguf")
-    _record_install(tmp_path, "unsloth/SmolLM2-GGUF", "user_configured", ["SmolLM2-Q4_K_M.gguf"])
-    _record_install(tmp_path, "bartowski/SmolLM2-GGUF", "user_configured", ["SmolLM2-Q4_K_M.gguf"])
+    _record_install(tmp_path, "unsloth/SmolLM2-GGUF", "user", ["SmolLM2-Q4_K_M.gguf"])
+    _record_install(tmp_path, "bartowski/SmolLM2-GGUF", "user", ["SmolLM2-Q4_K_M.gguf"])
 
     generate_models_ini(tmp_path)
     duplicate.unlink()
@@ -835,7 +835,7 @@ def _backfill_models_list(tmp_path) -> str:
 
 def test_backfill_records_an_ootb_model_from_the_catalog(tmp_path, monkeypatch, capsys):
     """A recordless GGUF at a declared location — flashed with the OS, not downloaded —
-    gets a builtin record naming its entry, with the board platform's variables as
+    gets a built_in record naming its entry, with the board platform's variables as
     inputs, so it reads as an install of the current catalog."""
     monkeypatch.setenv("BOARD_NAME", "unoq")
     models_dir = tmp_path / "models"
@@ -848,7 +848,7 @@ def test_backfill_records_an_ootb_model_from_the_catalog(tmp_path, monkeypatch, 
     assert len(records) == 1
     record = records[0]
     assert record["model_id"] == "llamacpp:gemma-4-E2B_q4_0-it"
-    assert record["model_origin"] == "builtin"
+    assert record["model_origin"] == "built_in"
     assert record["handler"] == "hf-handler"
     assert record["files"] == ["gemma-4-E2B_q4_0-it.gguf", "mmproj-F16.gguf"]
     # The unoq platform's variables, so the outdated check compares this board's.
@@ -862,7 +862,7 @@ def test_backfill_leaves_recorded_and_undeclared_files_alone(tmp_path, monkeypat
     models_dir = tmp_path / "models"
     # Already recorded (an ad-hoc download that happens to sit at the declared spot).
     _place_gguf(models_dir, "google/gemma-4-E2B-it-qat-q4_0-gguf/gemma-4-E2B_q4_0-it.gguf")
-    _record_install(models_dir, "google/gemma-4-E2B-it-qat-q4_0-gguf", "user_configured", ["gemma-4-E2B_q4_0-it.gguf"])
+    _record_install(models_dir, "google/gemma-4-E2B-it-qat-q4_0-gguf", "user", ["gemma-4-E2B_q4_0-it.gguf"])
     # Not declared by any entry.
     stray_repo = models_dir / "TheBloke" / "Mistral-GGUF"
     _place_gguf(models_dir, "TheBloke/Mistral-GGUF/mistral.Q4_0.gguf")
@@ -870,7 +870,7 @@ def test_backfill_leaves_recorded_and_undeclared_files_alone(tmp_path, monkeypat
     hf_downloader.backfill_ootb_records(models_dir, _backfill_models_list(tmp_path))
 
     records = metadata_records(read_metadata(str(models_dir / "google" / "gemma-4-E2B-it-qat-q4_0-gguf")))
-    assert [r["model_origin"] for r in records] == ["user_configured"]
+    assert [r["model_origin"] for r in records] == ["user"]
     assert not (stray_repo / METADATA_NAME).exists()
 
 
@@ -895,7 +895,7 @@ def test_generate_models_ini_backfills_the_scan(tmp_path, capsys):
     assert _read_models_ini(models_dir).sections() == ["gemma-4-E2B_q4_0-it"]
     record = metadata_records(read_metadata(str(models_dir / "google" / "gemma-4-E2B-it-qat-q4_0-gguf")))[0]
     assert record["model_id"] == "llamacpp:gemma-4-E2B_q4_0-it"
-    assert record["model_origin"] == "builtin"
+    assert record["model_origin"] == "built_in"
 
 
 # --------------------------------------------------------------------------- #
@@ -1307,7 +1307,7 @@ def test_each_quantization_keeps_its_own_metadata_record(tmp_path, monkeypatch, 
     data = read_metadata(str(models_dir / "unsloth" / "Qwen3-0.6B-GGUF"))
     # The records are the whole file: no top-level record that could misread as
     # "the" model of a directory holding two.
-    assert list(data) == ["records"]
+    assert list(data) == ["models"]
     records = metadata_records(data)
     assert [r["files"] for r in records] == [["Q4_0.gguf"], ["Q3_K_S.gguf"]]
     assert [r["model_id"] for r in records] == [
