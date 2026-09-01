@@ -30,16 +30,23 @@ fi
 DETECTED_NDEV="$(python3 /configure-llamacpp.py /models --print-ndev --ctx "${EFFECTIVE_CTX_SIZE}")"
 DETECTED_NDEV="${DETECTED_NDEV:-1}"
 
-# Build --device argument from GGML_HEXAGON_NDEV, falling back to the value detected
-# from the installed models (default: 1)
-if [ -n "${GGML_HEXAGON_NDEV}" ]; then
+# Build --device argument from GGML_HEXAGON_DEVICES (which accepts a session count, like
+# the GGML_HEXAGON_NDEV it replaced — still honored for older app configs), falling back
+# to the value detected from the installed models (default: 1)
+if [ -n "${GGML_HEXAGON_DEVICES}" ]; then
+  NDEV="${GGML_HEXAGON_DEVICES}"
+  echo "Using externally configured GGML_HEXAGON_DEVICES=${NDEV}"
+elif [ -n "${GGML_HEXAGON_NDEV}" ]; then
   NDEV="${GGML_HEXAGON_NDEV}"
-  echo "Using externally configured GGML_HEXAGON_NDEV=${NDEV}"
+  echo "Using externally configured GGML_HEXAGON_NDEV=${NDEV} (deprecated: set GGML_HEXAGON_DEVICES instead)"
 else
   NDEV="${DETECTED_NDEV}"
-  export GGML_HEXAGON_NDEV="${NDEV}"
-  echo "GGML_HEXAGON_NDEV not set: auto-detected ${NDEV} session(s) from installed models"
+  echo "GGML_HEXAGON_DEVICES not set: auto-detected ${NDEV} session(s) from installed models"
 fi
+export GGML_HEXAGON_DEVICES="${NDEV}"
+# Already translated into GGML_HEXAGON_DEVICES: don't let llama-server see the
+# deprecated variable, it would warn on every spawned instance.
+unset GGML_HEXAGON_NDEV
 
 echo "Configuring ${NDEV} session(s)..."
 DEVICE_LIST=""

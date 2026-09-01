@@ -80,13 +80,15 @@ def test_e4b_pinned_to_two_sessions(name, gguf_gb, ctx_size):
         ("Qwen3.5-0.8B-Q4_0", 0.51, 16384, 1),
         ("Qwen3.5-4B-Q4_0", 2.78, 16384, 2),
         ("gemma-4-12b-it-Q4_0", 6.98, 16384, 4),
-        # Small-context profile: reproduces the measurements in the table.
+        # Small-context profile: the 1-session measurements still hold; everything bigger
+        # takes all 4 sessions since the September 2025 llama.cpp build (Qwen3-8B fails to
+        # fastrpc-map its per-domain buffer on 2).
         ("Qwen3.5-0.8B-Q4_0", 0.51, 4096, 1),
         ("Qwen3-4B-2507-Q4_0", 2.38, 4096, 1),
         ("Qwen3.5-4B-Q4_0", 2.78, 4096, 1),
-        ("Qwen3-8B-Q4_0", 4.79, 4096, 2),
-        ("Qwen3.5-9B-Q4_0", 5.74, 4096, 2),
-        ("gemma-4-12b-it-Q4_0", 6.98, 4096, 3),
+        ("Qwen3-8B-Q4_0", 4.79, 4096, 4),
+        ("Qwen3.5-9B-Q4_0", 5.74, 4096, 4),
+        ("gemma-4-12b-it-Q4_0", 6.98, 4096, 4),
     ],
 )
 def test_unpinned_models_are_sized_by_gguf_size(name, gguf_gb, ctx_size, expected):
@@ -161,6 +163,29 @@ def test_the_ventunoq_model_set_keeps_the_full_context(monkeypatch):
     )
 
     assert detect_ctx_size(models, 16384) == 16384
+
+
+def test_qwen3_8b_gets_four_sessions_at_the_capped_context(monkeypatch, capsys):
+    """Regression for the 21q board set: Qwen3-8B caps the context to 4k, and at 4k it
+    fails to load on 2 sessions (fastrpc_mmap error on the HTP0 buffer with the September
+    2025 llama.cpp build), so the whole set has to come up with 4."""
+    models = _install_models(
+        monkeypatch,
+        {
+            "Qwen3-0.6B-Q3_K_S": 0.32,
+            "Qwen3-0.6B-Q4_0": 0.38,
+            "Qwen3.5-4B-Q4_0-pure": 2.38,
+            "Qwen_Qwen3-8B-Q4_0": 4.79,
+            "Qwen_Qwen3.5-4B-Q4_0": 2.78,
+            "gemma-3-1b-it-Q4_0": 0.72,
+            "gemma-4-E2B_q4_0-it": 3.35,
+            "gemma-4-E4B_q4_0-it": 5.15,
+        },
+    )
+
+    assert detect_ctx_size(models, 16384) == 4096
+    assert detect_hexagon_ndev(models, 4096) == 4
+    assert "Qwen_Qwen3-8B-Q4_0: 4.79 GB, requires 4 sessions" in capsys.readouterr().err
 
 
 def test_a_big_non_exempt_model_still_caps_the_context(monkeypatch, capsys):

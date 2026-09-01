@@ -1836,7 +1836,7 @@ models:
     bricks:
       - id: "arduino:llm"
         model_configuration:
-          GGML_HEXAGON_NDEV: 1      
+          GGML_HEXAGON_DEVICES: 1      
     deployment:
       handler: "hf-handler"
       platforms:
@@ -1860,7 +1860,7 @@ models:
     bricks:
       - id: "arduino:llm"
         model_configuration:
-          GGML_HEXAGON_NDEV: 2
+          GGML_HEXAGON_DEVICES: 2
     deployment:
       handler: "hf-handler"
       platforms:
@@ -1882,7 +1882,7 @@ models:
      bricks:
        - id: "arduino:llm"
          model_configuration:
-           GGML_HEXAGON_NDEV: 1       
+           GGML_HEXAGON_DEVICES: 1       
      deployment:
        handler: "hf-handler"
        platforms:
@@ -1911,7 +1911,7 @@ models:
      bricks:
        - id: "arduino:llm"
          model_configuration:
-           GGML_HEXAGON_NDEV: 1       
+           GGML_HEXAGON_DEVICES: 1       
      deployment:
        handler: "hf-handler"
        platforms:
