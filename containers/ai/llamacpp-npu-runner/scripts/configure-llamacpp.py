@@ -50,8 +50,14 @@ GB = 1e9
 # at that moment — other models resident in the router, leftover instances — not that the
 # model needs more sessions. Measured on a 21q: a loaded model costs ~1.6x its GGUF in RAM.
 
-# Default table, for the context sizes the service runs at out of the box.
-NDEV_BY_GGUF_GB = ((3.5, 4), (1.5, 2))
+# Default table, for the context sizes the service runs at out of the box. The middle
+# bucket takes 3 sessions because of the KV cache, which lives on the same sessions as
+# the weights and cannot be chunked: at 16k tokens Qwen3-4B-Instruct-2507 (2.38 GB) puts
+# a single 1 GiB KV buffer on each of 2 sessions, and fastrpc refuses a mapping that big
+# even with the board's RAM free (measured on a 21q: fails on 2 sessions, runs on 3).
+# KV size depends on the architecture, not the GGUF size: Qwen3.5-4B (2.78 GB) measured
+# fine on 2 sessions, so the bucket over-allocates it — the ~3%/token toll.
+NDEV_BY_GGUF_GB = ((3.5, 4), (1.5, 3))
 
 # Small-context table. A 4k KV cache leaves far more room on the domains. It was
 # originally measured on a ventunoq board (every installed model loaded at 1..4 sessions
