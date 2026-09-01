@@ -300,7 +300,7 @@ class PoseEstimation:
         """
         self._register_callback("count", callback)
 
-    def on_readable_change(self, callback: Callable[[bool], None] | None):
+    def on_readable_change(self, callback: Callable[[bool], None] | None) -> None:
         """Register a callback for when the tracked person becomes readable, or stops being.
 
         The pose classifier needs the skeleton to be complete enough to judge: joints
@@ -338,7 +338,7 @@ class PoseEstimation:
         self._confidence = float(confidence)
         logger.debug(f"detection confidence set to {self._confidence}")
 
-    def set_draw_bboxes(self, draw_bboxes: bool):
+    def set_draw_bboxes(self, draw_bboxes: bool) -> None:
         """Show or hide each detected person's bounding box on the overlay, effective immediately.
 
         Args:
@@ -353,7 +353,7 @@ class PoseEstimation:
         self._draw_bboxes = draw_bboxes
         logger.debug(f"bbox overlay {'enabled' if draw_bboxes else 'disabled'}")
 
-    def set_draw_low_confidence_points(self, draw_low_confidence_points: bool):
+    def set_draw_low_confidence_points(self, draw_low_confidence_points: bool) -> None:
         """Show or hide low-confidence keypoints on the overlay, effective immediately.
 
         Args:
@@ -368,7 +368,7 @@ class PoseEstimation:
         self._draw_low_confidence_points = draw_low_confidence_points
         logger.debug(f"uncertain keypoints overlay {'enabled' if draw_low_confidence_points else 'disabled'}")
 
-    def set_bbox_padding(self, padding: float | tuple[float, float, float, float]):
+    def set_bbox_padding(self, padding: float | tuple[float, float, float, float]) -> None:
         """Expand every reported and drawn bounding box, effective immediately.
 
         The value passed replaces the current padding entirely.
@@ -623,7 +623,7 @@ class PoseEstimation:
                 ),
             )
 
-    def _update_readable(self, readable: bool, now: float):
+    def _update_readable(self, readable: bool, now: float) -> None:
         """Dispatch readability changes: gained at once, lost only when it holds."""
         if readable == self._readable:
             self._readable_since = None
