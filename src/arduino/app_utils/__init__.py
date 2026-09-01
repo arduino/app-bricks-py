@@ -2,8 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-import os
-
 from . import bridge as bridge_module
 from .app import *
 from .bridge import *
