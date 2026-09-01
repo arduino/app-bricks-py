@@ -80,13 +80,13 @@ def test_e4b_pinned_to_two_sessions(name, gguf_gb, ctx_size):
         ("Qwen3.5-0.8B-Q4_0", 0.51, 16384, 1),
         ("Qwen3.5-4B-Q4_0", 2.78, 16384, 2),
         ("gemma-4-12b-it-Q4_0", 6.98, 16384, 4),
-        # Small-context profile: the 1-session measurements hold; everything bigger takes
-        # all 4 sessions until Qwen3-8B's failure to load on 2 is re-measured on a quiet
-        # board (it may have been RAM pressure rather than session sizing).
+        # Small-context profile: the 1-session measurements hold; Qwen3-8B was re-measured
+        # on the September 2025 build (fails on 2 sessions, runs on 3); anything bigger is
+        # unmeasured on that build and takes all 4 sessions.
         ("Qwen3.5-0.8B-Q4_0", 0.51, 4096, 1),
         ("Qwen3-4B-2507-Q4_0", 2.38, 4096, 1),
         ("Qwen3.5-4B-Q4_0", 2.78, 4096, 1),
-        ("Qwen3-8B-Q4_0", 4.79, 4096, 4),
+        ("Qwen3-8B-Q4_0", 4.79, 4096, 3),
         ("Qwen3.5-9B-Q4_0", 5.74, 4096, 4),
         ("gemma-4-12b-it-Q4_0", 6.98, 4096, 4),
     ],
@@ -165,10 +165,10 @@ def test_the_ventunoq_model_set_keeps_the_full_context(monkeypatch):
     assert detect_ctx_size(models, 16384) == 16384
 
 
-def test_qwen3_8b_gets_four_sessions_at_the_capped_context(monkeypatch, capsys):
+def test_qwen3_8b_gets_three_sessions_at_the_capped_context(monkeypatch, capsys):
     """Regression for the 21q board set: Qwen3-8B caps the context to 4k, and at 4k it
-    failed to load on 2 sessions (fastrpc_mmap error on the HTP0 buffer, possibly RAM
-    pressure — not re-measured yet), so the whole set has to come up with 4."""
+    fails to load on 2 sessions on the September 2025 build but runs on 3 (measured),
+    so the whole set has to come up with 3."""
     models = _install_models(
         monkeypatch,
         {
@@ -184,8 +184,8 @@ def test_qwen3_8b_gets_four_sessions_at_the_capped_context(monkeypatch, capsys):
     )
 
     assert detect_ctx_size(models, 16384) == 4096
-    assert detect_hexagon_ndev(models, 4096) == 4
-    assert "Qwen_Qwen3-8B-Q4_0: 4.79 GB, requires 4 sessions" in capsys.readouterr().err
+    assert detect_hexagon_ndev(models, 4096) == 3
+    assert "Qwen_Qwen3-8B-Q4_0: 4.79 GB, requires 3 sessions" in capsys.readouterr().err
 
 
 def test_a_big_non_exempt_model_still_caps_the_context(monkeypatch, capsys):

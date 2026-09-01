@@ -61,12 +61,11 @@ NDEV_BY_GGUF_GB = ((3.5, 4), (1.5, 2))
 #   Qwen3-4B-2507-Q4_0   2.38 GB -> 1     Qwen3.5-9B-Q4_0      5.74 GB -> 2
 #   Qwen3.5-4B-Q4_0      2.78 GB -> 1     gemma-4-12b          6.98 GB -> 3
 #
-# Qwen3-8B-Q4_0 has since failed to fastrpc-map its per-domain buffer on 2 sessions
-# (possibly RAM pressure rather than session sizing, see above — not re-measured yet),
-# so pending a re-measurement of the multi-session rows on a quiet board, every model
-# above the 1-session rows takes everything the hardware has.
+# Qwen3-8B-Q4_0 has since been re-measured on the September 2025 build: it no longer
+# loads on 2 sessions but runs on 3, so the 3.5+ bucket takes 3. Anything bigger is
+# unmeasured on that build and takes everything the hardware has.
 SMALL_CTX_SIZE = 4096
-NDEV_BY_GGUF_GB_SMALL_CTX = ((3.5, 4),)
+NDEV_BY_GGUF_GB_SMALL_CTX = ((5.0, 4), (3.5, 3))
 
 
 class ModelOverride(NamedTuple):
