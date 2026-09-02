@@ -450,7 +450,11 @@ def test_chat_raises_on_empty_response(make_llm, fake_model):
         llm.chat("hi")
 
 
-def test_chat_with_images_sends_multimodal_message(make_llm, fake_model):
+def test_chat_with_images_sends_multimodal_message_image_first(make_llm, fake_model):
+    # The image parts must precede the text part: content parts are rendered in
+    # order by the chat template, and vision models are trained on image-first
+    # prompts. Text-first makes small local VLMs (e.g. SmolVLM2 on llama.cpp)
+    # ignore the instruction and fall back to generic image captioning.
     fake_model.queue_invoke(AIMessage(content="ok"))
     llm = make_llm()
 
@@ -458,9 +462,20 @@ def test_chat_with_images_sends_multimodal_message(make_llm, fake_model):
 
     human = fake_model.invoke_inputs[-1][-1]
     assert isinstance(human, HumanMessage)
-    assert human.content[0] == {"type": "text", "text": "describe"}
-    assert human.content[1]["type"] == "image_url"
-    assert human.content[1]["image_url"]["url"].startswith("data:image/jpeg;base64,")
+    assert human.content[0]["type"] == "image_url"
+    assert human.content[0]["image_url"]["url"].startswith("data:image/jpeg;base64,")
+    assert human.content[1] == {"type": "text", "text": "describe"}
+
+
+def test_chat_with_multiple_images_keeps_all_images_before_the_text(make_llm, fake_model):
+    fake_model.queue_invoke(AIMessage(content="ok"))
+    llm = make_llm()
+
+    llm.chat("compare", images=[b"\x00", b"\x01", b"\x02"])
+
+    human = fake_model.invoke_inputs[-1][-1]
+    assert [part["type"] for part in human.content] == ["image_url", "image_url", "image_url", "text"]
+    assert human.content[-1] == {"type": "text", "text": "compare"}
 
 
 # --- chat_stream -------------------------------------------------------------

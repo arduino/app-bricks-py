@@ -273,11 +273,14 @@ class CloudLLM:
         messages = self._history.get_messages()
         message = None
         if images is not None and len(images) > 0:
+            # Images are placed before the text: vision models are trained on
+            # image-first ordering, and text-first degrades instruction
+            # following on small local VLMs.
             content = []
-            content.append({"type": "text", "text": user_input})
             for img in images:
                 image_b64 = self._image_to_base64(img)
                 content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}})
+            content.append({"type": "text", "text": user_input})
 
             message = HumanMessage(content=content)
         else:
