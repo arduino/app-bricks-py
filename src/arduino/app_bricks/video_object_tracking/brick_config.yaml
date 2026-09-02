@@ -9,7 +9,7 @@ required_devices:
   - camera
 ai_frameworks_compatibility:
   - edgeimpulse  
-model: yolox-object-tracking
+model: yolox-qnn-object-tracker
 supported_boards: ["ventunoq"]
 model_configuration_variables:
   - EI_V_OBJ_TRACKING_MODEL
