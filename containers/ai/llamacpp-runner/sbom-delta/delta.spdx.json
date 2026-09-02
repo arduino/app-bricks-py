@@ -1,7 +1,7 @@
 {
   "SPDXID": "SPDXRef-DOCUMENT",
   "creationInfo": {
-    "created": "2026-07-29T10:08:02.301283Z",
+    "created": "2026-09-02T07:51:51.037770Z",
     "creators": [
       "Tool: arduino-sbom-delta",
       "Organization: Arduino SRL"
@@ -11,12 +11,12 @@
   "documentDescribes": [
     "SPDXRef-Container"
   ],
-  "documentNamespace": "https://arduino.cc/sbom/delta/llamacpp-runner-0.12.1-20260729T100802Z",
+  "documentNamespace": "https://arduino.cc/sbom/delta/llamacpp-runner-0.13.0rc1-20260902T075151Z",
   "name": "llamacpp-runner",
   "packages": [
     {
       "SPDXID": "SPDXRef-Container",
-      "comment": "Delta SBOM for ghcr.io/arduino/app-bricks/llamacpp-runner:0.12.1 \u2014 changes relative to base image ghcr.io/arduino/app-bricks/python-slim:0.12.1",
+      "comment": "Delta SBOM for ghcr.io/arduino/app-bricks/llamacpp-runner:0.13.0rc1 \u2014 changes relative to base image ghcr.io/arduino/app-bricks/python-slim:0.13.0rc1",
       "copyrightText": "NOASSERTION",
       "downloadLocation": "NOASSERTION",
       "filesAnalyzed": false,
@@ -28,7 +28,7 @@
       "SPDXID": "SPDXRef-libgomp1-deb",
       "annotations": [
         {
-          "annotationDate": "2026-07-29T10:08:02.301283Z",
+          "annotationDate": "2026-09-02T07:51:51.037770Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"added\"}"
@@ -48,6 +48,31 @@
       "licenseDeclared": "NOASSERTION",
       "name": "libgomp1",
       "versionInfo": "14.2.0-19"
+    },
+    {
+      "SPDXID": "SPDXRef-pyyaml-pypi",
+      "annotations": [
+        {
+          "annotationDate": "2026-09-02T07:51:51.037770Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: arduino-sbom-delta",
+          "comment": "{\"change\": \"added\"}"
+        }
+      ],
+      "copyrightText": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:pypi/pyyaml@6.0.3",
+          "referenceType": "purl"
+        }
+      ],
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT",
+      "name": "pyyaml",
+      "versionInfo": "6.0.3"
     }
   ],
   "relationships": [
@@ -58,6 +83,11 @@
     },
     {
       "relatedSpdxElement": "SPDXRef-libgomp1-deb",
+      "relationshipType": "CONTAINS",
+      "spdxElementId": "SPDXRef-Container"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-pyyaml-pypi",
       "relationshipType": "CONTAINS",
       "spdxElementId": "SPDXRef-Container"
     }
