@@ -281,9 +281,11 @@ class V4LCamera(BaseCamera):
                     logger.warning(f"Camera {self.name} returned invalid FPS value: {configured_fps}. Cannot verify FPS setting.")
                 else:
                     actual_fps = int(configured_fps)
-                    if actual_fps != self.fps:
+                    if actual_fps < self.fps:
                         logger.warning(f"Camera {self.name} FPS set to {actual_fps} instead of requested {self.fps}")
                         self.fps = actual_fps
+                    elif actual_fps > self.fps:
+                        logger.info(f"Camera {self.name} driver runs at {actual_fps} FPS, throttling to requested {self.fps} FPS")
 
             # Verify camera with a test read
             ret, frame = self._cap.read()

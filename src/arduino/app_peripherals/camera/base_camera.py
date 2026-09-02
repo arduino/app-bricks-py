@@ -55,7 +55,6 @@ class BaseCamera(ABC):
         self._camera_lock = threading.Lock()
         self._is_started = False
         self._last_capture_time = time.monotonic()
-        self._desired_interval = 1.0 / fps if fps > 0 else 0
 
         # Auto-reconnection parameters
         self.auto_reconnect = auto_reconnect
@@ -73,6 +72,16 @@ class BaseCamera(ABC):
     def status(self) -> Literal["disconnected", "connected", "streaming", "paused"]:
         """Read-only property for camera status."""
         return self._status
+
+    @property
+    def fps(self) -> int:
+        """Frames per second the camera captures at."""
+        return self._fps
+
+    @fps.setter
+    def fps(self, value: int) -> None:
+        self._fps = value
+        self._desired_interval = 1.0 / value if value > 0 else 0
 
     @property
     def _none_frame_threshold(self) -> int:
