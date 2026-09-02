@@ -2,10 +2,12 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+from . import bridge as bridge_module
 from .app import *
+from .bridge import *
+from .logger import _configure_library_logger
 from .audio import *
 from .brick import *
-from .bridge import *
 from .errors import *
 from .errors import install_excepthook as _install_excepthook
 from .folderwatch import *
@@ -37,3 +39,9 @@ __all__ = [
 
 # Report uncaught AppErrors with a user-readable message instead of a bare traceback
 _install_excepthook()
+
+# Apply the standard log format and level to the arduino-router-bridge library's logger
+_configure_library_logger("arduino.router_bridge", display_name="Bridge")
+
+# Connect the bridge eagerly
+bridge_module._get_bridge()
