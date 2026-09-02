@@ -91,6 +91,7 @@ def test_e4b_pinned_to_two_sessions(name, gguf_gb, ctx_size):
         ("Qwen3-4B-2507-Q4_0", 2.38, 4096, 1),
         ("Qwen3.5-4B-Q4_0", 2.78, 4096, 1),
         ("Qwen3-8B-Q4_0", 4.79, 4096, 3),
+        ("granite-4.2-8b-Q4_0", 5.06, 4096, 4),
         ("Qwen3.5-9B-Q4_0", 5.74, 4096, 4),
         ("gemma-4-12b-it-Q4_0", 6.98, 4096, 4),
     ],
