@@ -1,6 +1,6 @@
 services:
   pose_estimation:
-    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/pose-estimation-runner:0.1.0
+    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/pose-estimation-runner:0.13.0rc1
     logging:
       driver: "json-file"
       options:
