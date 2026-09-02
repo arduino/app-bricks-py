@@ -1,15 +1,15 @@
 {
   "SPDXID": "SPDXRef-DOCUMENT",
   "creationInfo": {
-    "created": "2026-07-29T10:06:23Z",
+    "created": "2026-09-02T07:50:51Z",
     "creators": [
       "Organization: Anchore, Inc",
-      "Tool: syft-1.50.0"
+      "Tool: syft-1.51.1"
     ],
     "licenseListVersion": "3.28"
   },
   "dataLicense": "CC0-1.0",
-  "documentNamespace": "https://anchore.com/syft/image/ghcr.io/arduino/app-bricks/ei-models-runner-4e6e8856-0ba0-46a1-b0f3-5529698e900a",
+  "documentNamespace": "https://anchore.com/syft/image/ghcr.io/arduino/app-bricks/ei-models-runner-572d9e27-4204-4599-9cd3-40b810e3a646",
   "files": [
     {
       "SPDXID": "SPDXRef-File-...-aws-crypto-crc32-package.json-772f2f9f2384e320",
@@ -21203,14 +21203,14 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...concrete-crack-anomaly-detection.eim-e958a6cb328fa828",
+      "SPDXID": "SPDXRef-File-...concrete-crack-anomaly-detection.eim-21ca570ed8027966",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:5a64dca5f39b491dc151be9bd6cb5c80c9313a3c3560d2628dd444fbf10b6fb8",
+      "comment": "layerID: sha256:a17007a6aa6500783933751fb05f380f967f3e5299697d0b798bd7d90c1f4ed6",
       "copyrightText": "NOASSERTION",
       "fileName": "models/ootb/ei/concrete-crack-anomaly-detection.eim",
       "licenseConcluded": "NOASSERTION",
@@ -21219,14 +21219,14 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...ootb-ei-fan-anomaly-detection.eim-3112e07ac5a393a9",
+      "SPDXID": "SPDXRef-File-...ootb-ei-fan-anomaly-detection.eim-56c23d116c6a22fb",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:5a64dca5f39b491dc151be9bd6cb5c80c9313a3c3560d2628dd444fbf10b6fb8",
+      "comment": "layerID: sha256:a17007a6aa6500783933751fb05f380f967f3e5299697d0b798bd7d90c1f4ed6",
       "copyrightText": "NOASSERTION",
       "fileName": "models/ootb/ei/fan-anomaly-detection.eim",
       "licenseConcluded": "NOASSERTION",
@@ -21235,14 +21235,14 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-models-ootb-ei-glass-breaking.eim-2c33b43e9f92e04f",
+      "SPDXID": "SPDXRef-File-models-ootb-ei-glass-breaking.eim-8da8e030cf820be1",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:5a64dca5f39b491dc151be9bd6cb5c80c9313a3c3560d2628dd444fbf10b6fb8",
+      "comment": "layerID: sha256:a17007a6aa6500783933751fb05f380f967f3e5299697d0b798bd7d90c1f4ed6",
       "copyrightText": "NOASSERTION",
       "fileName": "models/ootb/ei/glass-breaking.eim",
       "licenseConcluded": "NOASSERTION",
@@ -21251,14 +21251,14 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-models-ootb-ei-hand-gestures.eim-75d59c5fe0cadcbf",
+      "SPDXID": "SPDXRef-File-models-ootb-ei-hand-gestures.eim-4bcb6fbc38ed0161",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:5a64dca5f39b491dc151be9bd6cb5c80c9313a3c3560d2628dd444fbf10b6fb8",
+      "comment": "layerID: sha256:a17007a6aa6500783933751fb05f380f967f3e5299697d0b798bd7d90c1f4ed6",
       "copyrightText": "NOASSERTION",
       "fileName": "models/ootb/ei/hand-gestures.eim",
       "licenseConcluded": "NOASSERTION",
@@ -21267,14 +21267,14 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...ei-keyword-spotting-hey-arduino.eim-51e8f5b4a10ffbd2",
+      "SPDXID": "SPDXRef-File-...ei-keyword-spotting-hey-arduino.eim-3b0eec429e69c134",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:5a64dca5f39b491dc151be9bd6cb5c80c9313a3c3560d2628dd444fbf10b6fb8",
+      "comment": "layerID: sha256:a17007a6aa6500783933751fb05f380f967f3e5299697d0b798bd7d90c1f4ed6",
       "copyrightText": "NOASSERTION",
       "fileName": "models/ootb/ei/keyword-spotting-hey-arduino.eim",
       "licenseConcluded": "NOASSERTION",
@@ -21283,14 +21283,14 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-models-ootb-ei-lw-face-det.eim-976b466112bd1b49",
+      "SPDXID": "SPDXRef-File-models-ootb-ei-lw-face-det.eim-c15357d4292e5f73",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:5a64dca5f39b491dc151be9bd6cb5c80c9313a3c3560d2628dd444fbf10b6fb8",
+      "comment": "layerID: sha256:a17007a6aa6500783933751fb05f380f967f3e5299697d0b798bd7d90c1f4ed6",
       "copyrightText": "NOASSERTION",
       "fileName": "models/ootb/ei/lw-face-det.eim",
       "licenseConcluded": "NOASSERTION",
@@ -21299,14 +21299,14 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-models-ootb-ei-mobilenet-v2-224px.eim-2678a8050c33ce13",
+      "SPDXID": "SPDXRef-File-models-ootb-ei-mobilenet-v2-224px.eim-a4275a9600c3c8ad",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:5a64dca5f39b491dc151be9bd6cb5c80c9313a3c3560d2628dd444fbf10b6fb8",
+      "comment": "layerID: sha256:a17007a6aa6500783933751fb05f380f967f3e5299697d0b798bd7d90c1f4ed6",
       "copyrightText": "NOASSERTION",
       "fileName": "models/ootb/ei/mobilenet-v2-224px.eim",
       "licenseConcluded": "NOASSERTION",
@@ -21315,14 +21315,14 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...ootb-ei-person-classification.eim-417174d88213721e",
+      "SPDXID": "SPDXRef-File-...ootb-ei-person-classification.eim-7fb7375bff05bfe4",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:5a64dca5f39b491dc151be9bd6cb5c80c9313a3c3560d2628dd444fbf10b6fb8",
+      "comment": "layerID: sha256:a17007a6aa6500783933751fb05f380f967f3e5299697d0b798bd7d90c1f4ed6",
       "copyrightText": "NOASSERTION",
       "fileName": "models/ootb/ei/person-classification.eim",
       "licenseConcluded": "NOASSERTION",
@@ -21331,14 +21331,14 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...ei-updown-wave-motion-detection.eim-ab1f860ed21a5e56",
+      "SPDXID": "SPDXRef-File-...ei-updown-wave-motion-detection.eim-10ba66fc81b135fc",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:5a64dca5f39b491dc151be9bd6cb5c80c9313a3c3560d2628dd444fbf10b6fb8",
+      "comment": "layerID: sha256:a17007a6aa6500783933751fb05f380f967f3e5299697d0b798bd7d90c1f4ed6",
       "copyrightText": "NOASSERTION",
       "fileName": "models/ootb/ei/updown-wave-motion-detection.eim",
       "licenseConcluded": "NOASSERTION",
@@ -21347,14 +21347,14 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-models-ootb-ei-yolo-x-nano.eim-4f2d36e415125d1b",
+      "SPDXID": "SPDXRef-File-models-ootb-ei-yolo-x-nano.eim-d15f0869574932d5",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:5a64dca5f39b491dc151be9bd6cb5c80c9313a3c3560d2628dd444fbf10b6fb8",
+      "comment": "layerID: sha256:a17007a6aa6500783933751fb05f380f967f3e5299697d0b798bd7d90c1f4ed6",
       "copyrightText": "NOASSERTION",
       "fileName": "models/ootb/ei/yolo-x-nano.eim",
       "licenseConcluded": "NOASSERTION",
@@ -22153,6 +22153,30 @@
       ]
     },
     {
+      "SPDXID": "SPDXRef-File-usr-bin-bzcat-93c295d10e0c009f",
+      "checksums": [
+        {
+          "algorithm": "SHA1",
+          "checksumValue": "ac4e2b389e700a1024b24043b3f6e186b91af52a"
+        },
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "6d3aa2edf0674bc8619f93c210005182569aa88fcc8bf0a58c638009848d1f99"
+        }
+      ],
+      "comment": "layerID: sha256:66376f73404c2bef0f4cb8d77e0e3696bb974fc08cf68c7bb3587d71f6e9c446",
+      "copyrightText": "NOASSERTION",
+      "fileName": "usr/bin/bzcat",
+      "fileTypes": [
+        "APPLICATION",
+        "BINARY"
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "licenseInfoInFiles": [
+        "NOASSERTION"
+      ]
+    },
+    {
       "SPDXID": "SPDXRef-File-usr-bin-bzdiff-2e9e508ee1157e6a",
       "checksums": [
         {
@@ -22215,6 +22239,30 @@
       "fileName": "usr/bin/bzgrep",
       "fileTypes": [
         "TEXT"
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "licenseInfoInFiles": [
+        "NOASSERTION"
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-File-usr-bin-bzip2-00cffa9a0ff0519b",
+      "checksums": [
+        {
+          "algorithm": "SHA1",
+          "checksumValue": "ac4e2b389e700a1024b24043b3f6e186b91af52a"
+        },
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "6d3aa2edf0674bc8619f93c210005182569aa88fcc8bf0a58c638009848d1f99"
+        }
+      ],
+      "comment": "layerID: sha256:66376f73404c2bef0f4cb8d77e0e3696bb974fc08cf68c7bb3587d71f6e9c446",
+      "copyrightText": "NOASSERTION",
+      "fileName": "usr/bin/bzip2",
+      "fileTypes": [
+        "APPLICATION",
+        "BINARY"
       ],
       "licenseConcluded": "NOASSERTION",
       "licenseInfoInFiles": [
@@ -26568,6 +26616,30 @@
       ]
     },
     {
+      "SPDXID": "SPDXRef-File-usr-bin-perl5.30.0-a555b9b9c1340a80",
+      "checksums": [
+        {
+          "algorithm": "SHA1",
+          "checksumValue": "a5a3fd6a3e1e32b3ca96db9917aa184786a6123a"
+        },
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "d42f3f0734cbece85f53a36582c61dedf1e8802d0e94273663a541b9350ded62"
+        }
+      ],
+      "comment": "layerID: sha256:66376f73404c2bef0f4cb8d77e0e3696bb974fc08cf68c7bb3587d71f6e9c446",
+      "copyrightText": "NOASSERTION",
+      "fileName": "usr/bin/perl5.30.0",
+      "fileTypes": [
+        "APPLICATION",
+        "BINARY"
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "licenseInfoInFiles": [
+        "NOASSERTION"
+      ]
+    },
+    {
       "SPDXID": "SPDXRef-File-usr-bin-pgrep-54d8a5df141dbfbe",
       "checksums": [
         {
@@ -29265,6 +29337,29 @@
       ]
     },
     {
+      "SPDXID": "SPDXRef-File-usr-bin-uncompress-b7f948f4989ee9e3",
+      "checksums": [
+        {
+          "algorithm": "SHA1",
+          "checksumValue": "683c487108ccbde6b89744d95ca6e295fa634c4b"
+        },
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "dbc33fb517aa148184d1fe8325a763325ddd89264ee0e84a6cd32f2579394276"
+        }
+      ],
+      "comment": "layerID: sha256:66376f73404c2bef0f4cb8d77e0e3696bb974fc08cf68c7bb3587d71f6e9c446",
+      "copyrightText": "NOASSERTION",
+      "fileName": "usr/bin/uncompress",
+      "fileTypes": [
+        "TEXT"
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "licenseInfoInFiles": [
+        "NOASSERTION"
+      ]
+    },
+    {
       "SPDXID": "SPDXRef-File-usr-bin-unexpand-a4742ff9e60405fa",
       "checksums": [
         {
@@ -30300,6 +30395,30 @@
       "fileName": "usr/bin/zipgrep",
       "fileTypes": [
         "TEXT"
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "licenseInfoInFiles": [
+        "NOASSERTION"
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-File-usr-bin-zipinfo-a1107d4d0b22a1ae",
+      "checksums": [
+        {
+          "algorithm": "SHA1",
+          "checksumValue": "d6307c943bfdb619679ae617c2742a1c795b4e68"
+        },
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "205a328f0a0ce2892eccf1acdd099cf9fb3e28f4b69e3d92398bb09643fb2d42"
+        }
+      ],
+      "comment": "layerID: sha256:235790ada95e72978c755b62443dfac56598cecc8b9ef13032e96552ec603120",
+      "copyrightText": "NOASSERTION",
+      "fileName": "usr/bin/zipinfo",
+      "fileTypes": [
+        "APPLICATION",
+        "BINARY"
       ],
       "licenseConcluded": "NOASSERTION",
       "licenseInfoInFiles": [
@@ -291356,7 +291475,7 @@
       "licenseDeclared": "LicenseRef-BSD-variant AND GPL-2.0-only",
       "name": "bzip2",
       "packageVerificationCode": {
-        "packageVerificationCodeValue": "bc0d7082f1a2a2b4bfbba0c930b9cf8e4c68f320"
+        "packageVerificationCodeValue": "f4b008c2a0319b5ae4611294d3c1f3aa500d90fc"
       },
       "sourceInfo": "acquired package info from DPKG DB: /var/lib/dpkg/status, /usr/share/doc/bzip2/copyright, /var/lib/dpkg/info/bzip2.md5sums, /var/lib/dpkg/info/bzip2.list",
       "supplier": "NOASSERTION",
@@ -301734,7 +301853,7 @@
       "licenseDeclared": "NOASSERTION",
       "name": "gzip",
       "packageVerificationCode": {
-        "packageVerificationCodeValue": "018219b4c309a441d050c6ac71b8a3fb24fd1bad"
+        "packageVerificationCodeValue": "ff8bf1244afbbbe9aa5dc9b2ae6cc59c5c168700"
       },
       "sourceInfo": "acquired package info from DPKG DB: /var/lib/dpkg/status, /usr/share/doc/gzip/copyright, /var/lib/dpkg/info/gzip.md5sums, /var/lib/dpkg/info/gzip.list",
       "supplier": "NOASSERTION",
@@ -321023,7 +321142,7 @@
       "licenseDeclared": "LicenseRef-Artistic AND Artistic-2.0 AND Artistic-dist AND BSD-3-Clause AND LicenseRef-BSD-3-clause-GENERIC AND LicenseRef-BSD-3-clause-with-weird-numbering AND LicenseRef-BSD-4-clause-POWERDOG AND LicenseRef-BZIP AND LicenseRef-DONT-CHANGE-THE-GPL AND LicenseRef-Expat AND GPL-1.0-only AND GPL-1.0-or-later AND GPL-2.0-only AND GPL-2.0-or-later AND LicenseRef-GPL-3--WITH-BISON-EXCEPTION AND LicenseRef-HSIEH-BSD AND LicenseRef-HSIEH-DERIVATIVE AND LGPL-2.1-only AND LicenseRef-REGCOMP AND LicenseRef-REGCOMP- AND LicenseRef-RRA-KEEP-THIS-NOTICE AND LicenseRef-SDBM-PUBLIC-DOMAIN AND LicenseRef-TEXT-TABS AND LicenseRef-Unicode AND Zlib",
       "name": "perl-base",
       "packageVerificationCode": {
-        "packageVerificationCodeValue": "f07af3ccb191478ddad166da4caa5a0642aa42b7"
+        "packageVerificationCodeValue": "aebe3751481d0efc3ccd9eadbd14e099111b98d3"
       },
       "sourceInfo": "acquired package info from DPKG DB: /var/lib/dpkg/status, /usr/share/doc/perl-base/copyright, /var/lib/dpkg/info/perl-base.md5sums, /var/lib/dpkg/info/perl-base.list, /var/lib/dpkg/info/perl-base.postinst, /var/lib/dpkg/info/perl-base.postrm, /var/lib/dpkg/info/perl-base.preinst, /var/lib/dpkg/info/perl-base.prerm",
       "supplier": "NOASSERTION",
@@ -325710,7 +325829,7 @@
       "externalRefs": [
         {
           "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:sigstore:sigstore:3.0.0:*:*:*:*:*:*:*",
+          "referenceLocator": "cpe:2.3:a:sigstore:sigstore:3.0.0:*:*:*:*:node.js:*:*",
           "referenceType": "cpe23Type"
         },
         {
@@ -330907,7 +331026,7 @@
       "licenseDeclared": "NOASSERTION",
       "name": "unzip",
       "packageVerificationCode": {
-        "packageVerificationCodeValue": "c7fc559852b14684ede5ea726b0c79f19c696de0"
+        "packageVerificationCodeValue": "d029169a2b045fec8d6b7658a0db0a5bff7aded9"
       },
       "sourceInfo": "acquired package info from DPKG DB: /var/lib/dpkg/status, /usr/share/doc/unzip/copyright, /var/lib/dpkg/info/unzip.md5sums, /var/lib/dpkg/info/unzip.list, /var/lib/dpkg/info/unzip.postinst, /var/lib/dpkg/info/unzip.postrm",
       "supplier": "NOASSERTION",
@@ -332922,7 +333041,7 @@
       "checksums": [
         {
           "algorithm": "SHA256",
-          "checksumValue": "276a61c1fbf7dd601e6a62c89bebc79733765f9ee2822e4d8ac252792c9a2f4b"
+          "checksumValue": "0429dbed2bfa67c763996197d9e4b01e1c91c49d64d38b99fe771ef1fbd64491"
         }
       ],
       "copyrightText": "NOASSERTION",
@@ -332930,7 +333049,7 @@
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:oci/ghcr.io%2Farduino%2Fapp-bricks%2Fei-models-runner@sha256%3A276a61c1fbf7dd601e6a62c89bebc79733765f9ee2822e4d8ac252792c9a2f4b?arch=arm64&tag=0.12.1",
+          "referenceLocator": "pkg:oci/ghcr.io%2Farduino%2Fapp-bricks%2Fei-models-runner@sha256%3A0429dbed2bfa67c763996197d9e4b01e1c91c49d64d38b99fe771ef1fbd64491?arch=arm64&tag=0.13.0rc1",
           "referenceType": "purl"
         }
       ],
@@ -332940,7 +333059,7 @@
       "name": "ghcr.io/arduino/app-bricks/ei-models-runner",
       "primaryPackagePurpose": "CONTAINER",
       "supplier": "NOASSERTION",
-      "versionInfo": "0.12.1"
+      "versionInfo": "0.13.0rc1"
     }
   ],
   "relationships": [
@@ -333831,6 +333950,11 @@
     },
     {
       "relatedSpdxElement": "SPDXRef-File-usr-share-doc-gzip-changelog.Debian.gz-aeab56d1cc0b1a4f",
+      "relationshipType": "CONTAINS",
+      "spdxElementId": "SPDXRef-Package-deb-gzip-2350eb367fea0821"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-File-usr-bin-uncompress-b7f948f4989ee9e3",
       "relationshipType": "CONTAINS",
       "spdxElementId": "SPDXRef-Package-deb-gzip-2350eb367fea0821"
     },
@@ -344290,6 +344414,11 @@
       "spdxElementId": "SPDXRef-Package-deb-unzip-42f170f297a42e1b"
     },
     {
+      "relatedSpdxElement": "SPDXRef-File-usr-bin-zipinfo-a1107d4d0b22a1ae",
+      "relationshipType": "CONTAINS",
+      "spdxElementId": "SPDXRef-Package-deb-unzip-42f170f297a42e1b"
+    },
+    {
       "relatedSpdxElement": "SPDXRef-File-usr-lib-mime-packages-unzip-bf6f4ef598457207",
       "relationshipType": "CONTAINS",
       "spdxElementId": "SPDXRef-Package-deb-unzip-42f170f297a42e1b"
@@ -346331,6 +346460,11 @@
     },
     {
       "relatedSpdxElement": "SPDXRef-File-...perl-base-unicore-lib-Bpt-C.pl-a536b0ed1aea5707",
+      "relationshipType": "CONTAINS",
+      "spdxElementId": "SPDXRef-Package-deb-perl-base-43e5f2c4ba849e63"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-File-usr-bin-perl5.30.0-a555b9b9c1340a80",
       "relationshipType": "CONTAINS",
       "spdxElementId": "SPDXRef-Package-deb-perl-base-43e5f2c4ba849e63"
     },
@@ -358260,6 +358394,11 @@
       "spdxElementId": "SPDXRef-Package-deb-libcairo2-c3e3c67d799fa162"
     },
     {
+      "relatedSpdxElement": "SPDXRef-File-usr-bin-bzip2-00cffa9a0ff0519b",
+      "relationshipType": "CONTAINS",
+      "spdxElementId": "SPDXRef-Package-deb-bzip2-c472e7c82cadc38b"
+    },
+    {
       "relatedSpdxElement": "SPDXRef-File-usr-bin-bzexe-0ea6a4ba1e12edaa",
       "relationshipType": "CONTAINS",
       "spdxElementId": "SPDXRef-Package-deb-bzip2-c472e7c82cadc38b"
@@ -358276,6 +358415,11 @@
     },
     {
       "relatedSpdxElement": "SPDXRef-File-usr-bin-bzip2recover-660a808f871a1410",
+      "relationshipType": "CONTAINS",
+      "spdxElementId": "SPDXRef-Package-deb-bzip2-c472e7c82cadc38b"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-File-usr-bin-bzcat-93c295d10e0c009f",
       "relationshipType": "CONTAINS",
       "spdxElementId": "SPDXRef-Package-deb-bzip2-c472e7c82cadc38b"
     },
