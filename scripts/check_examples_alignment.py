@@ -112,7 +112,19 @@ def cmd_run(args) -> int:
 
     data = json.loads(proc.stdout)
     for diag in data.get("generalDiagnostics", []):
-        diag["file"] = Path(diag["file"]).resolve().relative_to(examples_dir).as_posix()
+        # Normalize paths and tag the repository: diagnostics normally land on
+        # the examples files, but pyright may also point inside the library.
+        path = Path(diag["file"]).resolve()
+        try:
+            diag["file"] = path.relative_to(examples_dir).as_posix()
+            diag["repository"] = "app-bricks-examples"
+        except ValueError:
+            try:
+                diag["file"] = path.relative_to(library_src.parent).as_posix()
+                diag["repository"] = "app-bricks-py"
+            except ValueError:
+                diag["file"] = path.as_posix()
+                diag["repository"] = ""
     if args.out:
         Path(args.out).write_text(json.dumps(data, indent=2) + "\n")
     summary = data["summary"]
@@ -127,30 +139,35 @@ def cmd_run(args) -> int:
 
 
 def error_index(data: dict) -> tuple[Counter, dict]:
-    """Index error diagnostics by a line-shift-tolerant key: (file, rule, message first line)."""
+    """Index error diagnostics by a line-shift-tolerant key: (repository, file, rule, message first line).
+
+    Also returns the 1-based lines of the occurrences of each key (informational
+    only: lines are not part of the key, so moved code does not diff as new).
+    """
     counts: Counter = Counter()
-    samples: dict = {}
+    occurrences: dict[tuple, list[int]] = {}
     for diag in data.get("generalDiagnostics", []):
         if diag["severity"] != "error":
             continue
-        key = (diag["file"], diag.get("rule", ""), diag["message"].splitlines()[0])
+        key = (diag.get("repository", ""), diag["file"], diag.get("rule", ""), diag["message"].splitlines()[0])
         counts[key] += 1
-        samples.setdefault(key, diag)
-    return counts, samples
+        occurrences.setdefault(key, []).append(diag["range"]["start"]["line"] + 1)
+    return counts, occurrences
 
 
-def error_table(entries: dict) -> list[str]:
+def error_table(entries: dict, occurrences: dict) -> list[str]:
     """Markdown table rows for an error index, with pipes escaped for the cells."""
-    rows = ["| Example file | Rule | Message |", "|---|---|---|"]
-    for (file, rule, message), count in sorted(entries.items()):
-        suffix = f" (×{count})" if count > 1 else ""
-        rows.append(f"| `{file}` | {rule} | {message.replace('|', '\\|')}{suffix} |")
+    rows = ["| Repository | File | Line(s) | Rule | Message |", "|---|---|---|---|---|"]
+    for key in sorted(entries):
+        repo, file, rule, message = key
+        lines = ", ".join(str(line) for line in sorted(occurrences[key]))
+        rows.append(f"| {repo} | `{file}` | {lines} | {rule} | {message.replace('|', '\\|')} |")
     return rows
 
 
 def cmd_diff(args) -> int:
-    base_counts, _ = error_index(json.loads(Path(args.base).read_text()))
-    head_counts, head_samples = error_index(json.loads(Path(args.head).read_text()))
+    base_counts, base_occurrences = error_index(json.loads(Path(args.base).read_text()))
+    head_counts, head_occurrences = error_index(json.loads(Path(args.head).read_text()))
 
     new = {key: count - base_counts.get(key, 0) for key, count in head_counts.items() if count > base_counts.get(key, 0)}
     fixed = {key: count - head_counts.get(key, 0) for key, count in base_counts.items() if count > head_counts.get(key, 0)}
@@ -162,16 +179,16 @@ def cmd_diff(args) -> int:
         f"base {sum(base_counts.values())} → head {sum(head_counts.values())} "
         f"(**{sum(new.values())} new**, {sum(fixed.values())} fixed)",
     ]
-    for title, entries in (("New errors", new), ("Fixed errors", fixed)):
+    for title, entries, occurrences in (("New errors", new, head_occurrences), ("Fixed errors", fixed, base_occurrences)):
         if entries:
-            lines += ["", f"### {title}", ""] + error_table(entries)
+            lines += ["", f"### {title}", ""] + error_table(entries, occurrences)
     if not new and not fixed:
         lines += ["", "No changes in examples alignment."]
     if head_counts:
         # Pre-existing errors are part of the story too, but collapsed: the diff
         # above stays the signal of the PR.
         lines += ["", "<details>", f"<summary>Full report: {sum(head_counts.values())} errors against head</summary>", ""]
-        lines += error_table(head_counts)
+        lines += error_table(head_counts, head_occurrences)
         lines += ["", "</details>"]
     if args.reports_url:
         lines += ["", f"Raw pyright outputs (base/head JSON): [workflow artifact]({args.reports_url})"]
@@ -182,9 +199,9 @@ def cmd_diff(args) -> int:
     if summary_path:
         with open(summary_path, "a") as f:
             f.write(report + "\n")
-    for (file, rule, message), _count in sorted(new.items()):
-        line = head_samples[(file, rule, message)]["range"]["start"]["line"] + 1
-        print(f"::warning::examples alignment: {file}:{line} [{rule}] {message}")
+    for key in sorted(new):
+        _repo, file, rule, message = key
+        print(f"::warning::examples alignment: {file}:{head_occurrences[key][0]} [{rule}] {message}")
 
     # Informative check by design: new errors are reported, never blocking.
     return 0
