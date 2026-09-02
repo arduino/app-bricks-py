@@ -89,13 +89,8 @@ jobs:
       - name: Run pyright against head
         run: python head/scripts/check_examples_alignment.py run --examples-dir examples --library-src head/src --python checkenv/bin/python --out head.json
 
-      - name: Report alignment diff
-        run: python head/scripts/check_examples_alignment.py diff --base base.json --head head.json
-
-      - name: Report bricks example coverage
-        run: python head/scripts/check_examples_alignment.py coverage --examples-dir examples --head-src head/src --base-src base/src
-
       - name: Upload run outputs
+        id: reports
         uses: actions/upload-artifact@v4
         with:
           name: examples-alignment-reports
@@ -103,3 +98,9 @@ jobs:
             base.json
             head.json
           retention-days: 15
+
+      - name: Report alignment diff
+        run: python head/scripts/check_examples_alignment.py diff --base base.json --head head.json --reports-url "${{ steps.reports.outputs.artifact-url }}"
+
+      - name: Report bricks example coverage
+        run: python head/scripts/check_examples_alignment.py coverage --examples-dir examples --head-src head/src --base-src base/src

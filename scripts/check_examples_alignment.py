@@ -139,6 +139,15 @@ def error_index(data: dict) -> tuple[Counter, dict]:
     return counts, samples
 
 
+def error_table(entries: dict) -> list[str]:
+    """Markdown table rows for an error index, with pipes escaped for the cells."""
+    rows = ["| Example file | Rule | Message |", "|---|---|---|"]
+    for (file, rule, message), count in sorted(entries.items()):
+        suffix = f" (×{count})" if count > 1 else ""
+        rows.append(f"| `{file}` | {rule} | {message.replace('|', '\\|')}{suffix} |")
+    return rows
+
+
 def cmd_diff(args) -> int:
     base_counts, _ = error_index(json.loads(Path(args.base).read_text()))
     head_counts, head_samples = error_index(json.loads(Path(args.head).read_text()))
@@ -155,12 +164,17 @@ def cmd_diff(args) -> int:
     ]
     for title, entries in (("New errors", new), ("Fixed errors", fixed)):
         if entries:
-            lines += ["", f"### {title}", "", "| Example file | Rule | Message |", "|---|---|---|"]
-            for (file, rule, message), count in sorted(entries.items()):
-                suffix = f" (×{count})" if count > 1 else ""
-                lines.append(f"| `{file}` | {rule} | {message}{suffix} |")
+            lines += ["", f"### {title}", ""] + error_table(entries)
     if not new and not fixed:
         lines += ["", "No changes in examples alignment."]
+    if head_counts:
+        # Pre-existing errors are part of the story too, but collapsed: the diff
+        # above stays the signal of the PR.
+        lines += ["", "<details>", f"<summary>Full report: {sum(head_counts.values())} errors against head</summary>", ""]
+        lines += error_table(head_counts)
+        lines += ["", "</details>"]
+    if args.reports_url:
+        lines += ["", f"Raw pyright outputs (base/head JSON): [workflow artifact]({args.reports_url})"]
     report = "\n".join(lines)
 
     print(report)
@@ -249,6 +263,7 @@ def main() -> int:
     diff.add_argument("--base", required=True)
     diff.add_argument("--head", required=True)
     diff.add_argument("--summary", help="markdown output file (defaults to GITHUB_STEP_SUMMARY)")
+    diff.add_argument("--reports-url", help="link to the uploaded run outputs, appended to the summary")
     diff.set_defaults(func=cmd_diff)
 
     coverage = sub.add_parser("coverage", help="report library bricks that have no examples")
