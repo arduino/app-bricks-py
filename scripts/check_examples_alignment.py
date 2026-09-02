@@ -41,6 +41,7 @@ from pathlib import Path
 PYRIGHT_VERSION = "1.1.406"
 EXAMPLES_ROOTS = ["bricks", "core-and-foundational", "inspirational"]
 DEFAULT_EXAMPLES_DIR = "../app-bricks-examples"
+EXAMPLES_REPO_MD = "[app-bricks-examples](https://github.com/arduino/app-bricks-examples)@main"
 DEFAULT_VENV_PYTHON = ".venv/bin/python"
 SELF_EXTRA_RE = re.compile(r"^arduino[-_]app[-_]bricks\[(.+)\]$")
 
@@ -175,7 +176,7 @@ def cmd_diff(args) -> int:
     lines = [
         "## Examples alignment check",
         "",
-        f"Errors against the examples ([app-bricks-examples](https://github.com/arduino/app-bricks-examples)@main): "
+        f"Errors against the examples ({EXAMPLES_REPO_MD}): "
         f"base {sum(base_counts.values())} → head {sum(head_counts.values())} "
         f"(**{sum(new.values())} new**, {sum(fixed.values())} fixed)",
     ]
@@ -248,7 +249,7 @@ def cmd_coverage(args) -> int:
         lines += [f"- `{name}`" + (" — **introduced by this PR**" if name in introduced else "") for name in uncovered]
         lines += ["", "Informative only: a new brick may legitimately land before its examples do."]
     else:
-        lines.append("Every non-disabled brick has at least one example.")
+        lines.append(f"Every non-disabled brick has at least one example in {EXAMPLES_REPO_MD} repository.")
     report = "\n".join(lines)
 
     print(report)
