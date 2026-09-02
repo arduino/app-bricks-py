@@ -15,7 +15,7 @@ import unittest
 from contextlib import redirect_stderr
 from unittest.mock import patch
 
-from arduino.app_utils.logger import _configure_library_logger
+from arduino.app_utils.logger import _build_handler, _configure_library_logger
 
 
 class TestBridgeExports(unittest.TestCase):
@@ -32,7 +32,12 @@ class TestBridgeExports(unittest.TestCase):
         import arduino.app_utils  # noqa: F401  Importing the package configures the library logger
 
         lib_logger = logging.getLogger("arduino.router_bridge")
-        self.assertEqual(len(lib_logger.handlers), 1)
+        # Other tests and third-party libraries may attach their own handlers to this
+        # process-global logger, so only assert on the app-standard one being in place.
+        app_format = _build_handler().formatter._fmt
+        app_handlers = [h for h in lib_logger.handlers if h.formatter is not None and h.formatter._fmt == app_format]
+        foreign_handlers = [type(h).__name__ for h in lib_logger.handlers]
+        self.assertEqual(len(app_handlers), 1, f"expected exactly one app-standard handler among: {foreign_handlers}")
         self.assertFalse(lib_logger.propagate)
 
     def test_app_socket_env_is_applied_to_bridge(self):
