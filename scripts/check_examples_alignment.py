@@ -177,14 +177,22 @@ def cmd_diff(args) -> int:
 
 
 DISABLED_RE = re.compile(r"^disabled:\s*true\s*$", re.MULTILINE)
+BRICK_ID_RE = re.compile(r"^id:\s*(?:[\w-]+:)?([\w-]+)\s*$", re.MULTILINE)
 
 
 def library_bricks(library_src: Path) -> set[str]:
-    """Names of the non-disabled bricks defined in a library source checkout."""
+    """Names of the non-disabled bricks defined in a library source checkout.
+
+    A brick's name is the one declared in its brick_config.yaml `id` (without
+    the vendor prefix) — the identifier App Lab and the examples manifest use —
+    which for a few bricks differs from the module directory name.
+    """
     bricks = set()
     for config in sorted(library_src.glob("arduino/app_bricks/*/brick_config.yaml")):
-        if not DISABLED_RE.search(config.read_text()):
-            bricks.add(config.parent.name)
+        content = config.read_text()
+        if not DISABLED_RE.search(content):
+            match = BRICK_ID_RE.search(content)
+            bricks.add(match.group(1) if match else config.parent.name)
     return bricks
 
 
