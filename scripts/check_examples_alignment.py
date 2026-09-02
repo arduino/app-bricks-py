@@ -191,7 +191,7 @@ def cmd_diff(args) -> int:
         lines += error_table(head_counts, head_occurrences)
         lines += ["", "</details>"]
     if args.reports_url:
-        lines += ["", f"Raw pyright outputs (base/head JSON): [workflow artifact]({args.reports_url})"]
+        lines += ["", f"[Download full pyright JSON report]({args.reports_url})"]
     report = "\n".join(lines)
 
     print(report)
