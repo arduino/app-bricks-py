@@ -183,7 +183,7 @@ def cmd_diff(args) -> int:
         if entries:
             lines += ["", f"### {title}", ""] + error_table(entries, occurrences)
     if not new and not fixed:
-        lines += ["", "No changes in examples alignment."]
+        lines += ["", "No new errors in this PR."]
     if head_counts:
         # Pre-existing errors are part of the story too, but collapsed: the diff
         # above stays the signal of the PR.
@@ -191,7 +191,7 @@ def cmd_diff(args) -> int:
         lines += error_table(head_counts, head_occurrences)
         lines += ["", "</details>"]
     if args.reports_url:
-        lines += ["", f"[Download full pyright JSON report]({args.reports_url})"]
+        lines += ["", f"📥 [Download full pyright JSON report]({args.reports_url})"]
     report = "\n".join(lines)
 
     print(report)
