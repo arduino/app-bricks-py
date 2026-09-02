@@ -25,7 +25,7 @@ def _get_bridge() -> RouterBridge:
     with _bridge_lock:
         if _bridge is None:
             _bridge = RouterBridge(os.environ.get("APP_SOCKET", DEFAULT_ADDRESS))
-        _bridge.connect()  # No-op when already connected, restarts a disconnected bridge
+        _bridge.connect(timeout=0)  # Ensures background (re)connection without waiting for it
         return _bridge
 
 
