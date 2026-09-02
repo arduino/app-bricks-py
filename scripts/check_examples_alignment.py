@@ -192,6 +192,9 @@ def cmd_diff(args) -> int:
         lines += ["", "</details>"]
     if args.reports_url:
         lines += ["", f"📥 [Download full pyright JSON report]({args.reports_url})"]
+    # Horizontal rule separating this section from the coverage one, appended
+    # to the same job summary by the next step.
+    lines += ["", "---"]
     report = "\n".join(lines)
 
     print(report)
