@@ -1851,12 +1851,12 @@ models:
               model_name: desk-items-detector.eim
               target: runner-linux-aarch64
     bricks:
-      - id: "arduino:image_classification"
+      - id: "arduino:object_detection"
         model_configuration:
-          "EI_CLASSIFICATION_MODEL": "/var/lib/arduino-app-cli/models/edge-impulse/desk-items-detector/desk-items-detector.eim"
-      - id: "arduino:video_image_classification"
+          "EI_OBJ_DETECTION_MODEL": "/var/lib/arduino-app-cli/models/edge-impulse/desk-items-detector/desk-items-detector.eim"
+      - id: "arduino:video_object_detection"
         model_configuration:
-          "EI_V_CLASSIFICATION_MODEL": "/var/lib/arduino-app-cli/models/edge-impulse/desk-items-detector/desk-items-detector.eim"
+          "EI_V_OBJ_DETECTION_MODEL": "/var/lib/arduino-app-cli/models/edge-impulse/desk-items-detector/desk-items-detector.eim"
  - "ei:desk-items-detector-qnn":
     name : "Desk Items Detector"
     description: "A tiny computer vision model optimized for real-time detection of common objects found in a desk or office environment. This version of the model is optimized for NPU acceleration on supported devices, providing faster inference times while maintaining accuracy."
@@ -1883,12 +1883,12 @@ models:
               model_name: desk-items-detector-qnn.eim
               target: runner-linux-aarch64-qnn
     bricks:
-      - id: "arduino:image_classification"
+      - id: "arduino:object_detection"
         model_configuration:
-          "EI_CLASSIFICATION_MODEL": "/var/lib/arduino-app-cli/models/edge-impulse/desk-items-detector-qnn/desk-items-detector-qnn.eim"
-      - id: "arduino:video_image_classification"
+          "EI_OBJ_DETECTION_MODEL": "/var/lib/arduino-app-cli/models/edge-impulse/desk-items-detector-qnn/desk-items-detector-qnn.eim"
+      - id: "arduino:video_object_detection"
         model_configuration:
-          "EI_V_CLASSIFICATION_MODEL": "/var/lib/arduino-app-cli/models/edge-impulse/desk-items-detector-qnn/desk-items-detector-qnn.eim"           
+          "EI_V_OBJ_DETECTION_MODEL": "/var/lib/arduino-app-cli/models/edge-impulse/desk-items-detector-qnn/desk-items-detector-qnn.eim"           
  - "llamacpp:gemma-4-E2B_q4_0-it":
     name : "Gemma 4 E2B"
     description: >-
