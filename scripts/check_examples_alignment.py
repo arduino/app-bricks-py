@@ -24,8 +24,8 @@ Typical PR usage:
 
 Quick local usage (defaults: examples in ../app-bricks-examples, library in
 src, interpreter from the project .venv, no JSON output, details printed):
-  task check:examples-alignment -- run
-  task check:examples-alignment -- coverage
+  task check:examples-alignment:run
+  task check:examples-alignment:coverage
 """
 
 import argparse
