@@ -143,6 +143,22 @@ export DOCKER_PYTHON_BASE_IMAGE=app-bricks/python-apps-base:dev-pose-classificat
 ```
 Development containers are published by the dev CI (`docker-build.yml`) tagged as `dev-<branch-name>` (e.g. branch `pose-classification` → tag `dev-pose-classification`).
 
+## Examples alignment
+
+The published examples live in [app-bricks-examples](https://github.com/arduino/app-bricks-examples). To check whether your changes break the API contract the examples rely on (pyright analyzes their Python sources against your checkout), clone that repository next to this one and run:
+
+```sh
+task check:examples-alignment -- run
+```
+
+To list the bricks that have no examples yet:
+
+```sh
+task check:examples-alignment -- coverage
+```
+
+See `scripts/check_examples_alignment.py --help` for the full options (custom paths, JSON output, PR base/head diff — the mode used by the `check-examples-alignment.yml` workflow).
+
 ## Release
 
 Release is based on tags pushed to `main`. A single workflow (`docker-publish.yml`) handles all container

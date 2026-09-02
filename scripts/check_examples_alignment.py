@@ -21,6 +21,11 @@ Typical PR usage:
   python3 scripts/check_examples_alignment.py run --examples-dir <examples> --library-src base/src --python <venv> --out base.json
   python3 scripts/check_examples_alignment.py run --examples-dir <examples> --library-src head/src --python <venv> --out head.json
   python3 scripts/check_examples_alignment.py diff --base base.json --head head.json
+
+Quick local usage (defaults: examples in ../app-bricks-examples, library in
+src, interpreter from the project .venv, no JSON output, details printed):
+  task check:examples-alignment -- run
+  task check:examples-alignment -- coverage
 """
 
 import argparse
@@ -35,6 +40,8 @@ from pathlib import Path
 
 PYRIGHT_VERSION = "1.1.406"
 EXAMPLES_ROOTS = ["bricks", "core-and-foundational", "inspirational"]
+DEFAULT_EXAMPLES_DIR = "../app-bricks-examples"
+DEFAULT_VENV_PYTHON = ".venv/bin/python"
 SELF_EXTRA_RE = re.compile(r"^arduino[-_]app[-_]bricks\[(.+)\]$")
 
 
@@ -64,6 +71,9 @@ def cmd_deps(args) -> int:
 def cmd_run(args) -> int:
     examples_dir = Path(args.examples_dir).resolve()
     library_src = Path(args.library_src).resolve()
+    if not examples_dir.is_dir():
+        print(f"examples checkout not found in {examples_dir}: clone app-bricks-examples there or pass --examples-dir", file=sys.stderr)
+        return 2
     include = [root for root in EXAMPLES_ROOTS if (examples_dir / root).is_dir()]
     if not include:
         print(f"no examples roots found in {examples_dir}", file=sys.stderr)
@@ -80,9 +90,15 @@ def cmd_run(args) -> int:
         "executionEnvironments": [{"root": ".", "extraPaths": [str(library_src)]}],
     }
 
+    # Default to the project venv interpreter for quick local runs.
+    python = args.python or (DEFAULT_VENV_PYTHON if Path(DEFAULT_VENV_PYTHON).exists() else None)
+    if python and not Path(python).exists():
+        # Pyright would silently fall back to another environment, skewing the results.
+        print(f"python interpreter not found: {python}", file=sys.stderr)
+        return 2
     cmd = ["npx", "-y", f"pyright@{args.pyright_version}", "--project", str(examples_dir), "--outputjson"]
-    if args.python:
-        cmd += ["--pythonpath", str(Path(args.python).resolve())]
+    if python:
+        cmd += ["--pythonpath", str(Path(python).resolve())]
     try:
         config_path.write_text(json.dumps(config))
         proc = subprocess.run(cmd, capture_output=True, text=True)
@@ -97,10 +113,12 @@ def cmd_run(args) -> int:
     data = json.loads(proc.stdout)
     for diag in data.get("generalDiagnostics", []):
         diag["file"] = Path(diag["file"]).resolve().relative_to(examples_dir).as_posix()
-    Path(args.out).write_text(json.dumps(data, indent=2) + "\n")
+    if args.out:
+        Path(args.out).write_text(json.dumps(data, indent=2) + "\n")
     summary = data["summary"]
     print(f"{summary['filesAnalyzed']} files analyzed against {library_src}: {summary['errorCount']} errors, {summary['warningCount']} warnings")
-    if args.details:
+    # Without a JSON output the run is a local one-off: print the details.
+    if args.details or not args.out:
         errors = [diag for diag in data["generalDiagnostics"] if diag["severity"] == "error"]
         for diag in sorted(errors, key=lambda d: (d.get("rule", ""), d["file"], d["range"]["start"]["line"])):
             line = diag["range"]["start"]["line"] + 1
@@ -172,6 +190,9 @@ def library_bricks(library_src: Path) -> set[str]:
 
 def cmd_coverage(args) -> int:
     examples_dir = Path(args.examples_dir).resolve()
+    if not (examples_dir / "bricks").is_dir():
+        print(f"examples checkout not found in {examples_dir}: clone app-bricks-examples there or pass --examples-dir", file=sys.stderr)
+        return 2
     covered = {path.name for path in examples_dir.glob("bricks/*/*") if path.is_dir()}
     head_bricks = library_bricks(Path(args.head_src).resolve())
     base_bricks = library_bricks(Path(args.base_src).resolve()) if args.base_src else head_bricks
@@ -208,11 +229,11 @@ def main() -> int:
     deps.set_defaults(func=cmd_deps)
 
     run = sub.add_parser("run", help="run pyright over the examples against a library source")
-    run.add_argument("--examples-dir", required=True)
-    run.add_argument("--library-src", required=True)
-    run.add_argument("--python", help="python interpreter of the check venv")
+    run.add_argument("--examples-dir", default=DEFAULT_EXAMPLES_DIR)
+    run.add_argument("--library-src", default="src")
+    run.add_argument("--python", help=f"python interpreter of the check venv (defaults to {DEFAULT_VENV_PYTHON} when present)")
     run.add_argument("--pyright-version", default=PYRIGHT_VERSION)
-    run.add_argument("--out", required=True)
+    run.add_argument("--out", help="write the diagnostics as JSON; when omitted, details are printed instead")
     run.add_argument("--details", action="store_true", help="also print the error diagnostics, grouped by rule")
     run.set_defaults(func=cmd_run)
 
@@ -223,8 +244,8 @@ def main() -> int:
     diff.set_defaults(func=cmd_diff)
 
     coverage = sub.add_parser("coverage", help="report library bricks that have no examples")
-    coverage.add_argument("--examples-dir", required=True)
-    coverage.add_argument("--head-src", required=True)
+    coverage.add_argument("--examples-dir", default=DEFAULT_EXAMPLES_DIR)
+    coverage.add_argument("--head-src", default="src")
     coverage.add_argument("--base-src", help="library source of the PR base, to flag bricks introduced by the PR")
     coverage.add_argument("--summary", help="markdown output file (defaults to GITHUB_STEP_SUMMARY)")
     coverage.set_defaults(func=cmd_coverage)
