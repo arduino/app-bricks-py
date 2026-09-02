@@ -42,23 +42,37 @@ GB = 1e9
 # Number of sessions by GGUF size, ordered from the largest threshold down: the first entry a
 # model exceeds wins. Both tables are deliberately conservative — they over-allocate a session
 # on some models, which costs ~3% per token, rather than failing to load; models with a
-# known-good value should carry an explicit GGML_HEXAGON_NDEV instead.
+# known-good value should carry an explicit GGML_HEXAGON_DEVICES instead.
+#
+# Before resizing these tables over a load failure, check the board's free RAM first: the DSP
+# buffers come from plain system memory (/dev/dma_heap/system), so "ggml-hex: fastrpc_mmap
+# failed" with error 0x1 on a buffer that used to fit usually means the board was out of RAM
+# at that moment — other models resident in the router, leftover instances — not that the
+# model needs more sessions. Measured on a 21q: a loaded model costs ~1.6x its GGUF in RAM.
 
-# Default table, for the context sizes the service runs at out of the box.
-NDEV_BY_GGUF_GB = ((3.5, 4), (1.5, 2))
+# Default table, for the context sizes the service runs at out of the box. The middle
+# bucket takes 3 sessions because of the KV cache, which lives on the same sessions as
+# the weights and cannot be chunked: at 16k tokens Qwen3-4B-Instruct-2507 (2.38 GB) puts
+# a single 1 GiB KV buffer on each of 2 sessions, and fastrpc refuses a mapping that big
+# even with the board's RAM free (measured on a 21q: fails on 2 sessions, runs on 3).
+# KV size depends on the architecture, not the GGUF size: Qwen3.5-4B (2.78 GB) measured
+# fine on 2 sessions, so the bucket over-allocates it — the ~3%/token toll.
+NDEV_BY_GGUF_GB = ((3.5, 4), (1.5, 3))
 
-# Small-context table. A 4k KV cache leaves far more room on the domains, and this one is
-# measured rather than estimated: on a ventunoq board every installed model was loaded at
-# 1..4 sessions with -c 4096, taking the first count that loads.
+# Small-context table. A 4k KV cache leaves far more room on the domains. It was
+# originally measured on a ventunoq board (every installed model loaded at 1..4 sessions
+# with -c 4096, taking the first count that loads):
 #
 #   Qwen3.5-0.8B-Q4_0    0.51 GB -> 1     Qwen3-8B-Q4_0        4.79 GB -> 2
 #   Qwen3-4B-2507-Q4_0   2.38 GB -> 1     Qwen3.5-9B-Q4_0      5.74 GB -> 2
 #   Qwen3.5-4B-Q4_0      2.78 GB -> 1     gemma-4-12b          6.98 GB -> 3
 #
-# Thresholds sit between the measurements, so the table reproduces all of them exactly.
-# Above 8 GB there is no measurement, so that bucket gets everything the hardware has.
+# Qwen3-8B-Q4_0 has since been re-measured on the September 2025 build: it no longer
+# loads on 2 sessions but runs on 3, so the 3.5+ bucket takes 3. Anything bigger takes
+# everything the hardware has: granite-4.2-8b (5.06 GB) also loads on 3, but measured
+# no faster there than on 4, so there is nothing to gain from a tighter threshold.
 SMALL_CTX_SIZE = 4096
-NDEV_BY_GGUF_GB_SMALL_CTX = ((8.0, 4), (6.0, 3), (3.5, 2))
+NDEV_BY_GGUF_GB_SMALL_CTX = ((5.0, 4), (3.5, 3))
 
 
 class ModelOverride(NamedTuple):

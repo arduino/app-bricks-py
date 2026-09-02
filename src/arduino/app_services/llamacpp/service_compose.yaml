@@ -39,7 +39,7 @@ services:
         soft: 65536
         hard: 65536
     oom_score_adj: -500
-    mem_limit: 10g
+    mem_limit: 12g
     memswap_limit: 10g
     shm_size: 2g
     devices:
