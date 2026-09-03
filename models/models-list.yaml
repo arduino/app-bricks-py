@@ -1,6 +1,8 @@
 models:
  - face-detection:
     name : "Lightweight-Face-Detection"
+    family: "vision"
+    task: "Object detection"
     description: "A small and accurate model for detecting bounding boxes for faces in images."
     model_labels:
       - face
@@ -26,6 +28,8 @@ models:
       source-model-url: "https://aihub.qualcomm.com/models/face_det_lite"
  - face-detection-qnn:
     name : "Lightweight-Face-Detection"
+    family: "vision"
+    task: "Object detection"
     description: "A small and accurate model for detecting bounding boxes for faces in images. This version of the model is optimized for NPU acceleration on supported devices, providing faster inference times while maintaining accuracy."
     model_labels:
       - face
@@ -52,6 +56,8 @@ models:
       source-model-url: "https://aihub.qualcomm.com/models/face_det_lite"      
  - yolox-object-detection:
     name : "General purpose object detection - YoloX nano"
+    family: "vision"
+    task: "Object detection"
     description: "General purpose object detection model based on YoloX-Nano. This model is trained on the COCO dataset and can detect 80 different object classes."
     model_labels:
       - airplane
@@ -156,6 +162,8 @@ models:
           "EI_V_OBJ_DETECTION_MODEL": "/models/ootb/ei/yolo-x-nano.eim"
  - yolox-qnn-object-detection:
     name : "General purpose object detection - YoloX nano"
+    family: "vision"
+    task: "Object detection"
     description: "General purpose object detection model based on YoloX-Nano. This model is trained on the COCO dataset and can detect 80 different object classes. This version of the model is optimized for NPU acceleration on supported devices, providing faster inference times while maintaining accuracy."
     model_labels:
       - airplane
@@ -261,6 +269,8 @@ models:
           "EI_V_OBJ_DETECTION_MODEL": "/models/ootb/ei/yolo-x-nano-qnn.eim"
  - mobilenet-image-classification:
     name : "General purpose image classification"
+    family: "vision"
+    task: "Image classification"
     description: "General purpose image classification model based on MobileNetV2. This model is trained on the ImageNet dataset and can classify images into 1000 categories."
     model_labels:
       - abacus
@@ -1233,6 +1243,8 @@ models:
           "EI_V_CLASSIFICATION_MODEL": "/models/ootb/ei/mobilenet-v2-224px.eim"
  - person-classification:
     name : "Person classification"
+    family: "vision"
+    task: "Image classification"
     description: "Person classification model based on WakeVision dataset. This model is trained to classify images into two categories: person and not-person."
     model_labels: 
       - "non person"
@@ -1258,6 +1270,8 @@ models:
       pre-loaded: true
  - concrete-crack-anomaly-detection:
     name : "Concrete crack anomaly detection"
+    family: "vision"
+    task: "Visual anomaly detection"
     description: "Anomaly detection model to identify cracks in concrete structures."
     metadata:
       model_size_mb: 12
@@ -1277,6 +1291,8 @@ models:
           "EI_V_ANOMALY_DETECTION_MODEL": "/models/ootb/ei/concrete-crack-anomaly-detection.eim"
  - concrete-crack-anomaly-detection-high-resolution:
     name : "Concrete crack anomaly detection - High resolution"
+    family: "vision"
+    task: "Visual anomaly detection"
     description: "Anomaly detection model to identify cracks in concrete structures with higher resolution input images for improved accuracy. This version of the model is optimized for NPU acceleration on supported devices, providing faster inference times while maintaining accuracy."
     metadata:
       model_size_mb: 12
@@ -1297,6 +1313,8 @@ models:
           "EI_V_ANOMALY_DETECTION_MODEL": "/models/ootb/ei/concrete-crack-anomaly-detection-qnn.eim"          
  - keyword-spotting-hey-arduino:
     name : "Keyword spotting - Hey Arduino!"
+    family: "audio"
+    task: "Keyword spotting"
     description: "A keyword-spotting model to detect the 'Hey Arduino!' in audio streams."
     model_labels: 
       - "background"
@@ -1320,6 +1338,8 @@ models:
       pre-loaded: true          
  - updown-wave-motion-detection:
     name : "Continuous motion detection"
+    family: "sensor"
+    task: "Motion detection"
     description: "A motion detection model designed to identify up/down, wave, and snake movements evalauting accelerometer data."
     model_labels:
       - idle
@@ -1342,6 +1362,8 @@ models:
       pre-loaded: true          
  - fan-anomaly-detection:
     name : "Fan anomaly detection"
+    family: "sensor"
+    task: "Vibration anomaly detection"
     description: "An anomaly detection model designed to identify anomalies in fan operation."
     metadata:
       model_size_mb: 13
@@ -1359,6 +1381,8 @@ models:
       pre-loaded: true
  - glass-breaking:
     name : "Glass breaking classifier"
+    family: "audio"
+    task: "Audio classification"
     description: "A glass breaking classifier model to detect glass breaking sounds in audio recordings"
     model_labels:
       - "Background"
@@ -1380,6 +1404,8 @@ models:
       pre-loaded: true          
  - hand-gestures:
     name : "Hand gestures"
+    family: "vision"
+    task: "Object detection"
     description: "A lightweight vision model that detects four hand gestures: neutral fist, open hand (five), V-sign (peace), and thumbs-up (good)."
     model_labels:
       - five
@@ -1405,6 +1431,8 @@ models:
       pre-loaded: true      
  - "genie:qwen3_4b_instruct_2507":
     name : "Qwen 3-4B Instruct"
+    family: "language"
+    task: "Language model"
     description: >-
       The Qwen3-4B is a state-of-the-art multilingual base language model with 4 billion
       parameters, excelling in language understanding, generation, coding, and mathematics.
@@ -1433,6 +1461,8 @@ models:
       source-model-url: "https://aihub.qualcomm.com/models/qwen3_4b_instruct_2507"
  - "genie:qwen2_5_vl_7b_instruct":
     name : "Qwen 2.5-VL-7B VLM"
+    family: "language"
+    task: "Vision-language model"
     description: >-
       Qwen2.5-VL 7B is a multimodal vision-language model with 7 billion
       parameters that can process both images and text, enabling visual question
@@ -1459,6 +1489,8 @@ models:
       source-model-url: "https://aihub.qualcomm.com/models/qwen2_5_vl_7b_instruct"
  - "genie:qwen3_vl_4b_instruct":
     name : "Qwen 3-VL-4B VLM"
+    family: "language"
+    task: "Vision-language model"
     description: >-
       Qwen3-VL is a vision-language model from Alibaba Cloud capable of understanding
       both text and images for multimodal reasoning tasks such as visual question
@@ -1485,6 +1517,8 @@ models:
       source-model-url: "https://aihub.qualcomm.com/models/qwen3_vl_4b_instruct"      
  - gesture-recognition:
     name : "MediaPipe Hand-Gesture Recognition"
+    family: "vision"
+    task: "Gesture recognition"
     description: >-
       The MediaPipe Gesture Recognizer is a real-time machine learning pipeline that detects hands,
       predicts 21 hand landmarks, determines handedness (left/right),
@@ -1508,6 +1542,8 @@ models:
       pre-loaded: true
  - pose-estimation:
     name : "PoseNet MobileNet Pose Estimation"
+    family: "vision"
+    task: "Pose estimation"
     description: >-
       PoseNet performs real-time multi-person pose estimation, detecting up to 10 people
       per frame and locating 17 body keypoints (nose, eyes, ears, shoulders, elbows,
@@ -1524,6 +1560,8 @@ models:
       pre-loaded: true
  - whisper-small-quantized:
     name : "Whisper Small (quantized)"
+    family: "audio"
+    task: "Speech to text"
     description: >-
       Whisper ASR (Automatic Speech Recognition) model is a state-of-the-art system designed for transcribing spoken language into written text.
       This model is based on the transformer architecture and has been optimized for edge inference by replacing Multi-Head Attention (MHA)
@@ -1652,6 +1690,8 @@ models:
       - su
  - melo-tts-en:
     name : "Melo TTS (English)"
+    family: "audio"
+    task: "Text to speech"
     description: >-
       MeloTTS is a high-quality multi-lingual text-to-speech library - English version.
     supported_boards: ["ventunoq"]
@@ -1676,6 +1716,8 @@ models:
       source-model-url: "https://aihub.qualcomm.com/models/melotts_en"
  - melo-tts-es:
     name : "Melo TTS (Spanish)"
+    family: "audio"
+    task: "Text to speech"
     description: >-
       MeloTTS is a high-quality multi-lingual text-to-speech library - Spanish version.
     supported_boards: ["ventunoq"]
@@ -1700,6 +1742,8 @@ models:
       source-model-url: "https://aihub.qualcomm.com/models/melotts_es"
  - melo-tts-zh:
     name : "Melo TTS (Chinese)"
+    family: "audio"
+    task: "Text to speech"
     description: >-
       MeloTTS is a high-quality multi-lingual text-to-speech library - Chinese version.
     supported_boards: ["ventunoq"]
@@ -1724,6 +1768,8 @@ models:
       source-model-url: "https://aihub.qualcomm.com/models/melotts_zh"
  - pipertts_de:
     name : "Piper TTS (German)"
+    family: "audio"
+    task: "Text to speech"
     description: >-
       Piper is a high-quality multi-lingual text-to-speech library - German version.
     supported_boards: ["ventunoq"]
@@ -1748,6 +1794,8 @@ models:
       source-model-url: "https://aihub.qualcomm.com/models/pipertts_de"
  - pipertts_it:
     name : "Piper TTS (Italian)"
+    family: "audio"
+    task: "Text to speech"
     description: >-
       Piper is a high-quality multi-lingual text-to-speech library - Italian version.
     supported_boards: ["ventunoq"]
@@ -1772,6 +1820,8 @@ models:
       source-model-url: "https://aihub.qualcomm.com/models/pipertts_it"
  - pipertts_en:
     name : "Piper TTS (English)"
+    family: "audio"
+    task: "Text to speech"
     description: >-
       Piper is a high-quality multi-lingual text-to-speech library - English version.
     supported_boards: ["ventunoq"]
@@ -1796,6 +1846,8 @@ models:
       source-model-url: "https://aihub.qualcomm.com/models/pipertts_en"
  - "ei:efficientnet-b4":
     name : "General purpose object classification - EfficientNet-B4"
+    family: "vision"
+    task: "Image classification"
     description: "EfficientNetB4 is a machine learning model that can classify images from the Imagenet dataset. It can also be used as a backbone in building more complex models for specific use cases. This version of the model is optimized for NPU acceleration on supported devices, providing faster inference times while maintaining accuracy."
     metadata:
       requires_softmax: true
@@ -1828,6 +1880,8 @@ models:
           "EI_V_CLASSIFICATION_MODEL": "/var/lib/arduino-app-cli/models/edge-impulse/efficientnet-b4-qnn/efficientnet-b4-qnn.eim"
  - "llamacpp:gemma-4-E2B_q4_0-it":
     name : "Gemma 4 E2B"
+    family: "language"
+    task: "Language model"
     description: >-
       Gemma 4 E2B is an efficient, open AI model developed by Google DeepMind.
       Activating an effective two billion parameters, it is engineered specifically for mobile and edge devices.
@@ -1852,6 +1906,8 @@ models:
       source-model-url: "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf"
  - "llamacpp:gemma-4-E4B_q4_0-it":
     name : "Gemma 4 E4B"
+    family: "language"
+    task: "Language model"
     description: >-
       Gemma 4 E4B is an efficient, open AI model developed by Google DeepMind.
       Activating an effective four billion parameters, it is engineered specifically for mobile and edge devices.
@@ -1876,6 +1932,8 @@ models:
       source-model-url: "https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf"
  - "llamacpp:gemma-3-1b-it-Q4_0":
      name : "Gemma 3 1B"
+     family: "language"
+     task: "Language model"
      description: >-
         Gemma 3 1B is an efficient AI model developed by Google DeepMind.
      supported_boards: ["ventunoq", "unoq"]
@@ -1903,6 +1961,8 @@ models:
        source-model-url: "https://huggingface.co/unsloth/gemma-3-1b-it-GGUF"
  - "llamacpp:Qwen3.5-0.8B-Q4_0":
      name : "Qwen 3.5 0.8B"
+     family: "language"
+     task: "Language model"
      description: >-
        Qwen 3.5 0.8B is a compact yet powerful language model developed by Alibaba, designed to deliver efficient performance on edge devices.
        With 0.8 billion parameters, it strikes a balance between capability and resource efficiency, making it ideal
@@ -1932,6 +1992,8 @@ models:
        source-model-url: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF"
  - "ei:yolox-small-qnn-object-detection":
     name : "General purpose object detection - YoloX small"
+    family: "vision"
+    task: "Object detection"
     description: "General purpose object detection model based on YoloX-Small. This model is trained on the COCO dataset and can detect 80 different object classes. This version of the model is optimized for NPU acceleration on supported devices, providing faster inference times while maintaining accuracy."
     model_labels:
       - airplane
