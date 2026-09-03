@@ -1838,6 +1838,16 @@ models:
       ei-model-url: "https://studio.edgeimpulse.com/public/995296/live"
       source-model-id: "995296"
       source-model-url: "https://studio.edgeimpulse.com/public/995296/live"
+    model_labels:
+      - "Book"
+      - "Mug"
+      - "Mobile phone"
+      - "Mug"
+      - "Phone"
+      - "Plant"
+      - "Box"
+      - "Bottle"
+      - "Glasses"
     supported_boards: ["unoq"]
     deployment:
       handler: "ei-handler"
@@ -1863,6 +1873,16 @@ models:
       source-model-id: "995296"
       source-model-url: "https://studio.edgeimpulse.com/public/995296/live"
     supported_boards: ["ventunoq"]
+    model_labels:
+      - "Book"
+      - "Mug"
+      - "Mobile phone"
+      - "Mug"
+      - "Phone"
+      - "Plant"
+      - "Box"
+      - "Bottle"
+      - "Glasses"    
     deployment:
       handler: "ei-handler"
       pre-loaded: true
