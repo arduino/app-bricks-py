@@ -45,6 +45,8 @@ RUN set -ex; \
 FROM ${REGISTRY}app-bricks/python-slim:${BASE_IMAGE_VERSION} AS production
 
 ARG DEBIAN_FRONTEND=noninteractive
+ARG FFMPEG_LIBS_URL
+ARG FFMPEG_LIBS_DIGEST
 ARG LIBCAMERA_DEB_URL
 ARG LIBCAMERA_DEB_DIGEST
 ARG LIBCAMERA_IPA_DEB_URL
@@ -55,12 +57,16 @@ ARG GSTREAMER_QTIQMMFSRC_DEB_URL
 ARG GSTREAMER_QTIQMMFSRC_DEB_DIGEST
 ARG GSTREAMER_LIBGSTREAMER_PLUGINS_BASE_DEB_URL
 ARG GSTREAMER_LIBGSTREAMER_PLUGINS_BASE_DEB_DIGEST
+ARG GSTREAMER_PLUGINS_GOOD_DEB_URL
+ARG GSTREAMER_PLUGINS_GOOD_DEB_DIGEST
 
+ADD --checksum=${FFMPEG_LIBS_DIGEST} ${FFMPEG_LIBS_URL} /tmp/ffmpeg-libs.tar.gz
 ADD --checksum=${LIBCAMERA_DEB_DIGEST} ${LIBCAMERA_DEB_URL} /tmp/libcamera0.7.deb
 ADD --checksum=${LIBCAMERA_IPA_DEB_DIGEST} ${LIBCAMERA_IPA_DEB_URL} /tmp/libcamera-ipa.deb
 ADD --checksum=${GSTREAMER_LIBCAMERA_DEB_DIGEST} ${GSTREAMER_LIBCAMERA_DEB_URL} /tmp/gstreamer1.0-libcamera.deb
 ADD --checksum=${GSTREAMER_QTIQMMFSRC_DEB_DIGEST} ${GSTREAMER_QTIQMMFSRC_DEB_URL} /tmp/qtiqmmfsrc.deb
 ADD --checksum=${GSTREAMER_LIBGSTREAMER_PLUGINS_BASE_DEB_DIGEST} ${GSTREAMER_LIBGSTREAMER_PLUGINS_BASE_DEB_URL} /tmp/libgstreamer-plugins-base.deb
+ADD --checksum=${GSTREAMER_PLUGINS_GOOD_DEB_DIGEST} ${GSTREAMER_PLUGINS_GOOD_DEB_URL} /tmp/gstreamer-good.deb
 ADD https://raw.githubusercontent.com/googlefonts/opensans/main/fonts/ttf/OpenSans-Regular.ttf /home/app/.fonts/OpenSans.ttf
 
 # Copy the installed dependencies from the 'builder' stage
@@ -79,14 +85,18 @@ RUN set -ex; \
     # Install dependencies for pipewire
     apt-get install -y --no-install-recommends --no-install-suggests pipewire-alsa; \
     # Install dependencies for running OpenCV with Gstreamer backend
-    apt-get install -y --no-install-recommends --no-install-suggests libavcodec61 libavformat61 libavutil59 libswscale8; \
     apt-get install -y --no-install-recommends --no-install-suggests libjpeg62-turbo libtiff6 libpng16-16t64 libwebp7 libwebpdecoder3 libwebpdemux2 libwebpmux3 libopenblas0 liblapacke; \
-    apt-get install -y --no-install-recommends --no-install-suggests libgstreamer1.0-0 libgstreamer-plugins-base1.0-0 gstreamer1.0-plugins-good gstreamer1.0-plugins-base-apps; \
+    apt-get install -y --no-install-recommends --no-install-suggests libgstreamer1.0-0 libgstreamer-plugins-base1.0-0 gstreamer1.0-plugins-base-apps; \
+    # Install custom minimal FFmpeg and GStreamer Good plugins
+    mkdir -p /tmp/ffmpeg-libs; \
+    tar -xzf /tmp/ffmpeg-libs.tar.gz -C /tmp/ffmpeg-libs; \
+    apt-get install -y --no-install-recommends --no-install-suggests /tmp/ffmpeg-libs/*.deb /tmp/gstreamer-good.deb; \
+    apt-mark hold libavcodec61 libavformat61 libavutil59 libswscale8 libswresample5 gstreamer1.0-plugins-good; \
     # Install dependencies for running CSI cameras (libcamera, gstreamer introspection, qtiqmmfsrc)
     apt-get install -y --no-install-recommends --no-install-suggests libgirepository-2.0-0 gir1.2-glib-2.0 gir1.2-gstreamer-1.0 libpisp-common libboost-filesystem1.83.0 libboost-log1.83.0 libboost-thread1.83.0 libpisp1 libegl1 libgles2 libyaml-0-2 liblttng-ust1 libdw1t64 libyuv0; \
     dpkg -i /tmp/libcamera0.7.deb /tmp/libcamera-ipa.deb /tmp/gstreamer1.0-libcamera.deb; \
     apt-get install -y --no-install-recommends --no-install-suggests --allow-downgrades /tmp/qtiqmmfsrc.deb /tmp/libgstreamer-plugins-base.deb; \
-    rm /tmp/libcamera0.7.deb /tmp/libcamera-ipa.deb /tmp/gstreamer1.0-libcamera.deb /tmp/qtiqmmfsrc.deb /tmp/libgstreamer-plugins-base.deb; \
+    rm -rf /tmp/*.deb /tmp/ffmpeg-libs /tmp/ffmpeg-libs.tar.gz; \
     # Install other runtime dependencies
     apt-get install -y --no-install-recommends --no-install-suggests libglib2.0-0 inotify-tools libzbar0; \
     apt-get autoclean -y; \
@@ -101,17 +111,15 @@ RUN set -ex; \
         /usr/share/man/* \
         /usr/share/locale/* \
         /var/cache/debconf/* \
-        /var/lib/dpkg/info/* \
         /var/cache/apt/*.bin; \
+    # keep the rest of /var/lib/dpkg/info, or derived images cannot apt-get upgrade
+    rm -fr /var/lib/dpkg/info/*.symbols \
+        /var/lib/dpkg/info/*.shlibs \
+        /var/lib/dpkg/info/*.templates; \
     find /usr/share/doc -type f ! -name 'copyright' -delete; \
     find /usr/share/doc -type d -empty -delete; \
     # precompile python files to .pyc to speed up startup time
     python -m compileall /usr/local/bin; \
-    python -m compileall /usr/local/lib; \
-    # HACK: Remove VPX plugin
-    rm -f /usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstvpx.so; \
-    # Ensure libvpx and libx265 are not present
-    dpkg -r --force-depends libx265-215 libvpx9; \
-    ldconfig
+    python -m compileall /usr/local/lib
 
 COPY libcamera.yaml /etc/libcamera/configuration.yaml
