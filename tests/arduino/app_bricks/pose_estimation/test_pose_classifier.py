@@ -148,6 +148,17 @@ class TestPoseKNN:
         knn_std.fit(emb, labels)
         assert knn_std.classify(query)["sitting"] == pytest.approx(1.0)
 
+    def test_a_given_scale_and_reject_distance_are_kept(self):
+        rng = np.random.default_rng(0)
+        rows = rng.normal(size=(40, EMBEDDING_SIZE)).astype(np.float32)
+        labels = ["a"] * 20 + ["b"] * 20
+        own = PoseKNN()
+        own.fit(rows, labels)
+        frozen = PoseKNN()
+        frozen.fit(rows * 3, labels, scale=own.scale, reject_distance=own.reject_distance)
+        assert np.array_equal(frozen.scale, own.scale)
+        assert frozen.reject_distance == own.reject_distance
+
     def test_knn_label_weights_scale_votes(self):
         emb = np.asarray([[0.0], [0.1], [0.2], [0.3]], np.float32)
         knn = PoseKNN(k=4, reject_factor=100.0, vote_weighting="uniform")

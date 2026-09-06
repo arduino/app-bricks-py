@@ -1,0 +1,492 @@
+# SPDX-FileCopyrightText: Copyright (C) Arduino s.r.l. and/or its affiliated companies
+#
+# SPDX-License-Identifier: MPL-2.0
+
+"""Enrollment of custom poses: compose the reference database with the photos' skeletons,
+measure whether each pose forms, derive its operating point and write its report.
+
+Everything here works on embeddings already computed from the photos; reading folders,
+running the pose model and caching belong to the brick.
+"""
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Literal
+
+import numpy as np
+
+from .pose_classifier import ACTION_SMOOTHING_SECONDS, DEFAULT_ACTION_DURATION, DEFAULT_SMOOTHING_SECONDS, PoseKNN, load_pose_classifier
+from .pose_vocabulary import PoseSpec
+
+OTHER = "other"
+
+MIN_PHOTOS_TO_MEASURE = 20
+MIN_PHOTOS_TO_ACCEPT = 40
+MIN_GROUPS = 5
+REFERENCE_THRESHOLD = 0.55
+PASS_RECALL = 0.70
+CLEANING_SHARE = 0.30
+GROUP_DISTANCE = 1.0
+STATE_EXIT_GAP = 0.20
+ACTION_EXIT_GAP = 0.40
+MIN_ACTION_EXIT = 0.10
+PERCENTILE_WITHOUT_OTHER = 20
+OPERATING_POINT_GRID = np.round(np.arange(0.20, 0.951, 0.025), 3)
+F1_TIE = 0.01
+COLLISION_WARNING = 0.15
+IMBALANCE_RATIO = 3
+LEARNING_CURVE_FRACTIONS = (0.25, 0.375, 0.5, 0.75, 1.0)
+LEARNING_CURVE_DRAWS = 2
+LEARNING_CURVE_SEED = 42
+# Own neighbours among the 9 nearest at which a pose fires on 30%, 70% and 90% of its photos (groups held out),
+# measured on the built-in poses re-taught from 20 to 240 of their own rows and on the tennis strokes (122 points).
+OWN_NEIGHBOURS_FOR_RECALL_30 = 3.0
+OWN_NEIGHBOURS_FOR_RECALL_70 = 6.1
+OWN_NEIGHBOURS_FOR_RECALL_90 = 7.7
+GROUP_DEFINITION = "a group = photos whose skeletons are closer than 1.0 (near-identical frames, or the same pose held still)"
+
+
+@dataclass(frozen=True)
+class Bucket:
+    """The photos of one pose (or of `other`), already turned into embeddings.
+
+    Attributes:
+        name (str): The pose name, or "other" for the user's own negatives.
+        embeddings (np.ndarray): One row per usable photo, shape (n, EMBEDDING_SIZE).
+        photos (tuple[str, ...]): The usable photos' paths, one per row, relative to the poses folder.
+        found (int): Photos found in the folder, usable or not.
+        discarded (tuple[tuple[str, str], ...]): (path, reason) of every photo the structural
+            guards refused.
+    """
+
+    name: str
+    embeddings: np.ndarray
+    photos: tuple[str, ...]
+    found: int
+    discarded: tuple[tuple[str, str], ...] = ()
+
+    @property
+    def usable(self) -> int:
+        return len(self.photos)
+
+
+@dataclass(frozen=True)
+class Outcome:
+    """What the enrollment concluded about one custom pose.
+
+    Attributes:
+        name (str): The pose name.
+        accepted (bool): Whether the pose passed and is part of the classifier.
+        report (str): The full report text.
+        enter (float | None): Operating enter threshold, when accepted.
+        exit (float | None): Operating exit threshold, when accepted.
+    """
+
+    name: str
+    accepted: bool
+    report: str
+    enter: float | None = None
+    exit: float | None = None
+
+
+@dataclass(frozen=True)
+class Enrollment:
+    """The composed classifier and one outcome per custom pose.
+
+    Attributes:
+        knn (PoseKNN): The classifier over the composed database, with the shipped scale and reject distance.
+        outcomes (dict[str, Outcome]): Per custom pose name.
+        set_aside (dict[str, int]): Shipped rows removed by the cleaning, by their shipped label.
+    """
+
+    knn: PoseKNN
+    outcomes: dict[str, Outcome]
+    set_aside: dict[str, int]
+
+
+@dataclass(frozen=True)
+class _Measure:
+    own_shares: np.ndarray
+    own_neighbours: float
+    n0: float
+
+    @property
+    def recall(self) -> float:
+        return float((self.own_shares >= REFERENCE_THRESHOLD).mean())
+
+
+@dataclass(frozen=True)
+class _LearningCurve:
+    rows: tuple[int, ...]
+    recalls: tuple[float, ...]
+    n0s: tuple[float, ...]
+    verdict: Literal["good", "mixed", "unclear"]
+
+
+def _nearest(queries: np.ndarray, db: np.ndarray, k: int, skip: list[np.ndarray] | None = None) -> tuple[np.ndarray, np.ndarray]:
+    """Indices and distances of the k nearest database rows for each query, both already in the metric space.
+
+    skip lists, per query, the database rows to leave out (the row itself, its group).
+    """
+    k = min(k, len(db) - (1 if skip else 0))
+    idx = np.empty((len(queries), k), dtype=np.int64)
+    dist = np.empty((len(queries), k), dtype=np.float64)
+    db64 = db.astype(np.float64)
+    db_sq = np.sum(db64**2, axis=1)
+    for start in range(0, len(queries), 512):
+        block = queries[start : start + 512].astype(np.float64)
+        d = np.sqrt(np.maximum(np.sum(block**2, axis=1)[:, None] + db_sq[None, :] - 2.0 * block @ db64.T, 0.0))
+        if skip:
+            for row in range(len(block)):
+                d[row, skip[start + row]] = np.inf
+        top = np.argpartition(d, k - 1, axis=1)[:, :k]
+        idx[start : start + len(block)] = top
+        dist[start : start + len(block)] = np.take_along_axis(d, top, axis=1)
+    return idx, dist
+
+
+def _shares(idx: np.ndarray, dist: np.ndarray, labels: np.ndarray, reject_distance: float, classes: tuple[str, ...]) -> np.ndarray:
+    """Distance-weighted vote share of each class, per query; all zeros for rejected queries."""
+    weights = 1.0 / np.maximum(dist, 1e-6)
+    weights[np.median(dist, axis=1) > reject_distance] = 0.0
+    total = weights.sum(axis=1)
+    out = np.zeros((len(idx), len(classes)))
+    top_labels = labels[idx]
+    for column, cls in enumerate(classes):
+        out[:, column] = np.where(total > 0, (weights * (top_labels == cls)).sum(axis=1) / np.maximum(total, 1e-12), 0.0)
+    return out
+
+
+def group_photos(rows: np.ndarray, scale: np.ndarray) -> np.ndarray:
+    """Group index of each row: rows closer than GROUP_DISTANCE in the metric space chain into one group."""
+    scaled = rows.astype(np.float64) / scale
+    sq = np.sum(scaled**2, axis=1)
+    close = np.sqrt(np.maximum(sq[:, None] + sq[None, :] - 2.0 * scaled @ scaled.T, 0.0)) <= GROUP_DISTANCE
+    group = np.full(len(rows), -1, dtype=np.int64)
+    next_group = 0
+    for seed in range(len(rows)):
+        if group[seed] >= 0:
+            continue
+        stack = [seed]
+        group[seed] = next_group
+        while stack:
+            for neighbour in np.where(close[stack.pop()] & (group < 0))[0]:
+                group[neighbour] = next_group
+                stack.append(neighbour)
+        next_group += 1
+    return group
+
+
+def _measure(db: np.ndarray, labels: np.ndarray, own_idx: np.ndarray, groups: np.ndarray, k: int, reject: float, cls: str) -> _Measure:
+    """Own vote share of each row of a pose, with the row's whole group held out of the database."""
+    skip = [own_idx[groups == groups[i]] for i in range(len(own_idx))]
+    idx, dist = _nearest(db[own_idx], db, k, skip)
+    shares = _shares(idx, dist, labels, reject, (cls,))[:, 0]
+    own = float(((labels[idx] == cls) & np.isfinite(dist)).sum(axis=1).mean())
+    n0 = len(own_idx) * (k - own) / max(own, 1e-9)
+    return _Measure(own_shares=shares, own_neighbours=own, n0=n0)
+
+
+def _learning_curve(db: np.ndarray, labels: np.ndarray, own_idx: np.ndarray, groups: np.ndarray, k: int, reject: float, cls: str) -> _LearningCurve:
+    """n0 and recall at five sizes of the bucket (whole groups drawn), and the verdict on how n0 moves."""
+    own = db[own_idx].astype(np.float64)
+    foreign = db[labels != cls].astype(np.float64)
+    _, fdist = _nearest(own, foreign, k)
+    own_sq = np.sum(own**2, axis=1)
+    d_own = np.sqrt(np.maximum(own_sq[:, None] + own_sq[None, :] - 2.0 * own @ own.T, 0.0))
+    units = np.unique(groups)
+    rng = np.random.default_rng(LEARNING_CURVE_SEED)
+
+    def at(selected: np.ndarray) -> tuple[int, float, float]:
+        counts, hits = [], []
+        for i in np.where(selected)[0]:
+            candidates = np.concatenate([d_own[i][selected & (groups != groups[i])], fdist[i]])
+            is_own = np.concatenate([np.ones(len(candidates) - len(fdist[i]), bool), np.zeros(len(fdist[i]), bool)])
+            kk = min(k, len(candidates))
+            top = np.argpartition(candidates, kk - 1)[:kk]
+            counts.append(is_own[top].sum())
+            weights = 1.0 / np.maximum(candidates[top], 1e-6)
+            hits.append(np.median(candidates[top]) <= reject and weights[is_own[top]].sum() / weights.sum() >= REFERENCE_THRESHOLD)
+        n, v = int(selected.sum()), max(float(np.mean(counts)), 0.5)
+        return n, float(np.mean(hits)), max(n * (k - v) / v, 0.5)
+
+    rows, recalls, n0s, xs, ys = [], [], [], [], []
+    for fraction in LEARNING_CURVE_FRACTIONS:
+        draws = []
+        for _ in range(LEARNING_CURVE_DRAWS if fraction < 1.0 else 1):
+            chosen = units if fraction == 1.0 else rng.permutation(units)[: max(2, int(len(units) * fraction + 0.5))]
+            draws.append(at(np.isin(groups, chosen)))
+        rows.append(round(np.mean([n for n, _, _ in draws])))
+        recalls.append(float(np.mean([r for _, r, _ in draws])))
+        n0s.append(float(np.mean([n0 for _, _, n0 in draws])))
+        xs += [np.log(n) for n, _, _ in draws]
+        ys += [np.log(n0) for _, _, n0 in draws]
+    slope, intercept = np.polyfit(xs, ys, 1)
+    residuals = np.asarray(ys) - (slope * np.asarray(xs) + intercept)
+    spread = float(np.sum((np.asarray(xs) - np.mean(xs)) ** 2))
+    se = float(np.sqrt(np.sum(residuals**2) / max(len(xs) - 2, 1) / max(spread, 1e-12)))
+    verdict = "good" if slope <= 0 else "mixed" if slope > 2 * se else "unclear"
+    return _LearningCurve(rows=tuple(rows), recalls=tuple(recalls), n0s=tuple(n0s), verdict=verdict)
+
+
+def _operating_point(own_shares: np.ndarray, other_shares: np.ndarray | None, spec: PoseSpec) -> tuple[float, float, str]:
+    """Enter and exit thresholds of an accepted pose, and the note printed next to them."""
+    if spec.enter is not None and spec.exit is not None:
+        return spec.enter, spec.exit, "set by you"
+    if other_shares is not None and len(other_shares):
+        recalls = {float(e): float((own_shares >= e).mean()) for e in OPERATING_POINT_GRID}
+        silences = {float(e): float((other_shares < e).mean()) for e in OPERATING_POINT_GRID}
+        f1s = {e: 0.0 if recalls[e] + silences[e] == 0 else 2 * recalls[e] * silences[e] / (recalls[e] + silences[e]) for e in recalls}
+        enter = max(e for e, f1 in f1s.items() if f1 >= max(f1s.values()) - F1_TIE)
+        note = f"{100 * recalls[enter]:.0f}% of your photos fire, {100 * (1.0 - silences[enter]):.0f}% of other fires"
+    else:
+        enter = max(REFERENCE_THRESHOLD, float(np.percentile(own_shares, PERCENTILE_WITHOUT_OTHER)))
+        note = f"{100 * float((own_shares >= enter).mean()):.0f}% of your photos fire"
+    exit_ = enter - STATE_EXIT_GAP if spec.type == "state" else max(MIN_ACTION_EXIT, enter - ACTION_EXIT_GAP)
+    return enter, exit_, note
+
+
+def _fmt(value: float) -> str:
+    text = f"{value:.3f}"
+    return text[:-1] if text.endswith("0") else text
+
+
+def _photos_needed(n0: float, own_neighbours_target: float, k: int, have: int) -> int:
+    needed = max(n0 * own_neighbours_target / (k - own_neighbours_target), have + 10)
+    return int(np.ceil(needed / 10.0) * 10)
+
+
+def _rows_to_keep(
+    shipped_rows: np.ndarray,
+    shipped_labels: np.ndarray,
+    custom_rows: np.ndarray,
+    custom_labels: np.ndarray,
+    custom_names: tuple[str, ...],
+    k: int,
+    scale: np.ndarray,
+    reject: float,
+) -> np.ndarray:
+    """Mask of the shipped rows that stay: a row whose neighbourhood votes the new poses >= CLEANING_SHARE leaves."""
+    if not custom_names:
+        return np.ones(len(shipped_rows), bool)
+    probe = np.vstack([shipped_rows, custom_rows]) / scale
+    probe_labels = np.concatenate([shipped_labels, custom_labels])
+    idx, dist = _nearest(probe[: len(shipped_rows)], probe, k, [np.array([i]) for i in range(len(shipped_rows))])
+    return _shares(idx, dist, probe_labels, reject, custom_names).sum(axis=1) < CLEANING_SHARE
+
+
+def _confusion_table(
+    db: np.ndarray, labels: np.ndarray, k: int, reject: float, poses: tuple[str, ...], groups: dict[str, np.ndarray]
+) -> dict[str, dict[str, float]]:
+    """For each pose (rows), the share of its rows on which each pose (columns) fires at the reference threshold.
+
+    Custom poses hold their groups out, built-in poses hold the single row out; `none` completes each row to 1.
+    """
+    table: dict[str, dict[str, float]] = {}
+    for name in poses:
+        row_idx = np.where(labels == name)[0]
+        if name in groups:
+            skip = [row_idx[groups[name] == groups[name][i]] for i in range(len(row_idx))]
+        else:
+            skip = [np.array([i]) for i in row_idx]
+        shares = _shares(*_nearest(db[row_idx], db, k, skip), labels, reject, poses)
+        fires = {column: float((shares[:, j] >= REFERENCE_THRESHOLD).mean()) for j, column in enumerate(poses)}
+        fires["none"] = max(0.0, 1.0 - sum(fires.values()))
+        table[name] = fires
+    return table
+
+
+def enroll(asset_path: Path, specs: tuple[PoseSpec, ...], buckets: dict[str, Bucket], other: Bucket | None, now: str) -> Enrollment:
+    """Compose the database for the declared vocabulary and judge every custom pose.
+
+    Args:
+        asset_path: The shipped classifier database.
+        specs: The declared vocabulary, built-in and custom poses alike.
+        buckets: The embedded photos of each custom pose, by name.
+        other: The user's own negatives, or None.
+        now: Timestamp printed in the reports.
+    """
+    shipped, label_weights, builtin_names, _ = load_pose_classifier(asset_path)
+    if shipped.metric != "seuclidean" or shipped.vote_weighting != "distance" or label_weights is not None:
+        raise ValueError("custom poses need a seuclidean, distance-weighted classifier that weighs every vote alike")
+    asset = np.load(asset_path)
+    k, reject = shipped.k, shipped.reject_distance
+    scale = shipped.scale if shipped.scale is not None else np.ones(asset["embeddings"].shape[1], np.float32)
+    shipped_rows, shipped_labels, shipped_real = asset["embeddings"].astype(np.float32), asset["labels"].astype(str), asset["real"].astype(bool)
+    active = tuple(spec.name for spec in specs)
+    custom = tuple(spec.name for spec in specs if not spec.builtin)
+    measured = tuple(name for name in custom if buckets[name].usable >= MIN_PHOTOS_TO_MEASURE)
+
+    custom_rows = np.vstack([buckets[name].embeddings for name in measured]) if measured else np.empty((0, shipped_rows.shape[1]), np.float32)
+    custom_labels = np.concatenate([np.full(buckets[name].usable, name) for name in measured]) if measured else np.empty(0, str)
+    keep = _rows_to_keep(shipped_rows, shipped_labels, custom_rows, custom_labels, measured, k, scale, reject)
+    set_aside = {label: int(((~keep) & (shipped_labels == label)).sum()) for label in np.unique(shipped_labels[~keep])}
+
+    kept_labels = np.where(np.isin(shipped_labels[keep], active), shipped_labels[keep], OTHER)
+    other_rows = other.embeddings if other is not None else np.empty((0, shipped_rows.shape[1]), np.float32)
+    rows = np.vstack([shipped_rows[keep], custom_rows, other_rows]).astype(np.float32)
+    labels = np.concatenate([kept_labels, custom_labels, np.full(len(other_rows), OTHER)])
+    real = np.concatenate([shipped_real[keep], np.zeros(len(custom_rows) + len(other_rows), bool)])
+    knn = PoseKNN(k=k, reject_factor=shipped.reject_factor, metric=shipped.metric, vote_weighting=shipped.vote_weighting)
+    knn.fit(rows, list(labels), calibration_mask=real, scale=scale, reject_distance=reject)
+    db = rows / scale
+
+    groups = {name: group_photos(buckets[name].embeddings, scale) for name in custom}
+    own_idx = {name: np.where(labels == name)[0] for name in measured}
+    measures = {name: _measure(db, labels, own_idx[name], groups[name], k, reject, name) for name in measured}
+    other_idx = np.where(labels == OTHER)[0][-len(other_rows) :] if len(other_rows) else np.empty(0, np.int64)
+    other_shares = None
+    if len(other_idx):
+        idx, dist = _nearest(db[other_idx], db, k, [np.array([i]) for i in other_idx])
+        other_shares = _shares(idx, dist, labels, reject, measured) if measured else None
+
+    pending: dict[str, tuple] = {}
+    accepted: dict[str, tuple[float, float, str]] = {}
+    for spec in specs:
+        if spec.builtin:
+            continue
+        bucket = buckets[spec.name]
+        measure = measures.get(spec.name)
+        n, n_groups = bucket.usable, int(len(np.unique(groups[spec.name]))) if bucket.usable else 0
+        curve = None
+        if measure is not None and n >= MIN_PHOTOS_TO_ACCEPT and n_groups >= MIN_GROUPS:
+            curve = _learning_curve(db, labels, own_idx[spec.name], groups[spec.name], k, reject, spec.name)
+        if measure is not None and curve is not None and measure.recall > PASS_RECALL:
+            accepted[spec.name] = _operating_point(
+                measure.own_shares, other_shares[:, measured.index(spec.name)] if other_shares is not None else None, spec
+            )
+        pending[spec.name] = (spec, bucket, measure, n_groups, curve)
+
+    confusion_rows = tuple(name for name in active if name in measured or (name in builtin_names and (labels == name).any()))
+    table = _confusion_table(db, labels, k, reject, confusion_rows, {name: groups[name] for name in measured})
+    row_counts = {name: int((labels == name).sum()) for name in confusion_rows}
+
+    results: dict[str, Outcome] = {}
+    for name, (spec, bucket, measure, n_groups, curve) in pending.items():
+        point = accepted.get(name)
+        report = _report(
+            now,
+            spec,
+            bucket,
+            other,
+            len(shipped_rows) - int((~keep).sum()),
+            set_aside,
+            shipped_labels,
+            measure,
+            n_groups,
+            curve,
+            point,
+            table,
+            row_counts,
+            k,
+        )
+        results[name] = Outcome(
+            name=name, accepted=point is not None, report=report, enter=point[0] if point else None, exit=point[1] if point else None
+        )
+    return Enrollment(knn=knn, outcomes=results, set_aside=set_aside)
+
+
+def _report(
+    now: str,
+    spec: PoseSpec,
+    bucket: Bucket,
+    other: Bucket | None,
+    kept: int,
+    set_aside: dict[str, int],
+    shipped_labels: np.ndarray,
+    measure: _Measure | None,
+    n_groups: int,
+    curve: _LearningCurve | None,
+    point: tuple[float, float, str] | None,
+    table: dict[str, dict[str, float]],
+    row_counts: dict[str, int],
+    k: int,
+) -> str:
+    lines = [f"ENROLLMENT REPORT - {now}", f"pose: {spec.name}"]
+    if spec.type == "action":
+        lines.append(f"type: action, duration {DEFAULT_ACTION_DURATION if spec.duration is None else spec.duration:g} s")
+    else:
+        lines.append("type: state")
+    lines.append(f"photos: {bucket.found} found, {bucket.usable} usable, {len(bucket.discarded)} discarded")
+    lines += [f"  {path}  {reason}" for path, reason in bucket.discarded]
+    lines += [f"groups: {n_groups}", f"  {GROUP_DEFINITION}"]
+    if other is not None:
+        lines.append(f"other (your own negatives): {other.found} found, {other.usable} usable, {len(other.discarded)} discarded")
+        lines += [f"  {path}  {reason}" for path, reason in other.discarded]
+    if measure is not None:
+        aside = ", ".join(f"{count} {'guards' if label == OTHER else label}" for label, count in sorted(set_aside.items(), key=lambda item: -item[1]))
+        lines.append(f"database: {kept} rows kept, {sum(set_aside.values())} set aside (voted a new pose >= {CLEANING_SHARE:.2f}): {aside or 'none'}")
+        lines.append(
+            f"measure: {100 * measure.recall:.0f}% of your photos fire at threshold {REFERENCE_THRESHOLD:.2f} "
+            f"({100 * PASS_RECALL:.0f}% needed to pass; each group held out in turn)"
+        )
+        lines.append(f"  own neighbours among the {k} nearest: {measure.own_neighbours:.1f} / {k}")
+    if curve is not None:
+        lines.append("  learning curve: " + ", ".join(f"{n} photos {100 * r:.0f}%" for n, r in zip(curve.rows, curve.recalls)))
+        lines.append(
+            "  consistency: "
+            + {
+                "good": "good (more photos like these keep helping)",
+                "mixed": "mixed (the photos spread over different variants: keep one, or split into two poses)",
+                "unclear": "unclear (not enough photos to tell)",
+            }[curve.verdict]
+        )
+
+    n = bucket.usable
+    if point is not None:
+        enter, exit_, note = point
+        smoothing = (
+            spec.smoothing if spec.smoothing is not None else (ACTION_SMOOTHING_SECONDS if spec.type == "action" else DEFAULT_SMOOTHING_SECONDS)
+        )
+        smoothing_text = f"smoothing {_fmt(smoothing)} s" + (" (set by you)" if spec.smoothing is not None else "")
+        lines.append("verdict: ACCEPTED")
+        if note == "set by you":
+            lines.append(f"operating point: enter {_fmt(enter)}, exit {_fmt(exit_)} (set by you), {smoothing_text}")
+        else:
+            lines.append(f"operating point: enter {_fmt(enter)} ({note}), exit {_fmt(exit_)}, {smoothing_text}")
+        lines += _confusion_lines(table)
+        for row, fires in table.items():
+            for column, share in fires.items():
+                if column != row and column != "none" and share >= COLLISION_WARNING:
+                    lines.append(f"warning: {column} fires on {100 * share:.0f}% of the {row} photos")
+        for name, count in row_counts.items():
+            if name != spec.name and count and n > IMBALANCE_RATIO * count:
+                lines.append(f"warning: {spec.name} has {n // count}x more photos than {name}")
+        return "\n".join(lines)
+
+    if n < MIN_PHOTOS_TO_MEASURE:
+        lines.append(f"verdict: NOT ACCEPTED (at least {MIN_PHOTOS_TO_MEASURE} usable photos are needed to measure; you have {n})")
+        lines.append("next step: add photos")
+    elif n < MIN_PHOTOS_TO_ACCEPT:
+        forming = (
+            "the pose is forming well"
+            if measure.own_neighbours >= OWN_NEIGHBOURS_FOR_RECALL_70
+            else "the pose is forming"
+            if measure.own_neighbours >= OWN_NEIGHBOURS_FOR_RECALL_30
+            else "the pose is far from forming"
+        )
+        lines.append(f"verdict: NOT ACCEPTED (at least {MIN_PHOTOS_TO_ACCEPT} usable photos are needed to accept; you have {n}; {forming})")
+        lines.append("next step: add photos like these" if measure.own_neighbours >= OWN_NEIGHBOURS_FOR_RECALL_30 else "next step: add photos")
+    elif n_groups < MIN_GROUPS:
+        lines.append(f"verdict: NOT ACCEPTED (at least {MIN_GROUPS} groups are needed; you have {n_groups})")
+        lines.append("next step: add photos taken at different times, distances or angles")
+    else:
+        lines.append(f"verdict: NOT ACCEPTED ({100 * measure.recall:.0f}% of your photos fire, {100 * PASS_RECALL:.0f}% needed)")
+        if curve.verdict == "mixed":
+            lines.append("next step: keep one variant of the pose, or split the folder into two poses")
+            lines.append("  (the number of photos needed cannot be estimated while the photos mix variants)")
+        else:
+            for_70 = _photos_needed(measure.n0, OWN_NEIGHBOURS_FOR_RECALL_70, k, n)
+            for_90 = _photos_needed(measure.n0, OWN_NEIGHBOURS_FOR_RECALL_90, k, n)
+            lines.append(f"next step: add photos like these, about {for_70} in total for 70% recall, about {for_90} for 90%")
+    return "\n".join(lines)
+
+
+def _confusion_lines(table: dict[str, dict[str, float]]) -> list[str]:
+    columns = [*table.keys(), "none"]
+    width = max(len(name) for name in columns)
+    lines = [f"confusion (rows: photos of; columns: % of them on which each pose fires at {REFERENCE_THRESHOLD:.2f}; each group held out)"]
+    lines.append("  " + " " * width + "".join(f"  {column:>{max(len(column), 4)}}" for column in columns))
+    for row, fires in table.items():
+        lines.append(f"  {row:<{width}}" + "".join(f"  {100 * fires[column]:>{max(len(column), 4) - 1}.0f}%" for column in columns))
+    return lines

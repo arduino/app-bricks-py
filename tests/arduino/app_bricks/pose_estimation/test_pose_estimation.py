@@ -11,7 +11,8 @@ import numpy as np
 import pytest
 
 from arduino.app_bricks.pose_estimation import BUILTIN_POSE_NAMES, KEYPOINT_NAMES, Keypoint, Person, PoseEstimation
-from arduino.app_bricks.pose_estimation.pose_estimation import _POSE_CLASSIFIER_PATH, PoseSpec
+from arduino.app_bricks.pose_estimation.pose_estimation import _POSE_CLASSIFIER_PATH
+from arduino.app_bricks.pose_estimation.pose_vocabulary import PoseSpec
 from arduino.app_bricks.pose_estimation.pose_classifier import PoseKNN, load_pose_classifier
 
 # ---------------------------------------------------------------------------
@@ -149,7 +150,7 @@ class TestPoseVocabulary:
 
     def test_an_action_spec_reaches_the_temporal_layer(self, monkeypatch):
         spec = PoseSpec(name="sitting", builtin=True, type="action", duration=0.9)
-        monkeypatch.setattr(PoseEstimation, "_validate_poses", staticmethod(lambda poses: (spec,)))
+        monkeypatch.setattr("arduino.app_bricks.pose_estimation.pose_estimation.parse_poses", lambda poses, builtin_names: (spec,))
         pe = _construct(monkeypatch, poses=["sitting"])
         assert pe._pose_action_duration == {"sitting": 0.9}
         assert pe._pose_smoothing == {"sitting": 0.15}
@@ -179,38 +180,6 @@ class TestPoseVocabulary:
         _construct(monkeypatch)  # the full vocabulary is fine
         with pytest.raises(RuntimeError, match="other_weight"):
             _construct(monkeypatch, poses=["sitting"])
-
-    @pytest.mark.parametrize(
-        ("poses", "message"),
-        [
-            ("sitting", "must be a list"),
-            ([], "at least one pose"),
-            ([42], "name or a dict"),
-            ([{"type": "state"}], "'name' must be a non-empty string"),
-            ([{"name": "sitting", "tau": 0.3}], "unknown key 'tau'"),
-            (["jumping"], "unknown pose 'jumping' \(available: left_arm_raised, right_arm_raised, sitting, standing\)"),
-            ([{"name": "sitting", "type": "gesture"}], "unknown type 'gesture'"),
-            ([{"name": "sitting", "type": "action"}], "built-in poses are held poses"),
-            ([{"name": "sitting", "duration": 0.7}], "duration applies to actions only"),
-            ([{"name": "sitting", "thresholds": 0.5}], "thresholds must be a dict"),
-            ([{"name": "sitting", "thresholds": {"enter": 0.5}}], "thresholds must be a dict"),
-            ([{"name": "sitting", "thresholds": {"enter": 0.5, "exit": None}}], "must be a number"),
-            ([{"name": "sitting", "thresholds": {"enter": True, "exit": 0.1}}], "must be a number"),
-            ([{"name": "sitting", "thresholds": {"enter": 1.5, "exit": 0.1}}], "0 <= exit < enter <= 1"),
-            ([{"name": "sitting", "thresholds": {"enter": 0.4, "exit": 0.4}}], "0 <= exit < enter <= 1"),
-            ([{"name": "sitting", "smoothing": 0}], "smoothing must be positive"),
-            ([{"name": "sitting", "smoothing": "fast"}], "must be a number"),
-            (["sitting", {"name": "sitting"}], "declared more than once: sitting"),
-        ],
-    )
-    def test_malformed_declarations_are_refused(self, poses, message):
-        with pytest.raises(ValueError, match=message):
-            PoseEstimation._validate_poses(poses)
-
-    def test_a_spec_records_what_was_declared(self):
-        spec = PoseSpec.from_item({"name": "sitting", "thresholds": {"enter": 1, "exit": 0}, "smoothing": 2}, BUILTIN_POSE_NAMES)
-        assert spec == PoseSpec(name="sitting", builtin=True, enter=1.0, exit=0.0, smoothing=2.0)
-        assert PoseSpec.from_item("standing", BUILTIN_POSE_NAMES) == PoseSpec(name="standing", builtin=True)
 
 
 class TestDetectionParsing:

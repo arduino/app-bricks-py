@@ -195,7 +195,23 @@ class PoseKNN:
         np.fill_diagonal(dists, np.inf)
         return dists.min(axis=1)
 
-    def fit(self, embeddings: np.ndarray, labels: list[str], calibration_mask: np.ndarray | None = None) -> None:
+    @property
+    def scale(self) -> np.ndarray | None:
+        """Per-feature scale of the seuclidean metric (read-only), None for the other metrics."""
+        if self._scale is None:
+            return None
+        view = self._scale.view()
+        view.flags.writeable = False
+        return view
+
+    def fit(
+        self,
+        embeddings: np.ndarray,
+        labels: list[str],
+        calibration_mask: np.ndarray | None = None,
+        scale: np.ndarray | None = None,
+        reject_distance: float | None = None,
+    ) -> None:
         """Store the reference database and calibrate the rejection distance.
 
         The rejection distance is reject_factor times the 95th percentile of the
@@ -204,17 +220,25 @@ class PoseKNN:
 
         calibration_mask selects the rows the threshold is calibrated on: pass
         the real-example mask when the database contains augmented copies, whose
-        artificial density would otherwise shrink the percentile.
+        artificial density would otherwise shrink the percentile. scale and
+        reject_distance, when given, are taken as they are instead of being
+        calibrated: a database composed on top of another one keeps that one's.
         """
         db = np.asarray(embeddings, dtype=np.float32)
         mask = None if calibration_mask is None else np.asarray(calibration_mask, dtype=bool)
         if self.metric == "seuclidean":
-            calib_raw = db if mask is None else db[mask]
-            self._scale = np.maximum(calib_raw.std(axis=0), 1e-6).astype(np.float32)
+            if scale is not None:
+                self._scale = np.array(scale, dtype=np.float32)
+            else:
+                calib_raw = db if mask is None else db[mask]
+                self._scale = np.maximum(calib_raw.std(axis=0), 1e-6).astype(np.float32)
         self._db = self._to_metric_space(db)
         self._labels = np.asarray(labels)
         self.classes = tuple(sorted(set(labels)))
 
+        if reject_distance is not None:
+            self.reject_distance = float(reject_distance)
+            return
         calib = self._db if mask is None else self._db[mask]
         nn_dists = self._pairwise_nn_distance(calib)
         self.reject_distance = self.reject_factor * float(np.percentile(nn_dists, 95))
