@@ -23,7 +23,9 @@ from arduino.app_utils.image.adjustments import compress_to_jpeg
 from arduino.app_internal.core.module import load_brick_compose_file, resolve_address
 
 from .pose_classifier import (
+    ACTION_SMOOTHING_SECONDS,
     ANCHOR_JOINTS,
+    DEFAULT_ACTION_DURATION,
     DEFAULT_SMOOTHING_SECONDS,
     EMBEDDING_JOINTS,
     MIN_OBSERVED_SCORE,
@@ -301,13 +303,22 @@ class PoseEstimation:
             "enter": {spec.name: shipped_thresholds["enter"][spec.name] if spec.enter is None else spec.enter for spec in self._pose_specs},
             "exit": {spec.name: shipped_thresholds["exit"][spec.name] if spec.exit is None else spec.exit for spec in self._pose_specs},
         }
-        self._pose_smoothing = {spec.name: DEFAULT_SMOOTHING_SECONDS if spec.smoothing is None else spec.smoothing for spec in self._pose_specs}
+        self._pose_smoothing = {
+            spec.name: (ACTION_SMOOTHING_SECONDS if spec.type == "action" else DEFAULT_SMOOTHING_SECONDS)
+            if spec.smoothing is None
+            else spec.smoothing
+            for spec in self._pose_specs
+        }
+        self._pose_action_duration = {
+            spec.name: DEFAULT_ACTION_DURATION if spec.duration is None else spec.duration for spec in self._pose_specs if spec.type == "action"
+        }
         logger.info(f"pose classifier ready in {time.monotonic() - load_start:.2f}s (poses: {', '.join(self._pose_names)})")
         self._pose_ema = EmaHysteresis(
             classes=self._pose_names,
             smoothing_tau=self._pose_smoothing,
             enter_threshold=self._pose_thresholds["enter"],
             exit_threshold=self._pose_thresholds["exit"],
+            action_duration=self._pose_action_duration,
         )
         self._pose_last_ts: float | None = None
         self._pose_last_person: Person | None = None
@@ -339,6 +350,7 @@ class PoseEstimation:
             smoothing_tau=self._pose_smoothing,
             enter_threshold=self._pose_thresholds["enter"],
             exit_threshold=self._pose_thresholds["exit"],
+            action_duration=self._pose_action_duration,
         )
         self._pose_last_ts = None
         self._pose_last_person = None

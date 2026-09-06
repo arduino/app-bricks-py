@@ -140,6 +140,22 @@ class TestPoseVocabulary:
         assert pe._pose_ema.smoothing_tau == pe._pose_smoothing
         assert pe._pose_ema.enter_threshold == pe._pose_thresholds["enter"]
 
+    def test_built_in_poses_are_held_poses(self, pe: PoseEstimation):
+        assert pe._pose_action_duration == {}
+        assert pe._pose_ema.action_duration == {}
+        pe.stop()
+        pe._executor = ThreadPoolExecutor(max_workers=1)  # the fixture teardown shuts one down
+        assert pe._pose_ema.action_duration == {}
+
+    def test_an_action_spec_reaches_the_temporal_layer(self, monkeypatch):
+        spec = PoseSpec(name="sitting", builtin=True, type="action", duration=0.9)
+        monkeypatch.setattr(PoseEstimation, "_validate_poses", staticmethod(lambda poses: (spec,)))
+        pe = _construct(monkeypatch, poses=["sitting"])
+        assert pe._pose_action_duration == {"sitting": 0.9}
+        assert pe._pose_smoothing == {"sitting": 0.15}
+        assert pe._pose_ema.action_duration == {"sitting": 0.9}
+        assert pe._pose_ema.smoothing_tau == {"sitting": 0.15}
+
     def test_overrides_leave_the_shared_asset_untouched(self, monkeypatch):
         _construct(monkeypatch, poses=[{"name": "sitting", "thresholds": {"enter": 0.9, "exit": 0.1}}])
         assert load_pose_classifier(_POSE_CLASSIFIER_PATH)[3]["enter"]["sitting"] == 0.55

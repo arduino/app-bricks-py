@@ -75,6 +75,11 @@ _METRICS = ("euclidean", "cosine", "manhattan", "seuclidean")
 _VOTE_WEIGHTINGS = ("uniform", "distance")
 
 DEFAULT_SMOOTHING_SECONDS = 0.31
+ACTION_SMOOTHING_SECONDS = 0.15
+DEFAULT_ACTION_DURATION = 0.7
+ACTION_MIN_ACTIVATION_RATIO = 0.5
+ACTION_FORCED_CLOSE_RATIO = 3.0
+ACTION_REFRACTORY_RATIO = 1.5
 
 
 def normalize_pose(xy: np.ndarray) -> np.ndarray | None:
@@ -262,6 +267,17 @@ class EmaHysteresis:
     - person detected but joints unreadable: the smoothed values freeze, then
       decay after stale_seconds;
     - person not detected: freeze for grace_seconds, then decay as zeros.
+
+    Classes listed in action_duration are movements with a start and an end
+    rather than held poses, and their events follow pulse rules scaled by the
+    typical duration d of one occurrence: "enter" is emitted only once the
+    smoothed value has stayed above the exit threshold for ACTION_MIN_ACTIVATION_RATIO * d
+    seconds after crossing the enter threshold (a shorter burst produces no
+    event at all); an activation is closed after ACTION_FORCED_CLOSE_RATIO * d seconds
+    even if the value is still high; after an "exit" the class cannot re-enter
+    for ACTION_REFRACTORY_RATIO * d seconds. These timers keep running through
+    frozen frames, so a pending "enter" or a forced close can fire while the
+    values are frozen.
     """
 
     classes: tuple[str, ...]
@@ -270,13 +286,24 @@ class EmaHysteresis:
     exit_threshold: float | dict[str, float] = 0.40
     grace_seconds: float = 0.7
     stale_seconds: float = 3.0
+    action_duration: dict[str, float] = field(default_factory=dict)
     smoothed: dict[str, float] = field(init=False)
     active: dict[str, bool] = field(init=False)
     _invalid_time: float = field(init=False, default=0.0)
+    _time: float = field(init=False, default=0.0)
+    _pending_since: dict[str, float | None] = field(init=False)
+    _active_since: dict[str, float] = field(init=False)
+    _refractory_until: dict[str, float] = field(init=False)
 
     def __post_init__(self) -> None:
+        unknown = set(self.action_duration) - set(self.classes)
+        if unknown:
+            raise ValueError(f"action_duration names classes that are not tracked: {', '.join(sorted(unknown))}")
         self.smoothed = dict.fromkeys(self.classes, 0.0)
         self.active = dict.fromkeys(self.classes, False)
+        self._pending_since = dict.fromkeys(self.action_duration, None)
+        self._active_since = dict.fromkeys(self.action_duration, 0.0)
+        self._refractory_until = dict.fromkeys(self.action_duration, 0.0)
 
     @staticmethod
     def _per_class(spec: float | dict[str, float], cls: str) -> float:
@@ -288,10 +315,11 @@ class EmaHysteresis:
         probs=None marks an invalid frame (see class docstring for the two
         person_present cases). Returns [("enter"|"exit", class), ...].
         """
+        self._time += dt
         if probs is None:
             self._invalid_time += dt
             if self._invalid_time <= (self.stale_seconds if person_present else self.grace_seconds):
-                return []
+                return [event for cls in self.action_duration for event in self._update_action(cls, above_enter=False, below_exit=False)]
             probs = dict.fromkeys(self.classes, 0.0)
         else:
             self._invalid_time = 0.0
@@ -302,13 +330,37 @@ class EmaHysteresis:
             alpha = 1.0 - math.exp(-dt / self._per_class(self.smoothing_tau, cls))
             p = probs.get(cls, 0.0)
             self.smoothed[cls] = alpha * p + (1.0 - alpha) * self.smoothed[cls]
-            if not self.active[cls] and self.smoothed[cls] >= self._per_class(self.enter_threshold, cls):
+            above_enter = self.smoothed[cls] >= self._per_class(self.enter_threshold, cls)
+            below_exit = self.smoothed[cls] < self._per_class(self.exit_threshold, cls)
+            if cls in self.action_duration:
+                events += self._update_action(cls, above_enter, below_exit)
+            elif not self.active[cls] and above_enter:
                 self.active[cls] = True
                 events.append(("enter", cls))
-            elif self.active[cls] and self.smoothed[cls] < self._per_class(self.exit_threshold, cls):
+            elif self.active[cls] and below_exit:
                 self.active[cls] = False
                 events.append(("exit", cls))
         return events
+
+    def _update_action(self, cls: str, above_enter: bool, below_exit: bool) -> list[tuple[str, str]]:
+        duration = self.action_duration[cls]
+        pending_since = self._pending_since[cls]
+        if self.active[cls]:
+            if below_exit or self._time - self._active_since[cls] >= ACTION_FORCED_CLOSE_RATIO * duration:
+                self.active[cls] = False
+                self._refractory_until[cls] = self._time + ACTION_REFRACTORY_RATIO * duration
+                return [("exit", cls)]
+        elif pending_since is not None:
+            if below_exit:
+                self._pending_since[cls] = None
+            elif self._time - pending_since >= ACTION_MIN_ACTIVATION_RATIO * duration:
+                self._pending_since[cls] = None
+                self._active_since[cls] = pending_since
+                self.active[cls] = True
+                return [("enter", cls)]
+        elif above_enter and self._time >= self._refractory_until[cls]:
+            self._pending_since[cls] = self._time
+        return []
 
 
 @functools.lru_cache(maxsize=2)

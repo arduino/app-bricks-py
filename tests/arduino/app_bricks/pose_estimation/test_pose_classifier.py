@@ -238,6 +238,78 @@ class TestEmaHysteresis:
         assert _run(ema, {"fast": 1.0, "slow": 1.0}, steps=30) == [("enter", "slow")]
 
 
+def _action_ema(**overrides) -> EmaHysteresis:
+    settings = dict(classes=("stroke",), action_duration={"stroke": 0.7}, enter_threshold=0.5, exit_threshold=0.3, smoothing_tau=0.05)
+    settings.update(overrides)
+    return EmaHysteresis(**settings)
+
+
+HIGH, LOW, STEP = {"stroke": 1.0}, {"stroke": 0.0}, 0.125  # dyadic step: the clock sums exactly
+
+
+class TestActionSemantics:
+    """Pulse rules for action classes: duration 0.7 s gives 0.35 s minimum, 2.1 s forced close, 1.05 s refractory.
+
+    With smoothing 0.05 s and 0.125 s steps the value crosses the enter threshold at the first step (t = 0.125 s),
+    so the minimum is reached at t = 0.5 s (step 4), the forced close at 2.225 s (step 18, t = 2.25) and the
+    refractory ends at 3.3 s.
+    """
+
+    def test_a_burst_shorter_than_the_minimum_produces_no_event(self):
+        ema = _action_ema()
+        assert _run(ema, HIGH, steps=2, dt=STEP) == []
+        assert _run(ema, LOW, steps=10, dt=STEP) == []
+        assert not ema.active["stroke"]
+        assert ema._refractory_until["stroke"] == 0.0  # a blip does not arm the refractory
+        assert _run(ema, HIGH, steps=4, dt=STEP) == [("enter", "stroke")]
+
+    def test_enter_waits_for_the_minimum_activation(self):
+        ema = _action_ema()
+        assert _run(ema, HIGH, steps=3, dt=STEP) == []
+        assert ema.smoothed["stroke"] > 0.5  # above the enter threshold, still pending
+        assert _run(ema, HIGH, steps=1, dt=STEP) == [("enter", "stroke")]
+        assert _run(ema, HIGH, steps=10, dt=STEP) == []
+
+    def test_an_activation_is_closed_after_three_durations(self):
+        ema = _action_ema()
+        assert _run(ema, HIGH, steps=17, dt=STEP) == [("enter", "stroke")]
+        assert _run(ema, HIGH, steps=1, dt=STEP) == [("exit", "stroke")]
+        assert ema.smoothed["stroke"] > 0.9  # closed while the value is still high
+        assert not ema.active["stroke"]
+
+    def test_no_re_entry_during_the_refractory_period(self):
+        ema = _action_ema()
+        _run(ema, HIGH, steps=18, dt=STEP)  # enter, then the forced close at t = 2.25 s
+        assert _run(ema, HIGH, steps=11, dt=STEP) == []  # refractory until 3.3 s, then pending from 3.375 s
+        assert _run(ema, HIGH, steps=1, dt=STEP) == [("enter", "stroke")]  # t = 3.75 s
+
+    def test_a_threshold_exit_arms_the_refractory_too(self):
+        ema = _action_ema()
+        _run(ema, HIGH, steps=4, dt=STEP)
+        assert _run(ema, LOW, steps=1, dt=STEP) == [("exit", "stroke")]  # t = 0.625 s, refractory until 1.675 s
+        assert _run(ema, HIGH, steps=8, dt=STEP) == []  # t = 1.625 s: still refractory
+        assert _run(ema, HIGH, steps=4, dt=STEP) == [("enter", "stroke")]  # pending from 1.75 s, enter at 2.125 s
+
+    def test_a_held_pose_next_to_an_action_keeps_the_plain_hysteresis(self):
+        ema = _action_ema(
+            classes=("sitting", "stroke"), enter_threshold={"sitting": 0.6, "stroke": 0.5}, exit_threshold={"sitting": 0.4, "stroke": 0.3}
+        )
+        both = {"sitting": 1.0, "stroke": 1.0}
+        assert _run(ema, both, steps=1, dt=STEP) == [("enter", "sitting")]
+        assert _run(ema, both, steps=3, dt=STEP) == [("enter", "stroke")]
+        assert _run(ema, {"sitting": 0.0, "stroke": 0.0}, steps=2, dt=STEP) == [("exit", "sitting"), ("exit", "stroke")]
+
+    def test_an_action_must_be_a_tracked_class(self):
+        with pytest.raises(ValueError, match="not tracked: stroke"):
+            EmaHysteresis(classes=("sitting",), action_duration={"stroke": 0.7})
+
+    def test_the_clock_keeps_running_through_frozen_frames(self):
+        ema = _action_ema()
+        _run(ema, HIGH, steps=4, dt=STEP)
+        assert _run(ema, None, steps=13, dt=STEP) == []  # frozen since t = 0.5 s
+        assert _run(ema, None, steps=1, dt=STEP) == [("exit", "stroke")]  # forced close at t = 2.25 s
+
+
 # ---------------------------------------------------------------------------
 # The shipped database asset
 # ---------------------------------------------------------------------------
