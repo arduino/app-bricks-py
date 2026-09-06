@@ -11,7 +11,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Self
 from collections.abc import Callable
 
 import numpy as np
@@ -24,6 +24,7 @@ from arduino.app_internal.core.module import load_brick_compose_file, resolve_ad
 
 from .pose_classifier import (
     ANCHOR_JOINTS,
+    DEFAULT_SMOOTHING_SECONDS,
     EMBEDDING_JOINTS,
     MIN_OBSERVED_SCORE,
     OUT_OF_FRAME_TOLERANCE,
@@ -40,8 +41,17 @@ _POSE_CLASSIFIER_PATH = Path(__file__).resolve().parent / "assets" / "pose_class
 
 _UNREADABLE_HOLD_SEC = 0.5
 
-"""Names of the built-in poses accepted by `on_pose`."""
-POSE_NAMES: tuple[str, ...] = load_pose_classifier(_POSE_CLASSIFIER_PATH)[2]
+"""Names of the built-in poses, the ones an app can listen to without teaching anything."""
+BUILTIN_POSE_NAMES: tuple[str, ...] = load_pose_classifier(_POSE_CLASSIFIER_PATH)[2]
+
+_POSE_TYPES = ("state", "action")
+_POSE_KEYS = ("name", "type", "duration", "thresholds", "smoothing")
+
+
+def _as_number(value: object, what: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{what} must be a number, got {value!r}")
+    return float(value)
 
 
 @dataclass
@@ -104,6 +114,79 @@ class Pose:
     bounding_box_xyxy: tuple[int, int, int, int]
 
 
+@dataclass(frozen=True, kw_only=True)
+class PoseSpec:
+    """One pose of the vocabulary declared with the `poses` constructor argument.
+
+    Attributes:
+        name (str): The pose name.
+        builtin (bool): Whether the pose is one of `BUILTIN_POSE_NAMES`.
+        type (Literal["state", "action"]): "state" for a held pose, "action" for a
+            movement with a start and an end. Built-in poses are always "state".
+        duration (float | None): Typical length of one occurrence of an action, in seconds.
+        enter (float | None): Vote share above which the pose is entered; None keeps the
+            shipped value.
+        exit (float | None): Vote share below which the pose is left; None keeps the
+            shipped value.
+        smoothing (float | None): Time constant of the moving average, in seconds; None
+            keeps the default.
+    """
+
+    name: str
+    builtin: bool
+    type: Literal["state", "action"] = "state"
+    duration: float | None = None
+    enter: float | None = None
+    exit: float | None = None
+    smoothing: float | None = None
+
+    @classmethod
+    def from_item(cls, item: str | dict[str, Any], builtin_names: tuple[str, ...]) -> Self:
+        """Build a spec from one item of the `poses` list: a name, or a dict with `name` and options."""
+        if isinstance(item, str):
+            options: dict[str, Any] = {"name": item}
+        elif isinstance(item, dict):
+            options = dict(item)
+        else:
+            raise ValueError(f"each pose must be a name or a dict, got {item!r}")
+        name = options.get("name")
+        if not isinstance(name, str) or not name:
+            raise ValueError(f"pose {item!r}: 'name' must be a non-empty string")
+        unknown = [key for key in options if key not in _POSE_KEYS]
+        if unknown:
+            raise ValueError(f"pose {name!r}: unknown key {unknown[0]!r} (allowed: {', '.join(_POSE_KEYS)})")
+        builtin = name in builtin_names
+        if not builtin:
+            raise ValueError(f"unknown pose {name!r} (available: {', '.join(builtin_names)})")
+        pose_type = options.get("type", "state")
+        if pose_type not in _POSE_TYPES:
+            raise ValueError(f"pose {name!r}: unknown type {pose_type!r} (use one of {_POSE_TYPES})")
+        if builtin and pose_type != "state":
+            raise ValueError(f"pose {name!r}: built-in poses are held poses, their type cannot be changed")
+        duration = None
+        if "duration" in options:
+            if pose_type != "action":
+                raise ValueError(f"pose {name!r}: duration applies to actions only")
+            duration = _as_number(options["duration"], f"pose {name!r}: duration")
+            if not duration > 0.0:
+                raise ValueError(f"pose {name!r}: duration must be positive seconds, got {options['duration']!r}")
+        enter = exit_ = None
+        if "thresholds" in options:
+            thresholds = options["thresholds"]
+            if not isinstance(thresholds, dict) or set(thresholds) != {"enter", "exit"}:
+                raise ValueError(f"pose {name!r}: thresholds must be a dict with 'enter' and 'exit', got {thresholds!r}")
+            enter = _as_number(thresholds["enter"], f"pose {name!r}: thresholds['enter']")
+            exit_ = _as_number(thresholds["exit"], f"pose {name!r}: thresholds['exit']")
+            if not 0.0 <= exit_ < enter <= 1.0:
+                raise ValueError(f"pose {name!r}: thresholds must satisfy 0 <= exit < enter <= 1, got {thresholds!r}")
+        smoothing = None
+        if "smoothing" in options:
+            smoothing = _as_number(options["smoothing"], f"pose {name!r}: smoothing")
+            if not smoothing > 0.0:
+                raise ValueError(f"pose {name!r}: smoothing must be positive seconds, got {options['smoothing']!r}")
+        return cls(name=name, builtin=builtin, type=pose_type, duration=duration, enter=enter, exit=exit_, smoothing=smoothing)
+
+
 @brick
 class PoseEstimation:
     def __init__(
@@ -115,6 +198,7 @@ class PoseEstimation:
         draw_bboxes: bool = False,
         draw_low_confidence_points: bool = True,
         bbox_padding: float | tuple[float, float, float, float] = 0.0,
+        poses: list[str | dict[str, Any]] | None = None,
     ) -> None:
         """Initialize the PoseEstimation brick.
 
@@ -122,6 +206,13 @@ class PoseEstimation:
             camera (BaseCamera): The camera instance to use for capturing video. If None, a default
                 camera will be initialized. Pass the same instance shared with other bricks to reuse
                 a single camera.
+            poses (list[str | dict] | None): The poses this instance listens to. None (default)
+                selects the built-in poses with their shipped settings. Otherwise a list whose items
+                are pose names, or dicts with the key `name` plus any of `thresholds` ({"enter":
+                float, "exit": float}, with votes in [0, 1], replacing the shipped values) and
+                `smoothing` (seconds, the time constant of the moving average). Every name must be
+                one of `BUILTIN_POSE_NAMES`; the built-in poses left out stay in the classifier as
+                negatives and never fire.
             confidence (float): Minimum detection score for a person to be reported. The score is
                 the mean of the person's 17 keypoint scores, so partly visible people score lower.
                 Applied by the model runner, so detections below it are neither emitted nor drawn
@@ -149,8 +240,10 @@ class PoseEstimation:
                 expansion). Changeable at runtime with `set_bbox_padding()`.
 
         Raises:
+            ValueError: If `poses` is malformed or names a pose that does not exist.
             RuntimeError: If the model runner host address could not be resolved.
         """
+        self._pose_specs = self._validate_poses(poses)
         self._camera = camera if camera else Camera(fps=30)
         self._confidence = confidence
         self._count_debounce_sec = count_debounce_sec
@@ -200,10 +293,21 @@ class PoseEstimation:
         # dials and the operating point it was tuned with travel together
         # inside the asset.
         load_start = time.monotonic()
-        self._pose_knn, self._pose_label_weights, self._pose_names, self._pose_thresholds = load_pose_classifier(_POSE_CLASSIFIER_PATH)
+        self._pose_knn, self._pose_label_weights, _, shipped_thresholds = load_pose_classifier(_POSE_CLASSIFIER_PATH)
+        self._pose_names = BUILTIN_POSE_NAMES if poses is None else tuple(spec.name for spec in self._pose_specs)
+        if self._pose_label_weights is not None and set(self._pose_names) != set(BUILTIN_POSE_NAMES):
+            raise RuntimeError("a reduced pose vocabulary needs other_weight == 1.0 in the classifier asset")
+        self._pose_thresholds = {
+            "enter": {spec.name: shipped_thresholds["enter"][spec.name] if spec.enter is None else spec.enter for spec in self._pose_specs},
+            "exit": {spec.name: shipped_thresholds["exit"][spec.name] if spec.exit is None else spec.exit for spec in self._pose_specs},
+        }
+        self._pose_smoothing = {spec.name: DEFAULT_SMOOTHING_SECONDS if spec.smoothing is None else spec.smoothing for spec in self._pose_specs}
         logger.info(f"pose classifier ready in {time.monotonic() - load_start:.2f}s (poses: {', '.join(self._pose_names)})")
         self._pose_ema = EmaHysteresis(
-            classes=self._pose_names, enter_threshold=self._pose_thresholds["enter"], exit_threshold=self._pose_thresholds["exit"]
+            classes=self._pose_names,
+            smoothing_tau=self._pose_smoothing,
+            enter_threshold=self._pose_thresholds["enter"],
+            exit_threshold=self._pose_thresholds["exit"],
         )
         self._pose_last_ts: float | None = None
         self._pose_last_person: Person | None = None
@@ -231,7 +335,10 @@ class PoseEstimation:
             self._executor = None
         # Reset the temporal state so a restart begins from a clean slate
         self._pose_ema = EmaHysteresis(
-            classes=self._pose_names, enter_threshold=self._pose_thresholds["enter"], exit_threshold=self._pose_thresholds["exit"]
+            classes=self._pose_names,
+            smoothing_tau=self._pose_smoothing,
+            enter_threshold=self._pose_thresholds["enter"],
+            exit_threshold=self._pose_thresholds["exit"],
         )
         self._pose_last_ts = None
         self._pose_last_person = None
@@ -251,7 +358,7 @@ class PoseEstimation:
         self._register_callback("keypoints", callback)
 
     def on_pose(self, pose: str, callback: Callable[[Pose], None] | None) -> None:
-        """Register a callback for a built-in pose (e.g. "sitting").
+        """Register a callback for one of the poses this instance listens to (e.g. "sitting").
 
         The classifier follows ONE person: the largest bounding box in the
         frame, normally the closest to the camera. Other people stay visible
@@ -261,13 +368,14 @@ class PoseEstimation:
         tracked person assumes the pose, event="exit" when they leave it.
 
         Args:
-            pose (str): One of the built-in pose names: "left_arm_raised",
-                "right_arm_raised", "sitting", "standing".
+            pose (str): One of `pose_names`: the built-in poses ("left_arm_raised",
+                "right_arm_raised", "sitting", "standing") unless the constructor's
+                `poses` argument narrowed them down.
             callback (Callable[[Pose], None]): Function to call with the pose
                 event. None to unregister.
 
         Raises:
-            ValueError: If `pose` is not one of the built-in pose names.
+            ValueError: If `pose` is not one of `pose_names`.
         """
         if pose not in self._pose_names:
             raise ValueError(f"unknown pose {pose!r} (available: {', '.join(self._pose_names)})")
@@ -323,6 +431,11 @@ class PoseEstimation:
     def people_count(self) -> int:
         """How many people are in view right now, the value `on_count_change` last reported."""
         return self._person_count
+
+    @property
+    def pose_names(self) -> tuple[str, ...]:
+        """The poses this instance listens to, the names `on_pose` accepts."""
+        return self._pose_names
 
     def set_confidence(self, confidence: float) -> None:
         """Change the minimum detection score for a person, effective immediately.
@@ -395,6 +508,22 @@ class PoseEstimation:
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0.0 <= float(value) <= 1.0:
                 raise ValueError(f"padding values must be numbers in [0.0, 1.0], got {value!r}")
         return tuple(float(value) for value in values)
+
+    @staticmethod
+    def _validate_poses(poses: list[str | dict[str, Any]] | None) -> tuple[PoseSpec, ...]:
+        """Normalize the `poses` constructor argument to one spec per active pose."""
+        if poses is None:
+            return tuple(PoseSpec(name=name, builtin=True) for name in BUILTIN_POSE_NAMES)
+        if not isinstance(poses, (list, tuple)):
+            raise ValueError(f"poses must be a list of pose names or dicts, got {poses!r}")
+        if not poses:
+            raise ValueError("poses must list at least one pose (None selects the built-in poses)")
+        specs = tuple(PoseSpec.from_item(item, BUILTIN_POSE_NAMES) for item in poses)
+        names = [spec.name for spec in specs]
+        duplicates = sorted({name for name in names if names.count(name) > 1})
+        if duplicates:
+            raise ValueError(f"poses declared more than once: {', '.join(duplicates)}")
+        return specs
 
     def on_frame(self, callback: Callable[[np.ndarray], None] | None) -> None:
         """Register a callback that receives each raw camera frame.

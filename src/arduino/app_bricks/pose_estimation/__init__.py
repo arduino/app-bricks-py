@@ -3,8 +3,8 @@
 # SPDX-License-Identifier: MPL-2.0
 
 from arduino.app_bricks.pose_estimation.pose_estimation import (
+    BUILTIN_POSE_NAMES,
     KEYPOINT_NAMES,
-    POSE_NAMES,
     Keypoint,
     Person,
     Pose,
@@ -12,8 +12,8 @@ from arduino.app_bricks.pose_estimation.pose_estimation import (
 )
 
 __all__ = [
+    "BUILTIN_POSE_NAMES",
     "KEYPOINT_NAMES",
-    "POSE_NAMES",
     "Keypoint",
     "Person",
     "Pose",

@@ -7,9 +7,12 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import MagicMock
 
+import numpy as np
 import pytest
 
-from arduino.app_bricks.pose_estimation import KEYPOINT_NAMES, POSE_NAMES, Keypoint, Person, PoseEstimation
+from arduino.app_bricks.pose_estimation import BUILTIN_POSE_NAMES, KEYPOINT_NAMES, Keypoint, Person, PoseEstimation
+from arduino.app_bricks.pose_estimation.pose_estimation import _POSE_CLASSIFIER_PATH, PoseSpec
+from arduino.app_bricks.pose_estimation.pose_classifier import PoseKNN, load_pose_classifier
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -57,7 +60,8 @@ def pe_strict(monkeypatch: pytest.MonkeyPatch):
     yield from _make_instance(monkeypatch, out_of_frame_tolerance=0.0)
 
 
-def _make_instance(monkeypatch: pytest.MonkeyPatch, **kwargs):
+def _construct(monkeypatch: pytest.MonkeyPatch, **kwargs) -> PoseEstimation:
+    """Build a PoseEstimation with the runner infrastructure mocked out."""
     fake_compose = {"services": {"pose-runner": {}}}
     monkeypatch.setattr(
         "arduino.app_bricks.pose_estimation.pose_estimation.load_brick_compose_file",
@@ -67,9 +71,11 @@ def _make_instance(monkeypatch: pytest.MonkeyPatch, **kwargs):
         "arduino.app_bricks.pose_estimation.pose_estimation.resolve_address",
         lambda host: "127.0.0.1",
     )
+    return PoseEstimation(camera=MagicMock(), **kwargs)
 
-    camera = MagicMock()
-    instance = PoseEstimation(camera=camera, **kwargs)
+
+def _make_instance(monkeypatch: pytest.MonkeyPatch, **kwargs):
+    instance = _construct(monkeypatch, **kwargs)
 
     # Provide a real executor so callbacks actually run in threads
     instance._executor = ThreadPoolExecutor(max_workers=4)
@@ -94,6 +100,7 @@ def test_stop_resets_the_temporal_state_with_the_asset_thresholds(pe):
     assert pe._pose_ema.smoothed["sitting"] == 0.0
     assert pe._pose_ema.enter_threshold == pe._pose_thresholds["enter"]
     assert pe._pose_ema.exit_threshold == pe._pose_thresholds["exit"]
+    assert pe._pose_ema.smoothing_tau == pe._pose_smoothing
 
 
 # ---------------------------------------------------------------------------
@@ -102,7 +109,92 @@ def test_stop_resets_the_temporal_state_with_the_asset_thresholds(pe):
 
 
 def test_pose_names_lists_the_asset_poses():
-    assert POSE_NAMES == ("left_arm_raised", "right_arm_raised", "sitting", "standing")
+    assert BUILTIN_POSE_NAMES == ("left_arm_raised", "right_arm_raised", "sitting", "standing")
+
+
+# ---------------------------------------------------------------------------
+# The app's pose vocabulary
+# ---------------------------------------------------------------------------
+
+
+class TestPoseVocabulary:
+    def test_none_keeps_the_built_in_poses_with_their_shipped_settings(self, pe: PoseEstimation):
+        shipped = load_pose_classifier(_POSE_CLASSIFIER_PATH)[3]
+        assert pe.pose_names == BUILTIN_POSE_NAMES
+        assert pe._pose_thresholds == shipped
+        assert pe._pose_smoothing == dict.fromkeys(BUILTIN_POSE_NAMES, 0.31)
+        assert set(pe._pose_ema.active) == set(BUILTIN_POSE_NAMES)
+
+    def test_a_name_list_narrows_the_vocabulary(self, monkeypatch):
+        pe = _construct(monkeypatch, poses=["standing", "sitting"])
+        assert pe.pose_names == ("standing", "sitting")
+        assert set(pe._pose_ema.active) == {"standing", "sitting"}
+        assert pe._pose_thresholds["enter"] == {"standing": 0.80, "sitting": 0.55}
+        with pytest.raises(ValueError, match="unknown pose"):
+            pe.on_pose("left_arm_raised", lambda pose: None)
+
+    def test_a_dict_overrides_thresholds_and_smoothing(self, monkeypatch):
+        pe = _construct(monkeypatch, poses=[{"name": "sitting", "thresholds": {"enter": 0.7, "exit": 0.2}, "smoothing": 0.15}, "standing"])
+        assert pe._pose_thresholds == {"enter": {"sitting": 0.7, "standing": 0.80}, "exit": {"sitting": 0.2, "standing": 0.60}}
+        assert pe._pose_smoothing == {"sitting": 0.15, "standing": 0.31}
+        assert pe._pose_ema.smoothing_tau == pe._pose_smoothing
+        assert pe._pose_ema.enter_threshold == pe._pose_thresholds["enter"]
+
+    def test_overrides_leave_the_shared_asset_untouched(self, monkeypatch):
+        _construct(monkeypatch, poses=[{"name": "sitting", "thresholds": {"enter": 0.9, "exit": 0.1}}])
+        assert load_pose_classifier(_POSE_CLASSIFIER_PATH)[3]["enter"]["sitting"] == 0.55
+
+    def test_left_out_poses_vote_like_other_rows(self, pe: PoseEstimation):
+        asset = np.load(_POSE_CLASSIFIER_PATH)
+        knn = pe._pose_knn
+        relabelled = PoseKNN(k=knn.k, reject_factor=knn.reject_factor, metric=knn.metric, vote_weighting=knn.vote_weighting)
+        labels = [label if label == "sitting" else "other" for label in asset["labels"].astype(str)]
+        relabelled.fit(asset["embeddings"], labels, calibration_mask=asset["real"])
+        assert relabelled.reject_distance == pytest.approx(knn.reject_distance)
+        for row in asset["embeddings"][::97]:
+            assert knn.classify(row)["sitting"] == pytest.approx(relabelled.classify(row)["sitting"])
+
+    def test_a_weighted_other_class_refuses_a_reduced_vocabulary(self, monkeypatch):
+        knn, _, names, thresholds = load_pose_classifier(_POSE_CLASSIFIER_PATH)
+        monkeypatch.setattr(
+            "arduino.app_bricks.pose_estimation.pose_estimation.load_pose_classifier",
+            lambda path: (knn, {"other": 0.6}, names, thresholds),
+        )
+        _construct(monkeypatch)  # the full vocabulary is fine
+        with pytest.raises(RuntimeError, match="other_weight"):
+            _construct(monkeypatch, poses=["sitting"])
+
+    @pytest.mark.parametrize(
+        ("poses", "message"),
+        [
+            ("sitting", "must be a list"),
+            ([], "at least one pose"),
+            ([42], "name or a dict"),
+            ([{"type": "state"}], "'name' must be a non-empty string"),
+            ([{"name": "sitting", "tau": 0.3}], "unknown key 'tau'"),
+            (["jumping"], "unknown pose 'jumping' \(available: left_arm_raised, right_arm_raised, sitting, standing\)"),
+            ([{"name": "sitting", "type": "gesture"}], "unknown type 'gesture'"),
+            ([{"name": "sitting", "type": "action"}], "built-in poses are held poses"),
+            ([{"name": "sitting", "duration": 0.7}], "duration applies to actions only"),
+            ([{"name": "sitting", "thresholds": 0.5}], "thresholds must be a dict"),
+            ([{"name": "sitting", "thresholds": {"enter": 0.5}}], "thresholds must be a dict"),
+            ([{"name": "sitting", "thresholds": {"enter": 0.5, "exit": None}}], "must be a number"),
+            ([{"name": "sitting", "thresholds": {"enter": True, "exit": 0.1}}], "must be a number"),
+            ([{"name": "sitting", "thresholds": {"enter": 1.5, "exit": 0.1}}], "0 <= exit < enter <= 1"),
+            ([{"name": "sitting", "thresholds": {"enter": 0.4, "exit": 0.4}}], "0 <= exit < enter <= 1"),
+            ([{"name": "sitting", "smoothing": 0}], "smoothing must be positive"),
+            ([{"name": "sitting", "smoothing": "fast"}], "must be a number"),
+            (["sitting", {"name": "sitting"}], "declared more than once: sitting"),
+        ],
+    )
+    def test_malformed_declarations_are_refused(self, poses, message):
+        with pytest.raises(ValueError, match=message):
+            PoseEstimation._validate_poses(poses)
+
+    def test_a_spec_records_what_was_declared(self):
+        spec = PoseSpec.from_item({"name": "sitting", "thresholds": {"enter": 1, "exit": 0}, "smoothing": 2}, BUILTIN_POSE_NAMES)
+        assert spec == PoseSpec(name="sitting", builtin=True, enter=1.0, exit=0.0, smoothing=2.0)
+        assert PoseSpec.from_item("standing", BUILTIN_POSE_NAMES) == PoseSpec(name="standing", builtin=True)
 
 
 class TestDetectionParsing:

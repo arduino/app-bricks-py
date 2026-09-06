@@ -74,6 +74,8 @@ MIN_OBSERVED_SCORE = 0.1  # mirrors the runner's MIN_KEYPOINT_SCORE
 _METRICS = ("euclidean", "cosine", "manhattan", "seuclidean")
 _VOTE_WEIGHTINGS = ("uniform", "distance")
 
+DEFAULT_SMOOTHING_SECONDS = 0.31
+
 
 def normalize_pose(xy: np.ndarray) -> np.ndarray | None:
     """Translate the skeleton to the hip center and scale it by the torso size.
@@ -248,10 +250,13 @@ class PoseKNN:
 class EmaHysteresis:
     """Turn noisy per-frame probabilities into stable enter/exit events.
 
-    Per-class exponential moving average with thermostat-style thresholds (single numbers or per-class dicts):
+    Per-class exponential moving average with thermostat-style thresholds:
     active above enter_threshold, inactive again only below exit_threshold.
-    All time constants are in seconds: the caller passes the frame interval
-    dt, so behavior does not change with the pipeline frame rate.
+    The smoothing time constant and both thresholds are single numbers or
+    per-class dicts. Time is measured in seconds, not frames: each update
+    weighs the new frame by 1 - exp(-dt / smoothing_tau), with dt the seconds
+    elapsed since the previous frame, so a pose takes the same time to build
+    up at 30 or at 10 frames per second.
 
     Invalid frames are passed as probs=None; person_present tells them apart:
     - person detected but joints unreadable: the smoothed values freeze, then
@@ -260,7 +265,7 @@ class EmaHysteresis:
     """
 
     classes: tuple[str, ...]
-    smoothing_tau: float = 0.31  # seconds
+    smoothing_tau: float | dict[str, float] = DEFAULT_SMOOTHING_SECONDS
     enter_threshold: float | dict[str, float] = 0.60
     exit_threshold: float | dict[str, float] = 0.40
     grace_seconds: float = 0.7
@@ -274,7 +279,7 @@ class EmaHysteresis:
         self.active = dict.fromkeys(self.classes, False)
 
     @staticmethod
-    def _threshold(spec: float | dict[str, float], cls: str) -> float:
+    def _per_class(spec: float | dict[str, float], cls: str) -> float:
         return spec[cls] if isinstance(spec, dict) else spec
 
     def update(self, probs: dict[str, float] | None, dt: float, person_present: bool = True) -> list[tuple[str, str]]:
@@ -291,15 +296,16 @@ class EmaHysteresis:
         else:
             self._invalid_time = 0.0
 
-        alpha = 1.0 - math.exp(-max(dt, 1e-3) / self.smoothing_tau)
+        dt = max(dt, 1e-3)
         events = []
         for cls in self.classes:
+            alpha = 1.0 - math.exp(-dt / self._per_class(self.smoothing_tau, cls))
             p = probs.get(cls, 0.0)
             self.smoothed[cls] = alpha * p + (1.0 - alpha) * self.smoothed[cls]
-            if not self.active[cls] and self.smoothed[cls] >= self._threshold(self.enter_threshold, cls):
+            if not self.active[cls] and self.smoothed[cls] >= self._per_class(self.enter_threshold, cls):
                 self.active[cls] = True
                 events.append(("enter", cls))
-            elif self.active[cls] and self.smoothed[cls] < self._threshold(self.exit_threshold, cls):
+            elif self.active[cls] and self.smoothed[cls] < self._per_class(self.exit_threshold, cls):
                 self.active[cls] = False
                 events.append(("exit", cls))
         return events

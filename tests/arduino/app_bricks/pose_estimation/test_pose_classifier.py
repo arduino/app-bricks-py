@@ -231,6 +231,12 @@ class TestEmaHysteresis:
         _run(ema, {"sitting": 1.0}, steps=20)
         assert _run(ema, None, steps=30, person_present=False) == [("exit", "sitting")]
 
+    def test_per_class_smoothing(self):
+        ema = EmaHysteresis(classes=("fast", "slow"), smoothing_tau={"fast": 0.1, "slow": 2.0})
+        assert _run(ema, {"fast": 1.0, "slow": 1.0}, steps=5) == [("enter", "fast")]
+        assert ema.smoothed["slow"] < 0.3
+        assert _run(ema, {"fast": 1.0, "slow": 1.0}, steps=30) == [("enter", "slow")]
+
 
 # ---------------------------------------------------------------------------
 # The shipped database asset
@@ -243,7 +249,7 @@ class TestShippedDatabase:
         assert pose_names == ("left_arm_raised", "right_arm_raised", "sitting", "standing")
         assert set(knn.classes) == {*pose_names, "other"}
         assert 0.0 < knn.reject_distance < float("inf")
-        assert label_weights is None or set(label_weights) == {"other"}
+        assert label_weights is None  # a reduced pose vocabulary relies on every vote weighing the same
         assert all(pose in thresholds["enter"] and pose in thresholds["exit"] for pose in pose_names)
 
     def test_constructor_defaults_mirror_the_shipped_dials(self):
