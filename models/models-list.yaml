@@ -2407,7 +2407,12 @@ models:
     bricks:
       - id: "arduino:vlm"
         model_configuration:
-          GGML_HEXAGON_DEVICES: 1      
+          GGML_HEXAGON_DEVICES: 1
+          # This mmproj declares preproc_image_size 2048, so llama.cpp rescales every
+          # image to 2048px and slices it into 13 tiles of 512px - 13 vision-encoder
+          # passes per frame (~230 s on UnoQ) against the 2 the 500M model needs. The
+          # cap keeps one tile plus the overview, the slicing the 500M gets by default.
+          LLAMA_ARG_IMAGE_MAX_TOKENS: 64
     deployment:
       handler: "hf-handler"
       platforms:
