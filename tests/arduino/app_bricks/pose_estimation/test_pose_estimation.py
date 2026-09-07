@@ -869,13 +869,17 @@ class TestCustomPoses:
         assert len(calls) == 1
         assert len(list((root / "forehand").glob("report_*.txt"))) == 1
 
-    def test_a_pose_that_does_not_pass_stops_start_with_its_report(self, monkeypatch, tmp_path):
+    def test_a_pose_that_does_not_pass_stops_start_with_its_verdict(self, monkeypatch, tmp_path):
         root = _poses_dir(tmp_path, {"forehand": 12})
         cloud = _fake_cloud(load_pose_classifier(_POSE_CLASSIFIER_PATH)[0].scale, 12)
         monkeypatch.setattr(PoseEstimation, "_embed_photos", _fake_embedder(cloud))
         pe = _construct(monkeypatch, poses=["forehand"], custom_poses_dir=str(root))
-        with pytest.raises(ValueError, match="at least 20 usable photos are needed to measure; you have 12"):
+        with pytest.raises(ValueError) as refusal:
             pe.start()
+        assert str(refusal.value) == (
+            "custom pose(s) not accepted (the full report is in the log and in the pose folder):\n"
+            "  forehand: verdict: NOT ACCEPTED (at least 20 usable photos are needed to measure; you have 12); next step: add photos"
+        )
         assert not pe._camera.start.called
         assert len(list((root / "forehand").glob("report_*.txt"))) == 1
 

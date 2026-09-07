@@ -453,9 +453,10 @@ class PoseEstimation:
 
     def _install_enrollment(self, enrollment: Enrollment) -> None:
         """Make the composed classifier and the derived thresholds the ones the frames are judged with."""
-        refused = [outcome.report for outcome in enrollment.outcomes.values() if not outcome.accepted]
+        refused = [outcome for outcome in enrollment.outcomes.values() if not outcome.accepted]
         if refused:
-            raise ValueError("custom pose(s) not accepted, see the report(s):\n\n" + "\n\n".join(refused))
+            summaries = "\n".join(f"  {outcome.name}: {outcome.summary}" for outcome in refused)
+            raise ValueError(f"custom pose(s) not accepted (the full report is in the log and in the pose folder):\n{summaries}")
         self._pose_knn = enrollment.knn
         self._pose_label_weights = None
         for name, outcome in enrollment.outcomes.items():
