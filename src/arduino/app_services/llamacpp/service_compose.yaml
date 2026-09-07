@@ -41,7 +41,7 @@ services:
         hard: 65536
     oom_score_adj: -500
     mem_limit: 12g
-    memswap_limit: 10g
+    memswap_limit: 12g
     shm_size: 2g
     devices:
       - /dev/dma_heap/system
