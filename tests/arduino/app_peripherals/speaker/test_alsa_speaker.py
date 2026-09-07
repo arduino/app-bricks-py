@@ -50,13 +50,22 @@ class TestALSASpeakerDeviceResolution:
             ("CARD=SomeCard,DEV=0", "plughw:CARD=SomeCard,DEV=0"),
             ("plughw:CARD=SomeCard,DEV=0", "plughw:CARD=SomeCard,DEV=0"),
             ("hw:1,0", "plughw:CARD=AnotherCard,DEV=0"),
-            ("hw:0,0,0", "hw:0,0,0"),  # Fully-specified raw paths pass through as-is
-            ("plughw:SomeCard,0,0", "plughw:SomeCard,0,0"),
+            ("hw:SomeCard,0", "plughw:CARD=SomeCard,DEV=0"),  # Card name instead of index
+            ("plughw:AnotherCard,0", "plughw:CARD=AnotherCard,DEV=0"),
+            ("hw:1,0,0", "plughw:CARD=AnotherCard,DEV=0"),  # Subdevice is ignored
+            ("plughw:SomeCard,0,3", "plughw:CARD=SomeCard,DEV=0"),
         ],
     )
     def test_resolves_to_stable_ref(self, device, expected):
         """Test that supported identifiers resolve to a full ALSA path."""
         assert ALSASpeaker(device=device).device_stable_ref == expected
+
+    def test_subdevice_is_ignored_with_warning(self):
+        """Test that a subdevice component is dropped and reported."""
+        with patch("arduino.app_peripherals.speaker.alsa_speaker.logger") as mock_logger:
+            assert ALSASpeaker(device="hw:0,0,1").device_stable_ref == "plughw:CARD=SomeCard,DEV=0"
+
+        assert "Subdevice in 'hw:0,0,1' is ignored" in mock_logger.warning.call_args.args[0]
 
     def test_default_device_resolves_to_first_plugged(self):
         """Test that the default device selects the first plugged speaker."""
@@ -91,6 +100,7 @@ class TestALSASpeakerDeviceResolution:
         [
             (5, "No speaker found at index 5"),  # Ordinal beyond the plugged speakers
             ("CARD=Ghost,DEV=0", "not found among available"),  # Well-formed but disconnected
+            ("hw:Ghost,0", "not found among available"),
         ],
     )
     def test_unavailable_device_raises_open_error(self, device, message):
@@ -327,12 +337,36 @@ class TestALSASharedMode:
         spkr = ALSASpeaker()
         assert spkr.shared is True
 
-    def test_exclusive_mode(self):
-        """Test exclusive mode."""
-        spkr = ALSASpeaker(shared=False)
-        assert spkr.shared is False
+    @pytest.mark.parametrize(
+        "device, expected",
+        [
+            ("CARD=SomeCard,DEV=0", "plug_card_0_dev_0_spk"),
+            ("hw:1,0", "plug_card_1_dev_0_spk"),
+            ("plughw:SomeCard,0", "plug_card_0_dev_0_spk"),
+        ],
+    )
+    def test_shared_opens_plug_device(self, pcm_registry, device, expected):
+        """Test that shared mode opens the dmix-backed plug device for every card-based ref."""
+        spkr = ALSASpeaker(device=device, shared=True)
         spkr.start()
+
+        assert pcm_registry.get_last_instance().device == expected
+
+    @pytest.mark.parametrize(
+        "device, expected",
+        [
+            ("CARD=SomeCard,DEV=0", "plughw:CARD=0,DEV=0"),
+            ("hw:1,0", "plughw:CARD=1,DEV=0"),
+            ("plughw:SomeCard,0", "plughw:CARD=0,DEV=0"),
+        ],
+    )
+    def test_exclusive_opens_direct_device(self, pcm_registry, device, expected):
+        """Test that exclusive mode opens the device directly."""
+        spkr = ALSASpeaker(device=device, shared=False)
+        spkr.start()
+
         assert spkr.is_started()
+        assert pcm_registry.get_last_instance().device == expected
 
 
 class TestALSASpeakerUsbDiscovery:
