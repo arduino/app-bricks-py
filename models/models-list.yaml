@@ -2396,8 +2396,8 @@ models:
       source: "huggingface"
       source-model-id: "ggml-org/SmolVLM2-500M-Video-Instruct-Q8_0"
       source-model-url: "https://huggingface.co/ggml-org/SmolVLM2-500M-Video-Instruct-GGUF"
- - "llamacpp:SmolVLM-256M-Instruct-GGUF-Q8_0":
-    name : "SmolVLM-256M-Instruct-GGUF"
+ - "llamacpp:SmolVLM2-256M-Video-Instruct-Q8_0":
+    name : "SmolVLM2-256M-Video-Instruct"
     description: >-
       SmolVLM2 256M Video Instruct is a compact vision-language model developed by Hugging Face.
       With 256 million parameters, it understands images and short video clips alongside text,
@@ -2426,5 +2426,5 @@ models:
     metadata:
       model_size_mb: 279
       source: "huggingface"
-      source-model-id: "ggml-org/SmolVLM2-256M-Video-Instruct-GGUF"
+      source-model-id: "ggml-org/SmolVLM2-256M-Video-Instruct-Q8_0"
       source-model-url: "https://huggingface.co/ggml-org/SmolVLM2-256M-Video-Instruct-GGUF"
