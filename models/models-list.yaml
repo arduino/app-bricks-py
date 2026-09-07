@@ -2394,7 +2394,7 @@ models:
     metadata:
       model_size_mb: 546
       source: "huggingface"
-      source-model-id: "SmolVLM2-500M-Video-Instruct-Q8_0"
+      source-model-id: "ggml-org/SmolVLM2-500M-Video-Instruct-Q8_0"
       source-model-url: "https://huggingface.co/ggml-org/SmolVLM2-500M-Video-Instruct-GGUF"
  - "llamacpp:SmolVLM-256M-Instruct-GGUF-Q8_0":
     name : "SmolVLM-256M-Instruct-GGUF"
@@ -2413,18 +2413,18 @@ models:
       platforms:
         - ventunoq:
             variables:
-              model_url: "https://huggingface.co/ggml-org/SmolVLM-256M-Instruct-GGUF/blob/3e5cd255afa2a9b608348fabecbcc212e327affd/SmolVLM-256M-Instruct-Q8_0.gguf"
-              model_mmproj_url: "https://huggingface.co/ggml-org/SmolVLM-256M-Instruct-GGUF/blob/b9e4379657e1450d04d02eec8e345667265b0a00/mmproj-SmolVLM-256M-Instruct-Q8_0.gguf"
+              model_url: "https://huggingface.co/ggml-org/SmolVLM2-256M-Video-Instruct-GGUF/blob/2fd73d28c10a108a723cbf6f348114977cd488c1/SmolVLM2-256M-Video-Instruct-Q8_0.gguf"
+              model_mmproj_url: "https://huggingface.co/ggml-org/SmolVLM2-256M-Video-Instruct-GGUF/blob/2fd73d28c10a108a723cbf6f348114977cd488c1/mmproj-SmolVLM2-256M-Video-Instruct-Q8_0.gguf"
               models_repository: "llamacpp"
-              model_directory: "ggml-org/SmolVLM-256M-Instruct-GGUF"
+              model_directory: "ggml-org/SmolVLM2-256M-Video-Instruct-GGUF"
         - unoq:
             variables:
-              model_url: "https://huggingface.co/ggml-org/SmolVLM-256M-Instruct-GGUF/blob/3e5cd255afa2a9b608348fabecbcc212e327affd/SmolVLM-256M-Instruct-Q8_0.gguf"
-              model_mmproj_url: "https://huggingface.co/ggml-org/SmolVLM-256M-Instruct-GGUF/blob/b9e4379657e1450d04d02eec8e345667265b0a00/mmproj-SmolVLM-256M-Instruct-Q8_0.gguf"
+              model_url: "https://huggingface.co/ggml-org/SmolVLM2-256M-Video-Instruct-GGUF/blob/2fd73d28c10a108a723cbf6f348114977cd488c1/SmolVLM2-256M-Video-Instruct-Q8_0.gguf"
+              model_mmproj_url: "https://huggingface.co/ggml-org/SmolVLM2-256M-Video-Instruct-GGUF/blob/2fd73d28c10a108a723cbf6f348114977cd488c1/mmproj-SmolVLM2-256M-Video-Instruct-Q8_0.gguf"
               models_repository: "llamacpp"
-              model_directory: "ggml-org/SmolVLM-256M-Instruct-GGUF"              
+              model_directory: "ggml-org/SmolVLM2-256M-Video-Instruct-GGUF"             
     metadata:
       model_size_mb: 279
       source: "huggingface"
-      source-model-id: "SmolVLM-256M-Instruct-GGUF"
-      source-model-url: "https://huggingface.co/ggml-org/SmolVLM-256M-Instruct-GGUF"
+      source-model-id: "ggml-org/SmolVLM2-256M-Video-Instruct-GGUF"
+      source-model-url: "https://huggingface.co/ggml-org/SmolVLM2-256M-Video-Instruct-GGUF"
