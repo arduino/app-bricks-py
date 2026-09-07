@@ -50,8 +50,8 @@ class TestALSAMicrophoneDeviceResolution:
             ("CARD=SomeCard,DEV=0", "plughw:CARD=SomeCard,DEV=0"),
             ("plughw:CARD=SomeCard,DEV=0", "plughw:CARD=SomeCard,DEV=0"),
             ("hw:1,0", "plughw:CARD=AnotherCard,DEV=0"),
-            ("hw:0,0,0", "hw:0,0,0"),  # Fully-specified raw paths pass through as-is
-            ("plughw:SomeCard,0,0", "plughw:SomeCard,0,0"),
+            ("hw:SomeCard,0", "plughw:CARD=SomeCard,DEV=0"),  # Card name instead of index
+            ("plughw:AnotherCard,0", "plughw:CARD=AnotherCard,DEV=0"),
         ],
     )
     def test_resolves_to_stable_ref(self, device, expected):
@@ -77,6 +77,7 @@ class TestALSAMicrophoneDeviceResolution:
         [
             (None, "Invalid device type"),  # Wrong type
             ("not-a-real-device", "Unsupported device identifier"),  # Unrecognized format
+            ("hw:0,0,0", "Unsupported device identifier"),  # Subdevices are not supported
         ],
     )
     def test_bad_parameter_raises_config_error(self, device, message):
@@ -91,6 +92,7 @@ class TestALSAMicrophoneDeviceResolution:
         [
             (5, "No microphone found at index 5"),  # Ordinal beyond the plugged microphones
             ("CARD=Ghost,DEV=0", "not found among available"),  # Well-formed but disconnected
+            ("hw:Ghost,0", "not found among available"),
         ],
     )
     def test_unavailable_device_raises_open_error(self, device, message):
@@ -177,6 +179,45 @@ class TestALSAErrorManagement:
         mic.stop()
 
         assert not mic.is_started()
+
+
+class TestALSASharedMode:
+    """Test ALSA microphone shared mode."""
+
+    def test_shared_mode_default(self):
+        """Test that default shared mode is True."""
+        assert ALSAMicrophone().shared is True
+
+    @pytest.mark.parametrize(
+        "device, expected",
+        [
+            ("CARD=SomeCard,DEV=0", "plug_card_0_dev_0_mic"),
+            ("hw:1,0", "plug_card_1_dev_0_mic"),
+            ("plughw:SomeCard,0", "plug_card_0_dev_0_mic"),
+        ],
+    )
+    def test_shared_opens_plug_device(self, pcm_registry, device, expected):
+        """Test that shared mode opens the dsnoop-backed plug device for every card-based ref."""
+        mic = ALSAMicrophone(device=device, shared=True)
+        mic.start()
+
+        assert pcm_registry.get_last_instance().device == expected
+
+    @pytest.mark.parametrize(
+        "device, expected",
+        [
+            ("CARD=SomeCard,DEV=0", "plughw:CARD=0,DEV=0"),
+            ("hw:1,0", "plughw:CARD=1,DEV=0"),
+            ("plughw:SomeCard,0", "plughw:CARD=0,DEV=0"),
+        ],
+    )
+    def test_exclusive_opens_direct_device(self, pcm_registry, device, expected):
+        """Test that exclusive mode opens the device directly."""
+        mic = ALSAMicrophone(device=device, shared=False)
+        mic.start()
+
+        assert mic.is_started()
+        assert pcm_registry.get_last_instance().device == expected
 
 
 class TestALSADeviceDisconnection:
