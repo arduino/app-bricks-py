@@ -9,9 +9,9 @@ import queue
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 from collections.abc import Callable
 
 import numpy as np
@@ -24,19 +24,18 @@ from arduino.app_internal.core.module import load_brick_compose_file, resolve_ad
 
 from .pose_classifier import (
     ACTION_SMOOTHING_SECONDS,
-    ANCHOR_JOINTS,
     DEFAULT_ACTION_DURATION,
     DEFAULT_SMOOTHING_SECONDS,
-    EMBEDDING_JOINTS,
-    MIN_OBSERVED_SCORE,
     OUT_OF_FRAME_TOLERANCE,
     EmaHysteresis,
-    KEYPOINT_NAMES,
-    embed,
+    embed_person,
     load_pose_classifier,
-    normalize_pose,
 )
-from .pose_vocabulary import parse_poses
+from .pose_enrollment import OTHER, Enrollment, enroll
+from .pose_enrollment.cache import CACHE_FILE, EnrollmentCache
+from .pose_enrollment.photos import build_buckets, custom_folders, embed_photos, photos
+from .pose_types import Person, Pose, parse_people
+from .pose_vocabulary import PoseSpec, parse_poses
 
 logger = Logger("PoseEstimation")
 
@@ -44,68 +43,10 @@ _POSE_CLASSIFIER_PATH = Path(__file__).resolve().parent / "assets" / "pose_class
 
 _UNREADABLE_HOLD_SEC = 0.5
 
+_CUSTOM_POSES_DIR = "/app/poses"
+
 """Names of the built-in poses, the ones an app can listen to without teaching anything."""
 BUILTIN_POSE_NAMES: tuple[str, ...] = load_pose_classifier(_POSE_CLASSIFIER_PATH)[2]
-
-
-@dataclass
-class Keypoint:
-    """One of the 17 body keypoints of a detected person.
-
-    Attributes:
-        name (str): Keypoint name, one of `KEYPOINT_NAMES`.
-        x (int): Horizontal pixel coordinate in the camera frame.
-        y (int): Vertical pixel coordinate in the camera frame.
-        score (float): Confidence score in [0.0, 1.0] for this keypoint.
-    """
-
-    name: str
-    x: int
-    y: int
-    score: float
-
-
-@dataclass
-class Person:
-    """A person detected in a frame.
-
-    Attributes:
-        keypoints (dict[str, Keypoint]): The person's 17 keypoints, keyed by
-            keypoint name (see `KEYPOINT_NAMES`). Low-confidence keypoints are
-            included; filter by their score.
-        bounding_box_xyxy (tuple[int, int, int, int]): (x1, y1, x2, y2) box
-            enclosing the person's confident keypoints, expanded by the
-            configured bbox padding (none by default), in frame coordinates.
-    """
-
-    keypoints: dict[str, Keypoint]
-    bounding_box_xyxy: tuple[int, int, int, int]
-
-
-@dataclass
-class Pose:
-    """A pose classification event for a single person.
-
-    Delivered by `on_pose` callbacks when the tracked person assumes or leaves
-    a built-in pose.
-
-    Attributes:
-        name (str): Built-in pose name, e.g. "sitting".
-        event (Literal["enter", "exit"]): "enter" when the person assumes the
-            pose, "exit" when they leave it.
-        confidence (float): Classification confidence in [0.0, 1.0] at the event edge.
-        keypoints (dict[str, Keypoint]): The person's 17 keypoints, keyed by
-            keypoint name (see `KEYPOINT_NAMES`).
-        bounding_box_xyxy (tuple[int, int, int, int]): (x1, y1, x2, y2) box
-            enclosing the person's confident keypoints, expanded by the
-            configured bbox padding (none by default), in frame coordinates.
-    """
-
-    name: str
-    event: Literal["enter", "exit"]
-    confidence: float
-    keypoints: dict[str, Keypoint]
-    bounding_box_xyxy: tuple[int, int, int, int]
 
 
 @brick
@@ -120,6 +61,7 @@ class PoseEstimation:
         draw_low_confidence_points: bool = True,
         bbox_padding: float | tuple[float, float, float, float] = 0.0,
         poses: list[str | dict[str, Any]] | None = None,
+        custom_poses_dir: str = _CUSTOM_POSES_DIR,
     ) -> None:
         """Initialize the PoseEstimation brick.
 
@@ -131,9 +73,15 @@ class PoseEstimation:
                 selects the built-in poses with their shipped settings. Otherwise a list whose items
                 are pose names, or dicts with the key `name` plus any of `thresholds` ({"enter":
                 float, "exit": float}, with votes in [0, 1], replacing the shipped values) and
-                `smoothing` (seconds, the time constant of the moving average). Every name must be
-                one of `BUILTIN_POSE_NAMES`; the built-in poses left out stay in the classifier as
-                negatives and never fire.
+                `smoothing` (seconds, the time constant of the moving average). A name is either
+                one of `BUILTIN_POSE_NAMES` or a sub-folder of `custom_poses_dir` holding the photos
+                of a pose of yours, taught at `start()`; a custom pose also takes `type` ("state",
+                the default, for a held pose, or "action" for a movement) and `duration` (seconds,
+                actions only: the typical length of one occurrence, 0.7 by default). The built-in
+                poses left out stay in the classifier as negatives and never fire.
+            custom_poses_dir (str): Where the photo folders of the custom poses live, one folder per
+                pose named like the pose, plus an optional `other` folder with photos of what is not
+                any of your poses. Default "/app/poses".
             confidence (float): Minimum detection score for a person to be reported. The score is
                 the mean of the person's 17 keypoint scores, so partly visible people score lower.
                 Applied by the model runner, so detections below it are neither emitted nor drawn
@@ -161,10 +109,12 @@ class PoseEstimation:
                 expansion). Changeable at runtime with `set_bbox_padding()`.
 
         Raises:
-            ValueError: If `poses` is malformed or names a pose that does not exist.
+            ValueError: If `poses` is malformed or names a pose that does not exist, or if a folder
+                in `custom_poses_dir` carries the name of a built-in pose.
             RuntimeError: If the model runner host address could not be resolved.
         """
-        self._pose_specs = parse_poses(poses, BUILTIN_POSE_NAMES)
+        self._custom_poses_dir = Path(custom_poses_dir)
+        self._pose_specs = parse_poses(poses, BUILTIN_POSE_NAMES, custom_folders(self._custom_poses_dir, BUILTIN_POSE_NAMES))
         self._camera = camera if camera else Camera(fps=30)
         self._confidence = confidence
         self._count_debounce_sec = count_debounce_sec
@@ -219,8 +169,8 @@ class PoseEstimation:
         if self._pose_label_weights is not None and set(self._pose_names) != set(BUILTIN_POSE_NAMES):
             raise RuntimeError("a reduced pose vocabulary needs other_weight == 1.0 in the classifier asset")
         self._pose_thresholds = {
-            "enter": {spec.name: shipped_thresholds["enter"][spec.name] if spec.enter is None else spec.enter for spec in self._pose_specs},
-            "exit": {spec.name: shipped_thresholds["exit"][spec.name] if spec.exit is None else spec.exit for spec in self._pose_specs},
+            "enter": {spec.name: self._declared_threshold(spec, "enter", shipped_thresholds) for spec in self._pose_specs},
+            "exit": {spec.name: self._declared_threshold(spec, "exit", shipped_thresholds) for spec in self._pose_specs},
         }
         self._pose_smoothing = {
             spec.name: (ACTION_SMOOTHING_SECONDS if spec.type == "action" else DEFAULT_SMOOTHING_SECONDS)
@@ -251,7 +201,14 @@ class PoseEstimation:
         self._gate_log_counts = dict(self._gate_counts)
 
     def start(self) -> None:
-        """Start the capture thread and asyncio event loop."""
+        """Teach the custom poses, if any, then start the capture thread and the asyncio event loop.
+
+        Raises:
+            ValueError: If a custom pose is not accepted; the message carries its report.
+            RuntimeError: If the model runner cannot be reached to read the photos.
+        """
+        if any(not spec.builtin for spec in self._pose_specs):
+            self._install_enrollment(self._enroll_custom_poses())
         self._executor = ThreadPoolExecutor()
         self._camera.start()
         self._is_running = True
@@ -440,6 +397,78 @@ class PoseEstimation:
                 raise ValueError(f"padding values must be numbers in [0.0, 1.0], got {value!r}")
         return tuple(float(value) for value in values)
 
+    @staticmethod
+    def _declared_threshold(spec: PoseSpec, edge: str, shipped: dict[str, dict[str, float]]) -> float:
+        """The threshold a pose starts with: declared, shipped, or the reference point until enrollment derives it."""
+        declared = spec.enter if edge == "enter" else spec.exit
+        if declared is not None:
+            return declared
+        if spec.builtin:
+            return shipped[edge][spec.name]
+        return 0.55 if edge == "enter" else 0.35
+
+    def _embed_photos(self, paths: list[Path]) -> dict[Path, tuple[np.ndarray | None, str | None]]:
+        config = {"min_person_score": self._confidence, "draw_bboxes": False, "draw_low_confidence_points": False}
+        return embed_photos(paths, self._ws_send_url, self._ws_recv_url, config, self._confidence, self._out_of_frame_tolerance)
+
+    def _enroll_custom_poses(self) -> Enrollment:
+        """Turn the photo folders into buckets, reusing the cached embeddings, and run the enrollment."""
+        started = time.monotonic()
+        root = self._custom_poses_dir
+        cache = EnrollmentCache(root / CACHE_FILE, _POSE_CLASSIFIER_PATH, self._confidence, self._out_of_frame_tolerance)
+        names = [spec.name for spec in self._pose_specs if not spec.builtin] + ([OTHER] if (root / OTHER).is_dir() else [])
+        folders = {name: photos(root / name) for name in names}
+        keys = {path: cache.key(root, path) for paths in folders.values() for path in paths}
+        pending = [path for path, key in keys.items() if key not in cache.embeddings]
+        declaration = json.dumps([asdict(spec) for spec in self._pose_specs])
+        changed = bool(pending) or set(keys.values()) != set(cache.embeddings) or declaration != cache.declaration
+        if pending:
+            logger.info(f"reading {len(pending)} new photo(s) of the custom poses through the model runner")
+            for path, (embedding, reason) in self._embed_photos(pending).items():
+                cache.store(keys[path], embedding, reason)
+            cache.save(list(keys.values()))
+        buckets = build_buckets(root, folders, cache)
+        other = buckets.pop(OTHER, None)
+
+        now = time.strftime("%Y-%m-%d %H:%M:%S")
+        enrollment = enroll(_POSE_CLASSIFIER_PATH, self._pose_specs, buckets, other, now)
+        for name, outcome in enrollment.outcomes.items():
+            if changed:
+                stem = f"report_{now.replace(' ', '_').replace(':', '-')}"
+                report_path = root / name / f"{stem}.txt"
+                copy = 1
+                while report_path.exists():
+                    copy += 1
+                    report_path = root / name / f"{stem}-{copy}.txt"
+                report_path.write_text(outcome.report + "\n")
+                logger.info(f"enrollment report for {name!r} written to {report_path}:\n{outcome.report}")
+            else:
+                verdict = "accepted" if outcome.accepted else "not accepted"
+                logger.info(f"pose {name!r}: {verdict} (same photos and declaration as last time, report unchanged)")
+        if changed:
+            cache.declaration = declaration
+            cache.save(list(keys.values()))
+        logger.info(f"custom poses enrolled in {time.monotonic() - started:.1f}s")
+        return enrollment
+
+    def _install_enrollment(self, enrollment: Enrollment) -> None:
+        """Make the composed classifier and the derived thresholds the ones the frames are judged with."""
+        refused = [outcome.report for outcome in enrollment.outcomes.values() if not outcome.accepted]
+        if refused:
+            raise ValueError("custom pose(s) not accepted, see the report(s):\n\n" + "\n\n".join(refused))
+        self._pose_knn = enrollment.knn
+        self._pose_label_weights = None
+        for name, outcome in enrollment.outcomes.items():
+            self._pose_thresholds["enter"][name] = outcome.enter
+            self._pose_thresholds["exit"][name] = outcome.exit
+        self._pose_ema = EmaHysteresis(
+            classes=self._pose_names,
+            smoothing_tau=self._pose_smoothing,
+            enter_threshold=self._pose_thresholds["enter"],
+            exit_threshold=self._pose_thresholds["exit"],
+            action_duration=self._pose_action_duration,
+        )
+
     def on_frame(self, callback: Callable[[np.ndarray], None] | None) -> None:
         """Register a callback that receives each raw camera frame.
 
@@ -579,21 +608,7 @@ class PoseEstimation:
     def _process_detection(self, metadata: dict) -> None:
         """Process detection data and dispatch appropriate events."""
         try:
-            people: list[Person] = []
-            for entry in metadata.get("persons", []):
-                if float(entry.get("score", 0.0)) < self._confidence:
-                    continue
-                keypoints = {
-                    kp.get("name", ""): Keypoint(
-                        name=kp.get("name", ""),
-                        x=int(kp.get("x", 0)),
-                        y=int(kp.get("y", 0)),
-                        score=float(kp.get("score", 0.0)),
-                    )
-                    for kp in entry.get("keypoints", [])
-                }
-                bbox = entry.get("bounding_box_xyxy", [0, 0, 0, 0])
-                people.append(Person(keypoints=keypoints, bounding_box_xyxy=(int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3]))))
+            people = parse_people(metadata, self._confidence)
         except Exception as e:
             logger.error(f"Error parsing detection metadata: {e}")
             self._dispatch_error(e)
@@ -704,34 +719,11 @@ class PoseEstimation:
         an all-zeros dict from the classifier means "read fine, looks like
         nothing we know" and makes any active pose decay.
         """
-        anchors_observed = any(
-            (keypoint := person.keypoints.get(name)) is not None and keypoint.score >= MIN_OBSERVED_SCORE for name in ANCHOR_JOINTS
-        )
-        if not anchors_observed:
-            self._gate("anchors")
+        embedding, gate = embed_person(person, self._frame_hw, self._out_of_frame_tolerance)
+        self._gate(gate)
+        if embedding is None:
             return None
-        if any(name not in person.keypoints for name in KEYPOINT_NAMES):
-            self._gate("missing")
-            return None
-        if self._frame_hw is not None:
-            frame_h, frame_w = self._frame_hw
-            margin_x = self._out_of_frame_tolerance * frame_w
-            margin_y = self._out_of_frame_tolerance * frame_h
-            for name in EMBEDDING_JOINTS:
-                keypoint = person.keypoints[name]
-                if not (-margin_x <= keypoint.x <= frame_w + margin_x and -margin_y <= keypoint.y <= frame_h + margin_y):
-                    self._gate("out_of_frame")
-                    return None
-        xy = np.asarray(
-            [[person.keypoints[name].x, person.keypoints[name].y] for name in KEYPOINT_NAMES],
-            dtype=np.float32,
-        )
-        norm = normalize_pose(xy)
-        if norm is None:
-            self._gate("torso")
-            return None
-        self._gate("classified")
-        return self._pose_knn.classify(embed(norm), label_weights=self._pose_label_weights)
+        return self._pose_knn.classify(embedding, label_weights=self._pose_label_weights)
 
     def _dispatch_error(self, error: Exception) -> None:
         callback = self._get_callback("error")

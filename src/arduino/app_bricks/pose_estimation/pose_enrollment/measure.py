@@ -2,21 +2,16 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""Enrollment of custom poses: compose the reference database with the photos' skeletons,
-measure whether each pose forms, derive its operating point and write its report.
-
-Everything here works on embeddings already computed from the photos; reading folders,
-running the pose model and caching belong to the brick.
-"""
+"""The numbers behind an enrollment: compose the reference database with the photos' embeddings,
+measure whether each pose forms, derive its operating point, table the confusion among poses."""
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Literal
 
 import numpy as np
 
-from .pose_classifier import ACTION_SMOOTHING_SECONDS, DEFAULT_ACTION_DURATION, DEFAULT_SMOOTHING_SECONDS, PoseKNN, load_pose_classifier
-from .pose_vocabulary import PoseSpec
+from ..pose_classifier import PoseKNN
+from ..pose_vocabulary import PoseSpec
 
 OTHER = "other"
 
@@ -246,16 +241,6 @@ def _operating_point(own_shares: np.ndarray, other_shares: np.ndarray | None, sp
     return enter, exit_, note
 
 
-def _fmt(value: float) -> str:
-    text = f"{value:.3f}"
-    return text[:-1] if text.endswith("0") else text
-
-
-def _photos_needed(n0: float, own_neighbours_target: float, k: int, have: int) -> int:
-    needed = max(n0 * own_neighbours_target / (k - own_neighbours_target), have + 10)
-    return int(np.ceil(needed / 10.0) * 10)
-
-
 def _rows_to_keep(
     shipped_rows: np.ndarray,
     shipped_labels: np.ndarray,
@@ -294,199 +279,3 @@ def _confusion_table(
         fires["none"] = max(0.0, 1.0 - sum(fires.values()))
         table[name] = fires
     return table
-
-
-def enroll(asset_path: Path, specs: tuple[PoseSpec, ...], buckets: dict[str, Bucket], other: Bucket | None, now: str) -> Enrollment:
-    """Compose the database for the declared vocabulary and judge every custom pose.
-
-    Args:
-        asset_path: The shipped classifier database.
-        specs: The declared vocabulary, built-in and custom poses alike.
-        buckets: The embedded photos of each custom pose, by name.
-        other: The user's own negatives, or None.
-        now: Timestamp printed in the reports.
-    """
-    shipped, label_weights, builtin_names, _ = load_pose_classifier(asset_path)
-    if shipped.metric != "seuclidean" or shipped.vote_weighting != "distance" or label_weights is not None:
-        raise ValueError("custom poses need a seuclidean, distance-weighted classifier that weighs every vote alike")
-    asset = np.load(asset_path)
-    k, reject = shipped.k, shipped.reject_distance
-    scale = shipped.scale if shipped.scale is not None else np.ones(asset["embeddings"].shape[1], np.float32)
-    shipped_rows, shipped_labels, shipped_real = asset["embeddings"].astype(np.float32), asset["labels"].astype(str), asset["real"].astype(bool)
-    active = tuple(spec.name for spec in specs)
-    custom = tuple(spec.name for spec in specs if not spec.builtin)
-    measured = tuple(name for name in custom if buckets[name].usable >= MIN_PHOTOS_TO_MEASURE)
-
-    custom_rows = np.vstack([buckets[name].embeddings for name in measured]) if measured else np.empty((0, shipped_rows.shape[1]), np.float32)
-    custom_labels = np.concatenate([np.full(buckets[name].usable, name) for name in measured]) if measured else np.empty(0, str)
-    keep = _rows_to_keep(shipped_rows, shipped_labels, custom_rows, custom_labels, measured, k, scale, reject)
-    set_aside = {label: int(((~keep) & (shipped_labels == label)).sum()) for label in np.unique(shipped_labels[~keep])}
-
-    kept_labels = np.where(np.isin(shipped_labels[keep], active), shipped_labels[keep], OTHER)
-    other_rows = other.embeddings if other is not None else np.empty((0, shipped_rows.shape[1]), np.float32)
-    rows = np.vstack([shipped_rows[keep], custom_rows, other_rows]).astype(np.float32)
-    labels = np.concatenate([kept_labels, custom_labels, np.full(len(other_rows), OTHER)])
-    real = np.concatenate([shipped_real[keep], np.zeros(len(custom_rows) + len(other_rows), bool)])
-    knn = PoseKNN(k=k, reject_factor=shipped.reject_factor, metric=shipped.metric, vote_weighting=shipped.vote_weighting)
-    knn.fit(rows, list(labels), calibration_mask=real, scale=scale, reject_distance=reject)
-    db = rows / scale
-
-    groups = {name: group_photos(buckets[name].embeddings, scale) for name in custom}
-    own_idx = {name: np.where(labels == name)[0] for name in measured}
-    measures = {name: _measure(db, labels, own_idx[name], groups[name], k, reject, name) for name in measured}
-    other_idx = np.where(labels == OTHER)[0][-len(other_rows) :] if len(other_rows) else np.empty(0, np.int64)
-    other_shares = None
-    if len(other_idx):
-        idx, dist = _nearest(db[other_idx], db, k, [np.array([i]) for i in other_idx])
-        other_shares = _shares(idx, dist, labels, reject, measured) if measured else None
-
-    pending: dict[str, tuple] = {}
-    accepted: dict[str, tuple[float, float, str]] = {}
-    for spec in specs:
-        if spec.builtin:
-            continue
-        bucket = buckets[spec.name]
-        measure = measures.get(spec.name)
-        n, n_groups = bucket.usable, int(len(np.unique(groups[spec.name]))) if bucket.usable else 0
-        curve = None
-        if measure is not None and n >= MIN_PHOTOS_TO_ACCEPT and n_groups >= MIN_GROUPS:
-            curve = _learning_curve(db, labels, own_idx[spec.name], groups[spec.name], k, reject, spec.name)
-        if measure is not None and curve is not None and measure.recall > PASS_RECALL:
-            accepted[spec.name] = _operating_point(
-                measure.own_shares, other_shares[:, measured.index(spec.name)] if other_shares is not None else None, spec
-            )
-        pending[spec.name] = (spec, bucket, measure, n_groups, curve)
-
-    confusion_rows = tuple(name for name in active if name in measured or (name in builtin_names and (labels == name).any()))
-    table = _confusion_table(db, labels, k, reject, confusion_rows, {name: groups[name] for name in measured})
-    row_counts = {name: int((labels == name).sum()) for name in confusion_rows}
-
-    results: dict[str, Outcome] = {}
-    for name, (spec, bucket, measure, n_groups, curve) in pending.items():
-        point = accepted.get(name)
-        report = _report(
-            now,
-            spec,
-            bucket,
-            other,
-            len(shipped_rows) - int((~keep).sum()),
-            set_aside,
-            shipped_labels,
-            measure,
-            n_groups,
-            curve,
-            point,
-            table,
-            row_counts,
-            k,
-        )
-        results[name] = Outcome(
-            name=name, accepted=point is not None, report=report, enter=point[0] if point else None, exit=point[1] if point else None
-        )
-    return Enrollment(knn=knn, outcomes=results, set_aside=set_aside)
-
-
-def _report(
-    now: str,
-    spec: PoseSpec,
-    bucket: Bucket,
-    other: Bucket | None,
-    kept: int,
-    set_aside: dict[str, int],
-    shipped_labels: np.ndarray,
-    measure: _Measure | None,
-    n_groups: int,
-    curve: _LearningCurve | None,
-    point: tuple[float, float, str] | None,
-    table: dict[str, dict[str, float]],
-    row_counts: dict[str, int],
-    k: int,
-) -> str:
-    lines = [f"ENROLLMENT REPORT - {now}", f"pose: {spec.name}"]
-    if spec.type == "action":
-        lines.append(f"type: action, duration {DEFAULT_ACTION_DURATION if spec.duration is None else spec.duration:g} s")
-    else:
-        lines.append("type: state")
-    lines.append(f"photos: {bucket.found} found, {bucket.usable} usable, {len(bucket.discarded)} discarded")
-    lines += [f"  {path}  {reason}" for path, reason in bucket.discarded]
-    lines += [f"groups: {n_groups}", f"  {GROUP_DEFINITION}"]
-    if other is not None:
-        lines.append(f"other (your own negatives): {other.found} found, {other.usable} usable, {len(other.discarded)} discarded")
-        lines += [f"  {path}  {reason}" for path, reason in other.discarded]
-    if measure is not None:
-        aside = ", ".join(f"{count} {'guards' if label == OTHER else label}" for label, count in sorted(set_aside.items(), key=lambda item: -item[1]))
-        lines.append(f"database: {kept} rows kept, {sum(set_aside.values())} set aside (voted a new pose >= {CLEANING_SHARE:.2f}): {aside or 'none'}")
-        lines.append(
-            f"measure: {100 * measure.recall:.0f}% of your photos fire at threshold {REFERENCE_THRESHOLD:.2f} "
-            f"({100 * PASS_RECALL:.0f}% needed to pass; each group held out in turn)"
-        )
-        lines.append(f"  own neighbours among the {k} nearest: {measure.own_neighbours:.1f} / {k}")
-    if curve is not None:
-        lines.append("  learning curve: " + ", ".join(f"{n} photos {100 * r:.0f}%" for n, r in zip(curve.rows, curve.recalls)))
-        lines.append(
-            "  consistency: "
-            + {
-                "good": "good (more photos like these keep helping)",
-                "mixed": "mixed (the photos spread over different variants: keep one, or split into two poses)",
-                "unclear": "unclear (not enough photos to tell)",
-            }[curve.verdict]
-        )
-
-    n = bucket.usable
-    if point is not None:
-        enter, exit_, note = point
-        smoothing = (
-            spec.smoothing if spec.smoothing is not None else (ACTION_SMOOTHING_SECONDS if spec.type == "action" else DEFAULT_SMOOTHING_SECONDS)
-        )
-        smoothing_text = f"smoothing {_fmt(smoothing)} s" + (" (set by you)" if spec.smoothing is not None else "")
-        lines.append("verdict: ACCEPTED")
-        if note == "set by you":
-            lines.append(f"operating point: enter {_fmt(enter)}, exit {_fmt(exit_)} (set by you), {smoothing_text}")
-        else:
-            lines.append(f"operating point: enter {_fmt(enter)} ({note}), exit {_fmt(exit_)}, {smoothing_text}")
-        lines += _confusion_lines(table)
-        for row, fires in table.items():
-            for column, share in fires.items():
-                if column != row and column != "none" and share >= COLLISION_WARNING:
-                    lines.append(f"warning: {column} fires on {100 * share:.0f}% of the {row} photos")
-        for name, count in row_counts.items():
-            if name != spec.name and count and n > IMBALANCE_RATIO * count:
-                lines.append(f"warning: {spec.name} has {n // count}x more photos than {name}")
-        return "\n".join(lines)
-
-    if n < MIN_PHOTOS_TO_MEASURE:
-        lines.append(f"verdict: NOT ACCEPTED (at least {MIN_PHOTOS_TO_MEASURE} usable photos are needed to measure; you have {n})")
-        lines.append("next step: add photos")
-    elif n < MIN_PHOTOS_TO_ACCEPT:
-        forming = (
-            "the pose is forming well"
-            if measure.own_neighbours >= OWN_NEIGHBOURS_FOR_RECALL_70
-            else "the pose is forming"
-            if measure.own_neighbours >= OWN_NEIGHBOURS_FOR_RECALL_30
-            else "the pose is far from forming"
-        )
-        lines.append(f"verdict: NOT ACCEPTED (at least {MIN_PHOTOS_TO_ACCEPT} usable photos are needed to accept; you have {n}; {forming})")
-        lines.append("next step: add photos like these" if measure.own_neighbours >= OWN_NEIGHBOURS_FOR_RECALL_30 else "next step: add photos")
-    elif n_groups < MIN_GROUPS:
-        lines.append(f"verdict: NOT ACCEPTED (at least {MIN_GROUPS} groups are needed; you have {n_groups})")
-        lines.append("next step: add photos taken at different times, distances or angles")
-    else:
-        lines.append(f"verdict: NOT ACCEPTED ({100 * measure.recall:.0f}% of your photos fire, {100 * PASS_RECALL:.0f}% needed)")
-        if curve.verdict == "mixed":
-            lines.append("next step: keep one variant of the pose, or split the folder into two poses")
-            lines.append("  (the number of photos needed cannot be estimated while the photos mix variants)")
-        else:
-            for_70 = _photos_needed(measure.n0, OWN_NEIGHBOURS_FOR_RECALL_70, k, n)
-            for_90 = _photos_needed(measure.n0, OWN_NEIGHBOURS_FOR_RECALL_90, k, n)
-            lines.append(f"next step: add photos like these, about {for_70} in total for 70% recall, about {for_90} for 90%")
-    return "\n".join(lines)
-
-
-def _confusion_lines(table: dict[str, dict[str, float]]) -> list[str]:
-    columns = [*table.keys(), "none"]
-    width = max(len(name) for name in columns)
-    lines = [f"confusion (rows: photos of; columns: % of them on which each pose fires at {REFERENCE_THRESHOLD:.2f}; each group held out)"]
-    lines.append("  " + " " * width + "".join(f"  {column:>{max(len(column), 4)}}" for column in columns))
-    for row, fires in table.items():
-        lines.append(f"  {row:<{width}}" + "".join(f"  {100 * fires[column]:>{max(len(column), 4) - 1}.0f}%" for column in columns))
-    return lines

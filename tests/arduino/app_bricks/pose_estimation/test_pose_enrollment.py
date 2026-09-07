@@ -9,15 +9,9 @@ import numpy as np
 import pytest
 
 from arduino.app_bricks.pose_estimation.pose_classifier import load_pose_classifier
-from arduino.app_bricks.pose_estimation.pose_enrollment import (
-    Bucket,
-    _operating_point,
-    _report,
-    _Measure,
-    _LearningCurve,
-    enroll,
-    group_photos,
-)
+from arduino.app_bricks.pose_estimation.pose_enrollment import Bucket, enroll, group_photos
+from arduino.app_bricks.pose_estimation.pose_enrollment.measure import _LearningCurve, _Measure, _operating_point
+from arduino.app_bricks.pose_estimation.pose_enrollment.report import render_report
 from arduino.app_bricks.pose_estimation.pose_vocabulary import PoseSpec
 
 ASSET = Path(__file__).resolve().parents[4] / "src" / "arduino" / "app_bricks" / "pose_estimation" / "assets" / "pose_classifier.npz"
@@ -212,7 +206,7 @@ class TestConfusionAndWarnings:
         spec = PoseSpec(name="variant", builtin=False)
         table = {"standing": {"standing": 0.55, "variant": 0.40, "none": 0.05}, "variant": {"standing": 0.09, "variant": 0.88, "none": 0.03}}
         measure = _Measure(own_shares=np.full(60, 0.9), own_neighbours=7.3, n0=15.0)
-        report = _report(
+        report = render_report(
             NOW,
             spec,
             _bucket("variant", _cloud(NEW, 60)),
@@ -253,16 +247,16 @@ def test_a_mixed_bucket_gets_no_photo_estimate():
     bucket = _bucket("p", _cloud(NEW, 60))
     measure = _Measure(own_shares=np.full(60, 0.4), own_neighbours=3.4, n0=69.0)
     curve = _LearningCurve(rows=(15, 22, 30, 45, 60), recalls=(0.1, 0.2, 0.2, 0.3, 0.3), n0s=(40.0, 50.0, 60.0, 65.0, 69.0), verdict="mixed")
-    report = _report(NOW, spec, bucket, None, 3000, {}, np.asarray([]), measure, 20, curve, None, {}, {}, 9)
+    report = render_report(NOW, spec, bucket, None, 3000, {}, np.asarray([]), measure, 20, curve, None, {}, {}, 9)
     assert report.endswith(
         "next step: keep one variant of the pose, or split the folder into two poses\n"
         "  (the number of photos needed cannot be estimated while the photos mix variants)"
     )
     good = _LearningCurve(rows=curve.rows, recalls=curve.recalls, n0s=curve.n0s, verdict="good")
-    report = _report(NOW, spec, bucket, None, 3000, {}, np.asarray([]), measure, 20, good, None, {}, {}, 9)
+    report = render_report(NOW, spec, bucket, None, 3000, {}, np.asarray([]), measure, 20, good, None, {}, {}, 9)
     assert report.endswith("next step: add photos like these, about 150 in total for 70% recall, about 410 for 90%")
     close = _Measure(own_shares=np.full(42, 0.5), own_neighbours=5.5, n0=27.0)
-    report = _report(NOW, spec, _bucket("p", _cloud(NEW, 42)), None, 3000, {}, np.asarray([]), close, 20, good, None, {}, {}, 9)
+    report = render_report(NOW, spec, _bucket("p", _cloud(NEW, 42)), None, 3000, {}, np.asarray([]), close, 20, good, None, {}, {}, 9)
     assert "about 60 in total for 70% recall" in report  # never fewer than the photos already there
 
 

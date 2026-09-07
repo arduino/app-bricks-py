@@ -17,6 +17,8 @@ from pathlib import Path
 
 import numpy as np
 
+from .pose_types import Person
+
 """Names of the 17 body keypoints detected for each person, in model output order."""
 KEYPOINT_NAMES: tuple[str, ...] = (
     "nose",
@@ -118,6 +120,33 @@ def embed(xy_norm: np.ndarray) -> np.ndarray:
         i += 2
     feats[i : i + 2] = (xy_norm[IDX["left_shoulder"]] + xy_norm[IDX["right_shoulder"]]) / 2.0
     return feats
+
+
+def embed_person(person: Person, frame_hw: tuple[int, int] | None, out_of_frame_tolerance: float) -> tuple[np.ndarray | None, str]:
+    """The embedding of a detected person, or None and the gate that refused the skeleton.
+
+    Gates, in order: `anchors` (every normalization anchor guessed), `missing` (a keypoint not
+    reported), `out_of_frame` (an embedding joint extrapolated beyond the frame plus the tolerance),
+    `torso` (collapsed torso). `classified` when the embedding is returned.
+    """
+    anchors_observed = any((keypoint := person.keypoints.get(name)) is not None and keypoint.score >= MIN_OBSERVED_SCORE for name in ANCHOR_JOINTS)
+    if not anchors_observed:
+        return None, "anchors"
+    if any(name not in person.keypoints for name in KEYPOINT_NAMES):
+        return None, "missing"
+    if frame_hw is not None:
+        frame_h, frame_w = frame_hw
+        margin_x = out_of_frame_tolerance * frame_w
+        margin_y = out_of_frame_tolerance * frame_h
+        for name in EMBEDDING_JOINTS:
+            keypoint = person.keypoints[name]
+            if not (-margin_x <= keypoint.x <= frame_w + margin_x and -margin_y <= keypoint.y <= frame_h + margin_y):
+                return None, "out_of_frame"
+    xy = np.asarray([[person.keypoints[name].x, person.keypoints[name].y] for name in KEYPOINT_NAMES], dtype=np.float32)
+    norm = normalize_pose(xy)
+    if norm is None:
+        return None, "torso"
+    return embed(norm), "classified"
 
 
 class PoseKNN:

@@ -44,8 +44,11 @@ class PoseSpec:
     smoothing: float | None = None
 
     @classmethod
-    def from_item(cls, item: str | dict[str, Any], builtin_names: tuple[str, ...]) -> Self:
-        """Build a spec from one item of the `poses` list: a name, or a dict with `name` and options."""
+    def from_item(cls, item: str | dict[str, Any], builtin_names: tuple[str, ...], custom_names: tuple[str, ...] = ()) -> Self:
+        """Build a spec from one item of the `poses` list: a name, or a dict with `name` and options.
+
+        custom_names are the pose folders found next to the built-in names; any other name is refused.
+        """
         if isinstance(item, str):
             options: dict[str, Any] = {"name": item}
         elif isinstance(item, dict):
@@ -59,8 +62,9 @@ class PoseSpec:
         if unknown:
             raise ValueError(f"pose {name!r}: unknown key {unknown[0]!r} (allowed: {', '.join(_POSE_KEYS)})")
         builtin = name in builtin_names
-        if not builtin:
-            raise ValueError(f"unknown pose {name!r} (available: {', '.join(builtin_names)})")
+        if not builtin and name not in custom_names:
+            folders = f"; pose folders: {', '.join(custom_names)}" if custom_names else "; no pose folders found"
+            raise ValueError(f"unknown pose {name!r} (built-in: {', '.join(builtin_names)}{folders})")
         pose_type = options.get("type", "state")
         if pose_type not in _POSE_TYPES:
             raise ValueError(f"pose {name!r}: unknown type {pose_type!r} (use one of {_POSE_TYPES})")
@@ -90,7 +94,7 @@ class PoseSpec:
         return cls(name=name, builtin=builtin, type=pose_type, duration=duration, enter=enter, exit=exit_, smoothing=smoothing)
 
 
-def parse_poses(poses: list[str | dict[str, Any]] | None, builtin_names: tuple[str, ...]) -> tuple[PoseSpec, ...]:
+def parse_poses(poses: list[str | dict[str, Any]] | None, builtin_names: tuple[str, ...], custom_names: tuple[str, ...] = ()) -> tuple[PoseSpec, ...]:
     """Normalize the `poses` constructor argument to one spec per active pose."""
     if poses is None:
         return tuple(PoseSpec(name=name, builtin=True) for name in builtin_names)
@@ -98,7 +102,7 @@ def parse_poses(poses: list[str | dict[str, Any]] | None, builtin_names: tuple[s
         raise ValueError(f"poses must be a list of pose names or dicts, got {poses!r}")
     if not poses:
         raise ValueError("poses must list at least one pose (None selects the built-in poses)")
-    specs = tuple(PoseSpec.from_item(item, builtin_names) for item in poses)
+    specs = tuple(PoseSpec.from_item(item, builtin_names, custom_names) for item in poses)
     names = [spec.name for spec in specs]
     duplicates = sorted({name for name in names if names.count(name) > 1})
     if duplicates:
