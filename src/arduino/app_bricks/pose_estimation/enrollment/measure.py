@@ -33,12 +33,13 @@ IMBALANCE_RATIO = 3
 LEARNING_CURVE_FRACTIONS = (0.25, 0.375, 0.5, 0.75, 1.0)
 LEARNING_CURVE_DRAWS = 2
 LEARNING_CURVE_SEED = 42
-# Own neighbours among the 9 nearest at which a pose fires on 30%, 70% and 90% of its photos (groups held out),
+# Own neighbours among the 9 nearest at which a pose fires on 30%, 70% and 90% of its photos (look-alikes held out),
 # measured on the built-in poses re-taught from 20 to 240 of their own rows and on the tennis strokes (122 points).
 OWN_NEIGHBOURS_FOR_RECALL_30 = 3.0
-OWN_NEIGHBOURS_FOR_RECALL_70 = 6.1
+OWN_NEIGHBOURS_FOR_RECALL_70 = 6.0
 OWN_NEIGHBOURS_FOR_RECALL_90 = 7.7
-GROUP_DEFINITION = "a group = photos whose skeletons are closer than 1.0 (near-identical frames, or the same pose held still)"
+GROUP_DEFINITION = "a group = photos closer than 1.0 to its first photo (near-identical frames, or the same pose held still)"
+HOLD_OUT = "each photo judged with its near-identical photos left out"
 
 
 @dataclass(frozen=True)
@@ -82,6 +83,11 @@ class Outcome:
     report: str
     enter: float | None = None
     exit: float | None = None
+
+    @property
+    def summary(self) -> str:
+        """The report's closing lines, verdict and next step, on one line."""
+        return "; ".join(line.strip() for line in self.report[self.report.index("verdict:") :].splitlines())
 
 
 @dataclass(frozen=True)
@@ -152,29 +158,31 @@ def _shares(idx: np.ndarray, dist: np.ndarray, labels: np.ndarray, reject_distan
     return out
 
 
-def group_photos(rows: np.ndarray, scale: np.ndarray) -> np.ndarray:
-    """Group index of each row: rows closer than GROUP_DISTANCE in the metric space chain into one group."""
+def look_alikes(rows: np.ndarray, scale: np.ndarray) -> np.ndarray:
+    """Boolean matrix: rows i and j are within GROUP_DISTANCE of each other in the metric space."""
     scaled = rows.astype(np.float64) / scale
     sq = np.sum(scaled**2, axis=1)
-    close = np.sqrt(np.maximum(sq[:, None] + sq[None, :] - 2.0 * scaled @ scaled.T, 0.0)) <= GROUP_DISTANCE
-    group = np.full(len(rows), -1, dtype=np.int64)
-    next_group = 0
-    for seed in range(len(rows)):
-        if group[seed] >= 0:
-            continue
-        stack = [seed]
-        group[seed] = next_group
-        while stack:
-            for neighbour in np.where(close[stack.pop()] & (group < 0))[0]:
-                group[neighbour] = next_group
-                stack.append(neighbour)
-        next_group += 1
+    return np.sqrt(np.maximum(sq[:, None] + sq[None, :] - 2.0 * scaled @ scaled.T, 0.0)) <= GROUP_DISTANCE
+
+
+def group_photos(alike: np.ndarray) -> np.ndarray:
+    """Group index of each row: a row joins the first group whose first row it is alike to, else opens a group."""
+    leaders: list[int] = []
+    group = np.zeros(len(alike), dtype=np.int64)
+    for i in range(len(alike)):
+        for g, leader in enumerate(leaders):
+            if alike[i, leader]:
+                group[i] = g
+                break
+        else:
+            group[i] = len(leaders)
+            leaders.append(i)
     return group
 
 
-def _measure(db: np.ndarray, labels: np.ndarray, own_idx: np.ndarray, groups: np.ndarray, k: int, reject: float, cls: str) -> _Measure:
-    """Own vote share of each row of a pose, with the row's whole group held out of the database."""
-    skip = [own_idx[groups == groups[i]] for i in range(len(own_idx))]
+def _measure(db: np.ndarray, labels: np.ndarray, own_idx: np.ndarray, alike: np.ndarray, k: int, reject: float, cls: str) -> _Measure:
+    """Own vote share of each row of a pose, with the rows alike to it held out of the database."""
+    skip = [own_idx[alike[i]] for i in range(len(own_idx))]
     idx, dist = _nearest(db[own_idx], db, k, skip)
     shares = _shares(idx, dist, labels, reject, (cls,))[:, 0]
     own = float(((labels[idx] == cls) & np.isfinite(dist)).sum(axis=1).mean())
@@ -182,7 +190,9 @@ def _measure(db: np.ndarray, labels: np.ndarray, own_idx: np.ndarray, groups: np
     return _Measure(own_shares=shares, own_neighbours=own, n0=n0)
 
 
-def _learning_curve(db: np.ndarray, labels: np.ndarray, own_idx: np.ndarray, groups: np.ndarray, k: int, reject: float, cls: str) -> _LearningCurve:
+def _learning_curve(
+    db: np.ndarray, labels: np.ndarray, own_idx: np.ndarray, groups: np.ndarray, alike: np.ndarray, k: int, reject: float, cls: str
+) -> _LearningCurve:
     """n0 and recall at five sizes of the bucket (whole groups drawn), and the verdict on how n0 moves."""
     own = db[own_idx].astype(np.float64)
     foreign = db[labels != cls].astype(np.float64)
@@ -195,7 +205,7 @@ def _learning_curve(db: np.ndarray, labels: np.ndarray, own_idx: np.ndarray, gro
     def at(selected: np.ndarray) -> tuple[int, float, float]:
         counts, hits = [], []
         for i in np.where(selected)[0]:
-            candidates = np.concatenate([d_own[i][selected & (groups != groups[i])], fdist[i]])
+            candidates = np.concatenate([d_own[i][selected & ~alike[i]], fdist[i]])
             is_own = np.concatenate([np.ones(len(candidates) - len(fdist[i]), bool), np.zeros(len(fdist[i]), bool)])
             kk = min(k, len(candidates))
             top = np.argpartition(candidates, kk - 1)[:kk]
@@ -261,17 +271,18 @@ def _rows_to_keep(
 
 
 def _confusion_table(
-    db: np.ndarray, labels: np.ndarray, k: int, reject: float, poses: tuple[str, ...], groups: dict[str, np.ndarray]
+    db: np.ndarray, labels: np.ndarray, k: int, reject: float, poses: tuple[str, ...], alike: dict[str, np.ndarray]
 ) -> dict[str, dict[str, float]]:
     """For each pose (rows), the share of its rows on which each pose (columns) fires at the reference threshold.
 
-    Custom poses hold their groups out, built-in poses hold the single row out; `none` completes each row to 1.
+    Custom poses hold the rows alike to the judged one out, built-in poses hold the single row out; `none`
+    completes each row to 1.
     """
     table: dict[str, dict[str, float]] = {}
     for name in poses:
         row_idx = np.where(labels == name)[0]
-        if name in groups:
-            skip = [row_idx[groups[name] == groups[name][i]] for i in range(len(row_idx))]
+        if name in alike:
+            skip = [row_idx[alike[name][i]] for i in range(len(row_idx))]
         else:
             skip = [np.array([i]) for i in row_idx]
         shares = _shares(*_nearest(db[row_idx], db, k, skip), labels, reject, poses)

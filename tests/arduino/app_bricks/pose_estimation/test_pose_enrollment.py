@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from arduino.app_bricks.pose_estimation.classifier import load_pose_classifier
-from arduino.app_bricks.pose_estimation.enrollment import Bucket, enroll, group_photos
+from arduino.app_bricks.pose_estimation.enrollment import Bucket, enroll, group_photos, look_alikes
 from arduino.app_bricks.pose_estimation.enrollment.measure import _LearningCurve, _Measure, _operating_point
 from arduino.app_bricks.pose_estimation.enrollment.report import render_report
 from arduino.app_bricks.pose_estimation.vocabulary import PoseSpec
@@ -70,18 +70,20 @@ def _enroll(asset: Path, bucket: Bucket, other: Bucket | None = None, actives=("
 class TestGroups:
     def test_a_burst_of_identical_photos_is_one_group(self, asset):
         scale = load_pose_classifier(asset)[0].scale
-        assert len(np.unique(group_photos(np.repeat(NEW[None], 30, axis=0), scale))) == 1
+        assert len(np.unique(group_photos(look_alikes(np.repeat(NEW[None], 30, axis=0), scale)))) == 1
 
     def test_distinct_photos_are_distinct_groups(self, asset):
         scale = load_pose_classifier(asset)[0].scale
         rows = np.stack([_center(seed) for seed in range(10, 22)])
-        assert len(np.unique(group_photos(rows, scale))) == len(rows)
+        assert len(np.unique(group_photos(look_alikes(rows, scale)))) == len(rows)
 
-    def test_photos_chain_through_close_neighbours(self, asset):
+    def test_photos_drifting_in_small_steps_do_not_chain_into_one_group(self, asset):
         scale = load_pose_classifier(asset)[0].scale
         step = 0.9 * scale / np.sqrt(DIM)  # each step is 0.9 in the metric space
         rows = np.stack([NEW + i * step for i in range(6)])
-        assert len(np.unique(group_photos(rows, scale))) == 1
+        alike = look_alikes(rows, scale)
+        assert alike[0, 1] and not alike[0, 2]
+        assert group_photos(alike).tolist() == [0, 0, 1, 1, 2, 2]  # a group holds what is alike to its first photo
 
 
 class TestComposition:
@@ -138,7 +140,7 @@ class TestVerdicts:
     def test_one_take_has_too_few_groups(self, asset):
         report = _enroll(asset, _bucket("new_pose", _cloud(NEW, 45, spread=0.01))).outcomes["new_pose"].report
         assert "groups: 1\n" in report
-        assert "measure: 0% of your photos fire" in report  # the only group held out leaves nothing of the pose
+        assert "measure: 0% of your photos fire" in report  # every photo is alike to the judged one, nothing is left
         assert "verdict: NOT ACCEPTED (at least 5 groups are needed; you have 1)" in report
         assert report.endswith("next step: add photos taken at different times, distances or angles")
 
@@ -155,7 +157,10 @@ class TestVerdicts:
         report = outcome.report
         assert "verdict: ACCEPTED" in report
         assert "operating point: enter " in report and "% of your photos fire), exit " in report and "smoothing 0.31 s" in report
-        assert "confusion (rows: photos of; columns: % of them on which each pose fires at 0.55; each group held out)" in report
+        assert (
+            "confusion (rows: photos of; columns: % of them on which each pose fires at 0.55; near-identical photos of the judged one left out)"
+            in report
+        )
         assert "—" not in report
 
     def test_an_action_gets_the_action_exit_gap_and_smoothing(self, asset):
@@ -254,7 +259,7 @@ def test_a_mixed_bucket_gets_no_photo_estimate():
     )
     good = _LearningCurve(rows=curve.rows, recalls=curve.recalls, n0s=curve.n0s, verdict="good")
     report = render_report(NOW, spec, bucket, None, 3000, {}, np.asarray([]), measure, 20, good, None, {}, {}, 9)
-    assert report.endswith("next step: add photos like these, about 150 in total for 70% recall, about 410 for 90%")
+    assert report.endswith("next step: add photos like these, about 140 in total for 70% recall, about 410 for 90%")
     close = _Measure(own_shares=np.full(42, 0.5), own_neighbours=5.5, n0=27.0)
     report = render_report(NOW, spec, _bucket("p", _cloud(NEW, 42)), None, 3000, {}, np.asarray([]), close, 20, good, None, {}, {}, 9)
     assert "about 60 in total for 70% recall" in report  # never fewer than the photos already there

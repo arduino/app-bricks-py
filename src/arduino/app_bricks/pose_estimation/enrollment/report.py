@@ -12,6 +12,7 @@ from .measure import (
     CLEANING_SHARE,
     COLLISION_WARNING,
     GROUP_DEFINITION,
+    HOLD_OUT,
     IMBALANCE_RATIO,
     MIN_GROUPS,
     MIN_PHOTOS_TO_ACCEPT,
@@ -70,7 +71,7 @@ def render_report(
         lines.append(f"database: {kept} rows kept, {sum(set_aside.values())} set aside (voted a new pose >= {CLEANING_SHARE:.2f}): {aside or 'none'}")
         lines.append(
             f"measure: {100 * measure.recall:.0f}% of your photos fire at threshold {REFERENCE_THRESHOLD:.2f} "
-            f"({100 * PASS_RECALL:.0f}% needed to pass; each group held out in turn)"
+            f"({100 * PASS_RECALL:.0f}% needed to pass; {HOLD_OUT})"
         )
         lines.append(f"  own neighbours among the {k} nearest: {measure.own_neighbours:.1f} / {k}")
     if curve is not None:
@@ -137,7 +138,8 @@ def render_report(
 def _confusion_lines(table: dict[str, dict[str, float]]) -> list[str]:
     columns = [*table.keys(), "none"]
     width = max(len(name) for name in columns)
-    lines = [f"confusion (rows: photos of; columns: % of them on which each pose fires at {REFERENCE_THRESHOLD:.2f}; each group held out)"]
+    cells = f"columns: % of them on which each pose fires at {REFERENCE_THRESHOLD:.2f}"
+    lines = [f"confusion (rows: photos of; {cells}; near-identical photos of the judged one left out)"]
     lines.append("  " + " " * width + "".join(f"  {column:>{max(len(column), 4)}}" for column in columns))
     for row, fires in table.items():
         lines.append(f"  {row:<{width}}" + "".join(f"  {100 * fires[column]:>{max(len(column), 4) - 1}.0f}%" for column in columns))

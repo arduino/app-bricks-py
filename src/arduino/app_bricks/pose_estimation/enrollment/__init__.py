@@ -28,10 +28,11 @@ from .measure import (
     _rows_to_keep,
     _shares,
     group_photos,
+    look_alikes,
 )
 from .report import render_report
 
-__all__ = ["OTHER", "Bucket", "Enrollment", "Outcome", "enroll", "group_photos"]
+__all__ = ["OTHER", "Bucket", "Enrollment", "Outcome", "enroll", "group_photos", "look_alikes"]
 
 
 def enroll(asset_path: Path, specs: tuple[PoseSpec, ...], buckets: dict[str, Bucket], other: Bucket | None, now: str) -> Enrollment:
@@ -69,9 +70,10 @@ def enroll(asset_path: Path, specs: tuple[PoseSpec, ...], buckets: dict[str, Buc
     knn.fit(rows, list(labels), calibration_mask=real, scale=scale, reject_distance=reject)
     db = rows / scale
 
-    groups = {name: group_photos(buckets[name].embeddings, scale) for name in custom}
+    alike = {name: look_alikes(buckets[name].embeddings, scale) for name in custom}
+    groups = {name: group_photos(alike[name]) for name in custom}
     own_idx = {name: np.where(labels == name)[0] for name in measured}
-    measures = {name: _measure(db, labels, own_idx[name], groups[name], k, reject, name) for name in measured}
+    measures = {name: _measure(db, labels, own_idx[name], alike[name], k, reject, name) for name in measured}
     other_idx = np.where(labels == OTHER)[0][-len(other_rows) :] if len(other_rows) else np.empty(0, np.int64)
     other_shares = None
     if len(other_idx):
@@ -88,7 +90,7 @@ def enroll(asset_path: Path, specs: tuple[PoseSpec, ...], buckets: dict[str, Buc
         n, n_groups = bucket.usable, int(len(np.unique(groups[spec.name]))) if bucket.usable else 0
         curve = None
         if measure is not None and n >= MIN_PHOTOS_TO_ACCEPT and n_groups >= MIN_GROUPS:
-            curve = _learning_curve(db, labels, own_idx[spec.name], groups[spec.name], k, reject, spec.name)
+            curve = _learning_curve(db, labels, own_idx[spec.name], groups[spec.name], alike[spec.name], k, reject, spec.name)
         if measure is not None and curve is not None and measure.recall > PASS_RECALL:
             accepted[spec.name] = _operating_point(
                 measure.own_shares, other_shares[:, measured.index(spec.name)] if other_shares is not None else None, spec
@@ -96,7 +98,7 @@ def enroll(asset_path: Path, specs: tuple[PoseSpec, ...], buckets: dict[str, Buc
         pending[spec.name] = (spec, bucket, measure, n_groups, curve)
 
     confusion_rows = tuple(name for name in active if name in measured or (name in builtin_names and (labels == name).any()))
-    table = _confusion_table(db, labels, k, reject, confusion_rows, {name: groups[name] for name in measured})
+    table = _confusion_table(db, labels, k, reject, confusion_rows, {name: alike[name] for name in measured})
     row_counts = {name: int((labels == name).sum()) for name in confusion_rows}
 
     results: dict[str, Outcome] = {}
