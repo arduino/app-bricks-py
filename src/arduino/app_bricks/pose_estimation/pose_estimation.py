@@ -77,11 +77,13 @@ class PoseEstimation:
                 one of `BUILTIN_POSE_NAMES` or a sub-folder of `custom_poses_dir` holding the photos
                 of a pose of yours, taught at `start()`; a custom pose also takes `type` ("state",
                 the default, for a held pose, or "action" for a movement) and `duration` (seconds,
-                actions only: the typical length of one occurrence, 0.7 by default). The built-in
-                poses left out stay in the classifier as negatives and never fire.
+                actions only: the typical length of one occurrence, 0.7 by default); its
+                `thresholds` and `smoothing` default to the values derived from its photos. The
+                built-in poses left out stay in the classifier as negatives and never fire.
             custom_poses_dir (str): Where the photo folders of the custom poses live, one folder per
                 pose named like the pose, plus an optional `other` folder with photos of what is not
-                any of your poses. Default "/app/poses".
+                any of your poses. The brick writes its reports in the pose folders and what it
+                already read in `.cache`. Default "/app/poses".
             confidence (float): Minimum detection score for a person to be reported. The score is
                 the mean of the person's 17 keypoint scores, so partly visible people score lower.
                 Applied by the model runner, so detections below it are neither emitted nor drawn
@@ -110,7 +112,7 @@ class PoseEstimation:
 
         Raises:
             ValueError: If `poses` is malformed or names a pose that does not exist, or if a folder
-                in `custom_poses_dir` carries the name of a built-in pose.
+                in `custom_poses_dir` carries the name of a built-in pose or is not a valid pose name.
             RuntimeError: If the model runner host address could not be resolved.
         """
         self._custom_poses_dir = Path(custom_poses_dir)
@@ -204,7 +206,8 @@ class PoseEstimation:
         """Teach the custom poses, if any, then start the capture thread and the asyncio event loop.
 
         Raises:
-            ValueError: If a custom pose is not accepted; the message carries its report.
+            ValueError: If a custom pose is not accepted; the message carries the verdict and the next
+                step of each refused pose, the full report is in the log and in the pose folder.
             RuntimeError: If the model runner cannot be reached to read the photos.
         """
         if any(not spec.builtin for spec in self._pose_specs):
@@ -258,7 +261,7 @@ class PoseEstimation:
         Args:
             pose (str): One of `pose_names`: the built-in poses ("left_arm_raised",
                 "right_arm_raised", "sitting", "standing") unless the constructor's
-                `poses` argument narrowed them down.
+                `poses` argument narrowed them down, and the custom poses it declared.
             callback (Callable[[Pose], None]): Function to call with the pose
                 event. None to unregister.
 
