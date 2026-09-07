@@ -350,6 +350,131 @@ def test_the_type_table_matches_the_ggml_that_will_read_the_files():
             assert configure_llamacpp.GGML_TYPES[type_id] == (name, block, size), f"type {type_id}"
 
 
+class FakeGgml:
+    """libggml as the probe sees it: a type table with gaps, and garbage past its end.
+
+    Past the end, ggml_type_name() returns pointers into whatever follows the table — on
+    the board the first ones happened to be mapped and two of them were not, which is the
+    segfault the probe must never reach. Here every read past the first is recorded so the
+    tests can assert it never happens.
+    """
+
+    GAP = (b"DEPRECATED", 0, 0)
+    GARBAGE = (bytes([0xFD, 0x7B, 0xBD, 0xA9, 0xF5, 0x0B]), 0, 0)  # as read on the board past id 42
+
+    def __init__(self, types: dict, first_past_end: tuple = GARBAGE):
+        self.types = types
+        self.end = max(types) + 1
+        self.first_past_end = first_past_end
+        self.read_past_end = []
+
+    def _entry(self, type_id):
+        if type_id in self.types:
+            name, block, size = self.types[type_id]
+            return name.encode(), block, size
+        if type_id < self.end:
+            return self.GAP
+        if type_id > self.end:
+            self.read_past_end.append(type_id)
+        return self.first_past_end
+
+    def ggml_type_name(self, type_id):
+        return self._entry(type_id)[0]
+
+    def ggml_blck_size(self, type_id):
+        return self._entry(type_id)[1]
+
+    def ggml_type_size(self, type_id):
+        return self._entry(type_id)[2]
+
+
+def test_the_probe_stops_at_the_end_of_the_enum_and_never_reads_past_it():
+    """The regression behind an 8B model started on one session: probing type ids past
+    the enum dereferenced garbage and segfaulted, silently, in a command substitution."""
+    ggml = FakeGgml(configure_llamacpp.GGML_TYPES)
+
+    probed = {type_id: (name, block, size) for type_id, name, block, size in configure_llamacpp.probe_ggml_types_of(ggml)}
+
+    assert probed == configure_llamacpp.GGML_TYPES
+    assert ggml.read_past_end == []
+
+
+def test_the_probe_skips_the_gaps_inside_the_enum_and_sees_the_types_after_them():
+    types = {**configure_llamacpp.GGML_TYPES, 45: ("q3_0", 32, 14)}  # 43 and 44 removed, 45 added
+    del types[41]  # a gap inside the known range, as 4, 5 and 31-33 are
+    ggml = FakeGgml(types)
+
+    probed = {type_id: (name, block, size) for type_id, name, block, size in configure_llamacpp.probe_ggml_types_of(ggml)}
+
+    assert 4 not in probed and 41 not in probed
+    assert probed[42] == configure_llamacpp.GGML_TYPES[42]
+    # The first gap past the last known type reads as the end: what follows is unreachable
+    # by design, and a tensor of that type is refused rather than sized as free.
+    assert 45 not in probed
+    assert ggml.read_past_end == []
+
+
+def test_the_probe_sees_a_type_added_right_after_the_known_ones():
+    types = {**configure_llamacpp.GGML_TYPES, 43: ("q3_0", 32, 14)}
+    ggml = FakeGgml(types)
+
+    probed = dict((type_id, (name, block, size)) for type_id, name, block, size in configure_llamacpp.probe_ggml_types_of(ggml))
+
+    assert probed[43] == ("q3_0", 32, 14)
+    assert ggml.read_past_end == []
+
+
+def test_the_probe_runs_in_a_child_and_keeps_what_it_read_before_a_crash(monkeypatch, capsys, tmp_path):
+    """A segfault in the child costs the types it had not printed yet, not the sizing."""
+    import subprocess
+
+    monkeypatch.setattr(configure_llamacpp, "find_ggml_library", lambda: tmp_path / "libggml-base.so")
+    commands = []
+
+    def crashed_child(command, **kwargs):
+        commands.append(command)
+        stdout = "\t".join(["0", "f32", "1", "4"]) + "\n" + "\t".join(["2", "q4_0", "32", "18"]) + "\n"
+        return subprocess.CompletedProcess(command, returncode=-11, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(subprocess, "run", crashed_child)
+
+    probed = configure_llamacpp.probe_ggml_types()
+
+    assert probed == {0: ("f32", 1, 4), 2: ("q4_0", 32, 18)}
+    assert commands == [[configure_llamacpp.sys.executable, configure_llamacpp.__file__, "--probe-ggml-types", str(tmp_path / "libggml-base.so")]]
+    assert "libggml probe died with exit status -11" in capsys.readouterr().err
+
+
+def test_a_library_that_cannot_be_loaded_leaves_the_built_in_table(monkeypatch, capsys):
+    """End to end through the real child process: a library that is not there makes the
+    child fail, the parent says so, and the sizing runs on the built-in table."""
+    monkeypatch.setattr(configure_llamacpp, "find_ggml_library", lambda: Path("/nonexistent/libggml-base.so"))
+    monkeypatch.setattr(configure_llamacpp, "_ggml_types", None)
+
+    assert configure_llamacpp.probe_ggml_types() == {}
+    assert configure_llamacpp.ggml_types() == configure_llamacpp.GGML_TYPES
+    assert "libggml probe died" in capsys.readouterr().err
+
+
+def test_no_library_on_the_path_means_no_probe(monkeypatch):
+    monkeypatch.setenv("LD_LIBRARY_PATH", "")
+    assert configure_llamacpp.find_ggml_library() is None
+    assert configure_llamacpp.probe_ggml_types() == {}
+
+
+def test_malformed_probe_output_is_not_a_type():
+    lines = [
+        ["0", "f32", "1", "4"],
+        ["Segmentation fault"],  # not four fields
+        ["7", "q5_1", "x", "24"],  # not a number
+        ["8", "q8_0", "32", "34", ""],  # five fields
+        ["2", "q4_0", "32", "18"],
+    ]
+    output = "".join("\t".join(fields) + "\n" for fields in lines)
+
+    assert configure_llamacpp.parse_probed_types(output) == {0: ("f32", 1, 4), 2: ("q4_0", 32, 18)}
+
+
 def test_a_tensor_of_an_unknown_type_is_refused_rather_than_sized_as_free(tmp_path):
     """The dangerous failure: a type whose size is unknown must not be counted as zero
     bytes, which would under-size the model and start the server unable to load it."""
@@ -665,13 +790,26 @@ def test_detect_ctx_size_keeps_a_context_every_model_holds(tmp_path, capsys):
     assert "every model holds the 16384 token context" in capsys.readouterr().err
 
 
-@pytest.mark.parametrize("ctx_size", [0, 512, 4096])
+@pytest.mark.parametrize("ctx_size", [512, 4096])
 def test_a_context_at_or_below_the_floor_is_never_touched(tmp_path, ctx_size):
-    """0 means "not configured": llama-server picks the context, so there is nothing
-    to cap."""
     models = _install(tmp_path, huge=(32, 12000))
 
     assert detect_ctx_size(models, ctx_size) == ctx_size
+
+
+@pytest.mark.parametrize("mode", ["--print-ctx", "--print-ndev"])
+def test_an_unconfigured_context_is_taken_as_the_default_one(tmp_path, monkeypatch, capsys, mode):
+    """--ctx 0 is "not configured": both answers are computed for DEFAULT_CTX_SIZE, the
+    context run-model-router.sh exports in that case, rather than for nothing at all."""
+    _install(tmp_path, qwen3_8b=(36, 3739))
+    monkeypatch.setattr(configure_llamacpp.sys, "argv", ["configure-llamacpp.py", str(tmp_path), mode, "--ctx", "0"])
+
+    configure_llamacpp.main()
+
+    out, err = capsys.readouterr()
+    assert "an unconfigured context (taken as 16384)" in err
+    # An 8B model at 16k: the context is halved to 8k, and at 8k it needs 3 sessions.
+    assert out.strip() == {"--print-ctx": "8192", "--print-ndev": "4"}[mode]
 
 
 def test_the_4b_model_set_keeps_the_full_context(tmp_path):

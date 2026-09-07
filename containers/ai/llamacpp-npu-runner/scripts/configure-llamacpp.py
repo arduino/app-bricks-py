@@ -9,11 +9,14 @@ run-model-router.sh asks before starting it: which context size the installed mo
 hold (``--print-ctx``), and how many Hexagon sessions they need at that context
 (``--print-ndev``). Those two modes print a single number on stdout and send every
 diagnostic to stderr, so the caller can read the answer with a command substitution.
+``--probe-ggml-types`` is internal: the script runs itself in that mode to read the ggml
+type table out of libggml in a child process (see probe_ggml_types()).
 
 Usage:
     python configure-llamacpp.py /models
     python configure-llamacpp.py /models --print-ctx --ctx 16384
     python configure-llamacpp.py /models --print-ndev --ctx 4096
+    python configure-llamacpp.py --probe-ggml-types /opt/pkg-snapdragon/lib/libggml-base.so
 """
 
 import argparse
@@ -22,6 +25,7 @@ import math
 import os
 import re
 import struct
+import subprocess
 import sys
 from pathlib import Path
 from typing import NamedTuple
@@ -63,9 +67,13 @@ GGML_TYPES = {
 }
 # fmt: on
 
-# Type ids are probed up to here. ggml exports no count, and reading past the end of its
-# enum returns garbage rather than failing, which is what implausible() filters out.
+# Type ids are probed up to here at most; the probe stops earlier, at the end of the enum
+# (see probe_ggml_types_of()). ggml exports no count.
 MAX_GGML_TYPE_ID = 64
+
+# How long the probe may take before it is given up on, in seconds. It takes well under
+# one; the limit is there so that a hung child cannot hold up the container start.
+PROBE_TIMEOUT = 60
 
 _ggml_types = None
 
@@ -84,42 +92,108 @@ def ggml_types() -> dict:
     return _ggml_types
 
 
+def find_ggml_library() -> Path | None:
+    """The libggml-base shared object on LD_LIBRARY_PATH, or None when there is none."""
+    return next(
+        (
+            candidate
+            for directory in os.environ.get("LD_LIBRARY_PATH", "").split(os.pathsep)
+            if directory
+            for candidate in sorted(Path(directory).glob("libggml-base.so*"))
+        ),
+        None,
+    )
+
+
 def probe_ggml_types() -> dict:
-    """Ask libggml for its type table, or return {} if it cannot be asked."""
-    try:
-        import ctypes
+    """Ask libggml for its type table, or return {} if it cannot be asked.
 
-        library = next(
-            (
-                candidate
-                for directory in os.environ.get("LD_LIBRARY_PATH", "").split(os.pathsep)
-                if directory
-                for candidate in sorted(Path(directory).glob("libggml-base.so*"))
-            ),
-            None,
-        )
-        if library is None:
-            return {}
-        ggml = ctypes.CDLL(str(library))
-        ggml.ggml_type_name.restype, ggml.ggml_type_name.argtypes = ctypes.c_char_p, [ctypes.c_int]
-        ggml.ggml_blck_size.restype, ggml.ggml_blck_size.argtypes = ctypes.c_int64, [ctypes.c_int]
-        ggml.ggml_type_size.restype, ggml.ggml_type_size.argtypes = ctypes.c_size_t, [ctypes.c_int]
-
-        def implausible(name, block, size):
-            """Whether an answer looks like a type rather than like memory past the enum."""
-            return not (name and name.replace("_", "").isalnum() and 1 <= block <= 1024 and 1 <= size <= 4096)
-
-        table = {}
-        for type_id in range(MAX_GGML_TYPE_ID):
-            name = (ggml.ggml_type_name(type_id) or b"").decode("ascii", "replace")
-            block, size = ggml.ggml_blck_size(type_id), ggml.ggml_type_size(type_id)
-            if not implausible(name, block, size):
-                table[type_id] = (name, int(block), int(size))
-        return table
-    except Exception:
-        # Nothing here is worth failing a container start over: the table above is a
-        # perfectly good second source, and an unknown type falls back again from there.
+    The asking happens in a child process (this script in --probe-ggml-types mode),
+    because it is the one piece of native code on the sizing path and it has crashed:
+    ggml_type_name() is not bounds-checked, so a type id past the end of the enum makes it
+    return whatever pointer follows the type table, and dereferencing that segfaulted the
+    runner on the 20260902 build (type ids 56 and 58). In-process, that took the sizing
+    down with it and the server started on one session for an 8B model. The child prints
+    one type per line as it goes, so whatever it read before dying still counts, and the
+    built-in table covers the rest — nothing here is worth failing a container start over.
+    """
+    library = find_ggml_library()
+    if library is None:
         return {}
+    try:
+        result = subprocess.run(
+            [sys.executable, __file__, "--probe-ggml-types", str(library)],
+            capture_output=True,
+            text=True,
+            timeout=PROBE_TIMEOUT,
+        )
+    except (OSError, subprocess.SubprocessError) as e:
+        print(f"  libggml probe could not run ({type(e).__name__}: {e}), sizing with the built-in type table", file=sys.stderr)
+        return {}
+
+    table = parse_probed_types(result.stdout)
+    if result.returncode != 0:
+        detail = result.stderr.strip().splitlines()[-1:] or ["no output"]
+        print(
+            f"  libggml probe died with exit status {result.returncode} ({detail[0]}) after reading "
+            f"{len(table)} type(s): the built-in type table covers the rest",
+            file=sys.stderr,
+        )
+    return table
+
+
+def parse_probed_types(output: str) -> dict:
+    """The type table from the lines a --probe-ggml-types child printed, malformed ones skipped."""
+    table = {}
+    for line in output.splitlines():
+        fields = line.split("\t")
+        if len(fields) != 4:
+            continue
+        try:
+            type_id, block, size = int(fields[0]), int(fields[2]), int(fields[3])
+        except ValueError:
+            continue
+        table[type_id] = (fields[1], block, size)
+    return table
+
+
+def implausible_ggml_type(name: str, block: int, size: int) -> bool:
+    """Whether an answer looks like memory past the enum, or a gap in it, rather than a type."""
+    return not (name and name.replace("_", "").isalnum() and 1 <= block <= 1024 and 1 <= size <= 4096)
+
+
+def probe_ggml_types_of(ggml, known_types: dict = GGML_TYPES, limit: int = MAX_GGML_TYPE_ID):
+    """Yield (id, name, block size, bytes per block) for every type *ggml* knows, in order.
+
+    *ggml* answers ggml_type_name(), ggml_blck_size() and ggml_type_size() like the
+    library does. The enum has gaps — removed types, which answer with a name and a zero
+    block size — and no end marker: the first implausible answer past the last type this
+    file knows is taken as the end, and nothing past it is read, since that is what
+    crashes. A type added after a future gap is therefore not seen, which is safe: a
+    tensor of an unknown type is refused rather than sized as free (see read_gguf()).
+    """
+    last_known = max(known_types)
+    for type_id in range(limit):
+        name = (ggml.ggml_type_name(type_id) or b"").decode("ascii", "replace")
+        block, size = ggml.ggml_blck_size(type_id), ggml.ggml_type_size(type_id)
+        if implausible_ggml_type(name, block, size):
+            if type_id > last_known:
+                return
+            continue
+        yield type_id, name, int(block), int(size)
+
+
+def print_probed_ggml_types(library: Path) -> None:
+    """--probe-ggml-types mode: load *library* and print one "id name block size" line per type."""
+    import ctypes
+
+    ggml = ctypes.CDLL(str(library))
+    ggml.ggml_type_name.restype, ggml.ggml_type_name.argtypes = ctypes.c_char_p, [ctypes.c_int]
+    ggml.ggml_blck_size.restype, ggml.ggml_blck_size.argtypes = ctypes.c_int64, [ctypes.c_int]
+    ggml.ggml_type_size.restype, ggml.ggml_type_size.argtypes = ctypes.c_size_t, [ctypes.c_int]
+    for type_id, name, block, size in probe_ggml_types_of(ggml):
+        # One line per type, flushed at once, so that a crash on the next id loses nothing.
+        print(f"{type_id}\t{name}\t{block}\t{size}", flush=True)
 
 
 # Fixed-size metadata value types, by the type id GGUF stores: (struct format, size).
@@ -558,10 +632,11 @@ CTX_CAP_MIN_SESSIONS = MAX_SESSIONS
 # The context is halved down to this floor, never below it.
 MIN_CTX_SIZE = 4096
 
-# Context to size the sessions for when the caller does not know which one the server
-# will run at: the largest the service configures out of the box (service_compose.yaml),
-# so that an unset context is sized generously rather than tightly.
-ASSUMED_CTX_SIZE = 16384
+# Context the server runs at when none is configured (--ctx 0): the one the service
+# configures out of the box (service_compose.yaml). run-model-router.sh exports it as
+# LLAMA_ARG_CTX_SIZE too, rather than leaving llama-server to its own default, so that the
+# sessions are sized for the context the server really gets.
+DEFAULT_CTX_SIZE = 16384
 
 
 def sessions(count: int) -> str:
@@ -744,9 +819,16 @@ def generate_models_ini(models_dir: Path):
 def parse_args():
     """Parse the command line arguments."""
     parser = argparse.ArgumentParser(description="Generate models.ini from a models directory")
-    parser.add_argument("models_dir", type=Path, help="Path to the models directory")
+    parser.add_argument("models_dir", type=Path, nargs="?", help="Path to the models directory")
 
     mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--probe-ggml-types",
+        type=Path,
+        metavar="LIBGGML",
+        help="Internal: print the type table of the given libggml shared object, one "
+        "'id name block size' line per type, instead of generating models.ini",
+    )
     mode.add_argument(
         "--print-ndev",
         action="store_true",
@@ -765,7 +847,7 @@ def parse_args():
         type=int,
         default=0,
         help="Context size the server will run at, which decides how much room the KV cache "
-        f"leaves for the weights on each session (0: unknown, sizes as if at {MIN_CTX_SIZE})",
+        f"leaves for the weights on each session (0: not configured, taken as {DEFAULT_CTX_SIZE})",
     )
     return parser.parse_args()
 
@@ -774,15 +856,19 @@ def main():
     """Run the mode selected on the command line."""
     args = parse_args()
 
-    if not args.models_dir.is_dir():
+    if args.probe_ggml_types is not None:
+        print_probed_ggml_types(args.probe_ggml_types)
+        return
+
+    if args.models_dir is None or not args.models_dir.is_dir():
         raise SystemExit(f"Error: {args.models_dir} is not a directory")
 
+    ctx_size = args.ctx if args.ctx > 0 else DEFAULT_CTX_SIZE
+    scope = f"a {ctx_size} token context" if args.ctx > 0 else f"an unconfigured context (taken as {ctx_size})"
     if args.print_ctx:
-        print(f"Scanning installed models to check they hold a {args.ctx} token context...", file=sys.stderr)
-        print(detect_ctx_size(find_models(args.models_dir), args.ctx))
+        print(f"Scanning installed models to check they hold {scope}...", file=sys.stderr)
+        print(detect_ctx_size(find_models(args.models_dir), ctx_size))
     elif args.print_ndev:
-        ctx_size = args.ctx if args.ctx > 0 else ASSUMED_CTX_SIZE
-        scope = f"a {args.ctx} token context" if args.ctx > 0 else f"an unknown context (sizing for {ctx_size})"
         print(f"Scanning installed models to size the Hexagon sessions for {scope}...", file=sys.stderr)
         print(detect_hexagon_sessions(find_models(args.models_dir), ctx_size))
     else:
