@@ -52,11 +52,20 @@ class TestALSAMicrophoneDeviceResolution:
             ("hw:1,0", "plughw:CARD=AnotherCard,DEV=0"),
             ("hw:SomeCard,0", "plughw:CARD=SomeCard,DEV=0"),  # Card name instead of index
             ("plughw:AnotherCard,0", "plughw:CARD=AnotherCard,DEV=0"),
+            ("hw:1,0,0", "plughw:CARD=AnotherCard,DEV=0"),  # Subdevice is ignored
+            ("plughw:SomeCard,0,3", "plughw:CARD=SomeCard,DEV=0"),
         ],
     )
     def test_resolves_to_stable_ref(self, device, expected):
         """Test that supported identifiers resolve to a full ALSA path."""
         assert ALSAMicrophone(device=device).device_stable_ref == expected
+
+    def test_subdevice_is_ignored_with_warning(self):
+        """Test that a subdevice component is dropped and reported."""
+        with patch("arduino.app_peripherals.microphone.alsa_microphone.logger") as mock_logger:
+            assert ALSAMicrophone(device="hw:0,0,1").device_stable_ref == "plughw:CARD=SomeCard,DEV=0"
+
+        assert "Subdevice in 'hw:0,0,1' is ignored" in mock_logger.warning.call_args.args[0]
 
     def test_default_device_resolves_to_first_plugged(self):
         """Test that the default device selects the first plugged microphone."""
@@ -77,7 +86,6 @@ class TestALSAMicrophoneDeviceResolution:
         [
             (None, "Invalid device type"),  # Wrong type
             ("not-a-real-device", "Unsupported device identifier"),  # Unrecognized format
-            ("hw:0,0,0", "Unsupported device identifier"),  # Subdevices are not supported
         ],
     )
     def test_bad_parameter_raises_config_error(self, device, message):

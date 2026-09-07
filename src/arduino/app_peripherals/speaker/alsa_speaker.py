@@ -209,7 +209,8 @@ class ALSASpeaker(BaseSpeaker):
         Args:
             identifier: Card-based identifier to resolve. Supported inputs:
                 - str: "/dev/snd/by-id/..." symlink.
-                - str: "hw:<card>,<dev>" (or with "plughw:" prefix), where <card> is an index or a name.
+                - str: "hw:<card>,<dev>[,<subdev>]" (or with "plughw:" prefix), where <card> is an index
+                  or a name. The subdevice, if any, is ignored.
                 - str: "CARD=<name>,DEV=<n>" (with or without a prefix).
 
         Returns:
@@ -232,10 +233,12 @@ class ALSASpeaker(BaseSpeaker):
         if card_name_match:
             return f"plughw:CARD={card_name_match.group(2)},DEV={int(card_name_match.group(3))}"
 
-        card_match = re.match(r"^(.+:)?([^,=]+),(\d+)$", identifier)
+        card_match = re.match(r"^(.+:)?([^,=]+),(\d+)(,\d+)?$", identifier)
         if card_match:
             card = card_match.group(2)
             card_name = self._resolve_name(int(card)) if card.isdigit() else card
+            if card_match.group(4):
+                logger.warning(f"Subdevice in '{identifier}' is ignored, the whole device will be used")
             return f"plughw:CARD={card_name},DEV={int(card_match.group(3))}"
 
         raise SpeakerConfigError(f"Unsupported device identifier: {identifier}")
