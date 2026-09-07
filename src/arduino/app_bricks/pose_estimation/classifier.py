@@ -17,7 +17,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .pose_types import Person
+from .detections import Person
 
 """Names of the 17 body keypoints detected for each person, in model output order."""
 KEYPOINT_NAMES: tuple[str, ...] = (

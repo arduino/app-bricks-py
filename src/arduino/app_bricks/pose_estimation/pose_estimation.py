@@ -22,7 +22,7 @@ from arduino.app_utils import brick, Logger
 from arduino.app_utils.image.adjustments import compress_to_jpeg
 from arduino.app_internal.core.module import load_brick_compose_file, resolve_address
 
-from .pose_classifier import (
+from .classifier import (
     ACTION_SMOOTHING_SECONDS,
     DEFAULT_ACTION_DURATION,
     DEFAULT_SMOOTHING_SECONDS,
@@ -31,11 +31,11 @@ from .pose_classifier import (
     embed_person,
     load_pose_classifier,
 )
-from .pose_enrollment import OTHER, Enrollment, enroll
-from .pose_enrollment.cache import CACHE_FILE, EnrollmentCache
-from .pose_enrollment.photos import build_buckets, custom_folders, embed_photos, photos
-from .pose_types import Person, Pose, parse_people
-from .pose_vocabulary import PoseSpec, parse_poses
+from .enrollment import OTHER, Enrollment, enroll
+from .enrollment.cache import CACHE_FILE, EnrollmentCache
+from .enrollment.photos import build_buckets, custom_folders, embed_photos, photos
+from .detections import Person, Pose, parse_people
+from .vocabulary import PoseSpec, parse_poses
 
 logger = Logger("PoseEstimation")
 

@@ -15,10 +15,10 @@ import pytest
 
 from arduino.app_bricks.pose_estimation import BUILTIN_POSE_NAMES, KEYPOINT_NAMES, Keypoint, Person, PoseEstimation
 from arduino.app_bricks.pose_estimation.pose_estimation import _POSE_CLASSIFIER_PATH
-from arduino.app_bricks.pose_estimation.pose_classifier import embed_person
-from arduino.app_bricks.pose_estimation.pose_enrollment.photos import PersonReader
-from arduino.app_bricks.pose_estimation.pose_vocabulary import PoseSpec
-from arduino.app_bricks.pose_estimation.pose_classifier import PoseKNN, load_pose_classifier
+from arduino.app_bricks.pose_estimation.classifier import embed_person
+from arduino.app_bricks.pose_estimation.enrollment.photos import PersonReader
+from arduino.app_bricks.pose_estimation.vocabulary import PoseSpec
+from arduino.app_bricks.pose_estimation.classifier import PoseKNN, load_pose_classifier
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -955,7 +955,7 @@ class TestPersonReader:
         assert more[0].keypoints["nose"].x == 500
 
     def test_an_unreachable_runner_is_a_clear_error(self, monkeypatch):
-        from arduino.app_bricks.pose_estimation.pose_enrollment import photos
+        from arduino.app_bricks.pose_estimation.enrollment import photos
 
         monkeypatch.setattr(photos, "CONNECT_TIMEOUT_SEC", 0.5)
         with pytest.raises(RuntimeError, match="did not answer within"), PersonReader("ws://127.0.0.1:9", "ws://127.0.0.1:9", {}):

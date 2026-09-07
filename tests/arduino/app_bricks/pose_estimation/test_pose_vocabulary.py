@@ -5,7 +5,7 @@
 import pytest
 
 from arduino.app_bricks.pose_estimation import BUILTIN_POSE_NAMES
-from arduino.app_bricks.pose_estimation.pose_vocabulary import PoseSpec, parse_poses
+from arduino.app_bricks.pose_estimation.vocabulary import PoseSpec, parse_poses
 
 
 def test_none_selects_every_built_in_pose():

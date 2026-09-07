@@ -8,11 +8,11 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from arduino.app_bricks.pose_estimation.pose_classifier import load_pose_classifier
-from arduino.app_bricks.pose_estimation.pose_enrollment import Bucket, enroll, group_photos
-from arduino.app_bricks.pose_estimation.pose_enrollment.measure import _LearningCurve, _Measure, _operating_point
-from arduino.app_bricks.pose_estimation.pose_enrollment.report import render_report
-from arduino.app_bricks.pose_estimation.pose_vocabulary import PoseSpec
+from arduino.app_bricks.pose_estimation.classifier import load_pose_classifier
+from arduino.app_bricks.pose_estimation.enrollment import Bucket, enroll, group_photos
+from arduino.app_bricks.pose_estimation.enrollment.measure import _LearningCurve, _Measure, _operating_point
+from arduino.app_bricks.pose_estimation.enrollment.report import render_report
+from arduino.app_bricks.pose_estimation.vocabulary import PoseSpec
 
 ASSET = Path(__file__).resolve().parents[4] / "src" / "arduino" / "app_bricks" / "pose_estimation" / "assets" / "pose_classifier.npz"
 DIM = 30

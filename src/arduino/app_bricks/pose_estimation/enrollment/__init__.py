@@ -9,8 +9,8 @@ from pathlib import Path
 
 import numpy as np
 
-from ..pose_classifier import PoseKNN, load_pose_classifier
-from ..pose_vocabulary import PoseSpec
+from ..classifier import PoseKNN, load_pose_classifier
+from ..vocabulary import PoseSpec
 from .measure import (
     MIN_GROUPS,
     MIN_PHOTOS_TO_ACCEPT,

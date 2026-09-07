@@ -13,7 +13,7 @@ import numpy as np
 
 from arduino.app_utils import Logger
 
-from ..pose_classifier import EMBEDDING_SIZE
+from ..classifier import EMBEDDING_SIZE
 
 logger = Logger("PoseEstimation")
 

@@ -17,8 +17,8 @@ from websockets.sync.client import connect
 
 from arduino.app_utils.image.adjustments import compress_to_jpeg
 
-from ..pose_classifier import EMBEDDING_SIZE, embed_person
-from ..pose_types import Person, parse_people
+from ..classifier import EMBEDDING_SIZE, embed_person
+from ..detections import Person, parse_people
 from .cache import EnrollmentCache
 from .measure import OTHER, Bucket
 

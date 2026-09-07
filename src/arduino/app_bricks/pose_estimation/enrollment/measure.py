@@ -10,8 +10,8 @@ from typing import Literal
 
 import numpy as np
 
-from ..pose_classifier import PoseKNN
-from ..pose_vocabulary import PoseSpec
+from ..classifier import PoseKNN
+from ..vocabulary import PoseSpec
 
 OTHER = "other"
 

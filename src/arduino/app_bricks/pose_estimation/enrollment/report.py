@@ -6,8 +6,8 @@
 
 import numpy as np
 
-from ..pose_classifier import ACTION_SMOOTHING_SECONDS, DEFAULT_ACTION_DURATION, DEFAULT_SMOOTHING_SECONDS
-from ..pose_vocabulary import PoseSpec
+from ..classifier import ACTION_SMOOTHING_SECONDS, DEFAULT_ACTION_DURATION, DEFAULT_SMOOTHING_SECONDS
+from ..vocabulary import PoseSpec
 from .measure import (
     CLEANING_SHARE,
     COLLISION_WARNING,

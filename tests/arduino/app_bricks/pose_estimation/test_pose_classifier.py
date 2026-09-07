@@ -9,7 +9,7 @@ import json
 import numpy as np
 import pytest
 
-from arduino.app_bricks.pose_estimation.pose_classifier import (
+from arduino.app_bricks.pose_estimation.classifier import (
     EMBEDDING_SIZE,
     IDX,
     KEYPOINT_NAMES,
