@@ -14,7 +14,7 @@ models:
           "EI_V_OBJ_DETECTION_MODEL": "/models/ootb/ei/lw-face-det.eim"
     deployment:
       handler: "ei-handler"
-      pre-loaded: true          
+      pre-loaded: true
     metadata:
       model_size_mb: 17
       source: "qualcomm-ai-hub"
@@ -39,7 +39,7 @@ models:
           "EI_V_OBJ_DETECTION_MODEL": "/models/ootb/ei/lw-face-det-qnn-640.eim"
     deployment:
       handler: "ei-handler"
-      pre-loaded: true          
+      pre-loaded: true
     metadata:
       model_size_mb: 17
       source: "qualcomm-ai-hub"
@@ -1826,6 +1826,73 @@ models:
       - id: "arduino:video_image_classification"
         model_configuration:
           "EI_V_CLASSIFICATION_MODEL": "/var/lib/arduino-app-cli/models/edge-impulse/efficientnet-b4-qnn/efficientnet-b4-qnn.eim"
+ - "ei:desk-items-detector":
+    name : "Desk Items Detector"
+    description: "A tiny computer vision model optimized for real-time detection of common objects found in a desk or office environment."
+    metadata:
+      model_size_mb: 22
+      source: "edgeimpulse"
+      image-resolution: "320x320"
+      ei-project-id: 995296
+      ei-impulse-id: 6
+      ei-model-url: "https://studio.edgeimpulse.com/public/995296/live"
+      source-model-id: "995296"
+      source-model-url: "https://studio.edgeimpulse.com/public/995296/live"
+    model_labels:
+      - "Book"
+      - "Mug"
+      - "Mobile phone"
+      - "Mug"
+      - "Phone"
+      - "Plant"
+      - "Box"
+      - "Bottle"
+      - "Glasses"
+    supported_boards: ["unoq"]
+    deployment:
+      handler: "ei-handler"
+      pre-loaded: true
+    bricks:
+      - id: "arduino:object_detection"
+        model_configuration:
+          "EI_OBJ_DETECTION_MODEL": "/models/ootb/ei/desk-items-detector.eim"
+      - id: "arduino:video_object_detection"
+        model_configuration:
+          "EI_V_OBJ_DETECTION_MODEL": "/models/ootb/ei/desk-items-detector.eim"
+ - "ei:desk-items-detector-qnn":
+    name : "Desk Items Detector"
+    description: "A tiny computer vision model optimized for real-time detection of common objects found in a desk or office environment. This version of the model is optimized for NPU acceleration on supported devices, providing faster inference times while maintaining accuracy."
+    metadata:
+      model_size_mb: 22
+      source: "edgeimpulse"
+      image-resolution: "320x320"
+      hw_acceleration_backend: "qnn"
+      ei-project-id: 995296
+      ei-impulse-id: 6
+      ei-model-url: "https://studio.edgeimpulse.com/public/995296/live"
+      source-model-id: "995296"
+      source-model-url: "https://studio.edgeimpulse.com/public/995296/live"
+    supported_boards: ["ventunoq"]
+    model_labels:
+      - "Book"
+      - "Mug"
+      - "Mobile phone"
+      - "Mug"
+      - "Phone"
+      - "Plant"
+      - "Box"
+      - "Bottle"
+      - "Glasses"    
+    deployment:
+      handler: "ei-handler"
+      pre-loaded: true
+    bricks:
+      - id: "arduino:object_detection"
+        model_configuration:
+          "EI_OBJ_DETECTION_MODEL": "/models/ootb/ei/desk-items-detector-qnn.eim"
+      - id: "arduino:video_object_detection"
+        model_configuration:
+          "EI_V_OBJ_DETECTION_MODEL": "/models/ootb/ei/desk-items-detector-qnn.eim"           
  - "llamacpp:gemma-4-E2B_q4_0-it":
     name : "Gemma 4 E2B"
     description: >-
