@@ -11,26 +11,37 @@ import threading
 from arduino.router_bridge import DEFAULT_ADDRESS
 from arduino.router_bridge import Bridge as RouterBridge
 
+from .errors import AppError
+
 __all__ = ["Bridge", "notify", "call", "provide"]
+
+_connect_timeout = 5.0  # Seconds an app waits for its router before failing
 
 _bridge: RouterBridge | None = None
 _bridge_lock = threading.Lock()
 
 
 def _get_bridge() -> RouterBridge:
-    """Returns the app-wide shared bridge, creating it on first use and reconnecting it when needed.
-    The router address is taken from the APP_SOCKET environment variable, falling back to the library default.
+    """Returns the app-wide shared bridge, connecting it on first use. The router address is taken
+    from the APP_SOCKET environment variable, falling back to the library default. An app whose
+    router cannot be reached must fail rather than run half-connected: AppError is raised.
     """
     global _bridge
     with _bridge_lock:
         if _bridge is None:
-            _bridge = RouterBridge(os.environ.get("APP_SOCKET", DEFAULT_ADDRESS))
-        _bridge.connect(timeout=0)  # Ensures background (re)connection without waiting for it
+            bridge = RouterBridge(os.environ.get("APP_SOCKET", DEFAULT_ADDRESS))
+            if not bridge.connect(timeout=_connect_timeout):
+                bridge.disconnect()
+                raise AppError(
+                    f"Cannot reach the Arduino Router at {bridge.address} within {_connect_timeout:g}s.",
+                    hint="Make sure the arduino-router service is running on the board.",
+                )
+            _bridge = bridge
         return _bridge
 
 
 class Bridge:
-    """Process-wide access to the microcontroller RPC bridge, connected lazily on first use."""
+    """Process-wide access to the microcontroller RPC bridge, connected when arduino.app_utils is imported."""
 
     @staticmethod
     def notify(method_name: str, *params: object) -> None:
@@ -115,7 +126,6 @@ def notify(method_name: str | None = None) -> Callable[[Callable[..., object]], 
     When the decorated function is called, an RPC 'notify' (fire-and-forget) is sent
     to the microcontroller. The notify's arguments are taken from the decorated function's arguments.
     The RPC method name defaults to the decorated function's name if not specified.
-    The connection is established lazily, on the first invocation of the decorated function.
 
     Args:
         method_name (str, optional): The name of the RPC method to call. Defaults to the decorated function's name.
@@ -161,7 +171,6 @@ def call(method_name: str | None = None, timeout: float | None = 10) -> Callable
     The RPC method name defaults to the decorated function's name if not specified.
     A default timeout for the RPC call can be set via the decorator but it can be overridden
     by passing a 'timeout' keyword argument when calling the decorated function.
-    The connection is established lazily, on the first invocation of the decorated function.
 
     Args:
         method_name (str, optional): The name of the RPC method to call. Defaults to the decorated function's name.

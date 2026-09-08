@@ -11,6 +11,7 @@ from arduino.router_bridge import DEFAULT_ADDRESS
 
 from arduino.app_utils import bridge as bridge_module
 from arduino.app_utils.bridge import Bridge, call, notify, provide
+from arduino.app_utils.errors import AppError
 
 
 class SingletonTestCase(unittest.TestCase):
@@ -37,11 +38,22 @@ class TestSharedInstance(SingletonTestCase):
         self.assertIs(first, second)
         self.mock_router_bridge.assert_called_once()
 
-    def test_every_access_reconnects_a_stopped_bridge(self):
+    def test_connects_once_waiting_for_the_router(self):
         bridge_module._get_bridge()
         bridge_module._get_bridge()
 
-        self.assertEqual(self.mock_instance.connect.call_count, 2)  # connect() is idempotent on a running bridge
+        self.mock_instance.connect.assert_called_once_with(timeout=bridge_module._connect_timeout)
+
+    def test_unreachable_router_is_an_app_error(self):
+        """An app without its router must fail, not run half-connected."""
+        self.mock_instance.connect.return_value = False
+
+        with self.assertRaises(AppError) as cm:
+            bridge_module._get_bridge()
+
+        self.assertIn("Arduino Router", str(cm.exception))
+        self.mock_instance.disconnect.assert_called_once()  # No background retries left behind
+        self.assertIsNone(bridge_module._bridge)
 
     def test_app_socket_env_selects_the_address(self):
         with patch.dict("os.environ", {"APP_SOCKET": "unix:///tmp/app.sock"}):
