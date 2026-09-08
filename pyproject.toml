@@ -109,7 +109,6 @@ all = [
     "arduino_app_bricks[mood_detector]",
     "arduino_app_bricks[pose_estimation]",
     "arduino_app_bricks[stream]",
-    "arduino_app_bricks[arduino_cloud]",
     "arduino_app_bricks[telegram_bot]",
     "arduino_app_bricks[cloud_llm]",
     "arduino_app_bricks[cloud_asr]",
