@@ -41,7 +41,7 @@ def _get_bridge() -> RouterBridge:
 
 
 class Bridge:
-    """Process-wide access to the microcontroller RPC bridge, connected when arduino.app_utils is imported."""
+    """Process-wide access to the microcontroller RPC bridge, connected on first use."""
 
     @staticmethod
     def notify(method_name: str, *params: object) -> None:
