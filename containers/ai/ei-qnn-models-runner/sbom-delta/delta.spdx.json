@@ -1,7 +1,7 @@
 {
   "SPDXID": "SPDXRef-DOCUMENT",
   "creationInfo": {
-    "created": "2026-09-02T07:46:22.793891Z",
+    "created": "2026-09-08T06:58:01.454843Z",
     "creators": [
       "Tool: arduino-sbom-delta",
       "Organization: Arduino SRL"
@@ -11,12 +11,12 @@
   "documentDescribes": [
     "SPDXRef-Container"
   ],
-  "documentNamespace": "https://arduino.cc/sbom/delta/ei-qnn-models-runner-0.13.0rc1-20260902T074622Z",
+  "documentNamespace": "https://arduino.cc/sbom/delta/ei-qnn-models-runner-0.13.0rc2-20260908T065801Z",
   "name": "ei-qnn-models-runner",
   "packages": [
     {
       "SPDXID": "SPDXRef-Container",
-      "comment": "Delta SBOM for ghcr.io/arduino/app-bricks/ei-qnn-models-runner:0.13.0rc1 \u2014 changes relative to base image public.ecr.aws/g7a8t7v6/inference-container-qnn:v1.93.22",
+      "comment": "Delta SBOM for ghcr.io/arduino/app-bricks/ei-qnn-models-runner:0.13.0rc2 \u2014 changes relative to base image public.ecr.aws/g7a8t7v6/inference-container-qnn:v1.93.22",
       "copyrightText": "NOASSERTION",
       "downloadLocation": "NOASSERTION",
       "filesAnalyzed": false,
@@ -28,7 +28,7 @@
       "SPDXID": "SPDXRef-certifi-pypi",
       "annotations": [
         {
-          "annotationDate": "2026-09-02T07:46:22.793891Z",
+          "annotationDate": "2026-09-08T06:58:01.454843Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"added\"}"
@@ -53,7 +53,7 @@
       "SPDXID": "SPDXRef-charset-normalizer-pypi",
       "annotations": [
         {
-          "annotationDate": "2026-09-02T07:46:22.793891Z",
+          "annotationDate": "2026-09-08T06:58:01.454843Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"added\"}"
@@ -78,7 +78,7 @@
       "SPDXID": "SPDXRef-idna-pypi",
       "annotations": [
         {
-          "annotationDate": "2026-09-02T07:46:22.793891Z",
+          "annotationDate": "2026-09-08T06:58:01.454843Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"added\"}"
@@ -103,7 +103,7 @@
       "SPDXID": "SPDXRef-packaging-pypi",
       "annotations": [
         {
-          "annotationDate": "2026-09-02T07:46:22.793891Z",
+          "annotationDate": "2026-09-08T06:58:01.454843Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"added\"}"
@@ -128,7 +128,7 @@
       "SPDXID": "SPDXRef-pip-pypi",
       "annotations": [
         {
-          "annotationDate": "2026-09-02T07:46:22.793891Z",
+          "annotationDate": "2026-09-08T06:58:01.454843Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"added\"}"
@@ -153,7 +153,7 @@
       "SPDXID": "SPDXRef-python3-packaging-deb",
       "annotations": [
         {
-          "annotationDate": "2026-09-02T07:46:22.793891Z",
+          "annotationDate": "2026-09-08T06:58:01.454843Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"added\"}"
@@ -178,7 +178,7 @@
       "SPDXID": "SPDXRef-python3-pip-deb",
       "annotations": [
         {
-          "annotationDate": "2026-09-02T07:46:22.793891Z",
+          "annotationDate": "2026-09-08T06:58:01.454843Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"added\"}"
@@ -203,7 +203,7 @@
       "SPDXID": "SPDXRef-python3-wheel-deb",
       "annotations": [
         {
-          "annotationDate": "2026-09-02T07:46:22.793891Z",
+          "annotationDate": "2026-09-08T06:58:01.454843Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"added\"}"
@@ -228,7 +228,7 @@
       "SPDXID": "SPDXRef-requests-pypi",
       "annotations": [
         {
-          "annotationDate": "2026-09-02T07:46:22.793891Z",
+          "annotationDate": "2026-09-08T06:58:01.454843Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"added\"}"
@@ -253,7 +253,7 @@
       "SPDXID": "SPDXRef-urllib3-pypi",
       "annotations": [
         {
-          "annotationDate": "2026-09-02T07:46:22.793891Z",
+          "annotationDate": "2026-09-08T06:58:01.454843Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"added\"}"
@@ -278,7 +278,7 @@
       "SPDXID": "SPDXRef-wheel-pypi",
       "annotations": [
         {
-          "annotationDate": "2026-09-02T07:46:22.793891Z",
+          "annotationDate": "2026-09-08T06:58:01.454843Z",
           "annotationType": "OTHER",
           "annotator": "Tool: arduino-sbom-delta",
           "comment": "{\"change\": \"added\"}"
