@@ -1,7 +1,7 @@
 {
   "SPDXID": "SPDXRef-DOCUMENT",
   "creationInfo": {
-    "created": "2026-09-02T07:51:47Z",
+    "created": "2026-09-08T06:58:55Z",
     "creators": [
       "Organization: Anchore, Inc",
       "Tool: syft-1.51.1"
@@ -9,7 +9,7 @@
     "licenseListVersion": "3.28"
   },
   "dataLicense": "CC0-1.0",
-  "documentNamespace": "https://anchore.com/syft/image/ghcr.io/arduino/app-bricks/python-slim-11b37a34-4750-4f19-b7a5-da6559548071",
+  "documentNamespace": "https://anchore.com/syft/image/ghcr.io/arduino/app-bricks/python-slim-a19db5dd-4803-4d6b-bef1-bc21637f55e6",
   "files": [
     {
       "SPDXID": "SPDXRef-File-etc-adduser.conf-9053d9efa7e672fd",
@@ -23763,7 +23763,7 @@
       "checksums": [
         {
           "algorithm": "SHA256",
-          "checksumValue": "6e8b4b583be491f50455cfc3e092198e63570be055c07187da4a2665e6725f6a"
+          "checksumValue": "628ed78e8d2b54d8b562a4a874b936b5ea4f7c37e2c71e5c1e4d540a62baab74"
         }
       ],
       "copyrightText": "NOASSERTION",
@@ -23771,7 +23771,7 @@
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:oci/ghcr.io%2Farduino%2Fapp-bricks%2Fpython-slim@sha256%3A6e8b4b583be491f50455cfc3e092198e63570be055c07187da4a2665e6725f6a?arch=arm64&tag=0.13.0rc1",
+          "referenceLocator": "pkg:oci/ghcr.io%2Farduino%2Fapp-bricks%2Fpython-slim@sha256%3A628ed78e8d2b54d8b562a4a874b936b5ea4f7c37e2c71e5c1e4d540a62baab74?arch=arm64&tag=0.13.0rc2",
           "referenceType": "purl"
         }
       ],
@@ -23781,7 +23781,7 @@
       "name": "ghcr.io/arduino/app-bricks/python-slim",
       "primaryPackagePurpose": "CONTAINER",
       "supplier": "NOASSERTION",
-      "versionInfo": "0.13.0rc1"
+      "versionInfo": "0.13.0rc2"
     }
   ],
   "relationships": [
