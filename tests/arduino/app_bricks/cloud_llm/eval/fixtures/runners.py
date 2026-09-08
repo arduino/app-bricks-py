@@ -10,7 +10,7 @@ from collections.abc import Callable
 
 from arduino.app_bricks.cloud_llm import CloudLLM
 from runners.__init__ import ToolTrace
-from conftest import ModelConfig
+from model_config import ModelConfig
 
 from deepeval.test_case import ToolCall
 

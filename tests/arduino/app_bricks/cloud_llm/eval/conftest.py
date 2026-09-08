@@ -2,7 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor
 import json
 import glob
@@ -16,9 +15,16 @@ import uvicorn
 from logging import Logger
 
 
-from arduino.app_bricks.cloud_llm import CloudModelProvider, CloudModel
+from arduino.app_bricks.cloud_llm import CloudModelProvider
+from model_config import ModelConfig
 from stubs.granular_mcp_server import granular_mcp_server_factory
 from stubs.object_mcp_server import object_mcp_server_factory
+
+# Fixtures are discovered through this module's namespace: pytest_plugins is only allowed in a
+# top-level conftest, while this suite is also collected as part of the whole tests tree
+from fixtures.judge_model import judge_model  # noqa: F401
+from fixtures.model_factory import model_factory_fixture  # noqa: F401
+from fixtures.runners import execute_runner, runners_cache, runners_registry  # noqa: F401
 
 from deepeval.dataset import EvaluationDataset, Golden
 from deepeval.test_case import LLMTestCase, ToolCall
@@ -26,16 +32,6 @@ from fastapi import FastAPI
 
 
 logger = Logger("cloud_llm_tests")
-pytest_plugins = ["fixtures.judge_model", "fixtures.runners", "fixtures.model_factory"]
-
-
-@dataclass(frozen=True)
-class ModelConfig:
-    name: CloudModel | str
-    provider: str
-    requires_api_key: bool = True
-    api_key: str | None = None
-    base_url: str | None = None
 
 
 models_to_test = [
