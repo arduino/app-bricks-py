@@ -2,14 +2,23 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import json
+import queue
 import threading
 import time
+from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import MagicMock
 
+import numpy as np
 import pytest
 
-from arduino.app_bricks.pose_estimation import KEYPOINT_NAMES, POSE_NAMES, Keypoint, Person, PoseEstimation
+from arduino.app_bricks.pose_estimation import BUILTIN_POSE_NAMES, KEYPOINT_NAMES, Keypoint, Person, PoseEstimation
+from arduino.app_bricks.pose_estimation.pose_estimation import _POSE_CLASSIFIER_PATH
+from arduino.app_bricks.pose_estimation.classifier import embed_person
+from arduino.app_bricks.pose_estimation.enrollment.photos import PersonReader
+from arduino.app_bricks.pose_estimation.vocabulary import PoseSpec
+from arduino.app_bricks.pose_estimation.classifier import PoseKNN, load_pose_classifier
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -57,7 +66,8 @@ def pe_strict(monkeypatch: pytest.MonkeyPatch):
     yield from _make_instance(monkeypatch, out_of_frame_tolerance=0.0)
 
 
-def _make_instance(monkeypatch: pytest.MonkeyPatch, **kwargs):
+def _construct(monkeypatch: pytest.MonkeyPatch, **kwargs) -> PoseEstimation:
+    """Build a PoseEstimation with the runner infrastructure mocked out."""
     fake_compose = {"services": {"pose-runner": {}}}
     monkeypatch.setattr(
         "arduino.app_bricks.pose_estimation.pose_estimation.load_brick_compose_file",
@@ -67,9 +77,11 @@ def _make_instance(monkeypatch: pytest.MonkeyPatch, **kwargs):
         "arduino.app_bricks.pose_estimation.pose_estimation.resolve_address",
         lambda host: "127.0.0.1",
     )
+    return PoseEstimation(camera=MagicMock(), **kwargs)
 
-    camera = MagicMock()
-    instance = PoseEstimation(camera=camera, **kwargs)
+
+def _make_instance(monkeypatch: pytest.MonkeyPatch, **kwargs):
+    instance = _construct(monkeypatch, **kwargs)
 
     # Provide a real executor so callbacks actually run in threads
     instance._executor = ThreadPoolExecutor(max_workers=4)
@@ -94,6 +106,7 @@ def test_stop_resets_the_temporal_state_with_the_asset_thresholds(pe):
     assert pe._pose_ema.smoothed["sitting"] == 0.0
     assert pe._pose_ema.enter_threshold == pe._pose_thresholds["enter"]
     assert pe._pose_ema.exit_threshold == pe._pose_thresholds["exit"]
+    assert pe._pose_ema.smoothing_tau == pe._pose_smoothing
 
 
 # ---------------------------------------------------------------------------
@@ -102,7 +115,76 @@ def test_stop_resets_the_temporal_state_with_the_asset_thresholds(pe):
 
 
 def test_pose_names_lists_the_asset_poses():
-    assert POSE_NAMES == ("left_arm_raised", "right_arm_raised", "sitting", "standing")
+    assert BUILTIN_POSE_NAMES == ("left_arm_raised", "right_arm_raised", "sitting", "standing")
+
+
+# ---------------------------------------------------------------------------
+# The app's pose vocabulary
+# ---------------------------------------------------------------------------
+
+
+class TestPoseVocabulary:
+    def test_none_keeps_the_built_in_poses_with_their_shipped_settings(self, pe: PoseEstimation):
+        shipped = load_pose_classifier(_POSE_CLASSIFIER_PATH)[3]
+        assert pe.pose_names == BUILTIN_POSE_NAMES
+        assert pe._pose_thresholds == shipped
+        assert pe._pose_smoothing == dict.fromkeys(BUILTIN_POSE_NAMES, 0.31)
+        assert set(pe._pose_ema.active) == set(BUILTIN_POSE_NAMES)
+
+    def test_a_name_list_narrows_the_vocabulary(self, monkeypatch):
+        pe = _construct(monkeypatch, poses=["standing", "sitting"])
+        assert pe.pose_names == ("standing", "sitting")
+        assert set(pe._pose_ema.active) == {"standing", "sitting"}
+        assert pe._pose_thresholds["enter"] == {"standing": 0.80, "sitting": 0.55}
+        with pytest.raises(ValueError, match="unknown pose"):
+            pe.on_pose("left_arm_raised", lambda pose: None)
+
+    def test_a_dict_overrides_thresholds_and_smoothing(self, monkeypatch):
+        pe = _construct(monkeypatch, poses=[{"name": "sitting", "thresholds": {"enter": 0.7, "exit": 0.2}, "smoothing": 0.15}, "standing"])
+        assert pe._pose_thresholds == {"enter": {"sitting": 0.7, "standing": 0.80}, "exit": {"sitting": 0.2, "standing": 0.60}}
+        assert pe._pose_smoothing == {"sitting": 0.15, "standing": 0.31}
+        assert pe._pose_ema.smoothing_tau == pe._pose_smoothing
+        assert pe._pose_ema.enter_threshold == pe._pose_thresholds["enter"]
+
+    def test_built_in_poses_are_held_poses(self, pe: PoseEstimation):
+        assert pe._pose_action_duration == {}
+        assert pe._pose_ema.action_duration == {}
+        pe.stop()
+        pe._executor = ThreadPoolExecutor(max_workers=1)  # the fixture teardown shuts one down
+        assert pe._pose_ema.action_duration == {}
+
+    def test_an_action_spec_reaches_the_temporal_layer(self, monkeypatch):
+        spec = PoseSpec(name="sitting", builtin=True, type="action", duration=0.9)
+        monkeypatch.setattr("arduino.app_bricks.pose_estimation.pose_estimation.parse_poses", lambda poses, builtin_names, custom_names: (spec,))
+        pe = _construct(monkeypatch, poses=["sitting"])
+        assert pe._pose_action_duration == {"sitting": 0.9}
+        assert pe._pose_smoothing == {"sitting": 0.15}
+        assert pe._pose_ema.action_duration == {"sitting": 0.9}
+        assert pe._pose_ema.smoothing_tau == {"sitting": 0.15}
+
+    def test_overrides_leave_the_shared_asset_untouched(self, monkeypatch):
+        _construct(monkeypatch, poses=[{"name": "sitting", "thresholds": {"enter": 0.9, "exit": 0.1}}])
+        assert load_pose_classifier(_POSE_CLASSIFIER_PATH)[3]["enter"]["sitting"] == 0.55
+
+    def test_left_out_poses_vote_like_other_rows(self, pe: PoseEstimation):
+        asset = np.load(_POSE_CLASSIFIER_PATH)
+        knn = pe._pose_knn
+        relabelled = PoseKNN(k=knn.k, reject_factor=knn.reject_factor, metric=knn.metric, vote_weighting=knn.vote_weighting)
+        labels = [label if label == "sitting" else "other" for label in asset["labels"].astype(str)]
+        relabelled.fit(asset["embeddings"], labels, calibration_mask=asset["real"])
+        assert relabelled.reject_distance == pytest.approx(knn.reject_distance)
+        for row in asset["embeddings"][::97]:
+            assert knn.classify(row)["sitting"] == pytest.approx(relabelled.classify(row)["sitting"])
+
+    def test_a_weighted_other_class_refuses_a_reduced_vocabulary(self, monkeypatch):
+        knn, _, names, thresholds = load_pose_classifier(_POSE_CLASSIFIER_PATH)
+        monkeypatch.setattr(
+            "arduino.app_bricks.pose_estimation.pose_estimation.load_pose_classifier",
+            lambda path: (knn, {"other": 0.6}, names, thresholds),
+        )
+        _construct(monkeypatch)  # the full vocabulary is fine
+        with pytest.raises(RuntimeError, match="other_weight"):
+            _construct(monkeypatch, poses=["sitting"])
 
 
 class TestDetectionParsing:
@@ -588,3 +670,305 @@ class TestSetBboxPadding:
         with pytest.raises(ValueError):
             pe.set_bbox_padding(True)
         assert pe._bbox_padding == (0.1, 0.1, 0.1, 0.1)
+
+
+# ---------------------------------------------------------------------------
+# Custom poses taught from photo folders
+# ---------------------------------------------------------------------------
+
+
+def _fake_cloud(scale: np.ndarray, n: int, seed: int = 4) -> np.ndarray:
+    """Embeddings of a pose far from every shipped one, spread 0.6 per feature in the metric space."""
+    rng = np.random.default_rng(seed)
+    center = rng.normal(0.0, 3.0, size=len(scale)).astype(np.float32)
+    return (center + rng.normal(0.0, 0.6, size=(n, len(scale))) * scale).astype(np.float32)
+
+
+def _poses_dir(tmp_path, counts: dict[str, int]) -> Path:
+    root = tmp_path / "poses"
+    for name, n in counts.items():
+        (root / name).mkdir(parents=True)
+        for i in range(n):
+            (root / name / f"img_{i:03d}.jpg").write_bytes(b"jpeg" + bytes([i]))
+    return root
+
+
+def _fake_embedder(cloud: np.ndarray, bad: set[str] = frozenset(), calls: list | None = None):
+    def embed_photos(self, paths):
+        if calls is not None:
+            calls.append(list(paths))
+        return {
+            path: ((None, "no person detected") if path.name in bad else (cloud[int(path.stem.split("_")[1]) % len(cloud)], None)) for path in paths
+        }
+
+    return embed_photos
+
+
+class TestCustomPoses:
+    def test_a_folder_named_like_a_built_in_pose_is_refused(self, monkeypatch, tmp_path):
+        root = _poses_dir(tmp_path, {"sitting": 3})
+        with pytest.raises(ValueError, match="rename it"):
+            _construct(monkeypatch, poses=["standing"], custom_poses_dir=str(root))
+
+    def test_a_folder_with_an_invalid_name_is_refused(self, monkeypatch, tmp_path):
+        root = _poses_dir(tmp_path, {"Hands-On-Hips": 3})
+        with pytest.raises(ValueError, match="is not a valid pose name: use lowercase letters, digits and underscores"):
+            _construct(monkeypatch, poses=["standing"], custom_poses_dir=str(root))
+
+    def test_a_custom_name_needs_its_folder(self, monkeypatch, tmp_path):
+        root = _poses_dir(tmp_path, {"forehand": 3})
+        with pytest.raises(ValueError, match="unknown pose 'serve' .*pose folders: forehand"):
+            _construct(monkeypatch, poses=["serve"], custom_poses_dir=str(root))
+
+    def test_custom_poses_join_the_vocabulary_before_start(self, monkeypatch, tmp_path):
+        root = _poses_dir(tmp_path, {"forehand": 3})
+        pe = _construct(monkeypatch, poses=["sitting", {"name": "forehand", "type": "action"}], custom_poses_dir=str(root))
+        assert pe.pose_names == ("sitting", "forehand")
+        pe.on_pose("forehand", lambda pose: None)
+        assert (pe._pose_thresholds["enter"]["forehand"], pe._pose_thresholds["exit"]["forehand"]) == (0.55, 0.35)
+        assert pe._pose_action_duration == {"forehand": 0.7}
+
+    def test_start_teaches_the_pose_and_installs_it(self, monkeypatch, tmp_path):
+        root = _poses_dir(tmp_path, {"forehand": 60})
+        cloud = _fake_cloud(load_pose_classifier(_POSE_CLASSIFIER_PATH)[0].scale, 60)
+        monkeypatch.setattr(PoseEstimation, "_embed_photos", _fake_embedder(cloud))
+        pe = _construct(monkeypatch, poses=["sitting", {"name": "forehand", "type": "action"}], custom_poses_dir=str(root))
+        pe.start()
+        try:
+            reports = list((root / "forehand").glob("report_*.txt"))
+            assert len(reports) == 1 and "verdict: ACCEPTED" in reports[0].read_text()
+            assert "forehand" in pe._pose_knn.classes and pe._pose_label_weights is None
+            assert pe._pose_thresholds["enter"]["forehand"] >= 0.55
+            assert pe._pose_thresholds["exit"]["forehand"] == pytest.approx(max(0.10, pe._pose_thresholds["enter"]["forehand"] - 0.40))
+            assert set(pe._pose_ema.active) == {"sitting", "forehand"} and pe._pose_ema.action_duration == {"forehand": 0.7}
+            assert (root / ".cache" / "enrollment.npz").is_file()
+            assert pe._camera.start.called
+        finally:
+            pe.stop()
+
+    def test_a_second_start_reuses_the_cache_and_writes_no_new_report(self, monkeypatch, tmp_path):
+        root = _poses_dir(tmp_path, {"forehand": 60})
+        cloud = _fake_cloud(load_pose_classifier(_POSE_CLASSIFIER_PATH)[0].scale, 60)
+        calls: list = []
+        monkeypatch.setattr(PoseEstimation, "_embed_photos", _fake_embedder(cloud, calls=calls))
+        first = _construct(monkeypatch, poses=["forehand"], custom_poses_dir=str(root))
+        first.start()
+        first.stop()
+        second = _construct(monkeypatch, poses=["forehand"], custom_poses_dir=str(root))
+        second.start()
+        second.stop()
+        assert len(calls) == 1  # every photo was read once
+        assert len(list((root / "forehand").glob("report_*.txt"))) == 1
+        assert second._pose_thresholds["enter"]["forehand"] == first._pose_thresholds["enter"]["forehand"]
+
+    def test_a_changed_photo_is_read_again(self, monkeypatch, tmp_path):
+        root = _poses_dir(tmp_path, {"forehand": 60})
+        cloud = _fake_cloud(load_pose_classifier(_POSE_CLASSIFIER_PATH)[0].scale, 60)
+        calls: list = []
+        monkeypatch.setattr(PoseEstimation, "_embed_photos", _fake_embedder(cloud, calls=calls))
+        first = _construct(monkeypatch, poses=["forehand"], custom_poses_dir=str(root))
+        first.start()
+        first.stop()
+        changed = root / "forehand" / "img_007.jpg"
+        changed.write_bytes(b"a different photo")
+        second = _construct(monkeypatch, poses=["forehand"], custom_poses_dir=str(root))
+        second.start()
+        second.stop()
+        assert calls[1] == [changed]
+
+    def test_a_removed_photo_gives_a_new_report_without_reading_anything(self, monkeypatch, tmp_path):
+        root = _poses_dir(tmp_path, {"forehand": 60})
+        cloud = _fake_cloud(load_pose_classifier(_POSE_CLASSIFIER_PATH)[0].scale, 60)
+        calls: list = []
+        monkeypatch.setattr(PoseEstimation, "_embed_photos", _fake_embedder(cloud, calls=calls))
+        first = _construct(monkeypatch, poses=["forehand"], custom_poses_dir=str(root))
+        first.start()
+        first.stop()
+        (root / "forehand" / "img_007.jpg").unlink()
+        time.sleep(1.05)  # report files are named to the second
+        second = _construct(monkeypatch, poses=["forehand"], custom_poses_dir=str(root))
+        second.start()
+        second.stop()
+        assert len(calls) == 1
+        reports = sorted((root / "forehand").glob("report_*.txt"))
+        assert len(reports) == 2 and "photos: 59 found, 59 usable, 0 discarded" in reports[-1].read_text()
+
+    def test_a_changed_declaration_gives_a_new_report_without_reading_anything(self, monkeypatch, tmp_path):
+        root = _poses_dir(tmp_path, {"forehand": 60})
+        cloud = _fake_cloud(load_pose_classifier(_POSE_CLASSIFIER_PATH)[0].scale, 60)
+        calls: list = []
+        monkeypatch.setattr(PoseEstimation, "_embed_photos", _fake_embedder(cloud, calls=calls))
+        first = _construct(monkeypatch, poses=["forehand"], custom_poses_dir=str(root))
+        first.start()
+        first.stop()
+        time.sleep(1.05)  # report files are named to the second
+        second = _construct(monkeypatch, poses=[{"name": "forehand", "type": "action"}], custom_poses_dir=str(root))
+        second.start()
+        second.stop()
+        assert len(calls) == 1
+        reports = sorted((root / "forehand").glob("report_*.txt"))
+        assert len(reports) == 2 and "type: action, duration 0.7 s" in reports[-1].read_text()
+
+    def test_two_enrollments_in_the_same_second_keep_both_reports(self, monkeypatch, tmp_path):
+        root = _poses_dir(tmp_path, {"forehand": 60})
+        cloud = _fake_cloud(load_pose_classifier(_POSE_CLASSIFIER_PATH)[0].scale, 60)
+        monkeypatch.setattr(PoseEstimation, "_embed_photos", _fake_embedder(cloud))
+        monkeypatch.setattr(time, "strftime", lambda fmt, *args: "2026-09-07 10:00:00")
+        for poses in (["forehand"], [{"name": "forehand", "type": "action"}]):
+            pe = _construct(monkeypatch, poses=poses, custom_poses_dir=str(root))
+            pe.start()
+            pe.stop()
+        assert sorted(path.name for path in (root / "forehand").glob("report_*.txt")) == [
+            "report_2026-09-07_10-00-00-2.txt",
+            "report_2026-09-07_10-00-00.txt",
+        ]
+
+    @pytest.mark.parametrize("kwargs", [{"confidence": 0.5}, {"out_of_frame_tolerance": 0.0}])
+    def test_a_different_reading_setting_reads_every_photo_again(self, monkeypatch, tmp_path, kwargs):
+        root = _poses_dir(tmp_path, {"forehand": 60})
+        cloud = _fake_cloud(load_pose_classifier(_POSE_CLASSIFIER_PATH)[0].scale, 60)
+        calls: list = []
+        monkeypatch.setattr(PoseEstimation, "_embed_photos", _fake_embedder(cloud, calls=calls))
+        first = _construct(monkeypatch, poses=["forehand"], custom_poses_dir=str(root))
+        first.start()
+        first.stop()
+        second = _construct(monkeypatch, poses=["forehand"], custom_poses_dir=str(root), **kwargs)
+        second.start()
+        second.stop()
+        assert len(calls) == 2 and len(calls[1]) == 60
+
+    def test_an_unreadable_cache_is_ignored_and_rewritten(self, monkeypatch, tmp_path):
+        root = _poses_dir(tmp_path, {"forehand": 60})
+        cloud = _fake_cloud(load_pose_classifier(_POSE_CLASSIFIER_PATH)[0].scale, 60)
+        calls: list = []
+        monkeypatch.setattr(PoseEstimation, "_embed_photos", _fake_embedder(cloud, calls=calls))
+        cache_file = root / ".cache" / "enrollment.npz"
+        cache_file.parent.mkdir()
+        cache_file.write_bytes(b"PK\x03\x04 a truncated archive")
+        pe = _construct(monkeypatch, poses=["forehand"], custom_poses_dir=str(root))
+        pe.start()
+        pe.stop()
+        assert len(calls) == 1 and len(calls[0]) == 60
+        with np.load(cache_file, allow_pickle=False) as data:
+            assert len(data["keys"]) == 60
+        assert list((root / ".cache").iterdir()) == [cache_file]
+
+    def test_the_photos_read_are_kept_when_the_enrollment_fails(self, monkeypatch, tmp_path):
+        root = _poses_dir(tmp_path, {"forehand": 60})
+        cloud = _fake_cloud(load_pose_classifier(_POSE_CLASSIFIER_PATH)[0].scale, 60)
+        calls: list = []
+        monkeypatch.setattr(PoseEstimation, "_embed_photos", _fake_embedder(cloud, calls=calls))
+        first = _construct(monkeypatch, poses=["forehand"], custom_poses_dir=str(root))
+        with monkeypatch.context() as broken:
+            broken.setattr("arduino.app_bricks.pose_estimation.pose_estimation.enroll", MagicMock(side_effect=RuntimeError("boom")))
+            with pytest.raises(RuntimeError, match="boom"):
+                first.start()
+        second = _construct(monkeypatch, poses=["forehand"], custom_poses_dir=str(root))
+        second.start()
+        second.stop()
+        assert len(calls) == 1
+        assert len(list((root / "forehand").glob("report_*.txt"))) == 1
+
+    def test_a_pose_that_does_not_pass_stops_start_with_its_verdict(self, monkeypatch, tmp_path):
+        root = _poses_dir(tmp_path, {"forehand": 12})
+        cloud = _fake_cloud(load_pose_classifier(_POSE_CLASSIFIER_PATH)[0].scale, 12)
+        monkeypatch.setattr(PoseEstimation, "_embed_photos", _fake_embedder(cloud))
+        pe = _construct(monkeypatch, poses=["forehand"], custom_poses_dir=str(root))
+        with pytest.raises(ValueError) as refusal:
+            pe.start()
+        assert str(refusal.value) == (
+            "custom pose(s) not accepted (the full report is in the log and in the pose folder):\n"
+            "  forehand: verdict: NOT ACCEPTED (at least 20 usable photos are needed to measure; you have 12); next step: add photos"
+        )
+        assert not pe._camera.start.called
+        assert len(list((root / "forehand").glob("report_*.txt"))) == 1
+
+    def test_discarded_photos_and_the_other_folder_reach_the_report(self, monkeypatch, tmp_path):
+        root = _poses_dir(tmp_path, {"forehand": 60, "other": 10})
+        scale = load_pose_classifier(_POSE_CLASSIFIER_PATH)[0].scale
+        cloud = np.vstack([_fake_cloud(scale, 60), _fake_cloud(scale, 10, seed=9)])
+        monkeypatch.setattr(PoseEstimation, "_embed_photos", _fake_embedder(cloud, bad={"img_003.jpg"}))
+        pe = _construct(monkeypatch, poses=["forehand"], custom_poses_dir=str(root))
+        pe.start()
+        pe.stop()
+        report = next((root / "forehand").glob("report_*.txt")).read_text()
+        assert "photos: 60 found, 59 usable, 1 discarded\n  forehand/img_003.jpg  no person detected\n" in report
+        assert "other (your own negatives): 10 found, 9 usable, 1 discarded\n  other/img_003.jpg  no person detected\n" in report
+
+
+class TestEmbedPerson:
+    def test_a_readable_skeleton_is_embedded(self):
+        embedding, gate = embed_person(_person(), (480, 640), 0.25)
+        assert gate == "classified" and embedding is not None and embedding.shape == (30,)
+
+    def test_the_four_gates(self):
+        assert embed_person(_person(score=0.01), (480, 640), 0.25) == (None, "anchors")
+        person = _person()
+        del person.keypoints["left_ankle"]
+        assert embed_person(person, (480, 640), 0.25) == (None, "missing")
+        far = _person()
+        far.keypoints["left_wrist"] = Keypoint(name="left_wrist", x=5000, y=50, score=0.9)
+        assert embed_person(far, (480, 640), 0.25) == (None, "out_of_frame")
+        assert embed_person(far, None, 0.25)[1] == "classified"  # no frame size, no out-of-frame gate
+
+
+class TestPersonReader:
+    """The synchronous client against an in-process stand-in for the runner's two WebSocket ports."""
+
+    @pytest.fixture()
+    def fake_runner(self):
+        from websockets.sync.server import serve
+
+        received: list[dict] = []
+        answers: queue.Queue = queue.Queue()
+
+        def input_handler(websocket):
+            for message in websocket:
+                data = json.loads(message)
+                received.append(data)
+                if "frame" in data:
+                    n = sum(1 for d in received if "frame" in d) - 1  # frame 0 clears the tracking before the first photo
+                    persons = [] if n % 3 == 0 else [_person_payload(x=100 * n)]  # the third frame of a photo is the black one
+                    answers.put({"metadata": {"persons": persons, "crop_window": None if n % 3 == 1 else [0, 0, 10, 10]}})
+
+        def output_handler(websocket):
+            while True:
+                try:
+                    websocket.send(json.dumps(answers.get(timeout=5)))
+                except queue.Empty:
+                    return
+
+        servers = [serve(input_handler, "127.0.0.1", 0), serve(output_handler, "127.0.0.1", 0)]
+        threads = [threading.Thread(target=server.serve_forever, daemon=True) for server in servers]
+        for thread in threads:
+            thread.start()
+        ports = [server.socket.getsockname()[1] for server in servers]
+        yield f"ws://127.0.0.1:{ports[0]}", f"ws://127.0.0.1:{ports[1]}", received
+        for server in servers:
+            server.shutdown()
+
+    def test_a_photo_is_sent_twice_then_cleared_and_the_second_answer_is_used(self, fake_runner):
+        send_url, recv_url, received = fake_runner
+        image = np.zeros((48, 64, 3), np.uint8)
+        with PersonReader(send_url, recv_url, {"min_person_score": 0.3}) as runner:
+            people = runner.people(image, 0.3)
+            more = runner.people(image, 0.3)
+        assert received[0] == {"config": {"min_person_score": 0.3}}
+        assert [("frame" in d) for d in received[1:]] == [True] * 7  # clear, then photo, photo, clear twice
+        assert people[0].keypoints["nose"].x == 200  # the second answer of the first photo (x = 100 * 2)
+        assert more[0].keypoints["nose"].x == 500
+
+    def test_an_unreachable_runner_is_a_clear_error(self, monkeypatch):
+        from arduino.app_bricks.pose_estimation.enrollment import photos
+
+        monkeypatch.setattr(photos, "CONNECT_TIMEOUT_SEC", 0.5)
+        with pytest.raises(RuntimeError, match="did not answer within"), PersonReader("ws://127.0.0.1:9", "ws://127.0.0.1:9", {}):
+            pass
+
+
+def _person_payload(x: int) -> dict:
+    return {
+        "score": 0.9,
+        "keypoints": [{"name": name, "x": x + i, "y": 50 + i, "score": 0.9} for i, name in enumerate(KEYPOINT_NAMES)],
+        "bounding_box_xyxy": [x, 50, x + 50, 200],
+    }

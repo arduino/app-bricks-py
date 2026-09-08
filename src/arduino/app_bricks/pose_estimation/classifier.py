@@ -17,6 +17,8 @@ from pathlib import Path
 
 import numpy as np
 
+from .detections import Person
+
 """Names of the 17 body keypoints detected for each person, in model output order."""
 KEYPOINT_NAMES: tuple[str, ...] = (
     "nose",
@@ -74,6 +76,13 @@ MIN_OBSERVED_SCORE = 0.1  # mirrors the runner's MIN_KEYPOINT_SCORE
 _METRICS = ("euclidean", "cosine", "manhattan", "seuclidean")
 _VOTE_WEIGHTINGS = ("uniform", "distance")
 
+DEFAULT_SMOOTHING_SECONDS = 0.31
+ACTION_SMOOTHING_SECONDS = 0.15
+DEFAULT_ACTION_DURATION = 0.7
+ACTION_MIN_ACTIVATION_RATIO = 0.5
+ACTION_FORCED_CLOSE_RATIO = 3.0
+ACTION_REFRACTORY_RATIO = 1.5
+
 
 def normalize_pose(xy: np.ndarray) -> np.ndarray | None:
     """Translate the skeleton to the hip center and scale it by the torso size.
@@ -111,6 +120,33 @@ def embed(xy_norm: np.ndarray) -> np.ndarray:
         i += 2
     feats[i : i + 2] = (xy_norm[IDX["left_shoulder"]] + xy_norm[IDX["right_shoulder"]]) / 2.0
     return feats
+
+
+def embed_person(person: Person, frame_hw: tuple[int, int] | None, out_of_frame_tolerance: float) -> tuple[np.ndarray | None, str]:
+    """The embedding of a detected person, or None and the gate that refused the skeleton.
+
+    Gates, in order: `anchors` (every normalization anchor guessed), `missing` (a keypoint not
+    reported), `out_of_frame` (an embedding joint extrapolated beyond the frame plus the tolerance),
+    `torso` (collapsed torso). `classified` when the embedding is returned.
+    """
+    anchors_observed = any((keypoint := person.keypoints.get(name)) is not None and keypoint.score >= MIN_OBSERVED_SCORE for name in ANCHOR_JOINTS)
+    if not anchors_observed:
+        return None, "anchors"
+    if any(name not in person.keypoints for name in KEYPOINT_NAMES):
+        return None, "missing"
+    if frame_hw is not None:
+        frame_h, frame_w = frame_hw
+        margin_x = out_of_frame_tolerance * frame_w
+        margin_y = out_of_frame_tolerance * frame_h
+        for name in EMBEDDING_JOINTS:
+            keypoint = person.keypoints[name]
+            if not (-margin_x <= keypoint.x <= frame_w + margin_x and -margin_y <= keypoint.y <= frame_h + margin_y):
+                return None, "out_of_frame"
+    xy = np.asarray([[person.keypoints[name].x, person.keypoints[name].y] for name in KEYPOINT_NAMES], dtype=np.float32)
+    norm = normalize_pose(xy)
+    if norm is None:
+        return None, "torso"
+    return embed(norm), "classified"
 
 
 class PoseKNN:
@@ -188,7 +224,23 @@ class PoseKNN:
         np.fill_diagonal(dists, np.inf)
         return dists.min(axis=1)
 
-    def fit(self, embeddings: np.ndarray, labels: list[str], calibration_mask: np.ndarray | None = None) -> None:
+    @property
+    def scale(self) -> np.ndarray | None:
+        """Per-feature scale of the seuclidean metric (read-only), None for the other metrics."""
+        if self._scale is None:
+            return None
+        view = self._scale.view()
+        view.flags.writeable = False
+        return view
+
+    def fit(
+        self,
+        embeddings: np.ndarray,
+        labels: list[str],
+        calibration_mask: np.ndarray | None = None,
+        scale: np.ndarray | None = None,
+        reject_distance: float | None = None,
+    ) -> None:
         """Store the reference database and calibrate the rejection distance.
 
         The rejection distance is reject_factor times the 95th percentile of the
@@ -197,17 +249,25 @@ class PoseKNN:
 
         calibration_mask selects the rows the threshold is calibrated on: pass
         the real-example mask when the database contains augmented copies, whose
-        artificial density would otherwise shrink the percentile.
+        artificial density would otherwise shrink the percentile. scale and
+        reject_distance, when given, are taken as they are instead of being
+        calibrated: a database composed on top of another one keeps that one's.
         """
         db = np.asarray(embeddings, dtype=np.float32)
         mask = None if calibration_mask is None else np.asarray(calibration_mask, dtype=bool)
         if self.metric == "seuclidean":
-            calib_raw = db if mask is None else db[mask]
-            self._scale = np.maximum(calib_raw.std(axis=0), 1e-6).astype(np.float32)
+            if scale is not None:
+                self._scale = np.array(scale, dtype=np.float32)
+            else:
+                calib_raw = db if mask is None else db[mask]
+                self._scale = np.maximum(calib_raw.std(axis=0), 1e-6).astype(np.float32)
         self._db = self._to_metric_space(db)
         self._labels = np.asarray(labels)
         self.classes = tuple(sorted(set(labels)))
 
+        if reject_distance is not None:
+            self.reject_distance = float(reject_distance)
+            return
         calib = self._db if mask is None else self._db[mask]
         nn_dists = self._pairwise_nn_distance(calib)
         self.reject_distance = self.reject_factor * float(np.percentile(nn_dists, 95))
@@ -248,33 +308,58 @@ class PoseKNN:
 class EmaHysteresis:
     """Turn noisy per-frame probabilities into stable enter/exit events.
 
-    Per-class exponential moving average with thermostat-style thresholds (single numbers or per-class dicts):
+    Per-class exponential moving average with thermostat-style thresholds:
     active above enter_threshold, inactive again only below exit_threshold.
-    All time constants are in seconds: the caller passes the frame interval
-    dt, so behavior does not change with the pipeline frame rate.
+    The smoothing time constant and both thresholds are single numbers or
+    per-class dicts. Time is measured in seconds, not frames: each update
+    weighs the new frame by 1 - exp(-dt / smoothing_tau), with dt the seconds
+    elapsed since the previous frame, so a pose takes the same time to build
+    up at 30 or at 10 frames per second.
 
     Invalid frames are passed as probs=None; person_present tells them apart:
     - person detected but joints unreadable: the smoothed values freeze, then
       decay after stale_seconds;
     - person not detected: freeze for grace_seconds, then decay as zeros.
+
+    Classes listed in action_duration are movements with a start and an end
+    rather than held poses, and their events follow pulse rules scaled by the
+    typical duration d of one occurrence: "enter" is emitted only once the
+    smoothed value has stayed above the exit threshold for ACTION_MIN_ACTIVATION_RATIO * d
+    seconds after crossing the enter threshold (a shorter burst produces no
+    event at all); an activation is closed after ACTION_FORCED_CLOSE_RATIO * d seconds
+    even if the value is still high; after an "exit" the class cannot re-enter
+    for ACTION_REFRACTORY_RATIO * d seconds. These timers keep running through
+    frozen frames, so a pending "enter" or a forced close can fire while the
+    values are frozen.
     """
 
     classes: tuple[str, ...]
-    smoothing_tau: float = 0.31  # seconds
+    smoothing_tau: float | dict[str, float] = DEFAULT_SMOOTHING_SECONDS
     enter_threshold: float | dict[str, float] = 0.60
     exit_threshold: float | dict[str, float] = 0.40
     grace_seconds: float = 0.7
     stale_seconds: float = 3.0
+    action_duration: dict[str, float] = field(default_factory=dict)
     smoothed: dict[str, float] = field(init=False)
     active: dict[str, bool] = field(init=False)
     _invalid_time: float = field(init=False, default=0.0)
+    _time: float = field(init=False, default=0.0)
+    _pending_since: dict[str, float | None] = field(init=False)
+    _active_since: dict[str, float] = field(init=False)
+    _refractory_until: dict[str, float] = field(init=False)
 
     def __post_init__(self) -> None:
+        unknown = set(self.action_duration) - set(self.classes)
+        if unknown:
+            raise ValueError(f"action_duration names classes that are not tracked: {', '.join(sorted(unknown))}")
         self.smoothed = dict.fromkeys(self.classes, 0.0)
         self.active = dict.fromkeys(self.classes, False)
+        self._pending_since = dict.fromkeys(self.action_duration, None)
+        self._active_since = dict.fromkeys(self.action_duration, 0.0)
+        self._refractory_until = dict.fromkeys(self.action_duration, 0.0)
 
     @staticmethod
-    def _threshold(spec: float | dict[str, float], cls: str) -> float:
+    def _per_class(spec: float | dict[str, float], cls: str) -> float:
         return spec[cls] if isinstance(spec, dict) else spec
 
     def update(self, probs: dict[str, float] | None, dt: float, person_present: bool = True) -> list[tuple[str, str]]:
@@ -283,26 +368,52 @@ class EmaHysteresis:
         probs=None marks an invalid frame (see class docstring for the two
         person_present cases). Returns [("enter"|"exit", class), ...].
         """
+        self._time += dt
         if probs is None:
             self._invalid_time += dt
             if self._invalid_time <= (self.stale_seconds if person_present else self.grace_seconds):
-                return []
+                return [event for cls in self.action_duration for event in self._update_action(cls, above_enter=False, below_exit=False)]
             probs = dict.fromkeys(self.classes, 0.0)
         else:
             self._invalid_time = 0.0
 
-        alpha = 1.0 - math.exp(-max(dt, 1e-3) / self.smoothing_tau)
+        dt = max(dt, 1e-3)
         events = []
         for cls in self.classes:
+            alpha = 1.0 - math.exp(-dt / self._per_class(self.smoothing_tau, cls))
             p = probs.get(cls, 0.0)
             self.smoothed[cls] = alpha * p + (1.0 - alpha) * self.smoothed[cls]
-            if not self.active[cls] and self.smoothed[cls] >= self._threshold(self.enter_threshold, cls):
+            above_enter = self.smoothed[cls] >= self._per_class(self.enter_threshold, cls)
+            below_exit = self.smoothed[cls] < self._per_class(self.exit_threshold, cls)
+            if cls in self.action_duration:
+                events += self._update_action(cls, above_enter, below_exit)
+            elif not self.active[cls] and above_enter:
                 self.active[cls] = True
                 events.append(("enter", cls))
-            elif self.active[cls] and self.smoothed[cls] < self._threshold(self.exit_threshold, cls):
+            elif self.active[cls] and below_exit:
                 self.active[cls] = False
                 events.append(("exit", cls))
         return events
+
+    def _update_action(self, cls: str, above_enter: bool, below_exit: bool) -> list[tuple[str, str]]:
+        duration = self.action_duration[cls]
+        pending_since = self._pending_since[cls]
+        if self.active[cls]:
+            if below_exit or self._time - self._active_since[cls] >= ACTION_FORCED_CLOSE_RATIO * duration:
+                self.active[cls] = False
+                self._refractory_until[cls] = self._time + ACTION_REFRACTORY_RATIO * duration
+                return [("exit", cls)]
+        elif pending_since is not None:
+            if below_exit:
+                self._pending_since[cls] = None
+            elif self._time - pending_since >= ACTION_MIN_ACTIVATION_RATIO * duration:
+                self._pending_since[cls] = None
+                self._active_since[cls] = pending_since
+                self.active[cls] = True
+                return [("enter", cls)]
+        elif above_enter and self._time >= self._refractory_until[cls]:
+            self._pending_since[cls] = self._time
+        return []
 
 
 @functools.lru_cache(maxsize=2)
