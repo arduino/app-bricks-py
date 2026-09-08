@@ -1,7 +1,7 @@
 {
   "SPDXID": "SPDXRef-DOCUMENT",
   "creationInfo": {
-    "created": "2026-09-02T07:51:50Z",
+    "created": "2026-09-08T06:58:59Z",
     "creators": [
       "Organization: Anchore, Inc",
       "Tool: syft-1.51.1"
@@ -9,7 +9,7 @@
     "licenseListVersion": "3.28"
   },
   "dataLicense": "CC0-1.0",
-  "documentNamespace": "https://anchore.com/syft/image/ghcr.io/arduino/app-bricks/llamacpp-runner-2c39c77d-9519-48d4-97a8-e5f4da4271f2",
+  "documentNamespace": "https://anchore.com/syft/image/ghcr.io/arduino/app-bricks/llamacpp-runner-ced73e92-9744-4265-9354-fe3c90e47497",
   "files": [
     {
       "SPDXID": "SPDXRef-File-etc-adduser.conf-9053d9efa7e672fd",
@@ -21664,7 +21664,7 @@
       "checksums": [
         {
           "algorithm": "SHA256",
-          "checksumValue": "1f5c5a6a62e11d116adfefb7d499e20599ea522a0191e43cda121dcc8aa90bb7"
+          "checksumValue": "ae5d439c514945278feac4a50de06da339b2d1ee381d7d5669993ae8505e45e1"
         }
       ],
       "copyrightText": "NOASSERTION",
@@ -21672,7 +21672,7 @@
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:oci/ghcr.io%2Farduino%2Fapp-bricks%2Fllamacpp-runner@sha256%3A1f5c5a6a62e11d116adfefb7d499e20599ea522a0191e43cda121dcc8aa90bb7?arch=arm64&tag=0.13.0rc1",
+          "referenceLocator": "pkg:oci/ghcr.io%2Farduino%2Fapp-bricks%2Fllamacpp-runner@sha256%3Aae5d439c514945278feac4a50de06da339b2d1ee381d7d5669993ae8505e45e1?arch=arm64&tag=0.13.0rc2",
           "referenceType": "purl"
         }
       ],
@@ -21682,7 +21682,7 @@
       "name": "ghcr.io/arduino/app-bricks/llamacpp-runner",
       "primaryPackagePurpose": "CONTAINER",
       "supplier": "NOASSERTION",
-      "versionInfo": "0.13.0rc1"
+      "versionInfo": "0.13.0rc2"
     }
   ],
   "relationships": [
