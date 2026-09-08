@@ -1,7 +1,7 @@
 {
   "SPDXID": "SPDXRef-DOCUMENT",
   "creationInfo": {
-    "created": "2026-09-02T07:52:05Z",
+    "created": "2026-09-08T06:58:59Z",
     "creators": [
       "Organization: Anchore, Inc",
       "Tool: syft-1.51.1"
@@ -9,7 +9,7 @@
     "licenseListVersion": "3.28"
   },
   "dataLicense": "CC0-1.0",
-  "documentNamespace": "https://anchore.com/syft/image/ghcr.io/arduino/app-bricks/qairt-common-base-bca61ee2-7c18-4f72-b7d0-6cdfde94e679",
+  "documentNamespace": "https://anchore.com/syft/image/ghcr.io/arduino/app-bricks/qairt-common-base-02389d2f-e428-45cf-8554-a319b183d1e3",
   "files": [
     {
       "SPDXID": "SPDXRef-File-etc-adduser.conf-9053d9efa7e672fd",
@@ -27477,7 +27477,7 @@
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:oci/ghcr.io%2Farduino%2Fapp-bricks%2Fqairt-common-base@sha256%3Ad88796557b059ee14c02f912c2c00da281b5023bd6a31611f382fd1fbc5c291d?arch=arm64&tag=0.13.0rc1",
+          "referenceLocator": "pkg:oci/ghcr.io%2Farduino%2Fapp-bricks%2Fqairt-common-base@sha256%3Ad88796557b059ee14c02f912c2c00da281b5023bd6a31611f382fd1fbc5c291d?arch=arm64&tag=0.13.0rc2",
           "referenceType": "purl"
         }
       ],
@@ -27487,7 +27487,7 @@
       "name": "ghcr.io/arduino/app-bricks/qairt-common-base",
       "primaryPackagePurpose": "CONTAINER",
       "supplier": "NOASSERTION",
-      "versionInfo": "0.13.0rc1"
+      "versionInfo": "0.13.0rc2"
     }
   ],
   "relationships": [
