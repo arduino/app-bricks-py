@@ -1,7 +1,7 @@
 {
   "SPDXID": "SPDXRef-DOCUMENT",
   "creationInfo": {
-    "created": "2026-09-02T07:50:51Z",
+    "created": "2026-09-08T06:58:02Z",
     "creators": [
       "Organization: Anchore, Inc",
       "Tool: syft-1.51.1"
@@ -9,7 +9,7 @@
     "licenseListVersion": "3.28"
   },
   "dataLicense": "CC0-1.0",
-  "documentNamespace": "https://anchore.com/syft/image/ghcr.io/arduino/app-bricks/ei-models-runner-572d9e27-4204-4599-9cd3-40b810e3a646",
+  "documentNamespace": "https://anchore.com/syft/image/ghcr.io/arduino/app-bricks/ei-models-runner-60cff30e-b94c-4e20-9c3b-6a885e8a6cd7",
   "files": [
     {
       "SPDXID": "SPDXRef-File-...-aws-crypto-crc32-package.json-772f2f9f2384e320",
@@ -21203,14 +21203,14 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...concrete-crack-anomaly-detection.eim-21ca570ed8027966",
+      "SPDXID": "SPDXRef-File-...concrete-crack-anomaly-detection.eim-eaf4f45468aac9da",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:a17007a6aa6500783933751fb05f380f967f3e5299697d0b798bd7d90c1f4ed6",
+      "comment": "layerID: sha256:db93690d6ce332f34f7e8a2b079f1b33ba4a3c44da46034b0a193878dd211fd2",
       "copyrightText": "NOASSERTION",
       "fileName": "models/ootb/ei/concrete-crack-anomaly-detection.eim",
       "licenseConcluded": "NOASSERTION",
@@ -21219,14 +21219,30 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...ootb-ei-fan-anomaly-detection.eim-56c23d116c6a22fb",
+      "SPDXID": "SPDXRef-File-models-ootb-ei-desk-items-detector.eim-345f630de6c30e22",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:a17007a6aa6500783933751fb05f380f967f3e5299697d0b798bd7d90c1f4ed6",
+      "comment": "layerID: sha256:db93690d6ce332f34f7e8a2b079f1b33ba4a3c44da46034b0a193878dd211fd2",
+      "copyrightText": "NOASSERTION",
+      "fileName": "models/ootb/ei/desk-items-detector.eim",
+      "licenseConcluded": "NOASSERTION",
+      "licenseInfoInFiles": [
+        "NOASSERTION"
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-File-...ootb-ei-fan-anomaly-detection.eim-4e15a94af1edf957",
+      "checksums": [
+        {
+          "algorithm": "SHA1",
+          "checksumValue": "0000000000000000000000000000000000000000"
+        }
+      ],
+      "comment": "layerID: sha256:db93690d6ce332f34f7e8a2b079f1b33ba4a3c44da46034b0a193878dd211fd2",
       "copyrightText": "NOASSERTION",
       "fileName": "models/ootb/ei/fan-anomaly-detection.eim",
       "licenseConcluded": "NOASSERTION",
@@ -21235,14 +21251,14 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-models-ootb-ei-glass-breaking.eim-8da8e030cf820be1",
+      "SPDXID": "SPDXRef-File-models-ootb-ei-glass-breaking.eim-86dca919557bba01",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:a17007a6aa6500783933751fb05f380f967f3e5299697d0b798bd7d90c1f4ed6",
+      "comment": "layerID: sha256:db93690d6ce332f34f7e8a2b079f1b33ba4a3c44da46034b0a193878dd211fd2",
       "copyrightText": "NOASSERTION",
       "fileName": "models/ootb/ei/glass-breaking.eim",
       "licenseConcluded": "NOASSERTION",
@@ -21251,14 +21267,14 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-models-ootb-ei-hand-gestures.eim-4bcb6fbc38ed0161",
+      "SPDXID": "SPDXRef-File-models-ootb-ei-hand-gestures.eim-4ccd94cf1e846b69",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:a17007a6aa6500783933751fb05f380f967f3e5299697d0b798bd7d90c1f4ed6",
+      "comment": "layerID: sha256:db93690d6ce332f34f7e8a2b079f1b33ba4a3c44da46034b0a193878dd211fd2",
       "copyrightText": "NOASSERTION",
       "fileName": "models/ootb/ei/hand-gestures.eim",
       "licenseConcluded": "NOASSERTION",
@@ -21267,14 +21283,14 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...ei-keyword-spotting-hey-arduino.eim-3b0eec429e69c134",
+      "SPDXID": "SPDXRef-File-...ei-keyword-spotting-hey-arduino.eim-6079713b9087fa30",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:a17007a6aa6500783933751fb05f380f967f3e5299697d0b798bd7d90c1f4ed6",
+      "comment": "layerID: sha256:db93690d6ce332f34f7e8a2b079f1b33ba4a3c44da46034b0a193878dd211fd2",
       "copyrightText": "NOASSERTION",
       "fileName": "models/ootb/ei/keyword-spotting-hey-arduino.eim",
       "licenseConcluded": "NOASSERTION",
@@ -21283,14 +21299,14 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-models-ootb-ei-lw-face-det.eim-c15357d4292e5f73",
+      "SPDXID": "SPDXRef-File-models-ootb-ei-lw-face-det.eim-cdb7a185132b9acf",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:a17007a6aa6500783933751fb05f380f967f3e5299697d0b798bd7d90c1f4ed6",
+      "comment": "layerID: sha256:db93690d6ce332f34f7e8a2b079f1b33ba4a3c44da46034b0a193878dd211fd2",
       "copyrightText": "NOASSERTION",
       "fileName": "models/ootb/ei/lw-face-det.eim",
       "licenseConcluded": "NOASSERTION",
@@ -21299,14 +21315,14 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-models-ootb-ei-mobilenet-v2-224px.eim-a4275a9600c3c8ad",
+      "SPDXID": "SPDXRef-File-models-ootb-ei-mobilenet-v2-224px.eim-9e03c5741c79eb61",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:a17007a6aa6500783933751fb05f380f967f3e5299697d0b798bd7d90c1f4ed6",
+      "comment": "layerID: sha256:db93690d6ce332f34f7e8a2b079f1b33ba4a3c44da46034b0a193878dd211fd2",
       "copyrightText": "NOASSERTION",
       "fileName": "models/ootb/ei/mobilenet-v2-224px.eim",
       "licenseConcluded": "NOASSERTION",
@@ -21315,14 +21331,14 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...ootb-ei-person-classification.eim-7fb7375bff05bfe4",
+      "SPDXID": "SPDXRef-File-...ootb-ei-person-classification.eim-3e1c432353bf2e48",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:a17007a6aa6500783933751fb05f380f967f3e5299697d0b798bd7d90c1f4ed6",
+      "comment": "layerID: sha256:db93690d6ce332f34f7e8a2b079f1b33ba4a3c44da46034b0a193878dd211fd2",
       "copyrightText": "NOASSERTION",
       "fileName": "models/ootb/ei/person-classification.eim",
       "licenseConcluded": "NOASSERTION",
@@ -21331,14 +21347,14 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-...ei-updown-wave-motion-detection.eim-10ba66fc81b135fc",
+      "SPDXID": "SPDXRef-File-...ei-updown-wave-motion-detection.eim-548e64c78465315c",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:a17007a6aa6500783933751fb05f380f967f3e5299697d0b798bd7d90c1f4ed6",
+      "comment": "layerID: sha256:db93690d6ce332f34f7e8a2b079f1b33ba4a3c44da46034b0a193878dd211fd2",
       "copyrightText": "NOASSERTION",
       "fileName": "models/ootb/ei/updown-wave-motion-detection.eim",
       "licenseConcluded": "NOASSERTION",
@@ -21347,14 +21363,14 @@
       ]
     },
     {
-      "SPDXID": "SPDXRef-File-models-ootb-ei-yolo-x-nano.eim-d15f0869574932d5",
+      "SPDXID": "SPDXRef-File-models-ootb-ei-yolo-x-nano.eim-4ba0c2112e0292d1",
       "checksums": [
         {
           "algorithm": "SHA1",
           "checksumValue": "0000000000000000000000000000000000000000"
         }
       ],
-      "comment": "layerID: sha256:a17007a6aa6500783933751fb05f380f967f3e5299697d0b798bd7d90c1f4ed6",
+      "comment": "layerID: sha256:db93690d6ce332f34f7e8a2b079f1b33ba4a3c44da46034b0a193878dd211fd2",
       "copyrightText": "NOASSERTION",
       "fileName": "models/ootb/ei/yolo-x-nano.eim",
       "licenseConcluded": "NOASSERTION",
@@ -333041,7 +333057,7 @@
       "checksums": [
         {
           "algorithm": "SHA256",
-          "checksumValue": "0429dbed2bfa67c763996197d9e4b01e1c91c49d64d38b99fe771ef1fbd64491"
+          "checksumValue": "758fe84467cb717742d1123b6b1550e4a8caeab9e85d29e6c8dd16bfadaae1f6"
         }
       ],
       "copyrightText": "NOASSERTION",
@@ -333049,7 +333065,7 @@
       "externalRefs": [
         {
           "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:oci/ghcr.io%2Farduino%2Fapp-bricks%2Fei-models-runner@sha256%3A0429dbed2bfa67c763996197d9e4b01e1c91c49d64d38b99fe771ef1fbd64491?arch=arm64&tag=0.13.0rc1",
+          "referenceLocator": "pkg:oci/ghcr.io%2Farduino%2Fapp-bricks%2Fei-models-runner@sha256%3A758fe84467cb717742d1123b6b1550e4a8caeab9e85d29e6c8dd16bfadaae1f6?arch=arm64&tag=0.13.0rc2",
           "referenceType": "purl"
         }
       ],
@@ -333059,7 +333075,7 @@
       "name": "ghcr.io/arduino/app-bricks/ei-models-runner",
       "primaryPackagePurpose": "CONTAINER",
       "supplier": "NOASSERTION",
-      "versionInfo": "0.13.0rc1"
+      "versionInfo": "0.13.0rc2"
     }
   ],
   "relationships": [
