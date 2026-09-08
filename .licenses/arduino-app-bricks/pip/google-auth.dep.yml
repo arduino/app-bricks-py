@@ -1,9 +1,9 @@
 ---
 name: google-auth
-version: 2.51.0
+version: 2.57.1
 type: pip
 summary: Google Authentication Library
-homepage: https://github.com/googleapis/google-auth-library-python
+homepage: https://github.com/googleapis/google-cloud-python/tree/main/packages/google-auth
 license: apache-2.0
 licenses:
 - sources: LICENSE

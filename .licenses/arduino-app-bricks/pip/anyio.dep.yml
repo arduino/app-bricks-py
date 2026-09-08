@@ -1,6 +1,6 @@
 ---
 name: anyio
-version: 4.13.0
+version: 4.15.1
 type: pip
 summary: High-level concurrency and networking framework on top of asyncio or Trio
 homepage: ''

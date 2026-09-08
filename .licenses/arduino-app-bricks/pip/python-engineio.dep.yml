@@ -1,9 +1,9 @@
 ---
 name: python-engineio
-version: 4.13.1
+version: 4.14.0
 type: pip
 summary: Engine.IO server and client for Python
-homepage: https://github.com/miguelgrinberg/python-engineio
+homepage: https://code.miguelgrinberg.com/miguelgrinberg/python-engineio
 license: mit
 licenses:
 - sources: LICENSE

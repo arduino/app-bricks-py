@@ -1,6 +1,6 @@
 ---
 name: annotated-types
-version: 0.7.0
+version: 0.8.0
 type: pip
 summary: Reusable constraint types to use with typing.Annotated
 homepage: https://github.com/annotated-types/annotated-types

@@ -1,6 +1,6 @@
 ---
 name: jiter
-version: 0.14.0
+version: 0.16.0
 type: pip
 summary: Fast iterable JSON parser.
 homepage: https://github.com/pydantic/jiter/

@@ -1,6 +1,6 @@
 ---
 name: google-genai
-version: 1.75.0
+version: 2.22.0
 type: pip
 summary: GenAI Python SDK
 homepage: https://github.com/googleapis/python-genai

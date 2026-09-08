@@ -1,6 +1,6 @@
 ---
 name: pyasn1
-version: 0.6.3
+version: 0.6.4
 type: pip
 summary: Pure-Python implementation of ASN.1 types and DER/BER/CER codecs (X.208)
 homepage: https://github.com/pyasn1/pyasn1

@@ -1,6 +1,6 @@
 ---
 name: annotated-doc
-version: 0.0.4
+version: 0.0.5
 type: pip
 summary: Document parameters, class attributes, return types, and variables inline,
   with Annotated.

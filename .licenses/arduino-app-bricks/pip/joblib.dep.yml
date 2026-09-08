@@ -1,6 +1,6 @@
 ---
 name: joblib
-version: 1.5.3
+version: 1.6.0
 type: pip
 summary: Lightweight pipelining with Python functions
 homepage: https://joblib.readthedocs.io
