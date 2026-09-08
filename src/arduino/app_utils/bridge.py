@@ -67,13 +67,16 @@ class Bridge:
         Args:
             method_name (str): The name of the method to call on the microcontroller.
             *params: The parameters to pass to the method.
-            timeout (float, optional): The maximum time to wait for a response in seconds. If None, waits indefinitely. Defaults to 10s.
+            timeout (float, optional): The maximum time to wait for a response in seconds. If None, waits
+                indefinitely. Defaults to 10s.
 
         Raises:
-            ValueError: If the method does not exist or the call fails.
+            ValueError: If the peer answers with an error, e.g. the method does not exist. The exception is an
+                `arduino.router_bridge.RpcError` carrying the peer's error `code` and `message`.
             TimeoutError: If the call takes more time than the specified timeout.
             ConnectionError: If the connection drops while waiting for the response.
-            RuntimeError: If invoked from a provided handler (nested calls are not supported), or if the call fails unexpectedly.
+            RuntimeError: If invoked from a provided handler (nested calls are not supported), or if the call
+                fails unexpectedly.
 
         Examples:
             temperature = Bridge.call("get_temperature", "sensor1")
@@ -87,16 +90,18 @@ class Bridge:
         The handler should be a callable that can take arguments.
 
         The handler is registered with the router as soon as a connection is available
-        and re-registered transparently on every reconnection. Handlers run sequentially
-        on a dedicated thread: they may send notifications, but must not call back into
-        the bridge with `call` (nested calls are rejected with a RuntimeError).
+        and re-registered transparently on every reconnection. A method name belongs to one
+        client: providing one that another client already provides is a programming error.
+        Handlers run sequentially on a dedicated thread: they may send notifications, but must
+        not call back into the bridge with `call`, `provide` or `unprovide` (rejected with a RuntimeError).
 
         Args:
             method_name (str): The name under which the function should be provided to the microcontroller.
             handler (callable): The function to call when the microcontroller requires it.
 
         Raises:
-            ValueError: If handler is not callable.
+            ValueError: If handler is not callable, or another client already provides the method.
+            RuntimeError: If invoked from a provided handler.
 
         Examples:
             def get_country(lon: str, lat: str) -> str:
@@ -174,14 +179,17 @@ def call(method_name: str | None = None, timeout: float | None = 10) -> Callable
 
     Args:
         method_name (str, optional): The name of the RPC method to call. Defaults to the decorated function's name.
-        timeout (float, optional): The maximum time to wait for a response in seconds. If None, waits indefinitely. Defaults to 10s.
+        timeout (float, optional): The maximum time to wait for a response in seconds. If None, waits
+            indefinitely. Defaults to 10s.
 
     Raises:
         TypeError: If the decorated function is called with unexpected keyword arguments.
-        ValueError: If the method does not exist or the call fails.
+        ValueError: If the peer answers with an error, e.g. the method does not exist. The exception is an
+            `arduino.router_bridge.RpcError` carrying the peer's error `code` and `message`.
         TimeoutError: If the call takes more time than the specified timeout.
         ConnectionError: If the connection drops while waiting for the response.
-        RuntimeError: If invoked from a provided handler (nested calls are not supported), or if the call fails unexpectedly.
+        RuntimeError: If invoked from a provided handler (nested calls are not supported), or if the call fails
+            unexpectedly.
 
     Examples:
         @call()
@@ -221,12 +229,17 @@ def provide(method_name: str | None = None) -> Callable[[Callable[..., object]],
 
     The decorated function is automatically registered using its own name as method name,
     unless `method_name` is provided. The registration with the router happens as soon as
-    a connection is available and is renewed transparently on every reconnection.
-    The decorated function runs on a dedicated thread: it may send notifications, but must
-    not call back into the bridge with `call` (nested calls are rejected with a RuntimeError).
+    a connection is available and is renewed transparently on every reconnection. A method
+    name belongs to one client: providing one that another client already provides is a
+    programming error. The decorated function runs on a dedicated thread: it may send
+    notifications, but must not call back into the bridge with `call`, `provide` or `unprovide`
+    (rejected with a RuntimeError).
 
     Args:
         method_name (str, optional): The name under which the function should be registered.
+
+    Raises:
+        ValueError: If another client already provides the method.
 
     Examples:
         @provide()
