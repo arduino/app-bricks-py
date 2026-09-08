@@ -41,7 +41,7 @@ class TestBridgeExports(unittest.TestCase):
         self.assertFalse(lib_logger.propagate)
 
     def test_app_socket_env_is_applied_to_bridge(self):
-        """An app importing arduino.app_utils connects to the router address set via APP_SOCKET."""
+        """An app using the bridge connects to the router address set via APP_SOCKET."""
         with tempfile.TemporaryDirectory() as tmpdir:
             socket_path = os.path.join(tmpdir, "router.sock")
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as server:
@@ -49,7 +49,7 @@ class TestBridgeExports(unittest.TestCase):
                 server.listen(1)
                 server.settimeout(30)
 
-                code = "import arduino.app_utils; import time; time.sleep(30)"  # Stay alive while the bridge connects in the background
+                code = "from arduino.app_utils import Bridge; Bridge.notify('ping')"  # First use connects
                 app = subprocess.Popen([sys.executable, "-c", code], env={**os.environ, "APP_SOCKET": f"unix://{socket_path}"})
                 try:
                     connection, _ = server.accept()  # Times out and fails if the app connects elsewhere
