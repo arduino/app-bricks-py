@@ -28,10 +28,10 @@ Runner note: the model runner performs an internal person-tracking crop before i
 
 ## Teaching your own poses
 
-A custom pose is a folder of photos named like the pose (built-in pose names are not allowed) under `custom_poses_dir`, `/app/poses` by default:
+A custom pose is a folder of photos named like the pose (built-in pose names are not allowed) inside the `poses` folder at the root of your app. The running app sees that folder as `/app/poses`, the default `custom_poses_dir`:
 
 ```
-/app/poses/
+poses/                           # in your app's root folder; /app/poses for the running app
   hands_on_hips/                 # the pose: IMG_0001.jpg, IMG_0002.jpg, ... (jpg or png, one person, whole body in the frame)
     report_<date>_<time>.txt     # written by the brick at every start that changes something
   other/                         # optional: photos of what is NOT any of your poses
@@ -47,9 +47,11 @@ pose_estimation = PoseEstimation(camera, poses=["standing", "hands_on_hips", {"n
 pose_estimation.on_pose("hands_on_hips", on_hands_on_hips)
 ```
 
+A custom pose is used only when declared in `poses`: with `poses=None` the brick listens to the four built-in poses and ignores the folders.
+
 `type` is "state" (a held pose, the default) or "action" (a movement with a start and an end: one enter/exit pair per occurrence); `duration` is the typical length of one occurrence, in seconds, and can be specified only for actions; `thresholds` ({"enter", "exit"}) and `smoothing` (seconds) override the values the brick derives from the photos.
 
-At `start()` the brick reads the photos through the model runner (about 0.2 s per photo the first time; the photos already read are not read again thanks to `.cache/`), composes its classifier, measures whether each pose forms and writes a report in the log and in the pose folder. A pose that is not accepted stops `start()` with a `ValueError` carrying its verdict and next step; the app framework logs "Failed to start brick" and the brick stays stopped. The report, line by line:
+At `start()` the brick reads the photos through the model runner (a few fractions of a second per photo the first time, instant afterwards for the already computed ones thanks to `.cache/`), composes its classifier, measures whether each pose forms and writes a report in the log and in the pose folder. A pose that is not accepted stops `start()` with a `ValueError` carrying its verdict and next step; the app framework logs "Failed to start brick" and the brick stays stopped. The report, line by line:
 
 - `photos: <found> found, <usable> usable, <discarded> discarded`, then one line per discarded photo with the reason (no person detected, person partly out of frame, skeleton incomplete, not an image).
 - `groups: <n>`: how many distinct takes the photos amount to (photos closer than 1.0 to each other are one group); at least 5 are needed.
@@ -59,6 +61,6 @@ At `start()` the brick reads the photos through the model runner (about 0.2 s pe
 - `operating point`: the enter and exit thresholds derived from the photos (and from `other/` when present), and the smoothing.
 - `confusion`: on what share of each active pose's photos every pose fires; above 15% the report warns that the two poses fire together, and it warns when a custom pose has more than 3 times the photos of another active pose.
 
-What to expect: a compact held pose forms with a few dozen photos; a broad pose needs hundreds, and the report says how many. A variant of a built-in pose (a hand at the ear against `right_arm_raised`) is the hardest to teach: it competes with hundreds of shipped examples. The photos teach the pose the way the people in them hold it: a different person lands farther from the examples and fires less often. If the app is for other people too, put several people in the photos, or lower `enter` in `thresholds` and accept a few more false fires.
+What to expect: a compact held pose forms with a few dozen photos; a broad pose needs hundreds, and the report says how many. A variant of a built-in pose is the hardest to teach: it competes with hundreds of shipped examples. Recognizing people other than the ones in the photos takes photos of several people, or a lower `enter` and accept a few more false fires.
 
 Actions: film a few repetitions from a fixed point, put the frames of the movement in the pose folder and the frames between one repetition and the next in `other/` (they are what keeps the pose from firing while you wait). A movement like a tennis stroke forms from the frames of a handful of repetitions.
