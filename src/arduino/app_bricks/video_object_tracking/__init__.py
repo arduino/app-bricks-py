@@ -41,11 +41,11 @@ class VideoObjectTracking(VideoObjectDetection):
         labels_to_track: list[str] | None = None,
         min_movement_threshold: int = 10,
     ) -> None:
-        """Initialize the VideoObjectDetection class.
+        """Initialize the VideoObjectTracking class.
 
         Args:
             camera (BaseCamera): The camera instance to use for capturing video. If None, a default camera will be initialized.
-            confidence (float): Confidence level for detection. Default is 0.3 (30%).
+            confidence (float): Confidence level for detection. Default is 0.4 (40%).
             debounce_sec (float): Minimum seconds between repeated detections of the same object. Default is 0 seconds.
             keep_grace (int): Number of frames to keep an object if it disappears. Default is 3.
             max_observations (int): Maximum number of observations to consider. Default is 3
