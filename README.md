@@ -159,6 +159,8 @@ task check:examples-alignment:coverage
 
 See `scripts/check_examples_alignment.py --help` for the full options (custom paths, JSON output, PR base/head diff — the mode used by the `check-examples-alignment.yml` workflow).
 
+On pull requests the workflow fails when the change introduces new errors in the published examples: either adapt the change to keep the examples' contract, or open the matching PR on app-bricks-examples and coordinate the merge. Pre-existing errors are reported in the job summary but tolerated.
+
 ## Release
 
 Release is based on tags pushed to `main`. A single workflow (`docker-publish.yml`) handles all container

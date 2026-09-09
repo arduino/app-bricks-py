@@ -1,9 +1,10 @@
 name: Check examples alignment
 
-# Informative, non-blocking check: pyright analyzes the app-bricks-examples
-# Python code twice, resolving the library from the PR base and head sources,
-# and the diff of the two runs is reported in the job summary. New errors mean
-# this PR changes the API contract the published examples rely on.
+# Pyright analyzes the app-bricks-examples Python code twice, resolving the
+# library from the PR base and head sources, and the diff of the two runs is
+# reported in the job summary. New errors mean this PR changes the API contract
+# the published examples rely on: they fail the job (pre-existing errors are
+# reported but tolerated). The bricks coverage report stays informative.
 
 on:
   pull_request:

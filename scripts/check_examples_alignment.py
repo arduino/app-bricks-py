@@ -12,7 +12,8 @@ from a source checkout (no wheel build needed). Three modes:
   run       Run pyright over the examples trees against a library source path
             and save the diagnostics as JSON.
   diff      Compare two run outputs (base vs head of a PR) and report new/fixed
-            errors. Always exits 0: the check is informative, not blocking.
+            errors. Exits 1 when the head introduces new errors: the PR changes
+            the API contract the published examples rely on.
   coverage  Report the library bricks that have no examples, highlighting the
             ones introduced by the PR. Informative by design: a new brick may
             legitimately land before its examples do.
@@ -193,6 +194,12 @@ def cmd_diff(args) -> int:
         lines += ["", "<details>", f"<summary>Full report: {sum(head_counts.values())} errors against head</summary>", ""]
         lines += error_table(head_counts, head_occurrences)
         lines += ["", "</details>"]
+    if new:
+        lines += [
+            "",
+            "❌ This PR introduces errors in the published examples: either adapt the library change to keep the "
+            "examples' contract, or open the matching PR on app-bricks-examples and coordinate the merge.",
+        ]
     if args.reports_url:
         lines += ["", f"📥 [Download full pyright JSON report]({args.reports_url})"]
     # Horizontal rule separating this section from the coverage one, appended
@@ -207,10 +214,10 @@ def cmd_diff(args) -> int:
             f.write(report + "\n")
     for key in sorted(new):
         file, rule, message = key
-        print(f"::warning::examples alignment: {file}:{head_occurrences[key][0]} [{rule}] {message}")
+        print(f"::error::examples alignment: {file}:{head_occurrences[key][0]} [{rule}] {message}")
 
-    # Informative check by design: new errors are reported, never blocking.
-    return 0
+    # New errors fail the check; pre-existing ones are reported but tolerated.
+    return 1 if new else 0
 
 
 DISABLED_RE = re.compile(r"^disabled:\s*true\s*$", re.MULTILINE)
