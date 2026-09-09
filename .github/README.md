@@ -41,7 +41,7 @@ decides this — only the folder does.
 
 | Tag pattern | Containers | Extra behaviour |
 |---|---|---|
-| `bricks/X.Y.Z` | everything in `containers/bricks/` | Builds and uploads `.whl` to GitHub Release (displayed as `X.Y.Z`) |
+| `bricks/X.Y.Z` | everything in `containers/bricks/` | Builds and uploads `.whl` and `sboms.zip` to GitHub Release (displayed as `X.Y.Z`) |
 | `ai/X.Y.Z` | everything in `containers/ai/` | Auto-creates a PR to update compose file references |
 
 Containers flagged `base_image` are excluded from the seed set, so tagging the `base` group builds
@@ -112,6 +112,25 @@ There is no `tag_prefix` field: the container's directory decides which tag rele
 | `build_args` | object | Docker build args passed to the Dockerfile (key/value pairs) |
 | `sbom.runtime_base` | string | Image the delta SBOM is computed against — must match the Dockerfile's `FROM` |
 | `downstream` | string[] | Containers that depend on this one — rebuilt automatically after this container is built |
+
+## SBOMs
+
+`sboms.zip`, attached to every `bricks/*` GitHub Release, is generated from the published images, so
+nothing SBOM-related lives in the tree. `scripts/distributed_images.py` lists what a release
+distributes: the released group's build set at the new version, and every other group's build set at
+the version its containers are pinned to in the `src/**/{brick,service}_compose*.yaml` files (all
+references to a group must agree). `scripts/sbom_delta.py` scans one `name:version` with Syft against
+its `sbom.runtime_base` and writes `<name>-<version>/{base,full,delta}.spdx.json`.
+
+Scanning is spread over `_sbom-wave.yml` jobs, one matrix leg per image: `sbom-l<n>` starts as soon as
+`build-l<n>` is pushed and overlaps with the next wave's build, `sbom-pinned` starts right away since
+those images already exist. Each leg uploads a `sbom-delta-<name>-<version>` artifact; a failed scan is
+a warning, never a failure. `upload-release` collects the artifacts, checks them against the full
+distributed list, writes any gap to `MISSING.txt` inside the archive and to the job summary, and
+attaches the zip.
+
+The dev workflow runs the same scan per built image through `.github/actions/sbom-delta` and uploads
+it as a `sbom-delta-<name>-<tag>` run artifact.
 
 ## Skip-Rebuild Logic
 
