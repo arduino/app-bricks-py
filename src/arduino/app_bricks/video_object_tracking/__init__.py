@@ -6,6 +6,7 @@
 from arduino.app_utils import brick, Logger, LRUDict
 from arduino.app_bricks.video_objectdetection import AllDetectionsCallback, DetectionCallback, VideoObjectDetection
 from arduino.app_internal.core import EdgeImpulseRunnerFacade
+from arduino.app_peripherals.camera import BaseCamera
 from websockets.sync.client import connect
 from websockets.sync.connection import Connection
 from websockets.exceptions import ConnectionClosedOK, ConnectionClosedError
@@ -30,6 +31,7 @@ class VideoObjectTracking(VideoObjectDetection):
 
     def __init__(
         self,
+        camera: BaseCamera | None = None,
         confidence: float = 0.4,
         keep_grace: int = 3,
         max_observations: int = 3,
@@ -42,6 +44,7 @@ class VideoObjectTracking(VideoObjectDetection):
         """Initialize the VideoObjectDetection class.
 
         Args:
+            camera (BaseCamera): The camera instance to use for capturing video. If None, a default camera will be initialized.
             confidence (float): Confidence level for detection. Default is 0.3 (30%).
             debounce_sec (float): Minimum seconds between repeated detections of the same object. Default is 0 seconds.
             keep_grace (int): Number of frames to keep an object if it disappears. Default is 3.
@@ -55,7 +58,7 @@ class VideoObjectTracking(VideoObjectDetection):
         Raises:
             RuntimeError: If the host address could not be resolved.
         """
-        super().__init__(confidence=confidence, debounce_sec=debounce_sec)
+        super().__init__(camera=camera, confidence=confidence, debounce_sec=debounce_sec)
         self._labels_to_track = labels_to_track
         self._max_observations = max_observations
         self._keep_grace = keep_grace
