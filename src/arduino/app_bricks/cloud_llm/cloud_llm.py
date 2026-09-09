@@ -254,12 +254,12 @@ class CloudLLM:
 
         return self
 
-    def _get_message_with_history(self, user_input: str, images: list[str | bytes] = None) -> list[BaseMessage]:
+    def _get_message_with_history(self, user_input: str, images: Sequence[str | bytes] | None = None) -> list[BaseMessage]:
         """Retrieves the current message history for the conversation, including the new user input.
 
         Args:
             user_input (str): The latest input message from the user.
-            images (List[str | bytes]): Optional list of image file paths or raw bytes to include in the prompt.
+            images (Sequence[str | bytes] | None): Optional sequence of image file paths or raw bytes to include in the prompt.
 
         Returns:
             list[BaseMessage]: The list of messages in the conversation history,
@@ -412,7 +412,7 @@ class CloudLLM:
     def chat(
         self,
         message: str,
-        images: list[str | bytes] = None,
+        images: Sequence[str | bytes] | None = None,
         reasoning_effort: Union["ReasoningEffort", str, int, None] = None,
     ) -> str:
         """Sends a message to the AI and blocks until the complete response is received.
@@ -421,7 +421,7 @@ class CloudLLM:
 
         Args:
             message (str): The input text prompt from the user.
-            images (List[str | bytes]): Optional list of image file paths or raw bytes to include in the prompt.
+            images (Sequence[str | bytes] | None): Optional sequence of image file paths or raw bytes to include in the prompt.
             reasoning_effort (ReasoningEffort | str | int | None): Optional control over
                 how much the model reasons before answering. When ``None`` (default) the
                 behavior is unchanged and the base model is used. When provided, the
@@ -455,7 +455,7 @@ class CloudLLM:
     def _chat_invoke(
         self,
         message: str,
-        images: list[str | bytes] = None,
+        images: Sequence[str | bytes] | None = None,
         reasoning_effort: Union["ReasoningEffort", str, int, None] = None,
     ) -> str:
         """Internal method to perform the chat invocation with the model.
@@ -465,7 +465,7 @@ class CloudLLM:
 
         Args:
             message (str): The input text prompt from the user.
-            images (List[str | bytes]): Optional list of image file paths or raw bytes to include in the prompt.
+            images (Sequence[str | bytes] | None): Optional sequence of image file paths or raw bytes to include in the prompt.
             reasoning_effort (ReasoningEffort | str | int | None): Optional effort level or
                 token budget. When ``None`` the base model is used unchanged; otherwise the
                 reasoning-capable client is used and only the final answer text is returned.
@@ -503,7 +503,7 @@ class CloudLLM:
         self._history.add_messages([message])
         return self._content_to_text(message.content)
 
-    def chat_stream(self, message: str, images: list[str | bytes] = None) -> Iterator[str]:
+    def chat_stream(self, message: str, images: Sequence[str | bytes] | None = None) -> Iterator[str]:
         """Sends a message to the AI and yields response tokens as they are generated.
 
         This allows for processing or displaying the response in real-time (streaming).
@@ -517,7 +517,7 @@ class CloudLLM:
 
         Args:
             message (str): The input text prompt from the user.
-            images (List[str | bytes]): Optional list of image file paths or raw bytes to include in the prompt.
+            images (Sequence[str | bytes] | None): Optional sequence of image file paths or raw bytes to include in the prompt.
 
         Yields:
             str: Chunks of text (tokens) from the AI response.
@@ -543,7 +543,7 @@ class CloudLLM:
         self._logger.error(f"Response generation failed: {e}")
         raise RuntimeError(f"Response generation failed: {e}") from e
 
-    def _chat_stream_invoke(self, message: str, images: list[str | bytes] = None) -> Iterator[str]:
+    def _chat_stream_invoke(self, message: str, images: Sequence[str | bytes] | None = None) -> Iterator[str]:
         """Internal method to perform the chat streaming invocation with the model.
 
         This is separated from `chat_stream()` to allow for better error handling and potential reuse
@@ -551,7 +551,7 @@ class CloudLLM:
 
         Args:
             message (str): The input text prompt from the user.
-            images (List[str | bytes]): Optional list of image file paths or raw bytes to include in the prompt.
+            images (Sequence[str | bytes] | None): Optional sequence of image file paths or raw bytes to include in the prompt.
 
         Yields:
             str: Chunks of text (tokens) from the AI response.
@@ -1012,7 +1012,7 @@ class CloudLLM:
     def chat_stream_reasoning(
         self,
         message: str,
-        images: list[str | bytes] = None,
+        images: Sequence[str | bytes] | None = None,
         reasoning_effort: Union["ReasoningEffort", str, int, None] = None,
     ) -> Iterator[ReasoningStreamChunk]:
         """Sends a message and yields both reasoning and answer tokens as they are generated.
@@ -1028,7 +1028,7 @@ class CloudLLM:
 
         Args:
             message (str): The input text prompt from the user.
-            images (List[str | bytes]): Optional list of image file paths or raw bytes to include in the prompt.
+            images (Sequence[str | bytes] | None): Optional sequence of image file paths or raw bytes to include in the prompt.
             reasoning_effort (ReasoningEffort | str | int | None): How much the model
                 reasons. Pass a level ('minimal'/'low'/'medium'/'high') or an integer
                 token budget (`-1` unrestricted, `0` off, `N` tokens); either one is
@@ -1065,7 +1065,7 @@ class CloudLLM:
     def _chat_stream_reasoning_invoke(
         self,
         message: str,
-        images: list[str | bytes] = None,
+        images: Sequence[str | bytes] | None = None,
         reasoning_effort: Union["ReasoningEffort", str, int, None] = None,
     ) -> Iterator[ReasoningStreamChunk]:
         """Internal method to stream reasoning and answer tokens from the model.
@@ -1075,7 +1075,7 @@ class CloudLLM:
 
         Args:
             message (str): The input text prompt from the user.
-            images (List[str | bytes]): Optional list of image file paths or raw bytes to include in the prompt.
+            images (Sequence[str | bytes] | None): Optional sequence of image file paths or raw bytes to include in the prompt.
             reasoning_effort (ReasoningEffort | str | int | None): Effort level or token budget.
 
         Yields:
