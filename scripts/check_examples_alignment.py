@@ -44,6 +44,11 @@ EXAMPLES_ROOTS = ["bricks", "core-and-foundational", "inspirational"]
 DEFAULT_EXAMPLES_DIR = "../app-bricks-examples"
 EXAMPLES_REPO_MD = "[app-bricks-examples](https://github.com/arduino/app-bricks-examples)@main"
 DEFAULT_VENV_PYTHON = ".venv/bin/python"
+# Library dependencies that share the `arduino` namespace with the library
+# itself: when missing from the check interpreter pyright still resolves the
+# namespace from the library sources, silently degrading the missing modules
+# to Unknown and hiding real errors instead of reporting an unresolved import.
+NAMESPACE_DEPENDENCIES = ["arduino.router_bridge"]
 SELF_EXTRA_RE = re.compile(r"^arduino[-_]app[-_]bricks\[(.+)\]$")
 
 
@@ -98,6 +103,16 @@ def cmd_run(args) -> int:
         # Pyright would silently fall back to another environment, skewing the results.
         print(f"python interpreter not found: {python}", file=sys.stderr)
         return 2
+    if python:
+        preflight = subprocess.run([python, "-c", "import " + ", ".join(NAMESPACE_DEPENDENCIES)], capture_output=True, text=True)
+        if preflight.returncode != 0:
+            print(
+                f"the check interpreter {python} cannot import {', '.join(NAMESPACE_DEPENDENCIES)}: "
+                "the library dependencies are out of date in that environment and the analysis would silently miss errors. "
+                'Update it with `pip install -e ".[dev]"` (or `task init`) and retry.',
+                file=sys.stderr,
+            )
+            return 2
     cmd = ["npx", "-y", f"pyright@{args.pyright_version}", "--project", str(examples_dir), "--outputjson"]
     if python:
         cmd += ["--pythonpath", str(Path(python).resolve())]
@@ -283,7 +298,11 @@ def main() -> int:
     run = sub.add_parser("run", help="run pyright over the examples against a library source")
     run.add_argument("--examples-dir", default=DEFAULT_EXAMPLES_DIR)
     run.add_argument("--library-src", default="src")
-    run.add_argument("--python", help=f"python interpreter of the check venv (defaults to {DEFAULT_VENV_PYTHON} when present)")
+    run.add_argument(
+        "--python",
+        help=f"python interpreter of the check venv, which must have the library dependencies installed "
+        f"(defaults to {DEFAULT_VENV_PYTHON} when present)",
+    )
     run.add_argument("--pyright-version", default=PYRIGHT_VERSION)
     run.add_argument("--out", help="write the diagnostics as JSON; when omitted, details are printed instead")
     run.add_argument("--details", action="store_true", help="also print the error and warning diagnostics, grouped by rule")
