@@ -9,7 +9,6 @@ from arduino.app_internal.core import EdgeImpulseRunnerFacade
 from arduino.app_peripherals.camera import BaseCamera
 from websockets.sync.client import connect
 from websockets.sync.connection import Connection
-from websockets.exceptions import ConnectionClosedOK, ConnectionClosedError
 import json
 from collections import Counter
 import threading
@@ -305,50 +304,6 @@ class VideoObjectTracking(VideoObjectDetection):
         """Stop the video object detection process."""
         super().stop()
 
-    def execute(self) -> None:
-        """Connect to the model runner and process messages until `stop` is called.
-
-        Behavior:
-            - Establishes a WebSocket connection to the runner.
-            - Processes incoming messages for detections.
-            - Invokes registered callbacks for detected objects.
-            - Handles clean disconnection when stopping.
-            - Retries on transient WebSocket errors while running.
-
-        Exceptions:
-            ConnectionClosedOK:
-                Propagated to exit cleanly when the server closes the connection.
-            ConnectionClosedError, TimeoutError, ConnectionRefusedError:
-                Logged and retried with a short backoff while running.
-        """
-        while self._is_running.is_set():
-            try:
-                with connect(self._uri) as ws:
-                    while self._is_running.is_set():
-                        try:
-                            message = ws.recv()
-                            if not message:
-                                continue
-                            self._process_message(ws, message)
-                        except ConnectionClosedOK:
-                            raise
-                        except (TimeoutError, ConnectionRefusedError, ConnectionClosedError):
-                            logger.warning(f"Connection lost. Retrying...")
-                            raise
-                        except Exception as e:
-                            logger.exception(f"Failed to process detection: {e}")
-            except ConnectionClosedOK:
-                logger.debug(f"Disconnected cleanly, exiting WebSocket read loop.")
-                return
-            except (TimeoutError, ConnectionRefusedError, ConnectionClosedError):
-                logger.debug(f"Waiting for model runner. Retrying...")
-                import time
-
-                time.sleep(2)
-                continue
-            except Exception as e:
-                logger.exception(f"Failed to establish WebSocket connection to {self._host}: {e}")
-
     def _process_message(self, ws: Connection, message: str) -> None:
         jmsg = json.loads(message)
         if jmsg.get("type") == "hello":
@@ -402,11 +357,11 @@ class VideoObjectTracking(VideoObjectDetection):
                     self._record_object(detected_object_label=detected_object, object_id=object_id, x=box.get("x", 0), y=box.get("y", 0))
 
                     # Check if the class_id matches any registered handlers
-                    super()._execute_handler(detection=detected_object, detection_details=detection_details)
+                    super()._execute_handler(key=detected_object, payload=detection_details)
 
                 if len(detections) > 0:
                     # If there are detections, invoke the all-detection handler
-                    super()._execute_global_handler(detections=detections)
+                    super()._execute_handler(key=self.ALL_HANDLERS_KEY, payload=detections)
 
         else:
             # Leave logging for unknown message types for debugging purposes
