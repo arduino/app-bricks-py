@@ -464,6 +464,14 @@ def discover_containers(containers_dir: Path) -> list[str]:
     return sorted(p.parent.name for p in containers_dir.glob(CI_JSON_GLOB) if p.is_file())
 
 
+def parse_container_spec(spec: str, default_version: str) -> tuple[str, str]:
+    """Split a ``name[:version]`` CLI token, falling back to the default version."""
+    name, _, version = spec.partition(":")
+    if not name:
+        raise SbomDeltaError(f"Invalid container spec '{spec}': expected name[:version].")
+    return name, version or default_version
+
+
 def build_container_image(registry: str, container: str, version: str) -> str:
     """Build the fully qualified image reference for a container."""
     return f"{normalize_registry(registry)}app-bricks/{container}:{version}"
@@ -540,30 +548,33 @@ def run_generate(args: argparse.Namespace) -> int:
     require_command("syft", "Install from: https://github.com/anchore/syft#installation")
 
     containers_dir = REPO_ROOT / "containers"
-    containers = list(args.containers) if args.containers else discover_containers(containers_dir)
-    if not containers:
+    if args.containers:
+        specs = [parse_container_spec(spec, args.version) for spec in args.containers]
+    else:
+        specs = [(name, args.version) for name in discover_containers(containers_dir)]
+    if not specs:
         raise SbomDeltaError(f"No containers found (looked for {CI_JSON_GLOB} under {containers_dir}).")
 
     registry = normalize_registry(args.registry)
+    output_root = Path(args.output_dir)
 
     print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    print(f" SBOM Delta Generator  |  {registry}  v{args.version}  ({PLATFORM})")
+    print(f" SBOM Delta Generator  |  {registry}  ({PLATFORM})  ->  {output_root}")
     print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 
     failed: list[str] = []
-    for container in containers:
+    for container, version in specs:
         try:
-            output_dir = resolve_container_dir(containers_dir, container) / "sbom-delta"
             generate_delta_for_container(
                 containers_dir=containers_dir,
-                output_dir=output_dir,
+                output_dir=output_root / f"{container}-{version}",
                 container=container,
                 registry=registry,
-                version=args.version,
+                version=version,
             )
         except SbomDeltaError as exc:
             print(f"  ERROR: {exc}", file=sys.stderr)
-            failed.append(container)
+            failed.append(f"{container}:{version}")
         print("")
 
     if failed:
@@ -576,9 +587,14 @@ def run_generate(args: argparse.Namespace) -> int:
 def create_parser() -> argparse.ArgumentParser:
     """Create the CLI argument parser."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("containers", nargs="*", help="Container names (default: all with ci.json).")
+    parser.add_argument("containers", nargs="*", help="Containers as name[:version] (default: all with ci.json, at --version).")
     parser.add_argument("--registry", default=os.environ.get("REGISTRY", "ghcr.io/arduino/"), help="Registry prefix.")
-    parser.add_argument("--version", default=os.environ.get("VERSION", "latest"), help="Image tag to scan.")
+    parser.add_argument("--version", default=os.environ.get("VERSION", "latest"), help="Image tag to scan for containers given without a version.")
+    parser.add_argument(
+        "--output-dir",
+        default=str(REPO_ROOT / "sbom-delta"),
+        help="Directory receiving one <name>-<version>/ folder per scanned container (default: ./sbom-delta).",
+    )
     return parser
 
 

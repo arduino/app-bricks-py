@@ -158,6 +158,5 @@ jobs:
         uses: ./.github/actions/sbom-delta
         with:
           container: ${{ matrix.container }}
-          container_dir: ${{ steps.dir.outputs.path }}
           version: ${{ inputs.image_tag }}
           registry: ${{ env.DEV_REGISTRY_PATH }}
