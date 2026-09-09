@@ -134,7 +134,7 @@ tasks:
   license:deps:
     desc: Check and cache dependency licenses (licensed, via Docker)
     cmds:
-      - docker build -f containers/licensed/Dockerfile -t arduino-licensed .
+      - docker build -f scripts/licensed/Dockerfile -t arduino-licensed .
       - docker run --rm -v "$(pwd):/src" arduino-licensed
 
   license:
