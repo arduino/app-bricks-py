@@ -1,0 +1,14 @@
+#!/bin/sh
+
+# SPDX-FileCopyrightText: Copyright (C) Arduino s.r.l. and/or its affiliated companies
+#
+# SPDX-License-Identifier: MPL-2.0
+
+# Usage: licensed-apt <packages...>
+# Installs apt packages without recommends and drops the package lists
+
+set -e
+
+apt-get update
+apt-get install -y --no-install-recommends "$@"
+rm -rf /var/lib/apt/lists/*

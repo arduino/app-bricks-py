@@ -137,6 +137,11 @@ tasks:
       - docker build -f scripts/licensed/Dockerfile -t arduino-licensed .
       - docker run --rm -v "$(pwd):/src" arduino-licensed
 
+  license:deps:clean:
+    desc: Remove the Docker build caches of the licensed image, the image itself is kept
+    cmds:
+      - docker builder prune -f --filter 'description~=licensed'
+
   license:
     desc: Update license headers, files, and dependency license caches
     cmds:
