@@ -39,10 +39,13 @@ jobs:
             DELETE_PATH="/orgs/$OWNER/packages/container/$PKG/versions"
 
             # List all versions and find ones that match our branch tag or its buildcache
-            VERSIONS=$(gh api \
+            if ! VERSIONS=$(gh api \
               "$API_PATH" \
               --paginate \
-              --jq ".[] | select(any(.metadata.container.tags[]; test(\"^${TAG}(-buildcache|-[0-9]+)?$\"))) | .id" 2>/dev/null || true)
+              --jq ".[] | select(any(.metadata.container.tags[]; test(\"^${TAG}(-buildcache|-[0-9]+)?$\"))) | .id" 2>&1); then
+              echo "  Skipping $PKG: $VERSIONS"
+              continue
+            fi
 
             if [[ -z "$VERSIONS" ]]; then
               echo "  No versions found with tag '$TAG' for $PKG"
