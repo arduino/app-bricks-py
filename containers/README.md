@@ -56,7 +56,9 @@ inside this repo.
 |---|---|---|
 | `Dockerfile` | yes | Build recipe. The directory itself is the build context. |
 | `ci.json` | yes | CI metadata: watched paths, build args, dependencies, release flags |
-| `sbom-delta/` | generated | Delta SBOM against the base image, produced at build time and attached to the GitHub Release |
+
+SBOMs are not kept in the tree: they are generated from the published images at release time (see
+[SBOMs](#sboms)) and by the dev workflow as run artifacts.
 
 An image that derives from another container in this repo must declare `ARG REGISTRY` and
 `ARG BASE_IMAGE_VERSION` and use them in its `FROM`, so CI can point it at the freshly built upstream
@@ -73,7 +75,7 @@ The tag prefix is the folder to release:
 | Tag | Releases | Extra |
 |---|---|---|
 | `ai/X.Y.Z` | everything in `containers/ai/` | Opens a PR updating the compose files that reference the runners |
-| `bricks/X.Y.Z` | everything in `containers/bricks/` | Builds the Python `.whl` and attaches it, plus the SBOMs, to the GitHub Release |
+| `bricks/X.Y.Z` | everything in `containers/bricks/` | Builds the Python `.whl` and attaches it, plus the SBOMs of every distributed image, to the GitHub Release |
 
 Pushing the tag runs `docker-publish.yml`, which:
 
@@ -90,6 +92,21 @@ Pushing the tag runs `docker-publish.yml`, which:
    set `tag_latest`.
 
 A tag whose prefix is not an existing folder fails the run with the list of valid groups.
+
+## SBOMs
+
+The `bricks/X.Y.Z` release attaches `sboms.zip` to the GitHub Release, covering **every image we
+distribute**: the containers built by that release at `X.Y.Z`, plus the runners of the other groups at
+the version the compose files under `src/` pin them to, plus the base images of both sets. The set is
+resolved by `scripts/distributed_images.py` from `ci.json` and the compose files, and each image is
+scanned with `scripts/sbom_delta.py` against the base image it was built from (`sbom.runtime_base`).
+Each wave is scanned as soon as it is pushed, while the next wave builds; the pinned images are scanned
+from the start. The archive holds one `<name>-<version>/` folder per image with `base`, `full` and
+`delta` SPDX documents. A failed scan never blocks the release: the image is reported as a warning and
+listed in `MISSING.txt` inside the archive.
+
+Since the compose references are what ties an ai release to the library, release `ai/*` first, merge
+the bot PRs that bump those references, then release `bricks/*`.
 
 > `bricks/*` replaced `release/*` as the library release prefix when the containers were grouped by
 > folder. Older `release/*` tags remain readable by `setuptools_scm` but no longer trigger a release.

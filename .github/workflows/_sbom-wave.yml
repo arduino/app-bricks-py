@@ -1,0 +1,74 @@
+name: (reusable) RELEASE scan one wave of images
+
+# Reusable workflow that generates the delta SBOM of already published images.
+# A failed scan never fails the job, but the image is reported here as a warning
+# and then by upload-release, which lists it in MISSING.txt inside sboms.zip.
+
+on:
+  workflow_call:
+    inputs:
+      images:
+        description: "JSON array of images to scan, as name[:version]"
+        type: string
+        required: true
+      version:
+        description: "Version applied to images without a specified version"
+        type: string
+        required: false
+        default: ""
+
+env:
+  GHCR_REGISTRY: ghcr.io
+  GHCR_DESTINATION_ORG: ghcr.io/${{ github.repository_owner }}
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJson(inputs.images) }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Resolve image
+        id: image
+        env:
+          IMAGE: ${{ matrix.image }}
+          DEFAULT_VERSION: ${{ inputs.version }}
+        run: |
+          NAME="${IMAGE%%:*}"
+          VERSION="${IMAGE#*:}"
+          [[ "$IMAGE" == *:* ]] || VERSION="$DEFAULT_VERSION"
+          if [[ -z "$VERSION" ]]; then
+            echo "::error::No version for image '$IMAGE': pass name:version or the version input"
+            exit 1
+          fi
+          echo "name=$NAME" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Log into registry ${{ env.GHCR_REGISTRY }}
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.GHCR_REGISTRY }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: SBOM Delta
+        id: sbom
+        continue-on-error: true
+        uses: ./.github/actions/sbom-delta
+        with:
+          container: ${{ steps.image.outputs.name }}
+          version: ${{ steps.image.outputs.version }}
+          registry: ${{ env.GHCR_DESTINATION_ORG }}
+
+      - name: Report failed scan
+        if: steps.sbom.outcome == 'failure'
+        run: |
+          echo "::warning title=SBOM generation failed::${{ steps.image.outputs.name }}:${{ steps.image.outputs.version }} could not be scanned and will be missing from sboms.zip"

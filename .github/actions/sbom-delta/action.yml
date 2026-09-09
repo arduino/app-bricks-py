@@ -1,12 +1,9 @@
 name: Generate SBOM Delta
-description: Install Syft, generate delta SBOM for a container, and upload the artifact.
+description: Install Syft, generate the delta SBOM of a published container image and upload it as an artifact.
 
 inputs:
   container:
     description: Container name to scan
-    required: true
-  container_dir:
-    description: Repo-relative directory of the container (e.g. containers/ai/llamacpp-runner)
     required: true
   version:
     description: Image tag or version
@@ -32,14 +29,16 @@ runs:
         CONTAINER: ${{ inputs.container }}
         VERSION: ${{ inputs.version }}
         REGISTRY: ${{ inputs.registry }}
+        OUTPUT_DIR: ${{ runner.temp }}/sbom-delta
       run: |
         task -t Taskfile.dist.yml sbom:delta -- \
-          --version "$VERSION" \
           --registry "$REGISTRY" \
-          "$CONTAINER"
+          --output-dir "$OUTPUT_DIR" \
+          "$CONTAINER:$VERSION"
 
     - name: Upload delta SBOM artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: sbom-delta-${{ inputs.container }}
-        path: ./${{ inputs.container_dir }}/sbom-delta/
+        name: sbom-delta-${{ inputs.container }}-${{ inputs.version }}
+        path: ${{ runner.temp }}/sbom-delta/${{ inputs.container }}-${{ inputs.version }}/
+        if-no-files-found: error

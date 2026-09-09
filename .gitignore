@@ -195,3 +195,4 @@ Taskfile.yml
 
 # Other
 design/
+/sbom-delta/
