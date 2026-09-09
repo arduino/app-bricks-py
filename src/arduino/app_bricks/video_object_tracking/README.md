@@ -88,6 +88,8 @@ Callback signatures:
 - `on_detect(label, callback)`: the callback must be a plain function. With no parameters it is simply invoked; with one parameter it receives the tracking details dict `{"object_id": float, "bounding_box_xyxy": (x1, y1, x2, y2)}`.
 - `on_detect_all(callback)`: the callback receives one dict argument mapping each tracked label to its tracking details: `{label: {"object_id": float, "bounding_box_xyxy": (x1, y1, x2, y2)}, ...}`.
 
+The constructor also accepts a `camera` parameter (`BaseCamera`) to use a specific camera instead of the default one, which is where the capture frame rate and resolution are set. The frame rate bounds how far an object can move between two observations, so it bounds how reliably the tracker keeps an identity.
+
 ## Counting unique objects
 
 `get_unique_objects_count()` returns a `{label: count}` dictionary of how many **distinct** objects have been seen since the last reset. An object is counted once, the first time its ID appears, so a person standing in front of the camera for a minute is counted once and not once per frame.
