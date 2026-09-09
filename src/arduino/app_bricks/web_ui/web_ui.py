@@ -272,12 +272,12 @@ class WebUI:
             self._on_message_cbs[message_type] = callback
         logger.debug(f"Registered listener for message '{message_type}'")
 
-    def send_message(self, message_type: str, message: dict | str, room: str | None = None) -> None:
+    def send_message(self, message_type: str, message: dict | list | str, room: str | None = None) -> None:
         """Send a message to connected WebSocket clients.
 
         Args:
             message_type (str): The name of the message event to emit.
-            message (dict | str): The message payload to send (dict or str).
+            message (dict | list | str): The JSON-serializable message payload to send (dict, list or str).
             room (str): The target Socket.IO room (defaults to all clients).
 
         """
