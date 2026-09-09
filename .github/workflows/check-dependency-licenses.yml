@@ -22,13 +22,13 @@ jobs:
         id: licensed
         run: |
           export PATH="${{ env.TASKFILE_PATH }}:$PATH"
-          task license:deps 2>&1 | tee licensed_status.log || true
+          set -o pipefail
+          task license:deps 2>&1 | tee licensed_status.log || echo "failed=true" >> "$GITHUB_OUTPUT"
 
       - name: Annotate and summarize errors
         if: always()
         run: |
           actual_errors_file=$(mktemp)
-          install_warnings_file=$(mktemp)
           updated_records_raw_file=$(mktemp)
           updated_records_file=$(mktemp)
 
@@ -54,10 +54,6 @@ jobs:
             END { flush() }
           ' output_file="$actual_errors_file" licensed_status.log
 
-          grep '^::warning::Some packages from ' licensed_status.log | \
-            sed -E 's/^::warning::Some packages from (.+) failed to install$/- `\1`/' | \
-            sort -u > "$install_warnings_file" || true
-
           git diff --name-only -- .licenses | \
             grep -E '\.dep\.ya?ml$' | \
             sed -E 's#^\.licenses/##; s#\.dep\.ya?ml$##; s#/#.#g' | \
@@ -76,17 +72,11 @@ jobs:
               BEGIN { RS=""; ORS="\n\n" }
               NF { print "```text\n" $0 "\n```" }
             ' "$actual_errors_file" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ steps.licensed.outputs.failed }}" = "true" ]; then
+            echo "::error::task license:deps failed before reporting the license status, check the step log."
+            echo "❌ The dependency license scan did not complete, check the step log." >> $GITHUB_STEP_SUMMARY
           else
             echo "✅ No blocking dependency license issues found." >> $GITHUB_STEP_SUMMARY
-          fi
-
-          if [ -s "$install_warnings_file" ]; then
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### Errors installing dependencies" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "⚠️ These warnings are non-blocking, but they can make the license scan less complete for the affected environment." >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            cat "$install_warnings_file" >> $GITHUB_STEP_SUMMARY
           fi
 
           if [ -s "$updated_records_file" ]; then
@@ -133,5 +123,9 @@ jobs:
               END { flush() }
             ' "$actual_errors_file"
 
+            exit 1
+          fi
+
+          if [ "${{ steps.licensed.outputs.failed }}" = "true" ]; then
             exit 1
           fi

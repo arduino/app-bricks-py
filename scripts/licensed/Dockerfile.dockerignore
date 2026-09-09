@@ -1,0 +1,13 @@
+# Send only what the licensed Dockerfile copies as build context
+**
+
+!pyproject.toml
+!src/arduino/app_tools/
+!src/arduino/app_tools/**
+src/arduino/app_tools/**/__pycache__
+!containers/base/python-base/requirements-base.txt
+!containers/ai/aihub-models-runner/requirements-base.txt
+!containers/ai/gesture-recognition-runner/requirements.txt
+!containers/ai/pose-estimation-runner/requirements.txt
+!containers/bricks/models-downloader/requirements.txt
+!scripts/licensed/*.sh
