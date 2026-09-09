@@ -195,3 +195,6 @@ Taskfile.yml
 
 # Other
 design/
+# SBOM delta output of scripts/sbom_delta.py
+/sbom-delta/
+containers/*/*/sbom-delta/
