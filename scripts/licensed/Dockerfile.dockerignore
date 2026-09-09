@@ -10,4 +10,9 @@ src/arduino/app_tools/**/__pycache__
 !containers/ai/gesture-recognition-runner/requirements.txt
 !containers/ai/pose-estimation-runner/requirements.txt
 !containers/bricks/models-downloader/requirements.txt
-!scripts/licensed/*.sh
+!containers/ai/ei-qnn-models-runner/requirements.txt
+!containers/ai/llamacpp-runner/requirements.txt
+!containers/ai/llamacpp-npu-runner/requirements.txt
+!scripts/licensed/entrypoint.sh
+!scripts/licensed/bin/
+!scripts/licensed/bin/**
