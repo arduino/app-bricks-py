@@ -23,6 +23,9 @@ host has a single variable to set whatever the model is::
     #    quantization, at the tip of the default branch. model_type is optional, and
     #    so is the quantization — a bare repository defaults to Q4_0, falling back
     #    through IQ4_NL, Q8_0, Q4_K_M and Q4_K_S when the repository has no Q4_0.
+    #    Boards listed in BOARD_QUANTIZATIONS have their own order, which may depend on
+    #    the size the repository name advertises: UnoQ takes Q8_0 first up to 1B
+    #    parameters and Q4_0 first above that, and never falls back to a K quant.
     hf_downloader --model-url [<model_type>:]<repo_id>[:<quantization>[:<mmproj_quantization>]]
 
 The multimodal projector takes either syntax too, in its own variable, whichever form the
@@ -108,6 +111,7 @@ import argparse
 import configparser
 from collections import ChainMap
 from pathlib import Path
+from typing import NamedTuple
 from tqdm.auto import tqdm
 from urllib.parse import unquote, urlsplit
 import json
@@ -134,8 +138,70 @@ from common.models_list import MODELS_LIST_PATH, _iter_platform_variables, load_
 # for one and silently getting another is worse than an error naming what is there.
 DEFAULT_QUANTIZATIONS = ("Q4_0", "IQ4_NL", "Q8_0", "Q4_K_M", "Q4_K_S")
 
-# The first choice, reported as "the default"; the rest are only reached without it.
-DEFAULT_QUANTIZATION = DEFAULT_QUANTIZATIONS[0]
+
+class BoardQuantizations(NamedTuple):
+    """The orders one board wants: one for small models, one for everything else."""
+
+    small: tuple[str, ...]
+    large: tuple[str, ...]
+
+
+# Up to this many billion parameters a model counts as small. At that size the extra
+# bytes of an 8-bit model are affordable, above it they stop being.
+SMALL_MODEL_PARAMETERS_B = 1.0
+
+# Boards whose runner wants a different order, keyed by BOARD_NAME. UnoQ runs the small
+# models better at Q8_0 and the larger ones better at Q4_0, so the two orders are each
+# other reversed; the K quants are left out of both, because they run far slower there
+# than the plain 4-bit and 8-bit formats and a slow stand-in is no stand-in.
+BOARD_QUANTIZATIONS = {
+    "unoq": BoardQuantizations(small=("Q8_0", "Q4_0", "IQ4_NL"), large=("Q4_0", "IQ4_NL", "Q8_0")),
+}
+
+# Parameter counts as GGUF repositories spell them in their names: "Qwen3-0.6B",
+# "SmolLM2-135M", "gemma-3-1b-it", "gemma-4-E2B" for the effective size of a MatFormer.
+# The unit is required — it is what separates a size from the version in "Qwen3.5" — and
+# a letter may not follow it, so the "4bit" of a "-4bit-" tag is not read as 4 billion.
+PARAMETER_COUNT_RE = re.compile(r"(?<![0-9.])(\d+(?:\.\d+)?)([BM])(?![A-Za-z0-9])", re.IGNORECASE)
+
+# The repository the CLI help and the "model_url is required" error use as their example.
+EXAMPLE_REPO_ID = "unsloth/Qwen3-0.6B-GGUF"
+
+
+def parameter_count_b(repo_id: str) -> float | None:
+    """The parameter count *repo_id* advertises, in billions, or None when it advertises none.
+
+    The largest size in the name wins: a smaller one is usually something else, as in
+    "Qwen2.5-7B-Instruct-1M" — a 7B model with a million-token context, not a 1M one.
+    """
+    counts = [float(value) / (1000 if unit.upper() == "M" else 1) for value, unit in PARAMETER_COUNT_RE.findall(repo_id)]
+    return max(counts) if counts else None
+
+
+def default_quantizations(repo_id: str = "", board: str | None = None) -> tuple[str, ...]:
+    """The preference order for *repo_id* on *board*, or on the board this run is on.
+
+    The board is read from BOARD_NAME the same way the rest of the container reads it, so
+    a run outside a board — a test, a developer shell — gets the general order.
+
+    A board with two orders needs the model's size to pick between them, and the only
+    thing known about the model here is its name: a repository whose name does not say
+    how big it is gets the order for the larger models, the one that is affordable
+    whatever the model turns out to be.
+    """
+    if board is None:
+        board = os.environ.get("BOARD_NAME", "")
+    orders = BOARD_QUANTIZATIONS.get(board.lower())
+    if orders is None:
+        return DEFAULT_QUANTIZATIONS
+    parameters = parameter_count_b(repo_id)
+    return orders.small if parameters is not None and parameters <= SMALL_MODEL_PARAMETERS_B else orders.large
+
+
+def default_quantization(repo_id: str = "", board: str | None = None) -> str:
+    """The first choice, reported as "the default"; the rest are only reached without it."""
+    return default_quantizations(repo_id, board)[0]
+
 
 # The same, for a multimodal projector asked for without a quantization. An mmproj is a
 # small file next to a much larger model, so there is nothing to gain by going below the
@@ -569,15 +635,16 @@ def parse_model_key(model_key: str) -> tuple[str, str, str, str | None]:
 
     Accepted forms, colon-separated::
 
-        <repo_id>                                                   # quantization defaults to Q4_0, then the fallbacks
+        <repo_id>                                                   # quantization defaults to the board's first choice, then the fallbacks
         <repo_id>:<quantization>                                    # llama.cpp -hf style
         <model_type>:<repo_id>:<quantization>
         <model_type>:<repo_id>:<quantization>:<mmproj_quantization>
 
     ``model_type`` is optional and purely informative — nothing selects on it — so a
     two-field key is accepted and reads like llama.cpp's ``-hf Qwen/Qwen3-8B-GGUF:Q8_0``.
-    A defaulted quantization is only the first of ``DEFAULT_QUANTIZATIONS``; which one the
-    run settles on is decided later, against the disk and then the repository.
+    A defaulted quantization is only the first of ``default_quantizations(repo_id)`` — the
+    order for the board this run is on and for a model that size; which one the run
+    settles on is decided later, against the disk and then the repository.
     The field count alone disambiguates: a lone field can only be a repository, and a
     pair can only be repository plus quantization, since ``model_type`` never appears
     without one. Callers detect the defaulted quantization by the absence of a ``:``
@@ -588,7 +655,7 @@ def parse_model_key(model_key: str) -> tuple[str, str, str, str | None]:
     """
     parts = model_key.split(":")
     if len(parts) == 1:
-        model_type, repo_id, quantization, mmproj_quantization = "", parts[0], DEFAULT_QUANTIZATION, None
+        model_type, repo_id, quantization, mmproj_quantization = "", parts[0], default_quantization(parts[0]), None
     elif len(parts) == 2:
         model_type, repo_id, quantization, mmproj_quantization = "", parts[0], parts[1], None
     elif len(parts) == 3:
@@ -711,8 +778,8 @@ def resolve_model_source(model_url: str, model_mmproj_url: str | None = None) ->
             "model_url is required. Give either a Hugging Face file URL "
             "(https://huggingface.co/<org>/<repo>/blob/<revision>/<file>.gguf), a repository URL "
             "(https://huggingface.co/<org>/<repo>) or a compact key "
-            "([<model_type>:]<repo_id>[:<quantization>[:<mmproj_quantization>]], e.g. unsloth/Qwen3-0.6B-GGUF "
-            f"which defaults to {DEFAULT_QUANTIZATION}, or Qwen/Qwen3-8B-GGUF:Q8_0)"
+            f"([<model_type>:]<repo_id>[:<quantization>[:<mmproj_quantization>]], e.g. {EXAMPLE_REPO_ID} "
+            f"which defaults to {default_quantization(EXAMPLE_REPO_ID)}, or Qwen/Qwen3-8B-GGUF:Q8_0)"
         )
 
     source = {
@@ -754,7 +821,7 @@ def resolve_model_source(model_url: str, model_mmproj_url: str | None = None) ->
         # publish the first choice, and the caller who named no quantization has no opinion
         # about which of the equivalents they get. Only the defaulted case gets them.
         if source["quantization_defaulted"]:
-            source["quantization_fallbacks"] = [q for q in DEFAULT_QUANTIZATIONS if q != quantization]
+            source["quantization_fallbacks"] = [q for q in default_quantizations(repo_id) if q != quantization]
         source["allow_pattern"] = gguf_pattern(quantization)
         if mmproj_quantization:
             if model_mmproj_url:
@@ -1409,7 +1476,8 @@ def main():
         "(e.g. https://huggingface.co/org/repo/blob/<revision>/model.gguf; /resolve/ works too) "
         "or a compact key [<model_type>:]<repo_id>[:<quantization>[:<mmproj_quantization>]]; "
         "a repository URL (https://huggingface.co/org/repo) is read as the key for that repository "
-        f"(e.g. unsloth/Qwen3-0.6B-GGUF, which tries {', '.join(DEFAULT_QUANTIZATIONS)} in that order; "
+        f"(e.g. {EXAMPLE_REPO_ID}, which tries {', '.join(default_quantizations(EXAMPLE_REPO_ID))} in that order — "
+        "the order depends on the board and on the size the repository name advertises; "
         "Qwen/Qwen3-8B-GGUF:Q8_0; "
         "llamacpp:unsloth/gemma-4-E4B-it-GGUF:Q4_0:BF16).",
     )
@@ -1476,7 +1544,10 @@ def main():
     # Always reported, not only under --verbose: the caller named a repository without
     # a quantization, so they need to see which one they are getting.
     if source["quantization_defaulted"]:
-        emit_json_info(f"No quantization given for '{repo_id}', defaulting to {DEFAULT_QUANTIZATION}. Specify another as '{repo_id}:<quantization>'.")
+        emit_json_info(
+            f"No quantization given for '{repo_id}', defaulting to {source['quantization']}. "
+            f"Specify another as '{repo_id}:<quantization>'."
+        )
     if source["mmproj_quantization_fallbacks"]:
         emit_json_info(
             f"No mmproj quantization given for '{repo_id}', defaulting to {DEFAULT_MMPROJ_QUANTIZATION}. "
