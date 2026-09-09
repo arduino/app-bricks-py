@@ -4,7 +4,7 @@
 
 import inspect
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import Any
 from urllib.parse import urlparse
 
 import numpy as np
@@ -18,7 +18,7 @@ from .utils import _camera_registry, _claim_first_available_camera, _nth_plugged
 logger = Logger("Camera")
 
 
-class Camera(BaseCamera):
+class Camera:
     """
     Unified Camera class that can be configured for different camera types.
 
@@ -42,7 +42,7 @@ class Camera(BaseCamera):
         fps: int = 10,
         adjustments: Callable[[np.ndarray], np.ndarray] | None = None,
         **kwargs: Any,
-    ) -> "Camera":
+    ) -> BaseCamera:
         """
         Create a camera instance based on the source type.
 
@@ -97,9 +97,7 @@ class Camera(BaseCamera):
                         if the camera connection is lost. Default: True.
 
         Returns:
-            Camera: The camera implementation matching the source, exposing the
-                common BaseCamera interface (V4LCamera, CSICamera, IPCamera or
-                WebSocketCamera at runtime).
+            BaseCamera: Appropriate camera implementation instance
 
         Raises:
             CameraConfigError: If camera type is not supported or parameters are invalid
@@ -161,25 +159,6 @@ class Camera(BaseCamera):
             _camera_registry.claim(key)
             _camera_registry.bind(key, camera)
         return camera
-
-    if TYPE_CHECKING:
-        # Static-typing view only: __new__ returns one of the BaseCamera
-        # implementations, so these never run. They let type checkers treat
-        # Camera as a concrete BaseCamera and accept Camera(...) arguments.
-        def __init__(
-            self,
-            source: str | int | None = None,
-            resolution: tuple[int, int] = (640, 480),
-            fps: int = 10,
-            adjustments: Callable[[np.ndarray], np.ndarray] | None = None,
-            **kwargs: Any,
-        ) -> None: ...
-
-        def _open_camera(self) -> None: ...
-
-        def _close_camera(self) -> None: ...
-
-        def _read_frame(self) -> np.ndarray | None: ...
 
 
 def _claim_key(camera: BaseCamera) -> str | None:
