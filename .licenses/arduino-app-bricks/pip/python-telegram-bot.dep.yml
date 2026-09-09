@@ -1,6 +1,6 @@
 ---
 name: python-telegram-bot
-version: '22.7'
+version: '22.8'
 type: pip
 summary: We have made you a wrapper you can't refuse
 homepage: https://python-telegram-bot.org

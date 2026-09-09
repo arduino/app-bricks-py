@@ -1,6 +1,6 @@
 ---
 name: uvicorn
-version: 0.46.0
+version: 0.52.4
 type: pip
 summary: The lightning-fast ASGI server.
 homepage: https://uvicorn.dev/

@@ -1,6 +1,6 @@
 ---
 name: python-socketio
-version: 5.16.1
+version: 5.16.4
 type: pip
 summary: Socket.IO server and client for Python
 homepage: https://github.com/miguelgrinberg/python-socketio

@@ -1,6 +1,6 @@
 ---
 name: protobuf
-version: 7.34.1
+version: 7.36.1
 type: pip
 summary: ''
 homepage: https://developers.google.com/protocol-buffers/

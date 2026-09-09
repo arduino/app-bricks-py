@@ -1,6 +1,6 @@
 ---
 name: typing-inspection
-version: 0.4.2
+version: 0.4.4
 type: pip
 summary: Runtime typing introspection tools
 homepage: https://github.com/pydantic/typing-inspection

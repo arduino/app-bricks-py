@@ -1,6 +1,6 @@
 ---
 name: python-dotenv
-version: 1.2.2
+version: 1.2.3
 type: pip
 summary: Read key-value pairs from a .env file and set them as environment variables
 homepage: ''

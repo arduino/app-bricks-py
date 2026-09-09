@@ -1,6 +1,6 @@
 ---
 name: langchain-google-genai
-version: 4.2.2
+version: 4.4.0
 type: pip
 summary: An integration package connecting Google's genai package and LangChain
 homepage: https://docs.langchain.com/oss/python/integrations/providers/google
