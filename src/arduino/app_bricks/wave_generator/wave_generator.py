@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import threading
-from typing import Literal
+from typing import Literal, cast
 
 import numpy as np
 
@@ -121,20 +121,24 @@ class WaveGenerator:
         Get or set the current waveform type.
 
         Args:
-            wave_type (WaveType): One of "sine", "square", "sawtooth", "triangle".
+            wave_type (WaveType | str): One of "sine", "square", "sawtooth", "triangle".
+                Any other string raises ValueError.
 
         Returns:
             WaveType: Current waveform type ("sine", "square", "sawtooth", "triangle").
+
+        Raises:
+            ValueError: If the assigned value is not a supported waveform type.
         """
         return self._wave_type
 
     @wave_type.setter
-    def wave_type(self, wave_type: WaveType) -> None:
+    def wave_type(self, wave_type: WaveType | str) -> None:
         valid_types = ("sine", "square", "sawtooth", "triangle")
         if wave_type not in valid_types:
             raise ValueError(f"Invalid wave_type '{wave_type}'. Must be one of {valid_types}")
 
-        self._wave_type = wave_type
+        self._wave_type = cast(WaveType, wave_type)
 
     @property
     def sample_rate(self) -> int:
