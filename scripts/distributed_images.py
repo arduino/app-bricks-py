@@ -4,22 +4,25 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""List every container image distributed by a release, as ``name:version`` pairs.
+"""List every container image a release distributes, as ``name:version`` pairs.
 
-A release tag only builds the containers of its own group plus their bases
-(see ``scripts.build_levels``), but the library it ships also references the
-runners released earlier by the other groups through the compose files under
-``src/``. The SBOM archive attached to the release must cover all of them, so
-this module resolves, for every group:
+Containers live in ``containers/<group>/<name>/``, where the group is the
+sub-folder (``ai``, ``bricks`` or ``base``) and also the prefix of the tag that
+releases it: ``bricks/1.2.3`` builds only the containers under
+``containers/bricks/``, plus the base images they need (see
+``scripts.build_levels``). The library shipped by that release also uses the
+containers of the other groups, released earlier by their own tags: the compose
+files under ``src/`` pin the exact image version of each one. The SBOM archive
+attached to the release must cover all of these images, so this module lists:
 
-- the released group itself, at the version being released;
-- every other group, at the version its containers are pinned to in the
-  compose files. All references to a group must agree on one version, since
-  the group is released as a unit.
+- the containers built by this release, at the version being released;
+- the containers of every other group, at the version pinned in the compose
+  files. A group is released as a whole, so all its pinned references must
+  share the same version, otherwise the run fails.
 
-Each group contributes its whole release build set (its containers plus the
-base images they derive from), so shared bases are listed once per version
-they were published with.
+In both cases the base images the containers derive from are included. A base
+shared by two groups appears once per version, e.g. ``python-slim`` at the ai
+version and at the bricks version.
 """
 
 from __future__ import annotations

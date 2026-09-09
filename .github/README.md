@@ -115,22 +115,11 @@ There is no `tag_prefix` field: the container's directory decides which tag rele
 
 ## SBOMs
 
-`sboms.zip`, attached to every `bricks/*` GitHub Release, is generated from the published images, so
-nothing SBOM-related lives in the tree. `scripts/distributed_images.py` lists what a release
-distributes: the released group's build set at the new version, and every other group's build set at
-the version its containers are pinned to in the `src/**/{brick,service}_compose*.yaml` files (all
-references to a group must agree). `scripts/sbom_delta.py` scans one `name:version` with Syft against
-its `sbom.runtime_base` and writes `<name>-<version>/{base,full,delta}.spdx.json`.
+`sboms.zip`, attached to every `bricks/*` GitHub Release, is generated from the published images, so nothing SBOM-related lives in the tree. `scripts/distributed_images.py` lists what a release distributes: the released group's build set at the new version, and every other group's build set at the version its containers are pinned to in the `src/**/{brick,service}_compose*.yaml` files (all references to a group must agree). `scripts/sbom_delta.py` scans one `name:version` with Syft against its `sbom.runtime_base` and writes `<name>-<version>/{base,full,delta}.spdx.json`.
 
-Scanning is spread over `_sbom-wave.yml` jobs, one matrix leg per image: `sbom-l<n>` starts as soon as
-`build-l<n>` is pushed and overlaps with the next wave's build, `sbom-pinned` starts right away since
-those images already exist. Each leg uploads a `sbom-delta-<name>-<version>` artifact; a failed scan is
-a warning, never a failure. `upload-release` collects the artifacts, checks them against the full
-distributed list, writes any gap to `MISSING.txt` inside the archive and to the job summary, and
-attaches the zip.
+Scanning is spread over `_sbom-wave.yml` jobs, one matrix leg per image: `sbom-l<n>` starts as soon as `build-l<n>` is pushed and overlaps with the next wave's build, `sbom-pinned` starts right away since those images already exist. Each leg uploads a `sbom-delta-<name>-<version>` artifact; a failed scan is a warning, never a failure. `upload-release` collects the artifacts, checks them against the full distributed list, writes any gap to `MISSING.txt` inside the archive and to the job summary, and attaches the zip.
 
-The dev workflow runs the same scan per built image through `.github/actions/sbom-delta` and uploads
-it as a `sbom-delta-<name>-<tag>` run artifact.
+The dev workflow runs the same scan per built image through `.github/actions/sbom-delta` and uploads it as a `sbom-delta-<name>-<tag>` run artifact.
 
 ## Skip-Rebuild Logic
 

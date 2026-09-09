@@ -172,8 +172,8 @@ jobs:
   # SBOM scans run one wave behind the builds: each wave is scanned as soon as it
   # is pushed, in parallel with the next wave's build. The images pinned by the
   # compose files were published by an earlier release, so their scan starts
-  # right away. Scans never fail (see _sbom-wave.yml): a missing SBOM is reported
-  # by upload-release, not a reason to hold the release.
+  # right away. Scans never fail the workflow run: a missing SBOM is then reported
+  # by upload-release.
   sbom-pinned:
     needs: [detect]
     if: needs.detect.outputs.pinned_images != '[]'

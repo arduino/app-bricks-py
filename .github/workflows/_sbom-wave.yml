@@ -1,14 +1,8 @@
 name: (reusable) RELEASE scan one wave of images
 
-# Reusable workflow that generates the delta SBOM of already published images,
-# one matrix leg per image. docker-publish.yml invokes it once per build wave as
-# soon as that wave is pushed, so scanning overlaps with the next wave's build,
-# and once more for the images pinned by the compose files, which were published
-# by an earlier release.
-#
-# A failed scan never fails the job: SBOM generation must not block the release.
-# The image is reported here as a warning and again by upload-release, which
-# lists it in MISSING.txt inside sboms.zip.
+# Reusable workflow that generates the delta SBOM of already published images.
+# A failed scan never fails the job, but the image is reported here as a warning
+# and then by upload-release, which lists it in MISSING.txt inside sboms.zip.
 
 on:
   workflow_call:
@@ -18,7 +12,7 @@ on:
         type: string
         required: true
       version:
-        description: "Version of the images given without one"
+        description: "Version applied to images without a specified version"
         type: string
         required: false
         default: ""
