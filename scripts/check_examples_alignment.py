@@ -113,19 +113,15 @@ def cmd_run(args) -> int:
 
     data = json.loads(proc.stdout)
     for diag in data.get("generalDiagnostics", []):
-        # Normalize paths and tag the repository: diagnostics normally land on
-        # the examples files, but pyright may also point inside the library.
+        # Pyright only reports diagnostics for the analyzed files, i.e. the
+        # examples: the library reached through extraPaths is never reported,
+        # even when the root cause is one of its annotations. Paths are made
+        # relative to the examples checkout.
         path = Path(diag["file"]).resolve()
         try:
             diag["file"] = path.relative_to(examples_dir).as_posix()
-            diag["repository"] = "app-bricks-examples"
         except ValueError:
-            try:
-                diag["file"] = path.relative_to(library_src.parent).as_posix()
-                diag["repository"] = "app-bricks-py"
-            except ValueError:
-                diag["file"] = path.as_posix()
-                diag["repository"] = ""
+            diag["file"] = path.as_posix()
     if args.out:
         Path(args.out).write_text(json.dumps(data, indent=2) + "\n")
     summary = data["summary"]
@@ -140,7 +136,7 @@ def cmd_run(args) -> int:
 
 
 def error_index(data: dict) -> tuple[Counter, dict]:
-    """Index error diagnostics by a line-shift-tolerant key: (repository, file, rule, message first line).
+    """Index error diagnostics by a line-shift-tolerant key: (file, rule, message first line).
 
     Also returns the 1-based lines of the occurrences of each key (informational
     only: lines are not part of the key, so moved code does not diff as new).
@@ -150,7 +146,7 @@ def error_index(data: dict) -> tuple[Counter, dict]:
     for diag in data.get("generalDiagnostics", []):
         if diag["severity"] != "error":
             continue
-        key = (diag.get("repository", ""), diag["file"], diag.get("rule", ""), diag["message"].splitlines()[0])
+        key = (diag["file"], diag.get("rule", ""), diag["message"].splitlines()[0])
         counts[key] += 1
         occurrences.setdefault(key, []).append(diag["range"]["start"]["line"] + 1)
     return counts, occurrences
@@ -158,11 +154,11 @@ def error_index(data: dict) -> tuple[Counter, dict]:
 
 def error_table(entries: dict, occurrences: dict) -> list[str]:
     """Markdown table rows for an error index, with pipes escaped for the cells."""
-    rows = ["| Repository | File | Line(s) | Rule | Message |", "|---|---|---|---|---|"]
+    rows = ["| File | Line(s) | Rule | Message |", "|---|---|---|---|"]
     for key in sorted(entries):
-        repo, file, rule, message = key
+        file, rule, message = key
         lines = ", ".join(str(line) for line in sorted(occurrences[key]))
-        rows.append(f"| {repo} | `{file}` | {lines} | {rule} | {message.replace('|', '\\|')} |")
+        rows.append(f"| `{file}` | {lines} | {rule} | {message.replace('|', '\\|')} |")
     return rows
 
 
@@ -176,7 +172,7 @@ def cmd_diff(args) -> int:
     lines = [
         "## Examples alignment check",
         "",
-        f"Errors against the examples ({EXAMPLES_REPO_MD}): "
+        f"Errors in the {EXAMPLES_REPO_MD} Python sources analyzed against this library: "
         f"base {sum(base_counts.values())} → head {sum(head_counts.values())} "
         f"(**{sum(new.values())} new**, {sum(fixed.values())} fixed)",
     ]
@@ -204,7 +200,7 @@ def cmd_diff(args) -> int:
         with open(summary_path, "a") as f:
             f.write(report + "\n")
     for key in sorted(new):
-        _repo, file, rule, message = key
+        file, rule, message = key
         print(f"::warning::examples alignment: {file}:{head_occurrences[key][0]} [{rule}] {message}")
 
     # Informative check by design: new errors are reported, never blocking.
