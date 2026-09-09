@@ -1442,11 +1442,12 @@ def test_the_fallback_order_is_the_one_the_runners_want():
 def test_the_unoq_orders_are_the_ones_that_board_runs_well():
     """Pinned deliberately: they decide what a bare repository downloads there.
 
-    Q8_0 first up to 1B and Q4_0 first above it, and no K quant in either — those are
-    far slower on UnoQ than the plain formats, so they are not offered as stand-ins.
+    Q8_0 first up to 1B and IQ4_NL first above it; Q4_0 is nobody's first choice on
+    UnoQ, only the last resort for a repository that publishes nothing better. No K
+    quant in either order — those are far slower there than the plain formats.
     """
-    assert BOARD_QUANTIZATIONS["unoq"].small == ("Q8_0", "Q4_0", "IQ4_NL")
-    assert BOARD_QUANTIZATIONS["unoq"].large == ("Q4_0", "IQ4_NL", "Q8_0")
+    assert BOARD_QUANTIZATIONS["unoq"].small == ("Q8_0", "IQ4_NL", "Q4_0")
+    assert BOARD_QUANTIZATIONS["unoq"].large == ("IQ4_NL", "Q4_0", "Q8_0")
 
 
 @pytest.mark.parametrize(
@@ -1474,25 +1475,26 @@ def test_unoq_takes_q8_0_first_for_a_model_up_to_1b(monkeypatch, board):
     source = resolve_model_source("unsloth/SmolLM2-135M-Instruct-GGUF")
     assert source["quantization"] == "Q8_0"
     assert source["allow_pattern"] == "*Q8_0*.gguf"
-    assert source["quantization_fallbacks"] == ["Q4_0", "IQ4_NL"]
+    assert source["quantization_fallbacks"] == ["IQ4_NL", "Q4_0"]
 
 
-def test_unoq_takes_q4_0_first_above_1b(monkeypatch):
+def test_unoq_takes_iq4_nl_first_above_1b(monkeypatch):
+    """The 8-bit download stops fitting up there, and IQ4_NL runs better than Q4_0."""
     monkeypatch.setenv("BOARD_NAME", "unoq")
     source = resolve_model_source("unsloth/Qwen3-4B-GGUF")
-    assert source["quantization"] == "Q4_0"
-    assert source["quantization_fallbacks"] == ["IQ4_NL", "Q8_0"]
+    assert source["quantization"] == "IQ4_NL"
+    assert source["quantization_fallbacks"] == ["Q4_0", "Q8_0"]
 
 
 def test_1b_itself_is_small(monkeypatch):
     """The threshold includes its own size: a 1B model still gets Q8_0."""
     monkeypatch.setenv("BOARD_NAME", "unoq")
     assert default_quantizations("unsloth/gemma-3-1b-it-GGUF")[0] == "Q8_0"
-    assert default_quantizations("unsloth/Llama-3.2-1.5B-GGUF")[0] == "Q4_0"
+    assert default_quantizations("unsloth/Llama-3.2-1.5B-GGUF")[0] == "IQ4_NL"
 
 
 def test_a_repository_that_does_not_say_its_size_gets_the_larger_order(monkeypatch):
-    """Q4_0 is the affordable guess: an 8-bit download of an unknown model may not fit."""
+    """4 bits is the affordable guess: an 8-bit download of an unknown model may not fit."""
     monkeypatch.setenv("BOARD_NAME", "unoq")
     assert default_quantizations("microsoft/phi-4-mini-instruct-gguf") == BOARD_QUANTIZATIONS["unoq"].large
 

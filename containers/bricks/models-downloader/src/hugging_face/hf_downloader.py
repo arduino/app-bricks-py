@@ -25,7 +25,8 @@ host has a single variable to set whatever the model is::
     #    through IQ4_NL, Q8_0, Q4_K_M and Q4_K_S when the repository has no Q4_0.
     #    Boards listed in BOARD_QUANTIZATIONS have their own order, which may depend on
     #    the size the repository name advertises: UnoQ takes Q8_0 first up to 1B
-    #    parameters and Q4_0 first above that, and never falls back to a K quant.
+    #    parameters and IQ4_NL first above that, keeps Q4_0 as its last resort, and
+    #    never falls back to a K quant.
     hf_downloader --model-url [<model_type>:]<repo_id>[:<quantization>[:<mmproj_quantization>]]
 
 The multimodal projector takes either syntax too, in its own variable, whichever form the
@@ -151,11 +152,14 @@ class BoardQuantizations(NamedTuple):
 SMALL_MODEL_PARAMETERS_B = 1.0
 
 # Boards whose runner wants a different order, keyed by BOARD_NAME. UnoQ runs the small
-# models better at Q8_0 and the larger ones better at Q4_0, so the two orders are each
-# other reversed; the K quants are left out of both, because they run far slower there
-# than the plain 4-bit and 8-bit formats and a slow stand-in is no stand-in.
+# models better at 8 bits and the larger ones — where an 8-bit download stops fitting —
+# better at 4, so the two orders differ in where Q8_0 sits. Within the 4-bit class IQ4_NL
+# comes first either way: it runs better there than Q4_0, which is left as the last resort
+# for the repositories that publish nothing else. The K quants are in neither order,
+# because they run far slower on UnoQ than the plain formats and a slow stand-in is no
+# stand-in — a repository publishing only those fails instead, naming what it was asked for.
 BOARD_QUANTIZATIONS = {
-    "unoq": BoardQuantizations(small=("Q8_0", "Q4_0", "IQ4_NL"), large=("Q4_0", "IQ4_NL", "Q8_0")),
+    "unoq": BoardQuantizations(small=("Q8_0", "IQ4_NL", "Q4_0"), large=("IQ4_NL", "Q4_0", "Q8_0")),
 }
 
 # Parameter counts as GGUF repositories spell them in their names: "Qwen3-0.6B",
