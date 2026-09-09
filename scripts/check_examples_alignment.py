@@ -194,7 +194,7 @@ def cmd_diff(args) -> int:
     lines = [
         "## Examples alignment check",
         "",
-        f"Errors in the {EXAMPLES_REPO_MD} Python sources analyzed against this library: "
+        f"Errors in the Python sources of {args.examples_label} analyzed against {args.library_label}: "
         f"base {sum(base_counts.values())} → head {sum(head_counts.values())} "
         f"(**{sum(new.values())} new**, {sum(fixed.values())} fixed)",
     ]
@@ -313,6 +313,8 @@ def main() -> int:
     diff.add_argument("--head", required=True)
     diff.add_argument("--summary", help="markdown output file (defaults to GITHUB_STEP_SUMMARY)")
     diff.add_argument("--reports-url", help="link to the uploaded run outputs, appended to the summary")
+    diff.add_argument("--examples-label", default=EXAMPLES_REPO_MD, help="how the summary names the analyzed examples")
+    diff.add_argument("--library-label", default="this library", help="how the summary names the library they are analyzed against")
     diff.set_defaults(func=cmd_diff)
 
     coverage = sub.add_parser("coverage", help="report library bricks that have no examples")
