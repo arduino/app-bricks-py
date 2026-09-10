@@ -31,7 +31,7 @@ Every container that installs Python packages, under its own name. `python-apps-
 
 The venvs and the pip download cache live in the `arduino-licensed-venvs` Docker volume, nothing is written in the workspace. A run with no changes takes about 15 seconds, a cold one a few minutes. `task license:deps:clean` deletes the volume and keeps the image.
 
-In CI the volume is always empty, on purpose. Requirements are not fully pinned, so a cached venv could pass a check against last month's resolution. The workflow instead skips the scan entirely when a pull request touches none of the files that feed it.
+CI caches only what cannot change the verdict: the image layers, through Buildx and the Actions cache, and the pip download cache. The venvs are rebuilt on every run, so each pull request resolves afresh. Requirements are not fully pinned, so a cached venv could otherwise pass a check against last month's resolution. The workflow also runs on pushes to main, whose caches every pull request can read.
 
 ## Versions
 

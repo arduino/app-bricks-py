@@ -134,8 +134,20 @@ tasks:
   license:deps:
     desc: Check and cache dependency licenses (licensed, via Docker)
     cmds:
+      - task: license:deps:build
+      - task: license:deps:run
+
+  license:deps:build:
+    desc: Build the licensed image
+    cmds:
       - docker build -t arduino-licensed scripts/licensed
-      - docker run --rm -v "$(pwd):/src" -v arduino-licensed-venvs:/venvs arduino-licensed
+
+  license:deps:run:
+    desc: Run the licensed scan, LICENSED_VENVS is the volume or host directory holding the venvs
+    vars:
+      LICENSED_VENVS: '{{.LICENSED_VENVS | default "arduino-licensed-venvs"}}'
+    cmds:
+      - docker run --rm -v "$(pwd):/src" -v "{{.LICENSED_VENVS}}:/venvs" arduino-licensed
 
   license:deps:clean:
     desc: Remove the venvs cached by the licensed scan, the image itself is kept
