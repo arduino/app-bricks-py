@@ -58,7 +58,7 @@ inside this repo.
 |---|---|---|
 | `Dockerfile` | yes | Build recipe. The directory itself is the build context. |
 | `ci.json` | yes | CI metadata: watched paths, build args, dependencies, release flags |
-| `requirements.txt` | if Python packages are installed | The Python packages the image installs. Never install them inline, the [dependency license scan](../scripts/licensed/README.md) only sees this file |
+| `pyproject.toml` + `uv.lock` | if Python packages are installed | The Python packages the image installs, declared in `pyproject.toml` and pinned with hashes in `uv.lock` by `task deps:lock`. The Dockerfile installs from the lock. Never install packages inline, the [dependency license scan](../scripts/licensed/README.md) only sees the lock |
 
 SBOMs are not kept in the tree: they are generated from the published images at release time (see
 [SBOMs](#sboms)) and by the dev workflow as run artifacts.
