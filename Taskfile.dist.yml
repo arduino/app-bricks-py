@@ -134,13 +134,13 @@ tasks:
   license:deps:
     desc: Check and cache dependency licenses (licensed, via Docker)
     cmds:
-      - docker build -f scripts/licensed/Dockerfile -t arduino-licensed .
-      - docker run --rm -v "$(pwd):/src" arduino-licensed
+      - docker build -t arduino-licensed scripts/licensed
+      - docker run --rm -v "$(pwd):/src" -v arduino-licensed-venvs:/venvs arduino-licensed
 
   license:deps:clean:
-    desc: Remove the Docker build caches of the licensed image, the image itself is kept
+    desc: Remove the venvs cached by the licensed scan, the image itself is kept
     cmds:
-      - docker builder prune -f --filter 'description~=licensed'
+      - docker volume rm -f arduino-licensed-venvs
 
   license:
     desc: Update license headers, files, and dependency license caches

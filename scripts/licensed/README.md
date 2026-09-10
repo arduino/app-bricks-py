@@ -4,11 +4,11 @@
 
 ## What it does
 
-1. Builds the `arduino-licensed` image from the [Dockerfile](Dockerfile). One stage per scanned app creates a venv from that app's requirements file and keeps only the package metadata licensed reads.
-2. Runs `licensed cache`, which writes one record per package under `.licenses/<app>/pip/`.
-3. Runs `licensed status`, which fails when a record is missing, stale, unreviewed or carries a license outside the allowed list.
+1. Builds the `arduino-licensed` image from the [Dockerfile](Dockerfile). It holds licensed, the compilers some packages need and the same Python as the containers. It knows nothing about the apps.
+2. Runs [run.py](run.py) with the repository mounted at `/src` and the `arduino-licensed-venvs` volume at `/venvs`. For each app in [.licensed.yml](../../.licensed.yml) it creates a venv from the files named in the app's `venv` section, keeping only the package metadata licensed reads. A venv is rebuilt only when those files or the Python version change.
+3. Runs `licensed cache` and `licensed status` on every app, all apps in parallel. `cache` writes one record per package under `.licenses/<app>/pip/`, `status` fails when a record is missing, stale, unreviewed or carries a license outside the allowed list.
 
-The apps, the allowed licenses and the manually reviewed packages are declared in [.licensed.yml](../../.licensed.yml). Each app maps to `/venvs/<app>` inside the image.
+Before scanning, run.py refuses to start if an app has no `venv` section or if a non-empty `requirements*.txt` under `containers/` belongs to no app, so a container cannot slip out of the scan unnoticed.
 
 ## What is scanned
 
@@ -17,9 +17,8 @@ Every container that installs Python packages, under its own name. `python-apps-
 ## Adding a container
 
 1. List its Python packages in a `requirements.txt` in the container directory and install from that file in its Dockerfile. Inline `pip install <package>` lines are invisible to the scan.
-2. Add an app entry in `.licensed.yml` with `virtual_env_dir: "/venvs/<name>"`.
-3. Add a venv stage in the [Dockerfile](Dockerfile) that copies the requirements file, its `COPY --from` line in the final stage, and the file in [Dockerfile.dockerignore](Dockerfile.dockerignore).
-4. Run `task license:deps` and commit the new records under `.licenses/<name>/`.
+2. Add an app entry in `.licensed.yml` with `virtual_env_dir: "/venvs/<name>"` and `venv.requirements` pointing at the file.
+3. Run `task license:deps` and commit the new records under `.licenses/<name>/`.
 
 ## When the check fails
 
@@ -30,8 +29,10 @@ Every container that installs Python packages, under its own name. `python-apps-
 
 ## Caches
 
-Docker caches the layers and the pip downloads, so a run with no changes takes about 20 seconds and a cold build about 2 minutes. `task license:deps:clean` removes only this image's build cache and keeps the image. It relies on a naming convention: every stage is named `licensed-...` and every RUN goes through one of the `licensed-*` helpers in [bin/](bin/), so the word appears in every cache record. An inline RUN would escape the filter.
+The venvs and the pip download cache live in the `arduino-licensed-venvs` Docker volume, nothing is written in the workspace. A run with no changes takes about 15 seconds, a cold one a few minutes. `task license:deps:clean` deletes the volume and keeps the image.
+
+In CI the volume is always empty, on purpose. Requirements are not fully pinned, so a cached venv could pass a check against last month's resolution. The workflow instead skips the scan entirely when a pull request touches none of the files that feed it.
 
 ## Versions
 
-`licensed` and `licensee` are pinned in the Dockerfile. Licensee is what classifies license texts, so bumping it can change existing verdicts. Re-run the scan after a bump and review the diff.
+`licensed`, `licensee` and the base image are pinned in the Dockerfile. Licensee is what classifies license texts, so bumping it can change existing verdicts. Re-run the scan after a bump and review the diff.
