@@ -137,7 +137,7 @@ from common.models_list import MODELS_LIST_PATH, _iter_platform_variables, load_
 # is missing: same 4-bit class first, then Q8_0 as the one quantization essentially every
 # repository does publish. An explicitly requested quantization never falls back — asking
 # for one and silently getting another is worse than an error naming what is there.
-DEFAULT_QUANTIZATIONS = ("Q4_0", "IQ4_NL", "Q8_0", "Q4_K_M", "Q4_K_S")
+DEFAULT_QUANTIZATIONS = ("Q4_0", "Q8_0", "IQ4_NL", "Q4_K_M", "Q4_K_S")
 
 
 class BoardQuantizations(NamedTuple):
@@ -159,7 +159,7 @@ SMALL_MODEL_PARAMETERS_B = 1.0
 # because they run far slower on UnoQ than the plain formats and a slow stand-in is no
 # stand-in — a repository publishing only those fails instead, naming what it was asked for.
 BOARD_QUANTIZATIONS = {
-    "unoq": BoardQuantizations(small=("Q8_0", "IQ4_NL", "Q4_0"), large=("IQ4_NL", "Q4_0", "Q8_0")),
+    "unoq": BoardQuantizations(small=("Q8_0", "Q4_0", "IQ4_NL"), large=("Q4_0", "Q8_0", "IQ4_NL")),
 }
 
 # Parameter counts as GGUF repositories spell them in their names: "Qwen3-0.6B",
@@ -1549,8 +1549,7 @@ def main():
     # a quantization, so they need to see which one they are getting.
     if source["quantization_defaulted"]:
         emit_json_info(
-            f"No quantization given for '{repo_id}', defaulting to {source['quantization']}. "
-            f"Specify another as '{repo_id}:<quantization>'."
+            f"No quantization given for '{repo_id}', defaulting to {source['quantization']}. Specify another as '{repo_id}:<quantization>'."
         )
     if source["mmproj_quantization_fallbacks"]:
         emit_json_info(
