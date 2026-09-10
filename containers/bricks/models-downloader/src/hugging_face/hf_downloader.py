@@ -22,10 +22,10 @@ host has a single variable to set whatever the model is::
     # 2. Compact key, as llama.cpp's "-hf": downloads whatever matches the
     #    quantization, at the tip of the default branch. model_type is optional, and
     #    so is the quantization — a bare repository defaults to Q4_0, falling back
-    #    through IQ4_NL, Q8_0, Q4_K_M and Q4_K_S when the repository has no Q4_0.
+    #    through Q8_0, IQ4_NL, Q4_K_M and Q4_K_S when the repository has no Q4_0.
     #    Boards listed in BOARD_QUANTIZATIONS have their own order, which may depend on
     #    the size the repository name advertises: UnoQ takes Q8_0 first up to 1B
-    #    parameters and IQ4_NL first above that, keeps Q4_0 as its last resort, and
+    #    parameters and Q4_0 first above that, keeps IQ4_NL as its last resort, and
     #    never falls back to a K quant.
     hf_downloader --model-url [<model_type>:]<repo_id>[:<quantization>[:<mmproj_quantization>]]
 
@@ -134,9 +134,10 @@ from common.models_list import MODELS_LIST_PATH, _iter_platform_variables, load_
 # Quantizations tried, in order, when a model key names only a repository. Q4_0 comes
 # first because it is what the curated entries use and what the accelerated runners want,
 # but plenty of GGUF repositories never publish it, so the ones after it stand in when it
-# is missing: same 4-bit class first, then Q8_0 as the one quantization essentially every
-# repository does publish. An explicitly requested quantization never falls back — asking
-# for one and silently getting another is worse than an error naming what is there.
+# is missing: Q8_0 next, as the one quantization essentially every repository does publish,
+# then IQ4_NL and the K quants for the 4-bit-only repositories that skip both. An
+# explicitly requested quantization never falls back — asking for one and silently
+# getting another is worse than an error naming what is there.
 DEFAULT_QUANTIZATIONS = ("Q4_0", "Q8_0", "IQ4_NL", "Q4_K_M", "Q4_K_S")
 
 
@@ -153,11 +154,12 @@ SMALL_MODEL_PARAMETERS_B = 1.0
 
 # Boards whose runner wants a different order, keyed by BOARD_NAME. UnoQ runs the small
 # models better at 8 bits and the larger ones — where an 8-bit download stops fitting —
-# better at 4, so the two orders differ in where Q8_0 sits. Within the 4-bit class IQ4_NL
-# comes first either way: it runs better there than Q4_0, which is left as the last resort
-# for the repositories that publish nothing else. The K quants are in neither order,
-# because they run far slower on UnoQ than the plain formats and a slow stand-in is no
-# stand-in — a repository publishing only those fails instead, naming what it was asked for.
+# better at 4, so the two orders differ in where Q8_0 sits. Within the 4-bit class Q4_0
+# comes first either way: it is what the accelerated runner is built around, and IQ4_NL is
+# left as the last resort for the repositories that publish nothing else. The K quants are
+# in neither order, because they run far slower on UnoQ than the plain formats and a slow
+# stand-in is no stand-in — a repository publishing only those fails instead, naming what
+# it was asked for.
 BOARD_QUANTIZATIONS = {
     "unoq": BoardQuantizations(small=("Q8_0", "Q4_0", "IQ4_NL"), large=("Q4_0", "Q8_0", "IQ4_NL")),
 }

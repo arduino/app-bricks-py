@@ -1436,18 +1436,18 @@ def _unreachable_hub(*_args, **_kwargs):
 
 def test_the_fallback_order_is_the_one_the_runners_want():
     """Pinned deliberately: the order decides what a bare repository downloads."""
-    assert DEFAULT_QUANTIZATIONS == ("Q4_0", "IQ4_NL", "Q8_0", "Q4_K_M", "Q4_K_S")
+    assert DEFAULT_QUANTIZATIONS == ("Q4_0", "Q8_0", "IQ4_NL", "Q4_K_M", "Q4_K_S")
 
 
 def test_the_unoq_orders_are_the_ones_that_board_runs_well():
     """Pinned deliberately: they decide what a bare repository downloads there.
 
-    Q8_0 first up to 1B and IQ4_NL first above it; Q4_0 is nobody's first choice on
+    Q8_0 first up to 1B and Q4_0 first above it; IQ4_NL is nobody's first choice on
     UnoQ, only the last resort for a repository that publishes nothing better. No K
     quant in either order — those are far slower there than the plain formats.
     """
-    assert BOARD_QUANTIZATIONS["unoq"].small == ("Q8_0", "IQ4_NL", "Q4_0")
-    assert BOARD_QUANTIZATIONS["unoq"].large == ("IQ4_NL", "Q4_0", "Q8_0")
+    assert BOARD_QUANTIZATIONS["unoq"].small == ("Q8_0", "Q4_0", "IQ4_NL")
+    assert BOARD_QUANTIZATIONS["unoq"].large == ("Q4_0", "Q8_0", "IQ4_NL")
 
 
 @pytest.mark.parametrize(
@@ -1475,22 +1475,22 @@ def test_unoq_takes_q8_0_first_for_a_model_up_to_1b(monkeypatch, board):
     source = resolve_model_source("unsloth/SmolLM2-135M-Instruct-GGUF")
     assert source["quantization"] == "Q8_0"
     assert source["allow_pattern"] == "*Q8_0*.gguf"
-    assert source["quantization_fallbacks"] == ["IQ4_NL", "Q4_0"]
+    assert source["quantization_fallbacks"] == ["Q4_0", "IQ4_NL"]
 
 
-def test_unoq_takes_iq4_nl_first_above_1b(monkeypatch):
-    """The 8-bit download stops fitting up there, and IQ4_NL runs better than Q4_0."""
+def test_unoq_takes_q4_0_first_above_1b(monkeypatch):
+    """The 8-bit download stops fitting up there, and Q4_0 is what the runner wants."""
     monkeypatch.setenv("BOARD_NAME", "unoq")
     source = resolve_model_source("unsloth/Qwen3-4B-GGUF")
-    assert source["quantization"] == "IQ4_NL"
-    assert source["quantization_fallbacks"] == ["Q4_0", "Q8_0"]
+    assert source["quantization"] == "Q4_0"
+    assert source["quantization_fallbacks"] == ["Q8_0", "IQ4_NL"]
 
 
 def test_1b_itself_is_small(monkeypatch):
     """The threshold includes its own size: a 1B model still gets Q8_0."""
     monkeypatch.setenv("BOARD_NAME", "unoq")
     assert default_quantizations("unsloth/gemma-3-1b-it-GGUF")[0] == "Q8_0"
-    assert default_quantizations("unsloth/Llama-3.2-1.5B-GGUF")[0] == "IQ4_NL"
+    assert default_quantizations("unsloth/Llama-3.2-1.5B-GGUF")[0] == "Q4_0"
 
 
 def test_a_repository_that_does_not_say_its_size_gets_the_larger_order(monkeypatch):
@@ -1518,7 +1518,7 @@ def test_a_bare_repository_carries_the_fallbacks_after_its_first_choice():
     source = resolve_model_source("unsloth/SmolLM2-135M-Instruct-GGUF")
     assert source["quantization"] == "Q4_0"
     assert source["allow_pattern"] == "*Q4_0*.gguf"
-    assert source["quantization_fallbacks"] == ["IQ4_NL", "Q8_0", "Q4_K_M", "Q4_K_S"]
+    assert source["quantization_fallbacks"] == ["Q8_0", "IQ4_NL", "Q4_K_M", "Q4_K_S"]
 
 
 @pytest.mark.parametrize(
@@ -1546,7 +1546,7 @@ def test_narrow_to_published_keeps_the_first_choice_when_the_repo_has_it(monkeyp
 
 
 def test_narrow_to_published_takes_the_next_candidate_in_order(monkeypatch, capsys):
-    """The SmolLM2 case: no Q4_0, but a Q8_0 and a Q4_K_M - IQ4_NL first, then Q8_0."""
+    """The SmolLM2 case: no Q4_0, but a Q8_0 and a Q4_K_M - Q8_0 comes first."""
     monkeypatch.setattr(
         hf_downloader,
         "list_repo_matches",
@@ -1562,11 +1562,11 @@ def test_narrow_to_published_takes_the_next_candidate_in_order(monkeypatch, caps
     assert source["quantization_fallbacks"] == []
 
 
-def test_narrow_to_published_prefers_iq4_nl_over_q8_0(monkeypatch):
+def test_narrow_to_published_prefers_q8_0_over_iq4_nl(monkeypatch):
     monkeypatch.setattr(hf_downloader, "list_repo_matches", _repo_holding("m-Q8_0.gguf", "m-IQ4_NL.gguf", "m-Q4_K_S.gguf"))
     source = resolve_model_source("org/repo")
     narrow_to_published(source)
-    assert source["quantization"] == "IQ4_NL"
+    assert source["quantization"] == "Q8_0"
 
 
 def test_narrow_to_published_ignores_an_mmproj_only_match(monkeypatch):
@@ -1582,7 +1582,7 @@ def test_narrow_to_published_names_every_candidate_when_none_is_published(monkey
     with pytest.raises(FileNotFoundError) as excinfo:
         narrow_to_published(resolve_model_source("org/repo"))
     message = str(excinfo.value)
-    assert "No file matching any of '*Q4_0*.gguf', '*IQ4_NL*.gguf', '*Q8_0*.gguf'" in message
+    assert "No file matching any of '*Q4_0*.gguf', '*Q8_0*.gguf', '*IQ4_NL*.gguf'" in message
     assert "Available GGUF files: m-F16.gguf, m-Q2_K.gguf" in message
 
 
@@ -1942,7 +1942,7 @@ def test_a_repository_url_is_a_defaulted_quantization():
     source = resolve_model_source(f"https://huggingface.co/{SMOLLM}")
     assert source["quantization_defaulted"] is True
     assert source["quantization"] == "Q4_0"
-    assert source["quantization_fallbacks"] == ["IQ4_NL", "Q8_0", "Q4_K_M", "Q4_K_S"]
+    assert source["quantization_fallbacks"] == ["Q8_0", "IQ4_NL", "Q4_K_M", "Q4_K_S"]
     # Downloaded from the tip of the default branch, not pinned like a file URL.
     assert source["url_filename"] is None
     assert source["url_revision"] is None
