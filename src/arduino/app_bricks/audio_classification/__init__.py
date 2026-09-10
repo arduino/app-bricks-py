@@ -5,6 +5,7 @@
 import struct
 import wave
 from collections.abc import Callable
+from typing import BinaryIO
 
 from arduino.app_internal.core.audio import AudioDetector
 from arduino.app_peripherals.microphone import Microphone
@@ -67,7 +68,7 @@ class AudioClassification(AudioDetector):
         super().stop()
 
     @staticmethod
-    def classify_from_file(audio_path: str, confidence: float = 0.8) -> dict | None:
+    def classify_from_file(audio_path: str | BinaryIO, confidence: float = 0.8) -> dict | None:
         """Classify audio content from a WAV file.
 
         Supported sample widths:
@@ -77,7 +78,8 @@ class AudioClassification(AudioDetector):
             - 32-bit signed
 
         Args:
-            audio_path (str): Path to the `.wav` audio file to classify.
+            audio_path (str | BinaryIO): Path to the `.wav` audio file to classify, or a binary
+                file-like object (e.g. `io.BytesIO`) holding its content.
             confidence (float, optional): Minimum confidence threshold (0.0–1.0) required
                 for a detection to be considered valid. Defaults to 0.8 (80%).
 

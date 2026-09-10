@@ -24,6 +24,11 @@ from arduino.app_utils import brick, Logger
 
 logger = Logger("VideoObjectDetection")
 
+type DetectionCallback = Callable[[], None] | Callable[[dict], None] | Callable[[dict, bytes | None], None]
+"""Callback accepted by `on_detect`: no arguments, the detection details dict, or the dict plus the camera `frame`."""
+type AllDetectionsCallback = Callable[[dict], None] | Callable[[dict, bytes | None], None]
+"""Callback accepted by `on_detect_all`: the detections dict, optionally followed by the camera `frame`."""
+
 
 @brick
 class VideoObjectDetection:
@@ -93,16 +98,19 @@ class VideoObjectDetection:
         self._uri = f"ws://{self._host}:4912"
         logger.info(f"[{self.__class__.__name__}] Host: {self._host} - URL: {self._uri}")
 
-    def on_detect(self, object: str, callback: Callable[[], None]) -> None:
+    def on_detect(self, object: str, callback: DetectionCallback) -> None:
         """Register a callback invoked when a **specific label** is detected.
 
         Args:
             object (str): The label of the object to check for in the classification results.
-            callback (Callable[[], None]): A function with **no parameters**.
+            callback (DetectionCallback): A plain function taking either no parameters, or one
+                parameter receiving the detection details dict
+                `{"confidence": float, "bounding_box_xyxy": (x1, y1, x2, y2)}`. A function that also
+                declares a `frame` parameter receives the current camera frame as raw JPEG bytes
+                (or None when no preview frame is available, see `camera_preview`).
 
         Raises:
             TypeError: If `callback` is not a function.
-            ValueError: If `callback` accepts any parameters.
         """
         if not inspect.isfunction(callback):
             raise TypeError("Callback must be a callable function.")
@@ -112,19 +120,21 @@ class VideoObjectDetection:
                 logger.warning(f"Handler for object '{object}' already exists. Overwriting.")
             self._handlers[object] = callback
 
-    def on_detect_all(self, callback: Callable[[dict], None]) -> None:
+    def on_detect_all(self, callback: AllDetectionsCallback) -> None:
         """Register a callback invoked for **every detection event**.
 
         This is useful to receive a consolidated dictionary of detections for each frame.
 
         Args:
-            callback (Callable[[dict], None]): A function that accepts **one dict argument** mapping
+            callback (AllDetectionsCallback): A plain function taking one dict argument mapping
                 each detected label to the list of its detections, with the shape
                 `{label: [{"confidence": float, "bounding_box_xyxy": (x1, y1, x2, y2)}, ...], ...}`.
+                A function that also declares a `frame` parameter receives the current camera
+                frame as raw JPEG bytes (or None when no preview frame is available, see
+                `camera_preview`).
 
         Raises:
             TypeError: If `callback` is not a function.
-            ValueError: If `callback` does not accept exactly one argument.
         """
         if not inspect.isfunction(callback):
             raise TypeError("Callback must be a callable function.")
