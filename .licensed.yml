@@ -1,6 +1,6 @@
 cache_path: .licenses
 
-# venv tells scripts/licensed/run.py what to install in each app's virtual_env_dir
+# venv.project is the uv project scripts/licensed/run.py installs into each app's virtual_env_dir
 apps:
   - name: python-apps-base
     source_path: .
@@ -19,7 +19,7 @@ apps:
     python:
       virtual_env_dir: "/venvs/python-base"
     venv:
-      requirements: containers/base/python-base/requirements-base.txt
+      project: containers/base/python-base
 
   - name: aihub-models-runner
     source_path: .
@@ -28,7 +28,7 @@ apps:
     python:
       virtual_env_dir: "/venvs/aihub-models-runner"
     venv:
-      requirements: containers/ai/aihub-models-runner/requirements-base.txt
+      project: containers/ai/aihub-models-runner
 
   - name: gesture-recognition-runner
     source_path: .
@@ -37,7 +37,7 @@ apps:
     python:
       virtual_env_dir: "/venvs/gesture-recognition-runner"
     venv:
-      requirements: containers/ai/gesture-recognition-runner/requirements.txt
+      project: containers/ai/gesture-recognition-runner
 
   - name: pose-estimation-runner
     source_path: .
@@ -46,7 +46,7 @@ apps:
     python:
       virtual_env_dir: "/venvs/pose-estimation-runner"
     venv:
-      requirements: containers/ai/pose-estimation-runner/requirements.txt
+      project: containers/ai/pose-estimation-runner
 
   - name: models-downloader
     source_path: .
@@ -55,7 +55,7 @@ apps:
     python:
       virtual_env_dir: "/venvs/models-downloader"
     venv:
-      requirements: containers/bricks/models-downloader/requirements.txt
+      project: containers/bricks/models-downloader
 
   - name: ei-qnn-models-runner
     source_path: .
@@ -64,7 +64,7 @@ apps:
     python:
       virtual_env_dir: "/venvs/ei-qnn-models-runner"
     venv:
-      requirements: containers/ai/ei-qnn-models-runner/requirements.txt
+      project: containers/ai/ei-qnn-models-runner
 
   - name: llamacpp-runner
     source_path: .
@@ -73,7 +73,7 @@ apps:
     python:
       virtual_env_dir: "/venvs/llamacpp-runner"
     venv:
-      requirements: containers/ai/llamacpp-runner/requirements.txt
+      project: containers/ai/llamacpp-runner
 
   - name: llamacpp-npu-runner
     source_path: .
@@ -82,7 +82,7 @@ apps:
     python:
       virtual_env_dir: "/venvs/llamacpp-npu-runner"
     venv:
-      requirements: containers/ai/llamacpp-npu-runner/requirements.txt
+      project: containers/ai/llamacpp-npu-runner
 
 stale_records_action: error
 
@@ -106,6 +106,7 @@ reviewed:
     - tzdata            # Apache-2.0
     - pyalsaaudio       # PSF-2.0
     - certifi           # MPL-2.0, modified ca-bundle notice not recognised by licensee 9.20
+    - backports.strenum # PSF-2.0, ships CPython's LICENSE file while its metadata says MIT
 
 allowed:
   - mpl-2.0
