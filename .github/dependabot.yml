@@ -1,0 +1,26 @@
+version: 2
+# Dependency updates arrive as pull requests, where the license scan and the container builds review them
+updates:
+  - package-ecosystem: uv
+    directories:
+      - /
+      - /containers/ai/aihub-models-runner
+      - /containers/ai/ei-qnn-models-runner
+      - /containers/ai/gesture-recognition-runner
+      - /containers/ai/llamacpp-npu-runner
+      - /containers/ai/llamacpp-runner
+      - /containers/ai/pose-estimation-runner
+      - /containers/base/python-base
+      - /containers/bricks/models-downloader
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directories:
+      - /containers/*/*
+      - /scripts/licensed
+    schedule:
+      interval: weekly
+    ignore:
+      # Digest refreshes only, moving to another Python release is a deliberate change
+      - dependency-name: python
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
