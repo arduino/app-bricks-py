@@ -41,6 +41,7 @@ dev = [
     "mcp<2",
     "langchain_mcp_adapters",
     "langchain_ollama",
+    "reuse",
 ]
 dbstorage_influx = [
     "influxdb_client>=1.48.0",
@@ -195,3 +196,7 @@ allow-star-arg-any = true
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+
+[tool.uv]
+# The lock must resolve for the boards the containers run on, whatever machine locks it
+required-environments = ["sys_platform == 'linux' and platform_machine == 'aarch64'"]

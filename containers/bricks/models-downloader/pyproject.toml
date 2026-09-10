@@ -1,0 +1,18 @@
+# Python packages this image installs, pinned with hashes in uv.lock, see containers/README.md
+[project]
+name = "models-downloader"
+version = "0"
+requires-python = "==3.13.*"
+dependencies = [
+    "qai-hub-models-cli==0.59.0",
+    "requests==2.33.1",
+    "huggingface_hub==1.25.1",
+    "hf_xet==1.5.2",
+    "tqdm==4.67.3",
+    "stream-unzip==0.0.101",
+    "pyyaml==6.0.3",
+]
+
+[tool.uv]
+# The images run on aarch64 Linux only, the lock is resolved for that target alone
+environments = ["sys_platform == 'linux' and platform_machine == 'aarch64'"]
