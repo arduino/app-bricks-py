@@ -72,6 +72,12 @@ ENV UV_CONSTRAINT=/etc/uv-constraints.txt
 ENV PIP_CONSTRAINT=/etc/uv-constraints.txt
 
 RUN set -ex; \
+    # The Qualcomm FastRPC libraries live in contrib, and for trixie only in
+    # backports: enable just that component, for this build only.
+    printf '%s\n' 'Types: deb' 'URIs: http://deb.debian.org/debian' \
+        'Suites: trixie-backports' 'Components: contrib' \
+        'Signed-By: /usr/share/keyrings/debian-archive-keyring.pgp' \
+        > /etc/apt/sources.list.d/fastrpc-backports.sources; \
     apt-get update -y; \
     apt-get upgrade -y; \
     # Install dependencies for running ALSA
@@ -89,6 +95,16 @@ RUN set -ex; \
     rm /tmp/libcamera0.7.deb /tmp/libcamera-ipa.deb /tmp/gstreamer1.0-libcamera.deb /tmp/qtiqmmfsrc.deb /tmp/libgstreamer-plugins-base.deb; \
     # Install other runtime dependencies
     apt-get install -y --no-install-recommends --no-install-suggests libglib2.0-0 inotify-tools libzbar0; \
+    # Install the FastRPC client libraries used to reach the Hexagon DSP:
+    # libcdsprpc.so.1, libadsprpc.so.1, libsdsprpc.so.1 and their listeners.
+    # This Debian build keeps the upstream paths: it reads the machine name from
+    # /sys/firmware/devicetree/base/model (no /run/device-model bind mount) and
+    # the DSP config from /usr/share/hexagon-dsp/conf.d, not /usr/share/qcom.
+    apt-get install -y --no-install-recommends --no-install-suggests -t trixie-backports libfastrpc1; \
+    rm /etc/apt/sources.list.d/fastrpc-backports.sources; \
+    # libfastrpc1 ships only the SONAME symlinks: add the unversioned ones,
+    # which live in libfastrpc-dev, so dlopen("libcdsprpc.so") resolves too.
+    for so in /usr/lib/aarch64-linux-gnu/lib*dsp*.so.1; do ln -sf "${so##*/}" "${so%.so.1}.so"; done; \
     apt-get autoclean -y; \
     apt-get autoremove -y; \
     dpkg -r --force-depends libegl-mesa0 mesa-libgallium libllvm19; \
