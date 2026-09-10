@@ -72,11 +72,14 @@ class ObjectDetection(EdgeImpulseRunnerFacade):
 
         Args:
             image: The input image to annotate. Can be a PIL Image object or raw image bytes.
-            detections: Detection results containing object labels and bounding boxes.
+                None, e.g. a frame that could not be captured, is accepted and yields None.
+            detections: Detection results containing object labels and bounding boxes, as returned
+                by `detect()`. None, i.e. no detection result, is accepted and yields None, so the
+                output of `detect()` can be passed straight in.
 
         Returns:
             Image with bounding boxes and key points drawn.
-            None if input image or detections are invalid.
+            None if the input image or the detections are None or empty.
         """
         if not image or not detections:
             return None

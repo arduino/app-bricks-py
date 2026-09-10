@@ -68,6 +68,13 @@ class Leds:
 
     @staticmethod
     def set_led1_color(r: bool | int, g: bool | int, b: bool | int) -> None:
+        """Set the RGB color of LED1.
+
+        Args:
+            r (bool | int): Red channel state: True/1 on, False/0 off.
+            g (bool | int): Green channel state: True/1 on, False/0 off.
+            b (bool | int): Blue channel state: True/1 on, False/0 off.
+        """
         # check if /dev/leds/builtin/led1_r exists, if yes use compatible files, otherwise use legacy files
         if all(os.path.exists(f) for f in Leds._led1_brightness_files):
             Leds._write_led_file(Leds._led1_brightness_files[0], r)
@@ -82,6 +89,13 @@ class Leds:
 
     @staticmethod
     def set_led2_color(r: bool | int, g: bool | int, b: bool | int) -> None:
+        """Set the RGB color of LED2.
+
+        Args:
+            r (bool | int): Red channel state: True/1 on, False/0 off.
+            g (bool | int): Green channel state: True/1 on, False/0 off.
+            b (bool | int): Blue channel state: True/1 on, False/0 off.
+        """
         # check if /dev/leds/builtin/led2_r exists, if yes use compatible files, otherwise use legacy files
         if all(os.path.exists(f) for f in Leds._led2_brightness_files):
             Leds._write_led_file(Leds._led2_brightness_files[0], r)

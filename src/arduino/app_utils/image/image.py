@@ -69,7 +69,14 @@ def get_image_type(image_bytes: bytes | Image.Image) -> str | None:
 def get_image_bytes(image: str | Image.Image | bytes | None) -> bytes | None:
     """Convert different type of image objects to bytes.
 
-    Returns None when the image is None or cannot be converted.
+    Args:
+        image (str | Image.Image | bytes | None): The image to convert: a file path, a PIL Image or
+            raw bytes (returned as they are). None, e.g. the result of an image helper that found
+            nothing to process, is accepted and yields None.
+
+    Returns:
+        bytes | None: The PNG-encoded bytes of a PIL Image, the file content of a path, the bytes
+        themselves; None when the image is None or cannot be converted.
     """
     if image is None:
         return None
@@ -100,7 +107,8 @@ def draw_bounding_boxes(
     Args:
         image (Image.Image|bytes): The image to draw on, can be a PIL Image or bytes.
         detection (dict | None): A dictionary containing detection results with keys 'class_name', 'bounding_box_xyxy', and
-            'confidence'. If None or empty, the image is returned untouched.
+            'confidence', as returned by the detection bricks. None, i.e. no detection result, is accepted so the output of
+            a detection call can be passed straight in: with None or an empty dict the image is returned untouched.
         draw (ImageDraw.ImageDraw, optional): An existing ImageDraw object to use. If None, a new one is created.
         shape (Shape, optional): Shape of the bounding box. Defaults to rectangle.
         itself. Defaults to False.

@@ -260,6 +260,7 @@ class CloudLLM:
         Args:
             user_input (str): The latest input message from the user.
             images (Sequence[str | bytes] | None): Optional sequence of image file paths or raw bytes to include in the prompt.
+                None (default) sends a text-only message.
 
         Returns:
             list[BaseMessage]: The list of messages in the conversation history,
@@ -422,6 +423,7 @@ class CloudLLM:
         Args:
             message (str): The input text prompt from the user.
             images (Sequence[str | bytes] | None): Optional sequence of image file paths or raw bytes to include in the prompt.
+                None (default) sends a text-only message.
             reasoning_effort (ReasoningEffort | str | int | None): Optional control over
                 how much the model reasons before answering. When ``None`` (default) the
                 behavior is unchanged and the base model is used. When provided, the
@@ -466,6 +468,7 @@ class CloudLLM:
         Args:
             message (str): The input text prompt from the user.
             images (Sequence[str | bytes] | None): Optional sequence of image file paths or raw bytes to include in the prompt.
+                None (default) sends a text-only message.
             reasoning_effort (ReasoningEffort | str | int | None): Optional effort level or
                 token budget. When ``None`` the base model is used unchanged; otherwise the
                 reasoning-capable client is used and only the final answer text is returned.
@@ -518,6 +521,7 @@ class CloudLLM:
         Args:
             message (str): The input text prompt from the user.
             images (Sequence[str | bytes] | None): Optional sequence of image file paths or raw bytes to include in the prompt.
+                None (default) sends a text-only message.
 
         Yields:
             str: Chunks of text (tokens) from the AI response.
@@ -552,6 +556,7 @@ class CloudLLM:
         Args:
             message (str): The input text prompt from the user.
             images (Sequence[str | bytes] | None): Optional sequence of image file paths or raw bytes to include in the prompt.
+                None (default) sends a text-only message.
 
         Yields:
             str: Chunks of text (tokens) from the AI response.
@@ -1029,6 +1034,7 @@ class CloudLLM:
         Args:
             message (str): The input text prompt from the user.
             images (Sequence[str | bytes] | None): Optional sequence of image file paths or raw bytes to include in the prompt.
+                None (default) sends a text-only message.
             reasoning_effort (ReasoningEffort | str | int | None): How much the model
                 reasons. Pass a level ('minimal'/'low'/'medium'/'high') or an integer
                 token budget (`-1` unrestricted, `0` off, `N` tokens); either one is
@@ -1076,6 +1082,7 @@ class CloudLLM:
         Args:
             message (str): The input text prompt from the user.
             images (Sequence[str | bytes] | None): Optional sequence of image file paths or raw bytes to include in the prompt.
+                None (default) sends a text-only message.
             reasoning_effort (ReasoningEffort | str | int | None): Effort level or token budget.
 
         Yields:
