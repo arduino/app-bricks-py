@@ -32,29 +32,23 @@ Brick usage examples live in the [app-bricks-examples](https://github.com/arduin
 
 ## Library compile and build 
 
-To build wheel file suitable for release, use following commands:
+To build the wheel file suitable for release, run:
 ```sh
-pip install build
-python -m build .
+task build
 ```
-To build package as snapshot for latest development build, use following build command:
+To build the package as a snapshot for the latest development build, run:
 ```sh
-pip install build
-python -m build --config-setting "build_type=dev" .
+task build-dev
 ```
 
 ## Library development steps
-To start the development, clone the repository and create a virtual environment.
-
-Install the Taskfile CLI tool: https://taskfile.dev/installation/.
-
-Then, run the following command to set up the development environment:
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and the [Taskfile](https://taskfile.dev/installation/) CLI tool, clone the repository and run:
 
 ```sh
 task init
 ```
 
-This task will check the python version and install the required dependencies.
+uv provides Python 3.13, creates `.venv` and installs the library with its development dependencies, exactly the versions pinned in `uv.lock`. Every task runs inside that environment through `uv run`, there is nothing to activate.
 
 To force a specific Arduino App Lab container version, use 'APPSLAB_VERSION' environment variable.
 
@@ -197,6 +191,9 @@ Non-base images should start from common base images for performance and disk us
 
 ## License
 See [LICENSE](./LICENSE.txt) file for details.
+
+## Dependencies
+Every Python package the library and the containers install is pinned with hashes in a `uv.lock` next to its `pyproject.toml`: the repository root for the library, each container directory for the images (see [containers/README.md](containers/README.md#anatomy-of-a-container-directory)). The Dockerfiles install from the lock and refuse anything else, so an image is reproducible from its commit. After editing a `pyproject.toml` run `task deps:lock` to refresh the locks, `task deps:lock -- --upgrade` moves them to newer versions, and Dependabot opens weekly upgrade pull requests on which the license scan and the container builds run.
 
 ## Dependency licenses
 `task license:deps` checks the licenses of the Python packages shipped by the library and by every container, using Docker. Records live under `.licenses/`, the allowed licenses and reviewed packages in `.licensed.yml`. See [scripts/licensed/README.md](scripts/licensed/README.md) for how it works and what to do when it fails.
