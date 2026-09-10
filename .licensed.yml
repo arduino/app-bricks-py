@@ -1,5 +1,6 @@
 cache_path: .licenses
 
+# venv tells scripts/licensed/run.py what to install in each app's virtual_env_dir
 apps:
   - name: python-apps-base
     source_path: .
@@ -7,6 +8,9 @@ apps:
       pip: true
     python:
       virtual_env_dir: "/venvs/python-apps-base"
+    venv:
+      project: .
+      extras: [all]
 
   - name: python-base
     source_path: .
@@ -14,6 +18,8 @@ apps:
       pip: true
     python:
       virtual_env_dir: "/venvs/python-base"
+    venv:
+      requirements: containers/base/python-base/requirements-base.txt
 
   - name: aihub-models-runner
     source_path: .
@@ -21,6 +27,8 @@ apps:
       pip: true
     python:
       virtual_env_dir: "/venvs/aihub-models-runner"
+    venv:
+      requirements: containers/ai/aihub-models-runner/requirements-base.txt
 
   - name: gesture-recognition-runner
     source_path: .
@@ -28,6 +36,8 @@ apps:
       pip: true
     python:
       virtual_env_dir: "/venvs/gesture-recognition-runner"
+    venv:
+      requirements: containers/ai/gesture-recognition-runner/requirements.txt
 
   - name: pose-estimation-runner
     source_path: .
@@ -35,6 +45,8 @@ apps:
       pip: true
     python:
       virtual_env_dir: "/venvs/pose-estimation-runner"
+    venv:
+      requirements: containers/ai/pose-estimation-runner/requirements.txt
 
   - name: models-downloader
     source_path: .
@@ -42,12 +54,17 @@ apps:
       pip: true
     python:
       virtual_env_dir: "/venvs/models-downloader"
+    venv:
+      requirements: containers/bricks/models-downloader/requirements.txt
+
   - name: ei-qnn-models-runner
     source_path: .
     sources:
       pip: true
     python:
       virtual_env_dir: "/venvs/ei-qnn-models-runner"
+    venv:
+      requirements: containers/ai/ei-qnn-models-runner/requirements.txt
 
   - name: llamacpp-runner
     source_path: .
@@ -55,6 +72,8 @@ apps:
       pip: true
     python:
       virtual_env_dir: "/venvs/llamacpp-runner"
+    venv:
+      requirements: containers/ai/llamacpp-runner/requirements.txt
 
   - name: llamacpp-npu-runner
     source_path: .
@@ -62,6 +81,8 @@ apps:
       pip: true
     python:
       virtual_env_dir: "/venvs/llamacpp-npu-runner"
+    venv:
+      requirements: containers/ai/llamacpp-npu-runner/requirements.txt
 
 stale_records_action: error
 

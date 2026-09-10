@@ -14,11 +14,26 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # The merge commit and its base parent, enough to diff the PR
+          fetch-depth: 2
+
+      - name: Detect changes relevant to the scan
+        id: changes
+        run: |
+          if git diff --name-only HEAD^1 HEAD | grep -qE '^(pyproject\.toml|\.licensed\.yml|Taskfile\.dist\.yml|\.licenses/.*|scripts/licensed/.*|src/arduino/app_tools/.*|\.github/workflows/check-dependency-licenses\.yml|containers/.*/requirements[^/]*\.txt)$'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "✅ No dependency or scan configuration changed, license scan skipped." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Install Taskfile
+        if: steps.changes.outputs.run == 'true'
         run: which task || curl -sSfL https://taskfile.dev/install.sh | sh -s -- -b ${{ env.TASKFILE_PATH }} ${{ env.TASKFILE_VERSION }}
 
       - name: Check dependency licenses (licensed status)
+        if: steps.changes.outputs.run == 'true'
         id: licensed
         run: |
           export PATH="${{ env.TASKFILE_PATH }}:$PATH"
@@ -26,7 +41,7 @@ jobs:
           task license:deps 2>&1 | tee licensed_status.log || echo "failed=true" >> "$GITHUB_OUTPUT"
 
       - name: Annotate and summarize errors
-        if: always()
+        if: always() && steps.changes.outputs.run == 'true'
         run: |
           actual_errors_file=$(mktemp)
           updated_records_raw_file=$(mktemp)
