@@ -9,7 +9,7 @@ FROM ${REGISTRY}app-bricks/python-base:${BASE_IMAGE_VERSION}
 # Copy the Streamlit configuration file with customized settings in home app shared directory
 COPY ./streamlit/config.toml /home/app/.streamlit/config.toml
 
-COPY ./*.sh /
+COPY ./scripts/*.sh /
 COPY ./arduino*.whl /app/
 RUN bash -c 'WHL_FILES=(/app/*.whl) && uv pip install --system --no-cache-dir "${WHL_FILES[@]}"[all]'; \
     rm /app/*.whl; \    

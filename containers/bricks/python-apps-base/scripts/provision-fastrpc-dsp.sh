@@ -36,6 +36,7 @@ if ! mkdir -p "$HEXAGON_DSP/conf.d" 2>/dev/null; then
 fi
 
 if [ -d "$HOST_QCOM" ]; then
+  echo "Provisioning fastrpc DSP configurations..."
   for entry in "$HOST_QCOM"/*; do
     [ -e "$entry" ] || continue
     name=$(basename "$entry")

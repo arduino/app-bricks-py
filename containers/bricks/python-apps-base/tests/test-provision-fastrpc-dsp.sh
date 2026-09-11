@@ -10,7 +10,7 @@
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SCRIPT="$SCRIPT_DIR/../provision-fastrpc-dsp.sh"
+SCRIPT="$SCRIPT_DIR/../scripts/provision-fastrpc-dsp.sh"
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -36,7 +36,7 @@ check() { # <description> <condition...>
 # running inside the image, where /etc/fastrpc exists.
 BAKED=/etc/fastrpc/hexagon-dsp-binaries.yaml
 if [ ! -f "$BAKED" ]; then
-  BAKED="$SCRIPT_DIR/../../../base/python-base/hexagon-dsp-binaries.yaml"
+  BAKED="$SCRIPT_DIR/../../../base/python-base/conf/hexagon-dsp-binaries.yaml"
 fi
 [ -f "$BAKED" ] || { echo "FAIL: baked yaml not found ($BAKED)"; exit 1; }
 

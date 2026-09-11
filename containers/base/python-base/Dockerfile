@@ -130,14 +130,14 @@ RUN set -ex; \
     dpkg -r --force-depends libx265-215 libvpx9; \
     ldconfig
 
-COPY libcamera.yaml /etc/libcamera/configuration.yaml
+COPY conf/libcamera.yaml /etc/libcamera/configuration.yaml
 
 # Baked fastrpc DSP path config for all supported devices. Images derived from
 # this one copy it into /usr/share/hexagon-dsp/conf.d at startup (see
 # provision-fastrpc-dsp.sh in python-apps-base) as 00-arduino-dsp-binaries.yaml:
 # the fastrpc parser keeps the last alphabetical match, so this file sorts first
 # and acts as a fallback that any yaml provided by the host overrides.
-COPY hexagon-dsp-binaries.yaml /etc/fastrpc/hexagon-dsp-binaries.yaml
+COPY conf/hexagon-dsp-binaries.yaml /etc/fastrpc/hexagon-dsp-binaries.yaml
 
 # Pre-create the merged DSP view root, owned by arduino so images running as
 # the non-root user can populate it at startup.
