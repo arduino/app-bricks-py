@@ -108,6 +108,7 @@ INPUT_VARIABLES = (
     # edge impulse
     "ei_project_id",
     "ei_impulse_id",
+    "history_id",
     "target",
     # hugging face — model_url carries either a file URL or a compact model key
     "model_url",

@@ -151,6 +151,17 @@ def test_collect_inputs_never_records_secrets():
     assert "HF_HUB_TOKEN" not in inputs
 
 
+def test_collect_inputs_records_the_ei_history_id():
+    """An EI model pinned to a deployment history entry records that entry.
+
+    ``history_id`` is a declared models-list.yaml variable, so the outdated check
+    compares it against what was recorded: were it not persisted here, every
+    history-pinned model would read as outdated forever.
+    """
+    inputs = collect_inputs(dict(EI_ENV, history_id="8"))
+    assert inputs["history_id"] == "8"
+
+
 def test_collect_inputs_extra_keys():
     inputs = collect_inputs(dict(EI_ENV, custom_flag="on"), extra_keys=("custom_flag",))
     assert inputs["custom_flag"] == "on"
