@@ -1,0 +1,327 @@
+name: Build Media Stack
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: 'Release version (e.g. 1.0.0). If empty, no release will be created.'
+        required: false
+        default: ''
+      opencv_python_repo:
+        description: 'opencv-python repository in owner/repo format'
+        required: false
+        default: 'opencv/opencv-python'
+      opencv_python_ref:
+        description: 'opencv-python''s git ref to build'
+        required: false
+        default: '4.x'
+      ffmpeg_debian_version:
+        description: 'Specific Debian version of FFmpeg to pull (e.g. 7.1-4).'
+        required: false
+        default: 'latest'
+      gstreamer_good_version:
+        description: 'Specific Debian version of GStreamer Good to pull (e.g. 1.24.12-1).'
+        required: false
+        default: 'latest'
+
+permissions:
+  contents: write
+
+jobs:
+  setup:
+    runs-on: ubuntu-24.04-arm
+    outputs:
+      stack_version: ${{ steps.version.outputs.stack_version }}
+      release_version: ${{ steps.version.outputs.release_version }}
+      opencv_python_repo: ${{ steps.version.outputs.opencv_python_repo }}
+      opencv_python_commit: ${{ steps.version.outputs.opencv_python_commit }}
+    steps:
+      - name: Resolve build parameters
+        id: version
+        shell: bash
+        run: |
+          RELEASE_VERSION="${{ inputs.release_version }}"
+          STACK_VERSION="${RELEASE_VERSION:-snapshot-$(date -u +%Y%m%d)-${GITHUB_SHA::7}}"
+          REPO="${{ inputs.opencv_python_repo }}"
+          COMMIT="${{ inputs.opencv_python_ref }}"
+          echo "release_version=$RELEASE_VERSION" >> $GITHUB_OUTPUT
+          echo "stack_version=$STACK_VERSION" >> $GITHUB_OUTPUT
+          echo "opencv_python_repo=$REPO" >> $GITHUB_OUTPUT
+          echo "opencv_python_commit=$COMMIT" >> $GITHUB_OUTPUT
+
+  build-ffmpeg:
+    needs: setup
+    runs-on: ubuntu-24.04-arm
+    container:
+      image: debian:trixie
+      options: --user root
+    outputs:
+      version: ${{ steps.ffmpeg.outputs.version }}
+    steps:
+      - name: Install build tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates build-essential devscripts equivs debhelper-compat
+          sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sources
+          apt-get update
+
+      # FFmpeg uses its own ./configure script. The strategy is: patch debian/rules
+      # to disable the features we don't want.
+      - name: Build custom minimal FFmpeg
+        id: ffmpeg
+        shell: bash
+        run: |
+          FFMPEG_VER="${{ inputs.ffmpeg_debian_version }}"
+          if [[ "$FFMPEG_VER" == "latest" ]]; then FFMPEG_VER=""; fi
+          apt-get build-dep -y ffmpeg${FFMPEG_VER:+=$FFMPEG_VER}
+          apt-get source ffmpeg${FFMPEG_VER:+=$FFMPEG_VER}
+          cd ffmpeg-*
+          REAL_VER=$(dpkg-parsechangelog -S Version)
+          echo "version=$REAL_VER" >> $GITHUB_OUTPUT
+          
+          # debian/rules overrides dh_auto_configure and calls ./configure itself, so
+          # there's no env var to inject through. Append our --disable-* flags onto the
+          # end of that call to override the --enable-* flags it sets earlier.
+          python3 - <<'PYEOF'
+          import re
+
+          with open("debian/rules") as f:
+              c = f.read()
+          DISABLE = (
+              "--disable-libvpx --disable-libx265 --disable-libdav1d --disable-libaom "
+              "--disable-sdl2 --disable-libass --disable-libvidstab "
+              "--disable-libbluray --disable-librtmp --disable-libopenjpeg "
+              "--disable-libopus --disable-libtheora --disable-libvorbis "
+              "--disable-librsvg"
+          )
+
+          # Inject before the ' ||' error guard FFmpeg's rules append to the configure call.
+          c, n = re.subn(r"(\.\./\.\./configure [^\n]*?)( *\|\|)",
+                         r"\g<1> " + DISABLE + r"\g<2>", c, count=1)
+          if not n:
+              # Fallback: configure call without a trailing guard — inject at end of line.
+              c, n = re.subn(r"(\.\./\.\./configure [^\n]*?)(\n)",
+                             r"\g<1> " + DISABLE + r"\g<2>", c, count=1)
+          if not n:
+              # Fail if we couldn't find a configure call to patch
+              print(c)
+              raise RuntimeError("Could not find ./configure invocation in debian/rules")
+
+          with open("debian/rules", "w") as f:
+              f.write(c)
+          print("Injected disable flags into configure invocation")
+          PYEOF
+
+          DEB_BUILD_OPTIONS=nocheck dpkg-buildpackage -b -uc -us -j$(nproc)
+
+          cd ..
+          mkdir -p artifacts
+          cp *.deb artifacts/
+
+      - name: Upload FFmpeg debs
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-debs
+          path: artifacts/
+
+  build-gstreamer:
+    needs: setup
+    runs-on: ubuntu-24.04-arm
+    container:
+      image: debian:trixie
+      options: --user root
+    outputs:
+      version: ${{ steps.gstreamer.outputs.version }}
+    steps:
+      - name: Install build tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates build-essential devscripts equivs debhelper-compat meson ninja-build
+          sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sources
+          apt-get update
+
+      # GStreamer uses Meson, and Debian's packaging explicitly enumerates
+      # every plugin in .install files and in hand-written dh_install calls.
+      # Disabling a plugin stops it from being compiled, but the packaging
+      # layer still expects the file and aborts. So the strategy is one step
+      # to trim + three steps of damage control to stop Debian's machinery from
+      # failing over the now-missing files.
+      - name: Build custom minimal GStreamer Good plugins
+        id: gstreamer
+        shell: bash
+        run: |
+          GST_VER="${{ inputs.gstreamer_good_version }}"
+          if [[ "$GST_VER" == "latest" ]]; then GST_VER=""; fi
+          apt-get build-dep -y gstreamer1.0-plugins-good${GST_VER:+=$GST_VER}
+          apt-get source gstreamer1.0-plugins-good${GST_VER:+=$GST_VER}
+          cd gst-plugins-good1.0-*
+          REAL_VER=$(dpkg-parsechangelog -S Version)
+          echo "version=$REAL_VER" >> $GITHUB_OUTPUT
+
+          # Trim: remove the plugins to disable. Applied via `meson configure` so
+          # Debian's own configure flags are preserved and we layer ours on top.
+          MESON_OPTS="-Dauto_features=enabled -Ddv1394=disabled -Daalib=disabled -Damrnb=disabled -Damrwbdec=disabled -Dapetag=disabled -Dlibcaca=disabled -Dcairo=disabled -Dcutter=disabled -Ddv=disabled -Deffectv=disabled -Dflac=disabled -Dflx=disabled -Dgdk-pixbuf=disabled -Dgoom=disabled -Dgoom2k1=disabled -Dgtk3=disabled -Djack=disabled -Dlame=disabled -Dmonoscope=disabled -Dmpg123=disabled -Doss4=disabled -Doss=disabled -Dosxaudio=disabled -Dosxvideo=disabled -Dpulse=disabled -Dqt6=disabled -Dqt5=disabled -Drpicamsrc=disabled -Dshapewipe=disabled -Dshout2=disabled -Dsmpte=disabled -Dspeex=disabled -Dtaglib=disabled -Dtwolame=disabled -Dvpx=disabled -Dwavpack=disabled -Dximagesrc=disabled -Dalpha=disabled -Dauparse=disabled -Ddebugutils=disabled -Ddeinterlace=disabled -Ddtmf=disabled -Dequalizer=disabled -Dflv=disabled -Dicydemux=disabled -Did3demux=disabled -Dmultifile=disabled -Dreplaygain=disabled -Dspectrum=disabled -Dxingmux=disabled -Dy4m=disabled"
+
+          # Damage control 1/3: guard explicit dh_install calls with `test -f`.
+          python3 - <<'PYEOF'
+          import re
+          with open("debian/rules") as f:
+              c = f.read()
+          c = re.sub(
+              r"\t(dh_install -\S+ (debian/tmp/\S+libgst\S+\.so))",
+              lambda m: "\t" + "test -f " + m.group(2) + " && " + m.group(1) + " || true",
+              c
+          )
+          with open("debian/rules", "w") as f:
+              f.write(c)
+          PYEOF
+
+          # Damage control 2/3: drop .install entries for plugins not in debian/tmp.
+          cat > prune-install-files.py <<'PYEOF'
+          import re, glob
+          for f in glob.glob("debian/*.install"):
+              lines = open(f).readlines()
+              kept = [l for l in lines
+                      if not re.search(r"gstreamer-1\.0/libgst", l.strip())
+                      or glob.glob("debian/tmp/" + l.strip())]
+              open(f, "w").writelines(kept)
+          PYEOF
+
+          # Damage control 3/3: wire the hooks into debian/rules: apply MESON_OPTS,
+          # run prune-install-files.py and make dh_missing warn instead of abort.
+          {
+            printf '\nexecute_after_dh_auto_configure:\n'
+            printf '\tmeson configure obj-$(DEB_HOST_GNU_TYPE) %s\n' "$MESON_OPTS"
+            printf '\nexecute_before_dh_install:\n'
+            printf '\tpython3 prune-install-files.py\n'
+            printf '\noverride_dh_missing:\n'
+            printf '\tdh_missing --list-missing\n'
+          } >> debian/rules
+
+          DEB_BUILD_OPTIONS=nocheck dpkg-buildpackage -b -uc -us -j$(nproc)
+
+          cd ..
+          mkdir -p artifacts
+          cp *.deb artifacts/
+
+      - name: Upload GStreamer debs
+        uses: actions/upload-artifact@v4
+        with:
+          name: gstreamer-debs
+          path: artifacts/
+
+  build-opencv:
+    needs: [setup, build-ffmpeg, build-gstreamer]
+    runs-on: ubuntu-24.04-arm
+    container:
+      image: debian:trixie
+      options: --user root
+    outputs:
+      wheel_version: ${{ steps.opencv.outputs.wheel_version }}
+    steps:
+      - name: Install build tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git ca-certificates build-essential pkg-config ninja-build python3 python3-dev python3-pip
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: debs/
+
+      - name: Install custom debs
+        run: |
+          # Exclude -extra (conflicts with base packages) and -dbgsym (unneeded).
+          apt-get install -y $(ls ./debs/ffmpeg-debs/*.deb | grep -vE '\-(extra|dbgsym)')
+          apt-get install -y ./debs/gstreamer-debs/gstreamer1.0-plugins-good_*.deb
+
+      - name: Install OpenCV build deps
+        run: |
+          apt-get install -y --no-install-recommends libjpeg62-turbo-dev libpng-dev libtiff-dev libwebp-dev libopenblas-dev liblapacke-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
+
+      - name: Clone and build OpenCV Python wheel
+        id: opencv
+        run: |
+          REPO="${{ needs.setup.outputs.opencv_python_repo }}"
+          COMMIT="${{ needs.setup.outputs.opencv_python_commit }}"
+          git clone --depth 1 "https://github.com/$REPO.git" opencv-python
+          cd opencv-python
+          git fetch --depth 1 origin "$COMMIT"
+          git checkout "$COMMIT"
+          git submodule update --init --recursive --depth 1
+          export ENABLE_CONTRIB=0
+          export ENABLE_HEADLESS=1
+          export CMAKE_BUILD_PARALLEL_LEVEL=$(nproc)
+          export CMAKE_ARGS="-DWITH_GSTREAMER=ON -DWITH_FFMPEG=ON -DWITH_VPX=OFF -DWITH_X265=OFF -DWITH_CAROTENE=ON -DWITH_LAPACK=ON -DBUILD_opencv_python3=ON -DWITH_AVIF=OFF -DWITH_GTK=OFF -DWITH_QT=OFF -DWITH_CUDA=OFF -DBUILD_opencv_java=OFF -DWITH_VTK=OFF -DBUILD_opencv_dnn=OFF -DBUILD_opencv_dnn_modern=OFF"
+          pip3 wheel . --verbose --no-deps
+          WHL_FILE=$(ls opencv_python_headless*.whl | head -n 1)
+          WHL_VER=$(echo "$WHL_FILE" | cut -d'-' -f2)
+          echo "wheel_version=$WHL_VER" >> $GITHUB_OUTPUT
+          mkdir -p ../artifacts
+          mv *.whl ../artifacts/
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: opencv-wheel
+          path: artifacts/
+
+  release:
+    needs: [setup, build-ffmpeg, build-gstreamer, build-opencv]
+    if: needs.setup.outputs.release_version != ''
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Create or update release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          STACK_VERSION="${{ needs.setup.outputs.stack_version }}"
+          OPENCV_VERSION="${{ needs.build-opencv.outputs.wheel_version }}"
+          OPENCV_REPO="${{ needs.setup.outputs.opencv_python_repo }}"
+          OPENCV_REF="${{ needs.setup.outputs.opencv_python_commit }}"
+          FFMPEG_VERSION="${{ needs.build-ffmpeg.outputs.version }}"
+          GSTREAMER_VERSION="${{ needs.build-gstreamer.outputs.version }}"
+          TAG="media-stack/${STACK_VERSION}"
+          REPO="${{ github.repository }}"
+          
+          # Use gh to check and delete release if exists
+          gh release delete "$TAG" --repo "$REPO" --yes --cleanup-tag || true
+          
+          NOTES=$(cat <<EOF
+          Custom minimal media stack for Q boards.
+          
+          Media Stack Build Version: ${STACK_VERSION}
+          
+          Component Details:
+          - opencv-python-headless (Wheel): ${OPENCV_VERSION} (Source: ${OPENCV_REPO} @ ${OPENCV_REF})
+          - FFmpeg (Debian Source): ${FFMPEG_VERSION}
+          - gstreamer1.0-plugins-good (Debian Source): ${GSTREAMER_VERSION}
+          EOF
+          )
+          
+          # Collect release assets: the wheel, the runtime FFmpeg libs tarball and
+          # the plugins-good deb. Build byproducts (-extra, -dev, dbgsym, disabled
+          # plugin stubs) are intentionally left out.
+          mkdir release-assets
+          cp artifacts/opencv-wheel/*.whl release-assets/
+          cp artifacts/gstreamer-debs/gstreamer1.0-plugins-good_*.deb release-assets/
+
+          FFMPEG_VERSION_SAFE="${FFMPEG_VERSION##*:}"  # strip Debian epoch (e.g. 7:) for the filename
+          mkdir ffmpeg-libs
+          for pkg in libavcodec61 libavformat61 libavutil59 libswscale8 libswresample5; do
+            cp artifacts/ffmpeg-debs/${pkg}_*.deb ffmpeg-libs/
+          done
+          FFMPEG_LIBS_TARBALL="ffmpeg-libs-${FFMPEG_VERSION_SAFE}.tar.gz"
+          tar -czf "release-assets/${FFMPEG_LIBS_TARBALL}" -C ffmpeg-libs .
+
+          gh release create "$TAG" \
+            release-assets/* \
+            --repo "$REPO" \
+            --latest=false \
+            --title "Media Stack ${STACK_VERSION}" \
+            --notes "$NOTES"
