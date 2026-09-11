@@ -30,7 +30,6 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "setuptools",
-    "build",
     "pytest",
     "pytest-asyncio",
     "websocket-client",
