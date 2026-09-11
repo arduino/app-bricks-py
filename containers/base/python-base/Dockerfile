@@ -18,7 +18,8 @@ COPY ./pyproject.toml ./uv.lock /tmp/deps/
 # uv stays in the image, run.sh installs the user's packages with it at runtime
 COPY --from=uv /uv /usr/local/bin/uv
 
-ADD --checksum=${OPENCV_WHL_DIGEST} ${OPENCV_WHL_URL} /tmp/opencv-wheel/
+# The wheel stays in the image, run.sh serves it to the user's installs through UV_FIND_LINKS
+ADD --chmod=644 --checksum=${OPENCV_WHL_DIGEST} ${OPENCV_WHL_URL} /opt/wheels/
 
 RUN set -ex; \
     apt-get update -y; \
@@ -30,9 +31,9 @@ RUN set -ex; \
     apt-get install -y --no-install-recommends --no-install-suggests pkg-config libgirepository-2.0-dev libglib2.0-dev; \
     # Install the locked Python dependencies, then the prefetched OpenCV wheel
     uv export --frozen --project /tmp/deps | uv pip install --system --no-cache-dir --require-hashes -r -; \
-    uv pip install --system --no-cache-dir /tmp/opencv-wheel/*.whl; \
+    uv pip install --system --no-cache-dir /opt/wheels/*.whl; \
     printf 'opencv-python-headless==%s\n' "$(python -c 'from importlib.metadata import version; print(version("opencv-python-headless"))')" > /etc/uv-constraints.txt; \
-    rm -rf /tmp/deps /tmp/opencv-wheel; \
+    rm -rf /tmp/deps; \
     # Build PyGObject without cairo support
     uv pip install --system --no-cache-dir meson-python ninja; \
     uv pip install --system --no-cache-dir --no-build-isolation --no-deps -C setup-args="-Dpycairo=disabled" "PyGObject==${PYGOBJECT_VERSION}"; \
@@ -72,9 +73,13 @@ ADD --checksum=sha256:c53aceea2dcf5b4098099c0c4d0a061d17e178a049317b42a422b1a9f7
 COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 COPY --from=builder /etc/uv-constraints.txt /etc/uv-constraints.txt
+COPY --from=builder /opt/wheels /opt/wheels
 
+# User installs are pinned to the shipped OpenCV build and can fetch it from the image, PyPI does not have it
 ENV UV_CONSTRAINT=/etc/uv-constraints.txt
 ENV PIP_CONSTRAINT=/etc/uv-constraints.txt
+ENV UV_FIND_LINKS=/opt/wheels
+ENV PIP_FIND_LINKS=/opt/wheels
 
 RUN set -ex; \
     # The Qualcomm FastRPC libraries live in contrib, and for trixie only in
