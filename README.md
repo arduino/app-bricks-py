@@ -145,7 +145,7 @@ Development containers are published by the dev CI (`docker-build.yml`) tagged a
 
 ## Examples alignment
 
-The published examples live in [app-bricks-examples](https://github.com/arduino/app-bricks-examples). To check whether your changes break the API contract the examples rely on (pyright analyzes their Python sources against your checkout), clone that repository next to this one and run:
+The published examples live in [app-bricks-examples](https://github.com/arduino/app-bricks-examples). To check whether your changes break the API contract the examples rely on (pyright analyzes their Python sources against your checkout), clone that repository next to this one, make sure the project venv has the current library dependencies installed (`pip install -e ".[dev]"`, the check refuses to run against an outdated environment) and run:
 
 ```sh
 task check:examples-alignment:run
@@ -158,6 +158,8 @@ task check:examples-alignment:coverage
 ```
 
 See `scripts/check_examples_alignment.py --help` for the full options (custom paths, JSON output, PR base/head diff — the mode used by the `check-examples-alignment.yml` workflow).
+
+On pull requests the workflow fails when the change introduces new errors in the published examples: either adapt the change to keep the examples' contract, or open the matching PR on app-bricks-examples and coordinate the merge. Pre-existing errors are reported in the job summary but tolerated.
 
 ## Release
 
