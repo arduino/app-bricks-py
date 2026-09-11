@@ -199,4 +199,4 @@ tasks:
   sbom:delta:
     desc: Generate delta SBOMs for containers (requires syft and registry access)
     cmds:
-      - uv run python ./scripts/sbom_delta.py {{.CLI_ARGS}}
+      - python3 ./scripts/sbom_delta.py {{.CLI_ARGS}}
