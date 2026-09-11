@@ -145,8 +145,9 @@ fi
 bash /provision-alsa-devices.sh
 
 # Merge the host DSP payload and yaml config into /usr/share/hexagon-dsp,
-# where the fastrpc client libraries look for them. Best-effort: a failure
-# here only means the DSP is unavailable, the app still starts.
+# where the fastrpc client libraries look for them. The script ships with the
+# libraries in python-base. Best-effort: a failure here only means the DSP is
+# unavailable, the app still starts.
 sh /provision-fastrpc-dsp.sh || echo "Warning: fastrpc DSP provisioning failed"
 
 # Load custom bricks if present

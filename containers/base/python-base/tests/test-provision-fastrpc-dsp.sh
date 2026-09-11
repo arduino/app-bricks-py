@@ -36,7 +36,7 @@ check() { # <description> <condition...>
 # running inside the image, where /etc/fastrpc exists.
 BAKED=/etc/fastrpc/hexagon-dsp-binaries.yaml
 if [ ! -f "$BAKED" ]; then
-  BAKED="$SCRIPT_DIR/../../../base/python-base/conf/hexagon-dsp-binaries.yaml"
+  BAKED="$SCRIPT_DIR/../conf/hexagon-dsp-binaries.yaml"
 fi
 [ -f "$BAKED" ] || { echo "FAIL: baked yaml not found ($BAKED)"; exit 1; }
 

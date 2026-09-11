@@ -9,10 +9,13 @@
 # host yamls (the fastrpc parser only lists regular files) plus the image's
 # baked default. Nothing is ever written back to the host mount.
 #
-# Same idea as qairt-entrypoint.sh, but for the Debian libfastrpc1 shipped by
-# python-base: that build reads its config from /usr/share/hexagon-dsp/conf.d
-# and resolves each DSP_LIBRARY_PATH relative to /usr/share/hexagon-dsp (the
-# QAIRT source build uses /usr/share/qcom for both).
+# Same idea as qairt-entrypoint.sh, but for the Debian libfastrpc1 this image
+# installs: that build reads its config from /usr/share/hexagon-dsp/conf.d and
+# resolves each DSP_LIBRARY_PATH relative to /usr/share/hexagon-dsp (the QAIRT
+# source build uses /usr/share/qcom for both).
+#
+# Installed at /provision-fastrpc-dsp.sh; derived images call it from their
+# entrypoint (python-apps-base does it in run.sh).
 set -eu
 
 # The merged view must stay readable and traversable by every uid, whichever

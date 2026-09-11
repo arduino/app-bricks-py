@@ -132,13 +132,20 @@ RUN set -ex; \
 
 COPY conf/libcamera.yaml /etc/libcamera/configuration.yaml
 
-# Baked fastrpc DSP path config for all supported devices. Images derived from
-# this one copy it into /usr/share/hexagon-dsp/conf.d at startup (see
-# provision-fastrpc-dsp.sh in python-apps-base) as 00-arduino-dsp-binaries.yaml:
-# the fastrpc parser keeps the last alphabetical match, so this file sorts first
-# and acts as a fallback that any yaml provided by the host overrides.
+# Baked fastrpc DSP path config for all supported devices. The startup script
+# below copies it into /usr/share/hexagon-dsp/conf.d as
+# 00-arduino-dsp-binaries.yaml: the fastrpc parser keeps the last alphabetical
+# match, so this file sorts first and acts as a fallback that any yaml provided
+# by the host overrides.
 COPY conf/hexagon-dsp-binaries.yaml /etc/fastrpc/hexagon-dsp-binaries.yaml
+
+# Startup provisioning of the merged DSP view: it ships here, next to the
+# fastrpc libraries and the baked yaml it depends on. Derived images invoke it
+# from their entrypoint (python-apps-base does it in run.sh).
+COPY ./scripts/provision-fastrpc-dsp.sh /
 
 # Pre-create the merged DSP view root, owned by arduino so images running as
 # the non-root user can populate it at startup.
-RUN mkdir -p /usr/share/hexagon-dsp/conf.d && chown -R arduino:arduino /usr/share/hexagon-dsp
+RUN chmod 755 /provision-fastrpc-dsp.sh; \
+    mkdir -p /usr/share/hexagon-dsp/conf.d; \
+    chown -R arduino:arduino /usr/share/hexagon-dsp
