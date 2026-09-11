@@ -1,0 +1,9 @@
+id: arduino:language_translation
+name: Language Translation (T2T)
+description: Language translation brick for offline text-to-text translation
+category: text
+supported_boards: ["ventunoq"]
+requires_services: ["arduino:genie_audio"]
+ai_frameworks_compatibility:
+  - qnn
+model: opus-en-zh
