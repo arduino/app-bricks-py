@@ -14,7 +14,9 @@ services:
       - /dev/fastrpc-cdsp
     volumes:
       # Mount hexagon firmware
-      - ${HOST_DSP_INSTALLATION_PATH:-/usr/share/qcom}/qcs8300/Qualcomm/QCS8300-RIDE/dsp/cdsp:/lib/dsp/cdsp
+      - /sys/firmware/devicetree/base/model:/run/device-model
+      # Read-only: /qairt-entrypoint.sh merges it into /usr/share/qcom in the container layer
+      - ${HOST_DSP_INSTALLATION_PATH:-/usr/share/qcom}:/run/host-qcom:ro
     healthcheck:
       test: [ "CMD-SHELL", "nc -zv pose_estimation 5002 || exit 1" ]
       interval: 1s
