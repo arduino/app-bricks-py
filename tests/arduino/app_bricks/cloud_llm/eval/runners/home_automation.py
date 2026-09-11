@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 import asyncio
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 from conftest import ModelConfig
 from arduino.app_bricks.cloud_llm import CloudLLM
@@ -19,8 +19,8 @@ def _run(
     prompt: str,
     port: int,
     tool_trace: ToolTrace,
-    tools: List[Any] = [],
-) -> Tuple[CloudLLM, str]:
+    tools: list[Any] = [],
+) -> tuple[CloudLLM, str]:
     mcp_client = MultiServerMCPClient({
         "home_automation": {
             "transport": "streamable_http",
@@ -31,7 +31,7 @@ def _run(
     mcp_tools = asyncio.run(mcp_client.get_tools())
     tools.extend(mcp_tools)
 
-    llm_kwargs: Dict[str, Any] = {
+    llm_kwargs: dict[str, Any] = {
         "model": model.name,
         "base_url": model.base_url,
         "temperature": 0,
@@ -47,20 +47,20 @@ def _run(
 
 
 @runner
-def run_granular(model: ModelConfig, prompt: str, tool_trace: ToolTrace) -> Tuple[CloudLLM, str]:
+def run_granular(model: ModelConfig, prompt: str, tool_trace: ToolTrace) -> tuple[CloudLLM, str]:
     return _run(model=model, prompt=prompt, port=8000, tool_trace=tool_trace)
 
 
 @runner
-def run_granular_with_weather(model: ModelConfig, prompt: str, tool_trace: ToolTrace) -> Tuple[CloudLLM, str]:
+def run_granular_with_weather(model: ModelConfig, prompt: str, tool_trace: ToolTrace) -> tuple[CloudLLM, str]:
     return _run(model=model, prompt=prompt, port=8000, tools=[get_current_weather], tool_trace=tool_trace)
 
 
 @runner
-def run_object(model: ModelConfig, prompt: str, tool_trace: ToolTrace) -> Tuple[CloudLLM, str]:
+def run_object(model: ModelConfig, prompt: str, tool_trace: ToolTrace) -> tuple[CloudLLM, str]:
     return _run(model=model, prompt=prompt, port=8001, tool_trace=tool_trace)
 
 
 @runner
-def run_object_with_weather(model: ModelConfig, prompt: str, tool_trace: ToolTrace) -> Tuple[CloudLLM, str]:
+def run_object_with_weather(model: ModelConfig, prompt: str, tool_trace: ToolTrace) -> tuple[CloudLLM, str]:
     return _run(model=model, prompt=prompt, port=8001, tools=[get_current_weather], tool_trace=tool_trace)

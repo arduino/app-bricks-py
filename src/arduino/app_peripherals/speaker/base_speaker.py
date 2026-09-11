@@ -4,7 +4,8 @@
 
 import time
 import threading
-from typing import Literal
+from types import TracebackType
+from typing import Literal, Self
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -37,7 +38,7 @@ class BaseSpeaker(ABC):
         format: FormatPlain | FormatPacked,
         buffer_size: int,
         auto_reconnect: bool,
-    ):
+    ) -> None:
         """
         Initialize the speaker base.
 
@@ -120,7 +121,7 @@ class BaseSpeaker(ABC):
         return int(self._volume * 100)
 
     @volume.setter
-    def volume(self, volume: int):
+    def volume(self, volume: int) -> None:
         if not (0 <= volume <= 100):
             raise ValueError("Volume must be between 0 and 100.")
 
@@ -177,7 +178,7 @@ class BaseSpeaker(ABC):
             except Exception as e:
                 self.logger.warning(f"Failed to stop speaker: {e}")
 
-    def play(self, audio_chunk: np.ndarray):
+    def play(self, audio_chunk: np.ndarray) -> None:
         """
         Play an audio chunk on the speaker.
 
@@ -381,7 +382,7 @@ class BaseSpeaker(ABC):
         """Check if the speaker is started."""
         return self._is_started
 
-    def on_status_changed(self, callback: Callable[[str, dict], None] | None):
+    def on_status_changed(self, callback: Callable[[str, dict], None] | None) -> None:
         """Registers or removes a callback to be triggered on speaker lifecycle events.
 
         When a speaker status changes, the provided callback function will be invoked.
@@ -408,7 +409,7 @@ class BaseSpeaker(ABC):
             self._on_status_changed_cb = None
         else:
 
-            def _callback_wrapper(new_status: str, data: dict):
+            def _callback_wrapper(new_status: str, data: dict) -> None:
                 try:
                     callback(new_status, data)
                 except Exception as e:
@@ -417,17 +418,17 @@ class BaseSpeaker(ABC):
             self._on_status_changed_cb = _callback_wrapper
 
     @abstractmethod
-    def _open_speaker(self):
+    def _open_speaker(self) -> None:
         """Open the speaker connection. Must be implemented by subclasses."""
         pass
 
     @abstractmethod
-    def _close_speaker(self):
+    def _close_speaker(self) -> None:
         """Close the speaker connection. Must be implemented by subclasses."""
         pass
 
     @abstractmethod
-    def _write_audio(self, audio_chunk: np.ndarray):
+    def _write_audio(self, audio_chunk: np.ndarray) -> None:
         """Write a single audio chunk to the speaker. Must be implemented by subclasses."""
         pass
 
@@ -464,12 +465,12 @@ class BaseSpeaker(ABC):
             if self._on_status_changed_cb is not None:
                 self._event_executor.submit(self._on_status_changed_cb, new_status, data if data is not None else {})
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
         """Context manager entry."""
         self.start()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> None:
         """Context manager exit."""
         self.stop()
 

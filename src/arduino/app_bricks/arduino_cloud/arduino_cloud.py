@@ -6,6 +6,7 @@ import os
 import threading
 import time
 import warnings
+from collections.abc import Callable
 from typing import Any
 from urllib.parse import quote
 
@@ -66,7 +67,7 @@ class ArduinoCloud:
         server: str = _DEPRECATED,
         port: int = _DEPRECATED,
         daemon_url: str = None,
-    ):
+    ) -> None:
         """Initialize the Arduino Cloud client.
 
         Args:
@@ -111,7 +112,7 @@ class ArduinoCloud:
         return "http+unix://" + quote(socket_path, safe="")
 
     # ── lifecycle (managed by the App framework) ────────────────────────────────
-    def start(self):
+    def start(self) -> None:
         """Mark the brick started and ensure every registered leaf is subscribed.
 
         Subscription and the synchronous initial seed already happen in
@@ -122,7 +123,7 @@ class ArduinoCloud:
             self._started = True
         self._ensure_subscribed()
 
-    def loop(self):
+    def loop(self) -> None:
         """Sample device→cloud callbacks (on_run / on_read) and publish per policy.
 
         Each pass, for every registered object: run its poll callbacks when due
@@ -156,7 +157,7 @@ class ArduinoCloud:
                 logger.exception(f"Callback error for '{record.name}': {e}")
         time.sleep(_LOOP_INTERVAL)
 
-    def _fire_pending_on_write(self, record: CloudObject):
+    def _fire_pending_on_write(self, record: CloudObject) -> None:
         """Fire a complex object's coalesced on_write once, if one is owed.
 
         Checks and clears the pending flag under the lock, then invokes the
@@ -172,7 +173,7 @@ class ArduinoCloud:
         if fire:
             record.fire_on_write(self)
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop the brick and tear down the SSE listener threads."""
         with self._lock:
             threads = list(self._listeners.values())
@@ -190,7 +191,7 @@ class ArduinoCloud:
         return record.last_poll == 0.0 or (now - record.last_poll) >= record.interval
 
     # ── registration ─────────────────────────────────────────────────────────
-    def register(self, aiotobj: str | Any, **kwargs: Any):
+    def register(self, aiotobj: str | Any, **kwargs: Any) -> None:  # noqa: ANN401
         """Register a variable or object with the Arduino Cloud client.
 
         Args:
@@ -226,7 +227,7 @@ class ArduinoCloud:
         # on_write with the fully-seeded object rather than one per sub-property.
         self._fire_pending_on_write(aiotobj)
 
-    def get(self, name: str, default: Any = None) -> Any:
+    def get(self, name: str, default: Any = None) -> Any:  # noqa: ANN401
         """Return a registered variable's value, or default if unset/unknown."""
         with self._lock:
             record = self._records.get(name)
@@ -236,7 +237,7 @@ class ArduinoCloud:
         return default if value is None else value
 
     # ── SSE subscription ───────────────────────────────────────────────────────
-    def _subscribe_leaf(self, leaf: CloudObject, wait_ready: bool = False):
+    def _subscribe_leaf(self, leaf: CloudObject, wait_ready: bool = False) -> None:
         """Start (once) the single SSE listener thread for a scalar leaf.
 
         The listener's first frame seeds the leaf (resolving the local value per
@@ -274,7 +275,7 @@ class ArduinoCloud:
                 _SEED_TIMEOUT,
             )
 
-    def _ensure_subscribed(self):
+    def _ensure_subscribed(self) -> None:
         """(Re)subscribe any registered leaf whose SSE listener is missing or dead.
 
         Normally every leaf is subscribed in ``register``; this recovers a leaf
@@ -292,7 +293,7 @@ class ArduinoCloud:
                     logger.warning("ArduinoCloud: '%s' has no live SSE listener; re-subscribing", leaf.name)
                     self._subscribe_leaf(leaf)
 
-    def _make_handler(self, leaf: CloudObject):
+    def _make_handler(self, leaf: CloudObject) -> Callable[[str, dict], None]:
         """Build the SSE event handler for a leaf.
 
         Dispatches on the event name (see daemon_client): the sync frames
@@ -313,7 +314,7 @@ class ArduinoCloud:
         held by other listeners and the poll loop.
         """
 
-        def handle(event: str, payload: dict):
+        def handle(event: str, payload: dict) -> None:
             owner_to_fire = None
             with self._lock:
                 if event == EVENT_THING_UNAVAILABLE:
@@ -370,7 +371,7 @@ class ArduinoCloud:
         return handle
 
     # ── attribute-style variable access ─────────────────────────────────────────
-    def __getattr__(self, name: str):
+    def __getattr__(self, name: str) -> Any:  # noqa: ANN401
         """Intercept access to cloud variables as natural attributes."""
         records = self.__dict__.get("_records")
         if records is not None and name in records:
@@ -378,7 +379,7 @@ class ArduinoCloud:
             return record if record.is_complex else record.value
         raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
 
-    def __setattr__(self, name: str, value: Any):
+    def __setattr__(self, name: str, value: Any) -> None:  # noqa: ANN401
         """Intercept assignment to cloud variables as natural attributes."""
         if name.startswith("_"):
             super().__setattr__(name, value)

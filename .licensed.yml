@@ -8,7 +8,6 @@ apps:
     python:
       virtual_env_dir: ".licensed-venv"
 
-
   - name: python-base
     source_path: .
     sources:
@@ -30,12 +29,19 @@ apps:
     python:
       virtual_env_dir: "containers/ai/gesture-recognition-runner/.licensed-venv"
 
-  - name: python-apps-base
+  - name: pose-estimation-runner
     source_path: .
     sources:
       pip: true
     python:
-      virtual_env_dir: "containers/bricks/python-apps-base/.licensed-venv"
+      virtual_env_dir: "containers/ai/pose-estimation-runner/.licensed-venv"
+
+  - name: models-downloader
+    source_path: .
+    sources:
+      pip: true
+    python:
+      virtual_env_dir: "containers/bricks/models-downloader/.licensed-venv"
 
 stale_records_action: error
 

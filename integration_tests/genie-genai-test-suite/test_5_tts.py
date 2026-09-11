@@ -6,7 +6,7 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Optional, Generator
+from collections.abc import Generator
 
 import pytest
 import requests
@@ -40,8 +40,8 @@ def iter_tts_audio(
     sample_rate: int = TTS_RATE,
     timeout=(5, 300),
     chunk_size: int = 64 * 1024,
-    headers: Optional[dict] = None,
-) -> Generator[bytes, None, None]:
+    headers: dict | None = None,
+) -> Generator[bytes]:
     """
     Yield raw PCM bytes from the TTS service as they arrive.
     """
@@ -71,7 +71,7 @@ def iter_tts_audio(
 
 
 def save_tts_stream_to_file(
-    chunks: Generator[bytes, None, None],
+    chunks: Generator[bytes],
     out_pcm_path: Path,
 ) -> Path:
     """

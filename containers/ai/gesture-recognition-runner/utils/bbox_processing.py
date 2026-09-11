@@ -2,7 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-from typing import List, Tuple
 
 from utils.constants import *
 
@@ -436,7 +435,7 @@ def compute_box_corners_with_rotation(
     return np.swapaxes(points, -1, -2)  # [B, 4, 2]
 
 
-def compute_box_affine_crop_resize_matrix(box_corners: np.ndarray, output_image_size: Tuple[int, int]) -> List[np.ndarray]:
+def compute_box_affine_crop_resize_matrix(box_corners: np.ndarray, output_image_size: tuple[int, int]) -> list[np.ndarray]:
     """
     Compute the affine transform matrices required to crop, rescale, and pad the
     rotated box defined by the input corners to fit into an output image size
@@ -478,7 +477,7 @@ def compute_box_affine_crop_resize_matrix(box_corners: np.ndarray, output_image_
     if box_corners.shape[1] < 3:
         raise ValueError(f"`box_corners` must provide at least 3 corners per item; got K={box_corners.shape[1]}")
 
-    affines: List[np.ndarray] = []
+    affines: list[np.ndarray] = []
     B = box_corners.shape[0]
     for b in range(B):
         # Use only the first 3 corners (TL, BL, TR) to match original behavior

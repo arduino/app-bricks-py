@@ -83,7 +83,7 @@ def extract_docstrings_with_types(file_path: str, module_name: str) -> list[Docs
     Returns:
         list[DocstringInfo]: A list of DocstringInfo objects describing classes, functions, and methods.
     """
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, encoding="utf-8") as f:
         source = f.read()
     tree = ast.parse(source)
     # Patch AST nodes to know their parent for top-level function detection

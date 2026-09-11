@@ -1,6 +1,6 @@
 services:
   llamacpp-models-runner:
-    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/llamacpp-npu-runner:0.12.1
+    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/llamacpp-npu-runner:0.13.0rc2
     logging:
       driver: "json-file"
       options:
@@ -22,6 +22,7 @@ services:
       - LLAMA_ARG_THREADS=${LLAMA_ARG_THREADS:-4}
       - LLAMA_ARG_CPU_MASK=${LLAMA_ARG_CPU_MASK:-0x0f}
       - GGML_HEXAGON_OPBATCH=2048
+      - GGML_HEXAGON_MBUF=512
       - XDG_CACHE_HOME=/models
     working_dir: /models
     ports:
@@ -39,8 +40,8 @@ services:
         soft: 65536
         hard: 65536
     oom_score_adj: -500
-    mem_limit: 10g
-    memswap_limit: 10g
+    mem_limit: 12g
+    memswap_limit: 12g
     shm_size: 2g
     devices:
       - /dev/dma_heap/system

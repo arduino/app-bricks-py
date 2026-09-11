@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import json
-from typing import List, Optional, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage, messages_from_dict, messages_to_dict
 
@@ -20,12 +20,12 @@ DEFAULT_THREAD_ID = "default"
 class MessagePersistence(Protocol):
     """Backend interface for persisting chat messages"""
 
-    def load(self, limit: Optional[int] = None) -> List[BaseMessage]:
+    def load(self, limit: int | None = None) -> list[BaseMessage]:
         """Return persisted messages, most-recent last.
         `limit` caps how many of the most recent ones are returned (None = all)."""
         ...
 
-    def append(self, messages: List[BaseMessage]) -> None:
+    def append(self, messages: list[BaseMessage]) -> None:
         """Persist `messages` in order."""
         ...
 
@@ -41,10 +41,10 @@ class SQLMessagePersistence:
 
     def __init__(
         self,
-        sql_store: Optional[SQLStore] = None,
+        sql_store: SQLStore | None = None,
         thread_id: str = DEFAULT_THREAD_ID,
         table_name: str = DEFAULT_HISTORY_TABLE,
-    ):
+    ) -> None:
         """Initialize the store backend.
 
         Args:
@@ -71,7 +71,7 @@ class SQLMessagePersistence:
             },
         )
 
-    def load(self, limit: Optional[int] = None) -> List[BaseMessage]:
+    def load(self, limit: int | None = None) -> list[BaseMessage]:
         """Return persisted messages in chronological order, capped to the last `limit`."""
         if limit is not None and limit <= 0:
             return []
@@ -93,7 +93,7 @@ class SQLMessagePersistence:
             logger.error(f"Failed to deserialize persisted messages for thread '{self._thread_id}': {e}")
             return []
 
-    def append(self, messages: List[BaseMessage]) -> None:
+    def append(self, messages: list[BaseMessage]) -> None:
         if not messages:
             return
 
@@ -122,7 +122,7 @@ class WindowedChatMessageHistory:
 
     k: int
 
-    def __init__(self, k: int, system_message: str = "", store: Optional[MessagePersistence] = None):
+    def __init__(self, k: int, system_message: str = "", store: MessagePersistence | None = None) -> None:
         self.k = k
         self._messages: list[BaseMessage] = []
         self._system_message = SystemMessage(content=system_message) if system_message else None
@@ -133,7 +133,7 @@ class WindowedChatMessageHistory:
             # tool-call boundaries without dropping context.
             self._apply_window(store.load(limit=k * 2))
 
-    def _apply_window(self, messages: List[BaseMessage]) -> None:
+    def _apply_window(self, messages: list[BaseMessage]) -> None:
         """Append messages to the in-memory cache and enforce the window. No persistence."""
         if self.k == 0:
             return
@@ -157,7 +157,7 @@ class WindowedChatMessageHistory:
 
             self._messages = self._messages[start:]
 
-    def add_messages(self, messages: List[BaseMessage]) -> None:
+    def add_messages(self, messages: list[BaseMessage]) -> None:
         if self.k == 0:
             return
 
@@ -166,7 +166,7 @@ class WindowedChatMessageHistory:
 
         self._apply_window(messages)
 
-    def get_messages(self) -> List[BaseMessage]:
+    def get_messages(self) -> list[BaseMessage]:
         """Get all messages in the history, including system message if set."""
         if self.k == 0:
             return [self._system_message] if self._system_message else []

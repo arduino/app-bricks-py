@@ -1,6 +1,6 @@
 ---
 name: starlette
-version: 1.0.0
+version: 1.6.0
 type: pip
 summary: The little ASGI library that shines.
 homepage: https://github.com/Kludex/starlette

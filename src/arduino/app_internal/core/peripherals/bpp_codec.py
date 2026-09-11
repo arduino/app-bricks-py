@@ -32,7 +32,7 @@ class ReplayProtection:
     the IVs already seen within the validity window.
     """
 
-    def __init__(self, window_us: int = WINDOW_US):
+    def __init__(self, window_us: int = WINDOW_US) -> None:
         self.window_us = window_us
         self.cache: dict[bytes, int] = {}  # IV -> Expiration timestamp
 
@@ -61,7 +61,7 @@ class ReplayProtection:
 
         return True
 
-    def _prune(self, now: int):
+    def _prune(self, now: int) -> None:
         # Remove expired entries
         expired_keys = [k for k, v in self.cache.items() if now > v]
         for k in expired_keys:
@@ -97,7 +97,7 @@ class BPPCodec:
     Text-safe encoding/decoding via Base64URL are also provided.
     """
 
-    def __init__(self, secret: str = "", enable_encryption: bool = False):
+    def __init__(self, secret: str = "", enable_encryption: bool = False) -> None:
         """
         Initialize codec.
 

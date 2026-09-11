@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 """
-Pytest configuration for tests relying on microphone and speaker.
+Pytest configuration shared by the whole suite.
 
 This file mocks alsaaudio so tests can run on systems without the library installed
 (e.g., macOS or Windows which doesn't have ALSA) or without any specific hardware.
@@ -11,7 +11,7 @@ This file mocks alsaaudio so tests can run on systems without the library instal
 
 import pytest
 import sys
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 
@@ -279,3 +279,10 @@ def pcm_registry():
     """
     _pcm_registry.reset()
     yield _pcm_registry
+
+
+# Importing arduino.app_utils fails without a router: fake a successful connect for the whole suite.
+# Kept out of tests/, where a conftest would put the test packages ahead of arduino.* on sys.path.
+from arduino.router_bridge import Bridge
+
+patch.object(Bridge, "connect", return_value=True).start()

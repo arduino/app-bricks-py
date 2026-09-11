@@ -1,6 +1,6 @@
 ---
 name: google-api-core
-version: 2.30.3
+version: 2.36.0
 type: pip
 summary: Google API client core library
 homepage: https://github.com/googleapis/google-cloud-python/tree/main/packages/google-api-core

@@ -1,6 +1,6 @@
 ---
 name: watchfiles
-version: 1.1.1
+version: 1.2.0
 type: pip
 summary: Simple, modern and high performance file watching and code reload in python.
 homepage: https://github.com/samuelcolvin/watchfiles

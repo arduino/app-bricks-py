@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import threading
-from typing import Literal
+from typing import Literal, cast
 
 import numpy as np
 
@@ -35,7 +35,7 @@ class WaveGenerator:
         attack: float = 0.01,
         release: float = 0.03,
         glide: float = 0.02,
-    ):
+    ) -> None:
         """
         Initialize the WaveGenerator brick.
 
@@ -121,20 +121,24 @@ class WaveGenerator:
         Get or set the current waveform type.
 
         Args:
-            wave_type (WaveType): One of "sine", "square", "sawtooth", "triangle".
+            wave_type (WaveType | str): One of "sine", "square", "sawtooth", "triangle".
+                Any other string raises ValueError.
 
         Returns:
             WaveType: Current waveform type ("sine", "square", "sawtooth", "triangle").
+
+        Raises:
+            ValueError: If the assigned value is not a supported waveform type.
         """
         return self._wave_type
 
     @wave_type.setter
-    def wave_type(self, wave_type: WaveType):
+    def wave_type(self, wave_type: WaveType | str) -> None:
         valid_types = ("sine", "square", "sawtooth", "triangle")
         if wave_type not in valid_types:
             raise ValueError(f"Invalid wave_type '{wave_type}'. Must be one of {valid_types}")
 
-        self._wave_type = wave_type
+        self._wave_type = cast(WaveType, wave_type)
 
     @property
     def sample_rate(self) -> int:
@@ -182,7 +186,7 @@ class WaveGenerator:
         return self._frequency
 
     @frequency.setter
-    def frequency(self, freq: float):
+    def frequency(self, freq: float) -> None:
         if freq < 0.0:
             raise ValueError(f"Invalid frequency '{freq}'. Must be non-negative")
 
@@ -208,7 +212,7 @@ class WaveGenerator:
         return self._amplitude
 
     @amplitude.setter
-    def amplitude(self, amp: float):
+    def amplitude(self, amp: float) -> None:
         if amp < 0.0 or amp > 1.0:
             raise ValueError(f"Invalid amplitude '{amp}'. Must be in range [0.0, 1.0]")
 
@@ -233,7 +237,7 @@ class WaveGenerator:
         return self._attack
 
     @attack.setter
-    def attack(self, attack: float):
+    def attack(self, attack: float) -> None:
         if attack < 0.0:
             raise ValueError(f"Invalid attack time '{attack}'. Must be non-negative")
 
@@ -258,7 +262,7 @@ class WaveGenerator:
         return self._release
 
     @release.setter
-    def release(self, release: float):
+    def release(self, release: float) -> None:
         if release < 0.0:
             raise ValueError(f"Invalid release time '{release}'. Must be non-negative")
 
@@ -283,7 +287,7 @@ class WaveGenerator:
         return self._glide
 
     @glide.setter
-    def glide(self, glide: float):
+    def glide(self, glide: float) -> None:
         if glide < 0.0:
             raise ValueError(f"Invalid glide time '{glide}'. Must be non-negative")
 
@@ -306,7 +310,7 @@ class WaveGenerator:
         return self._speaker.volume
 
     @volume.setter
-    def volume(self, volume: int):
+    def volume(self, volume: int) -> None:
         self._speaker.volume = volume
 
     @property
@@ -327,7 +331,7 @@ class WaveGenerator:
             "volume": self.volume,
         }
 
-    def start(self):
+    def start(self) -> None:
         """
         Start the wave generator and audio output.
 
@@ -342,7 +346,7 @@ class WaveGenerator:
         self._running.set()
         logger.info("WaveGenerator started")
 
-    def stop(self):
+    def stop(self) -> None:
         """
         Stop the wave generator and audio output.
 
@@ -358,7 +362,7 @@ class WaveGenerator:
         logger.info("WaveGenerator stopped")
 
     @brick.execute
-    def _wave_generator_loop(self):
+    def _wave_generator_loop(self) -> None:
         logger.debug(f"Generator loop started. Block frame size: {self._block_frame_count}, Rate: {self.sample_rate}.")
 
         while self._running.is_set():

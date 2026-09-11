@@ -2,7 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-from typing import Tuple
 
 from arduino.app_bricks.cloud_llm import CloudLLM
 from stubs.weather_tool import get_current_weather
@@ -11,7 +10,7 @@ from runners import runner, ToolTrace
 
 
 @runner
-def run(model: ModelConfig, prompt: str, tool_trace: ToolTrace) -> Tuple[CloudLLM, str]:
+def run(model: ModelConfig, prompt: str, tool_trace: ToolTrace) -> tuple[CloudLLM, str]:
     llm = CloudLLM(
         model=model.name,
         temperature=0,

@@ -5,7 +5,7 @@
 import re
 import time
 from collections.abc import Callable
-from typing import Optional
+from typing import Protocol
 
 import cv2
 import numpy as np
@@ -19,7 +19,17 @@ from .errors import CameraOpenError, CameraReadError
 
 logger = Logger("CSICamera")
 
-_BACKENDS = {
+
+class _CsiBackend(Protocol):
+    """Interface shared by the CSI camera stack discovery modules."""
+
+    setup_gstreamer: Callable[[], None]
+    list_camera_ids: Callable[[], list[int]]
+    get_camera_identifier: Callable[[int], str]
+    gstreamer_source: Callable[[int], str]
+
+
+_BACKENDS: dict[str, _CsiBackend] = {
     "camss": csi_camss_discovery,
     "camx": csi_camx_discovery,
 }
@@ -34,7 +44,7 @@ def detect_camera_stack() -> str:
     raise RuntimeError("No supported camera stack detected. Please ensure either CAMSS or CAMX is available.")
 
 
-def _get_backend():
+def _get_backend() -> _CsiBackend:
     """Resolve the host camera stack backend and prepare GStreamer for it."""
     backend = _BACKENDS[detect_camera_stack()]
     backend.setup_gstreamer()
@@ -53,9 +63,9 @@ class CSICamera(BaseCamera):
         device: str | int = 0,
         resolution: tuple[int, int] = (1280, 720),
         fps: int = 30,
-        adjustments: Optional[Callable[[np.ndarray], np.ndarray]] = None,
+        adjustments: Callable[[np.ndarray], np.ndarray] | None = None,
         auto_reconnect: bool = True,
-    ):
+    ) -> None:
         """
         Initialize CSI camera.
 

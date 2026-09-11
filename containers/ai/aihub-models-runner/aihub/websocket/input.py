@@ -9,7 +9,7 @@ import base64
 import json
 import queue
 import threading
-from typing import Callable, Optional
+from collections.abc import Callable
 
 import cv2
 import numpy as np
@@ -35,7 +35,7 @@ class WebSocketInput(InputSource):
         on_frame_cb: Callable[[np.ndarray], None],
         host: str = "0.0.0.0",
         port: int = 5000,
-        on_config_cb: Optional[Callable[[dict], None]] = None,
+        on_config_cb: Callable[[dict], None] | None = None,
         **kwargs,
     ):
         """
@@ -56,9 +56,9 @@ class WebSocketInput(InputSource):
         self._host = host
         self._port = port
 
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._loop: asyncio.AbstractEventLoop | None = None
         self._server = None
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
 
         self._running = False
 
@@ -160,7 +160,7 @@ class WebSocketInput(InputSource):
         except Exception as e:
             logger.warning(f"Error applying config: {e}")
 
-    def _decode_frame(self, data: dict) -> Optional[np.ndarray]:
+    def _decode_frame(self, data: dict) -> np.ndarray | None:
         """Decode a frame from the message payload."""
         try:
             frame_data = base64.b64decode(data["frame"])

@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 from docs_generator.extractor import DocstringInfo
-from typing import List, Any
+from typing import Any
 import logging
 
 logger = logging.getLogger(__name__)
@@ -38,7 +38,7 @@ def _log_docstring_item(item: DocstringInfo):
     logger.debug(f"{item.name} - Returns: {getattr(item.doc, 'returns', None)}")
 
 
-def _format_parameters(params: List[Any], heading_level: int = 4) -> str:
+def _format_parameters(params: list[Any], heading_level: int = 4) -> str:
     if not params:
         return ""
     out = f"{'#' * heading_level} Parameters\n\n"
@@ -58,7 +58,7 @@ def _format_returns(returns: Any, heading_level: int = 4) -> str:
     return f"{'#' * heading_level} Returns\n\n-{type_str}: {desc}\n\n"
 
 
-def _format_raises(raises: List[Any], heading_level: int = 4) -> str:
+def _format_raises(raises: list[Any], heading_level: int = 4) -> str:
     if not raises:
         return ""
     out = f"{'#' * heading_level} Raises\n\n"
@@ -69,7 +69,7 @@ def _format_raises(raises: List[Any], heading_level: int = 4) -> str:
     return out + "\n"
 
 
-def _format_examples(examples: List[Any], heading_level: int = 3) -> str:
+def _format_examples(examples: list[Any], heading_level: int = 3) -> str:
     if not examples:
         return ""
     out = f"{'#' * heading_level} Examples\n\n"

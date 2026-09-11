@@ -6,7 +6,6 @@
 
 import threading
 import time
-from typing import Optional
 
 import numpy as np
 
@@ -44,9 +43,9 @@ class MJPEGOutput(OutputSink):
         self._jpeg_quality = 80
 
         self._app = Flask(__name__)
-        self._latest_jpeg: Optional[bytes] = None
+        self._latest_jpeg: bytes | None = None
         self._lock = threading.Lock()
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
         self._running = False
 
     @property

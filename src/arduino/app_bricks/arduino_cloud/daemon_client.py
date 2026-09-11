@@ -25,6 +25,8 @@ import threading
 from datetime import datetime
 from urllib.parse import quote, unquote, urlparse
 
+from collections.abc import Callable, Iterator
+
 import requests
 
 from arduino.app_utils import Logger
@@ -46,7 +48,7 @@ EVENT_LASTVALUE_MISSING = "lastvalue_missing"
 EVENT_THING_UNAVAILABLE = "thing_unavailable"
 
 
-def parse_timestamp(value) -> float | None:
+def parse_timestamp(value: object) -> float | None:
     """Parse an RFC3339 timestamp from the daemon into epoch seconds.
 
     The daemon emits Go RFC3339Nano (e.g. ``2026-06-22T10:00:00.123456789Z``),
@@ -80,7 +82,7 @@ def parse_timestamp(value) -> float | None:
 class DaemonClient:
     """Thin client for the daemon REST/SSE API."""
 
-    def __init__(self, base_url: str):
+    def __init__(self, base_url: str) -> None:
         self._base = base_url.rstrip("/")
         # If the URL uses the http+unix:// scheme, every session must mount the
         # UNIX-socket adapter; the socket path is the percent-encoded host part.
@@ -99,7 +101,7 @@ class DaemonClient:
             session.mount("http+unix://", UnixHTTPAdapter(self._socket_path))
         return session
 
-    def put_value(self, name: str, value) -> None:
+    def put_value(self, name: str, value: object) -> None:
         """Send a variable value to the daemon (best-effort; logs on failure).
 
         Failures are classified so the log points at the likely cause: a read
@@ -156,7 +158,9 @@ class DaemonClient:
             logger.info("ArduinoCloud: '%s' delivered again after %d consecutive failure(s)", name, self._put_fail_count)
             self._put_fail_count = 0
 
-    def stream_events(self, name: str, handler, stop_event: threading.Event, ready: threading.Event = None) -> None:
+    def stream_events(
+        self, name: str, handler: Callable[[str, dict], None], stop_event: threading.Event, ready: threading.Event | None = None
+    ) -> None:
         """Stream SSE events for a variable until stop_event is set.
 
         ``handler(event_name, payload_dict)`` is called for each event. The first
@@ -196,7 +200,7 @@ class DaemonClient:
             backoff = min(backoff * 2, _RECONNECT_MAX)
 
     @staticmethod
-    def _iter_events(resp, stop_event: threading.Event):
+    def _iter_events(resp: requests.Response, stop_event: threading.Event) -> Iterator[tuple[str, dict]]:
         """Parse the SSE byte stream, yielding each complete event as
         ``(event_name, payload_dict)``. Stops when stop_event is set or the
         stream ends."""

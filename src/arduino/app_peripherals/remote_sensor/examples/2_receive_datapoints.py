@@ -9,7 +9,7 @@ from arduino.app_peripherals.remote_sensor import RemoteSensor
 from arduino.app_utils.app import App
 
 
-def on_datapoint(data: bytes):
+def on_datapoint(data: bytes) -> None:
     # The payload is whatever the client sent (JSON, raw bytes, etc.)
     try:
         payload = json.loads(data.decode())
@@ -18,7 +18,7 @@ def on_datapoint(data: bytes):
         print(f"Received {len(data)} raw bytes")
 
 
-def on_status(status: str, info: dict):
+def on_status(status: str, info: dict) -> None:
     print(f"Sensor status changed to '{status}': {info}")
 
 

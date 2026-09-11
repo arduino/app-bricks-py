@@ -5,7 +5,6 @@
 import os
 import re
 import time
-from typing import Optional
 
 import alsaaudio
 import numpy as np
@@ -36,7 +35,7 @@ class ALSASpeaker(BaseSpeaker):
         buffer_size: int = Speaker.BUFFER_SIZE_BALANCED,
         shared: bool = True,
         auto_reconnect: bool = True,
-    ):
+    ) -> None:
         """
         Initialize ALSA speaker.
 
@@ -86,7 +85,7 @@ class ALSASpeaker(BaseSpeaker):
         self.shared = shared
         self.logger = logger
 
-        self._pcm: Optional[alsaaudio.PCM] = None
+        self._pcm: alsaaudio.PCM | None = None
 
         self._last_reconnection_attempt = 0.0  # Used for auto-reconnection when _write_audio is called
 
@@ -165,7 +164,6 @@ class ALSASpeaker(BaseSpeaker):
 
         The returned path is always one of:
             - "plughw:CARD=<name>,DEV=<n>" for card-based devices (USB and explicit),
-            - "hw:<c>,<d>,<s>" / "plughw:<c>,<d>,<s>" for fully-specified raw devices,
             - "pipewire:NODE=<node.name>" for built-in (jack) devices.
 
         Args:
@@ -193,8 +191,6 @@ class ALSASpeaker(BaseSpeaker):
                 return self._resolve_jack_ref(identifier)
             if identifier.startswith("usb:"):
                 return self._resolve_usb_ref(identifier)
-            if re.match(r"^(plughw:|hw:)[^,]+,\d+,\d+$", identifier):
-                return identifier
 
         # Everything else resolves to a card-based device
         playback_devices = self._alsa_playback_devices()
@@ -213,7 +209,8 @@ class ALSASpeaker(BaseSpeaker):
         Args:
             identifier: Card-based identifier to resolve. Supported inputs:
                 - str: "/dev/snd/by-id/..." symlink.
-                - str: "hw:<card>,<dev>" (or with "plughw:" prefix).
+                - str: "hw:<card>,<dev>[,<subdev>]" (or with "plughw:" prefix), where <card> is an index
+                  or a name. The subdevice, if any, is ignored.
                 - str: "CARD=<name>,DEV=<n>" (with or without a prefix).
 
         Returns:
@@ -236,9 +233,13 @@ class ALSASpeaker(BaseSpeaker):
         if card_name_match:
             return f"plughw:CARD={card_name_match.group(2)},DEV={int(card_name_match.group(3))}"
 
-        numeric_match = re.match(r"^(.+:)?(\d+),(\d+)$", identifier)
-        if numeric_match:
-            return f"plughw:CARD={self._resolve_name(int(numeric_match.group(2)))},DEV={int(numeric_match.group(3))}"
+        card_match = re.match(r"^(.+:)?([^,=]+),(\d+)(,\d+)?$", identifier)
+        if card_match:
+            card = card_match.group(2)
+            card_name = self._resolve_name(int(card)) if card.isdigit() else card
+            if card_match.group(4):
+                logger.warning(f"Subdevice in '{identifier}' is ignored, the whole device will be used")
+            return f"plughw:CARD={card_name},DEV={int(card_match.group(3))}"
 
         raise SpeakerConfigError(f"Unsupported device identifier: {identifier}")
 
@@ -290,7 +291,7 @@ class ALSASpeaker(BaseSpeaker):
         depend on current running system state.
 
         Args:
-            device_stable_ref: ALSA device name
+            device_stable_ref: ALSA device name in "[prefix:]CARD=<name>,DEV=<n>" format
 
         Returns:
             tuple: (card_index, device_index)
@@ -341,9 +342,6 @@ class ALSASpeaker(BaseSpeaker):
                     return node_description(node_match.group(1)) or device_ref
                 return device_ref
 
-            match = re.match(r"^(?:plughw:|hw:)([^,]+),\d+,\d+$", device_ref)
-            if match:
-                return match.group(1)
             # This is a card stable refs like "plughw:CARD=MyDevice,DEV=0" or "CARD=MyDevice,DEV=0"
             match = re.match(r"^(.+:)?CARD=([^,]+),DEV=(\d+)$", device_ref)
             if match:
@@ -388,10 +386,8 @@ class ALSASpeaker(BaseSpeaker):
         logger.debug(f"Opening PCM device: {self.device_stable_ref}")
 
         try:
-            direct_match = re.match(r"^pipewire($|:)|^(plughw:|hw:)[^,]+,\d+,\d+$", self.device_stable_ref)
-
-            if direct_match:
-                device = self.device_stable_ref
+            if re.match(r"^pipewire($|:)", self.device_stable_ref):
+                device = self.device_stable_ref  # PipeWire already shares the device
             elif self.shared:
                 card_idx, device_idx = self._resolve_runtime_ref(self.device_stable_ref)
                 device = f"plug_card_{card_idx}_dev_{device_idx}_spk"
@@ -455,7 +451,7 @@ class ALSASpeaker(BaseSpeaker):
             finally:
                 self._pcm = None
 
-    def _write_audio(self, audio_chunk: np.ndarray):
+    def _write_audio(self, audio_chunk: np.ndarray) -> None:
         """
         Write a single audio chunk to the ALSA speaker.
 

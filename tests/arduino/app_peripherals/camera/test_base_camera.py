@@ -86,6 +86,16 @@ def test_base_camera_init_invalid():
         MockedCamera(fps=0)
 
 
+def test_fps_setter_resyncs_throttling_interval():
+    """Test that updating fps recomputes the software throttling interval."""
+    camera = MockedCamera(fps=10)
+    assert camera._desired_interval == pytest.approx(1 / 10)
+
+    camera.fps = 20
+    assert camera.fps == 20
+    assert camera._desired_interval == pytest.approx(1 / 20)
+
+
 def test_is_started_state_transitions():
     """Test is_started return value through different state transitions."""
     camera = MockedCamera()

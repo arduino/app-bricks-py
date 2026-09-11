@@ -126,7 +126,7 @@ class WeatherForecast:
             category=weather_data[weather_code]["category"],
         )
 
-    def process(self, item):
+    def process(self, item: dict) -> WeatherData | dict:
         """Process dictionary input to get weather forecast.
 
         This method checks if the item is a dictionary with latitude and longitude or city name.

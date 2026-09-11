@@ -2,6 +2,8 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+from typing import Any
+
 import numpy as np
 
 from .base_microphone import BaseMicrophone, FormatPlain, FormatPacked
@@ -104,7 +106,7 @@ class Microphone:
         channels: int = CHANNELS_MONO,
         format: FormatPlain | FormatPacked = np.int16,
         buffer_size: int = BUFFER_SIZE_BALANCED,
-        **kwargs,
+        **kwargs: Any,
     ) -> BaseMicrophone:
         """
         Create a microphone instance based on the device type.
@@ -119,9 +121,11 @@ class Microphone:
                     "1", ...) counting USB microphones first, then jack ones,
                     regardless of whether it is already in use: contention on a
                     reused microphone is only discovered when starting it
-                - str: ALSA device name (e.g., "plughw:CARD=MyCard,DEV=0", "hw:0,0", "CARD=MyCard,DEV=0")
+                - str: ALSA device name (e.g., "plughw:CARD=MyCard,DEV=0", "CARD=MyCard,DEV=0",
+                    "hw:0,0", "hw:MyCard,0"). A trailing subdevice is ignored.
                 - str: ALSA device file path (e.g., "/dev/snd/by-id/usb-My-Device-00")
                 - str: Microphone.USB_MIC_x / Microphone.JACK_MIC_x macros
+                - str: PipeWire device (e.g., "pipewire", "pipewire:NODE=MyNode"), always shared
                 - str: WebSocket URL for audio streams (e.g., "ws://0.0.0.0:8080")
                 Default: None.
             sample_rate (int): Sample rate in Hz. Default: 16000
@@ -136,7 +140,8 @@ class Microphone:
             **kwargs: Microphone-specific configuration parameters grouped by type:
                 ALSA Microphone Parameters:
                     shared (bool): Whether the microphone can be used by multiple applications
-                        simultaneously. Default: True.
+                        simultaneously. Ignored for PipeWire devices, which are always
+                        shared. Default: True.
                     auto_reconnect (bool): Whether to automatically attempt to reconnect
                         if the microphone connection is lost. Default: True.
                 WebSocket Microphone Parameters:
@@ -171,6 +176,7 @@ class Microphone:
             microphone = Microphone("CARD=MyCard,DEV=0", format="S16_LE")
             microphone = Microphone("plughw:CARD=MyCard,DEV=0")
             microphone = Microphone("hw:0,0")
+            microphone = Microphone("hw:MyCard,0")  # Card name instead of index
             microphone = Microphone("/dev/snd/by-id/usb-My-Device-00")  # Using device file path
             microphone = Microphone("pipewire")  # To use default PipeWire microphone (if available)
             microphone = Microphone("pipewire:NODE=MyPipewireNode")  # Using PipeWire node name
@@ -232,9 +238,11 @@ class Microphone:
                     "1", ...) counting USB microphones first, then jack ones if
                     supported by the platform. The device is shared with other
                     instances using it
-                - str: ALSA device name (e.g., "plughw:CARD=MyCard,DEV=0", "hw:0,0", "CARD=MyCard,DEV=0")
+                - str: ALSA device name (e.g., "plughw:CARD=MyCard,DEV=0", "CARD=MyCard,DEV=0",
+                    "hw:0,0", "hw:MyCard,0"). A trailing subdevice is ignored.
                 - str: ALSA device file path (e.g., "/dev/snd/by-id/usb-My-Device-00")
                 - str: Microphone.USB_MIC_x / Microphone.JACK_MIC_x macros
+                - str: PipeWire device (e.g., "pipewire", "pipewire:NODE=MyNode"), always shared
                 - str: WebSocket URL for audio streams (e.g., "ws://0.0.0.0:8080")
                 Default: 0.
 
@@ -275,9 +283,11 @@ class Microphone:
                     "1", ...) counting USB microphones first, then jack ones if
                     supported by the platform. The device is shared with other
                     instances using it
-                - str: ALSA device name (e.g., "plughw:CARD=MyCard,DEV=0", "hw:0,0", "CARD=MyCard,DEV=0")
+                - str: ALSA device name (e.g., "plughw:CARD=MyCard,DEV=0", "CARD=MyCard,DEV=0",
+                    "hw:0,0", "hw:MyCard,0"). A trailing subdevice is ignored.
                 - str: ALSA device file path (e.g., "/dev/snd/by-id/usb-My-Device-00")
                 - str: Microphone.USB_MIC_x / Microphone.JACK_MIC_x macros
+                - str: PipeWire device (e.g., "pipewire", "pipewire:NODE=MyNode"), always shared
                 - str: WebSocket URL for audio streams (e.g., "ws://0.0.0.0:8080")
                 Default: 0.
 
@@ -305,7 +315,7 @@ def _create_microphone(
     channels: int,
     format: FormatPlain | FormatPacked,
     buffer_size: int,
-    **kwargs,
+    **kwargs: Any,
 ) -> BaseMicrophone:
     """Create the microphone implementation matching the given device identifier."""
     from urllib.parse import urlparse

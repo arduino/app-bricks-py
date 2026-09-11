@@ -1,6 +1,6 @@
 ---
 name: tqdm
-version: 4.67.3
+version: 4.70.0
 type: pip
 summary: Fast, Extensible Progress Meter
 homepage: https://tqdm.github.io

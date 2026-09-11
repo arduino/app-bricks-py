@@ -1,6 +1,6 @@
 services:
   pose_estimation:
-    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/pose-estimation-runner:0.1.0
+    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/pose-estimation-runner:0.13.0rc2
     logging:
       driver: "json-file"
       options:
@@ -14,7 +14,9 @@ services:
       - /dev/fastrpc-cdsp
     volumes:
       # Mount hexagon firmware
-      - ${HOST_DSP_INSTALLATION_PATH:-/usr/share/qcom}/qcs8300/Qualcomm/QCS8300-RIDE/dsp/cdsp:/lib/dsp/cdsp
+      - /sys/firmware/devicetree/base/model:/run/device-model
+      # Read-only: /qairt-entrypoint.sh merges it into /usr/share/qcom in the container layer
+      - ${HOST_DSP_INSTALLATION_PATH:-/usr/share/qcom}:/run/host-qcom:ro
     healthcheck:
       test: [ "CMD-SHELL", "nc -zv pose_estimation 5002 || exit 1" ]
       interval: 1s

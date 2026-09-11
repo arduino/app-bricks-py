@@ -5,10 +5,11 @@
 from arduino.app_utils import brick, Logger
 from arduino.app_peripherals.speaker import Speaker
 import threading
-from typing import Iterable
+from collections.abc import Iterable
 import numpy as np
 import time
 from pathlib import Path
+from typing import Any
 from collections import OrderedDict
 import math
 
@@ -20,19 +21,19 @@ from .composition import MusicComposition as MusicComposition
 logger = Logger("SoundGenerator")
 
 
-class LRUDict(OrderedDict):
+class LRUDict[K, V](OrderedDict[K, V]):
     """A dictionary-like object with a fixed size that evicts the least recently used items."""
 
-    def __init__(self, maxsize=128, *args, **kwargs):
+    def __init__(self, maxsize: int = 128, *args: Any, **kwargs: Any) -> None:
         self.maxsize = maxsize
         super().__init__(*args, **kwargs)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: K) -> V:
         value = super().__getitem__(key)
         self.move_to_end(key)
         return value
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key: K, value: V) -> None:
         if key in self:
             self.move_to_end(key)
 
@@ -92,7 +93,7 @@ class SoundGeneratorStreamer:
         wave_form: str = "sine",
         master_volume: float = 1.0,
         sound_effects: list = None,
-    ):
+    ) -> None:
         """Initialize the SoundGeneratorStreamer. Generates sound blocks for streaming, without internal playback.
         Args:
             bpm (int): The tempo in beats per minute for note duration calculations.
@@ -123,13 +124,13 @@ class SoundGeneratorStreamer:
 
         self._wav_cache = LRUDict(maxsize=10)
 
-    def start(self):
+    def start(self) -> None:
         pass
 
-    def stop(self):
+    def stop(self) -> None:
         pass
 
-    def _init_wave_generator(self, wave_form: str, sample_rate: int | None = None):
+    def _init_wave_generator(self, wave_form: str, sample_rate: int | None = None) -> None:
         """Initialize the WaveSamplesBuilder with the given sample rate.
 
         If `sample_rate` is None, uses `self._sample_rate`.
@@ -141,7 +142,7 @@ class SoundGeneratorStreamer:
             self._wave_gen = WaveSamplesBuilder(sample_rate=sr, wave_form=wave_form)
             self._sample_rate = int(sr)
 
-    def set_wave_form(self, wave_form: str):
+    def set_wave_form(self, wave_form: str) -> None:
         """
         Set the wave form type for sound generation.
         Args:
@@ -150,7 +151,7 @@ class SoundGeneratorStreamer:
         """
         self._init_wave_generator(wave_form)
 
-    def set_master_volume(self, volume: float):
+    def set_master_volume(self, volume: float) -> None:
         """
         Set the master volume level.
         Args:
@@ -158,7 +159,7 @@ class SoundGeneratorStreamer:
         """
         self._master_volume = max(0.0, min(1.0, volume))
 
-    def set_bpm(self, bpm: int):
+    def set_bpm(self, bpm: int) -> None:
         """
         Set the tempo in beats per minute.
         Args:
@@ -168,7 +169,7 @@ class SoundGeneratorStreamer:
             self._bpm = bpm
         logger.debug(f"BPM updated to {bpm}")
 
-    def set_effects(self, effects: list):
+    def set_effects(self, effects: list) -> None:
         """
         Set the list of sound effects to apply to the audio signal.
         Args:
@@ -540,7 +541,7 @@ class SoundGenerator(SoundGeneratorStreamer):
         wave_form: str = "sine",
         master_volume: float = 1.0,
         sound_effects: list = None,
-    ):
+    ) -> None:
         """Initialize the SoundGenerator.
 
         Args:
@@ -589,7 +590,7 @@ class SoundGenerator(SoundGeneratorStreamer):
         self._sequence_lock = threading.Lock()
         self._playback_session_id = 0  # Incremented each playback to invalidate stale threads
 
-    def start(self):
+    def start(self) -> None:
         """Start the sound generator and its internal speaker (if not external)."""
         if self._started.is_set():
             return
@@ -603,14 +604,14 @@ class SoundGenerator(SoundGeneratorStreamer):
         self._sync_sample_rate()
         self._started.set()
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop playback, halt any running sequence, and close the internal speaker."""
         self.stop_sequence()
         if not self.external_speaker:
             self._output_device.stop()
         self._started.clear()
 
-    def _sync_sample_rate(self):
+    def _sync_sample_rate(self) -> None:
         """Synchronize the wave generator sample rate with the actual output device."""
         actual_sr = self._output_device.sample_rate
         if actual_sr and actual_sr != self._sample_rate:
@@ -618,7 +619,7 @@ class SoundGenerator(SoundGeneratorStreamer):
             self._init_wave_generator(self._wave_gen.wave_form, sample_rate=actual_sr)
             logger.debug(f"Synced wave_gen sample_rate to {actual_sr}")
 
-    def _ensure_speaker_ready(self):
+    def _ensure_speaker_ready(self) -> None:
         """Ensure the internal speaker is started and ready for playback.
 
         Auto-starts the speaker on the first play call so users don't need to
@@ -640,7 +641,7 @@ class SoundGenerator(SoundGeneratorStreamer):
             return 0.0
         return min((float(buffer_size) / float(sample_rate)) * 2.0, 0.25)
 
-    def _wait_for_playback_session_end(self, session_id: int):
+    def _wait_for_playback_session_end(self, session_id: int) -> None:
         """Wait until the given playback session is no longer active."""
         while True:
             with self._sequence_lock:
@@ -654,7 +655,7 @@ class SoundGenerator(SoundGeneratorStreamer):
         """Schedule a timed stop for the currently running playback session."""
         stop_done = threading.Event()
 
-        def stop_after_delay():
+        def stop_after_delay() -> None:
             deadline = time.monotonic() + delay
             while True:
                 remaining = deadline - time.monotonic()
@@ -678,7 +679,7 @@ class SoundGenerator(SoundGeneratorStreamer):
         threading.Thread(target=stop_after_delay, daemon=True, name="SoundGen-CompStopTimer").start()
         return stop_done
 
-    def set_master_volume(self, volume: float):
+    def set_master_volume(self, volume: float) -> None:
         """
         Set the master volume level.
         Args:
@@ -686,7 +687,7 @@ class SoundGenerator(SoundGeneratorStreamer):
         """
         super().set_master_volume(volume)
 
-    def set_effects(self, effects: list):
+    def set_effects(self, effects: list) -> None:
         """
         Set the list of sound effects to apply to the audio signal.
         Args:
@@ -694,7 +695,7 @@ class SoundGenerator(SoundGeneratorStreamer):
         """
         super().set_effects(effects)
 
-    def play_polyphonic(self, notes: list[list[tuple[str, float]]], as_tone: bool = False, volume: float = None, block: bool = False):
+    def play_polyphonic(self, notes: list[list[tuple[str, float]]], as_tone: bool = False, volume: float = None, block: bool = False) -> None:
         """
         Play multiple sequences of musical notes simultaneously (poliphony).
         It is possible to play multi track music by providing a list of sequences,
@@ -718,7 +719,7 @@ class SoundGenerator(SoundGeneratorStreamer):
         block: bool | None = None,
         loop: bool = False,
         play_for: float | None = None,
-    ):
+    ) -> None:
         """
         Play a MusicComposition object.
 
@@ -781,7 +782,7 @@ class SoundGenerator(SoundGeneratorStreamer):
         on_complete_callback = None
         if not loop:
 
-            def on_complete():
+            def on_complete() -> None:
                 playback_done.set()
 
             on_complete_callback = on_complete
@@ -817,7 +818,7 @@ class SoundGenerator(SoundGeneratorStreamer):
             timed_stop_done.wait()
         self._wait_for_playback_session_end(session_id)
 
-    def play_chord(self, notes: list[str], note_duration: float | str = 1 / 4, volume: float = None, block: bool = False):
+    def play_chord(self, notes: list[str], note_duration: float | str = 1 / 4, volume: float = None, block: bool = False) -> None:
         """
         Play a chord consisting of multiple musical notes simultaneously for a specified duration and volume.
         Args:
@@ -835,7 +836,7 @@ class SoundGenerator(SoundGeneratorStreamer):
             if duration > 0.0:
                 time.sleep(duration)
 
-    def play(self, note: str, note_duration: float | str = 1 / 4, volume: float = None, block: bool = False):
+    def play(self, note: str, note_duration: float | str = 1 / 4, volume: float = None, block: bool = False) -> None:
         """
         Play a musical note for a specified duration and volume.
         Args:
@@ -853,7 +854,7 @@ class SoundGenerator(SoundGeneratorStreamer):
             if duration > 0.0:
                 time.sleep(duration)
 
-    def play_tone(self, note: str, duration: float = 0.25, volume: float = None, block: bool = False):
+    def play_tone(self, note: str, duration: float = 0.25, volume: float = None, block: bool = False) -> None:
         """Play a musical note with duration specified in seconds.
 
         Unlike ``play()`` which interprets duration as a musical note fraction,
@@ -871,7 +872,7 @@ class SoundGenerator(SoundGeneratorStreamer):
         if block and duration > 0.0:
             time.sleep(duration)
 
-    def play_abc(self, abc_string: str, volume: float = None, block: bool = False):
+    def play_abc(self, abc_string: str, volume: float = None, block: bool = False) -> None:
         """Play a sequence of musical notes defined in ABC notation.
 
         The parser is ABC 2.1 standard compliant (key signatures, accidentals,
@@ -894,7 +895,7 @@ class SoundGenerator(SoundGeneratorStreamer):
         if block:
             time.sleep(overall_duration)
 
-    def play_wav(self, wav_file: str, block: bool = False):
+    def play_wav(self, wav_file: str, block: bool = False) -> None:
         """Play a WAV audio file through the output device.
 
         Only uncompressed PCM WAV files matching the output device configuration
@@ -929,7 +930,7 @@ class SoundGenerator(SoundGeneratorStreamer):
         on_step_callback: callable = None,
         on_complete_callback: callable = None,
         volume: float = None,
-    ):
+    ) -> None:
         """
         Play a step sequence with automatic timing.
         This method handles all the complexity of buffer management internally,
@@ -992,7 +993,7 @@ class SoundGenerator(SoundGeneratorStreamer):
         self._sequence_thread.start()
         logger.info(f"Step sequence started: {len(sequence)} steps at {bpm} BPM (session {session_id})")
 
-    def stop_sequence(self):
+    def stop_sequence(self) -> None:
         """
         Stop the currently playing step sequence.
 
@@ -1029,13 +1030,13 @@ class SoundGenerator(SoundGeneratorStreamer):
         with self._sequence_lock:
             return self._sequence_thread is not None and self._sequence_thread.is_alive()
 
-    def _render_sequence_step(self, notes: list[str], note_duration: float | str, volume: float):
+    def _render_sequence_step(self, notes: list[str], note_duration: float | str, volume: float) -> bytes:
         """Render a single sequence step to a float32 audio buffer."""
         if notes and len(notes) > 0:
             if len(notes) == 1:
-                return super(SoundGenerator, self).play(notes[0], note_duration, volume)
-            return super(SoundGenerator, self).play_chord(notes, note_duration, volume)
-        return super(SoundGenerator, self).play("REST", note_duration, volume)
+                return super().play(notes[0], note_duration, volume)
+            return super().play_chord(notes, note_duration, volume)
+        return super().play("REST", note_duration, volume)
 
     def _playback_sequence_thread(
         self,
@@ -1047,7 +1048,7 @@ class SoundGenerator(SoundGeneratorStreamer):
         on_complete_callback: callable,
         volume: float,
         session_id: int,
-    ):
+    ) -> None:
         """Internal thread for step sequence playback.
 
         Uses a simple generate-play loop.  Each ``speaker.play()`` call writes

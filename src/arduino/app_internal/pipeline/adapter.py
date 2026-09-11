@@ -5,7 +5,7 @@
 import asyncio
 import queue
 import threading
-from typing import Any, Optional
+from typing import Any
 from .constants import _SHUTDOWN
 from .limiter import AsyncRateLimiter
 from arduino.app_utils import Logger
@@ -20,25 +20,25 @@ logger = Logger("pipeline.adapter")
 class AsyncBrickAdapter:
     """Base class for brick adapters, normalizing to an async API."""
 
-    def __init__(self, original_brick: Any, rate_limit: Optional[int] = None):
+    def __init__(self, original_brick: Any, rate_limit: int | None = None) -> None:  # noqa: ANN401
         self.original_brick = original_brick
         self.rate_limit = rate_limit
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._loop: asyncio.AbstractEventLoop | None = None
 
-    def set_loop(self, loop: asyncio.AbstractEventLoop):
+    def set_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         self._loop = loop
 
-    async def start(self):
+    async def start(self) -> Any:  # noqa: ANN401
         """Normalized async start method."""
         logger.debug(f"Running start method for {type(self.original_brick).__name__}")
         return await self._execute_maybe_sync("start")
 
-    async def stop(self):
+    async def stop(self) -> Any:  # noqa: ANN401
         """Normalized async stop method."""
         logger.debug(f"Starting stop method for {type(self.original_brick).__name__}")
         return await self._execute_maybe_sync("stop")
 
-    async def _execute_maybe_sync(self, method_name: str, *args: Any) -> Any:
+    async def _execute_maybe_sync(self, method_name: str, *args: Any) -> Any:  # noqa: ANN401
         """Helper to execute a method, handling sync/async via executor."""
         if not self._loop:
             raise RuntimeError("Loop not set for adapter execution")
@@ -59,7 +59,7 @@ class AsyncBrickAdapter:
 class AsyncSourceAdapter(AsyncBrickAdapter):
     """Adapter for async sources."""
 
-    def __init__(self, original_brick: Any, rate_limit: Optional[int] = None):
+    def __init__(self, original_brick: Any, rate_limit: int | None = None) -> None:  # noqa: ANN401
         super().__init__(original_brick, rate_limit)
 
         self._produce_method = getattr(self.original_brick, "produce", None)
@@ -67,7 +67,7 @@ class AsyncSourceAdapter(AsyncBrickAdapter):
             raise TypeError(f"Method 'produce' not found or not async on {type(self.original_brick).__name__}")
         self._limiter = AsyncRateLimiter(rate_limit) if rate_limit else None
 
-    async def produce(self, *args: Any) -> Any:
+    async def produce(self, *args: Any) -> Any:  # noqa: ANN401
         """Normalized async produce, calls original async method."""
         if self._limiter:
             await self._limiter.wait()
@@ -79,7 +79,7 @@ class AsyncBlockingSourceAdapter(AsyncBrickAdapter):
     Manages a daemon thread internally to avoid blocking the event loop.
     """
 
-    def __init__(self, original_brick: Any, rate_limit: Optional[int] = None):
+    def __init__(self, original_brick: Any, rate_limit: int | None = None) -> None:  # noqa: ANN401
         super().__init__(original_brick, rate_limit)
 
         self._produce_method = getattr(self.original_brick, "produce", None)
@@ -92,9 +92,9 @@ class AsyncBlockingSourceAdapter(AsyncBrickAdapter):
         # Internal queue for daemon thread -> async communication
         self._data_queue = queue.Queue(1)
         self._stop_event = threading.Event()
-        self._producer_thread: Optional[threading.Thread] = None
+        self._producer_thread: threading.Thread | None = None
 
-    async def start(self):
+    async def start(self) -> None:
         """Start the original brick and the internal blocking producer thread."""
         await super().start()
 
@@ -112,7 +112,7 @@ class AsyncBlockingSourceAdapter(AsyncBrickAdapter):
             self._producer_thread.start()
             logger.debug(f"Started internal producer thread for {type(self.original_brick).__name__}")
 
-    async def stop(self):
+    async def stop(self) -> None:
         """Signal the producer thread and the original brick to stop."""
         # Signal producer thread to stop and unblock consumer task
         self.unblock_producer()
@@ -124,7 +124,7 @@ class AsyncBlockingSourceAdapter(AsyncBrickAdapter):
         # Stop the original brick using base class method (will run in executor)
         await super().stop()
 
-    def unblock_producer(self):
+    def unblock_producer(self) -> None:
         """Signals the producer thread and injects sentinel to unblock consumer."""
         if not self._stop_event.is_set() and self._producer_thread and self._producer_thread.is_alive():
             logger.debug(f"Adapter for {type(self.original_brick).__name__}: signaling stop event and injecting sentinel.")
@@ -141,7 +141,7 @@ class AsyncBlockingSourceAdapter(AsyncBrickAdapter):
         else:
             logger.debug(f"Adapter for {type(self.original_brick).__name__}: stop already signaled.")
 
-    async def produce(self, *args: Any) -> Any:
+    async def produce(self, *args: Any) -> Any:  # noqa: ANN401
         """Normalized async produce, gets data from internal queue populated by the daemon thread
         and applies emission rate limit.
         """
@@ -166,7 +166,7 @@ class AsyncBlockingSourceAdapter(AsyncBrickAdapter):
 
     # TODO: we can probably avoid propagating the _SHUTDOWN sentinel and simply return.
     # self._producer_thread.is_alive() in produce() should take care of this situation.
-    def _producer_loop(self):
+    def _producer_loop(self) -> None:
         """Target for the internal daemon thread. Transfers data from the blocking produce method to the async one."""
         try:
             while not self._stop_event.is_set():
@@ -195,7 +195,7 @@ class AsyncBlockingSourceAdapter(AsyncBrickAdapter):
 
 
 class AsyncProcessorAdapter(AsyncBrickAdapter):
-    def __init__(self, original_brick: Any, rate_limit: Optional[int] = None):
+    def __init__(self, original_brick: Any, rate_limit: int | None = None) -> None:  # noqa: ANN401
         super().__init__(original_brick, rate_limit)
 
         self._process_method = getattr(self.original_brick, "process", None)
@@ -205,7 +205,7 @@ class AsyncProcessorAdapter(AsyncBrickAdapter):
         self._is_sync = not asyncio.iscoroutinefunction(self._process_method)
         self._limiter = AsyncRateLimiter(rate_limit) if rate_limit else None
 
-    async def process(self, *args: Any) -> Any:
+    async def process(self, *args: Any) -> Any:  # noqa: ANN401
         if not self._loop and self._is_sync:
             raise RuntimeError("Loop not set for executing sync process")
 
@@ -219,7 +219,7 @@ class AsyncProcessorAdapter(AsyncBrickAdapter):
 
 
 class AsyncSinkAdapter(AsyncBrickAdapter):
-    def __init__(self, original_brick: Any, rate_limit: Optional[int] = None):
+    def __init__(self, original_brick: Any, rate_limit: int | None = None) -> None:  # noqa: ANN401
         super().__init__(original_brick, rate_limit)
 
         self._consume_method = getattr(self.original_brick, "consume", None)
@@ -229,7 +229,7 @@ class AsyncSinkAdapter(AsyncBrickAdapter):
         self._is_sync = not asyncio.iscoroutinefunction(self._consume_method)
         self._limiter = AsyncRateLimiter(rate_limit) if rate_limit else None
 
-    async def consume(self, *args: Any) -> Any:
+    async def consume(self, *args: Any) -> Any:  # noqa: ANN401
         if not self._loop and self._is_sync:
             raise RuntimeError("Loop not set for executing sync consume")
 
@@ -242,7 +242,7 @@ class AsyncSinkAdapter(AsyncBrickAdapter):
             return await self._consume_method(*args)
 
 
-def create_adapter(brick: Any, brick_type: str, rate_limit: Optional[int] = None) -> AsyncBrickAdapter:
+def create_adapter(brick: Any, brick_type: str, rate_limit: int | None = None) -> AsyncBrickAdapter:  # noqa: ANN401
     """Factory function that creates the appropriate adapter for the provided brick_type."""
     original_brick = brick
     method_name = ""

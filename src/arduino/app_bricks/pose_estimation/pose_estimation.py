@@ -9,9 +9,10 @@ import queue
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import asdict
 from pathlib import Path
-from typing import Callable, Literal
+from typing import Any
+from collections.abc import Callable
 
 import numpy as np
 import websockets
@@ -21,79 +22,31 @@ from arduino.app_utils import brick, Logger
 from arduino.app_utils.image.adjustments import compress_to_jpeg
 from arduino.app_internal.core.module import load_brick_compose_file, resolve_address
 
-from .pose_classifier import (
-    ANCHOR_JOINTS,
-    EMBEDDING_JOINTS,
-    MIN_OBSERVED_SCORE,
+from .classifier import (
+    ACTION_SMOOTHING_SECONDS,
+    DEFAULT_ACTION_DURATION,
+    DEFAULT_SMOOTHING_SECONDS,
     OUT_OF_FRAME_TOLERANCE,
     EmaHysteresis,
-    KEYPOINT_NAMES,
-    embed,
+    embed_person,
     load_pose_classifier,
-    normalize_pose,
 )
+from .enrollment import OTHER, Enrollment, enroll
+from .enrollment.cache import CACHE_FILE, EnrollmentCache
+from .enrollment.photos import build_buckets, custom_folders, embed_photos, photos
+from .detections import Person, Pose, parse_people
+from .vocabulary import PoseSpec, parse_poses
 
 logger = Logger("PoseEstimation")
 
 _POSE_CLASSIFIER_PATH = Path(__file__).resolve().parent / "assets" / "pose_classifier.npz"
 
+_UNREADABLE_HOLD_SEC = 0.5
 
-@dataclass
-class Keypoint:
-    """One of the 17 body keypoints of a detected person.
+_CUSTOM_POSES_DIR = "/app/poses"
 
-    Attributes:
-        name (str): Keypoint name, one of `KEYPOINT_NAMES`.
-        x (int): Horizontal pixel coordinate in the camera frame.
-        y (int): Vertical pixel coordinate in the camera frame.
-        score (float): Confidence score in [0.0, 1.0] for this keypoint.
-    """
-
-    name: str
-    x: int
-    y: int
-    score: float
-
-
-@dataclass
-class Person:
-    """A person detected in a frame.
-
-    Attributes:
-        keypoints (dict[str, Keypoint]): The person's 17 keypoints, keyed by
-            keypoint name (see `KEYPOINT_NAMES`). Low-confidence keypoints are
-            included; filter by their score.
-        bounding_box_xyxy (tuple[int, int, int, int]): (x1, y1, x2, y2) box
-            enclosing the person's confident keypoints, in frame coordinates.
-    """
-
-    keypoints: dict[str, Keypoint]
-    bounding_box_xyxy: tuple[int, int, int, int]
-
-
-@dataclass
-class Pose:
-    """A pose classification event for a single person.
-
-    Delivered by `on_pose` callbacks when the tracked person assumes or leaves
-    a built-in pose.
-
-    Attributes:
-        name (str): Built-in pose name, e.g. "sitting".
-        event (Literal["enter", "exit"]): "enter" when the person assumes the
-            pose, "exit" when they leave it.
-        confidence (float): Classification confidence in [0.0, 1.0] at the event edge.
-        keypoints (dict[str, Keypoint]): The person's 17 keypoints, keyed by
-            keypoint name (see `KEYPOINT_NAMES`).
-        bounding_box_xyxy (tuple[int, int, int, int]): (x1, y1, x2, y2) box
-            enclosing the person's confident keypoints, in frame coordinates.
-    """
-
-    name: str
-    event: Literal["enter", "exit"]
-    confidence: float
-    keypoints: dict[str, Keypoint]
-    bounding_box_xyxy: tuple[int, int, int, int]
+"""Names of the built-in poses, the ones an app can listen to without teaching anything."""
+BUILTIN_POSE_NAMES: tuple[str, ...] = load_pose_classifier(_POSE_CLASSIFIER_PATH)[2]
 
 
 @brick
@@ -102,28 +55,75 @@ class PoseEstimation:
         self,
         camera: BaseCamera | None = None,
         confidence: float = 0.25,
-        debounce_sec: float = 0.0,
-    ):
+        count_debounce_sec: float = 0.0,
+        out_of_frame_tolerance: float = OUT_OF_FRAME_TOLERANCE,
+        draw_bboxes: bool = False,
+        draw_low_confidence_points: bool = True,
+        bbox_padding: float | tuple[float, float, float, float] = 0.0,
+        poses: list[str | dict[str, Any]] | None = None,
+        custom_poses_dir: str = _CUSTOM_POSES_DIR,
+    ) -> None:
         """Initialize the PoseEstimation brick.
 
         Args:
             camera (BaseCamera): The camera instance to use for capturing video. If None, a default
                 camera will be initialized. Pass the same instance shared with other bricks to reuse
                 a single camera.
+            poses (list[str | dict] | None): The poses this instance listens to. None (default)
+                selects the built-in poses with their shipped settings. Otherwise a list whose items
+                are pose names, or dicts with the key `name` plus any of `thresholds` ({"enter":
+                float, "exit": float}, with votes in [0, 1], replacing the shipped values) and
+                `smoothing` (seconds, the time constant of the moving average). A name is either
+                one of `BUILTIN_POSE_NAMES` or a sub-folder of `custom_poses_dir` holding the photos
+                of a pose of yours, taught at `start()`; a custom pose also takes `type` ("state",
+                the default, for a held pose, or "action" for a movement) and `duration` (seconds,
+                actions only: the typical length of one occurrence, 0.7 by default); its
+                `thresholds` and `smoothing` default to the values derived from its photos. The
+                built-in poses left out stay in the classifier as negatives and never fire.
+            custom_poses_dir (str): Where the photo folders of the custom poses live, one folder per
+                pose named like the pose, plus an optional `other` folder with photos of what is not
+                any of your poses. The brick writes its reports in the pose folders and what it
+                already read in `.cache`. Default "/app/poses".
             confidence (float): Minimum detection score for a person to be reported. The score is
                 the mean of the person's 17 keypoint scores, so partly visible people score lower.
                 Applied by the model runner, so detections below it are neither emitted nor drawn
                 on the overlay. Changeable at runtime with `set_confidence()`.
-            debounce_sec (float): Minimum seconds a presence or people-count change must be stable
-                before `on_enter`/`on_exit`/`on_count_change` fire again. Filters out detection
-                flicker. Default is 0 (no debounce).
+            count_debounce_sec (float): Minimum seconds a person leaving, or the people count
+                dropping, must hold before `on_exit`/`on_count_change` report it, so that a
+                dropped detection frame cannot fake it. People appearing are always reported at
+                once. Default is 0 (no debounce). Pose events are not affected: they have their
+                own temporal smoothing.
+            out_of_frame_tolerance (float): How far past the frame edges a joint may be
+                extrapolated before the skeleton counts as unreadable, as a fraction of the
+                frame size: no pose is classified and `on_readable_change` reports False.
+                Default is 0.25; 0 demands every joint inside the picture.
+            draw_bboxes (bool): Draw each detected person's bounding box on the skeleton overlay
+                served by the model runner. Off by default. Changeable at runtime with
+                `set_draw_bboxes()`.
+            draw_low_confidence_points (bool): Mark low-confidence keypoints on the overlay too, as small
+                hollow dots joined by darker lines. On by default; set to False for an overlay
+                that shows only the confident keypoints. Changeable at runtime with
+                `set_draw_low_confidence_points()`.
+            bbox_padding (float | tuple[float, float, float, float]): Expand every reported
+                and drawn bounding box, CSS style: a single number applies to all sides, a
+                4-tuple is (top, right, bottom, left). Top/bottom are fractions of the box
+                height, left/right of its width, each in [0.0, 1.0]. Default is 0 (no
+                expansion). Changeable at runtime with `set_bbox_padding()`.
 
         Raises:
+            ValueError: If `poses` is malformed or names a pose that does not exist, or if a folder
+                in `custom_poses_dir` carries the name of a built-in pose or is not a valid pose name.
             RuntimeError: If the model runner host address could not be resolved.
         """
+        self._custom_poses_dir = Path(custom_poses_dir)
+        self._pose_specs = parse_poses(poses, BUILTIN_POSE_NAMES, custom_folders(self._custom_poses_dir, BUILTIN_POSE_NAMES))
         self._camera = camera if camera else Camera(fps=30)
         self._confidence = confidence
-        self._debounce_sec = debounce_sec
+        self._count_debounce_sec = count_debounce_sec
+        self._out_of_frame_tolerance = out_of_frame_tolerance
+        self._draw_bboxes = draw_bboxes
+        self._draw_low_confidence_points = draw_low_confidence_points
+        self._bbox_padding = self._validate_bbox_padding(bbox_padding)
 
         # Callbacks
         self._callbacks: dict[str, Callable] = {}
@@ -133,9 +133,12 @@ class PoseEstimation:
 
         # State tracking
         self._person_present = False
-        self._presence_change_ts = 0.0
+        self._presence_since: float | None = None
         self._person_count = 0
-        self._count_change_ts = 0.0
+        self._count_candidate: int | None = None
+        self._count_since = 0.0
+        self._readable = False
+        self._readable_since: float | None = None
         self._is_running = False
 
         self._camera_frame_queue = queue.Queue(maxsize=2)
@@ -163,10 +166,30 @@ class PoseEstimation:
         # dials and the operating point it was tuned with travel together
         # inside the asset.
         load_start = time.monotonic()
-        self._pose_knn, self._pose_label_weights, self._pose_names, self._pose_thresholds = load_pose_classifier(_POSE_CLASSIFIER_PATH)
+        self._pose_knn, self._pose_label_weights, _, shipped_thresholds = load_pose_classifier(_POSE_CLASSIFIER_PATH)
+        self._pose_names = BUILTIN_POSE_NAMES if poses is None else tuple(spec.name for spec in self._pose_specs)
+        if self._pose_label_weights is not None and set(self._pose_names) != set(BUILTIN_POSE_NAMES):
+            raise RuntimeError("a reduced pose vocabulary needs other_weight == 1.0 in the classifier asset")
+        self._pose_thresholds = {
+            "enter": {spec.name: self._declared_threshold(spec, "enter", shipped_thresholds) for spec in self._pose_specs},
+            "exit": {spec.name: self._declared_threshold(spec, "exit", shipped_thresholds) for spec in self._pose_specs},
+        }
+        self._pose_smoothing = {
+            spec.name: (ACTION_SMOOTHING_SECONDS if spec.type == "action" else DEFAULT_SMOOTHING_SECONDS)
+            if spec.smoothing is None
+            else spec.smoothing
+            for spec in self._pose_specs
+        }
+        self._pose_action_duration = {
+            spec.name: DEFAULT_ACTION_DURATION if spec.duration is None else spec.duration for spec in self._pose_specs if spec.type == "action"
+        }
         logger.info(f"pose classifier ready in {time.monotonic() - load_start:.2f}s (poses: {', '.join(self._pose_names)})")
         self._pose_ema = EmaHysteresis(
-            classes=self._pose_names, enter_threshold=self._pose_thresholds["enter"], exit_threshold=self._pose_thresholds["exit"]
+            classes=self._pose_names,
+            smoothing_tau=self._pose_smoothing,
+            enter_threshold=self._pose_thresholds["enter"],
+            exit_threshold=self._pose_thresholds["exit"],
+            action_duration=self._pose_action_duration,
         )
         self._pose_last_ts: float | None = None
         self._pose_last_person: Person | None = None
@@ -179,13 +202,21 @@ class PoseEstimation:
         self._gate_log_ts = time.monotonic()
         self._gate_log_counts = dict(self._gate_counts)
 
-    def start(self):
-        """Start the capture thread and asyncio event loop."""
+    def start(self) -> None:
+        """Teach the custom poses, if any, then start the capture thread and the asyncio event loop.
+
+        Raises:
+            ValueError: If a custom pose is not accepted; the message carries the verdict and the next
+                step of each refused pose, the full report is in the log and in the pose folder.
+            RuntimeError: If the model runner cannot be reached to read the photos.
+        """
+        if any(not spec.builtin for spec in self._pose_specs):
+            self._install_enrollment(self._enroll_custom_poses())
         self._executor = ThreadPoolExecutor()
         self._camera.start()
         self._is_running = True
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop all tracking and close connections."""
         self._is_running = False
         self._camera.stop()
@@ -194,12 +225,18 @@ class PoseEstimation:
             self._executor = None
         # Reset the temporal state so a restart begins from a clean slate
         self._pose_ema = EmaHysteresis(
-            classes=self._pose_names, enter_threshold=self._pose_thresholds["enter"], exit_threshold=self._pose_thresholds["exit"]
+            classes=self._pose_names,
+            smoothing_tau=self._pose_smoothing,
+            enter_threshold=self._pose_thresholds["enter"],
+            exit_threshold=self._pose_thresholds["exit"],
+            action_duration=self._pose_action_duration,
         )
         self._pose_last_ts = None
         self._pose_last_person = None
+        self._readable = False
+        self._readable_since = None
 
-    def on_keypoints(self, callback: Callable[[Person], None] | None):
+    def on_keypoints(self, callback: Callable[[Person], None] | None) -> None:
         """Register a callback invoked once per detected person, for every processed frame.
 
         With several people in view, the callback is invoked once for each of
@@ -211,8 +248,8 @@ class PoseEstimation:
         """
         self._register_callback("keypoints", callback)
 
-    def on_pose(self, pose: str, callback: Callable[[Pose], None] | None):
-        """Register a callback for a built-in pose (e.g. "sitting").
+    def on_pose(self, pose: str, callback: Callable[[Pose], None] | None) -> None:
+        """Register a callback for one of the poses this instance listens to (e.g. "sitting").
 
         The classifier follows ONE person: the largest bounding box in the
         frame, normally the closest to the camera. Other people stay visible
@@ -222,19 +259,20 @@ class PoseEstimation:
         tracked person assumes the pose, event="exit" when they leave it.
 
         Args:
-            pose (str): One of the built-in pose names: "left_arm_raised",
-                "right_arm_raised", "sitting", "standing".
+            pose (str): One of `pose_names`: the built-in poses ("left_arm_raised",
+                "right_arm_raised", "sitting", "standing") unless the constructor's
+                `poses` argument narrowed them down, and the custom poses it declared.
             callback (Callable[[Pose], None]): Function to call with the pose
                 event. None to unregister.
 
         Raises:
-            ValueError: If `pose` is not one of the built-in pose names.
+            ValueError: If `pose` is not one of `pose_names`.
         """
         if pose not in self._pose_names:
             raise ValueError(f"unknown pose {pose!r} (available: {', '.join(self._pose_names)})")
         self._register_callback(f"pose:{pose}", callback)
 
-    def on_enter(self, callback: Callable[[], None] | None):
+    def on_enter(self, callback: Callable[[], None] | None) -> None:
         """Register a callback for when the first person enters the scene.
 
         Args:
@@ -243,7 +281,7 @@ class PoseEstimation:
         """
         self._register_callback("enter", callback)
 
-    def on_exit(self, callback: Callable[[], None] | None):
+    def on_exit(self, callback: Callable[[], None] | None) -> None:
         """Register a callback for when the last person leaves the scene.
 
         Args:
@@ -252,7 +290,7 @@ class PoseEstimation:
         """
         self._register_callback("exit", callback)
 
-    def on_count_change(self, callback: Callable[[int], None] | None):
+    def on_count_change(self, callback: Callable[[int], None] | None) -> None:
         """Register a callback for when the number of detected people changes.
 
         Args:
@@ -261,7 +299,36 @@ class PoseEstimation:
         """
         self._register_callback("count", callback)
 
-    def set_confidence(self, confidence: float):
+    def on_readable_change(self, callback: Callable[[bool], None] | None) -> None:
+        """Register a callback for when the tracked person becomes readable, or stops being.
+
+        The pose classifier needs the skeleton to be complete enough to judge: joints
+        wildly outside the frame, guessed anchors or a collapsed torso make the frame
+        unreadable, and no pose event is emitted while it stays that way. Becoming
+        readable is reported at once, losing it only when it holds.
+
+        Args:
+            callback (Callable[[bool], None]): Function to call with True when the tracked
+                person's pose can be read, False when it cannot. None to unregister.
+        """
+        self._register_callback("readable", callback)
+
+    @property
+    def readable(self) -> bool:
+        """Whether the tracked person's pose can be read right now."""
+        return self._readable
+
+    @property
+    def people_count(self) -> int:
+        """How many people are in view right now, the value `on_count_change` last reported."""
+        return self._person_count
+
+    @property
+    def pose_names(self) -> tuple[str, ...]:
+        """The poses this instance listens to, the names `on_pose` accepts."""
+        return self._pose_names
+
+    def set_confidence(self, confidence: float) -> None:
         """Change the minimum detection score for a person, effective immediately.
 
         Args:
@@ -273,9 +340,140 @@ class PoseEstimation:
         if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not 0.0 <= float(confidence) <= 1.0:
             raise ValueError(f"confidence must be a number in [0.0, 1.0], got {confidence!r}")
         self._confidence = float(confidence)
-        logger.info(f"detection confidence set to {self._confidence}")
+        logger.debug(f"detection confidence set to {self._confidence}")
 
-    def on_frame(self, callback: Callable[[np.ndarray], None] | None):
+    def set_draw_bboxes(self, draw_bboxes: bool) -> None:
+        """Show or hide each detected person's bounding box on the overlay, effective immediately.
+
+        Args:
+            draw_bboxes (bool): True to draw every detected person's bounding box on the
+                skeleton overlay served by the model runner, False to hide the boxes.
+
+        Raises:
+            ValueError: If draw_bboxes is not a boolean.
+        """
+        if not isinstance(draw_bboxes, bool):
+            raise ValueError(f"draw_bboxes must be a boolean, got {draw_bboxes!r}")
+        self._draw_bboxes = draw_bboxes
+        logger.debug(f"bbox overlay {'enabled' if draw_bboxes else 'disabled'}")
+
+    def set_draw_low_confidence_points(self, draw_low_confidence_points: bool) -> None:
+        """Show or hide low-confidence keypoints on the overlay, effective immediately.
+
+        Args:
+            draw_low_confidence_points (bool): True to mark low-confidence keypoints too, False for an
+                overlay that shows only the confident keypoints and connections.
+
+        Raises:
+            ValueError: If draw_low_confidence_points is not a boolean.
+        """
+        if not isinstance(draw_low_confidence_points, bool):
+            raise ValueError(f"draw_low_confidence_points must be a boolean, got {draw_low_confidence_points!r}")
+        self._draw_low_confidence_points = draw_low_confidence_points
+        logger.debug(f"uncertain keypoints overlay {'enabled' if draw_low_confidence_points else 'disabled'}")
+
+    def set_bbox_padding(self, padding: float | tuple[float, float, float, float]) -> None:
+        """Expand every reported and drawn bounding box, effective immediately.
+
+        The value passed replaces the current padding entirely.
+
+        Args:
+            padding (float | tuple[float, float, float, float]): CSS style: a single number
+                applies to all sides, a 4-tuple is (top, right, bottom, left). Top/bottom are
+                fractions of the box height, left/right of its width, each in [0.0, 1.0].
+
+        Raises:
+            ValueError: If padding is not a number in [0.0, 1.0] or a 4-tuple of them.
+        """
+        self._bbox_padding = self._validate_bbox_padding(padding)
+        top, right, bottom, left = self._bbox_padding
+        logger.debug(f"bbox padding set to top={top}, right={right}, bottom={bottom}, left={left}")
+
+    @staticmethod
+    def _validate_bbox_padding(padding: float | tuple[float, float, float, float]) -> tuple[float, float, float, float]:
+        """Normalize a CSS-style padding value to a (top, right, bottom, left) tuple."""
+        values = padding if isinstance(padding, (tuple, list)) else (padding, padding, padding, padding)
+        if len(values) != 4:
+            raise ValueError(f"padding must be a number or a (top, right, bottom, left) tuple, got {padding!r}")
+        for value in values:
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0.0 <= float(value) <= 1.0:
+                raise ValueError(f"padding values must be numbers in [0.0, 1.0], got {value!r}")
+        return tuple(float(value) for value in values)
+
+    @staticmethod
+    def _declared_threshold(spec: PoseSpec, edge: str, shipped: dict[str, dict[str, float]]) -> float:
+        """The threshold a pose starts with: declared, shipped, or the reference point until enrollment derives it."""
+        declared = spec.enter if edge == "enter" else spec.exit
+        if declared is not None:
+            return declared
+        if spec.builtin:
+            return shipped[edge][spec.name]
+        return 0.55 if edge == "enter" else 0.35
+
+    def _embed_photos(self, paths: list[Path]) -> dict[Path, tuple[np.ndarray | None, str | None]]:
+        config = {"min_person_score": self._confidence, "draw_bboxes": False, "draw_low_confidence_points": False}
+        return embed_photos(paths, self._ws_send_url, self._ws_recv_url, config, self._confidence, self._out_of_frame_tolerance)
+
+    def _enroll_custom_poses(self) -> Enrollment:
+        """Turn the photo folders into buckets, reusing the cached embeddings, and run the enrollment."""
+        started = time.monotonic()
+        root = self._custom_poses_dir
+        cache = EnrollmentCache(root / CACHE_FILE, _POSE_CLASSIFIER_PATH, self._confidence, self._out_of_frame_tolerance)
+        names = [spec.name for spec in self._pose_specs if not spec.builtin] + ([OTHER] if (root / OTHER).is_dir() else [])
+        folders = {name: photos(root / name) for name in names}
+        keys = {path: cache.key(root, path) for paths in folders.values() for path in paths}
+        pending = [path for path, key in keys.items() if key not in cache.embeddings]
+        declaration = json.dumps([asdict(spec) for spec in self._pose_specs])
+        changed = bool(pending) or set(keys.values()) != set(cache.embeddings) or declaration != cache.declaration
+        if pending:
+            logger.info(f"reading {len(pending)} new photo(s) of the custom poses through the model runner")
+            for path, (embedding, reason) in self._embed_photos(pending).items():
+                cache.store(keys[path], embedding, reason)
+            cache.save(list(keys.values()))
+        buckets = build_buckets(root, folders, cache)
+        other = buckets.pop(OTHER, None)
+
+        now = time.strftime("%Y-%m-%d %H:%M:%S")
+        enrollment = enroll(_POSE_CLASSIFIER_PATH, self._pose_specs, buckets, other, now)
+        for name, outcome in enrollment.outcomes.items():
+            if changed:
+                stem = f"report_{now.replace(' ', '_').replace(':', '-')}"
+                report_path = root / name / f"{stem}.txt"
+                copy = 1
+                while report_path.exists():
+                    copy += 1
+                    report_path = root / name / f"{stem}-{copy}.txt"
+                report_path.write_text(outcome.report + "\n")
+                logger.info(f"enrollment report for {name!r} written to {report_path}:\n{outcome.report}")
+            else:
+                verdict = "accepted" if outcome.accepted else "not accepted"
+                logger.info(f"pose {name!r}: {verdict} (same photos and declaration as last time, report unchanged)")
+        if changed:
+            cache.declaration = declaration
+            cache.save(list(keys.values()))
+        logger.info(f"custom poses enrolled in {time.monotonic() - started:.1f}s")
+        return enrollment
+
+    def _install_enrollment(self, enrollment: Enrollment) -> None:
+        """Make the composed classifier and the derived thresholds the ones the frames are judged with."""
+        refused = [outcome for outcome in enrollment.outcomes.values() if not outcome.accepted]
+        if refused:
+            summaries = "\n".join(f"  {outcome.name}: {outcome.summary}" for outcome in refused)
+            raise ValueError(f"custom pose(s) not accepted (the full report is in the log and in the pose folder):\n{summaries}")
+        self._pose_knn = enrollment.knn
+        self._pose_label_weights = None
+        for name, outcome in enrollment.outcomes.items():
+            self._pose_thresholds["enter"][name] = outcome.enter
+            self._pose_thresholds["exit"][name] = outcome.exit
+        self._pose_ema = EmaHysteresis(
+            classes=self._pose_names,
+            smoothing_tau=self._pose_smoothing,
+            enter_threshold=self._pose_thresholds["enter"],
+            exit_threshold=self._pose_thresholds["exit"],
+            action_duration=self._pose_action_duration,
+        )
+
+    def on_frame(self, callback: Callable[[np.ndarray], None] | None) -> None:
         """Register a callback that receives each raw camera frame.
 
         Args:
@@ -284,7 +482,7 @@ class PoseEstimation:
         """
         self._register_callback("frame", callback)
 
-    def on_error(self, callback: Callable[[Exception], None] | None):
+    def on_error(self, callback: Callable[[Exception], None] | None) -> None:
         """Register a callback invoked when an error occurs while processing detections.
 
         Args:
@@ -293,7 +491,7 @@ class PoseEstimation:
         """
         self._register_callback("error", callback)
 
-    def _register_callback(self, key: str, callback: Callable | None):
+    def _register_callback(self, key: str, callback: Callable | None) -> None:
         with self._callbacks_lock:
             if callback is None:
                 self._callbacks.pop(key, None)
@@ -308,7 +506,7 @@ class PoseEstimation:
             return self._callbacks.get(key)
 
     @brick.loop
-    def _capture_loop(self):
+    def _capture_loop(self) -> None:
         """Continuously capture frames from camera (runs in dedicated thread)."""
         try:
             frame = self._camera.capture()
@@ -344,7 +542,7 @@ class PoseEstimation:
                 logger.error(f"Error capturing frame: {e}")
 
     @brick.execute
-    def _send_receive_loop(self):
+    def _send_receive_loop(self) -> None:
         """Run the asyncio event loop in a dedicated thread."""
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -358,16 +556,26 @@ class PoseEstimation:
         finally:
             loop.close()
 
-    async def _send_frames_task(self):
+    async def _send_frames_task(self) -> None:
         """Send frames to the processing container via WebSocket."""
         while self._is_running:
             try:
                 async with websockets.connect(self._ws_send_url) as ws:
-                    sent_confidence: float | None = None
+                    sent_config: dict | None = None
                     while self._is_running:
-                        if self._confidence != sent_confidence:
-                            await ws.send(json.dumps({"config": {"min_person_score": self._confidence}}))
-                            sent_confidence = self._confidence
+                        top, right, bottom, left = self._bbox_padding
+                        config = {
+                            "min_person_score": self._confidence,
+                            "draw_bboxes": self._draw_bboxes,
+                            "draw_low_confidence_points": self._draw_low_confidence_points,
+                            "bbox_padding_top": top,
+                            "bbox_padding_right": right,
+                            "bbox_padding_bottom": bottom,
+                            "bbox_padding_left": left,
+                        }
+                        if config != sent_config:
+                            await ws.send(json.dumps({"config": config}))
+                            sent_config = config
                         try:
                             frame = await asyncio.get_event_loop().run_in_executor(None, self._camera_frame_queue.get, True, 0.1)
                         except queue.Empty:
@@ -383,7 +591,7 @@ class PoseEstimation:
                     logger.error(f"Error in send frames task: {e}. Reconnecting...")
                     await asyncio.sleep(3)
 
-    async def _receive_detections_task(self):
+    async def _receive_detections_task(self) -> None:
         """Receive detection results and dispatch events."""
         while self._is_running:
             try:
@@ -401,24 +609,10 @@ class PoseEstimation:
                     logger.error(f"Error in receive detections task: {e}. Reconnecting...")
                     await asyncio.sleep(3)
 
-    def _process_detection(self, metadata: dict):
+    def _process_detection(self, metadata: dict) -> None:
         """Process detection data and dispatch appropriate events."""
         try:
-            people: list[Person] = []
-            for entry in metadata.get("persons", []):
-                if float(entry.get("score", 0.0)) < self._confidence:
-                    continue
-                keypoints = {
-                    kp.get("name", ""): Keypoint(
-                        name=kp.get("name", ""),
-                        x=int(kp.get("x", 0)),
-                        y=int(kp.get("y", 0)),
-                        score=float(kp.get("score", 0.0)),
-                    )
-                    for kp in entry.get("keypoints", [])
-                }
-                bbox = entry.get("bounding_box_xyxy", [0, 0, 0, 0])
-                people.append(Person(keypoints=keypoints, bounding_box_xyxy=(int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3]))))
+            people = parse_people(metadata, self._confidence)
         except Exception as e:
             logger.error(f"Error parsing detection metadata: {e}")
             self._dispatch_error(e)
@@ -429,16 +623,27 @@ class PoseEstimation:
 
         # Dispatch person enter/exit events, debounced to filter out detection flicker
         present = count > 0
-        if present != self._person_present and (now - self._presence_change_ts) >= self._debounce_sec:
-            self._person_present = present
-            self._presence_change_ts = now
-            self._submit_callback("enter" if present else "exit")
+        if present == self._person_present:
+            self._presence_since = None
+        else:
+            if self._presence_since is None:
+                self._presence_since = now
+            if present or (now - self._presence_since) >= self._count_debounce_sec:
+                self._person_present = present
+                self._presence_since = None
+                self._submit_callback("enter" if present else "exit")
 
         # Dispatch people count change events, debounced as well
-        if count != self._person_count and (now - self._count_change_ts) >= self._debounce_sec:
-            self._person_count = count
-            self._count_change_ts = now
-            self._submit_callback("count", count)
+        if count == self._person_count:
+            self._count_candidate = None
+        else:
+            if self._count_candidate != count:
+                self._count_candidate = count
+                self._count_since = now
+            if count > self._person_count or (now - self._count_since) >= self._count_debounce_sec:
+                self._person_count = count
+                self._count_candidate = None
+                self._submit_callback("count", count)
 
         # Dispatch keypoint events (not debounced: they are the raw detection stream)
         if people:
@@ -446,7 +651,7 @@ class PoseEstimation:
 
         self._update_pose_classification(people, now)
 
-    def _update_pose_classification(self, people: list[Person], now: float):
+    def _update_pose_classification(self, people: list[Person], now: float) -> None:
         """Classify the tracked person (largest box) and dispatch pose edges."""
         dt = 0.0 if self._pose_last_ts is None else now - self._pose_last_ts
         self._pose_last_ts = now
@@ -458,6 +663,8 @@ class PoseEstimation:
             self._pose_last_person = tracked
             probs = self._classify_person(tracked)
             self._pose_last_probs = probs
+
+        self._update_readable(probs is not None, now)
 
         events = self._pose_ema.update(probs, dt, person_present=bool(people))
         if not events:
@@ -478,6 +685,18 @@ class PoseEstimation:
                     bounding_box_xyxy=bbox,
                 ),
             )
+
+    def _update_readable(self, readable: bool, now: float) -> None:
+        """Dispatch readability changes: gained at once, lost only when it holds."""
+        if readable == self._readable:
+            self._readable_since = None
+            return
+        if self._readable_since is None:
+            self._readable_since = now
+        if readable or (now - self._readable_since) >= _UNREADABLE_HOLD_SEC:
+            self._readable = readable
+            self._readable_since = None
+            self._submit_callback("readable", readable)
 
     @staticmethod
     def _box_area(box: tuple[int, int, int, int]) -> int:
@@ -504,41 +723,18 @@ class PoseEstimation:
         an all-zeros dict from the classifier means "read fine, looks like
         nothing we know" and makes any active pose decay.
         """
-        anchors_observed = any(
-            (keypoint := person.keypoints.get(name)) is not None and keypoint.score >= MIN_OBSERVED_SCORE for name in ANCHOR_JOINTS
-        )
-        if not anchors_observed:
-            self._gate("anchors")
+        embedding, gate = embed_person(person, self._frame_hw, self._out_of_frame_tolerance)
+        self._gate(gate)
+        if embedding is None:
             return None
-        if any(name not in person.keypoints for name in KEYPOINT_NAMES):
-            self._gate("missing")
-            return None
-        if self._frame_hw is not None:
-            frame_h, frame_w = self._frame_hw
-            margin_x = OUT_OF_FRAME_TOLERANCE * frame_w
-            margin_y = OUT_OF_FRAME_TOLERANCE * frame_h
-            for name in EMBEDDING_JOINTS:
-                keypoint = person.keypoints[name]
-                if not (-margin_x <= keypoint.x <= frame_w + margin_x and -margin_y <= keypoint.y <= frame_h + margin_y):
-                    self._gate("out_of_frame")
-                    return None
-        xy = np.asarray(
-            [[person.keypoints[name].x, person.keypoints[name].y] for name in KEYPOINT_NAMES],
-            dtype=np.float32,
-        )
-        norm = normalize_pose(xy)
-        if norm is None:
-            self._gate("torso")
-            return None
-        self._gate("classified")
-        return self._pose_knn.classify(embed(norm), label_weights=self._pose_label_weights)
+        return self._pose_knn.classify(embedding, label_weights=self._pose_label_weights)
 
-    def _dispatch_error(self, error: Exception):
+    def _dispatch_error(self, error: Exception) -> None:
         callback = self._get_callback("error")
         if callback:
             self._submit_callback("error", error)
 
-    def _submit_callback(self, key: str, *args, unroll: bool = False):
+    def _submit_callback(self, key: str, *args: Any, unroll: bool = False) -> None:
         """Acquire the per-callback lock and submit the callback to the executor.
 
         If the lock is already held (callback still running), the event is discarded.
@@ -556,7 +752,7 @@ class PoseEstimation:
             # Executor was shut down before the task could be submitted
             lock.release()
 
-    def _run_callback(self, lock: threading.Lock, callback: Callable, *args, unroll: bool = False):
+    def _run_callback(self, lock: threading.Lock, callback: Callable, *args: Any, unroll: bool = False) -> None:
         """Run a callback and release its lock when done.
 
         With `unroll=True` the first argument is a list and the callback is invoked once per item.

@@ -211,7 +211,7 @@ jobs:
             org.opencontainers.image.url=${{ env.GH_DESTINATION_REPO }}
 
       - name: Copy models-list.yaml into build context
-        if: steps.rebuild_check.outputs.needs_build == 'true' && contains(fromJSON('["models-downloader", "llamacpp-runner", "llamacpp-npu-runner"]'), matrix.container)
+        if: steps.rebuild_check.outputs.needs_build == 'true' && matrix.container == 'models-downloader'
         run: cp models/models-list.yaml ${{ steps.dir.outputs.path }}/models-list.yaml
 
       - name: Build and push Docker image
@@ -231,14 +231,6 @@ jobs:
             ${{ steps.config.outputs.build_args }}
             BASE_IMAGE_VERSION=${{ inputs.version }}
             REGISTRY=${{ env.GHCR_DESTINATION_ORG }}/
-
-      - name: SBOM Delta
-        uses: ./.github/actions/sbom-delta
-        with:
-          container: ${{ matrix.container }}
-          container_dir: ${{ steps.dir.outputs.path }}
-          version: ${{ inputs.version }}
-          registry: ${{ env.GHCR_DESTINATION_ORG }}
 
       - name: Update compose file references
         if: steps.config.outputs.update_compose == 'true'
@@ -265,6 +257,9 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: "feat: update ${{ matrix.container }} image references"
+          add-paths: |
+            src/**/brick_compose*.yaml
+            src/**/service_compose*.yaml
           title: "[RELEASE BOT] Update ${{ matrix.container }} image references"
           body: |
             This PR was automatically generated after releasing `${{ matrix.container }}:${{ inputs.version }}`.

@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import argparse
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -131,7 +131,7 @@ Examples:
     return parser
 
 
-def parse_args(args: Optional[List[str]] = None) -> Dict[str, Any]:
+def parse_args(args: list[str] | None = None) -> dict[str, Any]:
     """
     Parse command line arguments and return as dictionary suitable for AIHubApp.
 

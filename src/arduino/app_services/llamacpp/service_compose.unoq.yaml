@@ -1,6 +1,6 @@
 services:
   llamacpp-models-runner:
-    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/llamacpp-runner:0.12.1
+    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/llamacpp-runner:0.13.0rc2
     logging:
       driver: "json-file"
       options:
@@ -14,7 +14,7 @@ services:
       - LLAMA_ARG_BATCH=512
       - LLAMA_ARG_UBATCH=128
       - LLAMA_ARG_MODELS_DIR=/models
-      - LLAMA_ARG_FLASH_ATTN=off
+      - LLAMA_ARG_FLASH_ATTN=${LLAMA_ARG_FLASH_ATTN:-on}
       - LLAMA_ARG_MODELS_MAX=${LLAMA_ARG_MODELS_MAX:-1}
       - LLAMA_ARG_CTX_SIZE=${LLAMA_ARG_CTX_SIZE:-16384}
       - LLAMA_ARG_REASONING=${LLAMA_ARG_REASONING:-off}

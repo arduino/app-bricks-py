@@ -2,12 +2,20 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+from typing import Protocol
+
 import numpy as np
+
+
+class AudioEffect(Protocol):
+    """An effect object returned by the SoundEffect factories."""
+
+    def apply(self, signal: np.ndarray) -> np.ndarray: ...
 
 
 class SoundEffect:
     @staticmethod
-    def overdrive(drive: float = 100.0) -> np.ndarray:
+    def overdrive(drive: float = 100.0) -> AudioEffect:
         """
         Apply overdrive effect to the audio signal.
         Args:
@@ -18,7 +26,7 @@ class SoundEffect:
         """
 
         class SoundEffectOverdrive:
-            def __init__(self, drive: float = 1.0):
+            def __init__(self, drive: float = 1.0) -> None:
                 pass
 
             def apply(self, signal: np.ndarray) -> np.ndarray:
@@ -29,7 +37,7 @@ class SoundEffect:
         return SoundEffectOverdrive(drive)
 
     @staticmethod
-    def chorus(depth_ms=10, rate_hz: float = 0.25, mix: float = 0.5) -> np.ndarray:
+    def chorus(depth_ms: float = 10, rate_hz: float = 0.25, mix: float = 0.5) -> AudioEffect:
         """
         Apply chorus effect to the audio signal.
         Args:
@@ -42,7 +50,7 @@ class SoundEffect:
         """
 
         class SoundEffectChorus:
-            def __init__(self, depth_ms: int = 10, rate_hz: float = 0.25, mix: float = 0.5):
+            def __init__(self, depth_ms: float = 10, rate_hz: float = 0.25, mix: float = 0.5) -> None:
                 self.fs = 16000  # sample rate
                 self.depth_ms = depth_ms
                 self.rate_hz = rate_hz
@@ -69,7 +77,7 @@ class SoundEffect:
         return SoundEffectChorus(depth_ms, rate_hz, mix)
 
     @staticmethod
-    def adsr(attack: float = 0.015, decay: float = 0.2, sustain: float = 0.5, release: float = 0.35):
+    def adsr(attack: float = 0.015, decay: float = 0.2, sustain: float = 0.5, release: float = 0.35) -> AudioEffect:
         """
         Apply ADSR (attack/decay/sustain/release) envelope to the audio signal.
         Args:
@@ -80,7 +88,7 @@ class SoundEffect:
         """
 
         class SoundEffectADSR:
-            def __init__(self, attack: float = 0.015, decay: float = 0.2, sustain: float = 0.5, release: float = 0.35):
+            def __init__(self, attack: float = 0.015, decay: float = 0.2, sustain: float = 0.5, release: float = 0.35) -> None:
                 """
                 Initialize ADSR effect.
                 Args:
@@ -119,9 +127,9 @@ class SoundEffect:
         return SoundEffectADSR(attack, decay, sustain, release)
 
     @staticmethod
-    def tremolo(depth: float = 0.5, rate: float = 5.0):
+    def tremolo(depth: float = 0.5, rate: float = 5.0) -> AudioEffect:
         class SoundEffectTremolo:
-            def __init__(self, depth: float = 0.5, rate: float = 5.0):
+            def __init__(self, depth: float = 0.5, rate: float = 5.0) -> None:
                 """
                 Tremolo effect block-local.
                 Args:
@@ -145,9 +153,9 @@ class SoundEffect:
         return SoundEffectTremolo(depth, rate)
 
     @staticmethod
-    def vibrato(depth: float = 0.02, rate: float = 0.5):
+    def vibrato(depth: float = 0.02, rate: float = 0.5) -> AudioEffect:
         class SoundEffectVibrato:
-            def __init__(self, depth: float = 0.02, rate: float = 2.0):
+            def __init__(self, depth: float = 0.02, rate: float = 2.0) -> None:
                 """
                 Vibrato effect
                 Args:
@@ -172,9 +180,9 @@ class SoundEffect:
         return SoundEffectVibrato(depth=depth, rate=rate)
 
     @staticmethod
-    def bitcrusher(bits: int = 4, reduction: int = 6):
+    def bitcrusher(bits: int = 4, reduction: int = 6) -> AudioEffect:
         class SoundEffectBitcrusher:
-            def __init__(self, bits: int = 4, reduction: int = 4):
+            def __init__(self, bits: int = 4, reduction: int = 4) -> None:
                 """
                 Bitcrusher effect.
                 Args:
@@ -199,9 +207,9 @@ class SoundEffect:
         return SoundEffectBitcrusher(bits, reduction)
 
     @staticmethod
-    def octaver(oct_up: bool = True, oct_down: bool = False):
+    def octaver(oct_up: bool = True, oct_down: bool = False) -> AudioEffect:
         class SoundEffectOctaver:
-            def __init__(self, oct_up: bool = True, oct_down: bool = True):
+            def __init__(self, oct_up: bool = True, oct_down: bool = True) -> None:
                 """
                 Octaver effect.
                 Args:

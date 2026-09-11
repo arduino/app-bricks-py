@@ -145,12 +145,51 @@ def draw_connections(
     )
 
 
+def draw_box_from_xyxy(
+    frame: np.ndarray,
+    top_left: tuple[int, int],
+    bottom_right: tuple[int, int],
+    color: tuple[int, int, int] = (0, 0, 0),
+    size: int = 2,
+):
+    """
+    Draw a rectangle using the provided top left / bottom right corners.
+
+    Parameters
+    ----------
+        frame: np.ndarray
+            np array (H W C x uint8, RGB)
+
+        top_left: tuple[int, int]
+            (x, y) coordinates of the top left corner
+
+        bottom_right: tuple[int, int]
+            (x, y) coordinates of the bottom right corner
+
+        color: tuple[int, int, int]
+            Color of the rectangle lines (RGB)
+
+        size: int
+            Thickness of the rectangle lines
+
+    Returns
+    -------
+        None; modifies frame in place.
+    """
+    cv2.rectangle(frame, top_left, bottom_right, color, size)
+
+
 def draw_persons(
     frame: np.ndarray,
     person_scores: np.ndarray,
     keypoint_scores: np.ndarray,
     keypoint_coords_xy: np.ndarray,
-    draw_uncertain: bool = True,
+    draw_low_confidence_points: bool = True,
+    draw_bboxes: bool = False,
+    bbox_padding_top: float = 0.0,
+    bbox_padding_right: float = 0.0,
+    bbox_padding_bottom: float = 0.0,
+    bbox_padding_left: float = 0.0,
 ) -> dict:
     """
     Draw the skeleton overlay for each detected pose and build the detection metadata.
@@ -167,10 +206,22 @@ def draw_persons(
     keypoint_coords_xy
         Keypoint coordinates in (x, y) format mapped to the frame space,
         shape (max_detections, 17, 2).
-    draw_uncertain
+    draw_low_confidence_points
         Mark keypoints below MIN_KEYPOINT_SCORE too, as small hollow dots
         joined by darker lines. Set it to False for an overlay that
         shows only the confident keypoints and connections.
+    draw_bboxes
+        Draw each person's bounding box (the same one reported in the
+        metadata) as a yellow rectangle. Off by default.
+    bbox_padding_top
+        Expand each person's bounding box upwards by this fraction of its
+        height. Applied to the reported metadata and the drawn rectangle alike.
+    bbox_padding_right
+        Expand each person's bounding box to the right by this fraction of its width.
+    bbox_padding_bottom
+        Expand each person's bounding box downwards by this fraction of its height.
+    bbox_padding_left
+        Expand each person's bounding box to the left by this fraction of its width.
 
     Returns
     -------
@@ -189,11 +240,31 @@ def draw_persons(
 
         confident = kp_scores >= MIN_KEYPOINT_SCORE
 
+        # Compute the bounding box from the confident keypoints, expanded by the
+        # configured padding and clipped to the frame
+        bbox_coords = kp_coords[confident] if confident.any() else kp_coords
+        x_min, y_min = bbox_coords.min(axis=0)
+        x_max, y_max = bbox_coords.max(axis=0)
+        box_w, box_h = x_max - x_min, y_max - y_min
+        y_min -= bbox_padding_top * box_h
+        y_max += bbox_padding_bottom * box_h
+        x_min -= bbox_padding_left * box_w
+        x_max += bbox_padding_right * box_w
+        bbox_xyxy = [
+            int(np.clip(x_min, 0, width - 1)),
+            int(np.clip(y_min, 0, height - 1)),
+            int(np.clip(x_max, 0, width - 1)),
+            int(np.clip(y_max, 0, height - 1)),
+        ]
+
+        if draw_bboxes:
+            draw_box_from_xyxy(frame, (bbox_xyxy[0], bbox_xyxy[1]), (bbox_xyxy[2], bbox_xyxy[3]), (255, 255, 0), 2)
+
         edges = [(a, b) for a, b in SKELETON_CONNECTION_INDICES if confident[a] and confident[b]]
         if edges:
             draw_connections(frame, kp_coords, edges, (255, 255, 255), 2)
 
-        if draw_uncertain and not confident.all():
+        if draw_low_confidence_points and not confident.all():
             uncertain_edges = [(a, b) for a, b in SKELETON_CONNECTION_INDICES if not (confident[a] and confident[b])]
             if uncertain_edges:
                 draw_connections(frame, kp_coords, uncertain_edges, (120, 120, 255), 1)
@@ -201,11 +272,6 @@ def draw_persons(
 
         if confident.any():
             draw_points(frame, kp_coords[confident], (90, 250, 34), 7, (255, 255, 255))
-
-        # Compute the bounding box from the confident keypoints, clipped to the frame
-        bbox_coords = kp_coords[confident] if confident.any() else kp_coords
-        x_min, y_min = bbox_coords.min(axis=0)
-        x_max, y_max = bbox_coords.max(axis=0)
 
         persons_metadata.append({
             "score": float(person_score),
@@ -218,12 +284,7 @@ def draw_persons(
                 }
                 for i in range(len(KEYPOINT_NAMES))
             ],
-            "bounding_box_xyxy": [
-                int(np.clip(x_min, 0, width - 1)),
-                int(np.clip(y_min, 0, height - 1)),
-                int(np.clip(x_max, 0, width - 1)),
-                int(np.clip(y_max, 0, height - 1)),
-            ],
+            "bounding_box_xyxy": bbox_xyxy,
         })
 
     return {"persons": persons_metadata}

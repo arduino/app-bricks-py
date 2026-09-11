@@ -64,22 +64,23 @@ def test_declared_gguf_files_extracts_llamacpp_locations():
     ]
 
 
-def test_gguf_model_name_declared_files_keep_the_stem():
-    declarations = declared_gguf_files(MODELS)
-    assert gguf_model_name("google/gemma-gguf/gemma-Q4_0.gguf", declarations) == "gemma-Q4_0"
-    # A dir-level declaration (no pinned file) covers any GGUF in its directory.
-    assert gguf_model_name("unsloth/Qwen-GGUF/Qwen-Q4_0.gguf", declarations) == "Qwen-Q4_0"
-    # Nested per-quantization folders still belong to the declaring repository.
-    assert gguf_model_name("unsloth/Qwen-GGUF/Q4_0/Qwen-Q4_0.gguf", declarations) == "Qwen-Q4_0"
+def test_gguf_model_name_stems_curated_and_recordless_files():
+    # A curated download keeps the stem its fixed entry id uses.
+    assert gguf_model_name("google/gemma-gguf/gemma-Q4_0.gguf", {"model_origin": "built_in"}) == "gemma-Q4_0"
+    # No record at all: an out-of-the-box model — the fallback — keeps its stem too.
+    assert gguf_model_name("google/gemma-gguf/gemma-Q4_0.gguf", None) == "gemma-Q4_0"
+    # An unusable record (no origin, or not a mapping) degrades the same way.
+    assert gguf_model_name("google/gemma-gguf/gemma-Q4_0.gguf", {}) == "gemma-Q4_0"
+    assert gguf_model_name("google/gemma-gguf/gemma-Q4_0.gguf", "junk") == "gemma-Q4_0"
 
 
-def test_gguf_model_name_ad_hoc_files_are_path_qualified():
-    declarations = declared_gguf_files(MODELS)
+def test_gguf_model_name_user_files_are_path_qualified():
+    record = {"model_origin": "user"}
     # Same file name as a curated model, different repository: not that model.
-    assert gguf_model_name("bartowski/gemma-clone/gemma-Q4_0.gguf", declarations) == "bartowski/gemma-clone/gemma-Q4_0"
-    assert gguf_model_name("TheBloke/Mistral-GGUF/mistral.Q4_0.gguf", declarations) == "TheBloke/Mistral-GGUF/mistral.Q4_0"
-    # No declarations at all (unreadable catalog): everything is path-qualified.
-    assert gguf_model_name("google/gemma-gguf/gemma-Q4_0.gguf", ()) == "google/gemma-gguf/gemma-Q4_0"
+    assert gguf_model_name("bartowski/gemma-clone/gemma-Q4_0.gguf", record) == "bartowski/gemma-clone/gemma-Q4_0"
+    assert gguf_model_name("TheBloke/Mistral-GGUF/mistral.Q4_0.gguf", record) == "TheBloke/Mistral-GGUF/mistral.Q4_0"
+    # Nested per-quantization folders keep the whole path in the name.
+    assert gguf_model_name("unsloth/Qwen-GGUF/Q4_0/Qwen-Q4_0.gguf", record) == "unsloth/Qwen-GGUF/Q4_0/Qwen-Q4_0"
 
 
 def test_catalog_gguf_declarations_degrades_to_empty(tmp_path):

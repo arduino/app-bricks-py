@@ -27,7 +27,7 @@ class MoodDetector:
 
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the MoodDetector with a sentiment analyzer."""
         self._analyzer = SentimentIntensityAnalyzer()
 

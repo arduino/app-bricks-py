@@ -10,17 +10,17 @@ logger = Logger("ColorDetectorServer")
 
 @brick
 class Greeter:
-    def __init__(self, name="World"):
+    def __init__(self, name: str = "World") -> None:
         self.name = name
 
-    def start(self):
+    def start(self) -> None:
         logger.info("Starting Greeter")
 
-    def stop(self):
+    def stop(self) -> None:
         logger.info("Stopping Greeter")
 
     # This is a non-blocking method that will be called repeatedly
-    def loop(self):
+    def loop(self) -> None:
         logger.info(f"Hello, {self.name}!")
         time.sleep(1)
 

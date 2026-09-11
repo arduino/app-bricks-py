@@ -1,6 +1,6 @@
 ---
 name: bidict
-version: 0.23.1
+version: 0.24.1
 type: pip
 summary: The bidirectional mapping library for Python.
 homepage: ''
@@ -11,7 +11,7 @@ licenses:
     Mozilla Public License Version 2.0
     ==================================
 
-    Copyright 2009-2024 Joshua Bronson. All rights reserved.
+    Copyright 2009-2026 Joshua Bronson. All rights reserved.
 
 
     1. Definitions

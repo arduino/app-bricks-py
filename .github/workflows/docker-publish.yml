@@ -36,8 +36,10 @@ jobs:
     runs-on: ubuntu-24.04-arm
     outputs:
       tag_ref: ${{ steps.detect.outputs.tag_ref }}
+      group: ${{ steps.detect.outputs.group }}
       version: ${{ steps.detect.outputs.version }}
       prerelease: ${{ steps.detect.outputs.prerelease }}
+      pinned_images: ${{ steps.detect.outputs.pinned_images }}
       level_0: ${{ steps.detect.outputs.level_0 }}
       level_1: ${{ steps.detect.outputs.level_1 }}
       level_2: ${{ steps.detect.outputs.level_2 }}
@@ -69,8 +71,19 @@ jobs:
           # all descendants and ancestors and split the result into topological
           # waves (level_0 .. level_2).
           GROUP="${TAG_REF%%/*}"
+          echo "group=$GROUP" >> $GITHUB_OUTPUT
           echo "Releasing group: containers/${GROUP}/"
           python3 -m scripts.build_levels --mode release --group "$GROUP"
+
+          # Only the bricks release assembles sboms.zip. Besides its own build
+          # set, scanned wave by wave, it must cover the images it ships without
+          # building them: the runners pinned by the compose files and their bases.
+          if [[ "$GROUP" == "bricks" ]]; then
+            PINNED=$(python3 -m scripts.distributed_images --group "$GROUP" --version "$VERSION" --pinned-only --format json)
+          else
+            PINNED="[]"
+          fi
+          echo "pinned_images=$PINNED" >> $GITHUB_OUTPUT
 
   upload-whl:
     runs-on: ubuntu-24.04-arm
@@ -156,25 +169,93 @@ jobs:
       allow_retag: false
       skip_cache: ${{ inputs.skip_cache || false }}
 
+  # SBOM scans run one wave behind the builds: each wave is scanned as soon as it
+  # is pushed, in parallel with the next wave's build. The images pinned by the
+  # compose files were published by an earlier release, so their scan starts
+  # right away. Scans never fail the workflow run: a missing SBOM is then reported
+  # by upload-release.
+  sbom-pinned:
+    needs: [detect]
+    if: needs.detect.outputs.pinned_images != '[]'
+    uses: ./.github/workflows/_sbom-wave.yml
+    with:
+      images: ${{ needs.detect.outputs.pinned_images }}
+
+  sbom-l0:
+    needs: [detect, build-l0]
+    if: needs.detect.outputs.level_0 != '[]' && startsWith(needs.detect.outputs.tag_ref, 'bricks/')
+    uses: ./.github/workflows/_sbom-wave.yml
+    with:
+      images: ${{ needs.detect.outputs.level_0 }}
+      version: ${{ needs.detect.outputs.version }}
+
+  sbom-l1:
+    needs: [detect, build-l1]
+    if: needs.detect.outputs.level_1 != '[]' && startsWith(needs.detect.outputs.tag_ref, 'bricks/')
+    uses: ./.github/workflows/_sbom-wave.yml
+    with:
+      images: ${{ needs.detect.outputs.level_1 }}
+      version: ${{ needs.detect.outputs.version }}
+
+  sbom-l2:
+    needs: [detect, build-l2]
+    if: needs.detect.outputs.level_2 != '[]' && startsWith(needs.detect.outputs.tag_ref, 'bricks/')
+    uses: ./.github/workflows/_sbom-wave.yml
+    with:
+      images: ${{ needs.detect.outputs.level_2 }}
+      version: ${{ needs.detect.outputs.version }}
+
   upload-release:
     runs-on: ubuntu-24.04-arm
-    if: startsWith(needs.detect.outputs.tag_ref, 'bricks/')
-    needs: [detect, upload-whl, build-l0, build-l1, build-l2]
+    # Skipped waves (and their scans) must not skip this job, failed builds must.
+    if: ${{ !failure() && !cancelled() && startsWith(needs.detect.outputs.tag_ref, 'bricks/') }}
+    needs: [detect, upload-whl, build-l0, build-l1, build-l2, sbom-pinned, sbom-l0, sbom-l1, sbom-l2]
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
       - name: Download wheel artifact
         uses: actions/download-artifact@v4
         with:
           name: whl
           path: dist/
 
-      - name: Download all SBOM delta artifacts
+      - name: Download SBOM artifacts
         uses: actions/download-artifact@v4
         with:
           pattern: sbom-delta-*
           path: sbom-delta/
 
-      - name: Zip SBOM artifacts
-        run: zip -r dist/sboms.zip sbom-delta/
+      - name: Assemble sboms.zip
+        env:
+          GROUP: ${{ needs.detect.outputs.group }}
+          VERSION: ${{ needs.detect.outputs.version }}
+        run: |
+          shopt -s nullglob
+          mkdir -p sbom-delta
+
+          # Artifacts are named sbom-delta-<name>-<version>: strip the prefix so the
+          # archive holds one <name>-<version>/ folder per image.
+          for dir in sbom-delta/sbom-delta-*/; do
+            mv "$dir" "sbom-delta/$(basename "$dir" | sed 's/^sbom-delta-//')"
+          done
+
+          # Every distributed image must be covered. A missing SBOM is a warning,
+          # not a blocker: it is listed in the archive and in the job summary.
+          MISSING=()
+          while IFS= read -r IMAGE; do
+            [[ -f "sbom-delta/${IMAGE/:/-}/delta.spdx.json" ]] || MISSING+=("$IMAGE")
+          done < <(python3 -m scripts.distributed_images --group "$GROUP" --version "$VERSION")
+
+          if (( ${#MISSING[@]} )); then
+            printf '%s\n' "${MISSING[@]}" > sbom-delta/MISSING.txt
+            for IMAGE in "${MISSING[@]}"; do
+              echo "::warning title=SBOM missing::$IMAGE has no SBOM in sboms.zip, see the sbom-* jobs"
+            done
+            { echo "## SBOMs missing from sboms.zip"; printf -- '- %s\n' "${MISSING[@]}"; } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          zip -r dist/sboms.zip sbom-delta/
 
       - name: Upload release asset
         uses: softprops/action-gh-release@v2

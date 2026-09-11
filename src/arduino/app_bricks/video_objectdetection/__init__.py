@@ -10,7 +10,7 @@ import socket
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import base64
-from typing import Callable
+from collections.abc import Callable
 
 from websockets.sync.client import connect
 from websockets.sync.connection import Connection
@@ -23,6 +23,11 @@ from arduino.app_utils.image.adjustments import compress_to_jpeg
 from arduino.app_utils import brick, Logger
 
 logger = Logger("VideoObjectDetection")
+
+type DetectionCallback = Callable[[], None] | Callable[[dict], None] | Callable[[dict, bytes | None], None]
+"""Callback accepted by `on_detect`: no arguments, the detection details dict, or the dict plus the camera `frame`."""
+type AllDetectionsCallback = Callable[[dict], None] | Callable[[dict, bytes | None], None]
+"""Callback accepted by `on_detect_all`: the detections dict, optionally followed by the camera `frame`."""
 
 
 @brick
@@ -47,7 +52,7 @@ class VideoObjectDetection:
         confidence: float = 0.3,
         debounce_sec: float = 0.0,
         camera_preview: bool = False,
-    ):
+    ) -> None:
         """Initialize the VideoObjectDetection class.
 
         Args:
@@ -93,16 +98,19 @@ class VideoObjectDetection:
         self._uri = f"ws://{self._host}:4912"
         logger.info(f"[{self.__class__.__name__}] Host: {self._host} - URL: {self._uri}")
 
-    def on_detect(self, object: str, callback: Callable[[], None]):
+    def on_detect(self, object: str, callback: DetectionCallback) -> None:
         """Register a callback invoked when a **specific label** is detected.
 
         Args:
             object (str): The label of the object to check for in the classification results.
-            callback (Callable[[], None]): A function with **no parameters**.
+            callback (DetectionCallback): A plain function taking either no parameters, or one
+                parameter receiving the detection details dict
+                `{"confidence": float, "bounding_box_xyxy": (x1, y1, x2, y2)}`. A function that also
+                declares a `frame` parameter receives the current camera frame as raw JPEG bytes
+                (or None when no preview frame is available, see `camera_preview`).
 
         Raises:
             TypeError: If `callback` is not a function.
-            ValueError: If `callback` accepts any parameters.
         """
         if not inspect.isfunction(callback):
             raise TypeError("Callback must be a callable function.")
@@ -112,19 +120,21 @@ class VideoObjectDetection:
                 logger.warning(f"Handler for object '{object}' already exists. Overwriting.")
             self._handlers[object] = callback
 
-    def on_detect_all(self, callback: Callable[[dict], None]):
+    def on_detect_all(self, callback: AllDetectionsCallback) -> None:
         """Register a callback invoked for **every detection event**.
 
         This is useful to receive a consolidated dictionary of detections for each frame.
 
         Args:
-            callback (Callable[[dict], None]): A function that accepts **one dict argument** mapping
+            callback (AllDetectionsCallback): A plain function taking one dict argument mapping
                 each detected label to the list of its detections, with the shape
                 `{label: [{"confidence": float, "bounding_box_xyxy": (x1, y1, x2, y2)}, ...], ...}`.
+                A function that also declares a `frame` parameter receives the current camera
+                frame as raw JPEG bytes (or None when no preview frame is available, see
+                `camera_preview`).
 
         Raises:
             TypeError: If `callback` is not a function.
-            ValueError: If `callback` does not accept exactly one argument.
         """
         if not inspect.isfunction(callback):
             raise TypeError("Callback must be a callable function.")
@@ -132,19 +142,19 @@ class VideoObjectDetection:
         with self._handlers_lock:
             self._handlers[self.ALL_HANDLERS_KEY] = callback
 
-    def start(self):
+    def start(self) -> None:
         """Start the video object detection process."""
         self._camera.start()
         self._is_running.set()
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop the video object detection process and release resources."""
         self._is_running.clear()
         self._camera.stop()
         self._executor.shutdown(wait=False, cancel_futures=True)
 
     @brick.execute
-    def object_detection_loop(self):
+    def object_detection_loop(self) -> None:
         """Object detection main loop.
 
         Maintains WebSocket connection to the model runner and processes object detection messages.
@@ -181,7 +191,7 @@ class VideoObjectDetection:
                 time.sleep(2)
 
     @brick.execute
-    def camera_loop(self):
+    def camera_loop(self) -> None:
         """Camera main loop.
 
         Captures images from the camera and forwards them over the TCP connection.
@@ -224,7 +234,7 @@ class VideoObjectDetection:
                 logger.exception(f"Unexpected error in TCP loop: {e}")
                 time.sleep(2)
 
-    def _process_message(self, ws: Connection, message: str):
+    def _process_message(self, ws: Connection, message: str) -> None:
         jmsg = json.loads(message)
         if jmsg.get("type") == "hello":
             # Parse hello message to extract model info if needed
@@ -345,7 +355,7 @@ class VideoObjectDetection:
                 self._detection_locks[detection] = threading.Lock()
             return self._detection_locks[detection]
 
-    def _execute_handler(self, key: str, payload: dict | None = None, frame: bytes | None = None):
+    def _execute_handler(self, key: str, payload: dict | None = None, frame: bytes | None = None) -> None:
         """Execute the handler registered for the given key.
 
         Args:
@@ -374,7 +384,7 @@ class VideoObjectDetection:
             detection_lock.release()
             return
 
-        def _run():
+        def _run() -> None:
             try:
                 logger.debug(f"Detected: {key}, invoking handler.")
                 sig_args = inspect.signature(handler).parameters
@@ -394,13 +404,13 @@ class VideoObjectDetection:
             # Executor was shut down before the task could be submitted
             detection_lock.release()
 
-    def _send_ws_message(self, ws: Connection, message: dict):
+    def _send_ws_message(self, ws: Connection, message: dict) -> None:
         try:
             ws.send(json.dumps(message))
         except Exception as e:
             logger.error(f"Failed to send message over WebSocket: {e}")
 
-    def override_threshold(self, value: float):
+    def override_threshold(self, value: float) -> None:
         """Override the threshold for object detection model.
 
         Args:
@@ -413,7 +423,7 @@ class VideoObjectDetection:
         with connect(self._uri) as ws:
             self._override_threshold(ws, value)
 
-    def _override_threshold(self, ws: Connection, value: float):
+    def _override_threshold(self, ws: Connection, value: float) -> None:
         """Override the threshold for object detection model.
 
         Args:
@@ -444,7 +454,7 @@ class VideoObjectDetection:
         # Update local confidence value
         self._confidence = value
 
-    def _toogle_camera_preview(self, ws: Connection, enabled: bool):
+    def _toogle_camera_preview(self, ws: Connection, enabled: bool) -> None:
         """Toggle the camera preview on the model runner's web server.
 
         Args:

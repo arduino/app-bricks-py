@@ -1,6 +1,6 @@
 ---
 name: cffi
-version: 2.0.0
+version: 2.1.1
 type: pip
 summary: Foreign Function Interface for Python calling C code.
 homepage: ''
@@ -22,14 +22,4 @@ licenses:
     \n    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
     \n    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER \n    DEALINGS
     IN THE SOFTWARE.\n\n"
-notices:
-- sources: AUTHORS
-  text: |-
-    This package has been mostly done by Armin Rigo with help from
-    Maciej Fijałkowski. The idea is heavily based (although not directly
-    copied) from LuaJIT ffi by Mike Pall.
-
-
-    Other contributors:
-
-      Google Inc.
+notices: []

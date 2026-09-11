@@ -1,6 +1,6 @@
 ---
 name: httptools
-version: 0.7.1
+version: 0.8.0
 type: pip
 summary: A collection of framework independent HTTP protocol utils.
 homepage: https://github.com/MagicStack/httptools

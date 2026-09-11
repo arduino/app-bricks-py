@@ -21,7 +21,7 @@ class ObjectDetection(EdgeImpulseRunnerFacade):
     - Confidence scores for each detection
     """
 
-    def __init__(self, confidence: float = 0.3):
+    def __init__(self, confidence: float = 0.3) -> None:
         """Initialize the ObjectDetection module.
 
         Args:
@@ -51,7 +51,7 @@ class ObjectDetection(EdgeImpulseRunnerFacade):
         ret = super().infer_from_file(image_path)
         return self._extract_detection(ret, confidence)
 
-    def detect(self, image_bytes, image_type: str = "jpg", confidence: float = None) -> dict[str, list[Any]] | None:
+    def detect(self, image_bytes: bytes | Image.Image, image_type: str = "jpg", confidence: float = None) -> dict[str, list[Any]] | None:
         """Process an in-memory image to detect and identify objects.
 
         Args:
@@ -67,16 +67,19 @@ class ObjectDetection(EdgeImpulseRunnerFacade):
         ret = super().infer_from_image(image_bytes, image_type)
         return self._extract_detection(ret, confidence)
 
-    def draw_bounding_boxes(self, image: Image.Image | bytes, detections: dict) -> Image.Image | None:
+    def draw_bounding_boxes(self, image: Image.Image | bytes | None, detections: dict | None) -> Image.Image | None:
         """Draw bounding boxes on an image enclosing detected objects using PIL.
 
         Args:
             image: The input image to annotate. Can be a PIL Image object or raw image bytes.
-            detections: Detection results containing object labels and bounding boxes.
+                None, e.g. a frame that could not be captured, is accepted and yields None.
+            detections: Detection results containing object labels and bounding boxes, as returned
+                by `detect()`. None, i.e. no detection result, is accepted and yields None, so the
+                output of `detect()` can be passed straight in.
 
         Returns:
             Image with bounding boxes and key points drawn.
-            None if input image or detections are invalid.
+            None if the input image or the detections are None or empty.
         """
         if not image or not detections:
             return None
@@ -88,7 +91,7 @@ class ObjectDetection(EdgeImpulseRunnerFacade):
             shape = Shape.CIRCLE
         return draw_bounding_boxes(image, detections, shape=shape)
 
-    def _extract_detection(self, item, confidence: float = None):
+    def _extract_detection(self, item: dict | None, confidence: float = None) -> dict[str, list[Any]] | None:
         if not item:
             return None
 
@@ -125,7 +128,7 @@ class ObjectDetection(EdgeImpulseRunnerFacade):
 
         return None
 
-    def process(self, item):
+    def process(self, item: str | dict) -> dict[str, list[Any]] | None:
         """Process an item to detect objects in an image.
 
         This method supports two input formats:

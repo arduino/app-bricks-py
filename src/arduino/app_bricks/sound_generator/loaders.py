@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: MPL-2.0
 
 from arduino.app_utils.logger import Logger
-from typing import List, Tuple
 import re
 
 logger = Logger(__name__)
@@ -278,7 +277,7 @@ class ABCNotationLoader:
             return default_duration_in_seconds
 
     @staticmethod
-    def parse_abc_notation(abc_string: str, default_octave: int = 4) -> Tuple[dict, List[Tuple[str, float]]]:
+    def parse_abc_notation(abc_string: str, default_octave: int = 4) -> tuple[dict, list[tuple[str, float]]]:
         """Parse an ABC notation string into ``(note, duration_in_seconds)`` tuples.
 
         See :class:`ABCNotationLoader` for the full list of supported ABC 2.1
@@ -398,7 +397,7 @@ class ABCNotationLoader:
         music_string = re.sub(r"![^!]*!", "", music_string)  # Decorations (!ff!, !fermata!)
         music_string = re.sub(r"\+[^+]+\+", "", music_string)  # Old-style decorations (+fermata+)
 
-        result: List[Tuple[str, float]] = []
+        result: list[tuple[str, float]] = []
 
         # Tokenise: notes, rests, multimeasure rests, tuplets,
         # broken-rhythm markers, barlines, and chord brackets.

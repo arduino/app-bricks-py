@@ -12,7 +12,7 @@ MODELS_LIST_PATH = "/app/models-list.yaml"
 
 def load_models_list(yaml_path):
     """Load models-list.yaml and return the list of model entries."""
-    with open(yaml_path, "r") as f:
+    with open(yaml_path) as f:
         data = yaml.safe_load(f)
     return data.get("models", [])
 

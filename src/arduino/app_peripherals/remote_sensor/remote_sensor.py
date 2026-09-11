@@ -10,7 +10,9 @@ import time
 import websockets
 import asyncio
 from urllib.parse import urlparse, parse_qs
-from typing import Callable, Literal
+from types import TracebackType
+from typing import Literal, Self
+from collections.abc import Callable
 from concurrent.futures import CancelledError, ThreadPoolExecutor, Future
 
 from arduino.app_internal.core.peripherals.bpp_codec import BPPCodec
@@ -54,7 +56,7 @@ class RemoteSensor:
         secret: str | None = None,
         encrypt: bool = False,
         auto_reconnect: bool = True,
-    ):
+    ) -> None:
         """
         Initialize RemoteSensor WebSocket server.
 
@@ -199,7 +201,7 @@ class RemoteSensor:
         """Check if the sensor is started and running."""
         return self._is_started
 
-    def on_status_changed(self, callback: Callable[[str, dict], None] | None):
+    def on_status_changed(self, callback: Callable[[str, dict], None] | None) -> None:
         """Registers or removes a callback to be triggered on camera lifecycle events.
 
         When a camera status changes, the provided callback function will be invoked.
@@ -227,7 +229,7 @@ class RemoteSensor:
             self._on_status_changed_cb = None
         else:
 
-            def _callback_wrapper(new_status: str, data: dict):
+            def _callback_wrapper(new_status: str, data: dict) -> None:
                 try:
                     callback(new_status, data)
                 except Exception as e:
@@ -465,7 +467,7 @@ class RemoteSensor:
         if self._server_thread and self._server_thread.is_alive():
             self._server_thread.join(timeout=10.0)
 
-    async def _disconnect_and_stop(self):
+    async def _disconnect_and_stop(self) -> None:
         """Cleanly disconnect client with goodbye message and stop the server."""
         async with self._client_lock:
             if self._client:
@@ -483,7 +485,7 @@ class RemoteSensor:
         if self._server:
             self._server.close()
 
-    async def _send_to_client(self, message: bytes | str, client: websockets.ServerConnection | None = None):
+    async def _send_to_client(self, message: bytes | str, client: websockets.ServerConnection | None = None) -> None:
         """Send a message to the connected client."""
         if isinstance(message, str):
             message = message.encode()
@@ -504,12 +506,12 @@ class RemoteSensor:
         except Exception:
             raise
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
         """Context manager entry."""
         self.start()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> bool:
         """Context manager exit."""
         self.stop()
         return False

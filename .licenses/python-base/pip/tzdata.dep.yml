@@ -1,6 +1,6 @@
 ---
 name: tzdata
-version: '2026.2'
+version: '2026.3'
 type: pip
 summary: Provider of IANA time zone data
 homepage: https://github.com/python/tzdata
@@ -11,6 +11,7 @@ licenses:
     Apache Software License 2.0
 
     Copyright (c) 2020, Paul Ganssle (Google)
+    Copyright (c) 2026, Stan Ulbrych
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.

@@ -179,6 +179,31 @@ class TestV4LCameraStartStop:
         camera.start()
 
         assert camera.fps == 15
+        assert camera._desired_interval == pytest.approx(1 / 15)
+        assert camera.is_started()
+
+    @patch("arduino.app_peripherals.camera.v4l_camera.cv2.VideoCapture")
+    def test_hardware_adaptation_fps_downscale_emulation(self, mock_videocapture, mock_successful_connect):
+        """Test that V4LCamera keeps the requested FPS when the driver rate is higher."""
+
+        def get_caps(prop):
+            if prop == cv2.CAP_PROP_FRAME_WIDTH:
+                return 640
+            elif prop == cv2.CAP_PROP_FRAME_HEIGHT:
+                return 480
+            elif prop == cv2.CAP_PROP_FPS:
+                return 30
+            return 0
+
+        mock_successful_connect.get.side_effect = get_caps
+        mock_videocapture.return_value = mock_successful_connect
+
+        # Request 15fps on a device whose driver keeps 30fps: software throttling emulates it
+        camera = V4LCamera(resolution=(640, 480), fps=15)
+        camera.start()
+
+        assert camera.fps == 15
+        assert camera._desired_interval == pytest.approx(1 / 15)
         assert camera.is_started()
 
     @patch("arduino.app_peripherals.camera.v4l_camera.cv2.VideoCapture")

@@ -80,7 +80,7 @@ class AirQualityData:
 class AirQualityMonitoring:
     """Class to get air quality data from AQICN API."""
 
-    def __init__(self, token: str):
+    def __init__(self, token: str) -> None:
         """Initialize the AirQualityMonitoring class with the API token.
 
         Args:
@@ -209,7 +209,7 @@ class AirQualityMonitoring:
 class AirQualityLookupError(Exception):
     """Custom exception for air quality lookup errors."""
 
-    def __init__(self, message: str, status: str = None):
+    def __init__(self, message: str, status: str = None) -> None:
         """Initialize the AirQualityLookupError with a message and status.
 
         Args:
@@ -221,7 +221,7 @@ class AirQualityLookupError(Exception):
         self.message = message
 
     @classmethod
-    def from_api_response(cls, data: dict):
+    def from_api_response(cls, data: dict) -> "AirQualityLookupError":
         """AirQualityLookupError error handling based on response provided by AQI API.
 
         Documented errors:

@@ -2,6 +2,8 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+from typing import Any
+
 import numpy as np
 
 from .base_speaker import BaseSpeaker, FormatPlain, FormatPacked
@@ -103,7 +105,7 @@ class Speaker:
         channels: int = CHANNELS_MONO,
         format: FormatPlain | FormatPacked = np.int16,
         buffer_size: int = BUFFER_SIZE_BALANCED,
-        **kwargs,
+        **kwargs: Any,
     ) -> BaseSpeaker:
         """
         Create a speaker instance based on the device type.
@@ -118,9 +120,11 @@ class Speaker:
                     "1", ...) counting USB speakers first, then jack ones,
                     regardless of whether it is already in use: contention on a
                     reused speaker is only discovered when starting it
-                - str: ALSA device name (e.g., "plughw:CARD=MyCard,DEV=0", "hw:0,0", "CARD=MyCard,DEV=0")
+                - str: ALSA device name (e.g., "plughw:CARD=MyCard,DEV=0", "CARD=MyCard,DEV=0",
+                    "hw:0,0", "hw:MyCard,0"). A trailing subdevice is ignored.
                 - str: ALSA device file path (e.g., "/dev/snd/by-id/usb-My-Device-00")
                 - str: Speaker.USB_SPEAKER_x / Speaker.JACK_SPEAKER_x macros
+                - str: PipeWire device (e.g., "pipewire", "pipewire:NODE=MyNode"), always shared
                 Default: None.
             sample_rate (int): Sample rate in Hz. Default: 16000.
             channels (int): Number of audio channels. Default: 1.
@@ -135,7 +139,8 @@ class Speaker:
 
                 ALSA Speaker Parameters:
                     shared (bool): Whether the speaker can be used by multiple applications
-                        simultaneously. Default: True.
+                        simultaneously. Ignored for PipeWire devices, which are always
+                        shared. Default: True.
                     auto_reconnect (bool): Whether to automatically attempt to reconnect
                         if the speaker connection is lost. Default: True.
 
@@ -157,6 +162,7 @@ class Speaker:
             speaker = Speaker("CARD=USB,DEV=0", format="S16_LE")
             speaker = Speaker("plughw:CARD=USB,DEV=0")
             speaker = Speaker("hw:0,0", buffer_size=2048)
+            speaker = Speaker("hw:MyCard,0")  # Card name instead of index
             speaker = Speaker("/dev/snd/by-id/usb-My-Device-00")  # Using device file path
             speaker = Speaker("pipewire")  # To use default PipeWire speaker (if available)
             speaker = Speaker("pipewire:NODE=MyPipewireNode")  # Using PipeWire node name
@@ -196,7 +202,7 @@ class Speaker:
         channels: int,
         format: FormatPlain | FormatPacked,
         device: str | int = 0,
-    ):
+    ) -> None:
         """
         Play raw PCM audio data.
 
@@ -214,9 +220,11 @@ class Speaker:
                     "1", ...) counting USB speakers first, then jack ones if
                     supported by the platform. The device is shared with other
                     instances using it
-                - str: ALSA device name (e.g., "plughw:CARD=MyCard,DEV=0", "hw:0,0", "CARD=MyCard,DEV=0")
+                - str: ALSA device name (e.g., "plughw:CARD=MyCard,DEV=0", "CARD=MyCard,DEV=0",
+                    "hw:0,0", "hw:MyCard,0"). A trailing subdevice is ignored.
                 - str: ALSA device file path (e.g., "/dev/snd/by-id/usb-My-Device-00")
                 - str: Speaker.USB_SPEAKER_x / Speaker.JACK_SPEAKER_x macros
+                - str: PipeWire device (e.g., "pipewire", "pipewire:NODE=MyNode"), always shared
                 Default: 0.
 
         Raises:
@@ -229,7 +237,7 @@ class Speaker:
             speaker.play_pcm(pcm_audio)
 
     @staticmethod
-    def play_wav(wav_audio: np.ndarray, device: str | int = 0):
+    def play_wav(wav_audio: np.ndarray, device: str | int = 0) -> None:
         """
         Play audio from WAV format data.
         Note: Only uncompressed PCM WAV files are supported.
@@ -241,9 +249,11 @@ class Speaker:
                     "1", ...) counting USB speakers first, then jack ones if
                     supported by the platform. The device is shared with other
                     instances using it
-                - str: ALSA device name (e.g., "plughw:CARD=MyCard,DEV=0", "hw:0,0", "CARD=MyCard,DEV=0")
+                - str: ALSA device name (e.g., "plughw:CARD=MyCard,DEV=0", "CARD=MyCard,DEV=0",
+                    "hw:0,0", "hw:MyCard,0"). A trailing subdevice is ignored.
                 - str: ALSA device file path (e.g., "/dev/snd/by-id/usb-My-Device-00")
                 - str: Speaker.USB_SPEAKER_x / Speaker.JACK_SPEAKER_x macros
+                - str: PipeWire device (e.g., "pipewire", "pipewire:NODE=MyNode"), always shared
                 Default: 0.
 
         Raises:
@@ -293,7 +303,7 @@ def _create_speaker(
     channels: int,
     format: FormatPlain | FormatPacked,
     buffer_size: int,
-    **kwargs,
+    **kwargs: Any,
 ) -> BaseSpeaker:
     """Create the speaker implementation matching the given device identifier."""
     from .alsa_speaker import ALSASpeaker  # Imported here to avoid circular dependency

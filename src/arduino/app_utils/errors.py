@@ -5,6 +5,8 @@
 import os
 import sys
 import traceback
+from types import TracebackType
+from typing import Any
 
 __all__ = ["AppError"]
 
@@ -27,7 +29,7 @@ class AppError(Exception):
         raise SpeakerOpenError("No speaker found", hint="Connect a speaker and restart the app.")
     """
 
-    def __init__(self, *args, hint: str | None = None):
+    def __init__(self, *args: Any, hint: str | None = None) -> None:
         super().__init__(*args)
         self.hint = hint
 
@@ -38,7 +40,7 @@ def _banner(text: str = "") -> str:
     return "=" * _BANNER_WIDTH
 
 
-def _find_user_frame(tb) -> traceback.FrameSummary | None:
+def _find_user_frame(tb: TracebackType | None) -> traceback.FrameSummary | None:
     """Returns the innermost traceback frame that belongs to user code.
 
     Frames coming from installed packages (site-packages/dist-packages) or from
@@ -53,7 +55,7 @@ def _find_user_frame(tb) -> traceback.FrameSummary | None:
     return user_frames[-1] if user_frames else None
 
 
-def _app_excepthook(exc_type, exc, tb):
+def _app_excepthook(exc_type: type[BaseException], exc: BaseException, tb: TracebackType | None) -> None:
     if not isinstance(exc, Exception):
         # BaseExceptions like KeyboardInterrupt keep the standard behavior
         _previous_excepthook(exc_type, exc, tb)
@@ -81,7 +83,7 @@ def _app_excepthook(exc_type, exc, tb):
 _previous_excepthook = sys.__excepthook__
 
 
-def install_excepthook():
+def install_excepthook() -> None:
     """Installs the global app excepthook. Idempotent.
 
     Every uncaught Exception is reported with a clean, user-readable message

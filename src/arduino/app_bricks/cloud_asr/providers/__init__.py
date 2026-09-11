@@ -2,14 +2,14 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-from enum import Enum
+from enum import StrEnum
 
 from .openai import OpenAITranscribe
 from .google import GoogleSpeech
 from .types import ASRProvider, ASRProviderEvent, ASRProviderError
 
 
-class CloudProvider(str, Enum):
+class CloudProvider(StrEnum):
     OPENAI_TRANSCRIBE = "openai-transcribe"
     GOOGLE_SPEECH = "google-speech"
 

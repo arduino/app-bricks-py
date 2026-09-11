@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-from typing import Callable
+from collections.abc import Callable
 from arduino.app_internal.core.audio import AudioDetector
 from arduino.app_peripherals.microphone import BaseMicrophone
 from arduino.app_utils import brick, Logger
@@ -19,7 +19,7 @@ class KeywordSpotting(AudioDetector):
     trained on Edge Impulse platform.
     """
 
-    def __init__(self, mic: BaseMicrophone | None = None, confidence: float = 0.8, debounce_sec: float = 2.0):
+    def __init__(self, mic: BaseMicrophone | None = None, confidence: float = 0.8, debounce_sec: float = 2.0) -> None:
         """Initialize the KeywordSpotting class.
 
         Args:
@@ -35,7 +35,7 @@ class KeywordSpotting(AudioDetector):
         """
         super().__init__(mic=mic, confidence=confidence, debounce_sec=debounce_sec)
 
-    def on_detect(self, keyword: str, callback: Callable[[], None]):
+    def on_detect(self, keyword: str, callback: Callable[[], None]) -> None:
         """Register a callback function to be invoked when a specific keyword is detected.
 
         Args:
@@ -50,14 +50,14 @@ class KeywordSpotting(AudioDetector):
         """
         super().on_detect(keyword, callback)
 
-    def start(self):
+    def start(self) -> None:
         """Start the KeywordSpotting module and begin processing audio data.
 
         Begins continuous audio stream processing and keyword detection.
         """
         super().start()
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop the KeywordSpotting module and release resources.
 
         Stops audio processing and releases microphone and model resources.

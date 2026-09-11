@@ -2,14 +2,13 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-from typing import Tuple
 
 import numpy as np
 
 from utils.constants import *
 
 
-def decode_preds_from_anchors(box_coords: np.ndarray, img_size: Tuple[int, int], anchors: np.ndarray) -> None:
+def decode_preds_from_anchors(box_coords: np.ndarray, img_size: tuple[int, int], anchors: np.ndarray) -> None:
     """
     Decode predictions using the provided anchors.
 
