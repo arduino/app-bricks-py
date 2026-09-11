@@ -25,7 +25,7 @@ container by globbing `containers/*/<name>/Dockerfile`, so names must be unique 
 | Container | Group | Built `FROM` | Purpose |
 |---|---|---|---|
 | `python-slim` | base | `python:3.13-slim-trixie` | Minimal Python layer shared by everything else |
-| `python-base` | base | `python-slim` | System deps, non-root user, fonts, OpenCV wheel, libcamera + GStreamer packages |
+| `python-base` | base | `python-slim` | System deps, non-root user, fonts, OpenCV wheel with trimmed FFmpeg and GStreamer plugins-good builds, libcamera + GStreamer packages |
 | `qairt-common-base` | base | `python:3.13-slim-trixie` | Qualcomm AI Runtime and FastRPC libraries shared by the NPU runners |
 | `python-apps-base` | bricks | `python-base` | App runtime: installs the Arduino App Bricks `.whl` and the Streamlit config |
 | `models-downloader` | bricks | `python-slim` | Downloads models from AI Hub, Edge Impulse and Hugging Face per `models/models-list.yaml` |
