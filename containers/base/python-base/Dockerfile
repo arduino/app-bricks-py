@@ -10,8 +10,8 @@ FROM ghcr.io/astral-sh/uv:0.12.21@sha256:a7aed3216253ee804de3e2d8afa5073baa1a177
 FROM python:3.13-slim-trixie@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS builder
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG OPENCV_WHL_URL=https://github.com/robgee86/app-bricks-py/releases/download/media-stack%2F1.0.0/opencv_python_headless-4.13.0+1ddb20b-cp313-cp313-linux_aarch64.whl
-ARG OPENCV_WHL_DIGEST=sha256:750482bd34eb67e8795e3612ed6728d1709d6cdca91618c93846b0418865c8ad
+ARG OPENCV_WHL_URL=https://github.com/robgee86/app-bricks-py/releases/download/media-stack%2F1.0.0/opencv_python_headless-4.14.0+031876b-cp313-cp313-linux_aarch64.whl
+ARG OPENCV_WHL_DIGEST=sha256:dc06f120084427fc50346e14489de10173f55929341774b00c06627a6ecd592c
 ARG PYGOBJECT_VERSION=3.58.0
 
 COPY ./pyproject.toml ./uv.lock /tmp/deps/
@@ -51,8 +51,8 @@ RUN set -ex; \
 FROM ${REGISTRY}app-bricks/python-slim:${BASE_IMAGE_VERSION} AS production
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG FFMPEG_LIBS_URL=https://github.com/robgee86/app-bricks-py/releases/download/media-stack%2F1.0.0/ffmpeg-libs-7.1.4-0+deb13u1.tar.gz
-ARG FFMPEG_LIBS_DIGEST=sha256:61e5eaff6a186dbccb68a40479063ff1ba18ffe2d5197ae0dc3daad51fca8734
+ARG FFMPEG_LIBS_URL=https://github.com/robgee86/app-bricks-py/releases/download/media-stack%2F1.0.0/ffmpeg-libs-7.1.5-0+deb13u1.tar.gz
+ARG FFMPEG_LIBS_DIGEST=sha256:c571f9c04101878ab723ac8c8fdea28c9fcb1911c47b0ffb1bbdbb44da50ff74
 ARG LIBCAMERA_DEB_URL=https://github.com/arduino/app-bricks-py/releases/download/libcamera%2F0.7.1-qcom4/libcamera0.7_0.7.1-1.bpo13+1qcom4_arm64.deb
 ARG LIBCAMERA_DEB_DIGEST=sha256:958b7fb3d1a851542fddd5f54a259c685f1301945a3b10bce4fa15cf7886ef0f
 ARG LIBCAMERA_IPA_DEB_URL=https://github.com/arduino/app-bricks-py/releases/download/libcamera%2F0.7.1-qcom4/libcamera-ipa_0.7.1-1.bpo13+1qcom4_arm64.deb
@@ -63,8 +63,8 @@ ARG GSTREAMER_QTIQMMFSRC_DEB_URL=https://github.com/robgee86/app-bricks-py/relea
 ARG GSTREAMER_QTIQMMFSRC_DEB_DIGEST=sha256:b0b764a2f7ebf369de5cc9827c2952397d2ead757de7bee3f2c9c2f468d714a9
 ARG GSTREAMER_LIBGSTREAMER_PLUGINS_BASE_DEB_URL=https://github.com/robgee86/app-bricks-py/releases/download/qtiqmmfsrc%2F1.8.1/libgstreamer-plugins-base1.0-0_1.26.2-1+deb13u1_arm64.deb
 ARG GSTREAMER_LIBGSTREAMER_PLUGINS_BASE_DEB_DIGEST=sha256:a6e1aaadbac810957f5c4ce981d955c686734e85c23cbb5b89ddd33299f920c6
-ARG GSTREAMER_PLUGINS_GOOD_DEB_URL=https://github.com/robgee86/app-bricks-py/releases/download/media-stack%2F1.0.0/gstreamer1.0-plugins-good_1.26.2-1+deb13u1_arm64.deb
-ARG GSTREAMER_PLUGINS_GOOD_DEB_DIGEST=sha256:363759707c4c136bf427c21b3eba73e318fc1ebd5af128d51790e0428495aa96
+ARG GSTREAMER_PLUGINS_GOOD_DEB_URL=https://github.com/robgee86/app-bricks-py/releases/download/media-stack%2F1.0.0/gstreamer1.0-plugins-good_1.26.2-1+deb13u2_arm64.deb
+ARG GSTREAMER_PLUGINS_GOOD_DEB_DIGEST=sha256:639ef6ba154641fb36d8b84aafee4e57b38e54fc12da8403648671152a4b8219
 
 ADD --checksum=${FFMPEG_LIBS_DIGEST} ${FFMPEG_LIBS_URL} /tmp/ffmpeg-libs.tar.gz
 ADD --checksum=${LIBCAMERA_DEB_DIGEST} ${LIBCAMERA_DEB_URL} /tmp/libcamera0.7.deb
