@@ -8,5 +8,5 @@
   "sbom": {
     "runtime_base": "python:3.13-slim-trixie"
   },
-  "downstream": ["llamacpp-runner", "python-base", "models-downloader"]
+  "downstream": ["llamacpp-runner", "python-base", "models-downloader", "tps-location-api"]
 }
