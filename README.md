@@ -199,14 +199,17 @@ Non-base images should start from common base images for performance and disk us
 ## License
 See [LICENSE](./LICENSE.txt) file for details.
 
+## Dependency licenses
+`task license:deps` checks the licenses of the Python packages shipped by the library and by every container, using Docker. Records live under `.licenses/`, the allowed licenses and reviewed packages in `.licensed.yml`. See [scripts/licensed/README.md](scripts/licensed/README.md) for how it works and what to do when it fails.
+
 ## SBOM (Software Bill of Materials)
-Each container ships its SBOM files, in SPDX format, under its `sbom-delta/` directory (e.g. `containers/ai/ei-models-runner/sbom-delta/`):
+SBOMs are not kept in the tree. Each `bricks/X.Y.Z` release attaches `sboms.zip` to the GitHub Release, with one folder per distributed image holding three SPDX documents:
 
 - `base.spdx.json` — packages of the base image the container derives `FROM` (declared as `sbom.runtime_base` in the container's `ci.json`)
 - `full.spdx.json` — complete package list of the container image
 - `delta.spdx.json` — packages added by the container on top of its base image
 
-Delta SBOMs are produced at build time and attached to the GitHub Release. To (re)generate them locally, run:
+See [containers/README.md](containers/README.md#sboms) for how the set of images is resolved. To generate delta SBOMs locally, run:
 ```sh
 task sbom:delta
 ```

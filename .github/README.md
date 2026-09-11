@@ -23,14 +23,8 @@ the `containers` input of the dev workflow. CI locates a container by globbing
 `watch_paths` — and changes which tag releases it. Leaf names must stay unique across groups; the build
 planner fails loudly if two groups declare the same name.
 
-| Image | Group | Base | Purpose |
-|---|---|---|---|
-| **python-slim** | `base` | `python:3.13-slim-trixie` | Minimal Python layer shared by every image |
-| **python-base** | `base` | `python-slim` | Foundation layer — system deps, user/group setup, fonts |
-| **qairt-common-base** | `base` | `python:3.13-slim-trixie` | Qualcomm AI Runtime deps shared by the NPU runners |
-| **python-apps-base** | `bricks` | `python-base` | App runtime — installs the Arduino App Bricks `.whl`, Streamlit config |
-| **models-downloader** | `bricks` | `python-slim` | Fetches the models declared in `models/models-list.yaml` |
-| **ei-models-runner** | `ai` | Edge Impulse inference image | AI/ML model inference with OOTB models |
+The full list of images, with what each one builds from and what it is for, is the inventory in
+[containers/README.md](../containers/README.md#inventory).
 
 ## Release Triggers (Tag-Based)
 
@@ -86,7 +80,9 @@ always rebuild, since their base image was just rebuilt.
 }
 ```
 
-3. Push a tag `<group>/X.Y.Z` — the workflow picks up everything in that folder automatically.
+3. If the image installs Python packages, list them in a `requirements.txt` and register the container
+   in the dependency license scan, see [scripts/licensed/README.md](../scripts/licensed/README.md).
+4. Push a tag `<group>/X.Y.Z` — the workflow picks up everything in that folder automatically.
 
 To declare that another container depends on yours, add it to `downstream`:
 
