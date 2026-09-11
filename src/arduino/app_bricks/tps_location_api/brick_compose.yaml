@@ -1,0 +1,21 @@
+services:
+  tps_location_api:
+    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/tps-location-api:latest
+    network_mode: host
+    user: "0:0"
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    restart: unless-stopped
+    environment:
+      - SCANNER_PORT=${SCANNER_PORT:-8089}
+      - SCAN_TIMEOUT_SECONDS=${SCAN_TIMEOUT_SECONDS:-10}
+      - SCAN_RETRIES=${SCAN_RETRIES:-3}
+      - SCAN_CHANNEL_DWELL_TIME_MS=${SCAN_CHANNEL_DWELL_TIME_MS:-60}
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:${SCANNER_PORT:-8089}/health')\""]
+      interval: 20s
+      timeout: 2s
+      retries: 3
+      start_period: 60s
+      start_interval: 2s

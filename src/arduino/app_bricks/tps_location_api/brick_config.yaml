@@ -1,0 +1,65 @@
+id: arduino:tps_location_api
+name: TPS Location API
+description: Collects nearby Wi‑Fi access points and determines device location using the Qualcomm TPS Location API cloud service
+icon: 📍
+category: location
+version: 1.0.0
+author: Qualcomm
+requires_container: true
+required_devices:
+  - wifi
+variables:
+  - name: AUTH_KEY
+    description: TPS authentication key
+    type: string
+    secret: true
+  - name: AUTH_USER
+    description: TPS authentication user (e.g., "qualcomm-tester-1")
+    type: string
+
+  - name: TPS_LOC_API_URL
+    description: TPS Location API endpoint URL.
+    type: string
+    default_value: "https://global.skyhook.com/wps2/json/location"
+    hidden: true
+  - name: TPS_AUTH_VERSION
+    description: TPS Location API authentication version header value.
+    type: string
+    default_value: "2.3"
+    hidden: true
+  - name: TPS_PROTO_VERSION
+    description: TPS Location API protocol version header value.
+    type: string
+    default_value: "2.41"
+    hidden: true
+  - name: HTTP_REQ_TIMEOUT_SEC
+    description: Timeout in seconds for outgoing HTTP requests (scanner and location API).
+    type: int
+    default_value: 15
+    hidden: true
+  - name: SCANNER_PORT
+    description: Port for the WiFi scanner service. Change to avoid conflicts when multiple apps use this brick on the same device.
+    type: int
+    default_value: 8089
+    hidden: true
+  - name: SCAN_CHANNEL_DWELL_TIME_MS
+    description: Scan channel dwell time in milliseconds. Controls how long the radio stays on each channel during a WiFi scan.
+    type: int
+    default_value: 60
+    hidden: true
+  - name: SCAN_TIMEOUT_SECONDS
+    description: Timeout in seconds for each iw scan command execution.
+    type: int
+    default_value: 10
+    hidden: true
+  - name: SCAN_RETRIES
+    description: Number of retry attempts when a WiFi scan fails due to resource busy.
+    type: int
+    default_value: 3
+    hidden: true
+  - name: SCAN_CACHE_SECONDS
+    description: Duration in seconds to cache scan results before performing a new scan.
+    type: int
+    default_value: 10
+    hidden: true
+  
