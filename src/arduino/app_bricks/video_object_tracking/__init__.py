@@ -33,7 +33,7 @@ class VideoObjectTracking(VideoObjectDetection):
         camera: BaseCamera | None = None,
         confidence: float = 0.4,
         keep_grace: int = 3,
-        max_observations: int = 3,
+        min_detections: int = 3,
         iou_threshold: float = 0.1,
         euclidean_distance_threshold: int = 50,
         debounce_sec: float = 0.0,
@@ -47,7 +47,8 @@ class VideoObjectTracking(VideoObjectDetection):
             confidence (float): Confidence level for detection. Default is 0.4 (40%).
             debounce_sec (float): Minimum seconds between repeated detections of the same object. Default is 0 seconds.
             keep_grace (int): Number of frames to keep an object if it disappears. Default is 3.
-            max_observations (int): Maximum number of observations to consider. Default is 3
+            min_detections (int): How many times an object must be detected before the tracker reports it as a
+                track of its own. Higher values delay the first report but discard more spurious detections. Default is 3.
             iou_threshold (float): Intersection over Union threshold for tracking. Default is 0.1. This is used in case of object detection models.
             euclidean_distance_threshold (int): Maximum distance in pixels. Default is 50 (px). This is used in case of centroids models, like FOMO.
             labels_to_track (list[str], optional): List of labels to track. If None, all labels are tracked.
@@ -59,7 +60,7 @@ class VideoObjectTracking(VideoObjectDetection):
         """
         super().__init__(camera=camera, confidence=confidence, debounce_sec=debounce_sec)
         self._labels_to_track = labels_to_track
-        self._max_observations = max_observations
+        self._min_detections = min_detections
         self._keep_grace = keep_grace
         self._iou_threshold = iou_threshold
         self._euclidean_distance_threshold = euclidean_distance_threshold
@@ -311,11 +312,15 @@ class VideoObjectTracking(VideoObjectDetection):
             logger.debug(f"Connected to model runner: {jmsg}")
             try:
                 self._model_info = EdgeImpulseRunnerFacade.parse_model_info_message(jmsg)
-                if self._model_info and self._model_info.thresholds is not None:
-                    self._set_thresholds()
-
             except Exception as e:
                 logger.error(f"Error parsing WS hello message: {e}")
+                return
+
+            if self._model_info and self._model_info.thresholds is not None:
+                try:
+                    self._set_thresholds()
+                except Exception as e:
+                    logger.error(f"Failed to configure the tracker: {e}")
             return
 
         elif jmsg.get("type") == "handling-message-success":
@@ -371,8 +376,9 @@ class VideoObjectTracking(VideoObjectDetection):
         """Set the thresholds for the object tracking model."""
         self.override_confidence(self._confidence)
         self.override_keep_grace(self._keep_grace)
-        self.override_max_observations(self._max_observations)
+        self.override_min_detections(self._min_detections)
         self.override_iou_threshold(self._iou_threshold)
+        self.override_euclidean_distance_threshold(self._euclidean_distance_threshold)
 
     def override_confidence(self, confidence: float) -> None:
         """Override the confidence threshold for object detection model.
@@ -399,18 +405,17 @@ class VideoObjectTracking(VideoObjectDetection):
         """
         try:
             with connect(self._uri) as ws:
-                self._override_config_value(ws, "keep_grace", keep_grace)
+                self._override_config_value(ws, "max_age", keep_grace)
             self._keep_grace = keep_grace
         except Exception as e:
             logger.error(f"Failed to override keep grace: {e}")
             raise
 
-    def override_max_observations(self, max_observations: int) -> None:
-        """Override max observations for object tracking model.
-            Max Observations: how many frames an object is kept if it disappears.
+    def override_min_detections(self, min_detections: int) -> None:
+        """Override the number of detections a track needs for the object tracking model to report it.
 
         Args:
-            max_observations (int): The new value for the max observations.
+            min_detections (int): The new value for the minimum number of detections.
 
         Raises:
             TypeError: If the value is not a number.
@@ -418,10 +423,10 @@ class VideoObjectTracking(VideoObjectDetection):
         """
         try:
             with connect(self._uri) as ws:
-                self._override_config_value(ws, "max_observations", max_observations)
-            self._max_observations = max_observations
+                self._override_config_value(ws, "min_hits", min_detections)
+            self._min_detections = min_detections
         except Exception as e:
-            logger.error(f"Failed to override max observations: {e}")
+            logger.error(f"Failed to override the minimum number of detections: {e}")
             raise
 
     def override_iou_threshold(self, iou_threshold: float) -> None:
@@ -439,24 +444,24 @@ class VideoObjectTracking(VideoObjectDetection):
 
         if self._model_info is not None and self._model_info.model_type is not None:
             if self._model_info.model_type == "constrained_object_detection":
-                logger.debug("The model type is 'centroids'. Consider using 'override_euclidean_distance_threshold' instead for better results.")
+                logger.debug("This model reports centroids. Use 'override_euclidean_distance_threshold' instead.")
                 return
 
         try:
             with connect(self._uri) as ws:
-                self._override_config_value(ws, "threshold", iou_threshold)
+                self._override_config_value(ws, "iou_threshold", iou_threshold)
             self._iou_threshold = iou_threshold
         except Exception as e:
             logger.error(f"Failed to override IoU threshold: {e}")
             raise
 
-    def override_euclidean_distance_threshold(self, iou_threshold: float) -> None:
+    def override_euclidean_distance_threshold(self, euclidean_distance_threshold: float) -> None:
         """Override euclidean distance threshold for object tracking model.
             This is valid for centroids based detection models, like FOMO.
             Euclidean Distance Threshold: Maximum distance in pixels to consider two detections as the same object.
 
         Args:
-            iou_threshold (float): The new value for the IoU threshold.
+            euclidean_distance_threshold (float): The new value for the euclidean distance threshold, in pixels.
 
         Raises:
             TypeError: If the value is not a number.
@@ -465,15 +470,15 @@ class VideoObjectTracking(VideoObjectDetection):
 
         if self._model_info is not None and self._model_info.model_type is not None:
             if self._model_info.model_type == "object_detection":
-                logger.debug("The model type is 'constrained_object_detection'. Consider using 'override_iou_threshold' instead for better results.")
+                logger.debug("This model reports bounding boxes. Use 'override_iou_threshold' instead.")
                 return
 
         try:
             with connect(self._uri) as ws:
-                self._override_config_value(ws, "threshold", iou_threshold)
-            self._iou_threshold = iou_threshold
+                self._override_config_value(ws, "threshold", euclidean_distance_threshold)
+            self._euclidean_distance_threshold = euclidean_distance_threshold
         except Exception as e:
-            logger.error(f"Failed to override IoU threshold: {e}")
+            logger.error(f"Failed to override the euclidean distance threshold: {e}")
             raise
 
     def _override_config_value(self, ws: Connection, key: str, value: float | int) -> None:
@@ -485,20 +490,26 @@ class VideoObjectTracking(VideoObjectDetection):
             value (float | int): The new value for the configuration.
 
         Raises:
-            RuntimeError: If the model information is not available or does not support threshold override.
+            RuntimeError: If the model has no object tracking block, or that block has no such key.
             TypeError: If the value is not a number.
         """
-        if self._model_info is None or self._model_info.thresholds is None or len(self._model_info.thresholds) == 0:
-            raise RuntimeError("Model information is not available or does not support threshold override.")
-
-        if not value or not isinstance(value, (int, float)):
+        if not isinstance(value, (int, float)):
             raise TypeError("Invalid types for value.")
 
-        for th in self._model_info.thresholds:
-            if th.get("type") == "object_tracking":
-                logger.debug(f"Overriding value for type: {th.get('type')}, id: {th.get('id')}, key: {key}, value: {value}")
-                message = {"type": "threshold-override", "id": th["id"], "key": key, "value": value}
-                ws.send(json.dumps(message))
+        if self._model_info is None or not self._model_info.thresholds:
+            raise RuntimeError("Model information is not available or does not support threshold override.")
+
+        block = next((th for th in self._model_info.thresholds if th.get("type") == "object_tracking"), None)
+        if block is None:
+            available = ", ".join(str(th.get("type")) for th in self._model_info.thresholds)
+            raise RuntimeError(f"This model has no object tracking block, it only exposes: {available}.")
+
+        if key not in block:
+            knobs = ", ".join(k for k in block if k not in ("id", "type"))
+            raise RuntimeError(f"The object tracking block of this model exposes {knobs}, not '{key}'.")
+
+        logger.debug(f"Overriding {key} to {value} on block {block['id']}")
+        ws.send(json.dumps({"type": "threshold-override", "id": block["id"], "key": key, "value": value}))
 
 
 def _get_direction(last_x: int, last_y: int, x: int, y: int, min_movement_threshold: int = 10) -> str | None:
