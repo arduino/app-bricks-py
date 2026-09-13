@@ -35,7 +35,7 @@ The Video Object Tracking Brick allows you to:
   - `get_objects_directions()` → movement history per object ID
 - Virtual counting line via `set_horizontal_crossing_line(y)`, `set_vertical_crossing_line(x)` or `set_crossing_line_coordinates(x1, y1, x2, y2)`.
 - Configurable confidence threshold (default: `0.4`) and debounce time between repeated callback invocations (default: `0s`, i.e. no debounce).
-- Runtime tracker overrides: `override_confidence(value)`, `override_keep_grace(value)`, `override_max_observations(value)`, `override_iou_threshold(value)`, `override_euclidean_distance_threshold(value)`.
+- Runtime tracker overrides: `override_confidence(value)`, `override_keep_grace(value)`, `override_min_detections(value)`, `override_iou_threshold(value)`, `override_euclidean_distance_threshold(value)`.
 - Clean lifecycle control with `start()` / `stop()` and integration with `App.run()`.
 
 ## Prerequisites
@@ -134,7 +134,7 @@ The constructor accepts the tracker knobs below, and each one has a matching `ov
 | --- | --- | --- |
 | `confidence` | `0.4` | Minimum detection confidence, applied by the model runner. |
 | `keep_grace` | `3` | Frames an object is kept alive after it disappears, before its ID is dropped. |
-| `max_observations` | `3` | Maximum number of observations the tracker considers per object. |
+| `min_detections` | `3` | Detections an object needs before the tracker reports it as a track of its own. |
 | `iou_threshold` | `0.1` | Intersection-over-Union used to match tracks between frames. For bounding-box models such as YOLO. |
 | `euclidean_distance_threshold` | `50` | Maximum distance in pixels used to match tracks between frames. For centroid models such as FOMO. |
 | `debounce_sec` | `0.0` | Minimum seconds between repeated callback invocations for the same label. |
