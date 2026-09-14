@@ -1,90 +1,71 @@
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse
-from typing import List, Dict, Optional
+# SPDX-FileCopyrightText: Copyright (C) Arduino s.r.l. and/or its affiliated companies
+#
+# SPDX-License-Identifier: MPL-2.0
+
+"""HTTP API serving Wi-Fi scan results to the app container over a Unix domain socket."""
+
+import logging
 import os
+import threading
 import time
+from dataclasses import asdict
 
-from iw_scanner import scan_access_points, get_wireless_interface
+from fastapi import FastAPI, HTTPException
 
-app = FastAPI(
-    title="TPS Location Client Scanner",
-    description="Scans nearby WiFi Access Points using iw and serves results via REST API.",
-    version="1.0.0"
-)
+from iw_scanner import ScanError, ScanResult, list_interfaces, scan
+
+logger = logging.getLogger("scan_server")
 
 SCAN_CACHE_SECONDS = int(os.getenv("SCAN_CACHE_SECONDS", "10"))
-_cached_results: List[Dict[str, str]] = []
-_cached_timestamp_ms: int = 0
-_start_time: float = time.time()
+SCAN_INTERFACE = os.getenv("SCAN_INTERFACE") or None
 
 
-@app.get("/")
-async def root():
-    """Container info."""
-    return {
-        "status": "running",
-        "version": "1.0.0"
-    }
+class ScanCache:
+    """Serializes scans and reuses a result for ttl_seconds, which also bounds the scan rate."""
+
+    def __init__(self, ttl_seconds: int) -> None:
+        self._ttl_ms = ttl_seconds * 1000
+        self._lock = threading.Lock()
+        self._result: ScanResult | None = None
+
+    def get(self) -> tuple[ScanResult, bool]:
+        """Return the current result and whether it was served from cache."""
+        with self._lock:
+            now_ms = int(time.time() * 1000)
+            if self._result is not None and now_ms - self._result.timestamp_ms < self._ttl_ms:
+                return self._result, True
+            self._result = scan(SCAN_INTERFACE)
+            return self._result, False
+
+
+app = FastAPI(title="TPS Location Wi-Fi Scanner", version="1.0.0", docs_url=None, redoc_url=None, openapi_url=None)
+cache = ScanCache(SCAN_CACHE_SECONDS)
 
 
 @app.get("/health")
-async def health():
-    """Health check endpoint."""
-    interface = get_wireless_interface()
-    return {
-        "status": "healthy",
-        "interface_detected": interface is not None,
-        "interface": interface,
-        "uptime": time.time() - _start_time
-    }
+def health() -> dict:
+    """Report whether a wireless interface is available."""
+    try:
+        interfaces = list_interfaces()
+    except ScanError as e:
+        logger.error("health check failed: %s", e)
+        raise HTTPException(status_code=503, detail="wireless interfaces unavailable")
+    return {"status": "ok", "interfaces": interfaces}
 
 
 @app.get("/scan")
-async def get_access_points(
-    interface: Optional[str] = None,
-    force_refresh: bool = False
-) -> JSONResponse:
-    """
-    Scan and return nearby WiFi Access Points.
+def get_access_points() -> dict:
+    """Return the nearby access points, from cache when recent enough."""
+    try:
+        result, cached = cache.get()
+    except ScanError as e:
+        logger.error("scan failed: %s", e)
+        raise HTTPException(status_code=503, detail="Wi-Fi scan failed")
 
-    Query Parameters:
-        interface: Wireless interface to use (auto-detects if not provided).
-        force_refresh: Force a new scan, bypassing cache.
-    """
-    global _cached_results, _cached_timestamp_ms
-
-    now_ms = int(time.time() * 1000)
-
-    if (not force_refresh and
-            _cached_results and
-            (now_ms - _cached_timestamp_ms) < SCAN_CACHE_SECONDS * 1000):
-        age_ms = now_ms - _cached_timestamp_ms
-        return JSONResponse(content={
-            "status": "success",
-            "cached": True,
-            "age_ms": age_ms,
-            "timestamp_ms": _cached_timestamp_ms,
-            "count": len(_cached_results),
-            "access_points": _cached_results
-        })
-
-    scan_result = scan_access_points(interface=interface)
-
-    if scan_result is None:
-        raise HTTPException(
-            status_code=500,
-            detail="WiFi scan failed. Verify iw is installed and interface is available."
-        )
-
-    access_points, timestamp_ms = scan_result
-    _cached_results = access_points
-    _cached_timestamp_ms = timestamp_ms
-
-    return JSONResponse(content={
-        "status": "success",
-        "cached": False,
-        "age_ms": 0,
-        "timestamp_ms": timestamp_ms,
-        "count": len(access_points),
-        "access_points": access_points
-    })
+    return {
+        "timestamp_ms": result.timestamp_ms,
+        "age_ms": max(0, int(time.time() * 1000) - result.timestamp_ms),
+        "cached": cached,
+        "count": len(result.access_points),
+        "access_points": [asdict(ap) for ap in result.access_points],
+    }

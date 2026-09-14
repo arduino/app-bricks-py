@@ -1,283 +1,302 @@
+# SPDX-FileCopyrightText: Copyright (C) Arduino s.r.l. and/or its affiliated companies
+#
+# SPDX-License-Identifier: MPL-2.0
+
+"""Wi-Fi based geolocation through the TPS Location API cloud service."""
+
+import http.client
+import json
 import os
+import re
+import socket
+import threading
 import time
 import uuid
-import threading
-import requests
-from typing import List, Dict, Optional, Callable
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from typing import Any
+from urllib.parse import urlsplit
 
+import requests
 
-SCANNER_HOST = os.getenv("SCANNER_HOST", "172.17.0.1")
-SCANNER_PORT = os.getenv("SCANNER_PORT", "8089")
-SCANNER_BASE_URL = f"http://{SCANNER_HOST}:{SCANNER_PORT}"
+from arduino.app_utils import Logger, brick
 
+logger = Logger("TPSLocationAPI")
+
+SCANNER_SOCKET_PATH = os.getenv("SCANNER_SOCKET_PATH", "/app/.cache/tps_location_api/scanner.sock")
 TPS_LOC_API_URL = os.getenv("TPS_LOC_API_URL", "https://global.skyhook.com/wps2/json/location")
-AUTH_KEY = os.getenv("AUTH_KEY", "")
-AUTH_USER = os.getenv("AUTH_USER", "")
 TPS_AUTH_VERSION = os.getenv("TPS_AUTH_VERSION", "2.3")
 TPS_PROTO_VERSION = os.getenv("TPS_PROTO_VERSION", "2.41")
 HTTP_REQ_TIMEOUT_SEC = int(os.getenv("HTTP_REQ_TIMEOUT_SEC", "15"))
 
+STREET_ADDRESS_FIELDS = (
+    "distanceToPoint",
+    "streetNumber",
+    "addressLine",
+    "neighborhood",
+    "city",
+    "metro1",
+    "metro2",
+    "postalCode",
+    "county",
+    "province",
+    "region",
+    "stateCode",
+    "stateName",
+    "countryCode",
+    "countryName",
+)
 
+LocationCallback = Callable[[dict[str, Any] | None, Exception | None], None]
+
+
+def _snake_case(name: str) -> str:
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+
+
+def _build_payload(scan_result: dict[str, Any], street_address: bool) -> dict[str, Any]:
+    """Turn a scanner response into a TPS Location API request body.
+
+    Each access point becomes a wifiAccessPoints entry with its MAC address, signal strength in dBm
+    and age in milliseconds, which is the scan age plus the time since the access point was last seen.
+    Channel, SSID and connected flag are included when known.
+
+    Args:
+        scan_result (dict): Scanner response, see TPSLocationAPI._scan().
+        street_address (bool): Ask for a full street address lookup.
+
+    Returns:
+        dict: The request body.
+
+    Raises:
+        RuntimeError: If the scan found no access points.
+    """
+    access_points = scan_result.get("access_points", [])
+    if not access_points:
+        raise RuntimeError("No access points found for location request.")
+
+    scan_age_ms = int(scan_result.get("age_ms", 0))
+    wifi_aps = []
+    for ap in access_points:
+        signal = ap.get("signal")
+        entry = {
+            "macAddress": ap["bssid"].upper(),
+            "signalStrength": int(signal) if signal is not None else -100,
+            "age": scan_age_ms + int(ap.get("last_seen_ms") or 0),
+        }
+        if ap.get("channel"):
+            entry["channel"] = int(ap["channel"])
+        if ap.get("ssid"):
+            entry["ssid"] = ap["ssid"]
+        if ap.get("connected"):
+            entry["connected"] = True
+        wifi_aps.append(entry)
+
+    payload = {"considerIp": "false", "includeBeaconCounts": "true", "wifiAccessPoints": wifi_aps}
+    if street_address:
+        payload["streetAddressLookupType"] = "full"
+    return payload
+
+
+class _UnixSocketConnection(http.client.HTTPConnection):
+    """HTTP connection over a Unix domain socket."""
+
+    def __init__(self, path: str, timeout: float) -> None:
+        super().__init__("localhost", timeout=timeout)
+        self._path = path
+
+    def connect(self) -> None:
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.settimeout(self.timeout)
+        self.sock.connect(self._path)
+
+
+@brick
 class TPSLocationAPI:
-    """Client for the TPS Location API cloud service."""
+    """Client for the TPS Location API cloud service.
 
-    def __init__(self):
-        """Initialize the TPS Location API client."""
-        self.scanner_base_url = SCANNER_BASE_URL
+    Nearby Wi-Fi access points are collected by the scanner container and resolved to a
+    geographic position, optionally with a street address, by the TPS Location API.
+    """
+
+    def __init__(self, auth_key: str | None = None, auth_user: str | None = None) -> None:
+        """Initialize the TPS Location API client.
+
+        Args:
+            auth_key (str | None): TPS authentication key. Defaults to the AUTH_KEY brick variable.
+            auth_user (str | None): TPS authentication user. Defaults to the AUTH_USER brick variable.
+
+        Raises:
+            ValueError: If credentials are missing or the location API URL does not use https.
+        """
+        self.auth_key = auth_key or os.getenv("AUTH_KEY", "")
+        self.auth_user = auth_user or os.getenv("AUTH_USER", "")
+        if not self.auth_key or not self.auth_user:
+            raise ValueError("TPS credentials missing: set the AUTH_KEY and AUTH_USER brick variables")
+
         self.loc_api_url = TPS_LOC_API_URL
-        self.auth_key = AUTH_KEY
-        self.auth_user = AUTH_USER
-        self._executor = ThreadPoolExecutor(max_workers=4)
+        if urlsplit(self.loc_api_url).scheme != "https":
+            raise ValueError("TPS_LOC_API_URL must use https: credentials are sent with every request")
 
-    def _scan(self, interface: Optional[str] = None, force_refresh: bool = False) -> Dict:
-        """
-        Internal: Scan nearby WiFi Access Points by sending a GET request to the client scan container.
+        self.scanner_socket_path = SCANNER_SOCKET_PATH
+        self._executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="tps-locate")
+        self._lock = threading.Lock()
+        self._periodic_stops: set[threading.Event] = set()
 
-        Args:
-            interface: Wireless interface to use (auto-detects if not provided).
-            force_refresh: Force a new scan, bypassing cache.
+    def stop(self) -> None:
+        """Stop periodic updates and pending background lookups."""
+        with self._lock:
+            stops = list(self._periodic_stops)
+            self._periodic_stops.clear()
+        for stop_event in stops:
+            stop_event.set()
+        self._executor.shutdown(wait=False, cancel_futures=True)
 
-        Returns:
-            Dict with keys:
-                - access_points: List of AP dicts (bssid, ssid, signal, channel, connected)
-                - age_ms: Age of the scan data in milliseconds
-                - timestamp_ms: Collection time in milliseconds since epoch
-                - cached: Whether the result was served from cache
-
-        Raises:
-            RuntimeError: If the scan request fails.
-        """
-        params = {}
-        if interface:
-            params["interface"] = interface
-        if force_refresh:
-            params["force_refresh"] = "true"
-
-        try:
-            response = requests.get(f"{self.scanner_base_url}/scan", params=params, timeout=HTTP_REQ_TIMEOUT_SEC)
-            response.raise_for_status()
-        except requests.RequestException as e:
-            raise RuntimeError(f"WiFi scan request failed: {e}") from e
-
-        return response.json()
-
-    def locate(self, request_token: Optional[str] = None, street_address: bool = False, device_id: Optional[str] = None, opt_in: bool = False) -> Dict:
-        """
-        Get location by scanning WiFi APs and sending them to the TPS Location API.
+    def locate(
+        self,
+        request_token: str | None = None,
+        street_address: bool = False,
+        device_id: str | None = None,
+        opt_in: bool = False,
+    ) -> dict[str, Any]:
+        """Get the device location by scanning Wi-Fi access points and querying the TPS Location API.
 
         Args:
-            request_token: Optional request token. If None, a UUID is generated.
-            street_address: If True, include street address lookup in the response.
-            device_id: Optional device identifier. When provided, sent via Skyhook-PID header.
-            opt_in: Controls whether the TPS Location API persists the device_id (only meaningful when device_id is provided).
+            request_token (str | None): Request token, a UUID is generated when None.
+            street_address (bool): Include the reverse geocoded street address in the response.
+            device_id (str | None): Device identifier, sent in the Skyhook-PID header when provided.
+            opt_in (bool): Allow the TPS Location API to persist device_id. Only meaningful with device_id.
 
         Returns:
-            Dict with keys:
-                - location: Dict with 'lat' and 'lng' (floats)
-                - accuracy: Accuracy in meters (float)
-                - nap: Number of access points used (int)
-                - street_address: (only if street_address=True) Dict with street address fields
+            dict: location (lat, lng), accuracy in meters, nap (access points used), request_token and,
+                when requested and available, street_address.
 
         Raises:
-            RuntimeError: If the scan or location request fails.
+            RuntimeError: If the scan or the location request fails.
         """
-        # Get scan results
-        scan_result = self._scan(force_refresh=False)
-        access_points = scan_result.get("access_points", [])
-        age_ms = scan_result.get("age_ms", 0)
-
-        if not access_points:
-            raise RuntimeError("No access points found for location request.")
-
-        # Build Skyhook-compatible request payload
-        wifi_aps = []
-        for ap in access_points:
-            entry = {
-                "macAddress": ap.get("bssid", "").upper(),
-                "signalStrength": int(ap.get("signal", -100)),
-                "age": age_ms,
-            }
-            if ap.get("channel"):
-                entry["channel"] = ap["channel"]
-            if ap.get("ssid"):
-                entry["ssid"] = ap["ssid"]
-            if ap.get("connected"):
-                entry["connected"] = True
-            wifi_aps.append(entry)
-
-        payload = {
-            "considerIp": "false",
-            "includeBeaconCounts": "true",
-            "wifiAccessPoints": wifi_aps
-        }
-
-        if street_address:
-            payload["streetAddressLookupType"] = "full"
-
-        if request_token is None:
-            request_token = str(uuid.uuid4())
-
-        # Build headers
-        headers = {
-            "Content-Type": "application/json",
-            "Skyhook-Auth-Ver": TPS_AUTH_VERSION,
-            "Skyhook-Proto-Ver": TPS_PROTO_VERSION,
-            "Skyhook-Request-Token": request_token,
-            "Skyhook-Auth-Key": self.auth_key,
-            "Skyhook-Auth-User": self.auth_user,
-        }
-
-        # Send device ID if provided; opt_in controls whether the TPS Location API persists it
-        if device_id:
-            headers["Skyhook-PID"] = device_id
-            headers["Skyhook-Opt-In"] = str(opt_in).lower()
-
-
-        # Send request to TPS Location cloud service
+        headers = self._build_headers(request_token, device_id, opt_in)
+        payload = _build_payload(self._scan(), street_address)
         try:
-            response = requests.post(
-                self.loc_api_url,
-                json=payload,
-                headers=headers,
-                timeout=HTTP_REQ_TIMEOUT_SEC
-            )
+            response = requests.post(self.loc_api_url, json=payload, headers=headers, timeout=HTTP_REQ_TIMEOUT_SEC)
             response.raise_for_status()
-        except requests.RequestException as e:
+            data = response.json()
+        except (requests.RequestException, ValueError) as e:
             raise RuntimeError(f"Location request failed: {e}") from e
 
-        response_token = response.headers.get("Skyhook-Request-Token")
-
-        data = response.json()
-
-        # Parse into structured response
-        location_data = data.get("location", {})
-        result = {
-            "location": {
-                "lat": location_data.get("lat"),
-                "lng": location_data.get("lng")
-            },
+        location = data.get("location", {})
+        result: dict[str, Any] = {
+            "location": {"lat": location.get("lat"), "lng": location.get("lng")},
             "accuracy": data.get("accuracy"),
-            "nap": data.get("nap")
+            "nap": data.get("nap"),
         }
-        if response_token:
+        if response_token := response.headers.get("Skyhook-Request-Token"):
             result["request_token"] = response_token
-            
         if street_address and "streetAddress" in data:
-            sa = data["streetAddress"]
-            result["street_address"] = {
-                "distance_to_point": sa.get("distanceToPoint"),
-                "street_number": sa.get("streetNumber"),
-                "address_line": sa.get("addressLine"),
-                "neighborhood": sa.get("neighborhood"),
-                "city": sa.get("city"),
-                "metro1": sa.get("metro1"),
-                "metro2": sa.get("metro2"),
-                "postal_code": sa.get("postalCode"),
-                "county": sa.get("county"),
-                "province": sa.get("province"),
-                "region": sa.get("region"),
-                "state_code": sa.get("stateCode"),
-                "state_name": sa.get("stateName"),
-                "country_code": sa.get("countryCode"),
-                "country_name": sa.get("countryName"),
-            }
-
+            result["street_address"] = {_snake_case(field): data["streetAddress"].get(field) for field in STREET_ADDRESS_FIELDS}
         return result
 
     def async_locate(
         self,
-        callback: Callable[[Optional[Dict], Optional[Exception]], None],
-        request_token: Optional[str] = None,
+        callback: LocationCallback,
+        request_token: str | None = None,
         street_address: bool = False,
-        device_id: Optional[str] = None,
-        opt_in: bool = False
+        device_id: str | None = None,
+        opt_in: bool = False,
     ) -> None:
-        """
-        Non-blocking version of locate(). Performs the location lookup in a
-        background thread and invokes the callback when the result is ready.
+        """Run locate() in a background thread and deliver the outcome to callback.
 
         Args:
-            callback: A function called with (result, error). On success,
-                      result is the location dict and error is None. On failure,
-                      result is None and error is the raised exception.
-            request_token: Optional request token. If None, a UUID is generated.
-            street_address: If True, include street address lookup in the response.
-            device_id: Optional device identifier. When provided, sent via Skyhook-PID header.
-            opt_in: Controls whether the TPS Location API persists the device_id (only meaningful when device_id is provided).
-
-        Returns:
-            None. The result is delivered via the callback.
-
-        Example:
-            def on_location(result, error):
-                if error:
-                    logger.error(f"Locate failed: {error}")
-                else:
-                    logger.info(f"Location: {result}")
-
-            loc_api.async_locate(callback=on_location)
+            callback (Callable): Called with (result, error). On success result is the location dict,
+                extended with elapsed_ms, and error is None. On failure result is None and error is the exception.
+            request_token (str | None): Request token, a UUID is generated when None.
+            street_address (bool): Include the reverse geocoded street address in the response.
+            device_id (str | None): Device identifier, sent in the Skyhook-PID header when provided.
+            opt_in (bool): Allow the TPS Location API to persist device_id. Only meaningful with device_id.
         """
-        def _worker():
+
+        def _worker() -> None:
+            start = time.monotonic()
             try:
-                start_ms = time.time() * 1000
                 result = self.locate(request_token=request_token, street_address=street_address, device_id=device_id, opt_in=opt_in)
-                result["elapsed_ms"] = int(time.time() * 1000 - start_ms)
-                callback(result, None)
             except Exception as e:
+                logger.error(f"Location lookup failed: {e}")
                 callback(None, e)
+                return
+            result["elapsed_ms"] = int((time.monotonic() - start) * 1000)
+            callback(result, None)
 
         self._executor.submit(_worker)
 
     def periodic_locate(
         self,
-        callback: Callable[[Optional[Dict], Optional[Exception]], None],
+        callback: LocationCallback,
         period_sec: int = 30,
         street_address: bool = False,
-        device_id: Optional[str] = None,
-        opt_in: bool = False
+        device_id: str | None = None,
+        opt_in: bool = False,
     ) -> Callable[[], None]:
-        """
-        Periodically call locate() in a background thread and deliver results
-        via the callback. The caller does not need to implement a loop.
+        """Call locate() every period_sec seconds in the background and deliver each outcome to callback.
 
         Args:
-            callback: A function called with (result, error) after each location fix.
-                      On success, result is the location dict and error is None.
-                      On failure, result is None and error is the raised exception.
-            period_sec: Interval in seconds between locate() calls (default: 30).
-            street_address: If True, include street address lookup in each response.
-            device_id: Optional device identifier. When provided, sent via Skyhook-PID header.
-            opt_in: Controls whether the TPS Location API persists the device_id (only meaningful when device_id is provided).
+            callback (Callable): Called with (result, error) after each lookup, see async_locate().
+            period_sec (int): Interval in seconds between lookups. Defaults to 30.
+            street_address (bool): Include the reverse geocoded street address in each response.
+            device_id (str | None): Device identifier, sent in the Skyhook-PID header when provided.
+            opt_in (bool): Allow the TPS Location API to persist device_id. Only meaningful with device_id.
 
         Returns:
-            A stop function. Call it to stop the periodic location updates.
-
-        Example:
-            def on_location(result, error):
-                if error:
-                    logger.error(f"Locate failed: {error}")
-                else:
-                    logger.info(f"Location: {result}")
-
-            stop = loc_api.periodic_locate(callback=on_location, period_sec=10)
-            # ... later ...
-            stop()  # stops the periodic updates
+            Callable[[], None]: A function that stops the periodic updates.
         """
         stop_event = threading.Event()
+        with self._lock:
+            self._periodic_stops.add(stop_event)
 
-        def _scheduler():
-            """Schedule locate calls at fixed intervals using async_locate."""
+        def _scheduler() -> None:
             while not stop_event.is_set():
-                request_token = str(uuid.uuid4())
-                self.async_locate(callback=callback, request_token=request_token, street_address=street_address, device_id=device_id, opt_in=opt_in)
+                self.async_locate(callback=callback, street_address=street_address, device_id=device_id, opt_in=opt_in)
                 stop_event.wait(timeout=period_sec)
 
-        thread = threading.Thread(target=_scheduler, daemon=True, name="periodic-locate")
-        thread.start()
-
-        def stop():
-            """Stop the periodic locate loop."""
+        def stop() -> None:
             stop_event.set()
+            with self._lock:
+                self._periodic_stops.discard(stop_event)
 
+        threading.Thread(target=_scheduler, daemon=True, name="tps-periodic-locate").start()
         return stop
+
+    def _scan(self) -> dict[str, Any]:
+        """Fetch the nearby access points from the scanner container.
+
+        Returns:
+            dict: Scanner response with access_points, age_ms, timestamp_ms and cached keys.
+
+        Raises:
+            RuntimeError: If the scanner is unreachable or the scan failed.
+        """
+        connection = _UnixSocketConnection(self.scanner_socket_path, HTTP_REQ_TIMEOUT_SEC)
+        try:
+            connection.request("GET", "/scan")
+            response = connection.getresponse()
+            body = response.read()
+        except OSError as e:
+            raise RuntimeError(f"Wi-Fi scanner unreachable at {self.scanner_socket_path}: {e}") from e
+        finally:
+            connection.close()
+
+        if response.status != 200:
+            raise RuntimeError(f"Wi-Fi scan failed: scanner returned HTTP {response.status}")
+        return json.loads(body)
+
+    def _build_headers(self, request_token: str | None, device_id: str | None, opt_in: bool) -> dict[str, str]:
+        headers = {
+            "Content-Type": "application/json",
+            "Skyhook-Auth-Ver": TPS_AUTH_VERSION,
+            "Skyhook-Proto-Ver": TPS_PROTO_VERSION,
+            "Skyhook-Request-Token": request_token or str(uuid.uuid4()),
+            "Skyhook-Auth-Key": self.auth_key,
+            "Skyhook-Auth-User": self.auth_user,
+        }
+        if device_id:
+            headers["Skyhook-PID"] = device_id
+            headers["Skyhook-Opt-In"] = str(opt_in).lower()
+        return headers

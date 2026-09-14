@@ -4,12 +4,14 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-set -e
+set -eu
 
-if [ -z "$PYTHONUNBUFFERED" ]; then
-  export PYTHONUNBUFFERED=1
-fi
+SOCKET_PATH="${SCANNER_SOCKET_PATH:-/app/.cache/tps_location_api/scanner.sock}"
+SOCKET_DIR="$(dirname "$SOCKET_PATH")"
 
-PORT="${SCANNER_PORT:-8089}"
+# The socket directory is shared with the app container only: keep it private to the service user
+mkdir -p "$SOCKET_DIR"
+chmod 700 "$SOCKET_DIR" || echo "warning: cannot restrict permissions of $SOCKET_DIR" >&2
+rm -f "$SOCKET_PATH"
 
-exec python -m uvicorn scan_server:app --host 0.0.0.0 --port "$PORT" --log-level warning
+exec python -m uvicorn scan_server:app --uds "$SOCKET_PATH" --log-level warning
