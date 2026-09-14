@@ -16,8 +16,8 @@ def client(monkeypatch):
     """Serve the API with a scripted scanner and a fresh cache."""
     scans = []
 
-    def fake_scan(interface=None):
-        scans.append(interface)
+    def fake_scan():
+        scans.append(True)
         return ScanResult([AccessPoint("aa:bb:cc:dd:ee:ff", ssid="net", signal=-50.0, channel=6, last_seen_ms=10)], 1_000)
 
     monkeypatch.setattr(scan_server, "scan", fake_scan)
@@ -48,7 +48,7 @@ def test_scan_is_cached_within_ttl(client):
     client.get("/scan")
     body = client.get("/scan").json()
     assert body["cached"] is True
-    assert client.scans == [None]
+    assert client.scans == [True]
 
 
 def test_scan_expires_after_ttl(client, monkeypatch):
@@ -61,11 +61,11 @@ def test_scan_expires_after_ttl(client, monkeypatch):
 
 def test_scan_ignores_request_parameters(client):
     client.get("/scan", params={"interface": "eth0", "force_refresh": "true"})
-    assert client.scans == [None]
+    assert client.scans == [True]
 
 
 def test_scan_failure_is_a_503_without_details(client, monkeypatch):
-    def failing_scan(interface=None):
+    def failing_scan():
         raise ScanError("scan failed on wlan0: secret details")
 
     monkeypatch.setattr(scan_server, "scan", failing_scan)

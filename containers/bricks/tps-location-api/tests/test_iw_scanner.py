@@ -140,12 +140,6 @@ def test_scan_fails_on_unexpected_error(iw, monkeypatch):
         scan()
 
 
-def test_scan_rejects_unknown_interface(iw):
-    with pytest.raises(ScanError, match="unknown wireless interface"):
-        scan("eth0; reboot")
-    assert iw.calls == [["iw", "dev"]]
-
-
 def test_scan_fails_without_interfaces(iw):
     iw.on("dev", outcomes=completed(["iw", "dev"], stdout=""))
     with pytest.raises(ScanError, match="no wireless interface"):

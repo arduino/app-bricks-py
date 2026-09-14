@@ -17,7 +17,6 @@ from iw_scanner import ScanError, ScanResult, list_interfaces, scan
 logger = logging.getLogger("scan_server")
 
 SCAN_CACHE_SECONDS = int(os.getenv("SCAN_CACHE_SECONDS", "10"))
-SCAN_INTERFACE = os.getenv("SCAN_INTERFACE") or None
 
 
 class ScanCache:
@@ -34,7 +33,7 @@ class ScanCache:
             now_ms = int(time.time() * 1000)
             if self._result is not None and now_ms - self._result.timestamp_ms < self._ttl_ms:
                 return self._result, True
-            self._result = scan(SCAN_INTERFACE)
+            self._result = scan()
             return self._result, False
 
 

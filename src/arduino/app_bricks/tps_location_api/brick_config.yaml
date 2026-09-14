@@ -33,11 +33,6 @@ variables:
     type: int
     default_value: 15
     hidden: true
-  - name: SCAN_INTERFACE
-    description: Wireless interface to scan on. Leave empty to use the first one found.
-    type: string
-    default_value: ""
-    hidden: true
   - name: SCAN_CHANNEL_DWELL_TU
     description: Time the radio stays on each channel during a scan, in TUs (1 TU is 1024 microseconds). 0 leaves the driver default.
     type: int

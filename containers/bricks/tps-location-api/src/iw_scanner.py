@@ -18,7 +18,6 @@ SCAN_RETRIES = int(os.getenv("SCAN_RETRIES", "3"))
 # Per-channel dwell time in TUs (1 TU is 1024 us), 0 leaves the driver default
 SCAN_CHANNEL_DWELL_TU = int(os.getenv("SCAN_CHANNEL_DWELL_TU", "60"))
 
-_INTERFACE_RE = re.compile(r"^[A-Za-z0-9_.-]{1,15}$")
 _BSS_RE = re.compile(r"^BSS\s+([0-9a-f]{2}(?::[0-9a-f]{2}){5})", re.IGNORECASE)
 _SSID_RE = re.compile(r"^SSID:\s?(.*)$")
 _SIGNAL_RE = re.compile(r"^signal:\s*(-?\d+(?:\.\d+)?)\s*dBm")
@@ -65,16 +64,12 @@ def list_interfaces() -> list[str]:
     return [line.split()[1] for line in result.stdout.splitlines() if line.strip().startswith("Interface ")]
 
 
-def resolve_interface(interface: str | None) -> str:
-    """Return the interface to scan on, the first available one when none is given."""
+def first_interface() -> str:
+    """Return the first wireless interface known to the kernel."""
     interfaces = list_interfaces()
     if not interfaces:
         raise ScanError("no wireless interface found")
-    if not interface:
-        return interfaces[0]
-    if not _INTERFACE_RE.match(interface) or interface not in interfaces:
-        raise ScanError(f"unknown wireless interface: {interface!r}")
-    return interface
+    return interfaces[0]
 
 
 def _scan_output(interface: str) -> str:
@@ -101,9 +96,9 @@ def _scan_output(interface: str) -> str:
     raise ScanError(f"scan failed on {interface}: radio busy after {SCAN_RETRIES} attempts")
 
 
-def scan(interface: str | None = None) -> ScanResult:
-    """Scan for nearby access points, strongest first and deduplicated by BSSID."""
-    interface = resolve_interface(interface)
+def scan() -> ScanResult:
+    """Scan for nearby access points on the first wireless interface, strongest first and deduplicated by BSSID."""
+    interface = first_interface()
     access_points = parse_scan_output(_scan_output(interface))
     access_points.sort(key=lambda ap: ap.signal if ap.signal is not None else float("-inf"), reverse=True)
     unique: dict[str, AccessPoint] = {}

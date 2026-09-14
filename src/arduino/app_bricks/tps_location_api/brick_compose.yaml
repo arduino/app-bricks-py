@@ -13,7 +13,6 @@ services:
     volumes:
       - "${APP_HOME:-.}/.cache/tps_location_api:/app/.cache/tps_location_api"
     environment:
-      - SCAN_INTERFACE=${SCAN_INTERFACE:-}
       - SCAN_TIMEOUT_SECONDS=${SCAN_TIMEOUT_SECONDS:-10}
       - SCAN_RETRIES=${SCAN_RETRIES:-3}
       - SCAN_CHANNEL_DWELL_TU=${SCAN_CHANNEL_DWELL_TU:-60}
