@@ -2,7 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-import glob
 import os
 import sys
 from setuptools.build_meta import build_wheel as _orig_build_wheel
@@ -17,7 +16,6 @@ import shutil
 
 
 def run_preprocessing(dev_mode: bool = False) -> None:
-    registry = os.getenv("PUBLIC_IMAGE_REGISTRY_BASE", None)
     if dev_mode:
         version = os.getenv("DEV_TAG_VERSION", "dev-latest")
     else:
@@ -33,62 +31,22 @@ def run_preprocessing(dev_mode: bool = False) -> None:
             tag_regex=r"^(?:ai|bricks|release)/(?P<version>v?\d+(?:\.\d+)*(?:rc\d+)?)$",
         )
 
-    cache_folder_path = "src/arduino/app_bricks/static"
-    if os.path.exists(cache_folder_path) and os.path.isdir(cache_folder_path):
-        shutil.rmtree(cache_folder_path)
-    os.makedirs(cache_folder_path, exist_ok=True)
+    static_dir = "src/arduino/app_bricks/static"
+    shutil.rmtree(static_dir, ignore_errors=True)
 
+    print("################################### Docs generation #################################################################################")
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
+    sys.path.insert(0, project_root)
     try:
-        print(f"################################## Embed models list ###############################################################################")
-        matched_files = glob.glob("models/models-*.yaml")
-        if not matched_files:
-            raise FileNotFoundError("No files matching 'models/models-*.yaml' were found")
-        for src_file in matched_files:
-            shutil.copy(src_file, f"{cache_folder_path}/{os.path.basename(src_file)}")
-    except Exception as e:
-        print(f"Error: {e}.")
-        raise
-
-    embed_pyright_rules(cache_folder_path)
-
-    try:
-        print(f"################################## Building bricks list Version: {version} - Dev Mode: {dev_mode} ##################################")
-        cmd = ["arduino-bricks-release", "-o", f"{cache_folder_path}/bricks-list.yaml", "--version", f"{version}"]
-        if registry:
-            cmd.append("--registry")
-            cmd.append(registry)
-        if dev_mode:
-            cmd.append("--dev")
-
-        subprocess.run(cmd, check=True, cwd=os.getcwd())
-    except Exception as e:
-        print(f"Error: {e}.")
-        raise
-
-    try:
-        print(f"################################## Pre-provision bricks list #######################################################################")
-        cmd = ["arduino-bricks-list-modules", "-p", "-b", "-c", f"{cache_folder_path}", "--version", f"{version}"]
-        subprocess.run(cmd, check=True, cwd=os.getcwd())
-    except Exception as e:
-        print(f"Error: {e}.")
-        raise
-
-    try:
-        print("################################### Docs generation #################################################################################")
-        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
-        print(f"Project root: {project_root}")
-        if project_root not in sys.path:
-            print(f"Adding project root to sys.path: {project_root}")
-        sys.path.insert(0, project_root)
         from docs_generator import runner
 
         runner.run_docs_generator()
-    except Exception as e:
-        print(f"Error while generating docs: {e}.")
-        raise
     finally:
-        if project_root in sys.path:
-            sys.path.remove(project_root)
+        sys.path.remove(project_root)
+
+    print(f"################################## Provisioning static assets, version {version} - Dev Mode: {dev_mode} ##############################")
+    subprocess.run(["arduino-bricks-release", "--static-dir", static_dir, "--version", version], check=True, cwd=os.getcwd())
+    embed_pyright_rules(static_dir)
 
 
 PYRIGHT_RULES_SOURCE = "pyright-rules.json"

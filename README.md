@@ -28,7 +28,7 @@ Brick usage examples live in the [app-bricks-examples](https://github.com/arduin
 | ------------- | ------------- |
 | APP_HOME  | Base application directory context  |
 | LOCAL_DEV | To switch logic for local library development |
-| APPSLAB_VERSION | To override the image versions referenced in brick_compose.yaml files |
+| BRICKS_RELEASE_VERSION | Version stamped in place of the `__BRICKS_RELEASE_VERSION__` placeholder of compose and models files, defaults to the installed library version |
 
 ## Library compile and build 
 
@@ -49,8 +49,6 @@ task init
 ```
 
 uv provides Python 3.13, creates `.venv` and installs the library with its development dependencies, exactly the versions pinned in `uv.lock`. Every task runs inside that environment through `uv run`, there is nothing to activate.
-
-To force a specific Arduino App Lab container version, use 'APPSLAB_VERSION' environment variable.
 
 ## Linting and formatting
 
