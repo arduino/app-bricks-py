@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import logging
 import site
 import pathlib
 import yaml
@@ -13,11 +14,9 @@ import glob
 import shutil
 import time
 from urllib.parse import urlparse
-from arduino.app_internal.core.module import EnvVariable
-from arduino.app_utils import Logger
 from arduino.version import __version__
 
-logger = Logger(__name__)
+logger = logging.getLogger(__name__)
 
 RELEASE_VERSION_PLACEHOLDER = "__BRICKS_RELEASE_VERSION__"
 
@@ -31,6 +30,38 @@ service_compose_config_file_name: str = "service_compose.yaml"
 service_compose_config_file_name_prefix: str = "service_compose"
 main_readme_file_name: str = "README.md"
 examples_folder_name: str = "examples"
+
+
+class EnvVariable:
+    def __init__(self, name: str, description: str, default_value: str = None, hidden: bool = False, secret: bool = False) -> None:
+        """Represents a variable in brick_config file."""
+        self.name = name
+        self.default_value = default_value
+        self.description = description
+        self.hidden = hidden
+        self.secret = secret
+
+    def to_dict(self) -> dict:
+        """Converts the EnvVariable object to a dictionary."""
+        dict_out = {
+            "name": self.name,
+            "default_value": self.default_value,
+            "description": self.description,
+            "hidden": self.hidden,
+            "secret": self.secret,
+        }
+        if self.default_value is None or self.default_value == "":
+            del dict_out["default_value"]
+        if self.description is None or self.description == "":
+            del dict_out["description"]
+        if not self.hidden:
+            del dict_out["hidden"]
+        if not self.secret:
+            del dict_out["secret"]
+        return dict_out
+
+    def __str__(self) -> str:
+        return f"Name: {self.name}, Default value: {self.default_value}, Description: {self.description}"
 
 
 class ArduinoBrick:
@@ -523,15 +554,7 @@ def main() -> None:
         save_bricks_list(discovered_modules, [output_path.strip() for output_path in args.output.split(",")])
 
     if args.model_output:
-        import inspect
-
-        logger_class = type(logger)
-        logger_file_path = inspect.getfile(logger_class)
-        static_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(logger_file_path))),
-            "app_bricks",
-            "static",
-        )
+        static_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "app_bricks", "static")
         model_files = glob.glob(os.path.join(static_path, "models-*.yaml"))
         output_dir = os.path.dirname(args.model_output)
         if model_files:

@@ -278,6 +278,11 @@ web-ui = [
     { name = "uvicorn", extra = ["standard"] },
 ]
 
+[package.dev-dependencies]
+build = [
+    { name = "docstring-parser" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "arduino-app-bricks", extras = ["all"], marker = "extra == 'dev'" },
@@ -336,6 +341,9 @@ requires-dist = [
     { name = "websockets", marker = "extra == 'stream'" },
 ]
 provides-extras = ["dev", "dbstorage-influx", "mqtt", "folderwatcher", "usb-camera", "microphone", "web-ui", "streamlit-ui", "mood-detector", "pose-estimation", "stream", "telegram-bot", "cloud-llm", "mcp-client", "cloud-asr", "all"]
+
+[package.metadata.requires-dev]
+build = [{ name = "docstring-parser", specifier = ">=0.16" }]
 
 [[package]]
 name = "arduino-router-bridge"

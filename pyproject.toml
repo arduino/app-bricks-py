@@ -114,6 +114,12 @@ all = [
     "arduino_app_bricks[mcp_client]",
 ]
 
+# Needed by `task build` on top of the project itself, the CI wheel job installs only these
+[dependency-groups]
+build = [
+    "docstring_parser>=0.16",
+]
+
 [project.urls]
 "Homepage" = "https://github.com/arduino/app-bricks-py"
 
