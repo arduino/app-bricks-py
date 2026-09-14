@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""Unit tests for the SBOM delta CLI argument handling."""
+"""Unit tests for the SBOM delta base image resolution and CLI argument handling."""
 
 from __future__ import annotations
 
@@ -16,7 +16,25 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.sbom_delta import SbomDeltaError, parse_container_spec  # noqa: E402
+from scripts.container_deps import Containers  # noqa: E402
+from scripts.sbom_delta import SbomDeltaError, parse_container_spec, resolve_runtime_base  # noqa: E402
+from tests.scripts.test_container_deps import TREE, make_containers_dir  # noqa: E402
+
+
+def test_runtime_base_of_a_derived_container_is_its_parent_at_the_scanned_version(tmp_path):
+    containers = Containers(make_containers_dir(tmp_path, TREE))
+    assert resolve_runtime_base(containers, "python-apps-base", "ghcr.io/arduino", "1.2.3") == "ghcr.io/arduino/app-bricks/python-base:1.2.3"
+
+
+def test_runtime_base_of_a_root_container_is_its_external_image(tmp_path):
+    containers = Containers(make_containers_dir(tmp_path, TREE))
+    assert resolve_runtime_base(containers, "ei-models-runner", "ghcr.io/arduino/", "1.2.3") == "public.ecr.aws/g7a8t7v6/inference-container:v1.92.3"
+
+
+def test_runtime_base_of_an_unknown_container_is_rejected(tmp_path):
+    containers = Containers(make_containers_dir(tmp_path, TREE))
+    with pytest.raises(SbomDeltaError, match="Unknown container"):
+        resolve_runtime_base(containers, "ghost", "ghcr.io/arduino/", "1.2.3")
 
 
 def test_spec_without_version_uses_default():
