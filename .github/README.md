@@ -6,83 +6,84 @@ The repo produces container images, each with its own Dockerfile under `containe
 
 ### Layout
 
-Containers are filed under three groups. **The group is the release unit**: it is what a release tag
-selects, so which images a tag ships is decided by the folder alone.
+Containers are filed under three groups, which document what they are for:
 
-| Group | Released by | Contains |
-|---|---|---|
-| `containers/ai/` | `ai/X.Y.Z` | AI/ML model runners |
-| `containers/bricks/` | `bricks/X.Y.Z` | Images shipping the library itself and its supporting tooling |
-| `containers/base/` | never directly | Shared base images other containers derive `FROM` (`base_image: true`) |
+| Group | Contains |
+|---|---|
+| `containers/ai/` | AI/ML model runners |
+| `containers/bricks/` | Images shipping the library itself and its supporting tooling |
+| `containers/base/` | Shared base images other containers derive `FROM` (`base_image: true`) |
 
-Apart from selecting the release, the group is **not** part of a container's identity: a container is
-always referred to by its leaf directory name, which is also its image name
-(`ghcr.io/arduino/app-bricks/<name>`) and the value used in `downstream`, in the build matrices and in
-the `containers` input of the dev workflow. CI locates a container by globbing
-`containers/*/<name>/ci.json`, so moving a container between groups only means updating its
-`watch_paths` — and changes which tag releases it. Leaf names must stay unique across groups; the build
-planner fails loudly if two groups declare the same name.
+The group is **not** part of a container's identity: a container is always referred to by its leaf
+directory name, which is also its image name (`ghcr.io/arduino/app-bricks/<name>`) and the value used in
+`downstream`, in the build matrices and in the `containers` input of the dev workflow. CI locates a
+container by globbing `containers/*/<name>/ci.json`, so moving a container between groups only means
+updating its `watch_paths`. Leaf names must stay unique across groups; the build planner fails loudly if
+two groups declare the same name.
 
 The full list of images, with what each one builds from and what it is for, is the inventory in
 [containers/README.md](../containers/README.md#inventory).
 
-## Release Triggers (Tag-Based)
+## Release Workflow
 
-A single workflow (`docker-publish.yml`) handles all container releases. **The tag prefix is the
-`containers/` group to release**: pushing `ai/0.12.0` releases every container under `containers/ai/`,
-pushing `bricks/0.12.0` releases every container under `containers/bricks/`. Nothing in `ci.json`
-decides this — only the folder does.
+A single workflow (`docker-publish.yml`) is triggered by any `release/X.Y.Z` tag, or manually via
+`workflow_dispatch`. **Every release publishes every container at `X.Y.Z`**, together with the Python
+`.whl` and `sboms.zip` on the GitHub Release. There is one release cycle: the library and the containers
+it runs always ship together.
 
-| Tag pattern | Containers | Extra behaviour |
-|---|---|---|
-| `bricks/X.Y.Z` | everything in `containers/bricks/` | Builds and uploads `.whl` and `sboms.zip` to GitHub Release (displayed as `X.Y.Z`) |
-| `ai/X.Y.Z` | everything in `containers/ai/` | Auto-creates a PR to update compose file references |
+Containers flagged `base_image` are not release targets by themselves: they are rebuilt, and tagged with
+the release version, as the base of the images that derive from them.
 
-Containers flagged `base_image` are excluded from the seed set, so tagging the `base` group builds
-nothing: base images are rebuilt (and tagged with the triggering release version) only as a dependency
-of an image being released. A tag whose prefix is not an existing group fails the `detect` job with the
-list of known groups, rather than silently building nothing.
+### Tagging
 
-> **Note**: `bricks/*` replaced `release/*` as the library release prefix when the containers were
-> grouped by folder. `release/*` is still accepted by `tag_regex` in `pyproject.toml` so the pre-reorg
-> tag history stays parseable for dev builds, but it no longer triggers a release.
+Every released image receives a `:<version>` tag. A `:latest` tag is also applied unless the version
+contains `rc`, `alpha` or `beta`, which marks a prerelease.
 
-## Dependency Ordering (Release)
+### Compose file versioning
 
-The set of containers to build is the tagged group **plus the transitive closure in both directions**:
-all descendants (so images derived from something being released are rebuilt) and all ancestors of that
-set (so everything being rebuilt sits on a freshly built base). The result is split into topological
-waves by `scripts/build_levels.py` — `level_0` has no in-set parent, each later wave depends on the
-previous one — and `docker-publish.yml` chains one `build-l<n>` job per wave with `needs`.
+Bricks and services ship compose files describing the containers they need. Their image references carry
+the `__BRICKS_RELEASE_VERSION__` placeholder instead of a version, and so do the `models/models-*.yaml`
+files. `arduino-bricks-release` stamps the release version into the copies bundled in the wheel at build
+time, and `arduino-bricks-list-modules` does the same when it provisions the compose files at runtime. The
+version comes from `BRICKS_RELEASE_VERSION`, which `python-apps-base` sets to the tag it was built with,
+or from the installed library otherwise. Compose files therefore always reference the containers published
+by the same release. A version can still be written literally where a specific image is really needed.
 
-So `bricks/X.Y.Z` builds `python-slim` → (`python-base`, `models-downloader`) → `python-apps-base`, in
-that order, even though only the last two live in `containers/bricks/`. Dependencies are declared by the
-`downstream` field in `ci.json`, which must mirror the `FROM` lines of the Dockerfiles.
+## Dependency Ordering
+
+The set of containers to build is every non-base container plus the transitive closure of its bases, so
+everything being rebuilt sits on a freshly built base. The result is split into topological waves by
+`scripts/build_levels.py` — `level_0` has no in-set parent, each later wave depends on the previous one —
+and `docker-publish.yml` chains one `build-l<n>` job per wave with `needs`.
+
+So a release builds `python-slim` → (`python-base`, `models-downloader`, `llamacpp-runner`) →
+`python-apps-base`, and `qairt-common-base` → (`aihub-models-runner`, `llamacpp-npu-runner`) →
+(`gesture-recognition-runner`, `pose-estimation-runner`), each chain in that order. Dependencies are
+declared by the `downstream` field in `ci.json`, which must mirror the `FROM` lines of the Dockerfiles.
 
 Only the `level_0` wave may skip its build (see [Skip-Rebuild Logic](#skip-rebuild-logic)); later waves
 always rebuild, since their base image was just rebuilt.
 
 ## Adding a New Container
 
-1. Create `containers/<group>/my-container/Dockerfile`. The group decides which tag releases the image,
-   so pick it accordingly — see [Layout](#layout).
+1. Create `containers/<group>/my-container/Dockerfile`, filing it under the group that describes what it
+   is for — see [Layout](#layout).
 2. Create `containers/<group>/my-container/ci.json`:
 
 ```json
 {
   "watch_paths": ["containers/<group>/my-container/"],
-  "tag_latest": false,
   "build_whl": false,
-  "update_compose": false,
   "build_args": {},
   "sbom": { "runtime_base": "${REGISTRY}app-bricks/python-slim:${BASE_IMAGE_VERSION}" },
   "downstream": []
 }
 ```
 
-3. If the image installs Python packages, list them in a `requirements.txt` and register the container
-   in the dependency license scan, see [scripts/licensed/README.md](../scripts/licensed/README.md).
-4. Push a tag `<group>/X.Y.Z` — the workflow picks up everything in that folder automatically.
+3. If the image installs Python packages, declare them in a `pyproject.toml` locked by `task deps:lock`
+   and register the container in the dependency license scan, see
+   [scripts/licensed/README.md](../scripts/licensed/README.md).
+4. Push a `release/X.Y.Z` tag — the workflow picks up every container automatically.
 
 To declare that another container depends on yours, add it to `downstream`:
 
@@ -90,41 +91,37 @@ To declare that another container depends on yours, add it to `downstream`:
 "downstream": ["my-other-container"]
 ```
 
-> **Note**: any container listed in `downstream` must declare `ARG BASE_IMAGE_VERSION` in its Dockerfile. The CI passes the upstream image's tag via this build arg so the downstream image pulls the freshly built version, not `latest`.
+> **Note**: any container listed in `downstream` must declare `ARG REGISTRY` and `ARG BASE_IMAGE_VERSION` in its Dockerfile. The CI passes the upstream image's tag via `BASE_IMAGE_VERSION` so the downstream image pulls the freshly built version, not `latest`.
 
 No workflow file changes required.
 
 ## ci.json Reference
 
-There is no `tag_prefix` field: the container's directory decides which tag releases it.
-
 | Field | Type | Description |
 |---|---|---|
 | `watch_paths` | string[] | Repo-relative paths checked by the skip-rebuild logic — must include the container's own directory |
-| `base_image` | bool | Shared base image: never a direct release target, only rebuilt as a dependency |
-| `tag_latest` | bool | Also push a `:latest` tag on release |
-| `build_whl` | bool | Build and upload the Python `.whl` before the Docker build |
-| `update_compose` | bool | After release, open a PR updating `brick_compose.yaml` references |
+| `base_image` | bool | Shared base image: never a release target by itself, only rebuilt as a dependency |
+| `build_whl` | bool | Download the `.whl` artifact into the build context before the Docker build (set `true` on containers that install it) |
 | `build_args` | object | Docker build args passed to the Dockerfile (key/value pairs) |
 | `sbom.runtime_base` | string | Image the delta SBOM is computed against — must match the Dockerfile's `FROM` |
 | `downstream` | string[] | Containers that depend on this one — rebuilt automatically after this container is built |
 
 ## SBOMs
 
-`sboms.zip`, attached to every `bricks/*` GitHub Release, is generated from the published images, so nothing SBOM-related lives in the tree. `scripts/distributed_images.py` lists what a release distributes: the released group's build set at the new version, and every other group's build set at the version its containers are pinned to in the `src/**/{brick,service}_compose*.yaml` files (all references to a group must agree). `scripts/sbom_delta.py` scans one `name:version` with Syft against its `sbom.runtime_base` and writes `<name>-<version>/{base,full,delta}.spdx.json`.
+`sboms.zip`, attached to every GitHub Release, is generated from the published images, so nothing SBOM-related lives in the tree. Every image is built by the release, so the archive covers the whole build set at the release version. `scripts/sbom_delta.py` scans one `name:version` with Syft against its `sbom.runtime_base` and writes `<name>-<version>/{base,full,delta}.spdx.json`.
 
-Scanning is spread over `_sbom-wave.yml` jobs, one matrix leg per image: `sbom-l<n>` starts as soon as `build-l<n>` is pushed and overlaps with the next wave's build, `sbom-pinned` starts right away since those images already exist. Each leg uploads a `sbom-delta-<name>-<version>` artifact; a failed scan is a warning, never a failure. `upload-release` collects the artifacts, checks them against the full distributed list, writes any gap to `MISSING.txt` inside the archive and to the job summary, and attaches the zip.
+Scanning is spread over `_sbom-wave.yml` jobs, one matrix leg per image: `sbom-l<n>` starts as soon as `build-l<n>` is pushed and overlaps with the next wave's build. Each leg uploads a `sbom-delta-<name>-<version>` artifact; a failed scan is a warning, never a failure. `upload-release` collects the artifacts, checks them against the build set, writes any gap to `MISSING.txt` inside the archive and to the job summary, and attaches the zip.
 
 The dev workflow runs the same scan per built image through `.github/actions/sbom-delta` and uploads it as a `sbom-delta-<name>-<tag>` run artifact.
 
 ## Skip-Rebuild Logic
 
-For `level_0` containers only, the release checks whether the container's `watch_paths` actually changed since the previous tag of the series being released (the pushed tag's prefix — not the container's own group, since shared bases under `containers/base/` are never released by a `base/*` tag):
+For `level_0` containers only, the release checks whether the container's `watch_paths` actually changed since the previous `release/*` tag:
 
 - **Changed** → full Docker build and push
-- **Unchanged** → `crane copy` re-tags the existing image to the new version (instant, no rebuild)
+- **Unchanged** → `crane copy` re-tags the existing image to the new version (instant, no rebuild), and to `latest` unless the version is a prerelease
 
-So releasing `bricks/X.Y.Z` when nothing under `containers/base/python-slim/` changed re-tags `python-slim` from the previous release instead of rebuilding it.
+So releasing `release/X.Y.Z` when nothing under `containers/base/python-slim/` changed re-tags `python-slim` from the previous release instead of rebuilding it.
 
 ## Dev Build Workflow
 
@@ -139,12 +136,14 @@ Images are tagged `dev-<branch-name>` (branch name lowercased and sanitized, e.g
 
 **Dependency ordering**: the same topological planner as the release (`scripts/build_levels.py`, in `--mode dev`) expands the selection with its ancestors and descendants and splits it into waves — `build-l0`, `build-l1`, `build-l2` — where each wave waits for the previous one and receives `BASE_IMAGE_VERSION=<image-tag>` as a build arg so it uses the freshly built upstream images. The ordering is driven entirely by the `downstream` field in ci.json — no hardcoded container names in the workflow.
 
+**Wheel**: containers with `build_whl` get a wheel built with `BRICKS_RELEASE_VERSION=<image-tag>`, so the compose files it bundles reference the dev images of the same run.
+
 ## Build Characteristics
 
 - **Single platform**: All images target `linux/arm64` only
 - **Registry**: `ghcr.io/arduino/app-bricks/`
-- **Caching**: GitHub Actions cache (`type=gha`, `mode=max`)
-- **Release assets**: A `bricks/*` release also uploads the `.whl` to the GitHub Release via `softprops/action-gh-release`
+- **Caching**: Buildx registry cache (`<image>:buildcache`, `mode=max`), invalidated by content, `skip_cache` forces a cold rebuild
+- **Release assets**: The `.whl` and `sboms.zip` are uploaded to the GitHub Release via `softprops/action-gh-release`
 
 ## Image Size Monitoring
 

@@ -153,22 +153,16 @@ On pull requests the `check-pyright.yml` workflow runs both checks against the P
 
 ## Release
 
-Release is based on tags pushed to `main`. A single workflow (`docker-publish.yml`) handles all container
-releases: **the tag prefix is the `containers/` sub-folder to release**.
+Release is based on tags pushed to `main`. A single workflow (`docker-publish.yml`) publishes **every**
+container when a `release/X.Y.Z` tag is pushed, and uploads the Python wheel and the SBOMs to the GitHub
+Release. The library and the containers it runs ship together with the same version: the compose files
+bundled in the wheel reference the containers published by the same release.
 
-| Tag | What it releases |
-|---|---|
-| `bricks/X.Y.Z` | everything in `containers/bricks/` (`python-apps-base`, `models-downloader`) + Python `.whl` uploaded to GitHub Release |
-| `ai/X.Y.Z` | everything in `containers/ai/` (the model runners) |
+**Prerelease**: if the version contains `rc`, `alpha` or `beta`, images are tagged with the version only
+and no `:latest` tag is pushed.
 
-Release cycles for AI containers and Bricks are independent — they use separate folders and tag prefixes,
-and can be released at any time without affecting each other.
-
-After releasing a new version of AI containers, compose files that use AI containers are updated automatically via a generated PR.
-
-**Dependencies**: base images in `containers/base/` are not released on their own. Whatever a tagged
-group depends on is rebuilt first, in dependency order, and tagged with the same version — releasing
-`bricks/X.Y.Z` builds `python-slim` and `python-base` before `python-apps-base`. No manual step required.
+**Dependencies**: base images in `containers/base/` are not released on their own. They are rebuilt first,
+in dependency order, as the base of the images that derive from them, and tagged with the same version.
 
 For development, the dev build pipeline (`docker-build.yml`) is triggered manually (`workflow_dispatch`) on a branch and builds the selected containers (or all of them), tagging the images as `dev-<branch-name>`. Dependent containers are built in the correct order — downstream containers wait for their upstream to finish and use the freshly built image.
 
@@ -176,10 +170,9 @@ See [`.github/README.md`](.github/README.md) for full CI documentation.
 
 ### Container layers
 
-Library containers are based on a set of pre-defined Python base images, in `containers/base/`, that are
-updated with a different frequency wrt library release.
-Base images are never released on their own: they are rebuilt as a dependency of whichever group is being
-released, and tagged with that release version.
+Library containers are based on a set of pre-defined Python base images, in `containers/base/`.
+Base images are never released on their own: they are rebuilt as a dependency of the images that derive
+from them, and tagged with the release version.
 
 Base images are required to:
 * reduce the amount of updated layers during a single library update
@@ -204,13 +197,13 @@ After editing any `pyproject.toml` run `task deps:lock`, with `-- --upgrade` to 
 `task license:deps` checks the licenses of the Python packages shipped by the library and by every container, using Docker. Records live under `.licenses/`, the allowed licenses and reviewed packages in `.licensed.yml`. See [scripts/licensed/README.md](scripts/licensed/README.md) for how it works and what to do when it fails.
 
 ## SBOM (Software Bill of Materials)
-SBOMs are not kept in the tree. Each `bricks/X.Y.Z` release attaches `sboms.zip` to the GitHub Release, with one folder per distributed image holding three SPDX documents:
+SBOMs are not kept in the tree. Each release attaches `sboms.zip` to the GitHub Release, with one folder per published image holding three SPDX documents:
 
 - `base.spdx.json` — packages of the base image the container derives `FROM` (declared as `sbom.runtime_base` in the container's `ci.json`)
 - `full.spdx.json` — complete package list of the container image
 - `delta.spdx.json` — packages added by the container on top of its base image
 
-See [containers/README.md](containers/README.md#sboms) for how the set of images is resolved. To generate delta SBOMs locally, run:
+See [containers/README.md](containers/README.md#sboms) for how they are generated. To generate delta SBOMs locally, run:
 ```sh
 task sbom:delta
 ```

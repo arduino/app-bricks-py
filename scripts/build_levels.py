@@ -6,10 +6,9 @@
 
 """Compute the multi-level build plan for container images.
 
-Containers live in ``containers/<group>/<name>/``. The group is what a release
-tag selects: pushing ``ai/0.12.0`` releases every container under
-``containers/ai/``. A container is otherwise always identified by its leaf
-directory name, which is also its image name.
+Containers live in ``containers/<group>/<name>/``. The group only documents
+what a container is for: a release builds every container, and a container is
+always identified by its leaf directory name, which is also its image name.
 
 The dependency graph is declared in ``containers/*/*/ci.json`` via the
 ``downstream`` attribute (parent -> children edges). This module walks that
@@ -107,11 +106,6 @@ class Graph:
         """All known container names."""
         return set(self.children)
 
-    @property
-    def groups(self) -> set[str]:
-        """All known container groups (the ``containers/`` sub-folders)."""
-        return set(self.group.values())
-
 
 def _closure(seeds: set[str], edges: dict[str, list[str]]) -> set[str]:
     """Return the transitive closure of ``seeds`` following ``edges``."""
@@ -155,21 +149,14 @@ def resolve_dev_build_set(graph: Graph, select: str) -> set[str]:
     return resolve_build_set(graph, seeds)
 
 
-def resolve_release_build_set(graph: Graph, group: str) -> set[str]:
+def resolve_release_build_set(graph: Graph) -> set[str]:
     """Resolve the containers to build for the RELEASE workflow.
 
-    ``group`` is the prefix of the pushed tag, which *is* the ``containers/``
-    sub-folder to release: ``ai/0.12.0`` seeds every container under
-    ``containers/ai/``. Containers flagged ``base_image`` are excluded from the
-    seeds — a shared base is never a direct release target, so tagging the
-    ``base`` group alone builds nothing. The build set then adds the seeds'
-    descendants *and* ancestors, so every image being released sits on a freshly
-    built base even though that base is not itself a release target.
+    A release publishes every container at the same version. Containers flagged
+    ``base_image`` are not release targets by themselves: they are rebuilt only as
+    the base of an image being released, so a base nobody derives from is skipped.
     """
-    if group not in graph.groups:
-        raise BuildLevelsError(f"Unknown container group '{group}'. Known groups: {', '.join(sorted(graph.groups))}.")
-
-    seeds = {name for name, name_group in graph.group.items() if name_group == group and not graph.base_image[name]}
+    seeds = {name for name in graph.containers if not graph.base_image[name]}
     return resolve_build_set(graph, seeds)
 
 
@@ -240,7 +227,6 @@ def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mode", required=True, choices=["dev", "release"], help="Which workflow is requesting the plan.")
     parser.add_argument("--select", default="all", help="dev mode: 'all' or comma-separated container names.")
-    parser.add_argument("--group", default="", help="release mode: container group to release (the pushed tag's prefix).")
     return parser
 
 
@@ -253,9 +239,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.mode == "dev":
             build_set = resolve_dev_build_set(graph, args.select)
         else:
-            if not args.group:
-                raise BuildLevelsError("--group is required in release mode.")
-            build_set = resolve_release_build_set(graph, args.group)
+            build_set = resolve_release_build_set(graph)
 
         emit_outputs(build_plan(graph, build_set), build_set)
     except BuildLevelsError as exc:

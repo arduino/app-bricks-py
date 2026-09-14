@@ -5,12 +5,11 @@ run-name: "Release ${{ inputs.tag || github.ref_name }}"
 on:
   push:
     tags:
-      - "ai/*"
-      - "bricks/*"
+      - "release/*"
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to release (e.g. bricks/1.2.3) — the prefix is the containers/ group to release"
+        description: "Tag to release (e.g. release/1.2.3)"
         type: string
         required: true
       skip_cache:
@@ -28,7 +27,6 @@ permissions:
   contents: write
   packages: write
   id-token: write
-  pull-requests: write
   actions: write
 
 jobs:
@@ -36,13 +34,12 @@ jobs:
     runs-on: ubuntu-24.04-arm
     outputs:
       tag_ref: ${{ steps.detect.outputs.tag_ref }}
-      group: ${{ steps.detect.outputs.group }}
       version: ${{ steps.detect.outputs.version }}
       prerelease: ${{ steps.detect.outputs.prerelease }}
-      pinned_images: ${{ steps.detect.outputs.pinned_images }}
       level_0: ${{ steps.detect.outputs.level_0 }}
       level_1: ${{ steps.detect.outputs.level_1 }}
       level_2: ${{ steps.detect.outputs.level_2 }}
+      all_containers: ${{ steps.detect.outputs.all_containers }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -66,24 +63,9 @@ jobs:
             echo "prerelease=false" >> $GITHUB_OUTPUT
           fi
 
-          # The tag prefix IS the containers/ group to release (ai/0.12.0 ->
-          # containers/ai/). Seed the build plan with that group, then pull in
-          # all descendants and ancestors and split the result into topological
-          # waves (level_0 .. level_2).
-          GROUP="${TAG_REF%%/*}"
-          echo "group=$GROUP" >> $GITHUB_OUTPUT
-          echo "Releasing group: containers/${GROUP}/"
-          python3 -m scripts.build_levels --mode release --group "$GROUP"
-
-          # Only the bricks release assembles sboms.zip. Besides its own build
-          # set, scanned wave by wave, it must cover the images it ships without
-          # building them: the runners pinned by the compose files and their bases.
-          if [[ "$GROUP" == "bricks" ]]; then
-            PINNED=$(python3 -m scripts.distributed_images --group "$GROUP" --version "$VERSION" --pinned-only --format json)
-          else
-            PINNED="[]"
-          fi
-          echo "pinned_images=$PINNED" >> $GITHUB_OUTPUT
+          # Every container is released at this version. The plan is split into
+          # topological waves (level_0 .. level_2) so bases build first.
+          python3 -m scripts.build_levels --mode release
 
   upload-whl:
     runs-on: ubuntu-24.04-arm
@@ -96,11 +78,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Inject release version
-        if: startsWith(needs.detect.outputs.tag_ref, 'bricks/')
         run: sed -i 's/^__version__ = .*/__version__ = "${{ needs.detect.outputs.version }}"/' src/arduino/version.py
 
       - name: Build wheel in debian:trixie
-        if: startsWith(needs.detect.outputs.tag_ref, 'bricks/')
         run: |
           docker run --rm \
             -v "${{ github.workspace }}:/${{ github.workspace }}" \
@@ -169,20 +149,11 @@ jobs:
       skip_cache: ${{ inputs.skip_cache || false }}
 
   # SBOM scans run one wave behind the builds: each wave is scanned as soon as it
-  # is pushed, in parallel with the next wave's build. The images pinned by the
-  # compose files were published by an earlier release, so their scan starts
-  # right away. Scans never fail the workflow run: a missing SBOM is then reported
-  # by upload-release.
-  sbom-pinned:
-    needs: [detect]
-    if: needs.detect.outputs.pinned_images != '[]'
-    uses: ./.github/workflows/_sbom-wave.yml
-    with:
-      images: ${{ needs.detect.outputs.pinned_images }}
-
+  # is pushed, in parallel with the next wave's build. Scans never fail the
+  # workflow run: a missing SBOM is then reported by upload-release.
   sbom-l0:
     needs: [detect, build-l0]
-    if: needs.detect.outputs.level_0 != '[]' && startsWith(needs.detect.outputs.tag_ref, 'bricks/')
+    if: needs.detect.outputs.level_0 != '[]'
     uses: ./.github/workflows/_sbom-wave.yml
     with:
       images: ${{ needs.detect.outputs.level_0 }}
@@ -190,7 +161,7 @@ jobs:
 
   sbom-l1:
     needs: [detect, build-l1]
-    if: needs.detect.outputs.level_1 != '[]' && startsWith(needs.detect.outputs.tag_ref, 'bricks/')
+    if: needs.detect.outputs.level_1 != '[]'
     uses: ./.github/workflows/_sbom-wave.yml
     with:
       images: ${{ needs.detect.outputs.level_1 }}
@@ -198,7 +169,7 @@ jobs:
 
   sbom-l2:
     needs: [detect, build-l2]
-    if: needs.detect.outputs.level_2 != '[]' && startsWith(needs.detect.outputs.tag_ref, 'bricks/')
+    if: needs.detect.outputs.level_2 != '[]'
     uses: ./.github/workflows/_sbom-wave.yml
     with:
       images: ${{ needs.detect.outputs.level_2 }}
@@ -207,8 +178,8 @@ jobs:
   upload-release:
     runs-on: ubuntu-24.04-arm
     # Skipped waves (and their scans) must not skip this job, failed builds must.
-    if: ${{ !failure() && !cancelled() && startsWith(needs.detect.outputs.tag_ref, 'bricks/') }}
-    needs: [detect, upload-whl, build-l0, build-l1, build-l2, sbom-pinned, sbom-l0, sbom-l1, sbom-l2]
+    if: ${{ !failure() && !cancelled() }}
+    needs: [detect, upload-whl, build-l0, build-l1, build-l2, sbom-l0, sbom-l1, sbom-l2]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -227,8 +198,8 @@ jobs:
 
       - name: Assemble sboms.zip
         env:
-          GROUP: ${{ needs.detect.outputs.group }}
           VERSION: ${{ needs.detect.outputs.version }}
+          CONTAINERS: ${{ needs.detect.outputs.all_containers }}
         run: |
           shopt -s nullglob
           mkdir -p sbom-delta
@@ -239,12 +210,12 @@ jobs:
             mv "$dir" "sbom-delta/$(basename "$dir" | sed 's/^sbom-delta-//')"
           done
 
-          # Every distributed image must be covered. A missing SBOM is a warning,
+          # Every released image must be covered. A missing SBOM is a warning,
           # not a blocker: it is listed in the archive and in the job summary.
           MISSING=()
-          while IFS= read -r IMAGE; do
-            [[ -f "sbom-delta/${IMAGE/:/-}/delta.spdx.json" ]] || MISSING+=("$IMAGE")
-          done < <(python3 -m scripts.distributed_images --group "$GROUP" --version "$VERSION")
+          while IFS= read -r NAME; do
+            [[ -f "sbom-delta/${NAME}-${VERSION}/delta.spdx.json" ]] || MISSING+=("$NAME:$VERSION")
+          done < <(jq -r '.[]' <<< "$CONTAINERS")
 
           if (( ${#MISSING[@]} )); then
             printf '%s\n' "${MISSING[@]}" > sbom-delta/MISSING.txt
