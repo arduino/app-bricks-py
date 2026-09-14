@@ -138,6 +138,15 @@ Images are tagged `dev-<branch-name>` (branch name lowercased and sanitized, e.g
 
 **Wheel**: containers with `build_whl` get a wheel built with `BRICKS_RELEASE_VERSION=<image-tag>`, so the compose files it bundles reference the dev images of the same run.
 
+## Image Cleanup
+
+`docker-cleanup.yml` runs two independent jobs:
+
+| Trigger | Job | What it does |
+|---|---|---|
+| Branch deletion | `cleanup` | Deletes every GHCR version tagged `dev-<deleted-branch>`, including the run-number aliases and the build cache |
+| Weekly (Sunday 03:00 UTC) or manual | `prune-untagged` | Deletes untagged container versions, the blobs orphaned by overwritten buildx cache manifests. Any tagged version is preserved, and each candidate is re-checked right before deletion. The manual run accepts a `dry_run` flag to only list what would be deleted. |
+
 ## Build Characteristics
 
 - **Single platform**: All images target `linux/arm64` only

@@ -2,14 +2,24 @@ name: Cleanup branch containers from GHCR
 
 on:
   delete:
+  schedule:
+    # Weekly, Sunday 03:00 UTC
+    - cron: "0 3 * * 0"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "List the versions that would be deleted without deleting them"
+        type: boolean
+        default: false
 
 permissions:
   packages: write
+  contents: read
 
 jobs:
   cleanup:
     runs-on: ubuntu-24.04-arm
-    if: github.event.ref_type == 'branch'
+    if: github.event_name == 'delete' && github.event.ref_type == 'branch'
     steps:
       - name: Sanitize branch name
         id: branch
@@ -21,7 +31,7 @@ jobs:
           echo "tag=dev-$SANITIZED" >> $GITHUB_OUTPUT
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Delete branch-tagged images from GHCR
         env:
@@ -58,3 +68,70 @@ jobs:
                 echo "  Warning: failed to delete version $VERSION_ID (may require delete:packages scope)"
             done <<< "$VERSIONS"
           done
+
+  prune-untagged:
+    # Only deletes container versions whose tag list is empty: the blobs orphaned
+    # by overwritten buildx cache manifests. Any tagged version (release, latest,
+    # dev-<branch>, <tag>-buildcache) is preserved.
+    runs-on: ubuntu-24.04-arm
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Prune untagged container versions
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: |
+          set -euo pipefail
+
+          # Discover packages from containers/<group>/<name>/ directories
+          mapfile -t PACKAGES < <(ls -d containers/*/*/ | xargs -I{} basename {} | sed 's|^|app-bricks/|' | jq -Rr @uri)
+
+          TOTAL_FOUND=0
+          TOTAL_DELETED=0
+
+          for PKG in "${PACKAGES[@]}"; do
+            echo "::group::Package $PKG"
+            API_PATH="/orgs/$OWNER/packages/container/$PKG/versions"
+
+            UNTAGGED_IDS=$(gh api "$API_PATH" --paginate \
+              --jq '.[] | select(.metadata.container.tags | length == 0) | .id' 2>/dev/null || true)
+
+            if [[ -z "$UNTAGGED_IDS" ]]; then
+              echo "  No untagged versions"
+              echo "::endgroup::"
+              continue
+            fi
+
+            COUNT=$(echo "$UNTAGGED_IDS" | wc -l | tr -d ' ')
+            TOTAL_FOUND=$((TOTAL_FOUND + COUNT))
+            echo "  Found $COUNT untagged version(s)"
+
+            if [[ "$DRY_RUN" == "true" ]]; then
+              echo "$UNTAGGED_IDS" | sed 's/^/    would delete /'
+              echo "::endgroup::"
+              continue
+            fi
+
+            while IFS= read -r VERSION_ID; do
+              # Re-check right before deleting, a concurrent push may have tagged it meanwhile
+              TAGS=$(gh api "$API_PATH/$VERSION_ID" --jq '.metadata.container.tags | length' 2>/dev/null || echo "unknown")
+              if [[ "$TAGS" != "0" ]]; then
+                echo "  Skipping version $VERSION_ID, not untagged anymore"
+                continue
+              fi
+              echo "  Deleting untagged version $VERSION_ID"
+              if gh api --method DELETE "$API_PATH/$VERSION_ID"; then
+                TOTAL_DELETED=$((TOTAL_DELETED + 1))
+              else
+                echo "  Warning: failed to delete version $VERSION_ID"
+              fi
+            done <<< "$UNTAGGED_IDS"
+
+            echo "::endgroup::"
+          done
+
+          echo "Summary: found=$TOTAL_FOUND deleted=$TOTAL_DELETED dry_run=$DRY_RUN"
