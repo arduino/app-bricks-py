@@ -6,6 +6,10 @@ ARG REGISTRY
 ARG BASE_IMAGE_VERSION=latest
 FROM ${REGISTRY}app-bricks/python-base:${BASE_IMAGE_VERSION}
 
+# The compose files provisioned at runtime reference the images published with this one
+ARG BASE_IMAGE_VERSION
+ENV BRICKS_RELEASE_VERSION=${BASE_IMAGE_VERSION}
+
 # Copy the Streamlit configuration file with customized settings in home app shared directory
 COPY ./streamlit/config.toml /home/app/.streamlit/config.toml
 

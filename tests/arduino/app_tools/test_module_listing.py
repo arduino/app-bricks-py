@@ -4,6 +4,7 @@
 
 import pytest
 
+from arduino.version import __version__
 from arduino.app_tools.module_listing import (
     RELEASE_VERSION_PLACEHOLDER,
     ArduinoBrick,
@@ -72,8 +73,10 @@ def test_save_models_files_requires_models(tmp_path):
         save_models_files(str(tmp_path), str(tmp_path / "static"), "1.2.3")
 
 
-def test_resolve_release_version_prefers_argument_then_environment(monkeypatch):
+def test_resolve_release_version_prefers_argument_then_environment_then_library_version(monkeypatch):
     monkeypatch.setenv("BRICKS_RELEASE_VERSION", "dev-branch")
-
     assert resolve_release_version("2.0.0") == "2.0.0"
     assert resolve_release_version() == "dev-branch"
+
+    monkeypatch.delenv("BRICKS_RELEASE_VERSION")
+    assert resolve_release_version() == __version__
