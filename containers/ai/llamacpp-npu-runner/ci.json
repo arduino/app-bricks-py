@@ -1,8 +1,6 @@
 {
   "watch_paths": ["containers/ai/llamacpp-npu-runner/"],
-  "tag_latest": false,
   "build_whl": false,
-  "update_compose": true,
   "build_args": {
     "LLAMA_CPP_URL": "https://github.com/arduino/app-bricks-py/releases/download/llamacpp%2F20260918/llamacpp-hexagon-20260918.tar.gz",
     "LLAMA_CPP_DIGEST": "sha256:ba442b20dc252847ca24c16d2117dc3b385adf1e5f0654e3e2c008740e9cc79e"

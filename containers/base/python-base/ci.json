@@ -1,9 +1,7 @@
 {
   "base_image": true,
   "watch_paths": ["containers/base/python-base/"],
-  "tag_latest": true,
   "build_whl": false,
-  "update_compose": false,
   "build_args": {
     "OPENCV_WHL_URL": "https://github.com/arduino/app-bricks-py/releases/download/opencv%2F4.13.0.92-20260610/opencv_python_headless-4.13.0+1ddb20b-cp313-cp313-linux_aarch64.whl",
     "OPENCV_WHL_DIGEST": "sha256:8d5e8319df040b93a07c91155afea515e3629fcb55510d4eee4716fc165b9c0a",

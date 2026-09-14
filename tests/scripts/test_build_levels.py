@@ -31,8 +31,7 @@ def make_containers_dir(tmp_path: Path, spec: dict[str, dict]) -> Path:
     """Create a temporary ``containers/<group>/<name>/`` tree from a ``{name: attrs}`` spec.
 
     ``attrs`` may set ``downstream``, ``base_image`` and ``group`` (the sub-folder
-    the container is filed under — and therefore the tag that releases it,
-    ``bricks`` by default).
+    the container is filed under, ``bricks`` by default).
     """
     containers_dir = tmp_path / "containers"
     for name, attrs in spec.items():
@@ -126,52 +125,20 @@ def test_node_without_parents_is_level_zero(tmp_path):
     assert waves[0] == ["standalone"]
 
 
-def test_release_seeds_the_whole_tagged_group(tmp_path):
-    """An ``ai/X.Y.Z`` tag releases every container under ``containers/ai/``."""
+def test_release_builds_every_container_with_its_bases_first(tmp_path):
+    """A release publishes every container, whatever group it is filed under."""
     graph = make_graph(tmp_path, CHAIN)
-    build_set = resolve_release_build_set(graph, "ai")
-    # The three ai containers, plus qairt-common-base pulled in as their base.
-    assert build_set == {
-        "qairt-common-base",
-        "aihub-models-runner",
-        "gesture-recognition-runner",
-        "llamacpp-npu-runner",
-    }
-    # standalone lives in the bricks group -> excluded.
-    assert "standalone" not in build_set
+    build_set = resolve_release_build_set(graph)
+    assert build_set == set(CHAIN)
 
     waves = build_plan(graph, build_set)
-    assert waves[0] == ["qairt-common-base"]
+    assert waves[0] == ["qairt-common-base", "standalone"]
     assert waves[1] == ["aihub-models-runner", "llamacpp-npu-runner"]
     assert waves[2] == ["gesture-recognition-runner"]
 
 
-def test_release_of_one_group_pulls_bases_from_another(tmp_path):
-    """A dependency is built even when it lives in a group that was not tagged."""
-    graph = make_graph(tmp_path, CHAIN)
-    build_set = resolve_release_build_set(graph, "bricks")
-    # Only 'standalone' is in bricks and it has no dependencies.
-    assert build_set == {"standalone"}
-
-    spec = dict(CHAIN)
-    spec["standalone"] = {"group": "bricks", "downstream": []}
-    spec["shared-base"] = {"group": "base", "base_image": True, "downstream": ["standalone"]}
-    graph = make_graph(tmp_path / "second", spec)
-    build_set = resolve_release_build_set(graph, "bricks")
-    assert build_set == {"shared-base", "standalone"}
-    waves = build_plan(graph, build_set)
-    assert waves[0] == ["shared-base"]
-    assert waves[1] == ["standalone"]
-
-
-def test_release_of_base_group_alone_builds_nothing(tmp_path):
-    """Base images are dependency-only: tagging the base group is a no-op."""
-    graph = make_graph(tmp_path, CHAIN)
-    assert resolve_release_build_set(graph, "base") == set()
-
-
-def test_release_excludes_base_image_from_seeds_but_builds_it_as_ancestor(tmp_path):
-    """A base_image is never a direct seed, but is rebuilt when a released child needs it."""
+def test_release_builds_base_images_only_as_ancestors(tmp_path):
+    """A base_image is never a target by itself, but is rebuilt when a released child needs it."""
     spec = {
         "common-base": {"group": "base", "base_image": True, "downstream": ["app-a", "app-b"]},
         "app-a": {"group": "bricks", "downstream": []},
@@ -179,10 +146,10 @@ def test_release_excludes_base_image_from_seeds_but_builds_it_as_ancestor(tmp_pa
         "orphan-base": {"group": "base", "base_image": True, "downstream": []},
     }
     graph = make_graph(tmp_path, spec)
-    build_set = resolve_release_build_set(graph, "bricks")
+    build_set = resolve_release_build_set(graph)
     # common-base is pulled in as the ancestor of the two released apps...
     assert build_set == {"common-base", "app-a", "app-b"}
-    # ...but orphan-base (base_image, no released dependents) is never built.
+    # ...but orphan-base (base_image, no dependents) is never built.
     assert "orphan-base" not in build_set
 
     waves = build_plan(graph, build_set)
@@ -190,8 +157,7 @@ def test_release_excludes_base_image_from_seeds_but_builds_it_as_ancestor(tmp_pa
     assert waves[1] == ["app-a", "app-b"]
 
 
-def test_release_diamond_pulls_all_parents(tmp_path):
-    """Seeding one branch of a diamond must still rebuild the other parent of a shared child."""
+def test_release_diamond_builds_both_parents_before_the_child(tmp_path):
     spec = {
         "base": {"group": "base", "base_image": True, "downstream": ["a", "b"]},
         "a": {"group": "bricks", "downstream": ["c"]},
@@ -199,20 +165,12 @@ def test_release_diamond_pulls_all_parents(tmp_path):
         "c": {"group": "ai", "downstream": []},
     }
     graph = make_graph(tmp_path, spec)
-    build_set = resolve_release_build_set(graph, "bricks")
-    # Seeding only 'a' pulls c (descendant), then b (c's other parent) and base.
+    build_set = resolve_release_build_set(graph)
     assert build_set == {"base", "a", "b", "c"}
     waves = build_plan(graph, build_set)
     assert waves[0] == ["base"]
     assert waves[1] == ["a", "b"]
     assert waves[2] == ["c"]
-
-
-def test_unknown_release_group_raises(tmp_path):
-    """A typo'd tag prefix must fail loudly instead of silently building nothing."""
-    graph = make_graph(tmp_path, CHAIN)
-    with pytest.raises(BuildLevelsError, match="Unknown container group 'release'"):
-        resolve_release_build_set(graph, "release")
 
 
 def test_unknown_selected_container_raises(tmp_path):

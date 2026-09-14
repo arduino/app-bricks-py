@@ -32,7 +32,7 @@ on:
         type: string
         required: true
       tag_ref:
-        description: "Full tag ref (e.g. bricks/1.2.3)"
+        description: "Full tag ref (e.g. release/1.2.3)"
         type: string
         required: true
       prerelease:
@@ -59,7 +59,6 @@ permissions:
   contents: write
   packages: write
   id-token: write
-  pull-requests: write
   actions: write
 
 jobs:
@@ -96,8 +95,6 @@ jobs:
         run: |
           CI_JSON="${{ steps.dir.outputs.path }}/ci.json"
           echo "build_whl=$(jq -r '.build_whl // false' "$CI_JSON")" >> $GITHUB_OUTPUT
-          echo "update_compose=$(jq -r '.update_compose // false' "$CI_JSON")" >> $GITHUB_OUTPUT
-          echo "tag_latest=$(jq -r '.tag_latest // false' "$CI_JSON")" >> $GITHUB_OUTPUT
           echo "watch_paths=$(jq -r '.watch_paths | join(" ")' "$CI_JSON")" >> $GITHUB_OUTPUT
           BUILD_ARGS=$(jq -r '.build_args // {} | to_entries | map("\(.key)=\(.value)") | join("\n")' "$CI_JSON")
           echo "build_args<<EOF" >> $GITHUB_OUTPUT
@@ -133,10 +130,7 @@ jobs:
             exit 0
           fi
 
-          # Compare against the previous tag of the series being released, NOT of
-          # the container's own group: shared bases live under containers/base/
-          # but are only ever released by an ai/* or bricks/* tag, so their group
-          # is not a tag prefix at all.
+          # Compare against the previous release tag
           TAG_REF="${{ inputs.tag_ref }}"
           TAG_PREFIX="${TAG_REF%%/*}"
           CURRENT_TAG="${TAG_PREFIX}/${{ inputs.version }}"
@@ -171,7 +165,7 @@ jobs:
           crane copy \
             ${{ env.GHCR_DESTINATION_ORG }}/app-bricks/${{ matrix.container }}:${{ steps.rebuild_check.outputs.prev_version }} \
             ${{ env.GHCR_DESTINATION_ORG }}/app-bricks/${{ matrix.container }}:${{ inputs.version }}
-          if [[ "${{ steps.config.outputs.tag_latest }}" == "true" ]] && [[ "${{ inputs.prerelease }}" == "false" ]]; then
+          if [[ "${{ inputs.prerelease }}" == "false" ]]; then
             crane copy \
               ${{ env.GHCR_DESTINATION_ORG }}/app-bricks/${{ matrix.container }}:${{ steps.rebuild_check.outputs.prev_version }} \
               ${{ env.GHCR_DESTINATION_ORG }}/app-bricks/${{ matrix.container }}:latest
@@ -204,7 +198,7 @@ jobs:
         with:
           tags: |
             type=raw,value=${{ inputs.version }}
-            type=raw,value=latest,enable=${{ steps.config.outputs.tag_latest == 'true' && inputs.prerelease == 'false' }}
+            type=raw,value=latest,enable=${{ inputs.prerelease == 'false' }}
           images: ${{ env.GHCR_DESTINATION_ORG }}/app-bricks/${{ matrix.container }}
           labels: |
             org.opencontainers.image.source=${{ env.GH_DESTINATION_REPO }}
@@ -231,38 +225,3 @@ jobs:
             ${{ steps.config.outputs.build_args }}
             BASE_IMAGE_VERSION=${{ inputs.version }}
             REGISTRY=${{ env.GHCR_DESTINATION_ORG }}/
-
-      - name: Update compose file references
-        if: steps.config.outputs.update_compose == 'true'
-        env:
-          CONTAINER: ${{ matrix.container }}
-          VERSION: ${{ inputs.version }}
-        run: |
-          find src \( -name "brick_compose*.yaml" -o -name "service_compose*.yaml" \) | while read f; do
-            if grep -q "$CONTAINER" "$f"; then
-              echo "  Updating: $f"
-              sed -i -E "s|${CONTAINER}:[^ \"']+|${CONTAINER}:${VERSION}|g" "$f"
-            fi
-          done
-
-      - name: Configure Git
-        if: steps.config.outputs.update_compose == 'true'
-        run: |
-          git config user.name "AppLab Actions Bot"
-          git config user.email "bot@arduino.cc"
-
-      - name: Create Pull Request
-        if: steps.config.outputs.update_compose == 'true'
-        uses: peter-evans/create-pull-request@v8
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: "feat: update ${{ matrix.container }} image references"
-          add-paths: |
-            src/**/brick_compose*.yaml
-            src/**/service_compose*.yaml
-          title: "[RELEASE BOT] Update ${{ matrix.container }} image references"
-          body: |
-            This PR was automatically generated after releasing `${{ matrix.container }}:${{ inputs.version }}`.
-          branch: "container-release-${{ matrix.container }}-${{ inputs.version }}"
-          base: main
-          draft: true
