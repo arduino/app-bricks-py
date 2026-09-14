@@ -56,7 +56,7 @@ jobs:
           which task || curl -sSfL https://taskfile.dev/install.sh | sh -s -- -b ${{ env.TASKFILE_PATH }} ${{ env.TASKFILE_VERSION }}
           export PATH="${{ env.TASKFILE_PATH }}:$PATH"
           task init:ci
-          task build-dev
+          task build
           cp ./dist/arduino*.whl ./containers/bricks/python-apps-base/
 
       - name: Setup Docker buildx

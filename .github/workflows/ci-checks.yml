@@ -15,8 +15,6 @@ jobs:
     env:
       TASKFILE_VERSION: 'v3.44.0'
       TASKFILE_PATH: '/home/runner/go/bin'
-      # The editable install needs a version and the checkout carries no tags
-      SETUPTOOLS_SCM_PRETEND_VERSION: '0.0.0'
     steps:
       - name: Install git
         run: |

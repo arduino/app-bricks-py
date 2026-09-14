@@ -15,6 +15,7 @@ import time
 from urllib.parse import urlparse
 from arduino.app_internal.core.module import EnvVariable
 from arduino.app_utils import Logger
+from arduino.version import __version__
 
 logger = Logger(__name__)
 
@@ -360,8 +361,6 @@ def resolve_release_version(version: str | None = None) -> str:
     env_version = os.environ.get("BRICKS_RELEASE_VERSION")
     if env_version:
         return env_version
-    from arduino._version import __version__
-
     return __version__
 
 
@@ -416,6 +415,13 @@ def save_models_files(models_dir: str, output_dir: str, release_version: str) ->
         pathlib.Path(output_dir, os.path.basename(model_file)).write_text(_stamp_release_version(content, release_version))
 
 
+def save_pyright_rules(rules_file: str, output_dir: str) -> None:
+    """Copy the pyright rules file into the static assets, App Lab and the CI checks read it from the wheel."""
+    if not os.path.isfile(rules_file):
+        raise FileNotFoundError(f"{rules_file} not found, it is maintained at the repository root")
+    shutil.copy(rules_file, os.path.join(output_dir, os.path.basename(rules_file)))
+
+
 def save_api_docs_files(api_docs_dir: str, output_dir: str) -> None:
     """Copy the generated API docs to the output directory."""
     if not os.path.isdir(api_docs_dir):
@@ -449,11 +455,12 @@ def library_provisioning(out_path: str, modules: dict[str, list[ArduinoBrick]], 
 
 
 def release() -> None:
-    """Provision the static assets bundled into the wheel: bricks list, models files, compose files, READMEs, services and API docs."""
+    """Provision the static assets bundled into the wheel: bricks list, models files, compose files, READMEs, services, API docs and pyright rules."""
     parser = argparse.ArgumentParser(description="Provision the static assets bundled into the Arduino App Bricks wheel.")
     parser.add_argument("-d", "--static-dir", type=str, required=True, help="Static assets directory to populate.")
     parser.add_argument("-m", "--models-dir", type=str, default="models", help="Directory holding the models-*.yaml files.")
     parser.add_argument("-a", "--api-docs-dir", type=str, default="docs", help="Directory holding the generated API docs.")
+    parser.add_argument("-r", "--pyright-rules", type=str, default="pyright-rules.json", help="Pyright rules file to ship in the wheel.")
     parser.add_argument(
         "-v",
         "--version",
@@ -471,6 +478,7 @@ def release() -> None:
     save_models_files(args.models_dir, args.static_dir, release_version)
     library_provisioning(args.static_dir, discovered_modules, services_folder, release_version)
     save_api_docs_files(args.api_docs_dir, os.path.join(args.static_dir, "api-docs"))
+    save_pyright_rules(args.pyright_rules, args.static_dir)
 
 
 def main() -> None:

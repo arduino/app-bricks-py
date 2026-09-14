@@ -65,19 +65,25 @@ jobs:
           fi
           echo "path=$(dirname "${MATCHES[0]}")" >> $GITHUB_OUTPUT
 
-      - name: Build wheel in debian:trixie
-        if: matrix.container == 'python-apps-base'
+      - name: Read container config
+        id: config
         run: |
-          # Remove tags that setuptools_scm can't parse (see tag_regex in pyproject.toml:
-          # bricks/* is the current library release prefix, release/* the historical one)
-          git tag -l | grep -v -E '^(ai|bricks|release)/' | xargs -r git tag -d
+          CI_JSON="${{ steps.dir.outputs.path }}/ci.json"
+          echo "build_whl=$(jq -r '.build_whl // false' "$CI_JSON")" >> $GITHUB_OUTPUT
+          BUILD_ARGS=$(jq -r '.build_args // {} | to_entries | map("\(.key)=\(.value)") | join("\n")' "$CI_JSON")
+          echo "build_args<<EOF" >> $GITHUB_OUTPUT
+          echo "$BUILD_ARGS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
+      - name: Build wheel in debian:trixie
+        if: steps.config.outputs.build_whl == 'true'
+        run: |
+          # The compose files bundled in the wheel must reference the images built by this run
           docker run --rm \
             -v "${{ github.workspace }}:/${{ github.workspace }}" \
             -w "${{ github.workspace }}" \
             -e SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)" \
-            -e PUBLIC_IMAGE_REGISTRY_BASE="${{ env.DEV_REGISTRY_PATH }}" \
-            -e DEV_TAG_VERSION="${{ inputs.image_tag }}" \
+            -e BRICKS_RELEASE_VERSION="${{ inputs.image_tag }}" \
             debian:trixie bash -c "
               set -e
               apt-get update
@@ -87,18 +93,9 @@ jobs:
               git config --global --add safe.directory '*'
               pip install go-task-bin==${{ env.TASKFILE_VERSION }} uv==0.10.3
               task init:ci
-              task build-dev
+              task build
               cp ./dist/arduino*.whl ./pyproject.toml ./uv.lock ./${{ steps.dir.outputs.path }}/
             "
-
-      - name: Read container config
-        id: config
-        run: |
-          CI_JSON="${{ steps.dir.outputs.path }}/ci.json"
-          BUILD_ARGS=$(jq -r '.build_args // {} | to_entries | map("\(.key)=\(.value)") | join("\n")' "$CI_JSON")
-          echo "build_args<<EOF" >> $GITHUB_OUTPUT
-          echo "$BUILD_ARGS" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Setup Docker buildx
         uses: docker/setup-buildx-action@v4

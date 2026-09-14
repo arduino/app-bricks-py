@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import argparse
 import os
 from pathlib import Path
 from docs_generator.extractor import extract_docstrings_with_types
@@ -204,19 +205,11 @@ def process_app_peripherals(src_root: str, output_dir: str):
                 logging.info(f"No public docstrings found in folder: {folder_path}")
 
 
-def run_docs_generator():
-    """Entry point for the documentation generator CLI.
-
-    Sets up the source and output directories, then generates API and example documentation for all bricks
-    and peripherals.
-    The output directory structure will mirror the source tree under 'docs/'.
-
-    Returns:
-        None
-    """
+def run_docs_generator(output_directory: str | os.PathLike) -> None:
+    """Generate the API documentation of bricks and peripherals under output_directory, mirroring the source tree."""
     root_dir = Path(__file__).parent.parent
     source_root = root_dir / "src"
-    output_directory = root_dir / "docs"
+    output_directory = Path(output_directory)
     os.makedirs(output_directory, exist_ok=True)
     logger.info(f"Source root: {source_root}")
     logger.info(f"Output directory: {output_directory}")
@@ -225,5 +218,7 @@ def run_docs_generator():
 
 
 if __name__ == "__main__":
-    run_docs_generator()
+    parser = argparse.ArgumentParser(description="Generate the API documentation of bricks and peripherals.")
+    parser.add_argument("output_directory", help="Directory the documentation is written to.")
+    run_docs_generator(parser.parse_args().output_directory)
     logger.info("Documentation generation completed.")

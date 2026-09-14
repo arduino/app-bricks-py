@@ -95,21 +95,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Inject release version
+        if: startsWith(needs.detect.outputs.tag_ref, 'bricks/')
+        run: sed -i 's/^__version__ = .*/__version__ = "${{ needs.detect.outputs.version }}"/' src/arduino/version.py
+
       - name: Build wheel in debian:trixie
         if: startsWith(needs.detect.outputs.tag_ref, 'bricks/')
         run: |
-          # Remove tags that setuptools_scm can't parse (see tag_regex in pyproject.toml:
-          # bricks/* is the current library release prefix, release/* the historical one)
-          git tag -l | grep -v -E '^(ai|bricks|release)/' | xargs -r git tag -d
-
-          # Explicitly set the version so setuptools_scm does not need the git tag to exist
-          # (handles workflow_dispatch runs where no tag has been pushed yet)
           docker run --rm \
             -v "${{ github.workspace }}:/${{ github.workspace }}" \
             -w "${{ github.workspace }}" \
             -e SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)" \
-            -e PUBLIC_IMAGE_REGISTRY_BASE="${{ env.GHCR_DESTINATION_ORG }}/" \
-            -e SETUPTOOLS_SCM_PRETEND_VERSION="${{ needs.detect.outputs.version }}" \
             debian:trixie bash -c "
               set -e
               apt-get update
