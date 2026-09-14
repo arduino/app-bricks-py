@@ -156,7 +156,7 @@ tasks:
   sbom:delta:
     desc: Generate delta SBOMs for containers (requires syft and registry access)
     cmds:
-      - python3 ./scripts/sbom_delta.py {{.CLI_ARGS}}
+      - python3 -m scripts.sbom_delta {{.CLI_ARGS}}
 
   containers:tree:
     desc: Print the container hierarchy derived from the Dockerfiles

@@ -199,7 +199,7 @@ After editing any `pyproject.toml` run `task deps:lock`, with `-- --upgrade` to 
 ## SBOM (Software Bill of Materials)
 SBOMs are not kept in the tree. Each release attaches `sboms.zip` to the GitHub Release, with one folder per published image holding three SPDX documents:
 
-- `base.spdx.json` — packages of the base image the container derives `FROM` (declared as `sbom.runtime_base` in the container's `ci.json`)
+- `base.spdx.json` — packages of the base image the container derives `FROM`, read from the final stage of its Dockerfile
 - `full.spdx.json` — complete package list of the container image
 - `delta.spdx.json` — packages added by the container on top of its base image
 
