@@ -9,6 +9,14 @@ if [ -n "${quantization}" ]; then
     quantization_arg=(--quantization "${quantization}")
 fi
 
+# Models pinned to an entry of the project's deployment history are fetched from
+# the history endpoint, which addresses the build by id alone (target and
+# quantization are already baked into that past build).
+history_arg=()
+if [ -n "${history_id}" ]; then
+    history_arg=(--history-id "${history_id}")
+fi
+
 # Each model lives in its own folder named after model_name without its
 # extension (e.g. efficientnet-b4-qnn.eim -> efficientnet-b4-qnn). The .eim file
 # and the in-progress ".download" marker both live inside this folder, mirroring
@@ -39,4 +47,5 @@ exec python /app/edge_impulse/download_ei_build.py \
     --output-name "${model_name}" \
     --output-dir "${model_path}" \
     "${quantization_arg[@]}" \
+    "${history_arg[@]}" \
     --target "${target}"
