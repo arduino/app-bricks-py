@@ -55,36 +55,30 @@ jobs:
         run: |
           which task || curl -sSfL https://taskfile.dev/install.sh | sh -s -- -b ${{ env.TASKFILE_PATH }} ${{ env.TASKFILE_VERSION }}
           export PATH="${{ env.TASKFILE_PATH }}:$PATH"
+          pip install uv==0.10.3
           task init:ci
           task build
-          cp ./dist/arduino*.whl ./containers/bricks/python-apps-base/
 
       - name: Setup Docker buildx
         uses: docker/setup-buildx-action@v3
         with:
           driver-opts: network=host
 
-      - name: Build the base Docker image
-        uses: docker/build-push-action@v6
+      # The parent links in docker-bake.hcl build python-slim and python-base before python-apps-base
+      - name: Build the Docker images
+        uses: docker/bake-action@v7
         with:
-          context: ./containers/base/python-base
-          file: ./containers/base/python-base/Dockerfile
-          tags: localhost:5000/app-bricks/python-base:latest
+          source: .
+          files: ./docker-bake.hcl
+          targets: python-base,python-apps-base
           push: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build the apps base Docker image
-        uses: docker/build-push-action@v6
-        with:
-          context: ./containers/bricks/python-apps-base
-          file: ./containers/bricks/python-apps-base/Dockerfile
-          tags: localhost:5000/app-bricks/python-apps-base:latest
-          push: true
-          build-args: |
-            REGISTRY=localhost:5000/
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          set: |
+            *.cache-from=type=gha
+            *.cache-to=type=gha,mode=max
+        env:
+          REGISTRY: localhost:5000/
+          IMAGE_TAG: latest
+          BASE_IMAGE_VERSION: latest
 
       - name: Pull images for inspection
         run: |

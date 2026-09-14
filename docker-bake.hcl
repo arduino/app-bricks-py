@@ -171,8 +171,8 @@ target "llamacpp-npu-runner" {
   cache-to   = cache_to("llamacpp-npu-runner")
   contexts   = parent_context("qairt-common-base")
   args = {
-    LLAMA_CPP_URL    = "https://github.com/arduino/app-bricks-py/releases/download/llamacpp%2F20260902/llamacpp-hexagon-20260902.tar.gz"
-    LLAMA_CPP_DIGEST = "sha256:02e155c506d9ddb8aceb10a02c07debdab26726f9a4048a05b456cd1309b701c"
+    LLAMA_CPP_URL    = "https://github.com/arduino/app-bricks-py/releases/download/llamacpp%2F20260914/llamacpp-hexagon-20260914.tar.gz"
+    LLAMA_CPP_DIGEST = "sha256:b24f92871670b9d222d06efd9447f9be0b82d310a13fa3008ab3fe69d2b41e33"
   }
 }
 
@@ -184,8 +184,8 @@ target "llamacpp-runner" {
   cache-to   = cache_to("llamacpp-runner")
   contexts   = parent_context("python-slim")
   args = {
-    LLAMA_CPP_URL    = "https://github.com/arduino/app-bricks-py/releases/download/llamacpp%2F20260902/llamacpp-cpu-20260902.tar.gz"
-    LLAMA_CPP_DIGEST = "sha256:59f4325f2bf8cdca8a76b95ac1a96e929b6a120fce33b0d15cb29a57c39cf7dc"
+    LLAMA_CPP_URL    = "https://github.com/arduino/app-bricks-py/releases/download/llamacpp%2F20260914/llamacpp-cpu-20260914.tar.gz"
+    LLAMA_CPP_DIGEST = "sha256:e6bd5706ce4826842d6a4ad770a6bf825c6bf158fa9aab00561476e6995b5fc6"
   }
 }
 

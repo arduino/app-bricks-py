@@ -164,7 +164,7 @@ and no `:latest` tag is pushed.
 **Dependencies**: base images in `containers/base/` are not released on their own. They are rebuilt first,
 in dependency order, as the base of the images that derive from them, and tagged with the same version.
 
-For development, the dev build pipeline (`docker-build.yml`) is triggered manually (`workflow_dispatch`) on a branch and builds the selected containers (or all of them), tagging the images as `dev-<branch-name>`. Dependent containers are built in the correct order — downstream containers wait for their upstream to finish and use the freshly built image.
+For development, the dev build pipeline (`docker-build.yml`) is triggered manually (`workflow_dispatch`) on a branch and builds the selected containers (or all of them), tagging the images as `dev-<branch-name>`. The selection is widened with the containers deriving from it and with its bases, and `docker buildx bake` builds them in dependency order.
 
 See [`.github/README.md`](.github/README.md) for full CI documentation.
 

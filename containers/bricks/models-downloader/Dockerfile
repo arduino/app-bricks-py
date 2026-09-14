@@ -15,7 +15,8 @@ COPY ./pyproject.toml ./uv.lock /tmp/deps/
 
 COPY --chown=arduino:arduino --chmod=755 ./src /app
 
-COPY --chown=arduino:arduino --chmod=644 ./models-list.yaml /app/models-list.yaml
+# From the bake context pointing at the repository's models/ directory
+COPY --from=models --chown=arduino:arduino --chmod=644 models-list.yaml /app/models-list.yaml
 
 # uv is only mounted while installing, it is not part of the image
 RUN --mount=from=uv,source=/uv,target=/bin/uv \

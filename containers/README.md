@@ -15,10 +15,10 @@ The sub-folder only documents what a container is for: every release publishes e
 [Release process](#release-process)).
 
 The group is not part of a container's identity. A container is always referred to by
-its **leaf directory name**, which is also its image name — `ghcr.io/arduino/app-bricks/<name>` — and
-the value used in `downstream`, in the CI build matrices and in the `containers` input of the dev
-workflow. CI finds a container by globbing `containers/*/<name>/ci.json`, so names must be unique across
-groups; the build planner fails if two groups declare the same one.
+its **leaf directory name**, which is also its image name — `ghcr.io/arduino/app-bricks/<name>` — its
+target in `docker-bake.hcl` and the value used in the `containers` input of the dev workflow. CI finds a
+container by globbing `containers/*/<name>/Dockerfile`, so names must be unique across groups;
+`scripts/container_deps.py` fails if two groups declare the same one.
 
 ## Inventory
 
@@ -56,8 +56,7 @@ inside this repo.
 
 | Path | Required | Description |
 |---|---|---|
-| `Dockerfile` | yes | Build recipe. The directory itself is the build context. |
-| `ci.json` | yes | CI metadata: watched paths, build args, dependencies |
+| `Dockerfile` | yes | Build recipe. The directory itself is the build context, declared with the build args in the container's `docker-bake.hcl` target. |
 | `pyproject.toml` + `uv.lock` | if Python packages are installed | The Python packages the image installs, declared in `pyproject.toml` and pinned with hashes in `uv.lock` by `task deps:lock`. The Dockerfile installs from the lock, `task deps:sync` installs the same packages into a local `.venv` for IDE support. Board-only packages carry an environment marker. Never install packages inline, the [dependency license scan](../scripts/licensed/README.md) only sees the lock |
 
 | `tests/` | no | Python tests run by `task test` in the container's `.venv`, with the packages of its `test` dependency group; shell tests exercise the built image |
@@ -65,12 +64,13 @@ inside this repo.
 SBOMs are not kept in the tree: they are generated from the published images at release time (see
 [SBOMs](#sboms)) and by the dev workflow as run artifacts.
 
-An image that derives from another container in this repo must declare `ARG REGISTRY` and
-`ARG BASE_IMAGE_VERSION` and use them in its `FROM`, so CI can point it at the freshly built upstream
-instead of `latest`. Its parent must list it in `downstream`, and its own `sbom.runtime_base` must match
-its `FROM`.
+An image that derives from another container in this repo declares it once, in its Dockerfile:
+`FROM ${REGISTRY}app-bricks/<parent>:${BASE_IMAGE_VERSION}`, with both `ARG`s declared before it. Its
+`docker-bake.hcl` target links the same parent with `parent_context()`, so bake builds the parent
+in-graph first; `scripts/container_deps.py` reads the `FROM` line for everything else (dev build
+selection, SBOM base image, `task containers:tree`).
 
-See the [ci.json reference](../.github/README.md#cijson-reference) for every field.
+See the [docker-bake.hcl reference](../.github/README.md#docker-bakehcl-reference) for the variables CI sets.
 
 ## Release process
 
@@ -79,33 +79,32 @@ and attaches the Python `.whl` and the SBOMs of every image to the GitHub Releas
 containers it runs always ship together, so the compose files bundled in the wheel reference the images
 published by the same release (see [Compose file versioning](../.github/README.md#compose-file-versioning)).
 
-The workflow:
+The workflow builds every container with one `docker buildx bake` invocation. Bake resolves the
+dependency order from the parent links in `docker-bake.hcl`, so `python-slim` is built before
+`python-base`, which is built before `python-apps-base`, however deep the chain. Every image is pushed
+to `ghcr.io/arduino/app-bricks/<name>:X.Y.Z`, plus `:latest` unless the version is a prerelease (`rc`,
+`alpha` or `beta`). Base images in `containers/base/` are published like any other, tagged with the
+release version.
 
-1. **Resolves the build set** — every container that is not a base image, plus every base image any of
-   those need. Base images in `containers/base/` are therefore built and tagged with the release version
-   only as the base of a released image.
-2. **Orders it into waves** — `level_0` are the images with no dependency being built in the same run,
-   each later wave builds on the previous one. So a release builds `python-slim` before `python-base`
-   and `models-downloader`, then `python-apps-base`.
-3. **Skips what has not changed** — for `level_0` only, if a container's `watch_paths` are untouched
-   since the previous release tag, the existing image is re-tagged with `crane copy` instead of rebuilt.
-   Later waves always rebuild, since their base was just rebuilt.
-4. **Publishes** to `ghcr.io/arduino/app-bricks/<name>:X.Y.Z`, adding `:latest` unless the version is
-   a prerelease (`rc`, `alpha` or `beta`).
+A per-image registry cache (`<name>:buildcache`) is imported and exported on every release. The cache is
+content addressed, so only the layers whose inputs changed since the previous release are rebuilt; the
+`skip_cache` input of the manual run forces a cold rebuild, which is the way to refresh layers whose
+content never changes but whose result does (e.g. `apt-get upgrade`).
 
 ## SBOMs
 
 Each release attaches `sboms.zip` to the GitHub Release, covering **every image it publishes**. Each
-image is scanned with `scripts/sbom_delta.py` against the base image it was built from
-(`sbom.runtime_base`), one wave at a time while the next wave builds. The archive holds one
+image is scanned with `scripts/sbom_delta.py` against the base image it was built from, read from the
+final `FROM` of its Dockerfile, in a matrix job that runs once the build is pushed. The archive holds one
 `<name>-<version>/` folder per image with `base`, `full` and `delta` SPDX documents. A failed scan never
 blocks the release: the image is reported as a warning and listed in `MISSING.txt` inside the archive.
 
 ## Development builds
 
 `docker-build.yml` is manual (`workflow_dispatch`): pick a branch, and either `all` or a comma-separated
-list of container names. The same dependency resolution applies — selecting a leaf pulls in its bases,
-selecting a base pulls in everything derived from it — and images are published as
+list of container names. The selection is widened by `scripts/container_deps.py` — selecting a leaf
+pulls in its bases, selecting a base pulls in everything derived from it — and bake builds the result in
+dependency order. Images are published as
 `ghcr.io/arduino/app-bricks/<name>:dev-<branch>`. The wheel installed in `python-apps-base` is built with
 `BRICKS_RELEASE_VERSION=dev-<branch>`, so its compose files reference the dev images. They are deleted
 automatically when the branch is.

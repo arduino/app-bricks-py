@@ -21,7 +21,6 @@ on:
 env:
   GHCR_REGISTRY: ghcr.io
   GHCR_DESTINATION_ORG: ghcr.io/${{ github.repository_owner }}
-  GH_DESTINATION_REPO: https://github.com/${{ github.repository }}
 
 permissions:
   contents: write
@@ -36,10 +35,7 @@ jobs:
       tag_ref: ${{ steps.detect.outputs.tag_ref }}
       version: ${{ steps.detect.outputs.version }}
       prerelease: ${{ steps.detect.outputs.prerelease }}
-      level_0: ${{ steps.detect.outputs.level_0 }}
-      level_1: ${{ steps.detect.outputs.level_1 }}
-      level_2: ${{ steps.detect.outputs.level_2 }}
-      all_containers: ${{ steps.detect.outputs.all_containers }}
+      containers: ${{ steps.detect.outputs.containers }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -63,9 +59,16 @@ jobs:
             echo "prerelease=false" >> $GITHUB_OUTPUT
           fi
 
-          # Every container is released at this version. The plan is split into
-          # topological waves (level_0 .. level_2) so bases build first.
-          python3 -m scripts.build_levels --mode release
+          # Every container is released at this version. The Dockerfiles and
+          # docker-bake.hcl must describe the same set of containers.
+          CONTAINERS=$(python3 -m scripts.container_deps list | jq -c .)
+          BAKE_TARGETS=$(docker buildx bake --print 2>/dev/null | jq -c '.target | keys')
+          if [[ "$CONTAINERS" != "$BAKE_TARGETS" ]]; then
+            echo "::error::docker-bake.hcl targets $BAKE_TARGETS differ from the containers $CONTAINERS"
+            exit 1
+          fi
+          echo "Containers: $(jq -r 'join(" ")' <<< "$CONTAINERS")"
+          echo "containers=$CONTAINERS" >> $GITHUB_OUTPUT
 
   upload-whl:
     runs-on: ubuntu-24.04-arm
@@ -96,7 +99,6 @@ jobs:
               pip install go-task-bin==${{ env.TASKFILE_VERSION }} uv==0.10.3
               task init:ci
               task build
-              cp pyproject.toml uv.lock dist/
             "
 
       - name: Share wheel and lock with downstream jobs
@@ -109,77 +111,63 @@ jobs:
             dist/uv.lock
           retention-days: 1
 
-  build-l0:
+  build:
+    runs-on: ubuntu-24.04-arm
     needs: [detect, upload-whl]
-    if: needs.detect.outputs.level_0 != '[]'
-    uses: ./.github/workflows/_build-containers-release.yml
-    secrets: inherit
-    with:
-      containers: ${{ needs.detect.outputs.level_0 }}
-      version: ${{ needs.detect.outputs.version }}
-      tag_ref: ${{ needs.detect.outputs.tag_ref }}
-      prerelease: ${{ needs.detect.outputs.prerelease }}
-      allow_retag: true
-      skip_cache: ${{ inputs.skip_cache || false }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
 
-  build-l1:
-    needs: [detect, upload-whl, build-l0]
-    if: needs.detect.outputs.level_1 != '[]'
-    uses: ./.github/workflows/_build-containers-release.yml
-    secrets: inherit
-    with:
-      containers: ${{ needs.detect.outputs.level_1 }}
-      version: ${{ needs.detect.outputs.version }}
-      tag_ref: ${{ needs.detect.outputs.tag_ref }}
-      prerelease: ${{ needs.detect.outputs.prerelease }}
-      allow_retag: false
-      skip_cache: ${{ inputs.skip_cache || false }}
+      # The wheel bake context of python-apps-base
+      - name: Download wheel artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: whl
+          path: dist/
 
-  build-l2:
-    needs: [detect, upload-whl, build-l1]
-    if: needs.detect.outputs.level_2 != '[]'
-    uses: ./.github/workflows/_build-containers-release.yml
-    secrets: inherit
-    with:
-      containers: ${{ needs.detect.outputs.level_2 }}
-      version: ${{ needs.detect.outputs.version }}
-      tag_ref: ${{ needs.detect.outputs.tag_ref }}
-      prerelease: ${{ needs.detect.outputs.prerelease }}
-      allow_retag: false
-      skip_cache: ${{ inputs.skip_cache || false }}
+      - name: Log into registry ${{ env.GHCR_REGISTRY }}
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.GHCR_REGISTRY }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-  # SBOM scans run one wave behind the builds: each wave is scanned as soon as it
-  # is pushed, in parallel with the next wave's build. Scans never fail the
-  # workflow run: a missing SBOM is then reported by upload-release.
-  sbom-l0:
-    needs: [detect, build-l0]
-    if: needs.detect.outputs.level_0 != '[]'
+      - name: Setup Docker buildx
+        uses: docker/setup-buildx-action@v4
+
+      # Bake builds every container in dependency order through the parent
+      # links declared in docker-bake.hcl. The registry cache is content
+      # addressed: only the layers whose inputs changed since the previous
+      # release are rebuilt, skip_cache forces a cold rebuild.
+      - name: Build and push Docker images
+        uses: docker/bake-action@v7
+        with:
+          source: .
+          files: ./docker-bake.hcl
+          targets: ${{ join(fromJson(needs.detect.outputs.containers)) }}
+          push: true
+        env:
+          REGISTRY: ${{ env.GHCR_DESTINATION_ORG }}/
+          IMAGE_TAG: ${{ needs.detect.outputs.version }}
+          TAG_LATEST: ${{ needs.detect.outputs.prerelease == 'false' }}
+          BASE_IMAGE_VERSION: ${{ needs.detect.outputs.version }}
+          CACHE_TAG: buildcache
+          SKIP_CACHE: ${{ inputs.skip_cache || false }}
+          GITHUB_SHA: ${{ github.sha }}
+
+  # Scans never fail the workflow run: a missing SBOM is reported by upload-release.
+  sbom:
+    needs: [detect, build]
     uses: ./.github/workflows/_sbom-wave.yml
     with:
-      images: ${{ needs.detect.outputs.level_0 }}
-      version: ${{ needs.detect.outputs.version }}
-
-  sbom-l1:
-    needs: [detect, build-l1]
-    if: needs.detect.outputs.level_1 != '[]'
-    uses: ./.github/workflows/_sbom-wave.yml
-    with:
-      images: ${{ needs.detect.outputs.level_1 }}
-      version: ${{ needs.detect.outputs.version }}
-
-  sbom-l2:
-    needs: [detect, build-l2]
-    if: needs.detect.outputs.level_2 != '[]'
-    uses: ./.github/workflows/_sbom-wave.yml
-    with:
-      images: ${{ needs.detect.outputs.level_2 }}
+      images: ${{ needs.detect.outputs.containers }}
       version: ${{ needs.detect.outputs.version }}
 
   upload-release:
     runs-on: ubuntu-24.04-arm
-    # Skipped waves (and their scans) must not skip this job, failed builds must.
+    # Failed scans must not skip this job, failed builds must.
     if: ${{ !failure() && !cancelled() }}
-    needs: [detect, upload-whl, build-l0, build-l1, build-l2, sbom-l0, sbom-l1, sbom-l2]
+    needs: [detect, upload-whl, build, sbom]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -199,7 +187,7 @@ jobs:
       - name: Assemble sboms.zip
         env:
           VERSION: ${{ needs.detect.outputs.version }}
-          CONTAINERS: ${{ needs.detect.outputs.all_containers }}
+          CONTAINERS: ${{ needs.detect.outputs.containers }}
         run: |
           shopt -s nullglob
           mkdir -p sbom-delta
@@ -220,7 +208,7 @@ jobs:
           if (( ${#MISSING[@]} )); then
             printf '%s\n' "${MISSING[@]}" > sbom-delta/MISSING.txt
             for IMAGE in "${MISSING[@]}"; do
-              echo "::warning title=SBOM missing::$IMAGE has no SBOM in sboms.zip, see the sbom-* jobs"
+              echo "::warning title=SBOM missing::$IMAGE has no SBOM in sboms.zip, see the sbom job"
             done
             { echo "## SBOMs missing from sboms.zip"; printf -- '- %s\n' "${MISSING[@]}"; } >> "$GITHUB_STEP_SUMMARY"
           fi
