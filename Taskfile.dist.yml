@@ -96,6 +96,7 @@ tasks:
       - rm -rf dist
       - task: provision-static
       - uv run uv build .
+      - cp pyproject.toml uv.lock dist/
 
   license:headers:
     desc: Update SPDX license headers (REUSE)
@@ -156,3 +157,8 @@ tasks:
     desc: Generate delta SBOMs for containers (requires syft and registry access)
     cmds:
       - python3 ./scripts/sbom_delta.py {{.CLI_ARGS}}
+
+  containers:tree:
+    desc: Print the container hierarchy derived from the Dockerfiles
+    cmds:
+      - python3 -m scripts.container_deps tree
