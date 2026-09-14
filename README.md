@@ -36,7 +36,7 @@ Brick usage examples live in the [app-bricks-examples](https://github.com/arduin
 task build
 ```
 
-The wheel version is read from `src/arduino/version.py`, which stays at `0.0.0` in the repository: the release workflow injects the tag version into it before building. The same version is stamped in place of the `__BRICKS_RELEASE_VERSION__` placeholder in the compose and models files bundled in the wheel, so they reference the containers published by the same release. To point them at other images, dev images for example, override it:
+The wheel is pure Python and needs only the project and its `build` dependency group, which `task build` installs through uv. Its version is read from `src/arduino/version.py`, which stays at `0.0.0` in the repository: the release workflow injects the tag version into it before building. The same version is stamped in place of the `__BRICKS_RELEASE_VERSION__` placeholder in the compose and models files bundled in the wheel, so they reference the containers published by the same release. To point them at other images, dev images for example, override it:
 
 ```sh
 BRICKS_RELEASE_VERSION=dev-my-branch task build

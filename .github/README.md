@@ -29,7 +29,13 @@ The full list of images, with what each one builds from and what it is for, is t
 A single workflow (`docker-publish.yml`) is triggered by any `release/X.Y.Z` tag, or manually via
 `workflow_dispatch`. **Every release publishes every container at `X.Y.Z`**, together with the Python
 `.whl` and `sboms.zip` on the GitHub Release. There is one release cycle: the library and the containers
-it runs always ship together.
+it runs always ship together. The version must be `X.Y.Z` with an optional `rcN`, `aN` or `bN` suffix,
+which marks a prerelease; anything else fails the run before building.
+
+Three jobs: `build` validates the tag, builds the wheel with `task build` on the runner (the version
+injected into `src/arduino/version.py`, the project plus its `build` dependency group installed by uv),
+then bakes and pushes every image; `sbom` scans the published images; `publish` assembles `sboms.zip`
+and creates the GitHub Release with the wheel attached.
 
 Containers flagged `base_image` are not release targets by themselves: they are rebuilt, and tagged with
 the release version, as the base of the images that derive from them.
@@ -60,8 +66,8 @@ over the `default` group, which lists every container.
 
 `scripts/container_deps.py` reads the same `FROM` lines to serve everything else that needs the graph:
 the dev workflow widens its selection with it, `scripts/sbom_delta.py` takes the base image to diff
-against from it, and `task containers:tree` prints the hierarchy. The `detect` job of the release checks
-that the Dockerfiles and the bake targets describe the same set of containers.
+against from it, and `task containers:tree` prints the hierarchy. The release checks that the
+Dockerfiles and the bake targets describe the same set of containers before building.
 
 ## Adding a New Container
 
@@ -117,9 +123,9 @@ filled by `task build` with the wheel, `pyproject.toml` and `uv.lock`) and `mode
 
 `sboms.zip`, attached to every GitHub Release, is generated from the published images, so nothing SBOM-related lives in the tree. Every image is built by the release, so the archive covers all of them at the release version. `scripts/sbom_delta.py` scans one `name:version` with Syft against the base image of its Dockerfile, a parent container at the same version or the external image, and writes `<name>-<version>/{base,full,delta}.spdx.json`.
 
-Scanning runs in the `_sbom-wave.yml` matrix job once the build is pushed, one leg per image. Each leg uploads a `sbom-delta-<name>-<version>` artifact; a failed scan is a warning, never a failure. `upload-release` collects the artifacts, checks them against the released set, writes any gap to `MISSING.txt` inside the archive and to the job summary, and attaches the zip.
+Scanning runs in the `_sbom-scan.yml` reusable workflow once the build is pushed, one matrix leg per image. Each leg uploads a `sbom-delta-<name>-<version>` artifact; a failed scan is a warning, never a failure. `publish` collects the artifacts, checks them against the released set, writes any gap to `MISSING.txt` inside the archive and to the job summary, and attaches the zip.
 
-The dev workflow runs the same matrix over the images it published, as `sbom-delta-<name>-<tag>` run artifacts.
+The dev workflow runs the same scan over the images it published when its `sbom` input is set, as `sbom-delta-<name>-<tag>` run artifacts.
 
 ## Dev Build Workflow
 
@@ -129,12 +135,13 @@ The dev workflow runs the same matrix over the images it published, as `sbom-del
 - `containers` — comma-separated list of containers to build, or `all` (default)
 - `tag` — optional custom image tag
 - `skip_cache` — rebuild without cache
+- `sbom` — also generate the SBOMs of the published images (off by default)
 
 Images are tagged `dev-<branch-name>` (branch name lowercased and sanitized, e.g. `feat/My-Feature` → `dev-feat-my-feature`), plus a run-number-suffixed alias (e.g. `dev-feat-my-feature-42`), unless a custom `tag` is provided.
 
 **Dependency ordering**: `scripts/container_deps.py closure` widens the selection with the containers deriving from it and with its bases, so the published set stays consistent, then a single `docker buildx bake` builds the result in dependency order through the parent links of `docker-bake.hcl`. Nothing is hardcoded in the workflow.
 
-**Wheel**: when a selected target has a `wheel` context, the wheel is built first with `BRICKS_RELEASE_VERSION=<image-tag>`, so the compose files it bundles reference the dev images of the same run.
+**Wheel**: when a selected target has a `wheel` context, the wheel is built first on the runner with `BRICKS_RELEASE_VERSION=<image-tag>`, so the compose files it bundles reference the dev images of the same run.
 
 ## Image Cleanup
 

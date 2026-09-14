@@ -18,46 +18,45 @@ on:
         required: false
         default: false
 
-env:
-  GHCR_REGISTRY: ghcr.io
-  GHCR_DESTINATION_ORG: ghcr.io/${{ github.repository_owner }}
-
 permissions:
   contents: write
   packages: write
-  id-token: write
-  actions: write
+
+env:
+  UV_VERSION: "0.10.3"
+  TASKFILE_VERSION: "3.45.4"
 
 jobs:
-  detect:
+  build:
     runs-on: ubuntu-24.04-arm
     outputs:
-      tag_ref: ${{ steps.detect.outputs.tag_ref }}
-      version: ${{ steps.detect.outputs.version }}
-      prerelease: ${{ steps.detect.outputs.prerelease }}
-      containers: ${{ steps.detect.outputs.containers }}
+      tag_ref: ${{ steps.release.outputs.tag_ref }}
+      version: ${{ steps.release.outputs.version }}
+      prerelease: ${{ steps.release.outputs.prerelease }}
+      containers: ${{ steps.release.outputs.containers }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Detect containers to release
-        id: detect
+      - name: Resolve the release
+        id: release
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             TAG_REF="${{ inputs.tag }}"
           else
             TAG_REF="${GITHUB_REF_NAME}"
           fi
+          VERSION="${TAG_REF#release/}"
 
-          VERSION="${TAG_REF#*/}"
+          # The version is stamped into the wheel: it must be a plain X.Y.Z, with
+          # an optional rcN, aN or bN prerelease suffix which also disables :latest
+          if [[ "$TAG_REF" != release/* || ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+((rc|a|b)[0-9]+)?$ ]]; then
+            echo "::error::Tag '$TAG_REF' is not release/X.Y.Z[rcN|aN|bN]"
+            exit 1
+          fi
           echo "tag_ref=$TAG_REF" >> $GITHUB_OUTPUT
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-          if [[ "$VERSION" =~ rc|alpha|beta ]]; then
-            echo "prerelease=true" >> $GITHUB_OUTPUT
-          else
-            echo "prerelease=false" >> $GITHUB_OUTPUT
-          fi
+          echo "prerelease=$([[ "$VERSION" =~ [a-z] ]] && echo true || echo false)" >> $GITHUB_OUTPUT
 
           # Every container is released at this version. The Dockerfiles and
           # docker-bake.hcl must describe the same set of containers.
@@ -70,65 +69,31 @@ jobs:
           echo "Containers: $(jq -r 'join(" ")' <<< "$CONTAINERS")"
           echo "containers=$CONTAINERS" >> $GITHUB_OUTPUT
 
-  upload-whl:
-    runs-on: ubuntu-24.04-arm
-    needs: [detect]
-    env:
-      PYTHON_VERSION: "3.13"
-      TASKFILE_VERSION: "3.45.4"
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Install uv and task
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv tool install "go-task-bin==${{ env.TASKFILE_VERSION }}"
 
-      - name: Inject release version
-        run: sed -i 's/^__version__ = .*/__version__ = "${{ needs.detect.outputs.version }}"/' src/arduino/version.py
-
-      - name: Build wheel in debian:trixie
+      # The wheel is pure Python and reproducible: the version is injected into
+      # version.py and the build only needs the project plus the build group.
+      - name: Build the wheel
         run: |
-          docker run --rm \
-            -v "${{ github.workspace }}:/${{ github.workspace }}" \
-            -w "${{ github.workspace }}" \
-            -e SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)" \
-            debian:trixie bash -c "
-              set -e
-              apt-get update
-              apt-get install -y --no-install-recommends --no-install-suggests sudo git ca-certificates python3-dev python3-pip build-essential pkg-config
-              echo '[global]' > /etc/pip.conf
-              echo 'break-system-packages = true' >> /etc/pip.conf
-              git config --global --add safe.directory '*'
-              pip install go-task-bin==${{ env.TASKFILE_VERSION }} uv==0.10.3
-              task init:ci
-              task build
-            "
+          sed -i 's/^__version__ = .*/__version__ = "${{ steps.release.outputs.version }}"/' src/arduino/version.py
+          export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          task build
 
-      - name: Share wheel and lock with downstream jobs
+      - name: Share the wheel with the publish job
         uses: actions/upload-artifact@v4
         with:
           name: whl
-          path: |
-            dist/arduino*.whl
-            dist/pyproject.toml
-            dist/uv.lock
+          path: dist/arduino*.whl
           retention-days: 1
 
-  build:
-    runs-on: ubuntu-24.04-arm
-    needs: [detect, upload-whl]
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      # The wheel bake context of python-apps-base
-      - name: Download wheel artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: whl
-          path: dist/
-
-      - name: Log into registry ${{ env.GHCR_REGISTRY }}
+      - name: Log into registry ghcr.io
         uses: docker/login-action@v4
         with:
-          registry: ${{ env.GHCR_REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
@@ -136,49 +101,46 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       # Bake builds every container in dependency order through the parent
-      # links declared in docker-bake.hcl. The registry cache is content
-      # addressed: only the layers whose inputs changed since the previous
-      # release are rebuilt, skip_cache forces a cold rebuild.
-      - name: Build and push Docker images
+      # links declared in docker-bake.hcl, python-apps-base taking the wheel from
+      # dist/. The registry cache is content addressed: only the layers whose
+      # inputs changed since the previous release are rebuilt, skip_cache forces
+      # a cold rebuild.
+      - name: Build and push the images
         uses: docker/bake-action@v7
         with:
           source: .
           files: ./docker-bake.hcl
-          targets: ${{ join(fromJson(needs.detect.outputs.containers)) }}
+          targets: ${{ join(fromJson(steps.release.outputs.containers)) }}
           push: true
         env:
-          REGISTRY: ${{ env.GHCR_DESTINATION_ORG }}/
-          IMAGE_TAG: ${{ needs.detect.outputs.version }}
-          TAG_LATEST: ${{ needs.detect.outputs.prerelease == 'false' }}
-          BASE_IMAGE_VERSION: ${{ needs.detect.outputs.version }}
+          REGISTRY: ghcr.io/${{ github.repository_owner }}/
+          IMAGE_TAG: ${{ steps.release.outputs.version }}
+          TAG_LATEST: ${{ steps.release.outputs.prerelease == 'false' }}
+          BASE_IMAGE_VERSION: ${{ steps.release.outputs.version }}
           CACHE_TAG: buildcache
           SKIP_CACHE: ${{ inputs.skip_cache || false }}
           GITHUB_SHA: ${{ github.sha }}
 
-  # Scans never fail the workflow run: a missing SBOM is reported by upload-release.
   sbom:
-    needs: [detect, build]
-    uses: ./.github/workflows/_sbom-wave.yml
+    needs: [build]
+    uses: ./.github/workflows/_sbom-scan.yml
     with:
-      images: ${{ needs.detect.outputs.containers }}
-      version: ${{ needs.detect.outputs.version }}
+      containers: ${{ needs.build.outputs.containers }}
+      version: ${{ needs.build.outputs.version }}
 
-  upload-release:
+  publish:
     runs-on: ubuntu-24.04-arm
-    # Failed scans must not skip this job, failed builds must.
+    # Failed scans must not skip the release, a failed build must.
     if: ${{ !failure() && !cancelled() }}
-    needs: [detect, upload-whl, build, sbom]
+    needs: [build, sbom]
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Download wheel artifact
+      - name: Download the wheel
         uses: actions/download-artifact@v4
         with:
           name: whl
           path: dist/
 
-      - name: Download SBOM artifacts
+      - name: Download the SBOMs
         uses: actions/download-artifact@v4
         with:
           pattern: sbom-delta-*
@@ -186,8 +148,8 @@ jobs:
 
       - name: Assemble sboms.zip
         env:
-          VERSION: ${{ needs.detect.outputs.version }}
-          CONTAINERS: ${{ needs.detect.outputs.containers }}
+          VERSION: ${{ needs.build.outputs.version }}
+          CONTAINERS: ${{ needs.build.outputs.containers }}
         run: |
           shopt -s nullglob
           mkdir -p sbom-delta
@@ -215,15 +177,15 @@ jobs:
 
           zip -r dist/sboms.zip sbom-delta/
 
-      - name: Upload release asset
+      - name: Create the GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             dist/arduino*.whl
             dist/sboms.zip
-          tag_name: ${{ needs.detect.outputs.tag_ref }}
-          name: Release ${{ needs.detect.outputs.version }}
-          prerelease: ${{ needs.detect.outputs.prerelease }}
+          tag_name: ${{ needs.build.outputs.tag_ref }}
+          name: Release ${{ needs.build.outputs.version }}
+          prerelease: ${{ needs.build.outputs.prerelease }}
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
