@@ -330,38 +330,6 @@ class ModuleVariable:
         return f"Name: {self.name}, Default value: {self.default_value}, Description: {self.description}"
 
 
-class EnvVariable:
-    def __init__(self, name: str, description: str, default_value: str = None, hidden: bool = False, secret: bool = False) -> None:
-        """Represents a variable in brick_config file."""
-        self.name = name
-        self.default_value = default_value
-        self.description = description
-        self.hidden = hidden
-        self.secret = secret
-
-    def to_dict(self) -> dict:
-        """Converts the EnvVariable object to a dictionary."""
-        dict_out = {
-            "name": self.name,
-            "default_value": self.default_value,
-            "description": self.description,
-            "hidden": self.hidden,
-            "secret": self.secret,
-        }
-        if self.default_value is None or self.default_value == "":
-            del dict_out["default_value"]
-        if self.description is None or self.description == "":
-            del dict_out["description"]
-        if not self.hidden:
-            del dict_out["hidden"]
-        if not self.secret:
-            del dict_out["secret"]
-        return dict_out
-
-    def __str__(self) -> str:
-        return f"Name: {self.name}, Default value: {self.default_value}, Description: {self.description}"
-
-
 def load_module_supported_variables(file_path: str) -> list[ModuleVariable] | None:
     """Loads a Docker Compose file and returns all supported variables with its default values and description.
 

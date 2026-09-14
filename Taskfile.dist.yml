@@ -38,7 +38,7 @@ tasks:
   doc:
     desc: Generate the API documentation under docs/
     cmds:
-      - uv run python -m docs_generator.runner docs
+      - uv run --group build python -m docs_generator.runner docs
 
   test:
     desc: Run all unit tests, of the library and of the containers
@@ -87,7 +87,7 @@ tasks:
     cmds:
       - rm -rf src/arduino/app_bricks/static
       - task: doc
-      - uv run arduino-bricks-release --static-dir src/arduino/app_bricks/static --api-docs-dir docs
+      - uv run --group build arduino-bricks-release --static-dir src/arduino/app_bricks/static --api-docs-dir docs
 
   build:
     desc: Build the wheel, its version is read from src/arduino/version.py
