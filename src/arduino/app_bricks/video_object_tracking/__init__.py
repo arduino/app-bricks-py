@@ -344,8 +344,8 @@ class VideoObjectTracking(VideoObjectDetection):
                     if detected_object is None:
                         continue
 
-                    object_id = box.get("object_id", 0.0)
-                    if object_id <= 0.0:
+                    object_id = box.get("object_id")
+                    if object_id is None:
                         continue
 
                     # Extract bounding box coordinates if needed
