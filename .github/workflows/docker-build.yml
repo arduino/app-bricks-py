@@ -21,43 +21,40 @@ on:
         required: false
         type: boolean
         default: false
-
-env:
-  REGISTRY: ghcr.io
-  DEV_REGISTRY_PATH: ghcr.io/${{ github.repository_owner }}/
+      sbom:
+        description: "Also generate the SBOMs of the published images"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
   packages: write
-  id-token: write
+
+env:
+  UV_VERSION: "0.10.3"
+  TASKFILE_VERSION: "3.45.4"
 
 jobs:
-  setup:
+  build:
     runs-on: ubuntu-24.04-arm
     outputs:
-      branch: ${{ steps.resolve.outputs.branch }}
-      image_tag: ${{ steps.detect.outputs.image_tag }}
-      containers: ${{ steps.detect.outputs.containers }}
+      image_tag: ${{ steps.plan.outputs.image_tag }}
+      containers: ${{ steps.plan.outputs.containers }}
     steps:
-      - name: Resolve branch
-        id: resolve
-        run: |
-          BRANCH="${{ inputs.branch || github.ref_name }}"
-          echo "branch=$BRANCH" >> $GITHUB_OUTPUT
-
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
-          ref: ${{ steps.resolve.outputs.branch }}
+          ref: ${{ inputs.branch || github.ref_name }}
 
-      - name: Resolve containers to build
-        id: detect
+      - name: Resolve the build
+        id: plan
         run: |
           # Compute image tag from branch name unless an explicit tag was provided
           if [[ -n "${{ inputs.tag }}" ]]; then
             IMAGE_TAG="${{ inputs.tag }}"
           else
-            IMAGE_TAG="dev-$(echo "${{ steps.resolve.outputs.branch }}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/-/g')"
+            IMAGE_TAG="dev-$(echo "${{ inputs.branch || github.ref_name }}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/-/g')"
           fi
           echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
 
@@ -72,52 +69,31 @@ jobs:
           echo "Containers: $(jq -r 'join(" ")' <<< "$CONTAINERS")"
           echo "containers=$CONTAINERS" >> $GITHUB_OUTPUT
 
-          # Fail early if a container has no bake target
-          docker buildx bake --print $(jq -r 'join(" ")' <<< "$CONTAINERS") > /dev/null
-
-  build:
-    runs-on: ubuntu-24.04-arm
-    needs: [setup]
-    env:
-      TASKFILE_VERSION: "3.45.4"
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.setup.outputs.branch }}
-
-      - name: Check wheel requirement
-        id: wheel
-        run: |
           # Containers with a "wheel" bake context install the library from dist/
-          TARGETS=$(jq -r 'join(" ")' <<< '${{ needs.setup.outputs.containers }}')
-          echo "required=$(docker buildx bake --print $TARGETS 2>/dev/null | jq '[.target[].contexts // {} | has("wheel")] | any')" >> $GITHUB_OUTPUT
+          TARGETS=$(jq -r 'join(" ")' <<< "$CONTAINERS")
+          echo "wheel=$(docker buildx bake --print $TARGETS | jq '[.target[].contexts // {} | has("wheel")] | any')" >> $GITHUB_OUTPUT
+
+      - name: Install uv and task
+        if: steps.plan.outputs.wheel == 'true'
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+      - if: steps.plan.outputs.wheel == 'true'
+        run: uv tool install "go-task-bin==${{ env.TASKFILE_VERSION }}"
 
       # The compose files bundled in the wheel must reference the images built by this run
-      - name: Build wheel in debian:trixie
-        if: steps.wheel.outputs.required == 'true'
+      - name: Build the wheel
+        if: steps.plan.outputs.wheel == 'true'
+        env:
+          BRICKS_RELEASE_VERSION: ${{ steps.plan.outputs.image_tag }}
         run: |
-          docker run --rm \
-            -v "${{ github.workspace }}:/${{ github.workspace }}" \
-            -w "${{ github.workspace }}" \
-            -e SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)" \
-            -e BRICKS_RELEASE_VERSION="${{ needs.setup.outputs.image_tag }}" \
-            debian:trixie bash -c "
-              set -e
-              apt-get update
-              apt-get install -y --no-install-recommends --no-install-suggests sudo git ca-certificates python3-dev python3-pip build-essential pkg-config
-              echo '[global]' > /etc/pip.conf
-              echo 'break-system-packages = true' >> /etc/pip.conf
-              git config --global --add safe.directory '*'
-              pip install go-task-bin==${{ env.TASKFILE_VERSION }} uv==0.10.3
-              task init:ci
-              task build
-            "
+          export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          task build
 
-      - name: Log into registry ${{ env.REGISTRY }}
+      - name: Log into registry ghcr.io
         uses: docker/login-action@v4
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
@@ -126,25 +102,26 @@ jobs:
 
       # Bake builds the selected containers and their parents in dependency
       # order through the parent links declared in docker-bake.hcl
-      - name: Build and push Docker images
+      - name: Build and push the images
         uses: docker/bake-action@v7
         with:
           source: .
           files: ./docker-bake.hcl
-          targets: ${{ join(fromJson(needs.setup.outputs.containers)) }}
+          targets: ${{ join(fromJson(steps.plan.outputs.containers)) }}
           push: true
         env:
-          REGISTRY: ${{ env.DEV_REGISTRY_PATH }}
-          IMAGE_TAG: ${{ needs.setup.outputs.image_tag }}
+          REGISTRY: ghcr.io/${{ github.repository_owner }}/
+          IMAGE_TAG: ${{ steps.plan.outputs.image_tag }}
           RUN_NUMBER: ${{ github.run_number }}
-          BASE_IMAGE_VERSION: ${{ needs.setup.outputs.image_tag }}
-          CACHE_TAG: ${{ needs.setup.outputs.image_tag }}-buildcache
+          BASE_IMAGE_VERSION: ${{ steps.plan.outputs.image_tag }}
+          CACHE_TAG: ${{ steps.plan.outputs.image_tag }}-buildcache
           SKIP_CACHE: ${{ inputs.skip_cache }}
           GITHUB_SHA: ${{ github.sha }}
 
   sbom:
-    needs: [setup, build]
-    uses: ./.github/workflows/_sbom-wave.yml
+    needs: [build]
+    if: inputs.sbom
+    uses: ./.github/workflows/_sbom-scan.yml
     with:
-      images: ${{ needs.setup.outputs.containers }}
-      version: ${{ needs.setup.outputs.image_tag }}
+      containers: ${{ needs.build.outputs.containers }}
+      version: ${{ needs.build.outputs.image_tag }}

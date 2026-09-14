@@ -95,7 +95,7 @@ content never changes but whose result does (e.g. `apt-get upgrade`).
 
 Each release attaches `sboms.zip` to the GitHub Release, covering **every image it publishes**. Each
 image is scanned with `scripts/sbom_delta.py` against the base image it was built from, read from the
-final `FROM` of its Dockerfile, in a matrix job that runs once the build is pushed. The archive holds one
+final `FROM` of its Dockerfile, in a matrix job that runs once the images are pushed. The archive holds one
 `<name>-<version>/` folder per image with `base`, `full` and `delta` SPDX documents. A failed scan never
 blocks the release: the image is reported as a warning and listed in `MISSING.txt` inside the archive.
 

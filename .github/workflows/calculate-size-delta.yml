@@ -11,9 +11,8 @@ jobs:
   build:
     runs-on: ubuntu-24.04-arm
     env:
-      PYTHON_VERSION: "3.13"
-      TASKFILE_VERSION: "v3.44.0"
-      TASKFILE_PATH: "/home/runner/go/bin"
+      UV_VERSION: "0.10.3"
+      TASKFILE_VERSION: "3.45.4"
 
     services:
       registry:
@@ -44,20 +43,14 @@ jobs:
           fi
           echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Install uv and task
+        uses: astral-sh/setup-uv@v6
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: "pip"
-          cache-dependency-path: "pyproject.toml"
+          version: ${{ env.UV_VERSION }}
+      - run: uv tool install "go-task-bin==${{ env.TASKFILE_VERSION }}"
 
-      - name: Install and build library
-        run: |
-          which task || curl -sSfL https://taskfile.dev/install.sh | sh -s -- -b ${{ env.TASKFILE_PATH }} ${{ env.TASKFILE_VERSION }}
-          export PATH="${{ env.TASKFILE_PATH }}:$PATH"
-          pip install uv==0.10.3
-          task init:ci
-          task build
+      - name: Build the wheel
+        run: task build
 
       - name: Setup Docker buildx
         uses: docker/setup-buildx-action@v3
