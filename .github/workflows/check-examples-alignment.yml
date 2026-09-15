@@ -7,9 +7,10 @@ name: Check examples alignment
 # never fails for them: a library change may legitimately require a matching
 # examples change, and blocking both PRs on each other would deadlock. Instead
 # the report is posted as a sticky comment on the PR, with a label while new
-# errors exist. The comment and the label are only possible on PRs from
-# branches of this repository: on PRs from forks the token is read-only, so
-# that step is skipped and the job summary remains the place to look.
+# errors exist. On PRs from branches of this repository that happens in this
+# job. On PRs from forks the token is read-only, so this job only uploads the
+# report as an artifact and comment-examples-alignment.yml, running on
+# workflow_run with a write token and never touching the PR code, posts it.
 
 on:
   pull_request:
@@ -120,11 +121,36 @@ jobs:
           cat coverage.md >> "$GITHUB_STEP_SUMMARY"
           cat coverage.md >> report.md
 
+      - name: Save the report for the PR comment
+        # Consumed by comment-examples-alignment.yml for PRs from forks, where this
+        # job cannot write. The metadata lets that workflow identify the PR and
+        # verify it against the head SHA of this run before posting anything.
+        if: github.event_name == 'pull_request'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          NEW_ERRORS: ${{ steps.diff.outputs.new_errors }}
+        run: |
+          jq -n --arg pr "$PR_NUMBER" --arg sha "$HEAD_SHA" --arg repo "$HEAD_REPO" --arg new "${NEW_ERRORS:-0}" \
+            '{pr_number: ($pr | tonumber), head_sha: $sha, head_repo: $repo, new_errors: ($new | tonumber)}' > metadata.json
+
+      - name: Upload the report
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: examples-alignment-report
+          path: |
+            report.md
+            metadata.json
+          retention-days: 3
+
       - name: Post the report on the PR
         # Only for PRs from this repository: on a fork PR the token cannot write,
-        # so the step is skipped rather than failed. Any other hiccup (API error,
-        # missing label permission) must not fail the check either, hence
-        # continue-on-error: the job summary always carries the same report.
+        # so the step is skipped and comment-examples-alignment.yml takes over.
+        # Any other hiccup (API error, missing label permission) must not fail
+        # the check either, hence continue-on-error: the job summary always
+        # carries the same report.
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         continue-on-error: true
         env:
