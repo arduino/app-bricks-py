@@ -193,8 +193,11 @@ def cmd_diff(args) -> int:
     new = {key: count - base_counts.get(key, 0) for key, count in head_counts.items() if count > base_counts.get(key, 0)}
     fixed = {key: count - head_counts.get(key, 0) for key, count in base_counts.items() if count > head_counts.get(key, 0)}
 
+    # The verdict goes in the heading: the summary is also posted as a PR comment,
+    # and the outcome must be readable at a glance.
+    status = "❌" if new else "✅"
     lines = [
-        "## Examples alignment check",
+        f"## {status} Examples alignment check",
         "",
         f"Errors in the Python sources of {args.examples_label} analyzed against {args.library_label}: "
         f"base {sum(base_counts.values())} → head {sum(head_counts.values())} "
@@ -204,7 +207,7 @@ def cmd_diff(args) -> int:
         if entries:
             lines += ["", f"### {title}", ""] + error_table(entries, occurrences)
     if not new and not fixed:
-        lines += ["", "No new errors in this PR."]
+        lines += ["", "✅ No new errors in this PR."]
     if head_counts:
         # Pre-existing errors are part of the story too, but collapsed: the diff
         # above stays the signal of the PR.
@@ -214,7 +217,7 @@ def cmd_diff(args) -> int:
     if new:
         lines += [
             "",
-            "⚠️ This PR introduces errors in the published examples: either adapt the library change to keep the "
+            "❌ This PR introduces errors in the published examples: either adapt the library change to keep the "
             "examples' contract, or open the matching PR on app-bricks-examples and coordinate the merge.",
         ]
     if args.reports_url:
@@ -273,13 +276,14 @@ def cmd_coverage(args) -> int:
     uncovered = sorted(head_bricks - covered)
     introduced = sorted((head_bricks - base_bricks) - covered)
 
-    lines = ["### Bricks without examples", ""]
+    status = "❌" if uncovered else "✅"
+    lines = [f"### {status} Bricks without examples", ""]
     if uncovered:
-        lines.append(f"{len(uncovered)} bricks have no examples in app-bricks-examples:")
+        lines.append(f"❌ {len(uncovered)} bricks have no examples in app-bricks-examples:")
         lines += [f"- `{name}`" + (" — **introduced by this PR**" if name in introduced else "") for name in uncovered]
         lines += ["", "Informative only: a new brick may legitimately land before its examples do."]
     else:
-        lines.append(f"Every non-disabled brick has at least one example in {EXAMPLES_REPO_MD} repository.")
+        lines.append(f"✅ Every non-disabled brick has at least one example in {EXAMPLES_REPO_MD} repository.")
     report = "\n".join(lines)
 
     print(report)
