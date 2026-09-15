@@ -199,7 +199,7 @@ The library is described by the root files. `task init` installs it with its dev
 
 Each container that installs Python packages has its own files (see [containers/README.md](containers/README.md#anatomy-of-a-container-directory)) and its Dockerfile installs from the lock alone. `task deps:sync` creates a `.venv` in every container directory to point the IDE at. `pyaudio` needs the PortAudio headers on macOS and Linux (`brew install portaudio` or `apt install portaudio19-dev`).
 
-After editing any `pyproject.toml` run `task deps:lock`, with `-- --upgrade` to move to newer versions. Dependabot opens weekly upgrade pull requests, checked by the license scan and the container builds.
+After editing any `pyproject.toml` run `task deps:lock`, with `-- --upgrade` to move to newer versions; `task deps:check` verifies the locks are current and CI runs it on every pull request. Dependabot opens weekly upgrade pull requests, checked by the license scan and the container builds.
 
 ## Dependency licenses
 `task license:deps` checks the licenses of the Python packages shipped by the library and by every container, using Docker. Records live under `.licenses/`, the allowed licenses and reviewed packages in `.licensed.yml`. See [scripts/licensed/README.md](scripts/licensed/README.md) for how it works and what to do when it fails.

@@ -59,6 +59,11 @@ jobs:
             exit 1
           fi
 
+      - name: Check dependency locks
+        run: |
+          export PATH="${{ env.TASKFILE_PATH }}:$PATH"
+          task deps:check || { echo "A uv.lock is out of date, run 'task deps:lock' and commit the result."; exit 1; }
+
       - name: Check license headers and files
         run: |
           set -e
