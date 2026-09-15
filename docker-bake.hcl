@@ -1,4 +1,4 @@
-# Build definition of every container under containers/.
+# Build definition of every container under containers/<name>/.
 #
 # A container deriving from another container of this repository declares it
 # in its Dockerfile (FROM ${REGISTRY}app-bricks/<parent>:${BASE_IMAGE_VERSION})
@@ -137,7 +137,7 @@ group "default" {
 
 target "python-slim" {
   inherits   = ["_common"]
-  context    = "containers/base/python-slim"
+  context    = "containers/python-slim"
   tags       = image_tags("python-slim")
   cache-from = cache_from("python-slim")
   cache-to   = cache_to("python-slim")
@@ -145,7 +145,7 @@ target "python-slim" {
 
 target "llamacpp-runner" {
   inherits   = ["_downstream"]
-  context    = "containers/ai/llamacpp-runner"
+  context    = "containers/llamacpp-runner"
   tags       = image_tags("llamacpp-runner")
   cache-from = cache_from("llamacpp-runner")
   cache-to   = cache_to("llamacpp-runner")
@@ -154,7 +154,7 @@ target "llamacpp-runner" {
 
 target "models-downloader" {
   inherits   = ["_downstream"]
-  context    = "containers/bricks/models-downloader"
+  context    = "containers/models-downloader"
   tags       = image_tags("models-downloader")
   cache-from = cache_from("models-downloader")
   cache-to   = cache_to("models-downloader")
@@ -166,7 +166,7 @@ target "models-downloader" {
 
 target "python-base" {
   inherits   = ["_downstream"]
-  context    = "containers/base/python-base"
+  context    = "containers/python-base"
   tags       = image_tags("python-base")
   cache-from = cache_from("python-base")
   cache-to   = cache_to("python-base")
@@ -175,7 +175,7 @@ target "python-base" {
 
 target "python-apps-base" {
   inherits   = ["_downstream"]
-  context    = "containers/bricks/python-apps-base"
+  context    = "containers/python-apps-base"
   tags       = image_tags("python-apps-base")
   cache-from = cache_from("python-apps-base")
   cache-to   = cache_to("python-apps-base")
@@ -187,7 +187,7 @@ target "python-apps-base" {
 
 target "qairt-common-base" {
   inherits   = ["_common"]
-  context    = "containers/base/qairt-common-base"
+  context    = "containers/qairt-common-base"
   tags       = image_tags("qairt-common-base")
   cache-from = cache_from("qairt-common-base")
   cache-to   = cache_to("qairt-common-base")
@@ -195,7 +195,7 @@ target "qairt-common-base" {
 
 target "aihub-models-runner" {
   inherits   = ["_downstream"]
-  context    = "containers/ai/aihub-models-runner"
+  context    = "containers/aihub-models-runner"
   tags       = image_tags("aihub-models-runner")
   cache-from = cache_from("aihub-models-runner")
   cache-to   = cache_to("aihub-models-runner")
@@ -204,7 +204,7 @@ target "aihub-models-runner" {
 
 target "gesture-recognition-runner" {
   inherits   = ["_downstream"]
-  context    = "containers/ai/gesture-recognition-runner"
+  context    = "containers/gesture-recognition-runner"
   tags       = image_tags("gesture-recognition-runner")
   cache-from = cache_from("gesture-recognition-runner")
   cache-to   = cache_to("gesture-recognition-runner")
@@ -213,7 +213,7 @@ target "gesture-recognition-runner" {
 
 target "pose-estimation-runner" {
   inherits   = ["_downstream"]
-  context    = "containers/ai/pose-estimation-runner"
+  context    = "containers/pose-estimation-runner"
   tags       = image_tags("pose-estimation-runner")
   cache-from = cache_from("pose-estimation-runner")
   cache-to   = cache_to("pose-estimation-runner")
@@ -222,7 +222,7 @@ target "pose-estimation-runner" {
 
 target "llamacpp-npu-runner" {
   inherits   = ["_downstream"]
-  context    = "containers/ai/llamacpp-npu-runner"
+  context    = "containers/llamacpp-npu-runner"
   tags       = image_tags("llamacpp-npu-runner")
   cache-from = cache_from("llamacpp-npu-runner")
   cache-to   = cache_to("llamacpp-npu-runner")
@@ -231,7 +231,7 @@ target "llamacpp-npu-runner" {
 
 target "ei-models-runner" {
   inherits   = ["_common"]
-  context    = "containers/ai/ei-models-runner"
+  context    = "containers/ei-models-runner"
   tags       = image_tags("ei-models-runner")
   cache-from = cache_from("ei-models-runner")
   cache-to   = cache_to("ei-models-runner")
@@ -239,7 +239,7 @@ target "ei-models-runner" {
 
 target "ei-qnn-models-runner" {
   inherits   = ["_common"]
-  context    = "containers/ai/ei-qnn-models-runner"
+  context    = "containers/ei-qnn-models-runner"
   tags       = image_tags("ei-qnn-models-runner")
   cache-from = cache_from("ei-qnn-models-runner")
   cache-to   = cache_to("ei-qnn-models-runner")

@@ -23,33 +23,29 @@ def parent_from(name: str) -> str:
     return f"FROM ${{REGISTRY}}app-bricks/{name}:${{BASE_IMAGE_VERSION}}\n"
 
 
-def make_containers_dir(tmp_path: Path, spec: dict[str, tuple[str, str]]) -> Path:
-    """Create ``containers/<group>/<name>/Dockerfile`` files from a ``{name: (group, dockerfile)}`` spec."""
+def make_containers_dir(tmp_path: Path, spec: dict[str, str]) -> Path:
+    """Create ``containers/<name>/Dockerfile`` files from a ``{name: dockerfile}`` spec."""
     containers_dir = tmp_path / "containers"
-    for name, (group, dockerfile) in spec.items():
-        directory = containers_dir / group / name
+    for name, dockerfile in spec.items():
+        directory = containers_dir / name
         directory.mkdir(parents=True)
         (directory / "Dockerfile").write_text(dockerfile, encoding="utf-8")
     return containers_dir
 
 
-# The real chains, spread over the groups as in the repo.
+# The real chains of the repo.
 TREE = {
-    "python-slim": ("base", "FROM python:3.13-slim-trixie@sha256:abc AS production\nRUN true\n"),
+    "python-slim": "FROM python:3.13-slim-trixie@sha256:abc AS production\nRUN true\n",
     "python-base": (
-        "base",
         "ARG REGISTRY\nARG BASE_IMAGE_VERSION=latest\nFROM python:3.13-slim-trixie AS builder\n"
         + parent_from("python-slim")
-        + "COPY --from=builder /x /x\n",
+        + "COPY --from=builder /x /x\n"
     ),
-    "python-apps-base": ("bricks", "ARG REGISTRY\nARG BASE_IMAGE_VERSION=latest\n" + parent_from("python-base")),
-    "qairt-common-base": (
-        "base",
-        "FROM python:3.13-slim-trixie@sha256:abc AS base\nFROM base AS native\nFROM base AS runtime\nCOPY --from=native /a /a\n",
-    ),
-    "aihub-models-runner": ("ai", "FROM ghcr.io/astral-sh/uv:0.10.3 AS uv\n" + parent_from("qairt-common-base")),
-    "gesture-recognition-runner": ("ai", parent_from("aihub-models-runner")),
-    "ei-models-runner": ("ai", "FROM public.ecr.aws/g7a8t7v6/inference-container:v1.92.3\n"),
+    "python-apps-base": "ARG REGISTRY\nARG BASE_IMAGE_VERSION=latest\n" + parent_from("python-base"),
+    "qairt-common-base": "FROM python:3.13-slim-trixie@sha256:abc AS base\nFROM base AS native\nFROM base AS runtime\nCOPY --from=native /a /a\n",
+    "aihub-models-runner": "FROM ghcr.io/astral-sh/uv:0.10.3 AS uv\n" + parent_from("qairt-common-base"),
+    "gesture-recognition-runner": parent_from("aihub-models-runner"),
+    "ei-models-runner": "FROM public.ecr.aws/g7a8t7v6/inference-container:v1.92.3\n",
 }
 
 
@@ -78,7 +74,7 @@ def test_parent_is_recognised_only_from_the_repository_reference():
     assert parent_container("python:3.13-slim-trixie") is None
 
 
-def test_containers_are_identified_by_leaf_name_across_groups(tmp_path):
+def test_containers_are_read_from_their_dockerfiles(tmp_path):
     containers = Containers(make_containers_dir(tmp_path, TREE))
     assert containers.names == sorted(TREE)
     assert containers.parent["python-apps-base"] == "python-base"
@@ -88,23 +84,13 @@ def test_containers_are_identified_by_leaf_name_across_groups(tmp_path):
     assert containers.parent["ei-models-runner"] is None
 
 
-def test_duplicate_leaf_name_is_rejected(tmp_path):
-    spec = {"twin": ("ai", "FROM a:1\n")}
-    containers_dir = make_containers_dir(tmp_path, spec)
-    (containers_dir / "bricks" / "twin").mkdir(parents=True)
-    (containers_dir / "bricks" / "twin" / "Dockerfile").write_text("FROM b:1\n")
-    with pytest.raises(ContainerDepsError, match="Duplicate container name"):
-        Containers(containers_dir)
-
-
 def test_unknown_parent_is_rejected(tmp_path):
     with pytest.raises(ContainerDepsError, match="unknown container 'ghost'"):
-        Containers(make_containers_dir(tmp_path, {"orphan": ("ai", parent_from("ghost"))}))
+        Containers(make_containers_dir(tmp_path, {"orphan": parent_from("ghost")}))
 
 
-def test_flat_layout_yields_no_containers(tmp_path):
-    (tmp_path / "containers" / "python-slim").mkdir(parents=True)
-    (tmp_path / "containers" / "python-slim" / "Dockerfile").write_text("FROM a:1\n")
+def test_empty_containers_dir_yields_no_containers(tmp_path):
+    (tmp_path / "containers").mkdir()
     with pytest.raises(ContainerDepsError, match="No containers found"):
         Containers(tmp_path / "containers")
 

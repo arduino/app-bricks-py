@@ -6,7 +6,7 @@
 
 Covers the Hexagon session sizing of the NPU runner — the GGUF header reading it is
 built on, the sizing itself, and a regression table of what the measured models were
-measured to need (containers/ai/llamacpp-npu-runner/SESSION_ALLOCATION.md) — and, for
+measured to need (containers/llamacpp-npu-runner/SESSION_ALLOCATION.md) — and, for
 both runners, whose scripts deliberately duplicate the code, the served model names,
 which are derived from the ".arduino_metadata.yaml" download records rather than from
 a catalog baked into the images.
@@ -22,8 +22,8 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-NPU_SCRIPT = REPO_ROOT / "containers" / "ai" / "llamacpp-npu-runner" / "scripts" / "configure-llamacpp.py"
-CPU_SCRIPT = REPO_ROOT / "containers" / "ai" / "llamacpp-runner" / "scripts" / "configure-llamacpp.py"
+NPU_SCRIPT = REPO_ROOT / "containers" / "llamacpp-npu-runner" / "scripts" / "configure-llamacpp.py"
+CPU_SCRIPT = REPO_ROOT / "containers" / "llamacpp-runner" / "scripts" / "configure-llamacpp.py"
 
 
 def _load_script(script: Path, name: str):

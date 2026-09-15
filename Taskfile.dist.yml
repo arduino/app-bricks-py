@@ -21,19 +21,19 @@ tasks:
     desc: Refresh uv.lock for the library and every container, pass -- --upgrade to move to newer versions
     cmds:
       - uv lock {{.CLI_ARGS}}
-      - for p in containers/*/*/pyproject.toml; do uv lock --project "$(dirname "$p")" {{.CLI_ARGS}}; done
+      - for p in containers/*/pyproject.toml; do uv lock --project "$(dirname "$p")" {{.CLI_ARGS}}; done
 
   deps:sync:
     desc: Install the locked dependencies of the library and every container into their .venv for local development
     cmds:
       - uv sync --frozen --extra dev {{.CLI_ARGS}}
-      - for p in containers/*/*/pyproject.toml; do uv sync --frozen --project "$(dirname "$p")" {{.CLI_ARGS}} || exit 1; done
+      - for p in containers/*/pyproject.toml; do uv sync --frozen --project "$(dirname "$p")" {{.CLI_ARGS}} || exit 1; done
 
   deps:check:
     desc: Fail if any uv.lock is out of date with its pyproject.toml, run task deps:lock to refresh
     cmds:
       - uv lock --check
-      - for p in containers/*/*/pyproject.toml; do uv lock --check --project "$(dirname "$p")" || exit 1; done
+      - for p in containers/*/pyproject.toml; do uv lock --check --project "$(dirname "$p")" || exit 1; done
 
   doc:
     desc: Generate the API documentation under docs/
@@ -49,7 +49,7 @@ tasks:
   test:containers:
     desc: Run the tests of every container with a Python test suite, each in its own .venv with its test dependency group
     cmds:
-      - for d in containers/*/*; do ls "$d"/tests/*.py >/dev/null 2>&1 || continue; uv run --frozen --group test --project "$d" python -m pytest -vs "$d/tests" || exit 1; done
+      - for d in containers/*; do ls "$d"/tests/*.py >/dev/null 2>&1 || continue; uv run --frozen --group test --project "$d" python -m pytest -vs "$d/tests" || exit 1; done
 
   llm_test:
     desc: Run all LLM tests
