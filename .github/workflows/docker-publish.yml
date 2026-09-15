@@ -122,47 +122,51 @@ jobs:
           SKIP_CACHE: ${{ inputs.skip_cache || false }}
           GITHUB_SHA: ${{ github.sha }}
 
-  sbom:
-    needs: [build]
-    uses: ./.github/workflows/_sbom-scan.yml
-    with:
-      containers: ${{ needs.build.outputs.containers }}
-      version: ${{ needs.build.outputs.version }}
-
   publish:
     runs-on: ubuntu-24.04-arm
-    # Failed scans must not skip the release, a failed build must.
-    if: ${{ !failure() && !cancelled() }}
-    needs: [build, sbom]
+    needs: [build]
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
       - name: Download the wheel
         uses: actions/download-artifact@v4
         with:
           name: whl
           path: dist/
 
-      - name: Download the SBOMs
-        uses: actions/download-artifact@v4
+      - name: Log into registry ghcr.io
+        uses: docker/login-action@v4
         with:
-          pattern: sbom-delta-*
-          path: sbom-delta/
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Only the external base images are scanned, the built images carry their SBOM
+      - name: Install syft
+        run: curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+
+      # Reads the SBOM attestation of every published image and computes its delta
+      # against its base image. A failure never blocks the release: the image is
+      # listed in MISSING.txt inside sboms.zip and in the job summary.
+      - name: Generate the delta SBOMs
+        continue-on-error: true
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+          CONTAINERS: ${{ needs.build.outputs.containers }}
+        run: |
+          python3 -m scripts.sbom_delta \
+            --registry "ghcr.io/${{ github.repository_owner }}/" \
+            --version "$VERSION" \
+            --output-dir sbom-delta \
+            $(jq -r 'join(" ")' <<< "$CONTAINERS")
 
       - name: Assemble sboms.zip
         env:
           VERSION: ${{ needs.build.outputs.version }}
           CONTAINERS: ${{ needs.build.outputs.containers }}
         run: |
-          shopt -s nullglob
           mkdir -p sbom-delta
-
-          # Artifacts are named sbom-delta-<name>-<version>: strip the prefix so the
-          # archive holds one <name>-<version>/ folder per image.
-          for dir in sbom-delta/sbom-delta-*/; do
-            mv "$dir" "sbom-delta/$(basename "$dir" | sed 's/^sbom-delta-//')"
-          done
-
-          # Every released image must be covered. A missing SBOM is a warning,
-          # not a blocker: it is listed in the archive and in the job summary.
           MISSING=()
           while IFS= read -r NAME; do
             [[ -f "sbom-delta/${NAME}-${VERSION}/delta.spdx.json" ]] || MISSING+=("$NAME:$VERSION")
@@ -171,14 +175,13 @@ jobs:
           if (( ${#MISSING[@]} )); then
             printf '%s\n' "${MISSING[@]}" > sbom-delta/MISSING.txt
             for IMAGE in "${MISSING[@]}"; do
-              echo "::warning title=SBOM missing::$IMAGE has no SBOM in sboms.zip, see the sbom job"
+              echo "::warning title=SBOM missing::$IMAGE has no delta SBOM in sboms.zip, see the step above"
             done
             { echo "## SBOMs missing from sboms.zip"; printf -- '- %s\n' "${MISSING[@]}"; } >> "$GITHUB_STEP_SUMMARY"
           fi
 
           zip -r dist/sboms.zip sbom-delta/
 
-      # Creates the release/X.Y.Z tag on the released commit
       - name: Create the GitHub Release
         uses: softprops/action-gh-release@v2
         with:

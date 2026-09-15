@@ -124,11 +124,24 @@ filled by `task build` with the wheel, `pyproject.toml` and `uv.lock`) and `mode
 
 ## SBOMs
 
-`sboms.zip`, attached to every GitHub Release, is generated from the published images, so nothing SBOM-related lives in the tree. Every image is built by the release, so the archive covers all of them at the release version. `scripts/sbom_delta.py` scans one `name:version` with Syft against the base image of its Dockerfile, a parent container at the same version or the external image, and writes `<name>-<version>/{base,full,delta}.spdx.json`.
+Every image carries its SBOM: `docker-bake.hcl` asks BuildKit for a `type=sbom` attestation, generated
+while the image is built and pushed with it as part of the image index. Anyone can read it from the
+registry, no download needed:
 
-Scanning runs in the `_sbom-scan.yml` reusable workflow once the build is pushed, one matrix leg per image. Each leg uploads a `sbom-delta-<name>-<version>` artifact; a failed scan is a warning, never a failure. `publish` collects the artifacts, checks them against the released set, writes any gap to `MISSING.txt` inside the archive and to the job summary, and attaches the zip.
+```sh
+docker buildx imagetools inspect ghcr.io/arduino/app-bricks/<name>:<version> --format '{{ json .SBOM }}'
+```
 
-The dev workflow runs the same scan over the images it published when its `sbom` input is set, as `sbom-delta-<name>-<tag>` run artifacts.
+`sboms.zip`, attached to every GitHub Release, covers every image the release publishes. The `publish`
+job reads the attestation of each image and computes its delta against the base image of its Dockerfile:
+a parent container of this repository, whose attestation is read the same way, or one of the three
+external base images, the only ones still scanned with Syft. `scripts/sbom_delta.py` writes
+`<name>-<version>/{base,full,delta}.spdx.json` per image; an image whose delta could not be produced is
+listed in `MISSING.txt` inside the archive and in the job summary, never blocking the release. Nothing
+SBOM-related lives in the tree.
+
+The dev workflow pushes the same attestations and, when its `sbom` input is set, computes the same deltas
+into a `sbom-delta-<tag>` run artifact.
 
 ## Dev Build Workflow
 
@@ -138,7 +151,7 @@ The dev workflow runs the same scan over the images it published when its `sbom`
 - `containers` — comma-separated list of containers to build, or `all` (default)
 - `tag` — optional custom image tag
 - `skip_cache` — rebuild without cache
-- `sbom` — also generate the SBOMs of the published images (off by default)
+- `sbom` — also compute the delta SBOMs of the published images (off by default)
 
 Images are tagged `dev-<branch-name>` (branch name lowercased and sanitized, e.g. `feat/My-Feature` → `dev-feat-my-feature`), plus a run-number-suffixed alias (e.g. `dev-feat-my-feature-42`), unless a custom `tag` is provided.
 
@@ -153,11 +166,12 @@ Images are tagged `dev-<branch-name>` (branch name lowercased and sanitized, e.g
 | Trigger | Job | What it does |
 |---|---|---|
 | Branch deletion | `cleanup` | Deletes every GHCR version tagged `dev-<deleted-branch>`, including the run-number aliases and the build cache |
-| Weekly (Sunday 03:00 UTC) or manual | `prune-untagged` | Deletes untagged container versions, the blobs orphaned by overwritten buildx cache manifests. Any tagged version is preserved, and each candidate is re-checked right before deletion. The manual run accepts a `dry_run` flag to only list what would be deleted. |
+| Weekly (Sunday 03:00 UTC) or manual | `prune-untagged` | Deletes the untagged container versions no tagged manifest references, the leftovers of overwritten tags. A tagged image is an index holding the image and its SBOM attestation, a tagged build cache a manifest list: their children are untagged versions too and are kept. Each candidate is re-checked right before deletion. The manual run accepts a `dry_run` flag to only list what would be deleted. |
 
 ## Build Characteristics
 
 - **Single platform**: All images target `linux/arm64` only
 - **Registry**: `ghcr.io/arduino/app-bricks/`
+- **Attestations**: every image is pushed as an index holding the image and its SBOM attestation; provenance is disabled
 - **Caching**: Buildx registry cache per image, `<image>:buildcache` for releases and `<image>:<tag>-buildcache` for dev builds (`mode=max`), invalidated by content; `skip_cache` forces a cold rebuild
 - **Release assets**: The `.whl` and `sboms.zip` are uploaded to the GitHub Release via `softprops/action-gh-release`
