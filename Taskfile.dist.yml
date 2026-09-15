@@ -5,7 +5,6 @@ version: "3"
 # covers both. check:* tasks only verify and exit non-zero, fix:* tasks apply the same rules.
 
 vars:
-  # Files that carry an SPDX header, everything tracked but docs, data and configuration
   LICENSE_HEADER_EXCLUDE: '(^|/)(docs|examples-internal|tools)/|\.(md|txt|json|yml|yaml|toml|gitignore|dockerignore|gitmodules|in|ini|eim|lock)$'
   LICENSE_HEADER_ARGS: --skip-unrecognized --copyright-prefix spdx-string-c --copyright 'Arduino s.r.l. and/or its affiliated companies' --exclude-year --license MPL-2.0
 
@@ -120,15 +119,25 @@ tasks:
     cmds:
       - python3 -m scripts.sbom_delta {{.CLI_ARGS}}
 
-  # check: verify and fail, never modify, the fast ones are what CI runs on a pull request
+  # check: verify and fail, never modify, check:ci is the Docker-free subset CI runs on a pull request
 
   check:
-    desc: Run every check that needs no Docker, what CI runs on a pull request
+    desc: Run every check, the Docker ones included, before opening a pull request
     cmds:
       - task: check:format
       - task: check:lint
-      - task: check:license-headers
       - task: check:deps
+      - task: check:license-headers
+      - task: check:licenses
+      - task: check:containers:bake
+
+  check:ci:
+    desc: Run the checks CI runs on every pull request, the ones that need no Docker
+    cmds:
+      - task: check:format
+      - task: check:lint
+      - task: check:deps
+      - task: check:license-headers
 
   check:format:
     desc: Fail if any file is not formatted, run task fix:format
