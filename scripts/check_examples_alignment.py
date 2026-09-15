@@ -94,9 +94,17 @@ def cmd_run(args) -> int:
     if config_path.exists():
         print(f"{config_path} already exists, refusing to overwrite it", file=sys.stderr)
         return 2
+    # extraPaths must sit at the top level, not inside the execution environment
+    # of the examples: the library sources live outside that root, so pyright
+    # analyzes them with the default environment. Scoped to the environment, the
+    # library's own absolute imports (e.g. app_utils/leds.py importing Logger from
+    # arduino.app_utils) resolved against site-packages only, where the arduino
+    # namespace holds just the router bridge, and every symbol re-exported through
+    # such an import came back as "unknown import symbol" in the examples.
     config = {
         "include": include,
-        "executionEnvironments": [{"root": ".", "extraPaths": [str(library_src)]}],
+        "extraPaths": [str(library_src)],
+        "executionEnvironments": [{"root": "."}],
     }
 
     # Default to the project venv interpreter for quick local runs.
