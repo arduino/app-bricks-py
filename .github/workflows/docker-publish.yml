@@ -1,15 +1,14 @@
 name: RELEASE - Build & Publish Release
 
-run-name: "Release ${{ inputs.tag || github.ref_name }}"
+run-name: "Release ${{ inputs.version }}"
 
+# A release is started by hand from the branch to release. The release/X.Y.Z
+# tag is created by the last job, so it exists only once everything succeeded.
 on:
-  push:
-    tags:
-      - "release/*"
   workflow_dispatch:
     inputs:
-      tag:
-        description: "Tag to release (e.g. release/1.2.3)"
+      version:
+        description: "Version to release, X.Y.Z with an optional rcN, aN or bN prerelease suffix"
         type: string
         required: true
       skip_cache:
@@ -41,17 +40,19 @@ jobs:
       - name: Resolve the release
         id: release
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            TAG_REF="${{ inputs.tag }}"
-          else
-            TAG_REF="${GITHUB_REF_NAME}"
-          fi
-          VERSION="${TAG_REF#release/}"
+          VERSION="${{ inputs.version }}"
+          TAG_REF="release/$VERSION"
 
           # The version is stamped into the wheel: it must be a plain X.Y.Z, with
           # an optional rcN, aN or bN prerelease suffix which also disables :latest
-          if [[ "$TAG_REF" != release/* || ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+((rc|a|b)[0-9]+)?$ ]]; then
-            echo "::error::Tag '$TAG_REF' is not release/X.Y.Z[rcN|aN|bN]"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+((rc|a|b)[0-9]+)?$ ]]; then
+            echo "::error::Version '$VERSION' is not X.Y.Z[rcN|aN|bN]"
+            exit 1
+          fi
+
+          # A released version is never overwritten
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG_REF" > /dev/null; then
+            echo "::error::$TAG_REF already exists, $VERSION has been released"
             exit 1
           fi
           echo "tag_ref=$TAG_REF" >> $GITHUB_OUTPUT
@@ -177,6 +178,7 @@ jobs:
 
           zip -r dist/sboms.zip sbom-delta/
 
+      # Creates the release/X.Y.Z tag on the released commit
       - name: Create the GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -184,6 +186,7 @@ jobs:
             dist/arduino*.whl
             dist/sboms.zip
           tag_name: ${{ needs.build.outputs.tag_ref }}
+          target_commitish: ${{ github.sha }}
           name: Release ${{ needs.build.outputs.version }}
           prerelease: ${{ needs.build.outputs.prerelease }}
           generate_release_notes: true

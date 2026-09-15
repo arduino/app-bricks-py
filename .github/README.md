@@ -26,16 +26,19 @@ The full list of images, with what each one builds from and what it is for, is t
 
 ## Release Workflow
 
-A single workflow (`docker-publish.yml`) is triggered by any `release/X.Y.Z` tag, or manually via
-`workflow_dispatch`. **Every release publishes every container at `X.Y.Z`**, together with the Python
-`.whl` and `sboms.zip` on the GitHub Release. There is one release cycle: the library and the containers
-it runs always ship together. The version must be `X.Y.Z` with an optional `rcN`, `aN` or `bN` suffix,
-which marks a prerelease; anything else fails the run before building.
+A release is started by hand: run `docker-publish.yml` from the branch to release, giving the version.
+**Every release publishes every container at `X.Y.Z`**, together with the Python `.whl` and `sboms.zip`
+on the GitHub Release. There is one release cycle: the library and the containers it runs always ship
+together. The version must be `X.Y.Z` with an optional `rcN`, `aN` or `bN` suffix, which marks a
+prerelease; anything else, or a version whose `release/X.Y.Z` tag already exists, fails the run before
+building.
 
-Three jobs: `build` validates the tag, builds the wheel with `task build` on the runner (the version
+Three jobs: `build` validates the version, builds the wheel with `task build` on the runner (the version
 injected into `src/arduino/version.py`, the project plus its `build` dependency group installed by uv),
 then bakes and pushes every image; `sbom` scans the published images; `publish` assembles `sboms.zip`
-and creates the GitHub Release with the wheel attached.
+and creates the GitHub Release with the wheel attached, which creates the `release/X.Y.Z` tag on the
+released commit. The tag therefore exists only for versions whose run succeeded; a failed run leaves
+images at that version in the registry, overwritten by the next attempt.
 
 Containers flagged `base_image` are not release targets by themselves: they are rebuilt, and tagged with
 the release version, as the base of the images that derive from them.
@@ -97,7 +100,7 @@ target "my-container" {
 3. If the image installs Python packages, declare them in a `pyproject.toml` locked by `task deps:lock`
    and register the container in the dependency license scan, see
    [scripts/licensed/README.md](../scripts/licensed/README.md).
-4. Push a `release/X.Y.Z` tag — the workflow builds and publishes every target of the `default` group.
+4. Run the release workflow — it builds and publishes every target of the `default` group.
 
 Check the result with `docker buildx bake --print my-container` and `task containers:tree`.
 
