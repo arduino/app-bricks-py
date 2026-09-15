@@ -60,11 +60,19 @@ jobs:
           echo "prerelease=$([[ "$VERSION" =~ [a-z] ]] && echo true || echo false)" >> $GITHUB_OUTPUT
 
           # Every container is released at this version. The Dockerfiles and
-          # docker-bake.hcl must describe the same set of containers.
+          # docker-bake.hcl must describe the same set of containers...
           CONTAINERS=$(python3 -m scripts.container_deps list | jq -c .)
-          BAKE_TARGETS=$(docker buildx bake --print 2>/dev/null | jq -c '.target | keys')
+          BAKE=$(docker buildx bake --print 2>/dev/null)
+          BAKE_TARGETS=$(jq -c '.target | keys' <<< "$BAKE")
           if [[ "$CONTAINERS" != "$BAKE_TARGETS" ]]; then
             echo "::error::docker-bake.hcl targets $BAKE_TARGETS differ from the containers $CONTAINERS"
+            exit 1
+          fi
+          # ...and link the same parents the Dockerfiles build FROM
+          BAKE_PARENTS=$(jq -S -c '[.target | to_entries[] | {(.key): ((.value.contexts // {}) | to_entries[] | select(.value | startswith("target:")) | .value | ltrimstr("target:"))}] | add // {}' <<< "$BAKE")
+          DOCKERFILE_PARENTS=$(python3 -m scripts.container_deps | jq -S -c 'with_entries(select(.value.parent)) | map_values(.parent)')
+          if [[ "$BAKE_PARENTS" != "$DOCKERFILE_PARENTS" ]]; then
+            echo "::error::docker-bake.hcl parent links $BAKE_PARENTS differ from the Dockerfiles $DOCKERFILE_PARENTS"
             exit 1
           fi
           echo "Containers: $(jq -r 'join(" ")' <<< "$CONTAINERS")"
