@@ -62,9 +62,9 @@ jobs:
           # its bases, so the published set stays consistent; bake then orders
           # the builds through the parent links declared in docker-bake.hcl.
           if [[ "${{ inputs.containers }}" == "all" ]]; then
-            CONTAINERS=$(python3 -m scripts.container_deps list)
+            CONTAINERS=$(python3 -m scripts.container list)
           else
-            CONTAINERS=$(python3 -m scripts.container_deps closure $(tr ',' ' ' <<< "${{ inputs.containers }}"))
+            CONTAINERS=$(python3 -m scripts.container closure $(tr ',' ' ' <<< "${{ inputs.containers }}"))
           fi
           echo "Containers: $(jq -r 'join(" ")' <<< "$CONTAINERS")"
           echo "containers=$CONTAINERS" >> $GITHUB_OUTPUT

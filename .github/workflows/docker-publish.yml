@@ -60,8 +60,8 @@ jobs:
           echo "prerelease=$([[ "$VERSION" =~ [a-z] ]] && echo true || echo false)" >> $GITHUB_OUTPUT
 
           # Every container is released at this version, docker-bake.hcl must agree with the Dockerfiles
-          docker buildx bake --print 2>/dev/null | python3 -m scripts.container_deps check-bake
-          CONTAINERS=$(python3 -m scripts.container_deps list)
+          docker buildx bake --print 2>/dev/null | python3 -m scripts.container check-bake
+          CONTAINERS=$(python3 -m scripts.container list)
           echo "Containers: $(jq -r 'join(" ")' <<< "$CONTAINERS")"
           echo "containers=$CONTAINERS" >> $GITHUB_OUTPUT
 

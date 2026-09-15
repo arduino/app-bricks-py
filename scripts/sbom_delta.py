@@ -32,7 +32,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # Lets the script run both as `python3 -m scripts.sbom_delta` and directly
 sys.path.insert(0, str(REPO_ROOT))
-from scripts.container_deps import ContainerDepsError, Containers  # noqa: E402
+from scripts.container import ContainerError, Containers  # noqa: E402
 
 
 class SbomDeltaError(RuntimeError):
@@ -537,7 +537,7 @@ def run_generate(args: argparse.Namespace) -> int:
     """Run the end-to-end delta generation workflow."""
     try:
         containers = Containers(REPO_ROOT / "containers")
-    except ContainerDepsError as exc:
+    except ContainerError as exc:
         raise SbomDeltaError(str(exc)) from exc
     if args.containers:
         specs = [parse_container_spec(spec, args.version) for spec in args.containers]

@@ -181,7 +181,7 @@ tasks:
   check:containers:bake:
     desc: Fail if docker-bake.hcl and the Dockerfiles disagree on the containers or their parents
     cmds:
-      - docker buildx bake --print 2>/dev/null | python3 -m scripts.container_deps check-bake
+      - docker buildx bake --print 2>/dev/null | python3 -m scripts.container check-bake
 
   # fix: apply the rules the check tasks verify, formatting, lint, headers and license records
 
@@ -264,7 +264,7 @@ tasks:
   new:container:
     desc: "Scaffold a container and register it everywhere: task new:container -- <name> --group <group> --from <container|image> [--no-python] [--desc text]"
     cmds:
-      - python3 -m scripts.container {{.CLI_ARGS}}
+      - python3 -m scripts.container new {{.CLI_ARGS}}
       - task: check:containers:bake
 
   # show: information about the components, nothing is modified
@@ -282,9 +282,9 @@ tasks:
   show:containers:
     desc: Print the container hierarchy derived from the Dockerfiles
     cmds:
-      - python3 -m scripts.container_deps tree
+      - python3 -m scripts.container tree
 
   show:container:
     desc: "Show the base image, parent, children and files of one container: task show:container -- <name>"
     cmds:
-      - python3 -m scripts.container_deps show {{.CLI_ARGS}}
+      - python3 -m scripts.container show {{.CLI_ARGS}}
