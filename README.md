@@ -197,7 +197,7 @@ Every Python package is declared in a `pyproject.toml` and pinned with hashes in
 
 The library is described by the root files. `task init` installs it with its development tools into `.venv`, where every task runs through `uv run`. The `python-apps-base` image installs it from the same lock.
 
-Each container that installs Python packages has its own files (see [containers/README.md](containers/README.md#anatomy-of-a-container-directory)) and its Dockerfile installs from the lock alone. `task deps:sync`, run by `task init`, also creates a `.venv` in every container directory to point the IDE at. `pyaudio` needs the PortAudio headers on macOS and Linux (`brew install portaudio` or `apt install portaudio19-dev`).
+Each container that installs Python packages has its own files (see [containers/README.md](containers/README.md#anatomy-of-a-container-directory)) and its Dockerfile installs from the lock alone. `task deps:sync`, run by `task init`, also creates a `.venv` in every container directory to point the IDE at. A container with Python tests declares pytest in a `test` dependency group, kept out of the image, and `task test` runs its suite in that venv. `pyaudio` needs the PortAudio headers on macOS and Linux (`brew install portaudio` or `apt install portaudio19-dev`).
 
 After editing any `pyproject.toml` run `task deps:lock`, with `-- --upgrade` to move to newer versions; `task deps:check` verifies the locks are current and CI runs it on every pull request. Dependabot opens weekly upgrade pull requests, checked by the license scan and the container builds.
 

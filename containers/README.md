@@ -60,6 +60,8 @@ inside this repo.
 | `ci.json` | yes | CI metadata: watched paths, build args, dependencies, release flags |
 | `pyproject.toml` + `uv.lock` | if Python packages are installed | The Python packages the image installs, declared in `pyproject.toml` and pinned with hashes in `uv.lock` by `task deps:lock`. The Dockerfile installs from the lock, `task deps:sync` installs the same packages into a local `.venv` for IDE support. Board-only packages carry an environment marker. Never install packages inline, the [dependency license scan](../scripts/licensed/README.md) only sees the lock |
 
+| `tests/` | no | Python tests run by `task test` in the container's `.venv`, with the packages of its `test` dependency group; shell tests exercise the built image |
+
 SBOMs are not kept in the tree: they are generated from the published images at release time (see
 [SBOMs](#sboms)) and by the dev workflow as run artifacts.
 

@@ -13,6 +13,10 @@ dependencies = [
     "pyyaml==6.0.3",
 ]
 
+# Test-only packages, not exported into the image, task test runs the suite with them
+[dependency-groups]
+test = ["pytest"]
+
 [tool.uv]
 # The images run on aarch64 Linux, the lock must resolve for that target but installs on developer machines too
 required-environments = ["sys_platform == 'linux' and platform_machine == 'aarch64'"]
