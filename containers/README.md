@@ -79,7 +79,7 @@ See the [docker-bake.hcl reference](../.github/README.md#docker-bakehcl-referenc
 
 ## Release process
 
-Running `docker-publish.yml` with version `X.Y.Z` publishes **every container** at `X.Y.Z`, attaches the
+Running `release.yml` with version `X.Y.Z` publishes **every container** at `X.Y.Z`, attaches the
 Python `.whl` and the SBOMs of every image to the GitHub Release and creates the `release/X.Y.Z` tag. The library and the
 containers it runs always ship together, so the compose files bundled in the wheel reference the images
 published by the same release (see [Compose file versioning](../.github/README.md#compose-file-versioning)).
@@ -108,7 +108,7 @@ blocks the release: the image is reported as a warning and listed in `MISSING.tx
 
 ## Development builds
 
-`docker-build.yml` is manual (`workflow_dispatch`): pick a branch, and either `all` or a comma-separated
+`dev-release.yml` is manual (`workflow_dispatch`): pick a branch, and either `all` or a comma-separated
 list of container names. The selection is widened by `scripts/container.py` — selecting a leaf
 pulls in its bases, selecting a base pulls in everything derived from it — and bake builds the result in
 dependency order. Images are published as

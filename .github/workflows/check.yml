@@ -1,0 +1,63 @@
+name: Check
+
+# The pull request gates that need no license scan: task check:ci in the same container the tests
+# run in, and the bake definition against the Dockerfiles on a runner with Docker.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  UV_VERSION: "0.10.3"
+  TASKFILE_VERSION: "3.45.4"
+
+jobs:
+  code:
+    runs-on: ubuntu-24.04-arm
+    container:
+      image: python:3.13-slim
+      options: --user root
+    env:
+      TASKFILE_PATH: '/home/runner/go/bin'
+    steps:
+      - name: Install git
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends --no-install-suggests git ca-certificates curl
+          git config --global --add safe.directory '*'
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv, task and the library
+        run: |
+          set -e
+          which task || curl -sSfL https://taskfile.dev/install.sh | sh -s -- -b ${{ env.TASKFILE_PATH }} v${{ env.TASKFILE_VERSION }}
+          export PATH="${{ env.TASKFILE_PATH }}:$PATH"
+          pip install uv==${{ env.UV_VERSION }}
+          task init:ci
+
+      - name: Check formatting, lint, license headers and locks
+        run: |
+          export PATH="${{ env.TASKFILE_PATH }}:$PATH"
+          task check:ci
+
+  containers:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv and task
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv tool install "go-task-bin==${{ env.TASKFILE_VERSION }}"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Check docker-bake.hcl against the Dockerfiles
+        run: task check:containers:bake

@@ -1,0 +1,61 @@
+name: Test
+
+# The unit tests of the two components: the library in the Python container of the images, the
+# containers each in its own venv from its lock.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  UV_VERSION: "0.10.3"
+  TASKFILE_VERSION: "3.45.4"
+
+jobs:
+  bricks:
+    runs-on: ubuntu-24.04-arm
+    container:
+      image: python:3.13-slim
+      options: --user root
+    env:
+      TASKFILE_PATH: '/home/runner/go/bin'
+    steps:
+      - name: Install git
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends --no-install-suggests git ca-certificates curl
+          git config --global --add safe.directory '*'
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv, task and the library
+        run: |
+          set -e
+          which task || curl -sSfL https://taskfile.dev/install.sh | sh -s -- -b ${{ env.TASKFILE_PATH }} v${{ env.TASKFILE_VERSION }}
+          export PATH="${{ env.TASKFILE_PATH }}:$PATH"
+          pip install uv==${{ env.UV_VERSION }}
+          task init:ci
+
+      - name: Run the library tests
+        run: |
+          useradd -m testuser
+          chown -R testuser:testuser .
+          runuser -u testuser -- env PATH="${{ env.TASKFILE_PATH }}:$PATH" task test:bricks
+
+  containers:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv and task
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv tool install "go-task-bin==${{ env.TASKFILE_VERSION }}"
+
+      - name: Run the container tests
+        run: task test:containers

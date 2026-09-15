@@ -107,7 +107,7 @@ To improve the development experience in VS Code, we recommend adding a `.vscode
 
 After adding those files, VS Code will suggest installing the Python and Ruff extensions, which are properly configured for this project.
 
-Alternatively, `task check` verifies formatting, lint, license headers and locks the way CI does, and `task fix` applies formatting, the fixable lint rules and the license headers. Each rule has its own pair, for example:
+Alternatively, `task check` runs every check before a pull request, `task check:ci` the Docker-free subset CI runs, and `task fix` applies formatting, the fixable lint rules and the license headers. Each rule has its own pair, for example:
 
 ```sh
 task check:lint
@@ -133,7 +133,7 @@ For development purposes, it is possible to point to development containers (ins
 export DOCKER_REGISTRY_BASE=ghcr.io/<githubuser>/
 export DOCKER_PYTHON_BASE_IMAGE=app-bricks/python-apps-base:dev-pose-classification
 ```
-Development containers are published by the dev CI (`docker-build.yml`) tagged as `dev-<branch-name>` (e.g. branch `pose-classification` → tag `dev-pose-classification`).
+Development containers are published by the dev CI (`dev-release.yml`) tagged as `dev-<branch-name>` (e.g. branch `pose-classification` → tag `dev-pose-classification`).
 
 ## Pyright checks
 
@@ -152,7 +152,7 @@ On pull requests the `check-pyright.yml` workflow runs both checks against the P
 
 ## Release
 
-A release is started by running the `docker-publish.yml` workflow from the branch to release, giving
+A release is started by running the `release.yml` workflow from the branch to release, giving
 the version `X.Y.Z`. It publishes **every** container, uploads the Python wheel and the SBOMs to the
 GitHub Release and creates the `release/X.Y.Z` tag on the released commit only once all of that succeeded. The library and the containers it runs ship together with the same version: the compose files
 bundled in the wheel reference the containers published by the same release.
@@ -163,7 +163,7 @@ and no `:latest` tag is pushed.
 **Dependencies**: base images in `containers/base/` are not released on their own. They are rebuilt first,
 in dependency order, as the base of the images that derive from them, and tagged with the same version.
 
-For development, the dev build pipeline (`docker-build.yml`) is triggered manually (`workflow_dispatch`) on a branch and builds the selected containers (or all of them), tagging the images as `dev-<branch-name>`. The selection is widened with the containers deriving from it and with its bases, and `docker buildx bake` builds them in dependency order.
+For development, the dev build pipeline (`dev-release.yml`) is triggered manually (`workflow_dispatch`) on a branch and builds the selected containers (or all of them), tagging the images as `dev-<branch-name>`. The selection is widened with the containers deriving from it and with its bases, and `docker buildx bake` builds them in dependency order.
 
 See [`.github/README.md`](.github/README.md) for full CI documentation.
 

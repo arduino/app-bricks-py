@@ -1,4 +1,4 @@
-name: Check dependency licenses
+name: Check licenses
 on:
   pull_request:
   # Runs on main too so its image layers and venvs seed every pull request
@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  check-dependency-licenses:
+  licenses:
     runs-on: ubuntu-24.04-arm
     env:
       TASKFILE_VERSION: "v3.44.0"
