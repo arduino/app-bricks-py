@@ -208,6 +208,11 @@ def cmd_diff(args) -> int:
             lines += ["", f"### {title}", ""] + error_table(entries, occurrences)
     if not new and not fixed:
         lines += ["", "✅ No new errors in this PR."]
+    if not new and head_counts:
+        # Tolerated, but not to be forgotten: without new errors every remaining
+        # one is pre-existing, and the full list is in the collapsed report below.
+        pre_existing = sum(head_counts.values())
+        lines += ["", f"⚠️ {pre_existing} pre-existing error{'s' if pre_existing != 1 else ''}, listed in the full report below."]
     if head_counts:
         # Pre-existing errors are part of the story too, but collapsed: the diff
         # above stays the signal of the PR.
