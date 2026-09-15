@@ -36,7 +36,7 @@ jobs:
       - name: Check formatting, lint, license headers and locks
         run: |
           export PATH="${{ env.TASKFILE_PATH }}:$PATH"
-          task check
+          task check:ci
 
       - name: Run tests
         run: |
