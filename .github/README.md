@@ -63,6 +63,12 @@ building. Targets are listed parents first, each followed by the containers deri
 
 ## Adding a New Container
 
+`task containers:new -- my-container --from python-slim --purpose "What it does"` performs the steps
+below: it creates the directory with a starting `Dockerfile` and `pyproject.toml`, adds the bake target
+after its parent, the inventory row, the license scan and Dependabot entries, then runs
+`task containers:check`. Pass an image reference to `--from` for an external base and `--no-python` for
+an image that installs no Python packages. What follows is what it does, for reference and for adjusting the result.
+
 1. Create `containers/my-container/Dockerfile`. To derive from another container of this repo, start it
    with:
 
