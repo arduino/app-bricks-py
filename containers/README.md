@@ -43,6 +43,9 @@ inside this repo.
 
 ## Anatomy of a container directory
 
+`task containers:new -- <name> --from <parent> [--no-python]` scaffolds a directory with every registration the
+repository expects, see [Adding a New Container](../.github/README.md#adding-a-new-container).
+
 | Path | Required | Description |
 |---|---|---|
 | `Dockerfile` | yes | Build recipe, with the image's build arguments (download URLs, digests) as `ARG` defaults. The directory itself is the build context, declared by the container's `docker-bake.hcl` target. |
