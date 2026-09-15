@@ -159,7 +159,7 @@ tasks:
       - python3 -m scripts.sbom_delta {{.CLI_ARGS}}
 
   containers:new:
-    desc: "Scaffold a container and register it everywhere: task containers:new -- <name> --from <container|image> [--no-python] [--purpose text]"
+    desc: "Scaffold a container and register it everywhere: task containers:new -- <name> --from <container|image> [--no-python] [--desc text]"
     cmds:
       - python3 -m scripts.scaffold_container {{.CLI_ARGS}}
       - task: containers:check
