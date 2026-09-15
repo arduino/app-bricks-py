@@ -161,7 +161,3 @@ Images are tagged `dev-<branch-name>` (branch name lowercased and sanitized, e.g
 - **Registry**: `ghcr.io/arduino/app-bricks/`
 - **Caching**: Buildx registry cache per image, `<image>:buildcache` for releases and `<image>:<tag>-buildcache` for dev builds (`mode=max`), invalidated by content; `skip_cache` forces a cold rebuild
 - **Release assets**: The `.whl` and `sboms.zip` are uploaded to the GitHub Release via `softprops/action-gh-release`
-
-## Image Size Monitoring
-
-`calculate-size-delta.yml` is a manual workflow that builds both `python-base` and `python-apps-base`, measures their sizes using a local Docker registry, and posts a comment on the associated PR. If no PR is found, it falls back to the GitHub Actions Job Summary.
