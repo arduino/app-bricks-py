@@ -12,10 +12,13 @@ from a source checkout (no wheel build needed). Three modes:
   run       Run pyright over the examples trees against a library source path
             and save the diagnostics as JSON.
   diff      Compare two run outputs (base vs head of a PR) and report new/fixed
-            errors. Informative by design, always exits 0: new errors mean the PR
-            changes the API contract the published examples rely on, and the
-            workflow surfaces them on the PR (summary, comment, label) without
-            blocking it, so a coordinated library/examples change stays possible.
+            errors. New errors mean the head breaks the API contract between the
+            library and the published examples. Exits 0 by default: on library
+            PRs the check is informative and the workflow surfaces the report on
+            the PR (summary, comment, label), so a coordinated library/examples
+            change never deadlocks. With --fail-on-new it exits 1 on new errors:
+            the examples repository runs it that way on its own PRs, where the
+            analyzed files are the PR's and blocking is the point.
   coverage  Report the library bricks that have no examples, highlighting the
             ones introduced by the PR. Informative by design: a new brick may
             legitimately land before its examples do.
@@ -251,16 +254,21 @@ def cmd_diff(args) -> int:
     if summary_path:
         with open(summary_path, "a") as f:
             f.write(report + "\n")
+    # Annotations: warnings on an informative run, errors on a blocking one. The
+    # file/line properties place them inline in the PR diff, which only makes
+    # sense when the analyzed files belong to the repository running the check.
+    level = "error" if args.fail_on_new else "warning"
     for key in sorted(new):
         file, rule, message = key
-        print(f"::warning::examples alignment: {file}:{head_occurrences[key][0]} [{rule}] {message}")
+        line = head_occurrences[key][0]
+        properties = f" file={file},line={line}" if args.annotate_files else ""
+        print(f"::{level}{properties}::examples alignment: {file}:{line} [{rule}] {message}")
     # Exposed to the workflow, which turns it into a label on the PR.
     if output_path := os.environ.get("GITHUB_OUTPUT"):
         with open(output_path, "a") as f:
             f.write(f"new_errors={sum(new.values())}\n")
 
-    # Informative by design: new errors are reported on the PR, never blocking.
-    return 0
+    return 1 if new and args.fail_on_new else 0
 
 
 DISABLED_RE = re.compile(r"^disabled:\s*true\s*$", re.MULTILINE)
@@ -344,6 +352,12 @@ def main() -> int:
     diff.add_argument("--reports-url", help="link to the uploaded run outputs, appended to the summary")
     diff.add_argument("--examples-label", default=EXAMPLES_REPO_MD, help="how the summary names the analyzed examples")
     diff.add_argument("--library-label", default="this library", help="how the summary names the library they are analyzed against")
+    diff.add_argument("--fail-on-new", action="store_true", help="exit 1 when the head introduces new errors (blocking check)")
+    diff.add_argument(
+        "--annotate-files",
+        action="store_true",
+        help="place the annotations inline on file and line; only for a repository that holds the analyzed files",
+    )
     diff.set_defaults(func=cmd_diff)
 
     coverage = sub.add_parser("coverage", help="report library bricks that have no examples")
