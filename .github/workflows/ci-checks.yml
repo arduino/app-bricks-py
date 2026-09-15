@@ -33,46 +33,10 @@ jobs:
           pip install uv==0.10.3
           task init:ci
 
-      - name: Check code formatting
-        run: |
-          set -e
-          export PATH="${{ env.TASKFILE_PATH }}:$PATH"
-          task fmt > /dev/null 2>&1
-          if git diff --quiet; then
-            echo "Code is properly formatted."
-          else
-            echo "Please format the code by running 'task fmt'."
-            exit 1
-          fi
-
-      - name: Check linting
-        run: |
-          set -e
-          export PATH="${{ env.TASKFILE_PATH }}:$PATH"
-          task lint > /dev/null 2>&1
-          if git diff --quiet; then
-            echo "Code is properly linted."
-          else
-            echo "Please lint the code by running 'task lint'."
-            exit 1
-          fi
-
-      - name: Check dependency locks
+      - name: Check formatting, lint, license headers and locks
         run: |
           export PATH="${{ env.TASKFILE_PATH }}:$PATH"
-          task deps:check || { echo "A uv.lock is out of date, run 'task deps:lock' and commit the result."; exit 1; }
-
-      - name: Check license headers and files
-        run: |
-          set -e
-          export PATH="${{ env.TASKFILE_PATH }}:$PATH"
-          task license:headers > /dev/null 2>&1
-          if git diff --quiet; then
-            echo "License headers are up to date!"
-          else
-            echo "Please update license headers by running 'task license:headers'."
-            exit 1
-          fi
+          task check
 
       - name: Run tests
         run: |

@@ -17,7 +17,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from scripts.container_deps import Containers  # noqa: E402
-from scripts.scaffold_container import ScaffoldError, main, scaffold, target_blocks  # noqa: E402
+from scripts.container import ScaffoldError, main, scaffold, target_blocks  # noqa: E402
 
 BAKE = """group "default" {
   targets = [

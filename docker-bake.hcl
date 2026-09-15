@@ -19,7 +19,7 @@
 #   docker buildx bake                          # build them all
 #
 # python-apps-base installs the wheel from the "wheel" context (dist/, filled by
-# `task build`), models-downloader reads models-list.yaml from the "models"
+# `task build:bricks`), models-downloader reads models-list.yaml from the "models"
 # context (models/).
 
 # Registry prefix the images are published under, with a trailing slash.

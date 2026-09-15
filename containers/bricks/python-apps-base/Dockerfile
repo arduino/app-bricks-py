@@ -14,7 +14,7 @@ ENV BRICKS_RELEASE_VERSION=${BASE_IMAGE_VERSION}
 COPY ./streamlit/config.toml /home/app/.streamlit/config.toml
 
 COPY ./scripts/*.sh /
-# The wheel and the lock it was built from, from the bake context filled by `task build`
+# The wheel and the lock it was built from, from the bake context filled by `task build:bricks`
 COPY --from=wheel arduino*.whl pyproject.toml uv.lock /app/
 # OpenCV is left out, python-base ships its own GStreamer build of it
 RUN set -ex; \

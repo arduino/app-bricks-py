@@ -56,13 +56,13 @@ inside this repo.
 
 ## Anatomy of a container directory
 
-`task containers:new -- <name> --group <group> --from <parent> [--no-python]` scaffolds a directory with every registration the
+`task new:container -- <name> --group <group> --from <parent> [--no-python]` scaffolds a directory with every registration the
 repository expects, see [Adding a New Container](../.github/README.md#adding-a-new-container).
 
 | Path | Required | Description |
 |---|---|---|
 | `Dockerfile` | yes | Build recipe, with the image's build arguments (download URLs, digests) as `ARG` defaults. The directory itself is the build context, declared by the container's `docker-bake.hcl` target. |
-| `pyproject.toml` + `uv.lock` | if Python packages are installed | The Python packages the image installs, declared in `pyproject.toml` and pinned with hashes in `uv.lock` by `task deps:lock`. The Dockerfile installs from the lock, `task deps:sync` installs the same packages into a local `.venv` for IDE support. Board-only packages carry an environment marker. Never install packages inline, the [dependency license scan](../scripts/licensed/README.md) only sees the lock |
+| `pyproject.toml` + `uv.lock` | if Python packages are installed | The Python packages the image installs, declared in `pyproject.toml` and pinned with hashes in `uv.lock` by `task deps:lock`. The Dockerfile installs from the lock, `task init:containers` installs the same packages into a local `.venv` for IDE support. Board-only packages carry an environment marker. Never install packages inline, the [dependency license scan](../scripts/licensed/README.md) only sees the lock |
 
 | `tests/` | no | Python tests run by `task test` in the container's `.venv`, with the packages of its `test` dependency group; shell tests exercise the built image |
 
@@ -73,7 +73,7 @@ An image that derives from another container in this repo declares it once, in i
 `FROM ${REGISTRY}app-bricks/<parent>:${BASE_IMAGE_VERSION}`, with both `ARG`s declared before it. Its
 `docker-bake.hcl` target links the same parent with `parent_context()`, so bake builds the parent
 in-graph first; `scripts/container_deps.py` reads the `FROM` line for everything else (dev build
-selection, SBOM base image, `task containers:tree`) and the release fails if the two disagree.
+selection, SBOM base image, `task show:containers`) and the release fails if the two disagree.
 
 See the [docker-bake.hcl reference](../.github/README.md#docker-bakehcl-reference) for the variables CI sets.
 

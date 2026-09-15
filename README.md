@@ -33,13 +33,13 @@ Brick usage examples live in the [app-bricks-examples](https://github.com/arduin
 ## Building the wheel
 
 ```sh
-task build
+task build:bricks
 ```
 
-The wheel is pure Python and needs only the project and its `build` dependency group, which `task build` installs through uv. Its version is read from `src/arduino/version.py`, which stays at `0.0.0` in the repository: the release workflow injects the tag version into it before building. The same version is stamped in place of the `__BRICKS_RELEASE_VERSION__` placeholder in the compose and models files bundled in the wheel, so they reference the containers published by the same release. To point them at other images, dev images for example, override it:
+The wheel is pure Python and needs only the project and its `build` dependency group, which `task build:bricks` installs through uv. Its version is read from `src/arduino/version.py`, which stays at `0.0.0` in the repository: the release workflow injects the tag version into it before building. The same version is stamped in place of the `__BRICKS_RELEASE_VERSION__` placeholder in the compose and models files bundled in the wheel, so they reference the containers published by the same release. To point them at other images, dev images for example, override it:
 
 ```sh
-BRICKS_RELEASE_VERSION=dev-my-branch task build
+BRICKS_RELEASE_VERSION=dev-my-branch task build:bricks
 ```
 
 ## Library development steps
@@ -49,7 +49,9 @@ Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and the [T
 task init
 ```
 
-uv provides Python 3.13, creates `.venv` and installs the library with its development dependencies, exactly the versions pinned in `uv.lock`. Every task runs inside that environment through `uv run`, there is nothing to activate.
+uv provides Python 3.13, creates `.venv` and installs the library with its development dependencies, exactly the versions pinned in `uv.lock`, then does the same for every container (see [Dependencies](#dependencies)). Every task runs inside that environment through `uv run`, there is nothing to activate. `task init:bricks` sets up the library alone.
+
+Tasks are named `<intent>:<component>`: the intent is one of `init`, `deps`, `test`, `build`, `check`, `fix`, `new` and `show`, the component is `bricks` (the library) or `containers`, and a bare intent covers both. `check:*` tasks only verify and fail, `fix:*` tasks apply the same rules. `task --list` shows them all.
 
 ## Linting and formatting
 
@@ -105,14 +107,11 @@ To improve the development experience in VS Code, we recommend adding a `.vscode
 
 After adding those files, VS Code will suggest installing the Python and Ruff extensions, which are properly configured for this project.
 
-Alternatively, you can use the Ruff CLI to safely auto-fix linting issues and format your code by running:
+Alternatively, `task check` verifies formatting, lint, license headers and locks the way CI does, and `task fix` applies formatting, the fixable lint rules and the license headers. Each rule has its own pair, for example:
 
 ```sh
-task lint
-```
-
-```sh
-task fmt
+task check:lint
+task fix:lint
 ```
 
 ## Testing
@@ -124,7 +123,7 @@ task test
 
 or, to execute specific tests, use:
 ```sh
-task test:arduino/app_bricks
+task test:bricks -- tests/arduino/app_bricks
 ```
 
 Modules can use LOCAL_DEV=true env variable to set development specific configurations.
@@ -143,8 +142,8 @@ Type checking is driven by `pyright-rules.json` at the repository root, shipped 
 Two local checks, both needing the project venv with the current dependencies installed (`pip install -e ".[dev]"`; the checks refuse to run against an outdated environment) and, for the first, a clone of app-bricks-examples next to this repository:
 
 ```sh
-task check:api      # the examples analyzed against this checkout (profile api-user), then the bricks without examples
-task check:typing   # the library sources analyzed against themselves (profile app-bricks-py)
+task check:bricks:api      # the examples analyzed against this checkout (profile api-user), then the bricks without examples
+task check:bricks:typing   # the library sources analyzed against themselves (profile app-bricks-py)
 ```
 
 Extra arguments go to the underlying `run`/`typing` mode of `scripts/check_pyright.py` (custom paths, JSON output); see `python3 scripts/check_pyright.py --help` for the other modes, including the PR base/head `diff` the workflows use.
@@ -189,12 +188,12 @@ Every Python package is declared in a `pyproject.toml` and pinned with hashes in
 
 The library is described by the root files. `task init` installs it with its development tools into `.venv`, where every task runs through `uv run`. The `python-apps-base` image installs it from the same lock.
 
-Each container that installs Python packages has its own files (see [containers/README.md](containers/README.md#anatomy-of-a-container-directory)) and its Dockerfile installs from the lock alone. `task deps:sync`, run by `task init`, also creates a `.venv` in every container directory to point the IDE at. A container with Python tests declares pytest in a `test` dependency group, kept out of the image, and `task test` runs its suite in that venv. `pyaudio` needs the PortAudio headers on macOS and Linux (`brew install portaudio` or `apt install portaudio19-dev`).
+Each container that installs Python packages has its own files (see [containers/README.md](containers/README.md#anatomy-of-a-container-directory)) and its Dockerfile installs from the lock alone. `task init:containers`, run by `task init`, also creates a `.venv` in every container directory to point the IDE at. A container with Python tests declares pytest in a `test` dependency group, kept out of the image, and `task test` runs its suite in that venv. `pyaudio` needs the PortAudio headers on macOS and Linux (`brew install portaudio` or `apt install portaudio19-dev`).
 
-After editing any `pyproject.toml` run `task deps:lock`, with `-- --upgrade` to move to newer versions; `task deps:check` verifies the locks are current and CI runs it on every pull request. Dependabot opens weekly upgrade pull requests, checked by the license scan and the container builds.
+After editing any `pyproject.toml` run `task deps:lock`, with `-- --upgrade` to move to newer versions; `task check:deps` verifies the locks are current and CI runs it on every pull request. Dependabot opens weekly upgrade pull requests, checked by the license scan and the container builds.
 
 ## Dependency licenses
-`task license:deps` checks the licenses of the Python packages shipped by the library and by every container, using Docker. Records live under `.licenses/`, the allowed licenses and reviewed packages in `.licensed.yml`. See [scripts/licensed/README.md](scripts/licensed/README.md) for how it works and what to do when it fails.
+`task check:licenses` verifies the license records of the Python packages shipped by the library and by every container, and `task fix:licenses` updates them, both using Docker. Records live under `.licenses/`, the allowed licenses and reviewed packages in `.licensed.yml`. See [scripts/licensed/README.md](scripts/licensed/README.md) for how it works and what to do when it fails.
 
 ## SBOM (Software Bill of Materials)
 Every published image carries the SBOM BuildKit generated while building it, and each release attaches `sboms.zip` to the GitHub Release, with one folder per published image holding three SPDX documents:
@@ -205,11 +204,11 @@ Every published image carries the SBOM BuildKit generated while building it, and
 
 See [containers/README.md](containers/README.md#sboms) for how they are generated. To generate delta SBOMs locally, run:
 ```sh
-task sbom:delta
+task build:containers:sbom
 ```
 optionally passing container names and the image tag to scan, e.g.:
 ```sh
-task sbom:delta -- python-apps-base --version 1.0.0
+task build:containers:sbom -- python-apps-base --version 1.0.0
 ```
 
 **Note**: To run this task, you need Docker with buildx, `syft` for the external base images and access to the container registry.
