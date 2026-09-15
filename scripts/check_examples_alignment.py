@@ -12,7 +12,13 @@ from a source checkout (no wheel build needed). Three modes:
   run       Run pyright over the examples trees against a library source path
             and save the diagnostics as JSON.
   diff      Compare two run outputs (base vs head of a PR) and report new/fixed
-            errors. Always exits 0: the check is informative, not blocking.
+            errors. New errors mean the head breaks the API contract between the
+            library and the published examples. Exits 0 by default: on library
+            PRs the check is informative and the workflow surfaces the report on
+            the PR (summary, comment, label), so a coordinated library/examples
+            change never deadlocks. With --fail-on-new it exits 1 on new errors:
+            the examples repository runs it that way on its own PRs, where the
+            analyzed files are the PR's and blocking is the point.
   coverage  Report the library bricks that have no examples, highlighting the
             ones introduced by the PR. Informative by design: a new brick may
             legitimately land before its examples do.
@@ -43,6 +49,11 @@ EXAMPLES_ROOTS = ["bricks", "core-and-foundational", "inspirational"]
 DEFAULT_EXAMPLES_DIR = "../app-bricks-examples"
 EXAMPLES_REPO_MD = "[app-bricks-examples](https://github.com/arduino/app-bricks-examples)@main"
 DEFAULT_VENV_PYTHON = ".venv/bin/python"
+# Library dependencies that share the `arduino` namespace with the library
+# itself: when missing from the check interpreter pyright still resolves the
+# namespace from the library sources, silently degrading the missing modules
+# to Unknown and hiding real errors instead of reporting an unresolved import.
+NAMESPACE_DEPENDENCIES = ["arduino.router_bridge"]
 SELF_EXTRA_RE = re.compile(r"^arduino[-_]app[-_]bricks\[(.+)\]$")
 
 
@@ -86,9 +97,17 @@ def cmd_run(args) -> int:
     if config_path.exists():
         print(f"{config_path} already exists, refusing to overwrite it", file=sys.stderr)
         return 2
+    # extraPaths must sit at the top level, not inside the execution environment
+    # of the examples: the library sources live outside that root, so pyright
+    # analyzes them with the default environment. Scoped to the environment, the
+    # library's own absolute imports (e.g. app_utils/leds.py importing Logger from
+    # arduino.app_utils) resolved against site-packages only, where the arduino
+    # namespace holds just the router bridge, and every symbol re-exported through
+    # such an import came back as "unknown import symbol" in the examples.
     config = {
         "include": include,
-        "executionEnvironments": [{"root": ".", "extraPaths": [str(library_src)]}],
+        "extraPaths": [str(library_src)],
+        "executionEnvironments": [{"root": "."}],
     }
 
     # Default to the project venv interpreter for quick local runs.
@@ -97,9 +116,25 @@ def cmd_run(args) -> int:
         # Pyright would silently fall back to another environment, skewing the results.
         print(f"python interpreter not found: {python}", file=sys.stderr)
         return 2
+    if python:
+        # Absolute, but NOT resolved: <venv>/bin/python is a symlink to the base
+        # interpreter, and pyright derives the search paths from the interpreter it
+        # is handed. Resolving the link pointed it at the bare base install, whose
+        # site-packages has none of the dependencies, and every third-party import
+        # of the examples came back unresolved while the venv sat unused.
+        python = os.path.abspath(python)
+        preflight = subprocess.run([python, "-c", "import " + ", ".join(NAMESPACE_DEPENDENCIES)], capture_output=True, text=True)
+        if preflight.returncode != 0:
+            print(
+                f"the check interpreter {python} cannot import {', '.join(NAMESPACE_DEPENDENCIES)}: "
+                "the library dependencies are out of date in that environment and the analysis would silently miss errors. "
+                'Update it with `pip install -e ".[dev]"` (or `task init`) and retry.',
+                file=sys.stderr,
+            )
+            return 2
     cmd = ["npx", "-y", f"pyright@{args.pyright_version}", "--project", str(examples_dir), "--outputjson"]
     if python:
-        cmd += ["--pythonpath", str(Path(python).resolve())]
+        cmd += ["--pythonpath", python]
     try:
         config_path.write_text(json.dumps(config))
         proc = subprocess.run(cmd, capture_output=True, text=True)
@@ -113,34 +148,36 @@ def cmd_run(args) -> int:
 
     data = json.loads(proc.stdout)
     for diag in data.get("generalDiagnostics", []):
-        # Normalize paths and tag the repository: diagnostics normally land on
-        # the examples files, but pyright may also point inside the library.
+        # Pyright only reports diagnostics for the analyzed files, i.e. the
+        # examples: the library reached through extraPaths is never reported,
+        # even when the root cause is one of its annotations. Paths are made
+        # relative to the examples checkout.
         path = Path(diag["file"]).resolve()
         try:
             diag["file"] = path.relative_to(examples_dir).as_posix()
-            diag["repository"] = "app-bricks-examples"
         except ValueError:
-            try:
-                diag["file"] = path.relative_to(library_src.parent).as_posix()
-                diag["repository"] = "app-bricks-py"
-            except ValueError:
-                diag["file"] = path.as_posix()
-                diag["repository"] = ""
+            diag["file"] = path.as_posix()
     if args.out:
         Path(args.out).write_text(json.dumps(data, indent=2) + "\n")
     summary = data["summary"]
     print(f"{summary['filesAnalyzed']} files analyzed against {library_src}: {summary['errorCount']} errors, {summary['warningCount']} warnings")
-    # Without a JSON output the run is a local one-off: print the details.
+    # Without a JSON output the run is a local one-off: print the details,
+    # errors first, then the warnings (typically unresolved imports: a
+    # dependency missing from the check venv degrades the analysis).
     if args.details or not args.out:
-        errors = [diag for diag in data["generalDiagnostics"] if diag["severity"] == "error"]
-        for diag in sorted(errors, key=lambda d: (d.get("rule", ""), d["file"], d["range"]["start"]["line"])):
-            line = diag["range"]["start"]["line"] + 1
-            print(f"  [{diag.get('rule', '')}] {diag['file']}:{line}  {diag['message'].splitlines()[0]}")
+        for severity in ("error", "warning"):
+            diags = [diag for diag in data["generalDiagnostics"] if diag["severity"] == severity]
+            if not diags:
+                continue
+            print(f"{severity}s:")
+            for diag in sorted(diags, key=lambda d: (d.get("rule", ""), d["file"], d["range"]["start"]["line"])):
+                line = diag["range"]["start"]["line"] + 1
+                print(f"  [{diag.get('rule', '')}] {diag['file']}:{line}  {diag['message'].splitlines()[0]}")
     return 0
 
 
 def error_index(data: dict) -> tuple[Counter, dict]:
-    """Index error diagnostics by a line-shift-tolerant key: (repository, file, rule, message first line).
+    """Index error diagnostics by a line-shift-tolerant key: (file, rule, message first line).
 
     Also returns the 1-based lines of the occurrences of each key (informational
     only: lines are not part of the key, so moved code does not diff as new).
@@ -150,7 +187,7 @@ def error_index(data: dict) -> tuple[Counter, dict]:
     for diag in data.get("generalDiagnostics", []):
         if diag["severity"] != "error":
             continue
-        key = (diag.get("repository", ""), diag["file"], diag.get("rule", ""), diag["message"].splitlines()[0])
+        key = (diag["file"], diag.get("rule", ""), diag["message"].splitlines()[0])
         counts[key] += 1
         occurrences.setdefault(key, []).append(diag["range"]["start"]["line"] + 1)
     return counts, occurrences
@@ -158,11 +195,11 @@ def error_index(data: dict) -> tuple[Counter, dict]:
 
 def error_table(entries: dict, occurrences: dict) -> list[str]:
     """Markdown table rows for an error index, with pipes escaped for the cells."""
-    rows = ["| Repository | File | Line(s) | Rule | Message |", "|---|---|---|---|---|"]
+    rows = ["| File | Line(s) | Rule | Message |", "|---|---|---|---|"]
     for key in sorted(entries):
-        repo, file, rule, message = key
+        file, rule, message = key
         lines = ", ".join(str(line) for line in sorted(occurrences[key]))
-        rows.append(f"| {repo} | `{file}` | {lines} | {rule} | {message.replace('|', '\\|')} |")
+        rows.append(f"| `{file}` | {lines} | {rule} | {message.replace('|', '\\|')} |")
     return rows
 
 
@@ -173,10 +210,13 @@ def cmd_diff(args) -> int:
     new = {key: count - base_counts.get(key, 0) for key, count in head_counts.items() if count > base_counts.get(key, 0)}
     fixed = {key: count - head_counts.get(key, 0) for key, count in base_counts.items() if count > head_counts.get(key, 0)}
 
+    # The verdict goes in the heading: the summary is also posted as a PR comment,
+    # and the outcome must be readable at a glance.
+    status = "❌" if new else "✅"
     lines = [
-        "## Examples alignment check",
+        f"## {status} Examples alignment check",
         "",
-        f"Errors against the examples ({EXAMPLES_REPO_MD}): "
+        f"Errors in the Python sources of {args.examples_label} analyzed against {args.library_label}: "
         f"base {sum(base_counts.values())} → head {sum(head_counts.values())} "
         f"(**{sum(new.values())} new**, {sum(fixed.values())} fixed)",
     ]
@@ -184,13 +224,24 @@ def cmd_diff(args) -> int:
         if entries:
             lines += ["", f"### {title}", ""] + error_table(entries, occurrences)
     if not new and not fixed:
-        lines += ["", "No new errors in this PR."]
+        lines += ["", "✅ No new errors in this PR."]
+    if not new and head_counts:
+        # Tolerated, but not to be forgotten: without new errors every remaining
+        # one is pre-existing, and the full list is in the collapsed report below.
+        pre_existing = sum(head_counts.values())
+        lines += ["", f"⚠️ {pre_existing} pre-existing error{'s' if pre_existing != 1 else ''}, listed in the full report below."]
     if head_counts:
         # Pre-existing errors are part of the story too, but collapsed: the diff
         # above stays the signal of the PR.
         lines += ["", "<details>", f"<summary>Full report: {sum(head_counts.values())} errors against head</summary>", ""]
         lines += error_table(head_counts, head_occurrences)
         lines += ["", "</details>"]
+    if new:
+        lines += [
+            "",
+            "❌ This PR introduces errors in the published examples: either adapt the library change to keep the "
+            "examples' contract, or open the matching PR on app-bricks-examples and coordinate the merge.",
+        ]
     if args.reports_url:
         lines += ["", f"📥 [Download full pyright JSON report]({args.reports_url})"]
     # Horizontal rule separating this section from the coverage one, appended
@@ -203,12 +254,26 @@ def cmd_diff(args) -> int:
     if summary_path:
         with open(summary_path, "a") as f:
             f.write(report + "\n")
+    # Annotations: warnings on an informative run, errors on a blocking one. The
+    # file/line properties place them inline in the PR diff, which only makes
+    # sense when the analyzed files belong to the repository running the check.
+    level = "error" if args.fail_on_new else "warning"
     for key in sorted(new):
-        _repo, file, rule, message = key
-        print(f"::warning::examples alignment: {file}:{head_occurrences[key][0]} [{rule}] {message}")
+        file, rule, message = key
+        line = head_occurrences[key][0]
+        properties = f" file={file},line={line}" if args.annotate_files else ""
+        print(f"::{level}{properties}::examples alignment: {file}:{line} [{rule}] {message}")
+    # Exposed to the workflow, which turns it into a label on the PR. Best effort:
+    # the file belongs to the runner, and a context that only inherits the
+    # variable (a test job running as another user) must not fail on it.
+    if output_path := os.environ.get("GITHUB_OUTPUT"):
+        try:
+            with open(output_path, "a") as f:
+                f.write(f"new_errors={sum(new.values())}\n")
+        except OSError as e:
+            print(f"could not write new_errors to GITHUB_OUTPUT: {e}", file=sys.stderr)
 
-    # Informative check by design: new errors are reported, never blocking.
-    return 0
+    return 1 if new and args.fail_on_new else 0
 
 
 DISABLED_RE = re.compile(r"^disabled:\s*true\s*$", re.MULTILINE)
@@ -243,13 +308,14 @@ def cmd_coverage(args) -> int:
     uncovered = sorted(head_bricks - covered)
     introduced = sorted((head_bricks - base_bricks) - covered)
 
-    lines = ["### Bricks without examples", ""]
+    status = "❌" if uncovered else "✅"
+    lines = [f"### {status} Bricks without examples", ""]
     if uncovered:
-        lines.append(f"{len(uncovered)} bricks have no examples in app-bricks-examples:")
+        lines.append(f"❌ {len(uncovered)} bricks have no examples in app-bricks-examples:")
         lines += [f"- `{name}`" + (" — **introduced by this PR**" if name in introduced else "") for name in uncovered]
         lines += ["", "Informative only: a new brick may legitimately land before its examples do."]
     else:
-        lines.append(f"Every non-disabled brick has at least one example in {EXAMPLES_REPO_MD} repository.")
+        lines.append(f"✅ Every non-disabled brick has at least one example in {EXAMPLES_REPO_MD} repository.")
     report = "\n".join(lines)
 
     print(report)
@@ -274,10 +340,14 @@ def main() -> int:
     run = sub.add_parser("run", help="run pyright over the examples against a library source")
     run.add_argument("--examples-dir", default=DEFAULT_EXAMPLES_DIR)
     run.add_argument("--library-src", default="src")
-    run.add_argument("--python", help=f"python interpreter of the check venv (defaults to {DEFAULT_VENV_PYTHON} when present)")
+    run.add_argument(
+        "--python",
+        help=f"python interpreter of the check venv, which must have the library dependencies installed "
+        f"(defaults to {DEFAULT_VENV_PYTHON} when present)",
+    )
     run.add_argument("--pyright-version", default=PYRIGHT_VERSION)
     run.add_argument("--out", help="write the diagnostics as JSON; when omitted, details are printed instead")
-    run.add_argument("--details", action="store_true", help="also print the error diagnostics, grouped by rule")
+    run.add_argument("--details", action="store_true", help="also print the error and warning diagnostics, grouped by rule")
     run.set_defaults(func=cmd_run)
 
     diff = sub.add_parser("diff", help="compare two run outputs and report new/fixed errors")
@@ -285,6 +355,14 @@ def main() -> int:
     diff.add_argument("--head", required=True)
     diff.add_argument("--summary", help="markdown output file (defaults to GITHUB_STEP_SUMMARY)")
     diff.add_argument("--reports-url", help="link to the uploaded run outputs, appended to the summary")
+    diff.add_argument("--examples-label", default=EXAMPLES_REPO_MD, help="how the summary names the analyzed examples")
+    diff.add_argument("--library-label", default="this library", help="how the summary names the library they are analyzed against")
+    diff.add_argument("--fail-on-new", action="store_true", help="exit 1 when the head introduces new errors (blocking check)")
+    diff.add_argument(
+        "--annotate-files",
+        action="store_true",
+        help="place the annotations inline on file and line; only for a repository that holds the analyzed files",
+    )
     diff.set_defaults(func=cmd_diff)
 
     coverage = sub.add_parser("coverage", help="report library bricks that have no examples")

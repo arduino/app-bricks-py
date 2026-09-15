@@ -145,7 +145,7 @@ Development containers are published by the dev CI (`docker-build.yml`) tagged a
 
 ## Examples alignment
 
-The published examples live in [app-bricks-examples](https://github.com/arduino/app-bricks-examples). To check whether your changes break the API contract the examples rely on (pyright analyzes their Python sources against your checkout), clone that repository next to this one and run:
+The published examples live in [app-bricks-examples](https://github.com/arduino/app-bricks-examples). To check whether your changes break the API contract the examples rely on (pyright analyzes their Python sources against your checkout), clone that repository next to this one, make sure the project venv has the current library dependencies installed (`pip install -e ".[dev]"`, the check refuses to run against an outdated environment) and run:
 
 ```sh
 task check:examples-alignment:run
@@ -158,6 +158,8 @@ task check:examples-alignment:coverage
 ```
 
 See `scripts/check_examples_alignment.py --help` for the full options (custom paths, JSON output, PR base/head diff — the mode used by the `check-examples-alignment.yml` workflow).
+
+On pull requests the workflow is informative and never blocks the merge: a library change may legitimately require a matching change in the examples, and blocking the two PRs on each other would deadlock. The report (new errors introduced by the PR, errors fixed, pre-existing ones collapsed) goes to the job summary and to a sticky comment on the PR, with the `examples-misaligned` label while new errors exist. On PRs from forks the analysis job runs with a read-only token, so the comment is posted by `comment-examples-alignment.yml`, which runs afterwards with a write token and never executes code from the PR. New errors mean the change breaks the API contract the published examples rely on: either adapt the change, or open the matching PR on app-bricks-examples and merge the library first.
 
 ## Release
 

@@ -3,7 +3,14 @@ name: Check examples alignment
 # Informative, non-blocking check: pyright analyzes the app-bricks-examples
 # Python code twice, resolving the library from the PR base and head sources,
 # and the diff of the two runs is reported in the job summary. New errors mean
-# this PR changes the API contract the published examples rely on.
+# this PR changes the API contract the published examples rely on. The job
+# never fails for them: a library change may legitimately require a matching
+# examples change, and blocking both PRs on each other would deadlock. Instead
+# the report is posted as a sticky comment on the PR, with a label while new
+# errors exist. On PRs from branches of this repository that happens in this
+# job. On PRs from forks the token is read-only, so this job only uploads the
+# report as an artifact and comment-examples-alignment.yml, running on
+# workflow_run with a write token and never touching the PR code, posts it.
 
 on:
   pull_request:
@@ -17,6 +24,8 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
+  issues: write
 
 concurrency:
   group: examples-alignment-${{ github.ref }}
@@ -100,7 +109,77 @@ jobs:
           retention-days: 15
 
       - name: Report alignment diff
-        run: python head/scripts/check_examples_alignment.py diff --base base.json --head head.json --reports-url "${{ steps.reports.outputs.artifact-url }}"
+        id: diff
+        # The report goes to a file first: it feeds both the job summary and the PR comment.
+        run: |
+          python head/scripts/check_examples_alignment.py diff --base base.json --head head.json --summary report.md --reports-url "${{ steps.reports.outputs.artifact-url }}"
+          cat report.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Report bricks example coverage
-        run: python head/scripts/check_examples_alignment.py coverage --examples-dir examples --head-src head/src --base-src base/src
+        run: |
+          python head/scripts/check_examples_alignment.py coverage --examples-dir examples --head-src head/src --base-src base/src --summary coverage.md
+          cat coverage.md >> "$GITHUB_STEP_SUMMARY"
+          cat coverage.md >> report.md
+
+      - name: Save the report for the PR comment
+        # Consumed by comment-examples-alignment.yml for PRs from forks, where this
+        # job cannot write. The metadata lets that workflow identify the PR and
+        # verify it against the head SHA of this run before posting anything.
+        if: github.event_name == 'pull_request'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          NEW_ERRORS: ${{ steps.diff.outputs.new_errors }}
+        run: |
+          jq -n --arg pr "$PR_NUMBER" --arg sha "$HEAD_SHA" --arg repo "$HEAD_REPO" --arg new "${NEW_ERRORS:-0}" \
+            '{pr_number: ($pr | tonumber), head_sha: $sha, head_repo: $repo, new_errors: ($new | tonumber)}' > metadata.json
+
+      - name: Upload the report
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: examples-alignment-report
+          path: |
+            report.md
+            metadata.json
+          retention-days: 3
+
+      - name: Post the report on the PR
+        # Only for PRs from this repository: on a fork PR the token cannot write,
+        # so the step is skipped and comment-examples-alignment.yml takes over.
+        # Any other hiccup (API error, missing label permission) must not fail
+        # the check either, hence continue-on-error: the job summary always
+        # carries the same report.
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          NEW_ERRORS: ${{ steps.diff.outputs.new_errors }}
+          LABEL: examples-misaligned
+        run: |
+          marker='<!-- examples-alignment -->'
+          { echo "$marker"; cat report.md; } > comment.md
+          # GitHub caps comment bodies at 65536 characters.
+          if [ "$(wc -c < comment.md)" -gt 60000 ]; then
+            head -c 60000 comment.md > comment.trimmed.md
+            printf '\n\n… report truncated, the complete one is in the job summary.\n' >> comment.trimmed.md
+            mv comment.trimmed.md comment.md
+          fi
+          # One sticky comment per PR, updated in place at every run.
+          comment_id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate \
+            --jq "first(.[] | select(.body | startswith(\"$marker\")) | .id)")
+          if [ -n "$comment_id" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$comment_id" -F body=@comment.md > /dev/null
+          else
+            gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" -F body=@comment.md > /dev/null
+          fi
+          # The label flags the PR while it introduces new errors, and goes away once they are gone.
+          if [ "${NEW_ERRORS:-0}" != "0" ]; then
+            gh label create "$LABEL" --color D93F0B --force \
+              --description "Introduces errors in the published app-bricks-examples (see the alignment report comment)"
+            gh pr edit "$PR_NUMBER" --add-label "$LABEL"
+          else
+            gh pr edit "$PR_NUMBER" --remove-label "$LABEL" || true
+          fi
