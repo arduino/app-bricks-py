@@ -39,8 +39,8 @@ jobs:
           TAG: ${{ steps.branch.outputs.tag }}
           OWNER: ${{ github.repository_owner }}
         run: |
-          # Discover packages from containers/<group>/<name>/ directories
-          mapfile -t PACKAGES < <(ls -d containers/*/*/ | xargs -I{} basename {} | sed 's|^|app-bricks/|' | jq -Rr @uri)
+          # Discover packages from containers/<name>/ directories
+          mapfile -t PACKAGES < <(ls -d containers/*/ | xargs -I{} basename {} | sed 's|^|app-bricks/|' | jq -Rr @uri)
 
           for PKG in "${PACKAGES[@]}"; do
             echo "Processing package: $PKG (tag: $TAG)"
@@ -99,8 +99,8 @@ jobs:
           TOTAL_FOUND=0
           TOTAL_DELETED=0
 
-          # Discover packages from containers/<group>/<name>/ directories
-          for NAME in $(ls -d containers/*/*/ | xargs -I{} basename {}); do
+          # Discover packages from containers/<name>/ directories
+          for NAME in $(ls -d containers/*/ | xargs -I{} basename {}); do
             echo "::group::Package app-bricks/$NAME"
             API_PATH="/orgs/$OWNER/packages/container/$(jq -Rr @uri <<< "app-bricks/$NAME")/versions"
 
