@@ -1460,7 +1460,7 @@ models:
  - "genie:qwen3_vl_4b_instruct":
     name : "Qwen 3-VL-4B VLM"
     description: >-
-      Qwen3-VL is a vision-language model from Alibaba Cloud capable of understanding
+      Qwen3-VL 4B is a vision-language model from Alibaba Cloud capable of understanding
       both text and images for multimodal reasoning tasks such as visual question
       answering and image captioning.
     supported_boards: ["ventunoq"]
@@ -1486,10 +1486,9 @@ models:
  - "genie:qwen3_vl_8b_instruct":
     name : "Qwen 3-VL-8B VLM"
     description: >-
-      Qwen3-VL is a vision-language model from Alibaba Cloud capable of understanding
+      Qwen3-VL 8B is a vision-language model from Alibaba Cloud capable of understanding
       both text and images for multimodal reasoning tasks such as visual question
-      answering and image captioning. This version of the model has 8 billion parameters,
-      providing enhanced performance for complex multimodal tasks.
+      answering and image captioning.
     supported_boards: ["ventunoq"]
     bricks:
       - id: "arduino:vlm"
