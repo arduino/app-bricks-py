@@ -162,3 +162,8 @@ tasks:
     desc: Print the container hierarchy derived from the Dockerfiles
     cmds:
       - python3 -m scripts.container_deps tree
+
+  containers:check:
+    desc: Check that docker-bake.hcl agrees with the Dockerfiles
+    cmds:
+      - docker buildx bake --print 2>/dev/null | python3 -m scripts.container_deps check-bake

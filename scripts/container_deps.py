@@ -19,6 +19,7 @@ them in order.
     python3 -m scripts.container_deps list            # JSON array of every container
     python3 -m scripts.container_deps closure NAME... # the selection widened with its parents and children
     python3 -m scripts.container_deps tree            # the hierarchy, grouped by external base image
+    docker buildx bake --print | python3 -m scripts.container_deps check-bake   # docker-bake.hcl agrees with the Dockerfiles
 """
 
 from __future__ import annotations
@@ -132,6 +133,28 @@ class Containers:
             selected |= frontier
         return sorted(selected)
 
+    def check_bake(self, definition: dict) -> list[str]:
+        """Return what disagrees between a ``docker buildx bake --print`` definition and the Dockerfiles.
+
+        Every container must be a target of the default group, every target must
+        be a container, and a target must link exactly the parent its Dockerfile
+        builds FROM: bake rewrites that FROM to the freshly built parent only
+        through the link, without it the image is pulled from the registry instead.
+        """
+        targets = definition.get("target") or {}
+        problems = [f"'{name}' has a Dockerfile but no bake target in the default group" for name in sorted(set(self.names) - set(targets))]
+        problems += [f"bake target '{name}' has no containers/{name}/Dockerfile" for name in sorted(set(targets) - set(self.names))]
+        for name in sorted(set(self.names) & set(targets)):
+            contexts = targets[name].get("contexts") or {}
+            linked = sorted(value.removeprefix("target:") for value in contexts.values() if value.startswith("target:"))
+            expected = [self.parent[name]] if self.parent[name] else []
+            if linked != expected:
+                problems.append(
+                    f"bake target '{name}' links {', '.join(linked) or 'no parent'} but its Dockerfile builds FROM "
+                    f"{expected[0] if expected else 'an external image'}"
+                )
+        return problems
+
     def to_dict(self) -> dict[str, dict[str, str | None]]:
         """Map every container to its base image and parent container."""
         return {name: {"base": self.base[name], "parent": self.parent[name]} for name in self.names}
@@ -167,6 +190,7 @@ def create_parser() -> argparse.ArgumentParser:
     closure_parser = subparsers.add_parser("closure", help="Widen a selection with its parents and children, as a JSON array.")
     closure_parser.add_argument("containers", nargs="+", help="Selected container names.")
     subparsers.add_parser("tree", help="Print the container hierarchy.")
+    subparsers.add_parser("check-bake", help="Check a `docker buildx bake --print` definition, read from stdin, against the Dockerfiles.")
     return parser
 
 
@@ -181,6 +205,13 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(containers.closure(args.containers)))
         elif args.command == "tree":
             print(containers.tree())
+        elif args.command == "check-bake":
+            problems = containers.check_bake(json.load(sys.stdin))
+            for problem in problems:
+                print(f"Error: {problem}", file=sys.stderr)
+            if problems:
+                return 1
+            print("docker-bake.hcl agrees with the Dockerfiles")
         else:
             print(json.dumps(containers.to_dict(), indent=2))
     except ContainerDepsError as exc:

@@ -139,3 +139,45 @@ def test_tree_groups_roots_by_external_base(tmp_path):
         "   └─ aihub-models-runner\n"
         "      └─ gesture-recognition-runner"
     )
+
+
+def bake_definition(**contexts: dict[str, str]) -> dict:
+    """A ``bake --print`` definition with one target per TREE container and the given contexts."""
+    return {"target": {name: {"contexts": contexts.get(name.replace("-", "_"), {})} for name in TREE}}
+
+
+PARENT_LINKS = {
+    "python_base": {"ghcr.io/arduino/app-bricks/python-slim:local": "target:python-slim"},
+    "python_apps_base": {"wheel": "dist", "ghcr.io/arduino/app-bricks/python-base:local": "target:python-base"},
+    "aihub_models_runner": {"ghcr.io/arduino/app-bricks/qairt-common-base:local": "target:qairt-common-base"},
+    "gesture_recognition_runner": {"ghcr.io/arduino/app-bricks/aihub-models-runner:local": "target:aihub-models-runner"},
+}
+
+
+def test_check_bake_accepts_a_definition_matching_the_dockerfiles(tmp_path):
+    containers = Containers(make_containers_dir(tmp_path, TREE))
+    assert containers.check_bake(bake_definition(**PARENT_LINKS)) == []
+
+
+def test_check_bake_reports_containers_and_targets_that_do_not_match(tmp_path):
+    containers = Containers(make_containers_dir(tmp_path, TREE))
+    definition = bake_definition(**PARENT_LINKS)
+    del definition["target"]["ei-models-runner"]
+    definition["target"]["ghost"] = {}
+    assert containers.check_bake(definition) == [
+        "'ei-models-runner' has a Dockerfile but no bake target in the default group",
+        "bake target 'ghost' has no containers/ghost/Dockerfile",
+    ]
+
+
+def test_check_bake_reports_missing_wrong_and_spurious_parent_links(tmp_path):
+    containers = Containers(make_containers_dir(tmp_path, TREE))
+    links = dict(PARENT_LINKS)
+    links["python_apps_base"] = {"wheel": "dist"}
+    links["gesture_recognition_runner"] = {"x": "target:python-slim"}
+    links["ei_models_runner"] = {"x": "target:python-slim"}
+    assert containers.check_bake(bake_definition(**links)) == [
+        "bake target 'ei-models-runner' links python-slim but its Dockerfile builds FROM an external image",
+        "bake target 'gesture-recognition-runner' links python-slim but its Dockerfile builds FROM aihub-models-runner",
+        "bake target 'python-apps-base' links no parent but its Dockerfile builds FROM python-base",
+    ]
