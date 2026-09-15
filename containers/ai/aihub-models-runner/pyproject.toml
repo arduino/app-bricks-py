@@ -10,5 +10,5 @@ dependencies = [
 ]
 
 [tool.uv]
-# The images run on aarch64 Linux only, the lock is resolved for that target alone
-environments = ["sys_platform == 'linux' and platform_machine == 'aarch64'"]
+# The images run on aarch64 Linux, the lock must resolve for that target but installs on developer machines too
+required-environments = ["sys_platform == 'linux' and platform_machine == 'aarch64'"]
