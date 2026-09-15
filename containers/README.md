@@ -18,7 +18,7 @@ The group is not part of a container's identity. A container is always referred 
 its **leaf directory name**, which is also its image name — `ghcr.io/arduino/app-bricks/<name>` — its
 target in `docker-bake.hcl` and the value used in the `containers` input of the dev workflow. CI finds a
 container by globbing `containers/*/<name>/Dockerfile`, so names must be unique across groups;
-`scripts/container_deps.py` fails if two groups declare the same one.
+`scripts/container.py` fails if two groups declare the same one.
 
 ## Inventory
 
@@ -72,7 +72,7 @@ SBOMs are not kept in the tree: they are generated from the published images at 
 An image that derives from another container in this repo declares it once, in its Dockerfile:
 `FROM ${REGISTRY}app-bricks/<parent>:${BASE_IMAGE_VERSION}`, with both `ARG`s declared before it. Its
 `docker-bake.hcl` target links the same parent with `parent_context()`, so bake builds the parent
-in-graph first; `scripts/container_deps.py` reads the `FROM` line for everything else (dev build
+in-graph first; `scripts/container.py` reads the `FROM` line for everything else (dev build
 selection, SBOM base image, `task show:containers`) and the release fails if the two disagree.
 
 See the [docker-bake.hcl reference](../.github/README.md#docker-bakehcl-reference) for the variables CI sets.
@@ -109,7 +109,7 @@ blocks the release: the image is reported as a warning and listed in `MISSING.tx
 ## Development builds
 
 `docker-build.yml` is manual (`workflow_dispatch`): pick a branch, and either `all` or a comma-separated
-list of container names. The selection is widened by `scripts/container_deps.py` — selecting a leaf
+list of container names. The selection is widened by `scripts/container.py` — selecting a leaf
 pulls in its bases, selecting a base pulls in everything derived from it — and bake builds the result in
 dependency order. Images are published as
 `ghcr.io/arduino/app-bricks/<name>:dev-<branch>`. The wheel installed in `python-apps-base` is built with

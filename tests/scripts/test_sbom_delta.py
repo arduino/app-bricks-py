@@ -16,9 +16,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.container_deps import Containers  # noqa: E402
+from scripts.container import Containers  # noqa: E402
 from scripts.sbom_delta import SbomDeltaError, extract_attested_sbom, parse_container_spec, resolve_runtime_base  # noqa: E402
-from tests.scripts.test_container_deps import TREE, make_containers_dir  # noqa: E402
+from tests.scripts.test_container import TREE, make_containers_dir  # noqa: E402
 
 
 def test_runtime_base_of_a_derived_container_is_its_parent_at_the_scanned_version(tmp_path):

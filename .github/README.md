@@ -18,7 +18,7 @@ The group is **not** part of a container's identity: a container is always refer
 directory name, which is also its image name (`ghcr.io/arduino/app-bricks/<name>`), its bake target and
 the value used in the `containers` input of the dev workflow. CI locates a container by globbing
 `containers/*/<name>/Dockerfile`, so moving a container between groups only means updating the `context`
-of its bake target. Leaf names must stay unique across groups; `scripts/container_deps.py` fails loudly
+of its bake target. Leaf names must stay unique across groups; `scripts/container.py` fails loudly
 if two groups declare the same name.
 
 The full list of images, with what each one builds from and what it is for, is the inventory in
@@ -67,7 +67,7 @@ same parent with `parent_context()`. Bake then builds the parent in-graph before
 the chain, with a single invocation and no hardcoded ordering: a release is `docker buildx bake --push`
 over the `default` group, which lists every container.
 
-`scripts/container_deps.py` reads the same `FROM` lines to serve everything else that needs the graph:
+`scripts/container.py` reads the same `FROM` lines to serve everything else that needs the graph:
 the dev workflow widens its selection with it, `scripts/sbom_delta.py` takes the base image to diff
 against from it, and `task show:containers` prints the hierarchy. The release checks that the
 Dockerfiles and the bake targets describe the same set of containers and link the same parents before
@@ -165,7 +165,7 @@ into a `sbom-delta-<tag>` run artifact.
 
 Images are tagged `dev-<branch-name>` (branch name lowercased and sanitized, e.g. `feat/My-Feature` → `dev-feat-my-feature`), plus a run-number-suffixed alias (e.g. `dev-feat-my-feature-42`), unless a custom `tag` is provided.
 
-**Dependency ordering**: `scripts/container_deps.py closure` widens the selection with the containers deriving from it and with its bases, so the published set stays consistent, then a single `docker buildx bake` builds the result in dependency order through the parent links of `docker-bake.hcl`. Nothing is hardcoded in the workflow.
+**Dependency ordering**: `scripts/container.py closure` widens the selection with the containers deriving from it and with its bases, so the published set stays consistent, then a single `docker buildx bake` builds the result in dependency order through the parent links of `docker-bake.hcl`. Nothing is hardcoded in the workflow.
 
 **Wheel**: when a selected target has a `wheel` context, the wheel is built first on the runner with `BRICKS_RELEASE_VERSION=<image-tag>`, so the compose files it bundles reference the dev images of the same run.
 
