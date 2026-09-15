@@ -21,7 +21,7 @@ tasks:
     desc: Refresh uv.lock for the library and every container, pass -- --upgrade to move to newer versions
     cmds:
       - uv lock {{.CLI_ARGS}}
-      - for p in containers/*/pyproject.toml; do uv lock --project "$(dirname "$p")" {{.CLI_ARGS}}; done
+      - for p in containers/*/pyproject.toml; do uv lock --project "$(dirname "$p")" {{.CLI_ARGS}} || exit 1; done
 
   deps:sync:
     desc: Install the locked dependencies of the library and every container into their .venv for local development
