@@ -4,7 +4,11 @@
 # in its Dockerfile (FROM ${REGISTRY}app-bricks/<parent>:${BASE_IMAGE_VERSION})
 # and links it here with parent_context(): bake then builds the parent in-graph,
 # in dependency order, however deep the chain. scripts/container_deps.py reads
-# the same FROM lines, so the two must agree.
+# the same FROM lines and the release checks that the two agree. Targets are
+# listed parents first, each followed by the containers deriving from it.
+#
+# Build arguments specific to a container (download URLs and digests) are the
+# ARG defaults of its Dockerfile, so it also builds standalone.
 #
 #   docker buildx bake --print                  # inspect the resolved definition
 #   docker buildx bake python-apps-base         # build a container and its parents
@@ -116,19 +120,77 @@ target "_downstream" {
 # Every container: a release builds and publishes them all.
 group "default" {
   targets = [
-    "aihub-models-runner",
-    "ei-models-runner",
-    "ei-qnn-models-runner",
-    "gesture-recognition-runner",
-    "llamacpp-npu-runner",
+    "python-slim",
     "llamacpp-runner",
     "models-downloader",
-    "pose-estimation-runner",
-    "python-apps-base",
     "python-base",
-    "python-slim",
+    "python-apps-base",
     "qairt-common-base",
+    "aihub-models-runner",
+    "gesture-recognition-runner",
+    "pose-estimation-runner",
+    "llamacpp-npu-runner",
+    "ei-models-runner",
+    "ei-qnn-models-runner",
   ]
+}
+
+target "python-slim" {
+  inherits   = ["_common"]
+  context    = "containers/base/python-slim"
+  tags       = image_tags("python-slim")
+  cache-from = cache_from("python-slim")
+  cache-to   = cache_to("python-slim")
+}
+
+target "llamacpp-runner" {
+  inherits   = ["_downstream"]
+  context    = "containers/ai/llamacpp-runner"
+  tags       = image_tags("llamacpp-runner")
+  cache-from = cache_from("llamacpp-runner")
+  cache-to   = cache_to("llamacpp-runner")
+  contexts   = parent_context("python-slim")
+}
+
+target "models-downloader" {
+  inherits   = ["_downstream"]
+  context    = "containers/bricks/models-downloader"
+  tags       = image_tags("models-downloader")
+  cache-from = cache_from("models-downloader")
+  cache-to   = cache_to("models-downloader")
+  contexts = merge(
+    { models = "models" },
+    parent_context("python-slim"),
+  )
+}
+
+target "python-base" {
+  inherits   = ["_downstream"]
+  context    = "containers/base/python-base"
+  tags       = image_tags("python-base")
+  cache-from = cache_from("python-base")
+  cache-to   = cache_to("python-base")
+  contexts   = parent_context("python-slim")
+}
+
+target "python-apps-base" {
+  inherits   = ["_downstream"]
+  context    = "containers/bricks/python-apps-base"
+  tags       = image_tags("python-apps-base")
+  cache-from = cache_from("python-apps-base")
+  cache-to   = cache_to("python-apps-base")
+  contexts = merge(
+    { wheel = "dist" },
+    parent_context("python-base"),
+  )
+}
+
+target "qairt-common-base" {
+  inherits   = ["_common"]
+  context    = "containers/base/qairt-common-base"
+  tags       = image_tags("qairt-common-base")
+  cache-from = cache_from("qairt-common-base")
+  cache-to   = cache_to("qairt-common-base")
 }
 
 target "aihub-models-runner" {
@@ -137,6 +199,33 @@ target "aihub-models-runner" {
   tags       = image_tags("aihub-models-runner")
   cache-from = cache_from("aihub-models-runner")
   cache-to   = cache_to("aihub-models-runner")
+  contexts   = parent_context("qairt-common-base")
+}
+
+target "gesture-recognition-runner" {
+  inherits   = ["_downstream"]
+  context    = "containers/ai/gesture-recognition-runner"
+  tags       = image_tags("gesture-recognition-runner")
+  cache-from = cache_from("gesture-recognition-runner")
+  cache-to   = cache_to("gesture-recognition-runner")
+  contexts   = parent_context("aihub-models-runner")
+}
+
+target "pose-estimation-runner" {
+  inherits   = ["_downstream"]
+  context    = "containers/ai/pose-estimation-runner"
+  tags       = image_tags("pose-estimation-runner")
+  cache-from = cache_from("pose-estimation-runner")
+  cache-to   = cache_to("pose-estimation-runner")
+  contexts   = parent_context("aihub-models-runner")
+}
+
+target "llamacpp-npu-runner" {
+  inherits   = ["_downstream"]
+  context    = "containers/ai/llamacpp-npu-runner"
+  tags       = image_tags("llamacpp-npu-runner")
+  cache-from = cache_from("llamacpp-npu-runner")
+  cache-to   = cache_to("llamacpp-npu-runner")
   contexts   = parent_context("qairt-common-base")
 }
 
@@ -154,111 +243,4 @@ target "ei-qnn-models-runner" {
   tags       = image_tags("ei-qnn-models-runner")
   cache-from = cache_from("ei-qnn-models-runner")
   cache-to   = cache_to("ei-qnn-models-runner")
-}
-
-target "gesture-recognition-runner" {
-  inherits   = ["_downstream"]
-  context    = "containers/ai/gesture-recognition-runner"
-  tags       = image_tags("gesture-recognition-runner")
-  cache-from = cache_from("gesture-recognition-runner")
-  cache-to   = cache_to("gesture-recognition-runner")
-  contexts   = parent_context("aihub-models-runner")
-}
-
-target "llamacpp-npu-runner" {
-  inherits   = ["_downstream"]
-  context    = "containers/ai/llamacpp-npu-runner"
-  tags       = image_tags("llamacpp-npu-runner")
-  cache-from = cache_from("llamacpp-npu-runner")
-  cache-to   = cache_to("llamacpp-npu-runner")
-  contexts   = parent_context("qairt-common-base")
-  args = {
-    LLAMA_CPP_URL    = "https://github.com/arduino/app-bricks-py/releases/download/llamacpp%2F20260914/llamacpp-hexagon-20260914.tar.gz"
-    LLAMA_CPP_DIGEST = "sha256:b24f92871670b9d222d06efd9447f9be0b82d310a13fa3008ab3fe69d2b41e33"
-  }
-}
-
-target "llamacpp-runner" {
-  inherits   = ["_downstream"]
-  context    = "containers/ai/llamacpp-runner"
-  tags       = image_tags("llamacpp-runner")
-  cache-from = cache_from("llamacpp-runner")
-  cache-to   = cache_to("llamacpp-runner")
-  contexts   = parent_context("python-slim")
-  args = {
-    LLAMA_CPP_URL    = "https://github.com/arduino/app-bricks-py/releases/download/llamacpp%2F20260914/llamacpp-cpu-20260914.tar.gz"
-    LLAMA_CPP_DIGEST = "sha256:e6bd5706ce4826842d6a4ad770a6bf825c6bf158fa9aab00561476e6995b5fc6"
-  }
-}
-
-target "models-downloader" {
-  inherits   = ["_downstream"]
-  context    = "containers/bricks/models-downloader"
-  tags       = image_tags("models-downloader")
-  cache-from = cache_from("models-downloader")
-  cache-to   = cache_to("models-downloader")
-  contexts = merge(
-    { models = "models" },
-    parent_context("python-slim"),
-  )
-}
-
-target "pose-estimation-runner" {
-  inherits   = ["_downstream"]
-  context    = "containers/ai/pose-estimation-runner"
-  tags       = image_tags("pose-estimation-runner")
-  cache-from = cache_from("pose-estimation-runner")
-  cache-to   = cache_to("pose-estimation-runner")
-  contexts   = parent_context("aihub-models-runner")
-}
-
-target "python-apps-base" {
-  inherits   = ["_downstream"]
-  context    = "containers/bricks/python-apps-base"
-  tags       = image_tags("python-apps-base")
-  cache-from = cache_from("python-apps-base")
-  cache-to   = cache_to("python-apps-base")
-  contexts = merge(
-    { wheel = "dist" },
-    parent_context("python-base"),
-  )
-}
-
-target "python-base" {
-  inherits   = ["_downstream"]
-  context    = "containers/base/python-base"
-  tags       = image_tags("python-base")
-  cache-from = cache_from("python-base")
-  cache-to   = cache_to("python-base")
-  contexts   = parent_context("python-slim")
-  args = {
-    OPENCV_WHL_URL                                 = "https://github.com/arduino/app-bricks-py/releases/download/opencv%2F4.13.0.92-20260610/opencv_python_headless-4.13.0+1ddb20b-cp313-cp313-linux_aarch64.whl"
-    OPENCV_WHL_DIGEST                              = "sha256:8d5e8319df040b93a07c91155afea515e3629fcb55510d4eee4716fc165b9c0a"
-    LIBCAMERA_DEB_URL                              = "https://github.com/arduino/app-bricks-py/releases/download/libcamera%2F0.7.1-qcom4/libcamera0.7_0.7.1-1.bpo13+1qcom4_arm64.deb"
-    LIBCAMERA_DEB_DIGEST                           = "sha256:958b7fb3d1a851542fddd5f54a259c685f1301945a3b10bce4fa15cf7886ef0f"
-    LIBCAMERA_IPA_DEB_URL                          = "https://github.com/arduino/app-bricks-py/releases/download/libcamera%2F0.7.1-qcom4/libcamera-ipa_0.7.1-1.bpo13+1qcom4_arm64.deb"
-    LIBCAMERA_IPA_DEB_DIGEST                       = "sha256:04ed476cd08acc897297f47b2a35e13fc71e459156b69be0bf7364a80bfac283"
-    GSTREAMER_LIBCAMERA_DEB_URL                    = "https://github.com/arduino/app-bricks-py/releases/download/libcamera%2F0.7.1-qcom4/gstreamer1.0-libcamera_0.7.1-1.bpo13+1qcom4_arm64.deb"
-    GSTREAMER_LIBCAMERA_DEB_DIGEST                 = "sha256:c5c38c5ddd9689cc4dd07cc433c85c325c408a67e631499679e67a616099e4f1"
-    GSTREAMER_QTIQMMFSRC_DEB_URL                   = "https://github.com/robgee86/app-bricks-py/releases/download/qtiqmmfsrc%2F1.8.1/qtiqmmfsrc-1.8.1.deb"
-    GSTREAMER_QTIQMMFSRC_DEB_DIGEST                = "sha256:b0b764a2f7ebf369de5cc9827c2952397d2ead757de7bee3f2c9c2f468d714a9"
-    GSTREAMER_LIBGSTREAMER_PLUGINS_BASE_DEB_URL    = "https://github.com/robgee86/app-bricks-py/releases/download/qtiqmmfsrc%2F1.8.1/libgstreamer-plugins-base1.0-0_1.26.2-1+deb13u1_arm64.deb"
-    GSTREAMER_LIBGSTREAMER_PLUGINS_BASE_DEB_DIGEST = "sha256:a6e1aaadbac810957f5c4ce981d955c686734e85c23cbb5b89ddd33299f920c6"
-  }
-}
-
-target "python-slim" {
-  inherits   = ["_common"]
-  context    = "containers/base/python-slim"
-  tags       = image_tags("python-slim")
-  cache-from = cache_from("python-slim")
-  cache-to   = cache_to("python-slim")
-}
-
-target "qairt-common-base" {
-  inherits   = ["_common"]
-  context    = "containers/base/qairt-common-base"
-  tags       = image_tags("qairt-common-base")
-  cache-from = cache_from("qairt-common-base")
-  cache-to   = cache_to("qairt-common-base")
 }

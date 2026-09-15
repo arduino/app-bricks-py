@@ -10,8 +10,8 @@ FROM ghcr.io/astral-sh/uv:0.10.3@sha256:7a88d4c4e6f44200575000638453a5a381db0ae3
 FROM python:3.13-slim-trixie@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS builder
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG OPENCV_WHL_URL
-ARG OPENCV_WHL_DIGEST
+ARG OPENCV_WHL_URL=https://github.com/arduino/app-bricks-py/releases/download/opencv%2F4.13.0.92-20260610/opencv_python_headless-4.13.0+1ddb20b-cp313-cp313-linux_aarch64.whl
+ARG OPENCV_WHL_DIGEST=sha256:8d5e8319df040b93a07c91155afea515e3629fcb55510d4eee4716fc165b9c0a
 ARG PYGOBJECT_VERSION=3.58.0
 
 COPY ./pyproject.toml ./uv.lock /tmp/deps/
@@ -51,16 +51,16 @@ RUN set -ex; \
 FROM ${REGISTRY}app-bricks/python-slim:${BASE_IMAGE_VERSION} AS production
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG LIBCAMERA_DEB_URL
-ARG LIBCAMERA_DEB_DIGEST
-ARG LIBCAMERA_IPA_DEB_URL
-ARG LIBCAMERA_IPA_DEB_DIGEST
-ARG GSTREAMER_LIBCAMERA_DEB_URL
-ARG GSTREAMER_LIBCAMERA_DEB_DIGEST
-ARG GSTREAMER_QTIQMMFSRC_DEB_URL
-ARG GSTREAMER_QTIQMMFSRC_DEB_DIGEST
-ARG GSTREAMER_LIBGSTREAMER_PLUGINS_BASE_DEB_URL
-ARG GSTREAMER_LIBGSTREAMER_PLUGINS_BASE_DEB_DIGEST
+ARG LIBCAMERA_DEB_URL=https://github.com/arduino/app-bricks-py/releases/download/libcamera%2F0.7.1-qcom4/libcamera0.7_0.7.1-1.bpo13+1qcom4_arm64.deb
+ARG LIBCAMERA_DEB_DIGEST=sha256:958b7fb3d1a851542fddd5f54a259c685f1301945a3b10bce4fa15cf7886ef0f
+ARG LIBCAMERA_IPA_DEB_URL=https://github.com/arduino/app-bricks-py/releases/download/libcamera%2F0.7.1-qcom4/libcamera-ipa_0.7.1-1.bpo13+1qcom4_arm64.deb
+ARG LIBCAMERA_IPA_DEB_DIGEST=sha256:04ed476cd08acc897297f47b2a35e13fc71e459156b69be0bf7364a80bfac283
+ARG GSTREAMER_LIBCAMERA_DEB_URL=https://github.com/arduino/app-bricks-py/releases/download/libcamera%2F0.7.1-qcom4/gstreamer1.0-libcamera_0.7.1-1.bpo13+1qcom4_arm64.deb
+ARG GSTREAMER_LIBCAMERA_DEB_DIGEST=sha256:c5c38c5ddd9689cc4dd07cc433c85c325c408a67e631499679e67a616099e4f1
+ARG GSTREAMER_QTIQMMFSRC_DEB_URL=https://github.com/robgee86/app-bricks-py/releases/download/qtiqmmfsrc%2F1.8.1/qtiqmmfsrc-1.8.1.deb
+ARG GSTREAMER_QTIQMMFSRC_DEB_DIGEST=sha256:b0b764a2f7ebf369de5cc9827c2952397d2ead757de7bee3f2c9c2f468d714a9
+ARG GSTREAMER_LIBGSTREAMER_PLUGINS_BASE_DEB_URL=https://github.com/robgee86/app-bricks-py/releases/download/qtiqmmfsrc%2F1.8.1/libgstreamer-plugins-base1.0-0_1.26.2-1+deb13u1_arm64.deb
+ARG GSTREAMER_LIBGSTREAMER_PLUGINS_BASE_DEB_DIGEST=sha256:a6e1aaadbac810957f5c4ce981d955c686734e85c23cbb5b89ddd33299f920c6
 
 ADD --checksum=${LIBCAMERA_DEB_DIGEST} ${LIBCAMERA_DEB_URL} /tmp/libcamera0.7.deb
 ADD --checksum=${LIBCAMERA_IPA_DEB_DIGEST} ${LIBCAMERA_IPA_DEB_URL} /tmp/libcamera-ipa.deb

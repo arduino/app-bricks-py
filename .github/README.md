@@ -70,7 +70,8 @@ over the `default` group, which lists every container.
 `scripts/container_deps.py` reads the same `FROM` lines to serve everything else that needs the graph:
 the dev workflow widens its selection with it, `scripts/sbom_delta.py` takes the base image to diff
 against from it, and `task containers:tree` prints the hierarchy. The release checks that the
-Dockerfiles and the bake targets describe the same set of containers before building.
+Dockerfiles and the bake targets describe the same set of containers and link the same parents before
+building. Targets are listed parents first, each followed by the containers deriving from it.
 
 ## Adding a New Container
 
@@ -93,9 +94,12 @@ target "my-container" {
   cache-from = cache_from("my-container")
   cache-to   = cache_to("my-container")
   contexts   = parent_context("python-slim") # only when deriving from a container of this repo
-  args       = { SOME_URL = "...", SOME_DIGEST = "sha256:..." }
 }
 ```
+
+Build arguments specific to the image, such as download URLs and digests, are `ARG` defaults in its
+Dockerfile, so `docker build` of the directory works on its own; the bake target only carries the
+common `REGISTRY` and `BASE_IMAGE_VERSION`.
 
 3. If the image installs Python packages, declare them in a `pyproject.toml` locked by `task deps:lock`
    and register the container in the dependency license scan, see
