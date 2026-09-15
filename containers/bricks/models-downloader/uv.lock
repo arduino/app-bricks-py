@@ -93,11 +93,11 @@ wheels = [
 
 [[package]]
 name = "filelock"
-version = "3.32.6"
+version = "3.29.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/38/46/126b1831dca12060d4a8296bf9c4fe5c93c4f22197fa239cb0cc82042bba/filelock-3.32.6.tar.gz", hash = "sha256:a3f55a18af3652a94d8f47d6055df434f254ca1d02ef2524850c6d249ca2512c", size = 225172, upload-time = "2026-09-08T22:57:11.528Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b5/fe/997687a931ab51049acce6fa1f23e8f01216374ea81374ddee763c493db5/filelock-3.29.0.tar.gz", hash = "sha256:69974355e960702e789734cb4871f884ea6fe50bd8404051a3530bc07809cf90", size = 57571, upload-time = "2026-04-19T15:39:10.068Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/cc/06/4f138f618dbea66803291274f228f01daf29f306fe8b96bc30dab765df75/filelock-3.32.6-py3-none-any.whl", hash = "sha256:3f16ecd0117feae0dfc147e8c62eb5daeccd8bd800378c3ddf416de9b4feb6b1", size = 100189, upload-time = "2026-09-08T22:57:10.182Z" },
+    { url = "https://files.pythonhosted.org/packages/81/47/dd9a212ef6e343a6857485ffe25bba537304f1913bdbed446a23f7f592e1/filelock-3.29.0-py3-none-any.whl", hash = "sha256:96f5f6344709aa1572bbf631c640e4ebeeb519e08da902c39a001882f30ac258", size = 39812, upload-time = "2026-04-19T15:39:08.752Z" },
 ]
 
 [[package]]
@@ -210,7 +210,7 @@ requires-dist = [
     { name = "hf-xet", specifier = "==1.5.2" },
     { name = "huggingface-hub", specifier = "==1.25.1" },
     { name = "pyyaml", specifier = "==6.0.3" },
-    { name = "qai-hub-models-cli", specifier = "==0.59.0" },
+    { name = "qai-hub-models-cli", specifier = "==0.62.2" },
     { name = "requests", specifier = "==2.33.1" },
     { name = "stream-unzip", specifier = "==0.0.101" },
     { name = "tqdm", specifier = "==4.67.3" },
@@ -311,9 +311,10 @@ wheels = [
 
 [[package]]
 name = "qai-hub-models-cli"
-version = "0.59.0"
+version = "0.62.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
+    { name = "filelock" },
     { name = "packaging" },
     { name = "platformdirs" },
     { name = "prettytable" },
@@ -322,7 +323,7 @@ dependencies = [
     { name = "tqdm" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/68/72/8b8852fdbef551ffb65c990f851e54d40d41201ab418e8a3b7648daeb0d3/qai_hub_models_cli-0.59.0-py3-none-any.whl", hash = "sha256:2f22c5b73c2c947232e227843ea7836070a4071f21867ff4ace60d52cfe1641b", size = 143715, upload-time = "2026-07-28T00:29:33.9Z" },
+    { url = "https://files.pythonhosted.org/packages/27/4c/9e1f94f6afc6229ead5f8c0ff61300aff6da2d6cd892448f52237669d56a/qai_hub_models_cli-0.62.2-py3-none-any.whl", hash = "sha256:cd88bf9f148b67eb4aa8dfeb6ae7a32cc9a49b0c69e2b2f3e032e16d6fd48b81", size = 156571, upload-time = "2026-09-11T20:37:36.776Z" },
 ]
 
 [[package]]

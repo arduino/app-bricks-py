@@ -4,7 +4,7 @@ name = "models-downloader"
 version = "0"
 requires-python = "==3.13.*"
 dependencies = [
-    "qai-hub-models-cli==0.59.0",
+    "qai-hub-models-cli==0.62.2",
     "requests==2.33.1",
     "huggingface_hub==1.25.1",
     "hf_xet==1.5.2",
