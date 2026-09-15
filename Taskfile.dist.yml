@@ -124,10 +124,7 @@ tasks:
   check:
     desc: Run every check, the Docker ones included, before opening a pull request
     cmds:
-      - task: check:format
-      - task: check:lint
-      - task: check:deps
-      - task: check:license-headers
+      - task: check:ci
       - task: check:licenses
       - task: check:containers:bake
 

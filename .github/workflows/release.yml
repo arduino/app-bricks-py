@@ -1,4 +1,4 @@
-name: RELEASE - Build & Publish Release
+name: Release
 
 run-name: "Release ${{ inputs.version }}"
 

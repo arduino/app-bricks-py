@@ -1,4 +1,4 @@
-name: Cleanup branch containers from GHCR
+name: Clean up containers
 
 on:
   delete:

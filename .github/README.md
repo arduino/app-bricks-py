@@ -24,18 +24,34 @@ if two groups declare the same name.
 The full list of images, with what each one builds from and what it is for, is the inventory in
 [containers/README.md](../containers/README.md#inventory).
 
+## Pull Request Checks
+
+Every pull request runs four workflows, named after the task they run so the status list reads like
+`task --list`. The jobs are the components.
+
+| Workflow | Job | Runs |
+|---|---|---|
+| `check.yml` (Check) | `code` | `task check:ci`: formatting, lint, SPDX headers and locks, in the Python container of the images |
+| | `containers` | `task check:containers:bake`: `docker-bake.hcl` agrees with the Dockerfiles |
+| `check-licenses.yml` (Check licenses) | `licenses` | the dependency license scan, see [scripts/licensed/README.md](../scripts/licensed/README.md); also runs on pushes to main to seed its caches |
+| `check-pyright.yml` (Pyright checks) | `pyright` | `task check:bricks:api` and `task check:bricks:typing` against the PR base and head, informative; `comment-pyright.yml` posts the report on the pull request |
+| `test.yml` (Test) | `bricks` | `task test:bricks` in the Python container of the images |
+| | `containers` | `task test:containers`, each container suite in its own venv |
+
+Locally, `task check` runs every check including the Docker ones, and `task test` both test suites.
+
 ## Release Workflow
 
-A release is started by hand: run `docker-publish.yml` from the branch to release, giving the version.
+A release is started by hand: run `release.yml` from the branch to release, giving the version.
 **Every release publishes every container at `X.Y.Z`**, together with the Python `.whl` and `sboms.zip`
 on the GitHub Release. There is one release cycle: the library and the containers it runs always ship
 together. The version must be `X.Y.Z` with an optional `rcN`, `aN` or `bN` suffix, which marks a
 prerelease; anything else, or a version whose `release/X.Y.Z` tag already exists, fails the run before
 building.
 
-Three jobs: `build` validates the version, builds the wheel with `task build:bricks` on the runner (the version
+Two jobs: `build` validates the version, builds the wheel with `task build:bricks` on the runner (the version
 injected into `src/arduino/version.py`, the project plus its `build` dependency group installed by uv),
-then bakes and pushes every image; `sbom` scans the published images; `publish` assembles `sboms.zip`
+then bakes and pushes every image; `publish` derives the SBOM deltas from the published images, assembles `sboms.zip`
 and creates the GitHub Release with the wheel attached, which creates the `release/X.Y.Z` tag on the
 released commit. The tag therefore exists only for versions whose run succeeded; a failed run leaves
 images at that version in the registry, overwritten by the next attempt.
@@ -155,7 +171,7 @@ into a `sbom-delta-<tag>` run artifact.
 
 ## Dev Build Workflow
 
-`docker-build.yml` ("DEV - Build & Publish Branch Containers") is triggered manually via `workflow_dispatch` with:
+`dev-release.yml` ("Dev release") is triggered manually via `workflow_dispatch` with:
 
 - `branch` — branch to build (defaults to the branch the workflow is run from)
 - `containers` — comma-separated list of containers to build, or `all` (default)
@@ -171,7 +187,7 @@ Images are tagged `dev-<branch-name>` (branch name lowercased and sanitized, e.g
 
 ## Image Cleanup
 
-`docker-cleanup.yml` runs two independent jobs:
+`cleanup-containers.yml` runs two independent jobs:
 
 | Trigger | Job | What it does |
 |---|---|---|
