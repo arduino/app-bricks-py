@@ -23,6 +23,12 @@ tasks:
       - uv lock {{.CLI_ARGS}}
       - for p in containers/*/*/pyproject.toml; do uv lock --project "$(dirname "$p")" {{.CLI_ARGS}}; done
 
+  deps:sync:
+    desc: Install the locked dependencies of the library and every container into their .venv for local development
+    cmds:
+      - uv sync --frozen {{.CLI_ARGS}}
+      - for p in containers/*/*/pyproject.toml; do uv sync --frozen --project "$(dirname "$p")" {{.CLI_ARGS}}; done
+
   doc:
     desc: Generate documentation
     cmds:
