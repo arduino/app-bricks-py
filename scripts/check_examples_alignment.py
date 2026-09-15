@@ -106,6 +106,12 @@ def cmd_run(args) -> int:
         print(f"python interpreter not found: {python}", file=sys.stderr)
         return 2
     if python:
+        # Absolute, but NOT resolved: <venv>/bin/python is a symlink to the base
+        # interpreter, and pyright derives the search paths from the interpreter it
+        # is handed. Resolving the link pointed it at the bare base install, whose
+        # site-packages has none of the dependencies, and every third-party import
+        # of the examples came back unresolved while the venv sat unused.
+        python = os.path.abspath(python)
         preflight = subprocess.run([python, "-c", "import " + ", ".join(NAMESPACE_DEPENDENCIES)], capture_output=True, text=True)
         if preflight.returncode != 0:
             print(
@@ -117,7 +123,7 @@ def cmd_run(args) -> int:
             return 2
     cmd = ["npx", "-y", f"pyright@{args.pyright_version}", "--project", str(examples_dir), "--outputjson"]
     if python:
-        cmd += ["--pythonpath", str(Path(python).resolve())]
+        cmd += ["--pythonpath", python]
     try:
         config_path.write_text(json.dumps(config))
         proc = subprocess.run(cmd, capture_output=True, text=True)
