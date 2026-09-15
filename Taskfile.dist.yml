@@ -2,9 +2,9 @@ version: "3"
 
 tasks:
   init:
-    desc: Set up the development environment, uv provides Python 3.13 and installs everything into .venv
+    desc: Set up the development environment, uv provides Python 3.13 and installs the library and every container into their .venv
     cmds:
-      - uv sync --extra dev
+      - task: deps:sync
 
   init:ci:
     desc: Initialize CI environment
@@ -15,7 +15,7 @@ tasks:
       - apt-get install -y --no-install-recommends --no-install-suggests libavcodec-dev libavformat-dev libavutil-dev libswscale-dev
       - apt-get install -y --no-install-recommends --no-install-suggests libjpeg62-turbo-dev libpng-dev libtiff-dev libwebp-dev libopenblas-dev liblapacke-dev
       - apt-get install -y --no-install-recommends --no-install-suggests libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
-      - task: init
+      - uv sync --frozen --extra dev
 
   deps:lock:
     desc: Refresh uv.lock for the library and every container, pass -- --upgrade to move to newer versions
@@ -26,8 +26,8 @@ tasks:
   deps:sync:
     desc: Install the locked dependencies of the library and every container into their .venv for local development
     cmds:
-      - uv sync --frozen {{.CLI_ARGS}}
-      - for p in containers/*/*/pyproject.toml; do uv sync --frozen --project "$(dirname "$p")" {{.CLI_ARGS}}; done
+      - uv sync --frozen --extra dev {{.CLI_ARGS}}
+      - for p in containers/*/*/pyproject.toml; do uv sync --frozen --project "$(dirname "$p")" {{.CLI_ARGS}} || exit 1; done
 
   deps:check:
     desc: Fail if any uv.lock is out of date with its pyproject.toml, run task deps:lock to refresh
