@@ -78,5 +78,3 @@ A failed lookup raises `RuntimeError` from `locate()`, and is delivered as the s
 | `AUTH_USER` | TPS authentication user | *(required)* |
 
 Both can also be passed to the constructor: `TPSLocationAPI(auth_key=..., auth_user=...)`.
-
-Advanced variables, available in the brick configuration: `TPS_LOC_API_URL` (https only), `TPS_AUTH_VERSION`, `TPS_PROTO_VERSION`, `HTTP_REQ_TIMEOUT_SEC`, `SCAN_CHANNEL_DWELL_TU`, `SCAN_TIMEOUT_SECONDS`, `SCAN_RETRIES` and `SCAN_CACHE_SECONDS`. Their defaults suit the Arduino boards and rarely need changes.

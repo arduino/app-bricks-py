@@ -13,10 +13,10 @@ services:
     volumes:
       - "${APP_HOME:-.}/.cache/tps_location_api:/app/.cache/tps_location_api"
     environment:
-      - SCAN_TIMEOUT_SECONDS=${SCAN_TIMEOUT_SECONDS:-10}
-      - SCAN_RETRIES=${SCAN_RETRIES:-3}
-      - SCAN_CHANNEL_DWELL_TU=${SCAN_CHANNEL_DWELL_TU:-60}
-      - SCAN_CACHE_SECONDS=${SCAN_CACHE_SECONDS:-10}
+      - SCAN_TIMEOUT_SECONDS=10
+      - SCAN_RETRIES=3
+      - SCAN_CHANNEL_DWELL_TU=60
+      - SCAN_CACHE_SECONDS=10
     healthcheck:
       test: ["CMD", "python3", "-c", "import socket; s = socket.socket(socket.AF_UNIX); s.settimeout(2); s.connect('/app/.cache/tps_location_api/scanner.sock')"]
       interval: 20s

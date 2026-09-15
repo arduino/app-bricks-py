@@ -24,10 +24,10 @@ from arduino.app_utils import Logger, brick
 logger = Logger("TPSLocationAPI")
 
 SCANNER_SOCKET_PATH = os.getenv("SCANNER_SOCKET_PATH", "/app/.cache/tps_location_api/scanner.sock")
-TPS_LOC_API_URL = os.getenv("TPS_LOC_API_URL", "https://global.skyhook.com/wps2/json/location")
-TPS_AUTH_VERSION = os.getenv("TPS_AUTH_VERSION", "2.3")
-TPS_PROTO_VERSION = os.getenv("TPS_PROTO_VERSION", "2.41")
-HTTP_REQ_TIMEOUT_SEC = int(os.getenv("HTTP_REQ_TIMEOUT_SEC", "15"))
+TPS_LOC_API_URL = "https://global.skyhook.com/wps2/json/location"
+TPS_AUTH_VERSION = "2.3"
+TPS_PROTO_VERSION = "2.41"
+HTTP_REQ_TIMEOUT_SEC = 15
 
 STREET_ADDRESS_FIELDS = (
     "distanceToPoint",
