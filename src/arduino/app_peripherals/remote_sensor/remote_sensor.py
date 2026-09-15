@@ -16,7 +16,7 @@ from collections.abc import Callable
 from concurrent.futures import CancelledError, ThreadPoolExecutor, Future
 
 from arduino.app_internal.core.peripherals.bpp_codec import BPPCodec
-from arduino.app_utils import Logger
+from arduino.app_utils import Logger, peripheral_registry
 
 from .errors import RemoteSensorOpenError, RemoteSensorConfigError
 
@@ -133,6 +133,9 @@ class RemoteSensor:
         self._on_datapoint_cb: Callable[[bytes], None] | None = None
         self._on_status_changed_cb: Callable[[str, dict], None] | None = None
         self._event_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="RemoteSensorCallbackRunner")
+        # Release this peripheral when the app shuts down, even if the user never stops it
+        # explicitly. The registry keeps a weak reference, so this does not keep it alive.
+        peripheral_registry.Peripherals.register(self)
 
     @property
     def status(self) -> Literal["disconnected", "connected", "streaming", "paused"]:

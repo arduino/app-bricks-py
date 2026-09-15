@@ -11,7 +11,7 @@ from typing import Literal, Self
 from collections.abc import Callable, Iterator
 import numpy as np
 
-from arduino.app_utils import Logger
+from arduino.app_utils import Logger, peripheral_registry
 
 from .errors import CameraOpenError, CameraReadError, CameraTransformError
 
@@ -55,6 +55,9 @@ class BaseCamera(ABC):
         self._camera_lock = threading.Lock()
         self._is_started = False
         self._last_capture_time = time.monotonic()
+        # Set before stop() takes the camera lock, so an in-flight capture() stops waiting out its
+        # FPS interval and hands the lock over instead of making the shutdown wait for it
+        self._stop_requested = threading.Event()
 
         # Auto-reconnection parameters
         self.auto_reconnect = auto_reconnect
@@ -67,6 +70,9 @@ class BaseCamera(ABC):
         # Event handling
         self._on_status_changed_cb: Callable[[str, dict], None] | None = None
         self._event_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="CameraEvent")
+        # Release this peripheral when the app shuts down, even if the user never stops it
+        # explicitly. The registry keeps a weak reference, so this does not keep it alive.
+        peripheral_registry.Peripherals.register(self)
 
     @property
     def status(self) -> Literal["disconnected", "connected", "streaming", "paused"]:
@@ -98,6 +104,7 @@ class BaseCamera(ABC):
         """
         with self._camera_lock:
             self.logger.info("Starting camera...")
+            self._stop_requested.clear()
 
             attempt = 0
             while not self.is_started():
@@ -127,6 +134,10 @@ class BaseCamera(ABC):
 
     def stop(self) -> None:
         """Stop the camera and release resources."""
+        # Signalled before acquiring the lock: capture() holds it while throttling to the target
+        # FPS, which at a low FPS is long enough to matter during a time-boxed app shutdown.
+        self._stop_requested.set()
+
         with self._camera_lock:
             if not self.is_started():
                 return
@@ -153,15 +164,19 @@ class BaseCamera(ABC):
             Exception: If the underlying implementation fails to read a frame.
         """
         with self._camera_lock:
+            # This check has to stay ahead of _read_frame(): once the camera is stopped, a worker
+            # thread that outlived the shutdown must fail here rather than reach the
+            # auto-reconnect in _read_frame() and hand itself a freshly reopened device. On the
+            # CSI stack that would re-acquire a camera the app has already given back.
             if not self.is_started():
                 raise CameraReadError(f"Attempted to read from {self.name} before starting it.")
 
-            # Apply FPS throttling
+            # Apply FPS throttling, interruptible so that a pending stop() is not kept waiting
             if self._desired_interval > 0:
                 current_time = time.monotonic()
                 elapsed = current_time - self._last_capture_time
-                if elapsed < self._desired_interval:
-                    time.sleep(self._desired_interval - elapsed)
+                if elapsed < self._desired_interval and self._stop_requested.wait(self._desired_interval - elapsed):
+                    return None
 
             self._last_capture_time = time.monotonic()
 

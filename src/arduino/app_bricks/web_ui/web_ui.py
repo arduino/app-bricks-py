@@ -20,6 +20,17 @@ from arduino.app_utils import brick, Logger
 
 logger = Logger("WebUI")
 
+GRACEFUL_SHUTDOWN_TIMEOUT_S = 2.0
+"""How long the server waits for in-flight requests to finish before cancelling them.
+
+Uvicorn defaults to waiting forever, which never terminates in practice: a Socket.IO websocket or
+an engine.io long poll is almost always in flight, and a streaming response (see expose_camera)
+never completes on its own. The app's shutdown is time-boxed, so the wait has to be bounded here.
+"""
+
+FORCE_SHUTDOWN_TIMEOUT_S = 2.5
+"""How long to wait, after asking the server to stop, before forcing it to drop connections."""
+
 
 @brick
 class WebUI:
@@ -140,7 +151,13 @@ class WebUI:
             self._init_static_routes()
         self._init_socketio()
 
-        config = uvicorn.Config(self.app, host=self._addr, port=self._port, log_level="warning")
+        config = uvicorn.Config(
+            self.app,
+            host=self._addr,
+            port=self._port,
+            log_level="warning",
+            timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_TIMEOUT_S,
+        )
         if self._use_tls:
             from arduino.app_utils.tls_cert_manager import TLSCertificateManager
 
@@ -154,13 +171,42 @@ class WebUI:
         self._server = uvicorn.Server(config)
 
     def stop(self) -> None:
-        """Stop the web server gracefully.
+        """Stop the web server.
 
-        Waits up to 5 seconds for current requests to finish before terminating.
+        Asks the server to stop and shuts the Socket.IO layer down, then forces the server to drop
+        whatever is still connected. In-flight streaming responses, such as the ones produced by
+        expose_camera() or by a generator passed to expose_api(), never complete on their own and
+        are therefore cut off.
         """
         logger.debug("Stopping server...")
-        if self._server:
-            self._server.should_exit = True  # Ask to stop the server
+        if not self._server:
+            return
+
+        self._server.should_exit = True  # Ask to stop the server
+
+        # Stop the Socket.IO background task and close the client connections. Without this the
+        # server keeps waiting on an open websocket, or on an engine.io long poll parked for up to
+        # ping_interval + ping_timeout. Socket.IO is mounted as a sub-application, so its own
+        # shutdown hook never runs and it has to be driven from here, on the server's loop.
+        # SocketManager does not expose shutdown(), it only keeps the underlying server on the
+        # FastAPI app as `sio`.
+        sio_server = getattr(self.app, "sio", None)
+        if sio_server is not None and self._server_loop is not None and self._server_loop.is_running():
+            try:
+                asyncio.run_coroutine_threadsafe(sio_server.shutdown(), self._server_loop)
+            except Exception as e:
+                logger.debug(f"Failed to shut down the Socket.IO layer: {e}")
+
+        # Escalate if the graceful path does not complete: dropping connections is preferable to
+        # overrunning the app's shutdown budget and having the process killed instead.
+        def force_stop() -> None:
+            if self._server and not getattr(self._server, "force_exit", False):
+                logger.debug("Graceful shutdown timed out, forcing the server to stop")
+                self._server.force_exit = True
+
+        timer = threading.Timer(FORCE_SHUTDOWN_TIMEOUT_S, force_stop)
+        timer.daemon = True
+        timer.start()
 
     def execute(self) -> None:
         logger.debug(f"Serving static web files from {self._assets_dir_path}")
