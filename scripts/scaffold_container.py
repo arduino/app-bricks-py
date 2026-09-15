@@ -6,7 +6,7 @@
 inventory row in containers/README.md and, unless --no-python says the image installs no Python
 packages, the pyproject.toml with its license scan and Dependabot registrations.
 
-  python3 -m scripts.scaffold_container my-runner --from python-slim --purpose "What it runs"
+  python3 -m scripts.scaffold_container my-runner --from python-slim --desc "What it runs"
   python3 -m scripts.scaffold_container my-runner --from python:3.13-slim-trixie@sha256:... --no-python
 
 The parent is either a container of this repository, linked in the Dockerfile and in the bake target
@@ -148,10 +148,10 @@ def mermaid_id(name: str) -> str:
     return re.sub(r"[^a-z0-9]", "", name)
 
 
-def add_inventory_row(readme: str, name: str, parent: str | None, base_image: str, purpose: str) -> str:
+def add_inventory_row(readme: str, name: str, parent: str | None, base_image: str, desc: str) -> str:
     """Add the container to the inventory table, after its parent, and to the hierarchy graph."""
     built_from = f"`{parent}`" if parent else f"`{base_image.split('@')[0]}`"
-    row = f"| `{name}` | {built_from} | {purpose} |\n"
+    row = f"| `{name}` | {built_from} | {desc} |\n"
     rows = list(re.finditer(r"^\| `([^`]+)` \|.*\n", readme, re.MULTILINE))
     if not rows:
         raise ScaffoldError("containers/README.md has no inventory table.")
@@ -214,7 +214,7 @@ def detect_uv_image(containers_dir: Path) -> str:
     return DEFAULT_UV_IMAGE
 
 
-def scaffold(repo_root: Path, name: str, parent_or_image: str, purpose: str, python: bool) -> list[str]:
+def scaffold(repo_root: Path, name: str, parent_or_image: str, desc: str, python: bool) -> list[str]:
     """Create the container and register it everywhere the repository expects, returning the next steps."""
     if not NAME_PATTERN.match(name):
         raise ScaffoldError(f"'{name}' is not a valid container name, use lowercase letters, digits and dashes.")
@@ -238,7 +238,7 @@ def scaffold(repo_root: Path, name: str, parent_or_image: str, purpose: str, pyt
     dependabot = repo_root / ".github" / "dependabot.yml"
     updates = {
         bake: add_bake_target(bake.read_text(encoding="utf-8"), name, parent, containers),
-        readme: add_inventory_row(readme.read_text(encoding="utf-8"), name, parent, base_image, purpose),
+        readme: add_inventory_row(readme.read_text(encoding="utf-8"), name, parent, base_image, desc),
     }
     if python:
         updates[licensed] = add_licensed_app(licensed.read_text(encoding="utf-8"), name)
@@ -262,7 +262,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("name", help="Container name, also the image name and the bake target.")
     parser.add_argument("--from", dest="parent", required=True, metavar="PARENT", help="A container of this repo or an external image reference.")
-    parser.add_argument("--purpose", default="TODO", help="One line for the inventory in containers/README.md.")
+    parser.add_argument("--desc", default="TODO", help="One line for the inventory in containers/README.md.")
     parser.add_argument(
         "--no-python",
         dest="python",
@@ -276,7 +276,7 @@ def create_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = create_parser().parse_args(argv)
     try:
-        steps = scaffold(args.repo_root, args.name, args.parent, args.purpose, args.python)
+        steps = scaffold(args.repo_root, args.name, args.parent, args.desc, args.python)
     except (ScaffoldError, ContainerDepsError) as error:
         print(f"Error: {error}", file=sys.stderr)
         return 1
