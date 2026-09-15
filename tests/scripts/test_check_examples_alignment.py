@@ -6,8 +6,10 @@
 
 from __future__ import annotations
 
+import io
 import json
 import sys
+from contextlib import redirect_stdout
 from pathlib import Path
 
 import pytest
@@ -18,6 +20,13 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from scripts import check_examples_alignment as check  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def isolated_github_env(monkeypatch, tmp_path):
+    """Keep the script away from the real workflow files when the tests run in CI."""
+    monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "github_output"))
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
 
 
 def diagnostic(file: str, line: int, message: str, rule: str = "reportArgumentType") -> dict:
@@ -35,19 +44,23 @@ def write_report(path: Path, *diagnostics: dict) -> Path:
     return path
 
 
-def run_diff(tmp_path: Path, base: Path, head: Path, *extra: str) -> tuple[int, str]:
+def run_diff(tmp_path: Path, base: Path, head: Path, *extra: str) -> tuple[int, str, str]:
+    """Run the diff mode; returns (exit code, summary markdown, stdout).
+
+    Stdout is captured explicitly rather than through capsys: the script prints
+    workflow commands (::warning::, ::error::) that the Actions runner would turn
+    into annotations of the test job if they reached its log.
+    """
     summary = tmp_path / "summary.md"
-    argv = ["diff", "--base", str(base), "--head", str(head), "--summary", str(summary), *extra]
-    return _run_main(argv), summary.read_text()
-
-
-def _run_main(argv: list[str]) -> int:
-    saved = sys.argv
-    sys.argv = ["check_examples_alignment.py", *argv]
+    argv = ["check_examples_alignment.py", "diff", "--base", str(base), "--head", str(head), "--summary", str(summary), *extra]
+    saved, sys.argv = sys.argv, argv
+    out = io.StringIO()
     try:
-        return check.main()
+        with redirect_stdout(out):
+            code = check.main()
     finally:
         sys.argv = saved
+    return code, summary.read_text(), out.getvalue()
 
 
 @pytest.fixture
@@ -58,11 +71,9 @@ def reports(tmp_path: Path) -> tuple[Path, Path, Path]:
     return clean, one, two
 
 
-def test_new_errors_are_informative_by_default(tmp_path, reports, capsys, monkeypatch):
+def test_new_errors_are_informative_by_default(tmp_path, reports):
     clean, _one, two = reports
-    monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
-    code, summary = run_diff(tmp_path, clean, two)
-    out = capsys.readouterr().out
+    code, summary, out = run_diff(tmp_path, clean, two)
     assert code == 0
     assert "## ❌ Examples alignment check" in summary
     assert "(**2 new**, 0 fixed)" in summary
@@ -70,10 +81,9 @@ def test_new_errors_are_informative_by_default(tmp_path, reports, capsys, monkey
     assert "::error" not in out
 
 
-def test_fail_on_new_blocks_and_uses_error_annotations(tmp_path, reports, capsys):
+def test_fail_on_new_blocks_and_uses_error_annotations(tmp_path, reports):
     clean, _one, two = reports
-    code, _summary = run_diff(tmp_path, clean, two, "--fail-on-new")
-    out = capsys.readouterr().out
+    code, _summary, out = run_diff(tmp_path, clean, two, "--fail-on-new")
     assert code == 1
     assert out.count("::error::examples alignment:") == 2
 
@@ -85,24 +95,21 @@ def test_fail_on_new_passes_without_new_errors(tmp_path, reports):
     assert run_diff(tmp_path, two, two, "--fail-on-new")[0] == 0
 
 
-def test_annotate_files_places_annotations_inline(tmp_path, reports, capsys):
+def test_annotate_files_places_annotations_inline(tmp_path, reports):
     clean, one, _two = reports
-    run_diff(tmp_path, clean, one, "--fail-on-new", "--annotate-files")
-    out = capsys.readouterr().out
+    _code, _summary, out = run_diff(tmp_path, clean, one, "--fail-on-new", "--annotate-files")
     assert "::error file=bricks/a/python/main.py,line=5::examples alignment: bricks/a/python/main.py:5 [reportArgumentType] boom" in out
 
 
 def test_pre_existing_errors_are_flagged_when_none_is_new(tmp_path, reports):
     _clean, _one, two = reports
-    _code, summary = run_diff(tmp_path, two, two)
+    _code, summary, _out = run_diff(tmp_path, two, two)
     assert "## ✅ Examples alignment check" in summary
     assert "✅ No new errors in this PR." in summary
     assert "⚠️ 2 pre-existing errors" in summary
 
 
-def test_new_errors_count_is_exposed_to_the_workflow(tmp_path, reports, monkeypatch):
+def test_new_errors_count_is_exposed_to_the_workflow(tmp_path, reports):
     clean, _one, two = reports
-    output = tmp_path / "github_output"
-    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
     run_diff(tmp_path, clean, two)
-    assert "new_errors=2" in output.read_text()
+    assert "new_errors=2" in (tmp_path / "github_output").read_text()
