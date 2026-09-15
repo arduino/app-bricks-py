@@ -263,10 +263,15 @@ def cmd_diff(args) -> int:
         line = head_occurrences[key][0]
         properties = f" file={file},line={line}" if args.annotate_files else ""
         print(f"::{level}{properties}::examples alignment: {file}:{line} [{rule}] {message}")
-    # Exposed to the workflow, which turns it into a label on the PR.
+    # Exposed to the workflow, which turns it into a label on the PR. Best effort:
+    # the file belongs to the runner, and a context that only inherits the
+    # variable (a test job running as another user) must not fail on it.
     if output_path := os.environ.get("GITHUB_OUTPUT"):
-        with open(output_path, "a") as f:
-            f.write(f"new_errors={sum(new.values())}\n")
+        try:
+            with open(output_path, "a") as f:
+                f.write(f"new_errors={sum(new.values())}\n")
+        except OSError as e:
+            print(f"could not write new_errors to GITHUB_OUTPUT: {e}", file=sys.stderr)
 
     return 1 if new and args.fail_on_new else 0
 
