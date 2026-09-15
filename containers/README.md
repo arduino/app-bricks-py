@@ -74,8 +74,8 @@ See the [docker-bake.hcl reference](../.github/README.md#docker-bakehcl-referenc
 
 ## Release process
 
-Pushing a `release/X.Y.Z` tag runs `docker-publish.yml`, which publishes **every container** at `X.Y.Z`
-and attaches the Python `.whl` and the SBOMs of every image to the GitHub Release. The library and the
+Running `docker-publish.yml` with version `X.Y.Z` publishes **every container** at `X.Y.Z`, attaches the
+Python `.whl` and the SBOMs of every image to the GitHub Release and creates the `release/X.Y.Z` tag. The library and the
 containers it runs always ship together, so the compose files bundled in the wheel reference the images
 published by the same release (see [Compose file versioning](../.github/README.md#compose-file-versioning)).
 

@@ -153,9 +153,9 @@ On pull requests the `check-pyright.yml` workflow runs both checks against the P
 
 ## Release
 
-Release is based on tags pushed to `main`. A single workflow (`docker-publish.yml`) publishes **every**
-container when a `release/X.Y.Z` tag is pushed, and uploads the Python wheel and the SBOMs to the GitHub
-Release. The library and the containers it runs ship together with the same version: the compose files
+A release is started by running the `docker-publish.yml` workflow from the branch to release, giving
+the version `X.Y.Z`. It publishes **every** container, uploads the Python wheel and the SBOMs to the
+GitHub Release and creates the `release/X.Y.Z` tag on the released commit only once all of that succeeded. The library and the containers it runs ship together with the same version: the compose files
 bundled in the wheel reference the containers published by the same release.
 
 **Prerelease**: if the version contains `rc`, `alpha` or `beta`, images are tagged with the version only
