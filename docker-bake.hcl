@@ -91,9 +91,11 @@ function "parent_context" {
   result = { "${image(parent)}:${BASE_IMAGE_VERSION}" = "target:${parent}" }
 }
 
+# Every image carries the SBOM BuildKit generates while building it, read with
+# `docker buildx imagetools inspect <image> --format '{{ json .SBOM }}'`.
 target "_common" {
   platforms = ["linux/arm64"]
-  attest    = ["type=provenance,disabled=true"]
+  attest    = ["type=provenance,disabled=true", "type=sbom"]
   labels = {
     "org.opencontainers.image.source"   = "https://github.com/${GITHUB_REPOSITORY}"
     "org.opencontainers.image.url"      = "https://github.com/${GITHUB_REPOSITORY}"

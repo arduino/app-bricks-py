@@ -22,7 +22,7 @@ on:
         type: boolean
         default: false
       sbom:
-        description: "Also generate the SBOMs of the published images"
+        description: "Also compute the delta SBOMs of the published images"
         required: false
         type: boolean
         default: false
@@ -118,10 +118,24 @@ jobs:
           SKIP_CACHE: ${{ inputs.skip_cache }}
           GITHUB_SHA: ${{ github.sha }}
 
-  sbom:
-    needs: [build]
-    if: inputs.sbom
-    uses: ./.github/workflows/_sbom-scan.yml
-    with:
-      containers: ${{ needs.build.outputs.containers }}
-      version: ${{ needs.build.outputs.image_tag }}
+      # The images carry their SBOM attestation regardless, this computes the
+      # deltas against their base images like the release does
+      - name: Install syft
+        if: inputs.sbom
+        run: curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+
+      - name: Generate the delta SBOMs
+        if: inputs.sbom
+        run: |
+          python3 -m scripts.sbom_delta \
+            --registry "ghcr.io/${{ github.repository_owner }}/" \
+            --version "${{ steps.plan.outputs.image_tag }}" \
+            --output-dir sbom-delta \
+            $(jq -r 'join(" ")' <<< '${{ steps.plan.outputs.containers }}')
+
+      - name: Upload the delta SBOMs
+        if: inputs.sbom
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-delta-${{ steps.plan.outputs.image_tag }}
+          path: sbom-delta/

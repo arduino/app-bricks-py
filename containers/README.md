@@ -93,10 +93,12 @@ content never changes but whose result does (e.g. `apt-get upgrade`).
 
 ## SBOMs
 
-Each release attaches `sboms.zip` to the GitHub Release, covering **every image it publishes**. Each
-image is scanned with `scripts/sbom_delta.py` against the base image it was built from, read from the
-final `FROM` of its Dockerfile, in a matrix job that runs once the images are pushed. The archive holds one
-`<name>-<version>/` folder per image with `base`, `full` and `delta` SPDX documents. A failed scan never
+Every image is pushed with the SBOM BuildKit generated while building it, readable from the registry with
+`docker buildx imagetools inspect <image> --format '{{ json .SBOM }}'`. Each release also attaches
+`sboms.zip` to the GitHub Release, covering **every image it publishes**: `scripts/sbom_delta.py` reads
+those attestations and computes, for each image, the delta against the base image of its Dockerfile,
+the attestation of the parent container or a Syft scan of the external base. The archive holds one
+`<name>-<version>/` folder per image with `base`, `full` and `delta` SPDX documents. A failed delta never
 blocks the release: the image is reported as a warning and listed in `MISSING.txt` inside the archive.
 
 ## Development builds

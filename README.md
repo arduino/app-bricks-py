@@ -197,7 +197,7 @@ After editing any `pyproject.toml` run `task deps:lock`, with `-- --upgrade` to 
 `task license:deps` checks the licenses of the Python packages shipped by the library and by every container, using Docker. Records live under `.licenses/`, the allowed licenses and reviewed packages in `.licensed.yml`. See [scripts/licensed/README.md](scripts/licensed/README.md) for how it works and what to do when it fails.
 
 ## SBOM (Software Bill of Materials)
-SBOMs are not kept in the tree. Each release attaches `sboms.zip` to the GitHub Release, with one folder per published image holding three SPDX documents:
+Every published image carries the SBOM BuildKit generated while building it, and each release attaches `sboms.zip` to the GitHub Release, with one folder per published image holding three SPDX documents:
 
 - `base.spdx.json` — packages of the base image the container derives `FROM`, read from the final stage of its Dockerfile
 - `full.spdx.json` — complete package list of the container image
@@ -212,4 +212,4 @@ optionally passing container names and the image tag to scan, e.g.:
 task sbom:delta -- python-apps-base --version 1.0.0
 ```
 
-**Note**: To run this task, you need `syft` installed and access to the container registry.
+**Note**: To run this task, you need Docker with buildx, `syft` for the external base images and access to the container registry.
