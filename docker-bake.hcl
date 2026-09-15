@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: Copyright (C) Arduino s.r.l. and/or its affiliated companies
+#
+# SPDX-License-Identifier: MPL-2.0
+
 # Build definition of every container under containers/<name>/.
 #
 # A container deriving from another container of this repository declares it
