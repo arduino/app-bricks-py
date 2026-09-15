@@ -29,6 +29,12 @@ tasks:
       - uv sync --frozen {{.CLI_ARGS}}
       - for p in containers/*/*/pyproject.toml; do uv sync --frozen --project "$(dirname "$p")" {{.CLI_ARGS}}; done
 
+  deps:check:
+    desc: Fail if any uv.lock is out of date with its pyproject.toml, run task deps:lock to refresh
+    cmds:
+      - uv lock --check
+      - for p in containers/*/*/pyproject.toml; do uv lock --check --project "$(dirname "$p")" || exit 1; done
+
   doc:
     desc: Generate documentation
     cmds:
