@@ -98,14 +98,14 @@ def build_venv(app):
     return f"{app['name']}: venv built"
 
 
-def run_licensed(config, app, tmp):
+def run_licensed(config, app, tmp, commands=("cache", "status")):
     """Runs licensed on a single app through a config holding only that app."""
     app_config = {**config, "root": str(SRC), "apps": [app]}
     config_file = Path(tmp) / f"{app['name']}.yml"
     config_file.write_text(yaml.safe_dump(app_config))
     output = []
     ok = True
-    for command in ("cache", "status"):
+    for command in commands:
         result = subprocess.run(["licensed", command, "-c", str(config_file)], cwd=SRC, capture_output=True, text=True)
         output.append(result.stdout + result.stderr)
         if result.returncode != 0:
@@ -117,6 +117,8 @@ def run_licensed(config, app, tmp):
 
 
 def main():
+    # --check reports the status of the committed records without rewriting them
+    commands = ("status",) if "--check" in sys.argv[1:] else ("cache", "status")
     config, apps = load_config()
     check_projects_covered(apps)
     VENVS.mkdir(exist_ok=True)
@@ -127,7 +129,7 @@ def main():
         for message in pool.map(build_venv, apps):
             print(message, flush=True)
         with tempfile.TemporaryDirectory() as tmp:
-            results = list(pool.map(lambda app: run_licensed(config, app, tmp), apps))
+            results = list(pool.map(lambda app: run_licensed(config, app, tmp, commands), apps))
     if not all(results):
         failed = [app["name"] for app, ok in zip(apps, results) if not ok]
         fail("licensed reported problems for: " + ", ".join(failed))

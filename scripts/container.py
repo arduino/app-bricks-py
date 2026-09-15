@@ -6,8 +6,8 @@
 inventory row in containers/README.md and, unless --no-python says the image installs no Python
 packages, the pyproject.toml with its license scan and Dependabot registrations.
 
-  python3 -m scripts.scaffold_container my-runner --group ai --from python-slim --desc "What it runs"
-  python3 -m scripts.scaffold_container my-runner --group ai --from python:3.13-slim-trixie@sha256:... --no-python
+  python3 -m scripts.container my-runner --group ai --from python-slim --desc "What it runs"
+  python3 -m scripts.container my-runner --group ai --from python:3.13-slim-trixie@sha256:... --no-python
 
 The group is one of the containers/<group>/ directories (ai, base, bricks), see containers/README.md.
 The parent is either a container of this repository, linked in the Dockerfile and in the bake target
@@ -127,7 +127,7 @@ def add_bake_target(hcl: str, name: str, group: str, parent: str | None, contain
     if parent:
         missing = [target for target in subtree(containers, parent) if target not in blocks]
         if missing:
-            raise ScaffoldError(f"docker-bake.hcl has no target for {', '.join(missing)}, run `task containers:check`.")
+            raise ScaffoldError(f"docker-bake.hcl has no target for {', '.join(missing)}, run `task check:containers:bake`.")
         anchor = max(subtree(containers, parent), key=lambda target: blocks[target][0])
     else:
         anchor = max(blocks, key=lambda target: blocks[target][1])
@@ -257,8 +257,8 @@ def scaffold(repo_root: Path, name: str, group: str, parent_or_image: str, desc:
 
     steps = [f"Complete containers/{group}/{name}/Dockerfile and the purpose of '{name}' in containers/README.md."]
     if python:
-        steps.append(f"Declare the packages in containers/{group}/{name}/pyproject.toml, then run `task deps:lock` and `task license:deps`.")
-    steps.append("Run `task containers:check` and `task containers:tree`, then build with `docker buildx bake " + name + "`.")
+        steps.append(f"Declare the packages in containers/{group}/{name}/pyproject.toml, then run `task deps:lock` and `task fix:licenses`.")
+    steps.append(f"Run `task show:containers`, then build with `task build:containers -- {name}`.")
     return warnings + steps
 
 

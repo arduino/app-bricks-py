@@ -33,7 +33,7 @@ together. The version must be `X.Y.Z` with an optional `rcN`, `aN` or `bN` suffi
 prerelease; anything else, or a version whose `release/X.Y.Z` tag already exists, fails the run before
 building.
 
-Three jobs: `build` validates the version, builds the wheel with `task build` on the runner (the version
+Three jobs: `build` validates the version, builds the wheel with `task build:bricks` on the runner (the version
 injected into `src/arduino/version.py`, the project plus its `build` dependency group installed by uv),
 then bakes and pushes every image; `sbom` scans the published images; `publish` assembles `sboms.zip`
 and creates the GitHub Release with the wheel attached, which creates the `release/X.Y.Z` tag on the
@@ -69,16 +69,16 @@ over the `default` group, which lists every container.
 
 `scripts/container_deps.py` reads the same `FROM` lines to serve everything else that needs the graph:
 the dev workflow widens its selection with it, `scripts/sbom_delta.py` takes the base image to diff
-against from it, and `task containers:tree` prints the hierarchy. The release checks that the
+against from it, and `task show:containers` prints the hierarchy. The release checks that the
 Dockerfiles and the bake targets describe the same set of containers and link the same parents before
 building. Targets are listed parents first, each followed by the containers deriving from it.
 
 ## Adding a New Container
 
-`task containers:new -- my-container --group bricks --from python-slim --desc "What it does"` performs the steps
+`task new:container -- my-container --group bricks --from python-slim --desc "What it does"` performs the steps
 below: it creates the directory with a starting `Dockerfile` and `pyproject.toml`, adds the bake target
 after its parent, the inventory row, the license scan and Dependabot entries, then runs
-`task containers:check`. Pass an image reference to `--from` for an external base and `--no-python` for
+`task check:containers:bake`. Pass an image reference to `--from` for an external base and `--no-python` for
 an image that installs no Python packages. What follows is what it does, for reference and for adjusting the result.
 
 1. Create `containers/<group>/my-container/Dockerfile`, filing it under the group that describes what it
@@ -112,7 +112,7 @@ common `REGISTRY` and `BASE_IMAGE_VERSION`.
    [scripts/licensed/README.md](../scripts/licensed/README.md).
 4. Run the release workflow — it builds and publishes every target of the `default` group.
 
-Check the result with `docker buildx bake --print my-container` and `task containers:tree`.
+Check the result with `docker buildx bake --print my-container` and `task show:containers`.
 
 ## docker-bake.hcl Reference
 
@@ -129,7 +129,7 @@ Variables the workflows set, all optional for local builds:
 | `SKIP_CACHE` | `false` | When `true`, the cache is not imported but still exported |
 
 Two targets take extra named contexts: `python-apps-base` installs the wheel from `wheel` (`dist/`,
-filled by `task build` with the wheel, `pyproject.toml` and `uv.lock`) and `models-downloader` reads
+filled by `task build:bricks` with the wheel, `pyproject.toml` and `uv.lock`) and `models-downloader` reads
 `models-list.yaml` from `models` (the repository's `models/` directory).
 
 ## SBOMs

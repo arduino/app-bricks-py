@@ -1,13 +1,35 @@
 version: "3"
 
+# Task names are <intent>:<component>[:<detail>]. The intent is one of init, deps, test, build,
+# check, fix, new, show; the component is bricks (the library) or containers, and a bare intent
+# covers both. check:* tasks only verify and exit non-zero, fix:* tasks apply the same rules.
+
+vars:
+  # Files that carry an SPDX header, everything tracked but docs, data and configuration
+  LICENSE_HEADER_EXCLUDE: '(^|/)(docs|examples-internal|tools)/|\.(md|txt|json|yml|yaml|toml|gitignore|dockerignore|gitmodules|in|ini|eim|lock)$'
+  LICENSE_HEADER_ARGS: --skip-unrecognized --copyright-prefix spdx-string-c --copyright 'Arduino s.r.l. and/or its affiliated companies' --exclude-year --license MPL-2.0
+
 tasks:
+  # init: set up the development environment, a .venv per component with the locked dependencies
+
   init:
-    desc: Set up the development environment, uv provides Python 3.13 and installs the library and every container into their .venv
+    desc: Set up the development environment, the library and every container get a .venv with their locked dependencies
     cmds:
-      - task: deps:sync
+      - task: init:bricks
+      - task: init:containers
+
+  init:bricks:
+    desc: Create .venv with the library and its development tools, exactly the versions in uv.lock
+    cmds:
+      - uv sync --frozen --extra dev {{.CLI_ARGS}}
+
+  init:containers:
+    desc: Create a .venv in every container directory with its locked packages, the interpreter to point the IDE at
+    cmds:
+      - for p in containers/*/*/pyproject.toml; do uv sync --frozen --project "$(dirname "$p")" {{.CLI_ARGS}} || exit 1; done
 
   init:ci:
-    desc: Initialize CI environment
+    desc: Set up the CI environment, system packages plus the library .venv
     cmds:
       - apt-get update
       - apt-get install -y --no-install-recommends --no-install-suggests libasound2-dev portaudio19-dev libzbar0
@@ -15,97 +37,179 @@ tasks:
       - apt-get install -y --no-install-recommends --no-install-suggests libavcodec-dev libavformat-dev libavutil-dev libswscale-dev
       - apt-get install -y --no-install-recommends --no-install-suggests libjpeg62-turbo-dev libpng-dev libtiff-dev libwebp-dev libopenblas-dev liblapacke-dev
       - apt-get install -y --no-install-recommends --no-install-suggests libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
-      - uv sync --frozen --extra dev
+      - task: init:bricks
+
+  # deps: dependency management, the locks that pin what the library and the images install
 
   deps:lock:
-    desc: Refresh uv.lock for the library and every container, pass -- --upgrade to move to newer versions
+    desc: Refresh every uv.lock after editing a pyproject.toml, pass -- --upgrade to move to newer versions
+    cmds:
+      - task: deps:bricks:lock
+      - task: deps:containers:lock
+
+  deps:bricks:lock:
+    desc: Refresh the library uv.lock
     cmds:
       - uv lock {{.CLI_ARGS}}
+
+  deps:containers:lock:
+    desc: Refresh the uv.lock of every container
+    cmds:
       - for p in containers/*/*/pyproject.toml; do uv lock --project "$(dirname "$p")" {{.CLI_ARGS}} || exit 1; done
 
-  deps:sync:
-    desc: Install the locked dependencies of the library and every container into their .venv for local development
-    cmds:
-      - uv sync --frozen --extra dev {{.CLI_ARGS}}
-      - for p in containers/*/*/pyproject.toml; do uv sync --frozen --project "$(dirname "$p")" {{.CLI_ARGS}} || exit 1; done
-
-  deps:check:
-    desc: Fail if any uv.lock is out of date with its pyproject.toml, run task deps:lock to refresh
-    cmds:
-      - uv lock --check
-      - for p in containers/*/*/pyproject.toml; do uv lock --check --project "$(dirname "$p")" || exit 1; done
-
-  doc:
-    desc: Generate the API documentation under docs/
-    cmds:
-      - uv run --group build python -m docs_generator.runner docs
+  # test: unit tests, the library ones in .venv and the container ones in their own venv
 
   test:
-    desc: Run all unit tests, of the library and of the containers
+    desc: Run the unit tests of the library and of the containers
     cmds:
-      - uv run pytest -vs ./tests --ignore=tests/arduino/app_bricks/cloud_llm/eval/
+      - task: test:bricks
       - task: test:containers
+
+  test:bricks:
+    desc: Run the library unit tests, pass -- <path> to run a folder or a file
+    cmds:
+      - uv run pytest -vs {{default "./tests" .CLI_ARGS}} --ignore=tests/arduino/app_bricks/cloud_llm/eval/
+
+  test:bricks:llm:
+    desc: Run the LLM evaluation suite, needs the provider API keys
+    cmds:
+      - uv run deepeval test run tests/arduino/app_bricks/cloud_llm/eval/ -n 4 -vs
 
   test:containers:
     desc: Run the tests of every container with a Python test suite, each in its own .venv with its test dependency group
     cmds:
       - for d in containers/*/*; do ls "$d"/tests/*.py >/dev/null 2>&1 || continue; uv run --frozen --group test --project "$d" python -m pytest -vs "$d/tests" || exit 1; done
 
-  llm_test:
-    desc: Run all LLM tests
-    cmds:
-      - uv run deepeval test run tests/arduino/app_bricks/cloud_llm/eval/ -n 4 -vs
+  # build: artifacts, the wheel with its bundled assets and docs, the container images, the SBOMs
 
-  test:*:
-    desc: Run tests for a specific folder
+  build:
+    desc: Build the library wheel and every container image
     cmds:
-      - uv run pytest -vs ./tests/{{index .MATCH 0}}
+      - task: build:bricks
+      - task: build:containers
 
-  lint:
-    desc: Run linters
+  build:bricks:
+    desc: Build the wheel into dist/, its version is read from src/arduino/version.py
     cmds:
-      - uv run ruff check --fix .
+      - defer: rm -rf src/arduino/app_bricks/static
+      - rm -rf dist
+      - task: build:bricks:static
+      - uv run uv build .
+      - cp pyproject.toml uv.lock dist/
 
-  check:api:
+  build:bricks:docs:
+    desc: Generate the API documentation under docs/
+    cmds:
+      - uv run --group build python -m docs_generator.runner docs
+
+  build:bricks:static:
+    desc: Provision the static assets bundled into the wheel, BRICKS_RELEASE_VERSION overrides the version stamped into compose and models files
+    internal: true
+    cmds:
+      - rm -rf src/arduino/app_bricks/static
+      - task: build:bricks:docs
+      - uv run --group build arduino-bricks-release --static-dir src/arduino/app_bricks/static --api-docs-dir docs
+
+  build:containers:
+    desc: Build the container images with docker buildx bake, pass -- <names> for a subset (parents are built too)
+    cmds:
+      - docker buildx bake {{.CLI_ARGS}}
+
+  build:containers:sbom:
+    desc: Generate the delta SBOMs of the published containers (requires syft and registry access)
+    cmds:
+      - python3 -m scripts.sbom_delta {{.CLI_ARGS}}
+
+  # check: verify and fail, never modify, the fast ones are what CI runs on a pull request
+
+  check:
+    desc: Run every check that needs no Docker, what CI runs on a pull request
+    cmds:
+      - task: check:format
+      - task: check:lint
+      - task: check:license-headers
+      - task: check:deps
+
+  check:format:
+    desc: Fail if any file is not formatted, run task fix:format
+    cmds:
+      - uv run ruff format --check
+
+  check:lint:
+    desc: Fail on lint errors, run task fix:lint for the fixable ones
+    cmds:
+      - uv run ruff check .
+
+  check:license-headers:
+    desc: Fail if a source file lacks its SPDX header, run task fix:license-headers
+    cmds:
+      # Annotates a copy of the tracked files and reports the ones the fixer would change
+      - |
+        set -eu
+        tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+        git ls-files -z | grep -zEv '{{.LICENSE_HEADER_EXCLUDE}}' | tar --null -cf - -T - | tar -xf - -C "$tmp"
+        mkdir -p "$tmp/LICENSES" && cp LICENSE.txt "$tmp/LICENSES/MPL-2.0.txt"
+        (cd "$tmp" && find . -type f -not -path './LICENSES/*' -print0 | xargs -0 uv run --project "$OLDPWD" reuse annotate {{.LICENSE_HEADER_ARGS}} >/dev/null)
+        missing="$(cd "$tmp" && find . -type f -not -path './LICENSES/*' | while read -r f; do cmp -s "$f" "$OLDPWD/$f" || echo "${f#./}"; done)"
+        if [ -n "$missing" ]; then printf 'Missing SPDX headers, run task fix:license-headers:\n%s\n' "$missing"; exit 1; fi
+        echo "SPDX headers are in place"
+
+  check:licenses:
+    desc: Fail if the dependency license records under .licenses/ are not current with the locks (licensed status, via Docker)
+    cmds:
+      - task: _licenses:image
+      - task: _licenses:scan
+        vars: { LICENSED_ARGS: "--check" }
+
+  check:deps:
+    desc: Fail if any uv.lock is out of date with its pyproject.toml, run task deps:lock
+    cmds:
+      - uv lock --check
+      - for p in containers/*/*/pyproject.toml; do uv lock --check --project "$(dirname "$p")" || exit 1; done
+
+  check:bricks:api:
     desc: "Check the API contract with app-bricks-examples: pyright over the examples (profile api-user) and the bricks coverage. Extra args go to the run mode, see scripts/check_pyright.py --help"
     cmds:
       - uv run python scripts/check_pyright.py run {{.CLI_ARGS}}
       - uv run python scripts/check_pyright.py coverage
 
-  check:typing:
+  check:bricks:typing:
     desc: "Type-check the library sources with pyright (profile app-bricks-py). Extra args go to the typing mode, see scripts/check_pyright.py --help"
     cmds:
       - uv run python scripts/check_pyright.py typing {{.CLI_ARGS}}
 
-  fmt:
-    desc: Format code
+  check:containers:bake:
+    desc: Fail if docker-bake.hcl and the Dockerfiles disagree on the containers or their parents
+    cmds:
+      - docker buildx bake --print 2>/dev/null | python3 -m scripts.container_deps check-bake
+
+  # fix: apply the rules the check tasks verify, formatting, lint, headers and license records
+
+  fix:
+    desc: Apply formatting, the fixable lint rules and the SPDX headers
+    cmds:
+      - task: fix:format
+      - task: fix:lint
+      - task: fix:license-headers
+
+  fix:format:
+    desc: Format the code
     cmds:
       - uv run ruff format
 
-  provision-static:
-    desc: Provision the static assets bundled into the wheel, BRICKS_RELEASE_VERSION overrides the version stamped into compose and models files
+  fix:lint:
+    desc: Fix the lint errors ruff can fix, the others are reported
     cmds:
-      - rm -rf src/arduino/app_bricks/static
-      - task: doc
-      - uv run --group build arduino-bricks-release --static-dir src/arduino/app_bricks/static --api-docs-dir docs
+      - uv run ruff check --fix .
 
-  build:
-    desc: Build the wheel, its version is read from src/arduino/version.py
-    cmds:
-      - defer: rm -rf src/arduino/app_bricks/static
-      - rm -rf dist
-      - task: provision-static
-      - uv run uv build .
-      - cp pyproject.toml uv.lock dist/
-
-  license:headers:
-    desc: Update SPDX license headers (REUSE)
+  fix:license-headers:
+    desc: Add the SPDX headers and refresh the license files (REUSE)
     cmds:
       - |
         git ls-files |
-        grep -Ev "(^|/)(docs|examples-internal|tools)/|\.(md|txt|json|yml|yaml|toml|gitignore|dockerignore|gitmodules|in|ini|eim|lock)$" |
+        grep -Ev '{{.LICENSE_HEADER_EXCLUDE}}' |
         sed 's/ /\\ /g' |
-        xargs uv run reuse annotate -r --skip-unrecognized --copyright-prefix 'spdx-string-c' --copyright 'Arduino s.r.l. and/or its affiliated companies' --exclude-year --license 'MPL-2.0'
+        xargs uv run reuse annotate -r {{.LICENSE_HEADER_ARGS}}
       - uv run reuse download --all
       - |
         licenses_dir="LICENSES"
@@ -115,61 +219,72 @@ tasks:
           fi
           rm -rf "$licenses_dir"
         fi
-      # Strip trailing whitespace from license files.
-      # The upstream SPDX license texts (fetched by `reuse download`)
-      # contain stray trailing spaces that break license parsers such
-      # as `licensed`.
+      # The upstream SPDX texts fetched by reuse carry trailing spaces that break parsers such as licensed
       - cmd: find . -maxdepth 1 -name 'LICENSE*' -type f -exec sed -i '' 's/[[:space:]]*$//' {} +
         platforms: [darwin]
       - cmd: find . -maxdepth 1 -name 'LICENSE*' -type f -exec sed -i 's/[[:space:]]*$//' {} +
         platforms: [linux, windows]
 
-  license:deps:
-    desc: Check and cache dependency licenses (licensed, via Docker)
+  fix:licenses:
+    desc: Update the dependency license records under .licenses/ from the locks (licensed cache, via Docker)
     cmds:
-      - task: license:deps:build
-      - task: license:deps:run
+      - task: _licenses:image
+      - task: _licenses:scan
 
-  license:deps:build:
-    desc: Build the licensed image
+  fix:licenses:scan:
+    desc: Run the license scan against an already built arduino-licensed image (CI), LICENSED_VENVS is the volume or directory holding the venvs
     cmds:
-      - docker build -t arduino-licensed scripts/licensed
+      - task: _licenses:scan
+        vars: { LICENSED_VENVS: "{{.LICENSED_VENVS}}" }
 
-  license:deps:run:
-    desc: Run the licensed scan, LICENSED_VENVS is the volume or host directory holding the venvs
-    vars:
-      LICENSED_VENVS: '{{.LICENSED_VENVS | default "arduino-licensed-venvs"}}'
-    cmds:
-      - docker run --rm -v "$(pwd):/src" -v "{{.LICENSED_VENVS}}:/venvs" arduino-licensed
-
-  license:deps:clean:
-    desc: Remove the venvs cached by the licensed scan, the image itself is kept
+  fix:licenses:clean:
+    desc: Remove the venvs cached by the license scan, the image itself is kept
     cmds:
       - docker volume rm -f arduino-licensed-venvs
 
-  license:
-    desc: Update license headers, files, and dependency license caches
+  _licenses:image:
+    internal: true
     cmds:
-      - task: license:headers
-      - task: license:deps
+      - docker build -t arduino-licensed scripts/licensed
 
-  sbom:delta:
-    desc: Generate delta SBOMs for containers (requires syft and registry access)
+  _licenses:scan:
+    internal: true
+    vars:
+      LICENSED_VENVS: '{{.LICENSED_VENVS | default "arduino-licensed-venvs"}}'
     cmds:
-      - python3 -m scripts.sbom_delta {{.CLI_ARGS}}
+      - docker run --rm -v "$(pwd):/src" -v "{{.LICENSED_VENVS}}:/venvs" arduino-licensed {{.LICENSED_ARGS}}
 
-  containers:new:
-    desc: "Scaffold a container and register it everywhere: task containers:new -- <name> --group <group> --from <container|image> [--no-python] [--desc text]"
+  # new: scaffold a component with every file and registration the repository expects
+
+  new:brick:
+    desc: "Scaffold a brick package with its config, README and tests: task new:brick -- <name> [--name text] [--desc text] [--category name]"
     cmds:
-      - python3 -m scripts.scaffold_container {{.CLI_ARGS}}
-      - task: containers:check
+      - uv run python -m scripts.bricks new {{.CLI_ARGS}}
 
-  containers:tree:
+  new:container:
+    desc: "Scaffold a container and register it everywhere: task new:container -- <name> --group <group> --from <container|image> [--no-python] [--desc text]"
+    cmds:
+      - python3 -m scripts.container {{.CLI_ARGS}}
+      - task: check:containers:bake
+
+  # show: information about the components, nothing is modified
+
+  show:bricks:
+    desc: List the bricks with their category and name
+    cmds:
+      - uv run python -m scripts.bricks list
+
+  show:brick:
+    desc: "Show the configuration and files of one brick: task show:brick -- <name>"
+    cmds:
+      - uv run python -m scripts.bricks show {{.CLI_ARGS}}
+
+  show:containers:
     desc: Print the container hierarchy derived from the Dockerfiles
     cmds:
       - python3 -m scripts.container_deps tree
 
-  containers:check:
-    desc: Check that docker-bake.hcl agrees with the Dockerfiles
+  show:container:
+    desc: "Show the base image, parent, children and files of one container: task show:container -- <name>"
     cmds:
-      - docker buildx bake --print 2>/dev/null | python3 -m scripts.container_deps check-bake
+      - python3 -m scripts.container_deps show {{.CLI_ARGS}}

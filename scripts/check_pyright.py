@@ -33,8 +33,8 @@ Typical PR usage:
 
 Quick local usage (defaults: examples in ../app-bricks-examples, library in
 src, interpreter from the project .venv, no JSON output, details printed):
-  task check:api      (run + coverage)
-  task check:typing
+  task check:bricks:api      (run + coverage)
+  task check:bricks:typing
 """
 
 import argparse

@@ -155,6 +155,22 @@ class Containers:
                 )
         return problems
 
+    def describe(self, name: str) -> str:
+        """Render what the repository knows about one container."""
+        if name not in self.directory:
+            raise ContainerDepsError(f"Unknown container '{name}', see `list`.")
+        directory = self.directory[name]
+        lines = [
+            f"{name}",
+            f"  directory:  {directory}",
+            f"  base image: {self.base[name]}",
+            f"  parent:     {self.parent[name] or '-'}",
+            f"  children:   {', '.join(self.children(name)) or '-'}",
+            f"  python:     {'pyproject.toml + uv.lock' if (directory / 'pyproject.toml').exists() else '-'}",
+            f"  tests:      {'tests/' if (directory / 'tests').is_dir() else '-'}",
+        ]
+        return "\n".join(lines)
+
     def to_dict(self) -> dict[str, dict[str, str | None]]:
         """Map every container to its base image and parent container."""
         return {name: {"base": self.base[name], "parent": self.parent[name]} for name in self.names}
@@ -190,6 +206,8 @@ def create_parser() -> argparse.ArgumentParser:
     closure_parser = subparsers.add_parser("closure", help="Widen a selection with its parents and children, as a JSON array.")
     closure_parser.add_argument("containers", nargs="+", help="Selected container names.")
     subparsers.add_parser("tree", help="Print the container hierarchy.")
+    show_parser = subparsers.add_parser("show", help="Print the base image, parent, children and files of one container.")
+    show_parser.add_argument("name")
     subparsers.add_parser("check-bake", help="Check a `docker buildx bake --print` definition, read from stdin, against the Dockerfiles.")
     return parser
 
@@ -205,6 +223,8 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(containers.closure(args.containers)))
         elif args.command == "tree":
             print(containers.tree())
+        elif args.command == "show":
+            print(containers.describe(args.name))
         elif args.command == "check-bake":
             problems = containers.check_bake(json.load(sys.stdin))
             for problem in problems:

@@ -48,7 +48,7 @@ jobs:
         run: |
           export PATH="${{ env.TASKFILE_PATH }}:$PATH"
           set -o pipefail
-          task license:deps:run LICENSED_VENVS="${{ env.LICENSED_VENVS }}" 2>&1 | tee licensed_status.log || echo "failed=true" >> "$GITHUB_OUTPUT"
+          task fix:licenses:scan LICENSED_VENVS="${{ env.LICENSED_VENVS }}" 2>&1 | tee licensed_status.log || echo "failed=true" >> "$GITHUB_OUTPUT"
 
       - name: Annotate and summarize errors
         if: always()
@@ -90,7 +90,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
 
           if [ -s "$actual_errors_file" ]; then
-            echo "::error::Dependency license cache is out of date. Run 'task license:deps' locally, then review the changes, commit, and push the updated files."
+            echo "::error::Dependency license cache is out of date. Run 'task fix:licenses' locally, then review the changes, commit, and push the updated files."
             echo "❌ The following dependency license issues require review:" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             awk '
@@ -98,7 +98,7 @@ jobs:
               NF { print "```text\n" $0 "\n```" }
             ' "$actual_errors_file" >> $GITHUB_STEP_SUMMARY
           elif [ "${{ steps.licensed.outputs.failed }}" = "true" ]; then
-            echo "::error::task license:deps failed before reporting the license status, check the step log."
+            echo "::error::task fix:licenses failed before reporting the license status, check the step log."
             echo "❌ The dependency license scan did not complete, check the step log." >> $GITHUB_STEP_SUMMARY
           else
             echo "✅ No blocking dependency license issues found." >> $GITHUB_STEP_SUMMARY
@@ -108,7 +108,7 @@ jobs:
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "### Outdated dependency records" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "⚠️ These records changed during \`licensed cache\`. This can reflect dependency version updates, license text changes, or other cached metadata changes. They are non-blocking here, but usually mean the branch did not yet contain the latest cached dependency metadata. Please consider to run \`task license:deps\` locally, then review the changes, commit, and push the updated files." >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ These records changed during \`licensed cache\`. This can reflect dependency version updates, license text changes, or other cached metadata changes. They are non-blocking here, but usually mean the branch did not yet contain the latest cached dependency metadata. Please consider to run \`task fix:licenses\` locally, then review the changes, commit, and push the updated files." >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             cat "$updated_records_file" >> $GITHUB_STEP_SUMMARY
             while IFS= read -r record; do
