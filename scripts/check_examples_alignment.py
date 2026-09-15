@@ -12,8 +12,10 @@ from a source checkout (no wheel build needed). Three modes:
   run       Run pyright over the examples trees against a library source path
             and save the diagnostics as JSON.
   diff      Compare two run outputs (base vs head of a PR) and report new/fixed
-            errors. Exits 1 when the head introduces new errors: the PR changes
-            the API contract the published examples rely on.
+            errors. Informative by design, always exits 0: new errors mean the PR
+            changes the API contract the published examples rely on, and the
+            workflow surfaces them on the PR (summary, comment, label) without
+            blocking it, so a coordinated library/examples change stays possible.
   coverage  Report the library bricks that have no examples, highlighting the
             ones introduced by the PR. Informative by design: a new brick may
             legitimately land before its examples do.
@@ -212,7 +214,7 @@ def cmd_diff(args) -> int:
     if new:
         lines += [
             "",
-            "❌ This PR introduces errors in the published examples: either adapt the library change to keep the "
+            "⚠️ This PR introduces errors in the published examples: either adapt the library change to keep the "
             "examples' contract, or open the matching PR on app-bricks-examples and coordinate the merge.",
         ]
     if args.reports_url:
@@ -229,10 +231,14 @@ def cmd_diff(args) -> int:
             f.write(report + "\n")
     for key in sorted(new):
         file, rule, message = key
-        print(f"::error::examples alignment: {file}:{head_occurrences[key][0]} [{rule}] {message}")
+        print(f"::warning::examples alignment: {file}:{head_occurrences[key][0]} [{rule}] {message}")
+    # Exposed to the workflow, which turns it into a label on the PR.
+    if output_path := os.environ.get("GITHUB_OUTPUT"):
+        with open(output_path, "a") as f:
+            f.write(f"new_errors={sum(new.values())}\n")
 
-    # New errors fail the check; pre-existing ones are reported but tolerated.
-    return 1 if new else 0
+    # Informative by design: new errors are reported on the PR, never blocking.
+    return 0
 
 
 DISABLED_RE = re.compile(r"^disabled:\s*true\s*$", re.MULTILINE)
