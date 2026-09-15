@@ -41,9 +41,15 @@ tasks:
       - uv run python -m docs_generator.runner
 
   test:
-    desc: Run all unit tests
+    desc: Run all unit tests, of the library and of the containers
     cmds:
       - uv run pytest -vs ./tests --ignore=tests/arduino/app_bricks/cloud_llm/eval/
+      - task: test:containers
+
+  test:containers:
+    desc: Run the tests of every container with a Python test suite, each in its own .venv with its test dependency group
+    cmds:
+      - for d in containers/*/*; do ls "$d"/tests/*.py >/dev/null 2>&1 || continue; uv run --frozen --group test --project "$d" python -m pytest -vs "$d/tests" || exit 1; done
 
   llm_test:
     desc: Run all LLM tests
