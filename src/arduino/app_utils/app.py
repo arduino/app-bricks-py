@@ -20,7 +20,7 @@ logger = Logger("App")
 # The whole shutdown must fit in the container stop grace period: a process killed while still
 # holding an exclusive peripheral can leave it unusable for everyone else, so budgets are
 # deliberately conservative and leave headroom for the interpreter teardown.
-SHUTDOWN_BRICKS_BUDGET_S = 6.0
+SHUTDOWN_BRICKS_BUDGET_S = 5.0
 """Wall-clock budget, in seconds, for stopping every brick. Shared globally, not per brick."""
 
 SHUTDOWN_PERIPHERALS_BUDGET_S = 2.0
