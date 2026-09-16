@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""Unit tests for the diff mode of the examples alignment check."""
+"""Unit tests for the pyright check script: rules loading and diff mode."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts import check_examples_alignment as check  # noqa: E402
+from scripts import check_pyright as check  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -113,3 +113,65 @@ def test_new_errors_count_is_exposed_to_the_workflow(tmp_path, reports):
     clean, _one, two = reports
     run_diff(tmp_path, clean, two)
     assert "new_errors=2" in (tmp_path / "github_output").read_text()
+
+
+# --- rules file ---------------------------------------------------------------
+
+
+def write_rules(path: Path, **overrides) -> Path:
+    rules = {
+        "schemaVersion": 1,
+        "pythonVersion": "3.13",
+        "pyrightVersion": "1.1.411",
+        "useLibraryCodeForTypes": True,
+        "profiles": {
+            "app-bricks-py": {"typeCheckingMode": "strict", "rules": {"reportMissingTypeStubs": "none"}},
+            "api-user": {"typeCheckingMode": "standard", "rules": {}},
+        },
+    }
+    rules.update(overrides)
+    path.write_text(json.dumps(rules))
+    return path
+
+
+def test_profile_config_merges_engine_settings_mode_and_rules(tmp_path):
+    rules = check.load_rules(write_rules(tmp_path / "pyright-rules.json"))
+    library = check.profile_config(rules, "app-bricks-py")
+    assert library == {"typeCheckingMode": "strict", "reportMissingTypeStubs": "none", "pythonVersion": "3.13", "useLibraryCodeForTypes": True}
+    api = check.profile_config(rules, "api-user")
+    assert api["typeCheckingMode"] == "standard"
+    with pytest.raises(ValueError, match="unknown profile"):
+        check.profile_config(rules, "nope")
+
+
+def test_load_rules_rejects_what_app_lab_would_reject(tmp_path):
+    for name, overrides in {
+        "schema": {"schemaVersion": 2},
+        "mode": {"profiles": {"api-user": {"typeCheckingMode": "relaxed", "rules": {}}}},
+        "rule name": {"profiles": {"api-user": {"typeCheckingMode": "standard", "rules": {"extraPaths": "/x"}}}},
+        "severity": {"profiles": {"api-user": {"typeCheckingMode": "standard", "rules": {"reportUnusedImport": "loud"}}}},
+        "no profiles": {"profiles": {}},
+    }.items():
+        with pytest.raises(ValueError):
+            check.load_rules(write_rules(tmp_path / f"{name}.json", **overrides))
+
+
+def test_find_rules_file_prefers_the_repository_root_then_the_static_assets(tmp_path):
+    repo = tmp_path / "repo"
+    src = repo / "src"
+    (src / "arduino" / "app_bricks" / "static").mkdir(parents=True)
+    with pytest.raises(FileNotFoundError):
+        check.find_rules_file(src, None)
+    static = write_rules(src / "arduino" / "app_bricks" / "static" / "pyright-rules.json")
+    assert check.find_rules_file(src, None) == static
+    root = write_rules(repo / "pyright-rules.json")
+    assert check.find_rules_file(src, None) == root
+    explicit = write_rules(tmp_path / "elsewhere.json")
+    assert check.find_rules_file(src, str(explicit)) == explicit.resolve()
+
+
+def test_the_shipped_rules_file_loads_with_both_profiles():
+    rules = check.load_rules(REPO_ROOT / "pyright-rules.json")
+    assert set(rules["profiles"]) == {"app-bricks-py", "api-user"}
+    for profile in rules["profiles"]:
+        assert check.profile_config(rules, profile)["typeCheckingMode"] == "standard"
