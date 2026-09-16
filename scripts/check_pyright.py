@@ -301,57 +301,95 @@ def error_table(entries: dict, occurrences: dict) -> list[str]:
     return rows
 
 
+# A section is passed, failed, or warning: the last one is for facts worth a
+# look that are not errors of the PR, like a brick without examples yet.
+STATUS_ICONS = {"passed": "✅", "warning": "⚠️", "failed": "❌"}
+
+
+def section_markdown(section: dict) -> str:
+    """Standalone markdown of a check section: verdict in the heading, one-line
+    result, notes, then the details (this is what a single check prints and what
+    a workflow appends to its summary when it runs one check only)."""
+    lines = [f"## {STATUS_ICONS[section['status']]} {section['title']}", "", section["result"]]
+    for note in section.get("notes", []):
+        lines += ["", note]
+    if section.get("details"):
+        lines += ["", section["details"]]
+    if section.get("full_report"):
+        # Pre-existing errors are part of the story too, but collapsed: the diff
+        # above stays the signal of the PR.
+        lines += ["", "<details>", f"<summary>{section['full_report_title']}</summary>", "", section["full_report"], "", "</details>"]
+    if section.get("footer"):
+        lines += ["", section["footer"]]
+    return "\n".join(lines)
+
+
+def emit_section(section: dict, summary: str | None, result: str | None) -> None:
+    """Print a section, append it to the summary file and save it for the report mode."""
+    report = section_markdown(section)
+    print(report)
+    summary_path = summary or os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary_path:
+        with open(summary_path, "a") as f:
+            f.write(report + "\n\n---\n\n")
+    if result:
+        Path(result).write_text(json.dumps(section, indent=2) + "\n")
+
+
+def write_github_output(**values) -> None:
+    """Expose values to the workflow. Best effort: the file belongs to the runner,
+    and a context that only inherits the variable (a test job running as another
+    user) must not fail on it."""
+    output_path = os.environ.get("GITHUB_OUTPUT")
+    if not output_path:
+        return
+    try:
+        with open(output_path, "a") as f:
+            for name, value in values.items():
+                f.write(f"{name}={value}\n")
+    except OSError as e:
+        print(f"could not write to GITHUB_OUTPUT: {e}", file=sys.stderr)
+
+
 def cmd_diff(args) -> int:
     base_counts, base_occurrences = error_index(json.loads(Path(args.base).read_text()))
     head_counts, head_occurrences = error_index(json.loads(Path(args.head).read_text()))
 
     new = {key: count - base_counts.get(key, 0) for key, count in head_counts.items() if count > base_counts.get(key, 0)}
     fixed = {key: count - head_counts.get(key, 0) for key, count in base_counts.items() if count > head_counts.get(key, 0)}
+    new_total, fixed_total, head_total = sum(new.values()), sum(fixed.values()), sum(head_counts.values())
+    pre_existing = head_total - new_total
 
-    # The verdict goes in the heading: the summary is also posted as a PR comment,
-    # and the outcome must be readable at a glance.
-    status = "❌" if new else "✅"
-    lines = [
-        f"## {status} Examples alignment check",
-        "",
-        f"Errors in the Python sources of {args.examples_label} analyzed against {args.library_label}: "
-        f"base {sum(base_counts.values())} → head {sum(head_counts.values())} "
-        f"(**{sum(new.values())} new**, {sum(fixed.values())} fixed)",
-    ]
-    for title, entries, occurrences in (("New errors", new, head_occurrences), ("Fixed errors", fixed, base_occurrences)):
-        if entries:
-            lines += ["", f"### {title}", ""] + error_table(entries, occurrences)
+    notes: list[str] = []
     if not new and not fixed:
-        lines += ["", "✅ No new errors in this PR."]
+        notes.append("✅ No new errors in this PR.")
     if not new and head_counts:
         # Tolerated, but not to be forgotten: without new errors every remaining
-        # one is pre-existing, and the full list is in the collapsed report below.
-        pre_existing = sum(head_counts.values())
-        lines += ["", f"⚠️ {pre_existing} pre-existing error{'s' if pre_existing != 1 else ''}, listed in the full report below."]
-    if head_counts:
-        # Pre-existing errors are part of the story too, but collapsed: the diff
-        # above stays the signal of the PR.
-        lines += ["", "<details>", f"<summary>Full report: {sum(head_counts.values())} errors against head</summary>", ""]
-        lines += error_table(head_counts, head_occurrences)
-        lines += ["", "</details>"]
-    if new:
-        lines += [
-            "",
-            "❌ This PR introduces errors in the published examples: either adapt the library change to keep the "
-            "examples' contract, or open the matching PR on app-bricks-examples and coordinate the merge.",
-        ]
-    if args.reports_url:
-        lines += ["", f"📥 [Download full pyright JSON report]({args.reports_url})"]
-    # Horizontal rule separating this section from the coverage one, appended
-    # to the same job summary by the next step.
-    lines += ["", "---"]
-    report = "\n".join(lines)
+        # one is pre-existing, and the full list is in the details.
+        notes.append(f"⚠️ {pre_existing} pre-existing error{'s' if pre_existing != 1 else ''}, listed in the full report below.")
+    if new and args.guidance:
+        notes.append(f"❌ {args.guidance}")
 
-    print(report)
-    summary_path = args.summary or os.environ.get("GITHUB_STEP_SUMMARY")
-    if summary_path:
-        with open(summary_path, "a") as f:
-            f.write(report + "\n")
+    details: list[str] = []
+    for title, entries, occurrences in (("New errors", new, head_occurrences), ("Fixed errors", fixed, base_occurrences)):
+        if entries:
+            details += [f"#### {title}", ""] + error_table(entries, occurrences) + [""]
+    subject = args.subject or f"Errors in the Python sources of {args.examples_label} analyzed against {args.library_label}"
+    section = {
+        "title": args.title,
+        "status": "failed" if new else "passed",
+        "informative": not args.fail_on_new,
+        "result": f"{subject}: base {sum(base_counts.values())} → head {head_total} (**{new_total} new**, {fixed_total} fixed)",
+        "cell": f"**{new_total} new**, {fixed_total} fixed, {pre_existing} pre-existing",
+        "notes": notes,
+        "details": "\n".join(details).rstrip(),
+        "full_report_title": f"Full report: {head_total} error{'s' if head_total != 1 else ''} against head",
+        "full_report": "\n".join(error_table(head_counts, head_occurrences)) if head_counts else "",
+        "footer": f"📥 [Download full pyright JSON report]({args.reports_url})" if args.reports_url else "",
+        "new_errors": new_total,
+    }
+    emit_section(section, args.summary, args.result)
+
     # Annotations: warnings on an informative run, errors on a blocking one. The
     # file/line properties place them inline in the PR diff, which only makes
     # sense when the analyzed files belong to the repository running the check.
@@ -360,18 +398,65 @@ def cmd_diff(args) -> int:
         file, rule, message = key
         line = head_occurrences[key][0]
         properties = f" file={file},line={line}" if args.annotate_files else ""
-        print(f"::{level}{properties}::examples alignment: {file}:{line} [{rule}] {message}")
-    # Exposed to the workflow, which turns it into a label on the PR. Best effort:
-    # the file belongs to the runner, and a context that only inherits the
-    # variable (a test job running as another user) must not fail on it.
-    if output_path := os.environ.get("GITHUB_OUTPUT"):
-        try:
-            with open(output_path, "a") as f:
-                f.write(f"new_errors={sum(new.values())}\n")
-        except OSError as e:
-            print(f"could not write new_errors to GITHUB_OUTPUT: {e}", file=sys.stderr)
+        print(f"::{level}{properties}::{args.title}: {file}:{line} [{rule}] {message}")
+    # Exposed to the workflow, which turns it into a label on the PR.
+    write_github_output(new_errors=new_total)
 
     return 1 if new and args.fail_on_new else 0
+
+
+def cmd_report(args) -> int:
+    """Compose the sections saved by diff/coverage into one report: a verdict table
+    at the top, every accessory information in a single collapsed block."""
+    sections = [json.loads(Path(path).read_text()) for path in args.sections]
+    # The heading carries the worst status of the sections: ❌ when a pyright
+    # section has new errors, ⚠️ when only the coverage has something to say,
+    # ✅ otherwise. Whether a failure also fails the job is the workflow's
+    # business (--fail-on-new).
+    diff_sections = [s for s in sections if "new_errors" in s]
+    failed = any(s["status"] == "failed" for s in sections)
+    warned = any(s["status"] == "warning" for s in sections)
+    blocking_failed = any(s["status"] == "failed" and not s.get("informative") for s in diff_sections)
+
+    heading = "❌" if failed else "⚠️" if warned else "✅"
+    lines = [f"## {heading} {args.title}", ""]
+    # The verdict table is in plain sight when a check has something to say;
+    # when every check passed, the heading says it all and the table is folded.
+    table = ["| Check | Result |", "|---|---|"] + [f"| {STATUS_ICONS[s['status']]} {s['title']} | {s['cell']} |" for s in sections]
+    if failed or warned:
+        lines += table
+    else:
+        lines += ["<details>", f"<summary>All {len(sections)} checks passed</summary>", ""] + table + ["", "</details>"]
+    for s in sections:
+        for note in s.get("notes", []):
+            if not note.startswith("✅"):
+                icon, text = note.split(" ", 1)
+                lines += ["", f"{icon} **{s['title']}**: {text}"]
+    # Every accessory information in one collapsed block: tables of new and
+    # fixed errors, full lists, coverage details, download links.
+    lines += ["", "<details>", "<summary>Details</summary>", ""]
+    for s in sections:
+        lines += [f"### {s['title']}", "", s["result"], ""]
+        if s.get("details"):
+            lines += [s["details"], ""]
+        if s.get("full_report"):
+            lines += [f"#### {s['full_report_title']}", "", s["full_report"], ""]
+        if s.get("footer"):
+            lines += [s["footer"], ""]
+    lines += ["</details>"]
+    if args.reports_url:
+        # One artifact holds the pyright outputs of every section: one link, at
+        # the bottom and always in sight.
+        lines += ["", f"📥 [Download the pyright JSON outputs of these checks]({args.reports_url})"]
+    report = "\n".join(lines) + "\n"
+
+    print(report)
+    summary_path = args.summary or os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary_path:
+        with open(summary_path, "a") as f:
+            f.write(report)
+    write_github_output(status="failed" if failed else "passed", new_errors=sum(s.get("new_errors", 0) for s in diff_sections))
+    return 1 if blocking_failed and args.fail_on_new else 0
 
 
 DISABLED_RE = re.compile(r"^disabled:\s*true\s*$", re.MULTILINE)
@@ -406,23 +491,31 @@ def cmd_coverage(args) -> int:
     uncovered = sorted(head_bricks - covered)
     introduced = sorted((head_bricks - base_bricks) - covered)
 
-    status = "❌" if uncovered else "✅"
-    lines = [f"### {status} Bricks without examples", ""]
+    # Never a failure: a new brick may legitimately land before its examples do,
+    # so missing examples are a warning to keep in sight, not an error of the PR.
+    plural = "s" if len(uncovered) != 1 else ""
     if uncovered:
-        lines.append(f"❌ {len(uncovered)} bricks have no examples in app-bricks-examples:")
-        lines += [f"- `{name}`" + (" — **introduced by this PR**" if name in introduced else "") for name in uncovered]
-        lines += ["", "Informative only: a new brick may legitimately land before its examples do."]
+        result = f"⚠️ {len(uncovered)} brick{plural} without examples in {EXAMPLES_REPO_MD}."
+        details = "\n".join(f"- `{name}`" + (" — **introduced by this PR**" if name in introduced else "") for name in uncovered)
+        details += "\n\nInformative only: a new brick may legitimately land before its examples do."
+        named = ", ".join(f"`{name}`" for name in uncovered)
+        notes = [f"⚠️ {len(uncovered)} brick{plural} without examples: {named}" + (" (introduced by this PR)" if introduced else "") + "."]
     else:
-        lines.append(f"✅ Every non-disabled brick has at least one example in {EXAMPLES_REPO_MD} repository.")
-    report = "\n".join(lines)
-
-    print(report)
-    summary_path = args.summary or os.environ.get("GITHUB_STEP_SUMMARY")
-    if summary_path:
-        with open(summary_path, "a") as f:
-            f.write(report + "\n")
+        result = f"✅ Every non-disabled brick has at least one example in {EXAMPLES_REPO_MD}."
+        details = ""
+        notes = []
+    section = {
+        "title": args.title,
+        "status": "warning" if uncovered else "passed",
+        "informative": True,
+        "result": result,
+        "cell": f"{len(uncovered)} brick{plural} without examples" if uncovered else "every brick covered",
+        "notes": notes,
+        "details": details,
+    }
+    emit_section(section, args.summary, args.result)
     for name in introduced:
-        print(f"::notice::examples coverage: this PR introduces the brick '{name}', which has no examples in app-bricks-examples yet")
+        print(f"::notice::{args.title}: this PR introduces the brick '{name}', which has no examples in app-bricks-examples yet")
     return 0
 
 
@@ -460,8 +553,17 @@ def main() -> int:
     diff = sub.add_parser("diff", help="compare two run outputs and report new/fixed errors")
     diff.add_argument("--base", required=True)
     diff.add_argument("--head", required=True)
+    diff.add_argument("--title", default="Examples alignment check", help="name of the check in the report")
+    diff.add_argument("--subject", help="what the counts describe (default: the examples analyzed against the library)")
     diff.add_argument("--summary", help="markdown output file (defaults to GITHUB_STEP_SUMMARY)")
+    diff.add_argument("--result", help="save the check section as JSON, for the report mode")
     diff.add_argument("--reports-url", help="link to the uploaded run outputs, appended to the summary")
+    diff.add_argument(
+        "--guidance",
+        default="This PR introduces errors in the published examples: either adapt the library change to keep the "
+        "examples' contract, or open the matching PR on app-bricks-examples and coordinate the merge.",
+        help="what to do about new errors, shown when there are some",
+    )
     diff.add_argument("--examples-label", default=EXAMPLES_REPO_MD, help="how the summary names the analyzed examples")
     diff.add_argument("--library-label", default="this library", help="how the summary names the library they are analyzed against")
     diff.add_argument("--fail-on-new", action="store_true", help="exit 1 when the head introduces new errors (blocking check)")
@@ -476,8 +578,18 @@ def main() -> int:
     coverage.add_argument("--examples-dir", default=DEFAULT_EXAMPLES_DIR)
     coverage.add_argument("--head-src", default="src")
     coverage.add_argument("--base-src", help="library source of the PR base, to flag bricks introduced by the PR")
+    coverage.add_argument("--title", default="Bricks coverage", help="name of the check in the report")
     coverage.add_argument("--summary", help="markdown output file (defaults to GITHUB_STEP_SUMMARY)")
+    coverage.add_argument("--result", help="save the check section as JSON, for the report mode")
     coverage.set_defaults(func=cmd_coverage)
+
+    report = sub.add_parser("report", help="compose the sections saved by diff/coverage into one report")
+    report.add_argument("sections", nargs="+", help="section JSON files, in display order")
+    report.add_argument("--title", default="Pyright checks and examples coverage")
+    report.add_argument("--summary", help="markdown output file (defaults to GITHUB_STEP_SUMMARY)")
+    report.add_argument("--fail-on-new", action="store_true", help="exit 1 when a non-informative section failed")
+    report.add_argument("--reports-url", help="link to the uploaded pyright outputs of all the sections, appended to the details")
+    report.set_defaults(func=cmd_report)
 
     args = parser.parse_args()
     return args.func(args)

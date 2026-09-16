@@ -77,7 +77,7 @@ def test_new_errors_are_informative_by_default(tmp_path, reports):
     assert code == 0
     assert "## ❌ Examples alignment check" in summary
     assert "(**2 new**, 0 fixed)" in summary
-    assert out.count("::warning::examples alignment:") == 2
+    assert out.count("::warning::Examples alignment check:") == 2
     assert "::error" not in out
 
 
@@ -85,7 +85,7 @@ def test_fail_on_new_blocks_and_uses_error_annotations(tmp_path, reports):
     clean, _one, two = reports
     code, _summary, out = run_diff(tmp_path, clean, two, "--fail-on-new")
     assert code == 1
-    assert out.count("::error::examples alignment:") == 2
+    assert out.count("::error::Examples alignment check:") == 2
 
 
 def test_fail_on_new_passes_without_new_errors(tmp_path, reports):
@@ -98,7 +98,7 @@ def test_fail_on_new_passes_without_new_errors(tmp_path, reports):
 def test_annotate_files_places_annotations_inline(tmp_path, reports):
     clean, one, _two = reports
     _code, _summary, out = run_diff(tmp_path, clean, one, "--fail-on-new", "--annotate-files")
-    assert "::error file=bricks/a/python/main.py,line=5::examples alignment: bricks/a/python/main.py:5 [reportArgumentType] boom" in out
+    assert "::error file=bricks/a/python/main.py,line=5::Examples alignment check: bricks/a/python/main.py:5 [reportArgumentType] boom" in out
 
 
 def test_pre_existing_errors_are_flagged_when_none_is_new(tmp_path, reports):
@@ -175,3 +175,136 @@ def test_the_shipped_rules_file_loads_with_both_profiles():
     assert set(rules["profiles"]) == {"app-bricks-py", "api-user"}
     for profile in rules["profiles"]:
         assert check.profile_config(rules, profile)["typeCheckingMode"] == "standard"
+
+
+# --- report ---------------------------------------------------------------------
+
+
+def run_mode(tmp_path: Path, *argv: str) -> tuple[int, str]:
+    saved, sys.argv = sys.argv, ["check_pyright.py", *argv]
+    out = io.StringIO()
+    try:
+        with redirect_stdout(out):
+            code = check.main()
+    finally:
+        sys.argv = saved
+    return code, out.getvalue()
+
+
+def make_sections(tmp_path: Path, reports) -> tuple[Path, Path]:
+    clean, _one, two = reports
+    api = tmp_path / "api.json"
+    typing = tmp_path / "typing.json"
+    run_mode(
+        tmp_path,
+        "diff",
+        "--base",
+        str(clean),
+        "--head",
+        str(two),
+        "--title",
+        "API contract",
+        "--result",
+        str(api),
+        "--summary",
+        str(tmp_path / "a.md"),
+    )
+    run_mode(
+        tmp_path,
+        "diff",
+        "--base",
+        str(two),
+        "--head",
+        str(two),
+        "--title",
+        "Library typing",
+        "--subject",
+        "Errors in the library",
+        "--result",
+        str(typing),
+        "--summary",
+        str(tmp_path / "t.md"),
+    )
+    return api, typing
+
+
+def test_report_composes_a_verdict_table_and_one_collapsed_details_block(tmp_path, reports):
+    api, typing = make_sections(tmp_path, reports)
+    summary = tmp_path / "report.md"
+    code, _out = run_mode(tmp_path, "report", str(api), str(typing), "--summary", str(summary))
+    text = summary.read_text()
+    assert code == 0  # informative sections never fail the report
+    assert text.startswith("## ❌ Pyright checks and examples coverage")
+    assert "| ❌ API contract | **2 new**, 0 fixed, 0 pre-existing |" in text
+    assert "| ✅ Library typing | **0 new**, 0 fixed, 2 pre-existing |" in text
+    assert "⚠️ **Library typing**: 2 pre-existing errors" in text
+    assert "❌ **API contract**: This PR introduces errors" in text
+    assert text.count("<details>") == 1 and text.count("</details>") == 1
+    assert "### API contract" in text and "### Library typing" in text
+    assert "Errors in the library: base 2 → head 2" in text
+    assert "#### Full report: 2 errors against head" in text
+
+
+def test_report_links_the_shared_outputs_once(tmp_path, reports):
+    api, typing = make_sections(tmp_path, reports)
+    summary = tmp_path / "report.md"
+    run_mode(tmp_path, "report", str(api), str(typing), "--summary", str(summary), "--reports-url", "https://example/artifact")
+    text = summary.read_text()
+    assert text.count("https://example/artifact") == 1
+    # At the bottom, outside the collapsed details, always in sight.
+    assert text.index("Download the pyright JSON outputs") > text.rindex("</details>")
+
+
+def test_report_fails_only_for_blocking_sections(tmp_path, reports):
+    clean, _one, two = reports
+    blocking = tmp_path / "blocking.json"
+    run_mode(
+        tmp_path, "diff", "--base", str(clean), "--head", str(two), "--fail-on-new", "--result", str(blocking), "--summary", str(tmp_path / "b.md")
+    )
+    informative = tmp_path / "informative.json"
+    run_mode(tmp_path, "diff", "--base", str(clean), "--head", str(two), "--result", str(informative), "--summary", str(tmp_path / "i.md"))
+
+    assert run_mode(tmp_path, "report", str(informative), "--fail-on-new", "--summary", str(tmp_path / "r1.md"))[0] == 0
+    assert run_mode(tmp_path, "report", str(blocking), "--fail-on-new", "--summary", str(tmp_path / "r2.md"))[0] == 1
+    assert run_mode(tmp_path, "report", str(blocking), "--summary", str(tmp_path / "r3.md"))[0] == 0
+    assert "status=failed" in (tmp_path / "github_output").read_text()
+
+
+def test_report_heading_carries_the_worst_status(tmp_path, reports):
+    clean, _one, two = reports
+    passed = tmp_path / "passed.json"
+    run_mode(tmp_path, "diff", "--base", str(two), "--head", str(two), "--result", str(passed), "--summary", str(tmp_path / "p.md"))
+    failed = tmp_path / "failed.json"
+    run_mode(tmp_path, "diff", "--base", str(clean), "--head", str(two), "--result", str(failed), "--summary", str(tmp_path / "f.md"))
+    coverage = tmp_path / "coverage.json"
+    coverage.write_text(
+        json.dumps({
+            "title": "Examples coverage",
+            "status": "warning",
+            "informative": True,
+            "result": "⚠️ 1 brick without examples.",
+            "cell": "1 brick without examples",
+            "notes": ["⚠️ 1 brick without examples: `x` (introduced by this PR)."],
+            "details": "- `x`",
+        })
+    )
+
+    # Coverage alone turns the heading into a warning, never into a failure.
+    run_mode(tmp_path, "report", str(passed), str(coverage), "--summary", str(tmp_path / "r1.md"))
+    text = (tmp_path / "r1.md").read_text()
+    assert text.startswith("## ⚠️ Pyright checks and examples coverage")
+    assert "| ⚠️ Examples coverage | 1 brick without examples |" in text
+    assert "⚠️ **Examples coverage**: 1 brick without examples: `x` (introduced by this PR)." in text
+    # New errors in a pyright section win over the coverage warning.
+    run_mode(tmp_path, "report", str(failed), str(coverage), "--summary", str(tmp_path / "r2.md"))
+    assert (tmp_path / "r2.md").read_text().startswith("## ❌ Pyright checks and examples coverage")
+    # Everything clean: a plain pass, with the verdict table folded away too.
+    run_mode(tmp_path, "report", str(passed), "--summary", str(tmp_path / "r3.md"))
+    text = (tmp_path / "r3.md").read_text()
+    assert text.startswith("## ✅ Pyright checks and examples coverage")
+    assert "<summary>All 1 checks passed</summary>" in text
+    assert text.index("| Check | Result |") > text.index("<summary>All 1 checks passed</summary>")
+    assert text.count("<details>") == 2
+    # A warning or a failure keeps the table in plain sight.
+    assert "<summary>All" not in (tmp_path / "r1.md").read_text()
+    assert (tmp_path / "r1.md").read_text().count("<details>") == 1
