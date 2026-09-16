@@ -93,6 +93,15 @@ apps:
     venv:
       project: containers/ai/llamacpp-npu-runner
 
+  - name: edge-impulse-runner
+    source_path: .
+    sources:
+      pip: true
+    python:
+      virtual_env_dir: "/venvs/edge-impulse-runner"
+    venv:
+      project: containers/ai/edge-impulse-runner
+
 stale_records_action: error
 
 ignored:

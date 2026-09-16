@@ -25,6 +25,7 @@ container by globbing `containers/*/<name>/Dockerfile`, so names must be unique 
 | Container | Group | Built `FROM` | Purpose |
 |---|---|---|---|
 | `python-slim` | base | `python:3.13-slim-trixie` | Minimal Python layer shared by everything else |
+| `edge-impulse-runner` | ai | `python-slim` | Edge Impulse SDK Runner |
 | `python-base` | base | `python-slim` | System deps, non-root user, fonts, OpenCV wheel, libcamera + GStreamer packages |
 | `qairt-common-base` | base | `python:3.13-slim-trixie` | Qualcomm AI Runtime and FastRPC libraries shared by the NPU runners |
 | `python-apps-base` | bricks | `python-base` | App runtime: installs the Arduino App Bricks `.whl` and the Streamlit config |
@@ -49,6 +50,7 @@ graph LR
   ei[ei-models-runner]
   eiqnn[ei-qnn-models-runner]
   slim --> tpslocationapi[tps-location-api]
+  slim --> edgeimpulserunner[edge-impulse-runner]
 ```
 
 `ei-models-runner` and `ei-qnn-models-runner` build on external Edge Impulse images and have no upstream
