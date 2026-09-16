@@ -130,6 +130,7 @@ group "default" {
     "python-base",
     "python-apps-base",
     "tps",
+    "edge-impulse-runner",
     "qairt-common-base",
     "aihub-models-runner",
     "gesture-recognition-runner",
@@ -196,6 +197,15 @@ target "tps" {
   tags       = image_tags("tps")
   cache-from = cache_from("tps")
   cache-to   = cache_to("tps")
+  contexts   = parent_context("python-slim")
+}
+
+target "edge-impulse-runner" {
+  inherits   = ["_downstream"]
+  context    = "containers/ai/edge-impulse-runner"
+  tags       = image_tags("edge-impulse-runner")
+  cache-from = cache_from("edge-impulse-runner")
+  cache-to   = cache_to("edge-impulse-runner")
   contexts   = parent_context("python-slim")
 }
 
