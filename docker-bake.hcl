@@ -139,6 +139,7 @@ group "default" {
     "tps",
     "aihub-onnx-models-runner",
     "ocr-runner",
+    "edge-impulse-runner",
     "qairt-common-base",
     "aihub-litert-models-runner",
     "gesture-recognition-runner",
@@ -237,6 +238,15 @@ target "ocr-runner" {
   cache-from = cache_from("ocr-runner")
   cache-to   = cache_to("ocr-runner")
   contexts   = parent_context("aihub-onnx-models-runner")
+}
+
+target "edge-impulse-runner" {
+  inherits   = ["_downstream"]
+  context    = "containers/ai/edge-impulse-runner"
+  tags       = image_tags("edge-impulse-runner")
+  cache-from = cache_from("edge-impulse-runner")
+  cache-to   = cache_to("edge-impulse-runner")
+  contexts   = parent_context("python-slim")
 }
 
 target "qairt-common-base" {
