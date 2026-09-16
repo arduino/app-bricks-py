@@ -10,7 +10,7 @@ The TPS Location API brick allows you to:
 - Get the reverse geocoded street address of the device
 - Locate once, in the background with a callback, or periodically at a fixed interval
 
-An internet connection and TPS credentials are required. Register on the [TPS Portal](https://www.my.skyhook.com/), create a project and copy its Auth Key: it comes with a 60-day evaluation period.
+An internet connection and TPS credentials are required. Register on the [TPS Portal](https://my.skyhook.com/), create a project and copy its Auth Key: it comes with a 60-day evaluation period.
 
 ## Code example and usage
 
