@@ -324,11 +324,12 @@ def section_markdown(section: dict) -> str:
     return "\n".join(lines)
 
 
-def emit_section(section: dict, summary: str | None, result: str | None) -> None:
-    """Print a section, append it to the summary file and save it for the report mode."""
+def emit_section(section: dict, summary: str | None, result: str | None, no_summary: bool = False) -> None:
+    """Print a section, append it to the summary file (unless the report mode will
+    compose it later) and save it for the report mode."""
     report = section_markdown(section)
     print(report)
-    summary_path = summary or os.environ.get("GITHUB_STEP_SUMMARY")
+    summary_path = None if no_summary else (summary or os.environ.get("GITHUB_STEP_SUMMARY"))
     if summary_path:
         with open(summary_path, "a") as f:
             f.write(report + "\n\n---\n\n")
@@ -388,7 +389,7 @@ def cmd_diff(args) -> int:
         "footer": f"📥 [Download full pyright JSON report]({args.reports_url})" if args.reports_url else "",
         "new_errors": new_total,
     }
-    emit_section(section, args.summary, args.result)
+    emit_section(section, args.summary, args.result, args.no_summary)
 
     # Annotations: warnings on an informative run, errors on a blocking one. The
     # file/line properties place them inline in the PR diff, which only makes
@@ -513,7 +514,7 @@ def cmd_coverage(args) -> int:
         "notes": notes,
         "details": details,
     }
-    emit_section(section, args.summary, args.result)
+    emit_section(section, args.summary, args.result, args.no_summary)
     for name in introduced:
         print(f"::notice::{args.title}: this PR introduces the brick '{name}', which has no examples in app-bricks-examples yet")
     return 0
@@ -557,6 +558,7 @@ def main() -> int:
     diff.add_argument("--subject", help="what the counts describe (default: the examples analyzed against the library)")
     diff.add_argument("--summary", help="markdown output file (defaults to GITHUB_STEP_SUMMARY)")
     diff.add_argument("--result", help="save the check section as JSON, for the report mode")
+    diff.add_argument("--no-summary", action="store_true", help="do not append the section to the job summary (the report mode will)")
     diff.add_argument("--reports-url", help="link to the uploaded run outputs, appended to the summary")
     diff.add_argument(
         "--guidance",
@@ -581,6 +583,7 @@ def main() -> int:
     coverage.add_argument("--title", default="Bricks coverage", help="name of the check in the report")
     coverage.add_argument("--summary", help="markdown output file (defaults to GITHUB_STEP_SUMMARY)")
     coverage.add_argument("--result", help="save the check section as JSON, for the report mode")
+    coverage.add_argument("--no-summary", action="store_true", help="do not append the section to the job summary (the report mode will)")
     coverage.set_defaults(func=cmd_coverage)
 
     report = sub.add_parser("report", help="compose the sections saved by diff/coverage into one report")
