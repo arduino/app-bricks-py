@@ -143,23 +143,20 @@ export DOCKER_PYTHON_BASE_IMAGE=app-bricks/python-apps-base:dev-pose-classificat
 ```
 Development containers are published by the dev CI (`docker-build.yml`) tagged as `dev-<branch-name>` (e.g. branch `pose-classification` → tag `dev-pose-classification`).
 
-## Examples alignment
+## Pyright checks
 
-The published examples live in [app-bricks-examples](https://github.com/arduino/app-bricks-examples). To check whether your changes break the API contract the examples rely on (pyright analyzes their Python sources against your checkout), clone that repository next to this one, make sure the project venv has the current library dependencies installed (`pip install -e ".[dev]"`, the check refuses to run against an outdated environment) and run:
+Type checking is driven by `pyright-rules.json` at the repository root, shipped in the wheel as `arduino/app_bricks/static/pyright-rules.json` so that the same rules reach the CI of this repository, the CI of [app-bricks-examples](https://github.com/arduino/app-bricks-examples) and the App Lab editor. The library owns the rules, through two profiles: `app-bricks-py` for its own sources and `api-user` for code written against its API (the published examples, the apps edited in App Lab). The tools own the environment: paths, interpreter, execution root.
 
-```sh
-task check:examples-alignment:run
-```
-
-To list the bricks that have no examples yet:
+Two local checks, both needing the project venv with the current dependencies installed (`pip install -e ".[dev]"`; the checks refuse to run against an outdated environment) and, for the first, a clone of app-bricks-examples next to this repository:
 
 ```sh
-task check:examples-alignment:coverage
+task check:api      # the examples analyzed against this checkout (profile api-user), then the bricks without examples
+task check:typing   # the library sources analyzed against themselves (profile app-bricks-py)
 ```
 
-See `scripts/check_examples_alignment.py --help` for the full options (custom paths, JSON output, PR base/head diff — the mode used by the `check-examples-alignment.yml` workflow).
+Extra arguments go to the underlying `run`/`typing` mode of `scripts/check_pyright.py` (custom paths, JSON output); see `python3 scripts/check_pyright.py --help` for the other modes, including the PR base/head `diff` the workflows use.
 
-On pull requests the workflow is informative and never blocks the merge: a library change may legitimately require a matching change in the examples, and blocking the two PRs on each other would deadlock. The report (new errors introduced by the PR, errors fixed, pre-existing ones collapsed) goes to the job summary and to a sticky comment on the PR, with the `examples-misaligned` label while new errors exist. On PRs from forks the analysis job runs with a read-only token, so the comment is posted by `comment-examples-alignment.yml`, which runs afterwards with a write token and never executes code from the PR. New errors mean the change breaks the API contract the published examples rely on: either adapt the change, or open the matching PR on app-bricks-examples and merge the library first.
+On pull requests the `check-pyright.yml` workflow runs both checks against the PR base and head and is informative: it never blocks the merge, since a library change may legitimately require a matching change in the examples and blocking the two repositories on each other would deadlock. The report (new errors introduced by the PR, errors fixed, pre-existing ones collapsed) goes to the job summary and to a sticky comment on the PR, with a label while new errors exist. On PRs from forks the analysis job runs with a read-only token, so the comment is posted by `comment-pyright.yml`, which runs afterwards with a write token and never executes code from the PR. New API errors mean the change breaks the contract the published examples rely on: either adapt the change, or open the matching PR on app-bricks-examples and merge the library first.
 
 ## Release
 
