@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 
 from .errors import MicrophoneConfigError, MicrophoneOpenError, MicrophoneReadError
-from arduino.app_utils import Logger, peripheral_registry
+from arduino.app_utils import Logger, peripheral
 
 logger = Logger("Microphone")
 
@@ -21,6 +21,7 @@ type FormatPlain = type | np.dtype | str
 type FormatPacked = tuple[FormatPlain, bool]
 
 
+@peripheral
 class BaseMicrophone(ABC):
     """
     Abstract base class for microphone implementations.
@@ -101,9 +102,6 @@ class BaseMicrophone(ABC):
         self._status: Literal["disconnected", "connected", "streaming", "paused"] = "disconnected"
         self._on_status_changed_cb: Callable[[str, dict], None] | None = None
         self._event_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="MicrophoneCallbacksRunner")
-        # Release this peripheral when the app shuts down, even if the user never stops it
-        # explicitly. The registry keeps a weak reference, so this does not keep it alive.
-        peripheral_registry.Peripherals.register(self)
 
     @property
     def volume(self) -> int:

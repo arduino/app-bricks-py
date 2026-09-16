@@ -11,13 +11,14 @@ from typing import Literal, Self
 from collections.abc import Callable, Iterator
 import numpy as np
 
-from arduino.app_utils import Logger, peripheral_registry
+from arduino.app_utils import Logger, peripheral
 
 from .errors import CameraOpenError, CameraReadError, CameraTransformError
 
 logger = Logger("Camera")
 
 
+@peripheral
 class BaseCamera(ABC):
     """
     Abstract base class for camera implementations.
@@ -70,9 +71,6 @@ class BaseCamera(ABC):
         # Event handling
         self._on_status_changed_cb: Callable[[str, dict], None] | None = None
         self._event_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="CameraEvent")
-        # Release this peripheral when the app shuts down, even if the user never stops it
-        # explicitly. The registry keeps a weak reference, so this does not keep it alive.
-        peripheral_registry.Peripherals.register(self)
 
     @property
     def status(self) -> Literal["disconnected", "connected", "streaming", "paused"]:
