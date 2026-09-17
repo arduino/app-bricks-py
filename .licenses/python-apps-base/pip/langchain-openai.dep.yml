@@ -1,16 +1,16 @@
 ---
-name: langsmith
-version: 0.12.2
+name: langchain-openai
+version: 1.6.2
 type: pip
-summary: Client library to connect to the LangSmith Observability and Evaluation Platform.
-homepage: https://smith.langchain.com/
+summary: An integration package connecting OpenAI and LangChain
+homepage: https://docs.langchain.com/oss/python/integrations/providers/openai
 license: mit
 licenses:
 - sources: LICENSE
   text: |
     MIT License
 
-    Copyright (c) 2023 LangChain
+    Copyright (c) 2023 LangChain, Inc.
 
     Permission is hereby granted, free of charge, to any person obtaining a copy
     of this software and associated documentation files (the "Software"), to deal

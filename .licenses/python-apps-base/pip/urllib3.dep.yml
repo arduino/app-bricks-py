@@ -1,16 +1,16 @@
 ---
-name: filelock
-version: 3.32.6
+name: urllib3
+version: 2.7.0
 type: pip
-summary: A platform independent file lock.
-homepage: https://github.com/tox-dev/py-filelock
+summary: HTTP library with thread-safe connection pooling, file post, and more.
+homepage: ''
 license: mit
 licenses:
-- sources: LICENSE
+- sources: LICENSE.txt
   text: |
     MIT License
 
-    Copyright (c) 2025 Bernát Gábor and contributors
+    Copyright (c) 2008-2020 Andrey Petrov and contributors.
 
     Permission is hereby granted, free of charge, to any person obtaining a copy
     of this software and associated documentation files (the "Software"), to deal
