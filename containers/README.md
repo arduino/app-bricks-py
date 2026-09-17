@@ -14,6 +14,7 @@ the `containers` input of the dev workflow. Every release publishes every contai
 | Container | Built `FROM` | Purpose |
 |---|---|---|
 | `python-slim` | `python:3.13-slim-trixie` | Minimal Python layer shared by everything else |
+| `tps-location-api` | `python-slim` | Wi-Fi scan server of the TPS Location API brick, serves `iw` results to the app over a Unix socket |
 | `python-base` | `python-slim` | System deps, non-root user, fonts, OpenCV wheel, libcamera + GStreamer packages |
 | `qairt-common-base` | `python:3.13-slim-trixie` | Qualcomm AI Runtime and FastRPC libraries shared by the NPU runners |
 | `python-apps-base` | `python-base` | App runtime: installs the Arduino App Bricks `.whl` and the Streamlit config |
@@ -36,6 +37,7 @@ graph LR
   qairt --> lcppnpu[llamacpp-npu-runner]
   ei[ei-models-runner]
   eiqnn[ei-qnn-models-runner]
+  slim --> tpslocationapi[tps-location-api]
 ```
 
 `ei-models-runner` and `ei-qnn-models-runner` build on external Edge Impulse images and have no upstream

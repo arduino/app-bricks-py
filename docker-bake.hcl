@@ -129,6 +129,7 @@ group "default" {
     "models-downloader",
     "python-base",
     "python-apps-base",
+    "tps-location-api",
     "qairt-common-base",
     "aihub-models-runner",
     "gesture-recognition-runner",
@@ -187,6 +188,15 @@ target "python-apps-base" {
     { wheel = "dist" },
     parent_context("python-base"),
   )
+}
+
+target "tps-location-api" {
+  inherits   = ["_downstream"]
+  context    = "containers/tps-location-api"
+  tags       = image_tags("tps-location-api")
+  cache-from = cache_from("tps-location-api")
+  cache-to   = cache_to("tps-location-api")
+  contexts   = parent_context("python-slim")
 }
 
 target "qairt-common-base" {
