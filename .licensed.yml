@@ -19,7 +19,7 @@ apps:
     python:
       virtual_env_dir: "/venvs/python-base"
     venv:
-      project: containers/python-base
+      project: containers/base/python-base
 
   - name: aihub-models-runner
     source_path: .
@@ -28,7 +28,7 @@ apps:
     python:
       virtual_env_dir: "/venvs/aihub-models-runner"
     venv:
-      project: containers/aihub-models-runner
+      project: containers/ai/aihub-models-runner
 
   - name: gesture-recognition-runner
     source_path: .
@@ -37,7 +37,7 @@ apps:
     python:
       virtual_env_dir: "/venvs/gesture-recognition-runner"
     venv:
-      project: containers/gesture-recognition-runner
+      project: containers/ai/gesture-recognition-runner
 
   - name: pose-estimation-runner
     source_path: .
@@ -46,7 +46,7 @@ apps:
     python:
       virtual_env_dir: "/venvs/pose-estimation-runner"
     venv:
-      project: containers/pose-estimation-runner
+      project: containers/ai/pose-estimation-runner
 
   - name: models-downloader
     source_path: .
@@ -55,7 +55,7 @@ apps:
     python:
       virtual_env_dir: "/venvs/models-downloader"
     venv:
-      project: containers/models-downloader
+      project: containers/bricks/models-downloader
 
   - name: tps-location-api
     source_path: .
@@ -64,7 +64,7 @@ apps:
     python:
       virtual_env_dir: "/venvs/tps-location-api"
     venv:
-      project: containers/tps-location-api
+      project: containers/bricks/tps-location-api
 
   - name: ei-qnn-models-runner
     source_path: .
@@ -73,7 +73,7 @@ apps:
     python:
       virtual_env_dir: "/venvs/ei-qnn-models-runner"
     venv:
-      project: containers/ei-qnn-models-runner
+      project: containers/ai/ei-qnn-models-runner
 
   - name: llamacpp-runner
     source_path: .
@@ -82,7 +82,7 @@ apps:
     python:
       virtual_env_dir: "/venvs/llamacpp-runner"
     venv:
-      project: containers/llamacpp-runner
+      project: containers/ai/llamacpp-runner
 
   - name: llamacpp-npu-runner
     source_path: .
@@ -91,7 +91,7 @@ apps:
     python:
       virtual_env_dir: "/venvs/llamacpp-npu-runner"
     venv:
-      project: containers/llamacpp-npu-runner
+      project: containers/ai/llamacpp-npu-runner
 
 stale_records_action: error
 

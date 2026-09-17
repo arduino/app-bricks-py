@@ -30,24 +30,24 @@ BAKE = """group "default" {
 
 target "python-slim" {
   inherits   = ["_common"]
-  context    = "containers/python-slim"
+  context    = "containers/base/python-slim"
 }
 
 target "python-base" {
   inherits   = ["_downstream"]
-  context    = "containers/python-base"
+  context    = "containers/base/python-base"
   contexts   = parent_context("python-slim")
 }
 
 target "python-apps-base" {
   inherits   = ["_downstream"]
-  context    = "containers/python-apps-base"
+  context    = "containers/bricks/python-apps-base"
   contexts   = parent_context("python-base")
 }
 
 target "qairt-common-base" {
   inherits   = ["_common"]
-  context    = "containers/qairt-common-base"
+  context    = "containers/base/qairt-common-base"
 }
 """
 
@@ -55,12 +55,12 @@ README = """# Containers
 
 ## Inventory
 
-| Container | Built `FROM` | Purpose |
-|---|---|---|
-| `python-slim` | `python:3.13-slim-trixie` | Minimal Python layer |
-| `python-base` | `python-slim` | System deps |
-| `python-apps-base` | `python-base` | App runtime |
-| `qairt-common-base` | `python:3.13-slim-trixie` | Qualcomm runtime |
+| Container | Group | Built `FROM` | Purpose |
+|---|---|---|---|
+| `python-slim` | base | `python:3.13-slim-trixie` | Minimal Python layer |
+| `python-base` | base | `python-slim` | System deps |
+| `python-apps-base` | bricks | `python-base` | App runtime |
+| `qairt-common-base` | base | `python:3.13-slim-trixie` | Qualcomm runtime |
 
 ```mermaid
 graph LR
@@ -81,7 +81,7 @@ apps:
     python:
       virtual_env_dir: "/venvs/python-base"
     venv:
-      project: containers/python-base
+      project: containers/base/python-base
 
 stale_records_action: error
 
@@ -94,12 +94,12 @@ updates:
   - package-ecosystem: uv
     directories:
       - /
-      - /containers/python-base
+      - /containers/base/python-base
     schedule:
       interval: weekly
   - package-ecosystem: docker
     directories:
-      - /containers/*
+      - /containers/*/*
     schedule:
       interval: weekly
 """
@@ -115,14 +115,14 @@ def parent_from(name: str) -> str:
 def repo(tmp_path: Path) -> Path:
     containers = tmp_path / "containers"
     dockerfiles = {
-        "python-slim": "FROM python:3.13-slim-trixie@sha256:abc\n",
-        "python-base": UV_STAGE + parent_from("python-slim"),
-        "python-apps-base": parent_from("python-base"),
-        "qairt-common-base": "FROM python:3.13-slim-trixie@sha256:abc\n",
+        "base/python-slim": "FROM python:3.13-slim-trixie@sha256:abc\n",
+        "base/python-base": UV_STAGE + parent_from("python-slim"),
+        "bricks/python-apps-base": parent_from("python-base"),
+        "base/qairt-common-base": "FROM python:3.13-slim-trixie@sha256:abc\n",
     }
-    for name, dockerfile in dockerfiles.items():
-        (containers / name).mkdir(parents=True)
-        (containers / name / "Dockerfile").write_text(dockerfile)
+    for path, dockerfile in dockerfiles.items():
+        (containers / path).mkdir(parents=True)
+        (containers / path / "Dockerfile").write_text(dockerfile)
     (containers / "README.md").write_text(README)
     (tmp_path / "docker-bake.hcl").write_text(BAKE)
     (tmp_path / ".licensed.yml").write_text(LICENSED)
@@ -142,14 +142,14 @@ def group_order(hcl: str) -> list[str]:
 
 
 def test_derived_python_container_is_registered_everywhere(repo: Path) -> None:
-    steps = scaffold(repo, "my-runner", "python-slim", "Runs things", python=True)
+    steps = scaffold(repo, "my-runner", "bricks", "python-slim", "Runs things", python=True)
 
-    dockerfile = (repo / "containers/my-runner/Dockerfile").read_text()
+    dockerfile = (repo / "containers/bricks/my-runner/Dockerfile").read_text()
     assert "ARG REGISTRY\nARG BASE_IMAGE_VERSION=latest" in dockerfile
     assert parent_from("python-slim").strip() in dockerfile
     assert "FROM ghcr.io/astral-sh/uv:9.9.9@sha256:abc AS uv" in dockerfile, "uv stage reuses the image the other Dockerfiles mount"
     assert "uv export --frozen --project /tmp/deps" in dockerfile
-    assert (repo / "containers/my-runner/pyproject.toml").read_text().startswith("# Python packages this image installs")
+    assert (repo / "containers/bricks/my-runner/pyproject.toml").read_text().startswith("# Python packages this image installs")
 
     containers = Containers(repo / "containers")
     assert containers.parent["my-runner"] == "python-slim"
@@ -161,23 +161,26 @@ def test_derived_python_container_is_registered_everywhere(repo: Path) -> None:
     assert group_order(hcl) == target_order(hcl)
 
     readme = (repo / "containers/README.md").read_text()
-    assert "| `python-slim` | `python:3.13-slim-trixie` | Minimal Python layer |\n| `my-runner` | `python-slim` | Runs things |\n" in readme
+    assert (
+        "| `python-slim` | base | `python:3.13-slim-trixie` | Minimal Python layer |\n| `my-runner` | bricks | `python-slim` | Runs things |\n"
+        in readme
+    )
     assert "  slim --> myrunner[my-runner]\n```" in readme
 
     assert "  - name: my-runner\n" in (repo / ".licensed.yml").read_text()
-    assert "project: containers/my-runner\n\nstale_records_action: error" in (repo / ".licensed.yml").read_text()
-    assert "      - /containers/python-base\n      - /containers/my-runner\n" in (repo / ".github/dependabot.yml").read_text()
+    assert "project: containers/bricks/my-runner\n\nstale_records_action: error" in (repo / ".licensed.yml").read_text()
+    assert "      - /containers/base/python-base\n      - /containers/bricks/my-runner\n" in (repo / ".github/dependabot.yml").read_text()
     assert any("task deps:lock" in step for step in steps)
 
 
 def test_external_base_container_uses_common_and_goes_last(repo: Path) -> None:
-    steps = scaffold(repo, "ei-runner", "docker.io/edgeimpulse/runner:1.0@sha256:def", "Edge Impulse", python=False)
+    steps = scaffold(repo, "ei-runner", "bricks", "docker.io/edgeimpulse/runner:1.0@sha256:def", "Edge Impulse", python=False)
 
-    dockerfile = (repo / "containers/ei-runner/Dockerfile").read_text()
+    dockerfile = (repo / "containers/bricks/ei-runner/Dockerfile").read_text()
     assert "ARG REGISTRY" not in dockerfile
     assert "FROM docker.io/edgeimpulse/runner:1.0@sha256:def\n" in dockerfile
     assert "uv" not in dockerfile
-    assert not (repo / "containers/ei-runner/pyproject.toml").exists()
+    assert not (repo / "containers/bricks/ei-runner/pyproject.toml").exists()
     assert Containers(repo / "containers").parent["ei-runner"] is None
 
     hcl = (repo / "docker-bake.hcl").read_text()
@@ -188,8 +191,8 @@ def test_external_base_container_uses_common_and_goes_last(repo: Path) -> None:
     assert group_order(hcl)[-1] == "ei-runner"
 
     readme = (repo / "containers/README.md").read_text()
-    qairt_row = "| `qairt-common-base` | `python:3.13-slim-trixie` | Qualcomm runtime |\n"
-    assert qairt_row + "| `ei-runner` | `docker.io/edgeimpulse/runner:1.0` | Edge Impulse |\n" in readme, "after the last row"
+    qairt_row = "| `qairt-common-base` | base | `python:3.13-slim-trixie` | Qualcomm runtime |\n"
+    assert qairt_row + "| `ei-runner` | bricks | `docker.io/edgeimpulse/runner:1.0` | Edge Impulse |\n" in readme, "after the last row"
     assert "  eirunner[ei-runner]\n```" in readme
     assert "ei-runner" not in (repo / ".licensed.yml").read_text()
     assert "ei-runner" not in (repo / ".github/dependabot.yml").read_text()
@@ -197,33 +200,38 @@ def test_external_base_container_uses_common_and_goes_last(repo: Path) -> None:
 
 
 def test_external_base_without_digest_is_warned(repo: Path) -> None:
-    steps = scaffold(repo, "plain", "python:3.13-slim", "Plain", python=False)
+    steps = scaffold(repo, "plain", "bricks", "python:3.13-slim", "Plain", python=False)
     assert "pin it with @sha256" in steps[0]
 
 
 @pytest.mark.parametrize("name", ["Bad_Name", "-lead", "trail-", "python-base"])
 def test_invalid_or_existing_names_are_rejected(repo: Path, name: str) -> None:
     with pytest.raises(ScaffoldError):
-        scaffold(repo, name, "python-slim", "x", python=False)
-    assert not (repo / "containers" / name).exists() or name == "python-base"
+        scaffold(repo, name, "bricks", "python-slim", "x", python=False)
+    assert not (repo / "containers/bricks" / name).exists()
+
+
+def test_unknown_group_is_rejected(repo: Path) -> None:
+    with pytest.raises(ScaffoldError, match="not a container group"):
+        scaffold(repo, "my-runner", "tools", "python-slim", "x", python=True)
 
 
 def test_nothing_is_written_when_a_registration_fails(repo: Path) -> None:
-    (repo / "docker-bake.hcl").write_text('target "python-slim" {\n  context = "containers/python-slim"\n}\n')
+    (repo / "docker-bake.hcl").write_text('target "python-slim" {\n  context = "containers/base/python-slim"\n}\n')
     with pytest.raises(ScaffoldError, match="docker-bake.hcl"):
-        scaffold(repo, "my-runner", "python-slim", "x", python=True)
-    assert not (repo / "containers/my-runner").exists()
+        scaffold(repo, "my-runner", "bricks", "python-slim", "x", python=True)
+    assert not (repo / "containers/bricks/my-runner").exists()
     assert "my-runner" not in (repo / "containers/README.md").read_text()
     assert "my-runner" not in (repo / ".licensed.yml").read_text()
 
 
 def test_cli_reports_errors_and_next_steps(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    assert main(["my-runner", "--from", "python-slim", "--repo-root", str(repo)]) == 0
+    assert main(["my-runner", "--group", "bricks", "--from", "python-slim", "--repo-root", str(repo)]) == 0
     out = capsys.readouterr().out
-    assert out.startswith("Scaffolded containers/my-runner. Next steps:")
+    assert out.startswith("Scaffolded containers/bricks/my-runner. Next steps:")
     assert "task deps:lock" in out
 
-    assert main(["my-runner", "--from", "python-slim", "--no-python", "--repo-root", str(repo)]) == 1
+    assert main(["my-runner", "--group", "bricks", "--from", "python-slim", "--no-python", "--repo-root", str(repo)]) == 1
     assert "already exists" in capsys.readouterr().err
 
 

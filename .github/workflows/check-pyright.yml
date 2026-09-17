@@ -28,7 +28,7 @@ on:
       - "src/**"
       - "pyproject.toml"
       - "pyright-rules.json"
-      - "containers/python-base/pyproject.toml"
+      - "containers/base/python-base/pyproject.toml"
       - "scripts/check_pyright.py"
       - ".github/workflows/check-pyright.yml"
   workflow_dispatch:
@@ -91,7 +91,7 @@ jobs:
           # pyright resolves the library from the base/head sources.
           python head/scripts/check_pyright.py deps --pyproject head/pyproject.toml > library-deps.txt
           # Runtime baseline of the app container: the packages python-base installs.
-          python head/scripts/check_pyright.py deps --pyproject head/containers/python-base/pyproject.toml > container-deps.txt
+          python head/scripts/check_pyright.py deps --pyproject head/containers/base/python-base/pyproject.toml > container-deps.txt
           # Tolerant per-package install: a package that still fails to build on
           # the runner only degrades the affected types to Unknown, it must not
           # fail the job.

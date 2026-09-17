@@ -54,11 +54,11 @@ def requirement_lines(path):
 def check_projects_covered(apps):
     """Every uv project under containers/ must belong to a scanned app, and no requirements file may install packages."""
     declared = {project_dir(app).resolve() for app in apps}
-    found = [Path(f).parent for f in glob.glob(str(SRC / "containers/*/pyproject.toml"))]
+    found = [Path(f).parent for f in glob.glob(str(SRC / "containers/*/*/pyproject.toml"))]
     missing = sorted(p.relative_to(SRC) for p in found if p.resolve() not in declared)
     if missing:
         fail("uv projects not covered by any app in .licensed.yml:\n  " + "\n  ".join(map(str, missing)))
-    requirements = glob.glob(str(SRC / "containers/*/requirements*.txt"))
+    requirements = glob.glob(str(SRC / "containers/*/*/requirements*.txt"))
     listing = sorted(Path(f).relative_to(SRC) for f in requirements if requirement_lines(Path(f)))
     if listing:
         fail("requirements files are not scanned, declare the packages in the container's pyproject.toml:\n  " + "\n  ".join(map(str, listing)))

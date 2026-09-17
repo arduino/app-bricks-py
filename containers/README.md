@@ -4,28 +4,39 @@ Every container image produced by this repo lives here, one directory per image.
 
 ## Layout
 
-One directory per container, `containers/<name>/`. The directory name is the container's identity: its
-image name — `ghcr.io/arduino/app-bricks/<name>` — its target in `docker-bake.hcl` and the value used in
-the `containers` input of the dev workflow. Every release publishes every container (see
-[Release process](#release-process)); what each one is for is told by the [inventory](#inventory).
+```
+containers/
+├── base/     shared base images — never released on their own
+├── ai/       AI/ML model runners
+└── bricks/   the library itself and its supporting tooling
+```
+
+The sub-folder only documents what a container is for: every release publishes every container (see
+[Release process](#release-process)).
+
+The group is not part of a container's identity. A container is always referred to by
+its **leaf directory name**, which is also its image name — `ghcr.io/arduino/app-bricks/<name>` — its
+target in `docker-bake.hcl` and the value used in the `containers` input of the dev workflow. CI finds a
+container by globbing `containers/*/<name>/Dockerfile`, so names must be unique across groups;
+`scripts/container_deps.py` fails if two groups declare the same one.
 
 ## Inventory
 
-| Container | Built `FROM` | Purpose |
-|---|---|---|
-| `python-slim` | `python:3.13-slim-trixie` | Minimal Python layer shared by everything else |
-| `tps-location-api` | `python-slim` | Wi-Fi scan server of the TPS Location API brick, serves `iw` results to the app over a Unix socket |
-| `python-base` | `python-slim` | System deps, non-root user, fonts, OpenCV wheel, libcamera + GStreamer packages |
-| `qairt-common-base` | `python:3.13-slim-trixie` | Qualcomm AI Runtime and FastRPC libraries shared by the NPU runners |
-| `python-apps-base` | `python-base` | App runtime: installs the Arduino App Bricks `.whl` and the Streamlit config |
-| `models-downloader` | `python-slim` | Downloads models from AI Hub, Edge Impulse and Hugging Face per `models/models-list.yaml` |
-| `aihub-models-runner` | `qairt-common-base` | Runs Qualcomm AI Hub models, with GStreamer/WebSocket input and MJPEG/WebSocket output |
-| `gesture-recognition-runner` | `aihub-models-runner` | Hand-gesture recognition on the MediaPipe palm/landmark/classifier models |
-| `pose-estimation-runner` | `aihub-models-runner` | Body pose estimation on the PoseNet MobileNet model, 17 keypoints per person, custom pose models supported |
-| `ei-models-runner` | Edge Impulse inference image | Edge Impulse inference with the bundled out-of-the-box models |
-| `ei-qnn-models-runner` | Edge Impulse QNN inference image | Same, on the NPU-accelerated (QNN) models |
-| `llamacpp-runner` | `python-slim` | llama.cpp model router, CPU build |
-| `llamacpp-npu-runner` | `qairt-common-base` | llama.cpp model router, Hexagon NPU build |
+| Container | Group | Built `FROM` | Purpose |
+|---|---|---|---|
+| `python-slim` | base | `python:3.13-slim-trixie` | Minimal Python layer shared by everything else |
+| `python-base` | base | `python-slim` | System deps, non-root user, fonts, OpenCV wheel, libcamera + GStreamer packages |
+| `qairt-common-base` | base | `python:3.13-slim-trixie` | Qualcomm AI Runtime and FastRPC libraries shared by the NPU runners |
+| `python-apps-base` | bricks | `python-base` | App runtime: installs the Arduino App Bricks `.whl` and the Streamlit config |
+| `models-downloader` | bricks | `python-slim` | Downloads models from AI Hub, Edge Impulse and Hugging Face per `models/models-list.yaml` |
+| `tps-location-api` | bricks | `python-slim` | Wi-Fi scan server of the TPS Location API brick, serves `iw` results to the app over a Unix socket |
+| `aihub-models-runner` | ai | `qairt-common-base` | Runs Qualcomm AI Hub models, with GStreamer/WebSocket input and MJPEG/WebSocket output |
+| `gesture-recognition-runner` | ai | `aihub-models-runner` | Hand-gesture recognition on the MediaPipe palm/landmark/classifier models |
+| `pose-estimation-runner` | ai | `aihub-models-runner` | Body pose estimation on the PoseNet MobileNet model, 17 keypoints per person, custom pose models supported |
+| `ei-models-runner` | ai | Edge Impulse inference image | Edge Impulse inference with the bundled out-of-the-box models |
+| `ei-qnn-models-runner` | ai | Edge Impulse QNN inference image | Same, on the NPU-accelerated (QNN) models |
+| `llamacpp-runner` | ai | `python-slim` | llama.cpp model router, CPU build |
+| `llamacpp-npu-runner` | ai | `qairt-common-base` | llama.cpp model router, Hexagon NPU build |
 
 ```mermaid
 graph LR
@@ -45,7 +56,7 @@ inside this repo.
 
 ## Anatomy of a container directory
 
-`task containers:new -- <name> --from <parent> [--no-python]` scaffolds a directory with every registration the
+`task containers:new -- <name> --group <group> --from <parent> [--no-python]` scaffolds a directory with every registration the
 repository expects, see [Adding a New Container](../.github/README.md#adding-a-new-container).
 
 | Path | Required | Description |
@@ -77,7 +88,8 @@ The workflow builds every container with one `docker buildx bake` invocation. Ba
 dependency order from the parent links in `docker-bake.hcl`, so `python-slim` is built before
 `python-base`, which is built before `python-apps-base`, however deep the chain. Every image is pushed
 to `ghcr.io/arduino/app-bricks/<name>:X.Y.Z`, plus `:latest` unless the version is a prerelease (`rc`,
-`alpha` or `beta`). Base images are published like any other, tagged with the release version.
+`alpha` or `beta`). Base images in `containers/base/` are published like any other, tagged with the
+release version.
 
 A per-image registry cache (`<name>:buildcache`) is imported and exported on every release. The cache is
 content addressed, so only the layers whose inputs changed since the previous release are rebuilt; the

@@ -40,7 +40,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.LICENSED_VENVS }}
-          key: licensed-venvs-${{ hashFiles('uv.lock', 'containers/*/uv.lock') }}
+          key: licensed-venvs-${{ hashFiles('uv.lock', 'containers/*/*/uv.lock') }}
           restore-keys: licensed-venvs-
 
       - name: Check dependency licenses (licensed status)
