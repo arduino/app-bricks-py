@@ -161,7 +161,7 @@ bundled in the wheel reference the containers published by the same release.
 **Prerelease**: if the version contains `rc`, `alpha` or `beta`, images are tagged with the version only
 and no `:latest` tag is pushed.
 
-**Dependencies**: base images in `containers/` are not released on their own. They are rebuilt first,
+**Dependencies**: base images in `containers/base/` are not released on their own. They are rebuilt first,
 in dependency order, as the base of the images that derive from them, and tagged with the same version.
 
 For development, the dev build pipeline (`docker-build.yml`) is triggered manually (`workflow_dispatch`) on a branch and builds the selected containers (or all of them), tagging the images as `dev-<branch-name>`. The selection is widened with the containers deriving from it and with its bases, and `docker buildx bake` builds them in dependency order.
@@ -170,7 +170,7 @@ See [`.github/README.md`](.github/README.md) for full CI documentation.
 
 ### Container layers
 
-Library containers are based on a set of pre-defined Python base images, in `containers/`.
+Library containers are based on a set of pre-defined Python base images, in `containers/base/`.
 Base images are never released on their own: they are rebuilt as a dependency of the images that derive
 from them, and tagged with the release version.
 

@@ -2,12 +2,24 @@
 
 ## Container Images
 
-The repo produces container images, each with its own Dockerfile under `containers/<name>/` and a matching target in `docker-bake.hcl` at the repository root. The workflows build through `docker buildx bake`, so adding a container never means changing a workflow.
+The repo produces container images, each with its own Dockerfile under `containers/<group>/<name>/` and a matching target in `docker-bake.hcl` at the repository root. The workflows build through `docker buildx bake`, so adding a container never means changing a workflow.
 
-The directory name is the container's identity: its image name (`ghcr.io/arduino/app-bricks/<name>`),
-its bake target and the value used in the `containers` input of the dev workflow. Base images, the ones
-other containers derive `FROM`, are ordinary containers: they are built and published like the others,
-and are rebuilt whenever one of their children is.
+### Layout
+
+Containers are filed under three groups, which document what they are for:
+
+| Group | Contains |
+|---|---|
+| `containers/ai/` | AI/ML model runners |
+| `containers/bricks/` | Images shipping the library itself and its supporting tooling |
+| `containers/base/` | Shared base images other containers derive `FROM` (`base_image: true`) |
+
+The group is **not** part of a container's identity: a container is always referred to by its leaf
+directory name, which is also its image name (`ghcr.io/arduino/app-bricks/<name>`), its bake target and
+the value used in the `containers` input of the dev workflow. CI locates a container by globbing
+`containers/*/<name>/Dockerfile`, so moving a container between groups only means updating the `context`
+of its bake target. Leaf names must stay unique across groups; `scripts/container_deps.py` fails loudly
+if two groups declare the same name.
 
 The full list of images, with what each one builds from and what it is for, is the inventory in
 [containers/README.md](../containers/README.md#inventory).
@@ -63,14 +75,14 @@ building. Targets are listed parents first, each followed by the containers deri
 
 ## Adding a New Container
 
-`task containers:new -- my-container --from python-slim --desc "What it does"` performs the steps
+`task containers:new -- my-container --group bricks --from python-slim --desc "What it does"` performs the steps
 below: it creates the directory with a starting `Dockerfile` and `pyproject.toml`, adds the bake target
 after its parent, the inventory row, the license scan and Dependabot entries, then runs
 `task containers:check`. Pass an image reference to `--from` for an external base and `--no-python` for
 an image that installs no Python packages. What follows is what it does, for reference and for adjusting the result.
 
-1. Create `containers/my-container/Dockerfile`. To derive from another container of this repo, start it
-   with:
+1. Create `containers/<group>/my-container/Dockerfile`, filing it under the group that describes what it
+   is for — see [Layout](#layout). To derive from another container of this repo, start it with:
 
 ```dockerfile
 ARG REGISTRY
@@ -83,7 +95,7 @@ FROM ${REGISTRY}app-bricks/python-slim:${BASE_IMAGE_VERSION}
 ```hcl
 target "my-container" {
   inherits   = ["_downstream"]              # "_common" when the base image is external
-  context    = "containers/my-container"
+  context    = "containers/<group>/my-container"
   tags       = image_tags("my-container")
   cache-from = cache_from("my-container")
   cache-to   = cache_to("my-container")

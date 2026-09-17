@@ -6,8 +6,9 @@
 
 """Derive the container graph from the Dockerfiles.
 
-Containers live in ``containers/<name>/``, the directory name being also the
-image name. The base image of each one is declared exactly once, in the ``FROM`` of its Dockerfile's final stage:
+Containers live in ``containers/<group>/<name>/`` and are identified by their
+leaf directory name, which is also their image name. The base image of each
+one is declared exactly once, in the ``FROM`` of its Dockerfile's final stage:
 this module resolves it through multi-stage builds and tells whether it is
 another container of this repository (``FROM ${REGISTRY}app-bricks/<parent>:${BASE_IMAGE_VERSION}``)
 or an external image. CI therefore needs no second, drift-prone copy of the
@@ -31,7 +32,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DOCKERFILE_GLOB = "*/Dockerfile"
+DOCKERFILE_GLOB = "*/*/Dockerfile"
 
 FROM_PATTERN = re.compile(r"^\s*FROM\s+(?:--platform=\S+\s+)?(\S+)(?:\s+AS\s+(\S+))?\s*$", re.IGNORECASE)
 PARENT_PATTERN = re.compile(r"^\$\{REGISTRY\}app-bricks/([a-z0-9._-]+):\$\{BASE_IMAGE_VERSION\}$")
@@ -77,7 +78,7 @@ class Containers:
     """The containers of the repository, with their base image and parent."""
 
     def __init__(self, containers_dir: Path) -> None:
-        """Read every ``containers/<name>/Dockerfile``."""
+        """Read every ``containers/<group>/<name>/Dockerfile``."""
         self.directory: dict[str, Path] = {}
         self.base: dict[str, str] = {}
         self.parent: dict[str, str | None] = {}
@@ -88,6 +89,11 @@ class Containers:
 
         for dockerfile in dockerfiles:
             name = dockerfile.parent.name
+            if name in self.directory:
+                raise ContainerDepsError(
+                    f"Duplicate container name '{name}': {self.directory[name]} and {dockerfile.parent}. "
+                    f"Container names must be unique across groups (the name is also the image name)."
+                )
             self.directory[name] = dockerfile.parent
             self.base[name] = resolve_base_image(dockerfile)
             self.parent[name] = parent_container(self.base[name])
@@ -137,7 +143,7 @@ class Containers:
         """
         targets = definition.get("target") or {}
         problems = [f"'{name}' has a Dockerfile but no bake target in the default group" for name in sorted(set(self.names) - set(targets))]
-        problems += [f"bake target '{name}' has no containers/{name}/Dockerfile" for name in sorted(set(targets) - set(self.names))]
+        problems += [f"bake target '{name}' has no Dockerfile under containers/" for name in sorted(set(targets) - set(self.names))]
         for name in sorted(set(self.names) & set(targets)):
             contexts = targets[name].get("contexts") or {}
             linked = sorted(value.removeprefix("target:") for value in contexts.values() if value.startswith("target:"))

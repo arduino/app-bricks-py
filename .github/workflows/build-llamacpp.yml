@@ -63,7 +63,7 @@ jobs:
           git clone "https://github.com/${{ needs.resolve.outputs.llama_cpp_repo }}" llama.cpp
           cd llama.cpp
           git checkout "${{ needs.resolve.outputs.llama_cpp_ref }}"
-          cp ../containers/llamacpp-npu-runner/builder/CMakeUserPresets.json .
+          cp ../containers/ai/llamacpp-npu-runner/builder/CMakeUserPresets.json .
           # Anchor timestamps to the source commit time so builds are reproducible
           echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
 
