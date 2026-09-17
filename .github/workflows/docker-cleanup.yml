@@ -2,14 +2,24 @@ name: Cleanup branch containers from GHCR
 
 on:
   delete:
+  schedule:
+    # Weekly, Sunday 03:00 UTC
+    - cron: "0 3 * * 0"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "List the versions that would be deleted without deleting them"
+        type: boolean
+        default: false
 
 permissions:
   packages: write
+  contents: read
 
 jobs:
   cleanup:
     runs-on: ubuntu-24.04-arm
-    if: github.event.ref_type == 'branch'
+    if: github.event_name == 'delete' && github.event.ref_type == 'branch'
     steps:
       - name: Sanitize branch name
         id: branch
@@ -21,7 +31,7 @@ jobs:
           echo "tag=dev-$SANITIZED" >> $GITHUB_OUTPUT
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Delete branch-tagged images from GHCR
         env:
@@ -58,3 +68,81 @@ jobs:
                 echo "  Warning: failed to delete version $VERSION_ID (may require delete:packages scope)"
             done <<< "$VERSIONS"
           done
+
+  prune-untagged:
+    # Package versions are manifests. A tagged image is an index holding the image
+    # and its SBOM attestation, a tagged buildx cache is a manifest list of blobs:
+    # their children show up as untagged versions and must survive. Only the
+    # manifests no tagged version references are deleted, the leftovers of
+    # overwritten tags.
+    runs-on: ubuntu-24.04-arm
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Log into registry ghcr.io
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prune unreferenced untagged container versions
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: |
+          set -euo pipefail
+
+          TOTAL_FOUND=0
+          TOTAL_DELETED=0
+
+          # Discover packages from containers/<group>/<name>/ directories
+          for NAME in $(ls -d containers/*/*/ | xargs -I{} basename {}); do
+            echo "::group::Package app-bricks/$NAME"
+            API_PATH="/orgs/$OWNER/packages/container/$(jq -Rr @uri <<< "app-bricks/$NAME")/versions"
+
+            VERSIONS=$(gh api "$API_PATH" --paginate --jq '.[] | {id, digest: .name, tags: .metadata.container.tags}' 2>/dev/null | jq -s . || echo "[]")
+
+            # Digests referenced by a tagged manifest, read from the registry
+            REFERENCED=$(jq -r '.[] | select(.tags | length > 0) | .digest' <<< "$VERSIONS" | while read -r DIGEST; do
+              docker buildx imagetools inspect --raw "ghcr.io/$OWNER/app-bricks/$NAME@$DIGEST" 2>/dev/null | jq -r '.manifests[]?.digest // empty'
+            done | sort -u)
+
+            CANDIDATES=$(jq -r '.[] | select(.tags | length == 0) | "\(.id) \(.digest)"' <<< "$VERSIONS")
+            if [[ -z "$CANDIDATES" ]]; then
+              echo "  No untagged versions"
+              echo "::endgroup::"
+              continue
+            fi
+
+            while read -r VERSION_ID DIGEST; do
+              if grep -qxF "$DIGEST" <<< "$REFERENCED"; then
+                echo "  Keeping $DIGEST, referenced by a tagged manifest"
+                continue
+              fi
+              TOTAL_FOUND=$((TOTAL_FOUND + 1))
+              if [[ "$DRY_RUN" == "true" ]]; then
+                echo "  Would delete version $VERSION_ID ($DIGEST)"
+                continue
+              fi
+              # Re-check right before deleting, a concurrent push may have tagged it meanwhile
+              TAGS=$(gh api "$API_PATH/$VERSION_ID" --jq '.metadata.container.tags | length' 2>/dev/null || echo "unknown")
+              if [[ "$TAGS" != "0" ]]; then
+                echo "  Skipping version $VERSION_ID, not untagged anymore"
+                continue
+              fi
+              echo "  Deleting version $VERSION_ID ($DIGEST)"
+              if gh api --method DELETE "$API_PATH/$VERSION_ID"; then
+                TOTAL_DELETED=$((TOTAL_DELETED + 1))
+              else
+                echo "  Warning: failed to delete version $VERSION_ID"
+              fi
+            done <<< "$CANDIDATES"
+
+            echo "::endgroup::"
+          done
+
+          echo "Summary: unreferenced=$TOTAL_FOUND deleted=$TOTAL_DELETED dry_run=$DRY_RUN"

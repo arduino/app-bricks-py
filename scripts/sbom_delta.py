@@ -4,7 +4,14 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""Compute delta reports between container SBOMs"""
+"""Compute delta reports between container SBOMs.
+
+The SBOM of a published container is the SPDX attestation BuildKit attached to
+it at build time, read with `docker buildx imagetools inspect`. The delta is
+computed against the base image of its Dockerfile: a parent container of this
+repository, whose attestation is read the same way, or an external image, the
+only kind still scanned with Syft.
+"""
 
 from __future__ import annotations
 
@@ -23,9 +30,9 @@ from typing import Any
 VARIABLE_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-# Containers are grouped in sub-folders (containers/<group>/<name>/), so a
-# container is discovered one level deeper than the containers/ root.
-CI_JSON_GLOB = "*/*/ci.json"
+# Lets the script run both as `python3 -m scripts.sbom_delta` and directly
+sys.path.insert(0, str(REPO_ROOT))
+from scripts.container_deps import ContainerDepsError, Containers  # noqa: E402
 
 
 class SbomDeltaError(RuntimeError):
@@ -52,45 +59,6 @@ def load_json(path: Path) -> dict[str, Any]:
     return payload
 
 
-def resolve_container_dir(containers_dir: Path, container: str) -> Path:
-    """Locate a container directory by name, whatever group it is filed under."""
-    matches = sorted(ci_json.parent for ci_json in containers_dir.glob(f"*/{container}/ci.json"))
-    if not matches:
-        raise SbomDeltaError(f"Container '{container}' not found under {containers_dir} (no <group>/{container}/ci.json).")
-    if len(matches) > 1:
-        found = ", ".join(str(match) for match in matches)
-        raise SbomDeltaError(f"Duplicate container name '{container}': {found}.")
-    return matches[0]
-
-
-def load_container_config(containers_dir: Path, container: str) -> dict[str, Any]:
-    """Load ``ci.json`` metadata for a container."""
-    return load_json(resolve_container_dir(containers_dir, container) / "ci.json")
-
-
-def build_resolution_context(
-    config: dict[str, Any],
-    registry: str,
-    version: str,
-    build_args: dict[str, str] | None = None,
-) -> dict[str, str]:
-    """Build the variable map used to resolve runtime base templates."""
-    default_build_args = config.get("build_args") or {}
-    if not isinstance(default_build_args, dict):
-        raise SbomDeltaError("Expected 'build_args' to be a JSON object.")
-
-    context = {str(k): str(v) for k, v in default_build_args.items()}
-    context["REGISTRY"] = normalize_registry(registry)
-    context["VERSION"] = version
-    context["BASE_IMAGE_VERSION"] = version
-
-    for key, value in (build_args or {}).items():
-        context[str(key)] = str(value)
-
-    context["REGISTRY"] = normalize_registry(context["REGISTRY"])
-    return context
-
-
 def resolve_template(template: str, context: dict[str, str]) -> str:
     """Resolve ``${VAR}`` placeholders inside a template string."""
     resolved = template
@@ -105,29 +73,16 @@ def resolve_template(template: str, context: dict[str, str]) -> str:
     raise SbomDeltaError(f"Could not resolve template after 10 passes: {template}")
 
 
-def resolve_runtime_base(
-    containers_dir: Path,
-    container: str,
-    registry: str,
-    version: str,
-    build_args: dict[str, str] | None = None,
-) -> str:
-    """Resolve the fully qualified runtime base image for a container.
+def resolve_runtime_base(containers: Containers, container: str, registry: str, version: str) -> str:
+    """Resolve the image the delta SBOM is computed against.
 
-    Uses the ``sbom.runtime_base`` template in the container's ``ci.json``,
-    expanding ``${VAR}`` placeholders with registry, version, and build args.
+    It is the base of the container's Dockerfile: a parent container of this
+    repository at the given registry and version, or an external image as written.
     """
-    config = load_container_config(containers_dir, container)
-    sbom_config = config.get("sbom")
-    if not isinstance(sbom_config, dict):
-        raise SbomDeltaError(f"Container '{container}' is missing 'sbom.runtime_base'.")
-
-    runtime_base = sbom_config.get("runtime_base")
-    if not isinstance(runtime_base, str) or not runtime_base.strip():
-        raise SbomDeltaError(f"Container '{container}' is missing 'sbom.runtime_base'.")
-
-    context = build_resolution_context(config=config, registry=registry, version=version, build_args=build_args)
-    return resolve_template(runtime_base.strip(), context)
+    if container not in containers.base:
+        raise SbomDeltaError(f"Unknown container '{container}'. Known: {', '.join(containers.names)}.")
+    context = {"REGISTRY": normalize_registry(registry), "BASE_IMAGE_VERSION": version}
+    return resolve_template(containers.base[container], context)
 
 
 # ---------------------------------------------------------------------------
@@ -459,11 +414,6 @@ def require_command(command: str, install_hint: str) -> None:
         raise SbomDeltaError(f"'{command}' not found. {install_hint}")
 
 
-def discover_containers(containers_dir: Path) -> list[str]:
-    """Discover containers by looking for ``ci.json`` files."""
-    return sorted(p.parent.name for p in containers_dir.glob(CI_JSON_GLOB) if p.is_file())
-
-
 def parse_container_spec(spec: str, default_version: str) -> tuple[str, str]:
     """Split a ``name[:version]`` CLI token, falling back to the default version."""
     name, _, version = spec.partition(":")
@@ -480,9 +430,45 @@ def build_container_image(registry: str, container: str, version: str) -> str:
 PLATFORM = "linux/arm64"
 
 
+def extract_attested_sbom(image: str, payload: object) -> dict[str, Any]:
+    """Return the SPDX document from the ``imagetools inspect --format '{{ json .SBOM }}'`` output.
+
+    A single-platform image exposes the document directly, a multi-platform one
+    keys it by platform; the images built here have exactly one.
+    """
+    if isinstance(payload, dict):
+        if isinstance(payload.get("SPDX"), dict):
+            return payload["SPDX"]
+        documents = [entry["SPDX"] for entry in payload.values() if isinstance(entry, dict) and isinstance(entry.get("SPDX"), dict)]
+        if len(documents) == 1:
+            return documents[0]
+        if documents:
+            raise SbomDeltaError(f"image '{image}' carries {len(documents)} SBOM attestations, expected one platform")
+    raise SbomDeltaError(f"image '{image}' carries no SBOM attestation")
+
+
+def fetch_attested_sbom(image: str, output_path: Path) -> None:
+    """Save the SPDX SBOM attested to a published image, generated by BuildKit at build time."""
+    print(f"    attestation: {image}", file=sys.stderr)
+    require_command("docker", "Install Docker with buildx.")
+    command = ["docker", "buildx", "imagetools", "inspect", image, "--format", "{{ json .SBOM }}"]
+    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        details = (result.stderr or result.stdout or "").strip() or f"exit status {result.returncode}"
+        raise SbomDeltaError(f"failed to inspect image '{image}': {details}")
+    try:
+        payload = json.loads(result.stdout or "null")
+    except json.JSONDecodeError as exc:
+        raise SbomDeltaError(f"unreadable SBOM attestation of '{image}': {exc}") from exc
+    document = extract_attested_sbom(image, payload)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
 def scan_image(image: str, output_path: Path) -> None:
     """Scan an image with Syft and save the SPDX JSON report."""
     print(f"    syft scan: {image}", file=sys.stderr)
+    require_command("syft", "Install from: https://github.com/anchore/syft#installation")
 
     commands = [
         ["syft", f"registry:{image}", "--platform", PLATFORM, "--output", f"spdx-json={output_path}", "--quiet"],
@@ -505,14 +491,14 @@ def scan_image(image: str, output_path: Path) -> None:
 
 
 def generate_delta_for_container(
-    containers_dir: Path,
+    containers: Containers,
     output_dir: Path,
     container: str,
     registry: str,
     version: str,
 ) -> None:
     """Generate delta SBOM artifacts for a single container."""
-    base_image = resolve_runtime_base(containers_dir=containers_dir, container=container, registry=registry, version=version)
+    base_image = resolve_runtime_base(containers=containers, container=container, registry=registry, version=version)
     target_image = build_container_image(registry=registry, container=container, version=version)
 
     print(f"[{container}]")
@@ -523,10 +509,14 @@ def generate_delta_for_container(
     base_sbom = output_dir / "base.spdx.json"
     full_sbom = output_dir / "full.spdx.json"
 
-    print("  scanning base...")
-    scan_image(image=base_image, output_path=base_sbom)
-    print("  scanning container...")
-    scan_image(image=target_image, output_path=full_sbom)
+    if containers.parent[container]:
+        print("  reading the base attestation...")
+        fetch_attested_sbom(image=base_image, output_path=base_sbom)
+    else:
+        print("  scanning the external base...")
+        scan_image(image=base_image, output_path=base_sbom)
+    print("  reading the container attestation...")
+    fetch_attested_sbom(image=target_image, output_path=full_sbom)
 
     print("  computing delta...")
     report = build_delta_report(
@@ -545,15 +535,14 @@ def generate_delta_for_container(
 
 def run_generate(args: argparse.Namespace) -> int:
     """Run the end-to-end delta generation workflow."""
-    require_command("syft", "Install from: https://github.com/anchore/syft#installation")
-
-    containers_dir = REPO_ROOT / "containers"
+    try:
+        containers = Containers(REPO_ROOT / "containers")
+    except ContainerDepsError as exc:
+        raise SbomDeltaError(str(exc)) from exc
     if args.containers:
         specs = [parse_container_spec(spec, args.version) for spec in args.containers]
     else:
-        specs = [(name, args.version) for name in discover_containers(containers_dir)]
-    if not specs:
-        raise SbomDeltaError(f"No containers found (looked for {CI_JSON_GLOB} under {containers_dir}).")
+        specs = [(name, args.version) for name in containers.names]
 
     registry = normalize_registry(args.registry)
     output_root = Path(args.output_dir)
@@ -566,7 +555,7 @@ def run_generate(args: argparse.Namespace) -> int:
     for container, version in specs:
         try:
             generate_delta_for_container(
-                containers_dir=containers_dir,
+                containers=containers,
                 output_dir=output_root / f"{container}-{version}",
                 container=container,
                 registry=registry,
@@ -587,7 +576,7 @@ def run_generate(args: argparse.Namespace) -> int:
 def create_parser() -> argparse.ArgumentParser:
     """Create the CLI argument parser."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("containers", nargs="*", help="Containers as name[:version] (default: all with ci.json, at --version).")
+    parser.add_argument("containers", nargs="*", help="Containers as name[:version] (default: every container, at --version).")
     parser.add_argument("--registry", default=os.environ.get("REGISTRY", "ghcr.io/arduino/"), help="Registry prefix.")
     parser.add_argument("--version", default=os.environ.get("VERSION", "latest"), help="Image tag to scan for containers given without a version.")
     parser.add_argument(

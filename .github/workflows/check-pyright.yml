@@ -28,7 +28,7 @@ on:
       - "src/**"
       - "pyproject.toml"
       - "pyright-rules.json"
-      - "containers/base/python-base/requirements-base.txt"
+      - "containers/base/python-base/pyproject.toml"
       - "scripts/check_pyright.py"
       - ".github/workflows/check-pyright.yml"
   workflow_dispatch:
@@ -90,11 +90,12 @@ jobs:
           # Library dependencies (core + [all] extra), without the library itself:
           # pyright resolves the library from the base/head sources.
           python head/scripts/check_pyright.py deps --pyproject head/pyproject.toml > library-deps.txt
-          # Runtime baseline of the app container + library dependencies.
+          # Runtime baseline of the app container: the packages python-base installs.
+          python head/scripts/check_pyright.py deps --pyproject head/containers/base/python-base/pyproject.toml > container-deps.txt
           # Tolerant per-package install: a package that still fails to build on
           # the runner only degrades the affected types to Unknown, it must not
           # fail the job.
-          cat head/containers/base/python-base/requirements-base.txt library-deps.txt | while IFS= read -r pkg; do
+          cat container-deps.txt library-deps.txt | while IFS= read -r pkg; do
             pkg="${pkg%%#*}"
             [ -z "${pkg// /}" ] && continue
             ./checkenv/bin/pip install -q "$pkg" < /dev/null || echo "::notice::package not installed in the check venv: $pkg"

@@ -10,7 +10,7 @@ type-checked through two profiles, app-bricks-py for its own sources and api-use
 for code written against its API; this script adds the environment (paths,
 interpreter, execution root). Modes:
 
-  deps      Print the library dependencies (core + recursively expanded extra),
+  deps      Print a project's dependencies (core + recursively expanded extra),
             so the check venv can be built without building the library itself.
   run       Run pyright over the examples trees against a library source path
             (profile api-user) and save the diagnostics as JSON.
@@ -580,7 +580,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="mode", required=True)
 
-    deps = sub.add_parser("deps", help="print library dependencies for the check venv")
+    deps = sub.add_parser("deps", help="print a pyproject's dependencies for the check venv")
     deps.add_argument("--pyproject", default="pyproject.toml")
     deps.add_argument("--extra", default="all")
     deps.set_defaults(func=cmd_deps)

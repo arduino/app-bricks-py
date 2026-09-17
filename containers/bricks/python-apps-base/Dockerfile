@@ -6,12 +6,16 @@ ARG REGISTRY
 ARG BASE_IMAGE_VERSION=latest
 FROM ${REGISTRY}app-bricks/python-base:${BASE_IMAGE_VERSION}
 
+# The compose files provisioned at runtime reference the images published with this one
+ARG BASE_IMAGE_VERSION
+ENV BRICKS_RELEASE_VERSION=${BASE_IMAGE_VERSION}
+
 # Copy the Streamlit configuration file with customized settings in home app shared directory
 COPY ./streamlit/config.toml /home/app/.streamlit/config.toml
 
 COPY ./scripts/*.sh /
-# The wheel and the lock it was built from, copied here by the build workflows
-COPY ./arduino*.whl ./pyproject.toml ./uv.lock /app/
+# The wheel and the lock it was built from, from the bake context filled by `task build`
+COPY --from=wheel arduino*.whl pyproject.toml uv.lock /app/
 # OpenCV is left out, python-base ships its own GStreamer build of it
 RUN set -ex; \
     uv export --frozen --project /app --extra all --no-dev --no-emit-project --no-emit-package opencv-python-headless | uv pip install --system --no-cache-dir --require-hashes -r -; \

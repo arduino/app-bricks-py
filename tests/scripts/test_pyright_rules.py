@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import json
 import re
-import sys
 from pathlib import Path
 
 import pytest
@@ -60,17 +59,15 @@ def test_profile_holds_a_mode_and_report_rules_only(rules, profile):
 
 
 def test_the_file_is_shipped_in_the_wheel(tmp_path, monkeypatch):
-    # The build backend copies the file into the static assets, and the wheel
+    # arduino-bricks-release copies the file into the static assets, and the wheel
     # picks static files up through the package-data patterns.
     import tomllib
+
+    from arduino.app_tools.module_listing import save_pyright_rules
 
     pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())
     assert "*.json" in pyproject["tool"]["setuptools"]["package-data"]["*"]
 
-    if str(REPO_ROOT / "src" / "arduino" / "app_tools") not in sys.path:
-        sys.path.insert(0, str(REPO_ROOT / "src" / "arduino" / "app_tools"))
-    import builder
-
     monkeypatch.chdir(REPO_ROOT)
-    builder.embed_pyright_rules(str(tmp_path))
+    save_pyright_rules("pyright-rules.json", str(tmp_path))
     assert json.loads((tmp_path / "pyright-rules.json").read_text()) == json.loads(RULES_PATH.read_text())
