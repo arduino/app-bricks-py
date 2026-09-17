@@ -145,7 +145,7 @@ Development containers are published by the dev CI (`docker-build.yml`) tagged a
 
 ## Examples alignment
 
-The published examples live in [app-bricks-examples](https://github.com/arduino/app-bricks-examples). To check whether your changes break the API contract the examples rely on (pyright analyzes their Python sources against your checkout), clone that repository next to this one and run:
+The published examples live in [app-bricks-examples](https://github.com/arduino/app-bricks-examples). To check whether your changes break the API contract the examples rely on (pyright analyzes their Python sources against your checkout), clone that repository next to this one, make sure the project venv has the current library dependencies installed (`pip install -e ".[dev]"`, the check refuses to run against an outdated environment) and run:
 
 ```sh
 task check:examples-alignment:run
@@ -158,6 +158,8 @@ task check:examples-alignment:coverage
 ```
 
 See `scripts/check_examples_alignment.py --help` for the full options (custom paths, JSON output, PR base/head diff — the mode used by the `check-examples-alignment.yml` workflow).
+
+On pull requests the workflow is informative and never blocks the merge: a library change may legitimately require a matching change in the examples, and blocking the two PRs on each other would deadlock. The report (new errors introduced by the PR, errors fixed, pre-existing ones collapsed) goes to the job summary and to a sticky comment on the PR, with the `examples-misaligned` label while new errors exist. On PRs from forks the analysis job runs with a read-only token, so the comment is posted by `comment-examples-alignment.yml`, which runs afterwards with a write token and never executes code from the PR. New errors mean the change breaks the API contract the published examples rely on: either adapt the change, or open the matching PR on app-bricks-examples and merge the library first.
 
 ## Release
 
@@ -199,14 +201,17 @@ Non-base images should start from common base images for performance and disk us
 ## License
 See [LICENSE](./LICENSE.txt) file for details.
 
+## Dependency licenses
+`task license:deps` checks the licenses of the Python packages shipped by the library and by every container, using Docker. Records live under `.licenses/`, the allowed licenses and reviewed packages in `.licensed.yml`. See [scripts/licensed/README.md](scripts/licensed/README.md) for how it works and what to do when it fails.
+
 ## SBOM (Software Bill of Materials)
-Each container ships its SBOM files, in SPDX format, under its `sbom-delta/` directory (e.g. `containers/ai/ei-models-runner/sbom-delta/`):
+SBOMs are not kept in the tree. Each `bricks/X.Y.Z` release attaches `sboms.zip` to the GitHub Release, with one folder per distributed image holding three SPDX documents:
 
 - `base.spdx.json` — packages of the base image the container derives `FROM` (declared as `sbom.runtime_base` in the container's `ci.json`)
 - `full.spdx.json` — complete package list of the container image
 - `delta.spdx.json` — packages added by the container on top of its base image
 
-Delta SBOMs are produced at build time and attached to the GitHub Release. To (re)generate them locally, run:
+See [containers/README.md](containers/README.md#sboms) for how the set of images is resolved. To generate delta SBOMs locally, run:
 ```sh
 task sbom:delta
 ```

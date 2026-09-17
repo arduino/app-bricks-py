@@ -14,10 +14,11 @@ RUN set -ex; \
 # Add all EI OOTB models to the container with specific ownership
 COPY --chown=arduino:arduino ./models/ei-ootb-models/arm64/* /models/ootb/ei/
 COPY --chown=arduino:arduino ./src/start-runner.sh /home/arduino/start-runner.sh
+COPY ./requirements.txt /tmp/requirements.txt
 
 RUN set -ex; \
     apt-get update && apt-get install -y --no-install-recommends python3-pip && apt-get dist-clean && rm -rf /var/lib/apt/lists/* ; \
-    pip3 install --no-cache-dir --break-system-packages requests;\
+    pip3 install --no-cache-dir --break-system-packages -r /tmp/requirements.txt && rm /tmp/requirements.txt; \
     chmod +x /home/arduino/start-runner.sh
 
 WORKDIR /home/arduino

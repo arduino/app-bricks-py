@@ -33,7 +33,7 @@ groups; the build planner fails if two groups declare the same one.
 | `aihub-models-runner` | ai | `qairt-common-base` | Runs Qualcomm AI Hub models on LiteRT, with GStreamer/WebSocket input and MJPEG/WebSocket output. Installs OpenCV and `ai-edge-litert` for its runners |
 | `aihub-onnx-models-runner` | ai | `python-slim` | Same framework on ONNX Runtime: the QNN execution provider plus Debian's FastRPC libraries and OpenCV, without the QAIRT SDK |
 | `gesture-recognition-runner` | ai | `aihub-models-runner` | Hand-gesture recognition on the MediaPipe palm/landmark/classifier models |
-| `pose-estimation-runner` | ai | `aihub-models-runner` | Body-pose estimation on the MediaPipe pose models |
+| `pose-estimation-runner` | ai | `aihub-models-runner` | Body pose estimation on the PoseNet MobileNet model, 17 keypoints per person, custom pose models supported |
 | `ocr-runner` | ai | `aihub-onnx-models-runner` | EasyOCR text detection and recognition on the Hexagon NPU |
 | `ei-models-runner` | ai | Edge Impulse inference image | Edge Impulse inference with the bundled out-of-the-box models |
 | `ei-qnn-models-runner` | ai | Edge Impulse QNN inference image | Same, on the NPU-accelerated (QNN) models |
@@ -45,11 +45,8 @@ graph LR
   slim[python-slim] --> base[python-base] --> apps[python-apps-base]
   slim --> dl[models-downloader]
   slim --> lcpp[llamacpp-runner]
-  slim --> fw[aihub-framework]
-  slim --> onnx[aihub-onnx-models-runner] --> ocr[ocr-runner]
-  fw -.-> onnx
-  fw -.-> aihub[aihub-models-runner]
-  qairt[qairt-common-base] --> aihub --> gesture[gesture-recognition-runner]
+  qairt[qairt-common-base] --> aihub[aihub-models-runner] --> gesture[gesture-recognition-runner]
+  aihub --> pose[pose-estimation-runner]
   qairt --> lcppnpu[llamacpp-npu-runner]
   ei[ei-models-runner]
   eiqnn[ei-qnn-models-runner]
@@ -72,6 +69,7 @@ inside this repo.
 |---|---|---|
 | `Dockerfile` | yes | Build recipe. The directory itself is the build context. |
 | `ci.json` | yes | CI metadata: watched paths, build args, dependencies, release flags |
+| `requirements.txt` | if Python packages are installed | The Python packages the image installs. Never install them inline, the [dependency license scan](../scripts/licensed/README.md) only sees this file |
 
 SBOMs are not kept in the tree: they are generated from the published images at release time (see
 [SBOMs](#sboms)) and by the dev workflow as run artifacts.

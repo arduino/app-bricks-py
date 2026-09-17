@@ -5,6 +5,7 @@
 import argparse
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -15,6 +16,22 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from common.download_marker import write_marker
 from common.http_download import download, download_and_extract, emit_json_error, install_signal_handlers
 from common.model_metadata import write_metadata
+
+
+def _cli_failure_detail(exc: subprocess.CalledProcessError) -> str:
+    """Build a human-readable reason out of a failed ``qai_hub_models`` run.
+
+    The CLI reports its own errors (unsupported version, unknown model, ...) with a
+    plain ``print(e)`` before exiting 1, so the explanation lands on *stdout* and
+    stderr stays empty. Looking at stderr alone therefore hides exactly the message
+    the user needs, leaving only the command repr. Both streams are reported, most
+    specific first, and the command line is kept as a last resort.
+    """
+    parts = [(exc.stderr or "").strip(), (exc.stdout or "").strip()]
+    detail = " ".join(" ".join(part.split()) for part in parts if part)
+    if not detail:
+        return str(exc)
+    return f"{detail} (command: {shlex.join(exc.cmd)}, exit status {exc.returncode})"
 
 
 def _wipe_model_dir(model_dir: str, base_dir: str) -> None:
@@ -123,12 +140,19 @@ def main():
 
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        url = result.stdout.strip()
-        if not url or url == "" or not url.startswith("http"):
-            raise ValueError("Received wrong URL from qai_hub_models fetch command: " + url)
     except subprocess.CalledProcessError as exc:
-        msg = f"Failed to fetch model URL: {exc.stderr.strip() or exc}"
-        emit_json_error(msg)
+        emit_json_error(f"Failed to fetch model URL: {_cli_failure_detail(exc)}")
+        sys.exit(1)
+    except OSError as exc:
+        emit_json_error(f"Failed to run {cmd[0]}: {exc}")
+        sys.exit(1)
+
+    url = result.stdout.strip()
+    if not url.startswith("http"):
+        # A zero exit status with no URL still means the fetch failed; report what
+        # the CLI actually wrote instead of an empty or truncated message.
+        detail = url or (result.stderr or "").strip() or "no output"
+        emit_json_error(f"Received wrong URL from qai_hub_models fetch command: {detail}")
         sys.exit(1)
 
     print(json.dumps({"event": "info", "description": f"Downloading model from: {url}"}), flush=True)

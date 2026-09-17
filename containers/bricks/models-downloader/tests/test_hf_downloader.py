@@ -29,7 +29,12 @@ from common.download_marker import MARKER_NAME, read_marker
 from common.model_metadata import METADATA_NAME, metadata_records, read_metadata
 from hugging_face import hf_downloader
 from hugging_face.hf_downloader import (
+    BOARD_QUANTIZATIONS,
+    DEFAULT_MMPROJ_QUANTIZATIONS,
+    DEFAULT_QUANTIZATIONS,
     JsonProgress,
+    default_quantizations,
+    parameter_count_b,
     delete_matched_files,
     discard_incomplete_download,
     download_matched_files,
@@ -43,11 +48,16 @@ from hugging_face.hf_downloader import (
     is_installed,
     matches_pattern,
     matching_files,
+    names_quantization,
+    narrow_to_installed,
+    narrow_to_published,
     no_match_message,
     parse_hf_url,
+    parse_mmproj_key,
     parse_model_key,
     prune_emptied_repo_dir,
     public_repo_files,
+    repo_url_as_key,
     resolve_model_source,
     source_patterns,
     validate_hub_source,
@@ -1402,3 +1412,572 @@ def test_already_installed_request_reports_the_same_identity(tmp_path, monkeypat
     assert exists_event["model_id"] == downloaded_event["model_id"]
     assert exists_event["size_mb"] == downloaded_event["size_mb"]
     assert exists_event["artifacts"] == downloaded_event["artifacts"]
+
+
+# --------------------------------------------------------------------------- #
+# A defaulted quantization falls back; a requested one does not
+# --------------------------------------------------------------------------- #
+def _repo_holding(*paths):
+    """Stub ``list_repo_matches`` with a repository publishing exactly *paths*."""
+
+    def _list(_repo_id, patterns, ignore_pattern=None, **_kwargs):
+        files = [_RepoFile(path) for path in paths]
+        matched = [f for f in files if any(matches_pattern(f.path, p) for p in patterns)]
+        if ignore_pattern:
+            matched = [f for f in matched if not matches_pattern(f.path, ignore_pattern)]
+        return matched
+
+    return _list
+
+
+def _unreachable_hub(*_args, **_kwargs):
+    raise AssertionError("the Hub must not be consulted here")
+
+
+def test_the_fallback_order_is_the_one_the_runners_want():
+    """Pinned deliberately: the order decides what a bare repository downloads."""
+    assert DEFAULT_QUANTIZATIONS == ("Q4_0", "Q8_0", "IQ4_NL", "Q4_K_M", "Q4_K_S")
+
+
+def test_the_unoq_orders_are_the_ones_that_board_runs_well():
+    """Pinned deliberately: they decide what a bare repository downloads there.
+
+    Q8_0 first up to 1B and Q4_0 first above it; IQ4_NL is nobody's first choice on
+    UnoQ, only the last resort for a repository that publishes nothing better. No K
+    quant in either order — those are far slower there than the plain formats.
+    """
+    assert BOARD_QUANTIZATIONS["unoq"].small == ("Q8_0", "Q4_0", "IQ4_NL")
+    assert BOARD_QUANTIZATIONS["unoq"].large == ("Q4_0", "Q8_0", "IQ4_NL")
+
+
+@pytest.mark.parametrize(
+    "repo_id, expected",
+    [
+        ("unsloth/SmolLM2-135M-Instruct-GGUF", 0.135),
+        ("unsloth/Qwen3-0.6B-GGUF", 0.6),
+        ("unsloth/gemma-3-1b-it-GGUF", 1.0),  # lowercase, as plenty of repositories write it
+        ("unsloth/Qwen3.5-0.8B-GGUF", 0.8),  # the version is not a size: no unit after it
+        ("google/gemma-4-E2B-it-qat-q4_0-gguf", 2.0),  # a MatFormer's effective size
+        ("Qwen/Qwen2.5-7B-Instruct-1M-GGUF", 7.0),  # 1M is the context, and the smaller number
+        ("TheBloke/Mixtral-8x7B-Instruct-v0.1-GGUF", 7.0),
+        ("unsloth/Llama-3.2-3B-Instruct-GGUF", 3.0),
+        ("someone/Llama-3-8B-4bit-GGUF", 8.0),  # "4bit" is a tag, not four billion
+        ("microsoft/phi-4-mini-instruct-gguf", None),  # says nothing about its size
+    ],
+)
+def test_parameter_count_b_reads_the_size_out_of_the_name(repo_id, expected):
+    assert parameter_count_b(repo_id) == expected
+
+
+@pytest.mark.parametrize("board", ["unoq", "UnoQ"])
+def test_unoq_takes_q8_0_first_for_a_model_up_to_1b(monkeypatch, board):
+    monkeypatch.setenv("BOARD_NAME", board)
+    source = resolve_model_source("unsloth/SmolLM2-135M-Instruct-GGUF")
+    assert source["quantization"] == "Q8_0"
+    assert source["allow_pattern"] == "*Q8_0*.gguf"
+    assert source["quantization_fallbacks"] == ["Q4_0", "IQ4_NL"]
+
+
+def test_unoq_takes_q4_0_first_above_1b(monkeypatch):
+    """The 8-bit download stops fitting up there, and Q4_0 is what the runner wants."""
+    monkeypatch.setenv("BOARD_NAME", "unoq")
+    source = resolve_model_source("unsloth/Qwen3-4B-GGUF")
+    assert source["quantization"] == "Q4_0"
+    assert source["quantization_fallbacks"] == ["Q8_0", "IQ4_NL"]
+
+
+def test_1b_itself_is_small(monkeypatch):
+    """The threshold includes its own size: a 1B model still gets Q8_0."""
+    monkeypatch.setenv("BOARD_NAME", "unoq")
+    assert default_quantizations("unsloth/gemma-3-1b-it-GGUF")[0] == "Q8_0"
+    assert default_quantizations("unsloth/Llama-3.2-1.5B-GGUF")[0] == "Q4_0"
+
+
+def test_a_repository_that_does_not_say_its_size_gets_the_larger_order(monkeypatch):
+    """4 bits is the affordable guess: an 8-bit download of an unknown model may not fit."""
+    monkeypatch.setenv("BOARD_NAME", "unoq")
+    assert default_quantizations("microsoft/phi-4-mini-instruct-gguf") == BOARD_QUANTIZATIONS["unoq"].large
+
+
+@pytest.mark.parametrize("board", ["", "ventunoq"])
+def test_a_board_without_an_override_keeps_the_general_order(monkeypatch, board):
+    monkeypatch.setenv("BOARD_NAME", board)
+    assert default_quantizations("unsloth/SmolLM2-135M-Instruct-GGUF") == DEFAULT_QUANTIZATIONS
+    assert default_quantizations("unsloth/Qwen3-4B-GGUF") == DEFAULT_QUANTIZATIONS
+
+
+def test_a_requested_quantization_is_not_reordered_by_the_board(monkeypatch):
+    """The override moves the default, never a choice the caller made."""
+    monkeypatch.setenv("BOARD_NAME", "unoq")
+    source = resolve_model_source("unsloth/SmolLM2-135M-Instruct-GGUF:Q4_0")
+    assert source["quantization"] == "Q4_0"
+    assert source["quantization_fallbacks"] == []
+
+
+def test_a_bare_repository_carries_the_fallbacks_after_its_first_choice():
+    source = resolve_model_source("unsloth/SmolLM2-135M-Instruct-GGUF")
+    assert source["quantization"] == "Q4_0"
+    assert source["allow_pattern"] == "*Q4_0*.gguf"
+    assert source["quantization_fallbacks"] == ["Q8_0", "IQ4_NL", "Q4_K_M", "Q4_K_S"]
+
+
+@pytest.mark.parametrize(
+    "model_url",
+    [
+        "unsloth/Qwen3-0.6B-GGUF:Q4_0",  # the same quantization, but asked for
+        "llamacpp:unsloth/Qwen3-0.6B-GGUF:Q3_K_S",
+        "https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/blob/main/Qwen3-0.6B-Q4_0.gguf",
+    ],
+)
+def test_a_requested_quantization_has_no_fallbacks(model_url):
+    """Handing back a file the caller did not ask for is worse than failing."""
+    assert resolve_model_source(model_url)["quantization_fallbacks"] == []
+
+
+def test_narrow_to_published_keeps_the_first_choice_when_the_repo_has_it(monkeypatch, capsys):
+    monkeypatch.setattr(hf_downloader, "list_repo_matches", _repo_holding("Qwen3-0.6B-Q4_0.gguf", "Qwen3-0.6B-Q8_0.gguf"))
+    source = resolve_model_source("unsloth/Qwen3-0.6B-GGUF")
+
+    narrow_to_published(source)
+    assert source["quantization"] == "Q4_0"
+    assert source["allow_pattern"] == "*Q4_0*.gguf"
+    # Nothing to report: the caller is getting the quantization they were told about.
+    assert read_events(capsys) == []
+
+
+def test_narrow_to_published_takes_the_next_candidate_in_order(monkeypatch, capsys):
+    """The SmolLM2 case: no Q4_0, but a Q8_0 and a Q4_K_M - Q8_0 comes first."""
+    monkeypatch.setattr(
+        hf_downloader,
+        "list_repo_matches",
+        _repo_holding("SmolLM2-135M-Instruct-Q8_0.gguf", "SmolLM2-135M-Instruct-Q4_K_M.gguf"),
+    )
+    source = resolve_model_source("unsloth/SmolLM2-135M-Instruct-GGUF")
+
+    narrow_to_published(source)
+    assert source["quantization"] == "Q8_0"
+    assert source["allow_pattern"] == "*Q8_0*.gguf"
+    # The substitution is reported, and the fallbacks are spent: one answer from here on.
+    assert "publishes no Q4_0 model, using Q8_0 instead" in read_events(capsys)[0]["description"]
+    assert source["quantization_fallbacks"] == []
+
+
+def test_narrow_to_published_prefers_q8_0_over_iq4_nl(monkeypatch):
+    monkeypatch.setattr(hf_downloader, "list_repo_matches", _repo_holding("m-Q8_0.gguf", "m-IQ4_NL.gguf", "m-Q4_K_S.gguf"))
+    source = resolve_model_source("org/repo")
+    narrow_to_published(source)
+    assert source["quantization"] == "Q8_0"
+
+
+def test_narrow_to_published_ignores_an_mmproj_only_match(monkeypatch):
+    """A repo whose only Q8_0 file is the projector does not publish a Q8_0 model."""
+    monkeypatch.setattr(hf_downloader, "list_repo_matches", _repo_holding("mmproj-Q8_0.gguf", "m-Q4_K_M.gguf"))
+    source = resolve_model_source("org/repo")
+    narrow_to_published(source)
+    assert source["quantization"] == "Q4_K_M"
+
+
+def test_narrow_to_published_names_every_candidate_when_none_is_published(monkeypatch):
+    monkeypatch.setattr(hf_downloader, "list_repo_matches", _repo_holding("m-Q2_K.gguf", "m-F16.gguf"))
+    with pytest.raises(FileNotFoundError) as excinfo:
+        narrow_to_published(resolve_model_source("org/repo"))
+    message = str(excinfo.value)
+    assert "No file matching any of '*Q4_0*.gguf', '*Q8_0*.gguf', '*IQ4_NL*.gguf'" in message
+    assert "Available GGUF files: m-F16.gguf, m-Q2_K.gguf" in message
+
+
+def test_narrow_to_published_leaves_a_requested_quantization_alone(monkeypatch):
+    """No fallbacks, no listing call: the pattern stands or the download fails on it."""
+    monkeypatch.setattr(hf_downloader, "list_repo_matches", _unreachable_hub)
+    source = resolve_model_source("unsloth/Qwen3-0.6B-GGUF:Q3_K_S")
+    narrow_to_published(source)
+    assert source["allow_pattern"] == "*Q3_K_S*.gguf"
+
+
+def test_narrow_to_installed_prefers_what_is_already_on_disk(tmp_path, monkeypatch, capsys):
+    """A fallback fetched earlier stays the model: re-choosing it would re-download it."""
+    _models_dir, repo = _qwen_repo(tmp_path, "Qwen3-0.6B-Q8_0.gguf")
+    monkeypatch.setattr(hf_downloader, "list_repo_matches", _unreachable_hub)
+    source = resolve_model_source("unsloth/Qwen3-0.6B-GGUF")
+
+    assert narrow_to_installed(source, str(repo)) == "Q8_0"
+    assert source["allow_pattern"] == "*Q8_0*.gguf"
+    assert "using the Q8_0 already installed" in read_events(capsys)[0]["description"]
+
+
+def test_narrow_to_installed_keeps_the_first_choice_when_nothing_is_there(tmp_path):
+    _models_dir, repo = _qwen_repo(tmp_path, "Qwen3-0.6B-Q2_K.gguf")
+    source = resolve_model_source("unsloth/Qwen3-0.6B-GGUF")
+
+    assert narrow_to_installed(source, str(repo)) is None
+    assert source["allow_pattern"] == "*Q4_0*.gguf"
+
+
+def test_download_of_a_bare_repository_falls_back_to_what_it_publishes(tmp_path, monkeypatch, stub_download, capsys):
+    models_dir, repo = _qwen_repo(tmp_path)
+    monkeypatch.setattr(hf_downloader, "list_repo_matches", _repo_holding("Qwen3-0.6B-Q8_0.gguf"))
+
+    _run_main(monkeypatch, "--model-url", "unsloth/Qwen3-0.6B-GGUF", "--output-dir", str(models_dir))
+
+    assert stub_download == ["*Q8_0*.gguf"]
+    assert (repo / "Q8_0.gguf").is_file()
+    assert not (repo / MARKER_NAME).exists()
+    descriptions = [event["description"] for event in read_events(capsys)]
+    assert any("publishes no Q4_0 model, using Q8_0 instead" in d for d in descriptions)
+
+
+def test_download_of_a_bare_repository_fails_before_writing_anything(tmp_path, monkeypatch, stub_download, capsys):
+    """Exhausted fallbacks are a wrong model URL, not a download that died halfway."""
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    monkeypatch.setattr(hf_downloader, "list_repo_matches", _repo_holding("Qwen3-0.6B-Q2_K.gguf"))
+
+    with pytest.raises(SystemExit):
+        _run_main(monkeypatch, "--model-url", "unsloth/Qwen3-0.6B-GGUF", "--output-dir", str(models_dir))
+
+    assert stub_download == []
+    # No directory, so no marker and no leftovers to discard on the next run.
+    assert not (models_dir / "unsloth" / "Qwen3-0.6B-GGUF").exists()
+    assert read_events(capsys)[-1]["event"] == "error"
+
+
+def test_the_installed_fallback_is_not_downloaded_again(tmp_path, monkeypatch, stub_download, capsys):
+    """The regression this ordering exists for: a Q4_0 published later must not re-fetch."""
+    models_dir, _repo = _qwen_repo(tmp_path, "Qwen3-0.6B-Q8_0.gguf")
+    monkeypatch.setattr(hf_downloader, "list_repo_matches", _repo_holding("Qwen3-0.6B-Q4_0.gguf", "Qwen3-0.6B-Q8_0.gguf"))
+
+    _run_main(monkeypatch, "--model-url", "unsloth/Qwen3-0.6B-GGUF", "--output-dir", str(models_dir))
+
+    assert stub_download == []
+    descriptions = [event["description"] for event in read_events(capsys)]
+    assert any(d.startswith("Model exists:") and "Qwen3-0.6B-Q8_0.gguf" in d for d in descriptions)
+
+
+def test_check_finds_a_bare_repository_installed_as_a_fallback(tmp_path, monkeypatch, capsys):
+    """--check reads the disk alone, so the fallback has to be recognised without the Hub."""
+    models_dir, _repo = _qwen_repo(tmp_path, "Qwen3-0.6B-Q8_0.gguf")
+    monkeypatch.setattr(hf_downloader, "list_repo_matches", _unreachable_hub)
+
+    _run_main(monkeypatch, "--check", "--model-url", "unsloth/Qwen3-0.6B-GGUF", "--output-dir", str(models_dir))
+
+    assert read_events(capsys)[-1] == {"event": "info", "description": "Model exists: *Q8_0*.gguf", "downloading": False}
+
+
+def test_delete_removes_the_fallback_a_bare_repository_installed(tmp_path, monkeypatch):
+    models_dir, repo = _qwen_repo(tmp_path, "Qwen3-0.6B-Q8_0.gguf")
+    monkeypatch.setattr(hf_downloader, "list_repo_matches", _unreachable_hub)
+
+    _run_main(monkeypatch, "--delete", "--model-url", "unsloth/Qwen3-0.6B-GGUF", "--output-dir", str(models_dir))
+
+    assert not repo.exists()
+
+
+def test_no_match_message_names_each_pattern_that_was_tried(monkeypatch):
+    monkeypatch.setattr("hugging_face.hf_downloader.list_repo_matches", lambda *a, **k: [_RepoFile("m-Q2_K.gguf")])
+    message = no_match_message("org/repo", ["*Q4_0*.gguf", "*Q8_0*.gguf"])
+    assert message.startswith("No file matching any of '*Q4_0*.gguf', '*Q8_0*.gguf' found in repository 'org/repo'.")
+
+
+# --------------------------------------------------------------------------- #
+# The projector: named by key or URL next to either model syntax, F16 then BF16
+# --------------------------------------------------------------------------- #
+GEMMA = "unsloth/gemma-3-4b-it-GGUF"
+
+# What that repository really publishes, projectors included.
+GEMMA_FILES = (
+    "gemma-3-4b-it-Q4_0.gguf",
+    "gemma-3-4b-it-Q8_0.gguf",
+    "mmproj-BF16.gguf",
+    "mmproj-F16.gguf",
+    "mmproj-F32.gguf",
+)
+
+
+def test_the_mmproj_fallback_order():
+    assert DEFAULT_MMPROJ_QUANTIZATIONS == ("F16", "BF16")
+
+
+@pytest.mark.parametrize(
+    ("key", "expected"),
+    [
+        ("unsloth/gemma-3-4b-it-GGUF", ("unsloth/gemma-3-4b-it-GGUF", None)),
+        ("unsloth/gemma-3-4b-it-GGUF:BF16", ("unsloth/gemma-3-4b-it-GGUF", "BF16")),
+        ("llamacpp:unsloth/gemma-3-4b-it-GGUF:BF16", ("unsloth/gemma-3-4b-it-GGUF", "BF16")),
+    ],
+)
+def test_parse_mmproj_key_reads_the_same_shapes_as_a_model_key(key, expected):
+    assert parse_mmproj_key(key) == expected
+
+
+@pytest.mark.parametrize("key", ["a:b:c:d", ":BF16", "unsloth/gemma-GGUF:", "../etc:BF16"])
+def test_parse_mmproj_key_rejects_what_it_cannot_read(key):
+    with pytest.raises(ValueError):
+        parse_mmproj_key(key)
+
+
+def test_a_bare_mmproj_key_defaults_to_f16_with_bf16_behind_it():
+    source = resolve_model_source(f"llamacpp:{GEMMA}:Q4_0", GEMMA)
+    assert source["mmproj_quantization"] == "F16"
+    assert source["mmproj_quantization_fallbacks"] == ["BF16"]
+    assert source["mmproj_allow_pattern"] == "*mmproj*F16*.gguf"
+
+
+def test_an_mmproj_key_naming_its_quantization_does_not_fall_back():
+    source = resolve_model_source(f"llamacpp:{GEMMA}:Q4_0", f"{GEMMA}:BF16")
+    assert source["mmproj_quantization"] == "BF16"
+    assert source["mmproj_quantization_fallbacks"] == []
+
+
+def test_the_mmproj_url_is_honoured_next_to_a_model_key():
+    """The reported gap: with a key, --model-mmproj-url used to be dropped in silence."""
+    source = resolve_model_source(f"llamacpp:{GEMMA}:Q4_0", f"https://huggingface.co/{GEMMA}/blob/main/mmproj-BF16.gguf")
+    assert source["mmproj_url_filename"] == "mmproj-BF16.gguf"
+    assert source["mmproj_url_revision"] == "main"
+    assert source["mmproj_allow_pattern"] == "mmproj-BF16.gguf"
+
+
+def test_an_mmproj_key_is_honoured_next_to_a_model_url():
+    """The projector is its own variable: pinning the model does not have to pin it too."""
+    source = resolve_model_source(f"https://huggingface.co/{GEMMA}/blob/main/gemma-3-4b-it-Q4_0.gguf", GEMMA)
+    assert source["mmproj_quantization"] == "F16"
+    assert source["mmproj_quantization_fallbacks"] == ["BF16"]
+
+
+def test_an_mmproj_from_another_repository_is_refused():
+    with pytest.raises(ValueError, match="Both files must live in the same"):
+        resolve_model_source(f"llamacpp:{GEMMA}:Q4_0", "someone/else-GGUF:BF16")
+
+
+def test_a_projector_named_twice_is_refused():
+    """The key's fourth field and the mmproj variable would silently disagree."""
+    with pytest.raises(ValueError, match="named twice"):
+        resolve_model_source(f"llamacpp:{GEMMA}:Q4_0:F32", f"{GEMMA}:BF16")
+
+
+@pytest.mark.parametrize(
+    ("path", "quantization", "expected"),
+    [
+        ("mmproj-F16.gguf", "F16", True),
+        ("mmproj-BF16.gguf", "F16", False),  # the substring collision the glob falls for
+        ("mmproj-BF16.gguf", "BF16", True),
+        ("mmproj-model-f16.gguf", "F16", True),  # ggml-org's spelling
+        ("SmolLM2-135M-Instruct-Q4_K_M.gguf", "Q4_K_M", True),
+        ("SmolLM2-135M-Instruct-Q4_K_M.gguf", "Q4_K_S", False),
+    ],
+)
+def test_names_quantization_matches_whole_tokens_only(path, quantization, expected):
+    assert names_quantization(path, quantization) is expected
+
+
+def test_a_defaulted_projector_is_pinned_to_the_f16_file(monkeypatch):
+    """The glob would fetch mmproj-BF16.gguf too, so the resolved file is pinned by name."""
+    monkeypatch.setattr(hf_downloader, "list_repo_matches", _repo_holding(*GEMMA_FILES))
+    source = resolve_model_source(f"llamacpp:{GEMMA}:Q4_0", GEMMA)
+
+    narrow_to_published(source)
+
+    assert source["mmproj_allow_pattern"] == "mmproj-F16.gguf"
+    assert source["mmproj_quantization_fallbacks"] == []
+
+
+def test_a_requested_projector_is_pinned_too(monkeypatch):
+    """Same collision, same fix: asking for F16 must not bring BF16 along."""
+    monkeypatch.setattr(hf_downloader, "list_repo_matches", _repo_holding(*GEMMA_FILES))
+    source = resolve_model_source(f"llamacpp:{GEMMA}:Q4_0:F16")
+
+    narrow_to_published(source)
+
+    assert source["mmproj_allow_pattern"] == "mmproj-F16.gguf"
+
+
+def test_the_projector_falls_back_to_bf16(monkeypatch, capsys):
+    monkeypatch.setattr(hf_downloader, "list_repo_matches", _repo_holding("m-Q4_0.gguf", "mmproj-BF16.gguf"))
+    source = resolve_model_source(f"llamacpp:{GEMMA}:Q4_0", GEMMA)
+
+    narrow_to_published(source)
+
+    assert source["mmproj_allow_pattern"] == "mmproj-BF16.gguf"
+    assert "publishes no F16 mmproj, using BF16 instead" in read_events(capsys)[0]["description"]
+
+
+def test_the_projector_matches_the_lowercase_spelling(monkeypatch):
+    """ggml-org publishes mmproj-model-f16.gguf; a case-sensitive glob would miss it."""
+    monkeypatch.setattr(hf_downloader, "list_repo_matches", _repo_holding("m-Q4_0.gguf", "mmproj-model-f16.gguf"))
+    source = resolve_model_source(f"llamacpp:{GEMMA}:Q4_0", GEMMA)
+
+    narrow_to_published(source)
+
+    assert source["mmproj_quantization"] == "F16"
+    assert source["mmproj_allow_pattern"] == "mmproj-model-f16.gguf"
+
+
+def test_a_repository_with_no_projector_at_all_says_so(monkeypatch):
+    monkeypatch.setattr(hf_downloader, "list_repo_matches", _repo_holding("m-Q4_0.gguf"))
+    source = resolve_model_source(f"llamacpp:{GEMMA}:Q4_0", GEMMA)
+
+    with pytest.raises(FileNotFoundError) as excinfo:
+        narrow_to_published(source)
+    assert "No file matching any of '*mmproj*F16*.gguf', '*mmproj*BF16*.gguf'" in str(excinfo.value)
+
+
+def test_an_installed_projector_settles_a_defaulted_one(tmp_path, monkeypatch, capsys):
+    _models_dir, repo = _qwen_repo(tmp_path, "mmproj-BF16.gguf")
+    monkeypatch.setattr(hf_downloader, "list_repo_matches", _unreachable_hub)
+    source = resolve_model_source("llamacpp:unsloth/Qwen3-0.6B-GGUF:Q4_0", "unsloth/Qwen3-0.6B-GGUF")
+
+    assert narrow_to_installed(source, str(repo), mmproj=True) == "BF16"
+    assert source["mmproj_allow_pattern"] == "mmproj-BF16.gguf"
+    assert "using the BF16 already installed" in read_events(capsys)[0]["description"]
+
+
+def test_download_fetches_the_model_and_its_defaulted_projector(tmp_path, monkeypatch, stub_download, capsys):
+    models_dir, repo = _qwen_repo(tmp_path)
+    monkeypatch.setattr(hf_downloader, "list_repo_matches", _repo_holding("Qwen3-0.6B-Q4_0.gguf", "mmproj-F16.gguf", "mmproj-BF16.gguf"))
+
+    _run_main(
+        monkeypatch,
+        "--model-url",
+        "llamacpp:unsloth/Qwen3-0.6B-GGUF:Q4_0",
+        "--model-mmproj-url",
+        "unsloth/Qwen3-0.6B-GGUF",
+        "--output-dir",
+        str(models_dir),
+    )
+
+    # The projector is fetched by its exact name, so the BF16 next to it stays put.
+    assert stub_download == ["*Q4_0*.gguf", "mmproj-F16.gguf"]
+    assert (repo / "mmproj-F16.gguf").is_file()
+    assert not (repo / "mmproj-BF16.gguf").exists()
+    descriptions = [event["description"] for event in read_events(capsys)]
+    assert any("No mmproj quantization given" in d and "defaulting to F16" in d for d in descriptions)
+
+
+def test_the_marker_of_a_multimodal_download_names_both_files(tmp_path, monkeypatch):
+    models_dir, repo = _qwen_repo(tmp_path)
+    monkeypatch.setattr(hf_downloader, "list_repo_matches", _repo_holding("Qwen3-0.6B-Q4_0.gguf", "mmproj-F16.gguf"))
+    seen: list[dict] = []
+    monkeypatch.setattr(hf_downloader, "validate_hub_source", lambda *a, **k: None)
+    monkeypatch.setattr(
+        hf_downloader,
+        "download_matched_files",
+        lambda *args, **kwargs: seen.append(read_marker(str(repo / MARKER_NAME))),
+    )
+
+    _run_main(
+        monkeypatch,
+        "--model-url",
+        "llamacpp:unsloth/Qwen3-0.6B-GGUF:Q4_0",
+        "--model-mmproj-url",
+        "unsloth/Qwen3-0.6B-GGUF",
+        "--output-dir",
+        str(models_dir),
+    )
+
+    assert seen[0]["file_patterns"] == ["*Q4_0*.gguf", "mmproj-F16.gguf"]
+
+
+def test_delete_takes_only_the_projector_that_was_asked_for(tmp_path, monkeypatch):
+    """'*mmproj*F16*.gguf' also matches mmproj-BF16.gguf, which delete must not remove."""
+    models_dir, repo = _qwen_repo(tmp_path, "Qwen3-0.6B-Q4_0.gguf", "mmproj-F16.gguf", "mmproj-BF16.gguf")
+    monkeypatch.setattr(hf_downloader, "list_repo_matches", _unreachable_hub)
+
+    _run_main(
+        monkeypatch,
+        "--delete",
+        "--model-url",
+        "llamacpp:unsloth/Qwen3-0.6B-GGUF:Q4_0:F16",
+        "--output-dir",
+        str(models_dir),
+    )
+
+    assert not (repo / "Qwen3-0.6B-Q4_0.gguf").exists()
+    assert not (repo / "mmproj-F16.gguf").exists()
+    assert (repo / "mmproj-BF16.gguf").is_file()
+
+
+# --------------------------------------------------------------------------- #
+# The address of a repository is the key for that repository
+# --------------------------------------------------------------------------- #
+SMOLLM = "unsloth/SmolLM2-135M-Instruct-GGUF"
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        (f"https://huggingface.co/{SMOLLM}", SMOLLM),
+        (f"https://huggingface.co/{SMOLLM}/", SMOLLM),  # trailing slash, as the browser shows it
+        (f"https://huggingface.co/{SMOLLM}?library=llama-cpp", SMOLLM),  # the Hub's own query strings
+        ("https://huggingface.co/bert-base-uncased", "bert-base-uncased"),  # canonical repository
+        ("http://huggingface.co/unsloth/Qwen3-0.6B-GGUF", "unsloth/Qwen3-0.6B-GGUF"),
+    ],
+)
+def test_repo_url_as_key_reads_a_repository_address(url, expected):
+    assert repo_url_as_key(url) == expected
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        f"https://huggingface.co/{SMOLLM}/blob/main/SmolLM2-135M-Instruct-Q8_0.gguf",  # a file
+        f"https://huggingface.co/{SMOLLM}/resolve/main/SmolLM2-135M-Instruct-Q8_0.gguf",
+        f"https://huggingface.co/{SMOLLM}/tree/main",  # a revision to browse, which a key cannot carry
+        f"https://huggingface.co/{SMOLLM}/tree/main/subdir",
+        "https://huggingface.co/datasets/squad",  # not a model repository
+        "https://example.com/unsloth/SmolLM2-GGUF",  # not the Hub
+        "ftp://huggingface.co/unsloth/SmolLM2-GGUF",
+    ],
+)
+def test_repo_url_as_key_leaves_everything_else_to_parse_hf_url(url):
+    assert repo_url_as_key(url) is None
+
+
+def test_a_repository_url_resolves_exactly_like_the_bare_key():
+    from_url = resolve_model_source(f"https://huggingface.co/{SMOLLM}")
+    from_key = resolve_model_source(SMOLLM)
+    assert from_url == from_key
+
+
+def test_a_repository_url_is_a_defaulted_quantization():
+    """The scheme's own colon must not read as "the caller named a quantization"."""
+    source = resolve_model_source(f"https://huggingface.co/{SMOLLM}")
+    assert source["quantization_defaulted"] is True
+    assert source["quantization"] == "Q4_0"
+    assert source["quantization_fallbacks"] == ["Q8_0", "IQ4_NL", "Q4_K_M", "Q4_K_S"]
+    # Downloaded from the tip of the default branch, not pinned like a file URL.
+    assert source["url_filename"] is None
+    assert source["url_revision"] is None
+
+
+def test_a_repository_url_still_has_its_repo_id_validated():
+    """What comes back is a key, so the path check every key gets applies to it too."""
+    with pytest.raises(ValueError):
+        resolve_model_source("https://huggingface.co/../etc")
+
+
+def test_a_subtree_url_is_refused_and_says_what_is_accepted():
+    with pytest.raises(ValueError) as excinfo:
+        resolve_model_source(f"https://huggingface.co/{SMOLLM}/tree/main")
+    message = str(excinfo.value)
+    assert "does not name a repository, a revision and a file" in message
+    assert "https://huggingface.co/<owner>/<repo> for the repository itself" in message
+
+
+def test_a_repository_url_names_the_projector_too():
+    source = resolve_model_source(f"llamacpp:{GEMMA}:Q4_0", f"https://huggingface.co/{GEMMA}")
+    assert source["mmproj_quantization"] == "F16"
+    assert source["mmproj_quantization_fallbacks"] == ["BF16"]
+    assert source["mmproj_url_filename"] is None
+
+
+def test_downloading_a_repository_url_falls_back_like_the_key(tmp_path, monkeypatch, stub_download, capsys):
+    """The SmolLM2 case as it arrives from a browser: no Q4_0 in the repo, so Q8_0."""
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    monkeypatch.setattr(hf_downloader, "list_repo_matches", _repo_holding("SmolLM2-135M-Instruct-Q8_0.gguf"))
+
+    _run_main(monkeypatch, "--model-url", f"https://huggingface.co/{SMOLLM}", "--output-dir", str(models_dir))
+
+    assert stub_download == ["*Q8_0*.gguf"]
+    assert (models_dir / SMOLLM / "Q8_0.gguf").is_file()
+    descriptions = [event["description"] for event in read_events(capsys)]
+    assert any("publishes no Q4_0 model, using Q8_0 instead" in d for d in descriptions)

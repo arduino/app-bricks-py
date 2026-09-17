@@ -9,6 +9,8 @@ Usage examples:
         --quantization int8 --target runner-linux-aarch64-qnn
     python download_ei_build.py --ei-project-id 948887 --impulse-id 11 --output-name model.eim --output-dir ./downloads
     python download_ei_build.py --ei-project-id 948887 --impulse-id 11 --output-name model.eim
+    python download_ei_build.py --ei-project-id 995296 --impulse-id 6 --history-id 8 --output-name model.eim \
+        --target arduino-uno-q
 """
 
 import argparse
@@ -25,6 +27,37 @@ from common.model_metadata import write_metadata
 
 
 BASE_URL = "https://studio.edgeimpulse.com/v1/api/{project_id}/deployment/download?type={target}&impulseId={impulse_id}"
+HISTORY_URL = "https://studio.edgeimpulse.com/v1/api/{project_id}/deployment/history/{history_id}/download"
+
+
+def build_url(
+    project_id: int,
+    impulse_id: int,
+    target: str,
+    quantization: str | None = None,
+    history_id: int | None = None,
+) -> str:
+    """Return the EI download URL for the requested build.
+
+    When *history_id* is set the model is pinned to a specific entry of the
+    project's deployment history, which is addressed by id alone: the build it
+    refers to already fixes target and quantization, so neither is sent. Without
+    it the latest build of *impulse_id* for *target* is requested instead.
+    """
+    if history_id is not None:
+        return HISTORY_URL.format(project_id=project_id, history_id=history_id)
+
+    url = BASE_URL.format(project_id=project_id, impulse_id=impulse_id, target=target)
+    if quantization:
+        url += f"&modelType={quantization}"
+    return url
+
+
+def build_description(project_id: int, impulse_id: int, history_id: int | None = None) -> str:
+    """Human-readable description of the build a ``--info`` lookup refers to."""
+    if history_id is not None:
+        return f"Model info for project {project_id} deployment history {history_id}"
+    return f"Model info for project {project_id} impulse {impulse_id}"
 
 
 def _wipe_model_dir(model_dir: str) -> None:
@@ -53,6 +86,13 @@ def main():
         type=int,
         metavar="N",
         help="Impulse ID (e.g. 11).",
+    )
+    parser.add_argument(
+        "--history-id",
+        default=None,
+        type=int,
+        metavar="N",
+        help="Deployment history entry ID (e.g. 8). When set, that exact past build is downloaded and --target/--quantization are ignored.",
     )
     parser.add_argument(
         "--output-dir",
@@ -89,9 +129,13 @@ def main():
     # downloads before exiting. SIGKILL (-9) cannot be caught.
     install_signal_handlers()
 
-    url = BASE_URL.format(project_id=args.ei_project_id, impulse_id=args.impulse_id, target=args.target)
-    if args.quantization:
-        url += f"&modelType={args.quantization}"
+    url = build_url(
+        project_id=args.ei_project_id,
+        impulse_id=args.impulse_id,
+        target=args.target,
+        quantization=args.quantization,
+        history_id=args.history_id,
+    )
 
     # In-progress marker shared with the listing tool; it lives *inside* the
     # model folder (mirrors AI Hub / HF). On success only the marker is cleared;
@@ -116,7 +160,7 @@ def main():
             print(
                 json.dumps({
                     "event": "stat",
-                    "description": f"Model info for project {args.ei_project_id} impulse {args.impulse_id}",
+                    "description": build_description(args.ei_project_id, args.impulse_id, args.history_id),
                     "filename": info["filename"],
                     "size_bytes": info["content_length"],
                     "size_mb": round(info["content_length"] / 1024 / 1024, 2) if info["content_length"] else None,

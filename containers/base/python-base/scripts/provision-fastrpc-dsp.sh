@@ -34,12 +34,10 @@ BAKED_DSP_YAML="${BAKED_DSP_YAML:-/etc/fastrpc/hexagon-dsp-binaries.yaml}"
 [ -f "$BAKED_DSP_YAML" ] || exit 0
 
 if ! mkdir -p "$HEXAGON_DSP/conf.d" 2>/dev/null; then
-  echo "Skipping fastrpc DSP provisioning: $HEXAGON_DSP is not writable"
   exit 0
 fi
 
 if [ -d "$HOST_QCOM" ]; then
-  echo "Provisioning fastrpc DSP configurations..."
   for entry in "$HOST_QCOM"/*; do
     [ -e "$entry" ] || continue
     name=$(basename "$entry")
