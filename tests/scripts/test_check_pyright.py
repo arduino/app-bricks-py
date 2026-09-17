@@ -310,6 +310,40 @@ def test_report_heading_carries_the_worst_status(tmp_path, reports):
     assert (tmp_path / "r1.md").read_text().count("<details>") == 1
 
 
+def test_new_warnings_weigh_on_the_verdict_as_a_warning(tmp_path):
+    def warning(file, rule):
+        d = diagnostic(file, 3, "unknown", rule)
+        d["severity"] = "warning"
+        return d
+
+    base = write_report(tmp_path / "wb.json", warning("src/a.py", "reportUnknownMemberType"))
+    head = write_report(
+        tmp_path / "wh.json",
+        warning("src/a.py", "reportUnknownMemberType"),
+        warning("src/b.py", "reportUnknownMemberType"),
+        warning("src/c.py", "reportDeprecated"),
+    )
+    code, summary, out = run_diff(tmp_path, base, head, "--fail-on-new", "--result", str(tmp_path / "w.json"))
+    # Never a failure, never blocking.
+    assert code == 0
+    assert "## ⚠️ Examples alignment check" in summary
+    assert json.loads((tmp_path / "w.json").read_text())["status"] == "warning"
+    assert "(**0 new**, 0 fixed) · warnings 1 → 3" in summary
+    assert "⚠️ 2 new warnings in this PR, listed in the details (1 pre-existing)." in summary
+    assert json.loads((tmp_path / "w.json").read_text())["cell"].endswith("· **2 new warnings** · 3 warnings")
+    assert "#### New warnings" in summary and "| `src/b.py` | 3 | reportUnknownMemberType | unknown |" in summary
+    assert "#### Warnings by rule: 3 against head" in summary and "| reportUnknownMemberType | 2 |" in summary
+    assert out.count("::warning::Examples alignment check:") == 2
+
+    # Pre-existing warnings alone are debt in sight, not a warning on the PR.
+    code, summary, _out = run_diff(tmp_path, head, head, "--result", str(tmp_path / "w2.json"))
+    assert json.loads((tmp_path / "w2.json").read_text())["status"] == "passed"
+    assert "## ✅ Examples alignment check" in summary
+    assert "· warnings 3 → 3" in summary
+    assert "⚠️ 3 pre-existing warnings, broken down by rule in the details." in summary
+    assert json.loads((tmp_path / "w2.json").read_text())["cell"].endswith("0 pre-existing · 3 warnings")
+
+
 def test_full_report_is_capped_and_says_how_many_more(tmp_path):
     many = write_report(tmp_path / "many.json", *[diagnostic(f"src/arduino/m{i}.py", 1, f"error {i}") for i in range(check.FULL_REPORT_MAX_ROWS + 5)])
     clean = write_report(tmp_path / "clean.json")

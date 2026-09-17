@@ -278,8 +278,8 @@ def cmd_typing(args) -> int:
     return 0
 
 
-def error_index(data: dict) -> tuple[Counter, dict]:
-    """Index error diagnostics by a line-shift-tolerant key: (file, rule, message first line).
+def error_index(data: dict, severity: str = "error") -> tuple[Counter, dict]:
+    """Index the diagnostics of a severity by a line-shift-tolerant key: (file, rule, message first line).
 
     Also returns the 1-based lines of the occurrences of each key (informational
     only: lines are not part of the key, so moved code does not diff as new).
@@ -287,12 +287,25 @@ def error_index(data: dict) -> tuple[Counter, dict]:
     counts: Counter = Counter()
     occurrences: dict[tuple, list[int]] = {}
     for diag in data.get("generalDiagnostics", []):
-        if diag["severity"] != "error":
+        if diag["severity"] != severity:
             continue
         key = (diag["file"], diag.get("rule", ""), diag["message"].splitlines()[0])
         counts[key] += 1
         occurrences.setdefault(key, []).append(diag["range"]["start"]["line"] + 1)
     return counts, occurrences
+
+
+def warnings_by_rule(data: dict) -> Counter:
+    """Warning diagnostics counted per rule: warnings never weigh on the verdict,
+    but the debt they describe (rules downgraded in the profile, mostly Unknown
+    propagating from untyped code) deserves to be visible."""
+    return Counter(diag.get("rule", "") for diag in data.get("generalDiagnostics", []) if diag["severity"] == "warning")
+
+
+def warnings_table(rules: Counter) -> list[str]:
+    rows = ["| Rule | Warnings |", "|---|---|"]
+    rows += [f"| {rule} | {count} |" for rule, count in rules.most_common()]
+    return rows
 
 
 def error_table(entries: dict, occurrences: dict, max_rows: int | None = None) -> list[str]:
@@ -365,17 +378,34 @@ def write_github_output(**values) -> None:
 
 
 def cmd_diff(args) -> int:
-    base_counts, base_occurrences = error_index(json.loads(Path(args.base).read_text()))
-    head_counts, head_occurrences = error_index(json.loads(Path(args.head).read_text()))
+    base_data, head_data = json.loads(Path(args.base).read_text()), json.loads(Path(args.head).read_text())
+    base_counts, base_occurrences = error_index(base_data)
+    head_counts, head_occurrences = error_index(head_data)
+    base_warnings, head_warnings = warnings_by_rule(base_data), warnings_by_rule(head_data)
+    # Warnings follow the same rule as errors: the pre-existing ones are debt to
+    # keep in sight, the ones this PR adds weigh on the verdict, as a warning.
+    base_warning_counts, _ = error_index(base_data, "warning")
+    head_warning_counts, head_warning_occurrences = error_index(head_data, "warning")
 
     new = {key: count - base_counts.get(key, 0) for key, count in head_counts.items() if count > base_counts.get(key, 0)}
     fixed = {key: count - head_counts.get(key, 0) for key, count in base_counts.items() if count > head_counts.get(key, 0)}
+    new_warnings = {
+        key: count - base_warning_counts.get(key, 0) for key, count in head_warning_counts.items() if count > base_warning_counts.get(key, 0)
+    }
     new_total, fixed_total, head_total = sum(new.values()), sum(fixed.values()), sum(head_counts.values())
+    new_warnings_total = sum(new_warnings.values())
+    head_warnings_total = sum(head_warnings.values())
     pre_existing = head_total - new_total
+    pre_existing_warnings = head_warnings_total - new_warnings_total
 
     notes: list[str] = []
-    if not new and not fixed:
+    if not new and not fixed and not new_warnings:
         notes.append("✅ No new errors in this PR.")
+    if new_warnings:
+        note = f"⚠️ {new_warnings_total} new warning{'s' if new_warnings_total != 1 else ''} in this PR, listed in the details"
+        notes.append(note + (f" ({pre_existing_warnings} pre-existing)." if pre_existing_warnings else "."))
+    elif head_warnings_total:
+        notes.append(f"⚠️ {head_warnings_total} pre-existing warning{'s' if head_warnings_total != 1 else ''}, broken down by rule in the details.")
     if not new and head_counts:
         # Tolerated, but not to be forgotten: without new errors every remaining
         # one is pre-existing, and the full list is in the details.
@@ -387,13 +417,22 @@ def cmd_diff(args) -> int:
     for title, entries, occurrences in (("New errors", new, head_occurrences), ("Fixed errors", fixed, base_occurrences)):
         if entries:
             details += [f"#### {title}", ""] + error_table(entries, occurrences) + [""]
+    if new_warnings:
+        details += ["#### New warnings", ""] + error_table(new_warnings, head_warning_occurrences, FULL_REPORT_MAX_ROWS) + [""]
+    if head_warnings:
+        details += [f"#### Warnings by rule: {sum(head_warnings.values())} against head", ""] + warnings_table(head_warnings) + [""]
     subject = args.subject or f"Errors in the Python sources of {args.examples_label} analyzed against {args.library_label}"
     section = {
         "title": args.title,
-        "status": "failed" if new else "passed",
+        "status": "failed" if new else "warning" if new_warnings else "passed",
         "informative": not args.fail_on_new,
-        "result": f"{subject}: base {sum(base_counts.values())} → head {head_total} (**{new_total} new**, {fixed_total} fixed)",
-        "cell": f"**{new_total} new**, {fixed_total} fixed, {pre_existing} pre-existing",
+        "result": (
+            f"{subject}: base {sum(base_counts.values())} → head {head_total} (**{new_total} new**, {fixed_total} fixed)"
+            f" · warnings {sum(base_warnings.values())} → {sum(head_warnings.values())}"
+        ),
+        "cell": f"**{new_total} new**, {fixed_total} fixed, {pre_existing} pre-existing"
+        + (f" · **{new_warnings_total} new warning{'s' if new_warnings_total != 1 else ''}**" if new_warnings else "")
+        + (f" · {head_warnings_total} warning{'s' if head_warnings_total != 1 else ''}" if head_warnings_total else ""),
         "notes": notes,
         "details": "\n".join(details).rstrip(),
         "full_report_title": f"Full report: {head_total} error{'s' if head_total != 1 else ''} against head",
@@ -412,6 +451,11 @@ def cmd_diff(args) -> int:
         line = head_occurrences[key][0]
         properties = f" file={file},line={line}" if args.annotate_files else ""
         print(f"::{level}{properties}::{args.title}: {file}:{line} [{rule}] {message}")
+    for key in sorted(new_warnings):
+        file, rule, message = key
+        line = head_warning_occurrences[key][0]
+        properties = f" file={file},line={line}" if args.annotate_files else ""
+        print(f"::warning{properties}::{args.title}: {file}:{line} [{rule}] {message}")
     # Exposed to the workflow, which turns it into a label on the PR.
     write_github_output(new_errors=new_total)
 
