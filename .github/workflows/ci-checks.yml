@@ -15,6 +15,8 @@ jobs:
     env:
       TASKFILE_VERSION: 'v3.44.0'
       TASKFILE_PATH: '/home/runner/go/bin'
+      # The editable install needs a version and the checkout carries no tags
+      SETUPTOOLS_SCM_PRETEND_VERSION: '0.0.0'
     steps:
       - name: Install git
         run: |
@@ -30,7 +32,7 @@ jobs:
           set -e
           which task || curl -sSfL https://taskfile.dev/install.sh | sh -s -- -b ${{ env.TASKFILE_PATH }} ${{ env.TASKFILE_VERSION }}
           export PATH="${{ env.TASKFILE_PATH }}:$PATH"
-          export SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0
+          pip install uv==0.10.3
           task init:ci
 
       - name: Check code formatting
@@ -56,6 +58,11 @@ jobs:
             echo "Please lint the code by running 'task lint'."
             exit 1
           fi
+
+      - name: Check dependency locks
+        run: |
+          export PATH="${{ env.TASKFILE_PATH }}:$PATH"
+          task deps:check || { echo "A uv.lock is out of date, run 'task deps:lock' and commit the result."; exit 1; }
 
       - name: Check license headers and files
         run: |

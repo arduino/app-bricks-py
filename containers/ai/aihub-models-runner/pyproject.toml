@@ -1,0 +1,14 @@
+# Python packages this image installs, pinned with hashes in uv.lock, see containers/README.md
+[project]
+name = "aihub-models-runner"
+version = "0"
+requires-python = "==3.13.*"
+dependencies = [
+    "websockets",
+    "flask",
+    "waitress",
+]
+
+[tool.uv]
+# The images run on aarch64 Linux, the lock must resolve for that target but installs on developer machines too
+required-environments = ["sys_platform == 'linux' and platform_machine == 'aarch64'"]

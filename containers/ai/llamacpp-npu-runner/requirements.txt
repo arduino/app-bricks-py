@@ -1,2 +1,0 @@
-# configure-llamacpp.py parses the .arduino_metadata.yaml download records
-pyyaml
