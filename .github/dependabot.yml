@@ -12,6 +12,7 @@ updates:
       - /containers/ai/pose-estimation-runner
       - /containers/base/python-base
       - /containers/bricks/models-downloader
+      - /containers/bricks/tps-location-api
     schedule:
       interval: weekly
   - package-ecosystem: docker

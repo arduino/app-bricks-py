@@ -57,6 +57,15 @@ apps:
     venv:
       project: containers/bricks/models-downloader
 
+  - name: tps-location-api
+    source_path: .
+    sources:
+      pip: true
+    python:
+      virtual_env_dir: "/venvs/tps-location-api"
+    venv:
+      project: containers/bricks/tps-location-api
+
   - name: ei-qnn-models-runner
     source_path: .
     sources:
@@ -107,6 +116,7 @@ reviewed:
     - pyalsaaudio       # PSF-2.0
     - certifi           # MPL-2.0, modified ca-bundle notice not recognised by licensee 9.20
     - backports.strenum # PSF-2.0, ships CPython's LICENSE file while its metadata says MIT
+    - typing_extensions # PSF-2.0, ships CPython's LICENSE file with its history preamble, not matched by newer licensee
 
 allowed:
   - mpl-2.0
