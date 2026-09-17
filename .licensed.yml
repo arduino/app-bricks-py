@@ -57,14 +57,14 @@ apps:
     venv:
       project: containers/models-downloader
 
-  - name: tps-location-api
+  - name: tps
     source_path: .
     sources:
       pip: true
     python:
-      virtual_env_dir: "/venvs/tps-location-api"
+      virtual_env_dir: "/venvs/tps"
     venv:
-      project: containers/tps-location-api
+      project: containers/tps
 
   - name: ei-qnn-models-runner
     source_path: .

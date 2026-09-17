@@ -129,6 +129,7 @@ group "default" {
     "models-downloader",
     "python-base",
     "python-apps-base",
+    "tps",
     "qairt-common-base",
     "aihub-models-runner",
     "gesture-recognition-runner",
@@ -187,6 +188,15 @@ target "python-apps-base" {
     { wheel = "dist" },
     parent_context("python-base"),
   )
+}
+
+target "tps" {
+  inherits   = ["_downstream"]
+  context    = "containers/tps"
+  tags       = image_tags("tps")
+  cache-from = cache_from("tps")
+  cache-to   = cache_to("tps")
+  contexts   = parent_context("python-slim")
 }
 
 target "qairt-common-base" {

@@ -231,7 +231,7 @@ wheels = [
 ]
 
 [[package]]
-name = "tps-location-api"
+name = "tps"
 version = "0"
 source = { virtual = "." }
 dependencies = [
