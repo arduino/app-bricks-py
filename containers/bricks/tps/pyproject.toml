@@ -1,0 +1,17 @@
+# Python packages this image installs, pinned with hashes in uv.lock, see containers/README.md
+[project]
+name = "tps-location-api"
+version = "0"
+requires-python = "==3.13.*"
+dependencies = [
+    "fastapi==0.141.1",
+    "uvicorn==0.53.0",
+]
+
+# Test-only packages, not exported into the image, task test runs the suite with them
+[dependency-groups]
+test = ["pytest", "httpx"]
+
+[tool.uv]
+# The images run on aarch64 Linux, the lock must resolve for that target but installs on developer machines too
+required-environments = ["sys_platform == 'linux' and platform_machine == 'aarch64'"]
