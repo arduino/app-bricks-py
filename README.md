@@ -145,7 +145,7 @@ Development containers are published by the dev CI (`docker-build.yml`) tagged a
 
 ## Pyright checks
 
-Type checking is driven by `pyright-rules.json` at the repository root, shipped in the wheel as `arduino/app_bricks/static/pyright-rules.json` so that the same rules reach the CI of this repository, the CI of [app-bricks-examples](https://github.com/arduino/app-bricks-examples) and the App Lab editor. The library owns the rules, through two profiles: `app-bricks-py` for its own sources and `api-user` for code written against its API (the published examples, the apps edited in App Lab). The tools own the environment: paths, interpreter, execution root.
+Type checking is driven by `pyright-rules.json` at the repository root, shipped in the wheel as `arduino/app_bricks/static/pyright-rules.json` so that the same rules reach the CI of this repository, the CI of [app-bricks-examples](https://github.com/arduino/app-bricks-examples) and the App Lab editor. The library owns the rules, through two profiles: `app-bricks-py` for its own sources (strict, so the public API carries complete and truthful annotations) and `api-user` for code written against its API (standard, for the published examples and the apps edited in App Lab). The tools own the environment: paths, interpreter, execution root.
 
 Two local checks, both needing the project venv with the current dependencies installed (`pip install -e ".[dev]"`; the checks refuse to run against an outdated environment) and, for the first, a clone of app-bricks-examples next to this repository:
 

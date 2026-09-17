@@ -53,6 +53,10 @@ from pathlib import Path
 PYRIGHT_VERSION = "1.1.411"
 RULES_FILE = "pyright-rules.json"
 RULES_STATIC_PATH = "arduino/app_bricks/static/" + RULES_FILE
+# Rows of pre-existing errors shown in a section's full report: a large typing
+# debt would otherwise swamp the job summary and hit the PR comment size cap;
+# the complete list stays in the uploaded pyright outputs.
+FULL_REPORT_MAX_ROWS = 150
 PROFILE_LIBRARY = "app-bricks-py"
 PROFILE_API_USER = "api-user"
 LIBRARY_PACKAGE = "arduino"
@@ -291,13 +295,21 @@ def error_index(data: dict) -> tuple[Counter, dict]:
     return counts, occurrences
 
 
-def error_table(entries: dict, occurrences: dict) -> list[str]:
-    """Markdown table rows for an error index, with pipes escaped for the cells."""
+def error_table(entries: dict, occurrences: dict, max_rows: int | None = None) -> list[str]:
+    """Markdown table rows for an error index, with pipes escaped for the cells.
+
+    With max_rows the table is cut after that many entries and says how many more
+    there are: the complete list is in the pyright outputs the workflow uploads.
+    """
     rows = ["| File | Line(s) | Rule | Message |", "|---|---|---|---|"]
-    for key in sorted(entries):
+    keys = sorted(entries)
+    shown = keys if max_rows is None else keys[:max_rows]
+    for key in shown:
         file, rule, message = key
         lines = ", ".join(str(line) for line in sorted(occurrences[key]))
         rows.append(f"| `{file}` | {lines} | {rule} | {message.replace('|', '\\|')} |")
+    if len(shown) < len(keys):
+        rows += ["", f"… and {len(keys) - len(shown)} more, see the pyright outputs artifact for the complete list."]
     return rows
 
 
@@ -385,7 +397,7 @@ def cmd_diff(args) -> int:
         "notes": notes,
         "details": "\n".join(details).rstrip(),
         "full_report_title": f"Full report: {head_total} error{'s' if head_total != 1 else ''} against head",
-        "full_report": "\n".join(error_table(head_counts, head_occurrences)) if head_counts else "",
+        "full_report": "\n".join(error_table(head_counts, head_occurrences, FULL_REPORT_MAX_ROWS)) if head_counts else "",
         "footer": f"📥 [Download full pyright JSON report]({args.reports_url})" if args.reports_url else "",
         "new_errors": new_total,
     }

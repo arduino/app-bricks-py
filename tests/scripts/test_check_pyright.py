@@ -173,8 +173,8 @@ def test_find_rules_file_prefers_the_repository_root_then_the_static_assets(tmp_
 def test_the_shipped_rules_file_loads_with_both_profiles():
     rules = check.load_rules(REPO_ROOT / "pyright-rules.json")
     assert set(rules["profiles"]) == {"app-bricks-py", "api-user"}
-    for profile in rules["profiles"]:
-        assert check.profile_config(rules, profile)["typeCheckingMode"] == "standard"
+    assert check.profile_config(rules, "app-bricks-py")["typeCheckingMode"] == "strict"
+    assert check.profile_config(rules, "api-user")["typeCheckingMode"] == "standard"
 
 
 # --- report ---------------------------------------------------------------------
@@ -308,3 +308,14 @@ def test_report_heading_carries_the_worst_status(tmp_path, reports):
     # A warning or a failure keeps the table in plain sight.
     assert "<summary>All" not in (tmp_path / "r1.md").read_text()
     assert (tmp_path / "r1.md").read_text().count("<details>") == 1
+
+
+def test_full_report_is_capped_and_says_how_many_more(tmp_path):
+    many = write_report(tmp_path / "many.json", *[diagnostic(f"src/arduino/m{i}.py", 1, f"error {i}") for i in range(check.FULL_REPORT_MAX_ROWS + 5)])
+    clean = write_report(tmp_path / "clean.json")
+    _code, summary, _out = run_diff(tmp_path, many, many)
+    assert summary.count("| `src/arduino/") == check.FULL_REPORT_MAX_ROWS
+    assert "… and 5 more, see the pyright outputs artifact" in summary
+    # New errors are never cut: they are the signal of the PR.
+    _code, summary, _out = run_diff(tmp_path, clean, many)
+    assert summary.split("#### New errors")[1].split("<details>")[0].count("| `src/arduino/") == check.FULL_REPORT_MAX_ROWS + 5
