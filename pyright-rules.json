@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "description": "How Python code that uses this library is type-checked. Copied into arduino/app_bricks/static/ at build time, shipped in the wheel and read by the App Lab editor and by the CI checks of app-bricks-py and app-bricks-examples: the library owns the rules, the tools own the environment (paths, interpreter, execution root).",
+  "pythonVersion": "3.13",
+  "pyrightVersion": "1.1.411",
+  "useLibraryCodeForTypes": true,
+  "profiles": {
+    "app-bricks-py": {
+      "description": "The library checked against itself (task check:typing in app-bricks-py). Strict, so the public API carries complete and truthful annotations. Downgraded to warnings: the rules that mostly echo untyped third-party code (Unknown propagating through members, variables, arguments and lambdas, decorators from dependencies, missing stubs) and deprecations, which stay visible in the local check but do not count as errors.",
+      "typeCheckingMode": "strict",
+      "rules": {
+        "reportUnknownMemberType": "warning",
+        "reportUnknownVariableType": "warning",
+        "reportUnknownArgumentType": "warning",
+        "reportUnknownLambdaType": "warning",
+        "reportUntypedFunctionDecorator": "warning",
+        "reportMissingTypeStubs": "warning",
+        "reportDeprecated": "warning"
+      }
+    },
+    "api-user": {
+      "description": "Code written against the library API: the published examples (app-bricks-examples) and the apps edited in App Lab.",
+      "typeCheckingMode": "standard",
+      "rules": {}
+    }
+  }
+}

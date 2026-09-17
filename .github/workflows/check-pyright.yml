@@ -1,0 +1,223 @@
+name: Pyright checks
+
+# Informative, non-blocking checks driven by pyright-rules.json (see the
+# "Pyright checks" section of the README):
+#   - API contract: pyright analyzes the app-bricks-examples Python code twice,
+#     resolving the library from the PR base and head sources (profile api-user).
+#     New errors mean this PR changes the API contract the published examples
+#     rely on.
+#   - Library typing: pyright analyzes the library sources of the PR base and
+#     head (profile app-bricks-py). New errors mean this PR adds typing errors.
+#   - Examples coverage: the bricks without examples, flagging the ones this PR
+#     introduces.
+# The rules of the PR head apply to both sides of each diff, so a PR changing
+# the rules reports the errors they uncover as pre-existing, not as new.
+#
+# The job never fails for new errors: a library change may legitimately
+# require a matching examples change, and blocking both PRs on each other
+# would deadlock. The three checks are composed into one report, posted to the
+# job summary and as a sticky comment on the PR, with a label per check while
+# it has new errors. On PRs from branches of this repository that happens in
+# this job. On PRs from forks the token is read-only, so this job only uploads
+# the report as an artifact and comment-pyright.yml, running on workflow_run
+# with a write token and never touching the PR code, posts it.
+
+on:
+  pull_request:
+    paths:
+      - "src/**"
+      - "pyproject.toml"
+      - "pyright-rules.json"
+      - "containers/base/python-base/requirements-base.txt"
+      - "scripts/check_pyright.py"
+      - ".github/workflows/check-pyright.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: pyright-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.13"
+  NODE_VERSION: "22"
+
+jobs:
+  pyright:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: head
+
+      - name: Checkout PR base
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          path: base
+
+      - name: Checkout examples
+        uses: actions/checkout@v4
+        with:
+          repository: arduino/app-bricks-examples
+          ref: main
+          path: examples
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install system build dependencies
+        # Headers needed to compile the audio C extensions (pyalsaaudio, pyaudio),
+        # same packages installed by 'task install:deps'.
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends libasound2-dev portaudio19-dev
+
+      - name: Build check venv
+        run: |
+          python -m venv checkenv
+          # Library dependencies (core + [all] extra), without the library itself:
+          # pyright resolves the library from the base/head sources.
+          python head/scripts/check_pyright.py deps --pyproject head/pyproject.toml > library-deps.txt
+          # Runtime baseline of the app container + library dependencies.
+          # Tolerant per-package install: a package that still fails to build on
+          # the runner only degrades the affected types to Unknown, it must not
+          # fail the job.
+          cat head/containers/base/python-base/requirements-base.txt library-deps.txt | while IFS= read -r pkg; do
+            pkg="${pkg%%#*}"
+            [ -z "${pkg// /}" ] && continue
+            ./checkenv/bin/pip install -q "$pkg" < /dev/null || echo "::notice::package not installed in the check venv: $pkg"
+          done
+          # Per-example dependencies.
+          find examples/bricks examples/core-and-foundational examples/inspirational \
+            -path '*/python/requirements.txt' -exec ./checkenv/bin/pip install -q -r {} \;
+
+      - name: Analyze the examples against the base and the head
+        run: |
+          python head/scripts/check_pyright.py run --examples-dir examples --library-src base/src --rules head/pyright-rules.json --python checkenv/bin/python --out api-base.json
+          python head/scripts/check_pyright.py run --examples-dir examples --library-src head/src --rules head/pyright-rules.json --python checkenv/bin/python --out api-head.json
+
+      - name: Analyze the library sources of the base and the head
+        run: |
+          python head/scripts/check_pyright.py typing --library-src base/src --rules head/pyright-rules.json --python checkenv/bin/python --out typing-base.json
+          python head/scripts/check_pyright.py typing --library-src head/src --rules head/pyright-rules.json --python checkenv/bin/python --out typing-head.json
+
+      - name: Upload pyright outputs
+        id: outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: pyright-outputs
+          path: |
+            api-base.json
+            api-head.json
+            typing-base.json
+            typing-head.json
+          retention-days: 15
+
+      - name: API contract with the examples
+        id: api
+        run: >
+          python head/scripts/check_pyright.py diff --base api-base.json --head api-head.json
+          --title "API contract with the examples" --result api.json --no-summary
+
+      - name: Library typing
+        id: typing
+        run: >
+          python head/scripts/check_pyright.py diff --base typing-base.json --head typing-head.json
+          --title "Library typing" --subject "Errors in the library sources (profile app-bricks-py)"
+          --guidance "This PR introduces typing errors in the library: fix them, or adjust the annotations so they reflect what the code handles."
+          --result typing.json --no-summary
+
+      - name: Examples coverage
+        run: >
+          python head/scripts/check_pyright.py coverage --examples-dir examples --head-src head/src --base-src base/src
+          --title "Examples coverage" --result coverage.json --no-summary
+
+      - name: Compose the report
+        id: report
+        # One report for the three checks: it feeds the job summary and the PR
+        # comment. The pyright outputs of both checks are in one artifact, linked once.
+        env:
+          REPORTS_URL: ${{ steps.outputs.outputs.artifact-url }}
+        run: |
+          python head/scripts/check_pyright.py report api.json typing.json coverage.json --summary report.md --reports-url "$REPORTS_URL"
+          cat report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Save the report for the PR comment
+        # Consumed by comment-pyright.yml for PRs from forks, where this job cannot
+        # write. The metadata lets that workflow identify the PR and verify it
+        # against the head SHA of this run before posting anything.
+        if: github.event_name == 'pull_request'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          API_NEW_ERRORS: ${{ steps.api.outputs.new_errors }}
+          TYPING_NEW_ERRORS: ${{ steps.typing.outputs.new_errors }}
+        run: |
+          jq -n --arg pr "$PR_NUMBER" --arg sha "$HEAD_SHA" --arg repo "$HEAD_REPO" \
+            --arg api "${API_NEW_ERRORS:-0}" --arg typing "${TYPING_NEW_ERRORS:-0}" \
+            '{pr_number: ($pr | tonumber), head_sha: $sha, head_repo: $repo, api_new_errors: ($api | tonumber), typing_new_errors: ($typing | tonumber)}' > metadata.json
+
+      - name: Upload the report
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pyright-report
+          path: |
+            report.md
+            metadata.json
+          retention-days: 3
+
+      - name: Post the report on the PR
+        # Only for PRs from this repository: on a fork PR the token cannot write,
+        # so the step is skipped and comment-pyright.yml takes over. Any other
+        # hiccup (API error, missing label permission) must not fail the check
+        # either, hence continue-on-error: the job summary always carries the
+        # same report.
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          API_NEW_ERRORS: ${{ steps.api.outputs.new_errors }}
+          TYPING_NEW_ERRORS: ${{ steps.typing.outputs.new_errors }}
+        run: |
+          marker='<!-- pyright-checks -->'
+          { echo "$marker"; cat report.md; } > comment.md
+          # GitHub caps comment bodies at 65536 characters.
+          if [ "$(wc -c < comment.md)" -gt 60000 ]; then
+            head -c 60000 comment.md > comment.trimmed.md
+            printf '\n\n… report truncated, the complete one is in the job summary.\n' >> comment.trimmed.md
+            mv comment.trimmed.md comment.md
+          fi
+          # One sticky comment per PR, updated in place at every run.
+          comment_id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate \
+            --jq "first(.[] | select(.body | startswith(\"$marker\")) | .id)")
+          if [ -n "$comment_id" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$comment_id" -F body=@comment.md > /dev/null
+          else
+            gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" -F body=@comment.md > /dev/null
+          fi
+          # One label per check, present while the PR introduces new errors in it.
+          set_label() {
+            if [ "${3:-0}" != "0" ]; then
+              gh label create "$1" --color D93F0B --force --description "$2"
+              gh pr edit "$PR_NUMBER" --add-label "$1"
+            else
+              gh pr edit "$PR_NUMBER" --remove-label "$1" || true
+            fi
+          }
+          set_label examples-misaligned "Introduces errors in the published app-bricks-examples (see the pyright report comment)" "$API_NEW_ERRORS"
+          set_label typing-regression "Introduces typing errors in the library sources (see the pyright report comment)" "$TYPING_NEW_ERRORS"
