@@ -17,17 +17,50 @@ from typing import Any, Never
 
 logger = Logger("App")
 
-# The whole shutdown must fit in the container stop grace period: a process killed while still
-# holding an exclusive peripheral can leave it unusable for everyone else, so budgets are
-# deliberately conservative and leave headroom for the interpreter teardown.
-SHUTDOWN_BRICKS_BUDGET_S = 5.0
-"""Wall-clock budget, in seconds, for stopping every brick. Shared globally, not per brick."""
+# The whole shutdown must fit in the stop grace period the launcher gives the process: a process
+# killed while still holding an exclusive peripheral can leave it unusable for everyone else, so
+# the budgets below are derived from that limit rather than chosen independently.
+SHUTDOWN_GRACE_PERIOD_S = 5.0
+"""Hard limit, in seconds, between the termination signal and the process being killed.
 
-SHUTDOWN_PERIPHERALS_BUDGET_S = 2.0
-"""Wall-clock budget, in seconds, for releasing every peripheral, once the bricks are stopped."""
+Set by whoever stops the app, currently arduino-app-cli. Everything the shutdown does has to fit
+inside it, including the interpreter teardown that follows _shutdown().
+"""
 
-SHUTDOWN_LOCK_BUDGET_S = 1.0
-"""Max time, in seconds, spent waiting for the app lock before stopping bricks without it."""
+SHUTDOWN_HEADROOM_S = 0.5
+"""Part of the grace period deliberately left unused by the shutdown budgets.
+
+It covers what happens outside _shutdown() but inside the grace period: the delay between the
+termination signal and the shutdown actually starting, and the interpreter teardown that follows
+it (atexit hooks, the ThreadPoolExecutor thread joins in threading._shutdown(), garbage collection
+of anything the shutdown abandoned, module teardown).
+
+Kept small on purpose. A healthy app tears down in well under a millisecond, and the teardown of
+an unhealthy one is unbounded anyway, since threading._shutdown() joins executor threads with no
+timeout: a larger headroom would not save it, while the time is worth much more given to the
+bricks, where it is bounded and buys a clean stop.
+"""
+
+SHUTDOWN_PERIPHERALS_BUDGET_S = 1.5
+"""Wall-clock budget, in seconds, for releasing every peripheral, once the bricks are stopped.
+
+Reserved out of the grace period before the bricks get theirs: releasing an exclusive device is
+the one step whose failure outlives the process, so it is the last thing that may be squeezed.
+"""
+
+SHUTDOWN_BRICKS_BUDGET_S = SHUTDOWN_GRACE_PERIOD_S - SHUTDOWN_HEADROOM_S - SHUTDOWN_PERIPHERALS_BUDGET_S
+"""Wall-clock budget, in seconds, for stopping every brick. Shared globally, not per brick.
+
+Whatever the grace period has left once the headroom and the peripherals are accounted for, so
+raising either of those cannot push the shutdown past the grace period.
+"""
+
+SHUTDOWN_LOCK_BUDGET_S = 0.5
+"""Max time, in seconds, spent waiting for the app lock before stopping bricks without it.
+
+Nested inside the brick budget, so it is kept to a small fraction of it: waiting out a lock that
+is held at shutdown must not cost the bricks the time they need to stop.
+"""
 
 WORKER_JOIN_TIMEOUT_S = 5.0
 """Per-worker-thread join timeout used when no global deadline applies, i.e. by stop_brick()."""
@@ -169,10 +202,12 @@ class AppController:
     def _shutdown(self) -> None:
         """Performs a clean, time-bounded shutdown of all bricks and then of all peripherals.
 
-        The whole sequence is bounded by SHUTDOWN_BRICKS_BUDGET_S + SHUTDOWN_PERIPHERALS_BUDGET_S
-        so that it always completes within the container stop grace period. Overrunning it gets
-        the process killed, and a process killed while holding an exclusive peripheral can leave
-        that peripheral unusable until its driver or service is restarted.
+        The whole sequence is bounded by SHUTDOWN_BRICKS_BUDGET_S + SHUTDOWN_PERIPHERALS_BUDGET_S,
+        which is SHUTDOWN_GRACE_PERIOD_S minus SHUTDOWN_HEADROOM_S, so that it always completes
+        within the grace period the launcher allows, with the headroom left for the interpreter
+        teardown. Overrunning the grace period gets the process killed, and a process killed while
+        holding an exclusive peripheral can leave that peripheral unusable until its driver or
+        service is restarted.
         """
         if not self._running:
             return
@@ -191,7 +226,13 @@ class AppController:
             self._stop_all_peripherals()
 
         self._running = False
-        logger.debug(f"Shutdown completed in {time.monotonic() - started_at:.2f}s")
+        elapsed = time.monotonic() - started_at
+        if elapsed > SHUTDOWN_GRACE_PERIOD_S:
+            # Worth a warning of its own: past this point the process may already have been
+            # killed, and this line is what explains a peripheral that was never released.
+            logger.warning(f"Shutdown took {elapsed:.2f}s, over the {SHUTDOWN_GRACE_PERIOD_S:.1f}s grace period")
+        else:
+            logger.debug(f"Shutdown completed in {elapsed:.2f}s")
         print("======== App shutdown completed =====================", flush=True)
 
     def _stop_all_peripherals(self) -> None:

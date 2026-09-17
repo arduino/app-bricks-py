@@ -24,6 +24,12 @@ BRICKS_BUDGET = 0.6
 PERIPHERALS_BUDGET = 0.2
 SLACK = 0.6
 
+# Captured before the fast_budget fixture can shrink them, so the tests that are about the
+# production timings can put them back and assert on the real numbers.
+REAL_BRICKS_BUDGET = app.SHUTDOWN_BRICKS_BUDGET_S
+REAL_PERIPHERALS_BUDGET = app.SHUTDOWN_PERIPHERALS_BUDGET_S
+REAL_LOCK_BUDGET = app.SHUTDOWN_LOCK_BUDGET_S
+
 
 @pytest.fixture
 def app_instance(monkeypatch):
@@ -47,6 +53,18 @@ def fast_budget(monkeypatch):
     monkeypatch.setattr(app, "SHUTDOWN_BRICKS_BUDGET_S", BRICKS_BUDGET)
     monkeypatch.setattr(app, "SHUTDOWN_PERIPHERALS_BUDGET_S", PERIPHERALS_BUDGET)
     monkeypatch.setattr(app, "SHUTDOWN_LOCK_BUDGET_S", 0.1)
+
+
+@pytest.fixture
+def real_budgets(monkeypatch):
+    """Puts the production budgets back, overriding the autouse fast_budget fixture.
+
+    Used by the tests that exist to check the shutdown fits in the grace period, which is a
+    statement about the real numbers and says nothing if the budgets are shrunk first.
+    """
+    monkeypatch.setattr(app, "SHUTDOWN_BRICKS_BUDGET_S", REAL_BRICKS_BUDGET)
+    monkeypatch.setattr(app, "SHUTDOWN_PERIPHERALS_BUDGET_S", REAL_PERIPHERALS_BUDGET)
+    monkeypatch.setattr(app, "SHUTDOWN_LOCK_BUDGET_S", REAL_LOCK_BUDGET)
 
 
 # Test class definitions
@@ -98,6 +116,18 @@ class StuckLoopBrick:
 @brick
 class HangingStopBrick:
     """A brick whose stop() never returns, the case that used to block the whole shutdown."""
+
+    def __init__(self, release: threading.Event):
+        self._release = release
+        self.stop_entered = threading.Event()
+
+    def stop(self) -> None:
+        self.stop_entered.set()
+        self._release.wait(timeout=30)
+
+
+class BlockingPeripheral:
+    """A peripheral whose stop() never returns, e.g. a camera stuck in its driver."""
 
     def __init__(self, release: threading.Event):
         self._release = release
@@ -446,6 +476,62 @@ def test_case_6_a_peripheral_registered_by_a_brick_stop_is_still_released(app_in
 
     assert timeline == ["brick", "peripheral"]
     assert late.stop_count == 1
+
+
+def test_case_6_the_budgets_fit_in_the_grace_period():
+    """The budgets are what keeps the process from being killed mid-release, so their sum is an
+    invariant and not a preference: raising one without lowering another has to fail here.
+    """
+    assert REAL_BRICKS_BUDGET > 0, "the bricks must get a budget"
+    assert REAL_PERIPHERALS_BUDGET > 0, "the peripherals must get a budget"
+
+    total = REAL_BRICKS_BUDGET + REAL_PERIPHERALS_BUDGET + app.SHUTDOWN_HEADROOM_S
+    assert total <= app.SHUTDOWN_GRACE_PERIOD_S, (
+        f"the shutdown budgets add up to {total:.1f}s, over the {app.SHUTDOWN_GRACE_PERIOD_S:.1f}s grace period"
+    )
+
+    # The lock wait is nested inside the brick budget, so it must stay a small part of it
+    assert REAL_LOCK_BUDGET <= REAL_BRICKS_BUDGET / 2
+
+    # The interpreter-exit fallback stands in for the shutdown and is on the same clock
+    assert peripheral_registry.PERIPHERAL_STOP_BUDGET_S <= REAL_PERIPHERALS_BUDGET
+
+
+def test_case_6_a_pathological_shutdown_fits_in_the_grace_period(app_instance, peripherals, real_budgets):
+    """Condition: the worst case, with the production budgets - a brick whose stop() never
+    returns, bricks whose worker threads never return, and a peripheral whose stop() never
+    returns.
+    Expectation: _shutdown() returns inside the grace period, leaving the headroom for the
+    interpreter teardown. This is the end-to-end statement that the budgets are sized right:
+    overrunning the grace period is what gets the process killed while a device is still held.
+    """
+    release = threading.Event()
+    block = threading.Event()
+
+    hanging = HangingStopBrick(release)
+    for n in range(3):
+        StuckLoopBrick(f"stuck-{n}")
+    ManyWorkersBrick()
+
+    blocked = BlockingPeripheral(block)
+    peripherals.register(blocked)
+
+    _run(app_instance)
+
+    try:
+        started_at = time.monotonic()
+        app_instance._shutdown()
+        elapsed = time.monotonic() - started_at
+
+        assert elapsed <= app.SHUTDOWN_GRACE_PERIOD_S, f"shutdown took {elapsed:.2f}s, the process would have been killed"
+        # Fires before the grace-period assert above, with a clearer reason: the shutdown is meant
+        # to spend its budgets and stop, so the only slack here is CI scheduling
+        assert elapsed <= REAL_BRICKS_BUDGET + REAL_PERIPHERALS_BUDGET + 0.4, f"shutdown took {elapsed:.2f}s, it overran its budgets"
+        assert hanging.stop_entered.is_set(), "the brick was never asked to stop"
+        assert blocked.stop_entered.is_set(), "the peripheral was never asked to release"
+    finally:
+        release.set()
+        block.set()
 
 
 @pytest.mark.integration

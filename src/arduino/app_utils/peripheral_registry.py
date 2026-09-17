@@ -24,8 +24,14 @@ from .logger import Logger
 
 logger = Logger("Peripherals")
 
-PERIPHERAL_STOP_BUDGET_S = 2.0
-"""Default wall-clock budget, in seconds, for releasing every registered peripheral."""
+PERIPHERAL_STOP_BUDGET_S = 1.5
+"""Default wall-clock budget, in seconds, for releasing every registered peripheral.
+
+Matches the slice the application shutdown reserves for the peripherals (see
+``app.SHUTDOWN_PERIPHERALS_BUDGET_S``). It is what the interpreter-exit fallback runs with, and
+that fallback is on the same clock: the grace period started when the process was signalled, not
+when the interpreter began tearing down.
+"""
 
 MAX_STOP_PASSES = 3
 """Max number of times stop_all() re-reads the registry to catch late registrations."""
