@@ -10,8 +10,29 @@ import time
 
 import pytest
 
+import arduino.app_utils.peripheral_registry as peripheral_registry_module
 from arduino.app_peripherals.device_registry import DeviceRegistry
 from arduino.app_utils.peripheral_registry import PeripheralRegistry
+
+
+def _failing_start(when: int | None):
+    """Returns a Thread.start that fails on the when-th stop thread, or on all of them.
+
+    Mimics an interpreter that cannot create threads any more: thread exhaustion under memory
+    pressure, or a finalizing interpreter. Only the registry's own stop threads are affected, so
+    pytest's internals keep working.
+    """
+    real_start = threading.Thread.start
+    calls = {"n": 0}
+
+    def start(self):
+        if self.name.startswith("stop-"):
+            calls["n"] += 1
+            if when is None or calls["n"] == when:
+                raise RuntimeError("can't start new thread")
+        return real_start(self)
+
+    return start
 
 
 @pytest.fixture
@@ -198,3 +219,194 @@ class TestStopAllOnce:
         registry.stop_all_once(timeout=1.0)
 
         assert peripheral.stop_count == 0
+
+
+class TestStopAllRobustness:
+    """The sweep is the last chance a peripheral gets: it must never abort halfway."""
+
+    def test_a_peripheral_that_cannot_get_a_thread_is_stopped_inline(self, registry, monkeypatch):
+        """Condition: Thread.start() fails for a peripheral, e.g. no thread can be created.
+        Expectation: it is stopped on the caller's thread instead of being skipped.
+        """
+        peripheral = FakePeripheral()
+        registry.register(peripheral)
+        monkeypatch.setattr(threading.Thread, "start", _failing_start(when=1))
+
+        assert registry.stop_all(timeout=1.0) == []
+        assert peripheral.stop_count == 1
+
+    def test_a_failed_thread_start_does_not_skip_the_others(self, registry, monkeypatch):
+        """Condition: the first Thread.start() of the sweep fails.
+        Expectation: the sweep does not propagate and every peripheral is still stopped. It used
+        to abort on the first failure, leaving every peripheral after it held.
+        """
+        peripherals = [FakePeripheral() for _ in range(3)]
+        for peripheral in peripherals:
+            registry.register(peripheral)
+        monkeypatch.setattr(threading.Thread, "start", _failing_start(when=1))
+
+        registry.stop_all(timeout=1.0)
+
+        assert all(p.stop_count == 1 for p in peripherals), [p.stop_count for p in peripherals]
+
+    def test_an_exhausted_interpreter_still_releases_every_peripheral(self, registry, monkeypatch):
+        """Condition: no thread can be created at all, as in an interpreter that is finalizing.
+        Expectation: every peripheral is released, serially, on the caller's thread.
+        """
+        peripherals = [FakePeripheral() for _ in range(3)]
+        for peripheral in peripherals:
+            registry.register(peripheral)
+        monkeypatch.setattr(threading.Thread, "start", _failing_start(when=None))
+
+        assert registry.stop_all(timeout=1.0) == []
+        assert all(p.stopped.is_set() for p in peripherals)
+
+
+class TestLateRegistrations:
+    """A peripheral can be created while the sweep runs, e.g. by a brick's own stop()."""
+
+    def test_a_peripheral_registered_during_the_sweep_is_released(self, registry):
+        late = FakePeripheral()
+
+        class Registering(FakePeripheral):
+            def stop(self) -> None:
+                super().stop()
+                registry.register(late)
+
+        first = Registering()
+        registry.register(first)
+
+        registry.stop_all(timeout=2.0)
+
+        assert first.stop_count == 1
+        assert late.stop_count == 1, "a peripheral registered during the sweep was never released"
+
+    def test_late_registrations_are_bounded_by_max_passes(self, registry, monkeypatch):
+        """A peripheral whose stop() keeps registering new ones must not loop forever."""
+        monkeypatch.setattr(peripheral_registry_module, "MAX_STOP_PASSES", 3)
+        created: list[FakePeripheral] = []
+
+        class Breeding(FakePeripheral):
+            def stop(self) -> None:
+                super().stop()
+                child = Breeding()
+                created.append(child)
+                registry.register(child)
+
+        root = Breeding()
+        registry.register(root)
+
+        registry.stop_all(timeout=2.0)
+
+        assert root.stop_count == 1
+
+        # One new peripheral per pass, so the sweep stops after MAX_STOP_PASSES instead of spinning
+        assert len(created) == 3
+
+    def test_a_late_registration_does_not_extend_the_budget(self, registry):
+        """The extra passes share the original deadline, they do not restart it."""
+        block = threading.Event()
+        late = FakePeripheral(block=block)
+
+        class Registering(FakePeripheral):
+            def stop(self) -> None:
+                super().stop()
+                registry.register(late)
+
+        registering = Registering()
+        registry.register(registering)
+
+        try:
+            started_at = time.monotonic()
+            registry.stop_all(timeout=0.3)
+            elapsed = time.monotonic() - started_at
+
+            assert elapsed < 0.8, f"stop_all took {elapsed:.2f}s, the late pass restarted the budget"
+            assert registering.stop_count == 1
+        finally:
+            block.set()
+
+    def test_an_exhausted_budget_stops_re_reading_the_registry(self, registry):
+        """Condition: the first pass already used the whole budget.
+        Expectation: no further pass is attempted, the shutdown has to return to its caller.
+        """
+        block = threading.Event()
+        late = FakePeripheral()
+
+        class Registering(FakePeripheral):
+            def stop(self) -> None:
+                super().stop()
+                registry.register(late)
+                block.wait(timeout=30)
+
+        registering = Registering()
+        registry.register(registering)
+
+        try:
+            pending = registry.stop_all(timeout=0.2)
+
+            assert len(pending) == 1
+            assert late.stop_count == 0, "the budget was already spent, the late pass must be skipped"
+        finally:
+            block.set()
+
+
+class TestStopAllOnceRobustness:
+    def test_an_interrupted_sweep_leaves_the_latch_open(self, registry, monkeypatch):
+        """Condition: the sweep is interrupted, e.g. by a second termination signal raised into
+        the main thread while the shutdown is running.
+        Expectation: the latch stays open so the interpreter-exit fallback retries. The latch used
+        to be armed before the work, so an interrupted shutdown lost its peripherals for good.
+        """
+        peripheral = FakePeripheral()
+        registry.register(peripheral)
+
+        def interrupted(timeout):
+            raise KeyboardInterrupt("signal during shutdown")
+
+        monkeypatch.setattr(registry, "stop_all", interrupted)
+        with pytest.raises(KeyboardInterrupt):
+            registry.stop_all_once(timeout=0.2)
+
+        monkeypatch.undo()
+        registry.stop_all_once(timeout=1.0)  # the interpreter-exit fallback
+
+        assert peripheral.stop_count == 1
+
+    def test_a_completed_sweep_still_arms_the_latch(self, registry):
+        peripheral = FakePeripheral()
+        registry.register(peripheral)
+
+        registry.stop_all_once(timeout=1.0)
+        peripheral._started = True  # would be stopped again if the latch were still open
+        registry.stop_all_once(timeout=1.0)
+
+        assert peripheral.stop_count == 1
+
+    def test_a_concurrent_call_does_not_start_a_second_sweep(self, registry):
+        """The app shutdown and the interpreter-exit fallback can overlap: only one may sweep."""
+        entered = threading.Event()
+        block = threading.Event()
+        peripheral = FakePeripheral()
+
+        class Slow(FakePeripheral):
+            def stop(self) -> None:
+                entered.set()
+                block.wait(timeout=30)
+                super().stop()
+
+        slow = Slow()
+        registry.register(slow)
+        registry.register(peripheral)
+
+        sweeper = threading.Thread(target=registry.stop_all_once, args=(2.0,), daemon=True)
+        sweeper.start()
+        try:
+            assert entered.wait(timeout=2.0)
+
+            assert registry.stop_all_once(timeout=1.0) == [], "a second sweep was started"
+        finally:
+            block.set()
+            sweeper.join(timeout=5)
+
+        assert peripheral.stop_count == 1

@@ -145,11 +145,26 @@ class AppController:
             logger.info("Running in framework-managed mode (process lifecycle handled externally)")
             return
 
-        exit_code = self.loop(user_loop)
+        try:
+            exit_code = self.loop(user_loop)
+        except BaseException:
+            # loop() handles Exception itself, so getting here means SystemExit from user code or
+            # a BaseException raised into the main thread. The shutdown is the only thing that
+            # releases the peripherals in order, so it has to run on this path too.
+            self._shutdown_quietly()
+            raise
+
         self._shutdown()
 
         if exit_code:
             sys.exit(exit_code)
+
+    def _shutdown_quietly(self) -> None:
+        """Runs the shutdown while an exception is already propagating, swallowing its failures."""
+        try:
+            self._shutdown()
+        except Exception as e:
+            logger.exception(f"Shutdown failed while the app was already terminating: {e}")
 
     def _shutdown(self) -> None:
         """Performs a clean, time-bounded shutdown of all bricks and then of all peripherals.
@@ -186,7 +201,14 @@ class AppController:
         peripheral's own lock, and _app_lock is not reentrant, so holding it here would stall
         any concurrent register()/start_brick() for the whole peripheral budget.
         """
-        peripheral_registry.Peripherals.stop_all_once(SHUTDOWN_PERIPHERALS_BUDGET_S)
+        try:
+            peripheral_registry.Peripherals.stop_all_once(SHUTDOWN_PERIPHERALS_BUDGET_S)
+        except Exception as e:
+            # Releasing the peripherals is the last step of the shutdown: a failure here must not
+            # abort it, or _running would stay set and the completion never be reported.
+            # BaseException is deliberately not caught: it has to propagate, and the registry
+            # leaves its one-shot latch open so the interpreter-exit fallback can try again.
+            logger.exception(f"Failed to release the peripherals: {e}")
 
     def _is_framework_managed(self) -> bool:
         """Detect if running inside a framework that manages the process lifecycle.
