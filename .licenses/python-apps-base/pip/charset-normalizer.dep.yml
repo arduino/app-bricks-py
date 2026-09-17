@@ -1,16 +1,17 @@
 ---
-name: filelock
-version: 3.32.6
+name: charset-normalizer
+version: 3.5.1
 type: pip
-summary: A platform independent file lock.
-homepage: https://github.com/tox-dev/py-filelock
+summary: The Real First Universal Charset Detector. Open, modern and actively maintained
+  alternative to Chardet.
+homepage: ''
 license: mit
 licenses:
 - sources: LICENSE
   text: |
     MIT License
 
-    Copyright (c) 2025 Bernát Gábor and contributors
+    Copyright (c) 2025 TAHRI Ahmed R.
 
     Permission is hereby granted, free of charge, to any person obtaining a copy
     of this software and associated documentation files (the "Software"), to deal

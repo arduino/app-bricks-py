@@ -13,13 +13,13 @@ ARG LLAMA_CPP_DIGEST
 ADD --checksum=${LLAMA_CPP_DIGEST} ${LLAMA_CPP_URL} /tmp/llamacpp.tar.gz
 
 COPY ./scripts/* /
+COPY ./requirements.txt /tmp/requirements.txt
 
 RUN set -x; \
     apt-get update -y; \
     apt-get install -y --no-install-recommends --no-install-suggests libgomp1; \
     apt-get dist-clean; \
-    # pyyaml: configure-llamacpp.py parses the .arduino_metadata.yaml download records
-    pip install --no-cache-dir pyyaml; \
+    pip install --no-cache-dir -r /tmp/requirements.txt; \
     tar -xzf /tmp/llamacpp.tar.gz -C /opt; \
     rm /tmp/llamacpp.tar.gz; \
     chown -R arduino:arduino /opt/pkg-cpu; \
