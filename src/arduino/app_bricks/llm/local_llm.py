@@ -5,6 +5,7 @@
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 
+import time
 from typing import Any
 
 from arduino.app_bricks.cloud_llm import CloudLLM, CloudModelProvider
@@ -13,10 +14,15 @@ from arduino.app_bricks.cloud_llm.memory import MessagePersistence
 from arduino.app_utils import Logger, brick
 from arduino.app_internal.core import resolve_address, get_brick_config, get_brick_configured_model
 
-from openai import OpenAI, APIError, BadRequestError
+from openai import OpenAI, APIConnectionError, APIError, BadRequestError
 from collections.abc import Iterator, Sequence
 
 logger = Logger("LargeLanguageModel")
+
+# The local models runner lives in a sibling container that may still be starting up when the
+# brick is constructed. Connection errors on the model listing are therefore retried before giving up.
+LIST_MODELS_MAX_ATTEMPTS = 10
+LIST_MODELS_RETRY_DELAY_S = 1.0
 
 
 @brick
@@ -146,15 +152,22 @@ class LargeLanguageModel(CloudLLM):
         Returns:
             List[str]: A list of supported model names (e.g., ["qwen2.5-7b"]).
         """
-        try:
-            with OpenAI(base_url=self._model.openai_api_base, api_key=self._model.openai_api_key) as openai_client:
-                models_response = openai_client.models.list()
-                model_list = [model.id for model in models_response.data]
-
-                return model_list
-        except Exception as e:
-            logger.warning(f"Failed to list models: {e}")
-            return []
+        for attempt in range(1, LIST_MODELS_MAX_ATTEMPTS + 1):
+            try:
+                # Retries are handled here (not by the OpenAI client) so the runner has time to come up.
+                with OpenAI(base_url=self._model.openai_api_base, api_key=self._model.openai_api_key, max_retries=0) as openai_client:
+                    models_response = openai_client.models.list()
+                    return [model.id for model in models_response.data]
+            except APIConnectionError as e:
+                if attempt >= LIST_MODELS_MAX_ATTEMPTS:
+                    logger.warning(f"Failed to list models after {attempt} attempts: {e}")
+                    return []
+                logger.debug(f"Models runner not reachable yet (attempt {attempt}/{LIST_MODELS_MAX_ATTEMPTS}): {e}. Retrying...")
+                time.sleep(LIST_MODELS_RETRY_DELAY_S)
+            except Exception as e:
+                logger.warning(f"Failed to list models: {e}")
+                return []
+        return []
 
     def with_memory(
         self,
