@@ -6,9 +6,9 @@ ARG REGISTRY
 ARG BASE_IMAGE_VERSION=latest
 
 # ONNX Runtime with the QNN execution provider, the FastRPC client libraries and the aihub
-# framework, on python-slim. Not aihub-models-runner: that one carries the QAIRT SDK and
-# the LiteRT delegate, and this runner uses neither - the QAIRT it talks to the NPU with is
-# the one bundled in the onnxruntime-qnn wheel the base image installs.
+# framework, on python-slim. Not aihub-litert-models-runner: that one carries the QAIRT
+# SDK and the LiteRT delegate, and this runner uses neither - the QAIRT it talks to the
+# NPU with is the one bundled in the onnxruntime-qnn wheel the base image installs.
 FROM ${REGISTRY}app-bricks/aihub-onnx-models-runner:${BASE_IMAGE_VERSION}
 
 ARG DEBIAN_FRONTEND=noninteractive

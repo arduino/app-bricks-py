@@ -1,6 +1,6 @@
 {
   "watch_paths": [
-    "containers/ai/aihub-models-runner/"
+    "containers/ai/aihub-litert-models-runner/"
   ],
   "tag_latest": false,
   "build_whl": false,

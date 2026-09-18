@@ -27,13 +27,13 @@ groups; the build planner fails if two groups declare the same one.
 | `python-slim` | base | `python:3.13-slim-trixie` | Minimal Python layer shared by everything else |
 | `python-base` | base | `python-slim` | System deps, non-root user, fonts, OpenCV wheel, libcamera + GStreamer packages |
 | `qairt-common-base` | base | `python:3.13-slim-trixie` | Qualcomm AI Runtime SDK and a source build of FastRPC, shared by the LiteRT NPU runners |
+| `aihub-framework` | base | `python-slim` | Source-only: the `aihub` runner framework and app skeleton, shared by the two runner bases |
 | `python-apps-base` | bricks | `python-base` | App runtime: installs the Arduino App Bricks `.whl` and the Streamlit config |
 | `models-downloader` | bricks | `python-slim` | Downloads models from AI Hub, Edge Impulse and Hugging Face per `models/models-list.yaml` |
-| `aihub-framework` | ai | `python-slim` | Source-only: the `aihub` runner framework and app skeleton, shared by the two runner bases |
-| `aihub-models-runner` | ai | `qairt-common-base` | Runs Qualcomm AI Hub models on LiteRT, with GStreamer/WebSocket input and MJPEG/WebSocket output. Installs OpenCV and `ai-edge-litert` for its runners |
+| `aihub-litert-models-runner` | ai | `qairt-common-base` | Runs Qualcomm AI Hub models on LiteRT, with GStreamer/WebSocket input and MJPEG/WebSocket output. Installs OpenCV and `ai-edge-litert` for its runners |
 | `aihub-onnx-models-runner` | ai | `python-slim` | Same framework on ONNX Runtime: the QNN execution provider plus Debian's FastRPC libraries and OpenCV, without the QAIRT SDK |
-| `gesture-recognition-runner` | ai | `aihub-models-runner` | Hand-gesture recognition on the MediaPipe palm/landmark/classifier models |
-| `pose-estimation-runner` | ai | `aihub-models-runner` | Body pose estimation on the PoseNet MobileNet model, 17 keypoints per person, custom pose models supported |
+| `gesture-recognition-runner` | ai | `aihub-litert-models-runner` | Hand-gesture recognition on the MediaPipe palm/landmark/classifier models |
+| `pose-estimation-runner` | ai | `aihub-litert-models-runner` | Body pose estimation on the PoseNet MobileNet model, 17 keypoints per person, custom pose models supported |
 | `ocr-runner` | ai | `aihub-onnx-models-runner` | EasyOCR text detection and recognition on the Hexagon NPU |
 | `ei-models-runner` | ai | Edge Impulse inference image | Edge Impulse inference with the bundled out-of-the-box models |
 | `ei-qnn-models-runner` | ai | Edge Impulse QNN inference image | Same, on the NPU-accelerated (QNN) models |
@@ -45,7 +45,7 @@ graph LR
   slim[python-slim] --> base[python-base] --> apps[python-apps-base]
   slim --> dl[models-downloader]
   slim --> lcpp[llamacpp-runner]
-  qairt[qairt-common-base] --> aihub[aihub-models-runner] --> gesture[gesture-recognition-runner]
+  qairt[qairt-common-base] --> aihub[aihub-litert-models-runner] --> gesture[gesture-recognition-runner]
   aihub --> pose[pose-estimation-runner]
   qairt --> lcppnpu[llamacpp-npu-runner]
   ei[ei-models-runner]

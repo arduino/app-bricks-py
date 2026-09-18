@@ -8,7 +8,7 @@ ARG REGISTRY
 ARG BASE_IMAGE_VERSION=latest
 
 # The `aihub` framework and the app skeleton are shared with aihub-onnx-models-runner
-# and live in their own source-only image; see containers/ai/aihub-framework.
+# and live in their own source-only image; see containers/base/aihub-framework.
 FROM ${REGISTRY}app-bricks/aihub-framework:${BASE_IMAGE_VERSION} AS framework
 
 FROM ${REGISTRY}app-bricks/qairt-common-base:${BASE_IMAGE_VERSION}

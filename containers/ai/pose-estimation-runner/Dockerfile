@@ -5,7 +5,7 @@
 ARG REGISTRY
 ARG BASE_IMAGE_VERSION=latest
 
-FROM ${REGISTRY}app-bricks/aihub-models-runner:${BASE_IMAGE_VERSION}
+FROM ${REGISTRY}app-bricks/aihub-litert-models-runner:${BASE_IMAGE_VERSION}
 
 ARG DEBIAN_FRONTEND=noninteractive
 

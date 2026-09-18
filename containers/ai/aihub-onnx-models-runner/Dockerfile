@@ -3,8 +3,8 @@
 # SPDX-License-Identifier: MPL-2.0
 
 # Base image for the AI runners that reach the Hexagon NPU through ONNX Runtime's QNN
-# execution provider, as opposed to aihub-models-runner, which reaches it through the
-# LiteRT QNN delegate.
+# execution provider, as opposed to aihub-litert-models-runner, which reaches it
+# through the LiteRT QNN delegate.
 #
 # It deliberately does not build on qairt-common-base. That image downloads and installs
 # the whole QAIRT SDK (the aarch64 runtime plus the unsigned Hexagon skels for every HTP
@@ -17,8 +17,8 @@
 ARG REGISTRY
 ARG BASE_IMAGE_VERSION=latest
 
-# The `aihub` framework and the app skeleton are shared with aihub-models-runner and live
-# in their own source-only image; see containers/ai/aihub-framework.
+# The `aihub` framework and the app skeleton are shared with aihub-litert-models-runner
+# and live in their own source-only image; see containers/base/aihub-framework.
 FROM ${REGISTRY}app-bricks/aihub-framework:${BASE_IMAGE_VERSION} AS framework
 
 FROM ${REGISTRY}app-bricks/python-slim:${BASE_IMAGE_VERSION}

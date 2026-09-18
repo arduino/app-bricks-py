@@ -18,8 +18,8 @@ from pathlib import Path
 import numpy as np
 
 # Make the shared aihub package importable; it lives in its own source-only image, which
-# both aihub-models-runner and aihub-onnx-models-runner copy it from.
-FRAMEWORK_DIR = Path(__file__).resolve().parents[3] / "containers" / "ai" / "aihub-framework"
+# both aihub-litert-models-runner and aihub-onnx-models-runner copy it from.
+FRAMEWORK_DIR = Path(__file__).resolve().parents[3] / "containers" / "base" / "aihub-framework"
 if str(FRAMEWORK_DIR) not in sys.path:
     sys.path.insert(0, str(FRAMEWORK_DIR))
 

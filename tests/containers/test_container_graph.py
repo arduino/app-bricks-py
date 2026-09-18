@@ -106,6 +106,21 @@ def test_sbom_runtime_base_matches_the_final_from(directory: Path):
 
 
 @pytest.mark.parametrize("directory", CONTAINERS, ids=CONTAINER_IDS)
+def test_the_base_group_and_the_base_image_flag_agree(directory: Path):
+    """`containers/base/` is the group that is never a release target, and
+    `resolve_release_build_set` reads the flag, not the folder. A base filed under
+    `containers/base/` without the flag would be seeded by a `base/X.Y.Z` tag - which is
+    meant to build nothing - and a flagged container in `ai`/`bricks` would silently drop
+    out of its own group's release."""
+    flagged = bool(_ci_json(directory).get("base_image", False))
+    in_base_group = directory.parent.name == "base"
+    assert flagged == in_base_group, (
+        f"{directory.name}: lives in containers/{directory.parent.name}/ but base_image is {flagged}; "
+        f"the flag must be set for - and only for - the containers under containers/base/"
+    )
+
+
+@pytest.mark.parametrize("directory", CONTAINERS, ids=CONTAINER_IDS)
 def test_watch_paths_cover_the_container_directory(directory: Path):
     watched = _ci_json(directory).get("watch_paths") or []
     own = f"{directory.relative_to(REPO_ROOT).as_posix()}/"
