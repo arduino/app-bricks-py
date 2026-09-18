@@ -55,7 +55,7 @@ CTX_SIZES = (4096, 8192, 16384)
 # --------------------------------------------------------------------------- #
 
 GGUF_UINT32, GGUF_BOOL, GGUF_STRING, GGUF_ARRAY = 4, 7, 8, 9
-Q4_0, Q6_K, Q8_0, F32 = 2, 14, 8, 0
+Q4_0, Q3_K, Q6_K, Q8_0, F32 = 2, 11, 14, 8, 0
 
 
 def _gguf_string(text: str) -> bytes:
@@ -134,22 +134,25 @@ def attention_model(
 # --------------------------------------------------------------------------- #
 
 
-def test_the_npu_holds_every_quantization_but_the_k_quants(tmp_path):
-    """K-quants stay on the CPU: the Hexagon backend does not repack them."""
+def test_the_npu_holds_the_k_quants_the_build_repacks_and_not_the_rest(tmp_path):
+    """The image's llama.cpp repacks q4_K, q5_K and q6_K for the NPU, where upstream keeps
+    every K-quant on the CPU; q2_K and q3_K still stay there."""
     gguf = write_gguf(
         tmp_path / "m.gguf",
         {"general.architecture": "llama", "llama.block_count": 1},
         [
             ("blk.0.attn_k.weight", (q4_0_elements(10),), Q4_0),
             ("blk.0.ffn_up.weight", (256 * 1024,), Q6_K),
+            ("blk.0.ffn_gate.weight", (256 * 1024,), Q3_K),
             ("blk.0.ffn_down.weight", (32 * 1024,), Q8_0),
         ],
     )
 
     shape = read_model_shape(gguf)
 
+    q6_k_bytes = 256 * 1024 // 256 * 210
     q8_0_bytes = 32 * 1024 // 32 * 34
-    assert shape.npu_weight_bytes == pytest.approx(10 * MIB + q8_0_bytes, rel=1e-3)
+    assert shape.npu_weight_bytes == pytest.approx(10 * MIB + q6_k_bytes + q8_0_bytes, rel=1e-3)
 
 
 def test_the_token_embeddings_stay_on_the_cpu_when_the_output_is_a_separate_tensor(tmp_path):
@@ -172,6 +175,19 @@ def test_tied_token_embeddings_go_to_the_npu(tmp_path):
         ("blk.0.attn_k.weight", (q4_0_elements(10),), Q4_0),
     ]
     gguf = write_gguf(tmp_path / "m.gguf", {"general.architecture": "llama", "llama.block_count": 1}, tensors)
+
+    assert read_model_shape(gguf).npu_weight_bytes == pytest.approx(310 * MIB, rel=1e-3)
+
+
+def test_the_per_layer_embeddings_of_a_matformer_gemma_stay_on_the_cpu(tmp_path):
+    """Whatever their type: they are only read by get_rows. gemma-4-E2B keeps two thirds
+    of its bytes there, and would be sized for three sessions instead of one otherwise."""
+    tensors = [
+        ("token_embd.weight", (q4_0_elements(300),), Q4_0),
+        ("per_layer_token_embd.weight", (q4_0_elements(2000),), Q6_K),
+        ("blk.0.attn_k.weight", (q4_0_elements(10),), Q4_0),
+    ]
+    gguf = write_gguf(tmp_path / "m.gguf", {"general.architecture": "gemma4", "gemma4.block_count": 1}, tensors)
 
     assert read_model_shape(gguf).npu_weight_bytes == pytest.approx(310 * MIB, rel=1e-3)
 
@@ -615,22 +631,21 @@ def test_the_windowed_cache_follows_the_configured_batch_and_slots(tmp_path, mon
     # Unset, or not a positive number, means llama-server's own defaults.
     monkeypatch.setenv("LLAMA_ARG_UBATCH", "auto")
     monkeypatch.delenv("LLAMA_ARG_N_PARALLEL")
-    assert read_model_shape(gguf).kv_cache_bytes(16384) == per_cell * (4 * 512 + 256)
+    assert read_model_shape(gguf).kv_cache_bytes(16384) == per_cell * (4 * 512 + 512)
 
 
-def test_a_q8_0_cache_buys_back_a_session_on_a_kv_heavy_model(tmp_path):
-    """The measured case that matters: an 8B model at 16k loads on no number of sessions
-    with an f16 cache, and on three with a q8_0 one. Sized for four it would drag the
-    whole server's context down (see detect_ctx_size); sized for three it does not."""
-    qwen3_8b = dict(npu_weight_mib=3739, n_layer=36, kv_layers=36)
+def test_a_q8_0_cache_buys_back_a_session_on_a_kv_heavy_model():
+    """Qwen3-4B at 16k carries 2304 MiB of f16 cache, which takes it to three sessions,
+    and 1224 MiB of q8_0, which fits two."""
+    qwen3_4b = dict(npu_weight_mib=1955, n_layer=36, kv_layers=36)
     # 8 KV heads of 128, K and V
-    f16 = shape_of(bytes_per_cell=8 * 256 * 2, **qwen3_8b)
-    q8_0 = shape_of(bytes_per_cell=int(8 * 256 * 34 / 32), **qwen3_8b)
+    f16 = shape_of(bytes_per_cell=8 * 256 * 2, **qwen3_4b)
+    q8_0 = shape_of(bytes_per_cell=int(8 * 256 * 34 / 32), **qwen3_4b)
 
     assert f16.kv_cache_bytes(16384) == 2304 * MIB
     assert q8_0.kv_cache_bytes(16384) == pytest.approx(1224 * MIB, rel=1e-3)
-    assert f16.sessions_needed(16384) == configure_llamacpp.CTX_CAP_MIN_SESSIONS
-    assert q8_0.sessions_needed(16384) < configure_llamacpp.CTX_CAP_MIN_SESSIONS
+    assert f16.sessions_needed(16384) == 3
+    assert q8_0.sessions_needed(16384) == 2
 
 
 # --------------------------------------------------------------------------- #
@@ -653,16 +668,48 @@ def test_the_busiest_session_holds_one_layer_more_than_an_even_share():
     sessions puts 21 of its 40 layers' worth of KV cache on HTP0, 672 MiB of 1280."""
     granite = shape_of(npu_weight_mib=1688, n_layer=40, kv_layers=40, bytes_per_cell=2048)
 
+    compute = configure_llamacpp.compute_buffer_bytes
+
     assert granite.kv_cache_bytes(16384) == 1280 * MIB
-    assert granite.session_bytes(16384, 2) == pytest.approx((1688 + 1280) * MIB * 21 / 40, rel=1e-3)
+    assert granite.session_bytes(16384, 2) == pytest.approx((1688 + 1280) * MIB * 21 / 40 + compute(2), rel=1e-3)
     # One session holds all of it, never more.
-    assert granite.session_bytes(16384, 1) == granite.npu_bytes(16384)
+    assert granite.session_bytes(16384, 1) == granite.npu_bytes(16384) + compute(1)
+
+
+def test_the_budget_is_87_percent_of_the_address_space_a_session_offers():
+    """3134 MiB of DSP address space, as the backend prints it at start-up, with 13% kept
+    back for what the flat compute and state allowances get wrong — and so that no count
+    the rule asks for is below one a load was seen to succeed on (see MEASURED_MODELS)."""
+    assert configure_llamacpp.SESSION_BUDGET == int(3285696512 * 0.87)
+    assert configure_llamacpp.SESSION_BUDGET / MIB == pytest.approx(2726, abs=1)
+
+
+def test_every_session_reserves_a_compute_buffer_and_a_copy_of_the_one_feeding_it(monkeypatch):
+    """The compute buffer follows the micro-batch, not the context, and from two sessions
+    up a session also maps the buffer of the session it takes its input from: measured on
+    gemma-4-E4B at n_ubatch 1024, where HTP1 held 428 MiB of its own and the 554 of HTP0's."""
+    monkeypatch.delenv("LLAMA_ARG_UBATCH", raising=False)
+    one = configure_llamacpp.compute_buffer_bytes(1)
+
+    assert one == 512 * configure_llamacpp.COMPUTE_BYTES_PER_UBATCH_TOKEN
+    assert one / MIB == pytest.approx(307, abs=1)
+    assert configure_llamacpp.compute_buffer_bytes(2) == configure_llamacpp.compute_buffer_bytes(4) == 2 * one
+
+    monkeypatch.setenv("LLAMA_ARG_UBATCH", "1024")
+    assert configure_llamacpp.compute_buffer_bytes(1) == 2 * one
+
+
+def test_the_compute_allowance_covers_both_models_it_was_calibrated_on():
+    """At n_ubatch 1024, on the busiest session: gemma-4-E4B 554 MiB, gemma-4-E2B 265."""
+    for name, measured_mib_per_token in (("gemma-4-E4B", 554 / 1024), ("gemma-4-E2B", 265 / 1024)):
+        assert configure_llamacpp.COMPUTE_BYTES_PER_UBATCH_TOKEN >= measured_mib_per_token * MIB, name
 
 
 def test_sessions_are_added_until_the_busiest_session_fits_the_budget():
-    budget = configure_llamacpp.SESSION_BUDGET
-    small = shape_of(npu_weight_mib=budget / MIB - 1, n_layer=32, kv_layers=1, bytes_per_cell=0)
-    big = shape_of(npu_weight_mib=budget / MIB + 1, n_layer=32, kv_layers=1, bytes_per_cell=0)
+    """The compute buffer is part of what has to fit, so the weights get what it leaves."""
+    room = (configure_llamacpp.SESSION_BUDGET - configure_llamacpp.compute_buffer_bytes(1)) / MIB
+    small = shape_of(npu_weight_mib=room - 1, n_layer=32, kv_layers=1, bytes_per_cell=0)
+    big = shape_of(npu_weight_mib=room + 1, n_layer=32, kv_layers=1, bytes_per_cell=0)
 
     assert small.sessions_needed(4096) == 1
     assert big.sessions_needed(4096) == 2
@@ -674,11 +721,31 @@ def test_a_model_too_big_for_every_session_asks_for_them_all():
     assert huge.sessions_needed(16384) == configure_llamacpp.MAX_SESSIONS
 
 
+# gemma-4-E4B and E2B at 16k as measured on the board under this build — the one that
+# repacks the K-quants — with GGML_HEXAGON_MBUF=256, at n_ubatch 1024. E4B's figures are
+# llama-server's own: 2731 MiB of weights (HTP0 1173 + HTP1 1558) and 376 of KV cache. E2B's
+# 1356 MiB of weights are the 1026 the previous build put on the NPU plus its 330 MiB of
+# q6_K token embeddings, tied, which now go there too; its busiest session measured about
+# 1750 MiB all in.
+def gemma_shape(*, n_layer: int, npu_weight_mib: int, kv_mib_at_16k: int) -> ModelShape:
+    return ModelShape(n_layer, npu_weight_mib * MIB, (KvLayer(kv_mib_at_16k * MIB // 16384, 0),), 0)
+
+
+def test_the_gemmas_are_sized_as_measured_under_this_build(monkeypatch):
+    monkeypatch.delenv("LLAMA_ARG_UBATCH", raising=False)
+    e4b = gemma_shape(n_layer=42, npu_weight_mib=2731, kv_mib_at_16k=376)
+    e2b = gemma_shape(n_layer=35, npu_weight_mib=1356, kv_mib_at_16k=123)
+
+    # 2731 + 376 MiB before any compute buffer: over budget on one session, at ease on two.
+    assert e4b.sessions_needed(16384) == 2
+    assert e2b.sessions_needed(16384) == 1
+
+
 # The measured models, as the GGUF header describes them, against the sessions each needed
-# at each context: the smallest count that loaded on every attempt (SESSION_ALLOCATION.md),
-# None where no count up to four did. The sizing may ask for more than that —
-# over-allocating costs a little throughput, under-allocating fails the load — but never
-# for less, which is what this pins down.
+# at each context in the matrix of SESSION_ALLOCATION.md. The matrix was measured under
+# GGML_HEXAGON_MBUF=512 and n_ubatch 256, with the build that kept every K-quant on the CPU.
+# The tuple is the smallest count that loaded on *every* attempt, None where no count up to
+# four did.
 MEASURED_MODELS = {
     "SmolVLM2-500M-Video-Instruct-Q8_0": (shape_of(npu_weight_mib=366, n_layer=32, kv_layers=32, bytes_per_cell=1280), (1, 1, 1)),
     "Qwen3.5-0.8B-Q4_0": (shape_of(npu_weight_mib=249, n_layer=24, kv_layers=6, bytes_per_cell=2048, recurrent=True), (1, 1, 1)),
@@ -697,38 +764,57 @@ MEASURED_MODELS = {
 }
 
 
+# Where a smaller count loaded on some attempts and not on others: the flaky cells of the
+# matrix. MBUF 512 explains them — mapping a 512 MiB chunk failed at random — so the count
+# that loaded at least once is what the address space allows, and how low the sizing may
+# go. A cell not listed here never loaded on fewer sessions than MEASURED_MODELS says.
+LOADED_ON_SOME_ATTEMPTS = {
+    ("granite-4.2-3b-Q4_0", 8192): 1,
+    ("microsoft_Phi-4-mini-instruct-Q4_0", 4096): 1,
+    ("microsoft_Phi-4-mini-instruct-Q4_0", 16384): 2,
+    ("Nemotron-Mini-4B-Instruct-Q4_0", 16384): 2,
+    ("Qwen3.5-4B-Q8_0", 16384): 2,
+    ("Qwen_Qwen3-8B-Q4_0", 16384): 3,
+    ("DeepSeek-R1-Distill-Llama-8B-Q4_0", 16384): 4,
+    ("LFM2.5-8B-A1B-Q4_0", 8192): 2,
+}
+
+
+def loaded_on(name: str, ctx_size: int) -> int | None:
+    """The fewest sessions *name* was ever seen to load on at *ctx_size*, None if never."""
+    _, measured = MEASURED_MODELS[name]
+    seen = [count for count in (measured[CTX_SIZES.index(ctx_size)], LOADED_ON_SOME_ATTEMPTS.get((name, ctx_size))) if count]
+    return min(seen) if seen else None
+
+
 @pytest.mark.parametrize("name", sorted(MEASURED_MODELS))
-def test_the_measured_models_never_get_fewer_sessions_than_they_need(name):
-    shape, measured = MEASURED_MODELS[name]
+def test_the_measured_models_never_get_fewer_sessions_than_they_were_seen_to_load_on(name):
+    """The sizing may ask for more than was measured — over-allocating costs a little
+    throughput, under-allocating fails the load — but never for fewer than a load was seen
+    to succeed on. This is what SESSION_BUDGET_FRACTION is set by: at 0.9 it breaks in two
+    cells (Nemotron-Mini-4B at 8k, DeepSeek-R1-Distill-Llama-8B at 16k), at 0.87 it holds."""
+    shape, _ = MEASURED_MODELS[name]
 
-    for ctx_size, needed in zip(CTX_SIZES, measured):
+    for ctx_size in CTX_SIZES:
         asked = shape.sessions_needed(ctx_size)
-        if needed is None:
-            # Measured as not loading on any number of sessions at this context: the
+        loaded = loaded_on(name, ctx_size)
+        if loaded is None:
+            # Never loaded at this context under MBUF 512, on any count up to four: the
             # sizing cannot see that, the context cap is what keeps it out of trouble.
-            assert asked == configure_llamacpp.MAX_SESSIONS
+            assert asked == configure_llamacpp.MAX_SESSIONS, f"{name} at {ctx_size}: sized for {asked}, never loaded"
         else:
-            assert asked >= needed, f"{name} at {ctx_size}: sized for {asked}, needs {needed}"
-
-
-# The two cells the budget cannot place within a session of their measurement. Giving
-# Qwen3.5-4B-Q8_0 three sessions at 16k needs a budget of 1887 MiB, and keeping
-# Nemotron-Mini-4B off two sessions at 16k needs one below 1838 MiB, so no single budget
-# does both; the safe side of that trade puts Q8_0 on four, which is what the size tables
-# it replaced also did. LFM2.5-8B's measured two at 16k rests on a single attempt, against
-# a failure on two sessions at 8k.
-OVER_ALLOCATED_BY_TWO = {("Qwen3.5-4B-Q8_0", 16384), ("LFM2.5-8B-A1B-Q4_0", 16384)}
+            assert asked >= loaded, f"{name} at {ctx_size}: sized for {asked}, loaded on {loaded}"
 
 
 def test_the_measured_models_are_not_over_allocated_by_more_than_a_session():
-    """The other half of the trade-off: the sizing stays within one session of what was
-    measured, so the conservatism costs at most one session's throughput."""
+    """The other half of the trade-off: the sizing stays within one session of the count
+    that loaded on every attempt, so the conservatism costs at most one session's
+    throughput."""
     for name, (shape, measured) in MEASURED_MODELS.items():
         for ctx_size, needed in zip(CTX_SIZES, measured):
             if needed is None:
                 continue
-            slack = 2 if (name, ctx_size) in OVER_ALLOCATED_BY_TWO else 1
-            assert shape.sessions_needed(ctx_size) - needed <= slack, f"{name} at {ctx_size}"
+            assert shape.sessions_needed(ctx_size) - needed <= 1, f"{name} at {ctx_size}"
 
 
 # --------------------------------------------------------------------------- #
@@ -825,8 +911,9 @@ def test_the_4b_model_set_keeps_the_full_context(tmp_path):
 
 
 def test_an_8b_model_trades_the_context_for_sessions(tmp_path):
-    """With an 8B model installed the context comes down to 8k, where
-    three sessions hold it — where the size tables it replaces cut straight to 4k."""
+    """With an 8B model installed the context comes down to 8k, where three sessions hold
+    it — as measured in every attempt. At 16k the rule asks for four (three would sit at
+    99% of a 90% budget, and was never seen to load), so the cap fires as it did before."""
     models = _install(tmp_path, qwen3_8b=(36, 3739), qwen3_4b=(32, 1790))
 
     ctx_size = detect_ctx_size(models, 16384)

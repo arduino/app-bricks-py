@@ -10,9 +10,9 @@ services:
       - LLAMA_LOG_LEVEL=error
       - LLAMA_ARG_HOST=0.0.0.0
       - LLAMA_ARG_PORT=9999
-      - LLAMA_ARG_POLL=1000
+      - LLAMA_ARG_POLL=0
       - LLAMA_ARG_BATCH=1024
-      - LLAMA_ARG_UBATCH=256
+      - LLAMA_ARG_UBATCH=512
       - LLAMA_ARG_MODELS_DIR=/models
       - LLAMA_ARG_FLASH_ATTN=${LLAMA_ARG_FLASH_ATTN:-on}
       - LLAMA_ARG_MODELS_MAX=${LLAMA_ARG_MODELS_MAX:-2}
@@ -22,7 +22,7 @@ services:
       - LLAMA_ARG_THREADS=${LLAMA_ARG_THREADS:-4}
       - LLAMA_ARG_CPU_MASK=${LLAMA_ARG_CPU_MASK:-0x0f}
       - GGML_HEXAGON_OPBATCH=2048
-      - GGML_HEXAGON_MBUF=512
+      - GGML_HEXAGON_MBUF=256
       - XDG_CACHE_HOME=/models
     working_dir: /models
     ports:
