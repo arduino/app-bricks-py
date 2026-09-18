@@ -71,20 +71,16 @@ tasks:
     cmds:
       - ruff check --fix .
 
-  check:examples-alignment:
-    desc: "Check app-bricks-examples alignment against this library (see scripts/check_examples_alignment.py --help)"
+  check:api:
+    desc: "Check the API contract with app-bricks-examples: pyright over the examples (profile api-user) and the bricks coverage. Extra args go to the run mode, see scripts/check_pyright.py --help"
     cmds:
-      - python3 scripts/check_examples_alignment.py {{.CLI_ARGS}}
+      - python3 scripts/check_pyright.py run {{.CLI_ARGS}}
+      - python3 scripts/check_pyright.py coverage
 
-  check:examples-alignment:run:
-    desc: Run pyright over the app-bricks-examples code against this checkout
+  check:typing:
+    desc: "Type-check the library sources with pyright (profile app-bricks-py). Extra args go to the typing mode, see scripts/check_pyright.py --help"
     cmds:
-      - python3 scripts/check_examples_alignment.py run {{.CLI_ARGS}}
-
-  check:examples-alignment:coverage:
-    desc: Report the bricks that have no examples in app-bricks-examples
-    cmds:
-      - python3 scripts/check_examples_alignment.py coverage {{.CLI_ARGS}}
+      - python3 scripts/check_pyright.py typing {{.CLI_ARGS}}
 
   fmt:
     desc: Format code

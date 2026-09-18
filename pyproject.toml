@@ -135,7 +135,7 @@ where = ["src"]
 include = ["*"]
 
 [tool.setuptools.package-data]
-"*" = ["*.yaml", "*.md"]
+"*" = ["*.yaml", "*.md", "*.json"]
 
 
 [tool.setuptools_scm]
