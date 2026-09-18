@@ -10,7 +10,7 @@ jobs:
   ci-checks:
     runs-on: ubuntu-24.04-arm
     container:
-      image: python:3.13-slim
+      image: python:3.13-slim-trixie@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285
       options: --user root
     env:
       TASKFILE_VERSION: 'v3.44.0'
