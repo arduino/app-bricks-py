@@ -32,29 +32,23 @@ Brick usage examples live in the [app-bricks-examples](https://github.com/arduin
 
 ## Library compile and build 
 
-To build wheel file suitable for release, use following commands:
+To build the wheel file suitable for release, run:
 ```sh
-pip install build
-python -m build .
+task build
 ```
-To build package as snapshot for latest development build, use following build command:
+To build the package as a snapshot for the latest development build, run:
 ```sh
-pip install build
-python -m build --config-setting "build_type=dev" .
+task build-dev
 ```
 
 ## Library development steps
-To start the development, clone the repository and create a virtual environment.
-
-Install the Taskfile CLI tool: https://taskfile.dev/installation/.
-
-Then, run the following command to set up the development environment:
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and the [Taskfile](https://taskfile.dev/installation/) CLI tool, clone the repository and run:
 
 ```sh
 task init
 ```
 
-This task will check the python version and install the required dependencies.
+uv provides Python 3.13, creates `.venv` and installs the library with its development dependencies, exactly the versions pinned in `uv.lock`. Every task runs inside that environment through `uv run`, there is nothing to activate.
 
 To force a specific Arduino App Lab container version, use 'APPSLAB_VERSION' environment variable.
 
@@ -197,6 +191,15 @@ Non-base images should start from common base images for performance and disk us
 
 ## License
 See [LICENSE](./LICENSE.txt) file for details.
+
+## Dependencies
+Every Python package is declared in a `pyproject.toml` and pinned with hashes in the `uv.lock` next to it. Locks must resolve for the boards (`required-environments`) but install on Windows, macOS and Linux developer machines too; packages missing on some platforms carry an environment marker, like `pyalsaaudio` outside Linux.
+
+The library is described by the root files. `task init` installs it with its development tools into `.venv`, where every task runs through `uv run`. The `python-apps-base` image installs it from the same lock.
+
+Each container that installs Python packages has its own files (see [containers/README.md](containers/README.md#anatomy-of-a-container-directory)) and its Dockerfile installs from the lock alone. `task deps:sync`, run by `task init`, also creates a `.venv` in every container directory to point the IDE at. A container with Python tests declares pytest in a `test` dependency group, kept out of the image, and `task test` runs its suite in that venv. `pyaudio` needs the PortAudio headers on macOS and Linux (`brew install portaudio` or `apt install portaudio19-dev`).
+
+After editing any `pyproject.toml` run `task deps:lock`, with `-- --upgrade` to move to newer versions; `task deps:check` verifies the locks are current and CI runs it on every pull request. Dependabot opens weekly upgrade pull requests, checked by the license scan and the container builds.
 
 ## Dependency licenses
 `task license:deps` checks the licenses of the Python packages shipped by the library and by every container, using Docker. Records live under `.licenses/`, the allowed licenses and reviewed packages in `.licensed.yml`. See [scripts/licensed/README.md](scripts/licensed/README.md) for how it works and what to do when it fails.

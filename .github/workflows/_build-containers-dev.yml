@@ -85,10 +85,10 @@ jobs:
               echo '[global]' > /etc/pip.conf
               echo 'break-system-packages = true' >> /etc/pip.conf
               git config --global --add safe.directory '*'
-              pip install go-task-bin==${{ env.TASKFILE_VERSION }}
+              pip install go-task-bin==${{ env.TASKFILE_VERSION }} uv==0.10.3
               task init:ci
               task build-dev
-              cp ./dist/arduino*.whl ./${{ steps.dir.outputs.path }}/
+              cp ./dist/arduino*.whl ./pyproject.toml ./uv.lock ./${{ steps.dir.outputs.path }}/
             "
 
       - name: Read container config

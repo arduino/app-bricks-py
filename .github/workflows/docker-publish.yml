@@ -117,17 +117,20 @@ jobs:
               echo '[global]' > /etc/pip.conf
               echo 'break-system-packages = true' >> /etc/pip.conf
               git config --global --add safe.directory '*'
-              pip install go-task-bin==${{ env.TASKFILE_VERSION }}
-              pip install https://github.com/${{ github.repository }}/releases/download/opencv/4.13.0.92/opencv_python_headless-4.13.0.92-cp313-cp313-linux_aarch64.whl
+              pip install go-task-bin==${{ env.TASKFILE_VERSION }} uv==0.10.3
               task init:ci
               task build
+              cp pyproject.toml uv.lock dist/
             "
 
-      - name: Share wheel with downstream jobs
+      - name: Share wheel and lock with downstream jobs
         uses: actions/upload-artifact@v4
         with:
           name: whl
-          path: dist/arduino*.whl
+          path: |
+            dist/arduino*.whl
+            dist/pyproject.toml
+            dist/uv.lock
           retention-days: 1
 
   build-l0:
