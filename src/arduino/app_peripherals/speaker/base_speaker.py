@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 
 from .errors import SpeakerConfigError, SpeakerOpenError, SpeakerWriteError
-from arduino.app_utils import Logger
+from arduino.app_utils import Logger, peripheral
 
 logger = Logger("Speaker")
 
@@ -21,6 +21,7 @@ type FormatPlain = type | np.dtype | str
 type FormatPacked = tuple[FormatPlain, bool]
 
 
+@peripheral
 class BaseSpeaker(ABC):
     """
     Abstract base class for speaker implementations.
