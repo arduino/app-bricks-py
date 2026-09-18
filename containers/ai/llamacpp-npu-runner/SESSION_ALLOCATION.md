@@ -5,10 +5,11 @@ How many Hexagon (NPU) sessions a model needs, how that was measured, and how
 
 A session is one DSP protection domain — `HTP0`..`HTP3`, four of them per process.
 `llama-server` spreads a model over the sessions it is given layer by layer: each session
-holds the weights of its layers, the slice of the KV cache belonging to them, and its own
-compute buffers. Too few sessions and the model fails to load; too many and each token
-costs a little more. The runner has to choose the number before the server starts, from
-the files on disk alone.
+holds the weights of its layers, the slice of the KV cache belonging to them, its own
+compute buffer and, from two sessions up, a copy of the compute buffer of the session
+feeding it. Too few sessions and the model fails to load; too many and each token costs a
+little more. The runner has to choose the number before the server starts, from the files
+on disk alone.
 
 ## Contents
 
@@ -27,56 +28,71 @@ the files on disk alone.
   now reads the GGUF header instead: which tensors land on the NPU, and how big the KV
   cache is at the context the server runs at. Both reproduce what `llama-server` logs to
   within a MiB.
-- **One session reliably holds about 1.8 GiB of weights plus KV cache.** Above that the
-  outcome is not a function of size at all: loads succeeded holding 2.9 GiB and failed
-  holding 1.8 GiB, and nine configurations loaded on some attempts and not on others.
-- **The rule:** the smallest session count whose busiest session stays under 1800 MiB, then
-  halve the context until no model needs all four sessions. Against 175 trials it never
-  asks for fewer sessions than a model was measured to need, where the size tables it
-  replaces did so twice.
-- **A quantized KV cache would halve the context axis and make 16k reachable for 8B models,
-  but it is not enabled:** on a model whose layers share a cache, splitting it across
-  sessions corrupts the output silently.
+- **The limit is the DSP address space of a session, about 3134 MiB, and it is a hard one
+  once `GGML_HEXAGON_MBUF` is 256.** At 512 it was not: mapping a 512 MiB chunk failed at
+  random, which made loads succeed holding 2.9 GiB and fail holding 1.8 GiB. That is what
+  the matrix below measured, and why its verdicts near the edge were not reproducible.
+- **What a session holds is weights, KV cache and compute buffers** — its own, sized by the
+  micro-batch rather than the context, and from two sessions up a copy of the buffer of the
+  session feeding it. At `n_ubatch` 1024 that is up to a GiB a session. The first rule left
+  it out, which only worked because its 1800 MiB budget absorbed it by accident.
+- **The rule:** the smallest session count whose busiest session, compute buffers included,
+  stays under 87% of the address space (2726 MiB), then halve the context until no model
+  needs all four sessions. It never asks for fewer sessions than a load was seen to succeed
+  on, and 87% is the largest fraction for which that holds.
+- **A quantized KV cache would take a session off the KV-heavy models, but it is not
+  enabled:** on a model whose layers share a cache, splitting it across sessions corrupts
+  the output silently.
 
 ## The matrix
 
-Measured with the environment the service runs in ([Method](#method)) on a 16 GB board,
-against the llama.cpp build shipped in this image (`0.3.0-dev`, build 10779) and DSP
-firmware `DSP.AT.1.0.1-00170-LEMANS-1`: 175 trials over three runs, covering 87 distinct
-(model, context, sessions) configurations.
+Measured with the environment the service ran in at the time ([Method](#method)) on a
+16 GB board: the llama.cpp build then shipped in this image (`0.3.0-dev`, build 10779),
+DSP firmware `DSP.AT.1.0.1-00170-LEMANS-1`, `GGML_HEXAGON_MBUF=512` and `n_ubatch` 256.
+175 trials over three runs, covering 87 distinct (model, context, sessions) configurations.
+**The Sessions column carries the MBUF 512 verdicts**, chunk failures included (see [Where
+the limit is](#where-the-limit-is)); the Sized column is what the current rule asks for, at
+the `n_ubatch` of 512 the service runs now.
 
 | Model | Quant | GGUF | On NPU | KV 4k / 8k / 16k | Sessions 4k / 8k / 16k | Sized 4k / 8k / 16k |
 |---|:---:|---:|---:|---:|:---:|:---:|
 | SmolVLM2-500M-Video-Instruct | Q8_0 | 436 MB | 366 MiB | 160 / 320 / 640 MiB | **1 / 1 / 1** | 1 / 1 / 1 |
 | Qwen3.5-0.8B | Q4_0 | 507 MB | 250 MiB | 48 / 96 / 192 MiB | **1 / 1 / 1** | 1 / 1 / 1 |
 | gemma-3-1b-it | Q4_0 | 721 MB | 682 MiB | 66 / 82 / 114 MiB | **1 / 1 / 1** | 1 / 1 / 1 |
-| granite-4.2-3b | Q4_0 | 2129 MB | 1687 MiB | 320 / 640 / 1280 MiB | **1 / 2 / 2** | 2 / 2 / 2 |
-| Phi-4-mini-instruct | Q4_0 | 2331 MB | 1734 MiB | 512 / 1024 / 2048 MiB | **2 / 2 / 3** | 2 / 2 / 3 |
+| granite-4.2-3b | Q4_0 | 2129 MB | 1687 MiB | 320 / 640 / 1280 MiB | **1 / 2 / 2** | 1 / 1 / 2 |
+| Phi-4-mini-instruct | Q4_0 | 2331 MB | 1734 MiB | 512 / 1024 / 2048 MiB | **2 / 2 / 3** | 1 / 2 / 2 |
 | Qwen3-4B-Instruct-2507 | Q4_0 | 2375 MB | 1954 MiB | 576 / 1152 / 2304 MiB | **2 / 2 / 3** | 2 / 2 / 3 |
 | Qwen3.5-4B | Q4_0 pure | 2380 MB | 2258 MiB | 128 / 256 / 512 MiB | **1 / 1 / 2** | 2 / 2 / 2 |
-| Nemotron-Mini-4B-Instruct | Q4_0 | 2574 MB | 1411 MiB | 512 / 1024 / 2048 MiB | **1 / 2 / 3** | 2 / 2 / 3 |
-| Qwen3.5-4B | Q4_0 | 2583 MB | 1790 MiB | 128 / 256 / 512 MiB | **1 / 1 / 2** | 2 / 2 / 2 |
-| gemma-4-E2B-it | Q4_0 | 3349 MB | 1026 MiB | 51 / 75 / 123 MiB | **1 / 1 / 1** | 1 / 1 / 1 |
-| Qwen3.5-4B | Q8_0 | 4482 MB | 4263 MiB | 128 / 256 / 512 MiB | **2 / 2 / >2** | 3 / 3 / 4 |
-| DeepSeek-R1-Distill-Llama-8B | Q4_0 | 4675 MB | 3758 MiB | 512 / 1024 / 2048 MiB | **2 / 3 / >4** | 3 / 3 / 4 |
-| Qwen3-8B | Q4_0 | 4787 MB | 3737 MiB | 576 / 1152 / 2304 MiB | **2 / 3 / >4** | 3 / 3 / 4 |
-| DeepSeek-R1-0528-Qwen3-8B | Q4_0 | 4787 MB | 3737 MiB | 576 / 1152 / 2304 MiB | **2 / 3 / >4** | 3 / 3 / 4 |
-| LFM2.5-8B-A1B | Q4_0 | 4844 MB | 4406 MiB | 48 / 96 / 192 MiB | **2 / 3 / 2** | 3 / 3 / 4 |
-| granite-4.2-8b | Q4_0 | 5055 MB | 4276 MiB | 640 / 1280 / 2560 MiB | **3 / 3 / 4** | 4 / 4 / 4 |
-| gemma-4-E4B-it | Q4_0 | 5154 MB | 2171 MiB | 154 / 218 / 346 MiB | **1 / 1 / 1** | 2 / 2 / 2 |
+| Nemotron-Mini-4B-Instruct | Q4_0 | 2574 MB | 1411 MiB | 512 / 1024 / 2048 MiB | **1 / 2 / 3** | 1 / 1 / 2 |
+| Qwen3.5-4B | Q4_0 | 2583 MB | 1790 MiB | 128 / 256 / 512 MiB | **1 / 1 / 2** | 1 / 1 / 2 |
+| gemma-4-E2B-it | Q4_0 | 3349 MB | 1026 → 1356 MiB | 51 / 75 / 123 MiB | **1 / 1 / 1** | 1 / 1 / 1 |
+| Qwen3.5-4B | Q8_0 | 4482 MB | 4263 MiB | 128 / 256 / 512 MiB | **2 / 2 / >2** | 3 / 3 / 3 |
+| DeepSeek-R1-Distill-Llama-8B | Q4_0 | 4675 MB | 3758 MiB | 512 / 1024 / 2048 MiB | **2 / 3 / >4** | 3 / 3 / 3 |
+| Qwen3-8B | Q4_0 | 4787 MB | 3737 MiB | 576 / 1152 / 2304 MiB | **2 / 3 / >4** | 3 / 3 / 3 |
+| DeepSeek-R1-0528-Qwen3-8B | Q4_0 | 4787 MB | 3737 MiB | 576 / 1152 / 2304 MiB | **2 / 3 / >4** | 3 / 3 / 3 |
+| LFM2.5-8B-A1B | Q4_0 | 4844 MB | 4406 MiB | 48 / 96 / 192 MiB | **2 / 3 / 2** | 3 / 3 / 3 |
+| granite-4.2-8b | Q4_0 | 5055 MB | 4276 MiB | 640 / 1280 / 2560 MiB | **3 / 3 / 4** | 3 / 3 / 4 |
+| gemma-4-E4B-it | Q4_0 | 5154 MB | 2171 → 2731 MiB | 154 / 218 / 346 MiB | **1 / 1 / 1** | 2 / 2 / 2 |
 | Qwen3.5-9B | Q4_0 | 5741 MB | 3771 MiB | 128 / 256 / 512 MiB | **2 / 2 / 2** | 3 / 3 / 3 |
 | gemma-4-12b-it-qat | Q4_0 | 6975 MB | 5848 MiB | 1344 / 1488 / 1616 MiB | **3 / 3 / 4** | 4 / 4 / 4 |
 
 ### Reading the table
 
-- **Sessions** is the smallest count that loaded and generated on *every* attempt; `>n`
-  means nothing up to `n` did. Nine configurations loaded on some attempts and not on
-  others (see [Where the limit is](#where-the-limit-is)), which is why the column reports
-  what always worked rather than what once did. A cell tried only once is weaker evidence:
-  LFM2.5-8B's 8k cell failed on two sessions once, while its 16k cell was tried on two only
-  once and passed — sampling, not physics.
-- **Sized** is what `configure-llamacpp.py` asks for.
-- **On NPU** is the weight buffer `llama-server` reports, which is not the file size.
+- **Sessions** is the smallest count that loaded and generated on *every* attempt under
+  MBUF 512; `>n` means nothing up to `n` did. Nine configurations loaded on some attempts
+  and not on others (see [Where the limit is](#where-the-limit-is)), which is why the
+  column reports what always worked rather than what once did. A cell tried only once is
+  weaker evidence: LFM2.5-8B's 8k cell failed on two sessions once, while its 16k cell was
+  tried on two only once and passed — sampling, not physics.
+- **Sized** is what `configure-llamacpp.py` asks for. Where it is below the Sessions
+  column, the cell loaded on some attempts under MBUF 512 and failed on others — a chunk
+  failure, see [The budget](#the-budget).
+- **On NPU** is the weight buffer `llama-server` reported under that build, which is not the
+  file size. The build the image ships now repacks the K-quants, so the gemmas, whose tied
+  token embeddings are q6_K, put those on the NPU as well: gemma-4-E2B 1356 MiB, gemma-4-E4B
+  2731 (measured), and the Sized column counts them. gemma-4-E4B's `1 / 1 / 1` is therefore
+  a verdict on 2171 MiB of weights; on 2731 it is over budget on one session and was
+  measured on two at 16k, 9 loads in 9.
 - **KV** is the whole cache, summed over the sessions — what the context size buys. It
   grows linearly with the context for a plain attention model, stops growing for a
   sliding-window one (the gemmas), and stays small for a hybrid one, which only caches on
@@ -101,15 +117,23 @@ Sizing by file size cannot work: gemma-4-E4B (5.15 GB) runs on one session while
 Qwen3-4B-Instruct-2507 (2.38 GB) needs two. What reaches the NPU ranges from 31% of the
 file (gemma-4-E2B) to 99% (Qwen3.5-4B pure), for two reasons:
 
-- The Hexagon backend does not repack the K-quants, so those tensors stay on the CPU. The
-  matformer gemmas keep two thirds of their bytes in q6_K, which is the whole of their
-  apparent size problem: gemma-4-E2B is a 3.35 GB file that puts 1.03 GB on the NPU.
-- The token embeddings of a model with a separate `output.weight` stay on the CPU too —
-  they are only read by `get_rows`. With tied embeddings that same tensor is also the
-  output projection, and then it does go to the NPU (gemma-3-1b: all 682 MiB of it).
+- The Hexagon backend only holds the quantizations it repacks. Upstream that is everything
+  but the K-quants; the build this image ships (llama.cpp PR #28994) repacks q4_K, q5_K and
+  q6_K too, and only q2_K and q3_K are left on the CPU. `configure-llamacpp.py` keeps that
+  as an explicit list of CPU-only types (`CPU_ONLY_TYPES`), to be edited when the build
+  gains one — q3_K is on its way.
+- Tensors that are only read by `get_rows` stay on the CPU whatever their type. That is the
+  token embeddings of a model with a separate `output.weight` — with tied embeddings the
+  same tensor is also the output projection, and then it does go to the NPU (gemma-3-1b:
+  all 682 MiB of it; gemma-4-E4B: 560 MiB of q6_K) — and the per-layer embeddings of the
+  matformer gemmas, `per_layer_token_embd`, where gemma-4-E2B keeps two thirds of its
+  bytes. That is the whole of the gemmas' apparent size problem: E2B is a 3.35 GB file that
+  puts 1.36 GB on the NPU.
 
-Summing the tensor index under those two rules reproduces the `HTP model buffer size`
-`llama-server` reports **to within a MiB on 18 of the 19 models** (Qwen3.5-9B is 6% over).
+Summing the tensor index under those rules reproduced the `HTP model buffer size`
+`llama-server` reports **to within a MiB on 18 of the 19 models** under the previous build
+(Qwen3.5-9B is 6% over), and gives 2731 MiB for gemma-4-E4B under the current one, which is
+what it logs (HTP0 1173 + HTP1 1558).
 
 ### KV cache: the context axis
 
@@ -138,11 +162,34 @@ share = (ceil(n_layer / sessions) + 1) / n_layer
 granite-4.2-3b at 16k over two sessions: 21/40 of 1280 MiB = 672 MiB, and 672 MiB is what
 the log says. It holds for every model and session count measured.
 
+### Compute buffers
+
+Each session reserves a compute buffer for a full micro-batch, so it follows
+`LLAMA_ARG_UBATCH` and not the context. Measured on the `sched_reserve: HTPn compute buffer
+size` lines `llama-server` logs, at 16k, on the busiest session:
+
+| Model | `n_ubatch` 256 | `n_ubatch` 1024 | Per token |
+|---|---:|---:|---:|
+| gemma-4-E4B | 145 MiB | 554 MiB | 0.54 MiB |
+| gemma-4-E2B | 66 MiB | 265 MiB | 0.26 MiB |
+
+From two sessions up, a session also maps the compute buffer of the session it takes its
+input from — the scheduler hands the activations over through it. gemma-4-E4B over two
+sessions at `n_ubatch` 1024: HTP1 holds 1558 MiB of weights, 64 of KV cache, 428 of compute
+buffer of its own and the 554 of HTP0's — 2600 MiB where weights and KV cache come to 1620.
+
+The sizing has no formula for it from the tensor shapes yet, so it charges a flat
+`n_ubatch × 0.6 MiB` per session, twice from two sessions up: 307 and 614 MiB at the
+`n_ubatch` of 512 the service runs. Recalibrate against the `sched_reserve` lines after a
+llama.cpp bump. The first matrix noted compute buffers of up to 863 MiB (LFM2.5-8B, a MoE,
+at `n_ubatch` 256), well over that allowance: the 10% the budget keeps back is what covers a
+model like that, and a re-measured matrix is what would tell whether it is enough.
+
 ## Where the limit is
 
 ### The failure
 
-When a session runs out, the load fails on the buffer that no longer fits:
+When a session runs out, the load fails on the buffer chunk that no longer maps:
 
 ```
 ggml-hex: HTP0 buffer mapping failed : domain_id 3 size 536883200 fd 5 error 0x00000001
@@ -151,19 +198,33 @@ alloc_tensor_range: failed to allocate HTP0 buffer of size 536870912
 llama_init_from_model: failed to initialize the context: failed to allocate buffer for kv cache
 ```
 
-512 MiB is `GGML_HEXAGON_MBUF`, the largest buffer the backend maps at once, so the failure
-lands on a whole chunk rather than on the byte that overflowed.
+The size is `GGML_HEXAGON_MBUF`, the largest buffer the backend maps at once — 512 MiB when
+this was logged, 256 now — so the failure lands on a whole chunk rather than on the byte
+that overflowed.
 
 The DSP buffers come from plain system memory (`/dev/dma_heap/system`), so **the same
 message appears when the board is simply out of RAM** — check free memory before reading a
 load failure as a sizing problem. It was not the cause here: available memory never dropped
 below 7.8 GB across the run.
 
-### Not a single number
+### The address space of a session
 
-The backend reports about 3.1 GiB of DSP address space per session (`ggml-hex: HTP0 op
-batching: ... vmem 3285700608`). Loads succeeded holding as much as 2.9 GiB and failed
-holding as little as 1.8 GiB, and the measurements do not separate at any threshold:
+The backend prints what one session can map when it opens it:
+
+```
+ggml-hex: HTP0 op batching: ... vmem 3285696512
+```
+
+3134 MiB. With `GGML_HEXAGON_MBUF=256` that is the limit, and a deterministic one: a
+session whose weights, KV cache and compute buffers stay under it loads, one whose do not
+fails. gemma-4-E4B over two sessions at 16k and `n_ubatch` 1024, HTP1 holding 2600 MiB,
+loaded on 9 attempts in 9.
+
+### What the matrix saw instead
+
+The matrix ran with `GGML_HEXAGON_MBUF=512`, and there the outcome was not a function of
+size at all. Loads succeeded holding as much as 2.9 GiB and failed holding as little as
+1.8 GiB, and the measurements did not separate at any threshold:
 
 | Configuration | Busiest session | Outcome |
 |---|---|---|
@@ -173,15 +234,17 @@ holding as little as 1.8 GiB, and the measurements do not separate at any thresh
 | Qwen3-8B @16k, 4 sessions | 931 MiB weights + 512 MiB context | fails |
 
 The last two are the awkward pair: the configuration that fails asks for strictly less of
-both than the one that loads, so **no rule monotone in (weights, KV) can separate them**.
-The total mapped across all sessions does not separate them either — granite-4.2-8b maps
-6.8 GiB over four sessions and loads, Qwen3-8B fails at 5.9 GiB over the same four. What
-the failures have in common is the fourth session and a 16k context.
+both than the one that loads, so no rule monotone in (weights, KV) could separate them.
+The hidden variable was **whether a 512 MiB chunk happened to be mapped at that moment**.
+Repeating one configuration — gemma-4-E4B, two sessions, 16k, `n_ubatch` 1024 — the
+512 MiB chunk mapping failed on 3 attempts in 5 at MBUF 512 and on 0 in 9 at MBUF 256, with
+nothing else changed. Every failure line in the matrix is that same chunk
+(`size 536883200`), so the matrix measured two things at once: the address space, and the
+luck of the chunk.
 
 The per-session figures in these tables are `llama-server`'s own projection, compute buffers
-included. The budget in [The sizing rule](#the-sizing-rule) is compared against weights
-plus KV cache and state only, which is 30 to 900 MiB less depending on the model, so the two
-sets of numbers are not directly comparable.
+included, and are the numbers the budget in [The sizing rule](#the-sizing-rule) should be
+read against.
 
 ### Not reproducible near the edge
 
@@ -201,29 +264,25 @@ before every trial. **Nine of the 63 gave different verdicts on different attemp
 | Qwen3-8B @16k, 4 sessions | 1779 MiB | fail, fail, fail, pass |
 | DeepSeek-R1-0528-Qwen3-8B @16k, 4 sessions | 1779 MiB | pass, fail |
 
-Four things follow:
+Read with the chunk in mind:
 
-- **The per-session total does not order the outcomes.** Among the configurations whose
-  verdict never changed, one holding 2771 MiB loaded every time while one holding 2436 MiB
-  failed every time, and the stable verdicts interleave with the unstable ones all the way
-  up the range. Whatever the allocator runs out of is not a number these measurements can
-  see, so a budget can only sit *below the lowest load ever measured to fail*, not near the
-  highest that loaded.
-- **The flakiness is not confined to the extremes** — it appears from 1779 to 3132 MiB — so
-  a single measurement of a tight configuration means little. Every minimum in the matrix
-  is the count that worked on *every* attempt.
-- **Part of it is the trial order.** The first run walked the configurations back to back,
+- **The flaky cells are the chunk failing, not the session filling up.** Every one of them
+  is under the address space (the largest, 3132 MiB, only just), and the flakiness runs from
+  1779 to 3132 MiB rather than clustering at the top. So the count that loaded *at least
+  once* is what the address space allows, and that is how low the sizing may go;
+  `tests/scripts/test_configure_llamacpp.py` keeps the list (`LOADED_ON_SOME_ATTEMPTS`).
+- **Part of it was the trial order.** The first run walked the configurations back to back,
   about 3 seconds between a `SIGTERM` and the next load; granite-4.2-3b at 8k on one
   session failed that way and then loaded three times running when given a minute of idle
   first. RAM comes back within one 2-second sample of the kill, so what lingers is the
-  protection domain rather than memory. Back-to-back numbers are the pessimistic reading —
-  and the one that matters, since the router keeps `LLAMA_ARG_MODELS_MAX` models resident
-  and swaps them, so a real load can land on a DSP that was busy moments ago.
-- **The fourth session is the worst of it.** Two 8B models at 16k failed there at a
-  per-session load nothing else fails at, one of them after passing once, and the two are
-  the same architecture with identical tensor shapes. Nothing about a model predicts this,
-  which is why needing four sessions is treated as a reason to shrink the context rather
-  than as an allocation to make.
+  protection domain rather than memory. Worth remembering, since the router keeps
+  `LLAMA_ARG_MODELS_MAX` models resident and swaps them, so a real load can land on a DSP
+  that was busy moments ago.
+- **The fourth session had the least margin.** Two 8B models at 16k failed there with a KV
+  cache of 512 MiB a session — whole 512 MiB chunks — one of them after passing once, and
+  the two are the same architecture with identical tensor shapes. Needing four sessions is
+  still treated as a reason to shrink the context rather than as an allocation to make: it
+  is where the evidence is thinnest.
 
 ## The sizing rule
 
@@ -232,58 +291,76 @@ sessions whose busiest session stays inside the budget:
 
 ```
 npu_bytes(ctx) = npu_weight_bytes + kv_cache_bytes(ctx) + recurrent_state
-session_bytes  = npu_bytes(ctx) * (ceil(n_layer / sessions) + 1) / n_layer
-sessions       = min n <= 4 such that session_bytes <= 1800 MiB
+compute        = n_ubatch × 0.6 MiB
+session_bytes  = npu_bytes(ctx) × (ceil(n_layer / sessions) + 1) / n_layer
+               + compute + (compute if sessions > 1)
+sessions       = min n <= 4 such that session_bytes <= 0.87 × 3134 MiB
 ```
 
-Then, because needing all four sessions is where the allocator stops being dependable, it
-halves the context until no model needs the fourth — down to a floor of 4096.
-
-Compute buffers are left out on purpose. They range from 11 MiB to 863 MiB a session, and
-llama.cpp retries a smaller graph when one does not fit, so they are elastic in a way
-weights and KV are not: LFM2.5-8B loads happily with 863 MiB of compute buffers on top of
-2260 MiB of weights and KV.
+Then, because needing all four sessions is where the margin and the evidence are thinnest,
+it halves the context until no model needs the fourth — down to a floor of 4096.
 
 ### The budget
 
-1800 MiB is the largest budget that **never asks for fewer sessions than a configuration
-was measured to need**, scoring every configuration by its worst attempt rather than its
-luckiest. What binds it is Nemotron-Mini-4B at 16k, which wants 1838 MiB across two
-sessions and failed there — so the margin is 2%, and it is thin on purpose. Dropping to
-1700 MiB would cap the context of a board with an 8B model installed from 8192 to 4096, and
-8192 on three sessions is measured to work in every run. A spare session costs a little
-throughput; halving everyone's context does not.
+2726 MiB: 87% of the address space a session offers, the rest kept back for what the flat
+allowances — compute buffers, recurrent state — get wrong. The first rule fitted a budget of
+1800 MiB to weights and KV cache alone, against the MBUF 512 verdicts, and it never asked
+for fewer sessions than any of those verdicts. It worked because the slack under it happened
+to cover compute buffers of a few hundred MiB, and it stopped making sense the moment
+`n_ubatch` went from 256 to 1024 and the compute buffer to half a GiB a session. This one is
+derived from what the backend reports a session can map and what a session is measured to
+hold.
 
-Two consequences are worth naming:
+The fraction is set by one condition: **the rule never asks for fewer sessions than a load
+was seen to succeed on**, under either MBUF. At 90% it would, in two cells that never loaded
+on any attempt — Nemotron-Mini-4B at 8k on one session (2743 MiB, 97% of that budget) and
+DeepSeek-R1-Distill-Llama-8B at 16k on three (2792 MiB, 99%), the latter also taking
+Qwen3-8B to 16k on three where the context has always been capped to 8k. Both are inside the
+address space and may well load under MBUF 256, but nobody has tried, and 87% is the largest
+fraction that keeps the rule within what was observed. `tests/scripts/test_configure_llamacpp.py`
+holds the condition (`test_the_measured_models_never_get_fewer_sessions_than_they_were_seen_to_load_on`),
+so raising the fraction is a matter of running those two trials and, if they pass, adding
+them to `LOADED_ON_SOME_ATTEMPTS`.
 
-- **Qwen3.5-4B Q8_0 gets four sessions at 16k** where two were measured to work four times
-  in five. Giving it three would need a budget of 1887 MiB, above the 1838 MiB that fails,
-  so no single budget serves both. The size tables this replaces also gave it four:
-  nothing is lost, only not gained.
-- **LFM2.5-8B gets four sessions at 16k** against a measured two — on the strength of one
-  attempt at two sessions at 16k, and a failure at two sessions at 8k.
+Against the 53 cells of the matrix that have a count that always loaded:
 
-### Against the size tables it replaces
-
-The previous sizing used two tables keyed on the GGUF size, one per context band, plus
-per-model pins for the gemmas. Scored against the 53 measured cells that have a session
-count that always worked:
-
-| | Under-allocated (load fails) | Over-allocated | Exact |
+| | Fewer than always loaded | Exact | More |
 |---|:---:|:---:|:---:|
-| GGUF-size tables | 2 | 30 | 21 |
-| GGUF header + budget | 0 | 23 | 30 |
+| 1800 MiB on weights + KV cache (first rule) | 0 | 30 | 23 |
+| 87% of the address space, compute included | 4 | 32 | 17 |
 
-The two under-allocations are real: Qwen3-4B-Instruct-2507 and Phi-4-mini at 4k are both
-sized for one session and need two. Beyond the counts, the sizing now gets three things the
-tables could not:
+The four are granite-4.2-3b at 8k and Phi-4-mini at 4k on one session, and Phi-4-mini and
+Nemotron-Mini-4B at 16k on two. Every one of them loaded on some attempts under MBUF 512 and
+failed on others — the chunk — so the address space does hold them.
+
+What changes for a board:
+
+- **The gemmas move with the build.** gemma-4-E4B, 2171 MiB of weights and one session
+  under the previous build, is 2731 MiB and two sessions under the one that repacks the
+  K-quants — measured: over budget on one, 9 loads in 9 on two at 16k. gemma-4-E2B stays on
+  one, its busiest session about 1750 MiB all in at `n_ubatch` 1024.
+- **The 8B models are served as before: 8k on three sessions.** At 16k they need four
+  (82-84% of the budget), so the context is halved, and at 8k three hold them at 87-88%.
+- **granite-4.2-8b and gemma-4-12b still need four at 16k**, so a board carrying either still
+  gets its context capped, to 8k and 4k.
+- **`n_ubatch` is an axis now.** At 1024 the compute allowance is 614 MiB a session and 1229
+  on two or more, which puts gemma-4-E4B on three sessions; the service runs 512, where
+  it is on two.
+
+### Against the size tables the first rule replaced
+
+Before headers were read, the sizing used two tables keyed on the GGUF size, one per
+context band, plus per-model pins for the gemmas. They asked for fewer sessions than the
+matrix measured twice — Qwen3-4B-Instruct-2507 and Phi-4-mini at 4k, both sized for one
+session and needing two — and over-allocated 30 of the 53 cells. Beyond the counts, reading
+the header gets three things the tables could not:
 
 - **The gemma pins are gone.** gemma-4-E2B comes out at one session and gemma-4-E4B at two
-  from their tensor types alone, and both keep the full context without an exemption.
+  from their tensor index alone, and both keep the full context without an exemption.
 - **Quantization is an axis.** Qwen3.5-4B is sized differently as Q4_0 and as Q8_0, because
   the sizing weighs its tensors instead of its file.
 - **The context degrades gradually.** With an 8B model installed the tables cut straight
-  from 16k to 4k; the budget lands on 8k, where that model was measured to run on three
+  from 16k to 4k; the rule lands on 8k, where that model was measured to run on three
   sessions in every attempt. A board carrying only 4B-class models keeps 16k on two.
 
 ### When llama.cpp changes
@@ -310,6 +387,12 @@ changing a *meaning* rather than a name — the sliding-window cell count, or wh
 a cache — so the matrix is worth re-measuring after a bump ([Running it
 again](#running-it-again)).
 
+Two constants in `configure-llamacpp.py` are maintained by hand against the build, and a
+bump should check both against the server log: `CPU_ONLY_TYPES`, the quantizations the
+backend does not repack (against the `HTP model buffer size` lines), and
+`COMPUTE_BYTES_PER_UBATCH_TOKEN`, the compute allowance (against the `sched_reserve: HTPn
+compute buffer size` lines).
+
 ## A quantized KV cache
 
 The cache is f16 because that is llama.cpp's default, not because the DSP requires it:
@@ -325,8 +408,10 @@ write into a q8_0 destination when the head is at least 32 elements wide. Measur
 
 The cache costs 53% of f16 (34 bytes per 32 elements); every buffer stays on the NPU — the
 logs show `HTP0 KV buffer size`, so attention did not fall back to the CPU; prefill is
-unchanged and decode is within the run-to-run spread of this board. On a model set with an
-8B model it would take the served context from 8k to 16k at the same three sessions.
+unchanged and decode is within the run-to-run spread of this board. Under the current rule
+it would take Qwen3-4B-Instruct-2507 at 16k from three sessions to two, and put the 8B models
+at 16k on three sessions at 88% of the budget, where the f16 cache needs four and caps the
+context to 8k.
 
 ### Why it stays off
 
@@ -359,11 +444,14 @@ actually get. Unset — the default, and what the service ships — that is f16.
 
 Each trial runs one model on a freshly started `llama-server`, with the environment
 [`service_compose.yaml`](../../../src/arduino/app_services/llamacpp/service_compose.yaml)
-gives the container (`LLAMA_ARG_BATCH=1024`, `LLAMA_ARG_UBATCH=256`,
-`LLAMA_ARG_FLASH_ATTN=on`, `LLAMA_ARG_THREADS=4`, `LLAMA_ARG_CPU_MASK=0x0f`,
-`GGML_HEXAGON_OPBATCH=2048`, `GGML_HEXAGON_MBUF=512`) and the arguments
-[`run-model-router.sh`](scripts/run-model-router.sh) builds (`--device HTP0[,HTP1...]
--ngl 100 --load-mode none`), so that what is measured is what the service will do.
+gives the container and the arguments [`run-model-router.sh`](scripts/run-model-router.sh)
+builds (`--device HTP0[,HTP1...] -ngl 100 --load-mode none`), so that what is measured is
+what the service will do. The matrix above ran with the compose of its day
+(`LLAMA_ARG_UBATCH=256`, `GGML_HEXAGON_MBUF=512`, `LLAMA_ARG_POLL=1000`); `session-trial.sh`
+exports the current one (`LLAMA_ARG_UBATCH=512`, `GGML_HEXAGON_MBUF=256`, `LLAMA_ARG_POLL=0`,
+with `LLAMA_ARG_BATCH=1024`, `LLAMA_ARG_FLASH_ATTN=on`, `LLAMA_ARG_THREADS=4`,
+`LLAMA_ARG_CPU_MASK=0x0f`, `GGML_HEXAGON_OPBATCH=2048` unchanged), so a re-run measures the
+envelope the service runs in now.
 
 It waits for `/health`, then asks two questions over `/v1/chat/completions` at
 temperature 0:
@@ -393,8 +481,20 @@ common_memory_breakdown_print: | - HTP0 (Hexagon) | 0 = 0 + (2361 = 1688 + 640 +
 ### Running it again
 
 Worth redoing after a llama.cpp bump, a DSP firmware change, or a change to
-`GGML_HEXAGON_MBUF` — any of them can move the envelope — and after any change to which
-tensor types the Hexagon backend keeps on the NPU, which would invalidate the K-quant rule.
+`GGML_HEXAGON_MBUF` or `LLAMA_ARG_UBATCH` — any of them can move the envelope — and after any
+change to which tensor types the Hexagon backend keeps on the NPU. All of those have
+happened since the matrix was measured, so it is due. The trials worth running first, with
+`repro.sh` so that a verdict is repeated rather than sampled:
+
+- Nemotron-Mini-4B at 8k on one session and DeepSeek-R1-Distill-Llama-8B and Qwen3-8B at
+  16k on three — the cells that hold the budget at 87% ([The budget](#the-budget)). If they
+  load, the fraction can go to 90%, and the 8B models get 16k on three sessions.
+- The four cells the rule places below the count that always loaded, to confirm that they
+  fail under MBUF 512 only: granite-4.2-3b at 8k and Phi-4-mini at 4k on one session,
+  Phi-4-mini and Nemotron-Mini-4B at 16k on two.
+- LFM2.5-8B at 16k on three, whose compute buffer was the outlier of the first matrix.
+- The `sched_reserve: HTPn compute buffer size` lines of every model, to replace the flat
+  compute allowance with a fit, or confirm it covers them.
 
 [`tools/`](tools/) holds the harness: `session-trial.sh` runs one (model, context, sessions)
 trial, `session-matrix.sh` walks the matrix, `repro.sh` repeats a configuration to test
