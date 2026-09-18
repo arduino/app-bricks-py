@@ -3,8 +3,10 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import os
+import time
 
 from fastapi.testclient import TestClient
+from arduino.app_bricks.web_ui import web_ui
 from arduino.app_bricks.web_ui.web_ui import WebUI
 
 
@@ -183,3 +185,60 @@ def test_expose_camera_passes_quality_to_compress():
         TestClient(ui.app).get("/stream")
 
     mock_compress.assert_called_with(fake_frame, quality=95)
+
+
+class _FakeServer:
+    """A stand-in for uvicorn.Server exposing just the two stop flags."""
+
+    def __init__(self):
+        self.should_exit = False
+        self.force_exit = False
+
+
+def test_start_bounds_the_graceful_shutdown():
+    """Uvicorn waits forever by default, which never terminates while a client is connected."""
+    ui = WebUI()
+    ui.start()
+
+    assert ui._server is not None
+    assert ui._server.config.timeout_graceful_shutdown == web_ui.GRACEFUL_SHUTDOWN_TIMEOUT_S
+    assert ui._server.config.timeout_graceful_shutdown > 0
+
+
+def test_stop_forces_the_server_to_exit_when_the_graceful_path_stalls(monkeypatch):
+    """A stalled graceful shutdown must not outlive the app's shutdown budget."""
+    monkeypatch.setattr(web_ui, "FORCE_SHUTDOWN_TIMEOUT_S", 0.05)
+
+    ui = WebUI()
+    server = _FakeServer()
+    ui._server = server
+
+    ui.stop()
+
+    assert server.should_exit is True
+
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline and not server.force_exit:
+        time.sleep(0.01)
+
+    assert server.force_exit is True, "the server was never forced to stop"
+
+
+def test_stop_without_a_running_server_loop_is_safe():
+    """stop() may run before the server loop ever started, e.g. if start() failed."""
+    ui = WebUI()
+    server = _FakeServer()
+    ui._server = server
+    ui._server_loop = None
+
+    ui.stop()
+
+    assert server.should_exit is True
+
+
+def test_stop_without_a_server_is_a_noop():
+    ui = WebUI()
+
+    ui.stop()  # must not raise
+
+    assert ui._server is None
