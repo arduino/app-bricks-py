@@ -19,10 +19,22 @@ import atexit
 import threading
 import time
 import weakref
+from typing import Protocol
 
 from .logger import Logger
 
 logger = Logger("Peripherals")
+
+
+class Peripheral(Protocol):
+    """What the registry needs from a peripheral: a ``stop()`` that releases the device.
+
+    Structural, so nothing has to inherit from it: any class exposing a no-argument ``stop()``
+    satisfies it, which is exactly the single requirement ``@peripheral`` documents.
+    """
+
+    def stop(self) -> None: ...
+
 
 PERIPHERAL_STOP_BUDGET_S = 1.5
 """Default wall-clock budget, in seconds, for releasing every registered peripheral.
@@ -42,18 +54,18 @@ class PeripheralRegistry:
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._peripherals: weakref.WeakSet = weakref.WeakSet()
+        self._peripherals: weakref.WeakSet[Peripheral] = weakref.WeakSet()
         self._stopped = False
         self._stopping = False
 
-    def register(self, peripheral: object) -> None:
+    def register(self, peripheral: Peripheral) -> None:
         """Register a peripheral to be released when the application shuts down.
 
         Only a weak reference is kept, so registration never keeps the peripheral alive.
         Peripherals that cannot be weakly referenced or hashed are ignored.
 
         Args:
-            peripheral (object): Any object exposing a ``stop()`` method.
+            peripheral (Peripheral): Any object exposing a ``stop()`` method.
         """
         try:
             with self._lock:
@@ -62,11 +74,11 @@ class PeripheralRegistry:
             # Objects using __slots__ without __weakref__, or defining __eq__ without __hash__
             logger.debug(f"Peripheral '{type(peripheral).__name__}' cannot be registered for automatic release: {e}")
 
-    def unregister(self, peripheral: object) -> None:
+    def unregister(self, peripheral: Peripheral) -> None:
         """Remove a peripheral from the registry, if present.
 
         Args:
-            peripheral (object): The peripheral to forget.
+            peripheral (Peripheral): The peripheral to forget.
         """
         try:
             with self._lock:
@@ -74,7 +86,7 @@ class PeripheralRegistry:
         except TypeError:
             pass
 
-    def stop_all(self, timeout: float = PERIPHERAL_STOP_BUDGET_S) -> list[object]:
+    def stop_all(self, timeout: float = PERIPHERAL_STOP_BUDGET_S) -> list[Peripheral]:
         """Stop every registered peripheral, concurrently, within a single wall-clock budget.
 
         Peripherals are independent devices, so they are stopped in parallel: the budget covers
@@ -91,14 +103,14 @@ class PeripheralRegistry:
             timeout (float): Wall-clock budget, in seconds, for the whole set.
 
         Returns:
-            list[object]: The peripherals whose ``stop()`` had not returned within the budget.
+            list[Peripheral]: The peripherals whose ``stop()`` had not returned within the budget.
         """
         deadline = time.monotonic() + max(0.0, timeout)
-        pending: list[object] = []
+        pending: list[Peripheral] = []
         # What has already been swept, keyed by identity rather than equality: two distinct
         # devices of a class with value semantics must still be stopped separately. The values
         # are strong references, which also keeps the ids from being recycled under us.
-        swept: dict[int, object] = {}
+        swept: dict[int, Peripheral] = {}
 
         for _ in range(MAX_STOP_PASSES):
             with self._lock:
@@ -117,20 +129,20 @@ class PeripheralRegistry:
 
         return pending
 
-    def _stop_batch(self, targets: list[object], deadline: float) -> list[object]:
+    def _stop_batch(self, targets: list[Peripheral], deadline: float) -> list[Peripheral]:
         """Stop one batch of peripherals in parallel, joining them until the shared deadline.
 
         Args:
-            targets (list[object]): The peripherals to stop. Must not be empty.
+            targets (list[Peripheral]): The peripherals to stop. Must not be empty.
             deadline (float): Absolute time.monotonic() deadline shared by the whole batch.
 
         Returns:
-            list[object]: The peripherals whose ``stop()`` had not returned by the deadline.
+            list[Peripheral]: The peripherals whose ``stop()`` had not returned by the deadline.
         """
         logger.info(f"Releasing {len(targets)} peripheral(s)")
 
-        workers: list[tuple[object, threading.Thread]] = []
-        inline: list[object] = []
+        workers: list[tuple[Peripheral, threading.Thread]] = []
+        inline: list[Peripheral] = []
         for peripheral in targets:
             thread = threading.Thread(
                 target=self._stop_one,
@@ -149,7 +161,7 @@ class PeripheralRegistry:
                 continue
             workers.append((peripheral, thread))
 
-        pending = []
+        pending: list[Peripheral] = []
         for peripheral, thread in workers:
             thread.join(timeout=max(0.0, deadline - time.monotonic()))
             if thread.is_alive():
@@ -163,7 +175,7 @@ class PeripheralRegistry:
 
         return pending
 
-    def stop_all_once(self, timeout: float = PERIPHERAL_STOP_BUDGET_S) -> list[object]:
+    def stop_all_once(self, timeout: float = PERIPHERAL_STOP_BUDGET_S) -> list[Peripheral]:
         """Stop every registered peripheral, at most once per process.
 
         Later calls are no-ops, so the application shutdown and the interpreter-exit fallback can
@@ -178,7 +190,7 @@ class PeripheralRegistry:
             timeout (float): Wall-clock budget, in seconds, for the whole set.
 
         Returns:
-            list[object]: The peripherals whose ``stop()`` had not returned within the budget.
+            list[Peripheral]: The peripherals whose ``stop()`` had not returned within the budget.
         """
         with self._lock:
             if self._stopped or self._stopping:
@@ -214,7 +226,7 @@ class PeripheralRegistry:
             self._stopping = False
 
     @staticmethod
-    def _stop_one(peripheral: object) -> None:
+    def _stop_one(peripheral: Peripheral) -> None:
         try:
             peripheral.stop()
         except Exception as e:

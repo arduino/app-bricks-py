@@ -20,7 +20,7 @@ from arduino.app_utils import brick, Logger
 
 logger = Logger("WebUI")
 
-GRACEFUL_SHUTDOWN_TIMEOUT_S = 2.0
+GRACEFUL_SHUTDOWN_TIMEOUT_S = 2
 """How long the server waits for in-flight requests to finish before cancelling them.
 
 Uvicorn defaults to waiting forever, which never terminates in practice: a Socket.IO websocket or

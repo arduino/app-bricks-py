@@ -7,19 +7,20 @@ from functools import wraps
 from typing import Any, overload
 
 from . import peripheral_registry
+from .peripheral_registry import Peripheral
 
 __all__ = ["peripheral"]
 
 
 @overload
-def peripheral(user_class: None = None) -> Callable[[type], type]: ...
+def peripheral[C: Peripheral](user_class: None = None) -> Callable[[type[C]], type[C]]: ...
 
 
 @overload
-def peripheral[C](user_class: type[C]) -> type[C]: ...
+def peripheral[C: Peripheral](user_class: type[C]) -> type[C]: ...
 
 
-def peripheral(user_class: type | None = None) -> type | Callable[[type], type]:
+def peripheral[C: Peripheral](user_class: type[C] | None = None) -> type[C] | Callable[[type[C]], type[C]]:
     """Class decorator marking a class as a peripheral, released automatically when the app shuts down.
 
     Every instance is registered so that its ``stop()`` is called during the application shutdown,
@@ -29,7 +30,9 @@ def peripheral(user_class: type | None = None) -> type | Callable[[type], type]:
 
     Unlike ``@brick`` this does not manage the lifecycle: no ``start()`` is called for you and no
     ``loop``/``execute`` thread is run. The class only needs a ``stop()`` method, which must be safe
-    to call on an instance that was never started or was already stopped.
+    to call on an instance that was never started or was already stopped. That requirement is part
+    of the signature: a class without ``stop()`` does not satisfy ``Peripheral`` and a type checker
+    rejects the decoration.
 
     Only a weak reference to each instance is kept, so decorating a class never keeps its instances
     alive. Can be used as ``@peripheral`` or ``@peripheral()``.
@@ -47,7 +50,7 @@ def peripheral(user_class: type | None = None) -> type | Callable[[type], type]:
     return _decorate_class(user_class)  # Used as @peripheral
 
 
-def _decorate_class[C](user_class: type[C]) -> type[C]:
+def _decorate_class[C: Peripheral](user_class: type[C]) -> type[C]:
     """Patches user_class.__init__ to register every new instance for release on shutdown."""
     original_init = user_class.__init__
 
