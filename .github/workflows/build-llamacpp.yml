@@ -67,6 +67,11 @@ jobs:
           # Anchor timestamps to the source commit time so builds are reproducible
           echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
 
+      - name: Apply patches
+        run: |
+          cd llama.cpp
+          git apply -v ../.github/workflows/patches/llama.cpp-hexagon/*.patch
+
       - name: Build
         env:
           LLAMA_CPP_VERSION: ${{ needs.resolve.outputs.version }}
