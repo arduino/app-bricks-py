@@ -188,6 +188,12 @@ class VideoObjectTracking(VideoObjectDetection):
                 self._object_directions[object_id].append(direction)
                 logger.debug(f"Object ID {object_id} moved {direction} from ({last_x}, {last_y}) to ({x}, {y})")
 
+    def _forget_tracks(self) -> None:
+        """Forget the identifiers seen so far, keeping the counts: the tracker numbers tracks from zero on each run."""
+        with self._counter_lock:
+            self._recent_objects.clear()
+            self._object_directions.clear()
+
     def get_unique_objects_count(self) -> dict[str, int]:
         """
         Get all identified object types and their counts since the last reset.
@@ -304,6 +310,15 @@ class VideoObjectTracking(VideoObjectDetection):
                 self._model_info = EdgeImpulseRunnerFacade.parse_model_info_message(jmsg)
             except Exception as e:
                 logger.error(f"Error parsing WS hello message: {e}")
+                return
+
+            self._forget_tracks()
+
+            if not jmsg.get("modelParameters", {}).get("has_object_tracking", False):
+                logger.error(
+                    "This model has no object tracking block, so no object will ever be reported. "
+                    "Enable object tracking in the Edge Impulse project and export the model again."
+                )
                 return
 
             if self._model_info and self._model_info.thresholds is not None:
