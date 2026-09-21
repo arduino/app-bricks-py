@@ -102,6 +102,15 @@ apps:
     venv:
       project: containers/ai/edge-impulse-runner
 
+  - name: edge-impulse-npu-runner
+    source_path: .
+    sources:
+      pip: true
+    python:
+      virtual_env_dir: "/venvs/edge-impulse-npu-runner"
+    venv:
+      project: containers/ai/edge-impulse-npu-runner
+
 stale_records_action: error
 
 ignored:
@@ -126,6 +135,7 @@ reviewed:
     - certifi           # MPL-2.0, modified ca-bundle notice not recognised by licensee 9.20
     - backports.strenum # PSF-2.0, ships CPython's LICENSE file while its metadata says MIT
     - typing_extensions # PSF-2.0, ships CPython's LICENSE file with its history preamble, not matched by newer licensee
+    - numpy             # BSD-3-Clause, its LICENSE.txt also carries the notices of the bundled libraries, not matched by newer licensee
 
 allowed:
   - mpl-2.0
@@ -134,6 +144,7 @@ allowed:
   - mit-cmu
   - bsd-2-clause
   - bsd-3-clause
+  - bsd-3-clause-clear # BSD-3-Clause with an explicit no patent grant clause (edge-impulse-linux)
   - cc0-1.0
   - isc
   - psf-2.0

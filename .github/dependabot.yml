@@ -17,6 +17,7 @@ updates:
       - /containers/bricks/models-downloader
       - /containers/bricks/tps
       - /containers/ai/edge-impulse-runner
+      - /containers/ai/edge-impulse-npu-runner
     schedule:
       interval: weekly
       day: monday
