@@ -25,7 +25,7 @@ services:
     read_only: true
     tmpfs:
       - /tmp:size=64m               # the SDK creates its socket to each .eim process here
-      - /usr/share/qcom:size=1m     # the merged DSP view written by /qairt-entrypoint.sh
+      - /usr/share/qcom:size=1m,mode=1777   # the merged DSP view written by /qairt-entrypoint.sh, writable by the arduino user
     shm_size: 64m                   # feature buffers shared with the .eim processes
     stop_grace_period: 15s          # an inference in progress completes before the models are stopped
     cap_drop: [ALL]
