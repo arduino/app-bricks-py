@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from arduino.app_bricks.video_object_tracking import VideoObjectTracking
+from arduino.app_bricks.video_object_tracking import VideoObjectTracking, VideoObjectTrackingError
 
 FAKE_COMPOSE = {"services": {"ei-video-obj-tracking-runner": {}}}
 
@@ -66,6 +66,42 @@ def _recorded_walk_frames() -> list[list[dict]]:
     recording = json.loads(RECORDED_WALK.read_text())
     fields = recording["track_fields"]
     return [[dict(zip(fields, track, strict=True)) for track in frame["tracks"]] for frame in recording["frames"]]
+
+
+class _Handshake:
+    """Stands in for the runner during the constructor handshake."""
+
+    def __init__(self, hello: str | None):
+        self.hello = hello
+        self.frames_sent = 0
+
+    def create_connection(self, address, timeout=None):
+        return self
+
+    def sendall(self, payload: bytes) -> None:
+        self.frames_sent += 1
+
+    def connect(self, uri, open_timeout=None):
+        if self.hello is None:
+            raise TimeoutError("no runner")
+        return self
+
+    def recv(self, timeout=None) -> str:
+        return self.hello
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+@pytest.fixture(autouse=True)
+def handshake(monkeypatch: pytest.MonkeyPatch) -> _Handshake:
+    runner = _Handshake(_hello())
+    monkeypatch.setattr("arduino.app_bricks.video_object_tracking.socket.create_connection", runner.create_connection)
+    monkeypatch.setattr("arduino.app_bricks.video_object_tracking.connect", runner.connect)
+    return runner
 
 
 @pytest.fixture(autouse=True)
@@ -346,6 +382,26 @@ def test_a_new_hello_forgets_the_identifiers_and_keeps_the_counts(tracker: Video
 
     assert tracker.get_unique_objects_count() == {"person": 2}
     assert tracker.get_objects_directions() == {3: ["left"]}
+
+
+def test_the_constructor_asks_the_runner_about_the_model(handshake: _Handshake, tracker: VideoObjectTracking):
+    assert handshake.frames_sent == 1
+
+
+def test_a_model_without_the_tracking_block_refuses_to_start(handshake: _Handshake):
+    handshake.hello = _hello(thresholds=[{"id": 12, "type": "object_detection", "min_score": 0.3}], has_object_tracking=False)
+
+    with pytest.raises(VideoObjectTrackingError, match="no object tracking block"):
+        VideoObjectTracking()
+
+
+def test_a_runner_that_does_not_answer_lets_the_brick_start(handshake: _Handshake, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr("arduino.app_bricks.video_object_tracking._HANDSHAKE_TIMEOUT", 0.1)
+    monkeypatch.setattr("arduino.app_bricks.video_object_tracking._HANDSHAKE_STEP", 0.01)
+    handshake.hello = None
+
+    tracker = VideoObjectTracking()
+    tracker._executor.shutdown(wait=False)
 
 
 def test_a_model_without_the_tracking_block_is_reported_as_an_error(tracker: VideoObjectTracking, ws, overrides, logged_errors):
