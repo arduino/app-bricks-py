@@ -18,7 +18,10 @@ This Brick acts as a gateway to powerful AI models hosted in the cloud. It is de
 
 - **Internet Connection**: The board must be connected to the internet to reach the LLM provider's API.
 - **API Key**: A valid API key for the chosen service (e.g., OpenAI API Key, Anthropic API Key).
-- **Python Dependencies**: The Brick relies on LangChain integration packages (`langchain-anthropic`, `langchain-openai`, `langchain-google-genai`).
+- **Python dependency**: Install the Brick extra:
+  ```bash
+  pip install arduino_app_bricks[cloud_llm]
+  ```
 
 ## Code Example and Usage
 

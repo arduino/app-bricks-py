@@ -29,9 +29,9 @@ LIST_MODELS_RETRY_DELAY_S = 1.0
 class LargeLanguageModel(CloudLLM):
     """A Brick for interacting with locally-based Large Language Models (LLMs).
 
-    This class wraps LangChain functionality to provide a simplified, unified interface
-    for chatting with models like Qwenm, LLama, Gemma. It supports both synchronous
-    'one-shot' responses and streaming output, with optional conversational memory.
+    It provides a simplified, unified interface for chatting with models like Qwenm, LLama,
+    Gemma. It supports both synchronous 'one-shot' responses and streaming output,
+    with optional conversational memory.
     """
 
     _logger = logger
@@ -146,12 +146,14 @@ class LargeLanguageModel(CloudLLM):
     def list_models(self) -> list[str]:
         """Returns a list of supported local model identifiers.
 
-        Note: LargeLanguageModel supports OpenAI-compatible API. This method uses the OpenAI client to query available models from the local server.
-        LangChain's OpenAI wrapper does not provide a direct method to list models, so we need to use the underlying OpenAI client directly.
+        Note: LargeLanguageModel supports an OpenAI-compatible API. This method queries the available models
+        directly from the local server through the OpenAI client.
 
         Returns:
             List[str]: A list of supported model names (e.g., ["qwen2.5-7b"]).
         """
+        # The LangChain OpenAI wrapper exposes no method to list models, so the underlying
+        # OpenAI client is used directly here.
         for attempt in range(1, LIST_MODELS_MAX_ATTEMPTS + 1):
             try:
                 # Retries are handled here (not by the OpenAI client) so the runner has time to come up.
@@ -193,7 +195,7 @@ class LargeLanguageModel(CloudLLM):
         return super().with_memory(max_messages=max_messages, persistence=persistence)
 
     def get_client(self) -> BaseChatModel:
-        """Returns the underlying LangChain model instance.
+        """Returns the underlying chat model instance.
 
         This allows for advanced users to access the full capabilities of the model
         directly, such as calling `generate()` or `stream()` with custom message formats.
