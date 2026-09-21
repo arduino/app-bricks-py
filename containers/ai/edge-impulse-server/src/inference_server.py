@@ -14,9 +14,9 @@ it is pinned.
   python3 inference_server.py --models-dir /models --pinned-models detector \\
       --max-models 3 --max-clients 8 --memory-reserve-mb 512
 
-Acceleration depends on the .eim files, not on this code:
-  - QCS8275 -> deployment "... (AARCH64 with Qualcomm QNN)"  -> NPU
-  - QRB2210 -> deployment "Linux (AARCH64)"                 -> CPU
+The same server is packaged by two images, acceleration depends on the .eim files and on the image:
+  - edge-impulse-npu-runner -> deployment "... (AARCH64 with Qualcomm QNN)" -> NPU
+  - edge-impulse-runner     -> deployment "Linux (AARCH64)"                 -> CPU
 """
 
 import argparse

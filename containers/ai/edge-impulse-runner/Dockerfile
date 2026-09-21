@@ -11,9 +11,12 @@ FROM ${REGISTRY}app-bricks/python-slim:${BASE_IMAGE_VERSION}
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-COPY ./src /app
-COPY --chown=arduino:arduino --chmod=755 ./models/ei-ootb-models/arm64/*.eim /models/ootb/ei/
-COPY ./pyproject.toml ./uv.lock /tmp/deps/
+# The server, its locked packages and the out-of-the-box models come from the "server" context,
+# containers/ai/edge-impulse-server, shared with edge-impulse-npu-runner and linked in docker-bake.hcl.
+# Standalone build: docker build --build-context server=../edge-impulse-server .
+COPY --from=server ./src /app
+COPY --from=server --chown=arduino:arduino --chmod=755 ./models/ei-ootb-models/arm64/*.eim /models/ootb/ei/
+COPY --from=server ./pyproject.toml ./uv.lock /tmp/deps/
 
 # Runtime settings expected from the compose file:
 # - the .eim files mounted read-only at /models

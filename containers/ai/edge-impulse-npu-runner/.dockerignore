@@ -1,6 +1,3 @@
-# Only what the image copies
+# Only the QNN models, everything else comes from the server context
 *
-!pyproject.toml
-!uv.lock
-!src/
 !models/
