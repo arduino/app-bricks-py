@@ -1,31 +1,23 @@
 services:
   edge-impulse-runner:
-    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/edge-impulse-npu-runner:__BRICKS_RELEASE_VERSION__
+    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/edge-impulse-runner:__BRICKS_RELEASE_VERSION__
     logging:
       driver: "json-file"
       options:
         max-size: "5m"
         max-file: "2"
-    # Starting values, see containers/ai/edge-impulse-npu-runner/README.md
-    command: [--max-models=3, --max-clients=8, --memory-reserve-mb=512]
-    cpuset: "0-3"                   # the big cores, scheduling on the small ones too costs about a quarter of the frame rate
-    devices:
-      - /dev/fastrpc-cdsp           # Hexagon NPU
-      - /dev/dma_heap/system        # buffers shared with the DSP
+    # Starting values, see containers/ai/edge-impulse-server/README.md
+    command: [--max-models=1, --max-clients=4, --memory-reserve-mb=256]
+    cpus: "3"                       # leave one core to the app
     volumes:
       # The .eim models installed by the app CLI, next to the out-of-the-box ones of the image (/models/ootb/ei)
       - ${MODELS_PATH:-/var/lib/arduino-app-cli/models}/edge-impulse:/models/edge-impulse:ro
       - ${MODELS_PATH:-/var/lib/arduino-app-cli/models}/custom-ei:/models/custom-ei:ro
       # The socket the bricks connect to, /app/.cache/edge_impulse/ei.sock in the app container
       - "${APP_HOME:-.}/.cache/edge_impulse:/ipc"
-      # Mount hexagon firmware
-      - /sys/firmware/devicetree/base/model:/run/device-model
-      # Read-only: /qairt-entrypoint.sh merges it into /usr/share/qcom in the container
-      - ${HOST_DSP_INSTALLATION_PATH:-/usr/share/qcom}:/run/host-qcom:ro
     read_only: true
     tmpfs:
       - /tmp:size=64m               # the SDK creates its socket to each .eim process here
-      - /usr/share/qcom:size=1m,mode=1777   # the merged DSP view written by /qairt-entrypoint.sh, writable by the arduino user
     shm_size: 64m                   # feature buffers shared with the .eim processes
     stop_grace_period: 15s          # an inference in progress completes before the models are stopped
     cap_drop: [ALL]
