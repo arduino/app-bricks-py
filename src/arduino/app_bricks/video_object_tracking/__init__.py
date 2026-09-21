@@ -288,8 +288,9 @@ class VideoObjectTracking(VideoObjectDetection):
         This is useful to receive a consolidated dictionary of detections for each frame.
 
         Args:
-            callback (AllDetectionsCallback): A function that accepts **one dict argument** with
-                the shape `{label: confidence, ...}`.
+            callback (AllDetectionsCallback): A function that accepts **one dict argument** mapping
+                each tracked label to the list of its objects, with the shape
+                `{label: [{"object_id": int, "confidence": float, "bounding_box_xyxy": (x1, y1, x2, y2)}, ...], ...}`.
 
         Raises:
             TypeError: If `callback` is not a function.
@@ -332,41 +333,36 @@ class VideoObjectTracking(VideoObjectDetection):
             if not isinstance(result, dict):
                 return
 
-            bounding_boxes = result.get("object_tracking", [])
-            if bounding_boxes:
-                if len(bounding_boxes) == 0:
-                    return
+            tracked_objects = result.get("object_tracking", [])
+            if not tracked_objects:
+                return
 
-                # Process each bounding box
-                detections = {}
-                for box in bounding_boxes:
-                    detected_object = box.get("label")
-                    if detected_object is None:
-                        continue
+            detections = {}
+            for box in tracked_objects:
+                detected_object = box.get("label")
+                if detected_object is None:
+                    continue
 
-                    object_id = box.get("object_id")
-                    if object_id is None:
-                        continue
+                object_id = box.get("object_id")
+                if object_id is None:
+                    continue
 
-                    # Extract bounding box coordinates if needed
-                    xyxy_bbox = (
-                        box.get("x", 0),
-                        box.get("y", 0),
-                        box.get("x", 0) + box.get("width", 0),
-                        box.get("y", 0) + box.get("height", 0),
-                    )
+                x, y = box.get("x", 0), box.get("y", 0)
+                width, height = box.get("width", 0), box.get("height", 0)
 
-                    detection_details = {"object_id": object_id, "bounding_box_xyxy": xyxy_bbox}
-                    detections[detected_object] = detection_details
+                detection_details = {
+                    "object_id": object_id,
+                    "confidence": box.get("value", 0.0),
+                    "bounding_box_xyxy": (x, y, x + width, y + height),
+                }
+                detections.setdefault(detected_object, []).append(detection_details)
 
-                    self._record_object(detected_object_label=detected_object, object_id=object_id, x=box.get("x", 0), y=box.get("y", 0))
+                self._record_object(detected_object_label=detected_object, object_id=object_id, x=x, y=y)
 
-                    # Check if the class_id matches any registered handlers
-                    super()._execute_handler(key=detected_object, payload=detection_details)
+                super()._execute_handler(key=detected_object, payload=detection_details)
 
-                if len(detections) > 0:
-                    # If there are detections, invoke the all-detection handler
-                    super()._execute_handler(key=self.ALL_HANDLERS_KEY, payload=detections)
+            if len(detections) > 0:
+                super()._execute_handler(key=self.ALL_HANDLERS_KEY, payload=detections)
 
         else:
             # Leave logging for unknown message types for debugging purposes
