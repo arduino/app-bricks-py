@@ -41,13 +41,16 @@ class VideoObjectDetection:
       - Filters detections by a configurable confidence threshold.
       - Debounces repeated triggers of the same label.
       - Invokes per-label callbacks and/or a catch-all callback.
-      - Streams the video with the bounding boxes on port 4912, for browsers and embedded iframes.
+      - Streams the video with the bounding boxes on port 4912, for browsers and embedded iframes: every camera
+        frame is drawn with the boxes of the latest inference.
     """
 
     ALL_HANDLERS_KEY = "__ALL"
 
     _DETECTION_LOCK_TO = 0.01  # Seconds to wait for a detection lock before discarding the detection signal
     _RETRY_SEC = 2.0  # Seconds between attempts to reach the inference service
+    _OVERLAY_MIN_TTL = 0.5  # Seconds the boxes of the latest result stay on the video, at least
+    _OVERLAY_TTL_PERIODS = 2  # ...or this many inference periods: a model that stops answering leaves no ghost boxes
 
     def __init__(
         self,
@@ -95,6 +98,9 @@ class VideoObjectDetection:
         self._client_lock = threading.Lock()
         self._stream = VideoStreamServer(os.getenv("BIND_ADDRESS", "0.0.0.0"), stream_port) if stream_port is not None else None
         self._colors = LabelColors()
+        self._overlay_lock = threading.Lock()
+        self._overlay: tuple[dict, float] | None = None  # detections of the latest result and when they arrived
+        self._inference_period = 0.0  # seconds from capture to result, smoothed
 
         logger.info(f"[{self.__class__.__name__}] Model: {self._model}")
 
@@ -213,11 +219,12 @@ class VideoObjectDetection:
     def detection_loop(self) -> None:
         """Object detection main loop.
 
-        Captures a frame each time the model is free and submits it, a receiver thread dispatches the results as
-        they arrive. The camera rate is the ceiling: a model slower than the camera lowers the capture rate to
-        its own, the frame captured is always the freshest one and no work is spent on frames that would be
-        dropped. Waits for the service and its
-        model, and reconnects when the connection is lost, until stopped.
+        Submits a frame each time the model is free, one in flight at a time, and a receiver thread dispatches the
+        results as they arrive. Without viewers of the video, frames are captured only when the model is free: a
+        model slower than the camera lowers the capture rate to its own and no work is spent on frames that would
+        be dropped. With viewers, every camera frame is captured and streamed with the boxes of the latest result,
+        so the video keeps the camera rate whatever the model takes. Waits for the service and its model, and
+        reconnects when the connection is lost, until stopped.
         """
         while self._is_running.is_set():
             client = self._connect()
@@ -227,13 +234,15 @@ class VideoObjectDetection:
             receiver.start()
             try:
                 while self._is_running.is_set() and not client.closed:
-                    if not client.wait_idle(0.5):
+                    if not self._has_viewers and not client.wait_idle(0.5):
                         continue  # the model is still busy, check the stop flag and wait again
                     frame = self._camera.capture()
                     if frame is None:
                         time.sleep(0.01)  # Brief sleep if no image available
                         continue
-                    client.submit(frame, keep_frame=self._needs_frame())
+                    client.submit(frame, keep_frame=self._camera_preview)  # skipped while a frame is in flight
+                    if self._has_viewers:  # checked again: a viewer may have arrived during the wait
+                        self._publish(frame)
                 if self._is_running.is_set():
                     logger.warning("Inference service connection lost. Reconnecting...")
             except ConnectionError as e:
@@ -256,9 +265,10 @@ class VideoObjectDetection:
         except ConnectionError:
             pass
 
-    def _needs_frame(self) -> bool:
-        """True when the results must carry their frame, for the preview callbacks or the video stream."""
-        return self._camera_preview or (self._stream is not None and self._stream.has_clients)
+    @property
+    def _has_viewers(self) -> bool:
+        """True while someone watches the video stream, the only time frames are worth rendering."""
+        return self._stream is not None and self._stream.has_clients
 
     def _connect(self) -> InferenceClient | None:
         """Open the model on the inference service, retrying until it is ready or the brick is stopped."""
@@ -284,7 +294,10 @@ class VideoObjectDetection:
             client.close()
 
     def _process_result(self, result: Result) -> None:
-        """Turn the boxes of one frame into detections and invoke the handlers, `result.frame` feeds the stream and the preview."""
+        """Turn the boxes of one frame into detections, keep them for the video and invoke the handlers.
+
+        `result.frame`, present with `camera_preview`, is the frame the preview callbacks receive.
+        """
         if not result.ok:
             logger.warning(f"Inference failed ({result.error_code}): {result.error}")
             return
@@ -296,10 +309,7 @@ class VideoObjectDetection:
                 continue
             xyxy_bbox = (round(box.x), round(box.y), round(box.x + box.w), round(box.y + box.h))
             detections.setdefault(box.label, []).append({"confidence": box.score, "bounding_box_xyxy": xyxy_bbox})
-        if frame is not None and self._stream and self._stream.has_clients:
-            annotated = self._annotate(frame, detections)
-            if annotated is not None:
-                self._stream.publish(annotated)
+        self._remember(detections, (time.monotonic_ns() - result.ts_ns) / 1e9)
         if not detections:
             return
 
@@ -308,6 +318,27 @@ class VideoObjectDetection:
             for detection_details in label_detections:
                 self._execute_handler(key=label, payload=detection_details, frame=preview)
         self._execute_handler(key=self.ALL_HANDLERS_KEY, payload=detections, frame=preview)
+
+    def _remember(self, detections: dict, round_trip: float) -> None:
+        """Keep the detections for the video and smooth the inference period, which bounds how long they stay."""
+        with self._overlay_lock:
+            self._overlay = (detections, time.monotonic())
+            self._inference_period = round_trip if self._inference_period == 0 else 0.8 * self._inference_period + 0.2 * round_trip
+
+    def _current_detections(self) -> dict:
+        """The detections to draw now: the latest result's, unless it is older than the model can explain."""
+        with self._overlay_lock:
+            overlay = self._overlay
+            ttl = max(self._OVERLAY_MIN_TTL, self._OVERLAY_TTL_PERIODS * self._inference_period)
+        if overlay is None or time.monotonic() - overlay[1] > ttl:
+            return {}
+        return overlay[0]
+
+    def _publish(self, frame: np.ndarray) -> None:
+        """Stream the camera frame with the current detections drawn on it."""
+        annotated = self._annotate(frame, self._current_detections())
+        if annotated is not None and self._stream is not None:
+            self._stream.publish(annotated)
 
     def _annotate(self, frame: np.ndarray, detections: dict) -> bytes | None:
         """The frame with the boxes and labels drawn on a copy, as JPEG bytes for the video stream."""

@@ -176,14 +176,14 @@ class VideoStreamServer:
                 return None
 
     def _serve_stream(self, handler: BaseHTTPRequestHandler) -> None:
-        handler.send_response(200)
-        handler.send_header("Content-Type", f"multipart/x-mixed-replace; boundary={BOUNDARY.decode()}")
-        handler.send_header("Cache-Control", "no-store")
-        handler.end_headers()
         with self._cond:
             self._clients += 1
         seq = 0
         try:
+            handler.send_response(200)
+            handler.send_header("Content-Type", f"multipart/x-mixed-replace; boundary={BOUNDARY.decode()}")
+            handler.send_header("Cache-Control", "no-store")
+            handler.end_headers()
             while (item := self._next_frame(seq, handler.connection)) is not None:
                 seq, frame = item
                 handler.wfile.write(b"--" + BOUNDARY + b"\r\nContent-Type: image/jpeg\r\nContent-Length: " + str(len(frame)).encode() + b"\r\n\r\n")

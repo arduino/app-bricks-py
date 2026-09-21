@@ -1,11 +1,9 @@
 # Video Object Detection Brick
 
 This Brick provides a Python interface for **detecting objects in real time from a USB camera video stream**.
-It sends the camera frames to the Edge Impulse inference service running on the board, and produces detection
-events with predicted labels, bounding boxes, and confidence scores.
+It sends the camera frames to the Edge Impulse inference service running on the board, and produces detection events with predicted labels, bounding boxes, and confidence scores.
 
-Beyond visualization, it allows you to **register callbacks** that react to detections, either for specific
-objects or for all detections, enabling event-driven logic in your applications.
+Beyond visualization, it allows you to **register callbacks** that react to detections, either for specific objects or for all detections, enabling event-driven logic in your applications.
 It supports both **pre-trained models** provided by the framework and **custom models** trained with Edge Impulse.
 
 ## Overview
@@ -36,25 +34,16 @@ The Video Object Detection Brick allows you to:
 
 ## How it works
 
-The models run in the **Edge Impulse inference service** (`arduino:edge_impulse`), one container shared by the
-bricks of the app, on the NPU where the board has one. The brick opens the model configured for it over the
-service socket (`/app/.cache/edge_impulse/ei.sock` in the app container), sends each camera frame as it is,
-and receives the boxes in the coordinates of that frame: the service resizes the frame to the model input in
-the model's own resize mode. Connections requesting the
-same model share it, and the model is released when the brick stops.
+The models run in the **Edge Impulse inference service** (`arduino:edge_impulse`), one container shared by the bricks of the app, on the NPU where the board has one. The brick opens the model configured for it over the service socket (`/app/.cache/edge_impulse/ei.sock` in the app container), sends each camera frame as it is, and receives the boxes in the coordinates of that frame: the service resizes the frame to the model input in the model's own resize mode. Connections requesting the same model share it, and the model is released when the brick stops.
 
-The model is the one selected for the brick in the app configuration (`EI_V_OBJ_DETECTION_MODEL`, set by the
-app CLI to the `.eim` file under its models directory). To open another model of that directory, pass its name
-to the constructor: the path relative to the models directory of the service without extension, for example
-`ootb/ei/yolo-x-nano` for a bundled model or `custom-ei/<id>/model` for a custom one.
+The model is the one selected for the brick in the app configuration (`EI_V_OBJ_DETECTION_MODEL`, set by the app CLI to the `.eim` file under its models directory). To open another model of that directory, pass its name to the constructor: the path relative to the models directory of the service without extension, for example `ootb/ei/yolo-x-nano` for a bundled model or `custom-ei/<id>/model` for a custom one.
 
 ## Video stream
 
-The brick serves the camera video with the bounding boxes drawn on it on port `4912`, the port the model
-runner container used to expose: `http://<board>:4912/` is an MJPEG stream, which browsers show like an
-image at its natural size, for an `<img>` tag or a player, and `http://<board>:4912/embed` is the bare page
-the existing viewers load in an iframe. Frames are rendered only while someone is watching.
+The brick serves the camera video with the bounding boxes drawn on it on port `4912`: `http://<board>:4912/` is an MJPEG stream, which browsers show like an image at its natural size for an `<img>` tag or a player, and `http://<board>:4912/embed` is a bare page for embedding in an iframe. Frames are rendered only while someone is watching.
 `stream_port=None` in the constructor disables the stream.
+
+The video runs at the camera rate whatever the model takes: every frame is drawn with the boxes of the latest inference, so a slow model only makes the boxes lag behind moving objects until the next result replaces them, never the video stutter. Boxes older than twice the inference  period are dropped, so a model that stops answering leaves no stale boxes. Frames are rendered only while a viewer is connected.
 
 ## Prerequisites
 

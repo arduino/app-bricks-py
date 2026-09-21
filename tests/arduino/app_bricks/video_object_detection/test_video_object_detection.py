@@ -292,13 +292,9 @@ def read_part(response):
 
 def test_video_stream_shows_the_frames_with_the_boxes(running):
     runner = running()
-    connection = http.client.HTTPConnection("127.0.0.1", runner.detector.stream_port, timeout=5)
-    connection.request("GET", "/")
-    response = connection.getresponse()
-    assert response.status == 200
-    for _ in range(20):  # until the loop sees the client, frames are not rendered
-        runner.camera.push()
-        time.sleep(0.05)
+    first_result(runner)
+    connection, response = stream_viewer(runner)
+    runner.camera.push()
     first = cv2.imdecode(np.frombuffer(read_part(response), np.uint8), cv2.IMREAD_COLOR)
     runner.camera.push()
     second = cv2.imdecode(np.frombuffer(read_part(response), np.uint8), cv2.IMREAD_COLOR)
@@ -308,6 +304,60 @@ def test_video_stream_shows_the_frames_with_the_boxes(running):
     border = first[50, 16].astype(int)
     assert border.max() > 100 and tuple(first[110, 150]) == (0, 0, 0)
     assert np.abs(second[50, 16].astype(int) - border).max() < 40, "the label keeps its color across frames"
+
+
+def has_cat_box(jpeg):
+    """True when the cat box border (16, 24)-(64, 72) is drawn on the frame."""
+    image = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
+    return image[50, 16].astype(int).max() > 100
+
+
+def stream_viewer(runner):
+    connection = http.client.HTTPConnection("127.0.0.1", runner.detector.stream_port, timeout=5)
+    connection.request("GET", "/")
+    response = connection.getresponse()
+    assert response.status == 200
+    return connection, response
+
+
+def first_result(runner):
+    """Push one frame and wait for its detections, so the brick knows a set of boxes."""
+    results = queue.Queue()
+    runner.detector.on_detect_all(lambda detections: results.put(detections))
+    runner.camera.push()
+    assert results.get(timeout=TIMEOUT)
+
+
+def test_video_stream_keeps_the_camera_rate_with_a_slow_model(running, service):
+    """With a viewer every camera frame is streamed, drawn with the boxes of the latest result."""
+    service.reply_delay = 0.3
+    runner = running()
+    first_result(runner)
+    connection, response = stream_viewer(runner)
+    frames = []
+    for _ in range(10):  # one streamed frame per camera frame
+        runner.camera.push()
+        frames.append(read_part(response))
+    connection.close()
+    assert len(service.frames) <= 3, "the model saw one frame per inference"
+    assert all(has_cat_box(frame) for frame in frames), "every frame carries the latest boxes"
+
+
+def test_boxes_disappear_when_the_model_stops_answering(running, service):
+    runner = running()
+    first_result(runner)
+    service.reply_delay = 30.0  # the next frame never gets its result within the test
+    connection, response = stream_viewer(runner)
+    runner.camera.push()
+    assert has_cat_box(read_part(response)), "the boxes are still fresh"
+    deadline = time.monotonic() + 3.0
+    boxes_gone = False
+    while time.monotonic() < deadline and not boxes_gone:
+        time.sleep(0.05)
+        runner.camera.push()
+        boxes_gone = not has_cat_box(read_part(response))
+    connection.close()
+    assert boxes_gone, "the stale boxes were dropped"
 
 
 def test_video_stream_can_be_disabled(service):
