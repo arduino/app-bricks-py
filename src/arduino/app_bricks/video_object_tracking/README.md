@@ -143,4 +143,4 @@ The constructor accepts the tracker knobs below, and each one has a matching `ov
 
 `iou_threshold` and `euclidean_distance_threshold` are alternatives: which one the model uses depends on its type, and each `override_*` method is a no-op on a model of the other type.
 
-**Note**: `labels_to_track` filters the counters, the line crossings and the direction history only. Callbacks registered with `on_detect()` and `on_detect_all()` are invoked for every tracked label.
+**Note**: `labels_to_track` filters everything the Brick reports: the counters, the line crossings, the direction history and the callbacks.
