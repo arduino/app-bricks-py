@@ -9,6 +9,7 @@ import time
 from unittest.mock import MagicMock
 
 import pytest
+from websockets.exceptions import InvalidHandshake
 
 from arduino.app_bricks.video_objectdetection import VideoObjectDetection
 
@@ -492,3 +493,91 @@ def test_per_label_and_global_handler_both_fire(detector: VideoObjectDetection, 
 
     assert label_fired.is_set(), "Per-label handler must fire"
     assert global_fired.is_set(), "Global handler must fire"
+
+
+# ---------------------------------------------------------------------------
+# override_threshold — WebSocket connection retry
+# ---------------------------------------------------------------------------
+
+
+class _FakeModelInfo:
+    thresholds = [{"id": 7}]
+
+
+@pytest.fixture
+def no_retry_delay(monkeypatch: pytest.MonkeyPatch):
+    """Skip the real delay between connection attempts."""
+    monkeypatch.setattr("arduino.app_bricks.video_objectdetection.time.sleep", lambda _: None)
+
+
+def test_override_threshold_retries_until_connection_succeeds(detector: VideoObjectDetection, monkeypatch: pytest.MonkeyPatch, no_retry_delay):
+    """A model runner that is not accepting connections yet must be retried, not reported as a failure."""
+    detector._model_info = _FakeModelInfo()
+    connection = MagicMock()
+    connection.__enter__.return_value = connection  # `with connect(...) as ws` yields the connection itself
+    attempts = []
+
+    def fake_connect(uri):
+        attempts.append(uri)
+        if len(attempts) < 3:
+            raise ConnectionRefusedError(111, "Connection refused")
+        return connection
+
+    monkeypatch.setattr("arduino.app_bricks.video_objectdetection.connect", fake_connect)
+
+    detector.override_threshold(0.75)
+
+    assert len(attempts) == 3, "Connection should be retried until it succeeds"
+    connection.send.assert_called_once()
+    sent = json.loads(connection.send.call_args[0][0])
+    assert sent == {"type": "threshold-override", "id": 7, "key": "min_score", "value": 0.75}
+    assert detector._confidence == pytest.approx(0.75)
+    connection.__exit__.assert_called_once()
+
+
+def test_override_threshold_raises_after_exhausting_retries(detector: VideoObjectDetection, monkeypatch: pytest.MonkeyPatch, no_retry_delay):
+    """When the model runner stays unreachable, the last error is reported as a ConnectionError."""
+    detector._model_info = _FakeModelInfo()
+    attempts = []
+
+    def fake_connect(uri):
+        attempts.append(uri)
+        raise ConnectionRefusedError(111, "Connection refused")
+
+    monkeypatch.setattr("arduino.app_bricks.video_objectdetection.connect", fake_connect)
+
+    with pytest.raises(ConnectionError) as excinfo:
+        detector.override_threshold(0.5)
+
+    assert len(attempts) == detector._WS_CONNECT_RETRIES, "Every attempt should be used before giving up"
+    assert isinstance(excinfo.value.__cause__, ConnectionRefusedError)
+
+
+def test_override_threshold_retries_on_incomplete_handshake(detector: VideoObjectDetection, monkeypatch: pytest.MonkeyPatch, no_retry_delay):
+    """A socket that is listening but not serving WebSocket yet must also be retried."""
+    detector._model_info = _FakeModelInfo()
+    connection = MagicMock()
+    connection.__enter__.return_value = connection  # `with connect(...) as ws` yields the connection itself
+    attempts = []
+
+    def fake_connect(uri):
+        attempts.append(uri)
+        if len(attempts) < 2:
+            raise InvalidHandshake("not ready")
+        return connection
+
+    monkeypatch.setattr("arduino.app_bricks.video_objectdetection.connect", fake_connect)
+
+    detector.override_threshold(0.4)
+
+    assert len(attempts) == 2
+    connection.send.assert_called_once()
+
+
+def test_override_threshold_does_not_retry_on_invalid_value(detector: VideoObjectDetection, monkeypatch: pytest.MonkeyPatch, no_retry_delay):
+    """Argument validation still happens once a connection is available."""
+    detector._model_info = _FakeModelInfo()
+    monkeypatch.setattr("arduino.app_bricks.video_objectdetection.connect", lambda uri: MagicMock())
+
+    with pytest.raises(TypeError):
+        detector.override_threshold("high")

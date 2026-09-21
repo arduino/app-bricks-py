@@ -12,7 +12,6 @@ from setuptools.build_meta import (
     get_requires_for_build_editable as _orig_get_requires_for_build_editable,
     prepare_metadata_for_build_editable as _orig_prepare_metadata_for_build_editable,
 )
-from setuptools_scm import get_version
 import subprocess
 import shutil
 
@@ -22,6 +21,10 @@ def run_preprocessing(dev_mode: bool = False) -> None:
     if dev_mode:
         version = os.getenv("DEV_TAG_VERSION", "dev-latest")
     else:
+        # Imported here: the build backend needs it, the unit tests importing this
+        # module for its helpers do not have it installed.
+        from setuptools_scm import get_version
+
         # Keep in sync with [tool.setuptools_scm] tag_regex in pyproject.toml: the explicit
         # kwargs here bypass the pyproject configuration entirely.
         version = get_version(
@@ -45,6 +48,8 @@ def run_preprocessing(dev_mode: bool = False) -> None:
     except Exception as e:
         print(f"Error: {e}.")
         raise
+
+    embed_pyright_rules(cache_folder_path)
 
     try:
         print(f"################################## Building bricks list Version: {version} - Dev Mode: {dev_mode} ##################################")
@@ -84,6 +89,23 @@ def run_preprocessing(dev_mode: bool = False) -> None:
     finally:
         if project_root in sys.path:
             sys.path.remove(project_root)
+
+
+PYRIGHT_RULES_SOURCE = "pyright-rules.json"
+
+
+def embed_pyright_rules(cache_folder_path: str) -> None:
+    """Copy the pyright rules file into the static assets shipped in the wheel.
+
+    The file describes how code using the library is type-checked (profiles for
+    the library itself and for API users). It is maintained at the repository
+    root and read from the wheel by App Lab and by the CI checks of both
+    repositories, so it travels with every release.
+    """
+    print("################################## Embed pyright rules ##############################################################################")
+    if not os.path.isfile(PYRIGHT_RULES_SOURCE):
+        raise FileNotFoundError(f"{PYRIGHT_RULES_SOURCE} not found in the repository root")
+    shutil.copy(PYRIGHT_RULES_SOURCE, os.path.join(cache_folder_path, os.path.basename(PYRIGHT_RULES_SOURCE)))
 
 
 def build_wheel(wheel_directory: str, config_settings: dict | None = None, metadata_directory: str | None = None) -> str:

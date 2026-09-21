@@ -290,14 +290,14 @@ def read_gguf(path: Path):
 # Hexagon session sizing
 #
 # A model is spread over the Hexagon sessions layer by layer: each session holds the
-# weights of its layers, the slice of the KV cache that belongs to them, and its own
-# compute buffers. Sizing it is a matter of keeping the busiest session under what the DSP
-# will reliably map for one, which is not a single number — see ../SESSION_ALLOCATION.md,
-# where loads succeeded holding 2.9 GiB and failed holding 1.8 GiB. Past the limit the
-# load fails with
+# weights of its layers, the slice of the KV cache that belongs to them, its own compute
+# buffer and, from two sessions up, a copy of the compute buffer of the session it takes
+# its input from. Sizing it is a matter of keeping the busiest session under the DSP
+# address space the backend reports for one — see ../SESSION_ALLOCATION.md. Past that the
+# load fails on the chunk that no longer maps:
 #
-#   ggml-hex: HTP0 buffer mapping failed : domain_id 3 size 536883200 error 0x00000001
-#   alloc_tensor_range: failed to allocate HTP0 buffer of size 536870912
+#   ggml-hex: HTP0 buffer mapping failed : domain_id 3 size ... error 0x00000001
+#   alloc_tensor_range: failed to allocate HTP0 buffer of size ...
 #
 # Before resizing anything over such a failure, check the board's free RAM: the DSP
 # buffers come from plain system memory (/dev/dma_heap/system), so the same message
@@ -307,13 +307,25 @@ def read_gguf(path: Path):
 
 MIB = 1024 * 1024
 
-# Bytes of weights plus KV cache that one Hexagon session holds. Calibrated on the load
-# measurements in ../SESSION_ALLOCATION.md, against the worst observation of each
-# configuration rather than the luckiest: no configuration that ever failed to load asks
-# for this little. The binding one is Nemotron-Mini-4B at 16k over two sessions, which
-# wants 1838 MiB and failed, so the margin here is thin — but lowering it further starts
-# capping contexts that were measured to work, which costs more than a spare session.
-SESSION_BUDGET = 1800 * MIB
+# DSP address space one Hexagon session offers, in bytes, as the backend prints it when
+# the session opens ("ggml-hex: HTP0 op batching: ... vmem 3285696512", about 3134 MiB).
+# With GGML_HEXAGON_MBUF=256 (service_compose.yaml) this is the limit, and a hard one: a
+# session that stays under it loads and one that does not fails, every time. At MBUF 512 it
+# was not: mapping a 512 MiB chunk failed at random (3 loads in 5 for gemma-4-E4B, 0 in 9
+# once MBUF was 256), which is what made loads succeed holding 2.9 GiB and fail holding
+# 1.8 GiB — see ../SESSION_ALLOCATION.md.
+SESSION_VMEM = 3285696512
+
+# Fraction of it the sizing may fill, 2726 MiB. What is left over covers what the estimate
+# does not see: the compute buffer is a flat allowance rather than a per-model figure, and so
+# is the recurrent state. 0.87 rather than 0.9 because at 0.9 the rule asks for fewer
+# sessions than any load ever observed in two places — Qwen3-8B and DeepSeek-R1-Distill-
+# Llama-8B at 16k on three sessions (99% of that budget, where the context used to be
+# capped to 8k instead), Nemotron-Mini-4B at 8k on one (97%) — and neither has been tried on
+# the board with MBUF 256. At 0.87 every count the rule asks for is one a load was seen to
+# succeed on. Raising it back is a matter of running those trials (see ../SESSION_ALLOCATION.md).
+SESSION_BUDGET_FRACTION = 0.87
+SESSION_BUDGET = int(SESSION_VMEM * SESSION_BUDGET_FRACTION)
 
 # HTP0..HTP3: the Hexagon sessions the cDSP firmware gives one process.
 MAX_SESSIONS = 4
@@ -356,11 +368,12 @@ def kv_element_bytes(which: str) -> float:
 
 
 # The shape llama-server runs at, which decides how many cells a sliding-window KV cache
-# holds (see KvLayer.cells()). Both are read from the environment the server will see, with
-# llama-server's own defaults behind them: LLAMA_ARG_N_PARALLEL unset means the slot count
-# is auto-sized, which comes to 4, and service_compose.yaml sets LLAMA_ARG_UBATCH.
+# holds (see KvLayer.cells()) and how big the compute buffers are (compute_buffer_bytes()).
+# Both are read from the environment the server will see, with llama-server's own defaults
+# behind them: LLAMA_ARG_N_PARALLEL unset means the slot count is auto-sized, which comes
+# to 4, and an unset LLAMA_ARG_UBATCH is 512 — also what service_compose.yaml sets.
 DEFAULT_N_SEQ_MAX = 4
-DEFAULT_N_UBATCH = 256
+DEFAULT_N_UBATCH = 512
 
 
 def env_int(name: str, default: int) -> int:
@@ -380,9 +393,42 @@ def n_ubatch() -> int:
     return env_int("LLAMA_ARG_UBATCH", DEFAULT_N_UBATCH)
 
 
-# The Hexagon backend holds every quantization but the K-quants, which it does not repack:
-# those stay on the CPU.
-K_QUANT_SUFFIX = "_K"
+def compute_buffer_bytes(sessions: int) -> int:
+    """Bytes of compute buffers one of *sessions* sessions maps.
+
+    Its own and, from two sessions up, a copy of its predecessor's as well: a session takes
+    its input from the one before it, and the scheduler maps that session's compute buffer
+    into it to hand the activations over. Measured on gemma-4-E4B over two sessions at
+    n_ubatch 1024: HTP1 held 428 MiB of compute buffer of its own plus the 554 MiB of HTP0's,
+    on top of 1558 MiB of weights and 64 of KV cache — 2600 MiB where weights and KV cache
+    alone come to 1620.
+    """
+    return n_ubatch() * COMPUTE_BYTES_PER_UBATCH_TOKEN * (1 if sessions == 1 else 2)
+
+
+# Bytes of compute buffer one session reserves per token of micro-batch. llama.cpp sizes
+# the buffer for a full micro-batch, so it grows with LLAMA_ARG_UBATCH, not with the
+# context. Measured on the "sched_reserve: HTPn compute buffer size" lines llama-server
+# logs at 16k, on the busiest session: gemma-4-E4B 145 MiB at n_ubatch 256 and 554 at 1024
+# (0.54 MiB a token), gemma-4-E2B 66 and 265 (0.26). A flat allowance over the larger of the
+# two, until there is a formula from the tensor shapes; recalibrate it against those lines
+# after a llama.cpp bump.
+COMPUTE_BYTES_PER_UBATCH_TOKEN = int(0.6 * MIB)
+
+# Tensor types the Hexagon backend does not repack, so tensors of these types stay on the
+# CPU. The list follows the llama.cpp build the image ships: upstream keeps every K-quant
+# off the NPU, this build (llama.cpp PR #28994) repacks q4_K, q5_K and q6_K, and only the two
+# smallest K-quants are left out. A type not listed here counts as NPU-bound, which for a
+# type the backend does not really hold only costs a session — the safe direction. Revisit
+# when the backend gains a type (q3_K is on its way) or the image changes build.
+CPU_ONLY_TYPES = frozenset({"q2_K", "q3_K"})
+
+# Tensors only ever read by get_rows, which the NPU does not run, so they stay on the CPU
+# whatever their type: the per-layer embeddings of the matformer gemmas, where gemma-4-E2B
+# keeps two thirds of its bytes — the whole of its apparent size problem. token_embd.weight
+# is the same case, but only when the model has a separate output projection, see
+# npu_weight_bytes().
+GET_ROWS_ONLY_TENSORS = frozenset({"per_layer_token_embd.weight"})
 
 # A hybrid model (Qwen3.5, LFM2) keeps a recurrent state per sequence on the NPU next to
 # the KV cache of its attention layers. Its size follows the architecture rather than the
@@ -431,14 +477,15 @@ class ModelShape(NamedTuple):
     def session_bytes(self, ctx_size: int, sessions: int) -> int:
         """Bytes the busiest of *sessions* sessions ends up holding.
 
-        Weights and KV cache are split by layer, and the busiest session takes one
+        Weights, KV cache and state are split by layer, and the busiest session takes one
         layer's worth more than an even share — which is what the per-session figures
         llama-server logs show: granite-4.2-3b over two sessions puts 21 of its 40
-        layers' worth of KV cache on HTP0, measured as 672 MiB of 1280 at 16k.
+        layers' worth of KV cache on HTP0, measured as 672 MiB of 1280 at 16k. The compute
+        buffers are not split: every session reserves its own, see compute_buffer_bytes().
         """
         layers_per_session = -(-self.n_layer // sessions) + 1
         share = min(1.0, layers_per_session / self.n_layer)
-        return int(self.npu_bytes(ctx_size) * share)
+        return int(self.npu_bytes(ctx_size) * share) + compute_buffer_bytes(sessions)
 
     def sessions_needed(self, ctx_size: int) -> int:
         """Hexagon sessions this model needs at *ctx_size*, MAX_SESSIONS at worst."""
@@ -453,10 +500,12 @@ class ModelShape(NamedTuple):
 
     def describe(self, ctx_size: int) -> str:
         """How this model was sized, for the diagnostics."""
-        per_session = self.session_bytes(ctx_size, self.sessions_needed(ctx_size)) / MIB
+        needed = self.sessions_needed(ctx_size)
+        per_session = self.session_bytes(ctx_size, needed) / MIB
         return (
             f"{self.npu_weight_bytes / MIB:.0f} MiB on the NPU"
             f" + {self.kv_cache_bytes(ctx_size) / MIB:.0f} MiB of {kv_cache_description()} KV cache"
+            f" + {compute_buffer_bytes(needed) / MIB:.0f} MiB of compute buffers"
             f" -> {per_session:.0f} MiB per session" + ("" if self.fits(ctx_size) else f", over budget even on {sessions(MAX_SESSIONS)}")
         )
 
@@ -508,17 +557,20 @@ class FileSizeSizing(NamedTuple):
 def npu_weight_bytes(tensors) -> int:
     """Bytes of weights the Hexagon backend holds on the NPU.
 
-    Everything but the K-quants, and but the token embeddings of a model that has a
-    separate output projection: those are only read by get_rows and stay on the CPU. A
-    model with tied embeddings uses that same tensor as its output projection, and it
-    does go to the NPU. Reproduces the "HTP model buffer size" llama-server logs to
-    within a MiB on 18 of the 19 models measured.
+    Every tensor but those of a type the backend does not repack (CPU_ONLY_TYPES), those
+    only read by get_rows (GET_ROWS_ONLY_TENSORS), and the token embeddings of a model that
+    has a separate output projection, which are get_rows-only too. A model with tied
+    embeddings uses that same tensor as its output projection, and it does go to the NPU:
+    gemma-4-E4B puts its 560 MiB of q6_K token embeddings there. Reproduced the "HTP model
+    buffer size" llama-server logs to within a MiB on 18 of the 19 models measured under
+    the build that kept every K-quant on the CPU, and on gemma-4-E4B (2731 MiB) under the
+    one that repacks them.
     """
     names = {tensor.name for tensor in tensors}
-    dropped = set()
+    dropped = set(GET_ROWS_ONLY_TENSORS)
     if {"output.weight", "token_embd.weight"} <= names:
         dropped.add("token_embd.weight")
-    return sum(tensor.bytes for tensor in tensors if not tensor.type.endswith(K_QUANT_SUFFIX) and tensor.name not in dropped)
+    return sum(tensor.bytes for tensor in tensors if tensor.type not in CPU_ONLY_TYPES and tensor.name not in dropped)
 
 
 K_PROJECTION = re.compile(r"^blk\.(\d+)\.attn_k(?:_b)?\.weight$")

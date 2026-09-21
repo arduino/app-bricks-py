@@ -1,6 +1,6 @@
 ---
 name: openai
-version: 3.8.0
+version: 3.11.0
 type: pip
 summary: The official Python library for the openai API
 homepage: https://github.com/openai/openai-python

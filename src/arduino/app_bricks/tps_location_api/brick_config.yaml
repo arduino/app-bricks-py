@@ -1,0 +1,15 @@
+id: arduino:tps_location_api
+name: TPS Location API
+description: Collects nearby Wi-Fi access points and determines device location using the Qualcomm TPS Location API cloud service
+icon: 📍
+category: location
+version: 1.0.0
+author: Qualcomm
+variables:
+  - name: AUTH_KEY
+    description: TPS authentication key
+    type: string
+    secret: true
+  - name: AUTH_USER
+    description: TPS authentication user (e.g., "qualcomm-tester-1")
+    type: string

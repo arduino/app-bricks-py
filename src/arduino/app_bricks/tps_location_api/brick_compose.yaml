@@ -1,0 +1,26 @@
+services:
+  tps_location_api:
+    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/tps-location-api:0.13.0rc3
+    # The wireless interface lives in the host network namespace
+    network_mode: host
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - "${APP_HOME:-.}/.cache/tps_location_api:/app/.cache/tps_location_api"
+    environment:
+      - SCAN_TIMEOUT_SECONDS=10
+      - SCAN_RETRIES=3
+      - SCAN_CHANNEL_DWELL_TU=60
+      - SCAN_CACHE_SECONDS=10
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import socket; s = socket.socket(socket.AF_UNIX); s.settimeout(2); s.connect('/app/.cache/tps_location_api/scanner.sock')"]
+      interval: 20s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+      start_interval: 2s

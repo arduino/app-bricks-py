@@ -14,6 +14,7 @@ from .httprequest import *
 from .jsonparser import *
 from .ledmatrix import *
 from .logger import *
+from .peripheral import *
 from .slidingwindowbuffer import *
 from .leds import *
 
@@ -21,6 +22,7 @@ __all__ = [
     "App",
     "AppError",
     "brick",
+    "peripheral",
     "Bridge",
     "notify",
     "call",

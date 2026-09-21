@@ -1,0 +1,117 @@
+name: Comment pyright checks
+
+# Posts the pyright report on pull requests opened from forks. The analysis runs
+# in check-pyright.yml on the pull_request event, where the token is read-only
+# on fork PRs (that job executes code coming from the PR, so it must stay
+# unprivileged). This workflow runs afterwards on workflow_run, in the context of
+# this repository with a write token, and posts the report the analysis uploaded
+# as an artifact.
+#
+# Safety invariants, since the artifact was produced by a run that executed the
+# PR's code and every byte of it is untrusted:
+#   - nothing from the PR is checked out or executed here;
+#   - the PR number found in the artifact is accepted only if that PR's head SHA
+#     is the head SHA of the analysis run, so a PR cannot get another one
+#     commented;
+#   - the report is posted as the comment body via a file, never interpolated in
+#     a shell command or evaluated; a forged report can only make the PR's own
+#     comment look odd.
+#
+# PRs from branches of this repository are commented directly by the analysis
+# job, so they are skipped here. A workflow_run workflow only triggers from the
+# default branch: this file becomes active once merged, for the PRs that follow.
+
+on:
+  workflow_run:
+    workflows: ["Pyright checks"]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  comment:
+    runs-on: ubuntu-latest
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_repository.full_name != github.repository
+    steps:
+      - name: Download the report
+        id: download
+        # Missing artifact means the analysis stopped before producing a report
+        # (its own failure is already visible on the PR): nothing to post.
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: pyright-report
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+          path: report
+
+      - name: Verify the PR against the analyzed head
+        id: verify
+        if: steps.download.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
+        run: |
+          pr_number=$(jq -r '.pr_number' report/metadata.json)
+          api_new_errors=$(jq -r '.api_new_errors' report/metadata.json)
+          typing_new_errors=$(jq -r '.typing_new_errors' report/metadata.json)
+          if ! [[ "$pr_number" =~ ^[0-9]+$ && "$api_new_errors" =~ ^[0-9]+$ && "$typing_new_errors" =~ ^[0-9]+$ ]]; then
+            echo "::warning::pyright checks: malformed metadata in the report artifact, not posting"
+            exit 0
+          fi
+          # The artifact could name any PR: trust it only if that PR's head is the
+          # very commit the analysis run checked out.
+          read -r pr_sha pr_repo < <(gh api "repos/$GITHUB_REPOSITORY/pulls/$pr_number" --jq '"\(.head.sha) \(.head.repo.full_name)"')
+          if [ "$pr_sha" != "$RUN_HEAD_SHA" ] || [ "$pr_repo" != "$RUN_HEAD_REPO" ]; then
+            echo "::warning::pyright checks: PR #$pr_number head ($pr_repo@$pr_sha) does not match the analyzed head ($RUN_HEAD_REPO@$RUN_HEAD_SHA), not posting"
+            exit 0
+          fi
+          {
+            echo "pr_number=$pr_number"
+            echo "api_new_errors=$api_new_errors"
+            echo "typing_new_errors=$typing_new_errors"
+            echo "verified=true"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Post the report on the PR
+        if: steps.verify.outputs.verified == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.verify.outputs.pr_number }}
+          API_NEW_ERRORS: ${{ steps.verify.outputs.api_new_errors }}
+          TYPING_NEW_ERRORS: ${{ steps.verify.outputs.typing_new_errors }}
+        run: |
+          marker='<!-- pyright-checks -->'
+          { echo "$marker"; cat report/report.md; } > comment.md
+          # GitHub caps comment bodies at 65536 characters.
+          if [ "$(wc -c < comment.md)" -gt 60000 ]; then
+            head -c 60000 comment.md > comment.trimmed.md
+            printf '\n\n… report truncated, the complete one is in the job summary of the analysis run.\n' >> comment.trimmed.md
+            mv comment.trimmed.md comment.md
+          fi
+          # One sticky comment per PR, updated in place at every run.
+          comment_id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate \
+            --jq "first(.[] | select(.body | startswith(\"$marker\")) | .id)")
+          if [ -n "$comment_id" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$comment_id" -F body=@comment.md > /dev/null
+          else
+            gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" -F body=@comment.md > /dev/null
+          fi
+          # One label per check, present while the PR introduces new errors in it.
+          set_label() {
+            if [ "${3:-0}" != "0" ]; then
+              gh label create "$1" --color D93F0B --force --description "$2"
+              gh pr edit "$PR_NUMBER" --add-label "$1"
+            else
+              gh pr edit "$PR_NUMBER" --remove-label "$1" || true
+            fi
+          }
+          set_label examples-misaligned "Introduces errors in the published app-bricks-examples (see the pyright report comment)" "$API_NEW_ERRORS"
+          set_label typing-regression "Introduces typing errors in the library sources (see the pyright report comment)" "$TYPING_NEW_ERRORS"

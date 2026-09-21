@@ -31,6 +31,7 @@ groups; the build planner fails if two groups declare the same one.
 | `models-downloader` | bricks | `python-slim` | Downloads models from AI Hub, Edge Impulse and Hugging Face per `models/models-list.yaml` |
 | `aihub-models-runner` | ai | `qairt-common-base` | Runs Qualcomm AI Hub models, with GStreamer/WebSocket input and MJPEG/WebSocket output |
 | `gesture-recognition-runner` | ai | `aihub-models-runner` | Hand-gesture recognition on the MediaPipe palm/landmark/classifier models |
+| `pose-estimation-runner` | ai | `aihub-models-runner` | Body pose estimation on the PoseNet MobileNet model, 17 keypoints per person, custom pose models supported |
 | `ei-models-runner` | ai | Edge Impulse inference image | Edge Impulse inference with the bundled out-of-the-box models |
 | `ei-qnn-models-runner` | ai | Edge Impulse QNN inference image | Same, on the NPU-accelerated (QNN) models |
 | `llamacpp-runner` | ai | `python-slim` | llama.cpp model router, CPU build |
@@ -42,6 +43,7 @@ graph LR
   slim --> dl[models-downloader]
   slim --> lcpp[llamacpp-runner]
   qairt[qairt-common-base] --> aihub[aihub-models-runner] --> gesture[gesture-recognition-runner]
+  aihub --> pose[pose-estimation-runner]
   qairt --> lcppnpu[llamacpp-npu-runner]
   ei[ei-models-runner]
   eiqnn[ei-qnn-models-runner]
@@ -56,6 +58,7 @@ inside this repo.
 |---|---|---|
 | `Dockerfile` | yes | Build recipe. The directory itself is the build context. |
 | `ci.json` | yes | CI metadata: watched paths, build args, dependencies, release flags |
+| `requirements.txt` | if Python packages are installed | The Python packages the image installs. Never install them inline, the [dependency license scan](../scripts/licensed/README.md) only sees this file |
 
 SBOMs are not kept in the tree: they are generated from the published images at release time (see
 [SBOMs](#sboms)) and by the dev workflow as run artifacts.

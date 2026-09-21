@@ -2,7 +2,9 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import gc
 import pytest
+import threading
 import time
 import numpy as np
 import tempfile
@@ -11,6 +13,7 @@ import cv2
 from arduino.app_peripherals.camera import BaseCamera, CameraTransformError
 from arduino.app_peripherals.usb_camera import CameraReadError
 from arduino.app_utils.image.pipeable import PipeableFunction
+from arduino.app_utils.peripheral_registry import Peripherals
 
 
 class MockedCamera(BaseCamera):
@@ -523,3 +526,75 @@ def test_record_avi_uint8_conversion():
     assert read_count == expected_frames
 
     camera.stop()
+
+
+class TestShutdownRelease:
+    """A camera must be released when the app shuts down, even if the user never stops it.
+
+    A process killed while still holding a CSI camera leaves it assigned to a dead client, and
+    the camera then cannot be opened by anyone until cam-server is restarted.
+    """
+
+    def test_camera_registers_itself_for_release(self):
+        camera = MockedCamera()
+        camera.start()
+
+        Peripherals.stop_all(timeout=2.0)
+
+        assert camera.close_call_count == 1
+        assert not camera.is_started()
+
+    def test_release_is_a_noop_for_a_camera_that_was_never_started(self):
+        camera = MockedCamera()
+
+        Peripherals.stop_all(timeout=2.0)
+
+        assert camera.close_call_count == 0
+
+    def test_release_does_not_close_an_already_stopped_camera_twice(self):
+        camera = MockedCamera()
+        camera.start()
+        camera.stop()
+
+        Peripherals.stop_all(timeout=2.0)
+
+        assert camera.close_call_count == 1
+
+    def test_registration_does_not_keep_the_camera_alive(self):
+        camera = MockedCamera()
+        camera.start()
+        close_calls = []
+        camera._close_camera = lambda: close_calls.append(1)
+
+        del camera
+        gc.collect()
+
+        assert Peripherals.stop_all(timeout=2.0) == []
+
+    def test_stop_interrupts_a_throttled_capture(self):
+        """capture() holds the camera lock while pacing itself to the target FPS.
+
+        At a low FPS that wait is long enough to matter: stop() has to cut it short, or a
+        time-boxed shutdown can expire before the camera is ever released.
+        """
+        camera = MockedCamera(fps=1)  # a 1s interval between frames
+        camera.start()
+        assert camera.capture() is not None  # arms the throttle
+
+        captured = []
+
+        def capture_again():
+            captured.append(camera.capture())
+
+        reader = threading.Thread(target=capture_again, daemon=True)
+        reader.start()
+        time.sleep(0.05)  # let the reader take the lock and start waiting out the interval
+
+        started_at = time.monotonic()
+        camera.stop()
+        elapsed = time.monotonic() - started_at
+
+        reader.join(timeout=2)
+        assert elapsed < 0.5, f"stop() waited {elapsed:.2f}s for a throttled capture()"
+        assert camera.close_call_count == 1
+        assert captured == [None], "the interrupted capture must yield no frame"

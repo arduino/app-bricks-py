@@ -403,3 +403,60 @@ def test_classification_message_with_empty_classifications(classifier: VideoImag
     classifier._executor.shutdown(wait=True)
 
     assert not called.is_set()
+
+
+# ---------------------------------------------------------------------------
+# override_threshold — WebSocket connection retry
+# ---------------------------------------------------------------------------
+
+
+class _FakeModelInfo:
+    thresholds = [{"id": 7}]
+
+
+@pytest.fixture
+def no_retry_delay(monkeypatch: pytest.MonkeyPatch):
+    """Skip the real delay between connection attempts."""
+    monkeypatch.setattr("arduino.app_bricks.video_imageclassification.time.sleep", lambda _: None)
+
+
+def test_override_threshold_retries_until_connection_succeeds(classifier: VideoImageClassification, monkeypatch: pytest.MonkeyPatch, no_retry_delay):
+    """A model runner that is not accepting connections yet must be retried, not reported as a failure."""
+    classifier._model_info = _FakeModelInfo()
+    connection = MagicMock()
+    connection.__enter__.return_value = connection  # `with connect(...) as ws` yields the connection itself
+    attempts = []
+
+    def fake_connect(uri):
+        attempts.append(uri)
+        if len(attempts) < 3:
+            raise ConnectionRefusedError(111, "Connection refused")
+        return connection
+
+    monkeypatch.setattr("arduino.app_bricks.video_imageclassification.connect", fake_connect)
+
+    classifier.override_threshold(0.75)
+
+    assert len(attempts) == 3, "Connection should be retried until it succeeds"
+    connection.send.assert_called_once()
+    sent = json.loads(connection.send.call_args[0][0])
+    assert sent["type"] == "threshold-override"
+    assert sent["value"] == pytest.approx(0.75)
+
+
+def test_override_threshold_raises_after_exhausting_retries(classifier: VideoImageClassification, monkeypatch: pytest.MonkeyPatch, no_retry_delay):
+    """When the model runner stays unreachable, the last error is reported as a ConnectionError."""
+    classifier._model_info = _FakeModelInfo()
+    attempts = []
+
+    def fake_connect(uri):
+        attempts.append(uri)
+        raise ConnectionRefusedError(111, "Connection refused")
+
+    monkeypatch.setattr("arduino.app_bricks.video_imageclassification.connect", fake_connect)
+
+    with pytest.raises(ConnectionError) as excinfo:
+        classifier.override_threshold(0.5)
+
+    assert len(attempts) == classifier._WS_CONNECT_RETRIES, "Every attempt should be used before giving up"
+    assert isinstance(excinfo.value.__cause__, ConnectionRefusedError)
