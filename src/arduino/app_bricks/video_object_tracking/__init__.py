@@ -98,8 +98,8 @@ class VideoObjectTracking(VideoObjectDetection):
         Args:
             detected_object_label (str): The label of the detected object.
             object_id (float): The unique ID of the detected object.
-            x (int): The x-coordinate of the detected object.
-            y (int): The y-coordinate of the detected object.
+            x (int): The x-coordinate of the object reference point.
+            y (int): The y-coordinate of the object reference point.
         """
 
         if not self._is_label_enabled(detected_object_label):
@@ -127,8 +127,8 @@ class VideoObjectTracking(VideoObjectDetection):
         Args:
             detected_object_label (str): The label of the detected object.
             object_id (float): The unique ID of the detected object.
-            x (int): The x-coordinate of the detected object.
-            y (int): The y-coordinate of the detected object.
+            x (int): The x-coordinate of the object reference point.
+            y (int): The y-coordinate of the object reference point.
         """
         if not self._is_label_enabled(detected_object_label):
             # Discard if the label is not enabled for tracking
@@ -174,8 +174,8 @@ class VideoObjectTracking(VideoObjectDetection):
         Args:
             detected_object_label (str): The label of the detected object.
             object_id (float): The unique ID of the detected object.
-            x (int): The x-coordinate of the detected object.
-            y (int): The y-coordinate of the detected object.
+            x (int): The x-coordinate of the object reference point.
+            y (int): The y-coordinate of the object reference point.
         """
         if not self._is_label_enabled(detected_object_label):
             # Discard if the label is not enabled for tracking
@@ -357,7 +357,12 @@ class VideoObjectTracking(VideoObjectDetection):
                 }
                 detections.setdefault(detected_object, []).append(detection_details)
 
-                self._record_object(detected_object_label=detected_object, object_id=object_id, x=x, y=y)
+                self._record_object(
+                    detected_object_label=detected_object,
+                    object_id=object_id,
+                    x=x + width // 2,
+                    y=y + height // 2,
+                )
 
                 super()._execute_handler(key=detected_object, payload=detection_details)
 
