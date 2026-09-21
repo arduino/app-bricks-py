@@ -2,493 +2,360 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-import base64
-import json
+import http.client
+import queue
 import threading
 import time
-from unittest.mock import MagicMock
 
+import cv2
+import numpy as np
 import pytest
 
+import arduino.app_bricks.video_objectdetection as vod_module
+import arduino.app_internal.ei_inference as ei_inference
 from arduino.app_bricks.video_objectdetection import VideoObjectDetection
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-FAKE_COMPOSE = {"services": {"ei-object-detection": {}}}
-
-TIMEOUT = 2.0  # seconds to wait for async handler execution
+TIMEOUT = 3.0  # seconds to wait for a callback
+FRAME = np.zeros((120, 160, 3), np.uint8)  # 160x120 camera frames, the fake model input is 100x100
+CAT = {"label": "cat", "score": 0.9, "x": 16, "y": 24, "w": 48, "h": 48}  # in frame coordinates, as the service maps them
+DOG = {"label": "dog", "score": 0.2, "x": 0, "y": 0, "w": 10, "h": 10}
 
 
-def _make_classification_msg(bounding_boxes: list) -> str:
-    """Return a JSON-encoded WS classification message."""
-    return json.dumps({"type": "classification", "result": {"bounding_boxes": bounding_boxes}})
+class FakeCamera:
+    """A camera whose frames the test pushes, capture() blocks briefly when there is none."""
+
+    fps = 30
+
+    def __init__(self):
+        self.frames = queue.Queue()
+        self.started = False
+
+    def start(self):
+        self.started = True
+
+    def stop(self):
+        self.started = False
+
+    def capture(self):
+        try:
+            return self.frames.get(timeout=0.05)
+        except queue.Empty:
+            return None
+
+    def push(self, count=1):
+        for _ in range(count):
+            self.frames.put(FRAME.copy())
 
 
-def _make_box(label: str, value: float, x=0, y=0, width=10, height=10) -> dict:
-    return {"label": label, "value": value, "x": x, "y": y, "width": width, "height": height}
+class RunningDetector:
+    """A started brick with its detection loop running in a thread."""
 
+    def __init__(self, detector):
+        self.detector = detector
+        self.camera = detector._camera
+        detector.start()
+        self.thread = threading.Thread(target=detector.detection_loop, daemon=True)
+        self.thread.start()
 
-def _wait(event: threading.Event, timeout: float = TIMEOUT) -> bool:
-    """Wait for an event to be set; return True if it fired within the timeout."""
-    return event.wait(timeout=timeout)
-
-
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture(autouse=True)
-def mock_dependencies(monkeypatch: pytest.MonkeyPatch):
-    """Patch infrastructure so no real network calls are made."""
-    monkeypatch.setattr(
-        "arduino.app_bricks.video_objectdetection.load_brick_compose_file",
-        lambda cls: FAKE_COMPOSE,
-    )
-    monkeypatch.setattr(
-        "arduino.app_bricks.video_objectdetection.resolve_address",
-        lambda host: "127.0.0.1",
-    )
-    monkeypatch.setattr(
-        "arduino.app_bricks.video_objectdetection.Camera",
-        lambda: MagicMock(),
-    )
-
-
-@pytest.fixture
-def detector():
-    """VideoObjectDetection instance with default confidence=0.3."""
-    d = VideoObjectDetection(confidence=0.3, debounce_sec=0.0)
-    yield d
-    d._executor.shutdown(wait=False)
+    def stop(self):
+        self.detector.stop()
+        self.thread.join(TIMEOUT)
 
 
 @pytest.fixture
-def ws():
-    """Fake WebSocket connection (not used in classification path)."""
-    return MagicMock()
+def service(ei_service, monkeypatch):
+    monkeypatch.setattr(ei_inference, "DEFAULT_SOCKET_PATH", ei_service.socket_path)
+    ei_service.models["det"]["boxes"] = [CAT, DOG]
+    return ei_service
 
 
-# ---------------------------------------------------------------------------
-# Handler registration
-# ---------------------------------------------------------------------------
+@pytest.fixture
+def running(service):
+    """A running detector with confidence 0.3 and no debounce, the test registers its handlers first."""
+    runners = []
+
+    def start(**kwargs):
+        detector = VideoObjectDetection(camera=FakeCamera(), model="det", **{"confidence": 0.3, "debounce_sec": 0.0, "stream_port": 0, **kwargs})
+        runner = RunningDetector(detector)
+        runners.append(runner)
+        return runner
+
+    yield start
+    for runner in runners:
+        runner.stop()
 
 
-def test_on_detect_rejects_non_function(detector: VideoObjectDetection):
+# ---------------------------------------------------------------- configuration
+
+
+def test_model_from_the_configured_path(monkeypatch):
+    monkeypatch.setenv("EI_V_OBJ_DETECTION_MODEL", "/var/lib/arduino-app-cli/models/custom-ei/abc/model.eim")
+    monkeypatch.setattr("arduino.app_internal.ei_inference.client.DEFAULT_MODELS_DIR", "/var/lib/arduino-app-cli/models")
+    detector = VideoObjectDetection(camera=FakeCamera())
+    assert detector.model == "custom-ei/abc/model"
+
+
+def test_default_model_comes_from_the_models_list(monkeypatch):
+    from arduino.app_internal.core.module import ModelBrickConfig, ModelEntry
+
+    monkeypatch.delenv("EI_V_OBJ_DETECTION_MODEL", raising=False)
+    monkeypatch.setattr(vod_module, "get_brick_config", lambda cls: {"id": "arduino:video_object_detection"})
+    monkeypatch.setattr(vod_module, "get_brick_configured_model", lambda brick_id, brick_config: "yolox-qnn-object-detection")
+    entry = ModelEntry(
+        "yolox-qnn-object-detection",
+        bricks=[
+            ModelBrickConfig("arduino:object_detection", {"EI_OBJ_DETECTION_MODEL": "/models/ootb/ei/other.eim"}),
+            ModelBrickConfig("arduino:video_object_detection", {"EI_V_OBJ_DETECTION_MODEL": "/models/ootb/ei/yolo-x-nano-qnn.eim"}),
+        ],
+    )
+    monkeypatch.setattr(vod_module, "load_model_list", lambda: {"yolox-qnn-object-detection": entry})
+    assert VideoObjectDetection(camera=FakeCamera()).model == "ootb/ei/yolo-x-nano-qnn"
+
+
+def test_missing_model_configuration_is_an_error(monkeypatch):
+    monkeypatch.delenv("EI_V_OBJ_DETECTION_MODEL", raising=False)
+    monkeypatch.setattr(vod_module, "get_brick_config", lambda cls: None)
+    with pytest.raises(RuntimeError, match="EI_V_OBJ_DETECTION_MODEL"):
+        VideoObjectDetection(camera=FakeCamera())
+
+
+def test_bundled_model_from_the_configured_path(monkeypatch):
+    monkeypatch.setenv("EI_V_OBJ_DETECTION_MODEL", "/models/ootb/ei/yolo-x-nano.eim")
+    assert VideoObjectDetection(camera=FakeCamera()).model == "ootb/ei/yolo-x-nano"
+
+
+def test_model_outside_the_models_directories_is_an_error(monkeypatch):
+    monkeypatch.setenv("EI_V_OBJ_DETECTION_MODEL", "/home/arduino/model.eim")
+    with pytest.raises(RuntimeError, match="inference service"):
+        VideoObjectDetection(camera=FakeCamera())
+
+
+def test_callbacks_must_be_functions():
+    detector = VideoObjectDetection(camera=FakeCamera(), model="det")
     with pytest.raises(TypeError):
         detector.on_detect("cat", "not_a_function")
-
-
-def test_on_detect_all_rejects_non_function(detector: VideoObjectDetection):
     with pytest.raises(TypeError):
         detector.on_detect_all(42)
 
 
-def test_on_detect_overwrites_existing_handler(detector: VideoObjectDetection, ws):
-    called = []
-    detector.on_detect("cat", lambda: called.append(1))
-    detector.on_detect("cat", lambda: called.append(2))  # overwrite
-
-    msg = _make_classification_msg([_make_box("cat", 0.9)])
-    detector._process_message(ws, msg)
-    detector._executor.shutdown(wait=True)
-
-    assert called == [2], "Second handler should overwrite the first"
+def test_override_threshold_validates_the_value():
+    detector = VideoObjectDetection(camera=FakeCamera(), model="det")
+    with pytest.raises(TypeError):
+        detector.override_threshold("high")
+    detector.override_threshold(0.8)
+    assert detector._confidence == 0.8
 
 
-# ---------------------------------------------------------------------------
-# _execute_handler — per-label callbacks
-# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------- detections
 
 
-def test_handler_no_params_is_called(detector: VideoObjectDetection, ws):
-    """Handler with no parameters is invoked on a matching detection."""
+def test_frames_reach_the_service_and_boxes_come_back_in_frame_coordinates(running, service):
+    received = queue.Queue()
+    runner = running()
+    runner.detector.on_detect("cat", lambda details: received.put(details))
+    runner.camera.push()
+
+    details = received.get(timeout=TIMEOUT)
+    assert details["confidence"] == pytest.approx(0.9)
+    assert details["bounding_box_xyxy"] == (16, 24, 64, 72)
+    assert service.frames[0][2].shape == (120, 160, 3), "the camera frame reaches the service as it is"
+
+
+def test_handler_without_parameters_is_invoked(running):
     fired = threading.Event()
-    detector.on_detect("cat", lambda: fired.set())
-
-    msg = _make_classification_msg([_make_box("cat", 0.9)])
-    detector._process_message(ws, msg)
-
-    assert _wait(fired), "Handler should be invoked within timeout"
+    runner = running()
+    runner.detector.on_detect("cat", lambda: fired.set())
+    runner.camera.push()
+    assert fired.wait(TIMEOUT)
 
 
-def test_handler_with_detection_details_receives_payload(detector: VideoObjectDetection, ws):
-    """Handler accepting one positional arg receives the detection_details dict."""
-    received = {}
+def test_detections_below_the_confidence_threshold_are_dropped(running):
+    seen = queue.Queue()
+    runner = running(confidence=0.3)
+    runner.detector.on_detect("dog", lambda details: seen.put(("dog", details)))
+    runner.detector.on_detect_all(lambda detections: seen.put(("all", detections)))
+    runner.camera.push()
 
-    def handler(details):
-        received.update(details)
-
-    detector.on_detect("dog", handler)
-
-    msg = _make_classification_msg([_make_box("dog", 0.8, x=5, y=10, width=20, height=30)])
-    detector._process_message(ws, msg)
-    detector._executor.shutdown(wait=True)
-
-    assert received["confidence"] == pytest.approx(0.8)
-    assert received["bounding_box_xyxy"] == (5, 10, 25, 40)
+    kind, detections = seen.get(timeout=TIMEOUT)
+    assert kind == "all" and set(detections) == {"cat"}, "the dog scores 0.2, below the threshold"
+    assert len(detections["cat"]) == 1
+    with pytest.raises(queue.Empty):
+        seen.get(timeout=0.3)
 
 
-def test_handler_with_frame_kwarg_receives_none_when_preview_disabled(detector: VideoObjectDetection, ws):
-    """When camera_preview=False (default), frame is None even if handler accepts it."""
-    received_frame = []
-
-    def handler(details, frame=None):
-        received_frame.append(frame)
-
-    detector.on_detect("cat", handler)
-
-    msg = _make_classification_msg([_make_box("cat", 0.9)])
-    detector._process_message(ws, msg)
-    detector._executor.shutdown(wait=True)
-
-    assert received_frame == [None]
+def test_override_threshold_applies_to_the_next_frames(running):
+    labels = queue.Queue()
+    runner = running(confidence=0.3)
+    runner.detector.on_detect_all(lambda detections: labels.put(set(detections)))
+    runner.camera.push()
+    assert labels.get(timeout=TIMEOUT) == {"cat"}
+    runner.detector.override_threshold(0.1)
+    runner.camera.push()
+    assert labels.get(timeout=TIMEOUT) == {"cat", "dog"}
 
 
-def test_handler_with_frame_kwarg_receives_bytes_when_preview_enabled(monkeypatch: pytest.MonkeyPatch):
-    """When camera_preview=True and a frame is buffered, handler receives jpeg bytes."""
-    d = VideoObjectDetection(confidence=0.3, camera_preview=True)
-
-    fake_jpeg = b"\xff\xd8\xff\xe0fake_jpeg_data"
-    encoded = "data:image/jpeg;base64," + base64.b64encode(fake_jpeg).decode("utf-8")
-    with d._camera_preview_lock:
-        d._last_camera_frame = encoded
-
-    received_frame = []
-
-    def handler(details, frame=None):
-        received_frame.append(frame)
-
-    d.on_detect("cat", handler)
-
-    ws = MagicMock()
-    msg = _make_classification_msg([_make_box("cat", 0.9)])
-    d._process_message(ws, msg)
-    d._executor.shutdown(wait=True)
-
-    assert received_frame[0] == fake_jpeg
-
-
-# ---------------------------------------------------------------------------
-# _execute_handler — confidence filtering
-# ---------------------------------------------------------------------------
-
-
-def test_handler_not_called_below_confidence(detector: VideoObjectDetection, ws):
-    """Detection below confidence threshold must not trigger any handler."""
+def test_no_callback_when_nothing_passes_the_threshold(running, service):
+    service.models["det"]["boxes"] = [DOG]
     called = threading.Event()
-    detector.on_detect("cat", lambda: called.set())
-
-    # 0.2 < default confidence 0.3
-    msg = _make_classification_msg([_make_box("cat", 0.2)])
-    detector._process_message(ws, msg)
-    detector._executor.shutdown(wait=True)
-
-    assert not called.is_set(), "Handler must not fire for low-confidence detection"
-
-
-def test_handler_called_at_exact_confidence_threshold(detector: VideoObjectDetection, ws):
-    """Detection exactly at the confidence threshold must NOT trigger (strict <)."""
-    called = threading.Event()
-    detector.on_detect("cat", lambda: called.set())
-
-    msg = _make_classification_msg([_make_box("cat", 0.3)])
-    detector._process_message(ws, msg)
-    detector._executor.shutdown(wait=True)
-
-    # confidence 0.3 is not < 0.3, so handler should fire
-    assert called.is_set()
-
-
-def test_unregistered_label_does_not_trigger_handler(detector: VideoObjectDetection, ws):
-    """Detection for a label with no registered handler must not crash or fire."""
-    called = threading.Event()
-    detector.on_detect("cat", lambda: called.set())
-
-    msg = _make_classification_msg([_make_box("dog", 0.9)])
-    detector._process_message(ws, msg)
-    detector._executor.shutdown(wait=True)
-
-    assert not called.is_set()
-
-
-# ---------------------------------------------------------------------------
-# _execute_handler — debounce
-# ---------------------------------------------------------------------------
-
-
-def test_debounce_suppresses_rapid_repeat(ws):
-    """Second detection within the debounce window must not invoke the handler."""
-    d = VideoObjectDetection(confidence=0.3, debounce_sec=5.0)
-    count = []
-
-    def handler():
-        count.append(1)
-
-    d.on_detect("cat", handler)
-
-    msg = _make_classification_msg([_make_box("cat", 0.9)])
-    d._process_message(ws, msg)
-    d._execute_handler.__func__  # ensure the method exists
-    d._executor.shutdown(wait=True)
-
-    # Immediately send again — still within debounce window
-    count.clear()
-    d._executor = __import__("concurrent.futures", fromlist=["ThreadPoolExecutor"]).ThreadPoolExecutor(max_workers=5)
-    d._process_message(ws, msg)
-    d._executor.shutdown(wait=True)
-
-    assert count == [], "Handler must be suppressed within debounce window"
-
-
-def test_debounce_allows_after_window(ws):
-    """Handler must fire again after the debounce window has elapsed."""
-    d = VideoObjectDetection(confidence=0.3, debounce_sec=0.05)
-    count = []
-
-    def handler():
-        count.append(1)
-
-    d.on_detect("cat", handler)
-    msg = _make_classification_msg([_make_box("cat", 0.9)])
-
-    d._process_message(ws, msg)
-    d._executor.shutdown(wait=True)
-    assert len(count) == 1
-
-    time.sleep(0.1)  # let debounce window expire
-
-    d._executor = __import__("concurrent.futures", fromlist=["ThreadPoolExecutor"]).ThreadPoolExecutor(max_workers=5)
-    d._process_message(ws, msg)
-    d._executor.shutdown(wait=True)
-
-    assert len(count) == 2, "Handler should fire again after debounce window"
-
-
-# ---------------------------------------------------------------------------
-# _execute_handler — lock / concurrency
-# ---------------------------------------------------------------------------
-
-
-def test_handler_skipped_when_lock_already_held(detector: VideoObjectDetection, ws):
-    """If the per-detection lock is already held (handler running), new detections are skipped."""
-    barrier = threading.Barrier(2)
-    released = threading.Event()
-    invocations = []
-
-    def slow_handler():
-        invocations.append("start")
-        barrier.wait()  # sync with test thread
-        released.wait(timeout=TIMEOUT)
-
-    detector.on_detect("cat", slow_handler)
-
-    msg = _make_classification_msg([_make_box("cat", 0.9)])
-
-    # First message — slow_handler starts
-    detector._process_message(ws, msg)
-    barrier.wait()  # wait until slow_handler is inside
-
-    # Second message — lock is held, should be skipped
-    second_fired = threading.Event()
-
-    def quick_handler():
-        second_fired.set()
-
-    # Temporarily swap handler to a quick one and manually call _execute_handler
-    # The original slow_handler still owns the lock — a second _execute_handler call should skip
-    detector._process_message(ws, msg)
-
-    released.set()  # let slow_handler finish
-    detector._executor.shutdown(wait=True)
-
-    # Only one invocation should have happened (second was dropped)
-    assert invocations.count("start") == 1, "Second detection must be skipped while lock is held"
-
-
-def test_blocking_handler_discards_detections_sent_while_running(detector: VideoObjectDetection, ws):
-    """Detections arriving while the handler is still executing must all be discarded,
-    while detections for other labels are processed normally.
-
-    Scenario:
-      1. Register a blocking 'cat' handler and a quick 'dog' handler.
-      2. Send the first 'cat' detection — blocking handler starts and holds the cat lock.
-      3. Send 50 more 'cat' detections (all discarded) interleaved with 'dog' detections.
-      4. Unblock the cat handler.
-      5. Assert cat handler was called exactly once and dog handler was called
-         for every dog detection sent while cat was blocked.
-    """
-    EXTRA_DETECTIONS = 50
-    cat_invocation_count = []
-    dog_invocation_count = []
-    handler_started = threading.Event()
-    handler_unblock = threading.Event()
-
-    def blocking_cat_handler():
-        cat_invocation_count.append(1)
-        handler_started.set()  # signal that we are inside the handler
-        handler_unblock.wait(timeout=30)  # block until the test releases us
-
-    def dog_handler():
-        dog_invocation_count.append(1)
-
-    detector.on_detect("cat", blocking_cat_handler)
-    detector.on_detect("dog", dog_handler)
-
-    cat_msg = _make_classification_msg([_make_box("cat", 0.9)])
-    dog_msg = _make_classification_msg([_make_box("dog", 0.9)])
-
-    # 1st cat detection — starts the blocking handler
-    detector._process_message(ws, cat_msg)
-
-    # Wait until the cat handler is actually running and holding the lock
-    assert handler_started.wait(timeout=TIMEOUT), "Cat handler did not start in time"
-
-    # Interleave 50 cat detections (all dropped) with dog detections.
-    # Per-label locks are independent — dog must never be blocked by cat's lock.
-    DOG_DETECTIONS = 3
-    for i in range(EXTRA_DETECTIONS):
-        detector._process_message(ws, cat_msg)
-        if i < DOG_DETECTIONS:
-            detector._process_message(ws, dog_msg)
-
-    # Release the blocking cat handler
-    handler_unblock.set()
-    detector._executor.shutdown(wait=True)
-
-    assert len(cat_invocation_count) == 1, f"Cat handler should have been invoked exactly once, but was called {len(cat_invocation_count)} times"
-    assert len(dog_invocation_count) == DOG_DETECTIONS, (
-        f"Dog handler should have been invoked {DOG_DETECTIONS} times, but was called {len(dog_invocation_count)} times"
-    )
-
-
-# ---------------------------------------------------------------------------
-# ALL_HANDLERS_KEY (on_detect_all)
-# ---------------------------------------------------------------------------
-
-
-def test_global_handler_receives_all_detections(detector: VideoObjectDetection, ws):
-    """on_detect_all callback receives a dict with all detections above threshold."""
-    received = {}
-
-    def handler(detections):
-        received.update(detections)
-
-    detector.on_detect_all(handler)
-
-    msg = _make_classification_msg([
-        _make_box("cat", 0.9),
-        _make_box("dog", 0.7),
-        _make_box("bird", 0.1),  # below threshold — must be filtered
-    ])
-    detector._process_message(ws, msg)
-    detector._executor.shutdown(wait=True)
-
-    assert "cat" in received
-    assert "dog" in received
-    assert "bird" not in received
-
-
-def test_global_handler_not_called_when_no_detections_above_threshold(detector: VideoObjectDetection, ws):
-    """on_detect_all must not be called if no detection passes the confidence threshold."""
-    called = threading.Event()
-    detector.on_detect_all(lambda d: called.set())
-
-    msg = _make_classification_msg([_make_box("cat", 0.1)])
-    detector._process_message(ws, msg)
-    detector._executor.shutdown(wait=True)
-
-    assert not called.is_set()
-
-
-def test_global_handler_with_frame_receives_bytes_when_preview_enabled():
-    """on_detect_all callback with frame kwarg receives jpeg bytes when preview is enabled."""
-    d = VideoObjectDetection(confidence=0.3, camera_preview=True)
-
-    fake_jpeg = b"\xff\xd8\xff\xe0test"
-    encoded = "data:image/jpeg;base64," + base64.b64encode(fake_jpeg).decode("utf-8")
-    with d._camera_preview_lock:
-        d._last_camera_frame = encoded
-
-    received_frame = []
-
-    def handler(detections, frame=None):
-        received_frame.append(frame)
-
-    d.on_detect_all(handler)
-
-    ws = MagicMock()
-    msg = _make_classification_msg([_make_box("cat", 0.9)])
-    d._process_message(ws, msg)
-    d._executor.shutdown(wait=True)
-
-    assert received_frame[0] == fake_jpeg
-
-
-def test_global_handler_debounce(ws):
-    """on_detect_all respects debounce just like per-label handlers."""
-    d = VideoObjectDetection(confidence=0.3, debounce_sec=5.0)
-    count = []
-    d.on_detect_all(lambda dets: count.append(1))
-
-    msg = _make_classification_msg([_make_box("cat", 0.9)])
-    d._process_message(ws, msg)
-    d._executor.shutdown(wait=True)
-    assert len(count) == 1
-
-    # Second call within debounce window
-    from concurrent.futures import ThreadPoolExecutor
-
-    d._executor = ThreadPoolExecutor(max_workers=5)
-    d._process_message(ws, msg)
-    d._executor.shutdown(wait=True)
-
-    assert len(count) == 1, "Global handler must be debounced"
-
-
-# ---------------------------------------------------------------------------
-# Message type handling
-# ---------------------------------------------------------------------------
-
-
-def test_unknown_message_type_does_not_raise(detector: VideoObjectDetection, ws):
-    """Processing an unknown WS message type must not raise an exception."""
-    msg = json.dumps({"type": "unknown-type", "data": "something"})
-    detector._process_message(ws, msg)  # should not raise
-
-
-def test_handling_message_success_is_silently_ignored(detector: VideoObjectDetection, ws):
-    """handling-message-success messages must be silently ignored."""
-    msg = json.dumps({"type": "handling-message-success"})
-    detector._process_message(ws, msg)  # should not raise
-
-
-def test_classification_message_with_empty_bounding_boxes(detector: VideoObjectDetection, ws):
-    """Classification message with empty bounding_boxes list must not raise."""
-    called = threading.Event()
-    detector.on_detect("cat", lambda: called.set())
-
-    msg = json.dumps({"type": "classification", "result": {"bounding_boxes": []}})
-    detector._process_message(ws, msg)
-    detector._executor.shutdown(wait=True)
-
-    assert not called.is_set()
-
-
-def test_per_label_and_global_handler_both_fire(detector: VideoObjectDetection, ws):
-    """Both the per-label and the global handler must fire for the same detection."""
-    label_fired = threading.Event()
-    global_fired = threading.Event()
-
-    detector.on_detect("cat", lambda: label_fired.set())
-    detector.on_detect_all(lambda d: global_fired.set())
-
-    msg = _make_classification_msg([_make_box("cat", 0.9)])
-    detector._process_message(ws, msg)
-    detector._executor.shutdown(wait=True)
-
-    assert label_fired.is_set(), "Per-label handler must fire"
-    assert global_fired.is_set(), "Global handler must fire"
+    runner = running()
+    runner.detector.on_detect_all(lambda detections: called.set())
+    runner.camera.push(3)
+    assert not called.wait(0.5)
+
+
+def test_frame_kwarg_is_none_without_camera_preview(running):
+    frames = queue.Queue()
+    runner = running()
+    runner.detector.on_detect("cat", lambda details, frame=None: frames.put(frame))
+    runner.camera.push()
+    assert frames.get(timeout=TIMEOUT) is None
+
+
+def test_frame_kwarg_is_the_jpeg_frame_with_camera_preview(running):
+    frames = queue.Queue()
+    runner = running(camera_preview=True)
+    runner.detector.on_detect_all(lambda detections, frame: frames.put(frame))
+    runner.camera.push()
+    frame = frames.get(timeout=TIMEOUT)
+    assert isinstance(frame, bytes) and frame[:2] == b"\xff\xd8"
+
+
+def test_debounce_suppresses_rapid_repeats_and_allows_later_ones(running):
+    calls = queue.Queue()
+    runner = running(debounce_sec=0.5)
+    runner.detector.on_detect("cat", lambda: calls.put(time.monotonic()))
+    runner.camera.push(3)
+    first = calls.get(timeout=TIMEOUT)
+    with pytest.raises(queue.Empty):
+        calls.get(timeout=0.3)
+    time.sleep(0.3)
+    runner.camera.push()
+    assert calls.get(timeout=TIMEOUT) - first >= 0.5
+
+
+def test_slow_handler_discards_the_detections_arriving_meanwhile(running):
+    calls = []
+    release = threading.Event()
+
+    def slow():
+        calls.append(time.monotonic())
+        release.wait(TIMEOUT)
+
+    runner = running()
+    runner.detector.on_detect("cat", slow)
+    runner.camera.push(4)
+    time.sleep(0.5)
+    release.set()
+    time.sleep(0.2)
+    assert len(calls) == 1
+
+
+def test_frame_errors_do_not_stop_the_loop(running, service):
+    replies = iter([{"code": "internal", "error": "boom"}])
+    service.models["det"]["boxes"] = lambda seq, image: next(replies, [CAT])
+    fired = threading.Event()
+    runner = running()
+    runner.detector.on_detect("cat", lambda: fired.set())
+    for _ in range(20):  # frames captured while one is in flight are skipped, so pace them
+        runner.camera.push()
+        if fired.wait(0.1):
+            break
+    assert fired.is_set()
+
+
+def test_frames_are_captured_only_when_the_model_is_free(running, service):
+    """A slow model paces the capture: no frame is captured, resized or sent while one is in flight."""
+    service.reply_delay = 0.3
+    results = queue.Queue()
+    runner = running()
+    runner.detector.on_detect_all(lambda detections: results.put(detections))
+    runner.camera.push(6)
+    assert results.get(timeout=TIMEOUT)
+    time.sleep(0.45)
+    assert 1 <= len(service.frames) <= 3, "one frame per inference, the others still wait in the camera"
+    assert runner.camera.frames.qsize() >= 3, "nothing was captured while the model was busy"
+
+
+# ---------------------------------------------------------------- video stream
+
+
+def read_part(response):
+    """The next JPEG of a multipart/x-mixed-replace response."""
+    length = None
+    while True:
+        line = response.readline()
+        if line.lower().startswith(b"content-length:"):
+            length = int(line.split(b":", 1)[1])
+        if line == b"\r\n" and length is not None:
+            return response.read(length)
+
+
+def test_video_stream_shows_the_frames_with_the_boxes(running):
+    runner = running()
+    connection = http.client.HTTPConnection("127.0.0.1", runner.detector.stream_port, timeout=5)
+    connection.request("GET", "/")
+    response = connection.getresponse()
+    assert response.status == 200
+    for _ in range(20):  # until the loop sees the client, frames are not rendered
+        runner.camera.push()
+        time.sleep(0.05)
+    first = cv2.imdecode(np.frombuffer(read_part(response), np.uint8), cv2.IMREAD_COLOR)
+    runner.camera.push()
+    second = cv2.imdecode(np.frombuffer(read_part(response), np.uint8), cv2.IMREAD_COLOR)
+    connection.close()
+    assert first.shape == (120, 160, 3)
+    # The cat box is (16, 24)-(64, 72) in frame coordinates: its border is colored, nothing is drawn far from it
+    border = first[50, 16].astype(int)
+    assert border.max() > 100 and tuple(first[110, 150]) == (0, 0, 0)
+    assert np.abs(second[50, 16].astype(int) - border).max() < 40, "the label keeps its color across frames"
+
+
+def test_video_stream_can_be_disabled(service):
+    detector = VideoObjectDetection(camera=FakeCamera(), model="det", stream_port=None)
+    assert detector.stream_port is None
+    detector.start()
+    detector.stop()
+
+
+# ---------------------------------------------------------------- service lifecycle
+
+
+def test_waits_for_the_service_and_reconnects_when_it_restarts(service, monkeypatch):
+    monkeypatch.setattr(VideoObjectDetection, "_RETRY_SEC", 0.1)
+    fired = queue.Queue()
+    service.stop()
+    detector = VideoObjectDetection(camera=FakeCamera(), model="det", stream_port=0)
+    detector.on_detect("cat", lambda: fired.put(True))
+    runner = RunningDetector(detector)
+    try:
+        runner.camera.push()
+        with pytest.raises(queue.Empty):
+            fired.get(timeout=0.3)
+        service.start()
+        runner.camera.push()
+        assert fired.get(timeout=TIMEOUT)
+        # The service goes away and comes back: the brick reconnects
+        service.stop()
+        service.start()
+        assert service.closed.wait(TIMEOUT)
+        for _ in range(5):
+            runner.camera.push()
+            try:
+                assert fired.get(timeout=1.0)
+                break
+            except queue.Empty:
+                continue
+        else:
+            pytest.fail("no detection after the service restarted")
+    finally:
+        runner.stop()
+
+
+def test_stop_closes_the_connection_and_the_camera(running, service):
+    runner = running()
+    runner.camera.push()
+    assert service.opened.wait(TIMEOUT)
+    runner.stop()
+    assert service.closed.wait(TIMEOUT)
+    assert not runner.camera.started
+    assert not runner.thread.is_alive()
