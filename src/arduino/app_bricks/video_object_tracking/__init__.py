@@ -323,7 +323,7 @@ class VideoObjectTracking(VideoObjectDetection):
 
             if self._model_info and self._model_info.thresholds is not None:
                 try:
-                    self._set_thresholds()
+                    self._set_thresholds(ws)
                 except Exception as e:
                     logger.error(f"Failed to configure the tracker: {e}")
             return
@@ -380,13 +380,19 @@ class VideoObjectTracking(VideoObjectDetection):
             # Leave logging for unknown message types for debugging purposes
             logger.warning(f"Unknown message type: {jmsg.get('type')}")
 
-    def _set_thresholds(self) -> None:
-        """Set the thresholds for the object tracking model."""
-        self.override_confidence(self._confidence)
-        self.override_keep_grace(self._keep_grace)
-        self.override_min_detections(self._min_detections)
-        self.override_iou_threshold(self._iou_threshold)
-        self.override_euclidean_distance_threshold(self._euclidean_distance_threshold)
+    def _set_thresholds(self, ws: Connection) -> None:
+        """Set the thresholds for the object tracking model over the given connection."""
+        super()._override_threshold(ws, self._confidence)
+        self._override_config_value(ws, "max_age", self._keep_grace)
+        self._override_config_value(ws, "min_hits", self._min_detections)
+        if self._reports_centroids():
+            self._override_config_value(ws, "threshold", self._euclidean_distance_threshold)
+        else:
+            self._override_config_value(ws, "iou_threshold", self._iou_threshold)
+
+    def _reports_centroids(self) -> bool:
+        """Whether the model reports centroids, as FOMO does, instead of bounding boxes."""
+        return self._model_info is not None and self._model_info.model_type == "constrained_object_detection"
 
     def override_confidence(self, confidence: float) -> None:
         """Override the confidence threshold for object detection model.
@@ -450,10 +456,9 @@ class VideoObjectTracking(VideoObjectDetection):
             RuntimeError: If the model information is not available or does not support threshold override.
         """
 
-        if self._model_info is not None and self._model_info.model_type is not None:
-            if self._model_info.model_type == "constrained_object_detection":
-                logger.debug("This model reports centroids. Use 'override_euclidean_distance_threshold' instead.")
-                return
+        if self._reports_centroids():
+            logger.debug("This model reports centroids. Use 'override_euclidean_distance_threshold' instead.")
+            return
 
         try:
             with connect(self._uri) as ws:
@@ -476,10 +481,9 @@ class VideoObjectTracking(VideoObjectDetection):
             RuntimeError: If the model information is not available or does not support threshold override.
         """
 
-        if self._model_info is not None and self._model_info.model_type is not None:
-            if self._model_info.model_type == "object_detection":
-                logger.debug("This model reports bounding boxes. Use 'override_iou_threshold' instead.")
-                return
+        if self._model_info is not None and not self._reports_centroids():
+            logger.debug("This model reports bounding boxes. Use 'override_iou_threshold' instead.")
+            return
 
         try:
             with connect(self._uri) as ws:
