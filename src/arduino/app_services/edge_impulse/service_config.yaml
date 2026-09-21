@@ -1,0 +1,8 @@
+service_id: arduino:edge_impulse
+name: Edge Impulse inference service
+description: |
+  Runs the Edge Impulse (.eim) models and serves them to bricks over a Unix socket.
+  Every brick connection requests one model; connections requesting the same model share it.
+  On supported boards the models run on the NPU.
+category: ai
+supported_boards: ["unoq", "ventunoq"]
