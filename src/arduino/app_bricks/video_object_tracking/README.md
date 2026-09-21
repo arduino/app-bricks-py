@@ -61,7 +61,7 @@ tracker.set_horizontal_crossing_line(240)
 
 # Callback when a "person" is tracked
 def on_person_tracked(details: dict):
-    # Example: {"object_id": 7.0, "bounding_box_xyxy": (10, 20, 110, 220)}
+    # Example: {"object_id": 7.0, "confidence": 0.87, "bounding_box_xyxy": (10, 20, 110, 220)}
     print(f"🚶 Person {details['object_id']} at {details['bounding_box_xyxy']}")
 
 
@@ -70,7 +70,7 @@ tracker.on_detect("person", on_person_tracked)
 
 # Callback for all tracked objects of a frame (takes one dict argument)
 def on_all_tracked(objects: dict):
-    # Example: {"person": {"object_id": 7.0, "bounding_box_xyxy": (10, 20, 110, 220)}}
+    # Example: {"person": [{"object_id": 7.0, "confidence": 0.87, "bounding_box_xyxy": (10, 20, 110, 220)}]}
     print("Tracked:", objects)
     print("Unique so far:", tracker.get_unique_objects_count())
     print("Line crossings:", tracker.get_line_crossing_counts())
@@ -85,8 +85,8 @@ App.run()
 
 Callback signatures:
 
-- `on_detect(label, callback)`: the callback must be a plain function. With no parameters it is simply invoked; with one parameter it receives the tracking details dict `{"object_id": float, "bounding_box_xyxy": (x1, y1, x2, y2)}`.
-- `on_detect_all(callback)`: the callback receives one dict argument mapping each tracked label to its tracking details: `{label: {"object_id": float, "bounding_box_xyxy": (x1, y1, x2, y2)}, ...}`.
+- `on_detect(label, callback)`: the callback must be a plain function. With no parameters it is simply invoked; with one parameter it receives the tracking details dict `{"object_id": float, "confidence": float, "bounding_box_xyxy": (x1, y1, x2, y2)}`, once per object of that label in the frame.
+- `on_detect_all(callback)`: the callback receives one dict argument mapping each tracked label to the list of its objects in the frame: `{label: [{"object_id": float, "confidence": float, "bounding_box_xyxy": (x1, y1, x2, y2)}, ...], ...}`, so `len()` of a list is how many objects of that label are in view.
 
 The constructor also accepts a `camera` parameter (`BaseCamera`) to use a specific camera instead of the default one, which is where the capture frame rate and resolution are set. The frame rate bounds how far an object can move between two observations, so it bounds how reliably the tracker keeps an identity.
 
