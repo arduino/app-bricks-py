@@ -26,6 +26,7 @@ container by globbing `containers/*/<name>/Dockerfile`, so names must be unique 
 |---|---|---|---|
 | `python-slim` | base | `python:3.13-slim-trixie` | Minimal Python layer shared by everything else |
 | `edge-impulse-runner` | ai | `python-slim` | Edge Impulse SDK Runner |
+| `edge-impulse-npu-runner` | ai | `qairt-common-base` | Edge Impulse SDK NPU Runner |
 | `python-base` | base | `python-slim` | System deps, non-root user, fonts, OpenCV wheel with trimmed FFmpeg and GStreamer plugins-good builds, libcamera + GStreamer packages |
 | `qairt-common-base` | base | `python:3.13-slim-trixie` | Qualcomm AI Runtime and FastRPC libraries shared by the NPU runners |
 | `aihub-framework` | base | `scratch` | Layer, never run: the `aihub` runner framework and the app skeleton, copied by `aihub-litert-models-runner` and `aihub-onnx-models-runner` |
@@ -57,6 +58,7 @@ graph LR
   fw[aihub-framework] -.-> aihub
   fw -.-> aihubonnx
   slim --> edgeimpulserunner[edge-impulse-runner]
+  qairt --> edgeimpulsenpurunner[edge-impulse-npu-runner]
 ```
 
 `ei-models-runner` and `ei-qnn-models-runner` build on external Edge Impulse images and have no upstream
