@@ -3,17 +3,28 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-from arduino.app_utils import brick, Logger, LRUDict
+from arduino.app_utils import AppError, brick, Logger, LRUDict
+from arduino.app_utils.image.adjustments import compress_to_jpeg
 from arduino.app_bricks.video_objectdetection import AllDetectionsCallback, DetectionCallback, VideoObjectDetection
-from arduino.app_internal.core import EdgeImpulseRunnerFacade
+from arduino.app_internal.core import EdgeImpulseModelInfo, EdgeImpulseRunnerFacade
 from arduino.app_peripherals.camera import BaseCamera
 from websockets.sync.client import connect
 from websockets.sync.connection import Connection
 import json
+import socket
+import time
 from collections import Counter
 import threading
+import numpy as np
 
 logger = Logger("VideoObjectTracking")
+
+_HANDSHAKE_TIMEOUT = 8.0
+_HANDSHAKE_STEP = 0.5
+
+
+class VideoObjectTrackingError(AppError):
+    """Base class for video object tracking errors."""
 
 
 @brick
@@ -78,6 +89,57 @@ class VideoObjectTracking(VideoObjectDetection):
         # Directions tracking dict
         self._object_directions = {}
         self._min_movement_threshold = min_movement_threshold
+
+        self._require_object_tracking_block()
+
+    def _require_object_tracking_block(self) -> None:
+        """Refuse a model that cannot report tracks, while the app is still starting.
+
+        The model runner announces its model over the WebSocket, which it opens only once it has received a
+        frame, so a single synthetic frame is pushed to earn the announcement.
+
+        Raises:
+            VideoObjectTrackingError: If the model runner reports a model without the object tracking block.
+        """
+        try:
+            with socket.create_connection((self._host, 5050), timeout=_HANDSHAKE_TIMEOUT) as frames:
+                model_info = self._read_model_info(frames)
+        except Exception as e:
+            logger.warning(f"Could not ask the model runner about its model ({e}): skipping the object tracking check.")
+            return
+
+        if model_info is not None and not model_info.has_object_tracking:
+            raise VideoObjectTrackingError(
+                "This model has no object tracking block, so it can never report a tracked object.",
+                hint="Enable object tracking in the Edge Impulse project, export the model again, or pick a model that already has the block.",
+            )
+
+    def _read_model_info(self, frames: socket.socket) -> EdgeImpulseModelInfo | None:
+        """Feed synthetic frames until the runner opens its announcement channel, then read the announcement.
+
+        Args:
+            frames (socket.socket): The open connection the runner reads frames from.
+
+        Returns:
+            EdgeImpulseModelInfo | None: The model the runner announced.
+        """
+        encoded = compress_to_jpeg(np.zeros((32, 32, 3), dtype=np.uint8))
+        if encoded is None:
+            raise RuntimeError("Could not encode the frame the model runner is asked to look at.")
+        frame = encoded.tobytes()
+        deadline = time.monotonic() + _HANDSHAKE_TIMEOUT
+        while True:
+            frames.sendall(frame)
+            try:
+                with connect(self._uri, open_timeout=_HANDSHAKE_STEP) as ws:
+                    while True:
+                        message = json.loads(ws.recv(timeout=_HANDSHAKE_STEP))
+                        if message.get("type") == "hello":
+                            return EdgeImpulseRunnerFacade.parse_model_info_message(message)
+            except Exception:
+                if time.monotonic() >= deadline:
+                    raise
+                time.sleep(_HANDSHAKE_STEP)
 
     def _is_label_enabled(self, label: str) -> bool:
         """Check if a label is enabled for tracking.
@@ -314,7 +376,7 @@ class VideoObjectTracking(VideoObjectDetection):
 
             self._forget_tracks()
 
-            if not jmsg.get("modelParameters", {}).get("has_object_tracking", False):
+            if self._model_info is not None and not self._model_info.has_object_tracking:
                 logger.error(
                     "This model has no object tracking block, so no object will ever be reported. "
                     "Enable object tracking in the Edge Impulse project and export the model again."
