@@ -61,7 +61,7 @@ class LabelColors:
 
 
 def draw_detections(frame: np.ndarray, detections: dict[str, list[dict]], colors: LabelColors) -> np.ndarray:
-    """A copy of the frame with a box around every detection and a filled label above it, "label" and "(score)".
+    """A copy of the frame with a box around every detection and a filled label chip at its top-right corner, "label" and "(score)".
 
     Args:
         frame (np.ndarray): HxWx3 BGR frame.
@@ -84,12 +84,13 @@ def draw_detections(frame: np.ndarray, detections: dict[str, list[dict]], colors
             cv2.rectangle(image, (x1, y1), (x2, y2), color, thickness)
             lines = [label, f"({detection['confidence']:.2f})"]
             chip_h = len(lines) * (line_h + pad) + pad
-            chip_w = max(x2 - x1, max(cv2.getTextSize(line, FONT, font_scale, font_thickness)[0][0] for line in lines) + 2 * pad)
+            chip_w = max(cv2.getTextSize(line, FONT, font_scale, font_thickness)[0][0] for line in lines) + 2 * pad
+            left = max(0, x2 - chip_w)  # right-aligned with the box, kept inside the frame
             top = y1 - chip_h if y1 - chip_h >= 0 else y1  # inside the box when there is no room above
-            cv2.rectangle(image, (x1, top), (x1 + chip_w, top + chip_h), color, cv2.FILLED)
+            cv2.rectangle(image, (left, top), (left + chip_w, top + chip_h), color, cv2.FILLED)
             for i, line in enumerate(lines):
                 text_w = cv2.getTextSize(line, FONT, font_scale, font_thickness)[0][0]
-                origin = (x1 + (chip_w - text_w) // 2, top + pad + (i + 1) * (line_h + pad) - pad // 2)
+                origin = (left + (chip_w - text_w) // 2, top + pad + (i + 1) * (line_h + pad) - pad // 2)
                 cv2.putText(image, line, origin, FONT, font_scale, TEXT_COLOR, font_thickness, cv2.LINE_AA)
     return image
 
