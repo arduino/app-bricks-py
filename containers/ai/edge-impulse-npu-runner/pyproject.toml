@@ -5,15 +5,15 @@ requires-python = "==3.13.*"
 dependencies = [
     "edge-impulse-linux==1.2.2",
     "numpy==2.5.3",
+    "opencv-python-headless==4.13.0.92",
 ]
 
 [dependency-groups]
 test = ["pytest"]
 
 [tool.uv]
-# The SDK metadata requires its camera and audio helpers, the server only loads its runner module
+# The SDK metadata requires its microphone helper, the server only loads its runner module
 override-dependencies = [
-    "opencv-python-headless; sys_platform == 'never'",
     "pyaudio; sys_platform == 'never'",
 ]
 # The images run on aarch64 Linux, the lock must resolve for that target but installs on developer machines too

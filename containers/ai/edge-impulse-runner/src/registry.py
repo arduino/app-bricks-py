@@ -32,6 +32,7 @@ from pathlib import Path
 import numpy as np
 
 import memory
+from preprocess import BGR, RGB, Preprocessor
 from runner import Runner, RunnerExited
 
 log = logging.getLogger("ei.registry")
@@ -76,6 +77,7 @@ class Model:
             self.labels = list(params.get("labels", []))
             self.model_type = params.get("model_type", "classification")
             self.resize_mode = params.get("image_resize_mode", "squash")
+            self.preprocess = Preprocessor(self.width, self.height, self.resize_mode)
             self.project = info["project"]["name"]
             self.infer(np.zeros((self.height, self.width, 3), np.uint8))  # warm-up
         except BaseException:
@@ -98,20 +100,21 @@ class Model:
         """Per-connection work buffer for infer(): the encoded features and a temporary of the same size."""
         return np.empty(2 * self.width * self.height, np.float32)
 
-    def infer(self, rgb: np.ndarray, recv_ms: float = 0.0, scratch: np.ndarray | None = None) -> dict:
-        """Run one inference. An error here does not terminate the model.
-        `recv_ms` is the frame transfer time measured by the caller, reported with the other timings.
-        `scratch` is the caller's buffer from scratch(), allocated here if None."""
-        if rgb.shape != (self.height, self.width, 3):
-            raise RegistryError("bad_frame", f"image is {rgb.shape[1]}x{rgb.shape[0]}, expected {self.width}x{self.height} RGB")
+    def infer(self, frame: np.ndarray, color: int = RGB, recv_ms: float = 0.0, scratch: np.ndarray | None = None) -> dict:
+        """Run one inference on a frame of any size, resized to the model input. An error here does not terminate the model.
+        `color` is the channel order of the frame (protocol RGB or BGR), `recv_ms` the frame transfer time measured
+        by the caller, reported with the other timings, `scratch` the caller's buffer from scratch(), allocated here if None."""
+        if frame.ndim != 3 or frame.shape[2] != 3:
+            raise RegistryError("bad_frame", f"image of shape {frame.shape}, expected HxWx3")
         if scratch is None:
             scratch = self.scratch()
         pixels = self.width * self.height
         features, tmp = scratch[:pixels], scratch[pixels:]
         t0 = time.perf_counter()
-        # The image already has the model size: no resize or crop happens here.
-        # Encoding runs outside the lock: only the copy to the .eim and the request are serialized.
-        self.runner.features(rgb, features, tmp)
+        # Resizing and encoding run outside the lock: only the copy to the .eim and the request are serialized.
+        image, transform = self.preprocess(frame)
+        t_resized = time.perf_counter()
+        self.runner.features(image, features, tmp, bgr=color == BGR)
         t1 = time.perf_counter()
         with self._lock:
             t2 = time.perf_counter()
@@ -130,7 +133,8 @@ class Model:
         timing = raw.get("timing", {})
         ms = {
             "recv": recv_ms,
-            "encode": (t1 - t0) * 1e3,
+            "resize": (t_resized - t0) * 1e3,
+            "encode": (t1 - t_resized) * 1e3,
             "lock": (t2 - t1) * 1e3,
             "inference": (t3 - t2) * 1e3,
             "dsp": timing.get("dsp", 0),
@@ -140,11 +144,12 @@ class Model:
         with self._stats_lock:
             self._stats.update(ms)
             self._stats["frames"] += 1
+        boxes = []
+        for b in result.get("bounding_boxes") or []:
+            x, y, w, h = transform.to_source(b["x"], b["y"], b["width"], b["height"])
+            boxes.append({"label": b["label"], "score": float(b["value"]), "x": round(x, 2), "y": round(y, 2), "w": round(w, 2), "h": round(h, 2)})
         return {
-            "boxes": [
-                {"label": b["label"], "score": float(b["value"]), "x": b["x"], "y": b["y"], "w": b["width"], "h": b["height"]}
-                for b in result.get("bounding_boxes") or []
-            ],
+            "boxes": boxes,
             "classes": result.get("classification") or {},
             "anomaly": float(result.get("anomaly") or 0.0),
             "timing_ms": {key: round(value, 2) for key, value in ms.items()},

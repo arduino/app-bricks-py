@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""Protocol between clients and the inference server (v8, Unix domain socket SOCK_STREAM).
+"""Protocol between clients and the inference server (v9, Unix domain socket SOCK_STREAM).
 
 Every message:  [type: 4 ASCII bytes] [payload length: uint32 LE] [payload]
 
@@ -22,8 +22,10 @@ Messages
   OPEN  C->S  JSON     {"model": name}
   OPND  S->C  JSON     {"model", "project", "width", "height", "channels",
                         "labels", "model_type", "resize_mode"}
-  FRAM  C->S  binary   FRAME_HEADER + RGB24 pixels at the model resolution
-  RSLT  S->C  JSON     {"seq", "ts_ns", "boxes", "classes", "anomaly", "timing_ms"}
+  FRAM  C->S  binary   FRAME_HEADER + the pixels of the frame, any size, RGB or BGR; the server
+                       resizes it to the model input as the Studio does
+  RSLT  S->C  JSON     {"seq", "ts_ns", "boxes", "classes", "anomaly", "timing_ms"}, the boxes in the
+                       coordinates of the submitted frame
   ERR   S->C  JSON     {"op": "open"|"frame", "code", "error", ...}
 """
 
@@ -34,7 +36,7 @@ import time
 import numpy as np
 
 SOCKET_NAME = "ei.sock"
-PROTOCOL_VERSION = 8
+PROTOCOL_VERSION = 9
 
 OPEN = b"OPEN"
 OPENED = b"OPND"
@@ -54,7 +56,9 @@ E_BAD_FRAME = "bad_frame"  # invalid size or format
 E_INTERNAL = "internal"  # error during inference
 
 HEADER = struct.Struct("<4sI")  # type, payload length
-FRAME_HEADER = struct.Struct("<QqHHB3x")  # seq, ts_ns, width, height, channels
+FRAME_HEADER = struct.Struct("<QqHHBB2x")  # seq, ts_ns, width, height, channels, color (RGB or BGR)
+RGB, BGR = 0, 1  # the color codes of the frame header
+MAX_FRAME_PIXELS = 1920 * 1080  # frames above this are discarded, the buffer of a connection never grows past them
 MAX_PAYLOAD = 16 * 1024 * 1024  # above this the stream is considered corrupted
 MAX_CONTROL_PAYLOAD = 64 * 1024  # enough for any JSON message
 
@@ -76,17 +80,20 @@ def frame_size(width: int, height: int, channels: int = 3) -> int:
     return FRAME_HEADER.size + width * height * channels
 
 
+MAX_FRAME_PAYLOAD = frame_size(MAX_FRAME_PIXELS, 1)
+
+
 # ------------------------------------------------------------------ sending
 def send_json(sock, kind: bytes, obj: dict) -> None:
     data = json.dumps(obj, separators=(",", ":")).encode()
     sock.sendall(HEADER.pack(kind, len(data)) + data)
 
 
-def send_frame(sock, seq: int, ts_ns: int, rgb: np.ndarray) -> None:
-    """Send an HxWx3 uint8 image without copying its pixels into a new buffer."""
-    h, w, c = rgb.shape
-    pixels = memoryview(np.ascontiguousarray(rgb)).cast("B")
-    head = FRAME_HEADER.pack(seq, ts_ns, w, h, c)
+def send_frame(sock, seq: int, ts_ns: int, image: np.ndarray, color: int = RGB) -> None:
+    """Send an HxWx3 uint8 image, in RGB or BGR order, without copying its pixels into a new buffer."""
+    h, w, c = image.shape
+    pixels = memoryview(np.ascontiguousarray(image)).cast("B")
+    head = FRAME_HEADER.pack(seq, ts_ns, w, h, c, color)
     sock.sendall(HEADER.pack(FRAME, len(head) + len(pixels)) + head)
     sock.sendall(pixels)
 
@@ -155,11 +162,17 @@ def frame_seq(payload) -> int | None:
 
 
 def parse_frame(payload):
-    """Return (seq, ts_ns, image). The image points into the Reader buffer."""
+    """Return (seq, ts_ns, image, color). The image points into the Reader buffer."""
     if len(payload) < FRAME_HEADER.size:
         raise ProtocolError("frame too short")
-    seq, ts_ns, w, h, c = FRAME_HEADER.unpack_from(payload)
+    seq, ts_ns, w, h, c, color = FRAME_HEADER.unpack_from(payload)
+    if c != 3:
+        raise ProtocolError(f"expected 3 channels, received {c}")
+    if color not in (RGB, BGR):
+        raise ProtocolError(f"unknown color code {color}")
+    if w == 0 or h == 0 or w * h > MAX_FRAME_PIXELS:
+        raise ProtocolError(f"frame of {w}x{h} pixels, the limit is {MAX_FRAME_PIXELS} pixels")
     pixels = payload[FRAME_HEADER.size :]
     if len(pixels) != w * h * c:
         raise ProtocolError(f"expected {w * h * c} pixel bytes, received {len(pixels)}")
-    return seq, ts_ns, np.frombuffer(pixels, np.uint8).reshape(h, w, c)
+    return seq, ts_ns, np.frombuffer(pixels, np.uint8).reshape(h, w, c), color
