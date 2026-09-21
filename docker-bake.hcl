@@ -136,6 +136,7 @@ group "default" {
     "gesture-recognition-runner",
     "pose-estimation-runner",
     "llamacpp-npu-runner",
+    "edge-impulse-npu-runner",
     "ei-models-runner",
     "ei-qnn-models-runner",
   ]
@@ -250,6 +251,15 @@ target "llamacpp-npu-runner" {
   tags       = image_tags("llamacpp-npu-runner")
   cache-from = cache_from("llamacpp-npu-runner")
   cache-to   = cache_to("llamacpp-npu-runner")
+  contexts   = parent_context("qairt-common-base")
+}
+
+target "edge-impulse-npu-runner" {
+  inherits   = ["_downstream"]
+  context    = "containers/ai/edge-impulse-npu-runner"
+  tags       = image_tags("edge-impulse-npu-runner")
+  cache-from = cache_from("edge-impulse-npu-runner")
+  cache-to   = cache_to("edge-impulse-npu-runner")
   contexts   = parent_context("qairt-common-base")
 }
 
