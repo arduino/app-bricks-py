@@ -13,8 +13,7 @@ updates:
       - /containers/base/python-base
       - /containers/bricks/models-downloader
       - /containers/bricks/tps-location-api
-      - /containers/ai/edge-impulse-runner
-      - /containers/ai/edge-impulse-npu-runner
+      - /containers/ai/edge-impulse-server
     schedule:
       interval: weekly
   - package-ecosystem: docker
