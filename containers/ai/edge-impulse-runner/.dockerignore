@@ -1,6 +1,2 @@
-# Only what the image copies
+# Everything the image copies comes from the server context
 *
-!pyproject.toml
-!uv.lock
-!src/
-!models/
