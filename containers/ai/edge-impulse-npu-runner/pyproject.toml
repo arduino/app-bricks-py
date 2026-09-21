@@ -1,11 +1,20 @@
-# Python packages this image installs, pinned with hashes in uv.lock, see containers/README.md
 [project]
 name = "edge-impulse-npu-runner"
 version = "0"
 requires-python = "==3.13.*"
 dependencies = [
+    "edge-impulse-linux==1.2.2",
+    "numpy==2.5.3",
 ]
 
+[dependency-groups]
+test = ["pytest"]
+
 [tool.uv]
+# The SDK metadata requires its camera and audio helpers, the server only loads its runner module
+override-dependencies = [
+    "opencv-python-headless; sys_platform == 'never'",
+    "pyaudio; sys_platform == 'never'",
+]
 # The images run on aarch64 Linux, the lock must resolve for that target but installs on developer machines too
 required-environments = ["sys_platform == 'linux' and platform_machine == 'aarch64'"]
