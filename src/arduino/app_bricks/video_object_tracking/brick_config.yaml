@@ -5,6 +5,7 @@ description: |
   It identifies and tracks objects, returning their predicted class labels and item counts.
   The output is a video stream featuring bounding boxes around tracked objects, enabling object count.
   It supports pre-trained models provided by the framework and custom object detection models trained on the Edge Impulse platform.
+category: video
 required_devices:
   - camera
 ai_frameworks_compatibility:
