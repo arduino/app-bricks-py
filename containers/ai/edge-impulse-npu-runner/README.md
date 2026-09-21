@@ -7,7 +7,8 @@ NPU image changes.
 
 ## Models
 
-The `.eim` files must be built for the *Qualcomm Dragonwing IQ 8275 EVK (AARCH64 with Qualcomm QNN)*
+The image bundles the out-of-the-box models under `/models/ootb/ei`, the QNN builds included
+(`ootb/ei/yolo-x-nano-qnn`); the service mounts the models the app CLI installs next to them. The `.eim` files must be built for the *Qualcomm Dragonwing IQ 8275 EVK (AARCH64 with Qualcomm QNN)*
 deployment target, int8 quantized. A `.eim` built for the CPU target loads too, but runs on the CPU.
 If a QNN model fails to load with QNN errors in the log ("Failed to load skel", "Transport layer
 setup failed"), the FastRPC side is not reachable: check the NPU devices and the host DSP mount
