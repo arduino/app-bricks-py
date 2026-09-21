@@ -50,7 +50,7 @@ class VideoObjectDetection:
     _DETECTION_LOCK_TO = 0.01  # Seconds to wait for a detection lock before discarding the detection signal
     _RETRY_SEC = 2.0  # Seconds between attempts to reach the inference service
     _OVERLAY_MIN_TTL = 0.5  # Seconds the boxes of the latest result stay on the video, at least
-    _OVERLAY_TTL_PERIODS = 2  # ...or this many inference periods: a model that stops answering leaves no ghost boxes
+    _OVERLAY_TTL_PERIODS = 2  # ...or this many times their inference took: a model that stops answering leaves no ghost boxes
 
     def __init__(
         self,
@@ -99,8 +99,7 @@ class VideoObjectDetection:
         self._stream = VideoStreamServer(os.getenv("BIND_ADDRESS", "0.0.0.0"), stream_port) if stream_port is not None else None
         self._colors = LabelColors()
         self._overlay_lock = threading.Lock()
-        self._overlay: tuple[dict, float] | None = None  # detections of the latest result and when they arrived
-        self._inference_period = 0.0  # seconds from capture to result, smoothed
+        self._overlay: tuple[dict, float, float] | None = None  # detections of the latest result, arrival time, seconds they took
 
         logger.info(f"[{self.__class__.__name__}] Model: {self._model}")
 
@@ -320,19 +319,20 @@ class VideoObjectDetection:
         self._execute_handler(key=self.ALL_HANDLERS_KEY, payload=detections, frame=preview)
 
     def _remember(self, detections: dict, round_trip: float) -> None:
-        """Keep the detections for the video and smooth the inference period, which bounds how long they stay."""
+        """Keep the detections for the video, with the seconds their inference took, which bound how long they stay."""
         with self._overlay_lock:
-            self._overlay = (detections, time.monotonic())
-            self._inference_period = round_trip if self._inference_period == 0 else 0.8 * self._inference_period + 0.2 * round_trip
+            self._overlay = (detections, time.monotonic(), round_trip)
 
     def _current_detections(self) -> dict:
-        """The detections to draw now: the latest result's, unless it is older than the model can explain."""
+        """The detections to draw now: the latest result's, unless they are older than twice the time they took."""
         with self._overlay_lock:
             overlay = self._overlay
-            ttl = max(self._OVERLAY_MIN_TTL, self._OVERLAY_TTL_PERIODS * self._inference_period)
-        if overlay is None or time.monotonic() - overlay[1] > ttl:
+        if overlay is None:
             return {}
-        return overlay[0]
+        detections, arrived, round_trip = overlay
+        if time.monotonic() - arrived > max(self._OVERLAY_MIN_TTL, self._OVERLAY_TTL_PERIODS * round_trip):
+            return {}
+        return detections
 
     def _publish(self, frame: np.ndarray) -> None:
         """Stream the camera frame with the current detections drawn on it."""

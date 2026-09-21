@@ -119,7 +119,7 @@ def test_the_labels_of_a_run_get_well_separated_hues():
             assert min(abs(a - b), 1 - abs(a - b)) > 0.04, (a, b)
 
 
-def test_detections_are_drawn_as_a_box_with_a_label_chip_above():
+def test_detections_are_drawn_as_a_box_with_a_label_chip_at_the_top_right():
     colors = LabelColors(seed=3)
     frame = np.zeros((480, 640, 3), np.uint8)
     detections = {"cat": [{"confidence": 0.57, "bounding_box_xyxy": (200, 200, 300, 400)}]}
@@ -128,8 +128,9 @@ def test_detections_are_drawn_as_a_box_with_a_label_chip_above():
     color = colors["cat"]
     assert tuple(image[300, 200]) == color, "left border"
     assert tuple(image[300, 299]) == color, "right border"
-    assert tuple(image[190, 210]) == color, "the chip above the box has the same color"
+    assert tuple(image[190, 295]) == color, "the chip above the box, at its right corner, has the same color"
     assert (image[160:199, 200:300] >= 230).all(axis=2).any(), "white text in the chip"
+    assert tuple(image[190, 210]) == (0, 0, 0), "the chip is as wide as its text, not as the box"
     assert tuple(image[150, 250]) == (0, 0, 0), "the chip is compact"
     assert tuple(image[300, 250]) == (0, 0, 0), "the box is not filled"
     assert tuple(image[450, 500]) == (0, 0, 0), "nothing drawn far from the box"
@@ -138,4 +139,5 @@ def test_detections_are_drawn_as_a_box_with_a_label_chip_above():
 def test_label_chip_moves_inside_the_box_when_there_is_no_room_above():
     colors = LabelColors(seed=3)
     image = draw_detections(np.zeros((480, 640, 3), np.uint8), {"cat": [{"confidence": 0.9, "bounding_box_xyxy": (10, 5, 200, 300)}]}, colors)
-    assert tuple(image[15, 20]) == colors["cat"], "the chip starts at the top of the box"
+    assert tuple(image[15, 190]) == colors["cat"], "the chip starts at the top-right corner of the box"
+    assert tuple(image[15, 20]) == (0, 0, 0), "and does not span the box"
