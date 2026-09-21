@@ -100,7 +100,7 @@ tracker = VideoObjectTracking(labels_to_track=["car", "truck"])
 print(tracker.get_unique_objects_count())  # {"car": 12, "truck": 3}
 ```
 
-`reset_counters()` clears the unique-object counts, the line-crossing counts and the last-seen positions, so counting starts from scratch.
+`reset_counters()` clears the unique-object counts, the line-crossing counts and the last-seen positions, so counting starts from scratch. The same identifiers are also forgotten whenever the model runner reconnects, because the tracker numbers its tracks from zero on every run.
 
 ## Counting line crossings
 
