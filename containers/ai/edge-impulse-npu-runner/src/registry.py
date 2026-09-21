@@ -4,7 +4,8 @@
 
 """Model registry with reference counting.
 
-The available models are the <name>.eim files in the models directory.
+The available models are the <name>.eim files in the models directory, in subdirectories too: the
+name of /models/custom-ei/abc/model.eim is custom-ei/abc/model.
 
   - pinned (--pinned-models): loaded at startup, never terminated;
   - all the others: loaded when the first connection opens them, shared
@@ -36,7 +37,8 @@ from runner import Runner, RunnerExited
 log = logging.getLogger("ei.registry")
 
 UNLOADED, LOADING, LOADED, UNLOADING = "unloaded", "loading", "loaded", "unloading"
-MODEL_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+# One path segment of a model name, names may nest as <dir>/<name> under the models directory
+MODEL_NAME_SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 MB = 1024 * 1024
 
 
@@ -265,8 +267,8 @@ class ModelRegistry:
 
     # ------------------------------------------------------------ details
     def _entry(self, name: str) -> Entry:
-        path = self.models_dir / f"{name}.eim"
-        if not MODEL_NAME.match(str(name)) or not path.is_file():
+        path = self.models_dir.joinpath(*f"{name}.eim".split("/"))
+        if not all(MODEL_NAME_SEGMENT.match(part) for part in str(name).split("/")) or not path.is_file():
             raise RegistryError("unknown_model", f"model '{name}' not found: {self.models_dir}/{name}.eim is missing")
         with self._cond:
             return self._entries.setdefault(name, Entry(name, path))

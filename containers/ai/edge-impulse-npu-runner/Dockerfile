@@ -12,6 +12,7 @@ FROM ${REGISTRY}app-bricks/qairt-common-base:${BASE_IMAGE_VERSION}
 ARG DEBIAN_FRONTEND=noninteractive
 
 COPY ./src /app
+COPY --chown=arduino:arduino --chmod=755 ./models/ei-ootb-models/arm64/*.eim /models/ootb/ei/
 COPY ./pyproject.toml ./uv.lock /tmp/deps/
 
 # Runtime settings expected from the compose file:

@@ -33,7 +33,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TIMEOUT = int(os.environ.get("EI_TEST_TIMEOUT", "4"))
 W, H = 96, 64
 STD = ["--max-models", "2", "--max-clients", "3", "--memory-reserve-mb", "512"]
-FAKES = ["det", "cls", "extra", "slow", "broken", "hang", "badwarm", "flaky", "stuck", "late", "die", "gray", "portrait", "noexec"]
+FAKES = ["det", "cls", "extra", "slow", "broken", "hang", "badwarm", "flaky", "stuck", "late", "die", "gray", "portrait", "noexec", "sub/dir/nested"]
 
 
 class Harness:
@@ -47,6 +47,7 @@ class Harness:
         os.mkdir(self.models)
         for name in FAKES:
             path = f"{self.models}/{name}.eim"
+            os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, "w") as f:
                 f.write(f"#!{sys.executable}\nimport os, sys\n")  # no shell needed
                 f.write(f"os.execv(sys.executable, [sys.executable, '{HERE}/fake_eim.py', '{name}', *sys.argv[1:]])\n")
@@ -286,7 +287,7 @@ def test_frame_before_open_closes_the_connection(server):
     s.close()
 
 
-@pytest.mark.parametrize("name", ["nope", "../det", ".hidden", "det/../det", "det;x"])
+@pytest.mark.parametrize("name", ["nope", "../det", ".hidden", "det/../det", "det;x", "sub/dir/../dir/nested", "/sub/dir/nested", "sub//dir/nested"])
 def test_unknown_or_invalid_model_name_closes_the_connection(server, name):
     s, k, d = server.open_model(name)
     assert k == P.ERROR, (k, d)
@@ -445,6 +446,14 @@ def test_silent_connection_is_closed_after_the_open_timeout(server):
     assert server.read(s)[0] is None, "connection closed"
     assert dt < 3, f"took {dt:.1f}s"
     s.close()
+
+
+def test_model_in_a_subdirectory(server):
+    s, k, d = server.open_model("sub/dir/nested")
+    assert k == P.OPENED and d["model"] == "sub/dir/nested", d
+    assert server.frame(s)[0] == P.RESULT
+    s.close()
+    assert server.wait_for(lambda: "[sub/dir/nested] terminated" in server.log_text())
 
 
 def test_grayscale_and_portrait_models(server):
