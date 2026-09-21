@@ -102,10 +102,6 @@ class VideoObjectTracking(VideoObjectDetection):
             y (int): The y-coordinate of the object reference point.
         """
 
-        if not self._is_label_enabled(detected_object_label):
-            # Discard if the label is not enabled for tracking
-            return
-
         with self._counter_lock:
             if object_id not in self._recent_objects:
                 self._object_counters[detected_object_label] += 1
@@ -130,10 +126,6 @@ class VideoObjectTracking(VideoObjectDetection):
             x (int): The x-coordinate of the object reference point.
             y (int): The y-coordinate of the object reference point.
         """
-        if not self._is_label_enabled(detected_object_label):
-            # Discard if the label is not enabled for tracking
-            return
-
         with self._counter_lock:
             if object_id in self._recent_objects:
                 last_x, last_y = self._recent_objects[object_id]
@@ -177,10 +169,6 @@ class VideoObjectTracking(VideoObjectDetection):
             x (int): The x-coordinate of the object reference point.
             y (int): The y-coordinate of the object reference point.
         """
-        if not self._is_label_enabled(detected_object_label):
-            # Discard if the label is not enabled for tracking
-            return
-
         with self._counter_lock:
             if object_id in self._recent_objects:
                 last_x, last_y = self._recent_objects[object_id]
@@ -345,6 +333,9 @@ class VideoObjectTracking(VideoObjectDetection):
 
                 object_id = box.get("object_id")
                 if object_id is None:
+                    continue
+
+                if not self._is_label_enabled(detected_object):
                     continue
 
                 x, y = box.get("x", 0), box.get("y", 0)
