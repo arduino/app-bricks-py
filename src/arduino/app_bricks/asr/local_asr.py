@@ -140,7 +140,7 @@ class BaseASR:
     _FLUSH_INTERVAL_SECONDS = 5
     _DEFAULT_VAD_MS = 700
 
-    def __init__(self, source: object, language: str | None = None) -> None:
+    def __init__(self, source: object, language: str | None = None, translate: bool = False) -> None:
         # API configuration
         self.api_host = resolve_address(self._APP_SERVICE_NAME)
         if not self.api_host:
@@ -159,6 +159,7 @@ class BaseASR:
             self.model = brick_config.get("model", None)
 
         self.language = language
+        self.translate = translate
 
         self._source, self._owns_source = self._build_source(source)
 
@@ -276,7 +277,7 @@ class BaseASR:
             return
         started_at = time.perf_counter()
         try:
-            session_id = self._create_transcription_session(language=self.language)
+            session_id = self._create_transcription_session(language=self.language, translate=self.translate)
         except Exception as e:
             logger.warning(f"ASR warmup failed during session creation: {e}")
             return
@@ -311,8 +312,10 @@ class BaseASR:
         future = None
 
         try:
-            session_language = self.language  # Snapshot current language for the session
-            session_id = self._create_transcription_session(vad_ms=vad_ms, language=session_language)
+            # Snapshot current language and translate flag for the session
+            session_language = self.language
+            session_translate = self.translate
+            session_id = self._create_transcription_session(vad_ms=vad_ms, language=session_language, translate=session_translate)
             session_info = SessionInfo(
                 session_id=session_id,
                 duration=duration,
@@ -370,7 +373,7 @@ class BaseASR:
             self._active_session = None
             self._active_session_lock.release()
 
-    def _create_transcription_session(self, vad_ms: int | None = None, language: str | None = None) -> str:
+    def _create_transcription_session(self, vad_ms: int | None = None, language: str | None = None, translate: bool = False) -> str:
         sampling_rate = str(self._source.sample_rate)
         channels = str(self._source.channels)
 
@@ -380,6 +383,7 @@ class BaseASR:
         create_data = {
             "model": self.model,
             "stream": True,
+            "translate": translate,
             "parameters": json.dumps([
                 {"key": "sampling_rate", "value": sampling_rate},
                 {"key": "channels", "value": channels},
@@ -751,6 +755,7 @@ class AutomaticSpeechRecognition(BaseASR):
         self,
         mic: BaseMicrophone | None = None,
         language: str | None = None,
+        translate: bool = False,
     ) -> None:
         """
         ASR brick that transcribes a live audio stream from a microphone.
@@ -767,11 +772,22 @@ class AutomaticSpeechRecognition(BaseASR):
                 but can be overridden here if needed. It is exposed as
                 the public ``language`` attribute and may be reassigned at
                 runtime; the new value takes effect on the next session.
+            translate (bool): If ``True``, speech is translated to English instead
+                of being transcribed in the language it was spoken in. It is valid
+                only for models that support translation, so it costs no extra
+                model: the ASR model itself does the translating. The model this
+                brick runs, ``whisper-small-quantized``, supports it, and its
+                translate task always targets English. Any of its source languages
+                can be translated, but English is the only possible target. Set
+                ``language`` as well to skip source auto-detection. It is exposed
+                as the public ``translate`` attribute and may be reassigned at
+                runtime; the new value takes effect on the next session.
+                Default: ``False``.
 
         Note:
             Only one transcription can be active at a time.
         """
-        super().__init__(source=mic, language=language)
+        super().__init__(source=mic, language=language, translate=translate)
 
     def _build_source(self, source: object) -> tuple:
         if source is None:

@@ -30,6 +30,36 @@ def _wav_bytes(samples: np.ndarray, sample_rate: int = 16000, channels: int = 1)
     return buf.getvalue()
 
 
+class _FakeResponse:
+    """Minimal stand-in for a ``requests`` response."""
+
+    def __init__(self, payload: dict, status_code: int = 200):
+        self.status_code = status_code
+        self.text = str(payload)
+        self._payload = payload
+
+    def json(self) -> dict:
+        return self._payload
+
+
+def _mock_session_endpoints(monkeypatch) -> list[dict]:
+    """
+    Replace ``requests.post`` in the ASR module so session create/close succeed
+    offline. Returns the list of JSON bodies the brick posted, in order.
+    """
+    bodies: list[dict] = []
+
+    def fake_post(url=None, json=None, timeout=None, **kwargs):
+        url = url or kwargs.get("url", "")
+        bodies.append(json)
+        if "transcriptions/create" in url:
+            return _FakeResponse({"session_id": "sess-1", "state": "asr_initialized"})
+        return _FakeResponse({})
+
+    monkeypatch.setattr("arduino.app_bricks.asr.local_asr.requests.post", fake_post)
+    return bodies
+
+
 def _mock_transcribe_stream(monkeypatch, asr, events):
     """
     Replace ``asr._transcribe_stream`` with a generator yielding ``events``,
