@@ -1,0 +1,5 @@
+# Only what the image copies
+*
+!pyproject.toml
+!uv.lock
+!src/

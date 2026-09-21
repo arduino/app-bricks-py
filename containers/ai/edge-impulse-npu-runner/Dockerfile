@@ -11,17 +11,37 @@ FROM ${REGISTRY}app-bricks/qairt-common-base:${BASE_IMAGE_VERSION}
 
 ARG DEBIAN_FRONTEND=noninteractive
 
+COPY ./src /app
 COPY ./pyproject.toml ./uv.lock /tmp/deps/
 
+# Runtime settings expected from the compose file:
+# - the QNN .eim files mounted read-only at /models
+# - a host directory at /ipc for the socket
+# - the fastrpc and DMA heap devices
+# - the device model and the host DSP payload mounted for /qairt-entrypoint.sh
+# - a tmpfs /tmp for the .eim sockets
+# - shm_size for the feature buffers
+# - cap_drop ALL
 # uv is only mounted while installing, it is not part of the image
 RUN --mount=from=uv,source=/uv,target=/bin/uv \
     set -ex; \
     uv export --frozen --project /tmp/deps | uv pip install --system --no-cache-dir --require-hashes -r -; \
     rm -rf /tmp/deps; \
+    # The numpy test suites are never run by the server
+    find /usr/local/lib/python3.13/site-packages -type d -name tests -prune -exec rm -rf {} +; \
     # precompile python files to .pyc to speed up startup time
-    python -m compileall /usr/local/bin; \
-    python -m compileall /usr/local/lib
-
-# TODO: complete the image of edge-impulse-npu-runner, see containers/README.md
+    python -m compileall -q /usr/local/lib /app
 
 USER arduino
+
+WORKDIR /app
+
+ENV USER=arduino
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+# The server checks the NPU devices at startup and fails without them
+ENV EI_ACCEL=qnn
+
+# The entrypoint wrapper merges the host DSP payload into /usr/share/qcom, then runs the server.
+# Base arguments, the compose file appends the limits of the board in "command"
+ENTRYPOINT ["/qairt-entrypoint.sh", "python3", "/app/inference_server.py", "--socket=/ipc/ei.sock", "--models-dir=/models"]
