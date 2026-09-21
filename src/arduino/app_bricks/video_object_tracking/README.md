@@ -104,7 +104,7 @@ print(tracker.get_unique_objects_count())  # {"car": 12, "truck": 3}
 
 ## Counting line crossings
 
-Define a virtual line and the Brick counts, per label, every tracked object whose position moves from one side of it to the other:
+Define a virtual line and the Brick counts, per label, every tracked object whose **bounding box centre** moves from one side of it to the other:
 
 ```python
 tracker.set_horizontal_crossing_line(240)  # spans x from 0 to 480 at y=240
