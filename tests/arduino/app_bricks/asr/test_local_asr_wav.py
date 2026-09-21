@@ -17,6 +17,7 @@ from arduino.app_bricks.asr.local_asr import AudioSourceExhausted
 
 from conftest import (
     _FakeMic,
+    _mock_session_endpoints,
     _mock_transcribe_stream,
     _wav_bytes,
 )
@@ -148,3 +149,19 @@ class TestIdleState:
         asr = WAVAutomaticSpeechRecognition(wav=np.zeros(10, dtype=np.int16))
         asr.cancel()  # must not raise
         assert asr.is_transcribing() is False
+
+
+class TestTranslate:
+    """The WAV brick forwards ``translate`` the same way the microphone brick does."""
+
+    def test_defaults_to_false(self):
+        asr = WAVAutomaticSpeechRecognition(np.zeros(100, dtype=np.int16))
+        assert asr.translate is False
+
+    def test_session_body_carries_the_flag(self, monkeypatch):
+        bodies = _mock_session_endpoints(monkeypatch)
+        asr = WAVAutomaticSpeechRecognition(np.zeros(100, dtype=np.int16), translate=True)
+
+        asr._warmup()
+
+        assert bodies[0]["translate"] is True
