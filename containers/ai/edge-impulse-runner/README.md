@@ -12,9 +12,10 @@ outside the containers.
 
 ## Models
 
-The models are the executable `<name>.eim` files in the directory mounted at `/models`; the model
-name is the file name. This image runs models built for the *Linux (AARCH64)* deployment target,
-models built for the QNN target belong to the NPU image.
+The models are the executable `.eim` files under `/models`, the model name is their path relative to it
+without the extension, subdirectories included. The image bundles the out-of-the-box models under
+`/models/ootb/ei` (`ootb/ei/yolo-x-nano`); the service mounts the models the app CLI installs next to
+them, `edge-impulse/<dir>/<name>` and `custom-ei/<id>/model`.
 
 ## Server arguments
 
