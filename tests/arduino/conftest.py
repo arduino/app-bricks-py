@@ -286,3 +286,133 @@ def pcm_registry():
 from arduino.router_bridge import Bridge
 
 patch.object(Bridge, "connect", return_value=True).start()
+
+# ---------------------------------------------------------------------------
+# Fake Edge Impulse inference service, speaking the socket protocol of the edge-impulse-runner containers
+# ---------------------------------------------------------------------------
+
+import os
+import socket
+import tempfile
+import threading
+
+from arduino.app_internal.ei_inference import protocol as EI
+
+
+class FakeInferenceService:
+    """A server on a Unix socket that answers OPEN and FRAM like the real one, with scripted boxes.
+
+    ``models`` maps a model name to its details: ``width``, ``height``, ``resize_mode``, ``labels`` and
+    ``boxes``, a list of boxes in frame coordinates (as the real service maps them back) or a callable (seq, image)
+    returning the list or a
+    ``{"code", "error"}`` dict for a frame error. ``frames`` records every (model, seq, image) received.
+    """
+
+    def __init__(self):
+        self.dir = tempfile.mkdtemp(prefix="ei-fake-")
+        self.socket_path = os.path.join(self.dir, "ei.sock")
+        self.models = {}
+        self.frames = []
+        self.reply_delay = 0.0
+        self.open_delay = 0.0
+        self.opened = threading.Event()
+        self.closed = threading.Event()
+        self._server = None
+        self._threads = []
+        self._connections = []
+        self._lock = threading.Lock()
+
+    def start(self):
+        self._server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self._server.bind(self.socket_path)
+        self._server.listen(8)
+        thread = threading.Thread(target=self._accept, daemon=True)
+        thread.start()
+        self._threads.append(thread)
+        return self
+
+    def stop(self):
+        """Stop listening and drop every connection, the service can be started again."""
+        if self._server is not None:
+            self._server.close()
+            self._server = None
+        with self._lock:
+            connections, self._connections = self._connections, []
+        for conn in connections:
+            try:
+                conn.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            conn.close()
+        if os.path.exists(self.socket_path):
+            os.unlink(self.socket_path)
+
+    def cleanup(self):
+        self.stop()
+        os.rmdir(self.dir)
+
+    def _accept(self):
+        while True:
+            try:
+                conn, _ = self._server.accept()
+            except OSError:
+                return
+            with self._lock:
+                self._connections.append(conn)
+            thread = threading.Thread(target=self._serve, args=(conn,), daemon=True)
+            thread.start()
+            self._threads.append(thread)
+
+    def _serve(self, conn):
+        reader = EI.Reader(conn)
+        try:
+            kind, payload = reader.read()
+            request = EI.parse_json(payload)
+            name = request.get("model") if request else None
+            if kind != EI.OPEN or name not in self.models:
+                EI.send_json(conn, EI.ERROR, {"op": "open", "code": EI.E_UNKNOWN_MODEL, "error": f"model '{name}' not found"})
+                return
+            model = self.models[name]
+            if self.open_delay:
+                threading.Event().wait(self.open_delay)
+            details = {
+                "model": name,
+                "project": "fake",
+                "width": model["width"],
+                "height": model["height"],
+                "channels": 3,
+                "labels": model.get("labels", []),
+                "model_type": "object_detection",
+                "resize_mode": model.get("resize_mode", "squash"),
+            }
+            EI.send_json(conn, EI.OPENED, details)
+            self.opened.set()
+            while True:
+                kind, payload = reader.read()
+                seq, ts_ns, image, color = EI.parse_frame(payload)
+                self.frames.append((name, seq, image.copy()))
+                if self.reply_delay:
+                    threading.Event().wait(self.reply_delay)
+                boxes = model.get("boxes", [])
+                if callable(boxes):
+                    boxes = boxes(seq, image)
+                if isinstance(boxes, dict):
+                    EI.send_json(conn, EI.ERROR, {"op": "frame", "seq": seq, **boxes})
+                    continue
+                result = {"seq": seq, "ts_ns": ts_ns, "boxes": boxes, "classes": {}, "anomaly": 0.0, "timing_ms": {}}
+                EI.send_json(conn, EI.RESULT, result)
+        except (ConnectionError, OSError, EI.ProtocolError, ValueError):
+            pass
+        finally:
+            conn.close()
+            self.closed.set()
+
+
+@pytest.fixture
+def ei_service():
+    """A running FakeInferenceService with a 100x100 "det" model whose boxes the test sets."""
+    service = FakeInferenceService()
+    service.models["det"] = {"width": 100, "height": 100, "resize_mode": "squash", "labels": ["cat", "dog"], "boxes": []}
+    service.start()
+    yield service
+    service.cleanup()
