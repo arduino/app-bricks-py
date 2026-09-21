@@ -6,8 +6,8 @@ variant is [edge-impulse-npu-runner](../edge-impulse-npu-runner/README.md), the 
 
 Many clients connect to the same Unix socket. One connection uses one model, requested with the
 first message; connections asking for the same model share it, and it is terminated when the last
-one closes unless it is pinned. Clients send frames already at the model input size, the server
-never resizes and never returns images. The client library lives in the app-bricks-py library,
+one closes unless it is pinned. Clients send their frames as they are, the server resizes them to the
+model input the way the Studio does and returns the boxes in the frame coordinates, never images. The client library lives in the app-bricks-py library,
 outside the containers.
 
 ## Models
@@ -60,8 +60,8 @@ client: FRAM  ->  server: RSLT | ERR  repeated; an ERR here does not close the c
 |---|---|---|
 | `OPEN` | C -> S | JSON `{"model": name}` |
 | `OPND` | S -> C | JSON: `model`, `project`, `width`, `height`, `channels`, `labels`, `model_type`, `resize_mode` |
-| `FRAM` | C -> S | `<QqHHB3x` (seq, ts_ns, width, height, channels) + RGB24 pixels at the model resolution |
-| `RSLT` | S -> C | JSON: `seq`, `ts_ns`, `boxes` [{label, score, x, y, w, h}], `classes`, `anomaly`, `timing_ms` |
+| `FRAM` | C -> S | `<QqHHBB2x` (seq, ts_ns, width, height, channels, color 0=RGB 1=BGR) + the pixels, any size up to 1920x1080 |
+| `RSLT` | S -> C | JSON: `seq`, `ts_ns`, `boxes` [{label, score, x, y, w, h}] in frame coordinates, `classes`, `anomaly`, `timing_ms` |
 | `ERR ` | S -> C | JSON: `op` (`open` or `frame`), `code`, `error`, optional `model`/`seq` |
 
 | Code | When | Connection |
@@ -75,17 +75,18 @@ client: FRAM  ->  server: RSLT | ERR  repeated; an ERR here does not close the c
 | `bad_frame` | invalid frame size or format (a larger frame is discarded, not buffered) | open |
 | `internal` | error during inference | open |
 
-The `RSLT` boxes are in model pixels; the client converts them to the coordinates of the submitted
-image. `timing_ms` breaks down that frame in the server:
+The `RSLT` boxes are in the coordinates of the submitted frame: the server keeps the resize transform of
+each frame and maps the model output back through it.
 
 | Key | Time spent |
 |---|---|
 | `recv` | receiving the frame payload once its header arrived (socket transfer) |
+| `resize` | adapting the frame to the model input, in the model's resize mode |
 | `encode` | packing the pixels into the feature array |
 | `lock` | waiting for the model, busy with another connection's frame |
 | `inference` | the request to the `.eim`: feature copy, its processing, the reply |
 | `dsp`, `nn` | reported by the `.eim`, included in `inference`; `inference - dsp - nn` is its own overhead |
-| `server` | `encode + lock + inference`, from complete frame to result |
+| `server` | `resize + encode + lock + inference`, from complete frame to result |
 
 With `--stats-every` the server logs the frames processed, their rate and the mean of each value
 per loaded model, so a running server can be tuned from its log alone.

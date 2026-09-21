@@ -147,13 +147,13 @@ class Runner(ImpulseRunner):
         return "shm" if self._input_shm is not None else "json"
 
     # ------------------------------------------------------------ inference
-    def features(self, rgb: np.ndarray, out: np.ndarray, tmp: np.ndarray | None = None) -> np.ndarray:
-        """Encode an HxWx3 RGB uint8 image at the model size into `out`, a float32 buffer with one
-        value per pixel, as the .eim expects: (r << 16) | (g << 8) | b, or the gray level in all three
-        bytes. Values stay below 2**24, so they are exact in float32. The work is done in place; gray
+    def features(self, image: np.ndarray, out: np.ndarray, tmp: np.ndarray | None = None, bgr: bool = False) -> np.ndarray:
+        """Encode an HxWx3 uint8 image at the model size, RGB or BGR (`bgr`), into `out`, a float32 buffer
+        with one value per pixel, as the .eim expects: (r << 16) | (g << 8) | b, or the gray level in all
+        three bytes. Values stay below 2**24, so they are exact in float32. The work is done in place; gray
         needs a second buffer like `out`, `tmp`, allocated if not given."""
-        flat = rgb.reshape(-1, 3)
-        r, g, b = flat[:, 0], flat[:, 1], flat[:, 2]
+        flat = image.reshape(-1, 3)
+        r, g, b = (flat[:, 2], flat[:, 1], flat[:, 0]) if bgr else (flat[:, 0], flat[:, 1], flat[:, 2])
         if self.grayscale:
             # Luma as in the Edge Impulse SDKs, round(0.299 R + 0.587 G + 0.114 B); the bias rounds exact ties up
             if tmp is None:

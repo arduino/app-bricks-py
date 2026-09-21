@@ -84,7 +84,7 @@ class Connection:
 
     def __init__(self, sock: socket.socket, registry: ModelRegistry, name: str):
         self.sock, self.registry, self.name = sock, registry, name
-        self.reader = P.Reader(sock, limit=P.MAX_CONTROL_PAYLOAD)  # raised to the frame size once open
+        self.reader = P.Reader(sock, limit=P.MAX_CONTROL_PAYLOAD)  # raised to the frame limit once open
         self.model = None
         self.scratch = None  # work buffer for the model, sized on open
         self.errors = 0
@@ -126,7 +126,7 @@ class Connection:
         except RegistryError as exc:
             self.error("open", exc.code, str(exc), model=name)
             return False
-        self.reader.limit = P.frame_size(self.model.width, self.model.height)
+        self.reader.limit = P.MAX_FRAME_PAYLOAD
         self.scratch = self.model.scratch()
         P.send_json(self.sock, P.OPENED, self.model.describe())
         return True
@@ -139,12 +139,7 @@ class Connection:
                 kind, payload = self.reader.read()
             except P.PayloadTooLarge as exc:
                 if exc.kind == P.FRAME:
-                    self.error(
-                        "frame",
-                        P.E_BAD_FRAME,
-                        f"frame of {exc.length} bytes, expected {self.reader.limit} for {self.model.width}x{self.model.height} RGB",
-                        seq=P.frame_seq(exc.head),
-                    )
+                    self.error("frame", P.E_BAD_FRAME, f"frame of {exc.length} bytes, the limit is {P.MAX_FRAME_PAYLOAD}", seq=P.frame_seq(exc.head))
                 else:
                     self.error("frame", P.E_BAD_REQUEST, f"expected FRAM, received {exc.kind!r}")
                 continue
@@ -153,8 +148,8 @@ class Connection:
                 continue
             seq = P.frame_seq(payload)
             try:
-                seq, ts_ns, image = P.parse_frame(payload)
-                result = self.model.infer(image, self.reader.transfer_ms, self.scratch)
+                seq, ts_ns, image, color = P.parse_frame(payload)
+                result = self.model.infer(image, color, self.reader.transfer_ms, self.scratch)
             except P.ProtocolError as exc:
                 self.error("frame", P.E_BAD_FRAME, str(exc), seq=seq)
             except RunnerDied as exc:
@@ -257,12 +252,13 @@ class Server:
                     continue
                 ms = profile["mean_ms"]
                 log.info(
-                    "[%s] %d frames, %.1f fps | mean ms: recv %.1f, encode %.1f, lock %.1f, "
+                    "[%s] %d frames, %.1f fps | mean ms: recv %.1f, resize %.1f, encode %.1f, lock %.1f, "
                     "inference %.1f (dsp %.1f, nn %.1f, other %.1f), server %.1f",
                     model.name,
                     profile["frames"],
                     profile["fps"],
                     ms["recv"],
+                    ms["resize"],
                     ms["encode"],
                     ms["lock"],
                     ms["inference"],
