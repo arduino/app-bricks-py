@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""Pytest configuration for the edge-impulse-npu-runner container tests.
+"""Pytest configuration for the Edge Impulse inference server tests.
 
 Adds the container ``src`` directory to ``sys.path`` so the protocol module imports the same way it does at runtime.
 """

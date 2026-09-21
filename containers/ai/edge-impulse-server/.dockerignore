@@ -1,0 +1,7 @@
+# Only what the images copy from this context
+*
+!pyproject.toml
+!uv.lock
+!src/
+!models/
+**/__pycache__

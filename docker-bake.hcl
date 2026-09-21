@@ -24,9 +24,6 @@
 #   docker buildx bake python-apps-base         # build a container and its parents
 #   docker buildx bake                          # build them all
 #
-# python-apps-base installs the wheel from the "wheel" context (dist/, filled by
-# `task build:bricks`), models-downloader reads models-list.yaml from the "models"
-# context (models/).
 
 # Registry prefix the images are published under, with a trailing slash.
 variable "REGISTRY" {
@@ -247,7 +244,10 @@ target "edge-impulse-runner" {
   tags       = image_tags("edge-impulse-runner")
   cache-from = cache_from("edge-impulse-runner")
   cache-to   = cache_to("edge-impulse-runner")
-  contexts   = parent_context("python-slim")
+  contexts = merge(
+    { server = "containers/ai/edge-impulse-server" },
+    parent_context("python-slim"),
+  )
 }
 
 target "qairt-common-base" {
@@ -303,7 +303,10 @@ target "edge-impulse-npu-runner" {
   tags       = image_tags("edge-impulse-npu-runner")
   cache-from = cache_from("edge-impulse-npu-runner")
   cache-to   = cache_to("edge-impulse-npu-runner")
-  contexts   = parent_context("qairt-common-base")
+  contexts = merge(
+    { server = "containers/ai/edge-impulse-server" },
+    parent_context("qairt-common-base"),
+  )
 }
 
 target "ei-models-runner" {
