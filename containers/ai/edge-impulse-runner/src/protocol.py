@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""Protocol between clients and the inference server (v9, Unix domain socket SOCK_STREAM).
+"""Protocol between clients and the inference server (Unix domain socket SOCK_STREAM).
 
 Every message:  [type: 4 ASCII bytes] [payload length: uint32 LE] [payload]
 
@@ -36,7 +36,7 @@ import time
 import numpy as np
 
 SOCKET_NAME = "ei.sock"
-PROTOCOL_VERSION = 9
+PROTOCOL_VERSION = 0  # the protocol is not versioned yet, every change is breaking
 
 OPEN = b"OPEN"
 OPENED = b"OPND"
