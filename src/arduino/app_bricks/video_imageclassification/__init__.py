@@ -13,7 +13,7 @@ from collections.abc import Callable
 
 from websockets.sync.client import connect
 from websockets.sync.connection import Connection
-from websockets.exceptions import ConnectionClosedOK, ConnectionClosedError
+from websockets.exceptions import ConnectionClosedOK, ConnectionClosedError, InvalidHandshake
 
 from arduino.app_peripherals.camera import Camera, BaseCamera
 from arduino.app_internal.core.module import get_brick_config, get_brick_configured_model, load_model_list, load_brick_compose_file, resolve_address
@@ -35,6 +35,9 @@ class VideoImageClassification:
     ALL_HANDLERS_KEY = "__ALL"
 
     _DETECTION_LOCK_TO = 0.01  # Seconds to wait for a detection lock before discarding the detection signal
+
+    _WS_CONNECT_RETRIES = 5  # Attempts to open a one-shot WebSocket connection to the model runner
+    _WS_CONNECT_RETRY_DELAY = 1.0  # Seconds between connection attempts
 
     def __init__(self, camera: BaseCamera | None = None, confidence: float = 0.3, debounce_sec: float = 0.0) -> None:
         """Initialize the VideoImageClassification class.
@@ -344,6 +347,33 @@ class VideoImageClassification:
             # Executor was shut down before the task could be submitted
             classification_lock.release()
 
+    def _connect_with_retry(self) -> Connection:
+        """Open a WebSocket connection to the model runner, retrying while it is still starting up.
+
+        The model runner accepts connections only once its inference pipeline is up, so a
+        connection opened right after the app starts can be refused. Retry a few times
+        before giving up.
+
+        Returns:
+            Connection: The established WebSocket connection.
+
+        Raises:
+            ConnectionError: If the connection could not be established after all attempts.
+        """
+        last_error: Exception | None = None
+        for attempt in range(1, self._WS_CONNECT_RETRIES + 1):
+            try:
+                return connect(self._uri)
+            except (OSError, InvalidHandshake) as e:
+                # OSError covers ConnectionRefusedError and TimeoutError: the model runner is
+                # not accepting connections yet. InvalidHandshake: listening, but not ready.
+                last_error = e
+                logger.debug(f"WebSocket connection to {self._uri} failed (attempt {attempt}/{self._WS_CONNECT_RETRIES}): {e}")
+                if attempt < self._WS_CONNECT_RETRIES:
+                    time.sleep(self._WS_CONNECT_RETRY_DELAY)
+
+        raise ConnectionError(f"Could not connect to the model runner at {self._uri} after {self._WS_CONNECT_RETRIES} attempts") from last_error
+
     def override_threshold(self, value: float) -> None:
         """Override the threshold for image classification model.
 
@@ -353,8 +383,9 @@ class VideoImageClassification:
         Raises:
             TypeError: If the value is not a number.
             RuntimeError: If the model information is not available or does not support threshold override.
+            ConnectionError: If the model runner could not be reached.
         """
-        with connect(self._uri) as ws:
+        with self._connect_with_retry() as ws:
             self._override_threshold(ws, value)
 
     def _override_threshold(self, ws: Connection, value: float) -> None:
