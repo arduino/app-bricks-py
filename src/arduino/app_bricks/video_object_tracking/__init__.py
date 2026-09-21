@@ -72,7 +72,7 @@ class VideoObjectTracking(VideoObjectDetection):
         self._recent_objects = LRUDict(maxsize=150)  # To track recent object IDs and their labels
 
         # Crossing line coordinates
-        self._line_coordinates = (0, 0, 0, 0)  # x1, y1, x2, y2
+        self._line_coordinates = None  # x1, y1, x2, y2
         self._crossing_line_object = Counter()
 
         # Directions tracking dict
@@ -126,6 +126,9 @@ class VideoObjectTracking(VideoObjectDetection):
             x (int): The x-coordinate of the object reference point.
             y (int): The y-coordinate of the object reference point.
         """
+        if self._line_coordinates is None:
+            return
+
         with self._counter_lock:
             if object_id in self._recent_objects:
                 last_x, last_y = self._recent_objects[object_id]
@@ -229,8 +232,6 @@ class VideoObjectTracking(VideoObjectDetection):
         """
         with self._counter_lock:
             self._line_coordinates = (x1, y1, x2, y2)
-
-        self.reset_counters()
 
     def set_horizontal_crossing_line(self, y: int) -> None:
         """
