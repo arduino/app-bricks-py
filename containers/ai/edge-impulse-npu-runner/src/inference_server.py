@@ -4,7 +4,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""Multi-model Edge Impulse inference server (protocol v8).
+"""Multi-model Edge Impulse inference server.
 
 Many clients, one socket. Each connection requests a model with its first
 message and waits until it is ready. Connections that request the same
