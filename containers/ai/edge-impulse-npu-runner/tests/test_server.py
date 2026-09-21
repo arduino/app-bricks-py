@@ -131,8 +131,8 @@ class Harness:
         k, d = self.read(s)
         return s, k, d
 
-    def frame(self, s, w=W, h=H, c=3, seq=1, fill=0):
-        P.send_frame(s, seq, 123, np.full((h, w, c), fill, np.uint8))
+    def frame(self, s, w=W, h=H, c=3, seq=1, fill=0, color=P.RGB):
+        P.send_frame(s, seq, 123, np.full((h, w, c), fill, np.uint8), color)
         return self.read(s)
 
 
@@ -213,23 +213,48 @@ def test_open_and_infer(server):
     k, d = server.frame(s, fill=0)
     assert k == P.RESULT, d
     assert set(d) == {"seq", "ts_ns", "boxes", "classes", "anomaly", "timing_ms"}
-    assert set(d["timing_ms"]) == {"recv", "encode", "lock", "inference", "dsp", "nn", "server"}
+    assert set(d["timing_ms"]) == {"recv", "resize", "encode", "lock", "inference", "dsp", "nn", "server"}
     P.send_frame(s, 7, 1, np.tile(np.array([10, 20, 30], np.uint8), (H, W, 1)))
     k, d = server.read(s)
     assert k == P.RESULT and d["classes"]["first_feature"] == (10 << 16) | (20 << 8) | 30, "RGB pixel encoded as (r<<16)|(g<<8)|b"
+    P.send_frame(s, 8, 1, np.tile(np.array([10, 20, 30], np.uint8), (H, W, 1)), P.BGR)
+    k, d = server.read(s)
+    assert k == P.RESULT and d["classes"]["first_feature"] == (30 << 16) | (20 << 8) | 10, "a BGR frame is swapped to RGB"
+    s.close()
+
+
+def test_frames_of_any_size_are_resized_to_the_model_input(server):
+    """The fake det model is 96x64 fit-shortest and always reports the box (1, 2, 3, 4) in model pixels."""
+    s, k, d = server.open_model("det")
+    k, d = server.frame(s, w=192, h=128, seq=2)
+    assert k == P.RESULT, d
+    box = d["boxes"][0]
+    assert (box["x"], box["y"], box["w"], box["h"]) == (2, 4, 6, 8), "twice the model size, no crop: boxes scaled by 2"
+    k, d = server.frame(s, w=32, h=32, seq=3)
+    assert k == P.RESULT, ("smaller frames are upscaled", d)
+    k, d = server.frame(s, w=640, h=480, seq=4)
+    assert k == P.RESULT, d
+    box = d["boxes"][0]
+    assert abs(box["x"] - 1 / 0.15) < 0.1 and abs(box["w"] - 3 / 0.15) < 0.1, ("cropped to 640x427 then scaled by 0.15", box)
+    assert abs(box["y"] - (26 + 2 * 427 / 64)) < 0.2, ("the crop offset is mapped back", box)
     s.close()
 
 
 def test_bad_frames_keep_the_connection_open(server):
     s, k, d = server.open_model("det")
-    k, d = server.frame(s, w=32, seq=2)
-    assert k == P.ERROR and d["code"] == "bad_frame" and d["seq"] == 2, ("smaller frame", d)
-    k, d = server.frame(s, w=640, h=480, seq=3)
-    assert k == P.ERROR and d["code"] == "bad_frame" and d["seq"] == 3, ("larger frame is discarded, not buffered", d)
+    server.raw(s, P.FRAME, P.FRAME_HEADER.pack(2, 0, 4000, 3000, 3, 0) + b"\x00" * 10)
+    k, d = server.read(s)
+    assert k == P.ERROR and d["code"] == "bad_frame" and d["seq"] == 2, ("frame above the pixel limit", d)
+    server.raw(s, P.FRAME, P.FRAME_HEADER.pack(3, 0, 1920, 1090, 3, 0) + b"\x00" * (1920 * 1090 * 3))
+    k, d = server.read(s)
+    assert k == P.ERROR and d["code"] == "bad_frame" and d["seq"] == 3, ("frame above the payload limit is discarded, not buffered", d)
     assert server.frame(s, seq=4)[0] == P.RESULT
+    server.raw(s, P.FRAME, P.FRAME_HEADER.pack(9, 0, W, H, 3, 7) + b"\x00" * (W * H * 3))
+    k, d = server.read(s)
+    assert k == P.ERROR and d["code"] == "bad_frame", ("unknown color code", d)
     k, d = server.frame(s, c=1, seq=5)
     assert k == P.ERROR and d["code"] == "bad_frame", ("1 channel", d)
-    server.raw(s, P.FRAME, P.FRAME_HEADER.pack(6, 0, W, H, 3) + b"\x00" * 10)
+    server.raw(s, P.FRAME, P.FRAME_HEADER.pack(6, 0, W, H, 3, 0) + b"\x00" * 10)
     k, d = server.read(s)
     assert k == P.ERROR and d["code"] == "bad_frame" and d["seq"] == 6, ("truncated pixels", d)
     server.raw(s, P.FRAME, b"\x00" * 5)
