@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""Protocol between the clients and the inference service (v9, Unix domain socket SOCK_STREAM).
+"""Protocol between the clients and the inference service (Unix domain socket SOCK_STREAM).
 
 Every message: [type: 4 ASCII bytes] [payload length: uint32 LE] [payload]. One connection uses one model,
 requested with the first message; the connection stays open after a frame error, the server closes it
@@ -24,7 +24,7 @@ from typing import Any, cast
 import numpy as np
 
 SOCKET_NAME = "ei.sock"
-PROTOCOL_VERSION = 9
+PROTOCOL_VERSION = 0  # the protocol is not versioned yet, every change is breaking
 
 OPEN = b"OPEN"
 OPENED = b"OPND"
