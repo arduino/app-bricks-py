@@ -16,6 +16,8 @@ import random
 import select
 import socket
 import threading
+import time
+from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import cv2
@@ -58,6 +60,107 @@ class LabelColors:
                 self._colors[label] = (int(b * 255), int(g * 255), int(r * 255))
                 self._hue = (self._hue + self.HUE_STEP) % 1.0
             return self._colors[label]
+
+
+@dataclass
+class _Track:
+    label: str
+    box: tuple[float, float, float, float]  # x1, y1, x2, y2
+    score: float
+    last_seen: float
+
+
+class BoxStabilizer:
+    """Steadies the boxes drawn on the video across results.
+
+    A box appears when its score passes the threshold, then follows the matching box of the next results,
+    its position and score smoothed. It keeps showing while the matching score stays within `margin` below
+    the threshold, and for `hold` seconds after the last match, so scores hovering around the threshold and
+    single missed results do not make it flicker. The smoothing depends on the size of the change relative to
+    the box, so it behaves the same at every resolution and distance: the noise of a still object is ignored,
+    small changes are followed slowly and large ones almost at once, so a still box stays still and a moving
+    one keeps up. The callbacks of the brick see the raw detections, this only shapes what the viewers see.
+    """
+
+    MIN_HOLD = 0.25  # seconds a box outlives its last match, at least...
+    HOLD_PERIODS = 2  # ...or this many times its inference took: a model that stops answering leaves no ghost boxes
+    MARGIN = 0.15  # a box already shown survives scores this far below the threshold
+    MIN_IOU = 0.3  # the overlap a box must have with a track of the same label to be its next position
+    JITTER = 0.03  # an edge moving less than this fraction of the box size is noise on a still object and is ignored
+    MOTION = 0.5  # an edge moving this fraction of the box size is movement and is followed at FAST_SMOOTHING
+    SMOOTHING = 0.15  # weight of a change just above the jitter against the smoothed coordinate
+    FAST_SMOOTHING = 0.8  # weight of a change at or beyond MOTION
+    SCORE_SMOOTHING = 0.2  # weight of the new score against the displayed one
+
+    def __init__(self) -> None:
+        self._tracks: list[_Track] = []
+        self._hold = self.MIN_HOLD
+        self._lock = threading.Lock()
+
+    def update(self, boxes: list, threshold: float, round_trip: float) -> None:
+        """Feed the boxes of one result (objects with label, score, x, y, w, h) and the seconds it took."""
+        now = time.monotonic()
+        with self._lock:
+            self._hold = max(self.MIN_HOLD, self.HOLD_PERIODS * round_trip)
+            unmatched = sorted(boxes, key=lambda box: box.score, reverse=True)
+            for track in self._tracks:
+                match = self._best_match(track, unmatched)
+                if match is None or match.score < threshold - self.MARGIN:
+                    continue
+                unmatched.remove(match)
+                new = (match.x, match.y, match.x + match.w, match.y + match.h)
+                width, height = track.box[2] - track.box[0], track.box[3] - track.box[1]
+                track.box = tuple(self._follow(old, n, size) for old, n, size in zip(track.box, new, (width, height, width, height)))
+                track.score += self.SCORE_SMOOTHING * (match.score - track.score)
+                track.last_seen = now
+            for box in unmatched:
+                if box.score >= threshold:
+                    self._tracks.append(_Track(box.label, (box.x, box.y, box.x + box.w, box.y + box.h), box.score, now))
+            self._tracks = [track for track in self._tracks if now - track.last_seen <= self._hold]
+
+    def visible(self) -> dict[str, list[dict]]:
+        """The boxes to draw now, in the shape of the brick's detections."""
+        now = time.monotonic()
+        detections: dict[str, list[dict]] = {}
+        with self._lock:
+            for track in self._tracks:
+                if now - track.last_seen <= self._hold:
+                    xyxy = tuple(round(v) for v in track.box)
+                    detections.setdefault(track.label, []).append({"confidence": round(track.score, 2), "bounding_box_xyxy": xyxy})
+        return detections
+
+    @classmethod
+    def _follow(cls, old: float, new: float, size: float) -> float:
+        """The smoothed edge coordinate of a box `size` wide or tall: unchanged within the jitter, then moved by
+        a weight growing with the change, both measured against the box size, a pixel being the least that shows."""
+        delta = new - old
+        jitter, motion = max(1.0, cls.JITTER * size), max(2.0, cls.MOTION * size)
+        distance = abs(delta) - jitter
+        if distance <= 0:
+            return old
+        weight = cls.SMOOTHING + (cls.FAST_SMOOTHING - cls.SMOOTHING) * min(1.0, distance / (motion - jitter))
+        return old + weight * delta
+
+    @classmethod
+    def _best_match(cls, track: _Track, boxes: list) -> object | None:
+        best, best_iou = None, cls.MIN_IOU
+        for box in boxes:
+            if box.label != track.label:
+                continue
+            iou = _iou(track.box, (box.x, box.y, box.x + box.w, box.y + box.h))
+            if iou >= best_iou:
+                best, best_iou = box, iou
+        return best
+
+
+def _iou(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> float:
+    inter_w = min(a[2], b[2]) - max(a[0], b[0])
+    inter_h = min(a[3], b[3]) - max(a[1], b[1])
+    if inter_w <= 0 or inter_h <= 0:
+        return 0.0
+    inter = inter_w * inter_h
+    union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
+    return inter / union if union > 0 else 0.0
 
 
 def draw_detections(frame: np.ndarray, detections: dict[str, list[dict]], colors: LabelColors) -> np.ndarray:

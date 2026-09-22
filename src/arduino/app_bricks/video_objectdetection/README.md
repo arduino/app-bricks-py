@@ -43,7 +43,7 @@ The model is the one selected for the brick in the app configuration (`EI_V_OBJ_
 The brick serves the camera video with the bounding boxes drawn on it on port `4912`: `http://<board>:4912/` is an MJPEG stream, which browsers show like an image at its natural size for an `<img>` tag or a player, and `http://<board>:4912/embed` is a bare page for embedding in an iframe. Frames are rendered only while someone is watching.
 `stream_port=None` in the constructor disables the stream.
 
-The video runs at the camera rate whatever the model takes: every frame is drawn with the boxes of the latest inference, so a slow model only makes the boxes lag behind moving objects until the next result replaces them, never the video stutter. Boxes older than twice the inference  period are dropped, so a model that stops answering leaves no stale boxes. Frames are rendered only while a viewer is connected.
+The video runs at the camera rate whatever the model takes: every frame is drawn with the boxes of the latest inference. The drawn boxes are steadied across results.
 
 ## Prerequisites
 
