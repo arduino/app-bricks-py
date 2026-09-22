@@ -243,7 +243,7 @@ class CloudObject:
         self._has_pushed_once = True
         self._dirty = False
 
-    def pump(self, now: float, interval: float) -> None:
+    def pump(self, now: float, interval: float | None) -> None:
         """Publish the local value to the cloud per the update policy.
 
         Called from the brick loop for each scalar leaf. ``interval`` is the
@@ -299,7 +299,7 @@ class CloudObject:
         return value
 
     # ── cloud (cloud → device) changes ──────────────────────────────────────────
-    def apply_cloud(self, value: Any, cloud_ts: float) -> bool:  # noqa: ANN401
+    def apply_cloud(self, value: Any, cloud_ts: float | None) -> bool:  # noqa: ANN401
         """Resolve a SYNC frame against the local value, per the sync policy.
 
         This is the ``lastvalue`` path and nothing else. The three policies
@@ -309,7 +309,7 @@ class CloudObject:
 
         Returns True if the local value changed (so the caller schedules
         on_write). ``cloud_ts`` is epoch seconds (the daemon's last-value
-        timestamp for this variable).
+        timestamp for this variable), or None if the frame carried none.
         """
         if cloud_ts is None:
             cloud_ts = _now()
@@ -340,7 +340,7 @@ class CloudObject:
         self._dirty = False  # cloud value adopted; discard any pending local push
         return True
 
-    def apply_live(self, value: Any, cloud_ts: float) -> bool:  # noqa: ANN401
+    def apply_live(self, value: Any, cloud_ts: float | None) -> bool:  # noqa: ANN401
         """Apply a LIVE cloud update, with no policy arbitration at all.
 
         A live ``update`` frame is not a reunion between two values that drifted
@@ -361,7 +361,8 @@ class CloudObject:
         as a permanent rule, but it governs the sync only.
 
         Returns True if the local value changed (so the caller schedules
-        on_write). ``cloud_ts`` is epoch seconds.
+        on_write). ``cloud_ts`` is epoch seconds, or None if the frame
+        carried none.
         """
         if cloud_ts is None:
             cloud_ts = _now()
