@@ -177,6 +177,14 @@ jobs:
 
           zip -r dist/sboms.zip sbom-delta/
 
+      # Left to GitHub, the notes would start from the latest release of any kind, the prebuilt binaries included
+      - name: Resolve the previous release
+        id: previous
+        run: |
+          PREVIOUS_TAG=$(git ls-remote --tags origin 'refs/tags/release/*' 'refs/tags/bricks/*' | python3 -m scripts.previous_release_tag "${{ needs.build.outputs.version }}")
+          echo "Release notes start from ${PREVIOUS_TAG:-the release GitHub picks}"
+          echo "tag=$PREVIOUS_TAG" >> $GITHUB_OUTPUT
+
       - name: Create the GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -188,5 +196,6 @@ jobs:
           name: Release ${{ needs.build.outputs.version }}
           prerelease: ${{ needs.build.outputs.prerelease }}
           generate_release_notes: true
+          previous_tag: ${{ steps.previous.outputs.tag }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
