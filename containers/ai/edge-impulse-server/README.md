@@ -27,11 +27,12 @@ NPU image, its QNN builds; the service mounts the models the app CLI installs ne
 | `--max-models N` | yes | models in memory at the same time, pinned ones included |
 | `--max-clients N` | yes | concurrent connections |
 | `--memory-reserve-mb N` | yes | minimum available memory required to load a model |
+| `--max-model-instances N` | no | instances of one model the server may run when the connections keep it saturated, within the cores and the memory (default 1) |
 | `--pinned-models A,B` | no | comma-separated models loaded at startup and never terminated |
 | `--models-dir` | no | directory of the `.eim` files (default `/models`) |
 | `--socket` | no | socket path (default `/ipc/ei.sock`) |
 | `--stats-every` | no | seconds between log summaries (default 60) |
-| `--log-level` | no | Python log level (default `INFO`) |
+| `--log-level` | no | Python log level (default `WARNING`: only problems; `INFO` adds the model lifecycle, the instances and the periodic stats) |
 | `--accel cpu\|qnn` | no | startup checks only (NPU device access); default from `EI_ACCEL`, set by each image |
 
 The compose file of each image passes them in `command`. Startup fails if a pinned model does not
@@ -48,6 +49,35 @@ exist or does not load, or if there are more pinned models than `--max-models`.
 - The load log line says whether features reach the `.eim` through shared memory (`shm`) or as JSON.
   JSON costs several ms per frame: rebuild such a `.eim` with a recent Edge Impulse release.
 
+## Model instances
+
+A `.eim` process runs one inference at a time, and the Edge Impulse builds are single-threaded, so on a
+board with idle cores a model that its clients keep saturated can go faster with more processes. With
+`--max-model-instances` above 1 the server watches the utilization of every model, the busy time of its
+instances over the elapsed time, and adds an instance when it stays above 90% for a few seconds, as long
+as the ceiling is not reached, the cores allow it (the affinity mask and the cgroup quota against the
+cores the `.eim` was measured to use during its warm-up) and the memory reserve holds after another
+process of the size of the first. An instance whose model stays under 40% busy for a while is retired.
+A client slower than the model never triggers an instance, so the NPU image keeps the default of 1 and
+the CPU compose file for the UNO Q sets 2. An instance whose `.eim` exits is replaced on its own, the
+others keep serving.
+
+Two guards keep the instances honest. A model that keeps state from one frame to the next, object tracking
+in the first place, stays on one instance whatever the ceiling: two trackers would each see half the frames
+and number the objects differently. The server reads it from the parameters the `.eim` reports and logs
+`single instance` with the reason. And the cores an instance uses are not assumed but measured, at warm-up
+and then continuously from the CPU time of the process while it is busy, so a multi-threaded `.eim` that
+already fills the cores gets no replica, and instances that turn out to use more cores than the container
+has together lose one.
+
+Instances are the server's business: a connection learns only how many frames it may keep in flight,
+its slots, and the server picks the moment to raise them so the results stay evenly spaced (half an
+inference period after a result). When the results drift closer than two thirds of their target spacing,
+the allowance goes back to one until the moment that puts the next frame a full spacing after the
+surviving result, so the offset is restored in one step at the cost of a pause as long as the drift.
+Results go out in arrival order; one completing after a later frame was answered is dropped, which also
+covers an instance that never answers. The stats log reports the instances of each model.
+
 ## Unix socket interface
 
 Unix socket `SOCK_STREAM`. Every message: type (4 bytes) + length (uint32 LE) + payload.
@@ -56,16 +86,21 @@ Unix socket `SOCK_STREAM`. Every message: type (4 bytes) + length (uint32 LE) + 
 client: OPEN {"model": name}          first message, mandatory
 server: OPND {details}                once the model is ready
         ERR  {...} and close          if it cannot be opened
-client: FRAM  ->  server: RSLT | ERR  repeated; an ERR here does not close the connection
+client: FRAM  ->  server: RSLT | ERR  repeated, up to "slots" frames in flight; an ERR here does not close the connection
+          server: SLOT                when the frames the client may keep in flight change
 ```
 
 | Type | Direction | Payload |
 |---|---|---|
 | `OPEN` | C -> S | JSON `{"model": name}` |
-| `OPND` | S -> C | JSON: `model`, `project`, `width`, `height`, `channels`, `labels`, `model_type`, `resize_mode` |
+| `OPND` | S -> C | JSON: `model`, `project`, `width`, `height`, `channels`, `labels`, `model_type`, `resize_mode`, `slots` |
 | `FRAM` | C -> S | `<QqHHBB2x` (seq, ts_ns, width, height, channels, color 0=RGB 1=BGR) + the pixels, any size up to 1920x1080 |
-| `RSLT` | S -> C | JSON: `seq`, `ts_ns`, `boxes` [{label, score, x, y, w, h}] in frame coordinates, `classes`, `anomaly`, `timing_ms` |
-| `ERR ` | S -> C | JSON: `op` (`open` or `frame`), `code`, `error`, optional `model`/`seq` |
+| `RSLT` | S -> C | JSON: `seq`, `ts_ns`, `boxes` [{label, score, x, y, w, h}] in frame coordinates, `classes`, `anomaly`, `timing_ms`, `slots` |
+| `SLOT` | S -> C | JSON: `slots`, the frames the client may keep in flight from now on |
+| `ERR ` | S -> C | JSON: `op` (`open` or `frame`), `code`, `error`, optional `model`/`seq`, `slots` after open |
+
+`slots` is 1 at open and follows the instances of the model; a client that ignores it and sends one frame
+at a time keeps working.
 
 | Code | When | Connection |
 |---|---|---|
@@ -86,12 +121,12 @@ each frame and maps the model output back through it.
 | `recv` | receiving the frame payload once its header arrived (socket transfer) |
 | `resize` | adapting the frame to the model input, in the model's resize mode |
 | `encode` | packing the pixels into the feature array |
-| `lock` | waiting for the model, busy with another connection's frame |
+| `lock` | waiting for a free instance of the model, busy with another connection's frame |
 | `inference` | the request to the `.eim`: feature copy, its processing, the reply |
 | `dsp`, `nn` | reported by the `.eim`, included in `inference`; `inference - dsp - nn` is its own overhead |
 | `server` | `resize + encode + lock + inference`, from complete frame to result |
 
-With `--stats-every` the server logs the frames processed, their rate and the mean of each value
+With `--stats-every` and `--log-level INFO` the server logs the frames processed, their rate and the mean of each value
 per loaded model, so a running server can be tuned from its log alone.
 
 ## Tests and benchmarks

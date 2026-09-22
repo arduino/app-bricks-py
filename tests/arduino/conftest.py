@@ -292,6 +292,7 @@ patch.object(Bridge, "connect", return_value=True).start()
 # ---------------------------------------------------------------------------
 
 import os
+import queue
 import socket
 import tempfile
 import threading
@@ -302,10 +303,11 @@ from arduino.app_internal.ei_inference import protocol as EI
 class FakeInferenceService:
     """A server on a Unix socket that answers OPEN and FRAM like the real one, with scripted boxes.
 
-    ``models`` maps a model name to its details: ``width``, ``height``, ``resize_mode``, ``labels`` and
-    ``boxes``, a list of boxes in frame coordinates (as the real service maps them back) or a callable (seq, image)
-    returning the list or a
-    ``{"code", "error"}`` dict for a frame error. ``frames`` records every (model, seq, image) received.
+    ``models`` maps a model name to its details: ``width``, ``height``, ``resize_mode``, ``labels``, ``slots`` (the
+    frames the client may keep in flight, 1 by default) and ``boxes``, a list of boxes in frame coordinates (as the
+    real service maps them back) or a callable (seq, image) returning the list or a ``{"code", "error"}`` dict for a
+    frame error. ``frames`` records every (model, seq, image) received, ``grant(n)`` sends a SLOT message to every
+    connection.
     """
 
     def __init__(self):
@@ -351,6 +353,12 @@ class FakeInferenceService:
         self.stop()
         os.rmdir(self.dir)
 
+    def grant(self, slots):
+        """Tell every connection it may keep `slots` frames in flight, as the real service does when it adds an instance."""
+        with self._lock:
+            for conn in self._connections:
+                EI.send_json(conn, EI.SLOTS, {"slots": slots})
+
     def _accept(self):
         while True:
             try:
@@ -384,13 +392,30 @@ class FakeInferenceService:
                 "labels": model.get("labels", []),
                 "model_type": "object_detection",
                 "resize_mode": model.get("resize_mode", "squash"),
+                "slots": model.get("slots", 1),
             }
             EI.send_json(conn, EI.OPENED, details)
             self.opened.set()
+            # Like the real service, frames are read as they arrive and answered by a worker, so a client with
+            # several frames in flight never blocks on the socket while one is being "inferred"
+            pending = queue.Queue()
+            threading.Thread(target=self._answer, args=(conn, model, pending), daemon=True).start()
             while True:
                 kind, payload = reader.read()
                 seq, ts_ns, image, color = EI.parse_frame(payload)
-                self.frames.append((name, seq, image.copy()))
+                image = image.copy()
+                self.frames.append((name, seq, image))
+                pending.put((seq, ts_ns, image))
+        except (ConnectionError, OSError, EI.ProtocolError, ValueError):
+            pass
+        finally:
+            conn.close()
+            self.closed.set()
+
+    def _answer(self, conn, model, pending):
+        try:
+            while True:
+                seq, ts_ns, image = pending.get()
                 if self.reply_delay:
                     threading.Event().wait(self.reply_delay)
                 boxes = model.get("boxes", [])
@@ -401,11 +426,8 @@ class FakeInferenceService:
                     continue
                 result = {"seq": seq, "ts_ns": ts_ns, "boxes": boxes, "classes": {}, "anomaly": 0.0, "timing_ms": {}}
                 EI.send_json(conn, EI.RESULT, result)
-        except (ConnectionError, OSError, EI.ProtocolError, ValueError):
+        except (ConnectionError, OSError, ValueError):
             pass
-        finally:
-            conn.close()
-            self.closed.set()
 
 
 @pytest.fixture

@@ -7,7 +7,8 @@ services:
         max-size: "5m"
         max-file: "2"
     # Starting values, see containers/ai/edge-impulse-server/README.md
-    command: [--max-models=1, --max-clients=4, --memory-reserve-mb=256]
+    # A saturated model gets a second instance: the .eim files are single-threaded, the container has three cores
+    command: [--max-models=1, --max-clients=4, --memory-reserve-mb=256, --max-model-instances=2]
     cpus: "3"                       # leave one core to the app
     volumes:
       # The .eim models installed by the app CLI, next to the out-of-the-box ones of the image (/models/ootb/ei)
