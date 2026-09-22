@@ -11,22 +11,30 @@ Many clients connect to the same socket. One connection = one model.
     client: OPEN {"model": name}        first message, mandatory
     server: OPND {...}                  once the model is ready; the client waits
             ERR  {...} + close          if the model cannot be opened
-    client: FRAM ...                    repeated, one frame at a time
+    client: FRAM ...                    repeated, up to "slots" frames in flight
     server: RSLT {...} | ERR {...}      the connection stays open after an ERR too
+            SLOT {...}                  when the number of frames the client may keep in flight changes
 
 The model stays available as long as the connection is open. On disconnect
 the server releases it; if no other connection is using it and it is not
 pinned, the server terminates it.
 
+Slots: the server may run several instances of a model and tells each connection how many frames it
+may keep in flight, 1 at open. The client sends a frame whenever fewer than that are in flight; the
+server chooses when to raise the allowance so the results of a connection stay evenly spaced, and it
+sends results in arrival order, dropping one that completes after a later frame's result went out.
+A client that ignores the allowance and sends one frame at a time keeps working.
+
 Messages
   OPEN  C->S  JSON     {"model": name}
   OPND  S->C  JSON     {"model", "project", "width", "height", "channels",
-                        "labels", "model_type", "resize_mode"}
+                        "labels", "model_type", "resize_mode", "slots"}
   FRAM  C->S  binary   FRAME_HEADER + the pixels of the frame, any size, RGB or BGR; the server
                        resizes it to the model input as the Studio does
-  RSLT  S->C  JSON     {"seq", "ts_ns", "boxes", "classes", "anomaly", "timing_ms"}, the boxes in the
-                       coordinates of the submitted frame
-  ERR   S->C  JSON     {"op": "open"|"frame", "code", "error", ...}
+  RSLT  S->C  JSON     {"seq", "ts_ns", "boxes", "classes", "anomaly", "timing_ms", "slots"}, the boxes
+                       in the coordinates of the submitted frame
+  SLOT  S->C  JSON     {"slots"}, the frames the client may keep in flight from now on
+  ERR   S->C  JSON     {"op": "open"|"frame", "code", "error", "slots", ...}
 """
 
 import json
@@ -42,6 +50,7 @@ OPEN = b"OPEN"
 OPENED = b"OPND"
 FRAME = b"FRAM"
 RESULT = b"RSLT"
+SLOTS = b"SLOT"
 ERROR = b"ERR "
 
 # Open errors: the server closes the connection after sending them

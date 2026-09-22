@@ -12,7 +12,7 @@ model share it; the model is terminated when the last one closes, unless
 it is pinned.
 
   python3 inference_server.py --models-dir /models --pinned-models detector \\
-      --max-models 3 --max-clients 8 --memory-reserve-mb 512
+      --max-models 3 --max-clients 8 --memory-reserve-mb 512 --max-model-instances 2
 
 The same server is packaged by two images, acceleration depends on the .eim files and on the image:
   - edge-impulse-npu-runner -> deployment "... (AARCH64 with Qualcomm QNN)" -> NPU
@@ -27,6 +27,7 @@ import socket
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import memory
@@ -37,6 +38,7 @@ log = logging.getLogger("ei")
 
 LOGGED_ERRORS = 20  # errors logged at WARNING per connection
 OPEN_TIMEOUT_S = 10  # a connection must send its OPEN within this time
+DRIFT_TOLERANCE = 0.35  # results closer than this fraction under their target spacing (period / instances) get re-phased
 
 
 def parse_args():
@@ -50,10 +52,16 @@ def parse_args():
     ap.add_argument("--max-clients", type=int, required=True, help="concurrent connections")
     ap.add_argument("--memory-reserve-mb", type=int, required=True, help="minimum available memory required to load a model")
     ap.add_argument(
+        "--max-model-instances",
+        type=int,
+        default=1,
+        help="instances of one model the server may run when the connections keep it saturated, within the cores and the memory (default 1)",
+    )
+    ap.add_argument(
         "--accel", default=os.environ.get("EI_ACCEL", "cpu"), choices=["cpu", "qnn"], help="only used for startup checks (default from EI_ACCEL)"
     )
     ap.add_argument("--stats-every", type=float, default=60, help="seconds between log summaries")
-    ap.add_argument("--log-level", default="INFO")
+    ap.add_argument("--log-level", default="WARNING", help="WARNING by default: only problems; INFO adds the model lifecycle and the periodic stats")
     return ap.parse_args()
 
 
@@ -80,14 +88,34 @@ def check_npu_access(accel: str) -> None:
 
 class Connection:
     """A client connection: opens a model, then serves its frames.
-    The model is released when the connection closes."""
+
+    Frames are read, resized and encoded in the connection thread, then run on a free instance of the model
+    by a worker, so a connection with several frames in flight keeps several instances busy. Results go out
+    in arrival order: one completing after a later frame's result went out is dropped. The connection tells the
+    client how many frames it may keep in flight ("slots"): one, or the instances of the model once there are
+    several, granted half an inference period after a result so the results stay evenly spaced. When two results
+    drift closer than their target spacing, the allowance goes back to one until the moment that puts the next
+    frame exactly a half period after the surviving one, so the spacing is restored in one step at the cost of
+    a pause as long as the drift. The model is released when the connection closes.
+    """
 
     def __init__(self, sock: socket.socket, registry: ModelRegistry, name: str):
         self.sock, self.registry, self.name = sock, registry, name
         self.reader = P.Reader(sock, limit=P.MAX_CONTROL_PAYLOAD)  # raised to the frame limit once open
         self.model = None
-        self.scratch = None  # work buffer for the model, sized on open
         self.errors = 0
+        self.dropped = 0  # results that completed after a later one went out
+        self._send_lock = threading.Lock()
+        self._workers: ThreadPoolExecutor | None = None
+        self._scratches: list = []  # work buffers of the model, one per frame in flight
+        self._scratch_lock = threading.Lock()
+        self.slots = 1  # frames the client may keep in flight
+        self._pipelined = False  # more than one frame was ever allowed in flight: results may complete out of order
+        self._last_sent_seq = 0
+        self._last_sent_at: float | None = None
+        self._grant: threading.Timer | None = None
+        self._grant_delay = 0.0  # seconds from the last result to the next grant of the extra slots
+        self._closed = False
 
     def serve(self, accepted: bool) -> None:
         try:
@@ -120,20 +148,18 @@ class Connection:
         if not accepted:
             self.error("open", P.E_TOO_MANY_CLIENTS, "connection limit reached (--max-clients)", model=name)
             return False
-        log.info("[%s] requests '%s'", self.name, name)
+        log.debug("[%s] requests '%s'", self.name, name)
         try:
             self.model = self.registry.acquire(name)  # blocks until loaded
         except RegistryError as exc:
             self.error("open", exc.code, str(exc), model=name)
             return False
         self.reader.limit = P.MAX_FRAME_PAYLOAD
-        self.scratch = self.model.scratch()
-        P.send_json(self.sock, P.OPENED, self.model.describe())
+        self._workers = ThreadPoolExecutor(max_workers=self.registry.max_instances, thread_name_prefix=f"{self.name}-infer")
+        self.send(P.OPENED, {**self.model.describe(), "slots": self.slots})
         return True
 
     def serve_frames(self) -> None:
-        # Inference runs here, in the connection thread: different connections
-        # work in parallel, the same model processes one frame at a time.
         while True:
             try:
                 kind, payload = self.reader.read()
@@ -147,35 +173,95 @@ class Connection:
                 self.error("frame", P.E_BAD_REQUEST, f"expected FRAM, received {kind!r}")
                 continue
             seq = P.frame_seq(payload)
+            scratch = self._take_scratch()
             try:
                 seq, ts_ns, image, color = P.parse_frame(payload)
-                result = self.model.infer(image, color, self.reader.transfer_ms, self.scratch)
-            except P.ProtocolError as exc:
+                prepared = self.model.prepare(image, color, self.reader.transfer_ms, scratch)
+            except (P.ProtocolError, RegistryError) as exc:
+                self._give_scratch(scratch)
                 self.error("frame", P.E_BAD_FRAME, str(exc), seq=seq)
-            except RunnerDied as exc:
-                self.error("frame", exc.code, str(exc), seq=seq)
-                self.restart_model()
-            except RegistryError as exc:
-                self.error("frame", exc.code, str(exc), seq=seq)
-            except Exception as exc:
-                log.debug("[%s] inference error on '%s'", self.name, self.model.name, exc_info=True)
-                self.error("frame", P.E_INTERNAL, str(exc), seq=seq)
-            else:
-                P.send_json(self.sock, P.RESULT, {"seq": seq, "ts_ns": ts_ns, **result})
+                continue
+            # The frame is out of the reader buffer: the inference runs on a worker while the next frame is read
+            self._workers.submit(self._infer, seq, ts_ns, prepared, scratch)
+
+    def _infer(self, seq: int, ts_ns: int, prepared, scratch) -> None:
+        try:
+            result = self.model.infer(prepared)
+        except RunnerDied as exc:
+            self.error("frame", exc.code, str(exc), seq=seq)
+            self.restart_model()
+        except RegistryError as exc:
+            self.error("frame", exc.code, str(exc), seq=seq)
+        except Exception as exc:
+            log.debug("[%s] inference error on '%s'", self.name, self.model.name, exc_info=True)
+            self.error("frame", P.E_INTERNAL, str(exc), seq=seq)
+        else:
+            self.send_result(seq, P.RESULT, {"seq": seq, "ts_ns": ts_ns, **result})
+            self.registry.autoscale(self.model)
+        finally:
+            self._give_scratch(scratch)
+
+    def _take_scratch(self):
+        with self._scratch_lock:
+            return self._scratches.pop() if self._scratches else self.model.scratch()
+
+    def _give_scratch(self, scratch) -> None:
+        with self._scratch_lock:
+            self._scratches.append(scratch)
 
     def restart_model(self) -> None:
-        """The .eim exited: get the restarted model, or keep the dead one so the next frame retries."""
+        """An .eim exited: have its instance replaced, the next frames find the model whole again."""
         try:
-            self.model = self.registry.restart(self.model)
+            self.registry.restart(self.model)
         except RegistryError:
             pass  # already logged by the registry
 
-    def close(self) -> None:
-        self.sock.close()
-        if self.model is not None:
-            log.info("[%s] closed, releasing '%s'", self.name, self.model.name)
-            self.registry.release(self.model.name)
-            self.model = None
+    # ------------------------------------------------------------ sending
+    def send(self, kind: bytes, obj: dict) -> None:
+        with self._send_lock:
+            if not self._closed:
+                P.send_json(self.sock, kind, obj)
+
+    def send_result(self, seq: int | None, kind: bytes, obj: dict) -> None:
+        """Send the result or frame error of `seq` with the current allowance, unless a later frame's already went out."""
+        with self._send_lock:
+            if self._closed:
+                return
+            if seq is not None:
+                if self._pipelined and seq < self._last_sent_seq:
+                    self.dropped += 1
+                    log.debug("[%s] result of frame %d dropped, frame %d already answered", self.name, seq, self._last_sent_seq)
+                    return
+                self._last_sent_seq = seq
+            now = time.perf_counter()
+            instances = self.model.instance_count
+            target = self.model.period / max(1, instances)  # spacing of the results when the instances are interleaved
+            if instances < self.slots:
+                self.slots = max(1, instances)  # an instance was retired
+                self._grant_delay = target
+            elif self.slots > 1 and self._last_sent_at is not None and now - self._last_sent_at < (1 - DRIFT_TOLERANCE) * target:
+                # The results drifted together: one frame in flight until the moment that puts the next one a full
+                # spacing after the result that came before this one, which restores the offset in one step
+                self.slots = 1
+                self._grant_delay = max(0.0, target - (now - self._last_sent_at))
+            elif self.slots < instances:
+                self._grant_delay = target  # an instance was added: the extra frame starts a half period after this result
+            self._last_sent_at = now
+            P.send_json(self.sock, kind, {**obj, "slots": self.slots})
+            if self.slots < instances and self._grant is None:
+                self._grant = threading.Timer(self._grant_delay, self.grant)
+                self._grant.daemon = True
+                self._grant.start()
+
+    def grant(self) -> None:
+        """Raise the allowance to the instances of the model, at the moment that phases the extra frame between the others."""
+        with self._send_lock:
+            self._grant = None
+            instances = self.model.instance_count
+            if self._closed or instances <= self.slots:
+                return
+            self.slots, self._pipelined = instances, True
+            P.send_json(self.sock, P.SLOTS, {"slots": self.slots})
 
     def error(self, op: str, code: str, message: str, **extra) -> None:
         # A misbehaving client must not fill the log: after LOGGED_ERRORS its errors are logged at DEBUG
@@ -184,7 +270,24 @@ class Connection:
         log.log(level, "[%s] %s: %s", self.name, code, message)
         if self.errors == LOGGED_ERRORS:
             log.warning("[%s] further errors of this connection are logged at DEBUG", self.name)
-        P.send_json(self.sock, P.ERROR, {"op": op, "code": code, "error": message, **extra})
+        payload = {"op": op, "code": code, "error": message, **extra}
+        if op == "frame" and self.model is not None:
+            self.send_result(extra.get("seq"), P.ERROR, payload)
+        else:
+            self.send(P.ERROR, payload)
+
+    def close(self) -> None:
+        with self._send_lock:
+            self._closed = True
+            if self._grant is not None:
+                self._grant.cancel()
+        if self._workers is not None:
+            self._workers.shutdown(wait=True)  # the inferences in flight complete before the model is released
+        self.sock.close()
+        if self.model is not None:
+            log.debug("[%s] closed, releasing '%s'%s", self.name, self.model.name, f", {self.dropped} late results dropped" if self.dropped else "")
+            self.registry.release(self.model.name)
+            self.model = None
 
 
 class Server:
@@ -204,11 +307,12 @@ class Server:
             os.umask(mask)
         listener.listen()
         log.info(
-            "Listening on %s | max %d models, %d connections, reserve %d MB",
+            "Listening on %s | max %d models, %d connections, reserve %d MB, %d instances per model",
             path,
             self.args.max_models,
             self.args.max_clients,
             self.args.memory_reserve_mb,
+            self.args.max_model_instances,
         )
         count = 0
         try:
@@ -235,7 +339,7 @@ class Server:
     def log_stats(self) -> None:
         while True:
             time.sleep(self.args.stats_every)
-            models = [f"{n} ({u} conn{', pinned' if p else ''})" for n, u, p in self.registry.status()]
+            models = [f"{n} ({u} conn{', pinned' if p else ''}{f', {i} instances' if i > 1 else ''})" for n, u, p, i in self.registry.status()]
             available = memory.available_bytes()
             log.info(
                 "connections %d/%d | models %d/%d: %s | available memory %s MB",
@@ -252,11 +356,13 @@ class Server:
                     continue
                 ms = profile["mean_ms"]
                 log.info(
-                    "[%s] %d frames, %.1f fps | mean ms: recv %.1f, resize %.1f, encode %.1f, lock %.1f, "
+                    "[%s] %d frames, %.1f fps on %d instance%s | mean ms: recv %.1f, resize %.1f, encode %.1f, lock %.1f, "
                     "inference %.1f (dsp %.1f, nn %.1f, other %.1f), server %.1f",
                     model.name,
                     profile["frames"],
                     profile["fps"],
+                    profile["instances"],
+                    "" if profile["instances"] == 1 else "s",
                     ms["recv"],
                     ms["resize"],
                     ms["encode"],
@@ -275,7 +381,7 @@ def main() -> None:
     check_npu_access(args.accel)
     registry = None
     try:
-        registry = ModelRegistry(args.models_dir, args.pinned_models, args.max_models, args.memory_reserve_mb)
+        registry = ModelRegistry(args.models_dir, args.pinned_models, args.max_models, args.memory_reserve_mb, args.max_model_instances)
         registry.start()
     except (RegistryError, ValueError) as exc:
         if registry is not None:

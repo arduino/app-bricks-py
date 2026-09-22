@@ -33,7 +33,24 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TIMEOUT = int(os.environ.get("EI_TEST_TIMEOUT", "4"))
 W, H = 96, 64
 STD = ["--max-models", "2", "--max-clients", "3", "--memory-reserve-mb", "512"]
-FAKES = ["det", "cls", "extra", "slow", "broken", "hang", "badwarm", "flaky", "stuck", "late", "die", "gray", "portrait", "noexec", "sub/dir/nested"]
+FAKES = [
+    "det",
+    "cls",
+    "extra",
+    "slow",
+    "broken",
+    "hang",
+    "badwarm",
+    "flaky",
+    "stuck",
+    "late",
+    "die",
+    "gray",
+    "portrait",
+    "noexec",
+    "sub/dir/nested",
+    "tracker",
+]
 
 
 class Harness:
@@ -85,17 +102,21 @@ class Harness:
         return any("Traceback" in line and "ei.runner" not in line for line in self.log_text().splitlines())
 
     def eim_running(self, name=""):
+        return self.eim_count(name) > 0
+
+    def eim_count(self, name=""):
+        """Running fake .eim processes of the model."""
         needle = f"fake_eim.py {name}"
         if os.path.isdir("/proc"):
+            count = 0
             for pid in filter(str.isdigit, os.listdir("/proc")):
                 try:
                     cmd = open(f"/proc/{pid}/cmdline", "rb").read().replace(b"\0", b" ").decode()
                 except OSError:
                     continue
-                if needle in cmd:
-                    return True
-            return False
-        return subprocess.run(["pgrep", "-f", needle], capture_output=True).returncode == 0
+                count += needle in cmd
+            return count
+        return len(subprocess.run(["pgrep", "-f", needle], capture_output=True).stdout.split())
 
     def wait_for(self, cond, timeout=TIMEOUT + 3):
         """True as soon as cond() holds, False after the timeout: terminating a fake .eim takes ms on a laptop, longer on a board."""
@@ -209,10 +230,11 @@ def test_pinned_model_loaded_at_startup(server):
 def test_open_and_infer(server):
     s, k, d = server.open_model("det")
     assert k == P.OPENED, d
-    assert set(d) == {"model", "project", "width", "height", "channels", "labels", "model_type", "resize_mode"}
+    assert set(d) == {"model", "project", "width", "height", "channels", "labels", "model_type", "resize_mode", "slots"}
+    assert d["slots"] == 1, "one frame in flight until the server runs more instances"
     k, d = server.frame(s, fill=0)
     assert k == P.RESULT, d
-    assert set(d) == {"seq", "ts_ns", "boxes", "classes", "anomaly", "timing_ms"}
+    assert set(d) == {"seq", "ts_ns", "boxes", "classes", "anomaly", "timing_ms", "slots"}
     assert set(d["timing_ms"]) == {"recv", "resize", "encode", "lock", "inference", "dsp", "nn", "server"}
     P.send_frame(s, 7, 1, np.tile(np.array([10, 20, 30], np.uint8), (H, W, 1)))
     k, d = server.read(s)
@@ -457,7 +479,7 @@ def test_dying_eim_is_restarted_in_place(server):
     assert k == P.ERROR and d["code"] == "internal" and "exited with code 3" in d["error"], d
     k, d = server.frame(s, seq=2)
     assert k == P.RESULT and d["seq"] == 2, ("next frame served", d)
-    assert "restarting it" in server.log_text() and server.log_text().count("[die] loaded") == 2, "restart logged"
+    assert "restarting it" in server.log_text() and "[die] instance 2 replaces 1" in server.log_text(), "restart logged"
     s.close()
     assert server.wait_for(lambda: "[die] terminated" in server.log_text() and not server.eim_running("die")), "released after the client leaves"
 
@@ -522,3 +544,96 @@ def test_open_below_the_memory_reserve(harness):
     s.close()
     harness.stop()
     assert not harness.eim_running(), "no fake .eim process left"
+
+
+# ---------------------------------------------------------------- instances
+
+
+@pytest.fixture(scope="module")
+def scaled(harness):
+    """A server allowed two instances per model, with fake .eim files taking 100 ms per inference."""
+    harness.start(*STD, "--max-model-instances", "2", "--log-level", "INFO", env={"EI_FAKE_SLEEP": "0.1"})
+    yield harness
+    harness.stop()
+
+
+def hammer(harness, s, until, timeout=8.0, start_seq=1):
+    """Send frames one at a time, each as soon as its reply is in, until `until(kind, data)` holds.
+    Returns the replies and the last sequence number sent, whose result may still be on its way."""
+    replies, seq, deadline = [], start_seq, time.monotonic() + timeout
+    P.send_frame(s, seq, 0, np.zeros((H, W, 3), np.uint8))
+    while time.monotonic() < deadline:
+        k, d = harness.read(s)
+        replies.append((k, d))
+        if until(k, d):
+            return replies, seq
+        if k == P.RESULT:
+            seq += 1
+            P.send_frame(s, seq, 0, np.zeros((H, W, 3), np.uint8))
+    pytest.fail(f"condition not met, last replies: {replies[-3:]}")
+
+
+def test_saturated_model_gets_a_second_instance_and_the_connection_a_second_slot(scaled):
+    s, k, d = scaled.open_model("det")
+    assert k == P.OPENED and d["slots"] == 1
+    replies, last = hammer(scaled, s, lambda k, d: d.get("slots") == 2)
+    assert scaled.wait_for(lambda: scaled.eim_count("det") == 2), "a second .eim process runs"
+    assert "[det] instance 2 added" in scaled.log_text()
+    assert any(k == P.SLOTS for k, _ in replies), "the second slot is granted with a SLOT message, half a period after a result"
+    # Two frames in flight: the results arrive in order, and one that would arrive out of order is dropped instead
+    P.send_frame(s, last + 1, 0, np.zeros((H, W, 3), np.uint8))
+    P.send_frame(s, last + 2, 0, np.zeros((H, W, 3), np.uint8))
+    answered, deadline = [], time.monotonic() + 3
+    s.settimeout(0.5)
+    while time.monotonic() < deadline:
+        try:
+            k, d = P.Reader(s).read()
+        except TimeoutError:
+            continue
+        d = json.loads(bytes(d))
+        assert k in (P.RESULT, P.SLOTS), (k, d)
+        if k == P.RESULT and d["seq"] > last:
+            answered.append(d["seq"])
+    s.settimeout(10)
+    assert answered and answered == sorted(answered) and answered[-1] == last + 2, answered
+    s.close()
+    time.sleep(0.3)
+    assert scaled.wait_for(lambda: scaled.eim_count("det") == 0), "both instances go with the last connection"
+
+
+def test_a_client_slower_than_the_model_gets_no_second_instance(scaled):
+    s, k, d = scaled.open_model("cls")
+    for seq in range(1, 8):
+        k, d = scaled.frame(s, seq=seq)
+        assert k == P.RESULT and d["slots"] == 1, d
+        time.sleep(0.3)  # the model is idle three quarters of the time
+    assert scaled.eim_count("cls") == 1 and "[cls] instance 2" not in scaled.log_text()
+    s.close()
+
+
+def test_idle_instance_is_retired_and_the_slot_taken_back(scaled):
+    s, k, d = scaled.open_model("det")
+    _, last = hammer(scaled, s, lambda k, d: d.get("slots") == 2)
+    assert scaled.wait_for(lambda: scaled.eim_count("det") == 2)
+    deadline = time.monotonic() + 8
+    seq, slots = last + 1, 2
+    while time.monotonic() < deadline and (slots == 2 or scaled.eim_count("det") == 2):
+        time.sleep(0.4)  # the two instances are idle most of the time
+        k, d = scaled.frame(s, seq=seq)
+        seq += 1
+        while k != P.RESULT or d["seq"] != seq - 1:  # SLOT messages and the result hammer() left in flight
+            k, d = scaled.read(s)
+        slots = d["slots"]
+    assert slots == 1 and scaled.eim_count("det") == 1, "the second instance is retired and the client is back to one frame in flight"
+    assert "[det] instance 2 retired" in scaled.log_text()
+    s.close()
+
+
+def test_a_model_keeping_state_between_frames_never_gets_a_second_instance(scaled):
+    s, k, d = scaled.open_model("tracker")
+    assert k == P.OPENED
+    assert scaled.wait_for(lambda: "[tracker] single instance: object tracking" in scaled.log_text())
+    replies, _ = hammer(scaled, s, lambda k, d: k == P.RESULT and d["seq"] >= 25)  # saturated for longer than the scale-up delay
+    assert all(d["slots"] == 1 for k, d in replies), "two trackers would disagree on the object identities"
+    assert scaled.eim_count("tracker") == 1 and "[tracker] instance 2" not in scaled.log_text()
+    s.close()

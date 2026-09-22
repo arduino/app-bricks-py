@@ -48,6 +48,7 @@ while True:
                 "labels": ["a", "b"],
                 "model_type": "object_detection",
                 "image_resize_mode": "fit-shortest",
+                **({"has_object_tracking": True} if name == "tracker" else {}),
             },
         })
     elif "classify" in msg:
@@ -70,7 +71,7 @@ while True:
             sys.stderr.write(f"{name}: simulated failure\n")
             sys.stderr.flush()
         else:
-            time.sleep(0.02)
+            time.sleep(float(os.environ.get("EI_FAKE_SLEEP", "0.02")))  # the inference time
             reply.update({
                 "result": {
                     "bounding_boxes": [{"label": "a", "value": 0.9, "x": 1, "y": 2, "width": 3, "height": 4}],
