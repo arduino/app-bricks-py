@@ -57,17 +57,36 @@ def test_tracked_objects_come_with_their_ids(ei_service):
     assert result.tracks == [Box("cat", 0.9, 50, 25, 100, 50, id=7)]
 
 
-def test_configure_sets_the_thresholds_of_the_model(ei_service):
+def test_the_confidence_of_the_connection_decides_what_comes_back(ei_service):
+    ei_service.models["det"]["boxes"] = [
+        {"label": "cat", "score": 0.9, "x": 0, "y": 0, "w": 10, "h": 10},
+        {"label": "dog", "score": 0.4, "x": 0, "y": 0, "w": 10, "h": 10},
+    ]
+    with InferenceClient("det", ei_service.socket_path, confidence=0.5) as client:
+        assert client.confidence == 0.5
+        assert [box.label for box in client.infer(FRAME, timeout=5).boxes] == ["cat"]
+        client.set_confidence(0.3)
+        assert client.confidence == 0.3 and ei_service.configured == [("det", {"confidence": 0.3})]
+        assert [box.label for box in client.infer(FRAME, timeout=5).boxes] == ["cat", "dog"]
     with InferenceClient("det", ei_service.socket_path) as client:
-        blocks = client.configure(12, min_score=0.6)
-        assert blocks == [{"id": 12, "type": "object_detection", "min_score": 0.6}]
+        assert client.confidence is None, "without a confidence everything the model reports comes back"
+        assert len(client.infer(FRAME, timeout=5).boxes) == 2
+
+
+def test_configure_sets_the_thresholds_of_the_model(ei_service):
+    ei_service.models["det"]["thresholds"].append({"id": 28, "type": "object_tracking", "max_age": 1, "min_hits": 3})
+    with InferenceClient("det", ei_service.socket_path) as client:
+        blocks = client.configure(28, max_age=5)
+        assert blocks[1] == {"id": 28, "type": "object_tracking", "max_age": 5, "min_hits": 3}
         assert client.thresholds == blocks, "the client keeps the blocks as the service reports them"
-        assert ei_service.configured == [("det", {"id": 12, "min_score": 0.6})]
+        assert ei_service.configured == [("det", {"id": 28, "max_age": 5})]
         with pytest.raises(ServerError) as info:
-            client.configure(12, max_age=3)
+            client.configure(28, iou_threshold=0.3)
         assert info.value.code == "bad_request"
         with pytest.raises(ServerError):
-            client.configure(99, min_score=0.1)
+            client.configure(99, max_age=1)
+        with pytest.raises(ServerError):
+            client.configure(12, min_score=0.1)
         assert client.infer(FRAME, timeout=5).ok, "the connection stays usable after a refused configuration"
 
 

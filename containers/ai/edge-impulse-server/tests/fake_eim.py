@@ -88,8 +88,9 @@ while True:
             reply.update({
                 "result": {
                     "bounding_boxes": [{"label": "a", "value": 0.9, "x": 1, "y": 2, "width": 3, "height": 4}],
-                    # the thresholds this process holds, so a test can tell which values reached which instance
-                    "classification": {"first_feature": feats[0], "min_score": thresholds[0]["min_score"]},
+                    "classification": {"first_feature": feats[0]},
+                    # the score threshold this process holds, so a test can tell which value reached which instance
+                    "anomaly": thresholds[0]["min_score"],
                     **(
                         {"object_tracking": [{"label": "a", "value": 0.9, "x": 1, "y": 2, "width": 3, "height": 4, "object_id": 3}]}
                         if tracker

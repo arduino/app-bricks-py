@@ -241,10 +241,12 @@ def test_open_and_infer(server):
         "resize_mode",
         "object_tracking",
         "thresholds",
+        "confidence",
         "slots",
     }
     assert d["slots"] == 1, "one frame in flight until the server runs more instances"
     assert d["object_tracking"] is False and d["thresholds"] == [{"id": 12, "type": "object_detection", "min_score": 0.3}]
+    assert d["confidence"] is None, "without a confidence the connection receives everything the model reports"
     k, d = server.frame(s, fill=0)
     assert k == P.RESULT, d
     assert set(d) == {"seq", "ts_ns", "boxes", "tracks", "classes", "anomaly", "timing_ms", "slots"}
@@ -288,22 +290,70 @@ def test_a_tracking_model_reports_its_tracks_in_frame_coordinates(server):
     assert server.wait_for(lambda: not server.eim_running("tracker")), "released with its last connection"
 
 
-def test_thresholds_are_set_on_the_model_for_every_connection(server):
-    s, k, d = server.open_model("det")
-    P.send_json(s, P.CONFIGURE, {"id": 12, "min_score": 0.6})
+def open_with_confidence(server, name, confidence):
+    s = server.connect()
+    P.send_json(s, P.OPEN, {"model": name, "confidence": confidence})
     k, d = server.read(s)
-    assert (k, d) == (P.CONFIGURE, {"thresholds": [{"id": 12, "type": "object_detection", "min_score": 0.6}]}), "the blocks as they stand"
-    k, d = server.frame(s, seq=1)
-    assert k == P.RESULT and d["classes"]["min_score"] == 0.6, "the .eim received the value"
-    other, k, d = server.open_model("det")
-    assert k == P.OPENED and d["thresholds"][0]["min_score"] == 0.6, "the blocks belong to the model, every connection sees the value"
+    return s, k, d
+
+
+def test_each_connection_receives_what_reaches_its_confidence(server):
+    """The fake det model reports one box scoring 0.9, and its score threshold as the anomaly score."""
+    high, k, d = open_with_confidence(server, "det", 0.95)
+    assert k == P.OPENED and d["confidence"] == 0.95, d
+    assert d["thresholds"][0]["min_score"] == 0.95, "the threshold of the model follows its only connection"
+    k, d = server.frame(high, seq=1)
+    assert k == P.RESULT and d["boxes"] == [] and d["anomaly"] == 0.95, "nothing reaches 0.95, the .eim itself is at 0.95"
+    low, k, d = open_with_confidence(server, "det", 0.5)
+    assert k == P.OPENED and d["thresholds"][0]["min_score"] == 0.5, "the model goes down to the lowest confidence"
+    k, d = server.frame(low, seq=1)
+    assert k == P.RESULT and len(d["boxes"]) == 1 and d["anomaly"] == 0.5
+    k, d = server.frame(high, seq=2)
+    assert k == P.RESULT and d["boxes"] == [] and d["anomaly"] == 0.5, "the first connection still gets only what reaches its own"
+    P.send_json(high, P.CONFIGURE, {"confidence": 0.2})
+    k, d = server.read(high)
+    assert k == P.CONFIGURE and d["confidence"] == 0.2 and d["thresholds"][0]["min_score"] == 0.2, "a lower confidence at runtime lowers the model"
+    assert len(server.frame(high, seq=3)[1]["boxes"]) == 1
+    low.close()
+    assert server.wait_for(lambda: server.frame(high, seq=4)[1]["anomaly"] == 0.2), "the model follows the connections left"
+    high.close()
+    plain, k, d = server.open_model("det")
+    assert k == P.OPENED and d["thresholds"][0]["min_score"] == 0.3, "back to the exported value when nobody asks for a confidence"
+    assert server.frame(plain, seq=1)[1]["anomaly"] == 0.3
+    plain.close()
+
+
+def test_invalid_confidences_are_refused(server):
+    for confidence in [1.5, -0.1, "high", True]:
+        s = server.connect()
+        P.send_json(s, P.OPEN, {"model": "det", "confidence": confidence})
+        k, d = server.read(s)
+        assert k == P.ERROR and d["code"] == "bad_request" and "confidence" in d["error"], (confidence, d)
+        s.close()
+    s, k, d = server.open_model("det")
+    for values in [{"confidence": 2}, {"confidence": 0.5, "extra": 1}, {"other": 1}, {}]:
+        P.send_json(s, P.CONFIGURE, values)
+        k, d = server.read(s)
+        assert k == P.ERROR and d["op"] == "configure" and d["code"] == "bad_request", (values, d)
+    assert server.frame(s, seq=1)[0] == P.RESULT, "the connection stays open"
+    s.close()
+
+
+def test_thresholds_are_set_on_the_model_for_every_connection(server):
+    s, k, d = server.open_model("tracker")
+    P.send_json(s, P.CONFIGURE, {"id": 28, "max_age": 5})
+    k, d = server.read(s)
+    assert k == P.CONFIGURE and d["thresholds"][1] == {"id": 28, "type": "object_tracking", "max_age": 5, "min_hits": 3, "iou_threshold": 0.3}, d
+    other, k, d = server.open_model("tracker")
+    assert k == P.OPENED and d["thresholds"][1]["max_age"] == 5, "the blocks belong to the model, every connection sees the value"
     other.close()
     for values, expected in [
-        ({"id": 99, "min_score": 0.1}, "no threshold block 99"),
-        ({"id": 12, "max_age": 3}, "exposes min_score, not max_age"),
-        ({"id": 12}, "nothing was given"),
-        ({"id": 12, "min_score": "high"}, "must be numbers"),
-        ({"id": 12, "min_score": True}, "must be numbers"),
+        ({"id": 99, "max_age": 1}, "no threshold block 99"),
+        ({"id": 28, "min_score": 0.5}, "follows the confidence"),
+        ({"id": 28, "threshold": 3}, "exposes max_age, min_hits, iou_threshold, not threshold"),
+        ({"id": 28}, "nothing was given"),
+        ({"id": 28, "max_age": "long"}, "must be numbers"),
+        ({"id": 28, "max_age": True}, "must be numbers"),
     ]:
         P.send_json(s, P.CONFIGURE, values)
         k, d = server.read(s)
@@ -312,9 +362,8 @@ def test_thresholds_are_set_on_the_model_for_every_connection(server):
     k, d = server.read(s)
     assert k == P.ERROR and d["code"] == "bad_request", ("not a JSON object", d)
     assert server.frame(s, seq=2)[0] == P.RESULT, "the connection stays open"
-    P.send_json(s, P.CONFIGURE, {"id": 12, "min_score": 0.3})  # back to the default for the tests that follow
-    assert server.read(s)[0] == P.CONFIGURE
     s.close()
+    assert server.wait_for(lambda: not server.eim_running("tracker"))
 
 
 def test_bad_frames_keep_the_connection_open(server):
@@ -657,12 +706,11 @@ def test_saturated_model_gets_a_second_instance_and_the_connection_a_second_slot
 
 
 def test_thresholds_reach_the_instances_added_later(scaled):
-    s, k, d = scaled.open_model("det")
-    P.send_json(s, P.CONFIGURE, {"id": 12, "min_score": 0.55})
-    assert scaled.read(s)[0] == P.CONFIGURE
+    s, k, d = open_with_confidence(scaled, "det", 0.55)
+    assert k == P.OPENED and d["thresholds"][0]["min_score"] == 0.55
     replies, last = hammer(scaled, s, lambda k, d: d.get("slots") == 2)
     assert scaled.wait_for(lambda: scaled.eim_count("det") == 2)
-    seen = {d["classes"]["min_score"] for k, d in replies if k == P.RESULT}
+    seen = {d["anomaly"] for k, d in replies if k == P.RESULT}
     for round in range(4):  # two frames in flight run on both instances
         P.send_frame(s, last + 2 * round + 1, 0, np.zeros((H, W, 3), np.uint8))
         P.send_frame(s, last + 2 * round + 2, 0, np.zeros((H, W, 3), np.uint8))
@@ -670,7 +718,7 @@ def test_thresholds_reach_the_instances_added_later(scaled):
             k, d = scaled.read(s)
             while k != P.RESULT:
                 k, d = scaled.read(s)
-            seen.add(d["classes"]["min_score"])
+            seen.add(d["anomaly"])
     assert seen == {0.55}, "the value set before the second instance existed holds on it too"
     s.close()
     assert scaled.wait_for(lambda: scaled.eim_count("det") == 0)
