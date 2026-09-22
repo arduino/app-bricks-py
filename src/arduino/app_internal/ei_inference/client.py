@@ -4,7 +4,7 @@
 
 """Client of the inference service: one connection, one model.
 
-detector = InferenceClient("detector")
+detector = InferenceClient("detector", confidence=0.5)   # only the boxes reaching 0.5 come back
 result = detector.infer(frame)      # synchronous, the frame as captured, boxes in its coordinates
 detector.submit(frame)              # streaming: non-blocking, skipped while the slots are taken
 result = detector.latest
@@ -13,7 +13,8 @@ detector.close()                    # the service releases the model
 The service says how many frames the connection may keep in flight, its slots: one, or more when it
 runs several instances of the model. The client only follows: `wait_idle` returns when a slot is free.
 A model with the object tracking block reports the objects it follows in `Result.tracks`, boxes with an
-`id`; `configure` sets the threshold values of the model, the blocks `thresholds` lists.
+`id`. `set_confidence` changes what the connection receives, `configure` sets the other threshold values of
+the model, the blocks `thresholds` lists.
 """
 
 import collections
@@ -120,13 +121,18 @@ class _InFlight:
 class InferenceClient:
     """A connection to the inference service holding one model, thread-safe, as many frames in flight as the service allows."""
 
-    def __init__(self, model: str, socket_path: str = DEFAULT_SOCKET_PATH, open_timeout: float | None = None) -> None:
+    def __init__(
+        self, model: str, socket_path: str = DEFAULT_SOCKET_PATH, open_timeout: float | None = None, confidence: float | None = None
+    ) -> None:
         """Connect and request the model, blocking until the service has loaded it.
 
         Args:
             model (str): Model name, the ``.eim`` path relative to the models directory without extension.
             socket_path (str): Path of the service socket.
             open_timeout (float | None): Seconds to wait for the model to load, None waits indefinitely.
+            confidence (float | None): Score the boxes, tracks and classes must reach to be returned, between 0 and 1;
+                None returns everything the model reports. The model's own score threshold follows the lowest
+                confidence of the connections using it.
 
         Raises:
             ServerError: If the service refuses the model (unknown_model, too_many_models, low_memory, load_failed,
@@ -138,7 +144,7 @@ class InferenceClient:
         try:
             self.sock.connect(socket_path)
             self._reader = P.Reader(self.sock)
-            P.send_json(self.sock, P.OPEN, {"model": model})
+            P.send_json(self.sock, P.OPEN, {"model": model, **({} if confidence is None else {"confidence": confidence})})
             self.sock.settimeout(open_timeout)
             kind, payload = self._reader.read()
             self.sock.settimeout(None)
@@ -160,10 +166,11 @@ class InferenceClient:
         self.resize_mode: str = data["resize_mode"]  # how the service fits the frames into the model input
         self.object_tracking: bool = bool(data.get("object_tracking", False))  # the results carry the tracked objects
         self.thresholds: list[dict[str, Any]] = list(data.get("thresholds", []))  # the threshold blocks, with their current values
+        self.confidence: float | None = data.get("confidence")  # what the results must reach for this connection
         self.slots: int = int(data.get("slots", 1))  # frames the service lets this connection keep in flight
         self._send_lock = threading.Lock()
         self._configure_lock = threading.Lock()  # one configuration at a time, the reply carries no id
-        self._configured: list[dict[str, Any]] | ServerError | None = None  # the reply to the configuration in progress
+        self._configured: dict[str, Any] | ServerError | None = None  # the reply to the configuration in progress
         self._cond = threading.Condition()
         self._in_flight: dict[int, _InFlight] = {}  # by seq, in submission order
         self._latest: Result | None = None
@@ -282,13 +289,29 @@ class InferenceClient:
         """The threshold block of the given ``type`` ("object_detection", "object_tracking"...), None if the model has none."""
         return next((block for block in self.thresholds if block.get("type") == kind), None)
 
+    def set_confidence(self, confidence: float | None, timeout: float | None = 10.0) -> None:
+        """Change the score the boxes, tracks and classes must reach for this connection, None for everything.
+
+        Args:
+            confidence (float | None): The new confidence, between 0 and 1.
+            timeout (float | None): Seconds to wait for the service to apply it, None waits indefinitely.
+
+        Raises:
+            ServerError: If the service refuses it (bad_request).
+            TimeoutError: If the service does not answer in time.
+            ConnectionError: If the connection is closed.
+        """
+        self._send_configuration({"confidence": confidence}, timeout)
+
     def configure(self, block_id: int, timeout: float | None = 10.0, **values: float) -> list[dict[str, Any]]:
         """Set threshold values of one block of the model, for every connection using it.
+
+        The score threshold is not one of them: it follows the confidence of the connections, see ``set_confidence``.
 
         Args:
             block_id (int): The ``id`` of the block in ``thresholds``.
             timeout (float | None): Seconds to wait for the service to apply them, None waits indefinitely.
-            **values (float): The values to set, by the keys of the block, e.g. ``min_score=0.5`` or ``max_age=3``.
+            **values (float): The values to set, by the keys of the block, e.g. ``max_age=3``.
 
         Returns:
             list[dict]: The blocks with their current values, also kept in ``thresholds``.
@@ -298,6 +321,10 @@ class InferenceClient:
             TimeoutError: If the service does not answer in time.
             ConnectionError: If the connection is closed.
         """
+        return self._send_configuration({"id": block_id, **values}, timeout)["thresholds"]
+
+    def _send_configuration(self, values: dict[str, Any], timeout: float | None) -> dict[str, Any]:
+        """Send a CONF message and wait for its reply, keeping the thresholds and the confidence it reports."""
         with self._configure_lock:
             with self._cond:
                 if self.closed:
@@ -305,7 +332,7 @@ class InferenceClient:
                 self._configured = None
             try:
                 with self._send_lock:
-                    P.send_json(self.sock, P.CONFIGURE, {"id": block_id, **values})
+                    P.send_json(self.sock, P.CONFIGURE, values)
             except OSError as exc:
                 self.close()
                 raise ConnectionError("send failed") from exc
@@ -317,7 +344,8 @@ class InferenceClient:
                     raise ConnectionError("connection closed")
                 if isinstance(reply, ServerError):
                     raise reply
-                self.thresholds = reply
+                self.thresholds = list(reply.get("thresholds", self.thresholds))
+                self.confidence = reply.get("confidence")
                 return reply
 
     def get_result(self, timeout: float | None = 0) -> Result | None:
@@ -353,7 +381,7 @@ class InferenceClient:
                         self._cond.notify_all()
                         continue
                     if kind == P.CONFIGURE or (kind == P.ERROR and data.get("op") == "configure"):
-                        self._configured = ServerError(data["code"], data["error"]) if kind == P.ERROR else list(data.get("thresholds", []))
+                        self._configured = ServerError(data["code"], data["error"]) if kind == P.ERROR else data
                         self._cond.notify_all()
                         continue
                     # An ERR without seq refers to the oldest frame in flight (unparsable header)
