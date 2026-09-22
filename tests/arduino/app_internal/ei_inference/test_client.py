@@ -43,6 +43,22 @@ def test_open_exposes_the_model_details(ei_service):
         assert client.labels == ["cat", "dog"]
         assert client.input_size == (100, 100)
         assert client.info["resize_mode"] == "squash"
+        assert client.threshold_block("object_detection") == {"id": 12, "type": "object_detection", "min_score": 0.3}
+        assert client.threshold_block("object_tracking") is None
+
+
+def test_configure_sets_the_thresholds_of_the_model(ei_service):
+    with InferenceClient("det", ei_service.socket_path) as client:
+        blocks = client.configure(12, min_score=0.6)
+        assert blocks == [{"id": 12, "type": "object_detection", "min_score": 0.6}]
+        assert client.thresholds == blocks, "the client keeps the blocks as the service reports them"
+        assert ei_service.configured == [("det", {"id": 12, "min_score": 0.6})]
+        with pytest.raises(ServerError) as info:
+            client.configure(12, max_age=3)
+        assert info.value.code == "bad_request"
+        with pytest.raises(ServerError):
+            client.configure(99, min_score=0.1)
+        assert client.infer(FRAME, timeout=5).ok, "the connection stays usable after a refused configuration"
 
 
 def test_infer_sends_the_frame_as_it_is_and_returns_the_boxes(ei_service):

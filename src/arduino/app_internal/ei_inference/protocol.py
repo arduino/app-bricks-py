@@ -14,10 +14,13 @@ after an open error and releases the model when it closes. Kept identical to the
     client: FRAM ...                    repeated, up to "slots" frames in flight, any size, RGB or BGR
     server: RSLT {...} | ERR {...}      the connection stays open after an ERR too
             SLOT {...}                  when the number of frames the client may keep in flight changes
+    client: CONF {"id": block, key: value}   optional, sets threshold values of the model
+    server: CONF {"thresholds": [...]} | ERR {"op": "configure", ...}
 
 The server tells each connection how many frames it may keep in flight, "slots" in OPND, RSLT, ERR and
 SLOT, 1 at open: it raises the allowance when it runs several instances of the model, at the moment
-that keeps the results evenly spaced, and sends the results in arrival order.
+that keeps the results evenly spaced, and sends the results in arrival order. OPND carries the threshold
+blocks of the model ("thresholds", each with an "id" and a "type"), the ones CONF changes.
 """
 
 import json
@@ -36,6 +39,7 @@ OPENED = b"OPND"
 FRAME = b"FRAM"
 RESULT = b"RSLT"
 SLOTS = b"SLOT"
+CONFIGURE = b"CONF"
 ERROR = b"ERR "
 
 # Open errors: the server closes the connection after sending them

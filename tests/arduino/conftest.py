@@ -301,13 +301,14 @@ from arduino.app_internal.ei_inference import protocol as EI
 
 
 class FakeInferenceService:
-    """A server on a Unix socket that answers OPEN and FRAM like the real one, with scripted boxes.
+    """A server on a Unix socket that answers OPEN, FRAM and CONF like the real one, with scripted boxes.
 
-    ``models`` maps a model name to its details: ``width``, ``height``, ``resize_mode``, ``labels``, ``slots`` (the
-    frames the client may keep in flight, 1 by default) and ``boxes``, a list of boxes in frame coordinates (as the
-    real service maps them back) or a callable (seq, image) returning the list or a ``{"code", "error"}`` dict for a
-    frame error. ``frames`` records every (model, seq, image) received, ``grant(n)`` sends a SLOT message to every
-    connection.
+    ``models`` maps a model name to its details: ``width``, ``height``, ``resize_mode``, ``labels``, ``model_type``,
+    ``slots`` (the frames the client may keep in flight, 1 by default), ``thresholds`` (the blocks a CONF message
+    changes, each with an ``id`` and a ``type``) and ``boxes``, a list of boxes in frame coordinates (as the real
+    service maps them back) or a callable (seq, image) returning the list or a ``{"code", "error"}`` dict for a
+    frame error. ``frames`` records every (model, seq, image) received, ``configured`` every (model, values) set
+    through CONF, ``grant(n)`` sends a SLOT message to every connection.
     """
 
     def __init__(self):
@@ -315,6 +316,7 @@ class FakeInferenceService:
         self.socket_path = os.path.join(self.dir, "ei.sock")
         self.models = {}
         self.frames = []
+        self.configured = []
         self.reply_delay = 0.0
         self.open_delay = 0.0
         self.opened = threading.Event()
@@ -360,9 +362,10 @@ class FakeInferenceService:
                 EI.send_json(conn, EI.SLOTS, {"slots": slots})
 
     def _accept(self):
+        server = self._server  # stop() drops the attribute, the closed socket ends the loop
         while True:
             try:
-                conn, _ = self._server.accept()
+                conn, _ = server.accept()
             except OSError:
                 return
             with self._lock:
@@ -390,18 +393,25 @@ class FakeInferenceService:
                 "height": model["height"],
                 "channels": 3,
                 "labels": model.get("labels", []),
-                "model_type": "object_detection",
+                "model_type": model.get("model_type", "object_detection"),
                 "resize_mode": model.get("resize_mode", "squash"),
+                "thresholds": [dict(block) for block in model.get("thresholds", [])],
                 "slots": model.get("slots", 1),
             }
-            EI.send_json(conn, EI.OPENED, details)
+            send_lock = threading.Lock()  # the reader answers CONF while the worker sends results
+            with send_lock:
+                EI.send_json(conn, EI.OPENED, details)
             self.opened.set()
             # Like the real service, frames are read as they arrive and answered by a worker, so a client with
             # several frames in flight never blocks on the socket while one is being "inferred"
             pending = queue.Queue()
-            threading.Thread(target=self._answer, args=(conn, model, pending), daemon=True).start()
+            threading.Thread(target=self._answer, args=(conn, model, pending, send_lock), daemon=True).start()
             while True:
                 kind, payload = reader.read()
+                if kind == EI.CONFIGURE:
+                    with send_lock:
+                        self._configure(conn, name, model, EI.parse_json(payload))
+                    continue
                 seq, ts_ns, image, color = EI.parse_frame(payload)
                 image = image.copy()
                 self.frames.append((name, seq, image))
@@ -412,7 +422,24 @@ class FakeInferenceService:
             conn.close()
             self.closed.set()
 
-    def _answer(self, conn, model, pending):
+    def _configure(self, conn, name, model, values):
+        """Apply a CONF message to the thresholds of the model like the real service: the block must exist and expose the keys."""
+        block = next((b for b in model.get("thresholds", []) if b.get("id") == (values or {}).get("id")), None)
+        changes = {key: value for key, value in (values or {}).items() if key != "id"}
+        if block is None or any(key not in block or key in ("id", "type") for key in changes) or not changes:
+            knobs = ", ".join(key for key in (block or {}) if key not in ("id", "type"))
+            error = (
+                f"no threshold block {(values or {}).get('id')!r}"
+                if block is None
+                else f"the block exposes {knobs}, not {', '.join(changes) or 'nothing'}"
+            )
+            EI.send_json(conn, EI.ERROR, {"op": "configure", "code": EI.E_BAD_REQUEST, "error": error})
+            return
+        block.update(changes)
+        self.configured.append((name, values))
+        EI.send_json(conn, EI.CONFIGURE, {"thresholds": [dict(b) for b in model["thresholds"]]})
+
+    def _answer(self, conn, model, pending, send_lock):
         try:
             while True:
                 seq, ts_ns, image = pending.get()
@@ -421,11 +448,12 @@ class FakeInferenceService:
                 boxes = model.get("boxes", [])
                 if callable(boxes):
                     boxes = boxes(seq, image)
-                if isinstance(boxes, dict):
-                    EI.send_json(conn, EI.ERROR, {"op": "frame", "seq": seq, **boxes})
-                    continue
-                result = {"seq": seq, "ts_ns": ts_ns, "boxes": boxes, "classes": {}, "anomaly": 0.0, "timing_ms": {}}
-                EI.send_json(conn, EI.RESULT, result)
+                with send_lock:
+                    if isinstance(boxes, dict):
+                        EI.send_json(conn, EI.ERROR, {"op": "frame", "seq": seq, **boxes})
+                        continue
+                    result = {"seq": seq, "ts_ns": ts_ns, "boxes": boxes, "classes": {}, "anomaly": 0.0, "timing_ms": {}}
+                    EI.send_json(conn, EI.RESULT, result)
         except (ConnectionError, OSError, ValueError):
             pass
 
@@ -434,7 +462,14 @@ class FakeInferenceService:
 def ei_service():
     """A running FakeInferenceService with a 100x100 "det" model whose boxes the test sets."""
     service = FakeInferenceService()
-    service.models["det"] = {"width": 100, "height": 100, "resize_mode": "squash", "labels": ["cat", "dog"], "boxes": []}
+    service.models["det"] = {
+        "width": 100,
+        "height": 100,
+        "resize_mode": "squash",
+        "labels": ["cat", "dog"],
+        "thresholds": [{"id": 12, "type": "object_detection", "min_score": 0.3}],
+        "boxes": [],
+    }
     service.start()
     yield service
     service.cleanup()
