@@ -7,6 +7,7 @@ import re
 import yaml
 import sys
 from dataclasses import dataclass, field
+from typing import Any
 
 from arduino.app_utils.utils import get_board_name
 
@@ -67,7 +68,7 @@ def get_brick_compose_file(cls: type) -> str | None:
     return get_brick_linked_resource_file(cls, compose_config_file_name)
 
 
-def load_brick_compose_file(cls: type) -> dict | None:
+def load_brick_compose_file(cls: type) -> dict[str, Any] | None:
     """Loads the brick_compose.yaml file and returns its content."""
     pathfile = get_brick_compose_file(cls)
     if pathfile:

@@ -9,6 +9,7 @@ import time
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any, cast
 
 import cv2
 import numpy as np
@@ -80,7 +81,7 @@ class OcrResult:
     """
 
     text: str
-    detections: list[TextDetection] = field(default_factory=list)
+    detections: list[TextDetection] = field(default_factory=list[TextDetection])
 
     def __str__(self) -> str:
         return self.text
@@ -153,14 +154,13 @@ class OCR:
         # extract_text calls are serialized so each sent image matches its own answer
         self._lock = threading.Lock()
 
-        infra = load_brick_compose_file(self.__class__)
+        infra: dict[str, Any] | None = load_brick_compose_file(self.__class__)
         if infra is None or "services" not in infra:
             raise RuntimeError("Infrastructure configuration could not be loaded.")
-        for k, _ in infra["services"].items():
-            self._host = k
-            break  # Only one service is expected
+        services: dict[str, Any] = infra["services"]
+        service = next(iter(services), "")  # Only one service is expected
 
-        self._host = resolve_address(self._host)
+        self._host = resolve_address(service)
         if not self._host:
             raise RuntimeError("Host address could not be resolved. Please check your configuration.")
 
@@ -220,21 +220,24 @@ class OCR:
         return self._parse_metadata(metadata, self._confidence, scale, single_line)
 
     @staticmethod
-    def _validate_min_confidence(value: float) -> float:
+    def _validate_min_confidence(value: object) -> float:
         """Normalize a minimum-confidence value, rejecting anything outside [0.0, 1.0]."""
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0.0 <= float(value) <= 1.0:
             raise ValueError(f"confidence must be a number in [0.0, 1.0], got {value!r}")
         return float(value)
 
     @staticmethod
-    def _validate_rotation(value: Iterable[int] | int | None) -> list[int]:
+    def _validate_rotation(value: object) -> list[int]:
         """Normalize a rotation value into a sorted list of distinct angles among 90, 180, 270."""
         if value is None:
             return []
+        items: list[object]
         if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
-            value = [value]
+            items = [value]
+        else:
+            items = list(cast(Iterable[object], value))
         angles: set[int] = set()
-        for item in value:
+        for item in items:
             if isinstance(item, bool) or not isinstance(item, (int, float)) or int(item) != item:
                 raise ValueError(f"rotation must be angles in degrees among {_VALID_ROTATIONS}, got {item!r}")
             angle = int(item) % 360
@@ -246,7 +249,7 @@ class OCR:
         return sorted(angles)
 
     @staticmethod
-    def _encode_image(image: np.ndarray | bytes | str | Path) -> tuple[str, tuple[float, float]]:
+    def _encode_image(image: object) -> tuple[str, tuple[float, float]]:
         """Turn any supported image input into a base64-encoded image for the runner.
 
         Images whose longest side exceeds `_MAX_IMAGE_SIDE` are downscaled and JPEG
@@ -259,10 +262,13 @@ class OCR:
                 applied to the image, i.e. sent size / original size.
         """
         raw: bytes | None = None
+        frame: np.ndarray | None
+        # `image` is whatever the caller passed: the isinstance chain is the contract,
+        # and the casts only restore the parameters narrowing an untyped value drops.
         if isinstance(image, np.ndarray):
-            frame = image
+            frame = cast(np.ndarray, image)
         elif isinstance(image, (bytes, bytearray, memoryview)):
-            raw = bytes(image)
+            raw = bytes(cast(bytes | bytearray | memoryview, image))
             frame = cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_COLOR)
         elif isinstance(image, (str, Path)):
             path = Path(image)
@@ -308,7 +314,7 @@ class OCR:
         """Bytes the encoded image occupies on the wire (base64, without the JSON framing)."""
         return 4 * ((len(data) + 2) // 3)
 
-    def _request(self, payload: str, config: str) -> dict:
+    def _request(self, payload: str, config: str) -> dict[str, Any]:
         """Send one frame to the model runner and return the metadata it answers with.
 
         The configuration is sent before the frame on the same socket, so the runner
@@ -330,9 +336,9 @@ class OCR:
                             f"The OCR model runner accepted the image but did not answer within {self._timeout:.0f}s.",
                             hint="Check the OCR container logs; if the board is under heavy load, retry with a larger `timeout`.",
                         ) from e
-                    data = json.loads(message)
+                    data = cast(dict[str, Any], json.loads(message))
                     metadata = data.get("metadata")
-                    return metadata if isinstance(metadata, dict) else {}
+                    return cast(dict[str, Any], metadata) if isinstance(metadata, dict) else {}
             except (OSError, ConnectionClosed) as e:
                 last_error = e
                 logger.debug(f"OCR model runner not reachable yet ({e}); retrying...")
@@ -344,7 +350,7 @@ class OCR:
 
     @staticmethod
     def _parse_metadata(
-        metadata: dict,
+        metadata: dict[str, Any],
         min_confidence: float = 0.0,
         scale: tuple[float, float] = (1.0, 1.0),
         single_line: bool = False,
