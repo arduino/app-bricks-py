@@ -239,14 +239,16 @@ def test_open_and_infer(server):
         "labels",
         "model_type",
         "resize_mode",
+        "object_tracking",
         "thresholds",
         "slots",
     }
     assert d["slots"] == 1, "one frame in flight until the server runs more instances"
-    assert d["thresholds"] == [{"id": 12, "type": "object_detection", "min_score": 0.3}]
+    assert d["object_tracking"] is False and d["thresholds"] == [{"id": 12, "type": "object_detection", "min_score": 0.3}]
     k, d = server.frame(s, fill=0)
     assert k == P.RESULT, d
-    assert set(d) == {"seq", "ts_ns", "boxes", "classes", "anomaly", "timing_ms", "slots"}
+    assert set(d) == {"seq", "ts_ns", "boxes", "tracks", "classes", "anomaly", "timing_ms", "slots"}
+    assert d["tracks"] == [], "a model without object tracking reports no tracks"
     assert set(d["timing_ms"]) == {"recv", "resize", "encode", "lock", "inference", "dsp", "nn", "server"}
     P.send_frame(s, 7, 1, np.tile(np.array([10, 20, 30], np.uint8), (H, W, 1)))
     k, d = server.read(s)
@@ -272,6 +274,18 @@ def test_frames_of_any_size_are_resized_to_the_model_input(server):
     assert abs(box["x"] - 1 / 0.15) < 0.1 and abs(box["w"] - 3 / 0.15) < 0.1, ("cropped to 640x427 then scaled by 0.15", box)
     assert abs(box["y"] - (26 + 2 * 427 / 64)) < 0.2, ("the crop offset is mapped back", box)
     s.close()
+
+
+def test_a_tracking_model_reports_its_tracks_in_frame_coordinates(server):
+    """The fake tracker reports the track (1, 2, 3, 4) of object 3 in model pixels."""
+    s, k, d = server.open_model("tracker")
+    assert k == P.OPENED, d
+    assert d["object_tracking"] is True and [t["type"] for t in d["thresholds"]] == ["object_detection", "object_tracking"]
+    k, d = server.frame(s, w=192, h=128, seq=1)
+    assert k == P.RESULT, d
+    assert d["tracks"] == [{"label": "a", "score": 0.9, "x": 2, "y": 4, "w": 6, "h": 8, "id": 3}], "mapped back like the boxes, with the object id"
+    s.close()
+    assert server.wait_for(lambda: not server.eim_running("tracker")), "released with its last connection"
 
 
 def test_thresholds_are_set_on_the_model_for_every_connection(server):

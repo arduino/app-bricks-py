@@ -90,6 +90,11 @@ while True:
                     "bounding_boxes": [{"label": "a", "value": 0.9, "x": 1, "y": 2, "width": 3, "height": 4}],
                     # the thresholds this process holds, so a test can tell which values reached which instance
                     "classification": {"first_feature": feats[0], "min_score": thresholds[0]["min_score"]},
+                    **(
+                        {"object_tracking": [{"label": "a", "value": 0.9, "x": 1, "y": 2, "width": 3, "height": 4, "object_id": 3}]}
+                        if tracker
+                        else {}
+                    ),
                 },
                 "timing": {"dsp": 1, "classification": 2, "anomaly": 0},
             })

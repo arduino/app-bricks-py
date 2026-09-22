@@ -12,7 +12,8 @@ detector.close()                    # the service releases the model
 
 The service says how many frames the connection may keep in flight, its slots: one, or more when it
 runs several instances of the model. The client only follows: `wait_idle` returns when a slot is free.
-`configure` sets the threshold values of the model, the blocks `thresholds` lists.
+A model with the object tracking block reports the objects it follows in `Result.tracks`, boxes with an
+`id`; `configure` sets the threshold values of the model, the blocks `thresholds` lists.
 """
 
 import collections
@@ -69,7 +70,8 @@ class ServerError(Exception):
 
 @dataclass
 class Box:
-    """A detected object, in the coordinates of the submitted frame."""
+    """A detected object, in the coordinates of the submitted frame; a tracked one carries the ``id`` the model
+    keeps for it while it stays in view."""
 
     label: str
     score: float
@@ -77,17 +79,19 @@ class Box:
     y: float
     w: float
     h: float
+    id: int | None = None
 
 
 @dataclass
 class Result:
-    """The outcome of one inference, an error of the frame or the boxes, classes and timings."""
+    """The outcome of one inference, an error of the frame or the boxes, tracks, classes and timings."""
 
     model: str
     seq: int
     ts_ns: int  # timestamp of the submitted frame (CLOCK_MONOTONIC)
     source_size: tuple[int, int]  # (w, h) of the image the boxes refer to
     boxes: list[Box] = field(default_factory=list)
+    tracks: list[Box] = field(default_factory=list)  # the boxes with their ids, only from a model with the object tracking block
     classes: dict[str, float] = field(default_factory=dict)
     anomaly: float = 0.0
     timing_ms: dict[str, float] = field(default_factory=dict)
@@ -154,6 +158,7 @@ class InferenceClient:
         self.labels: list[str] = data["labels"]
         self.input_size: tuple[int, int] = (data["width"], data["height"])
         self.resize_mode: str = data["resize_mode"]  # how the service fits the frames into the model input
+        self.object_tracking: bool = bool(data.get("object_tracking", False))  # the results carry the tracked objects
         self.thresholds: list[dict[str, Any]] = list(data.get("thresholds", []))  # the threshold blocks, with their current values
         self.slots: int = int(data.get("slots", 1))  # frames the service lets this connection keep in flight
         self._send_lock = threading.Lock()
@@ -374,6 +379,7 @@ class InferenceClient:
             result.error, result.error_code = data.get("error"), data.get("code")
             return result
         result.boxes = [Box(b["label"], b["score"], b["x"], b["y"], b["w"], b["h"]) for b in data["boxes"]]
+        result.tracks = [Box(t["label"], t["score"], t["x"], t["y"], t["w"], t["h"], int(t["id"])) for t in data.get("tracks", [])]
         result.classes = data["classes"]
         result.anomaly = data["anomaly"]
         result.timing_ms = data["timing_ms"]
