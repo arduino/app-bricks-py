@@ -308,6 +308,7 @@ class FakeInferenceService:
     blocks a CONF message changes, each with an ``id`` and a ``type``), ``boxes``, a list of boxes in frame
     coordinates (as the real service maps them back) or a callable (seq, image) returning the list or a
     ``{"code", "error"}`` dict for a frame error, and ``tracks``, the same for the tracked objects, with their ``id``.
+    A connection asking for a confidence, in OPEN or CONF, receives only the boxes and tracks reaching it.
     ``frames`` records every (model, seq, image) received, ``configured`` every (model, values) set through CONF,
     ``grant(n)`` sends a SLOT message to every connection.
     """
@@ -385,6 +386,7 @@ class FakeInferenceService:
                 EI.send_json(conn, EI.ERROR, {"op": "open", "code": EI.E_UNKNOWN_MODEL, "error": f"model '{name}' not found"})
                 return
             model = self.models[name]
+            connection = {"confidence": request.get("confidence")}  # shared with the answering thread
             if self.open_delay:
                 threading.Event().wait(self.open_delay)
             details = {
@@ -398,6 +400,7 @@ class FakeInferenceService:
                 "resize_mode": model.get("resize_mode", "squash"),
                 "object_tracking": model.get("object_tracking", False),
                 "thresholds": [dict(block) for block in model.get("thresholds", [])],
+                "confidence": connection["confidence"],
                 "slots": model.get("slots", 1),
             }
             send_lock = threading.Lock()  # the reader answers CONF while the worker sends results
@@ -407,12 +410,12 @@ class FakeInferenceService:
             # Like the real service, frames are read as they arrive and answered by a worker, so a client with
             # several frames in flight never blocks on the socket while one is being "inferred"
             pending = queue.Queue()
-            threading.Thread(target=self._answer, args=(conn, model, pending, send_lock), daemon=True).start()
+            threading.Thread(target=self._answer, args=(conn, model, connection, pending, send_lock), daemon=True).start()
             while True:
                 kind, payload = reader.read()
                 if kind == EI.CONFIGURE:
                     with send_lock:
-                        self._configure(conn, name, model, EI.parse_json(payload))
+                        self._configure(conn, name, model, connection, EI.parse_json(payload))
                     continue
                 seq, ts_ns, image, color = EI.parse_frame(payload)
                 image = image.copy()
@@ -424,24 +427,33 @@ class FakeInferenceService:
             conn.close()
             self.closed.set()
 
-    def _configure(self, conn, name, model, values):
-        """Apply a CONF message to the thresholds of the model like the real service: the block must exist and expose the keys."""
-        block = next((b for b in model.get("thresholds", []) if b.get("id") == (values or {}).get("id")), None)
-        changes = {key: value for key, value in (values or {}).items() if key != "id"}
-        if block is None or any(key not in block or key in ("id", "type") for key in changes) or not changes:
-            knobs = ", ".join(key for key in (block or {}) if key not in ("id", "type"))
+    def _configure(self, conn, name, model, connection, values):
+        """Apply a CONF message like the real service: the confidence of the connection, or values of a block that must exist and expose the keys."""
+        values = values or {}
+        if "id" not in values:
+            if set(values) == {"confidence"}:
+                connection["confidence"] = values["confidence"]
+                self.configured.append((name, values))
+                EI.send_json(conn, EI.CONFIGURE, {"thresholds": [dict(b) for b in model.get("thresholds", [])], "confidence": values["confidence"]})
+            else:
+                EI.send_json(
+                    conn, EI.ERROR, {"op": "configure", "code": EI.E_BAD_REQUEST, "error": 'without a block id CONF takes {"confidence": value}'}
+                )
+            return
+        block = next((b for b in model.get("thresholds", []) if b.get("id") == values.get("id")), None)
+        changes = {key: value for key, value in values.items() if key != "id"}
+        if block is None or any(key not in block or key in ("id", "type", "min_score") for key in changes) or not changes:
+            knobs = ", ".join(key for key in (block or {}) if key not in ("id", "type", "min_score"))
             error = (
-                f"no threshold block {(values or {}).get('id')!r}"
-                if block is None
-                else f"the block exposes {knobs}, not {', '.join(changes) or 'nothing'}"
+                f"no threshold block {values.get('id')!r}" if block is None else f"the block exposes {knobs}, not {', '.join(changes) or 'nothing'}"
             )
             EI.send_json(conn, EI.ERROR, {"op": "configure", "code": EI.E_BAD_REQUEST, "error": error})
             return
         block.update(changes)
         self.configured.append((name, values))
-        EI.send_json(conn, EI.CONFIGURE, {"thresholds": [dict(b) for b in model["thresholds"]]})
+        EI.send_json(conn, EI.CONFIGURE, {"thresholds": [dict(b) for b in model["thresholds"]], "confidence": connection["confidence"]})
 
-    def _answer(self, conn, model, pending, send_lock):
+    def _answer(self, conn, model, connection, pending, send_lock):
         try:
             while True:
                 seq, ts_ns, image = pending.get()
@@ -452,6 +464,10 @@ class FakeInferenceService:
                     boxes = boxes(seq, image)
                 if callable(tracks):
                     tracks = tracks(seq, image)
+                confidence = connection["confidence"]
+                if confidence is not None:
+                    boxes = [box for box in boxes if box["score"] >= confidence] if isinstance(boxes, list) else boxes
+                    tracks = [track for track in tracks if track["score"] >= confidence]
                 with send_lock:
                     if isinstance(boxes, dict):
                         EI.send_json(conn, EI.ERROR, {"op": "frame", "seq": seq, **boxes})

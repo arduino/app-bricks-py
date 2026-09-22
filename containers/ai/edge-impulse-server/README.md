@@ -49,14 +49,20 @@ exist or does not load, or if there are more pinned models than `--max-models`.
 - The load log line says whether features reach the `.eim` through shared memory (`shm`) or as JSON.
   JSON costs several ms per frame: rebuild such a `.eim` with a recent Edge Impulse release.
 
-## Thresholds and object tracking
+## Confidence, thresholds and object tracking
+
+A connection may ask for a confidence, in `OPEN` or later with `CONF {"confidence": value}`: it then
+receives only the boxes, tracks and class scores reaching it. The score threshold of the model itself
+(`min_score`) follows the lowest confidence among its connections, back to the exported value when none
+asks for one, so no connection misses a box it wants while the model never computes more than needed.
 
 A `.eim` exposes its threshold blocks, `thresholds` in `OPND`: each has an `id` and a `type`, the object
 detection block its `min_score`, the object tracking block its `max_age`, `min_hits` and `iou_threshold`
-(`threshold`, a distance in pixels, for the centroid models such as FOMO). A connection changes them with
-`CONF {"id": block, key: value, ...}` and receives the blocks as they stand, or `bad_request` for an
-unknown block or key. The values are set on every instance of the model, on the ones added later too, and
-belong to the model: they hold for every connection using it.
+(`threshold`, a distance in pixels, for the centroid models such as FOMO). A connection changes the other
+values with `CONF {"id": block, key: value, ...}` and receives the blocks as they stand, or `bad_request`
+for an unknown block or key, or for `min_score`, which only the confidence drives. The values are set on
+every instance of the model, on the ones added later too, and belong to the model: they hold for every
+connection using it.
 
 A model with the object tracking block reports `object_tracking` true in `OPND` and its `tracks` in every
 result, the boxes with the `id` of the object, stable while it stays in view. Such a model runs on one
@@ -101,18 +107,18 @@ server: OPND {details}                once the model is ready
         ERR  {...} and close          if it cannot be opened
 client: FRAM  ->  server: RSLT | ERR  repeated, up to "slots" frames in flight; an ERR here does not close the connection
           server: SLOT                when the frames the client may keep in flight change
-client: CONF  ->  server: CONF | ERR  optional, threshold values of the model
+client: CONF  ->  server: CONF | ERR  optional, the confidence of the connection or threshold values of the model
 ```
 
 | Type | Direction | Payload |
 |---|---|---|
-| `OPEN` | C -> S | JSON `{"model": name}` |
-| `OPND` | S -> C | JSON: `model`, `project`, `width`, `height`, `channels`, `labels`, `model_type`, `resize_mode`, `object_tracking`, `thresholds`, `slots` |
+| `OPEN` | C -> S | JSON `{"model": name}`, plus an optional `confidence` between 0 and 1 |
+| `OPND` | S -> C | JSON: `model`, `project`, `width`, `height`, `channels`, `labels`, `model_type`, `resize_mode`, `object_tracking`, `thresholds`, `confidence`, `slots` |
 | `FRAM` | C -> S | `<QqHHBB2x` (seq, ts_ns, width, height, channels, color 0=RGB 1=BGR) + the pixels, any size up to 1920x1080 |
 | `RSLT` | S -> C | JSON: `seq`, `ts_ns`, `boxes` [{label, score, x, y, w, h}] and `tracks` [{label, score, x, y, w, h, id}] in frame coordinates, `classes`, `anomaly`, `timing_ms`, `slots` |
 | `SLOT` | S -> C | JSON: `slots`, the frames the client may keep in flight from now on |
-| `CONF` | C -> S | JSON: `id` of a threshold block and the values to set, `{"id": 28, "max_age": 3}` |
-| `CONF` | S -> C | JSON: `thresholds`, the blocks with their current values, once the values are set |
+| `CONF` | C -> S | JSON: `{"confidence": value}` for the connection, or the `id` of a threshold block and the values to set, `{"id": 28, "max_age": 3}` |
+| `CONF` | S -> C | JSON: `thresholds`, the blocks with their current values, and `confidence`, once set |
 | `ERR ` | S -> C | JSON: `op` (`open`, `frame` or `configure`), `code`, `error`, optional `model`/`seq`, `slots` after open |
 
 `slots` is 1 at open and follows the instances of the model; a client that ignores it and sends one frame
@@ -120,7 +126,7 @@ at a time keeps working.
 
 | Code | When | Connection |
 |---|---|---|
-| `bad_request` | first message is not `OPEN`, unexpected message afterwards, nothing sent for 10 s after connecting, or a `CONF` naming an unknown block or key | closed / open |
+| `bad_request` | first message is not `OPEN`, unexpected message afterwards, nothing sent for 10 s after connecting, an invalid `confidence`, or a `CONF` naming an unknown block or key | closed / open |
 | `too_many_clients` | `--max-clients` reached | closed |
 | `unknown_model` | `<name>.eim` is missing | closed |
 | `too_many_models` | `--max-models` reached (the message lists the models in memory) | closed |

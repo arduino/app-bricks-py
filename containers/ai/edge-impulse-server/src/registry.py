@@ -215,6 +215,10 @@ class Model:
             self.object_tracking = bool(params.get("has_object_tracking"))  # the results carry the tracked objects
             # The threshold blocks of the .eim with their current values, the ones a connection may change
             self.thresholds = [dict(t) for t in params.get("thresholds") or [] if isinstance(t, dict)]
+            # The block holding the score threshold follows the confidence of the connections, see set_confidence()
+            self._score_block = next((t for t in self.thresholds if "min_score" in t), None)
+            self._exported_min_score = self._score_block["min_score"] if self._score_block else None
+            self._confidences: dict = {}  # the confidence each connection asked for, by connection
             self.project = info["project"]["name"]
             self._warm_up(instance)
         except BaseException:
@@ -330,21 +334,44 @@ class Model:
             known = ", ".join(f"{t.get('id')} ({t.get('type')})" for t in self.current_thresholds()) or "none"
             raise RegistryError("bad_request", f"no threshold block {block_id!r}, the model has: {known}")
         changes = {key: value for key, value in values.items() if key != "id"}
-        knobs = [key for key in block if key not in ("id", "type")]
+        knobs = [key for key in block if key not in ("id", "type", "min_score")]
+        if "min_score" in changes:
+            raise RegistryError("bad_request", 'min_score follows the confidence of the connections, set it with {"confidence": value}')
         unknown = [key for key in changes if key not in knobs]
         if unknown or not changes:
             what = f"not {', '.join(unknown)}" if unknown else "nothing was given"
             raise RegistryError("bad_request", f"block {block_id} ({block.get('type')}) exposes {', '.join(knobs)}, {what}")
         if not all(isinstance(value, (int, float)) and not isinstance(value, bool) for value in changes.values()):
             raise RegistryError("bad_request", "threshold values must be numbers")
+        self._set_values(block, changes)
+        return self.current_thresholds()
+
+    def set_confidence(self, connection: object, confidence: float | None) -> None:
+        """Record the confidence a connection asked for, None when it leaves or asks for none, and keep the score
+        threshold of the model at the lowest confidence of its connections, so none of them misses a box it wants;
+        each connection then receives only what reaches its own. Back to the exported value when nobody asks."""
         with self._cond:
-            self._overrides.setdefault(block_id, {}).update(changes)
+            if confidence is None:
+                self._confidences.pop(connection, None)
+            else:
+                self._confidences[connection] = confidence
+            block = self._score_block
+            if block is None:
+                return
+            wanted = min(self._confidences.values()) if self._confidences else self._exported_min_score
+            if wanted == block["min_score"]:
+                return
+        self._set_values(block, {"min_score": wanted})
+
+    def _set_values(self, block: dict, changes: dict) -> None:
+        """Set the values on every instance, keep them for the instances added later and in the block."""
+        with self._cond:
+            self._overrides.setdefault(block["id"], {}).update(changes)
             instances = [i for i in self.instances if not i.dead and not i.draining]
         for instance in instances:
-            instance.configure({"id": block_id, **changes})
+            instance.configure({"id": block["id"], **changes})
         with self._cond:
             block.update(changes)
-        return self.current_thresholds()
 
     def _acquire(self) -> Instance:
         """The first free instance, waiting for one; RunnerDied when every instance is gone."""
