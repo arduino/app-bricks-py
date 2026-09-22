@@ -12,6 +12,7 @@ detector.close()                    # the service releases the model
 
 The service says how many frames the connection may keep in flight, its slots: one, or more when it
 runs several instances of the model. The client only follows: `wait_idle` returns when a slot is free.
+`configure` sets the threshold values of the model, the blocks `thresholds` lists.
 """
 
 import collections
@@ -153,8 +154,11 @@ class InferenceClient:
         self.labels: list[str] = data["labels"]
         self.input_size: tuple[int, int] = (data["width"], data["height"])
         self.resize_mode: str = data["resize_mode"]  # how the service fits the frames into the model input
+        self.thresholds: list[dict[str, Any]] = list(data.get("thresholds", []))  # the threshold blocks, with their current values
         self.slots: int = int(data.get("slots", 1))  # frames the service lets this connection keep in flight
         self._send_lock = threading.Lock()
+        self._configure_lock = threading.Lock()  # one configuration at a time, the reply carries no id
+        self._configured: list[dict[str, Any]] | ServerError | None = None  # the reply to the configuration in progress
         self._cond = threading.Condition()
         self._in_flight: dict[int, _InFlight] = {}  # by seq, in submission order
         self._latest: Result | None = None
@@ -269,6 +273,48 @@ class InferenceClient:
         """The last received result, even if already read."""
         return self._latest
 
+    def threshold_block(self, kind: str) -> dict[str, Any] | None:
+        """The threshold block of the given ``type`` ("object_detection", "object_tracking"...), None if the model has none."""
+        return next((block for block in self.thresholds if block.get("type") == kind), None)
+
+    def configure(self, block_id: int, timeout: float | None = 10.0, **values: float) -> list[dict[str, Any]]:
+        """Set threshold values of one block of the model, for every connection using it.
+
+        Args:
+            block_id (int): The ``id`` of the block in ``thresholds``.
+            timeout (float | None): Seconds to wait for the service to apply them, None waits indefinitely.
+            **values (float): The values to set, by the keys of the block, e.g. ``min_score=0.5`` or ``max_age=3``.
+
+        Returns:
+            list[dict]: The blocks with their current values, also kept in ``thresholds``.
+
+        Raises:
+            ServerError: If the service refuses them (bad_request: unknown block or key, internal).
+            TimeoutError: If the service does not answer in time.
+            ConnectionError: If the connection is closed.
+        """
+        with self._configure_lock:
+            with self._cond:
+                if self.closed:
+                    raise ConnectionError("connection closed")
+                self._configured = None
+            try:
+                with self._send_lock:
+                    P.send_json(self.sock, P.CONFIGURE, {"id": block_id, **values})
+            except OSError as exc:
+                self.close()
+                raise ConnectionError("send failed") from exc
+            with self._cond:
+                if not self._cond.wait_for(lambda: self._configured is not None or self.closed, timeout):
+                    raise TimeoutError(f"no reply from '{self.model}' to the configuration")
+                reply, self._configured = self._configured, None
+                if reply is None:
+                    raise ConnectionError("connection closed")
+                if isinstance(reply, ServerError):
+                    raise reply
+                self.thresholds = reply
+                return reply
+
     def get_result(self, timeout: float | None = 0) -> Result | None:
         """The oldest result not read yet, timeout=0 does not wait and None waits indefinitely.
 
@@ -299,6 +345,10 @@ class InferenceClient:
                     if "slots" in data:
                         self.slots = max(1, int(data["slots"]))
                     if kind == P.SLOTS:
+                        self._cond.notify_all()
+                        continue
+                    if kind == P.CONFIGURE or (kind == P.ERROR and data.get("op") == "configure"):
+                        self._configured = ServerError(data["code"], data["error"]) if kind == P.ERROR else list(data.get("thresholds", []))
                         self._cond.notify_all()
                         continue
                     # An ERR without seq refers to the oldest frame in flight (unparsable header)
