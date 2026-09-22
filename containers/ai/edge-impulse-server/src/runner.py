@@ -66,6 +66,34 @@ class RunnerExited(RuntimeError):
     """The .eim process is gone: it closed its socket or exited."""
 
 
+def encode_features(image: np.ndarray, out: np.ndarray, tmp: np.ndarray | None = None, bgr: bool = False, grayscale: bool = False) -> np.ndarray:
+    """Encode an HxWx3 uint8 image at the model size, RGB or BGR (`bgr`), into `out`, a float32 buffer
+    with one value per pixel, as the .eim expects: (r << 16) | (g << 8) | b, or the gray level in all
+    three bytes. Values stay below 2**24, so they are exact in float32. The work is done in place; gray
+    needs a second buffer like `out`, `tmp`, allocated if not given."""
+    flat = image.reshape(-1, 3)
+    r, g, b = (flat[:, 2], flat[:, 1], flat[:, 0]) if bgr else (flat[:, 0], flat[:, 1], flat[:, 2])
+    if grayscale:
+        # Luma as in the Edge Impulse SDKs, round(0.299 R + 0.587 G + 0.114 B); the bias rounds exact ties up
+        if tmp is None:
+            tmp = np.empty_like(out)
+        np.multiply(g, F32(0.587), out=tmp)
+        np.multiply(r, F32(0.299), out=out)
+        out += tmp
+        np.multiply(b, F32(0.114), out=tmp)
+        out += tmp
+        out += F32(0.5005)
+        np.floor(out, out=out)
+        out *= F32(0x010101)
+    else:
+        np.copyto(out, r, casting="unsafe")
+        out *= F32(256)
+        out += g
+        out *= F32(256)
+        out += b
+    return out
+
+
 class Runner(ImpulseRunner):
     def __init__(self, path: str):
         super().__init__(path)
@@ -148,31 +176,8 @@ class Runner(ImpulseRunner):
 
     # ------------------------------------------------------------ inference
     def features(self, image: np.ndarray, out: np.ndarray, tmp: np.ndarray | None = None, bgr: bool = False) -> np.ndarray:
-        """Encode an HxWx3 uint8 image at the model size, RGB or BGR (`bgr`), into `out`, a float32 buffer
-        with one value per pixel, as the .eim expects: (r << 16) | (g << 8) | b, or the gray level in all
-        three bytes. Values stay below 2**24, so they are exact in float32. The work is done in place; gray
-        needs a second buffer like `out`, `tmp`, allocated if not given."""
-        flat = image.reshape(-1, 3)
-        r, g, b = (flat[:, 2], flat[:, 1], flat[:, 0]) if bgr else (flat[:, 0], flat[:, 1], flat[:, 2])
-        if self.grayscale:
-            # Luma as in the Edge Impulse SDKs, round(0.299 R + 0.587 G + 0.114 B); the bias rounds exact ties up
-            if tmp is None:
-                tmp = np.empty_like(out)
-            np.multiply(g, F32(0.587), out=tmp)
-            np.multiply(r, F32(0.299), out=out)
-            out += tmp
-            np.multiply(b, F32(0.114), out=tmp)
-            out += tmp
-            out += F32(0.5005)
-            np.floor(out, out=out)
-            out *= F32(0x010101)
-        else:
-            np.copyto(out, r, casting="unsafe")
-            out *= F32(256)
-            out += g
-            out *= F32(256)
-            out += b
-        return out
+        """Encode an image for this .eim, see encode_features()."""
+        return encode_features(image, out, tmp, bgr=bgr, grayscale=self.grayscale)
 
     def classify(self, features: np.ndarray) -> dict:
         if self._input_shm is None:
