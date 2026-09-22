@@ -24,6 +24,7 @@ from arduino.app_bricks.arduino_cloud import (
 from arduino.app_bricks.arduino_cloud import arduino_cloud as ac_module
 from arduino.app_bricks.arduino_cloud import objects as ac_objects
 from arduino.app_bricks.arduino_cloud.daemon_client import (
+    CLIENT_ID_HEADER,
     DaemonClient,
     parse_timestamp,
     EVENT_LASTVALUE,
@@ -686,6 +687,69 @@ def test_stream_first_frame_and_put_409_over_tcp():
         t.join(timeout=2)
         server.shutdown()
         server.server_close()
+
+
+def test_client_id_header_sent_on_both_put_and_stream():
+    """The daemon suppresses an app's own write by matching the identifier on
+    the PUT against the one on the SSE subscription, so the SAME value must
+    reach both endpoints. If it is sent on only one of them there is nothing to
+    match and the app is handed back its own write — which makes a
+    read-modify-write app adopt a stale value and lose an increment."""
+    seen = {}
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_PUT(self):
+            length = int(self.headers.get("Content-Length", 0))
+            self.rfile.read(length)
+            seen["put"] = self.headers.get(CLIENT_ID_HEADER)
+            self.send_response(204)
+            self.end_headers()
+
+        def do_GET(self):
+            seen["get"] = self.headers.get(CLIENT_ID_HEADER)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
+            self.wfile.write(b'event: lastvalue_missing\ndata: {"name":"temp"}\n\n')
+            self.wfile.flush()
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    port = server.server_address[1]
+
+    client = DaemonClient(f"http://127.0.0.1:{port}")
+    stop = threading.Event()
+    ready = threading.Event()
+    t = threading.Thread(
+        target=client.stream_events,
+        args=("temp", lambda event, payload: stop.set(), stop, ready),
+        daemon=True,
+    )
+    t.start()
+    try:
+        assert ready.wait(timeout=5), "stream_events did not deliver the first frame"
+        client.put_value("temp", 5)
+    finally:
+        stop.set()
+        client.close()
+        t.join(timeout=2)
+        server.shutdown()
+        server.server_close()
+
+    assert seen.get("get"), f"no {CLIENT_ID_HEADER} on the SSE subscription"
+    assert seen.get("put"), f"no {CLIENT_ID_HEADER} on the value PUT"
+    assert seen["get"] == seen["put"] == client._client_id
+
+
+def test_client_id_is_unique_per_app_instance():
+    """Two apps must never share the identifier: if they did, the daemon would
+    suppress each one's frames on the other's stream and they would silently
+    stop seeing each other's writes. This is why it is generated here and is
+    not configurable."""
+    assert DaemonClient("http://127.0.0.1:5683")._client_id != DaemonClient("http://127.0.0.1:5683")._client_id
 
 
 # ── UNIX-socket transport ────────────────────────────────────────────────────
