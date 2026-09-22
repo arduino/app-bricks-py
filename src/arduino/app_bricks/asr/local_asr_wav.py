@@ -84,6 +84,7 @@ class WAVAutomaticSpeechRecognition(BaseASR):
         self,
         wav: np.ndarray | bytes,
         language: str | None = None,
+        translate: bool = False,
     ) -> None:
         """
         ASR brick that transcribes a finite in-memory audio buffer.
@@ -97,11 +98,22 @@ class WAVAutomaticSpeechRecognition(BaseASR):
                 but can be overridden here if needed. It is exposed as
                 the public ``language`` attribute and may be reassigned at
                 runtime; the new value takes effect on the next session.
+            translate (bool): If ``True``, speech is translated to English instead
+                of being transcribed in the language it was spoken in. It is valid
+                only for models that support translation, so it costs no extra
+                model: the ASR model itself does the translating. The model this
+                brick runs, ``whisper-small-quantized``, supports it, and its
+                translate task always targets English. Any of its source languages
+                can be translated, but English is the only possible target. Set
+                ``language`` as well to skip source auto-detection. It is exposed
+                as the public ``translate`` attribute and may be reassigned at
+                runtime; the new value takes effect on the next session.
+                Default: ``False``.
 
         Note:
             Only one transcription can be active at a time.
         """
-        super().__init__(source=wav, language=language)  # type: ignore[arg-type]
+        super().__init__(source=wav, language=language, translate=translate)  # type: ignore[arg-type]
 
     def _build_source(self, source: object) -> tuple:
         if not isinstance(source, (np.ndarray, bytes, bytearray)):
