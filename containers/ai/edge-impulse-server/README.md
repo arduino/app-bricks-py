@@ -49,7 +49,7 @@ exist or does not load, or if there are more pinned models than `--max-models`.
 - The load log line says whether features reach the `.eim` through shared memory (`shm`) or as JSON.
   JSON costs several ms per frame: rebuild such a `.eim` with a recent Edge Impulse release.
 
-## Thresholds
+## Thresholds and object tracking
 
 A `.eim` exposes its threshold blocks, `thresholds` in `OPND`: each has an `id` and a `type`, the object
 detection block its `min_score`, the object tracking block its `max_age`, `min_hits` and `iou_threshold`
@@ -57,6 +57,10 @@ detection block its `min_score`, the object tracking block its `max_age`, `min_h
 `CONF {"id": block, key: value, ...}` and receives the blocks as they stand, or `bad_request` for an
 unknown block or key. The values are set on every instance of the model, on the ones added later too, and
 belong to the model: they hold for every connection using it.
+
+A model with the object tracking block reports `object_tracking` true in `OPND` and its `tracks` in every
+result, the boxes with the `id` of the object, stable while it stays in view. Such a model runs on one
+instance whatever the ceiling, see below.
 
 ## Model instances
 
@@ -103,9 +107,9 @@ client: CONF  ->  server: CONF | ERR  optional, threshold values of the model
 | Type | Direction | Payload |
 |---|---|---|
 | `OPEN` | C -> S | JSON `{"model": name}` |
-| `OPND` | S -> C | JSON: `model`, `project`, `width`, `height`, `channels`, `labels`, `model_type`, `resize_mode`, `thresholds`, `slots` |
+| `OPND` | S -> C | JSON: `model`, `project`, `width`, `height`, `channels`, `labels`, `model_type`, `resize_mode`, `object_tracking`, `thresholds`, `slots` |
 | `FRAM` | C -> S | `<QqHHBB2x` (seq, ts_ns, width, height, channels, color 0=RGB 1=BGR) + the pixels, any size up to 1920x1080 |
-| `RSLT` | S -> C | JSON: `seq`, `ts_ns`, `boxes` [{label, score, x, y, w, h}] in frame coordinates, `classes`, `anomaly`, `timing_ms`, `slots` |
+| `RSLT` | S -> C | JSON: `seq`, `ts_ns`, `boxes` [{label, score, x, y, w, h}] and `tracks` [{label, score, x, y, w, h, id}] in frame coordinates, `classes`, `anomaly`, `timing_ms`, `slots` |
 | `SLOT` | S -> C | JSON: `slots`, the frames the client may keep in flight from now on |
 | `CONF` | C -> S | JSON: `id` of a threshold block and the values to set, `{"id": 28, "max_age": 3}` |
 | `CONF` | S -> C | JSON: `thresholds`, the blocks with their current values, once the values are set |
