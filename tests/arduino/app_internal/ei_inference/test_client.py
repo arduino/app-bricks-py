@@ -2,6 +2,8 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import threading
+
 import numpy as np
 import pytest
 
@@ -127,3 +129,27 @@ def test_service_going_away_closes_the_client(ei_service):
     with pytest.raises(ConnectionError):
         client.get_result(timeout=5)
     assert client.closed
+
+
+def test_the_service_decides_how_many_frames_are_in_flight(ei_service):
+    ei_service.models["det"]["slots"] = 2
+    ei_service.reply_delay = 0.3
+    with InferenceClient("det", ei_service.socket_path) as client:
+        assert client.slots == 2
+        frame = np.zeros((100, 100, 3), np.uint8)
+        assert client.submit(frame) == 1 and client.submit(frame) == 2, "two frames go out"
+        assert client.submit(frame) is None and client.busy, "the third waits for a slot"
+        first, second = client.get_result(timeout=2), client.get_result(timeout=2)
+        assert (first.seq, second.seq) == (1, 2), "results come back in order, none is lost"
+        assert client.wait_idle(0.1)
+
+
+def test_a_slot_message_raises_the_allowance_and_wakes_the_waiters(ei_service):
+    ei_service.reply_delay = 0.5
+    with InferenceClient("det", ei_service.socket_path) as client:
+        frame = np.zeros((100, 100, 3), np.uint8)
+        client.submit(frame)
+        assert client.submit(frame) is None, "one slot at open"
+        threading.Timer(0.1, ei_service.grant, args=(2,)).start()
+        assert client.wait_idle(1.0), "the SLOT message frees a slot before any result"
+        assert client.slots == 2 and client.submit(frame) == 2
