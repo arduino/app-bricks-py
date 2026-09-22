@@ -8,13 +8,13 @@ Every message:  [type: 4 ASCII bytes] [payload length: uint32 LE] [payload]
 
 Many clients connect to the same socket. One connection = one model.
 
-    client: OPEN {"model": name}        first message, mandatory
+    client: OPEN {"model": name, "confidence": 0.5}   first message, mandatory; the confidence is optional
     server: OPND {...}                  once the model is ready; the client waits
             ERR  {...} + close          if the model cannot be opened
     client: FRAM ...                    repeated, up to "slots" frames in flight
     server: RSLT {...} | ERR {...}      the connection stays open after an ERR too
             SLOT {...}                  when the number of frames the client may keep in flight changes
-    client: CONF {...}                  optional, sets threshold values of the model
+    client: CONF {...}                  optional, the confidence of the connection or threshold values of the model
     server: CONF {...} | ERR {...}      the blocks as they stand, or bad_request
 
 The model stays available as long as the connection is open. On disconnect
@@ -27,23 +27,27 @@ server chooses when to raise the allowance so the results of a connection stay e
 sends results in arrival order, dropping one that completes after a later frame's result went out.
 A client that ignores the allowance and sends one frame at a time keeps working.
 
-Thresholds: the .eim exposes its threshold blocks, each with an "id" and a "type" ("object_detection" with
-"min_score", "object_tracking" with "max_age", "min_hits" and "iou_threshold" or "threshold"...), "thresholds"
-in OPND. A CONF message sets values of one block; they belong to the model, so they hold for every connection
-using it and for the instances added later. A model with the object tracking block reports "object_tracking"
-true and its "tracks" in every result: the boxes with the "id" of the object, stable while it stays in view.
+Confidence: a connection may ask for one, in OPEN or with CONF {"confidence": value}; it then receives only
+the boxes, tracks and classes reaching it, and the score threshold of the model ("min_score") follows the
+lowest confidence among its connections, back to the exported value when none asks, so no connection
+misses a box it wants. Thresholds: the .eim exposes its threshold blocks, each with an "id" and a "type"
+("object_detection" with "min_score", "object_tracking" with "max_age", "min_hits" and "iou_threshold" or
+"threshold"...), "thresholds" in OPND. A CONF message naming a block sets its other values; they belong to
+the model, so they hold for every connection using it and for the instances added later. A model with the
+object tracking block reports "object_tracking" true and its "tracks" in every result: the boxes with the
+"id" of the object, stable while it stays in view.
 
 Messages
-  OPEN  C->S  JSON     {"model": name}
-  OPND  S->C  JSON     {"model", "project", "width", "height", "channels", "labels", "model_type",
-                        "resize_mode", "object_tracking", "thresholds", "slots"}
+  OPEN  C->S  JSON     {"model": name, "confidence": value}, the confidence optional
+  OPND  S->C  JSON     {"model", "project", "width", "height", "channels", "labels", "model_type", "resize_mode",
+                        "object_tracking", "thresholds", "confidence", "slots"}
   FRAM  C->S  binary   FRAME_HEADER + the pixels of the frame, any size, RGB or BGR; the server
                        resizes it to the model input as the Studio does
   RSLT  S->C  JSON     {"seq", "ts_ns", "boxes", "tracks", "classes", "anomaly", "timing_ms", "slots"}, the
                        boxes and the tracks in the coordinates of the submitted frame
   SLOT  S->C  JSON     {"slots"}, the frames the client may keep in flight from now on
-  CONF  C->S  JSON     {"id": block id, key: value, ...}, threshold values of one block of the model
-  CONF  S->C  JSON     {"thresholds"}, the blocks with their current values, once the values are set
+  CONF  C->S  JSON     {"confidence": value}, or {"id": block id, key: value, ...} for the values of a block
+  CONF  S->C  JSON     {"thresholds", "confidence"}, the blocks as they stand and the confidence, once set
   ERR   S->C  JSON     {"op": "open"|"frame"|"configure", "code", "error", "slots", ...}
 """
 

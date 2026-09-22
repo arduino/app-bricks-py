@@ -8,20 +8,22 @@ Every message: [type: 4 ASCII bytes] [payload length: uint32 LE] [payload]. One 
 requested with the first message; the connection stays open after a frame error, the server closes it
 after an open error and releases the model when it closes. Kept identical to the copy in the containers.
 
-    client: OPEN {"model": name}        first message, mandatory
+    client: OPEN {"model": name, "confidence": 0.5}   first message, mandatory; the confidence is optional
     server: OPND {...}                  once the model is ready
             ERR  {...} + close          if the model cannot be opened
     client: FRAM ...                    repeated, up to "slots" frames in flight, any size, RGB or BGR
     server: RSLT {...} | ERR {...}      the connection stays open after an ERR too
             SLOT {...}                  when the number of frames the client may keep in flight changes
-    client: CONF {"id": block, key: value}   optional, sets threshold values of the model
-    server: CONF {"thresholds": [...]} | ERR {"op": "configure", ...}
+    client: CONF {"confidence": 0.5} | CONF {"id": block, key: value}   optional
+    server: CONF {"thresholds": [...], "confidence": 0.5} | ERR {"op": "configure", ...}
 
 The server tells each connection how many frames it may keep in flight, "slots" in OPND, RSLT, ERR and
 SLOT, 1 at open: it raises the allowance when it runs several instances of the model, at the moment
-that keeps the results evenly spaced, and sends the results in arrival order. OPND carries the threshold
-blocks of the model ("thresholds", each with an "id" and a "type") and whether it tracks objects
-("object_tracking"): the results of such a model carry its "tracks", boxes with the "id" of the object.
+that keeps the results evenly spaced, and sends the results in arrival order. A connection asking for a
+confidence receives only the boxes, tracks and classes reaching it, and the model's score threshold follows
+the lowest confidence of its connections. OPND carries the threshold blocks of the model ("thresholds", each
+with an "id" and a "type"), the confidence and whether it tracks objects ("object_tracking"): the results of
+such a model carry its "tracks", boxes with the "id" of the object.
 """
 
 import json
