@@ -30,16 +30,17 @@ A client that ignores the allowance and sends one frame at a time keeps working.
 Thresholds: the .eim exposes its threshold blocks, each with an "id" and a "type" ("object_detection" with
 "min_score", "object_tracking" with "max_age", "min_hits" and "iou_threshold" or "threshold"...), "thresholds"
 in OPND. A CONF message sets values of one block; they belong to the model, so they hold for every connection
-using it and for the instances added later.
+using it and for the instances added later. A model with the object tracking block reports "object_tracking"
+true and its "tracks" in every result: the boxes with the "id" of the object, stable while it stays in view.
 
 Messages
   OPEN  C->S  JSON     {"model": name}
   OPND  S->C  JSON     {"model", "project", "width", "height", "channels", "labels", "model_type",
-                        "resize_mode", "thresholds", "slots"}
+                        "resize_mode", "object_tracking", "thresholds", "slots"}
   FRAM  C->S  binary   FRAME_HEADER + the pixels of the frame, any size, RGB or BGR; the server
                        resizes it to the model input as the Studio does
-  RSLT  S->C  JSON     {"seq", "ts_ns", "boxes", "classes", "anomaly", "timing_ms", "slots"}, the boxes
-                       in the coordinates of the submitted frame
+  RSLT  S->C  JSON     {"seq", "ts_ns", "boxes", "tracks", "classes", "anomaly", "timing_ms", "slots"}, the
+                       boxes and the tracks in the coordinates of the submitted frame
   SLOT  S->C  JSON     {"slots"}, the frames the client may keep in flight from now on
   CONF  C->S  JSON     {"id": block id, key: value, ...}, threshold values of one block of the model
   CONF  S->C  JSON     {"thresholds"}, the blocks with their current values, once the values are set
