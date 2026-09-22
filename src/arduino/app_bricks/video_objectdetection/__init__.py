@@ -18,7 +18,7 @@ from arduino.app_peripherals.camera import BaseCamera, Camera
 from arduino.app_utils import Logger, brick
 from arduino.app_utils.image.adjustments import compress_to_jpeg
 
-from .video_stream import LabelColors, VideoStreamServer, draw_detections
+from .video_stream import BoxStabilizer, LabelColors, VideoStreamServer, draw_detections
 
 logger = Logger("VideoObjectDetection")
 
@@ -49,8 +49,6 @@ class VideoObjectDetection:
 
     _DETECTION_LOCK_TO = 0.01  # Seconds to wait for a detection lock before discarding the detection signal
     _RETRY_SEC = 2.0  # Seconds between attempts to reach the inference service
-    _OVERLAY_MIN_TTL = 0.5  # Seconds the boxes of the latest result stay on the video, at least
-    _OVERLAY_TTL_PERIODS = 2  # ...or this many times their inference took: a model that stops answering leaves no ghost boxes
 
     def __init__(
         self,
@@ -98,8 +96,7 @@ class VideoObjectDetection:
         self._client_lock = threading.Lock()
         self._stream = VideoStreamServer(os.getenv("BIND_ADDRESS", "0.0.0.0"), stream_port) if stream_port is not None else None
         self._colors = LabelColors()
-        self._overlay_lock = threading.Lock()
-        self._overlay: tuple[dict, float, float] | None = None  # detections of the latest result, arrival time, seconds they took
+        self._boxes = BoxStabilizer()  # what the video shows: the boxes of the results, steadied across them
 
         logger.info(f"[{self.__class__.__name__}] Model: {self._model}")
 
@@ -293,7 +290,7 @@ class VideoObjectDetection:
             client.close()
 
     def _process_result(self, result: Result) -> None:
-        """Turn the boxes of one frame into detections, keep them for the video and invoke the handlers.
+        """Turn the boxes of one frame into detections, feed the video boxes and invoke the handlers.
 
         `result.frame`, present with `camera_preview`, is the frame the preview callbacks receive.
         """
@@ -308,7 +305,7 @@ class VideoObjectDetection:
                 continue
             xyxy_bbox = (round(box.x), round(box.y), round(box.x + box.w), round(box.y + box.h))
             detections.setdefault(box.label, []).append({"confidence": box.score, "bounding_box_xyxy": xyxy_bbox})
-        self._remember(detections, (time.monotonic_ns() - result.ts_ns) / 1e9)
+        self._boxes.update(result.boxes, self._confidence, (time.monotonic_ns() - result.ts_ns) / 1e9)
         if not detections:
             return
 
@@ -318,25 +315,9 @@ class VideoObjectDetection:
                 self._execute_handler(key=label, payload=detection_details, frame=preview)
         self._execute_handler(key=self.ALL_HANDLERS_KEY, payload=detections, frame=preview)
 
-    def _remember(self, detections: dict, round_trip: float) -> None:
-        """Keep the detections for the video, with the seconds their inference took, which bound how long they stay."""
-        with self._overlay_lock:
-            self._overlay = (detections, time.monotonic(), round_trip)
-
-    def _current_detections(self) -> dict:
-        """The detections to draw now: the latest result's, unless they are older than twice the time they took."""
-        with self._overlay_lock:
-            overlay = self._overlay
-        if overlay is None:
-            return {}
-        detections, arrived, round_trip = overlay
-        if time.monotonic() - arrived > max(self._OVERLAY_MIN_TTL, self._OVERLAY_TTL_PERIODS * round_trip):
-            return {}
-        return detections
-
     def _publish(self, frame: np.ndarray) -> None:
-        """Stream the camera frame with the current detections drawn on it."""
-        annotated = self._annotate(frame, self._current_detections())
+        """Stream the camera frame with the steadied boxes drawn on it."""
+        annotated = self._annotate(frame, self._boxes.visible())
         if annotated is not None and self._stream is not None:
             self._stream.publish(annotated)
 
