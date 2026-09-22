@@ -65,6 +65,11 @@ def parse_args():
     return ap.parse_args()
 
 
+def valid_confidence(value) -> bool:
+    """None, or a number between 0 and 1."""
+    return value is None or (isinstance(value, (int, float)) and not isinstance(value, bool) and 0 <= value <= 1)
+
+
 def model_list(text: str) -> list:
     """'a, b,c' -> ['a', 'b', 'c'] (no duplicates, order preserved)."""
     return list(dict.fromkeys(name.strip() for name in text.split(",") if name.strip()))
@@ -96,8 +101,10 @@ class Connection:
     several, granted half an inference period after a result so the results stay evenly spaced. When two results
     drift closer than their target spacing, the allowance goes back to one until the moment that puts the next
     frame exactly a half period after the surviving one, so the spacing is restored in one step at the cost of
-    a pause as long as the drift. A CONF message sets threshold values of the model, for every connection using
-    it. The model is released when the connection closes.
+    a pause as long as the drift. The connection may ask for a confidence, in OPEN or in a CONF message: the
+    model's score threshold follows the lowest one among its connections and each connection receives only the
+    boxes, tracks and classes that reach its own. A CONF message naming a block sets threshold values of the
+    model, for every connection using it. The model is released when the connection closes.
     """
 
     def __init__(self, sock: socket.socket, registry: ModelRegistry, name: str):
@@ -111,6 +118,7 @@ class Connection:
         self._scratches: list = []  # work buffers of the model, one per frame in flight
         self._scratch_lock = threading.Lock()
         self.slots = 1  # frames the client may keep in flight
+        self.confidence: float | None = None  # the score the results must reach for this connection, None for everything
         self._pipelined = False  # more than one frame was ever allowed in flight: results may complete out of order
         self._last_sent_seq = 0
         self._last_sent_at: float | None = None
@@ -146,6 +154,10 @@ class Connection:
         if not isinstance(name, str):
             self.error("open", P.E_BAD_REQUEST, 'the first message must be OPEN {"model": name}')
             return False
+        confidence = request.get("confidence")
+        if not valid_confidence(confidence):
+            self.error("open", P.E_BAD_REQUEST, "confidence must be a number between 0 and 1", model=name)
+            return False
         if not accepted:
             self.error("open", P.E_TOO_MANY_CLIENTS, "connection limit reached (--max-clients)", model=name)
             return False
@@ -157,8 +169,29 @@ class Connection:
             return False
         self.reader.limit = P.MAX_FRAME_PAYLOAD
         self._workers = ThreadPoolExecutor(max_workers=self.registry.max_instances, thread_name_prefix=f"{self.name}-infer")
-        self.send(P.OPENED, {**self.model.describe(), "slots": self.slots})
+        if confidence is not None:
+            try:
+                self.set_confidence(confidence)
+            except Exception as exc:
+                self.error("open", P.E_INTERNAL, f"could not set the confidence: {exc}", model=name)
+                return False
+        self.send(P.OPENED, {**self.model.describe(), "confidence": self.confidence, "slots": self.slots})
         return True
+
+    def set_confidence(self, confidence: float | None) -> None:
+        self.confidence = confidence
+        self.model.set_confidence(self, confidence)
+
+    def filtered(self, result: dict) -> dict:
+        """The result with only the boxes, tracks and classes reaching the confidence of the connection."""
+        if self.confidence is None:
+            return result
+        return {
+            **result,
+            "boxes": [box for box in result["boxes"] if box["score"] >= self.confidence],
+            "tracks": [track for track in result["tracks"] if track["score"] >= self.confidence],
+            "classes": {label: score for label, score in result["classes"].items() if score >= self.confidence},
+        }
 
     def serve_frames(self) -> None:
         while True:
@@ -200,19 +233,24 @@ class Connection:
             log.debug("[%s] inference error on '%s'", self.name, self.model.name, exc_info=True)
             self.error("frame", P.E_INTERNAL, str(exc), seq=seq)
         else:
-            self.send_result(seq, P.RESULT, {"seq": seq, "ts_ns": ts_ns, **result})
+            self.send_result(seq, P.RESULT, {"seq": seq, "ts_ns": ts_ns, **self.filtered(result)})
             self.registry.autoscale(self.model)
         finally:
             self._give_scratch(scratch)
 
     def configure(self, payload) -> None:
-        """Set threshold values of the model and reply with its blocks as they stand, or with an error."""
+        """Set the confidence of the connection or threshold values of the model, and reply with the blocks as they stand."""
         values = P.parse_json(payload)
         if values is None:
-            self.error("configure", P.E_BAD_REQUEST, 'CONF takes a JSON object {"id": block, key: value, ...}')
+            self.error("configure", P.E_BAD_REQUEST, 'CONF takes a JSON object {"confidence": value} or {"id": block, key: value, ...}')
             return
         try:
-            thresholds = self.model.configure(values)
+            if "id" in values:
+                self.model.configure(values)
+            elif set(values) != {"confidence"} or not valid_confidence(values["confidence"]):
+                raise RegistryError(P.E_BAD_REQUEST, 'without a block id CONF takes {"confidence": value}, a number between 0 and 1')
+            else:
+                self.set_confidence(values["confidence"])
         except RunnerDied as exc:
             self.error("configure", exc.code, str(exc))
             self.restart_model()
@@ -222,8 +260,8 @@ class Connection:
             log.debug("[%s] configuration error on '%s'", self.name, self.model.name, exc_info=True)
             self.error("configure", P.E_INTERNAL, str(exc))
         else:
-            log.debug("[%s] '%s' thresholds set: %s", self.name, self.model.name, values)
-            self.send(P.CONFIGURE, {"thresholds": thresholds})
+            log.debug("[%s] '%s' configured: %s", self.name, self.model.name, values)
+            self.send(P.CONFIGURE, {"thresholds": self.model.current_thresholds(), "confidence": self.confidence})
 
     def _take_scratch(self):
         with self._scratch_lock:
@@ -310,6 +348,11 @@ class Connection:
         self.sock.close()
         if self.model is not None:
             log.debug("[%s] closed, releasing '%s'%s", self.name, self.model.name, f", {self.dropped} late results dropped" if self.dropped else "")
+            if self.confidence is not None:
+                try:
+                    self.set_confidence(None)  # the score threshold of the model follows the connections left
+                except Exception as exc:
+                    log.debug("[%s] confidence not withdrawn: %s", self.name, exc)
             self.registry.release(self.model.name)
             self.model = None
 
