@@ -13,6 +13,8 @@ def mock_dependencies(monkeypatch: pytest.MonkeyPatch):
     fake_compose = {"services": {"models-runner": {"ports": ["${BIND_ADDRESS:-127.0.0.1}:8100:8100"]}}}
     monkeypatch.setattr("arduino.app_internal.core.load_brick_compose_file", lambda cls: fake_compose)
     monkeypatch.setattr("arduino.app_internal.core.resolve_address", lambda host: "127.0.0.1")
+    # default model: no softmax required
+    monkeypatch.setattr("arduino.app_bricks.image_classification.brick_model_requires_softmax", lambda cls: False)
     monkeypatch.setattr("arduino.app_internal.core.parse_docker_compose_variable", lambda x: [(None, None), (None, "8200")])
     # make get_image_bytes a no-op for raw bytes
     monkeypatch.setattr(
@@ -224,3 +226,40 @@ def test_process(tmp_path: Path, classifier: ImageClassification, monkeypatch: p
 
     # nonexistent file => None
     assert classifier.process("no_file.png") is None
+
+
+def test_classify_applies_softmax_only_when_model_requires_it(monkeypatch: pytest.MonkeyPatch):
+    """Raw logits are normalized with a softmax only for models flagged with `requires_softmax`."""
+    # Logits as returned by the EfficientNet-B4 runner: values above 1.0 that are not probabilities.
+    logits = {"folding chair": 6.0, "rocking chair": 5.0, "dining table": 4.0, "desk": 0.0}
+
+    class FakeResp:
+        status_code = 200
+
+        def json(self):
+            return {"result": {"classification": dict(logits)}}
+
+    monkeypatch.setattr("arduino.app_internal.core.ei.requests.post", lambda *a, **k: FakeResp())
+
+    # Model without the flag (e.g. default MobileNet): raw output untouched, so logits leak as >100%.
+    monkeypatch.setattr("arduino.app_bricks.image_classification.brick_model_requires_softmax", lambda cls: False)
+    classifier = ImageClassification()
+    assert classifier.apply_softmax is False
+    out = classifier.classify(b"bytes", "jpg", confidence=0.001)
+    assert [o["confidence"] for o in out["classification"]] == ["600.00", "500.00", "400.00"]
+
+    # Model flagged with requires_softmax: probabilities in [0, 100] that sum to 100.
+    monkeypatch.setattr("arduino.app_bricks.image_classification.brick_model_requires_softmax", lambda cls: True)
+    classifier = ImageClassification()
+    assert classifier.apply_softmax is True
+    out = classifier.classify(b"bytes", "jpg", confidence=0.001)
+    confidences = {o["class_name"]: float(o["confidence"]) for o in out["classification"]}
+    assert confidences["folding chair"] == pytest.approx(66.41, abs=0.01)
+    assert confidences["rocking chair"] == pytest.approx(24.43, abs=0.01)
+    assert len(confidences) == 4
+    assert all(0.0 <= c <= 100.0 for c in confidences.values())
+    assert sum(confidences.values()) == pytest.approx(100.0, abs=0.05)
+
+    # The confidence threshold is applied on probabilities, not on logits.
+    out = classifier.classify(b"bytes", "jpg", confidence=0.25)
+    assert [o["class_name"] for o in out["classification"]] == ["folding chair"]
