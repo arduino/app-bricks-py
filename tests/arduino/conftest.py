@@ -307,8 +307,9 @@ class FakeInferenceService:
     ``slots`` (the frames the client may keep in flight, 1 by default), ``object_tracking`` and ``thresholds`` (the
     blocks a CONF message changes, each with an ``id`` and a ``type``), ``boxes``, a list of boxes in frame
     coordinates (as the real service maps them back) or a callable (seq, image) returning the list or a
-    ``{"code", "error"}`` dict for a frame error, and ``tracks``, the same for the tracked objects, with their ``id``.
-    A connection asking for a confidence, in OPEN or CONF, receives only the boxes and tracks reaching it.
+    ``{"code", "error"}`` dict for a frame error, ``tracks``, the same for the tracked objects, with their ``id``, and
+    ``classes``, a ``{label: score}`` dict or a callable returning one. A connection asking for a confidence, in OPEN
+    or CONF, receives only the boxes, tracks and classes reaching it.
     ``frames`` records every (model, seq, image) received, ``configured`` every (model, values) set through CONF,
     ``grant(n)`` sends a SLOT message to every connection.
     """
@@ -459,20 +460,23 @@ class FakeInferenceService:
                 seq, ts_ns, image = pending.get()
                 if self.reply_delay:
                     threading.Event().wait(self.reply_delay)
-                boxes, tracks = model.get("boxes", []), model.get("tracks", [])
+                boxes, tracks, classes = model.get("boxes", []), model.get("tracks", []), model.get("classes", {})
                 if callable(boxes):
                     boxes = boxes(seq, image)
                 if callable(tracks):
                     tracks = tracks(seq, image)
+                if callable(classes):
+                    classes = classes(seq, image)
                 confidence = connection["confidence"]
                 if confidence is not None:
                     boxes = [box for box in boxes if box["score"] >= confidence] if isinstance(boxes, list) else boxes
                     tracks = [track for track in tracks if track["score"] >= confidence]
+                    classes = {label: score for label, score in classes.items() if score >= confidence}
                 with send_lock:
                     if isinstance(boxes, dict):
                         EI.send_json(conn, EI.ERROR, {"op": "frame", "seq": seq, **boxes})
                         continue
-                    result = {"seq": seq, "ts_ns": ts_ns, "boxes": boxes, "tracks": tracks, "classes": {}, "anomaly": 0.0, "timing_ms": {}}
+                    result = {"seq": seq, "ts_ns": ts_ns, "boxes": boxes, "tracks": tracks, "classes": classes, "anomaly": 0.0, "timing_ms": {}}
                     EI.send_json(conn, EI.RESULT, result)
         except (ConnectionError, OSError, ValueError):
             pass
