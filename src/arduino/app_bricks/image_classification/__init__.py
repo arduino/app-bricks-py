@@ -2,6 +2,8 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+from typing import Any
+
 from PIL import Image
 
 from arduino.app_internal.core import EdgeImpulseRunnerFacade
@@ -82,21 +84,22 @@ class ImageClassification(EdgeImpulseRunnerFacade):
         """
         return self._extract_classification(self._apply_softmax_if_required(super().process(item)))
 
-    def _apply_softmax_if_required(self, item: dict | None) -> dict | None:
+    def _apply_softmax_if_required(self, item: dict[str, Any] | None) -> dict[str, Any] | None:
         """Normalize raw runner logits to probabilities when the configured model requires it.
 
         Args:
             item: The raw Edge Impulse runner response.
 
         Returns:
-            dict | None: The same response, with the classification scores replaced by their softmax
+            dict[str, Any] | None: The same response, with the classification scores replaced by their softmax
             when `apply_softmax` is enabled; the response untouched otherwise.
         """
-        if not self.apply_softmax or not item or not isinstance(item, dict):
+        if not self.apply_softmax or not item:
             return item
-        result = item.get("result")
+        result: Any = item.get("result")
         if not isinstance(result, dict) or not result.get("classification"):
             return item
         # Softmax over the full logit vector, so probabilities keep the network calibration.
-        result["classification"] = compute_softmax_over_ei_classification(result["classification"])
+        classification: dict[str, Any] = result["classification"]
+        result["classification"] = compute_softmax_over_ei_classification(classification)
         return item

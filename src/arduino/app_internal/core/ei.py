@@ -3,6 +3,8 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import math
+from typing import Any
+
 import requests
 import io
 from PIL import Image
@@ -279,10 +281,10 @@ def brick_model_requires_softmax(brick_cls: type) -> bool:
     Returns:
         bool: True only if the configured model is listed with ``requires_softmax: true``.
     """
-    brick_config = get_brick_config(brick_cls)
+    brick_config: dict[str, Any] | None = get_brick_config(brick_cls)
     if not brick_config:
         return False
-    brick_id = brick_config.get("id")
+    brick_id: str | None = brick_config.get("id")
     if not brick_id:
         return False
 
@@ -302,7 +304,7 @@ def brick_model_requires_softmax(brick_cls: type) -> bool:
     return False
 
 
-def compute_softmax_over_ei_classification(det_classifications: dict, top_k: int | None = None) -> dict:
+def compute_softmax_over_ei_classification(det_classifications: dict[str, Any], top_k: int | None = None) -> dict[str, str]:
     """Compute softmax over Edge Impulse classification results if required by the model.
 
     The softmax is always computed over the *full* set of logits, so the resulting
