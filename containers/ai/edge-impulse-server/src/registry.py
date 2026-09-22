@@ -212,6 +212,7 @@ class Model:
             self.preprocess = Preprocessor(self.width, self.height, self.resize_mode)
             self.grayscale = instance.runner.grayscale
             self.stateful = stateful_reason(params)  # a reason to stay on one instance, None when replicas are fine
+            self.object_tracking = bool(params.get("has_object_tracking"))  # the results carry the tracked objects
             # The threshold blocks of the .eim with their current values, the ones a connection may change
             self.thresholds = [dict(t) for t in params.get("thresholds") or [] if isinstance(t, dict)]
             self.project = info["project"]["name"]
@@ -232,6 +233,7 @@ class Model:
             "labels": self.labels,
             "model_type": self.model_type,
             "resize_mode": self.resize_mode,
+            "object_tracking": self.object_tracking,
             "thresholds": self.current_thresholds(),
         }
 
@@ -305,6 +307,7 @@ class Model:
             self._stats["frames"] += 1
         return {
             "boxes": [self._in_frame(b, prepared.transform) for b in result.get("bounding_boxes") or []],
+            "tracks": [{**self._in_frame(t, prepared.transform), "id": int(t["object_id"])} for t in result.get("object_tracking") or []],
             "classes": result.get("classification") or {},
             "anomaly": float(result.get("anomaly") or 0.0),
             "timing_ms": {key: round(value, 2) for key, value in ms.items()},
@@ -697,12 +700,13 @@ class ModelRegistry:
             entry.model, entry.state = model, LOADED
             self._cond.notify_all()
         log.info(
-            "[%s] loaded in %.1f s: input %dx%d, %s, resize '%s', features via %s%s",
+            "[%s] loaded in %.1f s: input %dx%d, %s%s, resize '%s', features via %s%s",
             entry.name,
             elapsed,
             model.width,
             model.height,
             model.model_type,
+            " with object tracking" if model.object_tracking else "",
             model.resize_mode,
             model.runner.transport,
             " (pinned)" if entry.pinned else "",
