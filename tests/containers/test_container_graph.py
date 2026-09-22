@@ -20,13 +20,18 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from pathlib import Path
 
 import pytest
 
-from scripts.build_levels import MAX_LEVELS, Graph, build_plan, resolve_release_build_set
-
+# Make the repo-root ``scripts`` package importable regardless of the cwd.
 REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from scripts.build_levels import MAX_LEVELS, Graph, build_plan, resolve_release_build_set  # noqa: E402
+
 CONTAINERS_DIR = REPO_ROOT / "containers"
 
 # `FROM ${REGISTRY}app-bricks/<name>:${BASE_IMAGE_VERSION} [AS stage]` and the

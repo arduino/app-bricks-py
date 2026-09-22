@@ -120,6 +120,14 @@ def test_constructor_resolves_runner_endpoints(ocr: OCR):
     assert ocr._ws_recv_url == "ws://127.0.0.1:5001"
 
 
+def test_constructor_rejects_a_compose_without_services(monkeypatch: pytest.MonkeyPatch):
+    """No service to talk to: the brick says so instead of failing later on a missing host."""
+    monkeypatch.setattr("arduino.app_bricks.ocr.load_brick_compose_file", lambda cls: {"services": {}})
+    monkeypatch.setattr("arduino.app_bricks.ocr.resolve_address", lambda host: host)
+    with pytest.raises(RuntimeError):
+        OCR()
+
+
 # ---------------------------------------------------------------------------
 # Image encoding
 # ---------------------------------------------------------------------------
