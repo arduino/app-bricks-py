@@ -7,7 +7,7 @@ import threading
 import numpy as np
 import pytest
 
-from arduino.app_internal.ei_inference import InferenceClient, ServerError, model_name_from_path
+from arduino.app_internal.ei_inference import Box, InferenceClient, ServerError, model_name_from_path
 
 FRAME = np.zeros((100, 200, 3), np.uint8)  # 200x100 source, twice as wide as the 100x100 model
 
@@ -43,8 +43,18 @@ def test_open_exposes_the_model_details(ei_service):
         assert client.labels == ["cat", "dog"]
         assert client.input_size == (100, 100)
         assert client.info["resize_mode"] == "squash"
+        assert client.object_tracking is False
         assert client.threshold_block("object_detection") == {"id": 12, "type": "object_detection", "min_score": 0.3}
         assert client.threshold_block("object_tracking") is None
+
+
+def test_tracked_objects_come_with_their_ids(ei_service):
+    ei_service.models["det"]["object_tracking"] = True
+    ei_service.models["det"]["tracks"] = [{"label": "cat", "score": 0.9, "x": 50, "y": 25, "w": 100, "h": 50, "id": 7}]
+    with InferenceClient("det", ei_service.socket_path) as client:
+        assert client.object_tracking
+        result = client.infer(FRAME, timeout=5)
+    assert result.tracks == [Box("cat", 0.9, 50, 25, 100, 50, id=7)]
 
 
 def test_configure_sets_the_thresholds_of_the_model(ei_service):
