@@ -161,6 +161,34 @@ def test_device_wins_repushes_local_and_ignores_cloud():
     assert pushes == []
 
 
+def test_apply_live_ignores_the_sync_policies():
+    """A live update carries no arbitration, so every policy adopts it.
+
+    This is the behaviour change: under the old code DEVICE_WINS would have
+    ignored the value and pushed the local one back, and MOST_RECENT_WINS would
+    have rejected a value stamped before the last local change. Only apply_cloud
+    (the sync path) still arbitrates.
+    """
+    for policy in (DEVICE_WINS, CLOUD_WINS, MOST_RECENT_WINS):
+        pushes = []
+        obj = CloudObject("v", value=7, sync=policy)
+        obj.bind(lambda n, val: pushes.append((n, val)))
+        obj.set_local(5)  # stamps a local timestamp, so "older than local" means something
+        obj.pump(time.time(), ON_CHANGE)
+        pushes.clear()
+        # Older than the last local change, and still adopted.
+        assert obj.apply_live(9, cloud_ts=time.time() - 100) is True, policy
+        assert obj.value == 9, policy
+        # No push-back either: a live update is not a convergence to negotiate.
+        assert pushes == [], policy
+
+
+def test_apply_live_reports_no_change_for_an_equal_value():
+    obj = CloudObject("v", value=7, sync=CLOUD_WINS)
+    assert obj.apply_live(7, cloud_ts=time.time()) is False
+    assert obj.value == 7
+
+
 def test_invalid_sync_policy_rejected():
     with pytest.raises(ValueError):
         CloudObject("v", sync="bogus")
@@ -687,6 +715,50 @@ def test_stream_first_frame_and_put_409_over_tcp():
         t.join(timeout=2)
         server.shutdown()
         server.server_close()
+
+
+def test_device_wins_arbitrates_a_sync_frame_but_adopts_a_live_update(fake_client):
+    """Pins the ROUTING through the SSE handler: a ``lastvalue`` frame goes to
+    apply_cloud (the policy runs, the device value wins) and an ``update``
+    frame goes to apply_live (no policy, the cloud value is adopted).
+
+    Swapping the two branches, or pointing either at the wrong method, fails
+    here — which is the whole point of the change.
+    """
+    cloud, client = _make_cloud(fake_client)
+    client.initial["temp"] = (EVENT_LASTVALUE, {"value": 100, "timestamp": "2026-07-07T10:00:00Z", "last_value": True})
+    cloud.register("temp", value=7, sync=DEVICE_WINS)
+    cloud.start()
+    try:
+        # Sync: the policy runs, the local value wins and is pushed up.
+        assert cloud.temp == 7
+        assert ("temp", 7) in client.puts
+        # Live: no arbitration. Before this change the value stayed 7.
+        client.feed("temp", 42)
+        assert cloud.temp == 42
+    finally:
+        cloud.stop()
+
+
+def test_most_recent_wins_accepts_an_older_live_update(fake_client):
+    """The timestamp comparison belongs to the sync only.
+
+    An update stamped before the last local change used to be rejected — the
+    accident that gave MOST_RECENT_WINS an accidental immunity to the daemon's
+    own-write echo, which is why the echo fix had to land first. The push-back
+    side of it is pinned deterministically in the unit test above; here only
+    the adopted value is asserted, because the brick loop runs in a thread and
+    counting PUTs would race it.
+    """
+    cloud, client = _make_cloud(fake_client)
+    cloud.register("temp", value=1, sync=MOST_RECENT_WINS)
+    cloud.start()
+    try:
+        cloud.temp = 5  # stamps a local timestamp of "now"
+        client.feed("temp", 9, timestamp="2020-01-01T00:00:00Z")
+        assert cloud.temp == 9
+    finally:
+        cloud.stop()
 
 
 def test_client_id_header_sent_on_both_put_and_stream():

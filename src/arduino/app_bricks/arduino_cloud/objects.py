@@ -15,14 +15,18 @@ pure value holders plus the per-variable conflict-resolution logic.
 Conflict resolution is done here, in the brick, because the daemon is
 deliberately policy-agnostic: it only delivers a value together with the
 timestamp at which it was last set (locally or by the cloud). Each variable
-carries a sync policy mirroring the C++ ``ArduinoIoTCloud`` semantics:
+carries a sync policy mirroring the C++ ``ArduinoIoTCloud`` semantics. The
+policies resolve a SYNC frame and nothing else (``apply_cloud``); a live update
+is applied without arbitration (``apply_live``), exactly as C++ does by calling
+``execCallbackOnSync()`` only when ``is_sync_message`` is true:
 
-* ``CLOUD_WINS`` (default): an incoming cloud value is always applied when it
-  differs from the local one.
-* ``MOST_RECENT_WINS``: a cloud value is applied only if its timestamp is newer
-  than the timestamp of the last local change.
-* ``DEVICE_WINS``: cloud values are never applied; the local value is pushed
-  back to the cloud so it converges to the device.
+* ``CLOUD_WINS`` (default): at sync, the cloud value is applied when it differs
+  from the local one.
+* ``MOST_RECENT_WINS``: at sync, the cloud value is applied only if its
+  timestamp is newer than the timestamp of the last local change.
+* ``DEVICE_WINS``: at sync, the cloud value is not applied; the local value is
+  pushed back to the cloud so it converges to the device. Note this says
+  nothing about a LIVE cloud change, which such a variable does accept.
 """
 
 import time
@@ -296,7 +300,12 @@ class CloudObject:
 
     # ── cloud (cloud → device) changes ──────────────────────────────────────────
     def apply_cloud(self, value: Any, cloud_ts: float) -> bool:  # noqa: ANN401
-        """Apply an incoming cloud value according to the sync policy.
+        """Resolve a SYNC frame against the local value, per the sync policy.
+
+        This is the ``lastvalue`` path and nothing else. The three policies
+        answer one question only — "the device and the cloud each hold a value,
+        which one survives the reunion?" — which is a question a live update
+        does not ask: see ``apply_live``.
 
         Returns True if the local value changed (so the caller schedules
         on_write). ``cloud_ts`` is epoch seconds (the daemon's last-value
@@ -325,6 +334,42 @@ class CloudObject:
 
         if value == self._value:
             # Cloud already holds our value: nothing to publish.
+            self._dirty = False
+            return False
+        self._value = value
+        self._dirty = False  # cloud value adopted; discard any pending local push
+        return True
+
+    def apply_live(self, value: Any, cloud_ts: float) -> bool:  # noqa: ANN401
+        """Apply a LIVE cloud update, with no policy arbitration at all.
+
+        A live ``update`` frame is not a reunion between two values that drifted
+        apart while disconnected: the sync already happened, and someone — the
+        cloud, or another app sharing the variable — has changed it since. There
+        is nothing to arbitrate, so the new value is simply adopted.
+
+        This is what the C++ library the brick tracks does. ``updateProperty``
+        (``PropertyContainer.cpp:103``) calls ``execCallbackOnSync()`` — the one
+        and only caller of the three policy functions — when
+        ``is_sync_message`` is true, and otherwise goes straight to
+        ``fromCloudToLocal()``. Running the policies on both paths, as the brick
+        used to, had no counterpart there.
+
+        Note the consequence, which is the counter-intuitive part: a
+        ``DEVICE_WINS`` variable now DOES accept a live cloud write, where it
+        used to ignore it and push the local value back. The policy name reads
+        as a permanent rule, but it governs the sync only.
+
+        Returns True if the local value changed (so the caller schedules
+        on_write). ``cloud_ts`` is epoch seconds.
+        """
+        if cloud_ts is None:
+            cloud_ts = _now()
+        self._cloud_ts = cloud_ts
+        value = self._coerce(value)
+
+        if value == self._value:
+            # Already holding it: nothing changed and nothing to publish.
             self._dirty = False
             return False
         self._value = value
