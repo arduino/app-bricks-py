@@ -96,7 +96,8 @@ class Connection:
     several, granted half an inference period after a result so the results stay evenly spaced. When two results
     drift closer than their target spacing, the allowance goes back to one until the moment that puts the next
     frame exactly a half period after the surviving one, so the spacing is restored in one step at the cost of
-    a pause as long as the drift. The model is released when the connection closes.
+    a pause as long as the drift. A CONF message sets threshold values of the model, for every connection using
+    it. The model is released when the connection closes.
     """
 
     def __init__(self, sock: socket.socket, registry: ModelRegistry, name: str):
@@ -169,6 +170,9 @@ class Connection:
                 else:
                     self.error("frame", P.E_BAD_REQUEST, f"expected FRAM, received {exc.kind!r}")
                 continue
+            if kind == P.CONFIGURE:
+                self.configure(payload)
+                continue
             if kind != P.FRAME:
                 self.error("frame", P.E_BAD_REQUEST, f"expected FRAM, received {kind!r}")
                 continue
@@ -200,6 +204,26 @@ class Connection:
             self.registry.autoscale(self.model)
         finally:
             self._give_scratch(scratch)
+
+    def configure(self, payload) -> None:
+        """Set threshold values of the model and reply with its blocks as they stand, or with an error."""
+        values = P.parse_json(payload)
+        if values is None:
+            self.error("configure", P.E_BAD_REQUEST, 'CONF takes a JSON object {"id": block, key: value, ...}')
+            return
+        try:
+            thresholds = self.model.configure(values)
+        except RunnerDied as exc:
+            self.error("configure", exc.code, str(exc))
+            self.restart_model()
+        except RegistryError as exc:
+            self.error("configure", exc.code, str(exc))
+        except Exception as exc:
+            log.debug("[%s] configuration error on '%s'", self.name, self.model.name, exc_info=True)
+            self.error("configure", P.E_INTERNAL, str(exc))
+        else:
+            log.debug("[%s] '%s' thresholds set: %s", self.name, self.model.name, values)
+            self.send(P.CONFIGURE, {"thresholds": thresholds})
 
     def _take_scratch(self):
         with self._scratch_lock:
