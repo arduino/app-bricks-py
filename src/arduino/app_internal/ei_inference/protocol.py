@@ -11,8 +11,13 @@ after an open error and releases the model when it closes. Kept identical to the
     client: OPEN {"model": name}        first message, mandatory
     server: OPND {...}                  once the model is ready
             ERR  {...} + close          if the model cannot be opened
-    client: FRAM ...                    repeated, one frame at a time, any size, RGB or BGR
+    client: FRAM ...                    repeated, up to "slots" frames in flight, any size, RGB or BGR
     server: RSLT {...} | ERR {...}      the connection stays open after an ERR too
+            SLOT {...}                  when the number of frames the client may keep in flight changes
+
+The server tells each connection how many frames it may keep in flight, "slots" in OPND, RSLT, ERR and
+SLOT, 1 at open: it raises the allowance when it runs several instances of the model, at the moment
+that keeps the results evenly spaced, and sends the results in arrival order.
 """
 
 import json
@@ -30,6 +35,7 @@ OPEN = b"OPEN"
 OPENED = b"OPND"
 FRAME = b"FRAM"
 RESULT = b"RSLT"
+SLOTS = b"SLOT"
 ERROR = b"ERR "
 
 # Open errors: the server closes the connection after sending them

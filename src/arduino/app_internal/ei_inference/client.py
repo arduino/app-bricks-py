@@ -6,11 +6,15 @@
 
 detector = InferenceClient("detector")
 result = detector.infer(frame)      # synchronous, the frame as captured, boxes in its coordinates
-detector.submit(frame)              # streaming: non-blocking, skipped while a frame is in flight
+detector.submit(frame)              # streaming: non-blocking, skipped while the slots are taken
 result = detector.latest
 detector.close()                    # the service releases the model
+
+The service says how many frames the connection may keep in flight, its slots: one, or more when it
+runs several instances of the model. The client only follows: `wait_idle` returns when a slot is free.
 """
 
+import collections
 import os
 import socket
 import threading
@@ -109,7 +113,7 @@ class _InFlight:
 
 
 class InferenceClient:
-    """A connection to the inference service holding one model, thread-safe, at most one frame in flight."""
+    """A connection to the inference service holding one model, thread-safe, as many frames in flight as the service allows."""
 
     def __init__(self, model: str, socket_path: str = DEFAULT_SOCKET_PATH, open_timeout: float | None = None) -> None:
         """Connect and request the model, blocking until the service has loaded it.
@@ -149,11 +153,12 @@ class InferenceClient:
         self.labels: list[str] = data["labels"]
         self.input_size: tuple[int, int] = (data["width"], data["height"])
         self.resize_mode: str = data["resize_mode"]  # how the service fits the frames into the model input
+        self.slots: int = int(data.get("slots", 1))  # frames the service lets this connection keep in flight
         self._send_lock = threading.Lock()
         self._cond = threading.Condition()
-        self._in_flight: _InFlight | None = None
+        self._in_flight: dict[int, _InFlight] = {}  # by seq, in submission order
         self._latest: Result | None = None
-        self._unread: Result | None = None
+        self._unread: collections.deque[Result] = collections.deque()
         self._seq = 0
         self.closed = False
         self.sent = self.received = self.skipped = 0
@@ -162,29 +167,29 @@ class InferenceClient:
 
     @property
     def busy(self) -> bool:
-        """True while a frame is in flight."""
-        return self._in_flight is not None
+        """True while every slot holds a frame in flight."""
+        return len(self._in_flight) >= self.slots
 
     def wait_idle(self, timeout: float | None = None) -> bool:
-        """Wait until no frame is in flight, the moment to capture the next one.
+        """Wait until a slot is free, the moment to capture the next frame.
 
         Args:
             timeout (float | None): Seconds to wait, None waits indefinitely.
 
         Returns:
-            bool: True when the model is free, False when it is still busy after the timeout.
+            bool: True when a frame can be submitted, False when every slot is still taken after the timeout.
 
         Raises:
             ConnectionError: If the connection is closed.
         """
         with self._cond:
-            free = self._cond.wait_for(lambda: self._in_flight is None or self.closed, timeout)
+            free = self._cond.wait_for(lambda: len(self._in_flight) < self.slots or self.closed, timeout)
             if self.closed:
                 raise ConnectionError("connection closed")
             return free
 
     def submit(self, image: np.ndarray, ts_ns: int | None = None, color: str = "bgr", keep_frame: bool = False) -> int | None:
-        """Send the image if no frame is in flight, otherwise skip it and return None.
+        """Send the image if a slot is free, otherwise skip it and return None.
 
         The frame goes out as it is, the service resizes it to the model input and returns the boxes in its coordinates.
 
@@ -203,12 +208,12 @@ class InferenceClient:
         with self._cond:
             if self.closed:
                 raise ConnectionError("connection closed")
-            if self._in_flight is not None:
+            if len(self._in_flight) >= self.slots:
                 self.skipped += 1
                 return None
             self._seq += 1
             pending = _InFlight(self._seq)
-            self._in_flight = pending  # reserve the send slot
+            self._in_flight[pending.seq] = pending  # reserve the slot
 
         # The reply cannot arrive before the frame is sent: finish without the lock
         pending.ts_ns = ts_ns if ts_ns is not None else time.monotonic_ns()
@@ -225,7 +230,7 @@ class InferenceClient:
         return pending.seq
 
     def infer(self, image: np.ndarray, color: str = "bgr", keep_frame: bool = False, timeout: float | None = 30.0) -> Result:
-        """Wait until no frame is in flight, send the image and wait for its result.
+        """Wait for a free slot, send the image and wait for its result.
 
         Args:
             image (np.ndarray): HxWx3 uint8 frame.
@@ -248,14 +253,16 @@ class InferenceClient:
             if seq is not None:
                 break  # otherwise another thread got there first
         with self._cond:
-            done = self._cond.wait_for(lambda: (self._latest is not None and self._latest.seq == seq) or self.closed, _remaining(deadline))
+            done = self._cond.wait_for(lambda: seq not in self._in_flight or self.closed, _remaining(deadline))
             if not done:
                 raise TimeoutError(f"no reply from '{self.model}'")
-            if self._latest is None or self._latest.seq != seq:
+            result = next((r for r in self._unread if r.seq == seq), None)
+            if result is None:
+                if self._latest is not None and self._latest.seq == seq:
+                    return self._latest
                 raise ConnectionError("connection closed")
-            if self._unread is self._latest:
-                self._unread = None
-            return self._latest
+            self._unread.remove(result)
+            return result
 
     @property
     def latest(self) -> Result | None:
@@ -263,7 +270,7 @@ class InferenceClient:
         return self._latest
 
     def get_result(self, timeout: float | None = 0) -> Result | None:
-        """The result not read yet, timeout=0 does not wait and None waits indefinitely.
+        """The oldest result not read yet, timeout=0 does not wait and None waits indefinitely.
 
         Args:
             timeout (float | None): Seconds to wait for a result.
@@ -275,8 +282,8 @@ class InferenceClient:
             ConnectionError: If the connection is closed and no result is pending.
         """
         with self._cond:
-            self._cond.wait_for(lambda: self._unread is not None or self.closed, timeout)
-            result, self._unread = self._unread, None
+            self._cond.wait_for(lambda: self._unread or self.closed, timeout)
+            result = self._unread.popleft() if self._unread else None
             if result is None and self.closed:
                 raise ConnectionError("connection closed")
             return result
@@ -286,12 +293,21 @@ class InferenceClient:
             while True:
                 kind, payload = self._reader.read()
                 data = P.parse_json(payload)
+                if data is None:
+                    raise P.ProtocolError(f"unexpected reply: {kind!r}")
                 with self._cond:
-                    pending, self._in_flight = self._in_flight, None
-                    # An ERR without seq refers to the frame in flight (unparsable header)
-                    if data is None or pending is None or data.get("seq", pending.seq) != pending.seq:
+                    if "slots" in data:
+                        self.slots = max(1, int(data["slots"]))
+                    if kind == P.SLOTS:
+                        self._cond.notify_all()
+                        continue
+                    # An ERR without seq refers to the oldest frame in flight (unparsable header)
+                    seq = data.get("seq", next(iter(self._in_flight), None))
+                    pending = self._in_flight.pop(seq, None)
+                    if pending is None:
                         raise P.ProtocolError(f"unexpected reply: {data}")
-                    self._latest = self._unread = self._to_result(kind, data, pending)
+                    self._latest = self._to_result(kind, data, pending)
+                    self._unread.append(self._latest)
                     self.received += 1
                     self.round_trip_total_ms += (time.monotonic_ns() - pending.ts_ns) / 1e6
                     self._cond.notify_all()
