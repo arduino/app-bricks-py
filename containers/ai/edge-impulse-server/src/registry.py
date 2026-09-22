@@ -114,13 +114,21 @@ class Instance:
         return process.pid if process is not None else None
 
     def classify(self, features: np.ndarray) -> dict:
+        return self._request(self.runner.classify, features)
+
+    def configure(self, values: dict) -> None:
+        """Set threshold values on the .eim, `values` being {"id": block id, key: value, ...} as it takes them."""
+        self._request(self.runner.set_threshold, values)
+
+    def _request(self, request, argument):
+        """One request to the .eim, which serves one at a time; its exit becomes RunnerDied."""
         with self._lock:
             if self.dead:
                 raise RunnerDied(self.dead)
             if self._closed:
                 raise RegistryError("internal", "model terminated")
             try:
-                return self.runner.classify(features)
+                return request(argument)
             except RunnerExited as exc:
                 self.dead = str(exc)
                 raise RunnerDied(self.dead) from exc
@@ -191,6 +199,7 @@ class Model:
         self._high_since: float | None = None
         self._low_since: float | None = None
         self.limited_logged = False  # the refusal to add an instance was logged, the next ones go at DEBUG
+        self._overrides: dict = {}  # the threshold values set through configure(), by block id, for the instances added later
         instance = Instance(path, 1)
         try:
             info = instance.runner.init()
@@ -203,6 +212,8 @@ class Model:
             self.preprocess = Preprocessor(self.width, self.height, self.resize_mode)
             self.grayscale = instance.runner.grayscale
             self.stateful = stateful_reason(params)  # a reason to stay on one instance, None when replicas are fine
+            # The threshold blocks of the .eim with their current values, the ones a connection may change
+            self.thresholds = [dict(t) for t in params.get("thresholds") or [] if isinstance(t, dict)]
             self.project = info["project"]["name"]
             self._warm_up(instance)
         except BaseException:
@@ -221,7 +232,13 @@ class Model:
             "labels": self.labels,
             "model_type": self.model_type,
             "resize_mode": self.resize_mode,
+            "thresholds": self.current_thresholds(),
         }
+
+    def current_thresholds(self) -> list:
+        """The threshold blocks with their current values, copies."""
+        with self._cond:
+            return [dict(t) for t in self.thresholds]
 
     @property
     def runner(self) -> Runner:
@@ -286,16 +303,45 @@ class Model:
         with self._stats_lock:
             self._stats.update(ms)
             self._stats["frames"] += 1
-        boxes = []
-        for b in result.get("bounding_boxes") or []:
-            x, y, w, h = prepared.transform.to_source(b["x"], b["y"], b["width"], b["height"])
-            boxes.append({"label": b["label"], "score": float(b["value"]), "x": round(x, 2), "y": round(y, 2), "w": round(w, 2), "h": round(h, 2)})
         return {
-            "boxes": boxes,
+            "boxes": [self._in_frame(b, prepared.transform) for b in result.get("bounding_boxes") or []],
             "classes": result.get("classification") or {},
             "anomaly": float(result.get("anomaly") or 0.0),
             "timing_ms": {key: round(value, 2) for key, value in ms.items()},
         }
+
+    @staticmethod
+    def _in_frame(box: dict, transform: Transform) -> dict:
+        """A box of the .eim, in model pixels, mapped to the coordinates of the submitted frame."""
+        x, y, w, h = transform.to_source(box["x"], box["y"], box["width"], box["height"])
+        return {"label": box["label"], "score": float(box["value"]), "x": round(x, 2), "y": round(y, 2), "w": round(w, 2), "h": round(h, 2)}
+
+    def configure(self, values: dict) -> list:
+        """Set threshold values of one block, `values` being {"id": block id, key: value, ...} as the .eim takes them,
+        on every instance and on the ones added later; returns the blocks with their current values. The blocks
+        belong to the model: the values hold for every connection using it. bad_request for an unknown block or key."""
+        block_id = values.get("id")
+        with self._cond:
+            block = next((t for t in self.thresholds if t.get("id") == block_id), None)
+        if block is None:
+            known = ", ".join(f"{t.get('id')} ({t.get('type')})" for t in self.current_thresholds()) or "none"
+            raise RegistryError("bad_request", f"no threshold block {block_id!r}, the model has: {known}")
+        changes = {key: value for key, value in values.items() if key != "id"}
+        knobs = [key for key in block if key not in ("id", "type")]
+        unknown = [key for key in changes if key not in knobs]
+        if unknown or not changes:
+            what = f"not {', '.join(unknown)}" if unknown else "nothing was given"
+            raise RegistryError("bad_request", f"block {block_id} ({block.get('type')}) exposes {', '.join(knobs)}, {what}")
+        if not all(isinstance(value, (int, float)) and not isinstance(value, bool) for value in changes.values()):
+            raise RegistryError("bad_request", "threshold values must be numbers")
+        with self._cond:
+            self._overrides.setdefault(block_id, {}).update(changes)
+            instances = [i for i in self.instances if not i.dead and not i.draining]
+        for instance in instances:
+            instance.configure({"id": block_id, **changes})
+        with self._cond:
+            block.update(changes)
+        return self.current_thresholds()
 
     def _acquire(self) -> Instance:
         """The first free instance, waiting for one; RunnerDied when every instance is gone."""
@@ -393,7 +439,13 @@ class Model:
             raise
         with self._cond:
             self.instances.append(instance)
+            overrides = [{"id": block_id, **changes} for block_id, changes in self._overrides.items()]
             self._cond.notify_all()
+        for values in overrides:  # the thresholds set so far, once in service so none set meanwhile is missed
+            try:
+                instance.configure(values)
+            except RegistryError as exc:
+                log.warning("[%s] instance %d: thresholds %s not applied: %s", self.name, instance.ordinal, values, exc)
         return instance
 
     def retire_instance(self) -> Instance | None:

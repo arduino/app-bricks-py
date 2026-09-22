@@ -49,6 +49,15 @@ exist or does not load, or if there are more pinned models than `--max-models`.
 - The load log line says whether features reach the `.eim` through shared memory (`shm`) or as JSON.
   JSON costs several ms per frame: rebuild such a `.eim` with a recent Edge Impulse release.
 
+## Thresholds
+
+A `.eim` exposes its threshold blocks, `thresholds` in `OPND`: each has an `id` and a `type`, the object
+detection block its `min_score`, the object tracking block its `max_age`, `min_hits` and `iou_threshold`
+(`threshold`, a distance in pixels, for the centroid models such as FOMO). A connection changes them with
+`CONF {"id": block, key: value, ...}` and receives the blocks as they stand, or `bad_request` for an
+unknown block or key. The values are set on every instance of the model, on the ones added later too, and
+belong to the model: they hold for every connection using it.
+
 ## Model instances
 
 A `.eim` process runs one inference at a time, and the Edge Impulse builds are single-threaded, so on a
@@ -88,23 +97,26 @@ server: OPND {details}                once the model is ready
         ERR  {...} and close          if it cannot be opened
 client: FRAM  ->  server: RSLT | ERR  repeated, up to "slots" frames in flight; an ERR here does not close the connection
           server: SLOT                when the frames the client may keep in flight change
+client: CONF  ->  server: CONF | ERR  optional, threshold values of the model
 ```
 
 | Type | Direction | Payload |
 |---|---|---|
 | `OPEN` | C -> S | JSON `{"model": name}` |
-| `OPND` | S -> C | JSON: `model`, `project`, `width`, `height`, `channels`, `labels`, `model_type`, `resize_mode`, `slots` |
+| `OPND` | S -> C | JSON: `model`, `project`, `width`, `height`, `channels`, `labels`, `model_type`, `resize_mode`, `thresholds`, `slots` |
 | `FRAM` | C -> S | `<QqHHBB2x` (seq, ts_ns, width, height, channels, color 0=RGB 1=BGR) + the pixels, any size up to 1920x1080 |
 | `RSLT` | S -> C | JSON: `seq`, `ts_ns`, `boxes` [{label, score, x, y, w, h}] in frame coordinates, `classes`, `anomaly`, `timing_ms`, `slots` |
 | `SLOT` | S -> C | JSON: `slots`, the frames the client may keep in flight from now on |
-| `ERR ` | S -> C | JSON: `op` (`open` or `frame`), `code`, `error`, optional `model`/`seq`, `slots` after open |
+| `CONF` | C -> S | JSON: `id` of a threshold block and the values to set, `{"id": 28, "max_age": 3}` |
+| `CONF` | S -> C | JSON: `thresholds`, the blocks with their current values, once the values are set |
+| `ERR ` | S -> C | JSON: `op` (`open`, `frame` or `configure`), `code`, `error`, optional `model`/`seq`, `slots` after open |
 
 `slots` is 1 at open and follows the instances of the model; a client that ignores it and sends one frame
 at a time keeps working.
 
 | Code | When | Connection |
 |---|---|---|
-| `bad_request` | first message is not `OPEN`, unexpected message afterwards, or nothing sent for 10 s after connecting | closed / open |
+| `bad_request` | first message is not `OPEN`, unexpected message afterwards, nothing sent for 10 s after connecting, or a `CONF` naming an unknown block or key | closed / open |
 | `too_many_clients` | `--max-clients` reached | closed |
 | `unknown_model` | `<name>.eim` is missing | closed |
 | `too_many_models` | `--max-models` reached (the message lists the models in memory) | closed |

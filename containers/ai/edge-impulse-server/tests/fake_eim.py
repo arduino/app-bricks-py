@@ -21,6 +21,11 @@ if name == "slow":
     time.sleep(1.0)  # long enough for a second connection to arrive during the load
 w, h = (64, 96) if name == "portrait" else (96, 64)
 gray = name == "gray"
+tracker = name == "tracker"
+# The threshold blocks a real .eim reports, with the values set_threshold changes
+thresholds = [{"id": 12, "type": "object_detection", "min_score": 0.3}]
+if tracker:
+    thresholds.append({"id": 28, "type": "object_tracking", "max_age": 1, "min_hits": 3, "iou_threshold": 0.3})
 srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 srv.bind(path)
 srv.listen(1)
@@ -48,9 +53,17 @@ while True:
                 "labels": ["a", "b"],
                 "model_type": "object_detection",
                 "image_resize_mode": "fit-shortest",
-                **({"has_object_tracking": True} if name == "tracker" else {}),
+                "thresholds": thresholds,
+                **({"has_object_tracking": True} if tracker else {}),
             },
         })
+    elif "set_threshold" in msg:
+        values = msg["set_threshold"]
+        block = next((t for t in thresholds if t["id"] == values.get("id")), None)
+        if block is None:
+            reply = {"id": msg["id"], "success": False, "error": f"unknown threshold block {values.get('id')}"}
+        else:
+            block.update({k: v for k, v in values.items() if k != "id"})
     elif "classify" in msg:
         calls += 1
         feats = msg["classify"]
@@ -75,7 +88,8 @@ while True:
             reply.update({
                 "result": {
                     "bounding_boxes": [{"label": "a", "value": 0.9, "x": 1, "y": 2, "width": 3, "height": 4}],
-                    "classification": {"first_feature": feats[0]},
+                    # the thresholds this process holds, so a test can tell which values reached which instance
+                    "classification": {"first_feature": feats[0], "min_score": thresholds[0]["min_score"]},
                 },
                 "timing": {"dsp": 1, "classification": 2, "anomaly": 0},
             })

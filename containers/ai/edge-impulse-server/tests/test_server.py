@@ -230,8 +230,20 @@ def test_pinned_model_loaded_at_startup(server):
 def test_open_and_infer(server):
     s, k, d = server.open_model("det")
     assert k == P.OPENED, d
-    assert set(d) == {"model", "project", "width", "height", "channels", "labels", "model_type", "resize_mode", "slots"}
+    assert set(d) == {
+        "model",
+        "project",
+        "width",
+        "height",
+        "channels",
+        "labels",
+        "model_type",
+        "resize_mode",
+        "thresholds",
+        "slots",
+    }
     assert d["slots"] == 1, "one frame in flight until the server runs more instances"
+    assert d["thresholds"] == [{"id": 12, "type": "object_detection", "min_score": 0.3}]
     k, d = server.frame(s, fill=0)
     assert k == P.RESULT, d
     assert set(d) == {"seq", "ts_ns", "boxes", "classes", "anomaly", "timing_ms", "slots"}
@@ -259,6 +271,35 @@ def test_frames_of_any_size_are_resized_to_the_model_input(server):
     box = d["boxes"][0]
     assert abs(box["x"] - 1 / 0.15) < 0.1 and abs(box["w"] - 3 / 0.15) < 0.1, ("cropped to 640x427 then scaled by 0.15", box)
     assert abs(box["y"] - (26 + 2 * 427 / 64)) < 0.2, ("the crop offset is mapped back", box)
+    s.close()
+
+
+def test_thresholds_are_set_on_the_model_for_every_connection(server):
+    s, k, d = server.open_model("det")
+    P.send_json(s, P.CONFIGURE, {"id": 12, "min_score": 0.6})
+    k, d = server.read(s)
+    assert (k, d) == (P.CONFIGURE, {"thresholds": [{"id": 12, "type": "object_detection", "min_score": 0.6}]}), "the blocks as they stand"
+    k, d = server.frame(s, seq=1)
+    assert k == P.RESULT and d["classes"]["min_score"] == 0.6, "the .eim received the value"
+    other, k, d = server.open_model("det")
+    assert k == P.OPENED and d["thresholds"][0]["min_score"] == 0.6, "the blocks belong to the model, every connection sees the value"
+    other.close()
+    for values, expected in [
+        ({"id": 99, "min_score": 0.1}, "no threshold block 99"),
+        ({"id": 12, "max_age": 3}, "exposes min_score, not max_age"),
+        ({"id": 12}, "nothing was given"),
+        ({"id": 12, "min_score": "high"}, "must be numbers"),
+        ({"id": 12, "min_score": True}, "must be numbers"),
+    ]:
+        P.send_json(s, P.CONFIGURE, values)
+        k, d = server.read(s)
+        assert k == P.ERROR and d["op"] == "configure" and d["code"] == "bad_request" and expected in d["error"], (values, d)
+    server.raw(s, P.CONFIGURE, b"[1, 2]")
+    k, d = server.read(s)
+    assert k == P.ERROR and d["code"] == "bad_request", ("not a JSON object", d)
+    assert server.frame(s, seq=2)[0] == P.RESULT, "the connection stays open"
+    P.send_json(s, P.CONFIGURE, {"id": 12, "min_score": 0.3})  # back to the default for the tests that follow
+    assert server.read(s)[0] == P.CONFIGURE
     s.close()
 
 
@@ -599,6 +640,26 @@ def test_saturated_model_gets_a_second_instance_and_the_connection_a_second_slot
     s.close()
     time.sleep(0.3)
     assert scaled.wait_for(lambda: scaled.eim_count("det") == 0), "both instances go with the last connection"
+
+
+def test_thresholds_reach_the_instances_added_later(scaled):
+    s, k, d = scaled.open_model("det")
+    P.send_json(s, P.CONFIGURE, {"id": 12, "min_score": 0.55})
+    assert scaled.read(s)[0] == P.CONFIGURE
+    replies, last = hammer(scaled, s, lambda k, d: d.get("slots") == 2)
+    assert scaled.wait_for(lambda: scaled.eim_count("det") == 2)
+    seen = {d["classes"]["min_score"] for k, d in replies if k == P.RESULT}
+    for round in range(4):  # two frames in flight run on both instances
+        P.send_frame(s, last + 2 * round + 1, 0, np.zeros((H, W, 3), np.uint8))
+        P.send_frame(s, last + 2 * round + 2, 0, np.zeros((H, W, 3), np.uint8))
+        for _ in range(2):
+            k, d = scaled.read(s)
+            while k != P.RESULT:
+                k, d = scaled.read(s)
+            seen.add(d["classes"]["min_score"])
+    assert seen == {0.55}, "the value set before the second instance existed holds on it too"
+    s.close()
+    assert scaled.wait_for(lambda: scaled.eim_count("det") == 0)
 
 
 def test_a_client_slower_than_the_model_gets_no_second_instance(scaled):
