@@ -10,6 +10,7 @@ import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from typing import Any
 
 import numpy as np
 
@@ -23,9 +24,9 @@ from .video_stream import VideoStreamServer
 
 logger = Logger("VideoInference")
 
-type DetectionCallback = Callable[[], None] | Callable[[dict], None] | Callable[[dict, bytes | None], None]
+type DetectionCallback = Callable[[], None] | Callable[[dict[str, Any]], None] | Callable[[dict[str, Any], bytes | None], None]
 """Callback accepted by `on_detect`: no arguments, the detection details dict, or the dict plus the camera `frame`."""
-type AllDetectionsCallback = Callable[[dict], None] | Callable[[dict, bytes | None], None]
+type AllDetectionsCallback = Callable[[dict[str, Any]], None] | Callable[[dict[str, Any], bytes | None], None]
 """Callback accepted by `on_detect_all`: the detections dict, optionally followed by the camera `frame`."""
 
 
