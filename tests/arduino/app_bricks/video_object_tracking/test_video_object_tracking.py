@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 import arduino.app_internal.ei_inference as ei_inference
-from arduino.app_bricks.video_object_tracking import VideoObjectTracking
+from arduino.app_bricks.video_object_tracking import VideoObjectTracking, VideoObjectTrackingError
 from arduino.app_internal.ei_inference import Box, Result
 
 TIMEOUT = 3.0  # seconds to wait for a callback
@@ -264,7 +264,7 @@ def test_overrides_before_the_connection_are_set_when_the_model_is_opened(servic
 def test_a_model_without_the_tracking_block_refuses_to_start(service, camera):
     service.models[TRACKER]["object_tracking"] = False
 
-    with pytest.raises(RuntimeError, match="no object tracking block"):
+    with pytest.raises(VideoObjectTrackingError, match="no object tracking block"):
         VideoObjectTracking(camera=camera, stream_port=0)
     assert service.closed.wait(TIMEOUT), "the model is released"
 
