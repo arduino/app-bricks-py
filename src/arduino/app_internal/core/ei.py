@@ -3,10 +3,13 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import math
+from typing import Any
+
 import requests
 import io
 from PIL import Image
 from arduino.app_internal.core import load_brick_compose_file, resolve_address
+from arduino.app_internal.core.module import get_brick_config, get_brick_configured_model, load_model_list
 from arduino.app_utils.image import get_image_bytes, get_image_type
 from arduino.app_utils import Logger, HttpClient
 
@@ -263,7 +266,45 @@ class EdgeImpulseRunnerFacade:
         return f"http://{addr}:1337"
 
 
-def compute_softmax_over_ei_classification(det_classifications: dict, top_k: int | None = None) -> dict:
+def brick_model_requires_softmax(brick_cls: type) -> bool:
+    """Check whether the model configured for a brick requires a softmax on its classification output.
+
+    The model is resolved with the same rules used to provision it: the ``model`` entry of the
+    brick section in ``app.yaml`` first, then the default declared in the brick's ``brick_config.yaml``.
+    The resolved model is then looked up in the models list and its ``requires_softmax`` metadata
+    flag is returned. Any model without that flag (e.g. the default MobileNet, or custom models)
+    keeps its raw runner output untouched.
+
+    Args:
+        brick_cls: The brick class, used to locate its ``brick_config.yaml``.
+
+    Returns:
+        bool: True only if the configured model is listed with ``requires_softmax: true``.
+    """
+    brick_config: dict[str, Any] | None = get_brick_config(brick_cls)
+    if not brick_config:
+        return False
+    brick_id: str | None = brick_config.get("id")
+    if not brick_id:
+        return False
+
+    configured_model = get_brick_configured_model(brick_id, brick_config=brick_config)
+    if configured_model is None:
+        return False
+    logger.info(f"[{brick_cls.__name__}] Configured model: {configured_model}")
+
+    models_list = load_model_list()
+    if not models_list or configured_model not in models_list:
+        return False
+
+    model_entry = models_list[configured_model]
+    if model_entry.metadata and model_entry.metadata.get("requires_softmax"):
+        logger.info(f"[{brick_cls.__name__}] Model '{configured_model}' requires softmax: enabling it on the classification results.")
+        return True
+    return False
+
+
+def compute_softmax_over_ei_classification(det_classifications: dict[str, Any], top_k: int | None = None) -> dict[str, str]:
     """Compute softmax over Edge Impulse classification results if required by the model.
 
     The softmax is always computed over the *full* set of logits, so the resulting

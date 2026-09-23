@@ -1,6 +1,6 @@
 services:
   llamacpp-models-runner:
-    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/llamacpp-runner:0.13.0rc3
+    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/llamacpp-runner:0.13.0rc5
     logging:
       driver: "json-file"
       options:

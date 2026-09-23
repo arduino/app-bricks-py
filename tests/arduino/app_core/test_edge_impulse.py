@@ -298,3 +298,41 @@ def test_infer_from_features(monkeypatch: pytest.MonkeyPatch, facade: EdgeImpuls
     assert captured["url"].endswith("/api/features")
     assert captured["json"] == {"features": features}
     assert result == {"result": "success"}
+
+
+def _fake_models_list(metadata: dict | None) -> dict:
+    """Build a minimal models list with a single entry carrying the given metadata."""
+    from arduino.app_internal.core.module import ModelEntry
+
+    return {"ei:efficientnet-b4": ModelEntry(model_id="ei:efficientnet-b4", metadata=metadata or {})}
+
+
+@pytest.mark.parametrize(
+    "configured_model, metadata, expected",
+    [
+        ("ei:efficientnet-b4", {"requires_softmax": True}, True),
+        ("ei:efficientnet-b4", {"requires_softmax": False}, False),
+        ("ei:efficientnet-b4", {"model_size_mb": 89}, False),
+        ("mobilenet-image-classification", {"requires_softmax": True}, False),  # not in the list
+        (None, {"requires_softmax": True}, False),  # no configured model
+    ],
+)
+def test_brick_model_requires_softmax(monkeypatch: pytest.MonkeyPatch, configured_model: str | None, metadata: dict, expected: bool):
+    """The softmax is enabled only for the configured model flagged with `requires_softmax` in the models list."""
+    from arduino.app_internal.core.ei import brick_model_requires_softmax
+
+    monkeypatch.setattr("arduino.app_internal.core.ei.get_brick_config", lambda cls: {"id": "arduino:image_classification"})
+    monkeypatch.setattr("arduino.app_internal.core.ei.get_brick_configured_model", lambda brick_id, brick_config=None: configured_model)
+    monkeypatch.setattr("arduino.app_internal.core.ei.load_model_list", lambda: _fake_models_list(metadata))
+
+    assert brick_model_requires_softmax(EdgeImpulseRunnerFacade) is expected
+
+
+def test_brick_model_requires_softmax_without_brick_config(monkeypatch: pytest.MonkeyPatch):
+    """A brick without brick_config.yaml never enables the softmax."""
+    from arduino.app_internal.core.ei import brick_model_requires_softmax
+
+    monkeypatch.setattr("arduino.app_internal.core.ei.get_brick_config", lambda cls: None)
+    monkeypatch.setattr("arduino.app_internal.core.ei.load_model_list", lambda: _fake_models_list({"requires_softmax": True}))
+
+    assert brick_model_requires_softmax(EdgeImpulseRunnerFacade) is False

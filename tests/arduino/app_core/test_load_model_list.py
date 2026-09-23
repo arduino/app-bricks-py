@@ -16,7 +16,7 @@ SAMPLE_MODELS_YAML = """
     name: "General purpose object classification - EfficientNet-B4"
     description: "EfficientNetB4 is a machine learning model."
     metadata:
-      requires_softmax_layer: true
+      requires_softmax: true
       model_size_mb: 89
       source: "edgeimpulse"
       image-resolution: "380x380"
@@ -129,7 +129,7 @@ def test_load_model_list_no_deployment(mock_static_dir, tmp_path):
 
 @patch("arduino.app_internal.core.module.get_bricks_static_assets_directory")
 def test_load_model_list_metadata_requires_softmax(mock_static_dir, tmp_path):
-    """Test that metadata contains requires_softmax_layer for ei:efficientnet-b4."""
+    """Test that metadata contains requires_softmax for ei:efficientnet-b4."""
     model_file = tmp_path / "models-list.yaml"
     model_file.write_text(SAMPLE_MODELS_YAML, encoding="utf-8")
     mock_static_dir.return_value = str(tmp_path)
@@ -137,8 +137,8 @@ def test_load_model_list_metadata_requires_softmax(mock_static_dir, tmp_path):
     result = load_model_list()
     entry = result["ei:efficientnet-b4"]
 
-    assert "requires_softmax_layer" in entry.metadata
-    assert entry.metadata["requires_softmax_layer"] is True
+    assert "requires_softmax" in entry.metadata
+    assert entry.metadata["requires_softmax"] is True
 
 
 @patch("arduino.app_internal.core.module.get_bricks_static_assets_directory")
