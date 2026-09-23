@@ -86,7 +86,9 @@ class EdgeImpulseModel:
     def _default_model_path(cls) -> str | None:
         """The model path the models list configures for this brick and its default model, None when unknown."""
         brick_config = get_brick_config(cls)
-        brick_id = brick_config.get("id") if brick_config else None
+        if not brick_config:
+            return None
+        brick_id = brick_config.get("id")
         model_id = get_brick_configured_model(brick_id, brick_config) if brick_id else None
         models = load_model_list() or {}
         entry = models.get(model_id) if model_id else None
@@ -98,7 +100,7 @@ class EdgeImpulseModel:
                 return brick.model_configuration[cls.MODEL_VARIABLE]
         return None
 
-    def override_threshold(self, value: float) -> None:
+    def override_threshold(self, value: object) -> None:
         """Override the confidence threshold of the detections.
 
         Args:
