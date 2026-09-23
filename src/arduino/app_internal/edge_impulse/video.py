@@ -215,14 +215,15 @@ class VideoInference(EdgeImpulseModel):
 
     def _publish(self, frame: np.ndarray) -> None:
         """Stream the camera frame with the overlay drawn on it."""
-        annotated = self._annotate(frame)
-        if annotated is not None and self._stream is not None:
-            self._stream.publish(annotated)
+        if self._stream is None:
+            return
+        jpeg = compress_to_jpeg(self._annotate(frame))
+        if jpeg is not None:
+            self._stream.publish(jpeg.tobytes())
 
-    def _annotate(self, frame: np.ndarray) -> bytes | None:
-        """The frame with the overlay of the latest result, as JPEG bytes for the video stream; plain by default."""
-        jpeg = compress_to_jpeg(frame)
-        return jpeg.tobytes() if jpeg is not None else None
+    def _annotate(self, frame: np.ndarray) -> np.ndarray:
+        """The frame with the overlay of the latest result drawn on it, for the video stream; plain by default."""
+        return frame
 
     def _encode_preview(self, frame: np.ndarray | None) -> bytes | None:
         """The camera frame as JPEG bytes for the handlers, None unless camera_preview is enabled."""
