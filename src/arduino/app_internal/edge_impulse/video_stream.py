@@ -37,6 +37,9 @@ EMBED_PAGE = b"""<!DOCTYPE html>
 """
 FONT = cv2.FONT_HERSHEY_SIMPLEX
 TEXT_COLOR = (255, 255, 255)
+LINE_COLOR = (255, 255, 255)
+LINE_THICKNESS = 2
+CAPTION_COLOR = (40, 40, 40)
 
 
 class LabelColors:
@@ -197,6 +200,55 @@ def draw_detections(frame: np.ndarray, detections: dict[str, list[dict[str, Any]
                 origin = (left + (chip_w - text_w) // 2, top + pad + (i + 1) * (line_h + pad) - pad // 2)
                 cv2.putText(image, line, origin, FONT, font_scale, TEXT_COLOR, font_thickness, cv2.LINE_AA)
     return image
+
+
+def draw_crossing_line(frame: np.ndarray, line: tuple[int, int, int, int]) -> np.ndarray:
+    """The frame with the straight line through the two points of `line` drawn from edge to edge, in place.
+
+    Args:
+        frame (np.ndarray): HxWx3 BGR frame.
+        line (tuple[int, int, int, int]): Two points of the line, x1, y1, x2, y2, in frame coordinates.
+
+    Returns:
+        np.ndarray: The same frame, drawn on.
+    """
+    x1, y1, x2, y2 = line
+    dx, dy = x2 - x1, y2 - y1
+    if dx == 0 and dy == 0:
+        return frame
+    height, width = frame.shape[:2]
+    beyond_frame = (width + height) / max(abs(dx), abs(dy))
+    start = (round(x1 - dx * beyond_frame), round(y1 - dy * beyond_frame))
+    end = (round(x1 + dx * beyond_frame), round(y1 + dy * beyond_frame))
+    inside, start, end = cv2.clipLine((0, 0, width, height), start, end)
+    if inside:
+        cv2.line(frame, start, end, LINE_COLOR, LINE_THICKNESS)
+    return frame
+
+
+def draw_caption(frame: np.ndarray, lines: list[str]) -> np.ndarray:
+    """The frame with a filled chip in its top-left corner holding one line of text per entry, in place.
+
+    Args:
+        frame (np.ndarray): HxWx3 BGR frame.
+        lines (list[str]): The text lines, top to bottom.
+
+    Returns:
+        np.ndarray: The same frame, drawn on.
+    """
+    if not lines:
+        return frame
+    scale = max(frame.shape[0] / 480, 0.5)
+    font_scale, font_thickness = 0.5 * scale, 1 if scale < 1.5 else 2
+    line_h = cv2.getTextSize("Ag", FONT, font_scale, font_thickness)[0][1]
+    pad = max(3, round(5 * scale))
+    chip_h = len(lines) * (line_h + pad) + pad
+    chip_w = max(cv2.getTextSize(line, FONT, font_scale, font_thickness)[0][0] for line in lines) + 2 * pad
+    cv2.rectangle(frame, (0, 0), (chip_w, chip_h), CAPTION_COLOR, cv2.FILLED)
+    for i, line in enumerate(lines):
+        origin = (pad, pad + (i + 1) * (line_h + pad) - pad // 2)
+        cv2.putText(frame, line, origin, FONT, font_scale, TEXT_COLOR, font_thickness, cv2.LINE_AA)
+    return frame
 
 
 class VideoStreamServer:

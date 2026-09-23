@@ -10,7 +10,6 @@ from arduino.app_internal.edge_impulse import AllDetectionsCallback, BoxStabiliz
 from arduino.app_internal.ei_inference import Result
 from arduino.app_peripherals.camera import BaseCamera
 from arduino.app_utils import Logger, brick
-from arduino.app_utils.image.adjustments import compress_to_jpeg
 
 logger = Logger("VideoObjectDetection")
 
@@ -123,7 +122,6 @@ class VideoObjectDetection(VideoInference):
                 self._execute_handler(key=label, payload=detection_details, frame=preview)
         self._execute_handler(key=self.ALL_HANDLERS_KEY, payload=detections, frame=preview)
 
-    def _annotate(self, frame: np.ndarray) -> bytes | None:
-        """The frame with the steadied boxes and their labels drawn on a copy, as JPEG bytes for the video stream."""
-        jpeg = compress_to_jpeg(draw_detections(frame, self._boxes.visible(), self._colors))
-        return jpeg.tobytes() if jpeg is not None else None
+    def _annotate(self, frame: np.ndarray) -> np.ndarray:
+        """A copy of the frame with the steadied boxes and their labels drawn on it."""
+        return draw_detections(frame, self._boxes.visible(), self._colors)

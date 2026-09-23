@@ -119,14 +119,16 @@ print(tracker.get_unique_objects_count())  # {"car": 12, "truck": 3}
 Define a virtual line and the Brick counts, per label, every tracked object whose **bounding box centre** moves from one side of it to the other. Without a line, nothing is counted:
 
 ```python
-tracker.set_horizontal_crossing_line(240)  # spans x from 0 to 480 at y=240
-tracker.set_vertical_crossing_line(320)  # spans y from 0 to 480 at x=320
+tracker.set_horizontal_crossing_line(240)  # horizontal line at y=240
+tracker.set_vertical_crossing_line(320)  # vertical line at x=320
 tracker.set_crossing_line_coordinates(0, 100, 640, 380)  # arbitrary, diagonal line
 
 print(tracker.get_line_crossing_counts())  # {"person": 5}
 ```
 
 The two helpers span a fixed 480 px extent; use `set_crossing_line_coordinates()` to match a different frame size or to define a diagonal line.
+
+The video stream shows the line drawn across the whole frame: a crossing is counted wherever the object passes the line, not only between its two points. A chip in the top-left corner of the video shows, per label, the distinct objects seen and the crossings counted so far.
 
 Setting the line leaves every count untouched: call `reset_counters()` yourself if you want to start over.
 

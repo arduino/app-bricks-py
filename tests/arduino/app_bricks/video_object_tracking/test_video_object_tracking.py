@@ -8,6 +8,7 @@ import threading
 import time
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 import arduino.app_internal.ei_inference as ei_inference
@@ -256,6 +257,22 @@ def test_overrides_before_the_connection_are_set_when_the_model_is_opened(servic
     finally:
         tracker.stop()
         thread.join(TIMEOUT)
+
+
+def test_the_crossing_line_is_drawn_on_the_video_once_set(tracker):
+    frame = np.zeros((120, 160, 3), np.uint8)
+    assert not tracker._annotate(frame).any(), "without a line and without boxes the video shows the plain frame"
+    tracker.set_vertical_crossing_line(80)
+    annotated = tracker._annotate(frame)
+    assert annotated[:, 80].all(), "the line runs from the top to the bottom of the frame"
+    assert not frame.any(), "the camera frame itself is left untouched"
+
+
+def test_the_counters_appear_on_the_video_once_an_object_is_seen(tracker):
+    frame = np.zeros((120, 160, 3), np.uint8)
+    assert not tracker._annotate(frame)[:20, :60].any(), "nothing seen, no caption"
+    _replay(tracker, _walk(_straight((10, 10), (20, 10), 2)))
+    assert tracker._annotate(frame)[1, 1].any(), "a caption appears in the top-left corner"
 
 
 # ---------------------------------------------------------------- the model

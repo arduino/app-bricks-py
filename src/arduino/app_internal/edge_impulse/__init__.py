@@ -15,4 +15,6 @@ from .video import VideoInference as VideoInference
 from .video_stream import BoxStabilizer as BoxStabilizer
 from .video_stream import LabelColors as LabelColors
 from .video_stream import VideoStreamServer as VideoStreamServer
+from .video_stream import draw_caption as draw_caption
+from .video_stream import draw_crossing_line as draw_crossing_line
 from .video_stream import draw_detections as draw_detections
