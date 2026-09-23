@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pytest
 
+from huggingface_hub.hf_api import RepoFile
 from huggingface_hub.errors import (
     DisabledRepoError,
     GatedRepoError,
@@ -46,6 +47,7 @@ from hugging_face.hf_downloader import (
     interrupted_patterns,
     is_hf_url,
     is_installed,
+    list_repo_matches,
     matches_pattern,
     matching_files,
     names_quantization,
@@ -1319,6 +1321,61 @@ def test_unsupported_quantization_is_refused_before_downloading(tmp_path, monkey
     assert exc.value.code == 1
     assert read_events(capsys)[-1]["description"].startswith("Cannot download model. Not supported quantization: Q4_0_")
     assert stub_download == []
+
+
+BARTOWSKI_FILES = [f"Llama-3.2-3B-Instruct-{q}.gguf" for q in ("Q4_0", "Q4_0_4_4", "Q4_0_4_8", "Q4_0_8_8", "Q8_0")]
+
+
+class _FakeHfApi:
+    """Stand-in for HfApi whose tree is *BARTOWSKI_FILES*, as real RepoFile objects."""
+
+    def list_repo_tree(self, **_kwargs):
+        return [RepoFile(path=path, size=1, oid="0") for path in BARTOWSKI_FILES]
+
+
+def test_list_repo_matches_skips_unsupported_quantizations(monkeypatch):
+    """The bartowski case: "*Q4_0*.gguf" matches Q4_0_4_4, Q4_0_4_8 and Q4_0_8_8 too."""
+    monkeypatch.setattr(hf_downloader, "HfApi", _FakeHfApi)
+    matched = [f.path for f in list_repo_matches("bartowski/Llama-3.2-3B-Instruct-GGUF", ["*Q4_0*.gguf"])]
+    assert matched == ["Llama-3.2-3B-Instruct-Q4_0.gguf"]
+
+
+@pytest.mark.parametrize("model_url", ["bartowski/Llama-3.2-3B-Instruct-GGUF:Q4_0", "bartowski/Llama-3.2-3B-Instruct-GGUF"])
+def test_q4_0_download_leaves_the_repacked_variants_out(tmp_path, monkeypatch, model_url):
+    """Asked for, or defaulted to, Q4_0 fetches the one Q4_0 file, not its repacked siblings."""
+    fetched: list[str] = []
+
+    def _hf_hub_download(repo_id, filename, local_dir, tqdm_class):
+        fetched.append(filename)
+        Path(local_dir, filename).write_bytes(b"GGUF")
+
+    monkeypatch.delenv("BOARD_NAME", raising=False)
+    monkeypatch.setattr(hf_downloader, "HfApi", _FakeHfApi)
+    monkeypatch.setattr(hf_downloader, "validate_hub_source", lambda *args, **kwargs: None)
+    monkeypatch.setattr(hf_downloader, "hf_hub_download", _hf_hub_download)
+
+    _run_main(monkeypatch, "--model-url", model_url, "--output-dir", str(tmp_path))
+    assert fetched == ["Llama-3.2-3B-Instruct-Q4_0.gguf"]
+
+
+def test_narrow_to_published_does_not_settle_on_a_repacked_q4_0(monkeypatch):
+    """A repository whose only Q4_0-named files are repacked ones publishes no Q4_0."""
+    monkeypatch.delenv("BOARD_NAME", raising=False)
+    monkeypatch.setattr(hf_downloader, "list_repo_matches", _repo_holding("m-3B-Q4_0_4_4.gguf", "m-3B-Q8_0.gguf"))
+    source = resolve_model_source("org/m-3B-GGUF")
+    narrow_to_published(source)
+    assert source["quantization"] == "Q8_0"
+
+
+def test_a_repacked_q4_0_on_disk_is_not_an_installed_q4_0(tmp_path):
+    """A Q4_0_4_4 downloaded before the filter must not answer --check for Q4_0."""
+    repo = tmp_path / "org" / "m-3B-GGUF"
+    repo.mkdir(parents=True)
+    (repo / "m-3B-Q4_0_4_4.gguf").write_bytes(b"GGUF")
+
+    assert not is_installed(str(repo), ["*Q4_0*.gguf"])
+    source = resolve_model_source("org/m-3B-GGUF")
+    assert narrow_to_installed(source, str(repo)) is None
 
 
 def test_unsupported_quantization_can_still_be_deleted(tmp_path, monkeypatch):
