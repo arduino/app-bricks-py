@@ -13,6 +13,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 
 # The server and its locked packages, shared with edge-impulse-npu-runner
 COPY ./src /app
+COPY --chown=arduino:arduino --chmod=755 ./models/ei-ootb-models/arm64/*.eim /models/ootb/ei/
 COPY ./pyproject.toml ./uv.lock /tmp/deps/
 
 # Runtime settings expected from the compose file:

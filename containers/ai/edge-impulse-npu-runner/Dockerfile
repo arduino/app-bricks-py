@@ -15,6 +15,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 # containers/ai/edge-impulse-runner, linked in docker-bake.hcl.
 # Standalone build: docker build --build-context server=../edge-impulse-runner .
 COPY --from=server ./src /app
+COPY --from=server --chown=arduino:arduino --chmod=755 ./models/ei-ootb-models/arm64/*.eim /models/ootb/ei/
 COPY --from=server ./pyproject.toml ./uv.lock /tmp/deps/
 # The QNN builds of the out-of-the-box models, next to the CPU ones
 COPY --chown=arduino:arduino --chmod=755 ./models/ei-ootb-models/arm64/*.eim /models/ootb/ei/
