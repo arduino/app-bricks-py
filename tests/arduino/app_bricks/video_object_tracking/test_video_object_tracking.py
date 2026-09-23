@@ -345,7 +345,7 @@ def test_vertical_line_is_crossed_by_the_box_centre(tracker):
 
     _replay(tracker, _walk(_straight((240, 240), (400, 240), steps=8)))
 
-    assert tracker.get_line_crossing_counts() == {"person": 1}
+    assert tracker.get_line_crossing_counts() == {"person": {"right": 1}}
 
 
 def test_a_box_straddling_the_line_is_not_counted_until_its_centre_crosses(tracker):
@@ -356,13 +356,69 @@ def test_a_box_straddling_the_line_is_not_counted_until_its_centre_crosses(track
     assert tracker.get_line_crossing_counts() == {}
 
 
-def test_both_crossing_directions_add_to_the_same_counter(tracker):
+def test_each_crossing_direction_has_its_own_counter(tracker):
     tracker.set_vertical_crossing_line(320)
 
     _replay(tracker, _walk(_straight((240, 240), (400, 240), steps=8)))
     _replay(tracker, _walk(_straight((400, 240), (240, 240), steps=8)))
 
-    assert tracker.get_line_crossing_counts() == {"person": 2}
+    assert tracker.get_line_crossing_counts() == {"person": {"left": 1, "right": 1}}
+
+
+def test_horizontal_line_crossings_are_counted_down_and_up(tracker):
+    tracker.set_horizontal_crossing_line(240)
+
+    _replay(tracker, _walk(_straight((100, 100), (100, 300), steps=8)))
+    _replay(tracker, _walk(_straight((100, 300), (100, 100), steps=8)))
+
+    assert tracker.get_line_crossing_counts() == {"person": {"down": 1, "up": 1}}
+
+
+def test_a_line_tilted_less_than_22_5_degrees_is_crossed_up_and_down(tracker):
+    tracker.set_crossing_line_coordinates(0, 200, 640, 260)
+
+    _replay(tracker, _walk(_straight((300, 100), (300, 400), steps=8)))
+    _replay(tracker, _walk(_straight((300, 400), (300, 100), steps=8)))
+
+    assert tracker.get_line_crossing_counts() == {"person": {"down": 1, "up": 1}}
+
+
+def test_a_line_tilted_more_than_22_5_degrees_is_crossed_diagonally(tracker):
+    tracker.set_crossing_line_coordinates(0, 100, 640, 380)
+
+    _replay(tracker, _walk(_straight((300, 0), (300, 400), steps=8)))
+    _replay(tracker, _walk(_straight((300, 400), (300, 0), steps=8)))
+
+    assert tracker.get_line_crossing_counts() == {"person": {"down-left": 1, "up-right": 1}}
+
+
+def test_the_caption_lists_the_crossings_per_direction(tracker):
+    tracker.set_vertical_crossing_line(320)
+
+    _replay(tracker, _walk(_straight((240, 240), (400, 240), steps=8)))
+
+    assert tracker._captions() == ["person: 1 seen, 1 right"]
+
+
+def test_the_crossing_callback_receives_the_object_and_its_direction(tracker):
+    crossings = []
+    crossed = threading.Event()
+
+    def on_crossing(crossing):
+        crossings.append(crossing)
+        crossed.set()
+
+    tracker.on_line_crossing(on_crossing)
+    tracker.set_vertical_crossing_line(320)
+    _replay(tracker, _walk(_straight((240, 240), (400, 240), steps=8)))
+
+    assert crossed.wait(TIMEOUT)
+    assert crossings == [{"label": "person", "object_id": 1, "direction": "right"}]
+
+
+def test_the_crossing_callback_must_be_a_function(tracker):
+    with pytest.raises(TypeError):
+        tracker.on_line_crossing("not a function")
 
 
 def test_horizontal_line_helper_spans_480_pixels_whatever_the_camera_width(tracker):
@@ -386,7 +442,7 @@ def test_setting_the_line_keeps_the_objects_already_counted(tracker):
     _replay(tracker, _walk(_straight((200, 240), (400, 240), steps=5), object_id=2))
 
     assert tracker.get_unique_objects_count() == {"person": 2}
-    assert tracker.get_line_crossing_counts() == {"person": 1}
+    assert tracker.get_line_crossing_counts() == {"person": {"right": 1}}
 
 
 def test_direction_is_mirrored_on_the_horizontal_axis(tracker):
@@ -424,5 +480,5 @@ def test_recorded_walk_is_one_track_crossing_the_line_eight_times(tracker):
     _replay(tracker, _recorded_walk_frames())
 
     assert tracker.get_unique_objects_count() == {"person": 1}
-    assert tracker.get_line_crossing_counts() == {"person": 8}
+    assert tracker.get_line_crossing_counts() == {"person": {"left": 4, "right": 4}}
     assert len(tracker.get_objects_directions()[3]) == 30

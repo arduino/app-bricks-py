@@ -2,9 +2,12 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import inspect
+import math
 import threading
 import time
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import replace
 from typing import Any
 
@@ -22,6 +25,9 @@ MODEL_VARIABLE = "EI_V_OBJ_TRACKING_MODEL"
 STARTUP_TIMEOUT = 10.0  # seconds the constructor waits for the service to open the model, as long as the service gives a .eim to start
 CENTROID_MODEL_TYPE = "constrained_object_detection"  # FOMO reports centroids, matched by distance instead of overlap
 TRACKING_BLOCK = "object_tracking"  # the threshold block holding the tracker knobs
+
+type LineCrossingCallback = Callable[[dict[str, Any]], None]
+"""Callback accepted by `on_line_crossing`: one dict argument, `{"label": str, "object_id": int, "direction": str}`."""
 
 
 class VideoObjectTrackingError(AppError):
@@ -92,7 +98,8 @@ class VideoObjectTracking(VideoObjectDetection):
         self._object_counters: Counter[str] = Counter()  # distinct objects seen, per label
         self._recent_objects: LRUDict[int, tuple[int, int]] = LRUDict(maxsize=150)  # last seen position (x, y) of the recent object ids
         self._line_coordinates: tuple[int, int, int, int] | None = None  # x1, y1, x2, y2 of the crossing line
-        self._crossing_line_object: Counter[str] = Counter()  # crossings of the line, per label
+        self._crossing_line_object: dict[str, Counter[str]] = {}  # crossings of the line, per label and direction
+        self._line_crossing_handler: LineCrossingCallback | None = None
         self._object_directions: dict[int, list[str]] = {}  # direction history, per object id
         self._min_movement_threshold = min_movement_threshold
 
@@ -193,8 +200,7 @@ class VideoObjectTracking(VideoObjectDetection):
         self._recent_objects[object_id] = (x, y)
 
     def _record_line_crossing(self, detected_object_label: str, object_id: int, x: int, y: int) -> None:
-        """
-        Record that an object with a specific label and ID has crossed the line.
+        """Count a crossing of the line by the object, under the direction it moved in.
 
         Args:
             detected_object_label (str): The label of the detected object.
@@ -202,41 +208,26 @@ class VideoObjectTracking(VideoObjectDetection):
             x (int): The x-coordinate of the object reference point.
             y (int): The y-coordinate of the object reference point.
         """
-        if self._line_coordinates is None:
-            return
-
         with self._counter_lock:
-            if object_id in self._recent_objects:
-                last_x, last_y = self._recent_objects[object_id]
-                x1, y1, x2, y2 = self._line_coordinates
-                logger.debug(
-                    f"Checking line crossing for object ID {object_id} from ({last_x}, {last_y}) to ({x}, {y}) "
-                    f"against line ({x1}, {y1}) to ({x2}, {y2})"
-                )
-
-                if y1 == y2:
-                    # Horizontal line set so check for crossing horizontally only
-                    if (last_y < y1 <= y) or (last_y > y1 >= y):
-                        logger.debug(f"Object ID {object_id} crossed the horizontal line from y={last_y} to y={y}")
-                        self._crossing_line_object[detected_object_label] += 1
-                elif x1 == x2:
-                    # Vertical line set so check for crossing vertically only
-                    if (last_x < x1 <= x) or (last_x > x1 >= x):
-                        logger.debug(f"Object ID {object_id} crossed the vertical line from x={last_x} to x={x}")
-                        self._crossing_line_object[detected_object_label] += 1
-                else:
-                    # Diagonal line
-                    if (x2 - x1) == 0:
-                        return
-                    slope = (y2 - y1) / (x2 - x1)
-                    intercept = y1 - slope * x1
-                    line_y_at_last_x = slope * last_x + intercept
-                    line_y_at_current_x = slope * x + intercept
-                    crossed_up = last_y < line_y_at_last_x and y >= line_y_at_current_x
-                    crossed_down = last_y > line_y_at_last_x and y <= line_y_at_current_x
-                    if crossed_up or crossed_down:
-                        logger.debug(f"Object ID {object_id} crossed the diagonal line from ({last_x}, {last_y}) to ({x}, {y})")
-                        self._crossing_line_object[detected_object_label] += 1
+            if self._line_coordinates is None or object_id not in self._recent_objects:
+                return
+            last_x, last_y = self._recent_objects[object_id]
+            x1, y1, x2, y2 = self._line_coordinates
+            dx, dy = x2 - x1, y2 - y1
+            before = (last_x - x1) * dy - (last_y - y1) * dx
+            after = (x - x1) * dy - (y - y1) * dx
+            if before == 0 or (after != 0 and (after > 0) == (before > 0)):
+                return
+            direction = _crossing_direction(dx, dy, before)
+            self._crossing_line_object.setdefault(detected_object_label, Counter())[direction] += 1
+            handler = self._line_crossing_handler
+        logger.debug(f"Object ID {object_id} crossed the line from ({last_x}, {last_y}) to ({x}, {y}) moving {direction}")
+        if handler is not None:
+            crossing = {"label": detected_object_label, "object_id": object_id, "direction": direction}
+            try:
+                self._executor.submit(handler, crossing)
+            except RuntimeError:  # the executor was shut down before the task could be submitted
+                pass
 
     def _record_object_direction(self, detected_object_label: str, object_id: int, x: int, y: int) -> None:
         """
@@ -281,16 +272,16 @@ class VideoObjectTracking(VideoObjectDetection):
         with self._counter_lock:
             return dict(self._object_counters)
 
-    def get_line_crossing_counts(self) -> dict[str, int]:
+    def get_line_crossing_counts(self) -> dict[str, dict[str, int]]:
         """
-        Get the count of objects that have crossed the defined line since the last reset.
-            This includes all distinguished objects sees, based on their unique IDs.
+        Get the crossings of the defined line since the last reset, per label and direction.
 
         Returns:
-            dict: A dictionary with labels as keys and their respective counts as values.
+            dict: `{label: {direction: count}}`, where the direction is one of `up`, `down`, `left`, `right`,
+                `up-left`, `up-right`, `down-left`, `down-right`, as seen on the screen; only the directions seen appear.
         """
         with self._counter_lock:
-            return dict(self._crossing_line_object)
+            return {label: dict(counts) for label, counts in self._crossing_line_object.items()}
 
     def get_objects_directions(self) -> dict[int, list[str]]:
         """
@@ -354,6 +345,22 @@ class VideoObjectTracking(VideoObjectDetection):
         """
         super().on_detect(object, callback)
 
+    def on_line_crossing(self, callback: LineCrossingCallback) -> None:
+        """Register a callback invoked **every time a tracked object crosses the line**.
+
+        Args:
+            callback (LineCrossingCallback): A plain function taking one dict argument,
+                `{"label": str, "object_id": int, "direction": str}`, where `direction` is the screen direction of
+                the crossing, as `get_line_crossing_counts()` names it.
+
+        Raises:
+            TypeError: If `callback` is not a function.
+        """
+        if not inspect.isfunction(callback):
+            raise TypeError("Callback must be a callable function.")
+        with self._counter_lock:
+            self._line_crossing_handler = callback
+
     def on_detect_all(self, callback: AllDetectionsCallback) -> None:
         """Register a callback invoked for **every frame with tracked objects**.
 
@@ -395,17 +402,23 @@ class VideoObjectTracking(VideoObjectDetection):
         annotated = super()._annotate(frame)
         with self._counter_lock:
             line = self._line_coordinates
-            seen = dict(self._object_counters)
-            crossed = dict(self._crossing_line_object)
         if line is not None:
             draw_crossing_line(annotated, line)
+        return draw_caption(annotated, self._captions())
+
+    def _captions(self) -> list[str]:
+        """One line per label seen: the distinct objects and, with a line set, the crossings in each direction."""
+        with self._counter_lock:
+            line = self._line_coordinates
+            seen = dict(self._object_counters)
+            crossed = {label: dict(counts) for label, counts in self._crossing_line_object.items()}
         captions = []
         for label, count in sorted(seen.items()):
-            caption = f"{label}: {count} seen"
+            parts = [f"{count} seen"]
             if line is not None:
-                caption += f", {crossed.get(label, 0)} crossed"
-            captions.append(caption)
-        return draw_caption(annotated, captions)
+                parts += [f"{n} {direction}" for direction, n in sorted(crossed.get(label, {}).items())]
+            captions.append(f"{label}: " + ", ".join(parts))
+        return captions
 
     def override_keep_grace(self, keep_grace: int) -> None:
         """Override keep grace for object tracking model.
@@ -500,6 +513,26 @@ class VideoObjectTracking(VideoObjectDetection):
         """The type of the model as the service reports it, None while not connected."""
         client = self._connected()
         return client.info.get("model_type") if client is not None else None
+
+
+COMPASS = ("right", "down-right", "down", "down-left", "left", "up-left", "up", "up-right")  # clockwise on the screen, y down
+
+
+def _compass(dx: float, dy: float) -> str:
+    """The screen direction of the vector (dx, dy), y growing downwards, rounded to the nearest of the eight.
+
+    Each name covers 45 degrees: a vector within 22.5 degrees of an axis is `right`, `down`, `left` or `up`.
+    """
+    angle = math.degrees(math.atan2(dy, dx))
+    return COMPASS[math.floor(angle / 45 + 0.5) % 8]
+
+
+def _crossing_direction(dx: int, dy: int, before: int) -> str:
+    """The screen direction of a crossing of the line of direction (dx, dy): perpendicular to it, towards the side
+    reached, given `before`, the signed side of the starting point, `(x - x1) * dy - (y - y1) * dx`.
+    """
+    towards = -1 if before > 0 else 1
+    return _compass(towards * dy, -towards * dx)
 
 
 def _get_direction(last_x: int, last_y: int, x: int, y: int, min_movement_threshold: int = 10) -> str | None:

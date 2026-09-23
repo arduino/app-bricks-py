@@ -123,12 +123,23 @@ tracker.set_horizontal_crossing_line(240)  # horizontal line at y=240
 tracker.set_vertical_crossing_line(320)  # vertical line at x=320
 tracker.set_crossing_line_coordinates(0, 100, 640, 380)  # arbitrary, diagonal line
 
-print(tracker.get_line_crossing_counts())  # {"person": 5}
+print(tracker.get_line_crossing_counts())  # {"person": {"left": 3, "right": 2}}
 ```
 
 The two helpers span a fixed 480 px extent; use `set_crossing_line_coordinates()` to match a different frame size or to define a diagonal line.
 
-The video stream shows the line drawn across the whole frame: a crossing is counted wherever the object passes the line, not only between its two points. A chip in the top-left corner of the video shows, per label, the distinct objects seen and the crossings counted so far.
+To react to each crossing as it happens, register a callback with `on_line_crossing()`: it receives `{"label": str, "object_id": int, "direction": str}`.
+
+```python
+def on_crossing(crossing: dict) -> None:
+    logger.info(f"{crossing['label']} #{crossing['object_id']} went {crossing['direction']}")
+
+tracker.on_line_crossing(on_crossing)
+```
+
+Every crossing is counted under the direction it happened in, as seen on the screen: perpendicular to the line, towards the side the object reached. The direction is one of `up`, `down`, `left`, `right`, `up-left`, `up-right`, `down-left`, `down-right`: a line within 22.5° of horizontal is crossed `up` or `down`, one within 22.5° of vertical `left` or `right`, any other line in the two diagonal directions across it.
+
+The video stream shows the line drawn across the whole frame: a crossing is counted wherever the object passes the line, not only between its two points. A chip in the top-left corner of the video shows, per label, the distinct objects seen and the crossings counted so far in each direction.
 
 Setting the line leaves every count untouched: call `reset_counters()` yourself if you want to start over.
 
