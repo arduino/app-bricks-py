@@ -12,7 +12,7 @@ import numpy as np
 from arduino.app_internal.edge_impulse import AllDetectionsCallback, BoxStabilizer, DetectionCallback, LabelColors, VideoInference, draw_detections
 from arduino.app_internal.ei_inference import InferenceClient, Result, ServerError
 from arduino.app_peripherals.camera import BaseCamera
-from arduino.app_utils import Logger, LRUDict, brick
+from arduino.app_utils import AppError, Logger, LRUDict, brick
 
 logger = Logger("VideoObjectTracking")
 
@@ -21,6 +21,10 @@ STREAM_PORT = VideoInference.STREAM_PORT
 STARTUP_TIMEOUT = 10.0  # seconds the constructor waits for the service to open the model, as long as the service gives a .eim to start
 CENTROID_MODEL_TYPE = "constrained_object_detection"  # FOMO reports centroids, matched by distance instead of overlap
 TRACKING_BLOCK = "object_tracking"  # the threshold block holding the tracker knobs
+
+
+class VideoObjectTrackingError(AppError):
+    """Base class for video object tracking errors."""
 
 
 @brick
@@ -69,7 +73,8 @@ class VideoObjectTracking(VideoInference):
                 external viewers embed. Default is 4912, None disables the stream.
 
         Raises:
-            RuntimeError: If no model is configured, or the model has no object tracking block.
+            RuntimeError: If no model is configured.
+            VideoObjectTrackingError: If the model has no object tracking block.
         """
         super().__init__(camera=camera, confidence=confidence, debounce_sec=debounce_sec, stream_port=stream_port)
         self._colors = LabelColors()
@@ -101,7 +106,7 @@ class VideoObjectTracking(VideoInference):
         the check is skipped and the loop keeps trying once started.
 
         Raises:
-            RuntimeError: If the model has no object tracking block.
+            VideoObjectTrackingError: If the model has no object tracking block.
         """
         try:
             client = self._open(timeout=STARTUP_TIMEOUT)
@@ -113,9 +118,9 @@ class VideoObjectTracking(VideoInference):
             return
         if not client.object_tracking:
             self._close()
-            raise RuntimeError(
-                "This model has no object tracking block, so it can never report a tracked object: "
-                "enable object tracking in the Edge Impulse project and export the model again, or pick a model that has the block."
+            raise VideoObjectTrackingError(
+                "This model has no object tracking block, so it can never report a tracked object.",
+                hint="Enable object tracking in the Edge Impulse project and export the model again, or pick a model that already has the block.",
             )
 
     def _configure(self, client: InferenceClient) -> None:
