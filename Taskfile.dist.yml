@@ -1,105 +1,100 @@
 version: "3"
 
-vars:
-  PYTHON_VERSION_MIN: "3.13"
-
 tasks:
   init:
-    desc: Setup local env
+    desc: Set up the development environment, uv provides Python 3.13 and installs the library and every container into their .venv
     cmds:
-      - task: check:python:version
-      - task: install:deps
+      - task: deps:sync
 
   init:ci:
     desc: Initialize CI environment
-    deps:
-      - init
-    cmds:
-      - pip install reuse
-
-  check:python:version:
-    desc: Check if Python version is at least {{.PYTHON_VERSION_MIN}}
-    cmds:
-      - |
-        check_version() {
-          python_alias=$1
-          python_version=$($python_alias --version 2>&1 | awk '{print $2}')
-          required_version="{{.PYTHON_VERSION_MIN}}"
-          if [ "$(printf '%s\n' "$required_version" "$python_version" | sort -V | head -n1)" != "$required_version" ]; then
-            echo "$python_alias version must be at least $required_version. Current version: $python_version"
-            exit 1
-          fi
-        }
-
-        check_version python
-
-  install:deps:
-    desc: Install project dependencies
     cmds:
       - apt-get update
       - apt-get install -y --no-install-recommends --no-install-suggests libasound2-dev portaudio19-dev libzbar0
       - apt-get install -y --no-install-recommends --no-install-suggests gh git ca-certificates build-essential pkg-config
-      - apt-get install -y --no-install-recommends --no-install-suggests python3 python3-dev python3-pip python-is-python3
       - apt-get install -y --no-install-recommends --no-install-suggests libavcodec-dev libavformat-dev libavutil-dev libswscale-dev
       - apt-get install -y --no-install-recommends --no-install-suggests libjpeg62-turbo-dev libpng-dev libtiff-dev libwebp-dev libopenblas-dev liblapacke-dev
       - apt-get install -y --no-install-recommends --no-install-suggests libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
-      - pip install --no-cache-dir build
-      - pip install --no-cache-dir -e ".[dev]"
+      - uv sync --frozen --extra dev
+
+  deps:lock:
+    desc: Refresh uv.lock for the library and every container, pass -- --upgrade to move to newer versions
+    cmds:
+      - uv lock {{.CLI_ARGS}}
+      - for p in containers/*/*/pyproject.toml; do uv lock --project "$(dirname "$p")" {{.CLI_ARGS}}; done
+
+  deps:sync:
+    desc: Install the locked dependencies of the library and every container into their .venv for local development
+    cmds:
+      - uv sync --frozen --extra dev {{.CLI_ARGS}}
+      - for p in containers/*/*/pyproject.toml; do uv sync --frozen --project "$(dirname "$p")" {{.CLI_ARGS}} || exit 1; done
+
+  deps:check:
+    desc: Fail if any uv.lock is out of date with its pyproject.toml, run task deps:lock to refresh
+    cmds:
+      - uv lock --check
+      - for p in containers/*/*/pyproject.toml; do uv lock --check --project "$(dirname "$p")" || exit 1; done
 
   doc:
     desc: Generate documentation
     cmds:
-      - python -m docs_generator.runner
+      - uv run python -m docs_generator.runner
 
   test:
-    desc: Run all unit tests
+    desc: Run all unit tests, of the library and of the containers
     cmds:
-      - pytest -vs ./tests --ignore=tests/arduino/app_bricks/cloud_llm/eval/
+      - uv run pytest -vs ./tests --ignore=tests/arduino/app_bricks/cloud_llm/eval/
+      - task: test:containers
+
+  test:containers:
+    desc: Run the tests of every container with a Python test suite, each in its own .venv with its test dependency group
+    cmds:
+      - for d in containers/*/*; do ls "$d"/tests/*.py >/dev/null 2>&1 || continue; uv run --frozen --group test --project "$d" python -m pytest -vs "$d/tests" || exit 1; done
 
   llm_test:
     desc: Run all LLM tests
     cmds:
-      - deepeval test run tests/arduino/app_bricks/cloud_llm/eval/ -n 4 -vs
+      - uv run deepeval test run tests/arduino/app_bricks/cloud_llm/eval/ -n 4 -vs
 
   test:*:
     desc: Run tests for a specific folder
     cmds:
-      - pytest -vs ./tests/{{index .MATCH 0}}
+      - uv run pytest -vs ./tests/{{index .MATCH 0}}
 
   lint:
     desc: Run linters
     cmds:
-      - ruff check --fix .
+      - uv run ruff check --fix .
 
   check:api:
     desc: "Check the API contract with app-bricks-examples: pyright over the examples (profile api-user) and the bricks coverage. Extra args go to the run mode, see scripts/check_pyright.py --help"
     cmds:
-      - python3 scripts/check_pyright.py run {{.CLI_ARGS}}
-      - python3 scripts/check_pyright.py coverage
+      - uv run python scripts/check_pyright.py run {{.CLI_ARGS}}
+      - uv run python scripts/check_pyright.py coverage
 
   check:typing:
     desc: "Type-check the library sources with pyright (profile app-bricks-py). Extra args go to the typing mode, see scripts/check_pyright.py --help"
     cmds:
-      - python3 scripts/check_pyright.py typing {{.CLI_ARGS}}
+      - uv run python scripts/check_pyright.py typing {{.CLI_ARGS}}
 
   fmt:
     desc: Format code
     cmds:
-      - ruff format
+      - uv run ruff format
 
   build-dev:
     desc: Build a development package
     cmds:
       - rm -rf dist
       - task doc
-      - python -m build --config-setting "build_type=dev" .
+      - uv run uv build --config-setting build_type=dev .
 
   build:
     desc: Build a production package
     cmds:
       - rm -rf dist
       - task doc
-      - python -m build .
+      - uv run uv build .
 
   license:headers:
     desc: Update SPDX license headers (REUSE)
@@ -108,8 +103,8 @@ tasks:
         git ls-files |
         grep -Ev "(^|/)(docs|examples-internal|tools)/|\.(md|txt|json|yml|yaml|toml|gitignore|dockerignore|gitmodules|in|ini|eim|lock)$" |
         sed 's/ /\\ /g' |
-        xargs reuse annotate -r --skip-unrecognized --copyright-prefix 'spdx-string-c' --copyright 'Arduino s.r.l. and/or its affiliated companies' --exclude-year --license 'MPL-2.0'
-      - reuse download --all
+        xargs uv run reuse annotate -r --skip-unrecognized --copyright-prefix 'spdx-string-c' --copyright 'Arduino s.r.l. and/or its affiliated companies' --exclude-year --license 'MPL-2.0'
+      - uv run reuse download --all
       - |
         licenses_dir="LICENSES"
         if [ -d "$licenses_dir" ]; then

@@ -4,16 +4,14 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""Builds one venv per app declared in .licensed.yml, then runs licensed cache and status on each."""
+"""Installs the locked dependencies of every app in .licensed.yml into its venv, then runs licensed cache and status on each."""
 
 import glob
 import hashlib
-import os
 import shutil
 import subprocess
 import sys
 import tempfile
-import tomllib
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Lock
@@ -23,7 +21,6 @@ import yaml
 SRC = Path("/src")
 CONFIG = SRC / ".licensed.yml"
 VENVS = Path("/venvs")
-PIP_CACHE = VENVS / ".pip-cache"
 KEY_FILE = ".key"
 # Package metadata licensed reads, everything else is pruned from the venvs
 KEEP_IN_SITE_PACKAGES = {"pip", "setuptools", "wheel", "pkg_resources", "_distutils_hack"}
@@ -40,11 +37,13 @@ def load_config():
     config = yaml.safe_load(CONFIG.read_text())
     apps = config.get("apps") or []
     for app in apps:
-        if "venv" not in app:
-            fail(f"app {app['name']} has no venv section in .licensed.yml, nothing to scan")
-        if ("requirements" in app["venv"]) == ("project" in app["venv"]):
-            fail(f"app {app['name']} needs exactly one of venv.requirements or venv.project")
+        if "project" not in app.get("venv", {}):
+            fail(f"app {app['name']} has no venv.project in .licensed.yml, nothing to scan")
     return config, apps
+
+
+def project_dir(app):
+    return SRC / app["venv"]["project"]
 
 
 def requirement_lines(path):
@@ -52,58 +51,46 @@ def requirement_lines(path):
     return [line for line in lines if line]
 
 
-def check_requirements_covered(apps):
-    """Every non-empty requirements file under containers/ must belong to a scanned app."""
-    declared = {str(SRC / app["venv"]["requirements"]) for app in apps if "requirements" in app["venv"]}
-    found = glob.glob(str(SRC / "containers/*/*/requirements*.txt"))
-    missing = sorted(Path(f).relative_to(SRC) for f in found if f not in declared and requirement_lines(Path(f)))
+def check_projects_covered(apps):
+    """Every uv project under containers/ must belong to a scanned app, and no requirements file may install packages."""
+    declared = {project_dir(app).resolve() for app in apps}
+    found = [Path(f).parent for f in glob.glob(str(SRC / "containers/*/*/pyproject.toml"))]
+    missing = sorted(p.relative_to(SRC) for p in found if p.resolve() not in declared)
     if missing:
-        fail("requirements files not covered by any app in .licensed.yml:\n  " + "\n  ".join(map(str, missing)))
+        fail("uv projects not covered by any app in .licensed.yml:\n  " + "\n  ".join(map(str, missing)))
+    requirements = glob.glob(str(SRC / "containers/*/*/requirements*.txt"))
+    listing = sorted(Path(f).relative_to(SRC) for f in requirements if requirement_lines(Path(f)))
+    if listing:
+        fail("requirements files are not scanned, declare the packages in the container's pyproject.toml:\n  " + "\n  ".join(map(str, listing)))
 
 
-def venv_inputs(app):
-    """Files whose content decides what the venv contains."""
-    venv = app["venv"]
-    if "requirements" in venv:
-        return [SRC / venv["requirements"]]
-    return [SRC / venv["project"] / "pyproject.toml"]
+def check_lock(app):
+    """A lock that lags its pyproject would make the scan see something else than the image installs."""
+    result = subprocess.run(["uv", "lock", "--check", "--project", str(project_dir(app))], capture_output=True, text=True)
+    return None if result.returncode == 0 else f"{app['name']}: {result.stderr.strip()}"
 
 
 def venv_key(app):
     digest = hashlib.sha256(sys.version.encode())
-    for path in venv_inputs(app):
-        digest.update(path.read_bytes())
+    digest.update((project_dir(app) / "uv.lock").read_bytes())
     return digest.hexdigest()
 
 
-def install(app, pip):
-    venv = app["venv"]
-    if "requirements" in venv:
-        subprocess.run([*pip, "-r", str(SRC / venv["requirements"])], check=True)
-        return
-    # Install the project from a copy of its build files only, so the sources stay untouched
-    project = SRC / venv["project"]
-    pyproject = tomllib.loads((project / "pyproject.toml").read_text())
-    with tempfile.TemporaryDirectory() as tmp:
-        shutil.copy(project / "pyproject.toml", tmp)
-        for backend_path in pyproject.get("build-system", {}).get("backend-path", []):
-            shutil.copytree(project / backend_path, Path(tmp) / backend_path, ignore=shutil.ignore_patterns("__pycache__"))
-        extras = ",".join(venv.get("extras", []))
-        spec = f"{tmp}[{extras}]" if extras else tmp
-        env = {**os.environ, "SETUPTOOLS_SCM_PRETEND_VERSION": "0.0.0"}
-        subprocess.run([*pip, spec], check=True, env=env)
-
-
 def build_venv(app):
+    """Installs exactly what the image installs, the same export and hash checked install the Dockerfiles run."""
     venv_dir = Path(app["python"]["virtual_env_dir"])
     key_file = venv_dir / KEY_FILE
     key = venv_key(app)
     if key_file.exists() and key_file.read_text() == key:
         return f"{app['name']}: venv reused"
     shutil.rmtree(venv_dir, ignore_errors=True)
-    subprocess.run([sys.executable, "-m", "venv", str(venv_dir)], check=True)
-    pip = [str(venv_dir / "bin/pip"), "install", "-q", "--cache-dir", str(PIP_CACHE)]
-    install(app, pip)
+    # The seed gives the venv the pip licensed reads package metadata with
+    subprocess.run(["uv", "venv", "-q", "--seed", str(venv_dir)], check=True)
+    export = ["uv", "export", "--frozen", "--no-dev", "--no-emit-project", "--project", str(project_dir(app))]
+    export += [f"--extra={extra}" for extra in app["venv"].get("extras", [])]
+    requirements = subprocess.run(export, check=True, capture_output=True, text=True).stdout
+    install = ["uv", "pip", "install", "-q", "--python", str(venv_dir / "bin/python"), "--require-hashes", "-r", "-"]
+    subprocess.run(install, input=requirements, check=True, text=True)
     for entry in venv_dir.glob("lib/python*/site-packages/*"):
         if entry.name not in KEEP_IN_SITE_PACKAGES and not entry.name.endswith(".dist-info"):
             shutil.rmtree(entry) if entry.is_dir() else entry.unlink()
@@ -131,9 +118,12 @@ def run_licensed(config, app, tmp):
 
 def main():
     config, apps = load_config()
-    check_requirements_covered(apps)
+    check_projects_covered(apps)
     VENVS.mkdir(exist_ok=True)
     with ThreadPoolExecutor() as pool:
+        stale = [problem for problem in pool.map(check_lock, apps) if problem]
+        if stale:
+            fail("uv.lock is out of date, run task deps:lock:\n  " + "\n  ".join(stale))
         for message in pool.map(build_venv, apps):
             print(message, flush=True)
         with tempfile.TemporaryDirectory() as tmp:
