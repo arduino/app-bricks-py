@@ -19,9 +19,10 @@ print(result.text)
 `Camera.capture()`), the raw bytes of an encoded image file (e.g. JPEG or PNG),
 or a path to an image file. It returns an `OcrResult`:
 
-- `result.text` holds every recognized string joined by newlines, in reading
-  order (top to bottom, left to right); it is empty when no text was found.
-  `str(result)` yields the same text.
+- `result.text` holds every recognized string joined by single spaces, in
+  reading order (top to bottom, left to right), so it is one line (pass
+  `single_line=False` to get one piece of text per line instead); it is empty
+  when no text was found. `str(result)` yields the same text.
 - `result.detections` lists one `TextDetection` per piece of text found, in
   reading order, each carrying the recognized `text`, the recognition
   `confidence`, the axis-aligned `bounding_box_xyxy` box and the `polygon` of
@@ -69,9 +70,9 @@ Tuning:
   to read upright only for that image. Phone photos usually need none of this:
   their EXIF orientation is applied when the image is decoded.
 - `single_line` (constructor, overridable per call) joins every recognized piece
-  of text with single spaces instead of newlines, so `result.text` is one line.
-  Useful when the image holds one logical string split across regions, e.g. a
-  plate or a serial number. Default is `False`.
+  of text with single spaces, so `result.text` is one line. Default is `True`.
+  Pass `False` to join them with newlines instead, one piece of text per line,
+  e.g. to keep the rows of a label or a page apart.
 
 ```python
 from arduino.app_bricks.ocr import OCR
@@ -81,7 +82,7 @@ reading = ocr.extract_text("assets/meter.jpg")
 print(reading.text)
 
 sideways = ocr.extract_text("assets/page.jpg", rotation=[90, 270])
-plate = ocr.extract_text("assets/plate.jpg", single_line=True)  # one line, no newlines
+label = ocr.extract_text("assets/label.jpg", single_line=False)  # one piece of text per line
 ```
 
 Image size: the model looks at the whole image scaled to 800x608, so a piece of

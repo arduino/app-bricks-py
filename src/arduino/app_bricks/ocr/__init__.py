@@ -74,8 +74,8 @@ class OcrResult:
 
     Attributes:
         text (str): Every recognized string joined in reading order (top to
-            bottom, left to right), by newlines or, when `single_line` is set,
-            by single spaces. Empty when no text was found.
+            bottom, left to right), by single spaces or, when `single_line` is
+            False, by newlines. Empty when no text was found.
         detections (list[TextDetection]): One entry per piece of text found, in
             reading order, each with its position and confidence.
     """
@@ -110,7 +110,7 @@ class OCR:
         confidence: float = 0.3,
         allowlist: str | None = None,
         rotation: Iterable[int] | int | None = None,
-        single_line: bool = False,
+        single_line: bool = True,
         timeout: float = 30.0,
     ) -> None:
         """Initialize the OCR brick.
@@ -134,10 +134,10 @@ class OCR:
                 more recognizer pass per region. Default is None (upright only).
                 Can be overridden per call in `extract_text`.
             single_line (bool): Join every recognized piece of text with single
-                spaces instead of newlines, so `result.text` is one line. Useful
-                when the image holds one logical string split across regions, e.g.
-                a plate or a serial number. Default is False. Can be overridden
-                per call in `extract_text`.
+                spaces, so `result.text` is one line. Default is True. Pass False
+                to join them with newlines instead, one piece of text per line,
+                e.g. to keep the rows of a label or a page apart. Can be
+                overridden per call in `extract_text`.
             timeout (float): Maximum seconds `extract_text` waits for the model
                 runner, connection retries included. Default is 30.
 
@@ -192,7 +192,7 @@ class OCR:
                 to read upright only for this call.
             single_line (bool): Override the constructor's `single_line` for this
                 call only: True joins every recognized piece of text with single
-                spaces instead of newlines. None (default) uses the constructor
+                spaces, False with newlines. None (default) uses the constructor
                 value.
 
         Returns:

@@ -295,7 +295,7 @@ def test_extract_text_sends_config_then_frame_and_parses_answer(ocr: OCR, monkey
 
     result = ocr.extract_text(_JPEG)
 
-    assert result.text == "HELLO\nWORLD"
+    assert result.text == "HELLO WORLD"  # single_line is on by default
     assert len(send_ws.sent) == 2
     # The config travels before the frame, so the runner applies it to this image
     config = json.loads(send_ws.sent[0])
@@ -357,17 +357,21 @@ def test_extract_text_sends_constructor_rotation_and_call_override(monkeypatch: 
 
 
 def test_extract_text_single_line_joins_with_spaces(monkeypatch: pytest.MonkeyPatch):
-    answers = [json.dumps({"frame": None, "metadata": _runner_metadata()})] * 3
+    answers = [json.dumps({"frame": None, "metadata": _runner_metadata()})] * 5
     send_ws = FakeConnection("5000")
     recv_ws = FakeConnection("5001", messages=answers)
     _patch_connect(monkeypatch, {"5000": send_ws, "5001": recv_ws})
+
+    default = _make_ocr(monkeypatch)
+    assert default.extract_text(_JPEG).text == "HELLO WORLD"  # on by default
 
     ocr = _make_ocr(monkeypatch, single_line=True)
     assert ocr.extract_text(_JPEG).text == "HELLO WORLD"
     assert ocr.extract_text(_JPEG, single_line=False).text == "HELLO\nWORLD"  # call override wins
 
-    upright = _make_ocr(monkeypatch, single_line=False)
-    assert upright.extract_text(_JPEG, single_line=True).text == "HELLO WORLD"
+    multiline = _make_ocr(monkeypatch, single_line=False)
+    assert multiline.extract_text(_JPEG).text == "HELLO\nWORLD"
+    assert multiline.extract_text(_JPEG, single_line=True).text == "HELLO WORLD"
 
 
 def test_rotation_is_validated():
