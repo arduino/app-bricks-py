@@ -5,6 +5,7 @@ A simple, robust Python documentation generator for producing clean, PEP8-compli
 ## Features
 
 - Extracts and documents modules, classes, functions, methods, and class properties, including constructor (`__init__`) parameters.
+- Documents with a class the methods and properties it inherits from base classes of the same source tree, unless it redefines them, so a brick built on a shared base class shows its whole API.
 - Filters documented objects in `__init__.py` files to only those listed in `__all__`, if present.
 - Mirrors the source folder structure under `docs/`, organizing documentation by module.
 - Produces readable Markdown with clear sections: Parameters, Returns, Raises, and Examples.
