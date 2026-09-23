@@ -21,7 +21,7 @@ import requests
 
 from arduino.app_utils import Logger, brick
 
-logger = Logger("TPSLocationAPI")
+logger = Logger("TPS")
 
 SCANNER_SOCKET_PATH = os.getenv("SCANNER_SOCKET_PATH", "/app/.cache/tps_location_api/scanner.sock")
 TPS_LOC_API_URL = "https://global.skyhook.com/wps2/json/location"
@@ -62,7 +62,7 @@ def _build_payload(scan_result: dict[str, Any], street_address: bool) -> dict[st
     Channel, SSID and connected flag are included when known.
 
     Args:
-        scan_result (dict): Scanner response, see TPSLocationAPI._scan().
+        scan_result (dict): Scanner response, see TPS._scan().
         street_address (bool): Ask for a full street address lookup.
 
     Returns:
@@ -112,7 +112,7 @@ class _UnixSocketConnection(http.client.HTTPConnection):
 
 
 @brick
-class TPSLocationAPI:
+class TPS:
     """Client for the TPS Location API cloud service.
 
     Nearby Wi-Fi access points are collected by the scanner container and resolved to a
