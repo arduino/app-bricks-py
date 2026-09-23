@@ -1,25 +1,30 @@
 id: arduino:video_object_tracking
 name: Video Object Tracking
 description: |
-  This object detection brick utilizes a pre-trained model to track objects on a video stream.
-  It identifies and tracks objects, returning their predicted class labels and item counts.
-  The output is a video stream featuring bounding boxes around tracked objects, enabling object count.
-  It supports pre-trained models provided by the framework and custom object detection models trained on the Edge Impulse platform.
+  This object tracking brick utilizes a pre-trained model to track objects on a video stream.
+  It follows each object with a stable identity, returning the predicted class labels, counting the distinct objects and the ones crossing a line.
+  The output is a video stream featuring bounding boxes around the tracked objects with their identities.
+  It supports pre-trained models provided by the framework and custom object tracking models trained on the Edge Impulse platform.
 category: video
+ports:
+  - 4912
 required_devices:
   - camera
+requires_services: ["arduino:edge_impulse"]
+model_by_boards:
+    - platform: ventunoq
+      model: yolox-qnn-object-tracker
 ai_frameworks_compatibility:
-  - edgeimpulse  
-model: yolox-qnn-object-tracker
+  - edgeimpulse
 supported_boards: ["ventunoq"]
 model_configuration_variables:
   - EI_V_OBJ_TRACKING_MODEL
 variables:
-- name: CUSTOM_MODEL_PATH
-  description: Path to the custom model directory
-  hidden: true
-  default_value: /home/arduino/.arduino-bricks/ei-models
 - name: BIND_ADDRESS
-  description: Bind address
+  description: Bind address of the video stream
   hidden: true
   default_value: 0.0.0.0
+- name: VIDEO_DEVICE
+  description: Video device path
+  hidden: true
+  default_value: /dev/video1

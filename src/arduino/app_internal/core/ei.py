@@ -37,7 +37,6 @@ class EdgeImpulseModelInfo:
             self.label_count = int(model_params.get("label_count", -1))
             self.labels = model_params.get("labels", [])
             self.interval_ms = float(model_params.get("interval_ms", -1))
-            self.has_object_tracking = bool(model_params.get("has_object_tracking", False))
             self.thresholds = model_params["thresholds"]
 
 

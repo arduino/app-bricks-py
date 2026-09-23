@@ -1,30 +1,23 @@
-# SPDX-FileCopyrightText: Copyright (C) ARDUINO SRL (http://www.arduino.cc)
 # SPDX-FileCopyrightText: Copyright (C) Arduino s.r.l. and/or its affiliated companies
 #
 # SPDX-License-Identifier: MPL-2.0
 
-from arduino.app_utils import AppError, brick, Logger, LRUDict
-from arduino.app_utils.image.adjustments import compress_to_jpeg
-from arduino.app_bricks.video_objectdetection import AllDetectionsCallback, DetectionCallback, VideoObjectDetection
-from arduino.app_internal.core import EdgeImpulseModelInfo, EdgeImpulseRunnerFacade
-from arduino.app_peripherals.camera import BaseCamera
-from websockets.sync.client import connect
-from websockets.sync.connection import Connection
-import json
-import socket
+import threading
 import time
 from collections import Counter
-import threading
-import numpy as np
+from dataclasses import replace
+
+from arduino.app_bricks.video_objectdetection import STREAM_PORT, AllDetectionsCallback, DetectionCallback, VideoObjectDetection
+from arduino.app_internal.ei_inference import InferenceClient, Result, ServerError
+from arduino.app_peripherals.camera import BaseCamera
+from arduino.app_utils import Logger, LRUDict, brick
 
 logger = Logger("VideoObjectTracking")
 
-_HANDSHAKE_TIMEOUT = 8.0
-_HANDSHAKE_STEP = 0.5
-
-
-class VideoObjectTrackingError(AppError):
-    """Base class for video object tracking errors."""
+MODEL_VARIABLE = "EI_V_OBJ_TRACKING_MODEL"
+STARTUP_TIMEOUT = 10.0  # seconds the constructor waits for the service to open the model, as long as the service gives a .eim to start
+CENTROID_MODEL_TYPE = "constrained_object_detection"  # FOMO reports centroids, matched by distance instead of overlap
+TRACKING_BLOCK = "object_tracking"  # the threshold block holding the tracker knobs
 
 
 @brick
@@ -32,12 +25,15 @@ class VideoObjectTracking(VideoObjectDetection):
     """Module for object tracking on a **live video stream** using a specified machine learning model.
 
     This brick:
-      - Connects to a model runner over WebSocket.
-      - Parses incoming classification messages with bounding boxes.
-      - Filters detections by a configurable confidence threshold.
-      - Debounces repeated triggers of the same label.
-      - Invokes per-label callbacks and/or a catch-all callback.
+      - Streams the camera frames to the Edge Impulse inference service, as VideoObjectDetection does.
+      - Receives the objects the model tracks at the confidence of the brick, each with an identity that stays
+        the same while it is in view.
+      - Counts the distinct objects per label and the ones crossing a line, and follows their direction.
+      - Invokes per-label callbacks and/or a catch-all callback with the tracked objects.
+      - Streams the video with the tracked boxes, labelled with their identities, on port 4912.
     """
+
+    MODEL_VARIABLE = MODEL_VARIABLE
 
     def __init__(
         self,
@@ -50,96 +46,105 @@ class VideoObjectTracking(VideoObjectDetection):
         debounce_sec: float = 0.0,
         labels_to_track: list[str] | None = None,
         min_movement_threshold: int = 10,
+        stream_port: int | None = STREAM_PORT,
     ) -> None:
         """Initialize the VideoObjectTracking class.
 
         Args:
             camera (BaseCamera): The camera instance to use for capturing video. If None, a default camera will be initialized.
             confidence (float): Confidence level for detection. Default is 0.4 (40%).
-            debounce_sec (float): Minimum seconds between repeated detections of the same object. Default is 0 seconds.
             keep_grace (int): Number of frames to keep an object if it disappears. Default is 3.
             min_detections (int): How many times an object must be detected before the tracker reports it as a
                 track of its own. Higher values delay the first report but discard more spurious detections. Default is 3.
             iou_threshold (float): Intersection over Union threshold for tracking. Default is 0.1. This is used in case of object detection models.
             euclidean_distance_threshold (int): Maximum distance in pixels. Default is 50 (px). This is used in case of centroids models, like FOMO.
+            debounce_sec (float): Minimum seconds between repeated detections of the same object. Default is 0 seconds.
             labels_to_track (list[str], optional): List of labels to track. If None, all labels are tracked.
             min_movement_threshold(int): Minimum distance in pixels to consider a movement significant for
                 direction tracking. Default is 10.
+            stream_port (int | None): Port of the MJPEG stream of the video with the tracked boxes, the one
+                external viewers embed. Default is 4912, None disables the stream.
 
         Raises:
-            RuntimeError: If the host address could not be resolved.
+            RuntimeError: If no model is configured, or the model has no object tracking block.
         """
-        super().__init__(camera=camera, confidence=confidence, debounce_sec=debounce_sec)
+        super().__init__(camera=camera, confidence=confidence, debounce_sec=debounce_sec, stream_port=stream_port)
         self._labels_to_track = labels_to_track
-        self._min_detections = min_detections
-        self._keep_grace = keep_grace
-        self._iou_threshold = iou_threshold
-        self._euclidean_distance_threshold = euclidean_distance_threshold
+        # The knobs of the tracking block as the model names them: keep_grace is max_age, min_detections is min_hits,
+        # iou_threshold matches the boxes of a detection model and threshold the centroids of a FOMO one
+        self._tracker: dict[str, float] = {
+            "max_age": keep_grace,
+            "min_hits": min_detections,
+            "iou_threshold": iou_threshold,
+            "threshold": euclidean_distance_threshold,
+        }
 
-        # Counter for tracked objects
         self._counter_lock = threading.RLock()
-        self._object_counters = Counter()
-        # Map of recent object IDs to their last seen positions (x, y)
-        self._recent_objects = LRUDict(maxsize=150)  # To track recent object IDs and their labels
-
-        # Crossing line coordinates
-        self._line_coordinates = None  # x1, y1, x2, y2
-        self._crossing_line_object = Counter()
-
-        # Directions tracking dict
-        self._object_directions = {}
+        self._object_counters = Counter()  # distinct objects seen, per label
+        self._recent_objects = LRUDict(maxsize=150)  # last seen position (x, y) of the recent object ids
+        self._line_coordinates = None  # x1, y1, x2, y2 of the crossing line
+        self._crossing_line_object = Counter()  # crossings of the line, per label
+        self._object_directions = {}  # direction history, per object id
         self._min_movement_threshold = min_movement_threshold
 
-        self._require_object_tracking_block()
+        self._require_object_tracking()
 
-    def _require_object_tracking_block(self) -> None:
-        """Refuse a model that cannot report tracks, while the app is still starting.
+    def _require_object_tracking(self) -> None:
+        """Open the model while the app is starting, to refuse one that can never report a tracked object.
 
-        The model runner announces its model over the WebSocket, which it opens only once it has received a
-        frame, so a single synthetic frame is pushed to earn the announcement.
+        The connection is kept for the tracking loop. When the service is not reachable or refuses the model,
+        the check is skipped and the loop keeps trying once started.
 
         Raises:
-            VideoObjectTrackingError: If the model runner reports a model without the object tracking block.
+            RuntimeError: If the model has no object tracking block.
         """
         try:
-            with socket.create_connection((self._host, 5050), timeout=_HANDSHAKE_TIMEOUT) as frames:
-                model_info = self._read_model_info(frames)
-        except Exception as e:
-            logger.warning(f"Could not ask the model runner about its model ({e}): skipping the object tracking check.")
+            client = self._open(timeout=STARTUP_TIMEOUT)
+        except ServerError as e:
+            logger.warning(f"The inference service refused model '{self._model}' ({e.code}): {e}. Skipping the object tracking check.")
             return
-
-        if model_info is not None and not model_info.has_object_tracking:
-            raise VideoObjectTrackingError(
-                "This model has no object tracking block, so it can never report a tracked object.",
-                hint="Enable object tracking in the Edge Impulse project, export the model again, or pick a model that already has the block.",
+        except OSError as e:  # unreachable, or not ready within the timeout
+            logger.warning(f"Could not ask the inference service about model '{self._model}' ({e}): skipping the object tracking check.")
+            return
+        if not client.object_tracking:
+            self._close()
+            raise RuntimeError(
+                "This model has no object tracking block, so it can never report a tracked object: "
+                "enable object tracking in the Edge Impulse project and export the model again, or pick a model that has the block."
             )
 
-    def _read_model_info(self, frames: socket.socket) -> EdgeImpulseModelInfo | None:
-        """Feed synthetic frames until the runner opens its announcement channel, then read the announcement.
+    def _configure(self, client: InferenceClient) -> None:
+        """Set the tracker knobs on the model every time it is opened; the identifiers seen so far are forgotten,
+        the tracker numbers its tracks from zero on each run."""
+        self._forget_tracks()
+        if client.object_tracking:
+            self._apply_tracker(client)
 
-        Args:
-            frames (socket.socket): The open connection the runner reads frames from.
+    def _connect(self, running: threading.Event) -> InferenceClient | None:
+        client = super()._connect(running)
+        if client is not None and not client.object_tracking:
+            logger.error(
+                "This model has no object tracking block, so no object will ever be reported. "
+                "Enable object tracking in the Edge Impulse project and export the model again."
+            )
+        return client
 
-        Returns:
-            EdgeImpulseModelInfo | None: The model the runner announced.
-        """
-        encoded = compress_to_jpeg(np.zeros((32, 32, 3), dtype=np.uint8))
-        if encoded is None:
-            raise RuntimeError("Could not encode the frame the model runner is asked to look at.")
-        frame = encoded.tobytes()
-        deadline = time.monotonic() + _HANDSHAKE_TIMEOUT
-        while True:
-            frames.sendall(frame)
-            try:
-                with connect(self._uri, open_timeout=_HANDSHAKE_STEP) as ws:
-                    while True:
-                        message = json.loads(ws.recv(timeout=_HANDSHAKE_STEP))
-                        if message.get("type") == "hello":
-                            return EdgeImpulseRunnerFacade.parse_model_info_message(message)
-            except Exception:
-                if time.monotonic() >= deadline:
-                    raise
-                time.sleep(_HANDSHAKE_STEP)
+    def _apply_tracker(self, client: InferenceClient) -> None:
+        """Set the tracker knobs on the model, those its tracking block exposes."""
+        try:
+            tracking = client.threshold_block(TRACKING_BLOCK)
+            if tracking is not None:
+                knobs = ("max_age", "min_hits", self._matching_knob(client))
+                values = {knob: self._tracker[knob] for knob in knobs if knob in tracking}
+                if values:
+                    client.configure(tracking["id"], **values)
+        except (ServerError, TimeoutError, ConnectionError) as e:
+            logger.error(f"Failed to configure the tracker: {e}")
+
+    @staticmethod
+    def _matching_knob(client: InferenceClient) -> str:
+        """The knob matching the objects between frames: a distance for centroid models, an overlap for the others."""
+        return "threshold" if client.info.get("model_type") == CENTROID_MODEL_TYPE else "iou_threshold"
 
     def _is_label_enabled(self, label: str) -> bool:
         """Check if a label is enabled for tracking.
@@ -153,13 +158,13 @@ class VideoObjectTracking(VideoObjectDetection):
             return True
         return label in self._labels_to_track
 
-    def _record_object(self, detected_object_label: str, object_id: float, x: int, y: int) -> None:
+    def _record_object(self, detected_object_label: str, object_id: int, x: int, y: int) -> None:
         """
         Record that an object with a specific label and ID has been seen.
 
         Args:
             detected_object_label (str): The label of the detected object.
-            object_id (float): The unique ID of the detected object.
+            object_id (int): The unique ID of the detected object.
             x (int): The x-coordinate of the object reference point.
             y (int): The y-coordinate of the object reference point.
         """
@@ -178,13 +183,13 @@ class VideoObjectTracking(VideoObjectDetection):
         # Update the last seen position
         self._recent_objects[object_id] = (x, y)
 
-    def _record_line_crossing(self, detected_object_label: str, object_id: float, x: int, y: int) -> None:
+    def _record_line_crossing(self, detected_object_label: str, object_id: int, x: int, y: int) -> None:
         """
         Record that an object with a specific label and ID has crossed the line.
 
         Args:
             detected_object_label (str): The label of the detected object.
-            object_id (float): The unique ID of the detected object.
+            object_id (int): The unique ID of the detected object.
             x (int): The x-coordinate of the object reference point.
             y (int): The y-coordinate of the object reference point.
         """
@@ -224,13 +229,13 @@ class VideoObjectTracking(VideoObjectDetection):
                         logger.debug(f"Object ID {object_id} crossed the diagonal line from ({last_x}, {last_y}) to ({x}, {y})")
                         self._crossing_line_object[detected_object_label] += 1
 
-    def _record_object_direction(self, detected_object_label: str, object_id: float, x: int, y: int) -> None:
+    def _record_object_direction(self, detected_object_label: str, object_id: int, x: int, y: int) -> None:
         """
         Record the movement direction of an object with a specific label and ID.
 
         Args:
             detected_object_label (str): The label of the detected object.
-            object_id (float): The unique ID of the detected object.
+            object_id (int): The unique ID of the detected object.
             x (int): The x-coordinate of the object reference point.
             y (int): The y-coordinate of the object reference point.
         """
@@ -278,7 +283,7 @@ class VideoObjectTracking(VideoObjectDetection):
         with self._counter_lock:
             return dict(self._crossing_line_object)
 
-    def get_objects_directions(self) -> dict[float, list[str]]:
+    def get_objects_directions(self) -> dict[int, list[str]]:
         """
         Get the last known movement directions of tracked objects.
 
@@ -327,146 +332,52 @@ class VideoObjectTracking(VideoObjectDetection):
             self._crossing_line_object.clear()
 
     def on_detect(self, object: str, callback: DetectionCallback) -> None:  # noqa: A002
-        """Register a callback invoked when a **specific label** is detected.
+        """Register a callback invoked when a **specific label** is tracked.
 
         Args:
-            object (str): The label of the object to check for in the classification results.
-            callback (DetectionCallback): A function with **no parameters**.
+            object (str): The label of the object to check for in the tracking results.
+            callback (DetectionCallback): A plain function taking either no parameters, or one parameter receiving
+                the tracking details dict `{"object_id": int, "confidence": float, "bounding_box_xyxy": (x1, y1, x2, y2)}`,
+                once per object of that label in the frame.
 
         Raises:
             TypeError: If `callback` is not a function.
-            ValueError: If `callback` accepts any parameters.
         """
         super().on_detect(object, callback)
 
     def on_detect_all(self, callback: AllDetectionsCallback) -> None:
-        """Register a callback invoked for **every detection event**.
+        """Register a callback invoked for **every frame with tracked objects**.
 
-        This is useful to receive a consolidated dictionary of detections for each frame.
+        This is useful to receive a consolidated dictionary of the tracked objects for each frame.
 
         Args:
-            callback (AllDetectionsCallback): A function that accepts **one dict argument** mapping
-                each tracked label to the list of its objects, with the shape
+            callback (AllDetectionsCallback): A plain function taking one dict argument mapping each tracked
+                label to the list of its objects, with the shape
                 `{label: [{"object_id": int, "confidence": float, "bounding_box_xyxy": (x1, y1, x2, y2)}, ...], ...}`.
 
         Raises:
             TypeError: If `callback` is not a function.
-            ValueError: If `callback` does not accept exactly one argument.
         """
         super().on_detect_all(callback)
 
-    def start(self) -> None:
-        """Start the video object detection process."""
-        super().start()
-
-    def stop(self) -> None:
-        """Stop the video object detection process."""
-        super().stop()
-
-    def _process_message(self, ws: Connection, message: str) -> None:
-        jmsg = json.loads(message)
-        if jmsg.get("type") == "hello":
-            # Parse hello message to extract model info if needed
-            logger.debug(f"Connected to model runner: {jmsg}")
-            try:
-                self._model_info = EdgeImpulseRunnerFacade.parse_model_info_message(jmsg)
-            except Exception as e:
-                logger.error(f"Error parsing WS hello message: {e}")
-                return
-
-            self._forget_tracks()
-
-            if self._model_info is not None and not self._model_info.has_object_tracking:
-                logger.error(
-                    "This model has no object tracking block, so no object will ever be reported. "
-                    "Enable object tracking in the Edge Impulse project and export the model again."
-                )
-                return
-
-            if self._model_info and self._model_info.thresholds is not None:
-                try:
-                    self._set_thresholds(ws)
-                except Exception as e:
-                    logger.error(f"Failed to configure the tracker: {e}")
+    def _process_result(self, result: Result) -> None:
+        """Turn the tracks of one frame into detections with their ids, update the counters and invoke the handlers."""
+        if not result.ok:
+            logger.warning(f"Inference failed ({result.error_code}): {result.error}")
             return
 
-        elif jmsg.get("type") == "handling-message-success":
-            # Ignore handling-message-success messages
-            return
-
-        elif jmsg.get("type") == "classification":
-            result = jmsg.get("result", {})
-            if not isinstance(result, dict):
-                return
-
-            tracked_objects = result.get("object_tracking", [])
-            if not tracked_objects:
-                return
-
-            detections = {}
-            for box in tracked_objects:
-                detected_object = box.get("label")
-                if detected_object is None:
-                    continue
-
-                object_id = box.get("object_id")
-                if object_id is None:
-                    continue
-
-                if not self._is_label_enabled(detected_object):
-                    continue
-
-                x, y = box.get("x", 0), box.get("y", 0)
-                width, height = box.get("width", 0), box.get("height", 0)
-
-                detection_details = {
-                    "object_id": object_id,
-                    "confidence": box.get("value", 0.0),
-                    "bounding_box_xyxy": (x, y, x + width, y + height),
-                }
-                detections.setdefault(detected_object, []).append(detection_details)
-
-                self._record_object(
-                    detected_object_label=detected_object,
-                    object_id=object_id,
-                    x=x + width // 2,
-                    y=y + height // 2,
-                )
-
-                super()._execute_handler(key=detected_object, payload=detection_details)
-
-            if len(detections) > 0:
-                super()._execute_handler(key=self.ALL_HANDLERS_KEY, payload=detections)
-
-        else:
-            # Leave logging for unknown message types for debugging purposes
-            logger.warning(f"Unknown message type: {jmsg.get('type')}")
-
-    def _set_thresholds(self, ws: Connection) -> None:
-        """Set the thresholds for the object tracking model over the given connection."""
-        super()._override_threshold(ws, self._confidence)
-        self._override_config_value(ws, "max_age", self._keep_grace)
-        self._override_config_value(ws, "min_hits", self._min_detections)
-        if self._reports_centroids():
-            self._override_config_value(ws, "threshold", self._euclidean_distance_threshold)
-        else:
-            self._override_config_value(ws, "iou_threshold", self._iou_threshold)
-
-    def _reports_centroids(self) -> bool:
-        """Whether the model reports centroids, as FOMO does, instead of bounding boxes."""
-        return self._model_info is not None and self._model_info.model_type == "constrained_object_detection"
-
-    def override_confidence(self, confidence: float) -> None:
-        """Override the confidence threshold for object detection model.
-
-        Args:
-            confidence (float): The new value for the confidence threshold in the range [0.0, 1.0].
-
-        Raises:
-            TypeError: If the value is not a number.
-            RuntimeError: If the model information is not available or does not support threshold override.
-        """
-        super().override_threshold(confidence)
+        tracks = [track for track in result.tracks if track.id is not None and self._is_label_enabled(track.label)]
+        detections: dict[str, list[dict]] = {}
+        for track in tracks:
+            x1, y1, x2, y2 = round(track.x), round(track.y), round(track.x + track.w), round(track.y + track.h)
+            details = {"object_id": track.id, "confidence": track.score, "bounding_box_xyxy": (x1, y1, x2, y2)}
+            detections.setdefault(track.label, []).append(details)
+            self._record_object(track.label, track.id, (x1 + x2) // 2, (y1 + y2) // 2)
+            self._execute_handler(key=track.label, payload=details)
+        # The video shows every tracked object under its label and id
+        self._boxes.update([replace(track, label=f"{track.label} #{track.id}") for track in tracks], (time.monotonic_ns() - result.ts_ns) / 1e9)
+        if detections:
+            self._execute_handler(key=self.ALL_HANDLERS_KEY, payload=detections)
 
     def override_keep_grace(self, keep_grace: int) -> None:
         """Override keep grace for object tracking model.
@@ -477,15 +388,9 @@ class VideoObjectTracking(VideoObjectDetection):
 
         Raises:
             TypeError: If the value is not a number.
-            RuntimeError: If the model information is not available or does not support threshold override.
+            RuntimeError: If the tracking block of the model has no such knob or the service refuses the value.
         """
-        try:
-            with connect(self._uri) as ws:
-                self._override_config_value(ws, "max_age", keep_grace)
-            self._keep_grace = keep_grace
-        except Exception as e:
-            logger.error(f"Failed to override keep grace: {e}")
-            raise
+        self._override("max_age", keep_grace)
 
     def override_min_detections(self, min_detections: int) -> None:
         """Override the number of detections a track needs for the object tracking model to report it.
@@ -495,15 +400,9 @@ class VideoObjectTracking(VideoObjectDetection):
 
         Raises:
             TypeError: If the value is not a number.
-            RuntimeError: If the model information is not available or does not support threshold override.
+            RuntimeError: If the tracking block of the model has no such knob or the service refuses the value.
         """
-        try:
-            with connect(self._uri) as ws:
-                self._override_config_value(ws, "min_hits", min_detections)
-            self._min_detections = min_detections
-        except Exception as e:
-            logger.error(f"Failed to override the minimum number of detections: {e}")
-            raise
+        self._override("min_hits", min_detections)
 
     def override_iou_threshold(self, iou_threshold: float) -> None:
         """Override IoU threshold for object tracking model.
@@ -515,20 +414,12 @@ class VideoObjectTracking(VideoObjectDetection):
 
         Raises:
             TypeError: If the value is not a number.
-            RuntimeError: If the model information is not available or does not support threshold override.
+            RuntimeError: If the tracking block of the model has no such knob or the service refuses the value.
         """
-
-        if self._reports_centroids():
+        if self._model_type() == CENTROID_MODEL_TYPE:
             logger.debug("This model reports centroids. Use 'override_euclidean_distance_threshold' instead.")
             return
-
-        try:
-            with connect(self._uri) as ws:
-                self._override_config_value(ws, "iou_threshold", iou_threshold)
-            self._iou_threshold = iou_threshold
-        except Exception as e:
-            logger.error(f"Failed to override IoU threshold: {e}")
-            raise
+        self._override("iou_threshold", iou_threshold)
 
     def override_euclidean_distance_threshold(self, euclidean_distance_threshold: float) -> None:
         """Override euclidean distance threshold for object tracking model.
@@ -540,50 +431,47 @@ class VideoObjectTracking(VideoObjectDetection):
 
         Raises:
             TypeError: If the value is not a number.
-            RuntimeError: If the model information is not available or does not support threshold override.
+            RuntimeError: If the tracking block of the model has no such knob or the service refuses the value.
         """
-
-        if self._model_info is not None and not self._reports_centroids():
+        if self._model_type() not in (None, CENTROID_MODEL_TYPE):
             logger.debug("This model reports bounding boxes. Use 'override_iou_threshold' instead.")
             return
+        self._override("threshold", euclidean_distance_threshold)
 
-        try:
-            with connect(self._uri) as ws:
-                self._override_config_value(ws, "threshold", euclidean_distance_threshold)
-            self._euclidean_distance_threshold = euclidean_distance_threshold
-        except Exception as e:
-            logger.error(f"Failed to override the euclidean distance threshold: {e}")
-            raise
+    def _override(self, knob: str, value: float) -> None:
+        """Set a knob of the tracking block on the model, and keep it for the next connections."""
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            raise TypeError("Invalid types for value.")
+        self._push(knob, value)
+        self._tracker[knob] = value
 
-    def _override_config_value(self, ws: Connection, key: str, value: float | int) -> None:
-        """Override a specific configuration value for the object tracking model.
-
-        Args:
-            ws (Connection): The WebSocket connection to send the message through.
-            key (str): The configuration key to override.
-            value (float | int): The new value for the configuration.
+    def _push(self, knob: str, value: float) -> None:
+        """Send a knob of the tracking block to the model when connected, otherwise it is set when the model is opened.
 
         Raises:
-            RuntimeError: If the model has no object tracking block, or that block has no such key.
-            TypeError: If the value is not a number.
+            RuntimeError: If the model has no tracking block, the block has no such knob or the service refuses the value.
         """
-        if not isinstance(value, (int, float)):
-            raise TypeError("Invalid types for value.")
-
-        if self._model_info is None or not self._model_info.thresholds:
-            raise RuntimeError("Model information is not available or does not support threshold override.")
-
-        block = next((th for th in self._model_info.thresholds if th.get("type") == "object_tracking"), None)
+        client = self._connected()
+        if client is None:
+            logger.debug(f"Not connected: {knob}={value} will be set when the model is opened")
+            return
+        block = client.threshold_block(TRACKING_BLOCK)
         if block is None:
-            available = ", ".join(str(th.get("type")) for th in self._model_info.thresholds)
-            raise RuntimeError(f"This model has no object tracking block, it only exposes: {available}.")
+            available = ", ".join(str(b.get("type")) for b in client.thresholds) or "nothing"
+            raise RuntimeError(f"This model has no {TRACKING_BLOCK} block, it only exposes: {available}.")
+        if knob not in block:
+            knobs = ", ".join(key for key in block if key not in ("id", "type", "min_score"))
+            raise RuntimeError(f"The {TRACKING_BLOCK} block of this model exposes {knobs}, not '{knob}'.")
+        try:
+            client.configure(block["id"], **{knob: value})
+        except (ServerError, TimeoutError, ConnectionError) as e:
+            raise RuntimeError(f"The inference service refused {knob}={value}: {e}") from e
+        logger.debug(f"Set {knob}={value} on the tracking block of the model")
 
-        if key not in block:
-            knobs = ", ".join(k for k in block if k not in ("id", "type"))
-            raise RuntimeError(f"The object tracking block of this model exposes {knobs}, not '{key}'.")
-
-        logger.debug(f"Overriding {key} to {value} on block {block['id']}")
-        ws.send(json.dumps({"type": "threshold-override", "id": block["id"], "key": key, "value": value}))
+    def _model_type(self) -> str | None:
+        """The type of the model as the service reports it, None while not connected."""
+        client = self._connected()
+        return client.info.get("model_type") if client is not None else None
 
 
 def _get_direction(last_x: int, last_y: int, x: int, y: int, min_movement_threshold: int = 10) -> str | None:
@@ -611,7 +499,7 @@ def _get_direction(last_x: int, last_y: int, x: int, y: int, min_movement_thresh
 
     direction = None
     if abs(dx) == abs(dy):
-        logger.debug(f"Diagonal movement detected.")
+        logger.debug("Diagonal movement detected.")
         if dx > 0 and dy > 0:
             direction = "down-left"  # up-right becomes down-left
         elif dx > 0 > dy:
@@ -621,13 +509,13 @@ def _get_direction(last_x: int, last_y: int, x: int, y: int, min_movement_thresh
         elif dx < 0 and dy < 0:
             direction = "up-right"  # down-left becomes up-right ok
     elif abs(dx) > abs(dy):
-        logger.debug(f"Horizontal movement detected.")
+        logger.debug("Horizontal movement detected.")
         if dx > 0:
             direction = "left"  # right becomes left
         else:
             direction = "right"  # left becomes right
     else:
-        logger.debug(f"Vertical movement detected.")
+        logger.debug("Vertical movement detected.")
         if dy > 0:
             direction = "down"  # up becomes down
         else:
