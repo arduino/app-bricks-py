@@ -76,7 +76,7 @@ class VideoInference(EdgeImpulseModel):
         self._camera_preview = camera_preview
 
         self._handlers_lock = threading.Lock()
-        self._handlers: dict[str, Callable[[dict | None, bytes | None], None]] = {}
+        self._handlers: dict[str, Callable[[dict[str, Any] | None, bytes | None], None]] = {}
         self._detection_locks: dict[str, threading.Lock] = {}  # one per label, a handler never runs twice at once
         self._detection_locks_lock = threading.Lock()
         self._executor = ThreadPoolExecutor(max_workers=5, thread_name_prefix=f"{type(self).__name__}Handler")
@@ -126,7 +126,7 @@ class VideoInference(EdgeImpulseModel):
             self._handlers[self.ALL_HANDLERS_KEY] = self._bind(callback)
 
     @staticmethod
-    def _bind(callback: Callable) -> Callable[[dict | None, bytes | None], None]:
+    def _bind(callback: Callable[..., None]) -> Callable[[dict[str, Any] | None, bytes | None], None]:
         """Adapt a handler to (payload, frame) once, according to the parameters it declares."""
         parameters = inspect.signature(callback).parameters
         if len(parameters) == 0:
@@ -238,7 +238,7 @@ class VideoInference(EdgeImpulseModel):
                 self._detection_locks[detection] = threading.Lock()
             return self._detection_locks[detection]
 
-    def _execute_handler(self, key: str, payload: dict | None = None, frame: bytes | None = None) -> None:
+    def _execute_handler(self, key: str, payload: dict[str, Any] | None = None, frame: bytes | None = None) -> None:
         """Run the handler registered for the key on the executor, unless it is running already or debounced.
 
         Args:
