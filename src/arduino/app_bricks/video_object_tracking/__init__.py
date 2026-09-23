@@ -6,6 +6,7 @@ import threading
 import time
 from collections import Counter
 from dataclasses import replace
+from typing import Any
 
 from arduino.app_bricks.video_objectdetection import STREAM_PORT, AllDetectionsCallback, DetectionCallback, VideoObjectDetection
 from arduino.app_internal.ei_inference import InferenceClient, Result, ServerError
@@ -371,16 +372,18 @@ class VideoObjectTracking(VideoObjectDetection):
             logger.warning(f"Inference failed ({result.error_code}): {result.error}")
             return
 
-        tracks = [track for track in result.tracks if track.id is not None and self._is_label_enabled(track.label)]
-        detections: dict[str, list[dict]] = {}
-        for track in tracks:
+        tracked = [(track, track.id) for track in result.tracks if track.id is not None and self._is_label_enabled(track.label)]
+        detections: dict[str, list[dict[str, Any]]] = {}
+        for track, object_id in tracked:
             x1, y1, x2, y2 = round(track.x), round(track.y), round(track.x + track.w), round(track.y + track.h)
-            details = {"object_id": track.id, "confidence": track.score, "bounding_box_xyxy": (x1, y1, x2, y2)}
+            details = {"object_id": object_id, "confidence": track.score, "bounding_box_xyxy": (x1, y1, x2, y2)}
             detections.setdefault(track.label, []).append(details)
-            self._record_object(track.label, track.id, (x1 + x2) // 2, (y1 + y2) // 2)
+            self._record_object(track.label, object_id, (x1 + x2) // 2, (y1 + y2) // 2)
             self._execute_handler(key=track.label, payload=details)
         # The video shows every tracked object under its label and id
-        self._boxes.update([replace(track, label=f"{track.label} #{track.id}") for track in tracks], (time.monotonic_ns() - result.ts_ns) / 1e9)
+        self._boxes.update(
+            [replace(track, label=f"{track.label} #{object_id}") for track, object_id in tracked], (time.monotonic_ns() - result.ts_ns) / 1e9
+        )
         if detections:
             self._execute_handler(key=self.ALL_HANDLERS_KEY, payload=detections)
 
@@ -443,7 +446,7 @@ class VideoObjectTracking(VideoObjectDetection):
             return
         self._override("threshold", euclidean_distance_threshold)
 
-    def _override(self, knob: str, value: float) -> None:
+    def _override(self, knob: str, value: object) -> None:
         """Set a knob of the tracking block on the model, and keep it for the next connections."""
         if not isinstance(value, (int, float)) or isinstance(value, bool):
             raise TypeError("Invalid types for value.")
