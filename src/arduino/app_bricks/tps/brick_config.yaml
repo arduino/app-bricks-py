@@ -1,5 +1,5 @@
-id: arduino:tps_location_api
-name: TPS Location API
+id: arduino:tps
+name: TPS
 description: Collects nearby Wi-Fi access points and determines device location using the Qualcomm TPS Location API cloud service
 icon: 📍
 category: location

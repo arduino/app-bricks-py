@@ -15,7 +15,7 @@
     "aihub-onnx-models-runner",
     "llamacpp-runner",
     "models-downloader",
-    "tps-location-api",
+    "tps",
     "python-base"
   ]
 }

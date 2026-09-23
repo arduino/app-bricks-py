@@ -51,7 +51,7 @@ jobs:
       - name: Detect containers to release
         id: detect
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
             TAG_REF="${{ inputs.tag }}"
           else
             TAG_REF="${GITHUB_REF_NAME}"
