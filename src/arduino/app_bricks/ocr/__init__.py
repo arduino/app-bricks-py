@@ -55,8 +55,10 @@ class TextDetection:
             `extract_text`.
         polygon (list[tuple[int, int]]): The 4 (x, y) vertices of the detected text
             region, in pixel coordinates of the image passed to `extract_text`,
-            ordered top-left, top-right, bottom-right, bottom-left. They differ from
-            the bounding box when the text is slanted.
+            ordered top-left, top-right, bottom-right, bottom-left of the text as
+            read: for text read through `rotation` the first vertex is where the
+            text starts, not the image's top-left corner. They differ from the
+            bounding box when the text is slanted.
     """
 
     text: str
@@ -124,15 +126,16 @@ class OCR:
                 "0123456789" to read only digits. Applied by the model runner while
                 decoding, so it improves accuracy on constrained text rather than
                 just filtering the output. Default is None (no restriction).
-            rotation (Iterable[int] | int): Extra orientations to try when reading
-                each detected piece of text, as angles in degrees among 90, 180 and
-                270, e.g. `[90, 270]` for text running vertically or `180` for
-                upside-down labels. A rotated reading replaces the upright one only
-                when it is clearly more confident. Text is always read upright too;
-                90 and 270 are only tried on regions taller than wide (vertical
-                text), 180 on every region, and each applicable angle costs one
-                more recognizer pass per region. Default is None (upright only).
-                Can be overridden per call in `extract_text`.
+            rotation (Iterable[int] | int): Extra orientations to read the image
+                at, as angles in degrees among 90, 180 and 270, counter-clockwise:
+                e.g. `90` for text running top to bottom, `270` for text running
+                bottom to top, `180` for an upside-down image, `[90, 270]` when the
+                direction is unknown. The whole image is read upright and turned by
+                each angle, and the orientation that reads most confidently is
+                returned; a turned one wins only when it is clearly more confident.
+                Positions are always in the coordinates of the image passed in.
+                Each angle costs one more full reading of the image. Default is
+                None (upright only). Can be overridden per call in `extract_text`.
             single_line (bool): Join every recognized piece of text with single
                 spaces, so `result.text` is one line. Default is True. Pass False
                 to join them with newlines instead, one piece of text per line,
@@ -187,9 +190,9 @@ class OCR:
                 the raw bytes of an encoded image file (e.g. JPEG or PNG), or a
                 path to an image file.
             rotation (Iterable[int] | int): Override the constructor's `rotation`
-                for this call only, e.g. `[90, 270]` for an image whose text runs
-                vertically. None (default) uses the constructor value; pass `[]`
-                to read upright only for this call.
+                for this call only, e.g. `90` for an image whose text runs top to
+                bottom. None (default) uses the constructor value; pass `[]` to
+                read upright only for this call.
             single_line (bool): Override the constructor's `single_line` for this
                 call only: True joins every recognized piece of text with single
                 spaces, False with newlines. None (default) uses the constructor

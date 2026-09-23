@@ -59,16 +59,18 @@ Tuning:
   emitted at all — so it improves accuracy on constrained text rather than just
   filtering the output.
 
-- `rotation` (constructor, overridable per call) also reads detected pieces of
-  text rotated by the given angles (any of 90, 180, 270) and keeps the most
-  confident reading, for photos where the text does not run left to right:
-  vertical labels, an upside-down tag. Text is always read upright too; 90 and 270
-  are only tried on regions taller than wide (that is what vertical text looks
-  like), 180 on every region, and a rotated reading replaces the upright one only
-  when it is clearly more confident. Each applicable angle costs one more recognizer pass
-  per region, so leave it off when the orientation is known. Pass `[]` in a call
-  to read upright only for that image. Phone photos usually need none of this:
-  their EXIF orientation is applied when the image is decoded.
+- `rotation` (constructor, overridable per call) also reads the whole image
+  turned counter-clockwise by the given angles (any of 90, 180, 270) and returns
+  the orientation that reads most confidently, for images where the text does not
+  run left to right: `90` for text running top to bottom, `270` for bottom to top,
+  `180` for an upside-down image, `[90, 270]` when the direction is unknown. The
+  image is always read upright too, and a turned reading wins only when it is
+  clearly more confident. Lines and reading order come out as on an upright image,
+  and positions are in the coordinates of the image you passed in; the `polygon`
+  of a turned text starts at the corner where the text starts. Each angle costs one
+  more full reading of the image, so leave it off when the text is upright. Pass
+  `[]` in a call to read upright only for that image. Phone photos usually need
+  none of this: their EXIF orientation is applied when the image is decoded.
 - `single_line` (constructor, overridable per call) joins every recognized piece
   of text with single spaces, so `result.text` is one line. Default is `True`.
   Pass `False` to join them with newlines instead, one piece of text per line,
@@ -81,7 +83,7 @@ ocr = OCR(confidence=0.5, allowlist="0123456789.")
 reading = ocr.extract_text("assets/meter.jpg")
 print(reading.text)
 
-sideways = ocr.extract_text("assets/page.jpg", rotation=[90, 270])
+sideways = ocr.extract_text("assets/page.jpg", rotation=90)  # text running top to bottom
 label = ocr.extract_text("assets/label.jpg", single_line=False)  # one piece of text per line
 ```
 
@@ -91,5 +93,5 @@ the image height (a whole A4 page photographed from afar is beyond it: crop or g
 closer). Sending more pixels does not change that, so the brick downscales images
 larger than 2048 px on their longest side before sending them. Positions in the
 result always refer to the image you passed in. A dense image with many pieces of
-text takes longer: each detected region is one recognizer pass, times the number
-of orientations.
+text takes longer: each detected region is one recognizer pass, and with `rotation`
+the whole reading (detection and recognition) runs once per orientation.

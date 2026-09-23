@@ -36,7 +36,7 @@ from utils.constants import (
 from utils.image_processing import adjust_contrast, four_point_transform
 from utils.metadata import build_metadata
 from utils.model_io_processing import ONNXModel
-from utils.orientation import parse_rotations, plan_variants, rotate_cutout, select_best_readings
+from utils.orientation import detections_to_original, parse_rotations, reading_score, rotate_image, select_orientation
 from utils.post_processing import CTCLabelConverter
 
 # Stage-by-stage timing and configuration prints, off by default; EASYOCR_DEBUG=1 enables
@@ -49,8 +49,9 @@ def _debug(message: str) -> None:
         print(f"[ocr-debug] {message}", flush=True)
 
 
-# Per-frame counters filled by recognizer_get_text for the summary line.
-_frame_stats = {"boxes": 0, "reads": 0, "retries": 0}
+# Per-frame counters for the summary line, summed over the orientations read; reset by
+# inference_callback, filled by recognizer_get_text.
+_frame_stats = {"boxes": 0, "retries": 0}
 
 
 def _load_models() -> tuple[ONNXModel, ONNXModel]:
@@ -97,8 +98,9 @@ converter = CTCLabelConverter(CHARACTERS, LANG_CHAR)
 
 # Client-configurable settings that are not part of the CTC converter. Read once per frame.
 _settings: dict = {
-    # Extra rotations (degrees, multiples of 90) every cutout is also read at; the most
-    # confident reading per box wins. Empty = upright only. Config key: "rotation".
+    # Extra orientations (degrees counter-clockwise, multiples of 90) the whole image is
+    # also read at; the most confident orientation wins. Empty = upright only. Config
+    # key: "rotation".
     "rotations": [],
 }
 
@@ -109,11 +111,11 @@ def apply_config(config: dict) -> None:
     Supported settings:
         allowlist (str): Restrict recognition to these characters (e.g. "0123456789").
             An empty string removes the restriction.
-        rotation (list[int]): Also read detected regions rotated by these angles
-            (90, 180, 270) and keep the most confident reading, for text that is not
-            upright in the image. 90/270 are only tried on regions taller than wide
-            (vertical text), 180 on every region. An empty list reads upright only.
-            Each applicable angle costs one extra recognizer pass per region.
+        rotation (list[int]): Also read the whole image turned counter-clockwise by
+            these angles (90, 180, 270) and report the orientation that reads most
+            confidently, for text that is not upright in the image (see
+            utils/orientation.py). An empty list reads upright only. Each angle costs
+            one more full pass, detection and recognition.
     """
     if "allowlist" in config:
         value = config.get("allowlist")
@@ -356,9 +358,8 @@ def recognizer_get_text(
     """
     Run the recognizer over every detected box and clean up the predictions.
 
-    When rotations are configured every cutout is also read rotated by each angle, and the
-    most confident reading per box wins. Low-confidence cutouts are then read a second time
-    with boosted contrast, and again the more confident of the two readings wins.
+    Low-confidence cutouts are read a second time with boosted contrast, and the more
+    confident of the two readings wins.
 
     Parameters
     ----------
@@ -378,22 +379,11 @@ def recognizer_get_text(
     """
     t_start = time.perf_counter()
     boxes, cutouts = get_cutouts(img_grey, horizontal_boxes, free_boxes)
-    rotations = list(_settings["rotations"])
-    # One (box, angle) reading per planned variant: upright for every box, plus the
-    # rotations applicable to its shape (see utils.orientation).
-    variants = plan_variants(cutouts, rotations)
-    frames = [prepare_recognizer_input(rotate_cutout(cutouts[index], angle)) for index, angle in variants]
-    _debug(f"cutouts: {len(cutouts)} boxes, {len(frames)} orientation(s) prepared in {(time.perf_counter() - t_start) * 1000:.0f} ms")
+    cutout_frames = [prepare_recognizer_input(cutout) for cutout in cutouts]
+    _debug(f"cutouts: {len(cutouts)} boxes prepared in {(time.perf_counter() - t_start) * 1000:.0f} ms")
 
-    best = select_best_readings(recognizer_inference(frames), variants, len(cutouts))
-    predictions = [(text, confidence) for _, text, confidence in best]
-    # The frame each winning reading came from, for the contrast retry below.
-    winning_variant = {(index, angle): position for position, (index, angle) in enumerate(variants)}
-    cutout_frames = [frames[winning_variant[(index, angle)]] for index, (angle, _, _) in enumerate(best)]
-    if rotations and best:
-        rotated = sum(1 for angle, _, _ in best if angle)
-        _debug(f"rotations {rotations}: {len(frames) - len(cutouts)} extra readings, {rotated}/{len(best)} boxes read best when rotated")
-    _frame_stats["boxes"], _frame_stats["reads"] = len(cutouts), len(frames)
+    predictions = recognizer_inference(cutout_frames)
+    _frame_stats["boxes"] += len(cutouts)
 
     # Re-read anything the recognizer was unsure about, with the contrast pushed up.
     contrast_ths = RECOGNIZER_ARGS["contrast_ths"]
@@ -404,7 +394,7 @@ def recognizer_get_text(
         high_contrast_predictions = recognizer_inference([adjust_contrast(cutout_frames[i], contrast) for i in low_confidence_indices])
     else:
         high_contrast_predictions = []
-    _frame_stats["retries"] = len(low_confidence_indices)
+    _frame_stats["retries"] += len(low_confidence_indices)
 
     result_horizontal: list[tuple[box_xx_yy, str, float]] = []
     result_free: list[tuple[box_4corners, str, float]] = []
@@ -435,25 +425,16 @@ def recognizer_get_text(
     return result_horizontal, result_free
 
 
-def inference_callback(rgb_frame: np.ndarray) -> tuple[np.ndarray | None, dict]:
+def read_frame(rgb_frame: np.ndarray) -> dict:
     """
-    Process a single frame through the EasyOCR pipeline.
+    Run detection and recognition once, on the frame as given.
 
     Args:
         rgb_frame: Input frame as RGB np.ndarray (H, W, 3), uint8.
 
     Returns:
-        tuple[np.ndarray | None, dict]: contains (None, metadata). The frame slot is
-        always None - this pipeline produces text, not an annotated image, so the
-        output sinks emit the metadata without a video feed. metadata contains:
-            - 'text': str, all detected strings joined by newlines, in reading order
-            - 'detections': list of dicts, each containing:
-                - 'text': str
-                - 'confidence': float
-                - 'bounding_box_xyxy': list [x1, y1, x2, y2] in frame coordinates
-                - 'polygon': list of 4 [x, y] vertices in frame coordinates, ordered
-                  top-left, top-right, bottom-right, bottom-left
-                - 'type': str ('horizontal' or 'free')
+        dict: metadata as described in `inference_callback`, in the coordinates of
+        `rgb_frame`.
     """
     t_start = time.perf_counter()
     grey_frame = cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2GRAY)
@@ -482,15 +463,54 @@ def inference_callback(rgb_frame: np.ndarray) -> tuple[np.ndarray | None, dict]:
 
     t_end = time.perf_counter()
     _debug(
-        f"frame total {(t_end - t_start) * 1000:.0f} ms "
+        f"pass total {(t_end - t_start) * 1000:.0f} ms "
         f"(detector {(t_postprocess - t_start) * 1000:.0f} ms, recognizer {(t_end - t_postprocess) * 1000:.0f} ms)"
     )
 
-    metadata = build_metadata(result_horizontal, result_free)
+    return build_metadata(result_horizontal, result_free)
+
+
+def inference_callback(rgb_frame: np.ndarray) -> tuple[np.ndarray | None, dict]:
+    """
+    Process a single frame through the EasyOCR pipeline.
+
+    The frame is read upright and, for every configured rotation, turned by that angle;
+    the orientation that reads most confidently is reported (see utils/orientation.py).
+
+    Args:
+        rgb_frame: Input frame as RGB np.ndarray (H, W, 3), uint8.
+
+    Returns:
+        tuple[np.ndarray | None, dict]: contains (None, metadata). The frame slot is
+        always None - this pipeline produces text, not an annotated image, so the
+        output sinks emit the metadata without a video feed. metadata contains:
+            - 'text': str, all detected strings joined by newlines, in reading order
+            - 'detections': list of dicts, each containing:
+                - 'text': str
+                - 'confidence': float
+                - 'bounding_box_xyxy': list [x1, y1, x2, y2] in frame coordinates
+                - 'polygon': list of 4 [x, y] vertices in frame coordinates, ordered
+                  top-left, top-right, bottom-right, bottom-left of the text as read
+                  (for rotated text the first vertex is not the frame's top-left one)
+                - 'type': str ('horizontal' or 'free')
+    """
+    t_start = time.perf_counter()
+    _frame_stats["boxes"] = _frame_stats["retries"] = 0
+
+    angles = [0, *_settings["rotations"]]
+    readings = {angle: read_frame(rotate_image(rgb_frame, angle)) for angle in angles}
+    scores = {angle: reading_score((d["text"], d["confidence"]) for d in metadata["detections"]) for angle, metadata in readings.items()}
+    angle = select_orientation(scores)
+    metadata = readings[angle]
+    detections_to_original(metadata["detections"], angle, rgb_frame.shape)
+    if len(angles) > 1:
+        _debug(f"orientations {', '.join(f'{a}: {s:.2f}' for a, s in scores.items())} -> {angle}")
+
+    t_end = time.perf_counter()
     # One line per frame, always: enough to trace calls and performance from the container logs.
     logger.info(
-        f"ocr: {rgb_frame.shape[1]}x{rgb_frame.shape[0]} frame, {len(metadata['detections'])} texts from {_frame_stats['boxes']} boxes "
-        f"({_frame_stats['reads']} reads, {_frame_stats['retries']} retries) in {(t_end - t_start) * 1000:.0f} ms "
-        f"[detector {(t_postprocess - t_start) * 1000:.0f} ms, recognizer {(t_end - t_postprocess) * 1000:.0f} ms]"
+        f"ocr: {rgb_frame.shape[1]}x{rgb_frame.shape[0]} frame, {len(metadata['detections'])} texts "
+        f"read at {angle} deg ({len(angles)} orientation(s), {_frame_stats['boxes']} boxes, {_frame_stats['retries']} retries) "
+        f"in {(t_end - t_start) * 1000:.0f} ms"
     )
     return None, metadata

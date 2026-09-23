@@ -19,7 +19,7 @@ graphs land on the NPU: detector ~85 ms, recognizer ~17 ms per box (QCS8275 / IQ
 | `utils/onnx_ep.py` | ORT session factory: QNN plugin EP, CPU fallback, HTP context binaries, fingerprints |
 | `utils/model_io_processing.py` | `ONNXModel`: NHWC float in/out over the NCHW graphs (and (de)quantization from `metadata.json` for integer exports) |
 | `utils/constants.py` | model paths, thresholds, character set |
-| `utils/orientation.py` | rotated text: read each cutout at 90/180/270 too and keep the most confident reading (`rotation` setting) |
+| `utils/orientation.py` | rotated text: read the whole image turned by 90/180/270 too and keep the orientation that reads most confidently (`rotation` setting) |
 | `utils/{bbox,image,post}_processing.py`, `utils/metadata.py` | runtime-agnostic EasyOCR ports (unchanged from the TFLite version) |
 | `models/easyocr-onnx-float/` | `.onnx` + `.data` graphs, `metadata.json`, and the compiled `*.soc<id>.qnn_ctx.onnx` / `.json`, one pair per SoC |
 | `tools/compile_htp_context.py` | run on the board: compiles both graphs for the HTP and writes the context binaries |
@@ -32,10 +32,42 @@ The brick sends a `{"config": {...}}` message before each frame; `apply_config` 
 | key | value | effect |
 | --- | --- | --- |
 | `allowlist` | string of characters, `""` to clear | only these characters can be decoded (CTC logits of the others are zeroed) |
-| `rotation` | list of angles among 90, 180, 270, `[]` to clear | cutouts are also recognized rotated and the most confident reading wins (EasyOCR's `rotation_info`, see `utils/orientation.py`). 90/270 only on cutouts taller than wide, 180 on all, and a rotated reading must beat the upright one by 0.1 of confidence: without both guards rotated horizontal lines read as confident garbage. One extra recognizer pass per applicable angle per box; detection runs once |
+| `rotation` | list of angles among 90, 180, 270, `[]` to clear | the whole image is also read turned counter-clockwise by each angle, and the orientation with the highest character-weighted mean confidence is reported, a rotated one only when it beats upright by 0.1 (see `utils/orientation.py`). Positions are mapped back to the original frame. One extra full pass, detection and recognition, per angle |
 
 Both settings are process-wide and persist until the next config message, which is why
 the brick restates them on every call.
+
+## Accuracy and known limitations
+
+Measured on the CPU (`EASYOCR_EP=cpu`, the float graphs, which read like the HTP ones)
+with the runner pipeline on rendered two-line texts: 9 phrases x 7 fonts (Times, Arial,
+Courier, Calibri, Georgia, Verdana, Segoe UI) x 2 sizes (48 and 80 px). Letters and digits
+read correctly 98.1% of the time. Some punctuation does not:
+
+| character | read correctly | typical error |
+| --- | --- | --- |
+| `_` | 29% | dropped |
+| `/` | 50% | read as `I` |
+| `!` | 62% | read as `l` (28 of 84) |
+| `.` | 68% | dropped, mostly inside `...` |
+| `$` | 79% | read as `s` |
+| `,` `:` `@` `#` | 93% | |
+| `? ; ( ) + = % " ' & * -` | 100% | |
+
+This is the recognizer, not the pre-processing: padding the cutouts with background
+(10-20% of their height) fixes single cases, e.g. `youl` -> `you!` on
+`tests/containers/ai/ocr_runner_images/hey-arduino.png`, and breaks as many others
+(`Arduino!` -> `Arduinol`); over all the images the word accuracy moves by under 1%.
+
+Rotated text (`rotation`): on the same texts turned 90 degrees clockwise, reading the
+whole image turned gets 84% of the words right, as many as upright, and picks the right
+orientation for 167 of 168 images. The previous per-box approach (EasyOCR's
+`rotation_info`: detect once, recognize each cutout rotated) got 50%. The reasoning is in
+the `utils/orientation.py` docstring. Only 90 degrees was measured this way; 180 and 270
+use the same code path but have not been benchmarked.
+
+`tests/containers/ai/test_ocr_runner_model.py` reads the two reference images with the
+real models; it needs `onnxruntime` and is skipped without it.
 
 ## Everything is pinned
 

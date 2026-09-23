@@ -2,40 +2,43 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""Reading rotated text: recognize cutouts at several rotations, keep the best reading.
+"""Reading rotated text: run the whole pipeline on the image turned by each requested
+angle, keep the orientation that reads most confidently (`rotation` setting).
 
-Port of EasyOCR's `rotation_info` (`easyocr.Reader.recognize` with
-`make_rotated_img_list` / `set_result_with_confidence`), with one guard EasyOCR lacks.
-Detection runs once, on the upright image: CRAFT finds vertical or upside-down text lines
-as boxes just fine, it is the CRNN recognizer that only reads horizontal, left-to-right
-text. So a cutout is recognized as cut and again rotated by each requested angle, and per
-box the reading with the highest confidence wins.
+The CRNN recognizer only reads horizontal, left-to-right text. EasyOCR's `rotation_info`
+deals with that per box: detection runs once on the upright image and every cutout is
+also recognized rotated. That was this runner's first implementation, and it reads
+vertical text badly. The detector only merges characters into lines horizontally, so on
+a page turned by 90 degrees every word becomes a box of its own; short words ("to",
+"Nice") give nearly square cutouts whose upright reading is a confident single glyph
+("3" at 0.68, "2" at 0.93) that the rotated reading cannot beat; and reading order is
+computed in the upright frame, so the words of different lines interleave. Measured on
+rendered two-line texts (7 fonts, 2 sizes, 84 images, turned 90 degrees clockwise):
+50% of the words read correctly per box, 56% with the best per-box selection rule found.
 
-The guard: a quarter turn (90/270) is only tried on cutouts that are taller than wide.
-Rotating an ordinary horizontal text line by 90 degrees yields a narrow vertical strip
-that the recognizer reads as a single character with high confidence - measured on the
-board, such readings beat the correct upright ones ("ROBERTO GAINI" 0.64 lost to "L"
-0.68). A line of vertical text, on the other hand, is a tall box and becomes a normal
-horizontal strip once turned. 180 degrees keeps the shape and is always tried.
+Turning the image instead gives the detector upright text: lines merge, cutouts are
+ordinary strips and reading order comes out right. On the same images 84% of the words
+read correctly - what the upright originals score - and the right orientation was
+picked for 167 of 168 images. The cost is one full pass (detection + recognition) per
+extra angle.
 
-Second guard, also missing in EasyOCR: a rotated reading replaces the upright one only if
-it is more confident by at least ROTATION_MARGIN. Upside-down readings of upright text can
-still come out as confident nonsense ("Doltor" 0.75 lost to "JOHOQ" 0.82 on the board),
-while genuinely rotated text reads upright with low confidence and rotated with high, so a
-margin separates the two cases at little cost.
+Choosing: every orientation is scored with the character-weighted mean confidence of
+what it read, and a rotated orientation replaces the upright one only when it scores at
+least ROTATION_MARGIN more. The one wrong pick in the measurement above was an upright
+image scoring 0.57 upright and 0.60 turned; genuinely rotated text scores far apart
+(0.50 upright against 0.89 turned on tests/containers/ai/ocr_runner_images/hey-arduino-cw90.png).
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 
 import numpy as np
 
 # The recognizer input is a horizontal strip, so only quarter turns make sense.
 VALID_ROTATIONS = (90, 180, 270)
-QUARTER_TURNS = (90, 270)
 
-# How much more confident a rotated reading has to be to replace the upright one.
+# How much higher a rotated orientation has to score to replace the upright one.
 ROTATION_MARGIN = 0.1
 
 
@@ -79,77 +82,102 @@ def parse_rotations(value: object) -> list[int]:
     return rotations
 
 
-def rotate_cutout(cutout: np.ndarray, angle: int) -> np.ndarray:
-    """Rotate a [H, W] cutout counter-clockwise by a multiple of 90 degrees (0 returns it unchanged)."""
+def rotate_image(image: np.ndarray, angle: int) -> np.ndarray:
+    """Rotate an [H, W] or [H, W, C] image counter-clockwise by a multiple of 90 degrees (0 returns it unchanged)."""
     if angle % 360 == 0:
-        return cutout
-    return np.ascontiguousarray(np.rot90(cutout, k=(angle // 90) % 4))
+        return image
+    return np.ascontiguousarray(np.rot90(image, k=(angle // 90) % 4))
 
 
-def angles_for_cutout(shape: tuple[int, ...], rotations: list[int]) -> list[int]:
+def points_to_original(points: np.ndarray, angle: int, original_shape: Sequence[int]) -> np.ndarray:
     """
-    The orientations to read one cutout at: upright first, then the applicable rotations.
-
-    Quarter turns are only applied to cutouts taller than wide (see the module docstring);
-    180 degrees always.
-    """
-    height, width = shape[0], shape[1]
-    angles = [0]
-    for angle in rotations:
-        if angle in QUARTER_TURNS and height <= width:
-            continue
-        angles.append(angle)
-    return angles
-
-
-def plan_variants(cutouts: list[np.ndarray], rotations: list[int]) -> list[tuple[int, int]]:
-    """
-    Every (box_index, angle) reading to perform, box by box, upright first within a box.
+    Map (x, y) points from an image rotated with `rotate_image` back to the original image.
 
     Parameters
     ----------
-    cutouts
-        The [h, w] greyscale crops, one per detected box.
-    rotations
-        Angles from `parse_rotations`.
-    """
-    return [(index, angle) for index, cutout in enumerate(cutouts) for angle in angles_for_cutout(cutout.shape, rotations)]
-
-
-def select_best_readings(
-    readings: list[tuple[str, float]],
-    variants: list[tuple[int, int]],
-    n_boxes: int,
-) -> list[tuple[int, str, float]]:
-    """
-    Pick, for every box, the most confident of its readings.
-
-    Parameters
-    ----------
-    readings
-        (text, confidence) per entry of `variants`, in the same order.
-    variants
-        The (box_index, angle) plan from `plan_variants`.
-    n_boxes
-        Number of boxes; every box must appear in `variants` at least once.
+    points
+        [..., 2] coordinates in the rotated image.
+    angle
+        The angle the image was rotated by (counter-clockwise, multiple of 90).
+    original_shape
+        Shape of the original, unrotated image ([H, W] or [H, W, C]).
 
     Returns
     -------
-    best : list[tuple[int, str, float]]
-        One (angle, text, confidence) per box. The upright reading is kept unless a
-        rotated one is more confident by more than ROTATION_MARGIN; between rotated
-        readings the earlier one wins ties.
+    mapped : np.ndarray
+        [..., 2] float coordinates in the original image.
     """
-    if len(readings) != len(variants):
-        raise ValueError(f"expected one reading per planned variant ({len(variants)}), got {len(readings)}")
+    height, width = original_shape[0], original_shape[1]
+    pts = np.asarray(points, dtype=np.float64)
+    x, y = pts[..., 0], pts[..., 1]
+    quarter_turns = (angle // 90) % 4
+    if quarter_turns == 0:
+        mapped = (x, y)
+    elif quarter_turns == 1:  # the original's right edge became the top
+        mapped = (width - y, x)
+    elif quarter_turns == 2:
+        mapped = (width - x, height - y)
+    else:  # the original's left edge became the top
+        mapped = (y, height - x)
+    return np.stack(mapped, axis=-1)
 
-    best: list[tuple[int, str, float] | None] = [None] * n_boxes
-    for (box, angle), (text, confidence) in zip(variants, readings):
-        current = best[box]
-        margin = ROTATION_MARGIN if angle else 0.0
-        if current is None or confidence > current[2] + margin:
-            best[box] = (angle, text, confidence)
-    missing = [index for index, item in enumerate(best) if item is None]
-    if missing:
-        raise ValueError(f"no reading planned for box(es) {missing}")
-    return best  # type: ignore[return-value]
+
+def detections_to_original(detections: list[dict], angle: int, original_shape: Sequence[int]) -> list[dict]:
+    """
+    Move detection dicts (as built by `utils.metadata.build_metadata`) read on a rotated
+    image back into the coordinates of the original image, in place.
+
+    The polygon keeps its vertex order, so it still starts at the top-left corner *of the
+    text* as read: for text that runs top to bottom in the original that is its top-right
+    corner. `bounding_box_xyxy` is recomputed from the mapped polygon. Coordinates are
+    clipped to the original image.
+    """
+    if angle % 360 == 0:
+        return detections
+    height, width = original_shape[0], original_shape[1]
+    for det in detections:
+        points = points_to_original(np.asarray(det["polygon"], dtype=np.float64), angle, original_shape)
+        points[:, 0] = np.clip(points[:, 0], 0, width)
+        points[:, 1] = np.clip(points[:, 1], 0, height)
+        polygon = np.rint(points).astype(int)
+        det["polygon"] = polygon.tolist()
+        det["bounding_box_xyxy"] = [
+            int(polygon[:, 0].min()),
+            int(polygon[:, 1].min()),
+            int(polygon[:, 0].max()),
+            int(polygon[:, 1].max()),
+        ]
+    return detections
+
+
+def reading_score(texts_and_confidences: Iterable[tuple[str, float]]) -> float:
+    """Character-weighted mean confidence of a set of readings; 0.0 when nothing was read."""
+    chars = 0
+    weighted = 0.0
+    for text, confidence in texts_and_confidences:
+        chars += len(text)
+        weighted += len(text) * float(confidence)
+    return weighted / chars if chars else 0.0
+
+
+def select_orientation(scores: dict[int, float]) -> int:
+    """
+    Pick the orientation to report among the scored ones.
+
+    Parameters
+    ----------
+    scores
+        `reading_score` per angle; must contain 0 (upright).
+
+    Returns
+    -------
+    angle : int
+        0 unless a rotated orientation scores more than ROTATION_MARGIN above upright;
+        then the highest-scoring rotated one (the earlier one on ties).
+    """
+    if 0 not in scores:
+        raise ValueError("the upright orientation (0) must always be scored")
+    best_rotated = max((angle for angle in scores if angle), key=lambda angle: scores[angle], default=None)
+    if best_rotated is not None and scores[best_rotated] > scores[0] + ROTATION_MARGIN:
+        return best_rotated
+    return 0
