@@ -11,40 +11,14 @@ import cv2
 import numpy as np
 import pytest
 
-import arduino.app_bricks.video_objectdetection as vod_module
+import arduino.app_internal.edge_impulse.model as model_module
 import arduino.app_internal.ei_inference as ei_inference
 from arduino.app_bricks.video_objectdetection import VideoObjectDetection
 
 TIMEOUT = 3.0  # seconds to wait for a callback
-FRAME = np.zeros((120, 160, 3), np.uint8)  # 160x120 camera frames, the fake model input is 100x100
+# The fake camera produces 160x120 frames, the fake model input is 100x100
 CAT = {"label": "cat", "score": 0.9, "x": 16, "y": 24, "w": 48, "h": 48}  # in frame coordinates, as the service maps them
 DOG = {"label": "dog", "score": 0.2, "x": 0, "y": 0, "w": 10, "h": 10}
-
-
-class FakeCamera:
-    """A camera whose frames the test pushes, capture() blocks briefly when there is none."""
-
-    fps = 30
-
-    def __init__(self):
-        self.frames = queue.Queue()
-        self.started = False
-
-    def start(self):
-        self.started = True
-
-    def stop(self):
-        self.started = False
-
-    def capture(self):
-        try:
-            return self.frames.get(timeout=0.05)
-        except queue.Empty:
-            return None
-
-    def push(self, count=1):
-        for _ in range(count):
-            self.frames.put(FRAME.copy())
 
 
 class RunningDetector:
@@ -54,7 +28,7 @@ class RunningDetector:
         self.detector = detector
         self.camera = detector._camera
         detector.start()
-        self.thread = threading.Thread(target=detector.detection_loop, daemon=True)
+        self.thread = threading.Thread(target=detector.inference_loop, daemon=True)
         self.thread.start()
 
     def stop(self):
@@ -62,20 +36,27 @@ class RunningDetector:
         self.thread.join(TIMEOUT)
 
 
+@pytest.fixture(autouse=True)
+def configured_model(monkeypatch):
+    """The app configured the fake model for the brick, as the CLI does through the model variable."""
+    monkeypatch.setenv("EI_V_OBJ_DETECTION_MODEL", "/models/ootb/ei/det.eim")
+
+
 @pytest.fixture
 def service(ei_service, monkeypatch):
     monkeypatch.setattr(ei_inference, "DEFAULT_SOCKET_PATH", ei_service.socket_path)
     ei_service.models["det"]["boxes"] = [CAT, DOG]
+    ei_service.models["ootb/ei/det"] = ei_service.models["det"]  # the name the configured path resolves to
     return ei_service
 
 
 @pytest.fixture
-def running(service):
+def running(service, camera):
     """A running detector with confidence 0.3 and no debounce, the test registers its handlers first."""
     runners = []
 
     def start(**kwargs):
-        detector = VideoObjectDetection(camera=FakeCamera(), model="det", **{"confidence": 0.3, "debounce_sec": 0.0, "stream_port": 0, **kwargs})
+        detector = VideoObjectDetection(camera=camera, **{"confidence": 0.3, "debounce_sec": 0.0, "stream_port": 0, **kwargs})
         runner = RunningDetector(detector)
         runners.append(runner)
         return runner
@@ -88,19 +69,19 @@ def running(service):
 # ---------------------------------------------------------------- configuration
 
 
-def test_model_from_the_configured_path(monkeypatch):
+def test_model_from_the_configured_path(camera, monkeypatch):
     monkeypatch.setenv("EI_V_OBJ_DETECTION_MODEL", "/var/lib/arduino-app-cli/models/custom-ei/abc/model.eim")
     monkeypatch.setattr("arduino.app_internal.ei_inference.client.DEFAULT_MODELS_DIR", "/var/lib/arduino-app-cli/models")
-    detector = VideoObjectDetection(camera=FakeCamera())
+    detector = VideoObjectDetection(camera=camera)
     assert detector.model == "custom-ei/abc/model"
 
 
-def test_default_model_comes_from_the_models_list(monkeypatch):
+def test_default_model_comes_from_the_models_list(camera, monkeypatch):
     from arduino.app_internal.core.module import ModelBrickConfig, ModelEntry
 
     monkeypatch.delenv("EI_V_OBJ_DETECTION_MODEL", raising=False)
-    monkeypatch.setattr(vod_module, "get_brick_config", lambda cls: {"id": "arduino:video_object_detection"})
-    monkeypatch.setattr(vod_module, "get_brick_configured_model", lambda brick_id, brick_config: "yolox-qnn-object-detection")
+    monkeypatch.setattr(model_module, "get_brick_config", lambda cls: {"id": "arduino:video_object_detection"})
+    monkeypatch.setattr(model_module, "get_brick_configured_model", lambda brick_id, brick_config: "yolox-qnn-object-detection")
     entry = ModelEntry(
         "yolox-qnn-object-detection",
         bricks=[
@@ -108,42 +89,42 @@ def test_default_model_comes_from_the_models_list(monkeypatch):
             ModelBrickConfig("arduino:video_object_detection", {"EI_V_OBJ_DETECTION_MODEL": "/models/ootb/ei/yolo-x-nano-qnn.eim"}),
         ],
     )
-    monkeypatch.setattr(vod_module, "load_model_list", lambda: {"yolox-qnn-object-detection": entry})
-    assert VideoObjectDetection(camera=FakeCamera()).model == "ootb/ei/yolo-x-nano-qnn"
+    monkeypatch.setattr(model_module, "load_model_list", lambda: {"yolox-qnn-object-detection": entry})
+    assert VideoObjectDetection(camera=camera).model == "ootb/ei/yolo-x-nano-qnn"
 
 
-def test_missing_model_configuration_is_an_error(monkeypatch):
+def test_missing_model_configuration_is_an_error(camera, monkeypatch):
     monkeypatch.delenv("EI_V_OBJ_DETECTION_MODEL", raising=False)
-    monkeypatch.setattr(vod_module, "get_brick_config", lambda cls: None)
+    monkeypatch.setattr(model_module, "get_brick_config", lambda cls: None)
     with pytest.raises(RuntimeError, match="EI_V_OBJ_DETECTION_MODEL"):
-        VideoObjectDetection(camera=FakeCamera())
+        VideoObjectDetection(camera=camera)
 
 
-def test_bundled_model_from_the_configured_path(monkeypatch):
+def test_bundled_model_from_the_configured_path(camera, monkeypatch):
     monkeypatch.setenv("EI_V_OBJ_DETECTION_MODEL", "/models/ootb/ei/yolo-x-nano.eim")
-    assert VideoObjectDetection(camera=FakeCamera()).model == "ootb/ei/yolo-x-nano"
+    assert VideoObjectDetection(camera=camera).model == "ootb/ei/yolo-x-nano"
 
 
-def test_model_outside_the_models_directories_is_an_error(monkeypatch):
+def test_model_outside_the_models_directories_is_an_error(camera, monkeypatch):
     monkeypatch.setenv("EI_V_OBJ_DETECTION_MODEL", "/home/arduino/model.eim")
     with pytest.raises(RuntimeError, match="inference service"):
-        VideoObjectDetection(camera=FakeCamera())
+        VideoObjectDetection(camera=camera)
 
 
-def test_callbacks_must_be_functions():
-    detector = VideoObjectDetection(camera=FakeCamera(), model="det")
+def test_callbacks_must_be_functions(camera):
+    detector = VideoObjectDetection(camera=camera)
     with pytest.raises(TypeError):
         detector.on_detect("cat", "not_a_function")
     with pytest.raises(TypeError):
         detector.on_detect_all(42)
 
 
-def test_override_threshold_validates_the_value():
-    detector = VideoObjectDetection(camera=FakeCamera(), model="det")
+def test_override_threshold_validates_the_value(camera):
+    detector = VideoObjectDetection(camera=camera)
     with pytest.raises(TypeError):
         detector.override_threshold("high")
     detector.override_threshold(0.8)
-    assert detector._confidence == 0.8
+    assert detector.confidence == 0.8
 
 
 # ---------------------------------------------------------------- detections
@@ -360,8 +341,8 @@ def test_boxes_disappear_when_the_model_stops_answering(running, service):
     assert boxes_gone, "the stale boxes were dropped"
 
 
-def test_video_stream_can_be_disabled(service):
-    detector = VideoObjectDetection(camera=FakeCamera(), model="det", stream_port=None)
+def test_video_stream_can_be_disabled(service, camera):
+    detector = VideoObjectDetection(camera=camera, stream_port=None)
     assert detector.stream_port is None
     detector.start()
     detector.stop()
@@ -370,11 +351,11 @@ def test_video_stream_can_be_disabled(service):
 # ---------------------------------------------------------------- service lifecycle
 
 
-def test_waits_for_the_service_and_reconnects_when_it_restarts(service, monkeypatch):
+def test_waits_for_the_service_and_reconnects_when_it_restarts(service, camera, monkeypatch):
     monkeypatch.setattr(VideoObjectDetection, "_RETRY_SEC", 0.1)
     fired = queue.Queue()
     service.stop()
-    detector = VideoObjectDetection(camera=FakeCamera(), model="det", stream_port=0)
+    detector = VideoObjectDetection(camera=camera, stream_port=0)
     detector.on_detect("cat", lambda: fired.put(True))
     runner = RunningDetector(detector)
     try:
