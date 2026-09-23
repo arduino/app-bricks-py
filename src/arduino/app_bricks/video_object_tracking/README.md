@@ -1,7 +1,7 @@
 # Video Object Tracking Brick
 
 This Brick provides a Python interface for **tracking objects in real time from a USB camera video stream**.
-It connects to a model runner over WebSocket, continuously analyzes incoming frames, and produces tracking events where each object carries a **stable identity** across frames.
+It sends the camera frames to the Edge Impulse inference service running on the board, continuously analyzes them, and produces tracking events where each object carries a **stable identity** across frames.
 
 Because every object keeps the same ID while it stays visible, the Brick can answer questions plain detection cannot: *how many distinct objects have I seen*, *how many crossed this line*, and *which way are they moving*.
 It supports both **pre-trained models** provided by the framework and **custom models** trained with Edge Impulse.
@@ -17,7 +17,7 @@ The Video Object Tracking Brick allows you to:
 - Trigger custom Python functions when certain objects are tracked.
 - Handle all tracked objects of a frame in a single callback if desired.
 - Restrict counting and direction bookkeeping to a subset of labels.
-- Override the tracker parameters dynamically at runtime (if supported by the model).
+- Change the tracker parameters at runtime.
 
 ## Features
 
@@ -25,7 +25,7 @@ The Video Object Tracking Brick allows you to:
 - Outputs:
   - **Class label** (e.g., "person", "bicycle")
   - **Object ID**, stable for as long as the object is tracked
-  - **Bounding boxes** for localized detections
+  - **Bounding boxes** for localized detections, in the coordinates of the camera frame
 - Two callback styles:
   - `on_detect("<label>", callback)` → React to a specific label.
   - `on_detect_all(callback)` → React to all tracked objects of a frame at once.
@@ -35,16 +35,28 @@ The Video Object Tracking Brick allows you to:
   - `get_objects_directions()` → movement history per object ID
 - Virtual counting line via `set_horizontal_crossing_line(y)`, `set_vertical_crossing_line(x)` or `set_crossing_line_coordinates(x1, y1, x2, y2)`.
 - Configurable confidence threshold (default: `0.4`) and debounce time between repeated callback invocations (default: `0s`, i.e. no debounce).
-- Runtime tracker overrides: `override_confidence(value)`, `override_keep_grace(value)`, `override_min_detections(value)`, `override_iou_threshold(value)`, `override_euclidean_distance_threshold(value)`.
+- Runtime tracker overrides: `override_threshold(value)`, `override_keep_grace(value)`, `override_min_detections(value)`, `override_iou_threshold(value)`, `override_euclidean_distance_threshold(value)`.
 - Clean lifecycle control with `start()` / `stop()` and integration with `App.run()`.
+- Video stream with the tracked boxes and their identities on port `4912`, for browsers and embedded iframes.
+
+## How it works
+
+The models run in the **Edge Impulse inference service** (`arduino:edge_impulse`), one container shared by the bricks of the app, on the NPU where the board has one. The brick opens the model configured for it over the service socket, sends each camera frame as it is, and receives the objects the model tracks in the coordinates of that frame: the service resizes the frame to the model input in the model's own resize mode. The model is released when the brick stops.
+
+The model is the one selected for the brick in the app configuration, or the default of the brick for the board (`EI_V_OBJ_TRACKING_MODEL`, set by the app CLI to the `.eim` file under its models directory).
+
+The brick opens the model while the app is starting and refuses one without the **object tracking** block, since such a model can never report a tracked object. The framework ships `yolox-qnn-object-tracker` as the default; custom Edge Impulse models are supported as long as they include the object tracking block.
+
+## Video stream
+
+The brick serves the camera video with the tracked boxes drawn on it on port `4912`: `http://<board>:4912/` is an MJPEG stream, which browsers show like an image, and `http://<board>:4912/embed` is a bare page for embedding in an iframe. Every box is labelled with the object label and its ID, `person #3`, so an object keeps its color while it stays in view. Frames are rendered only while someone is watching.
+`stream_port=None` in the constructor disables the stream.
 
 ## Prerequisites
 
 To use this Brick you should have a USB camera connected to your board.
 
 **Tip**: Use a USB-C® Hub with USB-A connectors to support commercial web cameras.
-
-This Brick requires an **object tracking** model. The framework ships `yolox-object-tracking` as the default; custom Edge Impulse models are supported as long as the model runner emits `object_tracking` results.
 
 ## Code example and usage
 
@@ -61,7 +73,7 @@ tracker.set_horizontal_crossing_line(240)
 
 # Callback when a "person" is tracked
 def on_person_tracked(details: dict):
-    # Example: {"object_id": 7.0, "confidence": 0.87, "bounding_box_xyxy": (10, 20, 110, 220)}
+    # Example: {"object_id": 7, "confidence": 0.87, "bounding_box_xyxy": (10, 20, 110, 220)}
     print(f"🚶 Person {details['object_id']} at {details['bounding_box_xyxy']}")
 
 
@@ -70,7 +82,7 @@ tracker.on_detect("person", on_person_tracked)
 
 # Callback for all tracked objects of a frame (takes one dict argument)
 def on_all_tracked(objects: dict):
-    # Example: {"person": [{"object_id": 7.0, "confidence": 0.87, "bounding_box_xyxy": (10, 20, 110, 220)}]}
+    # Example: {"person": [{"object_id": 7, "confidence": 0.87, "bounding_box_xyxy": (10, 20, 110, 220)}]}
     print("Tracked:", objects)
     print("Unique so far:", tracker.get_unique_objects_count())
     print("Line crossings:", tracker.get_line_crossing_counts())
@@ -85,8 +97,8 @@ App.run()
 
 Callback signatures:
 
-- `on_detect(label, callback)`: the callback must be a plain function. With no parameters it is simply invoked; with one parameter it receives the tracking details dict `{"object_id": float, "confidence": float, "bounding_box_xyxy": (x1, y1, x2, y2)}`, once per object of that label in the frame.
-- `on_detect_all(callback)`: the callback receives one dict argument mapping each tracked label to the list of its objects in the frame: `{label: [{"object_id": float, "confidence": float, "bounding_box_xyxy": (x1, y1, x2, y2)}, ...], ...}`, so `len()` of a list is how many objects of that label are in view.
+- `on_detect(label, callback)`: the callback must be a plain function. With no parameters it is simply invoked; with one parameter it receives the tracking details dict `{"object_id": int, "confidence": float, "bounding_box_xyxy": (x1, y1, x2, y2)}`, once per object of that label in the frame.
+- `on_detect_all(callback)`: the callback receives one dict argument mapping each tracked label to the list of its objects in the frame: `{label: [{"object_id": int, "confidence": float, "bounding_box_xyxy": (x1, y1, x2, y2)}, ...], ...}`, so `len()` of a list is how many objects of that label are in view.
 
 The constructor also accepts a `camera` parameter (`BaseCamera`) to use a specific camera instead of the default one, which is where the capture frame rate and resolution are set. The frame rate bounds how far an object can move between two observations, so it bounds how reliably the tracker keeps an identity.
 
@@ -100,7 +112,7 @@ tracker = VideoObjectTracking(labels_to_track=["car", "truck"])
 print(tracker.get_unique_objects_count())  # {"car": 12, "truck": 3}
 ```
 
-`reset_counters()` clears the unique-object counts, the line-crossing counts and the last-seen positions, so counting starts from scratch. The same identifiers are also forgotten whenever the model runner reconnects, because the tracker numbers its tracks from zero on every run.
+`reset_counters()` clears the unique-object counts, the line-crossing counts and the last-seen positions, so counting starts from scratch. The same identifiers are also forgotten whenever the brick reconnects to the inference service, because the tracker numbers its tracks from zero on every run.
 
 ## Counting line crossings
 
@@ -128,11 +140,11 @@ Possible values are `up`, `down`, `left`, `right`, `up-left`, `up-right`, `down-
 
 ## Tracker parameters
 
-The constructor accepts the tracker knobs below, and each one has a matching `override_*` method to change it at runtime once the model runner is connected:
+The constructor accepts the tracker knobs below, and each one has a matching `override_*` method to change it at runtime:
 
 | Parameter | Default | Meaning |
 | --- | --- | --- |
-| `confidence` | `0.4` | Minimum detection confidence, applied by the model runner. |
+| `confidence` | `0.4` | Minimum detection confidence, applied by the model. |
 | `keep_grace` | `3` | Frames an object is kept alive after it disappears, before its ID is dropped. |
 | `min_detections` | `3` | Detections an object needs before the tracker reports it as a track of its own. |
 | `iou_threshold` | `0.1` | Intersection-over-Union used to match tracks between frames. For bounding-box models such as YOLO. |
@@ -141,6 +153,8 @@ The constructor accepts the tracker knobs below, and each one has a matching `ov
 | `labels_to_track` | `None` | Labels included in the counters. `None` means all labels. |
 | `min_movement_threshold` | `10` | Minimum displacement in pixels for a direction change. |
 
-`iou_threshold` and `euclidean_distance_threshold` are alternatives: which one the model uses depends on its type, and each `override_*` method is a no-op on a model of the other type.
+The knobs are set on the model as soon as it is opened and again on every reconnection. `iou_threshold` and `euclidean_distance_threshold` are alternatives: which one the model uses depends on its type, and each `override_*` method is a no-op on a model of the other type. An `override_*` method raises `RuntimeError` when the tracking block of the model has no such knob.
+
+**Note**: the thresholds belong to the model, so they hold for every brick of the app using the same model.
 
 **Note**: `labels_to_track` filters everything the Brick reports: the counters, the line crossings, the direction history and the callbacks.
