@@ -59,6 +59,7 @@ from hugging_face.hf_downloader import (
     public_repo_files,
     repo_url_as_key,
     resolve_model_source,
+    unsupported_quantization,
     source_patterns,
     validate_hub_source,
     validate_repo_id,
@@ -1272,6 +1273,62 @@ def test_check_answers_for_the_requested_quantization_only(tmp_path, monkeypatch
     with pytest.raises(SystemExit):
         _run_main(monkeypatch, "--check", "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q3_K_S", "--output-dir", str(models_dir))
     assert read_events(capsys)[-1] == {"event": "error", "description": "Model does not exist: *Q3_K_S*.gguf", "downloading": False}
+
+
+# --------------------------------------------------------------------------- #
+# main(): quantizations llama.cpp cannot load are refused before downloading
+# --------------------------------------------------------------------------- #
+BARTOWSKI_URL = "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/blob/main/Llama-3.2-3B-Instruct-{}.gguf"
+
+
+@pytest.mark.parametrize(
+    ("spec", "expected"),
+    [
+        (BARTOWSKI_URL.format("Q4_0_4_4"), "Q4_0_4_4"),
+        (BARTOWSKI_URL.format("Q4_0_4_8"), "Q4_0_4_8"),
+        (BARTOWSKI_URL.format("Q4_0_8_4"), "Q4_0_8_4"),
+        (BARTOWSKI_URL.format("Q4_0_8_8"), "Q4_0_8_8"),
+        ("bartowski/Llama-3.2-3B-Instruct-GGUF:q4_0_4_4", "Q4_0_4_4"),
+        (BARTOWSKI_URL.format("Q4_0"), None),
+        ("bartowski/Llama-3.2-3B-Instruct-GGUF:Q4_0", None),
+        (None, None),
+    ],
+)
+def test_unsupported_quantization(spec, expected):
+    assert unsupported_quantization(spec) == expected
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["--model-url", BARTOWSKI_URL.format("Q4_0_4_4")],
+        ["--model-url", "bartowski/Llama-3.2-3B-Instruct-GGUF:Q4_0_8_8"],
+        [
+            "--model-url",
+            GEMMA_URL,
+            "--model-mmproj-url",
+            "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf/blob/1894d1fc/mmproj-Q4_0_4_8.gguf",
+        ],
+        ["--info", "--model-url", BARTOWSKI_URL.format("Q4_0_4_4")],
+    ],
+)
+def test_unsupported_quantization_is_refused_before_downloading(tmp_path, monkeypatch, stub_download, capsys, argv):
+    with pytest.raises(SystemExit) as exc:
+        _run_main(monkeypatch, *argv, "--output-dir", str(tmp_path))
+
+    assert exc.value.code == 1
+    assert read_events(capsys)[-1]["description"].startswith("Cannot download model. Not supported quantization: Q4_0_")
+    assert stub_download == []
+
+
+def test_unsupported_quantization_can_still_be_deleted(tmp_path, monkeypatch):
+    """A model downloaded before the check existed must stay removable."""
+    repo = tmp_path / "bartowski" / "Llama-3.2-3B-Instruct-GGUF"
+    repo.mkdir(parents=True)
+    (repo / "Llama-3.2-3B-Instruct-Q4_0_4_4.gguf").write_bytes(b"GGUF")
+
+    _run_main(monkeypatch, "--delete", "--model-url", BARTOWSKI_URL.format("Q4_0_4_4"), "--output-dir", str(tmp_path))
+    assert not (repo / "Llama-3.2-3B-Instruct-Q4_0_4_4.gguf").exists()
 
 
 # --------------------------------------------------------------------------- #

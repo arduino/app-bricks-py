@@ -170,6 +170,10 @@ BOARD_QUANTIZATIONS = {
 # a letter may not follow it, so the "4bit" of a "-4bit-" tag is not read as 4 billion.
 PARAMETER_COUNT_RE = re.compile(r"(?<![0-9.])(\d+(?:\.\d+)?)([BM])(?![A-Za-z0-9])", re.IGNORECASE)
 
+# ARM repacked Q4_0 layouts that llama.cpp no longer loads: it repacks plain Q4_0 at load
+# time instead. Refused by name, before anything is downloaded.
+UNSUPPORTED_QUANTIZATIONS = ("Q4_0_4_4", "Q4_0_4_8", "Q4_0_8_4", "Q4_0_8_8")
+
 # The repository the CLI help and the "model_url is required" error use as their example.
 EXAMPLE_REPO_ID = "unsloth/Qwen3-0.6B-GGUF"
 
@@ -734,6 +738,16 @@ def is_hf_url(spec: str) -> bool:
     more useful than parsing it as a repository named "ftp".
     """
     return re.match(r"[A-Za-z][A-Za-z0-9+.-]*://", spec) is not None
+
+
+def unsupported_quantization(spec: str | None) -> str | None:
+    """Return the ``UNSUPPORTED_QUANTIZATIONS`` entry *spec* names, or None.
+
+    *spec* is a model URL or key as given; case is ignored, since file names are spelled
+    ``Q4_0_4_4`` at one publisher and ``q4_0_4_4`` at the next.
+    """
+    upper = (spec or "").upper()
+    return next((q for q in UNSUPPORTED_QUANTIZATIONS if q in upper), None)
 
 
 def gguf_pattern(spec: str, mmproj: bool = False) -> str:
@@ -1539,6 +1553,13 @@ def main():
     except ValueError as exc:
         emit_json_error(str(exc))
         raise SystemExit(1) from exc
+
+    # --delete stays allowed, so a model downloaded before this check can still be removed.
+    if not args.delete:
+        unsupported = unsupported_quantization(args.model_url) or unsupported_quantization(args.model_mmproj_url)
+        if unsupported:
+            emit_json_error(f"Cannot download model. Not supported quantization: {unsupported}.")
+            raise SystemExit(1)
 
     repo_id = source["repo_id"]
     # Set only for the URL syntax; they select the single-file download path.
