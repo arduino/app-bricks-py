@@ -244,7 +244,7 @@ models:
       image-resolution: "416x416"
       hw_acceleration_backend: "qnn"
       ei-project-id: 717280
-      ei-impulse-id: 1
+      ei-impulse-id: 4
       ei-model-url: "https://studio.edgeimpulse.com/public/717280/live"
       source-model-id: "YOLOX-Nano"
       source-model-url: "https://github.com/Megvii-BaseDetection/YOLOX"
