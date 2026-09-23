@@ -242,7 +242,8 @@ class LargeLanguageModel(CloudLLM):
             elif self._is_model_load_failure(server_msg):
                 ilogger.error(f"Model runner reported a load failure: status_code={e.code}, message={server_msg}")
                 error_msg = (
-                    f"Could not load model '{self._model_name}'. This could be due to a potential memory exhaustion on NPU sessions or unsupported model type."
+                    f"Could not load model '{self._model_name}'."
+                    f" This could be due to a potential memory exhaustion on NPU sessions or unsupported model type."
                     f" Please check the logs of the models runner '{getattr(self, '_runner_host', 'unknown')}' for details."
                 )
             else:
