@@ -18,11 +18,13 @@ import socket
 import threading
 import time
 from dataclasses import dataclass
+from typing import Any
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import cv2
 import numpy as np
 
+from arduino.app_internal.ei_inference import Box
 from arduino.app_utils import Logger
 
 logger = Logger("VideoStream")
@@ -96,8 +98,8 @@ class BoxStabilizer:
         self._hold = self.MIN_HOLD
         self._lock = threading.Lock()
 
-    def update(self, boxes: list, round_trip: float) -> None:
-        """Feed the boxes of one result (objects with label, score, x, y, w, h) and the seconds it took."""
+    def update(self, boxes: list[Box], round_trip: float) -> None:
+        """Feed the boxes of one result and the seconds it took."""
         now = time.monotonic()
         with self._lock:
             self._hold = max(self.MIN_HOLD, self.HOLD_PERIODS * round_trip)
@@ -109,17 +111,18 @@ class BoxStabilizer:
                 unmatched.remove(match)
                 new = (match.x, match.y, match.x + match.w, match.y + match.h)
                 width, height = track.box[2] - track.box[0], track.box[3] - track.box[1]
-                track.box = tuple(self._follow(old, n, size) for old, n, size in zip(track.box, new, (width, height, width, height)))
+                x1, y1, x2, y2 = (self._follow(old, n, size) for old, n, size in zip(track.box, new, (width, height, width, height)))
+                track.box = (x1, y1, x2, y2)
                 track.score += self.SCORE_SMOOTHING * (match.score - track.score)
                 track.last_seen = now
             for box in unmatched:
                 self._tracks.append(_Track(box.label, (box.x, box.y, box.x + box.w, box.y + box.h), box.score, now))
             self._tracks = [track for track in self._tracks if now - track.last_seen <= self._hold]
 
-    def visible(self) -> dict[str, list[dict]]:
+    def visible(self) -> dict[str, list[dict[str, Any]]]:
         """The boxes to draw now, in the shape of the brick's detections."""
         now = time.monotonic()
-        detections: dict[str, list[dict]] = {}
+        detections: dict[str, list[dict[str, Any]]] = {}
         with self._lock:
             for track in self._tracks:
                 if now - track.last_seen <= self._hold:
@@ -140,7 +143,7 @@ class BoxStabilizer:
         return old + weight * delta
 
     @classmethod
-    def _best_match(cls, track: _Track, boxes: list) -> object | None:
+    def _best_match(cls, track: _Track, boxes: list[Box]) -> Box | None:
         best, best_iou = None, cls.MIN_IOU
         for box in boxes:
             if box.label != track.label:
@@ -161,7 +164,7 @@ def _iou(a: tuple[float, float, float, float], b: tuple[float, float, float, flo
     return inter / union if union > 0 else 0.0
 
 
-def draw_detections(frame: np.ndarray, detections: dict[str, list[dict]], colors: LabelColors) -> np.ndarray:
+def draw_detections(frame: np.ndarray, detections: dict[str, list[dict[str, Any]]], colors: LabelColors) -> np.ndarray:
     """A copy of the frame with a box around every detection and a filled label chip at its top-right corner, "label" and "(score)".
 
     Args:
