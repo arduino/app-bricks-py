@@ -1,9 +1,9 @@
 # OCR Brick
 
 This OCR brick extracts the text visible in an image using the EasyOCR model
-(CRAFT text detector plus CRNN recognizer) accelerated on the board's NPU. Given
-an image it returns the recognized text in reading order, along with the position
-and confidence of every detected text region.
+accelerated on the board's NPU. Given an image it returns the recognized text
+in reading order, along with the position and confidence of every detected
+text region.
 
 The API is a single blocking call:
 
@@ -11,7 +11,7 @@ The API is a single blocking call:
 from arduino.app_bricks.ocr import OCR
 
 ocr = OCR()
-result = ocr.extract_text("/path/to/photo.jpg")
+result = ocr.extract_text("assests/photo.jpg")
 print(result.text)
 ```
 
@@ -77,25 +77,18 @@ Tuning:
 from arduino.app_bricks.ocr import OCR
 
 ocr = OCR(confidence=0.5, allowlist="0123456789.")
-reading = ocr.extract_text("/path/to/meter.jpg")
+reading = ocr.extract_text("assets/meter.jpg")
 print(reading.text)
 
-sideways = ocr.extract_text("/path/to/page.jpg", rotation=[90, 270])
-plate = ocr.extract_text("/path/to/plate.jpg", single_line=True)  # one line, no newlines
+sideways = ocr.extract_text("assets/page.jpg", rotation=[90, 270])
+plate = ocr.extract_text("assets/plate.jpg", single_line=True)  # one line, no newlines
 ```
 
 Image size: the model looks at the whole image scaled to 800x608, so a piece of
 text has to be reasonably large in the frame to be found, roughly at least 1.5% of
 the image height (a whole A4 page photographed from afar is beyond it: crop or get
 closer). Sending more pixels does not change that, so the brick downscales images
-larger than 2048 px on their longest side before sending them (JPEG, quality
-lowered if needed to stay under the runner's 1 MiB message limit). Positions in the
+larger than 2048 px on their longest side before sending them. Positions in the
 result always refer to the image you passed in. A dense image with many pieces of
-text takes longer: each detected region is one recognizer pass (about 15 ms on the
-NPU), times the number of orientations.
-
-Runner note: the model runner produces text metadata only — there is no annotated
-video feed and no MJPEG stream. Calls are serialized and block until the runner
-answers; `OCR(timeout=...)` bounds how long a call may wait (connection retries
-while the container starts up included, 30 seconds by default). If the runner
-cannot be reached in time, `extract_text` raises `OcrError`.
+text takes longer: each detected region is one recognizer pass, times the number
+of orientations.
