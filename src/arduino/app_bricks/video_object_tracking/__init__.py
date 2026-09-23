@@ -8,10 +8,14 @@ from collections import Counter
 from dataclasses import replace
 from typing import Any
 
+import numpy as np
+
 from arduino.app_bricks.video_objectdetection import STREAM_PORT, AllDetectionsCallback, DetectionCallback, VideoObjectDetection
 from arduino.app_internal.ei_inference import InferenceClient, Result, ServerError
 from arduino.app_peripherals.camera import BaseCamera
 from arduino.app_utils import AppError, Logger, LRUDict, brick
+
+from .drawing import draw_crossing_line
 
 logger = Logger("VideoObjectTracking")
 
@@ -86,11 +90,11 @@ class VideoObjectTracking(VideoObjectDetection):
         }
 
         self._counter_lock = threading.RLock()
-        self._object_counters = Counter()  # distinct objects seen, per label
-        self._recent_objects = LRUDict(maxsize=150)  # last seen position (x, y) of the recent object ids
-        self._line_coordinates = None  # x1, y1, x2, y2 of the crossing line
-        self._crossing_line_object = Counter()  # crossings of the line, per label
-        self._object_directions = {}  # direction history, per object id
+        self._object_counters: Counter[str] = Counter()  # distinct objects seen, per label
+        self._recent_objects: LRUDict[int, tuple[int, int]] = LRUDict(maxsize=150)  # last seen position (x, y) of the recent object ids
+        self._line_coordinates: tuple[int, int, int, int] | None = None  # x1, y1, x2, y2 of the crossing line
+        self._crossing_line_object: Counter[str] = Counter()  # crossings of the line, per label
+        self._object_directions: dict[int, list[str]] = {}  # direction history, per object id
         self._min_movement_threshold = min_movement_threshold
 
         self._require_object_tracking()
@@ -386,6 +390,13 @@ class VideoObjectTracking(VideoObjectDetection):
         )
         if detections:
             self._execute_handler(key=self.ALL_HANDLERS_KEY, payload=detections)
+
+    def _annotate(self, frame: np.ndarray) -> np.ndarray:
+        """A copy of the frame with the tracked boxes and, when a crossing line is set, the line drawn across it."""
+        annotated = super()._annotate(frame)
+        with self._counter_lock:
+            line = self._line_coordinates
+        return draw_crossing_line(annotated, line) if line is not None else annotated
 
     def override_keep_grace(self, keep_grace: int) -> None:
         """Override keep grace for object tracking model.
