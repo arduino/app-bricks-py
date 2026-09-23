@@ -54,10 +54,20 @@ read correctly 98.1% of the time. Some punctuation does not:
 | `,` `:` `@` `#` | 93% | |
 | `? ; ( ) + = % " ' & * -` | 100% | |
 
+The errors cluster on the last character of a line, where the cutout ends right after
+the glyph: `you!` -> `youl`, `you.` -> `you:`, while a mid-line `:` or a line-final `?`
+reads at 1.00. When the reading is wrong the right character is the recognizer's second
+candidate (`l` 0.78 / `!` 0.20, `:` 0.68 / `.` 0.28). The runner does not swap them: a
+word that really ends in `l` ("ball") or `:` ("Name:") would be corrupted instead, and a
+visible `youl` is better than a silent `bal!`.
+
 This is the recognizer, not the pre-processing: padding the cutouts with background
 (10-20% of their height) fixes single cases, e.g. `youl` -> `you!` on
 `tests/containers/ai/ocr_runner_images/hey-arduino.png`, and breaks as many others
-(`Arduino!` -> `Arduinol`); over all the images the word accuracy moves by under 1%.
+(`Arduino!` -> `Arduinol`); over all the images the word accuracy moves by under 2% and
+`,` / `$` get worse. Reading each cutout at several paddings (0-20%) and keeping the most
+confident reading does not help either (81.3% -> 80.3-82.6% of the words): a wrong reading
+is often the more confident one.
 
 Rotated text (`rotation`): on the same texts turned 90 degrees clockwise, reading the
 whole image turned gets 84% of the words right, as many as upright, and picks the right
