@@ -11,8 +11,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-import arduino.app_bricks.tps_location_api as tps_module
-from arduino.app_bricks.tps_location_api import TPSLocationAPI
+import arduino.app_bricks.tps as tps_module
+from arduino.app_bricks.tps import TPS
 
 SCAN_RESULT = {
     "timestamp_ms": 1000,
@@ -36,8 +36,8 @@ LOCATION_RESPONSE = {
 @pytest.fixture
 def client(monkeypatch):
     """A client with fake credentials whose scanner returns SCAN_RESULT."""
-    monkeypatch.setattr(TPSLocationAPI, "_scan", lambda self: json.loads(json.dumps(SCAN_RESULT)))
-    api = TPSLocationAPI(auth_key="key", auth_user="user")
+    monkeypatch.setattr(TPS, "_scan", lambda self: json.loads(json.dumps(SCAN_RESULT)))
+    api = TPS(auth_key="key", auth_user="user")
     yield api
     api.stop()
 
@@ -57,13 +57,13 @@ def test_requires_credentials(monkeypatch):
     monkeypatch.delenv("AUTH_KEY", raising=False)
     monkeypatch.delenv("AUTH_USER", raising=False)
     with pytest.raises(ValueError, match="AUTH_KEY"):
-        TPSLocationAPI()
+        TPS()
 
 
 def test_credentials_from_environment(monkeypatch):
     monkeypatch.setenv("AUTH_KEY", "env-key")
     monkeypatch.setenv("AUTH_USER", "env-user")
-    api = TPSLocationAPI()
+    api = TPS()
     assert (api.auth_key, api.auth_user) == ("env-key", "env-user")
     api.stop()
 
@@ -71,7 +71,7 @@ def test_credentials_from_environment(monkeypatch):
 def test_rejects_plain_http_location_api(monkeypatch):
     monkeypatch.setattr(tps_module, "TPS_LOC_API_URL", "http://example.com/location")
     with pytest.raises(ValueError, match="https"):
-        TPSLocationAPI(auth_key="key", auth_user="user")
+        TPS(auth_key="key", auth_user="user")
 
 
 def test_locate_builds_request_and_parses_response(client, post):
@@ -110,7 +110,7 @@ def test_locate_without_device_id_omits_pid_headers(client, post):
 
 
 def test_locate_fails_without_access_points(client, post, monkeypatch):
-    monkeypatch.setattr(TPSLocationAPI, "_scan", lambda self: {"access_points": []})
+    monkeypatch.setattr(TPS, "_scan", lambda self: {"access_points": []})
     with pytest.raises(RuntimeError, match="No access points"):
         client.locate()
     post.assert_not_called()
@@ -162,14 +162,14 @@ def scanner_socket(socket_dir):
 
 
 def test_scan_talks_to_the_scanner_over_a_unix_socket(scanner_socket):
-    api = TPSLocationAPI(auth_key="key", auth_user="user")
+    api = TPS(auth_key="key", auth_user="user")
     api.scanner_socket_path = scanner_socket
     assert api._scan() == SCAN_RESULT
     api.stop()
 
 
 def test_scan_reports_unreachable_scanner(socket_dir):
-    api = TPSLocationAPI(auth_key="key", auth_user="user")
+    api = TPS(auth_key="key", auth_user="user")
     api.scanner_socket_path = f"{socket_dir}/missing.sock"
     with pytest.raises(RuntimeError, match="unreachable"):
         api._scan()
