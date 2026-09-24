@@ -79,24 +79,24 @@ def test_build_model_directory_incomplete_returns_empty():
 
 
 # --------------------------------------------------------------------------- #
-# get_dir_size_mb
+# get_dir_size_bytes
 # --------------------------------------------------------------------------- #
-def test_get_dir_size_mb_file(tmp_path):
+def test_get_dir_size_bytes_file(tmp_path):
     f = tmp_path / "model.gguf"
-    f.write_bytes(b"\0" * (2 * 1024 * 1024))  # 2 MB
-    assert list_models.get_dir_size_mb(str(f)) == 2.0
+    f.write_bytes(b"\0" * 1234567)  # not a whole MiB: nothing is rounded
+    assert list_models.get_dir_size_bytes(str(f)) == 1234567
 
 
-def test_get_dir_size_mb_directory(tmp_path):
-    (tmp_path / "a.bin").write_bytes(b"\0" * (1024 * 1024))
+def test_get_dir_size_bytes_directory(tmp_path):
+    (tmp_path / "a.bin").write_bytes(b"\0" * 1000)
     sub = tmp_path / "sub"
     sub.mkdir()
-    (sub / "b.bin").write_bytes(b"\0" * (1024 * 1024))
-    assert list_models.get_dir_size_mb(str(tmp_path)) == 2.0
+    (sub / "b.bin").write_bytes(b"\0" * 24)
+    assert list_models.get_dir_size_bytes(str(tmp_path)) == 1024
 
 
-def test_get_dir_size_mb_missing_returns_none(tmp_path):
-    assert list_models.get_dir_size_mb(str(tmp_path / "nope")) is None
+def test_get_dir_size_bytes_missing_returns_none(tmp_path):
+    assert list_models.get_dir_size_bytes(str(tmp_path / "nope")) is None
 
 
 # --------------------------------------------------------------------------- #
@@ -238,8 +238,8 @@ def test_find_llamacpp_groups_mmproj(tmp_path):
     entry = results[0]
     assert entry["name"] == "moondream2-text-model-f16"
     assert entry["mmproj"].endswith("moondream2-mmproj-f16.gguf")
-    # disk size is the sum of both files (1 MB + 0.5 MB).
-    assert entry["disk_size_mb"] == 1.5
+    # disk size is the sum of both files (1 MiB + 0.5 MiB).
+    assert entry["disk_size_bytes"] == 1024 * 1024 + 512 * 1024
 
 
 def test_find_llamacpp_downloading_marker(tmp_path):
@@ -354,7 +354,7 @@ def test_get_model_info_platform_entry():
     assert info["handler"] == "hf-handler"
     assert info["model_directory"] == "google/gemma-4-E2B-it-qat-q4_0-gguf"
     assert info["models_repository"] == "llamacpp"
-    assert info["model_size_mb"] == 3430
+    assert info["model_size_bytes"] == 3430 * 1024 * 1024
     assert info["pre_loaded"] is False
 
 
@@ -443,7 +443,7 @@ def test_main_dedup_merges_filesystem_into_yaml(monkeypatch, capsys, tmp_path):
     # Canonical YAML metadata is kept...
     assert entry["name"] == "Gemma 4 E2B"
     assert entry["handler"] == "hf-handler"
-    assert entry["model_size_mb"] == 3430
+    assert entry["model_size_bytes"] == 3430 * 1024 * 1024
     # ...with filesystem-derived installed status.
     assert entry["installed"] is True
     assert entry["downloading"] is False
@@ -857,10 +857,10 @@ def test_find_llamacpp_same_file_name_in_two_repos_lists_two_models(tmp_path):
         "llamacpp:unsloth/SmolLM2-GGUF/SmolLM2-Q4_K_M",
         "llamacpp:bartowski/SmolLM2-GGUF/SmolLM2-Q4_K_M",
     }
-    for owner, size in (("unsloth", 1.0), ("bartowski", 2.0)):
+    for owner, size in (("unsloth", 1024 * 1024), ("bartowski", 2 * 1024 * 1024)):
         entry = results[f"llamacpp:{owner}/SmolLM2-GGUF/SmolLM2-Q4_K_M"]
         assert entry["path"].endswith(f"{owner}/SmolLM2-GGUF/SmolLM2-Q4_K_M.gguf")
-        assert entry["disk_size_mb"] == size
+        assert entry["disk_size_bytes"] == size
         # Each entry carries its own download record, never the other repository's.
         assert owner in entry["download_metadata"]["inputs"]["model_url"]
 

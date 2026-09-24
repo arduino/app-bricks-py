@@ -163,7 +163,6 @@ def main():
                     "description": build_description(args.ei_project_id, args.impulse_id, args.history_id),
                     "filename": info["filename"],
                     "size_bytes": info["content_length"],
-                    "size_mb": round(info["content_length"] / 1024 / 1024, 2) if info["content_length"] else None,
                 }),
                 flush=True,
             )

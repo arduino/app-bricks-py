@@ -254,11 +254,11 @@ def emit_json_info(
     artifacts: list[str] | None = None,
     downloading: bool | None = None,
     model_id: str | None = None,
-    size_mb: float | None = None,
+    size_bytes: int | None = None,
 ):
     """Print an ``info`` event.
 
-    ``model_id`` and ``size_mb`` are what the host would otherwise have to re-derive
+    ``model_id`` and ``size_bytes`` are what the host would otherwise have to re-derive
     from the artifact filenames or read back with a listing run, so a completed
     download reports them here instead. Both are omitted when absent: an ordinary
     progress message is unchanged, and an older host ignores them.
@@ -270,8 +270,8 @@ def emit_json_info(
         data["downloading"] = downloading
     if model_id is not None:
         data["model_id"] = model_id
-    if size_mb is not None:
-        data["size_mb"] = size_mb
+    if size_bytes is not None:
+        data["size_bytes"] = size_bytes
     print(json.dumps(data), flush=True)
 
 
@@ -1256,25 +1256,22 @@ def fallback_model_id(model_type: str, downloaded: list[str], models_dir: str) -
     return f"{model_type or 'llamacpp'}:{name}"
 
 
-def downloaded_size_mb(downloaded: list[str]) -> float | None:
-    """Total size in MB of the files a download wrote, or None if any cannot be read.
+def downloaded_size_bytes(downloaded: list[str]) -> int | None:
+    """Total size in bytes of the files a download wrote, or None if any cannot be read.
 
     Counts the mmproj file along with the main GGUF, which is what ``list_models.py``
-    reports as ``disk_size_mb`` for the same model, so the size a caller is told on
-    completion matches the one a later listing gives it. Rounded per file and then
-    again on the sum for the same reason: rounding the byte total once instead can
-    differ by a hundredth of a megabyte per file — nothing in itself, but enough to
-    make a caller see the size change the first time a listing runs.
+    reports as ``disk_size_bytes`` for the same model, so the size a caller is told on
+    completion matches the one a later listing gives it.
     """
     if not downloaded:
         return None
-    total = 0.0
+    total = 0
     for path in downloaded:
         try:
-            total += round(os.stat(path).st_size / 1024 / 1024, 2)
+            total += os.stat(path).st_size
         except OSError:
             return None
-    return round(total, 2)
+    return total
 
 
 def no_match_message(repo_id: str, pattern: str | list[str]) -> str:
@@ -1642,7 +1639,6 @@ def main():
                 "event": "stat",
                 "description": f"Total download size for {repo_id}",
                 "size_bytes": total_bytes,
-                "size_mb": round(total_bytes / 1024 / 1024, 2),
                 "files": matched_files,
             }),
             flush=True,
@@ -1713,7 +1709,7 @@ def main():
                 f"Model exists: {repo_id} ({installed})",
                 artifacts=present,
                 model_id=identity["model_id"],
-                size_mb=downloaded_size_mb(present),
+                size_bytes=downloaded_size_bytes(present),
             )
             return
         if os.path.isdir(output_dir) and not has_model_content(output_dir):
@@ -1846,7 +1842,7 @@ def main():
             f"Downloaded to: {output_dir}",
             artifacts=downloaded,
             model_id=identity["model_id"],
-            size_mb=downloaded_size_mb(downloaded),
+            size_bytes=downloaded_size_bytes(downloaded),
         )
 
         marker = Path(output_dir) / MARKER_NAME

@@ -9,7 +9,7 @@ import os
 import pytest
 import yaml
 
-from common.models_list import find_matching_model, find_model_size_mb, load_models_list
+from common.models_list import find_matching_model, find_model_size_bytes, load_models_list, model_size_bytes
 
 
 # Path to the real models-list.yaml. It lives in the repository root, not in the
@@ -201,19 +201,31 @@ def test_every_downloadable_entry_round_trips():
 
 
 # --------------------------------------------------------------------------- #
-# find_model_size_mb
+# find_model_size_bytes / model_size_bytes
 # --------------------------------------------------------------------------- #
-def test_find_model_size_mb_match():
-    assert find_model_size_mb([AI_HUB_ENTRY], "genie", "qwen3_4b_instruct_2507") == 3039
+def test_find_model_size_bytes_match():
+    assert find_model_size_bytes([AI_HUB_ENTRY], "genie", "qwen3_4b_instruct_2507") == 3039 * 1024 * 1024
 
 
-def test_find_model_size_mb_no_match_returns_minus_one():
-    assert find_model_size_mb([AI_HUB_ENTRY], "genie", "absent") == -1
+def test_find_model_size_bytes_no_match_returns_minus_one():
+    assert find_model_size_bytes([AI_HUB_ENTRY], "genie", "absent") == -1
 
 
-def test_find_model_size_mb_matching_entry_without_metadata():
+def test_find_model_size_bytes_matching_entry_without_metadata():
     entry = {"x:y": {"deployment": {"platforms": [{"ventunoq": {"variables": {"model_type": "genie", "model_name": "n"}}}]}}}
-    assert find_model_size_mb([entry], "genie", "n") == -1
+    assert find_model_size_bytes([entry], "genie", "n") == -1
+
+
+def test_model_size_bytes_reads_the_yaml_mib_value():
+    assert model_size_bytes({"model_size_mb": 1.5}) == 1572864
+    assert model_size_bytes({"model_size_mb": "17"}) == 17 * 1024 * 1024  # yaml strings too
+
+
+def test_model_size_bytes_without_a_usable_value():
+    assert model_size_bytes(None) is None
+    assert model_size_bytes({}) is None
+    assert model_size_bytes({"model_size_mb": "big"}) is None
+    assert model_size_bytes({"model_size_mb": 0}) is None
 
 
 # --------------------------------------------------------------------------- #
