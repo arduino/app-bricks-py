@@ -82,10 +82,29 @@ tasks:
   # build: artifacts, the wheel with its bundled assets and docs, the container images, the SBOMs
 
   build:
-    desc: Build the library wheel and every container image
+    desc: Build the wheel and the images of the current branch for board testing, tagged with the branch under REGISTRY (dev.local/ by default) and saved to dist/, pass -- <names> for a subset
+    vars:
+      TAG:
+        sh: git rev-parse --abbrev-ref HEAD | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/-/g'
+    env:
+      REGISTRY: '{{.REGISTRY | default "dev.local/"}}'
+      IMAGE_TAG: "{{.TAG}}"
+      BASE_IMAGE_VERSION: "{{.TAG}}"
+      BRICKS_RELEASE_VERSION: "{{.TAG}}"
     cmds:
-      - task: build:bricks
-      - task: build:containers
+      # Nested calls keep the environment, so the wheel references the images built along with it.
+      # The SBOM is dropped since the docker driver of a local builder rejects attestations
+      - '"{{.TASK_EXE}}" build:bricks'
+      - '"{{.TASK_EXE}}" build:containers -- --set "*.attest=type=sbom,disabled=true" {{.CLI_ARGS}}'
+      # Bake loads only the selected images, the parents it builds for them stay in the build cache
+      - |
+        set -eo pipefail
+        docker buildx bake --print {{.CLI_ARGS}} 2>/dev/null |
+        jq -r --args '.target | to_entries[] | select(($ARGS.positional | length) == 0 or (.key | IN($ARGS.positional[]))) | "\(.key) \(.value.tags[0])"' {{.CLI_ARGS}} |
+        while read -r name ref; do
+          echo "Saving $ref"
+          docker save "$ref" | gzip > "dist/$name-{{.TAG}}.tar.gz"
+        done
 
   build:bricks:
     desc: Build the wheel into dist/, its version is read from src/arduino/version.py
