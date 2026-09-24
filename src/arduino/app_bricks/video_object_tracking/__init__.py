@@ -288,7 +288,8 @@ class VideoObjectTracking(VideoObjectDetection):
         Get the last known movement directions of tracked objects.
 
         Returns:
-            dict: A dictionary with object IDs as keys and their respective movement directions as values.
+            dict: A dictionary with object IDs as keys and their respective movement directions as values, the
+                screen directions `up`, `down`, `left`, `right`, `up-left`, `up-right`, `down-left`, `down-right`.
         """
         with self._counter_lock:
             return dict(self._object_directions)
@@ -536,9 +537,7 @@ def _crossing_direction(dx: int, dy: int, before: int) -> str:
 
 
 def _get_direction(last_x: int, last_y: int, x: int, y: int, min_movement_threshold: int = 10) -> str | None:
-    """
-    Determine the movement direction based on the change in coordinates.
-    Note: The directions are mirrored both horizontally and vertically.
+    """The screen direction of the move from (last_x, last_y) to (x, y), None for a move too small to count.
 
     Args:
         last_x (int): The previous x-coordinate.
@@ -548,38 +547,11 @@ def _get_direction(last_x: int, last_y: int, x: int, y: int, min_movement_thresh
         min_movement_threshold (int): Minimum distance in pixels to consider a movement significant. Default is 10.
 
     Returns:
-        str: The movement direction ('up', 'down', 'left', 'right', 'up-left', 'up-right', 'down-left', 'down-right').
+        str | None: One of 'up', 'down', 'left', 'right', 'up-left', 'up-right', 'down-left', 'down-right', as seen on
+            the screen, or None when the move stays below the threshold on both axes.
     """
-    logger.debug(f"Calculating direction change from ({last_x}, {last_y}) to ({x}, {y})")
     dx = x - last_x
     dy = y - last_y
-
-    # Check for minimal movement to avoid noise detection as direction change
     if abs(dx) < min_movement_threshold and abs(dy) < min_movement_threshold:
         return None
-
-    direction = None
-    if abs(dx) == abs(dy):
-        logger.debug("Diagonal movement detected.")
-        if dx > 0 and dy > 0:
-            direction = "down-left"  # up-right becomes down-left
-        elif dx > 0 > dy:
-            direction = "up-left"  # down-right becomes up-left
-        elif dx < 0 < dy:
-            direction = "down-right"  # up-left becomes down-right ok
-        elif dx < 0 and dy < 0:
-            direction = "up-right"  # down-left becomes up-right ok
-    elif abs(dx) > abs(dy):
-        logger.debug("Horizontal movement detected.")
-        if dx > 0:
-            direction = "left"  # right becomes left
-        else:
-            direction = "right"  # left becomes right
-    else:
-        logger.debug("Vertical movement detected.")
-        if dy > 0:
-            direction = "down"  # up becomes down
-        else:
-            direction = "up"  # down becomes up
-
-    return direction
+    return _compass(dx, dy)

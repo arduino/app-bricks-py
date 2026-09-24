@@ -445,10 +445,10 @@ def test_setting_the_line_keeps_the_objects_already_counted(tracker):
     assert tracker.get_line_crossing_counts() == {"person": {"right": 1}}
 
 
-def test_direction_is_mirrored_on_the_horizontal_axis(tracker):
+def test_direction_is_the_one_seen_on_the_screen(tracker):
     _replay(tracker, _walk(_straight((0, 240), (400, 240), steps=8)))
 
-    assert tracker.get_objects_directions() == {1: ["left"]}
+    assert tracker.get_objects_directions() == {1: ["right"]}
 
 
 def test_movement_below_the_threshold_reports_no_direction(tracker):
@@ -457,10 +457,10 @@ def test_movement_below_the_threshold_reports_no_direction(tracker):
     assert tracker.get_objects_directions() == {}
 
 
-def test_diagonal_direction_needs_an_exact_45_degree_step(tracker):
-    _replay(tracker, _walk([(100, 100), (150, 150), (200, 201)]))
+def test_a_step_within_22_5_degrees_of_the_diagonal_is_diagonal(tracker):
+    _replay(tracker, _walk([(100, 100), (150, 150), (200, 201), (260, 221)]))
 
-    assert tracker.get_objects_directions() == {1: ["down-left", "down"]}
+    assert tracker.get_objects_directions() == {1: ["down-right", "right"]}
 
 
 def test_reset_counters_keeps_the_direction_history(tracker):
@@ -471,7 +471,7 @@ def test_reset_counters_keeps_the_direction_history(tracker):
 
     assert tracker.get_unique_objects_count() == {}
     assert tracker.get_line_crossing_counts() == {}
-    assert tracker.get_objects_directions() == {1: ["left"]}
+    assert tracker.get_objects_directions() == {1: ["right"]}
 
 
 def test_recorded_walk_is_one_track_crossing_the_line_eight_times(tracker):
@@ -481,4 +481,4 @@ def test_recorded_walk_is_one_track_crossing_the_line_eight_times(tracker):
 
     assert tracker.get_unique_objects_count() == {"person": 1}
     assert tracker.get_line_crossing_counts() == {"person": {"left": 4, "right": 4}}
-    assert len(tracker.get_objects_directions()[3]) == 30
+    assert len(tracker.get_objects_directions()[3]) == 35
