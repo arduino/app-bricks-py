@@ -11,7 +11,7 @@ import tempfile
 import cv2
 
 from arduino.app_peripherals.camera import BaseCamera, CameraTransformError
-from arduino.app_peripherals.usb_camera import CameraReadError
+from arduino.app_peripherals.camera import CameraReadError
 from arduino.app_utils.image.pipeable import PipeableFunction
 from arduino.app_utils.peripheral_registry import Peripherals
 
