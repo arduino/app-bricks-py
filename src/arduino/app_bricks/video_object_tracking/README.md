@@ -147,7 +147,7 @@ Setting the line leaves every count untouched: call `reset_counters()` yourself 
 
 `get_objects_directions()` returns `{object_id: [direction, ...]}`, the sequence of direction changes observed for each tracked object. Consecutive repeats are collapsed, so a straight walk yields a single entry and the last element is the object's current direction.
 
-Possible values are `up`, `down`, `left`, `right`, `up-left`, `up-right`, `down-left`, `down-right`. Horizontal directions are reported **mirrored** with respect to the frame: an object moving rightwards across the frame is reported as `left`. Vertical directions are not mirrored.
+Possible values are `up`, `down`, `left`, `right`, `up-left`, `up-right`, `down-left`, `down-right`, as seen on the screen: an object moving rightwards across the frame is reported as `right`. Each name covers 45 degrees, so a movement within 22.5° of an axis is `up`, `down`, `left` or `right`, the line crossings use the same names.
 
 `min_movement_threshold` (default `10` px) is the minimum displacement needed for a movement to count as a direction change, which keeps bounding-box jitter from producing spurious directions.
 
