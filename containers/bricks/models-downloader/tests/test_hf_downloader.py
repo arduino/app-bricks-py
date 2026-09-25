@@ -39,7 +39,7 @@ from hugging_face.hf_downloader import (
     delete_matched_files,
     discard_incomplete_download,
     download_matched_files,
-    downloaded_size_mb,
+    downloaded_size_bytes,
     fallback_model_id,
     generate_models_ini,
     gguf_pattern,
@@ -1458,20 +1458,23 @@ def test_delete_drops_only_the_deleted_quantizations_record(tmp_path, monkeypatc
 
 
 # --------------------------------------------------------------------------- #
-# downloaded_size_mb
+# downloaded_size_bytes
 # --------------------------------------------------------------------------- #
-def test_downloaded_size_mb_sums_the_files_like_the_listing(tmp_path):
+def test_downloaded_size_bytes_sums_the_files_like_the_listing(tmp_path):
+    import list_models
+
     main = tmp_path / "model-Q4_0.gguf"
-    main.write_bytes(b"\0" * (2 * 1024 * 1024))
+    main.write_bytes(b"\0" * 2000001)
     mmproj = tmp_path / "mmproj-BF16.gguf"
-    mmproj.write_bytes(b"\0" * (1024 * 1024))
+    mmproj.write_bytes(b"\0" * 1000003)
 
-    assert downloaded_size_mb([str(main), str(mmproj)]) == 3.0
+    assert downloaded_size_bytes([str(main), str(mmproj)]) == 3000004
+    assert list_models.get_dir_size_bytes(str(tmp_path)) == 3000004
 
 
-def test_downloaded_size_mb_without_files_or_with_unreadable_ones(tmp_path):
-    assert downloaded_size_mb([]) is None
-    assert downloaded_size_mb([str(tmp_path / "gone.gguf")]) is None
+def test_downloaded_size_bytes_without_files_or_with_unreadable_ones(tmp_path):
+    assert downloaded_size_bytes([]) is None
+    assert downloaded_size_bytes([str(tmp_path / "gone.gguf")]) is None
 
 
 # --------------------------------------------------------------------------- #
@@ -1493,7 +1496,7 @@ def test_download_event_reports_the_model_id_and_size(tmp_path, monkeypatch, stu
     done = read_events(capsys)[-1]
     assert done["description"].startswith("Downloaded to:")
     assert done["model_id"] == "llamacpp:unsloth/Qwen3-0.6B-GGUF/Q3_K_S"
-    assert done["size_mb"] == 0.0  # the stub writes a 1-byte file
+    assert done["size_bytes"] == 1  # the stub writes a 1-byte file
     listed = list_models.find_llamacpp_models(str(base))
     assert [m["id"] for m in listed] == [done["model_id"]]
 
@@ -1524,7 +1527,7 @@ def test_already_installed_request_reports_the_same_identity(tmp_path, monkeypat
     assert exists_event["description"].startswith("Model exists:")
     assert stub_download == ["*Q3_K_S*.gguf"]  # the second run transferred nothing
     assert exists_event["model_id"] == downloaded_event["model_id"]
-    assert exists_event["size_mb"] == downloaded_event["size_mb"]
+    assert exists_event["size_bytes"] == downloaded_event["size_bytes"]
     assert exists_event["artifacts"] == downloaded_event["artifacts"]
 
 

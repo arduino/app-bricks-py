@@ -35,7 +35,7 @@ from common.model_metadata import (
     read_metadata,
     record_for_model_id,
 )
-from common.models_list import get_model_subdir, load_models_list, MODELS_LIST_PATH
+from common.models_list import get_model_subdir, load_models_list, model_size_bytes, MODELS_LIST_PATH
 
 
 MODELS_BASE_DIR = "/models"
@@ -60,7 +60,7 @@ def get_model_info(model_entry):
             name = model_data.get("name", model_id)
             supported_boards = model_data.get("supported_boards", [])
             deployment = model_data.get("deployment")
-            model_size_mb = model_data.get("metadata", {}).get("model_size_mb")
+            size_bytes = model_size_bytes(model_data.get("metadata"))
 
             if not deployment:
                 continue
@@ -76,7 +76,7 @@ def get_model_info(model_entry):
                     "models_repository": "",
                     "model_type": "",
                     "model_name": "",
-                    "model_size_mb": model_size_mb,
+                    "model_size_bytes": size_bytes,
                     "pre_loaded": True,
                     "supported_boards": supported_boards,
                 })
@@ -103,7 +103,7 @@ def get_model_info(model_entry):
                         "models_repository": models_repository,
                         "model_type": variables.get("model_type", ""),
                         "model_name": variables.get("model_name", ""),
-                        "model_size_mb": model_size_mb,
+                        "model_size_bytes": size_bytes,
                         "pre_loaded": False,
                         "supported_boards": supported_boards,
                         "platform": platform_name,  # Kept for the per-board dedup; never part of the output.
@@ -127,15 +127,15 @@ def build_model_directory(variables):
     return ""
 
 
-def get_dir_size_mb(path):
-    """Return total disk usage of a path (file or directory) in MB, rounded to 2 decimals."""
+def get_dir_size_bytes(path):
+    """Return total disk usage of a path (file or directory) in bytes."""
     try:
         st = os.stat(path, follow_symlinks=False)
     except OSError:
         return None
 
     if stat.S_ISREG(st.st_mode):
-        return round(st.st_size / 1024 / 1024, 2)
+        return st.st_size
     if not stat.S_ISDIR(st.st_mode):
         return None
 
@@ -158,7 +158,7 @@ def get_dir_size_mb(path):
                         total += entry_stat.st_size
         except OSError:
             continue
-    return round(total / 1024 / 1024, 2)
+    return total
 
 
 # Cache of os.scandir results keyed by search_dir.
@@ -386,12 +386,12 @@ def find_llamacpp_models(models_base_dir, declarations=()):
                 # a declared location keeps the stem, anything else is qualified.
                 if not any(declaration_covers(d, n, rel_dir, f) for d, n, _mid in declarations):
                     model_name = rel_path[: -len(".gguf")]
-            disk_size_mb = get_dir_size_mb(full_path)
+            disk_size_bytes = get_dir_size_bytes(full_path)
             # The mmproj file in the same directory is part of this model.
             if mmproj_files:
-                mmproj_size = get_dir_size_mb(os.path.join(root, mmproj_files[0]))
-                if disk_size_mb is not None and mmproj_size is not None:
-                    disk_size_mb = round(disk_size_mb + mmproj_size, 2)
+                mmproj_size = get_dir_size_bytes(os.path.join(root, mmproj_files[0]))
+                if disk_size_bytes is not None and mmproj_size is not None:
+                    disk_size_bytes += mmproj_size
             entry = {
                 "id": f"llamacpp:{model_name}",
                 "name": model_name,
@@ -402,7 +402,7 @@ def find_llamacpp_models(models_base_dir, declarations=()):
                 "path": full_path,
                 "installed": not downloading,
                 "downloading": downloading,
-                "disk_size_mb": disk_size_mb,
+                "disk_size_bytes": disk_size_bytes,
                 "_rel_dir": rel_dir,
                 "_filename": f,
             }
@@ -529,8 +529,8 @@ def main():
                 "model_origin": ORIGIN_BUILTIN,
                 "installed": True,
             }
-            if model_info.get("model_size_mb") is not None:
-                entry["model_size_mb"] = model_info["model_size_mb"]
+            if model_info.get("model_size_bytes") is not None:
+                entry["model_size_bytes"] = model_info["model_size_bytes"]
         else:
             exists, path = check_model_exists(model_info, args.models_dir)
             # Per-model ".download" marker present => download in progress/incomplete.
@@ -543,11 +543,11 @@ def main():
                 "installed": exists and not downloading,
                 "downloading": downloading,
             }
-            if model_info.get("model_size_mb") is not None:
-                entry["model_size_mb"] = model_info["model_size_mb"]
+            if model_info.get("model_size_bytes") is not None:
+                entry["model_size_bytes"] = model_info["model_size_bytes"]
             if exists:
                 entry["path"] = path
-                entry["disk_size_mb"] = get_dir_size_mb(path)
+                entry["disk_size_bytes"] = get_dir_size_bytes(path)
             # Read the record regardless of `exists`: check_model_exists() cannot
             # resolve the nested model_directory of a Hugging Face model, whose
             # status is only fixed up by the llamacpp merge below.
@@ -577,15 +577,15 @@ def main():
         existing = by_id.get(declared_id) if declared_id else None
         if existing is not None:
             merged_ids.add(declared_id)
-            # Keep the canonical YAML name/handler/model_size_mb/model_origin (the
+            # Keep the canonical YAML name/handler/model_size_bytes/model_origin (the
             # model is declared, so it is not user-configured); take the
             # filesystem-derived status and on-disk details.
             existing["installed"] = m["installed"]
             existing["downloading"] = m["downloading"]
             if "path" in m:
                 existing["path"] = m["path"]
-            if m.get("disk_size_mb") is not None:
-                existing["disk_size_mb"] = m["disk_size_mb"]
+            if m.get("disk_size_bytes") is not None:
+                existing["disk_size_bytes"] = m["disk_size_bytes"]
             if "mmproj" in m:
                 existing["mmproj"] = m["mmproj"]
             if "download_metadata" in m and "download_metadata" not in existing:
@@ -622,15 +622,14 @@ def main():
         installed_count = sum(1 for r in results if r["installed"])
         total_count = len(results)
         print(f"Models: {installed_count}/{total_count} installed\n")
-        print(f"{'STATUS':<12} {'ORIGIN':<16} {'SIZE (MB)':<12} {'ID':<45} {'NAME':<40} {'PATH'}")
+        print(f"{'STATUS':<12} {'ORIGIN':<16} {'SIZE (MiB)':<12} {'ID':<45} {'NAME':<40} {'PATH'}")
         print("-" * 169)
         for r in results:
             status = "DOWNLOADING" if r.get("downloading") else ("INSTALLED" if r["installed"] else "NOT FOUND")
-            size = (
-                f"{r['disk_size_mb']:.2f}"
-                if r.get("disk_size_mb") is not None
-                else (f"{r['model_size_mb']}" if r.get("model_size_mb") is not None else "-")
-            )
+            size_bytes = r.get("disk_size_bytes")
+            if size_bytes is None:
+                size_bytes = r.get("model_size_bytes")
+            size = f"{size_bytes / 1024 / 1024:.2f}" if size_bytes is not None else "-"
             path = r.get("path", "")
             origin = r.get("model_origin", "")
             print(f"{status:<12} {origin:<16} {size:<12} {r['id']:<45} {r['name']:<40} {path}")

@@ -110,10 +110,25 @@ def find_matching_model(models, env, board=None):
     return model_id, model_data, platform_name
 
 
-def find_model_size_mb(models, model_type, model_name):
-    """Return model_size_mb for the model whose deployment variables match model_type and model_name, or -1 if not found."""
+def model_size_bytes(metadata):
+    """Return the size in bytes a models-list.yaml entry declares, or None if it declares none.
+
+    The yaml states the size in MiB (``model_size_mb``); every size the downloader reports
+    is in bytes, so the declared one is converted here, once.
+    """
+    try:
+        size_mb = float((metadata or {}).get("model_size_mb"))
+    except (TypeError, ValueError):
+        return None
+    if size_mb <= 0:
+        return None
+    return round(size_mb * 1024 * 1024)
+
+
+def find_model_size_bytes(models, model_type, model_name):
+    """Return the size in bytes of the model whose deployment variables match model_type and model_name, or -1 if not found."""
     for _model_id, model_data, _platform_name, variables in _iter_platform_variables(models):
         if variables.get("model_type") == model_type and variables.get("model_name") == model_name:
-            metadata = model_data.get("metadata", {})
-            return metadata.get("model_size_mb", -1)
+            size = model_size_bytes(model_data.get("metadata"))
+            return size if size is not None else -1
     return -1

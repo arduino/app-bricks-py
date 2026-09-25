@@ -2,10 +2,10 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""Return model_size_mb from models-list.yaml for a given ai-hub-handler model.
+"""Return the model size, in bytes, from models-list.yaml for a given ai-hub-handler model.
 
 Looks up the model by matching model_type and model_name in the deployment variables.
-Prints a JSON stat event with size_mb if found, or size_mb -1 if not found.
+Prints a JSON stat event with size_bytes if found, or size_bytes -1 if not found.
 
 Usage:
     python ai_hub_model_info.py --model-type genie --model-name qwen3_4b_instruct_2507
@@ -18,11 +18,11 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from common.models_list import load_models_list, find_model_size_mb, MODELS_LIST_PATH
+from common.models_list import load_models_list, find_model_size_bytes, MODELS_LIST_PATH
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Return model_size_mb from models-list.yaml for an ai-hub-handler model.")
+    parser = argparse.ArgumentParser(description="Return the model size in bytes from models-list.yaml for an ai-hub-handler model.")
     parser.add_argument(
         "--model-type",
         required=True,
@@ -70,13 +70,13 @@ def main():
         )
         sys.exit(1)
 
-    size_mb = find_model_size_mb(models, args.model_type, args.model_name)
+    size_bytes = find_model_size_bytes(models, args.model_type, args.model_name)
 
     print(
         json.dumps({
             "event": "stat",
             "description": f"Model info for {model_key}",
-            "size_mb": size_mb,
+            "size_bytes": size_bytes,
         }),
         flush=True,
     )
