@@ -13,11 +13,11 @@ from collections.abc import Callable
 
 from websockets.sync.client import connect
 from websockets.sync.connection import Connection
-from websockets.exceptions import ConnectionClosedOK, ConnectionClosedError
+from websockets.exceptions import ConnectionClosedOK, ConnectionClosedError, InvalidHandshake
 
 from arduino.app_peripherals.camera import Camera, BaseCamera
-from arduino.app_internal.core.module import get_brick_config, get_brick_configured_model, load_model_list, load_brick_compose_file, resolve_address
-from arduino.app_internal.core.ei import compute_softmax_over_ei_classification
+from arduino.app_internal.core.module import load_brick_compose_file, resolve_address
+from arduino.app_internal.core.ei import brick_model_requires_softmax, compute_softmax_over_ei_classification
 from arduino.app_internal.core import EdgeImpulseRunnerFacade
 from arduino.app_utils.image.adjustments import compress_to_jpeg
 from arduino.app_utils import brick, Logger
@@ -35,6 +35,9 @@ class VideoImageClassification:
     ALL_HANDLERS_KEY = "__ALL"
 
     _DETECTION_LOCK_TO = 0.01  # Seconds to wait for a detection lock before discarding the detection signal
+
+    _WS_CONNECT_RETRIES = 5  # Attempts to open a one-shot WebSocket connection to the model runner
+    _WS_CONNECT_RETRY_DELAY = 1.0  # Seconds between connection attempts
 
     def __init__(self, camera: BaseCamera | None = None, confidence: float = 0.3, debounce_sec: float = 0.0) -> None:
         """Initialize the VideoImageClassification class.
@@ -74,20 +77,9 @@ class VideoImageClassification:
         if not self._host:
             raise RuntimeError("Host address could not be resolved. Please check your configuration.")
 
-        self.apply_softmax = False
-
-        brick_config = get_brick_config(self.__class__)
-        app_configured_model = get_brick_configured_model(brick_config.get("id") if brick_config else None, brick_config=brick_config)
-
-        if app_configured_model is not None:
-            logger.info(f"Configured model: {app_configured_model}")
-        models_list = load_model_list()
-        if models_list is not None:
-            if app_configured_model is not None and app_configured_model in models_list:
-                model_entry = models_list[app_configured_model]
-                if model_entry.metadata and "requires_softmax" in model_entry.metadata and model_entry.metadata["requires_softmax"]:
-                    logger.info(f"Model '{app_configured_model}' requires softmax application. Enabling softmax in the classification results.")
-                    self.apply_softmax = True
+        # Some models (e.g. EfficientNet-B4) return raw logits: apply a softmax only when the
+        # configured model is flagged with `requires_softmax` in the models list.
+        self.apply_softmax = brick_model_requires_softmax(self.__class__)
 
         self._uri = f"ws://{self._host}:4912"
         logger.info(f"[{self.__class__.__name__}] Host: {self._host} - URL: {self._uri}")
@@ -344,6 +336,33 @@ class VideoImageClassification:
             # Executor was shut down before the task could be submitted
             classification_lock.release()
 
+    def _connect_with_retry(self) -> Connection:
+        """Open a WebSocket connection to the model runner, retrying while it is still starting up.
+
+        The model runner accepts connections only once its inference pipeline is up, so a
+        connection opened right after the app starts can be refused. Retry a few times
+        before giving up.
+
+        Returns:
+            Connection: The established WebSocket connection.
+
+        Raises:
+            ConnectionError: If the connection could not be established after all attempts.
+        """
+        last_error: Exception | None = None
+        for attempt in range(1, self._WS_CONNECT_RETRIES + 1):
+            try:
+                return connect(self._uri)
+            except (OSError, InvalidHandshake) as e:
+                # OSError covers ConnectionRefusedError and TimeoutError: the model runner is
+                # not accepting connections yet. InvalidHandshake: listening, but not ready.
+                last_error = e
+                logger.debug(f"WebSocket connection to {self._uri} failed (attempt {attempt}/{self._WS_CONNECT_RETRIES}): {e}")
+                if attempt < self._WS_CONNECT_RETRIES:
+                    time.sleep(self._WS_CONNECT_RETRY_DELAY)
+
+        raise ConnectionError(f"Could not connect to the model runner at {self._uri} after {self._WS_CONNECT_RETRIES} attempts") from last_error
+
     def override_threshold(self, value: float) -> None:
         """Override the threshold for image classification model.
 
@@ -353,8 +372,9 @@ class VideoImageClassification:
         Raises:
             TypeError: If the value is not a number.
             RuntimeError: If the model information is not available or does not support threshold override.
+            ConnectionError: If the model runner could not be reached.
         """
-        with connect(self._uri) as ws:
+        with self._connect_with_retry() as ws:
             self._override_threshold(ws, value)
 
     def _override_threshold(self, ws: Connection, value: float) -> None:

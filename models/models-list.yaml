@@ -1606,7 +1606,9 @@ models:
       - da
       - hu
       - ta
-      - no
+      # Quoted: bare "no" is a YAML 1.1 boolean, which would turn the
+      # Norwegian language code into False.
+      - "no"
       - th
       - ur
       - hr
@@ -1916,7 +1918,7 @@ models:
       platforms:
         - ventunoq:
             variables:
-              model_url: "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf/blob/1894d1fc0a19d86697abd40483f5983c867df03f/gemma-4-E2B_q4_0-it.gguf"
+              model_url: "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf/blob/347eef722ec7f151f37d1ef0b5c7c77d8de4efcb/gemma-4-E2B_q4_0-it.gguf"
               models_repository: "llamacpp"
               model_directory: "google/gemma-4-E2B-it-qat-q4_0-gguf"
     metadata:
@@ -1940,7 +1942,7 @@ models:
       platforms:
         - ventunoq:
             variables:
-              model_url: "https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf/blob/99ef3d9bbf819591699ffa9084c4be12db1fbe6c/gemma-4-E4B_q4_0-it.gguf"
+              model_url: "https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf/blob/e998672c8018dd704e347d3b6843c112547244d1/gemma-4-E4B_q4_0-it.gguf"
               models_repository: "llamacpp"
               model_directory: "google/gemma-4-E4B-it-qat-q4_0-gguf"
     metadata:

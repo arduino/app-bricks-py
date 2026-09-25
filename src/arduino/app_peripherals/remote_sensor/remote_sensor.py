@@ -16,13 +16,14 @@ from collections.abc import Callable
 from concurrent.futures import CancelledError, ThreadPoolExecutor, Future
 
 from arduino.app_internal.core.peripherals.bpp_codec import BPPCodec
-from arduino.app_utils import Logger
+from arduino.app_utils import Logger, peripheral
 
 from .errors import RemoteSensorOpenError, RemoteSensorConfigError
 
 logger = Logger("RemoteSensor")
 
 
+@peripheral
 class RemoteSensor:
     """
     RemoteSensor implementation that hosts a WebSocket server.

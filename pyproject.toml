@@ -51,7 +51,7 @@ mqtt = [
 folderwatcher = [
     "watchdog>=6.0.0",
 ]
-usb_camera = [
+camera = [
     # Upper bound keeps us on the 4.13 ABI; the exact build is enforced by
     # the container's uv-constraint.txt file.
     "opencv-python-headless>=4.13,<4.14"
@@ -102,7 +102,7 @@ all = [
     "arduino_app_bricks[dbstorage_influx]",
     "arduino_app_bricks[mqtt]",
     "arduino_app_bricks[folderwatcher]",
-    "arduino_app_bricks[usb_camera]",
+    "arduino_app_bricks[camera]",
     "arduino_app_bricks[microphone]",
     "arduino_app_bricks[web_ui]",
     "arduino_app_bricks[streamlit_ui]",
@@ -128,7 +128,7 @@ where = ["src"]
 include = ["*"]
 
 [tool.setuptools.package-data]
-"*" = ["*.yaml", "*.md"]
+"*" = ["*.yaml", "*.md", "*.json"]
 
 
 [tool.setuptools_scm]

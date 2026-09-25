@@ -1,7 +1,7 @@
 {
   "watch_paths": [
-    "containers/bricks/tps-location-api/",
-    "src/arduino/app_bricks/tps_location_api/"
+    "containers/bricks/tps/",
+    "src/arduino/app_bricks/tps/"
   ],
   "tag_latest": false,
   "build_whl": false,

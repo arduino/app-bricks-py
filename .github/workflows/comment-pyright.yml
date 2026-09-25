@@ -1,11 +1,11 @@
-name: Comment examples alignment
+name: Comment pyright checks
 
-# Posts the examples alignment report on pull requests opened from forks. The
-# analysis runs in check-examples-alignment.yml on the pull_request event, where
-# the token is read-only on fork PRs (that job executes code coming from the PR,
-# so it must stay unprivileged). This workflow runs afterwards on workflow_run,
-# in the context of this repository with a write token, and posts the report the
-# analysis uploaded as an artifact.
+# Posts the pyright report on pull requests opened from forks. The analysis runs
+# in check-pyright.yml on the pull_request event, where the token is read-only
+# on fork PRs (that job executes code coming from the PR, so it must stay
+# unprivileged). This workflow runs afterwards on workflow_run, in the context of
+# this repository with a write token, and posts the report the analysis uploaded
+# as an artifact.
 #
 # Safety invariants, since the artifact was produced by a run that executed the
 # PR's code and every byte of it is untrusted:
@@ -23,7 +23,7 @@ name: Comment examples alignment
 
 on:
   workflow_run:
-    workflows: ["Check examples alignment"]
+    workflows: ["Pyright checks"]
     types: [completed]
 
 permissions:
@@ -46,7 +46,7 @@ jobs:
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
-          name: examples-alignment-report
+          name: pyright-report
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ github.token }}
           path: report
@@ -60,31 +60,35 @@ jobs:
           RUN_HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
         run: |
           pr_number=$(jq -r '.pr_number' report/metadata.json)
-          new_errors=$(jq -r '.new_errors' report/metadata.json)
-          if ! [[ "$pr_number" =~ ^[0-9]+$ && "$new_errors" =~ ^[0-9]+$ ]]; then
-            echo "::warning::examples alignment: malformed metadata in the report artifact, not posting"
+          api_new_errors=$(jq -r '.api_new_errors' report/metadata.json)
+          typing_new_errors=$(jq -r '.typing_new_errors' report/metadata.json)
+          if ! [[ "$pr_number" =~ ^[0-9]+$ && "$api_new_errors" =~ ^[0-9]+$ && "$typing_new_errors" =~ ^[0-9]+$ ]]; then
+            echo "::warning::pyright checks: malformed metadata in the report artifact, not posting"
             exit 0
           fi
           # The artifact could name any PR: trust it only if that PR's head is the
           # very commit the analysis run checked out.
           read -r pr_sha pr_repo < <(gh api "repos/$GITHUB_REPOSITORY/pulls/$pr_number" --jq '"\(.head.sha) \(.head.repo.full_name)"')
           if [ "$pr_sha" != "$RUN_HEAD_SHA" ] || [ "$pr_repo" != "$RUN_HEAD_REPO" ]; then
-            echo "::warning::examples alignment: PR #$pr_number head ($pr_repo@$pr_sha) does not match the analyzed head ($RUN_HEAD_REPO@$RUN_HEAD_SHA), not posting"
+            echo "::warning::pyright checks: PR #$pr_number head ($pr_repo@$pr_sha) does not match the analyzed head ($RUN_HEAD_REPO@$RUN_HEAD_SHA), not posting"
             exit 0
           fi
-          echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
-          echo "new_errors=$new_errors" >> "$GITHUB_OUTPUT"
-          echo "verified=true" >> "$GITHUB_OUTPUT"
+          {
+            echo "pr_number=$pr_number"
+            echo "api_new_errors=$api_new_errors"
+            echo "typing_new_errors=$typing_new_errors"
+            echo "verified=true"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Post the report on the PR
         if: steps.verify.outputs.verified == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ steps.verify.outputs.pr_number }}
-          NEW_ERRORS: ${{ steps.verify.outputs.new_errors }}
-          LABEL: examples-misaligned
+          API_NEW_ERRORS: ${{ steps.verify.outputs.api_new_errors }}
+          TYPING_NEW_ERRORS: ${{ steps.verify.outputs.typing_new_errors }}
         run: |
-          marker='<!-- examples-alignment -->'
+          marker='<!-- pyright-checks -->'
           { echo "$marker"; cat report/report.md; } > comment.md
           # GitHub caps comment bodies at 65536 characters.
           if [ "$(wc -c < comment.md)" -gt 60000 ]; then
@@ -100,11 +104,14 @@ jobs:
           else
             gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" -F body=@comment.md > /dev/null
           fi
-          # The label flags the PR while it introduces new errors, and goes away once they are gone.
-          if [ "$NEW_ERRORS" != "0" ]; then
-            gh label create "$LABEL" --color D93F0B --force \
-              --description "Introduces errors in the published app-bricks-examples (see the alignment report comment)"
-            gh pr edit "$PR_NUMBER" --add-label "$LABEL"
-          else
-            gh pr edit "$PR_NUMBER" --remove-label "$LABEL" || true
-          fi
+          # One label per check, present while the PR introduces new errors in it.
+          set_label() {
+            if [ "${3:-0}" != "0" ]; then
+              gh label create "$1" --color D93F0B --force --description "$2"
+              gh pr edit "$PR_NUMBER" --add-label "$1"
+            else
+              gh pr edit "$PR_NUMBER" --remove-label "$1" || true
+            fi
+          }
+          set_label examples-misaligned "Introduces errors in the published app-bricks-examples (see the pyright report comment)" "$API_NEW_ERRORS"
+          set_label typing-regression "Introduces typing errors in the library sources (see the pyright report comment)" "$TYPING_NEW_ERRORS"

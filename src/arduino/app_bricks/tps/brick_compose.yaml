@@ -1,6 +1,6 @@
 services:
   tps_location_api:
-    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/tps-location-api:0.13.0rc2
+    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/tps:0.13.0rc6
     # The wireless interface lives in the host network namespace
     network_mode: host
     cap_drop:

@@ -170,6 +170,12 @@ BOARD_QUANTIZATIONS = {
 # a letter may not follow it, so the "4bit" of a "-4bit-" tag is not read as 4 billion.
 PARAMETER_COUNT_RE = re.compile(r"(?<![0-9.])(\d+(?:\.\d+)?)([BM])(?![A-Za-z0-9])", re.IGNORECASE)
 
+# ARM repacked Q4_0 layouts that llama.cpp no longer loads: it repacks plain Q4_0 at load
+# time instead. Refused by name, before anything is downloaded, and skipped wherever a
+# pattern selects files: "*Q4_0*.gguf" would otherwise match them as well, since each one
+# starts with "Q4_0".
+UNSUPPORTED_QUANTIZATIONS = ("Q4_0_4_4", "Q4_0_4_8", "Q4_0_8_4", "Q4_0_8_8")
+
 # The repository the CLI help and the "model_url is required" error use as their example.
 EXAMPLE_REPO_ID = "unsloth/Qwen3-0.6B-GGUF"
 
@@ -322,7 +328,11 @@ def matching_files(output_dir: str, patterns: list[str]) -> list[Path]:
     under the same pattern that selected it for download.
     """
     base = Path(output_dir)
-    return [p for p in model_files(output_dir) if any(matches_pattern(p.relative_to(base).as_posix(), pattern) for pattern in patterns)]
+    return [
+        p
+        for p in model_files(output_dir)
+        if not unsupported_quantization(p.name) and any(matches_pattern(p.relative_to(base).as_posix(), pattern) for pattern in patterns)
+    ]
 
 
 def is_installed(output_dir: str, patterns: list[str]) -> bool:
@@ -736,6 +746,16 @@ def is_hf_url(spec: str) -> bool:
     return re.match(r"[A-Za-z][A-Za-z0-9+.-]*://", spec) is not None
 
 
+def unsupported_quantization(spec: str | None) -> str | None:
+    """Return the ``UNSUPPORTED_QUANTIZATIONS`` entry *spec* names, or None.
+
+    *spec* is a model URL or key as given; case is ignored, since file names are spelled
+    ``Q4_0_4_4`` at one publisher and ``q4_0_4_4`` at the next.
+    """
+    upper = (spec or "").upper()
+    return next((q for q in UNSUPPORTED_QUANTIZATIONS if q in upper), None)
+
+
 def gguf_pattern(spec: str, mmproj: bool = False) -> str:
     """Turn a quantization or file name *spec* into an fnmatch pattern for GGUF files.
 
@@ -978,6 +998,10 @@ def slot_holds(path: str, quantization: str, mmproj: bool) -> bool:
         # A repository whose only Q8_0 file is an mmproj companion publishes no Q8_0
         # model, and the projector is never picked out of the model files either.
         return False
+    if unsupported_quantization(path):
+        # A Q4_0_4_4 file does not stand for a Q4_0: a defaulted slot moves on to the next
+        # candidate instead of settling on a quantization with nothing loadable behind it.
+        return False
     if mmproj:
         return names_quantization(path, quantization)
     return matches_pattern(path, gguf_pattern(quantization))
@@ -1107,7 +1131,7 @@ def list_repo_matches(repo_id: str, patterns: list[str], ignore_pattern: str | N
     """Return the files of *repo_id* matching any of *patterns*, minus *ignore_pattern*."""
     api = HfApi()
     all_files = [item for item in api.list_repo_tree(repo_id=repo_id, recursive=True) if isinstance(item, RepoFile)]
-    matched = [f for f in all_files if any(matches_pattern(f.path, p) for p in patterns)]
+    matched = [f for f in all_files if not unsupported_quantization(f.path) and any(matches_pattern(f.path, p) for p in patterns)]
     if ignore_pattern:
         matched = [f for f in matched if not matches_pattern(f.path, ignore_pattern)]
     return matched
@@ -1539,6 +1563,13 @@ def main():
     except ValueError as exc:
         emit_json_error(str(exc))
         raise SystemExit(1) from exc
+
+    # --delete stays allowed, so a model downloaded before this check can still be removed.
+    if not args.delete:
+        unsupported = unsupported_quantization(args.model_url) or unsupported_quantization(args.model_mmproj_url)
+        if unsupported:
+            emit_json_error(f"Cannot download model. Not supported quantization: {unsupported}.")
+            raise SystemExit(1)
 
     repo_id = source["repo_id"]
     # Set only for the URL syntax; they select the single-file download path.
