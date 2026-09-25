@@ -5,7 +5,9 @@
 """Return model_size_mb from models-list.yaml for a given ai-hub-handler model.
 
 Looks up the model by matching model_type and model_name in the deployment variables.
-Prints a JSON stat event with size_mb if found, or size_mb -1 if not found.
+Prints a JSON stat event with size_mb, null when the model or its size is not declared.
+AI Hub does not publish the size before a download, so the declared one is all there
+is, and size_bytes is always null.
 
 Usage:
     python ai_hub_model_info.py --model-type genie --model-name qwen3_4b_instruct_2507
@@ -71,11 +73,14 @@ def main():
         sys.exit(1)
 
     size_mb = find_model_size_mb(models, args.model_type, args.model_name)
+    if size_mb is None or size_mb < 0:
+        size_mb = None
 
     print(
         json.dumps({
             "event": "stat",
             "description": f"Model info for {model_key}",
+            "size_bytes": None,
             "size_mb": size_mb,
         }),
         flush=True,

@@ -21,7 +21,6 @@ import argparse
 import fnmatch
 import json
 import os
-import stat
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -35,6 +34,8 @@ from common.model_metadata import (
     read_metadata,
     record_for_model_id,
 )
+from common.model_size import path_size_bytes, paths_size_bytes, size_mb
+from common.model_source import model_publisher, model_runtime
 from common.models_list import get_model_subdir, load_models_list, MODELS_LIST_PATH
 
 
@@ -44,6 +45,18 @@ MODELS_BASE_DIR = "/models"
 # ".arduino_metadata.yaml" record does. A model declared in models-list.yaml is curated
 # and its variables can be compared against to detect an outdated install; one found
 # only on disk was downloaded ad hoc and there is nothing to compare it to.
+#
+# "runtime" and "model_publisher" say what runs the model and who publishes it
+# (common/model_source.py): derived from the handler and, for Hugging Face, from the
+# repository the model comes from; "metadata.model_publisher" in models-list.yaml
+# overrides the publisher of an entry.
+#
+# "size_mb" is on every entry, in the unit and rounding of common/model_size.py: what
+# the files measure on disk once the model is installed, the size models-list.yaml
+# declares ("model_size_mb") otherwise, and for an ad-hoc download in progress, which
+# nothing declares, the size its ".download" marker says it will have. It is null only
+# when none of these is known. "model_size_mb" (declared) and "disk_size_mb" (measured,
+# only for a complete install) are still reported alongside it.
 
 
 def get_model_info(model_entry):
@@ -60,18 +73,22 @@ def get_model_info(model_entry):
             name = model_data.get("name", model_id)
             supported_boards = model_data.get("supported_boards", [])
             deployment = model_data.get("deployment")
-            model_size_mb = model_data.get("metadata", {}).get("model_size_mb")
+            metadata = model_data.get("metadata") or {}
+            model_size_mb = metadata.get("model_size_mb")
 
             if not deployment:
                 continue
 
             pre_loaded = deployment.get("pre-loaded", False)
+            handler = deployment.get("handler", "")
 
             if pre_loaded:
                 results.append({
                     "id": model_id,
                     "name": name,
-                    "handler": deployment.get("handler", ""),
+                    "handler": handler,
+                    "runtime": model_runtime(handler),
+                    "model_publisher": model_publisher(handler, metadata),
                     "model_directory": "",
                     "models_repository": "",
                     "model_type": "",
@@ -98,7 +115,9 @@ def get_model_info(model_entry):
                     results.append({
                         "id": model_id,
                         "name": name,
-                        "handler": deployment.get("handler", ""),
+                        "handler": handler,
+                        "runtime": model_runtime(handler),
+                        "model_publisher": model_publisher(handler, metadata, variables.get("model_url", ""), variables.get("model_directory", "")),
                         "model_directory": model_directory,
                         "models_repository": models_repository,
                         "model_type": variables.get("model_type", ""),
@@ -128,37 +147,21 @@ def build_model_directory(variables):
 
 
 def get_dir_size_mb(path):
-    """Return total disk usage of a path (file or directory) in MB, rounded to 2 decimals."""
-    try:
-        st = os.stat(path, follow_symlinks=False)
-    except OSError:
-        return None
+    """Return the size of a path (file or directory) in MB, per common/model_size.py."""
+    return size_mb(path_size_bytes(path))
 
-    if stat.S_ISREG(st.st_mode):
-        return round(st.st_size / 1024 / 1024, 2)
-    if not stat.S_ISDIR(st.st_mode):
-        return None
 
-    total = 0
-    stack = [path]
-    while stack:
-        current = stack.pop()
-        try:
-            with os.scandir(current) as it:
-                for entry in it:
-                    try:
-                        # Don't follow symlinks; use cached stat from DirEntry.
-                        entry_stat = entry.stat(follow_symlinks=False)
-                    except OSError:
-                        continue
-                    mode = entry_stat.st_mode
-                    if stat.S_ISDIR(mode):
-                        stack.append(entry.path)
-                    elif stat.S_ISREG(mode):
-                        total += entry_stat.st_size
-        except OSError:
-            continue
-    return round(total / 1024 / 1024, 2)
+def listed_size_mb(installed, disk_size_mb, declared_size_mb, expected_size_mb=None):
+    """The ``size_mb`` of a listing entry: measured, else declared, else expected.
+
+    A download in progress is never measured: its files are partial. Always a float
+    (or None), even for a size models-list.yaml declares as an integer.
+    """
+    if installed and disk_size_mb is not None:
+        return disk_size_mb
+    if declared_size_mb is not None:
+        return float(declared_size_mb)
+    return expected_size_mb
 
 
 # Cache of os.scandir results keyed by search_dir.
@@ -328,6 +331,22 @@ def marker_covers_file(marker, filename):
     return any(isinstance(p, str) and fnmatch.fnmatch(filename, p) for p in patterns)
 
 
+def scanned_publisher(record, marker, rel_dir):
+    """The publisher of a GGUF found under the llamacpp tree.
+
+    Read from the inputs the file was downloaded with (its record, or the marker of a
+    download in flight), and from its location otherwise: a download lands in
+    ``<llamacpp>/<repo_id>``, so an out-of-the-box model with no record still names
+    its repository by the directory it sits in.
+    """
+    for source in ((record or {}).get("inputs"), marker):
+        if isinstance(source, dict):
+            publisher = model_publisher("llamacpp", model_url=source.get("model_url", ""), model_directory=source.get("model_directory", ""))
+            if publisher:
+                return publisher
+    return model_publisher("llamacpp", model_directory=rel_dir)
+
+
 def find_llamacpp_models(models_base_dir, declarations=()):
     """Scan for .gguf models under the llamacpp directory.
 
@@ -386,26 +405,28 @@ def find_llamacpp_models(models_base_dir, declarations=()):
                 # a declared location keeps the stem, anything else is qualified.
                 if not any(declaration_covers(d, n, rel_dir, f) for d, n, _mid in declarations):
                     model_name = rel_path[: -len(".gguf")]
-            disk_size_mb = get_dir_size_mb(full_path)
-            # The mmproj file in the same directory is part of this model.
-            if mmproj_files:
-                mmproj_size = get_dir_size_mb(os.path.join(root, mmproj_files[0]))
-                if disk_size_mb is not None and mmproj_size is not None:
-                    disk_size_mb = round(disk_size_mb + mmproj_size, 2)
+            # The mmproj file in the same directory is part of this model, and the two
+            # are summed in bytes, like the downloader sizes the same files.
+            model_files = [full_path] + ([os.path.join(root, mmproj_files[0])] if mmproj_files else [])
+            disk_size_mb = size_mb(paths_size_bytes(model_files))
             entry = {
                 "id": f"llamacpp:{model_name}",
                 "name": model_name,
                 "handler": "llamacpp",
+                "runtime": model_runtime("llamacpp"),
+                "model_publisher": scanned_publisher(record, marker if downloading else None, rel_dir),
                 # Found on disk. main() overrides this when the id matches a
                 # models-list.yaml entry, which makes it a curated model instead.
                 "model_origin": ORIGIN_USER,
                 "path": full_path,
                 "installed": not downloading,
                 "downloading": downloading,
-                "disk_size_mb": disk_size_mb,
+                "size_mb": listed_size_mb(not downloading, disk_size_mb, None, marker.get("size_mb") if downloading and marker else None),
                 "_rel_dir": rel_dir,
                 "_filename": f,
             }
+            if not downloading and disk_size_mb is not None:
+                entry["disk_size_mb"] = disk_size_mb
             if mmproj_files:
                 entry["mmproj"] = os.path.join(root, mmproj_files[0])
             if record is not None:
@@ -422,20 +443,23 @@ def find_llamacpp_models(models_base_dir, declarations=()):
             # by location so the id matches the one the finished install will get.
             if not any(declaration_covers(d, n, rel_dir, filename) for d, n, _mid in declarations):
                 model_name = f"{rel_dir}/{model_name}" if rel_dir else model_name
+            # A record for the file being fetched is a previous install of the same
+            # model (a re-download); a record naming only other files is a sibling's.
+            record = file_record(os.path.join(root, filename), llamacpp_dir) if filename else None
             entry = {
                 "id": f"llamacpp:{model_name}",
                 "name": model_name,
                 "handler": "llamacpp",
+                "runtime": model_runtime("llamacpp"),
+                "model_publisher": scanned_publisher(record, marker, rel_dir),
                 "model_origin": ORIGIN_USER,
                 "path": root,
                 "installed": False,
                 "downloading": True,
+                "size_mb": marker.get("size_mb"),
                 "_rel_dir": rel_dir,
                 "_filename": filename,
             }
-            # A record for the file being fetched is a previous install of the same
-            # model (a re-download); a record naming only other files is a sibling's.
-            record = file_record(os.path.join(root, filename), llamacpp_dir) if filename else None
             if record is not None:
                 entry["download_metadata"] = record
             results.append(entry)
@@ -526,8 +550,11 @@ def main():
                 "id": model_info["id"],
                 "name": model_info["name"],
                 "handler": model_info["handler"],
+                "runtime": model_info["runtime"],
+                "model_publisher": model_info["model_publisher"],
                 "model_origin": ORIGIN_BUILTIN,
                 "installed": True,
+                "size_mb": listed_size_mb(True, None, model_info.get("model_size_mb")),
             }
             if model_info.get("model_size_mb") is not None:
                 entry["model_size_mb"] = model_info["model_size_mb"]
@@ -535,19 +562,25 @@ def main():
             exists, path = check_model_exists(model_info, args.models_dir)
             # Per-model ".download" marker present => download in progress/incomplete.
             downloading = bool(model_is_downloading(model_info, args.models_dir))
+            installed = exists and not downloading
+            disk_size_mb = get_dir_size_mb(path) if installed else None
             entry = {
                 "id": model_info["id"],
                 "name": model_info["name"],
                 "handler": model_info["handler"],
+                "runtime": model_info["runtime"],
+                "model_publisher": model_info["model_publisher"],
                 "model_origin": ORIGIN_BUILTIN,
-                "installed": exists and not downloading,
+                "installed": installed,
                 "downloading": downloading,
+                "size_mb": listed_size_mb(installed, disk_size_mb, model_info.get("model_size_mb")),
             }
             if model_info.get("model_size_mb") is not None:
                 entry["model_size_mb"] = model_info["model_size_mb"]
             if exists:
                 entry["path"] = path
-                entry["disk_size_mb"] = get_dir_size_mb(path)
+            if disk_size_mb is not None:
+                entry["disk_size_mb"] = disk_size_mb
             # Read the record regardless of `exists`: check_model_exists() cannot
             # resolve the nested model_directory of a Hugging Face model, whose
             # status is only fixed up by the llamacpp merge below.
@@ -584,8 +617,12 @@ def main():
             existing["downloading"] = m["downloading"]
             if "path" in m:
                 existing["path"] = m["path"]
+            # The YAML path check may have measured a partial or unrelated folder:
+            # the scanned file is the authority on what this model measures.
+            existing.pop("disk_size_mb", None)
             if m.get("disk_size_mb") is not None:
                 existing["disk_size_mb"] = m["disk_size_mb"]
+            existing["size_mb"] = listed_size_mb(m["installed"], m.get("disk_size_mb"), existing.get("model_size_mb"), m.get("size_mb"))
             if "mmproj" in m:
                 existing["mmproj"] = m["mmproj"]
             if "download_metadata" in m and "download_metadata" not in existing:
@@ -626,11 +663,7 @@ def main():
         print("-" * 169)
         for r in results:
             status = "DOWNLOADING" if r.get("downloading") else ("INSTALLED" if r["installed"] else "NOT FOUND")
-            size = (
-                f"{r['disk_size_mb']:.2f}"
-                if r.get("disk_size_mb") is not None
-                else (f"{r['model_size_mb']}" if r.get("model_size_mb") is not None else "-")
-            )
+            size = f"{r['size_mb']:.2f}" if r.get("size_mb") is not None else "-"
             path = r.get("path", "")
             origin = r.get("model_origin", "")
             print(f"{status:<12} {origin:<16} {size:<12} {r['id']:<45} {r['name']:<40} {path}")

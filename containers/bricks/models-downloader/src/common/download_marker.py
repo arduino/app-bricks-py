@@ -22,6 +22,11 @@ quantization ever downloaded from that repository, so the bare presence of a mar
 does not mean that all of them are in progress. It is optional — a handler whose model
 directory holds exactly one model has nothing to disambiguate, and a marker written
 before the field existed carries none — and its absence means the whole directory.
+
+``size_mb`` is the size the download will have once complete (``common/model_size.py``),
+written when the handler knows it up front. The listing reports it for a download in
+progress that models-list.yaml does not size — an ad-hoc Hugging Face model — so such a
+model is sized before any of its files exist. It is optional as well.
 """
 
 import json
@@ -30,11 +35,12 @@ import os
 MARKER_NAME = ".download"
 
 
-def marker_payload(handler="", models_repository="", model_directory="", model_url="", file_patterns=None):
+def marker_payload(handler="", models_repository="", model_directory="", model_url="", file_patterns=None, size_mb=None):
     """Build the marker dict from the fields that match a models-list.yaml entry.
 
-    ``model_url`` is included only when set (some handlers download by URL), and so is
-    ``file_patterns`` (only handlers sharing a directory between models need it).
+    ``model_url`` is included only when set (some handlers download by URL), and so are
+    ``file_patterns`` (only handlers sharing a directory between models need it) and
+    ``size_mb`` (only a handler that knows the size before downloading can tell it).
     """
     payload = {
         "status": "downloading",
@@ -46,15 +52,17 @@ def marker_payload(handler="", models_repository="", model_directory="", model_u
         payload["model_url"] = model_url
     if file_patterns:
         payload["file_patterns"] = list(file_patterns)
+    if size_mb is not None:
+        payload["size_mb"] = size_mb
     return payload
 
 
-def write_marker(model_dir, handler="", models_repository="", model_directory="", model_url="", file_patterns=None):
+def write_marker(model_dir, handler="", models_repository="", model_directory="", model_url="", file_patterns=None, size_mb=None):
     """Create ``<model_dir>/.download`` with the JSON payload and return its path."""
     os.makedirs(model_dir, exist_ok=True)
     path = os.path.join(model_dir, MARKER_NAME)
     with open(path, "w") as f:
-        json.dump(marker_payload(handler, models_repository, model_directory, model_url, file_patterns), f)
+        json.dump(marker_payload(handler, models_repository, model_directory, model_url, file_patterns, size_mb), f)
         f.write("\n")
     return path
 
