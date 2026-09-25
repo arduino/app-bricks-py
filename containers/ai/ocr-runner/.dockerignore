@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: Copyright (C) Arduino s.r.l. and/or its affiliated companies
+#
+# SPDX-License-Identifier: MPL-2.0
+
+# Development-only material that must not end up in the image.
+.venv/
+**/__pycache__
+**/*.pyc
+sbom-delta/
+README.md
+.dockerignore
+ci.json

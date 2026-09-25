@@ -2,50 +2,8 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-import math
-
 import cv2
 import numpy as np
-
-from utils.constants import *
-
-
-def denormalize_coordinates(
-    coordinates: np.ndarray,
-    input_img_size: tuple[int, int],
-    scale: float = 1.0,
-    pad: tuple[int, int] = (0, 0),
-) -> None:
-    """
-    Maps detection coordinates from normalized [0, 1] to absolute coordinates in
-    the original (pre-resize) image.
-
-    Parameters
-    ----------
-    coordinates : np.ndarray
-        Tensor of shape [..., 2]. Coordinates are ordered (y, x) and normalized to [0,1].
-        This array is modified in place.
-
-    input_img_size : (int, int)
-        (H, W) of the network input (the resized padded tensor).
-
-    scale : float
-        Scale factor used during resizing to network size.
-
-    pad : (int, int)
-        Padding (H_pad, W_pad) added during resize-to-network.
-
-    Returns
-    -------
-    None
-        Coordinates are denormalized in place.
-    """
-    img_0, img_1 = input_img_size
-    pad_0, pad_1 = pad
-
-    # Convert normalized coordinates -> network pixel space -> remove padding -> unscale -> int
-    coordinates[..., 0] = ((coordinates[..., 0] * img_0 - pad_0) / scale).astype(np.int32)
-    coordinates[..., 1] = ((coordinates[..., 1] * img_1 - pad_1) / scale).astype(np.int32)
 
 
 def apply_batched_affines_to_frame(frame: np.ndarray, affines: list[np.ndarray], output_image_size: tuple[int, int]) -> np.ndarray:
@@ -122,55 +80,3 @@ def compute_vector_rotation(
     # atan2(dy, dx)
     theta = np.arctan2(dy, dx) - offset_rads
     return theta
-
-
-def resize_pad(
-    image: np.ndarray,
-    dst_size: tuple[int, int],
-) -> tuple[np.ndarray, float, tuple[int, int]]:
-    """
-    Resize and pad image to shape (dst_size[0], dst_size[1]) while preserving aspect ratio.
-
-    Parameters
-    ----------
-    image
-        Input image with shape (H, W) or (H, W, C). dtype can be uint8, float32, etc.
-    dst_size
-        Desired (height, width).
-
-    Returns
-    -------
-    rescaled_padded_image : np.ndarray
-        Output image with shape (dst_h, dst_w) or (dst_h, dst_w, C).
-    scale : float
-        Scale factor applied to the original image (same for H and W).
-    padding : (int, int)
-        (pad_left, pad_top) applied to the resized image.
-    """
-    if image.ndim not in (2, 3):
-        raise ValueError("image must be 2D (H, W) or 3D (H, W, C)")
-
-    src_h, src_w = image.shape[:2]
-    dst_h, dst_w = int(dst_size[0]), int(dst_size[1])
-
-    # Compute uniform scale to fit within dst while preserving aspect ratio
-    h_ratio = dst_h / src_h
-    w_ratio = dst_w / src_w
-    scale = min(h_ratio, w_ratio)
-
-    new_h = max(1, math.floor(src_h * scale))
-    new_w = max(1, math.floor(src_w * scale))
-
-    interp = cv2.INTER_LINEAR
-    resized = cv2.resize(image, (new_w, new_h), interpolation=interp)
-
-    # Compute padding amounts
-    pad_total_h = dst_h - new_h
-    pad_total_w = dst_w - new_w
-
-    pad_top, pad_bottom = (pad_total_h // 2, pad_total_h - pad_total_h // 2)
-    pad_left, pad_right = (pad_total_w // 2, pad_total_w - pad_total_w // 2)
-
-    padded = cv2.copyMakeBorder(resized, pad_top, pad_bottom, pad_left, pad_right, borderType=cv2.BORDER_CONSTANT, value=0.0)
-
-    return padded, scale, (pad_left, pad_top)

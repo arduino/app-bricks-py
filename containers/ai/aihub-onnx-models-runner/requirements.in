@@ -1,0 +1,39 @@
+# Everything the aihub-onnx-models-runner base image installs on top of the aihub
+# framework's requirements-base.txt, listed explicitly: requirements.txt is compiled
+# from this file with --no-deps and installed with `pip install --no-deps --require-hashes`,
+# so only these packages, at these versions, with these hashes, end up in the image. Lock for
+# the container target (linux aarch64, CPython 3.13, the python:3.13-slim base of python-slim):
+#
+#   uv pip compile requirements.in --no-deps --python-platform aarch64-manylinux_2_34 \
+#       --python-version 3.13 --generate-hashes -o requirements.txt
+#
+# Transitive dependencies deliberately left out: sympy + mpmath (~80 MB, only used by
+# onnxruntime's offline tooling) and coloredlogs + humanfriendly (declared by the plugin
+# wheel, never imported at runtime).
+#
+# opencv-python-headless is here rather than in a runner because the `aihub` framework
+# itself needs cv2 - the websocket input decodes frames with it - so every runner on this
+# base needs it too. One ~90 MB wheel in the base instead of one per runner.
+#
+# onnxruntime-qnn is a plugin EP compiled against one onnxruntime release and one QAIRT
+# release, and it bundles that QAIRT (~190 MB of libQnnHtp*.so plus the Hexagon skels). That
+# bundled QAIRT is the only one in this image - unlike qairt-common-base, python-slim ships no
+# QAIRT SDK of its own - so the wheel decides the QAIRT the NPU runs, and the HTP context
+# binaries a runner ships have to be compiled against it.
+#
+# Pairs, from the release notes (https://github.com/onnxruntime/onnxruntime-qnn/releases) and
+# measured on the 21q with the EasyOCR recognizer:
+#   2.5.0 -> ORT 1.29.0, QAIRT 2.49.40   correct (pinned)
+#
+# The line below records the QAIRT of the pinned wheel. It is read by
+# tests/containers/ai/test_ocr_runner_context_binaries.py and compared with the `qnn_version`
+# recorded in every runner's models/**/*.qnn_ctx.json, so bumping the wheel without
+# recompiling the context binaries turns CI red.
+# qairt-version: 2.49.40
+numpy==2.5.3
+onnxruntime==1.29.0
+onnxruntime-qnn==2.5.0
+flatbuffers==25.12.19
+protobuf==7.36.1
+packaging==26.3
+opencv-python-headless==5.0.0.93

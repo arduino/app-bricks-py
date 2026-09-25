@@ -1,0 +1,74 @@
+{
+    "model_id": "easyocr",
+    "model_name": "EasyOCR",
+    "runtime": "onnx",
+    "precision": "float",
+    "tool_versions": {
+        "qairt": "2.45.0.260326154327",
+        "onnx_runtime": "1.27.1"
+    },
+    "model_files": {
+        "detector.onnx": {
+            "inputs": {
+                "image": {
+                    "shape": [
+                        1,
+                        3,
+                        608,
+                        800
+                    ],
+                    "dtype": "float32",
+                    "io_type": "image",
+                    "image_metadata": {},
+                    "value_range": [
+                        0.0,
+                        1.0
+                    ]
+                }
+            },
+            "outputs": {
+                "results": {
+                    "shape": [
+                        1,
+                        304,
+                        400,
+                        2
+                    ],
+                    "dtype": "float32"
+                }
+            }
+        },
+        "recognizer.onnx": {
+            "inputs": {
+                "image": {
+                    "shape": [
+                        1,
+                        1,
+                        64,
+                        800
+                    ],
+                    "dtype": "float32",
+                    "io_type": "image",
+                    "image_metadata": {
+                        "color_format": "grayscale"
+                    },
+                    "value_range": [
+                        0.0,
+                        1.0
+                    ]
+                }
+            },
+            "outputs": {
+                "output_preds": {
+                    "shape": [
+                        1,
+                        199,
+                        97
+                    ],
+                    "dtype": "float32"
+                }
+            }
+        }
+    },
+    "use_case": "Image To Text"
+}

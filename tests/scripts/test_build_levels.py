@@ -51,11 +51,11 @@ def make_graph(tmp_path: Path, spec: dict[str, dict]) -> Graph:
 
 
 # The real chain under test, spread over the container groups as in the repo:
-#   qairt -> aihub -> gesture
+#   qairt -> aihub-litert -> gesture
 #   qairt -> llamacpp-npu
 CHAIN = {
-    "qairt-common-base": {"group": "base", "base_image": True, "downstream": ["aihub-models-runner", "llamacpp-npu-runner"]},
-    "aihub-models-runner": {"group": "ai", "downstream": ["gesture-recognition-runner"]},
+    "qairt-common-base": {"group": "base", "base_image": True, "downstream": ["aihub-litert-models-runner", "llamacpp-npu-runner"]},
+    "aihub-litert-models-runner": {"group": "ai", "downstream": ["gesture-recognition-runner"]},
     "gesture-recognition-runner": {"group": "ai", "downstream": []},
     "llamacpp-npu-runner": {"group": "ai", "downstream": []},
     "standalone": {"group": "bricks", "downstream": []},
@@ -96,7 +96,7 @@ def test_three_level_chain_from_root(tmp_path):
     waves = build_plan(graph, build_set)
     assert len(waves) == MAX_LEVELS
     assert waves[0] == ["qairt-common-base"]
-    assert waves[1] == ["aihub-models-runner", "llamacpp-npu-runner"]
+    assert waves[1] == ["aihub-litert-models-runner", "llamacpp-npu-runner"]
     assert waves[2] == ["gesture-recognition-runner"]
 
 
@@ -104,10 +104,10 @@ def test_reverse_closure_from_leaf(tmp_path):
     """Selecting a leaf must pull in its ancestors so bases build first."""
     graph = make_graph(tmp_path, CHAIN)
     build_set = resolve_dev_build_set(graph, "gesture-recognition-runner")
-    assert build_set == {"qairt-common-base", "aihub-models-runner", "gesture-recognition-runner"}
+    assert build_set == {"qairt-common-base", "aihub-litert-models-runner", "gesture-recognition-runner"}
     waves = build_plan(graph, build_set)
     assert waves[0] == ["qairt-common-base"]
-    assert waves[1] == ["aihub-models-runner"]
+    assert waves[1] == ["aihub-litert-models-runner"]
     assert waves[2] == ["gesture-recognition-runner"]
     # The sibling llamacpp-npu-runner is NOT an ancestor of gesture and must be excluded.
     assert "llamacpp-npu-runner" not in build_set
@@ -133,7 +133,7 @@ def test_release_seeds_the_whole_tagged_group(tmp_path):
     # The three ai containers, plus qairt-common-base pulled in as their base.
     assert build_set == {
         "qairt-common-base",
-        "aihub-models-runner",
+        "aihub-litert-models-runner",
         "gesture-recognition-runner",
         "llamacpp-npu-runner",
     }
@@ -142,7 +142,7 @@ def test_release_seeds_the_whole_tagged_group(tmp_path):
 
     waves = build_plan(graph, build_set)
     assert waves[0] == ["qairt-common-base"]
-    assert waves[1] == ["aihub-models-runner", "llamacpp-npu-runner"]
+    assert waves[1] == ["aihub-litert-models-runner", "llamacpp-npu-runner"]
     assert waves[2] == ["gesture-recognition-runner"]
 
 

@@ -1,0 +1,17 @@
+{
+  "base_image": true,
+  "watch_paths": [
+    "containers/base/aihub-framework/"
+  ],
+  "tag_latest": true,
+  "build_whl": false,
+  "update_compose": false,
+  "build_args": {},
+  "sbom": {
+    "runtime_base": "${REGISTRY}app-bricks/python-slim:${BASE_IMAGE_VERSION}"
+  },
+  "downstream": [
+    "aihub-litert-models-runner",
+    "aihub-onnx-models-runner"
+  ]
+}

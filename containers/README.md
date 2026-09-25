@@ -26,12 +26,15 @@ groups; the build planner fails if two groups declare the same one.
 |---|---|---|---|
 | `python-slim` | base | `python:3.13-slim-trixie` | Minimal Python layer shared by everything else |
 | `python-base` | base | `python-slim` | System deps, non-root user, fonts, OpenCV wheel, libcamera + GStreamer packages |
-| `qairt-common-base` | base | `python:3.13-slim-trixie` | Qualcomm AI Runtime and FastRPC libraries shared by the NPU runners |
+| `qairt-common-base` | base | `python:3.13-slim-trixie` | Qualcomm AI Runtime SDK and a source build of FastRPC, shared by the LiteRT NPU runners |
+| `aihub-framework` | base | `python-slim` | Source-only: the `aihub` runner framework and app skeleton, shared by the two runner bases |
 | `python-apps-base` | bricks | `python-base` | App runtime: installs the Arduino App Bricks `.whl` and the Streamlit config |
 | `models-downloader` | bricks | `python-slim` | Downloads models from AI Hub, Edge Impulse and Hugging Face per `models/models-list.yaml` |
-| `aihub-models-runner` | ai | `qairt-common-base` | Runs Qualcomm AI Hub models, with GStreamer/WebSocket input and MJPEG/WebSocket output |
-| `gesture-recognition-runner` | ai | `aihub-models-runner` | Hand-gesture recognition on the MediaPipe palm/landmark/classifier models |
-| `pose-estimation-runner` | ai | `aihub-models-runner` | Body pose estimation on the PoseNet MobileNet model, 17 keypoints per person, custom pose models supported |
+| `aihub-litert-models-runner` | ai | `qairt-common-base` | Runs Qualcomm AI Hub models on LiteRT, with GStreamer/WebSocket input and MJPEG/WebSocket output. Installs OpenCV and `ai-edge-litert` for its runners |
+| `aihub-onnx-models-runner` | ai | `python-slim` | Same framework on ONNX Runtime: the QNN execution provider plus Debian's FastRPC libraries and OpenCV, without the QAIRT SDK |
+| `gesture-recognition-runner` | ai | `aihub-litert-models-runner` | Hand-gesture recognition on the MediaPipe palm/landmark/classifier models |
+| `pose-estimation-runner` | ai | `aihub-litert-models-runner` | Body pose estimation on the PoseNet MobileNet model, 17 keypoints per person, custom pose models supported |
+| `ocr-runner` | ai | `aihub-onnx-models-runner` | EasyOCR text detection and recognition on the Hexagon NPU |
 | `ei-models-runner` | ai | Edge Impulse inference image | Edge Impulse inference with the bundled out-of-the-box models |
 | `ei-qnn-models-runner` | ai | Edge Impulse QNN inference image | Same, on the NPU-accelerated (QNN) models |
 | `llamacpp-runner` | ai | `python-slim` | llama.cpp model router, CPU build |
@@ -42,12 +45,20 @@ graph LR
   slim[python-slim] --> base[python-base] --> apps[python-apps-base]
   slim --> dl[models-downloader]
   slim --> lcpp[llamacpp-runner]
-  qairt[qairt-common-base] --> aihub[aihub-models-runner] --> gesture[gesture-recognition-runner]
+  qairt[qairt-common-base] --> aihub[aihub-litert-models-runner] --> gesture[gesture-recognition-runner]
   aihub --> pose[pose-estimation-runner]
   qairt --> lcppnpu[llamacpp-npu-runner]
   ei[ei-models-runner]
   eiqnn[ei-qnn-models-runner]
 ```
+
+Solid arrows are `FROM`; the dotted ones are `COPY --from`: `aihub-framework` is a
+source-only image that exists so the two runner bases share one copy of the `aihub`
+package. CI builds each container with its own directory as the build context, so sharing
+a plain directory between them is not possible - both pull the files out of that image
+instead. It is still an ordinary edge in the graph: the parent lists both runners in its
+`downstream`, and `tests/containers/test_container_graph.py` checks that every in-repo image
+a Dockerfile pulls, `FROM` or `COPY --from`, is declared that way.
 
 `ei-models-runner` and `ei-qnn-models-runner` build on external Edge Impulse images and have no upstream
 inside this repo.
@@ -87,7 +98,10 @@ Pushing the tag runs `docker-publish.yml`, which:
    release version, but tagging the `base` group alone releases nothing.
 2. **Orders it into waves** — `level_0` are the images with no dependency being built in the same run,
    each later wave builds on the previous one. So `bricks/X.Y.Z` builds `python-slim`, then
-   `python-base` and `models-downloader`, then `python-apps-base`.
+   `python-base` and `models-downloader`, then `python-apps-base`. There are four waves
+   (`MAX_LEVELS` in `scripts/build_levels.py`, matched by the `build-l0`..`build-l3` jobs in
+   the workflows); the deepest chain today is `python-slim` → `aihub-framework` →
+   `aihub-onnx-models-runner` → `ocr-runner`.
 3. **Skips what has not changed** — for `level_0` only, if a container's `watch_paths` are untouched
    since the previous tag of its own group, the existing image is re-tagged with `crane copy` instead of
    rebuilt. Later waves always rebuild, since their base was just rebuilt.

@@ -1,0 +1,28 @@
+services:
+  ocr:
+    image: ${DOCKER_REGISTRY_BASE:-ghcr.io/arduino/}app-bricks/ocr-runner:0.1.0
+    # No video feed: the pipeline produces text metadata only, so the MJPEG output
+    # (and its port) is not enabled at all.
+    entrypoint: [ "/aihub-onnx-entrypoint.sh", "python", "main.py", "--input", "websocket", "--output", "websocket" ]
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+    devices:
+      - /dev/dma_heap/system
+      - /dev/fastrpc-cdsp
+    volumes:
+      # Host DSP installation, read-only: /aihub-onnx-entrypoint.sh merges it into
+      # /usr/share/hexagon-dsp in the container layer. No /run/device-model bind mount
+      # here: this runner ships Debian's libfastrpc, which reads the machine name from
+      # /sys/firmware/devicetree/base/model directly.
+      - ${HOST_DSP_INSTALLATION_PATH:-/usr/share/qcom}:/run/host-qcom:ro
+      # SoC identity (soc_id, machine): the runner refuses a pre-compiled HTP context
+      # binary that was built for a different SoC than the one it is running on.
+      - /sys/devices/soc0:/sys/devices/soc0:ro
+    healthcheck:
+      test: [ "CMD-SHELL", "nc -zv ocr 5001 || exit 1" ]
+      interval: 1s
+      timeout: 2s
+      retries: 30

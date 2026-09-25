@@ -1,0 +1,12 @@
+id: arduino:ocr
+name: OCR
+description: |
+  This OCR brick extracts the text visible in an image using the EasyOCR model
+  accelerated on the board's NPU.
+  Given an image it returns the recognized text in reading order, along with the
+  position and confidence of every detected text region.
+category: image
+ai_frameworks_compatibility:
+  - qnn
+model: easy-ocr
+supported_boards: ["ventunoq"]

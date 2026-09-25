@@ -5,10 +5,12 @@
 import numpy as np
 from ai_edge_litert.interpreter import Interpreter
 
+from aihub.image_processing import resize_pad
+from aihub.model_io_processing import dequantize, quantize
+from aihub.tf import load_qnn_delegate
+
 from utils.constants import INPUT_HEIGHT, INPUT_WIDTH, MIN_KEYPOINT_SCORE, MIN_PERSON_SCORE
-from utils.tf import load_qnn_delegate
-from utils.image_processing import resize_pad
-from utils.model_io_processing import decode_multiple_persons, dequantize, quantize
+from utils.model_io_processing import decode_multiple_persons
 from utils.draw import draw_persons
 
 
