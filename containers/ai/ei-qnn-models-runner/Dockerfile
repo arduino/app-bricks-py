@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-FROM public.ecr.aws/g7a8t7v6/inference-container-qnn:v1.93.22
+FROM public.ecr.aws/g7a8t7v6/inference-container-qnn:v1.95.14
 
 ARG DEBIAN_FRONTEND=noninteractive
 
