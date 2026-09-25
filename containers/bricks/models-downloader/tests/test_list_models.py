@@ -693,6 +693,117 @@ def test_table_shows_the_origin_column(monkeypatch, capsys, tmp_path):
     assert "built_in" in out
 
 
+# --------------------------------------------------------------------------- #
+# runtime and model_publisher
+# --------------------------------------------------------------------------- #
+SOURCE_YAML = (
+    SAMPLE_YAML
+    + """\
+ - "ei:aihub-based":
+    name: "EI project built on an AI Hub model"
+    supported_boards: ["ventunoq"]
+    deployment:
+      handler: "ei-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              models_repository: "edge-impulse"
+              model_name: "aihub-based.eim"
+    metadata:
+      model_publisher: "qualcomm-ai-hub"
+ - "genie:qwen":
+    name: "Qwen"
+    supported_boards: ["ventunoq"]
+    deployment:
+      handler: "ai-hub-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              model_type: "genie"
+              model_name: "qwen"
+              models_repository: "genai"
+ - "pose-estimation":
+    name: "PoseNet"
+    deployment:
+      handler: "ai-hub-handler"
+      pre-loaded: true
+ - "face-detection":
+    name: "Face detection"
+    deployment:
+      handler: "ei-handler"
+      pre-loaded: true
+"""
+)
+
+
+def _by_id(models):
+    return {m["id"]: m for m in models}
+
+
+def test_main_reports_runtime_and_publisher_per_handler(monkeypatch, capsys, tmp_path):
+    _models_dir, models = _run_main(monkeypatch, capsys, tmp_path, SOURCE_YAML)
+    by_id = _by_id(models)
+    expected = {
+        "llamacpp:gemma-4-E2B_q4_0-it": ("llamacpp", "google"),
+        "ei:other-model": ("edge-impulse-sdk", "edge-impulse"),
+        "ei:aihub-based": ("edge-impulse-sdk", "qualcomm-ai-hub"),
+        "genie:qwen": ("qnn", "qualcomm-ai-hub"),
+        "pose-estimation": ("qnn", "qualcomm-ai-hub"),
+        "face-detection": ("edge-impulse-sdk", "edge-impulse"),
+    }
+    assert {model_id: (by_id[model_id]["runtime"], by_id[model_id]["model_publisher"]) for model_id in expected} == expected
+
+
+def test_main_merge_keeps_the_declared_publisher(monkeypatch, capsys, tmp_path):
+    """A curated GGUF found on disk keeps the publisher its declaration gives."""
+    models_dir, _models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
+    _install_gemma(models_dir, CURRENT_METADATA)
+
+    _models_dir, models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
+    entry = _gemma_entry(models)
+    assert entry["installed"] is True
+    assert (entry["runtime"], entry["model_publisher"]) == ("llamacpp", "google")
+
+
+def test_find_llamacpp_publisher_from_the_record(tmp_path):
+    """An ad-hoc download is published by the owner of the repository it came from."""
+    base = tmp_path / "models"
+    repo = os.path.join(str(base), "llamacpp", "custom-dir")
+    _make_gguf(os.path.join(repo, "Qwen3-8B-Q8_0.gguf"))
+    _write_metadata_file(
+        repo,
+        "models:\n- handler: hf-handler\n  model_id: llamacpp:x\n  model_origin: user\n  files: [Qwen3-8B-Q8_0.gguf]\n"
+        "  inputs:\n    model_url: Qwen/Qwen3-8B-GGUF:Q8_0\n    model_directory: custom-dir\n",
+    )
+    [entry] = list_models.find_llamacpp_models(str(base))
+    assert (entry["runtime"], entry["model_publisher"]) == ("llamacpp", "Qwen")
+
+
+def test_find_llamacpp_publisher_from_the_location_without_record(tmp_path):
+    base = tmp_path / "models"
+    _make_gguf(os.path.join(str(base), "llamacpp", "unsloth", "gemma-3-1b-it-GGUF", "gemma-3-1b-it-Q4_0.gguf"))
+    [entry] = list_models.find_llamacpp_models(str(base))
+    assert (entry["runtime"], entry["model_publisher"]) == ("llamacpp", "unsloth")
+
+
+def test_find_llamacpp_publisher_of_a_pending_download_from_its_marker(tmp_path):
+    base = tmp_path / "models"
+    repo = os.path.join(str(base), "llamacpp", "some-dir")
+    write_marker(
+        repo, handler="hf-handler", models_repository="llamacpp", model_url="https://huggingface.co/TheBloke/Mistral-GGUF/blob/main/mistral.Q4_0.gguf"
+    )
+    [entry] = list_models.find_llamacpp_models(str(base))
+    assert entry["downloading"] is True
+    assert (entry["runtime"], entry["model_publisher"]) == ("llamacpp", "TheBloke")
+
+
+def test_find_llamacpp_canonical_repository_has_no_publisher(tmp_path):
+    base = tmp_path / "models"
+    _make_gguf(os.path.join(str(base), "llamacpp", "gpt2", "gpt2-Q4_0.gguf"))
+    [entry] = list_models.find_llamacpp_models(str(base))
+    assert entry["model_publisher"] is None
+
+
 def test_find_llamacpp_attaches_metadata(tmp_path):
     base = tmp_path / "models"
     repo = os.path.join(str(base), *GEMMA_REPO)

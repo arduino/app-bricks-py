@@ -35,6 +35,7 @@ from common.model_metadata import (
     read_metadata,
     record_for_model_id,
 )
+from common.model_source import model_publisher, model_runtime
 from common.models_list import get_model_subdir, load_models_list, MODELS_LIST_PATH
 
 
@@ -44,6 +45,11 @@ MODELS_BASE_DIR = "/models"
 # ".arduino_metadata.yaml" record does. A model declared in models-list.yaml is curated
 # and its variables can be compared against to detect an outdated install; one found
 # only on disk was downloaded ad hoc and there is nothing to compare it to.
+#
+# "runtime" and "model_publisher" say what runs the model and who publishes it
+# (common/model_source.py): derived from the handler and, for Hugging Face, from the
+# repository the model comes from; "metadata.model_publisher" in models-list.yaml
+# overrides the publisher of an entry.
 
 
 def get_model_info(model_entry):
@@ -60,18 +66,22 @@ def get_model_info(model_entry):
             name = model_data.get("name", model_id)
             supported_boards = model_data.get("supported_boards", [])
             deployment = model_data.get("deployment")
-            model_size_mb = model_data.get("metadata", {}).get("model_size_mb")
+            metadata = model_data.get("metadata") or {}
+            model_size_mb = metadata.get("model_size_mb")
 
             if not deployment:
                 continue
 
             pre_loaded = deployment.get("pre-loaded", False)
+            handler = deployment.get("handler", "")
 
             if pre_loaded:
                 results.append({
                     "id": model_id,
                     "name": name,
-                    "handler": deployment.get("handler", ""),
+                    "handler": handler,
+                    "runtime": model_runtime(handler),
+                    "model_publisher": model_publisher(handler, metadata),
                     "model_directory": "",
                     "models_repository": "",
                     "model_type": "",
@@ -98,7 +108,9 @@ def get_model_info(model_entry):
                     results.append({
                         "id": model_id,
                         "name": name,
-                        "handler": deployment.get("handler", ""),
+                        "handler": handler,
+                        "runtime": model_runtime(handler),
+                        "model_publisher": model_publisher(handler, metadata, variables.get("model_url", ""), variables.get("model_directory", "")),
                         "model_directory": model_directory,
                         "models_repository": models_repository,
                         "model_type": variables.get("model_type", ""),
@@ -328,6 +340,22 @@ def marker_covers_file(marker, filename):
     return any(isinstance(p, str) and fnmatch.fnmatch(filename, p) for p in patterns)
 
 
+def scanned_publisher(record, marker, rel_dir):
+    """The publisher of a GGUF found under the llamacpp tree.
+
+    Read from the inputs the file was downloaded with (its record, or the marker of a
+    download in flight), and from its location otherwise: a download lands in
+    ``<llamacpp>/<repo_id>``, so an out-of-the-box model with no record still names
+    its repository by the directory it sits in.
+    """
+    for source in ((record or {}).get("inputs"), marker):
+        if isinstance(source, dict):
+            publisher = model_publisher("llamacpp", model_url=source.get("model_url", ""), model_directory=source.get("model_directory", ""))
+            if publisher:
+                return publisher
+    return model_publisher("llamacpp", model_directory=rel_dir)
+
+
 def find_llamacpp_models(models_base_dir, declarations=()):
     """Scan for .gguf models under the llamacpp directory.
 
@@ -396,6 +424,8 @@ def find_llamacpp_models(models_base_dir, declarations=()):
                 "id": f"llamacpp:{model_name}",
                 "name": model_name,
                 "handler": "llamacpp",
+                "runtime": model_runtime("llamacpp"),
+                "model_publisher": scanned_publisher(record, marker if downloading else None, rel_dir),
                 # Found on disk. main() overrides this when the id matches a
                 # models-list.yaml entry, which makes it a curated model instead.
                 "model_origin": ORIGIN_USER,
@@ -422,10 +452,15 @@ def find_llamacpp_models(models_base_dir, declarations=()):
             # by location so the id matches the one the finished install will get.
             if not any(declaration_covers(d, n, rel_dir, filename) for d, n, _mid in declarations):
                 model_name = f"{rel_dir}/{model_name}" if rel_dir else model_name
+            # A record for the file being fetched is a previous install of the same
+            # model (a re-download); a record naming only other files is a sibling's.
+            record = file_record(os.path.join(root, filename), llamacpp_dir) if filename else None
             entry = {
                 "id": f"llamacpp:{model_name}",
                 "name": model_name,
                 "handler": "llamacpp",
+                "runtime": model_runtime("llamacpp"),
+                "model_publisher": scanned_publisher(record, marker, rel_dir),
                 "model_origin": ORIGIN_USER,
                 "path": root,
                 "installed": False,
@@ -433,9 +468,6 @@ def find_llamacpp_models(models_base_dir, declarations=()):
                 "_rel_dir": rel_dir,
                 "_filename": filename,
             }
-            # A record for the file being fetched is a previous install of the same
-            # model (a re-download); a record naming only other files is a sibling's.
-            record = file_record(os.path.join(root, filename), llamacpp_dir) if filename else None
             if record is not None:
                 entry["download_metadata"] = record
             results.append(entry)
@@ -526,6 +558,8 @@ def main():
                 "id": model_info["id"],
                 "name": model_info["name"],
                 "handler": model_info["handler"],
+                "runtime": model_info["runtime"],
+                "model_publisher": model_info["model_publisher"],
                 "model_origin": ORIGIN_BUILTIN,
                 "installed": True,
             }
@@ -539,6 +573,8 @@ def main():
                 "id": model_info["id"],
                 "name": model_info["name"],
                 "handler": model_info["handler"],
+                "runtime": model_info["runtime"],
+                "model_publisher": model_info["model_publisher"],
                 "model_origin": ORIGIN_BUILTIN,
                 "installed": exists and not downloading,
                 "downloading": downloading,
