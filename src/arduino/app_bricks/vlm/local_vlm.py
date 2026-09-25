@@ -20,9 +20,9 @@ logger = Logger("VisionLanguageModel")
 class VisionLanguageModel(LargeLanguageModel):
     """A Brick for interacting with locally-based Vision Language Models (VLMs).
 
-    This class wraps LangChain functionality to provide a simplified, unified interface
-    for chatting with models like Qwenm, LLama, Gemma. It supports both synchronous
-    'one-shot' responses and streaming output, with optional conversational memory.
+    It provides a simplified, unified interface for chatting with models like Qwenm, LLama,
+    Gemma. It supports both synchronous 'one-shot' responses and streaming output,
+    with optional conversational memory.
     """
 
     def __init__(
