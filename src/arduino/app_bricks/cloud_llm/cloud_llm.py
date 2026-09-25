@@ -400,7 +400,7 @@ class CloudLLM:
         return str(content)
 
     def get_client(self) -> BaseChatModel:
-        """Returns the underlying chat model instance.
+        """Returns the underlying LangChain model instance.
 
         This allows for advanced users to access the full capabilities of the model
         directly, such as calling `generate()` or `stream()` with custom message formats.

@@ -18,7 +18,7 @@ The Brick uses the model configured for `arduino:vlm` in Arduino App Lab.
 - **Streaming responses**: Uses `chat_stream()` when the application should display generated text as it arrives.
 - **Conversation memory**: Keeps recent chat history with `with_memory()` and can persist it across restarts with `persistence=True`.
 - **Configurable generation**: Supports system prompts, temperature, token limits, timeouts, and model overrides.
-- **Advanced access**: Exposes the underlying chat model client through `get_client()` for custom integrations.
+- **Advanced access**: Exposes the underlying LangChain chat model through `get_client()` for custom integrations.
 
 ## Prerequisites
 
@@ -137,7 +137,7 @@ supported_boards: ["ventunoq"]
 - **`stop_stream()`**: Requests cancellation of the active streaming response.
 - **`with_memory(max_messages=0, persistence=None)`**: Enables conversational memory for the instance. `persistence=True` enables persistence with a default database/thread; pass a `MessagePersistence` (importable as `from arduino.app_bricks.cloud_llm.memory import MessagePersistence`) for full control. Pass `max_messages=0` to disable history.
 - **`clear_memory()`**: Clears the active conversation history.
-- **`get_client()`**: Returns the underlying `BaseChatModel` chat model instance.
+- **`get_client()`**: Returns the underlying LangChain `BaseChatModel` instance.
 
 ## Image Inputs
 
