@@ -32,7 +32,8 @@ if [ -f "${model_path}/.download" ] || { [ -d "${model_path}" ] && [ -z "$(find 
     echo "{\"event\": \"info\", \"description\": \"Removing incomplete previous download: ${model_folder}\"}"
     rm -rf "${model_path:?}"
 elif [ -f "${model_path}/${model_name}" ]; then
-    echo "{\"event\": \"info\", \"description\": \"Model exists: ${model_name}\"}"
+    python /app/common/model_size.py --description "Model exists: ${model_name}" "${model_path}" \
+        || echo "{\"event\": \"info\", \"description\": \"Model exists: ${model_name}\", \"size_mb\": null}"
     exit 0
 fi
 

@@ -14,6 +14,7 @@ Usage examples:
 """
 
 import argparse
+import json
 import os
 import shutil
 import sys
@@ -24,6 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from common.download_marker import write_marker
 from common.http_download import check, download, emit_json_error, install_signal_handlers
 from common.model_metadata import write_metadata
+from common.model_size import path_size_bytes, size_mb
 
 
 BASE_URL = "https://studio.edgeimpulse.com/v1/api/{project_id}/deployment/download?type={target}&impulseId={impulse_id}"
@@ -154,8 +156,6 @@ def main():
 
     try:
         if args.info:
-            import json
-
             info = check(url, output_name=args.output_name)
             print(
                 json.dumps({
@@ -163,7 +163,7 @@ def main():
                     "description": build_description(args.ei_project_id, args.impulse_id, args.history_id),
                     "filename": info["filename"],
                     "size_bytes": info["content_length"],
-                    "size_mb": round(info["content_length"] / 1024 / 1024, 2) if info["content_length"] else None,
+                    "size_mb": size_mb(info["content_length"]),
                 }),
                 flush=True,
             )
@@ -177,6 +177,16 @@ def main():
             write_metadata(args.output_dir, handler="ei-handler")
             if os.path.exists(marker):
                 os.remove(marker)
+            # Sized like the listing sizes the model folder, so the two agree.
+            print(
+                json.dumps({
+                    "event": "info",
+                    "description": f"Downloaded to: {os.path.abspath(args.output_dir)}",
+                    "artifacts": [os.path.abspath(out_file)],
+                    "size_mb": size_mb(path_size_bytes(args.output_dir)),
+                }),
+                flush=True,
+            )
     except requests.HTTPError as exc:
         msg = f"HTTP error: {exc.response.status_code} {exc.response.reason} (url: {url})"
         if not args.info:

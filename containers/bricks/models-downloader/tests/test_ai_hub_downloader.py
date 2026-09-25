@@ -117,3 +117,45 @@ def test_non_url_output_is_reported(monkeypatch, capsys):
 
     (error,) = _error_events(capsys)
     assert "No assets for this chipset" in error["description"]
+
+
+# --------------------------------------------------------------------------- #
+# size_mb on the completion event and in the info stat event
+# --------------------------------------------------------------------------- #
+def test_completed_download_reports_size_mb(monkeypatch, capsys, tmp_path):
+    """Sized like the listing sizes the model directory, bookkeeping files excluded."""
+    model_directory = "qwen3_vl_8b_instruct-genie-w4a16-qualcomm_qcs8275"
+    monkeypatch.setenv("model_directory", model_directory)
+    monkeypatch.setattr(download_ai_hub_model.sys, "argv", [*ARGV, "--output-dir", str(tmp_path)])
+    monkeypatch.setattr(
+        download_ai_hub_model.subprocess,
+        "run",
+        lambda *a, **k: subprocess.CompletedProcess(a, 0, stdout="https://example.com/model.zip\n", stderr=""),
+    )
+
+    def _extract(_url, output_dir, _json_progress):
+        path = tmp_path / model_directory / "model.bin"
+        path.write_bytes(b"\0" * (2 * 1024 * 1024))
+
+    monkeypatch.setattr(download_ai_hub_model, "download_and_extract", _extract)
+
+    download_ai_hub_model.main()
+
+    events = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
+    assert events[-1]["description"].startswith("Downloaded to:")
+    assert events[-1]["size_mb"] == 2.0
+
+
+def test_info_reports_null_size_for_an_undeclared_model(monkeypatch, capsys, tmp_path):
+    from ai_hub import ai_hub_model_info
+
+    yaml_path = tmp_path / "models-list.yaml"
+    yaml_path.write_text("models: []\n")
+    monkeypatch.setattr(
+        ai_hub_model_info.sys, "argv", ["ai_hub_model_info.py", "--model-type", "genie", "--model-name", "absent", "--model-list", str(yaml_path)]
+    )
+    ai_hub_model_info.main()
+    event = json.loads(capsys.readouterr().out)
+    assert event["event"] == "stat"
+    assert event["size_mb"] is None
+    assert event["size_bytes"] is None

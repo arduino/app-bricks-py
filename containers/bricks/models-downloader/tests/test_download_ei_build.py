@@ -55,3 +55,41 @@ def test_history_id_zero_is_still_treated_as_a_history_build():
 def test_info_description_names_the_history_entry():
     assert build_description(995296, 6, 8) == "Model info for project 995296 deployment history 8"
     assert build_description(948887, 10) == "Model info for project 948887 impulse 10"
+
+
+def test_completed_download_reports_size_mb(monkeypatch, capsys, tmp_path):
+    """Sized like the listing sizes the model folder, bookkeeping files excluded."""
+    import json
+    import sys
+
+    from edge_impulse import download_ei_build
+
+    def _download(_url, output_dir, _json_progress, output_name=None):
+        path = tmp_path / output_name
+        path.write_bytes(b"\0" * (3 * 1024 * 1024))
+        return str(path)
+
+    monkeypatch.setattr(download_ei_build, "download", _download)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "download_ei_build.py",
+            "--ei-project-id",
+            "1",
+            "--impulse-id",
+            "2",
+            "--target",
+            "runner-linux-aarch64-qnn",
+            "--output-name",
+            "m.eim",
+            "--output-dir",
+            str(tmp_path),
+        ],
+    )
+    download_ei_build.main()
+
+    events = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
+    assert events[-1]["description"].startswith("Downloaded to:")
+    assert events[-1]["size_mb"] == 3.0
+    assert not (tmp_path / ".download").exists()

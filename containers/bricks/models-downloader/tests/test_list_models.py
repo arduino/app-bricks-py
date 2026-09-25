@@ -1186,3 +1186,119 @@ def test_main_missing_yaml_exits(monkeypatch, capsys, tmp_path):
     with pytest.raises(SystemExit) as exc:
         list_models.main()
     assert exc.value.code == 1
+
+
+# --------------------------------------------------------------------------- #
+# size_mb: one size on every entry, whatever the handler and the state
+# --------------------------------------------------------------------------- #
+MIB = 1024 * 1024
+
+SIZE_YAML = (
+    SOURCE_YAML
+    + """\
+ - "ei:installed":
+    name: "Installed EI model"
+    supported_boards: ["ventunoq"]
+    deployment:
+      handler: "ei-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              models_repository: "edge-impulse"
+              model_name: "installed.eim"
+    metadata:
+      model_size_mb: 99
+ - "ei:downloading":
+    name: "EI model being downloaded"
+    supported_boards: ["ventunoq"]
+    deployment:
+      handler: "ei-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              models_repository: "edge-impulse"
+              model_name: "downloading.eim"
+    metadata:
+      model_size_mb: 42
+"""
+)
+
+
+def _size_fixture(models_dir):
+    """One model per state: installed / downloading / absent, curated / ad hoc."""
+    ei = os.path.join(str(models_dir), "edge-impulse")
+    _make_gguf(os.path.join(ei, "installed", "installed.eim"), size_bytes=2 * MIB)
+    _make_gguf(os.path.join(ei, "downloading", "downloading.eim"), size_bytes=MIB // 2)  # partial
+    write_marker(os.path.join(ei, "downloading"), handler="ei-handler")
+    # Ad-hoc Hugging Face models: one installed, one whose download has not landed a file yet.
+    _make_gguf(os.path.join(str(models_dir), "llamacpp", "TheBloke", "Mistral-GGUF", "mistral.Q4_0.gguf"), size_bytes=3 * MIB)
+    write_marker(
+        os.path.join(str(models_dir), "llamacpp", "unsloth", "Qwen3-0.6B-GGUF"),
+        handler="hf-handler",
+        model_url="unsloth/Qwen3-0.6B-GGUF:Q4_0",
+        file_patterns=["*Q4_0*.gguf"],
+        size_mb=380.5,
+    )
+
+
+def test_main_every_entry_has_size_mb(monkeypatch, capsys, tmp_path):
+    models_dir, _models = _run_main(monkeypatch, capsys, tmp_path, SIZE_YAML)
+    _size_fixture(models_dir)
+    list_models._SEARCH_DIR_CACHE.clear()
+
+    _models_dir, models = _run_main(monkeypatch, capsys, tmp_path, SIZE_YAML)
+
+    assert models
+    assert all("size_mb" in m for m in models)
+    by_id = _by_id(models)
+    # Installed: what it measures on disk, not what the catalog declares.
+    assert by_id["ei:installed"]["size_mb"] == 2.0
+    assert by_id["ei:installed"]["disk_size_mb"] == 2.0
+    # Downloading: the declared size; the partial file is not measured at all.
+    assert by_id["ei:downloading"]["size_mb"] == 42.0
+    assert isinstance(by_id["ei:downloading"]["size_mb"], float)
+    assert "disk_size_mb" not in by_id["ei:downloading"]
+    # Absent and pre-loaded: the declared size.
+    assert by_id["llamacpp:gemma-4-E2B_q4_0-it"]["size_mb"] == 3430.0
+    # Undeclared and absent: nothing to tell, and still the key is there.
+    assert by_id["pose-estimation"]["size_mb"] is None
+    # Ad hoc: measured once installed, and the marker's expected size before that.
+    assert by_id["llamacpp:mistral.Q4_0"]["size_mb"] == 3.0
+    pending = [m for m in models if m.get("downloading") and m["handler"] == "llamacpp"]
+    assert [m["size_mb"] for m in pending] == [380.5]
+
+
+def test_main_merged_curated_gguf_reports_what_it_measures(monkeypatch, capsys, tmp_path):
+    models_dir, _models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
+    repo = _install_gemma(models_dir, CURRENT_METADATA)
+    _make_gguf(os.path.join(repo, "gemma-4-E2B_q4_0-it.gguf"), size_bytes=5 * MIB)
+
+    _models_dir, models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
+    entry = _gemma_entry(models)
+    assert entry["installed"] is True
+    assert entry["size_mb"] == entry["disk_size_mb"] == 5.0
+    assert entry["model_size_mb"] == 3430  # the declaration is still reported alongside
+
+
+def test_find_llamacpp_gguf_and_mmproj_size_matches_the_download_event(tmp_path):
+    """The drift test: the size the HF downloader reports on completion is the listing's."""
+    from hugging_face.hf_downloader import downloaded_size_mb
+
+    base = tmp_path / "models"
+    repo = base / "llamacpp" / "org" / "vlm-GGUF"
+    files = [str(repo / "vlm-Q4_0.gguf"), str(repo / "mmproj-F16.gguf")]
+    _make_gguf(files[0], size_bytes=3 * 1024 + 1)  # sizes chosen so per-file rounding would drift
+    _make_gguf(files[1], size_bytes=3 * 1024 + 1)
+
+    [entry] = list_models.find_llamacpp_models(str(base))
+    assert entry["size_mb"] == entry["disk_size_mb"] == downloaded_size_mb(files) == 0.01
+
+
+def test_table_shows_size_mb(monkeypatch, capsys, tmp_path):
+    yaml_path = tmp_path / "models-list.yaml"
+    yaml_path.write_text(SAMPLE_YAML)
+    models_dir = tmp_path / "models"
+    models_dir.mkdir(exist_ok=True)
+    monkeypatch.setattr("sys.argv", ["list_models.py", "--models-dir", str(models_dir), "--model-list", str(yaml_path)])
+    list_models.main()
+    assert "3430.00" in capsys.readouterr().out
