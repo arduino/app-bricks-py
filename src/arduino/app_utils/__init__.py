@@ -14,7 +14,6 @@ from .folderwatch import *
 from .jsonparser import *
 from .ledmatrix import *
 from .logger import *
-from .lrudict import *
 from .peripheral import *
 from .slidingwindowbuffer import *
 from .leds import *
@@ -33,7 +32,6 @@ __all__ = [
     "FrameDesigner",
     "JSONParser",
     "Logger",
-    "LRUDict",
     "SineGenerator",
     "SlidingWindowBuffer",
     "Leds",
