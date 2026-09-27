@@ -17,7 +17,7 @@ import numpy as np
 from arduino.app_bricks.video_objectdetection import STREAM_PORT, AllDetectionsCallback, DetectionCallback, VideoObjectDetection
 from arduino.app_internal.ei_inference import InferenceClient, Result, ServerError
 from arduino.app_peripherals.camera import BaseCamera
-from arduino.app_utils import AppError, Logger, LRUDict, brick
+from arduino.app_utils import AppError, Logger, brick
 
 from .drawing import draw_area, draw_crossing_line
 
@@ -101,7 +101,9 @@ class VideoObjectTracking(VideoObjectDetection):
 
         self._counter_lock = threading.RLock()
         self._object_counters: Counter[str] = Counter()  # distinct objects seen, per label
-        self._recent_objects: LRUDict[int, tuple[int, int]] = LRUDict(maxsize=150)  # last seen position (x, y) of the recent object ids
+        self._recent_objects: dict[int, tuple[int, int]] = {}  # last seen position (x, y) of the ids the tracker still follows
+        self._last_seen: dict[int, int] = {}  # number of the result that last reported each of those ids
+        self._results = 0  # results processed, to tell when the tracker has given an id up
         self._line_coordinates: tuple[int, int, int, int] | None = None  # x1, y1, x2, y2 of the crossing line
         self._crossing_line_object: dict[str, Counter[str]] = {}  # crossings of the line, per label and direction
         self._line_crossing_handler: LineCrossingCallback | None = None
@@ -308,10 +310,23 @@ class VideoObjectTracking(VideoObjectDetection):
                 self._object_directions[object_id].append(direction)
                 logger.debug(f"Object ID {object_id} moved {direction} from ({last_x}, {last_y}) to ({x}, {y})")
 
+    def _expire_objects(self, seen: set[int]) -> None:
+        """Forget the ids missing from more results than `keep_grace`: the tracker has given them up and never
+        uses them again, while the ids it still follows keep their position and their place in the counts."""
+        with self._counter_lock:
+            self._results += 1
+            for object_id in seen:
+                self._last_seen[object_id] = self._results
+            for object_id, last_seen in list(self._last_seen.items()):
+                if self._results - last_seen > self._tracker["max_age"]:
+                    del self._last_seen[object_id]
+                    self._recent_objects.pop(object_id, None)
+
     def _forget_tracks(self) -> None:
         """Forget the identifiers seen so far, keeping the counts: the tracker numbers tracks from zero on each run."""
         with self._counter_lock:
             self._recent_objects.clear()
+            self._last_seen.clear()
             self._object_directions.clear()
             self._area_present.clear()
 
@@ -450,6 +465,7 @@ class VideoObjectTracking(VideoObjectDetection):
         with self._counter_lock:
             self._object_counters.clear()
             self._recent_objects.clear()
+            self._last_seen.clear()
             self._crossing_line_object.clear()
             self._area_counts.clear()
 
@@ -543,6 +559,7 @@ class VideoObjectTracking(VideoObjectDetection):
             centres.append((track.label, object_id, (x1 + x2) // 2, (y1 + y2) // 2))
             self._execute_handler(key=track.label, payload=details)
         self._record_area(centres)
+        self._expire_objects({object_id for _, object_id in tracked})
         # The video shows every tracked object under its label and id
         self._boxes.update(
             [replace(track, label=f"{track.label} #{object_id}") for track, object_id in tracked], (time.monotonic_ns() - result.ts_ns) / 1e9

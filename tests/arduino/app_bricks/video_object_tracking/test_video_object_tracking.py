@@ -318,6 +318,22 @@ def test_a_new_connection_forgets_the_identifiers_and_keeps_the_counts(running, 
     assert brick.get_unique_objects_count() == {"person": 2}, "the same id on a new run of the tracker is a new object"
 
 
+def test_a_live_track_keeps_its_position_whatever_the_crowd(tracker):
+    tracker.set_vertical_crossing_line(320)
+    crowd = [_track(object_id=100 + i, x=i, y=0) for i in range(200)]
+
+    _replay(tracker, [[_track(object_id=1, x=260, y=140)], crowd, [_track(object_id=1, x=300, y=140)]])
+
+    assert tracker.get_line_crossing_counts() == {"person": {"right": 1, "all": 1}}, "the crossing during the gap is counted"
+    assert tracker.get_unique_objects_count() == {"person": 201}, "the object back from the gap is not counted again"
+
+
+def test_an_id_the_tracker_gave_up_is_forgotten(tracker):
+    _replay(tracker, [[_track(object_id=i)] for i in range(500)] + [[], [], [], []])
+
+    assert tracker._recent_objects == {} and tracker._last_seen == {}, "keep_grace is 3: after 4 results nothing is kept"
+
+
 # ---------------------------------------------------------------- area
 
 AREA = (200, 200, 400, 400)

@@ -2,7 +2,8 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-from arduino.app_utils import brick, Logger, LRUDict
+from arduino.app_utils import brick, Logger
+from arduino.app_utils.lrudict import LRUDict
 from arduino.app_peripherals.speaker import Speaker
 import threading
 from collections.abc import Iterable
