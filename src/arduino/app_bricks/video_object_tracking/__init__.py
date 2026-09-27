@@ -301,7 +301,8 @@ class VideoObjectTracking(VideoInference):
 
     def set_crossing_line_coordinates(self, x1: int, y1: int, x2: int, y2: int) -> None:
         """
-        Set the coordinates of the line for counting objects crossing it.
+        Set the line for counting objects crossing it: the straight line through the two points, across the whole
+        frame, so an object crossing it beyond the two points counts too.
 
         Args:
             x1 (int): The x-coordinate of the first point of the line.
@@ -314,21 +315,21 @@ class VideoObjectTracking(VideoInference):
 
     def set_horizontal_crossing_line(self, y: int) -> None:
         """
-        Set a horizontal line for counting objects crossing it.
+        Set a horizontal line across the whole frame for counting objects crossing it.
 
         Args:
             y (int): The y-coordinate of the horizontal line.
         """
-        self.set_crossing_line_coordinates(0, y, 480, y)
+        self.set_crossing_line_coordinates(0, y, 1, y)
 
     def set_vertical_crossing_line(self, x: int) -> None:
         """
-        Set a vertical line for counting objects crossing it.
+        Set a vertical line across the whole frame for counting objects crossing it.
 
         Args:
             x (int): The x-coordinate of the vertical line.
         """
-        self.set_crossing_line_coordinates(x, 0, x, 480)
+        self.set_crossing_line_coordinates(x, 0, x, 1)
 
     def reset_counters(self) -> None:
         """Reset the counts of tracked objects."""
