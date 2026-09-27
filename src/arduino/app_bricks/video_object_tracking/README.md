@@ -13,6 +13,7 @@ The Video Object Tracking Brick allows you to:
 - Continuously track objects from a live camera or video stream, each with a persistent object ID.
 - Count **unique** objects per label, instead of counting the same object again on every frame.
 - Count objects crossing a virtual line (horizontal, vertical or diagonal).
+- Watch an area of the video: objects entering and leaving it, and the ones inside.
 - Follow the movement direction of each tracked object.
 - Trigger custom Python functions when certain objects are tracked.
 - Handle all tracked objects of a frame in a single callback if desired.
@@ -32,8 +33,10 @@ The Video Object Tracking Brick allows you to:
 - Counters, readable at any time:
   - `get_unique_objects_count()` → distinct objects seen per label
   - `get_line_crossing_counts()` → line crossings per label
+  - `get_objects_in_area()` / `get_area_counts()` → objects inside the area now, entries and exits per label
   - `get_objects_directions()` → movement history per object ID
 - Virtual counting line via `set_horizontal_crossing_line(y)`, `set_vertical_crossing_line(x)` or `set_crossing_line_coordinates(x1, y1, x2, y2)`.
+- Watched area via `set_rectangular_area(x1, y1, x2, y2)` or `set_area_coordinates(points)`, with `on_area_enter(callback)` and `on_area_exit(callback)`.
 - Configurable confidence threshold (default: `0.4`) and debounce time between repeated callback invocations (default: `0s`, i.e. no debounce).
 - Runtime tracker overrides: `override_threshold(value)`, `override_keep_grace(value)`, `override_min_detections(value)`, `override_iou_threshold(value)`, `override_euclidean_distance_threshold(value)`.
 - Clean lifecycle control with `start()` / `stop()` and integration with `App.run()`.
@@ -142,6 +145,37 @@ Every crossing is counted under the direction it happened in, as seen on the scr
 The video stream shows the line drawn across the whole frame: a crossing is counted wherever the object passes the line, not only between its two points.
 
 Setting the line leaves every count untouched: call `reset_counters()` yourself if you want to start over.
+
+## Watching an area
+
+Define an area of the video and the Brick follows, per label, the tracked objects whose **bounding box centre** is inside it. The area is a polygon in the coordinates of the camera frame, concave ones included, or a rectangle through the helper:
+
+```python
+tracker.set_rectangular_area(200, 150, 440, 330)  # two opposite corners
+tracker.set_area_coordinates([(100, 100), (300, 80), (320, 300), (120, 320)])  # any polygon, from 3 to 100 points
+
+print(tracker.get_objects_in_area())  # {"apple": 1}
+print(tracker.get_area_counts())  # {"apple": {"entered": 3, "exited": 2}}
+```
+
+The points follow the border in order, and the border must not cross itself: `set_area_coordinates()` raises `ValueError` for one that does, as it does for fewer than three distinct points or more than 100. A point repeated right after itself, or the first one repeated at the end to close the polygon, is left out.
+
+An object **enters** the area when it is seen inside and was not inside already, also when it first appears there. It **leaves** when it is seen outside, by more than `min_movement_threshold` pixels so that a centre wobbling on the border does not enter again and again, or when it disappears while inside and the tracker gives it up, after `keep_grace` frames. Setting the area again, or a new run of the tracker, empties the objects inside without reporting them as gone.
+
+To react as it happens, register a callback for each event: both receive `{"label": str, "object_id": int}`.
+
+```python
+def on_enter(event: dict) -> None:
+    logger.info(f"{event['label']} #{event['object_id']} entered the area")
+
+def on_exit(event: dict) -> None:
+    logger.info(f"{event['label']} #{event['object_id']} left the area")
+
+tracker.on_area_enter(on_enter)
+tracker.on_area_exit(on_exit)
+```
+
+The video stream shows the outline of the area in yellow. `reset_counters()` clears the entries and exits, not the objects inside now.
 
 ## Tracking movement direction
 
