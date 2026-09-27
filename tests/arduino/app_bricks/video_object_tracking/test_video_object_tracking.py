@@ -406,10 +406,13 @@ def test_the_crossing_callback_must_be_a_function(tracker):
         tracker.on_line_crossing("not a function")
 
 
-def test_horizontal_line_helper_spans_480_pixels_whatever_the_camera_width(tracker):
+def test_the_line_helpers_count_crossings_anywhere_across_a_wide_frame(tracker):
     tracker.set_horizontal_crossing_line(240)
+    _replay(tracker, _walk(_straight((1100, 100), (1100, 400), steps=8), object_id=1))
+    tracker.set_vertical_crossing_line(320)
+    _replay(tracker, _walk(_straight((240, 650), (400, 650), steps=8), object_id=2))
 
-    assert tracker._line_coordinates == (0, 240, 480, 240)
+    assert tracker.get_line_crossing_counts() == {"person": {"down": 1, "right": 1, "all": 2}}
 
 
 def test_with_no_line_set_nothing_is_counted(tracker):
