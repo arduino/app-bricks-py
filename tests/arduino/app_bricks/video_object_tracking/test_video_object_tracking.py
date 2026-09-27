@@ -528,6 +528,23 @@ def test_the_area_callbacks_must_be_functions(tracker):
         tracker.on_area_exit("not a function")
 
 
+def test_a_hidden_line_and_area_still_count(tracker):
+    tracker.set_vertical_crossing_line(320, visible=False)
+    tracker.set_rectangular_area(*AREA, visible=False)
+
+    assert not tracker._annotate(np.zeros((480, 640, 3), np.uint8)).any(), "neither is drawn on the video"
+    _replay(tracker, [[_at(x, 300)] for x in (250, 350)])
+    assert tracker.get_line_crossing_counts() == {"person": {"right": 1, "all": 1}}
+    assert tracker.get_area_counts() == {"person": {"entered": 1}}
+
+
+def test_setting_again_without_visible_shows_it_again(tracker):
+    tracker.set_rectangular_area(*AREA, visible=False)
+    tracker.set_rectangular_area(*AREA)
+
+    assert tracker._annotate(np.zeros((480, 640, 3), np.uint8))[300, 200].any()
+
+
 def test_the_area_outline_is_drawn_on_the_video_in_yellow(tracker):
     frame = np.zeros((480, 640, 3), np.uint8)
     tracker.set_rectangular_area(*AREA)
