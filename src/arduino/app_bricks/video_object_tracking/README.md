@@ -126,7 +126,7 @@ tracker.set_crossing_line_coordinates(0, 100, 640, 380)  # arbitrary, diagonal l
 print(tracker.get_line_crossing_counts())  # {"person": {"left": 3, "right": 2, "all": 5}}
 ```
 
-The two helpers span a fixed 480 px extent; use `set_crossing_line_coordinates()` to match a different frame size or to define a diagonal line.
+Every line runs across the whole frame, whatever its resolution: the helpers set a horizontal or vertical one, `set_crossing_line_coordinates()` the line through any two points, a diagonal one included.
 
 To react to each crossing as it happens, register a callback with `on_line_crossing()`: it receives `{"label": str, "object_id": int, "direction": str}`.
 
