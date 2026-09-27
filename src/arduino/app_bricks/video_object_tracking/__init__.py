@@ -108,11 +108,13 @@ class VideoObjectTracking(VideoInference):
         self._last_seen: dict[int, int] = {}  # number of the result that last reported each of those ids
         self._results = 0  # results processed, to tell when the tracker has given an id up
         self._line_coordinates: tuple[int, int, int, int] | None = None  # x1, y1, x2, y2 of the crossing line
+        self._line_visible = True
         self._crossing_line_object: dict[str, Counter[str]] = {}  # crossings of the line, per label and direction
         self._line_crossing_handler: LineCrossingCallback | None = None
         self._object_directions: dict[int, list[str]] = {}  # direction history, per object id
         self._min_movement_threshold = min_movement_threshold
         self._area: np.ndarray | None = None  # the vertices of the watched area, as OpenCV takes a polygon
+        self._area_visible = True
         self._area_present: dict[int, tuple[str, int]] = {}  # objects inside the area: id -> (label, results since last seen)
         self._area_counts: dict[str, Counter[str]] = {}  # entries and exits of the area, per label
         self._area_enter_handler: AreaCallback | None = None
@@ -388,7 +390,7 @@ class VideoObjectTracking(VideoInference):
         with self._counter_lock:
             return dict(self._object_directions)
 
-    def set_crossing_line_coordinates(self, x1: int, y1: int, x2: int, y2: int) -> None:
+    def set_crossing_line_coordinates(self, x1: int, y1: int, x2: int, y2: int, *, visible: bool = True) -> None:
         """
         Set the line for counting objects crossing it: the straight line through the two points, across the whole
         frame, so an object crossing it beyond the two points counts too.
@@ -398,29 +400,33 @@ class VideoObjectTracking(VideoInference):
             y1 (int): The y-coordinate of the first point of the line.
             x2 (int): The x-coordinate of the second point of the line.
             y2 (int): The y-coordinate of the second point of the line.
+            visible (bool): Draw it on the video stream. Default is True; counting works either way.
         """
         with self._counter_lock:
             self._line_coordinates = (x1, y1, x2, y2)
+            self._line_visible = visible
 
-    def set_horizontal_crossing_line(self, y: int) -> None:
+    def set_horizontal_crossing_line(self, y: int, *, visible: bool = True) -> None:
         """
         Set a horizontal line across the whole frame for counting objects crossing it.
 
         Args:
             y (int): The y-coordinate of the horizontal line.
+            visible (bool): Draw it on the video stream. Default is True; counting works either way.
         """
-        self.set_crossing_line_coordinates(0, y, 1, y)
+        self.set_crossing_line_coordinates(0, y, 1, y, visible=visible)
 
-    def set_vertical_crossing_line(self, x: int) -> None:
+    def set_vertical_crossing_line(self, x: int, *, visible: bool = True) -> None:
         """
         Set a vertical line across the whole frame for counting objects crossing it.
 
         Args:
             x (int): The x-coordinate of the vertical line.
+            visible (bool): Draw it on the video stream. Default is True; counting works either way.
         """
-        self.set_crossing_line_coordinates(x, 0, x, 1)
+        self.set_crossing_line_coordinates(x, 0, x, 1, visible=visible)
 
-    def set_area_coordinates(self, points: list[tuple[int, int]]) -> None:
+    def set_area_coordinates(self, points: list[tuple[int, int]], *, visible: bool = True) -> None:
         """
         Set the area watched for objects entering and leaving it: the polygon through the points, in the order they
         follow its border. The objects inside are counted again from their next appearance.
@@ -429,6 +435,7 @@ class VideoObjectTracking(VideoInference):
             points (list[tuple[int, int]]): From three to MAX_AREA_POINTS (100) distinct (x, y) points in frame
                 coordinates, along a border that does not cross itself; the polygon may be concave. A point repeated
                 right after itself, or the first one repeated at the end, is left out.
+            visible (bool): Draw it on the video stream. Default is True; counting works either way.
 
         Raises:
             ValueError: If fewer than three or more than MAX_AREA_POINTS distinct points are given, or if the border
@@ -444,9 +451,10 @@ class VideoObjectTracking(VideoInference):
         polygon = np.array(border, dtype=np.int32)
         with self._counter_lock:
             self._area = polygon.reshape(-1, 1, 2)
+            self._area_visible = visible
             self._area_present.clear()
 
-    def set_rectangular_area(self, x1: int, y1: int, x2: int, y2: int) -> None:
+    def set_rectangular_area(self, x1: int, y1: int, x2: int, y2: int, *, visible: bool = True) -> None:
         """
         Set a rectangular area watched for objects entering and leaving it.
 
@@ -455,13 +463,14 @@ class VideoObjectTracking(VideoInference):
             y1 (int): The y-coordinate of a corner.
             x2 (int): The x-coordinate of the opposite corner.
             y2 (int): The y-coordinate of the opposite corner.
+            visible (bool): Draw it on the video stream. Default is True; counting works either way.
 
         Raises:
             ValueError: If the rectangle has no width or no height.
         """
         left, right = sorted((x1, x2))
         top, bottom = sorted((y1, y2))
-        self.set_area_coordinates([(left, top), (right, top), (right, bottom), (left, bottom)])
+        self.set_area_coordinates([(left, top), (right, top), (right, bottom), (left, bottom)], visible=visible)
 
     def reset_counters(self) -> None:
         """Reset the counts of tracked objects."""
@@ -574,7 +583,8 @@ class VideoObjectTracking(VideoInference):
         """A copy of the frame with the tracked boxes and, when set, the crossing line and the outline of the area."""
         annotated = draw_detections(frame, self._boxes.visible(), self._colors)
         with self._counter_lock:
-            line, area = self._line_coordinates, self._area
+            line = self._line_coordinates if self._line_visible else None
+            area = self._area if self._area_visible else None
         if line is not None:
             draw_crossing_line(annotated, line)
         if area is not None:
