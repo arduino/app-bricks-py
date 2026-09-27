@@ -142,7 +142,7 @@ tracker.on_line_crossing(on_crossing)
 
 Every crossing is counted under the direction it happened in, as seen on the screen: perpendicular to the line, towards the side the object reached. The direction is one of `up`, `down`, `left`, `right`, `up-left`, `up-right`, `down-left`, `down-right`: a line within 22.5° of horizontal is crossed `up` or `down`, one within 22.5° of vertical `left` or `right`, any other line in the two diagonal directions across it.
 
-The video stream shows the line drawn across the whole frame: a crossing is counted wherever the object passes the line, not only between its two points.
+The video stream shows the line drawn across the whole frame: a crossing is counted wherever the object passes the line, not only between its two points. Pass `visible=False` to any of the three methods to count without drawing it.
 
 Setting the line leaves every count untouched: call `reset_counters()` yourself if you want to start over.
 
@@ -175,7 +175,7 @@ tracker.on_area_enter(on_enter)
 tracker.on_area_exit(on_exit)
 ```
 
-The video stream shows the outline of the area in yellow. `reset_counters()` clears the entries and exits, not the objects inside now.
+The video stream shows the outline of the area in yellow, unless it is set with `visible=False`: an app drawing its own overlay on the video still gets the events and the counts. `reset_counters()` clears the entries and exits, not the objects inside now.
 
 ## Tracking movement direction
 
