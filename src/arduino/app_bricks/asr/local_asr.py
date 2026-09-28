@@ -281,26 +281,29 @@ class BaseASR:
         """
         Drain an event stream into a single transcription string.
 
-        Accumulates non-empty ``full_text`` events; if none arrive, falls back
-        to the most recent non-empty ``partial_text``. Returns ``""`` if no
-        speech was detected.
+        The server sends a sentence as consecutive ``partial_text`` pieces, one
+        per early flush, then a ``full_text`` with the whole sentence. Sentences
+        are concatenated from their ``full_text``; the pieces of a sentence the
+        session ended on before its ``full_text`` (e.g. stopped right after the
+        speech) are appended as they are. Returns ``""`` if no speech was detected.
         """
-        last_partial = ""
+        pending: list[str] = []  # pieces of the sentence not closed by a full_text yet
         final_text = ""
 
         with stream:
             for chunk in stream:
-                if chunk.type == "partial_text" and chunk.data.strip():
-                    last_partial = chunk.data
-                elif chunk.type == "full_text" and chunk.data.strip():
-                    final_text += chunk.data
+                if not chunk.data.strip():
+                    continue
+                if chunk.type == "partial_text":
+                    pending.append(chunk.data)
+                elif chunk.type == "full_text":
+                    final_text += chunk.data  # already contains its pieces
+                    pending.clear()
 
-        if final_text.strip():
-            return final_text
-        if last_partial.strip():
-            logger.warning("ASR returned empty full_text, falling back to last partial_text")
-            return last_partial
-        return ""
+        if pending:
+            logger.debug("Session ended before the last full_text, using its partial_text pieces")
+            final_text += "".join(pending)
+        return final_text if final_text.strip() else ""
 
     @brick.execute
     def _asyncio_loop(self) -> None:

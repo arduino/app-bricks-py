@@ -143,17 +143,18 @@ class TestTranscribeSentence:
         # Only the first three events should have been pulled before close.
         assert [e.data for e in consumed] == ["hel", "hello", "hello"]
 
-    def test_falls_back_to_last_partial_when_source_exhausts(self, monkeypatch):
+    def test_joins_partial_pieces_when_source_exhausts(self, monkeypatch):
+        # partial_text events are consecutive pieces of the sentence, not revisions
         asr = AutomaticSpeechRecognition(mic=_started_mic())
         _mock_transcribe_stream(
             monkeypatch,
             asr,
             [
-                ASREvent("partial_text", "hello"),
-                ASREvent("partial_text", "hello world"),
+                ASREvent("partial_text", " Alcuni festival dispongono"),
+                ASREvent("partial_text", " di aree di campeggio."),
             ],
         )
-        assert asr.transcribe_sentence() == "hello world"
+        assert asr.transcribe_sentence() == " Alcuni festival dispongono di aree di campeggio."
 
     def test_timeout_passed_as_duration(self, monkeypatch):
         asr = AutomaticSpeechRecognition(mic=_started_mic())
