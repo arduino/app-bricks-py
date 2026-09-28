@@ -12,7 +12,8 @@ if [ -f "${model_path}/.download" ]; then
 # A directory holding only the ".arduino_metadata.yaml" record and no model content
 # is a leftover, not an installed model.
 elif [ -d "${model_path}" ] && [ -n "$(find "${model_path}" -mindepth 1 ! -name '.arduino_metadata.yaml*' -print -quit 2>/dev/null)" ]; then
-    echo "{\"event\": \"info\", \"description\": \"Model exists: ${model_directory}\", \"downloading\": false}"
+    python /app/common/model_size.py --description "Model exists: ${model_directory}" --downloading false "${model_path}" \
+        || echo "{\"event\": \"info\", \"description\": \"Model exists: ${model_directory}\", \"downloading\": false, \"size_mb\": null}"
     exit 0
 else
     echo "{\"event\": \"error\", \"description\": \"Model does not exist: ${model_directory}\", \"downloading\": false}"
