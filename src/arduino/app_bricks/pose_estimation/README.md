@@ -11,7 +11,7 @@ Integration highlights:
 - `out_of_frame_tolerance` sets how far past the frame edges a joint may be extrapolated before the skeleton counts as unreadable, as a fraction of the frame size: 0.25 by default, 0 to demand a person entirely inside the picture.
 - `poses` (constructor) declares the poses the instance listens to, built-in or your own: a list of names, or of dicts with `name` plus `type`, `duration`, `thresholds` and `smoothing`. The built-in poses left out stay in the classifier as negatives and never fire; `pose_names` lists the active ones.
 - A custom pose is a folder of photos: see "Teaching your own poses" below.
-- `BUILTIN_POSE_NAMES` lists the built-in pose names.
+- `BUILTIN_POSE_NAMES` lists the built-in pose names, described in "Built-in poses" below.
 - `set_confidence` changes the minimum person detection score at runtime; the value is applied by the model runner itself, so the skeleton overlay only ever shows what the API reports.
 - `set_draw_bboxes` (or `draw_bboxes=True` in the constructor) draws every detected person's bounding box on the overlay; off by default.
 - `set_draw_low_confidence_points` (or `draw_low_confidence_points=False` in the constructor) shows or hides the low-confidence keypoint marks on the overlay; shown by default.
@@ -25,6 +25,15 @@ Detection score: the `confidence` threshold (constructor and `set_confidence`) c
 Classification note: the pose classifier is a k-NN over a reference database of labeled examples shipped with the brick (`assets/pose_classifier.npz`, ~0.6 MB) together with the exact dials and per-pose thresholds it was tuned with. The brick reads everything it needs (examples, dials, thresholds, calibration mask) from the file itself.
 
 Runner note: the model runner performs an internal person-tracking crop before inference (people far from the camera would otherwise be too small in the model's letterboxed input and lose keypoint confidence). This is transparent to clients: reported coordinates are always in full-frame pixels. While the window is active, a periodic extra full-frame pass (every 10 frames) updates the tracking window only, so people entering the scene outside of it are discovered within a few tenths of a second without any quality dip in the reported results.
+
+## Built-in poses
+
+The brick recognizes four poses by default:
+
+- `left_arm_raised`: the person raises their left arm, as when asking to speak or waving hello. Left is the person's own left.
+- `right_arm_raised`: the same with the right arm.
+- `standing`: the person stands with the arms down.
+- `sitting`: the person sits, on a chair or a bench, with the legs in view.
 
 ## Teaching your own poses
 
