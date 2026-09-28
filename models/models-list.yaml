@@ -1676,8 +1676,8 @@ models:
       - ba
       - jw
       - su
- - whisper-medium:
-    name : "Whisper Medium"
+ - whisper-small:
+    name : "Whisper Small"
     description: >-
       Whisper ASR (Automatic Speech Recognition) model is a state-of-the-art system designed for transcribing spoken language into written text.
       This model is based on the transformer architecture and has been optimized for edge inference by replacing Multi-Head Attention (MHA)
@@ -1691,19 +1691,19 @@ models:
         - ventunoq:
             variables:
               model_type: "voice_ai"
-              model_name: "whisper_medium"
+              model_name: "whisper_small"
               models_repository: "audio-analytics/asr"
-              model_directory: "whisper_medium-voice_ai-float-qualcomm_qcs8275"
+              model_directory: "whisper_small-voice_ai-float-qualcomm_qcs8275"
               quantization: "float"
               chipset: "qualcomm-qcs8275"
               version: "0.62.2"
     bricks:
       - id: "arduino:asr"
     metadata:
-      model_size_mb: 1582
+      model_size_mb: 343
       source: "qualcomm-ai-hub"
-      source-model-id: "whisper_medium"
-      source-model-url: "https://aihub.qualcomm.com/models/whisper_medium"
+      source-model-id: "whisper_small"
+      source-model-url: "https://aihub.qualcomm.com/models/whisper_small"
     supported_languages:
       - en
       - zh
@@ -1803,7 +1803,7 @@ models:
       - ha
       - ba
       - jw
-      - su      
+      - su     
  - melo-tts-en:
     name : "Melo TTS (English)"
     description: >-
