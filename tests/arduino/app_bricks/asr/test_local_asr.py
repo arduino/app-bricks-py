@@ -9,7 +9,9 @@ import numpy as np
 import pytest
 
 from arduino.app_bricks.asr import (
+    ASRError,
     ASREvent,
+    ASRServiceBusyError,
     ASRUnavailableError,
     AutomaticSpeechRecognition,
     TranscriptionStream,
@@ -17,6 +19,7 @@ from arduino.app_bricks.asr import (
 
 from conftest import (
     _FakeMic,
+    _FakeResponse,
     _mock_session_endpoints,
     _mock_transcribe_stream,
     _started_mic,
@@ -282,3 +285,66 @@ class TestTranslate:
             loop.close()
 
         assert seen["translate"] is True
+
+
+class TestSessionCreate:
+    """How ``_create_transcription_session`` maps the server's answers."""
+
+    @staticmethod
+    def _answer(monkeypatch, payload: dict, status_code: int) -> dict:
+        seen: dict = {}
+
+        def fake_post(url=None, json=None, timeout=None, **kwargs):
+            seen["timeout"] = timeout
+            return _FakeResponse(payload, status_code=status_code)
+
+        monkeypatch.setattr("arduino.app_bricks.asr.local_asr.requests.post", fake_post)
+        return seen
+
+    def test_conflict_raises_service_busy(self, monkeypatch):
+        # Body and status the audio-analytics 1.0.5 API returns while another session is open
+        self._answer(
+            monkeypatch,
+            {
+                "error": {
+                    "message": "A transcription session is already active (pending-8eb7d19b). Please close it first via /transcriptions/close.",
+                    "type": "server_error",
+                    "code": "conflict",
+                    "sessions": [],
+                }
+            },
+            status_code=409,
+        )
+        asr = AutomaticSpeechRecognition(mic=_FakeMic())
+
+        with pytest.raises(ASRServiceBusyError, match="already active"):
+            asr._create_transcription_session()
+
+    def test_conflict_without_message_still_raises_service_busy(self, monkeypatch):
+        self._answer(monkeypatch, {}, status_code=409)
+        asr = AutomaticSpeechRecognition(mic=_FakeMic())
+
+        with pytest.raises(ASRServiceBusyError):
+            asr._create_transcription_session()
+
+    def test_engine_init_failure_is_not_reported_as_busy(self, monkeypatch):
+        self._answer(
+            monkeypatch,
+            {"error": {"message": "ASR engine failed to initialize: whisper_init failed", "type": "server_error", "code": None}},
+            status_code=400,
+        )
+        asr = AutomaticSpeechRecognition(mic=_FakeMic())
+
+        with pytest.raises(ASRError, match="whisper_init failed") as exc_info:
+            asr._create_transcription_session()
+        assert not isinstance(exc_info.value, ASRServiceBusyError)
+
+    def test_timeout_covers_a_slow_model_load(self, monkeypatch):
+        seen = self._answer(monkeypatch, {"session_id": "sess-1", "state": "asr_initialized"}, status_code=200)
+        asr = AutomaticSpeechRecognition(mic=_FakeMic())
+
+        asr._create_transcription_session()
+
+        # The server retries a failed NPU load 3 times: ~17 s on the board before it answers.
+        assert seen["timeout"] == asr._CREATE_TIMEOUT_SECONDS
+        assert seen["timeout"] >= 30

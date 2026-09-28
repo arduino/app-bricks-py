@@ -10,7 +10,7 @@ import threading
 import time
 from collections.abc import Generator, Iterator
 from concurrent.futures import CancelledError, Future
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import TracebackType
 from contextlib import AbstractContextManager
 from typing import Literal
@@ -22,7 +22,7 @@ from websockets.exceptions import ConnectionClosed, ConnectionClosedOK
 
 from arduino.app_internal.core import resolve_address
 from arduino.app_internal.core.module import get_brick_config, get_brick_configured_model
-from arduino.app_peripherals.microphone import BaseMicrophone, Microphone
+from arduino.app_peripherals.microphone import BaseMicrophone, Microphone, PauseDetector, chunk_level
 from arduino.app_utils import AppError, Logger, brick
 
 logger = Logger("ASR")
@@ -85,6 +85,49 @@ def _dtype_to_pcm_format(dtype: np.dtype, is_packed: bool = False) -> str:
     raise ValueError(f"Unsupported numpy dtype for PCM format: {dtype}")
 
 
+class _PauseFlushPolicy:
+    """
+    Decides when to ask the server for an early transcript of the speech buffered so far.
+
+    Whisper only transcribes a segment once the server-side VAD closes it, which can
+    take many seconds of continuous speech. Flushing earlier gives near-streaming output,
+    but the server transcribes exactly what it has, so a flush in the middle of a word
+    garbles that word. The policy therefore waits for a short pause, found by a
+    :class:`PauseDetector`, and only forces a cut when the speaker does not pause at all.
+    """
+
+    def __init__(self, min_s: float, max_s: float, pause_s: float, min_voiced_s: float) -> None:
+        self.min_s = min_s
+        self.max_s = max_s
+        self.min_voiced_s = min_voiced_s
+        self._detector = PauseDetector(pause_s=pause_s)
+        self.reset()
+
+    def reset(self) -> None:
+        """Start a new segment: called after a flush and when the server closes a segment itself."""
+        self._in_segment = False
+        self._segment_s = 0.0
+        self._voiced_s = 0.0
+
+    def update(self, level: float, duration_s: float) -> bool:
+        """Account one chunk of ``duration_s`` seconds; returns True when a flush is due."""
+        quiet = self._detector.update_level(level, duration_s)
+        if not self._in_segment:
+            if quiet:
+                return False
+            self._in_segment = True
+        self._segment_s += duration_s
+        if not quiet:
+            self._voiced_s += duration_s
+        if self._voiced_s < self.min_voiced_s:
+            return False
+        at_pause = self._segment_s >= self.min_s and self._detector.paused
+        if at_pause or self._segment_s >= self.max_s:
+            self.reset()
+            return True
+        return False
+
+
 @dataclass(frozen=True)
 class ASREvent:
     type: Literal["partial_text", "full_text"]
@@ -123,9 +166,14 @@ class SessionInfo:
     cancelled: threading.Event
     language: str | None = None
     reader_thread: threading.Thread | None = None
+    # Set by the reader when the flush policy asks for an early transcript
+    flush_requested: threading.Event = field(default_factory=threading.Event)
+    # Set by the receiver when the server closes a segment on its own (VAD end)
+    segment_closed: threading.Event = field(default_factory=threading.Event)
 
 
 _END_SENTINEL = object()  # Sentinel value to signal end of audio stream in the chunk queue
+_FLUSH_MARK = object()  # Chunk-queue marker: request an early transcript once the audio before it is sent
 
 
 class BaseASR:
@@ -137,8 +185,17 @@ class BaseASR:
     """
 
     _APP_SERVICE_NAME = "audio-analytics-runner"
-    _FLUSH_INTERVAL_SECONDS = 5
+    # Early transcripts (see _PauseFlushPolicy): cut at the first pause of at least
+    # _FLUSH_PAUSE_SECONDS once a segment is _FLUSH_MIN_SECONDS long, or anyway at
+    # _FLUSH_MAX_SECONDS, well inside Whisper's 30 s window.
+    _FLUSH_MIN_SECONDS = 3.0
+    _FLUSH_MAX_SECONDS = 10.0
+    _FLUSH_PAUSE_SECONDS = 0.25
+    _FLUSH_MIN_VOICED_SECONDS = 0.5
     _DEFAULT_VAD_MS = 700
+    # Session creation loads the model onto the NPU; the server retries a failed
+    # load several times, so a create can legitimately take well over 10 s.
+    _CREATE_TIMEOUT_SECONDS = 60
 
     def __init__(self, source: object, language: str | None = None, translate: bool = False) -> None:
         # API configuration
@@ -396,22 +453,23 @@ class BaseASR:
 
         try:
             start = time.monotonic()
-            response = requests.post(url=create_url, json=create_data, timeout=10)
+            response = requests.post(url=create_url, json=create_data, timeout=self._CREATE_TIMEOUT_SECONDS)
             elapsed = time.monotonic() - start
             if elapsed > 5:
                 logger.warning(f"Session creation took {elapsed:.1f}s")
         except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
             raise ASRUnavailableError(f"Inference service unreachable: {e}") from None
 
-        if response.status_code == 400:
+        # The server answers 409 (code "conflict") when another session is active
+        if response.status_code in (400, 409):
             try:
                 err = response.json().get("error", {})
                 msg = err.get("message", "")
             except Exception:
                 msg = response.text or ""
-            if "transcription session is already active" in msg:
+            if response.status_code == 409 or "transcription session is already active" in msg:
                 raise ASRServiceBusyError(msg or "Inference server is serving another client")
-            raise ASRError(msg or f"Failed to create transcription session: 400")
+            raise ASRError(msg or f"Failed to create transcription session: {response.status_code}")
 
         if response.status_code != 200:
             msg = f"Failed to create transcription session: {response.status_code}"
@@ -519,6 +577,13 @@ class BaseASR:
         session_id = session_info.session_id
         start_time = session_info.start_time
         duration = session_info.duration
+        policy = _PauseFlushPolicy(
+            min_s=self._FLUSH_MIN_SECONDS,
+            max_s=self._FLUSH_MAX_SECONDS,
+            pause_s=self._FLUSH_PAUSE_SECONDS,
+            min_voiced_s=self._FLUSH_MIN_VOICED_SECONDS,
+        )
+        frames_per_second = self._source.sample_rate * self._source.channels
         try:
             while not self._stop_worker.is_set() and not session_info.cancelled.is_set():
                 if duration > 0 and (time.time() - start_time) >= duration:
@@ -534,16 +599,14 @@ class BaseASR:
                     break
                 if chunk is None:
                     continue  # transient (paused/underrun) — keep going
-                try:
-                    session_info.chunk_queue.put_nowait(chunk.tobytes())
-                except queue.Full:
-                    if not isinstance(self._source, BaseMicrophone):
-                        try:
-                            session_info.chunk_queue.put(chunk.tobytes())
-                        except queue.Full:
-                            logger.warning(f"Send queue full for session {session_id}, dropping chunk")
-                    else:
-                        logger.warning(f"Send queue full for session {session_id}, dropping chunk")
+                if session_info.segment_closed.is_set():
+                    session_info.segment_closed.clear()
+                    policy.reset()
+                flush_due = policy.update(chunk_level(chunk, self._source.format_is_packed), chunk.size / frames_per_second)
+                self._enqueue(session_info, chunk.tobytes())
+                if flush_due:
+                    # Queued behind the audio, so the server cuts exactly at this pause
+                    self._enqueue(session_info, _FLUSH_MARK)
         finally:
             # Block until the end sentinel is enqueued so the sender always sees it.
             # This is required if exit condition is duration or WAV exhaustion.
@@ -554,6 +617,19 @@ class BaseASR:
                 except queue.Full:
                     continue
             logger.debug(f"Reader thread exited for session {session_id}")
+
+    def _enqueue(self, session_info: SessionInfo, item: bytes | object) -> None:
+        """Queue an item for the sender: live mics drop on overflow, finite sources wait."""
+        try:
+            session_info.chunk_queue.put_nowait(item)
+        except queue.Full:
+            if not isinstance(self._source, BaseMicrophone):
+                try:
+                    session_info.chunk_queue.put(item)
+                except queue.Full:
+                    logger.warning(f"Send queue full for session {session_info.session_id}, dropping chunk")
+            else:
+                logger.warning(f"Send queue full for session {session_info.session_id}, dropping chunk")
 
     async def _await_connection_established(self, websocket: websockets.ClientConnection, label: str) -> None:
         try:
@@ -575,6 +651,9 @@ class BaseASR:
                     continue
                 if item is _END_SENTINEL:
                     break
+                if item is _FLUSH_MARK:
+                    session_info.flush_requested.set()
+                    continue
 
                 assert isinstance(item, bytes), f"Expected bytes, got {type(item)}"
                 message = {
@@ -637,6 +716,7 @@ class BaseASR:
                     continue
                 elif evt_type == "transcript.text.done":
                     logger.debug(f"Session {session_id} putting full transcription: {evt_text}")
+                    session_info.segment_closed.set()
                     result_queue.put(ASREvent("full_text", evt_text))
                     continue
                 elif evt_type == "transcript.event":
@@ -705,19 +785,15 @@ class BaseASR:
             logger.debug(f"WebSocket {label} closed while draining for session {session_id}: {e}")
 
     async def _periodic_flush(self, session_info: SessionInfo) -> None:
+        """Send the flushes the reader thread requests (see _PauseFlushPolicy)."""
         session_id = session_info.session_id
-        has_duration = session_info.duration > 0
         try:
             while not self._stop_worker.is_set() and not session_info.cancelled.is_set():
-                await asyncio.sleep(self._FLUSH_INTERVAL_SECONDS)
-                if self._stop_worker.is_set() or session_info.cancelled.is_set():
-                    break
+                await asyncio.sleep(0.05)
+                if not session_info.flush_requested.is_set():
+                    continue
+                session_info.flush_requested.clear()
                 await asyncio.to_thread(self._flush_transcription_session, session_id)
-                if has_duration:
-                    remaining = session_info.duration - (time.time() - session_info.start_time)
-                    if remaining < self._FLUSH_INTERVAL_SECONDS:
-                        logger.debug(f"No more flushes for session {session_id}: only {remaining:.1f}s remaining")
-                        break
         except asyncio.CancelledError:
             logger.debug(f"Periodic flush cancelled for session {session_id}")
             raise
@@ -775,10 +851,11 @@ class AutomaticSpeechRecognition(BaseASR):
             translate (bool): If ``True``, speech is translated to English instead
                 of being transcribed in the language it was spoken in. It is valid
                 only for models that support translation, so it costs no extra
-                model: the ASR model itself does the translating. The model this
-                brick runs, ``whisper-small-quantized``, supports it, and its
-                translate task always targets English. Any of its source languages
-                can be translated, but English is the only possible target. Set
+                model: the ASR model itself does the translating. The Whisper
+                models this brick runs, including the default
+                ``whisper-small-quantized``, support it, and their translate task
+                always targets English. Any of their source languages can be
+                translated, but English is the only possible target. Set
                 ``language`` as well to skip source auto-detection. It is exposed
                 as the public ``translate`` attribute and may be reassigned at
                 runtime; the new value takes effect on the next session.
