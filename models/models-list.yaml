@@ -1700,7 +1700,7 @@ models:
     bricks:
       - id: "arduino:asr"
     metadata:
-      model_size_mb: 343
+      model_size_mb: 1582
       source: "qualcomm-ai-hub"
       source-model-id: "whisper_medium"
       source-model-url: "https://aihub.qualcomm.com/models/whisper_medium"
