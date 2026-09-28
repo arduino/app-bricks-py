@@ -199,7 +199,7 @@ def test_find_llamacpp_single_model(tmp_path):
     entry = results[0]
     assert entry["id"] == "llamacpp:repo/model-a"
     assert entry["name"] == "repo/model-a"
-    assert entry["handler"] == "llamacpp"
+    assert entry["handler"] == "hf-handler"
     assert entry["installed"] is True
     assert entry["downloading"] is False
     assert "mmproj" not in entry
@@ -1264,7 +1264,7 @@ def test_main_every_entry_has_size_mb(monkeypatch, capsys, tmp_path):
     assert by_id["pose-estimation"]["size_mb"] is None
     # Ad hoc: measured once installed, and the marker's expected size before that.
     assert by_id["llamacpp:mistral.Q4_0"]["size_mb"] == 3.0
-    pending = [m for m in models if m.get("downloading") and m["handler"] == "llamacpp"]
+    pending = [m for m in models if m.get("downloading") and m["model_origin"] == "user"]
     assert [m["size_mb"] for m in pending] == [380.5]
 
 
@@ -1302,3 +1302,38 @@ def test_table_shows_size_mb(monkeypatch, capsys, tmp_path):
     monkeypatch.setattr("sys.argv", ["list_models.py", "--models-dir", str(models_dir), "--model-list", str(yaml_path)])
     list_models.main()
     assert "3430.00" in capsys.readouterr().out
+
+
+# --------------------------------------------------------------------------- #
+# handler: always a handler models-handlers.yaml defines
+# --------------------------------------------------------------------------- #
+REPO_MODELS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "models"))
+MODELS_HANDLERS = os.path.join(REPO_MODELS_DIR, "models-handlers.yaml")
+
+
+def _defined_handlers():
+    import yaml
+
+    with open(MODELS_HANDLERS, encoding="utf-8") as f:
+        return {name for item in yaml.safe_load(f)["handlers"] for name in item}
+
+
+@pytest.mark.skipif(not os.path.isfile(MODELS_HANDLERS), reason="models/models-handlers.yaml not available")
+def test_main_reports_only_handlers_models_handlers_defines(monkeypatch, capsys, tmp_path):
+    """The host runs an entry's actions through its handler: a GGUF found on disk is
+    an hf-handler model, never an undefined "llamacpp" handler."""
+    models_dir, _models = _run_main(monkeypatch, capsys, tmp_path, SIZE_YAML)
+    _size_fixture(models_dir)
+    list_models._SEARCH_DIR_CACHE.clear()
+
+    _models_dir, models = _run_main(monkeypatch, capsys, tmp_path, SIZE_YAML)
+
+    assert {m["handler"] for m in models if m["model_origin"] == "user"} == {"hf-handler"}
+    assert {m["handler"] for m in models} <= _defined_handlers()
+
+
+@pytest.mark.skipif(not os.path.isfile(MODELS_HANDLERS), reason="models/models-handlers.yaml not available")
+def test_catalog_declares_only_defined_handlers():
+    entries = list_models.load_models_list(os.path.join(REPO_MODELS_DIR, "models-list.yaml"))
+    declared = {data["deployment"]["handler"] for entry in entries for data in entry.values() if data.get("deployment")}
+    assert declared <= _defined_handlers()

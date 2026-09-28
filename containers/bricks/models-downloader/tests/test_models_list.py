@@ -14,7 +14,8 @@ from common.models_list import find_matching_model, find_model_size_mb, load_mod
 
 # Path to the real models-list.yaml. It lives in the repository root, not in the
 # container directory: CI copies it in right before ``docker build``.
-REAL_MODELS_LIST = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "models", "models-list.yaml"))
+# tests/ -> models-downloader/ -> bricks/ -> containers/ -> repository root.
+REAL_MODELS_LIST = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "models", "models-list.yaml"))
 
 
 # --------------------------------------------------------------------------- #

@@ -25,20 +25,24 @@ RUNTIME_QNN = "qnn"
 RUNTIME_EDGE_IMPULSE_SDK = "edge-impulse-sdk"
 RUNTIME_LLAMACPP = "llamacpp"
 
+# The handler names models-handlers.yaml defines, which the listing reports: a GGUF
+# found on disk is a Hugging Face download, so it is an hf-handler model too.
+HANDLER_AI_HUB = "ai-hub-handler"
+HANDLER_EDGE_IMPULSE = "ei-handler"
+HANDLER_HUGGING_FACE = "hf-handler"
+
 PUBLISHER_QUALCOMM_AI_HUB = "qualcomm-ai-hub"
 PUBLISHER_EDGE_IMPULSE = "edge-impulse"
 
-# "llamacpp" is the handler the listing reports for a GGUF found on disk.
 HANDLER_RUNTIMES = {
-    "ai-hub-handler": RUNTIME_QNN,
-    "ei-handler": RUNTIME_EDGE_IMPULSE_SDK,
-    "hf-handler": RUNTIME_LLAMACPP,
-    "llamacpp": RUNTIME_LLAMACPP,
+    HANDLER_AI_HUB: RUNTIME_QNN,
+    HANDLER_EDGE_IMPULSE: RUNTIME_EDGE_IMPULSE_SDK,
+    HANDLER_HUGGING_FACE: RUNTIME_LLAMACPP,
 }
 
 HANDLER_PUBLISHERS = {
-    "ai-hub-handler": PUBLISHER_QUALCOMM_AI_HUB,
-    "ei-handler": PUBLISHER_EDGE_IMPULSE,
+    HANDLER_AI_HUB: PUBLISHER_QUALCOMM_AI_HUB,
+    HANDLER_EDGE_IMPULSE: PUBLISHER_EDGE_IMPULSE,
 }
 
 _HF_NETLOC = "huggingface.co"
@@ -93,8 +97,8 @@ def model_publisher(handler, metadata=None, model_url="", model_directory=""):
     """The publisher of a model of *handler*; see the module docstring.
 
     Args:
-        handler: The handler of the entry ("ai-hub-handler", "ei-handler",
-            "hf-handler", or "llamacpp" for a GGUF found on disk).
+        handler: The handler of the entry ("ai-hub-handler", "ei-handler" or
+            "hf-handler", which a GGUF found on disk is too).
         metadata: The entry's models-list.yaml ``metadata``; its ``model_publisher``
             wins over anything derived.
         model_url: For Hugging Face, the URL or compact key the model was downloaded from.
@@ -103,6 +107,6 @@ def model_publisher(handler, metadata=None, model_url="", model_directory=""):
     declared = (metadata or {}).get("model_publisher")
     if declared:
         return str(declared)
-    if HANDLER_RUNTIMES.get(handler) == RUNTIME_LLAMACPP:
+    if handler == HANDLER_HUGGING_FACE:
         return hf_publisher(model_url, model_directory)
     return HANDLER_PUBLISHERS.get(handler)

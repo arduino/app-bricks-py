@@ -35,7 +35,7 @@ from common.model_metadata import (
     record_for_model_id,
 )
 from common.model_size import path_size_bytes, paths_size_bytes, size_mb
-from common.model_source import model_publisher, model_runtime
+from common.model_source import HANDLER_HUGGING_FACE, model_publisher, model_runtime
 from common.models_list import get_model_subdir, load_models_list, MODELS_LIST_PATH
 
 
@@ -341,10 +341,12 @@ def scanned_publisher(record, marker, rel_dir):
     """
     for source in ((record or {}).get("inputs"), marker):
         if isinstance(source, dict):
-            publisher = model_publisher("llamacpp", model_url=source.get("model_url", ""), model_directory=source.get("model_directory", ""))
+            publisher = model_publisher(
+                HANDLER_HUGGING_FACE, model_url=source.get("model_url", ""), model_directory=source.get("model_directory", "")
+            )
             if publisher:
                 return publisher
-    return model_publisher("llamacpp", model_directory=rel_dir)
+    return model_publisher(HANDLER_HUGGING_FACE, model_directory=rel_dir)
 
 
 def find_llamacpp_models(models_base_dir, declarations=()):
@@ -412,8 +414,8 @@ def find_llamacpp_models(models_base_dir, declarations=()):
             entry = {
                 "id": f"llamacpp:{model_name}",
                 "name": model_name,
-                "handler": "llamacpp",
-                "runtime": model_runtime("llamacpp"),
+                "handler": HANDLER_HUGGING_FACE,
+                "runtime": model_runtime(HANDLER_HUGGING_FACE),
                 "model_publisher": scanned_publisher(record, marker if downloading else None, rel_dir),
                 # Found on disk. main() overrides this when the id matches a
                 # models-list.yaml entry, which makes it a curated model instead.
@@ -449,8 +451,8 @@ def find_llamacpp_models(models_base_dir, declarations=()):
             entry = {
                 "id": f"llamacpp:{model_name}",
                 "name": model_name,
-                "handler": "llamacpp",
-                "runtime": model_runtime("llamacpp"),
+                "handler": HANDLER_HUGGING_FACE,
+                "runtime": model_runtime(HANDLER_HUGGING_FACE),
                 "model_publisher": scanned_publisher(record, marker, rel_dir),
                 "model_origin": ORIGIN_USER,
                 "path": root,

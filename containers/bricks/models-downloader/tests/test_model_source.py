@@ -15,7 +15,6 @@ from common.model_source import hf_publisher, hf_repo_id, model_publisher, model
         ("ai-hub-handler", "qnn"),
         ("ei-handler", "edge-impulse-sdk"),
         ("hf-handler", "llamacpp"),
-        ("llamacpp", "llamacpp"),
         ("unknown-handler", None),
     ],
 )
