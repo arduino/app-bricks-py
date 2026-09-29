@@ -196,6 +196,10 @@ class BaseASR:
     # Session creation loads the model onto the NPU; the server retries a failed
     # load several times, so a create can legitimately take well over 10 s.
     _CREATE_TIMEOUT_SECONDS = 60
+    # A cancelled session keeps the instance busy until the server has closed it
+    # (a few seconds: the server waits for the DSP to release). A new session waits
+    # for that rather than failing, up to the close timeout plus the WebSocket teardown.
+    _CLOSING_WAIT_SECONDS = 30.0
 
     def __init__(self, source: object, language: str | None = None, translate: bool = False) -> None:
         # API configuration
@@ -230,6 +234,10 @@ class BaseASR:
 
         self._active_session_lock = threading.Lock()
         self._active_session: SessionInfo | None = None
+        # A new session is waiting for the slot or being created, and cancel() was
+        # called meanwhile: it applies to that session as soon as it exists
+        self._starting = threading.Event()
+        self._cancel_pending = threading.Event()
 
     def start(self) -> None:
         """Prepare the ASR for transcription. Starts the owned mic if applicable."""
@@ -252,7 +260,16 @@ class BaseASR:
         logger.debug("Stopped ASR and cleaned up resources.")
 
     def cancel(self) -> None:
-        """Cancel the active transcription session, if any."""
+        """
+        Cancel the active transcription session, if any.
+
+        It returns at once; the session then takes a few seconds to close on the
+        server. A transcription started meanwhile waits for that close instead of
+        raising ASRBusyError, so stop-then-start from a UI needs no delay.
+        """
+        if self._starting.is_set():
+            logger.debug("Cancelling the session being started")
+            self._cancel_pending.set()
         active = self._active_session
         if active is None:
             logger.debug("No active session to cancel")
@@ -361,12 +378,13 @@ class BaseASR:
         if self._stop_worker.is_set():
             raise RuntimeError("Brick is stopping or already stopped")
 
-        if not self._active_session_lock.acquire(blocking=False):
-            active_id = self._active_session.session_id if self._active_session else "unknown"
-            raise ASRBusyError(
-                f"A transcription session (id={active_id}) is already active on this instance. "
-                f"Create a separate ASR instance for concurrent transcriptions."
-            )
+        self._starting.set()
+        try:
+            self._acquire_session_slot()
+        except BaseException:
+            self._starting.clear()
+            self._cancel_pending.clear()
+            raise
 
         session_info: SessionInfo | None = None
         future = None
@@ -386,6 +404,10 @@ class BaseASR:
                 cancelled=threading.Event(),
             )
             self._active_session = session_info
+            self._starting.clear()
+            if self._cancel_pending.is_set():
+                self._cancel_pending.clear()
+                session_info.cancelled.set()
 
             future = asyncio.run_coroutine_threadsafe(
                 self._transcription_session_handler(session_info),
@@ -431,7 +453,34 @@ class BaseASR:
             if session_info is not None:
                 session_info.cancelled.set()
             self._active_session = None
+            self._starting.clear()
+            self._cancel_pending.clear()
             self._active_session_lock.release()
+
+    def _acquire_session_slot(self) -> None:
+        """
+        Take the instance's single session slot.
+
+        A session that was cancelled, or is ending, still holds the slot while the
+        server closes it: wait for it, so that stop-then-start works. Only a session
+        still running raises ASRBusyError.
+        """
+        if self._active_session_lock.acquire(blocking=False):
+            return
+        active = self._active_session
+        if active is not None and active.cancelled.is_set():
+            wait_s = self._CLOSING_WAIT_SECONDS
+        elif active is None:
+            wait_s = 0.5  # the previous session is just releasing the slot, or one is being created
+        else:
+            wait_s = 0.0
+        if wait_s and self._active_session_lock.acquire(timeout=wait_s):
+            return
+        active_id = active.session_id if active else "unknown"
+        raise ASRBusyError(
+            f"A transcription session (id={active_id}) is already active on this instance. "
+            f"Cancel it first, or create a separate ASR instance for concurrent transcriptions."
+        )
 
     def _create_transcription_session(self, vad_ms: int | None = None, language: str | None = None, translate: bool = False) -> str:
         sampling_rate = str(self._source.sample_rate)

@@ -109,7 +109,7 @@ change takes effect on the next transcription session.
 
 ## Errors
 
-- `ASRBusyError`: raised if you call `transcribe()` / `transcribe_stream()` while the instance already has an active session. Fix by awaiting the current session or using a separate instance.
+- `ASRBusyError`: raised if you call `transcribe()` / `transcribe_stream()` while the instance already has a session running. A session stopped with `cancel()` does not count: the new one waits for it to close. Fix by cancelling or awaiting the current session, or by using a separate instance.
 - `ASRServiceBusyError`: raised when the inference server rejects session creation because it is currently serving another client. The caller decides whether to retry.
 - `ASRUnavailableError`: raised when the inference service is unreachable (container down, network error) or the WebSocket connection drops mid-session. The caller decides whether to retry.
 - `ASRError`: base class for all of the above.

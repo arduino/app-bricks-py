@@ -3,12 +3,15 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import asyncio
+import queue
 import threading
+import time
 
 import numpy as np
 import pytest
 
 from arduino.app_bricks.asr import (
+    ASRBusyError,
     ASRError,
     ASREvent,
     ASRServiceBusyError,
@@ -16,6 +19,7 @@ from arduino.app_bricks.asr import (
     AutomaticSpeechRecognition,
     TranscriptionStream,
 )
+from arduino.app_bricks.asr.local_asr import SessionInfo
 
 from conftest import (
     _FakeMic,
@@ -349,3 +353,109 @@ class TestSessionCreate:
         # The server retries a failed NPU load 3 times: ~17 s on the board before it answers.
         assert seen["timeout"] == asr._CREATE_TIMEOUT_SECONDS
         assert seen["timeout"] >= 30
+
+
+class TestSessionSlot:
+    """Stop-then-start from a UI: the previous session is cancelled but still closing
+    on the server (~4 s on the board) when the next start arrives."""
+
+    @pytest.fixture
+    def asr(self, monkeypatch):
+        asr = AutomaticSpeechRecognition(mic=_started_mic())
+        loop = asyncio.new_event_loop()
+        thread = threading.Thread(target=loop.run_forever, daemon=True)
+        thread.start()
+        asr._worker_loop.set_result(loop)
+        self.created: list[float] = []
+        self.handled: list[bool] = []  # was the new session already cancelled when it started?
+
+        def fake_create(vad_ms=None, language=None, translate=False):
+            self.created.append(time.monotonic())
+            return f"sess-{len(self.created)}"
+
+        async def fake_handler(session_info):
+            self.handled.append(session_info.cancelled.is_set())
+
+        monkeypatch.setattr(asr, "_create_transcription_session", fake_create)
+        monkeypatch.setattr(asr, "_transcription_session_handler", fake_handler)
+        yield asr
+        loop.call_soon_threadsafe(loop.stop)
+        thread.join(2)
+
+    @staticmethod
+    def _hold_slot(asr, cancelled: bool, release_after: float | None) -> threading.Thread:
+        """Pretend a previous session holds the slot, and release it after a while."""
+        previous = SessionInfo(
+            session_id="previous",
+            duration=0,
+            start_time=time.time(),
+            result_queue=queue.Queue(),
+            chunk_queue=queue.Queue(),
+            cancelled=threading.Event(),
+        )
+        if cancelled:
+            previous.cancelled.set()
+        asr._active_session_lock.acquire()
+        asr._active_session = previous
+
+        def release():
+            time.sleep(release_after)
+            asr._active_session = None
+            asr._active_session_lock.release()
+
+        thread = threading.Thread(target=release, daemon=True)
+        if release_after is not None:
+            thread.start()
+        return thread
+
+    def test_start_waits_for_a_cancelled_session_to_close(self, asr):
+        self._hold_slot(asr, cancelled=True, release_after=0.3)
+        t0 = time.monotonic()
+
+        list(asr.transcribe_stream())
+
+        assert len(self.created) == 1
+        assert self.created[0] - t0 >= 0.3
+        assert self.handled == [False]
+
+    def test_start_during_a_running_session_is_busy(self, asr):
+        self._hold_slot(asr, cancelled=False, release_after=None)
+        t0 = time.monotonic()
+
+        with pytest.raises(ASRBusyError):
+            list(asr.transcribe_stream())
+
+        assert time.monotonic() - t0 < 0.2
+        assert self.created == []
+
+    def test_gives_up_when_the_close_never_ends(self, asr):
+        asr._CLOSING_WAIT_SECONDS = 0.2
+        self._hold_slot(asr, cancelled=True, release_after=None)
+
+        with pytest.raises(ASRBusyError):
+            list(asr.transcribe_stream())
+        assert self.created == []
+
+    def test_cancel_while_creating_cancels_the_new_session(self, asr, monkeypatch):
+        created = []
+
+        def create_then_user_stops(vad_ms=None, language=None, translate=False):
+            created.append(True)
+            asr.cancel()  # the stop arrives while the server is still creating the session
+            return "sess-1"
+
+        monkeypatch.setattr(asr, "_create_transcription_session", create_then_user_stops)
+
+        list(asr.transcribe_stream())
+
+        assert created == [True]
+        assert self.handled == [True]
+
+    def test_stop_during_the_close_does_not_cancel_the_next_session(self, asr):
+        release = self._hold_slot(asr, cancelled=True, release_after=0.1)
+        asr.cancel()  # e.g. "new recording" pressed while the previous session closes
+        release.join(1)
+
+        list(asr.transcribe_stream())
+
+        assert self.handled == [False]
