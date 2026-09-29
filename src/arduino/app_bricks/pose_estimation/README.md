@@ -47,13 +47,15 @@ App.run()
 
 ## Configuration
 
-`PoseEstimation(camera=None, confidence=0.5, poses=None, custom_poses_dir="/app/poses", bbox_padding=0, draw_bboxes=False, draw_low_confidence_points=True)`:
+`PoseEstimation(camera=None, confidence=0.25, count_debounce_sec=0.0, out_of_frame_tolerance=0.25, poses=None, custom_poses_dir="/app/poses", bbox_padding=0, draw_bboxes=False, draw_low_confidence_points=True)`:
 
 - `camera` (`BaseCamera`, optional): the camera instance to use. If not provided, a default `Camera(fps=30)` is created.
 - `confidence` (`float`): minimum confidence (0.0 to 1.0) for person detection. The value compares against the average of a person's 17 keypoint scores.
+- `count_debounce_sec` (`float`): minimum seconds a person leaving, or the people count dropping, must hold before `on_exit`/`on_count_change` report it. Default is 0 (no debounce).
+- `out_of_frame_tolerance` (`float`): how far past the frame edges a joint may be extrapolated before the skeleton counts as unreadable, as a fraction of the frame size. Default is 0.25; 0 demands every joint inside the picture.
 - `poses` (`list`, optional): list of pose names or pose dicts to listen to. Defaults to the four built-in poses. See "Built-in Poses" below.
 - `custom_poses_dir` (`str`): path to the folder containing custom pose training photos.
-- `bbox_padding` (`int` or `tuple`): expands bounding boxes, CSS style; none by default.
+- `bbox_padding` (`float` or `tuple`): expands bounding boxes, CSS style; a single number applies to all sides, a 4-tuple is (top, right, bottom, left), each a fraction of the box height (top/bottom) or width (left/right) in [0.0, 1.0]. None by default.
 - `draw_bboxes` (`bool`): whether to draw bounding boxes on the overlay.
 - `draw_low_confidence_points` (`bool`): whether to show low-confidence keypoint marks on the overlay.
 
@@ -75,8 +77,8 @@ App.run()
 - **`readable`**: current readability state of the tracked person's skeleton (bool). Turns False when normalization anchors are guessed, a joint lands far outside the frame, or the torso collapses.
 - **`people_count`**: current number of detected people (int).
 - **`pose_names`**: list of active pose names the instance is listening to.
-- **`BUILTIN_POSE_NAMES`**: list of all available built-in pose names.
-- **`out_of_frame_tolerance`**: how far past frame edges a joint may be extrapolated (fraction of frame size, 0.25 by default; set to 0 to demand the person entirely inside the frame).
+
+`BUILTIN_POSE_NAMES` is not an instance property but a module-level constant, importable with `from arduino.app_bricks.pose_estimation import BUILTIN_POSE_NAMES`: the tuple of all available built-in pose names.
 
 ## Technical Details
 
