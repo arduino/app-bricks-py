@@ -57,7 +57,8 @@ class ArduinoCloud:
 
     Per-variable conflict resolution is selectable via the ``sync`` argument to
     ``register`` (``DEVICE_WINS`` / ``CLOUD_WINS`` / ``MOST_RECENT_WINS``,
-    default ``CLOUD_WINS``).
+    default ``CLOUD_WINS``). It governs the SYNC only: a live cloud update is
+    applied with no arbitration, whatever the policy.
     """
 
     def __init__(
@@ -298,11 +299,11 @@ class ArduinoCloud:
 
         Dispatches on the event name (see daemon_client): the sync frames
         (thing_unavailable / lastvalue / lastvalue_missing) resolve the leaf's
-        local value and move it in/out of the pending state; live ``update``
-        events apply cloud changes (and are ignored while pending, since only a
-        sync frame ends the "no thing assigned" state). Whenever an applied cloud
-        value wins and actually changes the local value (``apply_cloud`` returns
-        True) on_write is delivered: for a scalar variable it fires immediately,
+        local value against the sync policy (``apply_cloud``) and move it in/out
+        of the pending state; live ``update`` events are applied with no policy
+        at all (``apply_live``), and are ignored while pending since only a sync
+        frame ends the "no thing assigned" state. Whenever either call actually
+        changes the local value (it returns True) on_write is delivered: for a scalar variable it fires immediately,
         as soon as the message arrives (C++ ArduinoIoTCloud synchronous onUpdate
         parity). For a complex object each sub-property arrives as its own frame,
         so on_write is coalesced — the owner is flagged and fired once, with the
@@ -346,7 +347,9 @@ class ArduinoCloud:
                     value = payload.get("value")
                     ts = parse_timestamp(payload.get("timestamp"))
                     logger.debug("ArduinoCloud: cloud update for '%s': value=%r ts=%s", leaf.name, value, ts)
-                    changed = leaf.apply_cloud(value, ts)
+                    # apply_live, NOT apply_cloud: the sync policies arbitrate a
+                    # sync frame only. See CloudObject.apply_live.
+                    changed = leaf.apply_live(value, ts)
 
                 if changed:
                     owner = leaf._owner
