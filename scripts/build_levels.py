@@ -41,7 +41,7 @@ CI_JSON_GLOB = "*/*/ci.json"
 # Maximum number of build waves supported by the caller workflows
 # (jobs build-l0 .. build-l{MAX_LEVELS - 1}). Bump this together with the
 # number of chained jobs in docker-build.yml / docker-publish.yml.
-MAX_LEVELS = 3
+MAX_LEVELS = 4
 
 
 class BuildLevelsError(RuntimeError):

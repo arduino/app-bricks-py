@@ -36,6 +36,7 @@ jobs:
       level_0: ${{ steps.detect.outputs.level_0 }}
       level_1: ${{ steps.detect.outputs.level_1 }}
       level_2: ${{ steps.detect.outputs.level_2 }}
+      level_3: ${{ steps.detect.outputs.level_3 }}
     steps:
       - name: Resolve branch
         id: resolve
@@ -60,7 +61,7 @@ jobs:
           fi
           echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
 
-          # Compute the topological build plan (level_0 .. level_4) and append it
+          # Compute the topological build plan (level_0 .. level_3) and append it
           # to $GITHUB_OUTPUT. Bases are always placed before the images that
           # derive FROM them, and both descendants and ancestors of the selection
           # are pulled in so the full chain is rebuilt in order.
@@ -92,6 +93,16 @@ jobs:
     uses: ./.github/workflows/_build-containers-dev.yml
     with:
       containers: ${{ needs.setup.outputs.level_2 }}
+      branch: ${{ needs.setup.outputs.branch }}
+      image_tag: ${{ needs.setup.outputs.image_tag }}
+      skip_cache: ${{ inputs.skip_cache }}
+
+  build-l3:
+    needs: [setup, build-l2]
+    if: needs.setup.outputs.level_3 != '[]'
+    uses: ./.github/workflows/_build-containers-dev.yml
+    with:
+      containers: ${{ needs.setup.outputs.level_3 }}
       branch: ${{ needs.setup.outputs.branch }}
       image_tag: ${{ needs.setup.outputs.image_tag }}
       skip_cache: ${{ inputs.skip_cache }}

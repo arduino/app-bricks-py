@@ -43,6 +43,7 @@ jobs:
       level_0: ${{ steps.detect.outputs.level_0 }}
       level_1: ${{ steps.detect.outputs.level_1 }}
       level_2: ${{ steps.detect.outputs.level_2 }}
+      level_3: ${{ steps.detect.outputs.level_3 }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -69,7 +70,7 @@ jobs:
           # The tag prefix IS the containers/ group to release (ai/0.12.0 ->
           # containers/ai/). Seed the build plan with that group, then pull in
           # all descendants and ancestors and split the result into topological
-          # waves (level_0 .. level_2).
+          # waves (level_0 .. level_3).
           GROUP="${TAG_REF%%/*}"
           echo "group=$GROUP" >> $GITHUB_OUTPUT
           echo "Releasing group: containers/${GROUP}/"
@@ -169,6 +170,19 @@ jobs:
       allow_retag: false
       skip_cache: ${{ inputs.skip_cache || false }}
 
+  build-l3:
+    needs: [detect, upload-whl, build-l2]
+    if: needs.detect.outputs.level_3 != '[]'
+    uses: ./.github/workflows/_build-containers-release.yml
+    secrets: inherit
+    with:
+      containers: ${{ needs.detect.outputs.level_3 }}
+      version: ${{ needs.detect.outputs.version }}
+      tag_ref: ${{ needs.detect.outputs.tag_ref }}
+      prerelease: ${{ needs.detect.outputs.prerelease }}
+      allow_retag: false
+      skip_cache: ${{ inputs.skip_cache || false }}
+
   # SBOM scans run one wave behind the builds: each wave is scanned as soon as it
   # is pushed, in parallel with the next wave's build. The images pinned by the
   # compose files were published by an earlier release, so their scan starts
@@ -205,11 +219,19 @@ jobs:
       images: ${{ needs.detect.outputs.level_2 }}
       version: ${{ needs.detect.outputs.version }}
 
+  sbom-l3:
+    needs: [detect, build-l3]
+    if: needs.detect.outputs.level_3 != '[]' && startsWith(needs.detect.outputs.tag_ref, 'bricks/')
+    uses: ./.github/workflows/_sbom-wave.yml
+    with:
+      images: ${{ needs.detect.outputs.level_3 }}
+      version: ${{ needs.detect.outputs.version }}
+
   upload-release:
     runs-on: ubuntu-24.04-arm
     # Skipped waves (and their scans) must not skip this job, failed builds must.
     if: ${{ !failure() && !cancelled() && startsWith(needs.detect.outputs.tag_ref, 'bricks/') }}
-    needs: [detect, upload-whl, build-l0, build-l1, build-l2, sbom-pinned, sbom-l0, sbom-l1, sbom-l2]
+    needs: [detect, upload-whl, build-l0, build-l1, build-l2, build-l3, sbom-pinned, sbom-l0, sbom-l1, sbom-l2, sbom-l3]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6

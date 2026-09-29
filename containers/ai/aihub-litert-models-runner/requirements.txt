@@ -1,0 +1,18 @@
+# What the LiteRT runner base installs on top of the aihub framework's
+# requirements-base.txt. Shared by every runner built on this image
+# (gesture-recognition-runner, pose-estimation-runner), which is why it lives here:
+#
+#   opencv-python-headless  the `aihub` framework itself needs cv2 (the websocket input
+#                           decodes frames with it), so every runner does. ~90 MB of wheel,
+#                           installed once instead of once per runner.
+#   ai-edge-litert          the LiteRT interpreter and the QNN delegate loader behind
+#                           aihub.tf.load_qnn_delegate(); it is what makes this base the
+#                           LiteRT one, as opposed to aihub-onnx-models-runner.
+#
+# Unlike the ONNX base, this list is not hash-locked and pip resolves the transitive
+# dependencies: that is what the two runners did before these lines moved up here, and
+# nothing downstream depends on the exact versions. The ONNX base locks its list because
+# the HTP context binaries its runners ship are only valid for the exact onnxruntime /
+# onnxruntime-qnn wheels that compiled them.
+opencv-python-headless
+ai-edge-litert

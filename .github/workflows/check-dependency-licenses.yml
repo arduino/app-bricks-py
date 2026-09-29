@@ -14,8 +14,11 @@ jobs:
     env:
       TASKFILE_VERSION: "v3.44.0"
       TASKFILE_PATH: "/home/runner/go/bin"
-      LICENSED_VENVS: ${{ runner.temp }}/licensed
     steps:
+      # The runner context is not available in job-level env, so derive the path here
+      - name: Set licensed venvs path
+        run: echo "LICENSED_VENVS=$RUNNER_TEMP/licensed" >> "$GITHUB_ENV"
+
       - name: Checkout repository
         uses: actions/checkout@v4
 

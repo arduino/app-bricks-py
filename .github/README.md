@@ -107,7 +107,7 @@ There is no `tag_prefix` field: the container's directory decides which tag rele
 | `update_compose` | bool | After release, open a PR updating `brick_compose.yaml` references |
 | `build_args` | object | Docker build args passed to the Dockerfile (key/value pairs) |
 | `sbom.runtime_base` | string | Image the delta SBOM is computed against — must match the Dockerfile's `FROM` |
-| `downstream` | string[] | Containers that depend on this one — rebuilt automatically after this container is built |
+| `downstream` | string[] | Containers that depend on this one — rebuilt automatically after this container is built. Covers `COPY --from=<image>` as well as `FROM`: anything a Dockerfile pulls out of another container in this repo |
 
 ## SBOMs
 
@@ -137,7 +137,7 @@ So releasing `bricks/X.Y.Z` when nothing under `containers/base/python-slim/` ch
 
 Images are tagged `dev-<branch-name>` (branch name lowercased and sanitized, e.g. `feat/My-Feature` → `dev-feat-my-feature`), plus a run-number-suffixed alias (e.g. `dev-feat-my-feature-42`), unless a custom `tag` is provided.
 
-**Dependency ordering**: the same topological planner as the release (`scripts/build_levels.py`, in `--mode dev`) expands the selection with its ancestors and descendants and splits it into waves — `build-l0`, `build-l1`, `build-l2` — where each wave waits for the previous one and receives `BASE_IMAGE_VERSION=<image-tag>` as a build arg so it uses the freshly built upstream images. The ordering is driven entirely by the `downstream` field in ci.json — no hardcoded container names in the workflow.
+**Dependency ordering**: the same topological planner as the release (`scripts/build_levels.py`, in `--mode dev`) expands the selection with its ancestors and descendants and splits it into waves — `build-l0` .. `build-l3`, as many as `MAX_LEVELS` — where each wave waits for the previous one and receives `BASE_IMAGE_VERSION=<image-tag>` as a build arg so it uses the freshly built upstream images. The ordering is driven entirely by the `downstream` field in ci.json — no hardcoded container names in the workflow.
 
 ## Build Characteristics
 
