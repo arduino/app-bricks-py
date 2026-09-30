@@ -1,7 +1,7 @@
 name: Check
 
-# The pull request gates that need no license scan: task check:ci in the same container the tests
-# run in, and the bake definition against the Dockerfiles on a runner with Docker.
+# The pull request gates that need no license scan: the Docker-free checks of Taskfile.ci.yml in the
+# same container the tests run in, and the bake definition against the Dockerfiles on a runner with Docker.
 
 on:
   pull_request:
@@ -37,12 +37,12 @@ jobs:
           which task || curl -sSfL https://taskfile.dev/install.sh | sh -s -- -b ${{ env.TASKFILE_PATH }} v${{ env.TASKFILE_VERSION }}
           export PATH="${{ env.TASKFILE_PATH }}:$PATH"
           pip install uv==${{ env.UV_VERSION }}
-          task init:ci
+          task -t Taskfile.ci.yml init
 
       - name: Check formatting, lint, license headers and locks
         run: |
           export PATH="${{ env.TASKFILE_PATH }}:$PATH"
-          task check:ci
+          task -t Taskfile.ci.yml check
 
   containers:
     runs-on: ubuntu-24.04-arm

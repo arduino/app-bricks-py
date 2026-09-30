@@ -51,7 +51,7 @@ task init
 
 uv provides Python 3.13, creates `.venv` and installs the library with its development dependencies, exactly the versions pinned in `uv.lock`, then does the same for every container (see [Dependencies](#dependencies)). Every task runs inside that environment through `uv run`, there is nothing to activate. `task init:bricks` sets up the library alone.
 
-Tasks are named `<intent>:<component>`: the intent is one of `init`, `deps`, `test`, `build`, `check`, `fix`, `new` and `show`, the component is `bricks` (the library) or `containers`, and a bare intent covers both. `check:*` tasks only verify and fail, `fix:*` tasks apply the same rules. `task --list` shows them all.
+Tasks are named `<intent>:<component>`: the intent is one of `init`, `deps`, `test`, `build`, `check`, `fix`, `new` and `show`, the component is `bricks` (the library) or `containers`, and a bare intent covers both. `check:*` tasks only verify and fail, `fix:*` tasks apply the same rules. `task --list` shows them all, and every one of them runs on a developer machine: the tasks that only make sense in CI, installing system packages on the workflow image, live in `Taskfile.ci.yml`, which the workflows run with `task -t Taskfile.ci.yml`.
 
 ## Linting and formatting
 
@@ -107,7 +107,7 @@ To improve the development experience in VS Code, we recommend adding a `.vscode
 
 After adding those files, VS Code will suggest installing the Python and Ruff extensions, which are properly configured for this project.
 
-Alternatively, `task check` runs every check before a pull request, `task check:ci` the Docker-free subset CI runs, and `task fix` applies formatting, the fixable lint rules and the license headers. Each rule has its own pair, for example:
+Alternatively, `task check` runs every check before a pull request, a superset of what CI runs, and `task fix` applies formatting, the fixable lint rules and the license headers. Each rule has its own pair, for example:
 
 ```sh
 task check:lint

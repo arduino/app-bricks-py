@@ -37,7 +37,7 @@ jobs:
           which task || curl -sSfL https://taskfile.dev/install.sh | sh -s -- -b ${{ env.TASKFILE_PATH }} v${{ env.TASKFILE_VERSION }}
           export PATH="${{ env.TASKFILE_PATH }}:$PATH"
           pip install uv==${{ env.UV_VERSION }}
-          task init:ci
+          task -t Taskfile.ci.yml init
 
       - name: Run the library tests
         run: |

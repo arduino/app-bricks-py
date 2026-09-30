@@ -31,7 +31,7 @@ Every pull request runs four workflows, named after the task they run so the sta
 
 | Workflow | Job | Runs |
 |---|---|---|
-| `check.yml` (Check) | `code` | `task check:ci`: formatting, lint, SPDX headers and locks, in the Python container of the images |
+| `check.yml` (Check) | `code` | `task -t Taskfile.ci.yml check`: formatting, lint, SPDX headers and locks, in the Python container of the images |
 | | `containers` | `task check:containers:bake`: `docker-bake.hcl` agrees with the Dockerfiles |
 | `check-licenses.yml` (Check licenses) | `licenses` | the dependency license scan, see [scripts/licensed/README.md](../scripts/licensed/README.md); also runs on pushes to main to seed its caches |
 | `check-pyright.yml` (Pyright checks) | `pyright` | `task check:bricks:api` and `task check:bricks:typing` against the PR base and head, informative; `comment-pyright.yml` posts the report on the pull request |

@@ -3,6 +3,7 @@ version: "3"
 # Task names are <intent>:<component>[:<detail>]. The intent is one of init, deps, test, build,
 # check, fix, new, show; the component is bricks (the library) or containers, and a bare intent
 # covers both. check:* tasks only verify and exit non-zero, fix:* tasks apply the same rules.
+# Every task here runs on a developer machine. What runs only in CI lives in Taskfile.ci.yml.
 
 vars:
   LICENSE_HEADER_EXCLUDE: '(^|/)(docs|examples-internal|tools)/|\.(md|txt|json|yml|yaml|toml|gitignore|dockerignore|gitmodules|in|ini|eim|lock)$'
@@ -26,17 +27,6 @@ tasks:
     desc: Create a .venv in every container directory with its locked packages, the interpreter to point the IDE at
     cmds:
       - for p in containers/*/*/pyproject.toml; do uv sync --frozen --project "$(dirname "$p")" {{.CLI_ARGS}} || exit 1; done
-
-  init:ci:
-    desc: Set up the CI environment, system packages plus the library .venv
-    cmds:
-      - apt-get update
-      - apt-get install -y --no-install-recommends --no-install-suggests libasound2-dev portaudio19-dev libzbar0
-      - apt-get install -y --no-install-recommends --no-install-suggests gh git ca-certificates build-essential pkg-config
-      - apt-get install -y --no-install-recommends --no-install-suggests libavcodec-dev libavformat-dev libavutil-dev libswscale-dev
-      - apt-get install -y --no-install-recommends --no-install-suggests libjpeg62-turbo-dev libpng-dev libtiff-dev libwebp-dev libopenblas-dev liblapacke-dev
-      - apt-get install -y --no-install-recommends --no-install-suggests libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
-      - task: init:bricks
 
   # deps: dependency management, the locks that pin what the library and the images install
 
@@ -119,22 +109,17 @@ tasks:
     cmds:
       - python3 -m scripts.sbom_delta {{.CLI_ARGS}}
 
-  # check: verify and fail, never modify, check:ci is the Docker-free subset CI runs on a pull request
+  # check: verify and fail, never modify
 
   check:
     desc: Run every check, the Docker ones included, before opening a pull request
-    cmds:
-      - task: check:ci
-      - task: check:licenses
-      - task: check:containers:bake
-
-  check:ci:
-    desc: Run the checks CI runs on every pull request, the ones that need no Docker
     cmds:
       - task: check:format
       - task: check:lint
       - task: check:deps
       - task: check:license-headers
+      - task: check:licenses
+      - task: check:containers:bake
 
   check:format:
     desc: Fail if any file is not formatted, run task fix:format
