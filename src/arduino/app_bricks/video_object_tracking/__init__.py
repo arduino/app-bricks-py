@@ -15,11 +15,12 @@ import cv2
 import numpy as np
 
 from arduino.app_bricks.video_objectdetection import STREAM_PORT, AllDetectionsCallback, DetectionCallback, VideoObjectDetection
+from arduino.app_internal.edge_impulse import LabelColors
 from arduino.app_internal.ei_inference import InferenceClient, Result, ServerError
 from arduino.app_peripherals.camera import BaseCamera
 from arduino.app_utils import AppError, Logger, brick
 
-from .drawing import draw_area, draw_crossing_line
+from .drawing import AREA_COLOR, LINE_COLOR, draw_area, draw_crossing_line
 
 logger = Logger("VideoObjectTracking")
 
@@ -89,6 +90,7 @@ class VideoObjectTracking(VideoObjectDetection):
             VideoObjectTrackingError: If the model has no object tracking block.
         """
         super().__init__(camera=camera, confidence=confidence, debounce_sec=debounce_sec, stream_port=stream_port)
+        self._colors = LabelColors(avoid=(LINE_COLOR, AREA_COLOR))
         self._labels_to_track = labels_to_track
         # The knobs of the tracking block as the model names them: keep_grace is max_age, min_detections is min_hits,
         # iou_threshold matches the boxes of a detection model and threshold the centroids of a FOMO one

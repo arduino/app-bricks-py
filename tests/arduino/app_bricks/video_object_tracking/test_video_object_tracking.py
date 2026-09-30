@@ -14,6 +14,9 @@ import pytest
 
 import arduino.app_internal.ei_inference as ei_inference
 from arduino.app_bricks.video_object_tracking import MAX_AREA_POINTS, VideoObjectTracking, VideoObjectTrackingError
+from arduino.app_bricks.video_object_tracking.drawing import AREA_COLOR, LINE_COLOR
+from arduino.app_internal.edge_impulse import LabelColors
+from arduino.app_utils.image.colors import color_difference
 from arduino.app_internal.ei_inference import Box, Result
 
 TIMEOUT = 3.0  # seconds to wait for a callback
@@ -554,6 +557,13 @@ def test_the_area_outline_is_drawn_on_the_video_in_yellow(tracker):
     assert tuple(annotated[300, 200]) == (0, 255, 255), "the left side of the outline"
     assert not annotated[300, 300].any(), "the inside stays as the camera shows it"
     assert not frame.any(), "the camera frame itself is left untouched"
+
+
+def test_the_box_colors_stay_clearly_different_from_the_line_and_the_area(tracker):
+    for i in range(12):
+        color = tracker._colors[f"label #{i}"]
+        for drawn in (LINE_COLOR, AREA_COLOR):
+            assert color_difference(color, drawn) >= LabelColors.MIN_DIFFERENCE, (i, color)
 
 
 # ---------------------------------------------------------------- counting
