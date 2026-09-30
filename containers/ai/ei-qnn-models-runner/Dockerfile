@@ -4,7 +4,7 @@
 
 FROM ghcr.io/astral-sh/uv:0.12.21@sha256:a7aed3216253ee804de3e2d8afa5073baa1a177335345d43845cd4165e43b711 AS uv
 
-FROM public.ecr.aws/g7a8t7v6/inference-container-qnn:v1.95.14@sha256:5742959f4b414c997fec333a2fa8429aa2e3d3cf31abdc9ab821fb20ade07574
+FROM public.ecr.aws/g7a8t7v6/inference-container-qnn:v1.95.17@sha256:ff67c6982a88e40c697c90ed45122f3061e6bc5f986ef6f16ea77875d1dd4d1c
 
 ARG DEBIAN_FRONTEND=noninteractive
 
