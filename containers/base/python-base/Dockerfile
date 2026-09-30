@@ -5,15 +5,21 @@
 ARG REGISTRY
 ARG BASE_IMAGE_VERSION=latest
 
-FROM python:3.13-slim-trixie AS builder
+FROM ghcr.io/astral-sh/uv:0.10.3@sha256:7a88d4c4e6f44200575000638453a5a381db0ae31ad5c3a51b14f8687c9d93a3 AS uv
+
+FROM python:3.13-slim-trixie@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS builder
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG OPENCV_WHL_URL
-ARG OPENCV_WHL_DIGEST
+ARG OPENCV_WHL_URL=https://github.com/arduino/app-bricks-py/releases/download/opencv%2F4.13.0.92-20260610/opencv_python_headless-4.13.0+1ddb20b-cp313-cp313-linux_aarch64.whl
+ARG OPENCV_WHL_DIGEST=sha256:8d5e8319df040b93a07c91155afea515e3629fcb55510d4eee4716fc165b9c0a
+ARG PYGOBJECT_VERSION=3.58.0
 
-COPY ./requirements-base.txt /app/requirements.txt
+COPY ./pyproject.toml ./uv.lock /tmp/deps/
+# uv stays in the image, run.sh installs the user's packages with it at runtime
+COPY --from=uv /uv /usr/local/bin/uv
 
-ADD --checksum=${OPENCV_WHL_DIGEST} ${OPENCV_WHL_URL} /tmp/opencv-wheel/
+# The wheel stays in the image, run.sh serves it to the user's installs through UV_FIND_LINKS
+ADD --chmod=644 --checksum=${OPENCV_WHL_DIGEST} ${OPENCV_WHL_URL} /opt/wheels/
 
 RUN set -ex; \
     apt-get update -y; \
@@ -23,14 +29,14 @@ RUN set -ex; \
     apt-get install -y --no-install-recommends --no-install-suggests libasound2-dev libalsaplayer-dev portaudio19-dev libzbar0; \
     # Install build dependencies for building PyGObject
     apt-get install -y --no-install-recommends --no-install-suggests pkg-config libgirepository-2.0-dev libglib2.0-dev; \
-    # Install Python dependencies (requirements file + prefetched OpenCV wheel)
-    pip install --no-cache-dir uv; \
-    uv pip install --system --no-cache-dir -r /app/requirements.txt /tmp/opencv-wheel/*.whl; \
+    # Install the locked Python dependencies, then the prefetched OpenCV wheel
+    uv export --frozen --project /tmp/deps | uv pip install --system --no-cache-dir --require-hashes -r -; \
+    uv pip install --system --no-cache-dir /opt/wheels/*.whl; \
     printf 'opencv-python-headless==%s\n' "$(python -c 'from importlib.metadata import version; print(version("opencv-python-headless"))')" > /etc/uv-constraints.txt; \
-    rm -rf /app/requirements.txt /tmp/opencv-wheel; \
+    rm -rf /tmp/deps; \
     # Build PyGObject without cairo support
     uv pip install --system --no-cache-dir meson-python ninja; \
-    uv pip install --system --no-cache-dir --no-build-isolation --no-deps -C setup-args="-Dpycairo=disabled" PyGObject; \
+    uv pip install --system --no-cache-dir --no-build-isolation --no-deps -C setup-args="-Dpycairo=disabled" "PyGObject==${PYGOBJECT_VERSION}"; \
     uv pip uninstall --system meson-python meson ninja pyproject-metadata packaging; \
     # Strip debug symbols, tests and remove unneeded packages to reduce size
     find /usr/local/lib/python3.13/site-packages -type f -name "*.so" -exec strip -s {} +; \
@@ -45,31 +51,35 @@ RUN set -ex; \
 FROM ${REGISTRY}app-bricks/python-slim:${BASE_IMAGE_VERSION} AS production
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG LIBCAMERA_DEB_URL
-ARG LIBCAMERA_DEB_DIGEST
-ARG LIBCAMERA_IPA_DEB_URL
-ARG LIBCAMERA_IPA_DEB_DIGEST
-ARG GSTREAMER_LIBCAMERA_DEB_URL
-ARG GSTREAMER_LIBCAMERA_DEB_DIGEST
-ARG GSTREAMER_QTIQMMFSRC_DEB_URL
-ARG GSTREAMER_QTIQMMFSRC_DEB_DIGEST
-ARG GSTREAMER_LIBGSTREAMER_PLUGINS_BASE_DEB_URL
-ARG GSTREAMER_LIBGSTREAMER_PLUGINS_BASE_DEB_DIGEST
+ARG LIBCAMERA_DEB_URL=https://github.com/arduino/app-bricks-py/releases/download/libcamera%2F0.7.1-qcom4/libcamera0.7_0.7.1-1.bpo13+1qcom4_arm64.deb
+ARG LIBCAMERA_DEB_DIGEST=sha256:958b7fb3d1a851542fddd5f54a259c685f1301945a3b10bce4fa15cf7886ef0f
+ARG LIBCAMERA_IPA_DEB_URL=https://github.com/arduino/app-bricks-py/releases/download/libcamera%2F0.7.1-qcom4/libcamera-ipa_0.7.1-1.bpo13+1qcom4_arm64.deb
+ARG LIBCAMERA_IPA_DEB_DIGEST=sha256:04ed476cd08acc897297f47b2a35e13fc71e459156b69be0bf7364a80bfac283
+ARG GSTREAMER_LIBCAMERA_DEB_URL=https://github.com/arduino/app-bricks-py/releases/download/libcamera%2F0.7.1-qcom4/gstreamer1.0-libcamera_0.7.1-1.bpo13+1qcom4_arm64.deb
+ARG GSTREAMER_LIBCAMERA_DEB_DIGEST=sha256:c5c38c5ddd9689cc4dd07cc433c85c325c408a67e631499679e67a616099e4f1
+ARG GSTREAMER_QTIQMMFSRC_DEB_URL=https://github.com/robgee86/app-bricks-py/releases/download/qtiqmmfsrc%2F1.8.1/qtiqmmfsrc-1.8.1.deb
+ARG GSTREAMER_QTIQMMFSRC_DEB_DIGEST=sha256:b0b764a2f7ebf369de5cc9827c2952397d2ead757de7bee3f2c9c2f468d714a9
+ARG GSTREAMER_LIBGSTREAMER_PLUGINS_BASE_DEB_URL=https://github.com/robgee86/app-bricks-py/releases/download/qtiqmmfsrc%2F1.8.1/libgstreamer-plugins-base1.0-0_1.26.2-1+deb13u1_arm64.deb
+ARG GSTREAMER_LIBGSTREAMER_PLUGINS_BASE_DEB_DIGEST=sha256:a6e1aaadbac810957f5c4ce981d955c686734e85c23cbb5b89ddd33299f920c6
 
 ADD --checksum=${LIBCAMERA_DEB_DIGEST} ${LIBCAMERA_DEB_URL} /tmp/libcamera0.7.deb
 ADD --checksum=${LIBCAMERA_IPA_DEB_DIGEST} ${LIBCAMERA_IPA_DEB_URL} /tmp/libcamera-ipa.deb
 ADD --checksum=${GSTREAMER_LIBCAMERA_DEB_DIGEST} ${GSTREAMER_LIBCAMERA_DEB_URL} /tmp/gstreamer1.0-libcamera.deb
 ADD --checksum=${GSTREAMER_QTIQMMFSRC_DEB_DIGEST} ${GSTREAMER_QTIQMMFSRC_DEB_URL} /tmp/qtiqmmfsrc.deb
 ADD --checksum=${GSTREAMER_LIBGSTREAMER_PLUGINS_BASE_DEB_DIGEST} ${GSTREAMER_LIBGSTREAMER_PLUGINS_BASE_DEB_URL} /tmp/libgstreamer-plugins-base.deb
-ADD https://raw.githubusercontent.com/googlefonts/opensans/main/fonts/ttf/OpenSans-Regular.ttf /home/app/.fonts/OpenSans.ttf
+ADD --checksum=sha256:c53aceea2dcf5b4098099c0c4d0a061d17e178a049317b42a422b1a9f7f8eb59 https://raw.githubusercontent.com/googlefonts/opensans/bd7e37632246368c60fdcbd374dbf9bad11969b6/fonts/ttf/OpenSans-Regular.ttf /home/app/.fonts/OpenSans.ttf
 
 # Copy the installed dependencies from the 'builder' stage
 COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 COPY --from=builder /etc/uv-constraints.txt /etc/uv-constraints.txt
+COPY --from=builder /opt/wheels /opt/wheels
 
+# User installs are pinned to the shipped OpenCV build and can fetch it from the image, PyPI does not have it
 ENV UV_CONSTRAINT=/etc/uv-constraints.txt
 ENV PIP_CONSTRAINT=/etc/uv-constraints.txt
+ENV UV_FIND_LINKS=/opt/wheels
+ENV PIP_FIND_LINKS=/opt/wheels
 
 RUN set -ex; \
     # The Qualcomm FastRPC libraries live in contrib, and for trixie only in
