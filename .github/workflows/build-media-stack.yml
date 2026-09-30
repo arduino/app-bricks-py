@@ -53,7 +53,7 @@ jobs:
     needs: setup
     runs-on: ubuntu-24.04-arm
     container:
-      image: debian:trixie
+      image: debian:trixie-slim
       options: --user root
     outputs:
       version: ${{ steps.ffmpeg.outputs.version }}
@@ -128,7 +128,7 @@ jobs:
     needs: setup
     runs-on: ubuntu-24.04-arm
     container:
-      image: debian:trixie
+      image: debian:trixie-slim
       options: --user root
     outputs:
       version: ${{ steps.gstreamer.outputs.version }}
@@ -214,7 +214,7 @@ jobs:
     needs: [setup, build-ffmpeg, build-gstreamer]
     runs-on: ubuntu-24.04-arm
     container:
-      image: debian:trixie
+      image: debian:trixie-slim
       options: --user root
     outputs:
       wheel_version: ${{ steps.opencv.outputs.wheel_version }}
