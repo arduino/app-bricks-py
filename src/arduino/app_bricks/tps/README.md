@@ -20,6 +20,7 @@ The TPS Brick allows you to:
 
 ## Prerequisites
 
+- **Supported boards**: Arduino UNO™ Q and Arduino VENTUNO™ Q.
 - **Internet connection**: The board must reach the TPS Location API cloud service.
 - **Wi-Fi interface**: The board's wireless interface must be available for scanning, even when the board is connected to the internet another way. The location is computed from visible access points only, with no IP-based fallback.
 - **TPS credentials**: Register on the [TPS Portal](https://my.skyhook.com/), create a project and copy its Auth Key. The key comes with a 60-day evaluation period. Set the key and your authentication user in **Brick Configuration** in App Lab, as described in [Configuration](#configuration).
