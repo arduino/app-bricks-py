@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from ._lazy_exports import lazy_exports as _lazy_exports
 from .app import *
+from .app import install_startup_signal_handler
 from .bridge import *
 from .logger import _configure_library_logger
 from .brick import *
@@ -62,6 +63,9 @@ __all__ = [
 
 # Report uncaught AppErrors with a user-readable message instead of a bare traceback
 _install_excepthook()
+
+# A stop requested before App.run() must not wait for the launcher to kill the process
+install_startup_signal_handler()
 
 # Apply the standard log format and level to the arduino-router-bridge library's logger
 _configure_library_logger("arduino.router_bridge", display_name="Bridge")
