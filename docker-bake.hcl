@@ -7,7 +7,7 @@
 # A container deriving from another container of this repository declares it
 # in its Dockerfile (FROM ${REGISTRY}app-bricks/<parent>:${BASE_IMAGE_VERSION})
 # and links it here with parent_context(): bake then builds the parent in-graph,
-# in dependency order, however deep the chain. scripts/container_deps.py reads
+# in dependency order, however deep the chain. scripts/container.py reads
 # the same FROM lines and the release checks that the two agree. Targets are
 # listed parents first, each followed by the containers deriving from it.
 #
@@ -19,7 +19,7 @@
 #   docker buildx bake                          # build them all
 #
 # python-apps-base installs the wheel from the "wheel" context (dist/, filled by
-# `task build`), models-downloader reads models-list.yaml from the "models"
+# `task build:bricks`), models-downloader reads models-list.yaml from the "models"
 # context (models/).
 
 # Registry prefix the images are published under, with a trailing slash.
