@@ -171,7 +171,6 @@ cython_debug/
 
 # Build
 src/arduino/app_bricks/static
-_version.py
 TODO.*
 docs/
 
@@ -194,8 +193,3 @@ Taskfile.yml
 # Other
 design/
 /sbom-delta/
-
-# Copied next to the wheel by the build workflows, see containers/bricks/python-apps-base/Dockerfile
-containers/bricks/python-apps-base/*.whl
-containers/bricks/python-apps-base/pyproject.toml
-containers/bricks/python-apps-base/uv.lock

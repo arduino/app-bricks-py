@@ -21,77 +21,121 @@ on:
         required: false
         type: boolean
         default: false
+      sbom:
+        description: "Also compute the delta SBOMs of the published images"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
   packages: write
-  id-token: write
+
+env:
+  UV_VERSION: "0.10.3"
+  TASKFILE_VERSION: "3.45.4"
 
 jobs:
-  setup:
+  build:
     runs-on: ubuntu-24.04-arm
     outputs:
-      branch: ${{ steps.resolve.outputs.branch }}
-      image_tag: ${{ steps.detect.outputs.image_tag }}
-      level_0: ${{ steps.detect.outputs.level_0 }}
-      level_1: ${{ steps.detect.outputs.level_1 }}
-      level_2: ${{ steps.detect.outputs.level_2 }}
+      image_tag: ${{ steps.plan.outputs.image_tag }}
+      containers: ${{ steps.plan.outputs.containers }}
     steps:
-      - name: Resolve branch
-        id: resolve
-        run: |
-          BRANCH="${{ inputs.branch || github.ref_name }}"
-          echo "branch=$BRANCH" >> $GITHUB_OUTPUT
-
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
-          ref: ${{ steps.resolve.outputs.branch }}
-          fetch-depth: 0
+          ref: ${{ inputs.branch || github.ref_name }}
 
-      - name: Resolve containers to build
-        id: detect
+      - name: Resolve the build
+        id: plan
         run: |
           # Compute image tag from branch name unless an explicit tag was provided
           if [[ -n "${{ inputs.tag }}" ]]; then
             IMAGE_TAG="${{ inputs.tag }}"
           else
-            IMAGE_TAG="dev-$(echo "${{ steps.resolve.outputs.branch }}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/-/g')"
+            IMAGE_TAG="dev-$(echo "${{ inputs.branch || github.ref_name }}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/-/g')"
           fi
           echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
 
-          # Compute the topological build plan (level_0 .. level_4) and append it
-          # to $GITHUB_OUTPUT. Bases are always placed before the images that
-          # derive FROM them, and both descendants and ancestors of the selection
-          # are pulled in so the full chain is rebuilt in order.
-          python3 -m scripts.build_levels --mode dev --select "${{ inputs.containers }}"
+          # Widen the selection with the containers deriving from it and with
+          # its bases, so the published set stays consistent; bake then orders
+          # the builds through the parent links declared in docker-bake.hcl.
+          if [[ "${{ inputs.containers }}" == "all" ]]; then
+            CONTAINERS=$(python3 -m scripts.container_deps list)
+          else
+            CONTAINERS=$(python3 -m scripts.container_deps closure $(tr ',' ' ' <<< "${{ inputs.containers }}"))
+          fi
+          echo "Containers: $(jq -r 'join(" ")' <<< "$CONTAINERS")"
+          echo "containers=$CONTAINERS" >> $GITHUB_OUTPUT
 
-  build-l0:
-    needs: [setup]
-    if: needs.setup.outputs.level_0 != '[]'
-    uses: ./.github/workflows/_build-containers-dev.yml
-    with:
-      containers: ${{ needs.setup.outputs.level_0 }}
-      branch: ${{ needs.setup.outputs.branch }}
-      image_tag: ${{ needs.setup.outputs.image_tag }}
-      skip_cache: ${{ inputs.skip_cache }}
+          # Containers with a "wheel" bake context install the library from dist/
+          TARGETS=$(jq -r 'join(" ")' <<< "$CONTAINERS")
+          echo "wheel=$(docker buildx bake --print $TARGETS | jq '[.target[].contexts // {} | has("wheel")] | any')" >> $GITHUB_OUTPUT
 
-  build-l1:
-    needs: [setup, build-l0]
-    if: needs.setup.outputs.level_1 != '[]'
-    uses: ./.github/workflows/_build-containers-dev.yml
-    with:
-      containers: ${{ needs.setup.outputs.level_1 }}
-      branch: ${{ needs.setup.outputs.branch }}
-      image_tag: ${{ needs.setup.outputs.image_tag }}
-      skip_cache: ${{ inputs.skip_cache }}
+      - name: Install uv and task
+        if: steps.plan.outputs.wheel == 'true'
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+      - if: steps.plan.outputs.wheel == 'true'
+        run: uv tool install "go-task-bin==${{ env.TASKFILE_VERSION }}"
 
-  build-l2:
-    needs: [setup, build-l1]
-    if: needs.setup.outputs.level_2 != '[]'
-    uses: ./.github/workflows/_build-containers-dev.yml
-    with:
-      containers: ${{ needs.setup.outputs.level_2 }}
-      branch: ${{ needs.setup.outputs.branch }}
-      image_tag: ${{ needs.setup.outputs.image_tag }}
-      skip_cache: ${{ inputs.skip_cache }}
+      # The compose files bundled in the wheel must reference the images built by this run
+      - name: Build the wheel
+        if: steps.plan.outputs.wheel == 'true'
+        env:
+          BRICKS_RELEASE_VERSION: ${{ steps.plan.outputs.image_tag }}
+        run: |
+          export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          task build
+
+      - name: Log into registry ghcr.io
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Docker buildx
+        uses: docker/setup-buildx-action@v4
+
+      # Bake builds the selected containers and their parents in dependency
+      # order through the parent links declared in docker-bake.hcl
+      - name: Build and push the images
+        uses: docker/bake-action@v7
+        with:
+          source: .
+          files: ./docker-bake.hcl
+          targets: ${{ join(fromJson(steps.plan.outputs.containers)) }}
+          push: true
+        env:
+          REGISTRY: ghcr.io/${{ github.repository_owner }}/
+          IMAGE_TAG: ${{ steps.plan.outputs.image_tag }}
+          RUN_NUMBER: ${{ github.run_number }}
+          BASE_IMAGE_VERSION: ${{ steps.plan.outputs.image_tag }}
+          CACHE_TAG: ${{ steps.plan.outputs.image_tag }}-buildcache
+          SKIP_CACHE: ${{ inputs.skip_cache }}
+          GITHUB_SHA: ${{ github.sha }}
+
+      # The images carry their SBOM attestation regardless, this computes the
+      # deltas against their base images like the release does
+      - name: Install syft
+        if: inputs.sbom
+        run: curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+
+      - name: Generate the delta SBOMs
+        if: inputs.sbom
+        run: |
+          python3 -m scripts.sbom_delta \
+            --registry "ghcr.io/${{ github.repository_owner }}/" \
+            --version "${{ steps.plan.outputs.image_tag }}" \
+            --output-dir sbom-delta \
+            $(jq -r 'join(" ")' <<< '${{ steps.plan.outputs.containers }}')
+
+      - name: Upload the delta SBOMs
+        if: inputs.sbom
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-delta-${{ steps.plan.outputs.image_tag }}
+          path: sbom-delta/

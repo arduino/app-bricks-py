@@ -21,7 +21,7 @@ tasks:
     desc: Refresh uv.lock for the library and every container, pass -- --upgrade to move to newer versions
     cmds:
       - uv lock {{.CLI_ARGS}}
-      - for p in containers/*/*/pyproject.toml; do uv lock --project "$(dirname "$p")" {{.CLI_ARGS}}; done
+      - for p in containers/*/*/pyproject.toml; do uv lock --project "$(dirname "$p")" {{.CLI_ARGS}} || exit 1; done
 
   deps:sync:
     desc: Install the locked dependencies of the library and every container into their .venv for local development
@@ -36,9 +36,9 @@ tasks:
       - for p in containers/*/*/pyproject.toml; do uv lock --check --project "$(dirname "$p")" || exit 1; done
 
   doc:
-    desc: Generate documentation
+    desc: Generate the API documentation under docs/
     cmds:
-      - uv run python -m docs_generator.runner
+      - uv run --group build python -m docs_generator.runner docs
 
   test:
     desc: Run all unit tests, of the library and of the containers
@@ -82,19 +82,21 @@ tasks:
     cmds:
       - uv run ruff format
 
-  build-dev:
-    desc: Build a development package
+  provision-static:
+    desc: Provision the static assets bundled into the wheel, BRICKS_RELEASE_VERSION overrides the version stamped into compose and models files
     cmds:
-      - rm -rf dist
-      - task doc
-      - uv run uv build --config-setting build_type=dev .
+      - rm -rf src/arduino/app_bricks/static
+      - task: doc
+      - uv run --group build arduino-bricks-release --static-dir src/arduino/app_bricks/static --api-docs-dir docs
 
   build:
-    desc: Build a production package
+    desc: Build the wheel, its version is read from src/arduino/version.py
     cmds:
+      - defer: rm -rf src/arduino/app_bricks/static
       - rm -rf dist
-      - task doc
+      - task: provision-static
       - uv run uv build .
+      - cp pyproject.toml uv.lock dist/
 
   license:headers:
     desc: Update SPDX license headers (REUSE)
@@ -151,70 +153,23 @@ tasks:
       - task: license:headers
       - task: license:deps
 
-  sbom:generate:internal:
-    internal: true
-    cmds:
-      - |
-        if [ -z "{{.IMAGE}}" ] || [ -z "{{.TAG}}" ] || [ -z "{{.FILENAME}}" ]; then
-          echo "Error: IMAGE, TAG, and FILENAME must be set."
-          exit 1
-        fi
-
-        docker sbom "{{.IMAGE}}:{{.TAG}}" --output "{{.FILENAME}}" --format spdx-json
-
-  sbom:update:internal:
-    internal: true
-    cmds:
-      - task: sbom:generate:internal
-        vars:
-          IMAGE: '{{.IMAGE}}'
-          TAG: '{{.TAG}}'
-          FILENAME: '{{.DIR}}/sbom_new.json'
-      - |
-        NEW_SBOM="{{.DIR}}/sbom_new.json"
-        TMP_FILE="{{.DIR}}/sbom_tmp.json"
-        CURRENT_SBOM="{{.DIR}}/sbom.spdx.json"
-
-        jq --indent 1 --argfile current "$CURRENT_SBOM" '
-          .packages |= map(
-            . as $outer
-            | if $outer.licenseDeclared == "NONE" or $outer.licenseDeclared == "NOASSERTION" then
-                (
-                 [$current.packages[]
-                    | select(.name == $outer.name and .versionInfo == $outer.versionInfo)
-                  ] | first
-                ) as $matched
-                | if $matched != null and $matched.licenseDeclared != null then
-                    $outer 
-                    + {licenseDeclared: $matched.licenseDeclared} 
-                    + (if $matched.comment != null then {comment: $matched.comment} else {} end)
-                  else
-                    $outer
-                  end
-              else
-                $outer
-              end
-          )
-        ' "$NEW_SBOM" > "$TMP_FILE"
-
-        cp "$TMP_FILE" "$CURRENT_SBOM"
-        rm -f "$NEW_SBOM" "$TMP_FILE"
-
-  sbom:
-    desc: "Update SBOM files for python-apps-base and ei-models-runner containers. Parameters: BRICKS_TAG and EI_TAG."
-    cmds:
-      - task: sbom:update:internal
-        vars:
-          IMAGE: 'public.ecr.aws/arduino/app-bricks/python-apps-base'
-          TAG: '{{.BRICKS_TAG}}'
-          DIR: './containers/bricks/python-apps-base'
-      - task: sbom:update:internal
-        vars:
-          IMAGE: 'public.ecr.aws/arduino/app-bricks/ei-models-runner'
-          TAG: '{{.EI_TAG}}'
-          DIR: './containers/ai/ei-models-runner'
-
   sbom:delta:
     desc: Generate delta SBOMs for containers (requires syft and registry access)
     cmds:
-      - python3 ./scripts/sbom_delta.py {{.CLI_ARGS}}
+      - python3 -m scripts.sbom_delta {{.CLI_ARGS}}
+
+  containers:new:
+    desc: "Scaffold a container and register it everywhere: task containers:new -- <name> --group <group> --from <container|image> [--no-python] [--desc text]"
+    cmds:
+      - python3 -m scripts.scaffold_container {{.CLI_ARGS}}
+      - task: containers:check
+
+  containers:tree:
+    desc: Print the container hierarchy derived from the Dockerfiles
+    cmds:
+      - python3 -m scripts.container_deps tree
+
+  containers:check:
+    desc: Check that docker-bake.hcl agrees with the Dockerfiles
+    cmds:
+      - docker buildx bake --print 2>/dev/null | python3 -m scripts.container_deps check-bake

@@ -1,6 +1,6 @@
 # Python packages this image installs, pinned with hashes in uv.lock, see containers/README.md
 [project]
-name = "tps-location-api"
+name = "tps"
 version = "0"
 requires-python = "==3.13.*"
 dependencies = [

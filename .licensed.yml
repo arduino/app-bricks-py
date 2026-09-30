@@ -57,12 +57,12 @@ apps:
     venv:
       project: containers/bricks/models-downloader
 
-  - name: tps-location-api
+  - name: tps
     source_path: .
     sources:
       pip: true
     python:
-      virtual_env_dir: "/venvs/tps-location-api"
+      virtual_env_dir: "/venvs/tps"
     venv:
       project: containers/bricks/tps
 
