@@ -24,6 +24,7 @@ models:
       ei-model-url: "https://studio.edgeimpulse.com/public/830703/live"
       source-model-id: "face-det-lite"
       source-model-url: "https://aihub.qualcomm.com/models/face_det_lite"
+      model_publisher: "qualcomm-ai-hub"
  - face-detection-qnn:
     name : "Lightweight-Face-Detection"
     description: "A small and accurate model for detecting bounding boxes for faces in images. This version of the model is optimized for NPU acceleration on supported devices, providing faster inference times while maintaining accuracy."
@@ -50,6 +51,7 @@ models:
       ei-model-url: "https://studio.edgeimpulse.com/public/830703/live"
       source-model-id: "face-det-lite"
       source-model-url: "https://aihub.qualcomm.com/models/face_det_lite"
+      model_publisher: "qualcomm-ai-hub"
  - yolox-object-detection:
     name : "General purpose object detection - YoloX nano"
     description: "General purpose object detection model based on YoloX-Nano. This model is trained on the COCO dataset and can detect 80 different object classes."
@@ -1836,6 +1838,7 @@ models:
       ei-model-url: "https://studio.edgeimpulse.com/public/948887/live"
       source-model-id: "efficientnet_b4"
       source-model-url: "https://aihub.qualcomm.com/compute/models/efficientnet_b4"
+      model_publisher: "qualcomm-ai-hub"
     supported_boards: ["ventunoq"]
     deployment:
       handler: "ei-handler"
@@ -2100,6 +2103,7 @@ models:
       ei-model-url: "https://studio.edgeimpulse.com/public/1014102/live"
       source-model-id: "yolox"
       source-model-url: "https://aihub.qualcomm.com/models/yolox"
+      model_publisher: "qualcomm-ai-hub"
     supported_boards: ["ventunoq"]
     deployment:
       handler: "ei-handler"

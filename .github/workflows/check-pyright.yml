@@ -13,14 +13,18 @@ name: Pyright checks
 # The rules of the PR head apply to both sides of each diff, so a PR changing
 # the rules reports the errors they uncover as pre-existing, not as new.
 #
-# The job never fails for new errors: a library change may legitimately
+# The job is not a required status check: a library change may legitimately
 # require a matching examples change, and blocking both PRs on each other
-# would deadlock. The three checks are composed into one report, posted to the
-# job summary and as a sticky comment on the PR, with a label per check while
-# it has new errors. On PRs from branches of this repository that happens in
-# this job. On PRs from forks the token is read-only, so this job only uploads
-# the report as an artifact and comment-pyright.yml, running on workflow_run
-# with a write token and never touching the PR code, posts it.
+# would deadlock. It still ends red when the composed report does (new errors
+# in a pyright check), as a visible signal on the PR; a report with only
+# warnings, or all green, leaves the job green. The failure is raised by the
+# very last step, after every report, artifact, comment and label step has run.
+# The three checks are composed into one report, posted to the job summary and
+# as a sticky comment on the PR, with a label per check while it has new
+# errors. On PRs from branches of this repository that happens in this job. On
+# PRs from forks the token is read-only, so this job only uploads the report as
+# an artifact and comment-pyright.yml, running on workflow_run with a write
+# token and never touching the PR code, posts it.
 
 on:
   pull_request:
@@ -183,9 +187,9 @@ jobs:
       - name: Post the report on the PR
         # Only for PRs from this repository: on a fork PR the token cannot write,
         # so the step is skipped and comment-pyright.yml takes over. Any other
-        # hiccup (API error, missing label permission) must not fail the check
-        # either, hence continue-on-error: the job summary always carries the
-        # same report.
+        # hiccup (API error, missing label permission) must not decide the
+        # outcome of the job either, hence continue-on-error: the job summary
+        # always carries the same report.
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         continue-on-error: true
         env:
@@ -221,3 +225,13 @@ jobs:
           }
           set_label examples-misaligned "Introduces errors in the published app-bricks-examples (see the pyright report comment)" "$API_NEW_ERRORS"
           set_label typing-regression "Introduces typing errors in the library sources (see the pyright report comment)" "$TYPING_NEW_ERRORS"
+
+      - name: Fail on new errors
+        # Mirrors the ❌ of the report on the job, and nothing more: the verdict
+        # is the one already composed above, and the job is not a required
+        # check. Last on purpose, so a red outcome never skips the report, the
+        # artifact for fork PRs, the comment or the labels.
+        if: steps.report.outputs.status == 'failed'
+        run: |
+          echo "::error::the PR introduces new pyright errors: see the report in the job summary"
+          exit 1

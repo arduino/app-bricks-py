@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""Pytest configuration for the tps-location-api container tests.
+"""Pytest configuration for the tps container tests.
 
 Adds the container ``src`` directory to ``sys.path`` so the scanner modules import the same way they do at runtime.
 """

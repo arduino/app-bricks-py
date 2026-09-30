@@ -120,6 +120,7 @@ import json
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from common.download_marker import MARKER_NAME, read_marker, write_marker
 from common.gguf_naming import catalog_gguf_declarations, declaration_covers, gguf_model_name
+from common.model_size import paths_size_mb, size_mb
 from common.model_metadata import (
     ORIGIN_BUILTIN,
     ORIGIN_USER,
@@ -169,6 +170,12 @@ BOARD_QUANTIZATIONS = {
 # The unit is required — it is what separates a size from the version in "Qwen3.5" — and
 # a letter may not follow it, so the "4bit" of a "-4bit-" tag is not read as 4 billion.
 PARAMETER_COUNT_RE = re.compile(r"(?<![0-9.])(\d+(?:\.\d+)?)([BM])(?![A-Za-z0-9])", re.IGNORECASE)
+
+# ARM repacked Q4_0 layouts that llama.cpp no longer loads: it repacks plain Q4_0 at load
+# time instead. Refused by name, before anything is downloaded, and skipped wherever a
+# pattern selects files: "*Q4_0*.gguf" would otherwise match them as well, since each one
+# starts with "Q4_0".
+UNSUPPORTED_QUANTIZATIONS = ("Q4_0_4_4", "Q4_0_4_8", "Q4_0_8_4", "Q4_0_8_8")
 
 # The repository the CLI help and the "model_url is required" error use as their example.
 EXAMPLE_REPO_ID = "unsloth/Qwen3-0.6B-GGUF"
@@ -322,7 +329,11 @@ def matching_files(output_dir: str, patterns: list[str]) -> list[Path]:
     under the same pattern that selected it for download.
     """
     base = Path(output_dir)
-    return [p for p in model_files(output_dir) if any(matches_pattern(p.relative_to(base).as_posix(), pattern) for pattern in patterns)]
+    return [
+        p
+        for p in model_files(output_dir)
+        if not unsupported_quantization(p.name) and any(matches_pattern(p.relative_to(base).as_posix(), pattern) for pattern in patterns)
+    ]
 
 
 def is_installed(output_dir: str, patterns: list[str]) -> bool:
@@ -736,6 +747,16 @@ def is_hf_url(spec: str) -> bool:
     return re.match(r"[A-Za-z][A-Za-z0-9+.-]*://", spec) is not None
 
 
+def unsupported_quantization(spec: str | None) -> str | None:
+    """Return the ``UNSUPPORTED_QUANTIZATIONS`` entry *spec* names, or None.
+
+    *spec* is a model URL or key as given; case is ignored, since file names are spelled
+    ``Q4_0_4_4`` at one publisher and ``q4_0_4_4`` at the next.
+    """
+    upper = (spec or "").upper()
+    return next((q for q in UNSUPPORTED_QUANTIZATIONS if q in upper), None)
+
+
 def gguf_pattern(spec: str, mmproj: bool = False) -> str:
     """Turn a quantization or file name *spec* into an fnmatch pattern for GGUF files.
 
@@ -978,6 +999,10 @@ def slot_holds(path: str, quantization: str, mmproj: bool) -> bool:
         # A repository whose only Q8_0 file is an mmproj companion publishes no Q8_0
         # model, and the projector is never picked out of the model files either.
         return False
+    if unsupported_quantization(path):
+        # A Q4_0_4_4 file does not stand for a Q4_0: a defaulted slot moves on to the next
+        # candidate instead of settling on a quantization with nothing loadable behind it.
+        return False
     if mmproj:
         return names_quantization(path, quantization)
     return matches_pattern(path, gguf_pattern(quantization))
@@ -1107,7 +1132,7 @@ def list_repo_matches(repo_id: str, patterns: list[str], ignore_pattern: str | N
     """Return the files of *repo_id* matching any of *patterns*, minus *ignore_pattern*."""
     api = HfApi()
     all_files = [item for item in api.list_repo_tree(repo_id=repo_id, recursive=True) if isinstance(item, RepoFile)]
-    matched = [f for f in all_files if any(matches_pattern(f.path, p) for p in patterns)]
+    matched = [f for f in all_files if not unsupported_quantization(f.path) and any(matches_pattern(f.path, p) for p in patterns)]
     if ignore_pattern:
         matched = [f for f in matched if not matches_pattern(f.path, ignore_pattern)]
     return matched
@@ -1233,24 +1258,29 @@ def fallback_model_id(model_type: str, downloaded: list[str], models_dir: str) -
 
 
 def downloaded_size_mb(downloaded: list[str]) -> float | None:
-    """Total size in MB of the files a download wrote, or None if any cannot be read.
+    """Total ``size_mb`` of the files a download wrote, or None if any cannot be read.
 
-    Counts the mmproj file along with the main GGUF, which is what ``list_models.py``
-    reports as ``disk_size_mb`` for the same model, so the size a caller is told on
-    completion matches the one a later listing gives it. Rounded per file and then
-    again on the sum for the same reason: rounding the byte total once instead can
-    differ by a hundredth of a megabyte per file — nothing in itself, but enough to
-    make a caller see the size change the first time a listing runs.
+    Counts the mmproj file along with the main GGUF and sums them in bytes, which is
+    how ``list_models.py`` sizes the same model (``common/model_size.py``), so the size a
+    caller is told on completion is the one a later listing gives it.
     """
-    if not downloaded:
+    return paths_size_mb(downloaded)
+
+
+def expected_size_mb(repo_id: str, patterns: list[str]) -> float | None:
+    """The ``size_mb`` the files matching *patterns* will have once downloaded, or None.
+
+    Written into the ".download" marker, so the listing can size an ad-hoc download
+    before any of its files exist. Best effort: sizing the repository must never fail
+    or hold up the download it describes.
+    """
+    try:
+        sizes = [f.size for f in list_repo_matches(repo_id, patterns)]
+    except Exception:  # noqa: BLE001 - see the docstring
         return None
-    total = 0.0
-    for path in downloaded:
-        try:
-            total += round(os.stat(path).st_size / 1024 / 1024, 2)
-        except OSError:
-            return None
-    return round(total, 2)
+    if not sizes or any(size is None for size in sizes):
+        return None
+    return size_mb(sum(sizes))
 
 
 def no_match_message(repo_id: str, pattern: str | list[str]) -> str:
@@ -1540,6 +1570,13 @@ def main():
         emit_json_error(str(exc))
         raise SystemExit(1) from exc
 
+    # --delete stays allowed, so a model downloaded before this check can still be removed.
+    if not args.delete:
+        unsupported = unsupported_quantization(args.model_url) or unsupported_quantization(args.model_mmproj_url)
+        if unsupported:
+            emit_json_error(f"Cannot download model. Not supported quantization: {unsupported}.")
+            raise SystemExit(1)
+
     repo_id = source["repo_id"]
     # Set only for the URL syntax; they select the single-file download path.
     url_filename = source["url_filename"]
@@ -1611,7 +1648,7 @@ def main():
                 "event": "stat",
                 "description": f"Total download size for {repo_id}",
                 "size_bytes": total_bytes,
-                "size_mb": round(total_bytes / 1024 / 1024, 2),
+                "size_mb": size_mb(total_bytes),
                 "files": matched_files,
             }),
             flush=True,
@@ -1621,7 +1658,8 @@ def main():
         # directory holds several quantizations, so a download in progress there says
         # nothing about the one being asked for — which may well be installed already.
         if is_installed(output_dir, patterns):
-            emit_json_info(f"Model exists: {allow_pattern}", downloading=False)
+            present = [str(p) for p in matching_files(output_dir, patterns) if p.suffix == ".gguf"]
+            emit_json_info(f"Model exists: {allow_pattern}", downloading=False, size_mb=downloaded_size_mb(present))
         elif (Path(output_dir) / MARKER_NAME).is_file():
             # A ".download" marker means a download is in progress or was interrupted
             emit_json_info(f"Model downloading: {repo_id}", downloading=True)
@@ -1714,6 +1752,7 @@ def main():
             # Which files of a shared repository directory this download is for, so a
             # quantization already installed there is not reported as in progress.
             file_patterns=patterns,
+            size_mb=expected_size_mb(repo_id, patterns),
         )
 
         emit_json_info(f"Downloading to: {os.path.abspath(output_dir)}", artifacts=[os.path.abspath(output_dir)])

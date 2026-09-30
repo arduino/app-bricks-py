@@ -85,9 +85,8 @@ from datetime import datetime, UTC
 
 import yaml
 
+from common.model_size import METADATA_NAME, is_bookkeeping_name  # noqa: F401 - re-exported
 from common.models_list import MODELS_LIST_PATH, find_matching_model, load_models_list
-
-METADATA_NAME = ".arduino_metadata.yaml"
 
 _HEADER = (
     "# Written by the Arduino models-downloader after a successful download.\n"
@@ -127,15 +126,6 @@ ORIGIN_USER = "user"
 def utc_now_iso():
     """Return the current UTC time as a second-resolution ISO-8601 string ("...Z")."""
     return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-
-
-def is_bookkeeping_name(name):
-    """True when *name* is a metadata/marker file rather than model content.
-
-    Matches the ``.arduino_metadata.yaml.tmp`` sibling of an interrupted atomic
-    write too, so a directory holding only that is still treated as incomplete.
-    """
-    return name == ".download" or name.startswith(METADATA_NAME)
 
 
 def collect_inputs(env=None, extra_keys=()):

@@ -1,10 +1,10 @@
-# TPS Location API
+# TPS
 
 Wi-Fi based geolocation for your Arduino app. The brick scans the nearby Wi-Fi access points and resolves the device position, and optionally its street address, through the [TPS Location API](https://www.my.skyhook.com/) cloud service.
 
 ## Overview
 
-The TPS Location API brick allows you to:
+The TPS brick allows you to:
 
 - Get the device latitude, longitude and accuracy from the surrounding Wi-Fi access points
 - Get the reverse geocoded street address of the device
@@ -17,9 +17,9 @@ An internet connection and TPS credentials are required. Register on the [TPS Po
 Locate the device once:
 
 ```python
-from arduino.app_bricks.tps_location_api import TPSLocationAPI
+from arduino.app_bricks.tps import TPS
 
-client = TPSLocationAPI()
+client = TPS()
 
 location = client.locate()
 print(f"Lat: {location['location']['lat']}, Lng: {location['location']['lng']}, Accuracy: {location['accuracy']}m")
@@ -77,4 +77,4 @@ A failed lookup raises `RuntimeError` from `locate()`, and is delivered as the s
 | `AUTH_KEY` | TPS authentication key | *(required)* |
 | `AUTH_USER` | TPS authentication user | *(required)* |
 
-Both can also be passed to the constructor: `TPSLocationAPI(auth_key=..., auth_user=...)`.
+Both can also be passed to the constructor: `TPS(auth_key=..., auth_user=...)`.
