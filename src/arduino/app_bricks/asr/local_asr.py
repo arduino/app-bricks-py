@@ -234,10 +234,12 @@ class BaseASR:
 
         self._active_session_lock = threading.Lock()
         self._active_session: SessionInfo | None = None
-        # A new session is waiting for the slot or being created, and cancel() was
-        # called meanwhile: it applies to that session as soon as it exists
-        self._starting = threading.Event()
-        self._cancel_pending = threading.Event()
+        # Cancel events of the sessions being started (waiting for the slot or being
+        # created on the server): cancel() sets them, so a stop is never lost. Each
+        # event becomes the ``cancelled`` of its session once that is active. Guarded
+        # by _state_lock together with _active_session.
+        self._state_lock = threading.Lock()
+        self._pending_starts: set[threading.Event] = set()
 
     def start(self) -> None:
         """Prepare the ASR for transcription. Starts the owned mic if applicable."""
@@ -267,15 +269,18 @@ class BaseASR:
         server. A transcription started meanwhile waits for that close instead of
         raising ASRBusyError, so stop-then-start from a UI needs no delay.
         """
-        if self._starting.is_set():
+        with self._state_lock:
+            pending = list(self._pending_starts)
+            active = self._active_session
+        for event in pending:
+            event.set()
+        if active is not None:
+            logger.debug(f"Cancelling session {active.session_id}")
+            active.cancelled.set()
+        elif pending:
             logger.debug("Cancelling the session being started")
-            self._cancel_pending.set()
-        active = self._active_session
-        if active is None:
+        else:
             logger.debug("No active session to cancel")
-            return
-        logger.debug(f"Cancelling session {active.session_id}")
-        active.cancelled.set()
 
     def is_transcribing(self) -> bool:
         """
@@ -378,18 +383,22 @@ class BaseASR:
         if self._stop_worker.is_set():
             raise RuntimeError("Brick is stopping or already stopped")
 
-        self._starting.set()
-        try:
-            self._acquire_session_slot()
-        except BaseException:
-            self._starting.clear()
-            self._cancel_pending.clear()
-            raise
+        # This session's cancel event, from now on: cancel() finds it in _pending_starts
+        # until the session is active, then as the session's ``cancelled``.
+        cancelled = threading.Event()
+        with self._state_lock:
+            self._pending_starts.add(cancelled)
 
+        slot_taken = False
         session_info: SessionInfo | None = None
         future = None
 
         try:
+            slot_taken = self._acquire_session_slot(cancelled)
+            if not slot_taken:
+                logger.debug("Transcription cancelled before it started")
+                return
+
             # Snapshot current language and translate flag for the session
             session_language = self.language
             session_translate = self.translate
@@ -401,13 +410,11 @@ class BaseASR:
                 result_queue=queue.Queue(),
                 chunk_queue=queue.Queue(maxsize=100),
                 language=session_language,
-                cancelled=threading.Event(),
+                cancelled=cancelled,
             )
-            self._active_session = session_info
-            self._starting.clear()
-            if self._cancel_pending.is_set():
-                self._cancel_pending.clear()
-                session_info.cancelled.set()
+            with self._state_lock:
+                self._active_session = session_info
+                self._pending_starts.discard(cancelled)
 
             future = asyncio.run_coroutine_threadsafe(
                 self._transcription_session_handler(session_info),
@@ -450,23 +457,27 @@ class BaseASR:
             raise RuntimeError(f"Transcription failed: {e}")
 
         finally:
-            if session_info is not None:
-                session_info.cancelled.set()
-            self._active_session = None
-            self._starting.clear()
-            self._cancel_pending.clear()
-            self._active_session_lock.release()
+            cancelled.set()
+            # Only this session's own state: another session may already be starting
+            with self._state_lock:
+                self._pending_starts.discard(cancelled)
+                if self._active_session is session_info:
+                    self._active_session = None
+            if slot_taken:
+                self._active_session_lock.release()
 
-    def _acquire_session_slot(self) -> None:
+    def _acquire_session_slot(self, cancelled: threading.Event) -> bool:
         """
         Take the instance's single session slot.
 
         A session that was cancelled, or is ending, still holds the slot while the
         server closes it: wait for it, so that stop-then-start works. Only a session
         still running raises ASRBusyError.
+
+        Returns:
+            bool: True with the slot taken; False, without the slot, if ``cancelled``
+                was set meanwhile (the user stopped before the session started).
         """
-        if self._active_session_lock.acquire(blocking=False):
-            return
         active = self._active_session
         if active is not None and active.cancelled.is_set():
             wait_s = self._CLOSING_WAIT_SECONDS
@@ -474,8 +485,19 @@ class BaseASR:
             wait_s = 0.5  # the previous session is just releasing the slot, or one is being created
         else:
             wait_s = 0.0
-        if wait_s and self._active_session_lock.acquire(timeout=wait_s):
-            return
+        deadline = time.monotonic() + wait_s
+        while not cancelled.is_set():
+            remaining = deadline - time.monotonic()
+            # Short waits, so a cancel() is noticed while the slot is still held
+            if self._active_session_lock.acquire(timeout=min(0.1, max(remaining, 0.0))):
+                if cancelled.is_set():
+                    self._active_session_lock.release()
+                    return False
+                return True
+            if remaining <= 0:
+                break
+        if cancelled.is_set():
+            return False
         active_id = active.session_id if active else "unknown"
         raise ASRBusyError(
             f"A transcription session (id={active_id}) is already active on this instance. "

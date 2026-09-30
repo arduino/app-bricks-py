@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import asyncio
-import queue
 import threading
 import time
 
@@ -19,7 +18,6 @@ from arduino.app_bricks.asr import (
     AutomaticSpeechRecognition,
     TranscriptionStream,
 )
-from arduino.app_bricks.asr.local_asr import SessionInfo
 
 from conftest import (
     _FakeMic,
@@ -357,7 +355,10 @@ class TestSessionCreate:
 
 class TestSessionSlot:
     """Stop-then-start from a UI: the previous session is cancelled but still closing
-    on the server (~4 s on the board) when the next start arrives."""
+    on the server (~4 s on the board) when the next start arrives.
+
+    Session A always runs through ``transcribe_stream`` so that its teardown is the
+    real one; the server-side close is a gate the test opens when it wants."""
 
     @pytest.fixture
     def asr(self, monkeypatch):
@@ -366,81 +367,110 @@ class TestSessionSlot:
         thread = threading.Thread(target=loop.run_forever, daemon=True)
         thread.start()
         asr._worker_loop.set_result(loop)
-        self.created: list[float] = []
-        self.handled: list[bool] = []  # was the new session already cancelled when it started?
+        self.created: list[str] = []
+        self.handled: list[bool] = []  # was the session already cancelled when its handler started?
+        self.close_gate: dict[str, threading.Event] = {}  # the server closing a session, until set
 
         def fake_create(vad_ms=None, language=None, translate=False):
-            self.created.append(time.monotonic())
-            return f"sess-{len(self.created)}"
+            sid = f"sess-{len(self.created) + 1}"
+            self.created.append(sid)
+            return sid
 
         async def fake_handler(session_info):
             self.handled.append(session_info.cancelled.is_set())
+            await asyncio.to_thread(session_info.cancelled.wait)
+            gate = self.close_gate.get(session_info.session_id)
+            if gate is not None:
+                await asyncio.to_thread(gate.wait)
 
         monkeypatch.setattr(asr, "_create_transcription_session", fake_create)
         monkeypatch.setattr(asr, "_transcription_session_handler", fake_handler)
         yield asr
+        for gate in self.close_gate.values():
+            gate.set()
+        asr.cancel()
         loop.call_soon_threadsafe(loop.stop)
         thread.join(2)
 
     @staticmethod
-    def _hold_slot(asr, cancelled: bool, release_after: float | None) -> threading.Thread:
-        """Pretend a previous session holds the slot, and release it after a while."""
-        previous = SessionInfo(
-            session_id="previous",
-            duration=0,
-            start_time=time.time(),
-            result_queue=queue.Queue(),
-            chunk_queue=queue.Queue(),
-            cancelled=threading.Event(),
-        )
-        if cancelled:
-            previous.cancelled.set()
-        asr._active_session_lock.acquire()
-        asr._active_session = previous
+    def _start(asr) -> tuple[threading.Thread, list]:
+        """Run a transcription in a thread; the list gets its events, or its exception."""
+        out: list = []
 
-        def release():
-            time.sleep(release_after)
-            asr._active_session = None
-            asr._active_session_lock.release()
+        def run():
+            try:
+                out.append(list(asr.transcribe_stream()))
+            except Exception as e:  # noqa: BLE001
+                out.append(e)
 
-        thread = threading.Thread(target=release, daemon=True)
-        if release_after is not None:
-            thread.start()
+        thread = threading.Thread(target=run, daemon=True)
+        thread.start()
+        return thread, out
+
+    @staticmethod
+    def _wait(predicate, timeout: float = 2.0) -> None:
+        deadline = time.monotonic() + timeout
+        while not predicate():
+            assert time.monotonic() < deadline, "timed out"
+            time.sleep(0.005)
+
+    def _running(self, asr, n: int) -> None:
+        """Wait until the n-th session is running, i.e. its handler has started."""
+        self._wait(lambda: len(self.handled) >= n)
+
+    def _closing_session(self, asr) -> threading.Thread:
+        """Start session A, stop it, and hold its server-side close open."""
+        self.close_gate["sess-1"] = threading.Event()
+        thread, _ = self._start(asr)
+        self._running(asr, 1)
+        asr.cancel()
         return thread
 
+    @staticmethod
+    def _active_id(asr) -> str | None:
+        active = asr._active_session
+        return active.session_id if active else None
+
     def test_start_waits_for_a_cancelled_session_to_close(self, asr):
-        self._hold_slot(asr, cancelled=True, release_after=0.3)
-        t0 = time.monotonic()
+        a = self._closing_session(asr)
+        b, _ = self._start(asr)
 
-        list(asr.transcribe_stream())
+        time.sleep(0.2)
+        assert self.created == ["sess-1"]  # B is waiting, not busy and not started
+        assert b.is_alive()
 
-        assert len(self.created) == 1
-        assert self.created[0] - t0 >= 0.3
-        assert self.handled == [False]
+        self.close_gate["sess-1"].set()
+        self._running(asr, 2)
+        assert self._active_id(asr) == "sess-2"
+        a.join(1)
+        asr.cancel()
+        b.join(1)
+        assert self.handled == [False, False]
 
     def test_start_during_a_running_session_is_busy(self, asr):
-        self._hold_slot(asr, cancelled=False, release_after=None)
+        a, _ = self._start(asr)
+        self._running(asr, 1)
         t0 = time.monotonic()
 
         with pytest.raises(ASRBusyError):
             list(asr.transcribe_stream())
 
         assert time.monotonic() - t0 < 0.2
-        assert self.created == []
+        assert self.created == ["sess-1"]
+        asr.cancel()
+        a.join(1)
 
     def test_gives_up_when_the_close_never_ends(self, asr):
         asr._CLOSING_WAIT_SECONDS = 0.2
-        self._hold_slot(asr, cancelled=True, release_after=None)
+        self._closing_session(asr)
 
         with pytest.raises(ASRBusyError):
             list(asr.transcribe_stream())
-        assert self.created == []
+        assert self.created == ["sess-1"]
 
     def test_cancel_while_creating_cancels_the_new_session(self, asr, monkeypatch):
-        created = []
-
         def create_then_user_stops(vad_ms=None, language=None, translate=False):
-            created.append(True)
+            self.created.append("sess-1")
             asr.cancel()  # the stop arrives while the server is still creating the session
             return "sess-1"
 
@@ -448,14 +478,54 @@ class TestSessionSlot:
 
         list(asr.transcribe_stream())
 
-        assert created == [True]
+        assert self.created == ["sess-1"]
         assert self.handled == [True]
 
-    def test_stop_during_the_close_does_not_cancel_the_next_session(self, asr):
-        release = self._hold_slot(asr, cancelled=True, release_after=0.1)
-        asr.cancel()  # e.g. "new recording" pressed while the previous session closes
-        release.join(1)
+    def test_stop_while_waiting_for_the_close_skips_the_new_session(self, asr):
+        # stop A, start B while A closes, stop again while B waits for the slot
+        a = self._closing_session(asr)
+        b, b_out = self._start(asr)
+        self._wait(lambda: asr._pending_starts)
+        asr.cancel()
 
-        list(asr.transcribe_stream())
-
+        self.close_gate["sess-1"].set()
+        a.join(1)
+        b.join(1)
+        assert not b.is_alive()
+        assert self.created == ["sess-1"]  # B never reached the server
+        assert b_out == [[]]  # and yielded nothing
         assert self.handled == [False]
+
+    def test_stop_while_creating_after_the_close_cancels_the_new_session(self, asr, monkeypatch):
+        # stop A, start B while A closes, stop again while the server creates B
+        def create_then_user_stops(vad_ms=None, language=None, translate=False):
+            sid = f"sess-{len(self.created) + 1}"
+            self.created.append(sid)
+            if sid == "sess-2":
+                asr.cancel()
+            return sid
+
+        monkeypatch.setattr(asr, "_create_transcription_session", create_then_user_stops)
+        a = self._closing_session(asr)
+        b, _ = self._start(asr)
+        self._wait(lambda: asr._pending_starts)
+
+        self.close_gate["sess-1"].set()
+        a.join(1)
+        b.join(1)
+        assert not b.is_alive()
+        assert self.created == ["sess-1", "sess-2"]
+        assert self.handled == [False, True]  # B started already cancelled, so it closes at once
+
+    def test_stop_during_the_close_does_not_cancel_the_next_session(self, asr):
+        a = self._closing_session(asr)
+        asr.cancel()  # e.g. "new recording" pressed while A closes, no B waiting yet
+        self.close_gate["sess-1"].set()
+        a.join(1)
+
+        b, _ = self._start(asr)
+        self._running(asr, 2)
+        assert self._active_id(asr) == "sess-2"
+        assert self.handled == [False, False]
+        asr.cancel()
+        b.join(1)
