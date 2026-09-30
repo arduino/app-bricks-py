@@ -112,6 +112,7 @@ RUN set -ex; \
     apt-get install -y --no-install-recommends --no-install-suggests libgirepository-2.0-0 gir1.2-glib-2.0 gir1.2-gstreamer-1.0 libpisp-common libboost-filesystem1.83.0 libboost-log1.83.0 libboost-thread1.83.0 libpisp1 libegl1 libgles2 libyaml-0-2 liblttng-ust1 libdw1t64 libyuv0; \
     dpkg -i /tmp/libcamera0.7.deb /tmp/libcamera-ipa.deb /tmp/gstreamer1.0-libcamera.deb; \
     apt-get install -y --no-install-recommends --no-install-suggests --allow-downgrades /tmp/qtiqmmfsrc.deb /tmp/libgstreamer-plugins-base.deb; \
+    apt-mark hold libgstreamer-plugins-base1.0-0; \
     rm -rf /tmp/*.deb /tmp/ffmpeg-libs /tmp/ffmpeg-libs.tar.gz; \
     # Install other runtime dependencies
     apt-get install -y --no-install-recommends --no-install-suggests libglib2.0-0 inotify-tools libzbar0; \
