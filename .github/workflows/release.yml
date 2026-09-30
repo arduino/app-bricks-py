@@ -1,0 +1,192 @@
+name: Release
+
+run-name: "Release ${{ inputs.version }}"
+
+# A release is started by hand from the branch to release. The release/X.Y.Z
+# tag is created by the last job, so it exists only once everything succeeded.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, X.Y.Z with an optional rcN, aN or bN prerelease suffix"
+        type: string
+        required: true
+      skip_cache:
+        description: "Rebuild without cache"
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  UV_VERSION: "0.10.3"
+  TASKFILE_VERSION: "3.45.4"
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    outputs:
+      tag_ref: ${{ steps.release.outputs.tag_ref }}
+      version: ${{ steps.release.outputs.version }}
+      prerelease: ${{ steps.release.outputs.prerelease }}
+      containers: ${{ steps.release.outputs.containers }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Resolve the release
+        id: release
+        run: |
+          VERSION="${{ inputs.version }}"
+          TAG_REF="release/$VERSION"
+
+          # The version is stamped into the wheel: it must be a plain X.Y.Z, with
+          # an optional rcN, aN or bN prerelease suffix which also disables :latest
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+((rc|a|b)[0-9]+)?$ ]]; then
+            echo "::error::Version '$VERSION' is not X.Y.Z[rcN|aN|bN]"
+            exit 1
+          fi
+
+          # A released version is never overwritten
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG_REF" > /dev/null; then
+            echo "::error::$TAG_REF already exists, $VERSION has been released"
+            exit 1
+          fi
+          echo "tag_ref=$TAG_REF" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "prerelease=$([[ "$VERSION" =~ [a-z] ]] && echo true || echo false)" >> $GITHUB_OUTPUT
+
+          # Every container is released at this version, docker-bake.hcl must agree with the Dockerfiles
+          docker buildx bake --print 2>/dev/null | python3 -m scripts.container check-bake
+          CONTAINERS=$(python3 -m scripts.container list)
+          echo "Containers: $(jq -r 'join(" ")' <<< "$CONTAINERS")"
+          echo "containers=$CONTAINERS" >> $GITHUB_OUTPUT
+
+      - name: Install uv and task
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv tool install "go-task-bin==${{ env.TASKFILE_VERSION }}"
+
+      # The wheel is pure Python and reproducible: the version is injected into
+      # version.py and the build only needs the project plus the build group.
+      - name: Build the wheel
+        run: |
+          sed -i 's/^__version__ = .*/__version__ = "${{ steps.release.outputs.version }}"/' src/arduino/version.py
+          export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          task build:bricks
+
+      - name: Share the wheel with the publish job
+        uses: actions/upload-artifact@v4
+        with:
+          name: whl
+          path: dist/arduino*.whl
+          retention-days: 1
+
+      - name: Log into registry ghcr.io
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Docker buildx
+        uses: docker/setup-buildx-action@v4
+
+      # Bake builds every container in dependency order through the parent
+      # links declared in docker-bake.hcl, python-apps-base taking the wheel from
+      # dist/. The registry cache is content addressed: only the layers whose
+      # inputs changed since the previous release are rebuilt, skip_cache forces
+      # a cold rebuild.
+      - name: Build and push the images
+        uses: docker/bake-action@v7
+        with:
+          source: .
+          files: ./docker-bake.hcl
+          targets: ${{ join(fromJson(steps.release.outputs.containers)) }}
+          push: true
+        env:
+          REGISTRY: ghcr.io/${{ github.repository_owner }}/
+          IMAGE_TAG: ${{ steps.release.outputs.version }}
+          TAG_LATEST: ${{ steps.release.outputs.prerelease == 'false' }}
+          BASE_IMAGE_VERSION: ${{ steps.release.outputs.version }}
+          CACHE_TAG: buildcache
+          SKIP_CACHE: ${{ inputs.skip_cache || false }}
+          GITHUB_SHA: ${{ github.sha }}
+
+  publish:
+    runs-on: ubuntu-24.04-arm
+    needs: [build]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Download the wheel
+        uses: actions/download-artifact@v4
+        with:
+          name: whl
+          path: dist/
+
+      - name: Log into registry ghcr.io
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Only the external base images are scanned, the built images carry their SBOM
+      - name: Install syft
+        run: curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+
+      # Reads the SBOM attestation of every published image and computes its delta
+      # against its base image. A failure never blocks the release: the image is
+      # listed in MISSING.txt inside sboms.zip and in the job summary.
+      - name: Generate the delta SBOMs
+        continue-on-error: true
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+          CONTAINERS: ${{ needs.build.outputs.containers }}
+        run: |
+          python3 -m scripts.sbom_delta \
+            --registry "ghcr.io/${{ github.repository_owner }}/" \
+            --version "$VERSION" \
+            --output-dir sbom-delta \
+            $(jq -r 'join(" ")' <<< "$CONTAINERS")
+
+      - name: Assemble sboms.zip
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+          CONTAINERS: ${{ needs.build.outputs.containers }}
+        run: |
+          mkdir -p sbom-delta
+          MISSING=()
+          while IFS= read -r NAME; do
+            [[ -f "sbom-delta/${NAME}-${VERSION}/delta.spdx.json" ]] || MISSING+=("$NAME:$VERSION")
+          done < <(jq -r '.[]' <<< "$CONTAINERS")
+
+          if (( ${#MISSING[@]} )); then
+            printf '%s\n' "${MISSING[@]}" > sbom-delta/MISSING.txt
+            for IMAGE in "${MISSING[@]}"; do
+              echo "::warning title=SBOM missing::$IMAGE has no delta SBOM in sboms.zip, see the step above"
+            done
+            { echo "## SBOMs missing from sboms.zip"; printf -- '- %s\n' "${MISSING[@]}"; } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          zip -r dist/sboms.zip sbom-delta/
+
+      - name: Create the GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/arduino*.whl
+            dist/sboms.zip
+          tag_name: ${{ needs.build.outputs.tag_ref }}
+          target_commitish: ${{ github.sha }}
+          name: Release ${{ needs.build.outputs.version }}
+          prerelease: ${{ needs.build.outputs.prerelease }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
