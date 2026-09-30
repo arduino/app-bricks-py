@@ -6,15 +6,23 @@ ARG REGISTRY
 ARG BASE_IMAGE_VERSION=latest
 FROM ${REGISTRY}app-bricks/python-base:${BASE_IMAGE_VERSION}
 
+# The compose files provisioned at runtime reference the images published with this one
+ARG BASE_IMAGE_VERSION
+ENV BRICKS_RELEASE_VERSION=${BASE_IMAGE_VERSION}
+
 # Copy the Streamlit configuration file with customized settings in home app shared directory
 COPY ./streamlit/config.toml /home/app/.streamlit/config.toml
 
 COPY ./scripts/*.sh /
-COPY ./arduino*.whl /app/
-RUN bash -c 'WHL_FILES=(/app/*.whl) && uv pip install --system --no-cache-dir "${WHL_FILES[@]}"[all]'; \
-    rm /app/*.whl; \
+# The wheel and the lock it was built from, from the bake context filled by `task build:bricks`
+COPY --from=wheel arduino*.whl pyproject.toml uv.lock /app/
+# OpenCV is left out, python-base ships its own GStreamer build of it
+RUN set -ex; \
+    uv export --frozen --project /app --extra all --no-dev --no-emit-project --no-emit-package opencv-python-headless | uv pip install --system --no-cache-dir --require-hashes -r -; \
+    uv pip install --system --no-cache-dir --no-deps /app/*.whl; \
+    rm /app/*.whl /app/pyproject.toml /app/uv.lock; \
     # ALSA dsnoop/dmix wrappers: the file is static, generate it once here instead of at every app start
-    HOME=/home/app bash /provision-alsa-devices.sh; \
+    HOME=/home/app bash /provision-alsa-devices.sh; \    
     # fix permissions for /home/app
     chown arduino:arduino -R /home/app; \
     chmod 777 -R /home/app; \

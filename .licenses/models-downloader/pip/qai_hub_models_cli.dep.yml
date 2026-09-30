@@ -1,6 +1,6 @@
 ---
 name: qai_hub_models_cli
-version: 0.59.0
+version: 0.62.2
 type: pip
 summary: CLI for Qualcomm AI Hub Models.
 homepage: https://aihub.qualcomm.com/models

@@ -1,4 +1,0 @@
-# This file contains base dependencies required by the framework
-websockets
-flask
-waitress

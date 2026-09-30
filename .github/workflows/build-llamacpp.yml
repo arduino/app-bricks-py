@@ -97,7 +97,7 @@ jobs:
     needs: resolve
     runs-on: ubuntu-24.04-arm
     container:
-      image: debian:trixie
+      image: debian:trixie-slim
       options: --user root
     timeout-minutes: 90
     steps:

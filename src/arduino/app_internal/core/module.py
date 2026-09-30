@@ -330,38 +330,6 @@ class ModuleVariable:
         return f"Name: {self.name}, Default value: {self.default_value}, Description: {self.description}"
 
 
-class EnvVariable:
-    def __init__(self, name: str, description: str, default_value: str = None, hidden: bool = False, secret: bool = False) -> None:
-        """Represents a variable in brick_config file."""
-        self.name = name
-        self.default_value = default_value
-        self.description = description
-        self.hidden = hidden
-        self.secret = secret
-
-    def to_dict(self) -> dict:
-        """Converts the EnvVariable object to a dictionary."""
-        dict_out = {
-            "name": self.name,
-            "default_value": self.default_value,
-            "description": self.description,
-            "hidden": self.hidden,
-            "secret": self.secret,
-        }
-        if self.default_value is None or self.default_value == "":
-            del dict_out["default_value"]
-        if self.description is None or self.description == "":
-            del dict_out["description"]
-        if not self.hidden:
-            del dict_out["hidden"]
-        if not self.secret:
-            del dict_out["secret"]
-        return dict_out
-
-    def __str__(self) -> str:
-        return f"Name: {self.name}, Default value: {self.default_value}, Description: {self.description}"
-
-
 def load_module_supported_variables(file_path: str) -> list[ModuleVariable] | None:
     """Loads a Docker Compose file and returns all supported variables with its default values and description.
 
@@ -424,68 +392,3 @@ def resolve_address(host: str) -> str:
         return remote_dev
     else:
         return host
-
-
-def _update_compose_release_version_by_platform(
-    compose_file_path: str,
-    release_version: str,
-    append_suffix: bool = False,
-    only_ai_containers: bool = False,
-    registry: str = None,
-) -> None:
-    """Update all compose files that are present in the same directory of the provided compose_file_path.
-    For examples, alongside brick_compose.yaml, if there are brick_compose.ventunoq.yaml and brick_compose.unoq.yaml,
-    they will be updated as well with the same release version.
-    Same for service_compose.yaml files that might be present in the same directory and subdirectories.
-    """
-
-    directory = os.path.dirname(compose_file_path)
-    for filename in os.listdir(directory):
-        if (filename.startswith("brick_compose") or filename.startswith("service_compose")) and filename.endswith(".yaml"):
-            file_path = os.path.join(directory, filename)
-            _update_compose_release_version(file_path, release_version, append_suffix, only_ai_containers, registry)
-
-
-def _update_compose_release_version(
-    compose_file_path: str,
-    release_version: str,
-    append_suffix: bool = False,
-    only_ai_containers: bool = False,
-    registry: str = None,
-) -> str:
-    """Updates the release version in the Docker Compose file."""
-    with open(compose_file_path) as file:
-        content = file.read()
-
-    print("Updating compose file:", compose_file_path)
-    if only_ai_containers and "-runner" not in content:
-        return compose_file_path
-
-    # Replace the release version in the content
-    updated_content = content
-
-    if only_ai_containers:
-        substitution = "-runner:" + release_version
-        # First replace branch-name style tags (e.g. dev-next, feature-foo); branch names start with a letter
-        updated_content = re.sub(r"-runner:[a-zA-Z][a-zA-Z0-9._/-]*", substitution, updated_content)
-        # Then replace semver style tags (e.g. 1.2.3, 1.2.3rc1)
-        updated_content = re.sub(r"-runner:[0-9]+\.[0-9]+\.[0-9]+(rc[0-9]+)?", substitution, updated_content)
-
-    substitution = release_version
-    updated_content = re.sub(r"\${APPSLAB_VERSION:\-([^}]+)?}", substitution, updated_content)
-    updated_content = re.sub(r"\${APPSLAB_VERSION}", substitution, updated_content)
-
-    if registry and registry != "":
-        # Normalize to exactly one trailing slash: callers pass the registry base
-        # both with and without it, and images are concatenated as <registry><image>
-        registry = registry.rstrip("/") + "/"
-        substitution = "${DOCKER_REGISTRY_BASE:-" + registry + "}"
-        updated_content = re.sub(r"\${DOCKER_REGISTRY_BASE:\-([^}]+)?}", substitution, updated_content)
-        updated_content = re.sub(r"\${DOCKER_REGISTRY_BASE}", substitution, updated_content)
-
-    if append_suffix:
-        compose_file_path = compose_file_path + ".new"
-    with open(compose_file_path, "w") as file:
-        file.write(updated_content)
-
-    return compose_file_path
