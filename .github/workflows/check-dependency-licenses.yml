@@ -14,7 +14,6 @@ jobs:
     env:
       TASKFILE_VERSION: "v3.44.0"
       TASKFILE_PATH: "/home/runner/go/bin"
-      LICENSED_VENVS: ${{ runner.temp }}/licensed
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -39,7 +38,7 @@ jobs:
       - name: Restore pip download cache
         uses: actions/cache/restore@v4
         with:
-          path: ${{ env.LICENSED_VENVS }}/.pip-cache
+          path: ${{ runner.temp }}/licensed/.pip-cache
           key: licensed-pip-${{ github.run_id }}
           restore-keys: licensed-pip-
 
@@ -48,13 +47,13 @@ jobs:
         run: |
           export PATH="${{ env.TASKFILE_PATH }}:$PATH"
           set -o pipefail
-          task license:deps:run LICENSED_VENVS="${{ env.LICENSED_VENVS }}" 2>&1 | tee licensed_status.log || echo "failed=true" >> "$GITHUB_OUTPUT"
+          task license:deps:run LICENSED_VENVS="${{ runner.temp }}/licensed" 2>&1 | tee licensed_status.log || echo "failed=true" >> "$GITHUB_OUTPUT"
 
       - name: Save pip download cache
         if: always()
         uses: actions/cache/save@v4
         with:
-          path: ${{ env.LICENSED_VENVS }}/.pip-cache
+          path: ${{ runner.temp }}/licensed/.pip-cache
           key: licensed-pip-${{ github.run_id }}
 
       - name: Annotate and summarize errors
