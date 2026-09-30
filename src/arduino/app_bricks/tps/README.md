@@ -94,7 +94,9 @@ Pass `street_address=True` to any of the methods above to add the street address
 location = client.locate(street_address=True)
 address = location.get("street_address")
 if address:
-    print(f"{address['address_line']}, {address['city']}, {address['country_name']}")
+    # Unknown fields are None, so print only the ones with a value
+    fields = (address["address_line"], address["city"], address["country_name"])
+    print(", ".join(value for value in fields if value))
 ```
 
 ## Understanding the Result
