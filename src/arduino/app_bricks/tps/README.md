@@ -16,7 +16,7 @@ The TPS Brick allows you to:
 - Returns latitude, longitude, accuracy in meters and the number of access points used
 - Optional reverse geocoding to a full street address
 - Blocking, background and periodic lookups with a single `(result, error)` callback signature
-- Credentials read from **Brick Configuration**, never hardcoded
+- Credentials read from **Brick Configuration** or passed to the constructor
 
 ## Prerequisites
 
@@ -91,6 +91,10 @@ Call `stop()` to end the periodic updates, or `client.stop()` to end all periodi
 Pass `street_address=True` to any of the methods above to add the street address to the result:
 
 ```python
+from arduino.app_bricks.tps import TPS
+
+client = TPS()
+
 location = client.locate(street_address=True)
 address = location.get("street_address")
 if address:
@@ -130,7 +134,7 @@ Both can also be passed to the constructor: `TPS(auth_key=..., auth_user=...)`.
 - **`periodic_locate(callback, period_sec=30, street_address=False, device_id=None, opt_in=False)`**: Runs a background lookup every `period_sec` seconds and calls `callback(result, error)` after each one. Returns a function that stops the updates.
 - **`stop()`**: Stops all periodic updates and cancels pending background lookups.
 
-The optional parameters work the same way for every method:
+The optional parameters work the same way for every method that accepts them:
 
 - `request_token`: Custom token identifying the request. A UUID is generated when omitted.
 - `street_address`: Adds the reverse geocoded street address to the result.
