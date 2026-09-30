@@ -1,7 +1,7 @@
 name: Check dependency licenses
 on:
   pull_request:
-  # Runs on main too so its image layers and pip cache seed every pull request
+  # Runs on main too so its image layers and venvs seed every pull request
   push:
     branches: [main]
 
@@ -34,14 +34,14 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # pip still resolves against the index, the cache only skips downloads and local builds.
-      # Every run creates fresh venvs, they are not cached.
-      - name: Restore pip download cache
-        uses: actions/cache/restore@v4
+      # Safe to cache: a venv is a pure function of its uv.lock and the image's Python, and run.py
+      # rebuilds every venv whose key no longer matches its lock
+      - name: Cache the venvs
+        uses: actions/cache@v4
         with:
-          path: ${{ env.LICENSED_VENVS }}/.pip-cache
-          key: licensed-pip-${{ github.run_id }}
-          restore-keys: licensed-pip-
+          path: ${{ env.LICENSED_VENVS }}
+          key: licensed-venvs-${{ hashFiles('uv.lock', 'containers/*/*/uv.lock') }}
+          restore-keys: licensed-venvs-
 
       - name: Check dependency licenses (licensed status)
         id: licensed
@@ -49,13 +49,6 @@ jobs:
           export PATH="${{ env.TASKFILE_PATH }}:$PATH"
           set -o pipefail
           task license:deps:run LICENSED_VENVS="${{ env.LICENSED_VENVS }}" 2>&1 | tee licensed_status.log || echo "failed=true" >> "$GITHUB_OUTPUT"
-
-      - name: Save pip download cache
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ env.LICENSED_VENVS }}/.pip-cache
-          key: licensed-pip-${{ github.run_id }}
 
       - name: Annotate and summarize errors
         if: always()

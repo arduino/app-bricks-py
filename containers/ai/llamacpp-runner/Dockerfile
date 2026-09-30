@@ -4,6 +4,9 @@
 
 ARG REGISTRY
 ARG BASE_IMAGE_VERSION=latest
+
+FROM ghcr.io/astral-sh/uv:0.10.3@sha256:7a88d4c4e6f44200575000638453a5a381db0ae31ad5c3a51b14f8687c9d93a3 AS uv
+
 FROM ${REGISTRY}app-bricks/python-slim:${BASE_IMAGE_VERSION}
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -13,13 +16,15 @@ ARG LLAMA_CPP_DIGEST
 ADD --checksum=${LLAMA_CPP_DIGEST} ${LLAMA_CPP_URL} /tmp/llamacpp.tar.gz
 
 COPY ./scripts/* /
-COPY ./requirements.txt /tmp/requirements.txt
+COPY ./pyproject.toml ./uv.lock /tmp/deps/
 
-RUN set -x; \
+# uv is only mounted while installing, it is not part of the image
+RUN --mount=from=uv,source=/uv,target=/bin/uv \
+    set -ex; \
     apt-get update -y; \
     apt-get install -y --no-install-recommends --no-install-suggests libgomp1; \
     apt-get dist-clean; \
-    pip install --no-cache-dir -r /tmp/requirements.txt; \
+    uv export --frozen --project /tmp/deps | uv pip install --system --no-cache-dir --require-hashes -r -; \
     tar -xzf /tmp/llamacpp.tar.gz -C /opt; \
     rm /tmp/llamacpp.tar.gz; \
     chown -R arduino:arduino /opt/pkg-cpu; \

@@ -4,7 +4,7 @@
 
 # Multi-stage Dockerfile for common QAIRT based services
 
-FROM python:3.13-slim-trixie AS base
+FROM python:3.13-slim-trixie@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS base
 
 # Install common dependencies
 RUN set -ex && apt-get update && \

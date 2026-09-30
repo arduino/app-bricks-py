@@ -10,9 +10,13 @@ FROM ${REGISTRY}app-bricks/python-base:${BASE_IMAGE_VERSION}
 COPY ./streamlit/config.toml /home/app/.streamlit/config.toml
 
 COPY ./scripts/*.sh /
-COPY ./arduino*.whl /app/
-RUN bash -c 'WHL_FILES=(/app/*.whl) && uv pip install --system --no-cache-dir "${WHL_FILES[@]}"[all]'; \
-    rm /app/*.whl; \    
+# The wheel and the lock it was built from, copied here by the build workflows
+COPY ./arduino*.whl ./pyproject.toml ./uv.lock /app/
+# OpenCV is left out, python-base ships its own GStreamer build of it
+RUN set -ex; \
+    uv export --frozen --project /app --extra all --no-dev --no-emit-project --no-emit-package opencv-python-headless | uv pip install --system --no-cache-dir --require-hashes -r -; \
+    uv pip install --system --no-cache-dir --no-deps /app/*.whl; \
+    rm /app/*.whl /app/pyproject.toml /app/uv.lock; \
     # fix permissions for /home/app
     chown arduino:arduino -R /home/app; \
     chmod 777 -R /home/app; \
