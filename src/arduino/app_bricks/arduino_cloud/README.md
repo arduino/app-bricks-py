@@ -46,11 +46,20 @@ By default the Brick reaches the daemon through its UNIX socket (`/run/arduino-c
 
 ### Conflict resolution (sync policy)
 
-Each variable can choose how Cloud updates interact with local changes, mirroring the Arduino Cloud (C++) semantics:
+Each variable can choose how a **sync** resolves against its local value, mirroring the Arduino Cloud (C++) semantics:
 
-- `CLOUD_WINS` (default): an incoming Cloud value is always applied when it differs from the local value.
-- `MOST_RECENT_WINS`: a Cloud value is applied only if it is newer than the last local change.
-- `DEVICE_WINS`: Cloud values are ignored; the local value is pushed back so the Cloud converges to the device.
+- `CLOUD_WINS` (default): the Cloud value is applied when it differs from the local value.
+- `MOST_RECENT_WINS`: the Cloud value is applied only if it is newer than the last local change.
+- `DEVICE_WINS`: the Cloud value is ignored; the local value is pushed back so the Cloud converges to the device.
+
+**These policies apply to the sync only** — the value the Cloud reports when the
+Brick starts, or when the thing becomes available. They answer one question:
+"the device and the Cloud each hold a value, which one survives the reunion?"
+
+A **live** Cloud change that arrives afterwards is not a reunion, so no policy
+runs and the new value is simply applied. The consequence worth knowing: a `DEVICE_WINS` variable **does** accept a
+live Cloud write, even though its name reads like a permanent rule. Use
+`on_write` if the application needs to react to (or override) such a change.
 
 ```python
 from arduino.app_bricks.arduino_cloud import ArduinoCloud, MOST_RECENT_WINS

@@ -73,9 +73,9 @@ class ContentChunk(ReasoningStreamChunk):
 class CloudLLM:
     """A Brick for interacting with cloud-based Large Language Models (LLMs).
 
-    This class wraps LangChain functionality to provide a simplified, unified interface
-    for chatting with models like Claude, GPT, and Gemini. It supports both synchronous
-    'one-shot' responses and streaming output, with optional conversational memory.
+    It provides a simplified, unified interface for chatting with models like Claude, GPT,
+    and Gemini. It supports both synchronous 'one-shot' responses and streaming output,
+    with optional conversational memory.
     """
 
     _logger = logger

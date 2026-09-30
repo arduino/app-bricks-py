@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from common.download_marker import write_marker
 from common.http_download import download, download_and_extract, emit_json_error, install_signal_handlers
 from common.model_metadata import write_metadata
+from common.model_size import path_size_bytes, size_mb
 
 
 def _cli_failure_detail(exc: subprocess.CalledProcessError) -> str:
@@ -169,6 +170,16 @@ def main():
             write_metadata(model_dir, handler="ai-hub-handler")
         if marker and os.path.exists(marker):
             os.remove(marker)
+        # Sized like the listing sizes the model directory, so the two agree; without
+        # a per-model directory there is nothing of this model alone to measure.
+        print(
+            json.dumps({
+                "event": "info",
+                "description": f"Downloaded to: {os.path.abspath(model_dir or args.output_dir)}",
+                "size_mb": size_mb(path_size_bytes(model_dir)) if model_dir else None,
+            }),
+            flush=True,
+        )
     except requests.HTTPError as exc:
         msg = f"HTTP error: {exc.response.status_code} {exc.response.reason}"
         _wipe_model_dir(model_dir, args.output_dir)
