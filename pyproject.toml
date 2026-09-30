@@ -32,7 +32,7 @@ dev = [
     "pytest",
     "pytest-asyncio",
     "websocket-client",
-    "ruff==0.14.2",
+    "ruff==0.16.9",
     "docstring_parser>=0.16",
     "arduino_app_bricks[all]",
     "deepeval",
@@ -146,6 +146,7 @@ preview = true
 indent-style = "space"
 docstring-code-format = true
 docstring-code-line-length = 150
+exclude = ["*.md"]
 
 [tool.ruff.lint]
 select = [
