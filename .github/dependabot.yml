@@ -24,6 +24,9 @@ updates:
     cooldown:
       default-days: 7
     rebase-strategy: disabled
+    ignore:
+      # python-base ships a custom build of this wheel, bumped by hand
+      - dependency-name: opencv-python-headless
     groups:
       python:
         patterns: ["*"]
@@ -47,6 +50,11 @@ updates:
       # Digest refreshes only, moving to another Python release is a deliberate change
       - dependency-name: python
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      # The Edge Impulse runtimes, bumped by hand
+      - dependency-name: g7a8t7v6/inference-container
+      - dependency-name: g7a8t7v6/inference-container-qnn
+      # The Qualcomm services from artifacts.codelinaro.org, bumped by hand
+      - dependency-name: iot-solutions-microservices/*
     groups:
       docker:
         patterns: ["*"]
