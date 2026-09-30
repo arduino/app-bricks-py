@@ -25,6 +25,7 @@ import cv2
 import numpy as np
 
 from arduino.app_internal.ei_inference import Box
+from arduino.app_utils.image.colors import color_difference
 from arduino.app_utils import Logger
 
 logger = Logger("VideoStream")
@@ -43,14 +44,24 @@ class LabelColors:
     """A color per label, picked the first time the label is seen and kept for the whole run.
 
     The first hue is random, the following ones step around the color wheel by the golden ratio, so the
-    labels of a run are always distinct from each other.
+    labels of a run are always distinct from each other. A color the eye would confuse with one of the colors
+    to avoid, by their CIEDE2000 difference, is stepped over.
     """
 
     HUE_STEP = 0.618034
+    MIN_DIFFERENCE = 23.0  # the CIEDE2000 difference a label color keeps from every color to avoid
+    MAX_STEPS = 100  # hues stepped over at most, when the colors to avoid leave no room
 
-    def __init__(self, seed: int | None = None) -> None:
+    def __init__(self, seed: int | None = None, avoid: tuple[tuple[int, int, int], ...] = ()) -> None:
+        """
+        Args:
+            seed (int | None): Seed of the random first hue, for a palette that repeats. Default is None.
+            avoid (tuple[tuple[int, int, int], ...]): BGR colors drawn on the same frames, which the label
+                colors keep clearly different from. Default is none.
+        """
         self._random = random.Random(seed)
         self._hue = self._random.random()
+        self._avoided = avoid
         self._colors: dict[str, tuple[int, int, int]] = {}
         self._lock = threading.Lock()
 
@@ -58,10 +69,25 @@ class LabelColors:
         with self._lock:
             if label not in self._colors:
                 # Light, moderately saturated colors keep the white label text readable
-                r, g, b = colorsys.hsv_to_rgb(self._hue, self._random.uniform(0.35, 0.6), 0.95)
-                self._colors[label] = (int(b * 255), int(g * 255), int(r * 255))
+                saturation = self._random.uniform(0.35, 0.6)
+                color = _bgr(self._hue, saturation)
+                for _ in range(self.MAX_STEPS):
+                    if self._clear_of_avoided(color):
+                        break
+                    self._hue = (self._hue + self.HUE_STEP) % 1.0
+                    color = _bgr(self._hue, saturation)
+                self._colors[label] = color
                 self._hue = (self._hue + self.HUE_STEP) % 1.0
             return self._colors[label]
+
+    def _clear_of_avoided(self, color: tuple[int, int, int]) -> bool:
+        return all(color_difference(color, avoided) >= self.MIN_DIFFERENCE for avoided in self._avoided)
+
+
+def _bgr(hue: float, saturation: float) -> tuple[int, int, int]:
+    """The light BGR color of the hue at the saturation."""
+    r, g, b = colorsys.hsv_to_rgb(hue, saturation, 0.95)
+    return (int(b * 255), int(g * 255), int(r * 255))
 
 
 @dataclass

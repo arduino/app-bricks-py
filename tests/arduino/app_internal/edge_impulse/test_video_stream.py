@@ -4,6 +4,7 @@
 
 import colorsys
 import http.client
+import random
 import threading
 import urllib.error
 import urllib.request
@@ -12,6 +13,7 @@ import numpy as np
 import pytest
 
 from arduino.app_internal.edge_impulse import BoxStabilizer, LabelColors, VideoStreamServer, draw_detections
+from arduino.app_utils.image.colors import color_difference
 from arduino.app_internal.ei_inference import Box
 
 JPEG_A = b"\xff\xd8A\xff\xd9"
@@ -118,6 +120,45 @@ def test_the_labels_of_a_run_get_well_separated_hues():
     for i, a in enumerate(hues):
         for b in hues[i + 1 :]:
             assert min(abs(a - b), 1 - abs(a - b)) > 0.04, (a, b)
+
+
+def _hue(color: tuple[int, int, int]) -> float:
+    b, g, r = color
+    return colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)[0]
+
+
+def test_the_label_colors_stay_clearly_different_from_the_colors_to_avoid():
+    yellow, magenta = (0, 255, 255), (255, 0, 255)
+    for seed in range(200):
+        colors = LabelColors(seed=seed, avoid=(yellow, magenta))
+        for i in range(12):
+            color = colors[f"label{i}"]
+            for avoided in (yellow, magenta):
+                assert color_difference(color, avoided) >= LabelColors.MIN_DIFFERENCE, (seed, i, color)
+
+
+def test_without_colors_to_avoid_the_palette_is_the_golden_ratio_walk():
+    seed = 3
+    walk = random.Random(seed)
+    hue = walk.random()
+    expected = []
+    for _ in range(5):
+        r, g, b = colorsys.hsv_to_rgb(hue, walk.uniform(0.35, 0.6), 0.95)
+        expected.append((int(b * 255), int(g * 255), int(r * 255)))
+        hue = (hue + LabelColors.HUE_STEP) % 1.0
+
+    colors = LabelColors(seed=seed)
+
+    assert [colors[f"label{i}"] for i in range(5)] == expected
+
+
+def test_avoiding_colors_keeps_the_labels_of_a_run_apart():
+    for seed in range(200):
+        colors = LabelColors(seed=seed, avoid=((0, 255, 255), (255, 0, 255)))
+        hues = [_hue(colors[f"label{i}"]) for i in range(8)]
+        for i, a in enumerate(hues):
+            for b in hues[i + 1 :]:
+                assert min(abs(a - b), 1 - abs(a - b)) > 0.03, (seed, a, b)
 
 
 def test_detections_are_drawn_as_a_box_with_a_label_chip_at_the_top_right():
