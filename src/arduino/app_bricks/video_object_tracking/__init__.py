@@ -20,7 +20,7 @@ from arduino.app_internal.edge_impulse.client import InferenceClient, Result, Se
 from arduino.app_peripherals.camera import BaseCamera
 from arduino.app_utils import AppError, Logger, brick
 
-from .drawing import draw_area, draw_crossing_line
+from .drawing import AREA_COLOR, LINE_COLOR, draw_area, draw_crossing_line
 
 logger = Logger("VideoObjectTracking")
 
@@ -91,7 +91,7 @@ class VideoObjectTracking(VideoInference):
             VideoObjectTrackingError: If the model has no object tracking block.
         """
         super().__init__(camera=camera, confidence=confidence, debounce_sec=debounce_sec, stream_port=stream_port)
-        self._colors = LabelColors()
+        self._colors = LabelColors(avoid=(LINE_COLOR, AREA_COLOR))
         self._boxes = BoxStabilizer()  # what the video shows: the tracked boxes, steadied across results
         self._labels_to_track = labels_to_track
         # The knobs of the tracking block as the model names them: keep_grace is max_age, min_detections is min_hits,
