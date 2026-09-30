@@ -1,5 +1,8 @@
 version: 2
-# Dependency updates arrive as pull requests, where the license scan and the container builds review them
+# Dependency updates arrive as pull requests, where the license scan and the container builds review them.
+# Both ecosystems run once a week on the same morning and fold every update into one pull request each.
+# A version must be a week old before it is proposed, so short-lived releases are skipped, and Dependabot
+# never rebases on its own: comment "@dependabot rebase" when a pull request falls behind main.
 updates:
   - package-ecosystem: uv
     directories:
@@ -15,13 +18,35 @@ updates:
       - /containers/bricks/tps
     schedule:
       interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Rome
+    cooldown:
+      default-days: 7
+    rebase-strategy: disabled
+    groups:
+      python:
+        patterns: ["*"]
+      # Security fixes arrive as soon as they are published, still as one pull request
+      python-security:
+        applies-to: security-updates
+        patterns: ["*"]
   - package-ecosystem: docker
     directories:
       - /containers/*/*
       - /scripts/licensed
     schedule:
       interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Rome
+    cooldown:
+      default-days: 7
+    rebase-strategy: disabled
     ignore:
       # Digest refreshes only, moving to another Python release is a deliberate change
       - dependency-name: python
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
+    groups:
+      docker:
+        patterns: ["*"]
