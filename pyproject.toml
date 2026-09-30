@@ -146,6 +146,7 @@ preview = true
 indent-style = "space"
 docstring-code-format = true
 docstring-code-line-length = 150
+exclude = ["*.md"]
 
 [tool.ruff.lint]
 select = [
