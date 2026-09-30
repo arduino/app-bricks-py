@@ -1144,6 +1144,7 @@ def stub_download(monkeypatch):
 
     monkeypatch.setattr(hf_downloader, "validate_hub_source", lambda *args, **kwargs: None)
     monkeypatch.setattr(hf_downloader, "download_matched_files", _download)
+    monkeypatch.setattr(hf_downloader, "expected_size_mb", lambda *args, **kwargs: None)
     return requested
 
 
@@ -1264,7 +1265,7 @@ def test_check_answers_for_the_requested_quantization_only(tmp_path, monkeypatch
     # Installed, even though the repository directory carries a marker for another file.
     (repo / MARKER_NAME).write_text("{}")
     _run_main(monkeypatch, "--check", "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q4_0", "--output-dir", str(models_dir))
-    assert read_events(capsys)[-1] == {"event": "info", "description": "Model exists: *Q4_0*.gguf", "downloading": False}
+    assert read_events(capsys)[-1] == {"event": "info", "description": "Model exists: *Q4_0*.gguf", "downloading": False, "size_mb": 0.0}
 
     # The quantization the marker stands for is the one still on its way.
     _run_main(monkeypatch, "--check", "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q3_K_S", "--output-dir", str(models_dir))
@@ -1774,7 +1775,7 @@ def test_check_finds_a_bare_repository_installed_as_a_fallback(tmp_path, monkeyp
 
     _run_main(monkeypatch, "--check", "--model-url", "unsloth/Qwen3-0.6B-GGUF", "--output-dir", str(models_dir))
 
-    assert read_events(capsys)[-1] == {"event": "info", "description": "Model exists: *Q8_0*.gguf", "downloading": False}
+    assert read_events(capsys)[-1] == {"event": "info", "description": "Model exists: *Q8_0*.gguf", "downloading": False, "size_mb": 0.0}
 
 
 def test_delete_removes_the_fallback_a_bare_repository_installed(tmp_path, monkeypatch):
@@ -2095,3 +2096,47 @@ def test_downloading_a_repository_url_falls_back_like_the_key(tmp_path, monkeypa
     assert (models_dir / SMOLLM / "Q8_0.gguf").is_file()
     descriptions = [event["description"] for event in read_events(capsys)]
     assert any("publishes no Q4_0 model, using Q8_0 instead" in d for d in descriptions)
+
+
+# --------------------------------------------------------------------------- #
+# expected_size_mb: the size an ad-hoc download is listed with before it lands
+# --------------------------------------------------------------------------- #
+class _SizedRepoFile(_RepoFile):
+    def __init__(self, path, size):
+        super().__init__(path)
+        self.size = size
+
+
+def test_expected_size_mb_sums_the_matched_files(monkeypatch):
+    files = [_SizedRepoFile("m-Q4_0.gguf", 3 * 1024 * 1024), _SizedRepoFile("mmproj-F16.gguf", 1024 * 1024)]
+    monkeypatch.setattr(hf_downloader, "list_repo_matches", lambda *a, **k: files)
+    assert hf_downloader.expected_size_mb("org/m-GGUF", ["*Q4_0*.gguf", "*mmproj*F16*.gguf"]) == 4.0
+
+
+@pytest.mark.parametrize("listing", [[], [_SizedRepoFile("m.gguf", None)]])
+def test_expected_size_mb_unknown_without_sizes(monkeypatch, listing):
+    monkeypatch.setattr(hf_downloader, "list_repo_matches", lambda *a, **k: listing)
+    assert hf_downloader.expected_size_mb("org/m-GGUF", ["*.gguf"]) is None
+
+
+def test_expected_size_mb_never_fails_the_download(monkeypatch):
+    def _boom(*_args, **_kwargs):
+        raise OSError("offline")
+
+    monkeypatch.setattr(hf_downloader, "list_repo_matches", _boom)
+    assert hf_downloader.expected_size_mb("org/m-GGUF", ["*.gguf"]) is None
+
+
+def test_download_marker_carries_the_expected_size(tmp_path, monkeypatch, stub_download):
+    models_dir, repo = _qwen_repo(tmp_path)
+    monkeypatch.setattr(hf_downloader, "expected_size_mb", lambda *a, **k: 380.5)
+    seen: list[dict] = []
+    monkeypatch.setattr(
+        hf_downloader,
+        "download_matched_files",
+        lambda *args, **kwargs: seen.append(read_marker(str(repo / MARKER_NAME))),
+    )
+
+    _run_main(monkeypatch, "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q3_K_S", "--output-dir", str(models_dir))
+
+    assert seen[0]["size_mb"] == 380.5

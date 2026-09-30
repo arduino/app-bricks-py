@@ -1,0 +1,31 @@
+version: "3"
+
+# Tasks that run only in CI, on the Debian image of the workflows: they install system packages as
+# root and name the subsets the pull request gates run, so they never run on a developer machine.
+# Everything a developer runs lives in Taskfile.dist.yml, reused here through the dev namespace,
+# which keeps this file out of task --list. The workflows run it with task -t Taskfile.ci.yml <task>.
+
+includes:
+  dev:
+    taskfile: ./Taskfile.dist.yml
+    internal: true
+
+tasks:
+  init:
+    desc: Set up the CI environment, system packages plus the library .venv
+    cmds:
+      - apt-get update
+      - apt-get install -y --no-install-recommends --no-install-suggests libasound2-dev portaudio19-dev libzbar0
+      - apt-get install -y --no-install-recommends --no-install-suggests gh git ca-certificates build-essential pkg-config
+      - apt-get install -y --no-install-recommends --no-install-suggests libavcodec-dev libavformat-dev libavutil-dev libswscale-dev
+      - apt-get install -y --no-install-recommends --no-install-suggests libjpeg62-turbo-dev libpng-dev libtiff-dev libwebp-dev libopenblas-dev liblapacke-dev
+      - apt-get install -y --no-install-recommends --no-install-suggests libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
+      - task: dev:init:bricks
+
+  check:
+    desc: Run the pull request checks that need no Docker, formatting, lint, locks and license headers
+    cmds:
+      - task: dev:check:format
+      - task: dev:check:lint
+      - task: dev:check:deps
+      - task: dev:check:license-headers

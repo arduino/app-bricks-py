@@ -11,7 +11,8 @@ if [ -f "${model_path}/.download" ]; then
     echo "{\"event\": \"info\", \"description\": \"Model downloading: ${model_name}\", \"downloading\": true}"
     exit 0
 elif [ -f "${model_path}/${model_name}" ]; then
-    echo "{\"event\": \"info\", \"description\": \"Model exists: ${model_name}\", \"downloading\": false}"
+    python /app/common/model_size.py --description "Model exists: ${model_name}" --downloading false "${model_path}" \
+        || echo "{\"event\": \"info\", \"description\": \"Model exists: ${model_name}\", \"downloading\": false, \"size_mb\": null}"
     exit 0
 else
     echo "{\"event\": \"error\", \"description\": \"Model does not exist: ${model_name}\", \"downloading\": false}"

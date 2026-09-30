@@ -22,6 +22,7 @@ variable values with it over two endpoints (RFC-13 §8):
 
 import json
 import threading
+import uuid
 from datetime import datetime
 from urllib.parse import quote, unquote, urlparse
 
@@ -34,6 +35,14 @@ from arduino.app_utils import Logger
 from .unix_adapter import UnixHTTPAdapter
 
 logger = Logger("ArduinoCloud")
+
+# Identifies this app instance to the daemon, sent on BOTH the value PUT and
+# the SSE subscription. It is what lets the daemon avoid streaming an app its
+# own write back: without it the echo of a PUT arrives after the app has
+# already computed its next value, and a CLOUD_WINS variable adopts the stale
+# echoed value — so a read-modify-write app (counter = counter + 1) silently
+# loses an increment. Values coming from the cloud are never filtered.
+CLIENT_ID_HEADER = "X-App-Client-ID"
 
 _PUT_TIMEOUT = 10.0  # seconds for a value PUT
 _SSE_CONNECT_TIMEOUT = 10.0  # seconds to establish the SSE connection
@@ -88,6 +97,12 @@ class DaemonClient:
         # UNIX-socket adapter; the socket path is the percent-encoded host part.
         parsed = urlparse(self._base)
         self._socket_path = unquote(parsed.netloc) if parsed.scheme == "http+unix" else None
+        # One identity per app instance, generated here and never configurable:
+        # if two apps could be made to share it they would silently stop seeing
+        # each other's writes. Being per-app rather than per-stream also means
+        # it survives an SSE reconnect, so a PUT in flight across a reconnect
+        # still matches. Must be set before the first session is built.
+        self._client_id = str(uuid.uuid4())
         self._session = self._new_session()
         self._sse_sessions: list[requests.Session] = []
         self._sse_lock = threading.Lock()
@@ -99,6 +114,10 @@ class DaemonClient:
         session = requests.Session()
         if self._socket_path:
             session.mount("http+unix://", UnixHTTPAdapter(self._socket_path))
+        # Set on the session rather than per call, so every request — including
+        # the ones a reconnected SSE stream makes — carries it without anyone
+        # having to remember.
+        session.headers[CLIENT_ID_HEADER] = self._client_id
         return session
 
     def put_value(self, name: str, value: object) -> None:

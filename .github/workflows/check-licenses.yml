@@ -1,0 +1,159 @@
+name: Check licenses
+on:
+  pull_request:
+  # Runs on main too so its image layers and venvs seed every pull request
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  licenses:
+    runs-on: ubuntu-24.04-arm
+    env:
+      TASKFILE_VERSION: "v3.44.0"
+      TASKFILE_PATH: "/home/runner/go/bin"
+    steps:
+      # The runner context is not available in job-level env, only inside steps
+      - name: Set the licensed venvs directory
+        run: echo "LICENSED_VENVS=$RUNNER_TEMP/licensed" >> "$GITHUB_ENV"
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Taskfile
+        run: which task || curl -sSfL https://taskfile.dev/install.sh | sh -s -- -b ${{ env.TASKFILE_PATH }} ${{ env.TASKFILE_VERSION }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build the licensed image
+        uses: docker/build-push-action@v6
+        with:
+          context: scripts/licensed
+          tags: arduino-licensed
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Safe to cache: a venv is a pure function of its uv.lock and the image's Python, and run.py
+      # rebuilds every venv whose key no longer matches its lock.
+      - name: Cache the venvs
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/licensed
+          key: licensed-venvs-${{ hashFiles('uv.lock', 'containers/*/*/uv.lock') }}
+          restore-keys: licensed-venvs-
+
+      - name: Check dependency licenses (licensed status)
+        id: licensed
+        run: |
+          export PATH="${{ env.TASKFILE_PATH }}:$PATH"
+          set -o pipefail
+          task fix:licenses:scan LICENSED_VENVS="${{ runner.temp }}/licensed" 2>&1 | tee licensed_status.log || echo "failed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Annotate and summarize errors
+        if: always()
+        run: |
+          actual_errors_file=$(mktemp)
+          updated_records_raw_file=$(mktemp)
+          updated_records_file=$(mktemp)
+
+          awk '
+            function flush() {
+              if (block != "") {
+                print block >> output_file
+                print "" >> output_file
+                block = ""
+              }
+            }
+
+            /^Errors:$/ { in_errors = 1; next }
+            in_errors && /^\* / { flush(); block = $0; next }
+            in_errors && /^[[:space:]]+/ {
+              if (block != "") {
+                block = block "\n" $0
+              }
+              next
+            }
+            in_errors && /^$/ { flush(); next }
+            in_errors { flush(); in_errors = 0 }
+            END { flush() }
+          ' output_file="$actual_errors_file" licensed_status.log
+
+          git diff --name-only -- .licenses | \
+            grep -E '\.dep\.ya?ml$' | \
+            sed -E 's#^\.licenses/##; s#\.dep\.ya?ml$##; s#/#.#g' | \
+            sort -u > "$updated_records_raw_file" || true
+
+          sed -E 's#^#- `#; s#$#`#' "$updated_records_raw_file" > "$updated_records_file" || true
+
+          echo "### Licensed Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -s "$actual_errors_file" ]; then
+            echo "::error::Dependency license cache is out of date. Run 'task fix:licenses' locally, then review the changes, commit, and push the updated files."
+            echo "❌ The following dependency license issues require review:" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            awk '
+              BEGIN { RS=""; ORS="\n\n" }
+              NF { print "```text\n" $0 "\n```" }
+            ' "$actual_errors_file" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ steps.licensed.outputs.failed }}" = "true" ]; then
+            echo "::error::task fix:licenses failed before reporting the license status, check the step log."
+            echo "❌ The dependency license scan did not complete, check the step log." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ No blocking dependency license issues found." >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ -s "$updated_records_file" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Outdated dependency records" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ These records changed during \`licensed cache\`. This can reflect dependency version updates, license text changes, or other cached metadata changes. They are non-blocking here, but usually mean the branch did not yet contain the latest cached dependency metadata. Please consider to run \`task fix:licenses\` locally, then review the changes, commit, and push the updated files." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            cat "$updated_records_file" >> $GITHUB_STEP_SUMMARY
+            while IFS= read -r record; do
+              [ -n "$record" ] || continue
+              echo "::warning::Dependency record out-of-date: $record"
+            done < "$updated_records_raw_file"
+          fi
+
+
+          if [ -s "$actual_errors_file" ]; then
+            # GitHub workflow commands need escaped newlines, otherwise only the
+            # first line is attached to the annotation and the rest is plain log output.
+            awk '
+              function escape(text, escaped) {
+                escaped = text
+                gsub(/%/, "%25", escaped)
+                gsub(/\r/, "%0D", escaped)
+                gsub(/\n/, "%0A", escaped)
+                return escaped
+              }
+
+              function flush() {
+                if (block != "") {
+                  print "::error::" escape(block)
+                  block = ""
+                }
+              }
+
+              /^\* / { flush(); block = $0; next }
+              /^[[:space:]]+/ {
+                if (block != "") {
+                  block = block "\n" $0
+                }
+                next
+              }
+              /^$/ { flush(); next }
+              END { flush() }
+            ' "$actual_errors_file"
+
+            exit 1
+          fi
+
+          if [ "${{ steps.licensed.outputs.failed }}" = "true" ]; then
+            exit 1
+          fi

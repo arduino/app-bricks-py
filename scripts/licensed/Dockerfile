@@ -2,11 +2,13 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# Tools image for the dependency license scan, see README.md. The venvs are built at run
-# time by run.py into the /venvs volume, so this image knows nothing about the scanned apps.
+# Tools image for the dependency license scan, see README.md. run.py installs each app's lock
+# into the /venvs volume at run time, so this image knows nothing about the scanned apps.
 
 ARG LICENSED_VERSION=5.0.6
 ARG LICENSEE_VERSION=9.20.0
+
+FROM ghcr.io/astral-sh/uv:0.10.3@sha256:7a88d4c4e6f44200575000638453a5a381db0ae31ad5c3a51b14f8687c9d93a3 AS uv
 
 # Same base as the scanned containers, pinned so the venvs resolve like the images do
 FROM python:3.13-slim-trixie@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS builder
@@ -20,11 +22,15 @@ RUN set -ex; \
     apt-get install -y --no-install-recommends build-essential cmake pkg-config ruby-full ruby-dev libssl-dev zlib1g-dev libzstd-dev; \
     gem install licensee -v "${LICENSEE_VERSION}"; \
     gem install licensed -v "${LICENSED_VERSION}"; \
+    # licensed matches a package to its .dist-info folder folding only dashes into underscores, PEP 503 folds dots too
+    sed -i 's|package\["Name"\].tr("-", "_")|package["Name"].gsub(/[-_.]+/, "_")|g' /var/lib/gems/*/gems/licensed-${LICENSED_VERSION}/lib/licensed/sources/pip.rb; \
+    grep -q 'gsub(/\[-_.\]+/, "_")' /var/lib/gems/*/gems/licensed-${LICENSED_VERSION}/lib/licensed/sources/pip.rb; \
     rm -rf /var/lib/gems/*/cache /var/lib/gems/*/gems/rugged-*/vendor /var/lib/gems/*/gems/rugged-*/ext
 
 FROM python:3.13-slim-trixie@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285
 
-ENV LANG=C.UTF-8 PIP_ROOT_USER_ACTION=ignore
+# The uv cache sits in the volume so it survives between runs, the venvs use the image's Python
+ENV LANG=C.UTF-8 PIP_ROOT_USER_ACTION=ignore UV_CACHE_DIR=/venvs/.uv-cache UV_PYTHON_DOWNLOADS=never
 
 # Compilers and headers serve the packages that ship no wheel, such as pyalsaaudio and PyAudio
 RUN set -ex; \
@@ -36,6 +42,7 @@ RUN set -ex; \
 
 COPY --from=builder /var/lib/gems /var/lib/gems
 COPY --from=builder /usr/local/bin/licensed /usr/local/bin/licensed
+COPY --from=uv /uv /usr/local/bin/uv
 COPY --chmod=755 run.py /run.py
 
 WORKDIR /src
