@@ -10,7 +10,7 @@ import threading
 import time
 from collections.abc import Generator, Iterator
 from concurrent.futures import CancelledError, Future
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import TracebackType
 from contextlib import AbstractContextManager
 from typing import Literal
@@ -22,7 +22,7 @@ from websockets.exceptions import ConnectionClosed, ConnectionClosedOK
 
 from arduino.app_internal.core import resolve_address
 from arduino.app_internal.core.module import get_brick_config, get_brick_configured_model
-from arduino.app_peripherals.microphone import BaseMicrophone, Microphone
+from arduino.app_peripherals.microphone import BaseMicrophone, Microphone, PauseDetector, chunk_level
 from arduino.app_utils import AppError, Logger, brick
 
 logger = Logger("ASR")
@@ -85,6 +85,49 @@ def _dtype_to_pcm_format(dtype: np.dtype, is_packed: bool = False) -> str:
     raise ValueError(f"Unsupported numpy dtype for PCM format: {dtype}")
 
 
+class _PauseFlushPolicy:
+    """
+    Decides when to ask the server for an early transcript of the speech buffered so far.
+
+    Whisper only transcribes a segment once the server-side VAD closes it, which can
+    take many seconds of continuous speech. Flushing earlier gives near-streaming output,
+    but the server transcribes exactly what it has, so a flush in the middle of a word
+    garbles that word. The policy therefore waits for a short pause, found by a
+    :class:`PauseDetector`, and only forces a cut when the speaker does not pause at all.
+    """
+
+    def __init__(self, min_s: float, max_s: float, pause_s: float, min_voiced_s: float) -> None:
+        self.min_s = min_s
+        self.max_s = max_s
+        self.min_voiced_s = min_voiced_s
+        self._detector = PauseDetector(pause_s=pause_s)
+        self.reset()
+
+    def reset(self) -> None:
+        """Start a new segment: called after a flush and when the server closes a segment itself."""
+        self._in_segment = False
+        self._segment_s = 0.0
+        self._voiced_s = 0.0
+
+    def update(self, level: float, duration_s: float) -> bool:
+        """Account one chunk of ``duration_s`` seconds; returns True when a flush is due."""
+        quiet = self._detector.update_level(level, duration_s)
+        if not self._in_segment:
+            if quiet:
+                return False
+            self._in_segment = True
+        self._segment_s += duration_s
+        if not quiet:
+            self._voiced_s += duration_s
+        if self._voiced_s < self.min_voiced_s:
+            return False
+        at_pause = self._segment_s >= self.min_s and self._detector.paused
+        if at_pause or self._segment_s >= self.max_s:
+            self.reset()
+            return True
+        return False
+
+
 @dataclass(frozen=True)
 class ASREvent:
     type: Literal["partial_text", "full_text"]
@@ -123,9 +166,14 @@ class SessionInfo:
     cancelled: threading.Event
     language: str | None = None
     reader_thread: threading.Thread | None = None
+    # Set by the reader when the flush policy asks for an early transcript
+    flush_requested: threading.Event = field(default_factory=threading.Event)
+    # Set by the receiver when the server closes a segment on its own (VAD end)
+    segment_closed: threading.Event = field(default_factory=threading.Event)
 
 
 _END_SENTINEL = object()  # Sentinel value to signal end of audio stream in the chunk queue
+_FLUSH_MARK = object()  # Chunk-queue marker: request an early transcript once the audio before it is sent
 
 
 class BaseASR:
@@ -137,8 +185,21 @@ class BaseASR:
     """
 
     _APP_SERVICE_NAME = "audio-analytics-runner"
-    _FLUSH_INTERVAL_SECONDS = 5
+    # Early transcripts (see _PauseFlushPolicy): cut at the first pause of at least
+    # _FLUSH_PAUSE_SECONDS once a segment is _FLUSH_MIN_SECONDS long, or anyway at
+    # _FLUSH_MAX_SECONDS, well inside Whisper's 30 s window.
+    _FLUSH_MIN_SECONDS = 3.0
+    _FLUSH_MAX_SECONDS = 10.0
+    _FLUSH_PAUSE_SECONDS = 0.25
+    _FLUSH_MIN_VOICED_SECONDS = 0.5
     _DEFAULT_VAD_MS = 700
+    # Session creation loads the model onto the NPU; the server retries a failed
+    # load several times, so a create can legitimately take well over 10 s.
+    _CREATE_TIMEOUT_SECONDS = 60
+    # A cancelled session keeps the instance busy until the server has closed it
+    # (a few seconds: the server waits for the DSP to release). A new session waits
+    # for that rather than failing, up to the close timeout plus the WebSocket teardown.
+    _CLOSING_WAIT_SECONDS = 30.0
 
     def __init__(self, source: object, language: str | None = None, translate: bool = False) -> None:
         # API configuration
@@ -173,6 +234,12 @@ class BaseASR:
 
         self._active_session_lock = threading.Lock()
         self._active_session: SessionInfo | None = None
+        # Cancel events of the sessions being started (waiting for the slot or being
+        # created on the server): cancel() sets them, so a stop is never lost. Each
+        # event becomes the ``cancelled`` of its session once that is active. Guarded
+        # by _state_lock together with _active_session.
+        self._state_lock = threading.Lock()
+        self._pending_starts: set[threading.Event] = set()
 
     def start(self) -> None:
         """Prepare the ASR for transcription. Starts the owned mic if applicable."""
@@ -195,13 +262,25 @@ class BaseASR:
         logger.debug("Stopped ASR and cleaned up resources.")
 
     def cancel(self) -> None:
-        """Cancel the active transcription session, if any."""
-        active = self._active_session
-        if active is None:
+        """
+        Cancel the active transcription session, if any.
+
+        It returns at once; the session then takes a few seconds to close on the
+        server. A transcription started meanwhile waits for that close instead of
+        raising ASRBusyError, so stop-then-start from a UI needs no delay.
+        """
+        with self._state_lock:
+            pending = list(self._pending_starts)
+            active = self._active_session
+        for event in pending:
+            event.set()
+        if active is not None:
+            logger.debug(f"Cancelling session {active.session_id}")
+            active.cancelled.set()
+        elif pending:
+            logger.debug("Cancelling the session being started")
+        else:
             logger.debug("No active session to cancel")
-            return
-        logger.debug(f"Cancelling session {active.session_id}")
-        active.cancelled.set()
 
     def is_transcribing(self) -> bool:
         """
@@ -224,26 +303,29 @@ class BaseASR:
         """
         Drain an event stream into a single transcription string.
 
-        Accumulates non-empty ``full_text`` events; if none arrive, falls back
-        to the most recent non-empty ``partial_text``. Returns ``""`` if no
-        speech was detected.
+        The server sends a sentence as consecutive ``partial_text`` pieces, one
+        per early flush, then a ``full_text`` with the whole sentence. Sentences
+        are concatenated from their ``full_text``; the pieces of a sentence the
+        session ended on before its ``full_text`` (e.g. stopped right after the
+        speech) are appended as they are. Returns ``""`` if no speech was detected.
         """
-        last_partial = ""
+        pending: list[str] = []  # pieces of the sentence not closed by a full_text yet
         final_text = ""
 
         with stream:
             for chunk in stream:
-                if chunk.type == "partial_text" and chunk.data.strip():
-                    last_partial = chunk.data
-                elif chunk.type == "full_text" and chunk.data.strip():
-                    final_text += chunk.data
+                if not chunk.data.strip():
+                    continue
+                if chunk.type == "partial_text":
+                    pending.append(chunk.data)
+                elif chunk.type == "full_text":
+                    final_text += chunk.data  # already contains its pieces
+                    pending.clear()
 
-        if final_text.strip():
-            return final_text
-        if last_partial.strip():
-            logger.warning("ASR returned empty full_text, falling back to last partial_text")
-            return last_partial
-        return ""
+        if pending:
+            logger.debug("Session ended before the last full_text, using its partial_text pieces")
+            final_text += "".join(pending)
+        return final_text if final_text.strip() else ""
 
     @brick.execute
     def _asyncio_loop(self) -> None:
@@ -301,17 +383,22 @@ class BaseASR:
         if self._stop_worker.is_set():
             raise RuntimeError("Brick is stopping or already stopped")
 
-        if not self._active_session_lock.acquire(blocking=False):
-            active_id = self._active_session.session_id if self._active_session else "unknown"
-            raise ASRBusyError(
-                f"A transcription session (id={active_id}) is already active on this instance. "
-                f"Create a separate ASR instance for concurrent transcriptions."
-            )
+        # This session's cancel event, from now on: cancel() finds it in _pending_starts
+        # until the session is active, then as the session's ``cancelled``.
+        cancelled = threading.Event()
+        with self._state_lock:
+            self._pending_starts.add(cancelled)
 
+        slot_taken = False
         session_info: SessionInfo | None = None
         future = None
 
         try:
+            slot_taken = self._acquire_session_slot(cancelled)
+            if not slot_taken:
+                logger.debug("Transcription cancelled before it started")
+                return
+
             # Snapshot current language and translate flag for the session
             session_language = self.language
             session_translate = self.translate
@@ -323,9 +410,11 @@ class BaseASR:
                 result_queue=queue.Queue(),
                 chunk_queue=queue.Queue(maxsize=100),
                 language=session_language,
-                cancelled=threading.Event(),
+                cancelled=cancelled,
             )
-            self._active_session = session_info
+            with self._state_lock:
+                self._active_session = session_info
+                self._pending_starts.discard(cancelled)
 
             future = asyncio.run_coroutine_threadsafe(
                 self._transcription_session_handler(session_info),
@@ -368,10 +457,52 @@ class BaseASR:
             raise RuntimeError(f"Transcription failed: {e}")
 
         finally:
-            if session_info is not None:
-                session_info.cancelled.set()
-            self._active_session = None
-            self._active_session_lock.release()
+            cancelled.set()
+            # Only this session's own state: another session may already be starting
+            with self._state_lock:
+                self._pending_starts.discard(cancelled)
+                if self._active_session is session_info:
+                    self._active_session = None
+            if slot_taken:
+                self._active_session_lock.release()
+
+    def _acquire_session_slot(self, cancelled: threading.Event) -> bool:
+        """
+        Take the instance's single session slot.
+
+        A session that was cancelled, or is ending, still holds the slot while the
+        server closes it: wait for it, so that stop-then-start works. Only a session
+        still running raises ASRBusyError.
+
+        Returns:
+            bool: True with the slot taken; False, without the slot, if ``cancelled``
+                was set meanwhile (the user stopped before the session started).
+        """
+        active = self._active_session
+        if active is not None and active.cancelled.is_set():
+            wait_s = self._CLOSING_WAIT_SECONDS
+        elif active is None:
+            wait_s = 0.5  # the previous session is just releasing the slot, or one is being created
+        else:
+            wait_s = 0.0
+        deadline = time.monotonic() + wait_s
+        while not cancelled.is_set():
+            remaining = deadline - time.monotonic()
+            # Short waits, so a cancel() is noticed while the slot is still held
+            if self._active_session_lock.acquire(timeout=min(0.1, max(remaining, 0.0))):
+                if cancelled.is_set():
+                    self._active_session_lock.release()
+                    return False
+                return True
+            if remaining <= 0:
+                break
+        if cancelled.is_set():
+            return False
+        active_id = active.session_id if active else "unknown"
+        raise ASRBusyError(
+            f"A transcription session (id={active_id}) is already active on this instance. "
+            f"Cancel it first, or create a separate ASR instance for concurrent transcriptions."
+        )
 
     def _create_transcription_session(self, vad_ms: int | None = None, language: str | None = None, translate: bool = False) -> str:
         sampling_rate = str(self._source.sample_rate)
@@ -396,22 +527,23 @@ class BaseASR:
 
         try:
             start = time.monotonic()
-            response = requests.post(url=create_url, json=create_data, timeout=10)
+            response = requests.post(url=create_url, json=create_data, timeout=self._CREATE_TIMEOUT_SECONDS)
             elapsed = time.monotonic() - start
             if elapsed > 5:
                 logger.warning(f"Session creation took {elapsed:.1f}s")
         except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
             raise ASRUnavailableError(f"Inference service unreachable: {e}") from None
 
-        if response.status_code == 400:
+        # The server answers 409 (code "conflict") when another session is active
+        if response.status_code in (400, 409):
             try:
                 err = response.json().get("error", {})
                 msg = err.get("message", "")
             except Exception:
                 msg = response.text or ""
-            if "transcription session is already active" in msg:
+            if response.status_code == 409 or "transcription session is already active" in msg:
                 raise ASRServiceBusyError(msg or "Inference server is serving another client")
-            raise ASRError(msg or f"Failed to create transcription session: 400")
+            raise ASRError(msg or f"Failed to create transcription session: {response.status_code}")
 
         if response.status_code != 200:
             msg = f"Failed to create transcription session: {response.status_code}"
@@ -519,6 +651,13 @@ class BaseASR:
         session_id = session_info.session_id
         start_time = session_info.start_time
         duration = session_info.duration
+        policy = _PauseFlushPolicy(
+            min_s=self._FLUSH_MIN_SECONDS,
+            max_s=self._FLUSH_MAX_SECONDS,
+            pause_s=self._FLUSH_PAUSE_SECONDS,
+            min_voiced_s=self._FLUSH_MIN_VOICED_SECONDS,
+        )
+        frames_per_second = self._source.sample_rate * self._source.channels
         try:
             while not self._stop_worker.is_set() and not session_info.cancelled.is_set():
                 if duration > 0 and (time.time() - start_time) >= duration:
@@ -534,16 +673,14 @@ class BaseASR:
                     break
                 if chunk is None:
                     continue  # transient (paused/underrun) — keep going
-                try:
-                    session_info.chunk_queue.put_nowait(chunk.tobytes())
-                except queue.Full:
-                    if not isinstance(self._source, BaseMicrophone):
-                        try:
-                            session_info.chunk_queue.put(chunk.tobytes())
-                        except queue.Full:
-                            logger.warning(f"Send queue full for session {session_id}, dropping chunk")
-                    else:
-                        logger.warning(f"Send queue full for session {session_id}, dropping chunk")
+                if session_info.segment_closed.is_set():
+                    session_info.segment_closed.clear()
+                    policy.reset()
+                flush_due = policy.update(chunk_level(chunk, self._source.format_is_packed), chunk.size / frames_per_second)
+                self._enqueue(session_info, chunk.tobytes())
+                if flush_due:
+                    # Queued behind the audio, so the server cuts exactly at this pause
+                    self._enqueue(session_info, _FLUSH_MARK)
         finally:
             # Block until the end sentinel is enqueued so the sender always sees it.
             # This is required if exit condition is duration or WAV exhaustion.
@@ -554,6 +691,19 @@ class BaseASR:
                 except queue.Full:
                     continue
             logger.debug(f"Reader thread exited for session {session_id}")
+
+    def _enqueue(self, session_info: SessionInfo, item: bytes | object) -> None:
+        """Queue an item for the sender: live mics drop on overflow, finite sources wait."""
+        try:
+            session_info.chunk_queue.put_nowait(item)
+        except queue.Full:
+            if not isinstance(self._source, BaseMicrophone):
+                try:
+                    session_info.chunk_queue.put(item)
+                except queue.Full:
+                    logger.warning(f"Send queue full for session {session_info.session_id}, dropping chunk")
+            else:
+                logger.warning(f"Send queue full for session {session_info.session_id}, dropping chunk")
 
     async def _await_connection_established(self, websocket: websockets.ClientConnection, label: str) -> None:
         try:
@@ -575,6 +725,9 @@ class BaseASR:
                     continue
                 if item is _END_SENTINEL:
                     break
+                if item is _FLUSH_MARK:
+                    session_info.flush_requested.set()
+                    continue
 
                 assert isinstance(item, bytes), f"Expected bytes, got {type(item)}"
                 message = {
@@ -637,6 +790,7 @@ class BaseASR:
                     continue
                 elif evt_type == "transcript.text.done":
                     logger.debug(f"Session {session_id} putting full transcription: {evt_text}")
+                    session_info.segment_closed.set()
                     result_queue.put(ASREvent("full_text", evt_text))
                     continue
                 elif evt_type == "transcript.event":
@@ -705,19 +859,15 @@ class BaseASR:
             logger.debug(f"WebSocket {label} closed while draining for session {session_id}: {e}")
 
     async def _periodic_flush(self, session_info: SessionInfo) -> None:
+        """Send the flushes the reader thread requests (see _PauseFlushPolicy)."""
         session_id = session_info.session_id
-        has_duration = session_info.duration > 0
         try:
             while not self._stop_worker.is_set() and not session_info.cancelled.is_set():
-                await asyncio.sleep(self._FLUSH_INTERVAL_SECONDS)
-                if self._stop_worker.is_set() or session_info.cancelled.is_set():
-                    break
+                await asyncio.sleep(0.05)
+                if not session_info.flush_requested.is_set():
+                    continue
+                session_info.flush_requested.clear()
                 await asyncio.to_thread(self._flush_transcription_session, session_id)
-                if has_duration:
-                    remaining = session_info.duration - (time.time() - session_info.start_time)
-                    if remaining < self._FLUSH_INTERVAL_SECONDS:
-                        logger.debug(f"No more flushes for session {session_id}: only {remaining:.1f}s remaining")
-                        break
         except asyncio.CancelledError:
             logger.debug(f"Periodic flush cancelled for session {session_id}")
             raise
@@ -775,10 +925,11 @@ class AutomaticSpeechRecognition(BaseASR):
             translate (bool): If ``True``, speech is translated to English instead
                 of being transcribed in the language it was spoken in. It is valid
                 only for models that support translation, so it costs no extra
-                model: the ASR model itself does the translating. The model this
-                brick runs, ``whisper-small-quantized``, supports it, and its
-                translate task always targets English. Any of its source languages
-                can be translated, but English is the only possible target. Set
+                model: the ASR model itself does the translating. The Whisper
+                models this brick runs, including the default
+                ``whisper-small-quantized``, support it, and their translate task
+                always targets English. Any of their source languages can be
+                translated, but English is the only possible target. Set
                 ``language`` as well to skip source auto-detection. It is exposed
                 as the public ``translate`` attribute and may be reassigned at
                 runtime; the new value takes effect on the next session.

@@ -7,6 +7,7 @@ from .base_microphone import BaseMicrophone, FormatPlain, FormatPacked
 from .alsa_microphone import ALSAMicrophone
 from .websocket_microphone import WebSocketMicrophone
 from .errors import *
+from .utils import PauseDetector, chunk_level
 
 __all__ = [
     "Microphone",
@@ -19,4 +20,6 @@ __all__ = [
     "MicrophoneConfigError",
     "MicrophoneOpenError",
     "MicrophoneReadError",
+    "PauseDetector",
+    "chunk_level",
 ]
