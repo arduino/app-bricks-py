@@ -1,6 +1,6 @@
 version: 2
 # Dependency updates arrive as pull requests, where the license scan and the container builds review them.
-# Both ecosystems run once a week on the same morning and fold every update into one pull request each.
+# Every entry runs once a week on the same morning and folds its updates into one pull request.
 # A version must be a week old before it is proposed, so short-lived releases are skipped, and Dependabot
 # never rebases on its own: comment "@dependabot rebase" when a pull request falls behind main.
 updates:
@@ -53,8 +53,24 @@ updates:
       # The Edge Impulse runtimes, bumped by hand
       - dependency-name: g7a8t7v6/inference-container
       - dependency-name: g7a8t7v6/inference-container-qnn
+    groups:
+      docker:
+        patterns: ["*"]
+  - package-ecosystem: docker-compose
+    directories:
+      - /src/arduino/app_bricks/*
+      - /src/arduino/app_services/*
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Rome
+    cooldown:
+      default-days: 7
+    rebase-strategy: disabled
+    ignore:
       # The Qualcomm services from artifacts.codelinaro.org, bumped by hand
       - dependency-name: iot-solutions-microservices/*
     groups:
-      docker:
+      compose:
         patterns: ["*"]
