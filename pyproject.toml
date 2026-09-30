@@ -54,7 +54,7 @@ folderwatcher = [
 camera = [
     # Upper bound keeps us on the 4.13 ABI; the exact build is enforced by
     # the container's uv-constraint.txt file.
-    "opencv-python-headless>=4.13,<4.14"
+    "opencv-python-headless>=4.13,<5.1"
 ]
 microphone = [
     "pyalsaaudio==0.11.0; sys_platform == 'linux'",
