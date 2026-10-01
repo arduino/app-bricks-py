@@ -35,16 +35,6 @@ def get_box_color(confid: float) -> str:
     return "#1EFF00"  # Default to Green if out of range
 
 
-def _read(file_path: str) -> bytes:
-    """Read an image from a file path and return a PIL Image object."""
-    try:
-        with open(file_path, "rb") as f:
-            return f.read()
-    except Exception as e:
-        logger.error(f"Error reading image: {e}")
-        return None
-
-
 def get_image_type(image_bytes: bytes | Image.Image) -> str | None:
     """Detect the type of image from bytes or a PIL Image object.
 
@@ -88,7 +78,8 @@ def get_image_bytes(image: str | Image.Image | bytes | None) -> bytes | None:
         elif isinstance(image, bytes):
             return image
         elif isinstance(image, str):
-            return _read(image)
+            with open(image, "rb") as f:
+                return f.read()
     except Exception as e:
         logger.error(f"Error converting image to bytes: {e}")
         return None
