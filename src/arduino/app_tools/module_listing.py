@@ -106,8 +106,8 @@ class ArduinoBrick:
         self.model_by_boards: list[dict[str, str]] | None = model_by_boards
         self.model_configuration_variables: list[str] | None = model_configuration_variables
 
-    def to_dict(self) -> dict:
-        out_dict: dict = {
+    def to_dict(self) -> dict[str, Any]:
+        out_dict: dict[str, Any] = {
             "id": self.id,
             "name": self.name,
             "description": self.brick_description,
@@ -187,8 +187,8 @@ class ArduinoService:
         self.supported_boards: list[str] | None = supported_boards
         self.root_path: str | None = str(root_path) if root_path is not None else None
 
-    def to_dict(self) -> dict:
-        out_dict: dict = {
+    def to_dict(self) -> dict[str, Any]:
+        out_dict: dict[str, Any] = {
             "service_id": self.service_id,
             "name": self.name,
             "description": self.brick_description,
@@ -255,7 +255,7 @@ def find_config_yaml(root_path: str | pathlib.Path) -> tuple[list[ArduinoBrick],
             editable_module: pathlib.Path = item / editable_module_config
             if config_file.is_file():
                 try:
-                    config: dict = yaml.safe_load(config_file.read_text())
+                    config: dict[str, Any] = yaml.safe_load(config_file.read_text())
                     if "id" not in config or "name" not in config or "description" not in config:
                         continue
 
@@ -286,7 +286,7 @@ def find_config_yaml(root_path: str | pathlib.Path) -> tuple[list[ArduinoBrick],
                     logger.error(f"Error: {config_file} is not a valid YAML file.")
             elif service_config_file.is_file():
                 try:
-                    config: dict = yaml.safe_load(service_config_file.read_text())
+                    config: dict[str, Any] = yaml.safe_load(service_config_file.read_text())
                     if "service_id" not in config or "name" not in config or "description" not in config:
                         continue
 
@@ -310,9 +310,9 @@ def find_config_yaml(root_path: str | pathlib.Path) -> tuple[list[ArduinoBrick],
             elif editable_module.is_file():
                 try:
                     with open(editable_module) as editable_module_cfg:
-                        content: dict = json.load(editable_module_cfg)
+                        content: dict[str, Any] = json.load(editable_module_cfg)
                         if "url" in content and "dir_info" in content:
-                            editable_c: dict = content["dir_info"]
+                            editable_c: dict[str, Any] = content["dir_info"]
                             if "editable" in editable_c and editable_c["editable"]:
                                 url: str = content["url"]
                                 parsed_url = urlparse(url)
