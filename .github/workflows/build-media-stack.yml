@@ -23,9 +23,29 @@ on:
         description: 'Specific Debian version of GStreamer Good to pull (e.g. 1.24.12-1).'
         required: false
         default: 'latest'
+      gstreamer_base_version:
+        description: 'Specific Debian version of GStreamer Base to pull and patch for qtiqmmfsrc (e.g. 1.26.2-1+deb13u2).'
+        required: false
+        default: 'latest'
+      qti_oss_patches_ref:
+        description: 'qualcomm/gst-qti-oss-patches git ref with the GStreamer Base patches, matching its Debian version'
+        required: false
+        default: 'a4db6968a1f467875407a2008d7c13974a826fe4'
+      qimsdk_ref:
+        description: 'qualcomm/gst-plugins-imsdk git ref of qtiqmmfsrc, matching the camera server on the board'
+        required: false
+        default: '0.1.3'
+      camera_service_ref:
+        description: 'qualcomm/camera-service git ref of the qmmf client, matching the camera server on the board'
+        required: false
+        default: '0.1.1'
 
 permissions:
   contents: write
+
+env:
+  # libcamera_metadata source, dlopen'd by qtiqmmfsrc's qmmf client
+  SYSTEM_MEDIA_REF: android-16.0.0_r4
 
 jobs:
   setup:
@@ -210,6 +230,177 @@ jobs:
           name: gstreamer-debs
           path: artifacts/
 
+  build-qtiqmmfsrc:
+    needs: setup
+    runs-on: ubuntu-24.04-arm
+    container:
+      image: debian:trixie-slim
+      options: --user root
+    outputs:
+      gstreamer_base_version: ${{ steps.gstreamer-base.outputs.version }}
+      version: ${{ steps.qtiqmmfsrc.outputs.version }}
+    env:
+      DEBFULLNAME: Roberto Gazia
+      DEBEMAIL: r.gazia@arduino.cc
+    steps:
+      - name: Install build tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates build-essential devscripts equivs debhelper-compat git python3
+          sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sources
+          apt-get update
+
+      # Qualcomm's patches add the compressed NV12_Q08C/NV12_Q10LE32C video formats
+      # qtiqmmfsrc relies on. They go into the Debian patch series, and the +qcom
+      # version suffix makes the patched packages distinguishable from Debian's.
+      - name: Build patched GStreamer Base
+        id: gstreamer-base
+        shell: bash
+        run: |
+          GST_VER="${{ inputs.gstreamer_base_version }}"
+          PATCHES_REF="${{ inputs.qti_oss_patches_ref }}"
+          if [[ "$GST_VER" == "latest" ]]; then GST_VER=""; fi
+          apt-get build-dep -y gst-plugins-base1.0${GST_VER:+=$GST_VER}
+          apt-get source gst-plugins-base1.0${GST_VER:+=$GST_VER}
+
+          git init -q qti-oss-patches
+          git -C qti-oss-patches fetch -q --depth 1 https://github.com/qualcomm/gst-qti-oss-patches.git "$PATCHES_REF"
+          git -C qti-oss-patches checkout -q FETCH_HEAD
+
+          cd gst-plugins-base1.0-*
+          cp gst-libs/gst/video/video-format.h ../video-format.h.orig
+          mkdir debian/patches/qcom
+          cp ../qti-oss-patches/gstreamer1.0-plugins-base/*.patch debian/patches/qcom/
+          (cd debian/patches && ls qcom/*.patch >> series)
+          dch --local +qcom "Apply Qualcomm's patches from gst-qti-oss-patches@${PATCHES_REF}."
+          echo "version=$(dpkg-parsechangelog -S Version)" >> $GITHUB_OUTPUT
+
+          DEB_BUILD_OPTIONS="nocheck parallel=$(nproc)" dpkg-buildpackage -b -uc -us
+
+      # Stock plugins are built against stock headers, so the patches must only
+      # append new formats and leave the numbering of the existing ones untouched.
+      - name: Check the patched video formats
+        run: |
+          apt-get install -y ./libgstreamer-plugins-base1.0-0_*.deb ./libgstreamer-gl1.0-0_*.deb ./gir1.2-gst-plugins-base-1.0_*.deb ./libgstreamer-plugins-base1.0-dev_*.deb
+          python3 - <<'PYEOF'
+          import ctypes, re
+
+          def formats(path):
+              body = re.search(r"typedef enum \{(.*?)\} GstVideoFormat;", open(path).read(), re.S).group(1)
+              body = re.sub(r"/\*.*?\*/", "", body, flags=re.S)
+              assert "=" not in body, "explicit GstVideoFormat values are not supported by this check"
+              return re.findall(r"\bGST_VIDEO_FORMAT_\w+", body)
+
+          stock = formats("video-format.h.orig")
+          patched = formats("/usr/include/gstreamer-1.0/gst/video/video-format.h")
+          assert patched[:len(stock)] == stock, "the patches renumber stock video formats"
+
+          gstvideo = ctypes.CDLL("libgstvideo-1.0.so.0")
+          gstvideo.gst_video_format_from_string.argtypes = [ctypes.c_char_p]
+          for value, name in enumerate(patched[len(stock):], start=len(stock)):
+              assert gstvideo.gst_video_format_from_string(name[len("GST_VIDEO_FORMAT_"):].encode()) == value, name
+              print(f"{name} = {value}")
+          PYEOF
+
+      # Builds against the patched GStreamer Base installed above. Each project is
+      # installed to /usr, for the next one to find it, and to stage/ for packaging.
+      - name: Build qtiqmmfsrc
+        shell: bash
+        run: |
+          apt-get install -y --no-install-recommends cmake ninja-build pkgconf libprotobuf-dev protobuf-compiler libjson-glib-dev libopencv-dev libgbm-dev libegl-dev libgles-dev
+
+          fetch() { git init -q "$1" && git -C "$1" fetch -q --depth 1 "$2" "$3" && git -C "$1" checkout -q FETCH_HEAD; }
+          fetch system-media https://android.googlesource.com/platform/system/media "$SYSTEM_MEDIA_REF"
+          fetch camera-service https://github.com/qualcomm/camera-service.git "${{ inputs.camera_service_ref }}"
+          fetch qimsdk https://github.com/qualcomm/gst-plugins-imsdk.git "${{ inputs.qimsdk_ref }}"
+
+          export CFLAGS="-mbranch-protection=standard -fstack-protector-strong -O2 -D_FORTIFY_SOURCE=2 -Wformat -Wformat-security -Werror=format-security"
+          export CXXFLAGS="$CFLAGS"
+          build() {
+            local src="$1"; shift
+            cmake -S "$src" -B "build-$src" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr \
+              -DCMAKE_INSTALL_LIBDIR=lib/aarch64-linux-gnu -DCMAKE_INSTALL_SYSCONFDIR=/etc "$@"
+            cmake --build "build-$src"
+            cmake --install "build-$src"
+            DESTDIR="$PWD/stage" cmake --install "build-$src" --strip
+          }
+
+          # libcamera_metadata is loaded as libcamera_metadata.so.0, built without Android's logging
+          sed -i '\|ANDROID_API|d; \|#include <cutils/compiler\.h>|d' \
+            system-media/private/camera/include/camera_metadata_hidden.h system-media/camera/include/system/camera_metadata.h
+          sed -i 's|#include <log/log.h>|#include <stddef.h>\n#define android_errorWriteLog(...)\n#define ALOGE(...)|' \
+            system-media/camera/src/camera_metadata.c
+          cat > system-media/CMakeLists.txt <<'EOF'
+          cmake_minimum_required(VERSION 3.16)
+          project(camera_metadata C)
+          add_library(camera_metadata SHARED camera/src/camera_metadata.c)
+          target_include_directories(camera_metadata PRIVATE private/camera/include camera/include)
+          set_target_properties(camera_metadata PROPERTIES VERSION 0.1.0 SOVERSION 0)
+          install(TARGETS camera_metadata DESTINATION lib)
+          EOF
+
+          build system-media
+          build camera-service -DBUILD_CATEGORY=CLIENT
+          build qimsdk -DENABLE_GST_PLUGIN_BASE=ON -DENABLE_GST_PLUGIN_QMMFSRC=ON -DVHDR_MODES_ENABLE=ON
+
+      # Ships the plugin with the private libraries it loads, and pins the exact
+      # GStreamer Base it was built against so apt keeps the two paired.
+      - name: Package qtiqmmfsrc
+        id: qtiqmmfsrc
+        shell: bash
+        run: |
+          mkdir -p debian/qtiqmmfsrc/DEBIAN
+          (
+            cd stage
+            # libcamera_metadata is dlopen'd, so it is not among the NEEDED entries
+            queue=(usr/lib/aarch64-linux-gnu/gstreamer-1.0/*.so usr/lib/libcamera_metadata.so.0)
+            keep=()
+            while ((${#queue[@]})); do
+              lib="${queue[0]}"; queue=("${queue[@]:1}")
+              [[ " ${keep[*]} " == *" $lib "* ]] && continue
+              keep+=("$lib")
+              target=$(realpath --relative-to=. "$lib")
+              [[ "$target" == "$lib" ]] || keep+=("$target")
+              for needed in $(objdump -p "$lib" | awk '/NEEDED/ {print $2}'); do
+                queue+=($(find usr -name "$needed"))
+              done
+            done
+            cp -a --parents "${keep[@]}" ../debian/qtiqmmfsrc/
+          )
+
+          QIMSDK_REF="${{ inputs.qimsdk_ref }}"
+          VERSION="$QIMSDK_REF"
+          [[ "$VERSION" =~ ^[0-9] ]] || VERSION="0~git$(git -C qimsdk rev-parse --short=12 HEAD)"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          GST_BASE_VERSION="${{ steps.gstreamer-base.outputs.version }}"
+          printf 'Source: qtiqmmfsrc\n\nPackage: qtiqmmfsrc\nArchitecture: arm64\n' > debian/control
+          SHLIBS_DEPENDS=$(dpkg-shlibdeps -O $(find debian/qtiqmmfsrc -type f -name '*.so*') | sed -n 's/^shlibs:Depends=//p')
+          cat > debian/qtiqmmfsrc/DEBIAN/control <<EOF
+          Package: qtiqmmfsrc
+          Version: $VERSION
+          Architecture: arm64
+          Maintainer: $DEBFULLNAME <$DEBEMAIL>
+          Section: libs
+          Priority: optional
+          Depends: $SHLIBS_DEPENDS, libgbm1, libgstreamer-plugins-base1.0-0 (= $GST_BASE_VERSION)
+          Homepage: https://github.com/qualcomm/gst-plugins-imsdk
+          Description: Qualcomm qtiqmmfsrc GStreamer camera source
+           Built from gst-plugins-imsdk $QIMSDK_REF and camera-service ${{ inputs.camera_service_ref }}
+           against GStreamer Base $GST_BASE_VERSION, with the private qmmf client
+           libraries it needs to reach the camera server on the host.
+          EOF
+          echo "activate-noawait ldconfig" > debian/qtiqmmfsrc/DEBIAN/triggers
+          dpkg-deb --build --root-owner-group debian/qtiqmmfsrc "qtiqmmfsrc_${VERSION}_arm64.deb"
+
+          mkdir -p artifacts
+          cp qtiqmmfsrc_*.deb libgstreamer-plugins-base1.0-0_*.deb artifacts/
+
+      - name: Upload qtiqmmfsrc debs
+        uses: actions/upload-artifact@v4
+        with:
+          name: qtiqmmfsrc-debs
+          path: artifacts/
+
   build-opencv:
     needs: [setup, build-ffmpeg, build-gstreamer]
     runs-on: ubuntu-24.04-arm
@@ -267,7 +458,7 @@ jobs:
           path: artifacts/
 
   release:
-    needs: [setup, build-ffmpeg, build-gstreamer, build-opencv]
+    needs: [setup, build-ffmpeg, build-gstreamer, build-qtiqmmfsrc, build-opencv]
     if: needs.setup.outputs.release_version != ''
     runs-on: ubuntu-24.04-arm
     steps:
@@ -286,6 +477,8 @@ jobs:
           OPENCV_REF="${{ needs.setup.outputs.opencv_python_commit }}"
           FFMPEG_VERSION="${{ needs.build-ffmpeg.outputs.version }}"
           GSTREAMER_VERSION="${{ needs.build-gstreamer.outputs.version }}"
+          GSTREAMER_BASE_VERSION="${{ needs.build-qtiqmmfsrc.outputs.gstreamer_base_version }}"
+          QTIQMMFSRC_VERSION="${{ needs.build-qtiqmmfsrc.outputs.version }}"
           TAG="media-stack/${STACK_VERSION}"
           REPO="${{ github.repository }}"
           
@@ -301,12 +494,14 @@ jobs:
           - opencv-python-headless (Wheel): ${OPENCV_VERSION} (Source: ${OPENCV_REPO} @ ${OPENCV_REF})
           - FFmpeg (Debian Source): ${FFMPEG_VERSION}
           - gstreamer1.0-plugins-good (Debian Source): ${GSTREAMER_VERSION}
+          - libgstreamer-plugins-base1.0-0 (Debian Source + Qualcomm patches): ${GSTREAMER_BASE_VERSION} (Patches: qualcomm/gst-qti-oss-patches @ ${{ inputs.qti_oss_patches_ref }})
+          - qtiqmmfsrc: ${QTIQMMFSRC_VERSION} (Source: qualcomm/gst-plugins-imsdk @ ${{ inputs.qimsdk_ref }}, qualcomm/camera-service @ ${{ inputs.camera_service_ref }}, android/platform/system/media @ ${{ env.SYSTEM_MEDIA_REF }})
           EOF
           )
           
-          # Collect release assets: the wheel, the runtime FFmpeg libs tarball and
-          # the plugins-good deb. Build byproducts (-extra, -dev, dbgsym, disabled
-          # plugin stubs) are intentionally left out.
+          # Collect release assets: the wheel, the runtime FFmpeg libs tarball, the
+          # plugins-good deb and the qtiqmmfsrc tarball. Build byproducts (-extra,
+          # -dev, dbgsym, disabled plugin stubs) are intentionally left out.
           mkdir release-assets
           cp artifacts/opencv-wheel/*.whl release-assets/
           cp artifacts/gstreamer-debs/gstreamer1.0-plugins-good_*.deb release-assets/
@@ -318,6 +513,9 @@ jobs:
           done
           FFMPEG_LIBS_TARBALL="ffmpeg-libs-${FFMPEG_VERSION_SAFE}.tar.gz"
           tar -czf "release-assets/${FFMPEG_LIBS_TARBALL}" -C ffmpeg-libs .
+
+          # qtiqmmfsrc and the GStreamer Base it was built against ship as one asset
+          tar -czf "release-assets/qtiqmmfsrc-${QTIQMMFSRC_VERSION}.tar.gz" -C artifacts/qtiqmmfsrc-debs .
 
           gh release create "$TAG" \
             release-assets/* \
