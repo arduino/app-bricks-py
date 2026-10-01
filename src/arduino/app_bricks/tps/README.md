@@ -1,13 +1,13 @@
 # TPS Brick
 
-This Brick provides Wi-Fi® based geolocation for your Arduino® App Lab applications. It scans the nearby Wi-Fi access points and resolves the device position, and optionally its street address, through the Qualcomm® TPS Location API cloud service.
+This Brick provides Wi-Fi® based geolocation for the board. It scans the Wi-Fi access points around the board and resolves its position, and optionally its street address, through the Qualcomm® TPS Location API cloud service.
 
 ## Overview
 
 The TPS Brick allows you to:
 
-- Get the device latitude, longitude and accuracy from the surrounding Wi-Fi access points.
-- Get the reverse geocoded street address of the device.
+- Get the board's latitude, longitude and accuracy from the surrounding Wi-Fi access points.
+- Get the reverse geocoded street address of the board.
 - Locate once, in the background with a callback, or periodically at a fixed interval.
 
 ## Features
@@ -20,7 +20,7 @@ The TPS Brick allows you to:
 
 ## Prerequisites
 
-- **Supported boards**: Arduino UNO™ Q and Arduino VENTUNO™ Q.
+- **Supported boards**: Arduino® UNO™ Q and Arduino VENTUNO™ Q.
 - **Internet connection**: The board must reach the TPS Location API cloud service.
 - **Wi-Fi interface**: The board's wireless interface must be available for scanning, even when the board is connected to the internet another way. The location is computed from visible access points only, with no IP-based fallback.
 - **TPS credentials**: Register on the [TPS Portal](https://my.skyhook.com/), create a project and copy its Auth Key. The key comes with a 60-day evaluation period. Set the key and your authentication user in **Brick Configuration** in App Lab, as described in [Configuration](#configuration).
