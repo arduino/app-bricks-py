@@ -101,10 +101,11 @@ class WAVAutomaticSpeechRecognition(BaseASR):
             translate (bool): If ``True``, speech is translated to English instead
                 of being transcribed in the language it was spoken in. It is valid
                 only for models that support translation, so it costs no extra
-                model: the ASR model itself does the translating. The model this
-                brick runs, ``whisper-small-quantized``, supports it, and its
-                translate task always targets English. Any of its source languages
-                can be translated, but English is the only possible target. Set
+                model: the ASR model itself does the translating. The Whisper
+                models this brick runs, including the default
+                ``whisper-small-quantized``, support it, and their translate task
+                always targets English. Any of their source languages can be
+                translated, but English is the only possible target. Set
                 ``language`` as well to skip source auto-detection. It is exposed
                 as the public ``translate`` attribute and may be reassigned at
                 runtime; the new value takes effect on the next session.
