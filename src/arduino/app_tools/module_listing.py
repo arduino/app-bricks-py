@@ -74,16 +74,16 @@ class ArduinoBrick:
         ports: list[int],
         fs_path: str,
         model_name: str,
-        category: str = "miscellaneous",
+        category: str | None = "miscellaneous",
         mount_devices_into_container: bool = False,
-        requires_display: str = None,
-        required_device_classes: list[str] = None,
-        env_variables: dict[str, str] = None,
-        supported_boards: list[str] = None,
-        requires_services: list[str] = None,
-        ai_frameworks_compatibility: list[str] = None,
-        model_by_boards: list[dict[str, str]] = None,
-        model_configuration_variables: list[str] = None,
+        requires_display: str | None = None,
+        required_device_classes: list[str] | None = None,
+        env_variables: list[dict[str, Any]] | None = None,
+        supported_boards: list[str] | None = None,
+        requires_services: list[str] | None = None,
+        ai_frameworks_compatibility: list[str] | None = None,
+        model_by_boards: list[dict[str, str]] | None = None,
+        model_configuration_variables: list[str] | None = None,
     ) -> None:
         self.id = id
         self.name = name
@@ -93,11 +93,13 @@ class ArduinoBrick:
         self.compose_file: str | None = self.get_compose_file()
         self.readme_file: str | None = self.get_readme_file()
         self.model_name: str = model_name
-        self.category = category
+        # A brick_config.yaml without a category, read as None, gets the default
+        self.category: str = category or "miscellaneous"
         self.mount_devices_into_container: bool = mount_devices_into_container
         self.requires_display: str | None = requires_display
         self.required_device_classes: list[str] | None = required_device_classes
-        self.env_variables: dict[str, str] | None = env_variables
+        # The `variables` entries of brick_config.yaml, one mapping per variable
+        self.env_variables: list[dict[str, Any]] | None = env_variables
         self.supported_boards: list[str] | None = supported_boards
         self.requires_services: list[str] | None = requires_services
         self.ai_frameworks_compatibility: list[str] | None = ai_frameworks_compatibility
@@ -133,6 +135,9 @@ class ArduinoBrick:
             additional_vars: list[EnvVariable] = []
             for var in self.env_variables:
                 name = var.get("name")
+                if not name:
+                    logger.warning(f"Variable without a name in the configuration of {self.id}, skipped")
+                    continue
                 description = var.get("description", "")
                 default = var.get("default_value", "")
                 hidden = var.get("hidden", False)
@@ -167,20 +172,20 @@ class ArduinoService:
         name: str,
         brick_description: str,
         fs_path: str,
-        category: str = "miscellaneous",
-        env_variables: dict[str, str] = None,
-        supported_boards: list[str] = None,
-        root_path: str = None,
+        category: str | None = "miscellaneous",
+        env_variables: list[dict[str, Any]] | None = None,
+        supported_boards: list[str] | None = None,
+        root_path: str | pathlib.Path | None = None,
     ) -> None:
         self.service_id = service_id
         self.name = name
         self.brick_description = brick_description
         self.path = fs_path
         self.compose_file: str | None = self.get_compose_file()
-        self.category = category
-        self.env_variables: dict[str, str] | None = env_variables
+        self.category: str = category or "miscellaneous"
+        self.env_variables: list[dict[str, Any]] | None = env_variables
         self.supported_boards: list[str] | None = supported_boards
-        self.root_path = root_path
+        self.root_path: str | None = str(root_path) if root_path is not None else None
 
     def to_dict(self) -> dict:
         out_dict: dict = {
@@ -198,6 +203,9 @@ class ArduinoService:
             additional_vars: list[EnvVariable] = []
             for var in self.env_variables:
                 name = var.get("name")
+                if not name:
+                    logger.warning(f"Variable without a name in the configuration of {self.service_id}, skipped")
+                    continue
                 description = var.get("description", "")
                 default = var.get("default_value", "")
                 hidden = var.get("hidden", False)
@@ -219,7 +227,7 @@ class ArduinoService:
         return f"Name: {self.name}\nDescription: {self.brick_description}\nPath: {self.path}\nCompose file: {self.get_compose_file()}\n"
 
 
-def find_config_yaml(root_path: str) -> tuple[list[ArduinoBrick], list[ArduinoService]]:
+def find_config_yaml(root_path: str | pathlib.Path) -> tuple[list[ArduinoBrick], list[ArduinoService]]:
     """Scans all subfolders within the given root_path to find 'config.yaml'.
 
     Args:
