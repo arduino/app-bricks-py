@@ -6,7 +6,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 
 import time
-from typing import Any
+from typing import Any, NoReturn
 
 from arduino.app_bricks.cloud_llm import CloudLLM, CloudModelProvider
 from arduino.app_bricks.cloud_llm.cloud_llm import DEFAULT_MEMORY, ToolLike
@@ -213,7 +213,7 @@ class LargeLanguageModel(CloudLLM):
         """
         return "failed to load" in (server_msg or "").lower()
 
-    def _handle_api_error(self, ilogger: Logger, e: Exception) -> None:
+    def _handle_api_error(self, ilogger: Logger, e: Exception) -> NoReturn:
         """Handles OpenAI API errors by logging details and raising RuntimeError.
 
         Args:
