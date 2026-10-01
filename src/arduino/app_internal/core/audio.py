@@ -119,6 +119,8 @@ class AudioDetector(EdgeImpulseRunnerFacade):
                 best_matched_keyword = keyword_name
                 best_matched_keyword_confidence = keyword_confidence
 
+        if best_matched_keyword is None:
+            return None
         return best_matched_keyword, best_matched_keyword_confidence
 
     @brick.loop
