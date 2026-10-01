@@ -55,13 +55,9 @@ class VisionLanguageModel(LargeLanguageModel):
 
         if model is None:
             brick_config = get_brick_config(self.__class__)
-            app_configured_model = get_brick_configured_model(brick_config.get("id") if brick_config else None)
-            if app_configured_model:
-                logger.debug(f"Using model: '{app_configured_model}'.")
-                model = app_configured_model
-            else:
-                model = brick_config.get("model", None)
-                logger.debug(f"Using default model: '{model}'.")
+            # app.yaml override first, then the brick default (model_by_boards or model)
+            model = get_brick_configured_model(brick_config.get("id") if brick_config else None, brick_config=brick_config)
+            logger.debug(f"Using model: '{model}'.")
 
         super().__init__(
             model=model,

@@ -211,13 +211,11 @@ class BaseASR:
         self.api_base_url = f"http://{self.api_host}:{self.api_port}/audio-analytics/v1/api"
         self.ws_url = f"ws://{self.api_host}:{self.api_port}/stream"
 
-        # Load the model configured at bricks level
+        # Load the model configured at bricks level: app.yaml override first, then the brick default
         brick_config = get_brick_config(self.__class__)
-        app_configured_model = get_brick_configured_model(brick_config.get("id") if brick_config else None)
-        if app_configured_model:
-            self.model = app_configured_model
-        else:
-            self.model = brick_config.get("model", None)
+        self.model = get_brick_configured_model(brick_config.get("id") if brick_config else None, brick_config=brick_config)
+        if not self.model:
+            raise ValueError("Model name must be provided via the brick configuration.")
 
         self.language = language
         self.translate = translate

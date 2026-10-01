@@ -47,7 +47,7 @@ class SQLStore:
         self.database_name = f"{data_dir}/{database_name}"
         if not self.database_name.endswith(".db"):
             self.database_name = f"{self.database_name}.db"
-        self.conn = None
+        self.conn: sqlite3.Connection | None = None
         self.conn_lock = threading.RLock()
 
     def _connect(self) -> None:
@@ -89,6 +89,8 @@ class SQLStore:
         with self.conn_lock:
             if not self.conn:
                 self._connect()
+            if self.conn is None:
+                raise DBStorageSQLStoreError("SQLite connection is not available")
             return self.conn
 
     def start(self) -> None:
@@ -138,9 +140,10 @@ class SQLStore:
 
         try:
             with self.conn_lock:
-                cursor = self._get_connection().cursor()
+                conn = self._get_connection()
+                cursor = conn.cursor()
                 cursor.execute(sql)
-                self.conn.commit()
+                conn.commit()
             logger.debug(f"Created table {table} with columns {columns}")
         except sqlite3.Error as e:
             raise DBStorageSQLStoreError(f"Error creating table {table}: {e}")
@@ -162,9 +165,10 @@ class SQLStore:
 
         try:
             with self.conn_lock:
-                cursor = self._get_connection().cursor()
+                conn = self._get_connection()
+                cursor = conn.cursor()
                 cursor.execute(sql)
-                self.conn.commit()
+                conn.commit()
             logger.debug(f"Dropped table {table}")
         except sqlite3.Error as e:
             raise DBStorageSQLStoreError(f"Error dropping table {table}: {e}")
@@ -207,9 +211,10 @@ class SQLStore:
 
         try:
             with self.conn_lock:
-                cursor = self._get_connection().cursor()
+                conn = self._get_connection()
+                cursor = conn.cursor()
                 cursor.execute(sql, tuple(data.values()))
-                self.conn.commit()
+                conn.commit()
             logger.debug(f"Inserted data into {table}: {data}")
         except sqlite3.Error as e:
             raise DBStorageSQLStoreError(f"Error inserting data into {table}: {e}")
@@ -257,7 +262,8 @@ class SQLStore:
 
         try:
             with self.conn_lock:
-                cursor = self._get_connection().cursor()
+                conn = self._get_connection()
+                cursor = conn.cursor()
                 cursor.execute(sql)
                 col_names = [description[0] for description in cursor.description]
                 rows = cursor.fetchall()
@@ -290,9 +296,10 @@ class SQLStore:
 
         try:
             with self.conn_lock:
-                cursor = self._get_connection().cursor()
+                conn = self._get_connection()
+                cursor = conn.cursor()
                 cursor.execute(sql, tuple(data.values()))
-                self.conn.commit()
+                conn.commit()
             logger.debug(f"Updated data in {table}: {data} where {condition}")
         except sqlite3.Error as e:
             raise DBStorageSQLStoreError(f"Error updating data in {table}: {e}")
@@ -318,9 +325,10 @@ class SQLStore:
 
         try:
             with self.conn_lock:
-                cursor = self._get_connection().cursor()
+                conn = self._get_connection()
+                cursor = conn.cursor()
                 cursor.execute(sql)
-                self.conn.commit()
+                conn.commit()
             logger.debug(f"Deleted data from {table} where {condition}")
         except sqlite3.Error as e:
             raise DBStorageSQLStoreError(f"Error deleting data from {table}: {e}")
@@ -345,17 +353,18 @@ class SQLStore:
 
         try:
             with self.conn_lock:
-                cursor = self._get_connection().cursor()
+                conn = self._get_connection()
+                cursor = conn.cursor()
                 cursor.execute(sql, args or ())
                 logger.debug(f"Executing SQL command: {sql} with args {args}")
 
                 first_row = cursor.fetchone()
                 if first_row is None:
-                    self.conn.commit()
+                    conn.commit()
                     return None
                 else:
                     rows = [first_row] + cursor.fetchall()
-                    self.conn.commit()
+                    conn.commit()
                     col_names = [description[0] for description in cursor.description]
             return [dict(zip(col_names, row)) for row in rows]
         except sqlite3.Error as e:
@@ -387,7 +396,9 @@ class SQLStore:
             if not self.conn:
                 self._connect()
 
-            cursor = self._get_connection().cursor()
+            conn = self._get_connection()
+
+            cursor = conn.cursor()
             # Check for persistent tables
             cursor.execute("""SELECT name FROM sqlite_master WHERE type='table' AND name=?""", tuple([table]))
             exists = cursor.fetchone() is not None
@@ -400,7 +411,7 @@ class SQLStore:
         try:
             logger.debug(f"Attempting schema alignment for table {table} (force_drop_table={force_drop_table})")
             with self.conn_lock:
-                self.conn.execute("BEGIN")
+                conn.execute("BEGIN")
                 # Table exists: get current schema
                 cursor.execute(f"PRAGMA table_xinfo({table})")
                 existing_cols = {row["name"]: row["type"] for row in cursor.fetchall()}  # {col_name: col_type}
@@ -429,7 +440,7 @@ class SQLStore:
                 )
                 logger.error(msg)
                 with self.conn_lock:
-                    self.conn.rollback()
+                    conn.rollback()
                 raise DBStorageSQLStoreError(msg)
 
             # Add columns if needed
@@ -441,7 +452,7 @@ class SQLStore:
                     logger.debug(f"Added column {col} {dtype} to {table}")
                 except sqlite3.Error as e:
                     with self.conn_lock:
-                        self.conn.rollback()
+                        conn.rollback()
                     logger.error(f"Error adding column {col} to {table}: {e}")
                     raise DBStorageSQLStoreError(f"Error adding column {col} to {table}: {e}")
             logger.debug(f"Table {table} schema aligned. Added columns: {list(to_add.keys())}, dropped: {dropped}")
@@ -449,7 +460,7 @@ class SQLStore:
             logger.error(f"Schema change failed for table {table}: {exc}")
             logger.debug("Rolling back transaction")
             with self.conn_lock:
-                self.conn.rollback()
+                conn.rollback()
             if force_drop_table:
                 logger.warning(f"Dropping and recreating table {table} due to force_drop_table=True")
                 self.drop_table(table)

@@ -123,6 +123,8 @@ class MotionDetection(EdgeImpulseRunnerFacade):
                 detected_class = class_name
                 detected_class_confidence = class_confidence
 
+        if detected_class is None:
+            return None
         return detected_class, detected_class_confidence, classification_dict
 
     @brick.loop
