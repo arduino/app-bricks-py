@@ -321,8 +321,7 @@ def find_config_yaml(root_path: str | pathlib.Path) -> tuple[list[ArduinoBrick],
                                 if os.name == "nt" and local_file_path.startswith("/"):
                                     local_file_path = local_file_path[1:]
 
-                                local_file_path = pathlib.Path(local_file_path) / "src"
-                                sub_bricks, sub_services = find_config_yaml(local_file_path)
+                                sub_bricks, sub_services = find_config_yaml(pathlib.Path(local_file_path) / "src")
                                 discovered_modules.extend(sub_bricks)
                                 discovered_services.extend(sub_services)
 
@@ -348,7 +347,7 @@ def list_installed_packages_pkg_resources() -> tuple[dict[str, list[ArduinoBrick
     paths = set(site.getsitepackages())
     paths.add(site.getusersitepackages())
     for local_path in paths:
-        if local_path is None or local_path == "":
+        if not local_path:
             continue
         logger.debug(f"Checking local path: {local_path}")
         local_bricks, local_svc = find_config_yaml(local_path)
@@ -361,7 +360,7 @@ def list_installed_packages_pkg_resources() -> tuple[dict[str, list[ArduinoBrick
         for svs in checked_svc_paths[key]:
             local_path = svs.root_path
             logger.info(f"Searching for app_services folder in root path: {local_path}")
-            if local_path is None or local_path == "":
+            if not local_path:
                 continue
             if "app_services" in str(local_path):
                 logger.info(f"Found app_services folder directly in: {local_path}")
