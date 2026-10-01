@@ -396,7 +396,8 @@ class SoundGeneratorStreamer:
         duration = self._note_duration(note_duration)
         logger.debug(f"play_chord: notes={notes}, note_duration={note_duration}, duration={duration}s, volume={volume}")
         if len(notes) == 1:
-            return self.play(notes[0], duration, volume)
+            # The note duration, not the seconds computed from it: play converts it itself.
+            return self.play(notes[0], note_duration, volume)
 
         waves = []
         base_frequency = None
