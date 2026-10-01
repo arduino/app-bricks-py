@@ -12,7 +12,7 @@ on:
         required: false
         default: 'opencv/opencv-python'
       opencv_python_ref:
-        description: 'opencv-python''s git ref to build'
+        description: 'Specific opencv-python''s version (git ref) to build'
         required: false
         default: '4.x'
       ffmpeg_debian_version:
