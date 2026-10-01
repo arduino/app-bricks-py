@@ -364,7 +364,9 @@ def list_installed_packages_pkg_resources() -> tuple[dict[str, list[ArduinoBrick
             break
 
     if services_folder is None:
-        logger.error("ERROR: app_services folder not found in site-packages directories.")
+        raise FileNotFoundError(
+            "app_services folder not found in site-packages directories: the services are part of the library, its installation is incomplete"
+        )
 
     # Check application python home directory
     app_home = "/app/python"
