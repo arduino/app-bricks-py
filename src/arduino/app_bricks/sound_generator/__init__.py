@@ -313,7 +313,7 @@ class SoundGeneratorStreamer:
             return None
         return self._notes.get(note.strip().upper())
 
-    def play_polyphonic(self, notes: list[list[tuple[str, float]]], as_tone: bool = False, volume: float = None) -> tuple[bytes, float]:
+    def play_polyphonic(self, notes: list[list[tuple[str, float]]], as_tone: bool = False, volume: float = None) -> tuple[np.ndarray, float]:
         """Generate audio for multiple note sequences mixed together (polyphony).
 
         Produces multi-track audio by mixing a list of sequences, where each
@@ -326,6 +326,9 @@ class SoundGeneratorStreamer:
 
         Returns:
             tuple[np.ndarray, float]: The mixed audio block (float32) and its duration in seconds.
+
+        Raises:
+            ValueError: If no sequence holds a known note.
         """
         if volume is None:
             volume = self._master_volume
@@ -340,7 +343,7 @@ class SoundGeneratorStreamer:
             for note, duration in sequence:
                 sequence_duration += duration
                 frequency = self._get_note(note)
-                if frequency >= 0.0:
+                if frequency is not None and frequency >= 0.0:
                     if base_frequency is None:
                         base_frequency = frequency
                     if not as_tone:
@@ -357,7 +360,7 @@ class SoundGeneratorStreamer:
                     max_duration = sequence_duration
 
         if len(sequences_data) == 0:
-            return
+            raise ValueError("No valid note in the sequences")
 
         # Mix sequences - align lengths
         max_length = max(len(seq) for seq in sequences_data)
@@ -375,7 +378,7 @@ class SoundGeneratorStreamer:
         blk = self._apply_sound_effects(blk, base_frequency)
         return (blk, max_duration)
 
-    def play_chord(self, notes: list[str], note_duration: float | str = 1 / 4, volume: float = None) -> bytes:
+    def play_chord(self, notes: list[str], note_duration: float | str = 1 / 4, volume: float = None) -> np.ndarray:
         """Generate audio for a chord of simultaneous notes.
 
         Args:
@@ -385,12 +388,14 @@ class SoundGeneratorStreamer:
 
         Returns:
             np.ndarray: The audio block of the chord (float32).
+
+        Raises:
+            ValueError: If none of the notes is a known note.
         """
         duration = self._note_duration(note_duration)
         logger.debug(f"play_chord: notes={notes}, note_duration={note_duration}, duration={duration}s, volume={volume}")
         if len(notes) == 1:
-            self.play(notes[0], duration, volume)
-            return
+            return self.play(notes[0], duration, volume)
 
         waves = []
         base_frequency = None
@@ -407,7 +412,7 @@ class SoundGeneratorStreamer:
             else:
                 continue
         if len(waves) == 0:
-            return
+            raise ValueError(f"No valid note in chord {notes}")
         chord = np.sum(waves, axis=0, dtype=np.float32)
         chord /= np.max(np.abs(chord))  # Normalize to prevent clipping
         blk = chord.astype(np.float32)
@@ -415,7 +420,7 @@ class SoundGeneratorStreamer:
         logger.debug(f"  Chord generated: {len(blk)} samples")
         return blk
 
-    def play(self, note: str, note_duration: float | str = 1 / 4, volume: float = None) -> bytes:
+    def play(self, note: str, note_duration: float | str = 1 / 4, volume: float = None) -> np.ndarray:
         """Generate audio samples for a single musical note.
 
         Args:
@@ -424,7 +429,10 @@ class SoundGeneratorStreamer:
             volume (float, optional): Volume level (0.0 to 1.0). If None, uses master volume.
 
         Returns:
-            np.ndarray: The audio block (float32), or None if the note is invalid.
+            np.ndarray: The audio block (float32).
+
+        Raises:
+            ValueError: If the note is not a known note.
         """
         duration = self._note_duration(note_duration)
         frequency = self._get_note(note)
@@ -449,8 +457,9 @@ class SoundGeneratorStreamer:
             expected_frames = int(duration * self._sample_rate)
             logger.debug(f"  Generated audio: {len(data)} samples (expected {expected_frames} @ {self._sample_rate}Hz, duration={duration}s)")
             return data
+        raise ValueError(f"Invalid note '{note}'")
 
-    def play_tone(self, note: str, duration: float = 0.25, volume: float = None) -> bytes:
+    def play_tone(self, note: str, duration: float = 0.25, volume: float = None) -> np.ndarray:
         """Generate audio samples for a note with duration in seconds.
 
         Unlike ``play()`` which interprets duration as a musical note fraction,
@@ -462,7 +471,10 @@ class SoundGeneratorStreamer:
             volume (float, optional): Volume level (0.0 to 1.0). If None, uses master volume.
 
         Returns:
-            np.ndarray: The audio block (float32), or None if the note is invalid.
+            np.ndarray: The audio block (float32).
+
+        Raises:
+            ValueError: If the note is not a known note or the duration is not positive.
         """
         frequency = self._get_note(note)
         if frequency is not None and frequency >= 0.0 and duration > 0.0:
@@ -471,8 +483,9 @@ class SoundGeneratorStreamer:
             data = self._wave_gen.generate_block(float(frequency), duration, volume)
             data = self._apply_sound_effects(data, frequency)
             return data
+        raise ValueError(f"Invalid note '{note}' or non-positive duration {duration}")
 
-    def play_abc(self, abc_string: str, volume: float = None) -> Iterable[tuple[bytes, float]]:
+    def play_abc(self, abc_string: str, volume: float = None) -> Iterable[tuple[np.ndarray, float]]:
         """Generate audio samples from an ABC notation string.
 
         Yields one audio block per note in the parsed ABC sequence.  The parser
@@ -526,8 +539,6 @@ class SoundGeneratorStreamer:
             if len(self._wav_cache) < 250 * 1024:  # 250 KB cache limit
                 self._wav_cache[wav_file] = (wav_data, duration)
             return (wav_data, duration)
-
-        return (None, None)
 
 
 @brick
