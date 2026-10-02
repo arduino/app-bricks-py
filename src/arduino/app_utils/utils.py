@@ -33,10 +33,7 @@ def _has_callable_method(obj_or_cls: object, method_name: str) -> bool:
         return False
 
     # Handle both bound and unbound methods
-    try:
-        func = method.__func__
-    except AttributeError:
-        func = method
+    func = getattr(method, "__func__", method)
 
     sig = inspect.signature(func)
     params = list(sig.parameters.values())

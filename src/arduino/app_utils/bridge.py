@@ -211,7 +211,12 @@ def call(method_name: str | None = None, timeout: float | None = 10) -> Callable
         @wraps(func)
         def wrapper(*args: object, **kwargs: object) -> R:
             # An optional 'timeout' keyword overrides the decorator's default
-            actual_timeout = kwargs.pop("timeout", timeout)
+            actual_timeout = timeout
+            if "timeout" in kwargs:
+                override = kwargs.pop("timeout")
+                if override is not None and not isinstance(override, (int, float)):
+                    raise TypeError(f"'timeout' must be a number of seconds or None, not {type(override).__name__}.")
+                actual_timeout = override
 
             # Any remaining kwargs passed to the decorated function are unexpected
             if kwargs:

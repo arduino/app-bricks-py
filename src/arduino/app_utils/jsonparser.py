@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import json
+from typing import Any
 from arduino.app_utils import Logger
 
 logger = Logger("JSONParser")
@@ -12,7 +13,8 @@ class JSONParser:
     def __init__(self, silent: bool = False) -> None:
         self.silent = silent
 
-    def parse(self, item: str) -> dict | None:
+    def parse(self, item: str) -> dict[str, Any] | list[Any] | None:
+        """The JSON document in item, an object or an array; None when it does not parse."""
         try:
             return json.loads(item)
         except Exception as e:
