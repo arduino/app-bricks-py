@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 import numpy as np
 
 from arduino.app_peripherals.speaker import Speaker, BaseSpeaker, ALSASpeaker
+from arduino.app_peripherals.speaker.speaker import _claim_first_available_speaker
 from arduino.app_peripherals.speaker.errors import SpeakerConfigError, SpeakerError, SpeakerOpenError, SpeakerWriteError
 
 
@@ -293,3 +294,39 @@ class TestExceptionHierarchy:
             raise SpeakerWriteError("Test")
         except SpeakerError as e:
             assert "Test" in str(e)
+
+
+class TestClaimFirstAvailableSpeaker:
+    """Claim-aware device resolution used by Speaker auto-selection."""
+
+    def test_skips_already_claimed_speakers(self, mock_pw_dump):
+        mock_pw_dump(usb_ids=(50, 60))
+
+        assert _claim_first_available_speaker() == "plughw:CARD=SomeCard,DEV=0"
+        assert _claim_first_available_speaker() == "plughw:CARD=AnotherCard,DEV=0"
+
+    def test_falls_back_to_jack_under_media_carrier(self, mock_pw_dump, monkeypatch):
+        monkeypatch.setenv("CONFIGURED_CARRIERS", "media-carrier")
+        mock_pw_dump(usb_ids=(50,), builtin_ids=(52,))
+
+        assert _claim_first_available_speaker() == "plughw:CARD=SomeCard,DEV=0"
+        assert _claim_first_available_speaker() == "pipewire:NODE=alsa_output.platform-sound.Sink-52"
+
+    def test_raises_when_all_speakers_are_claimed(self, mock_pw_dump):
+        mock_pw_dump(usb_ids=(50,))
+
+        _claim_first_available_speaker()
+        with pytest.raises(SpeakerOpenError):
+            _claim_first_available_speaker()
+
+    def test_raises_when_no_speaker_is_plugged(self, mock_pw_dump):
+        mock_pw_dump(usb_ids=(), builtin_ids=())
+
+        with pytest.raises(SpeakerOpenError):
+            _claim_first_available_speaker()
+
+    def test_never_selects_bluetooth_or_hdmi_speakers(self, mock_pw_dump, monkeypatch):
+        monkeypatch.setenv("CONFIGURED_CARRIERS", "media-carrier")
+        mock_pw_dump(builtin_ids=(54,), bluetooth_ids=(50,), hdmi_ids=(52,))
+
+        assert _claim_first_available_speaker() == "pipewire:NODE=alsa_output.platform-sound.Sink-54"

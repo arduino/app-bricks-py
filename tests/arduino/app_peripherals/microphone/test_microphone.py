@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 import numpy as np
 
 from arduino.app_peripherals.microphone import Microphone, BaseMicrophone, ALSAMicrophone, WebSocketMicrophone
+from arduino.app_peripherals.microphone.microphone import _claim_first_available_microphone
 from arduino.app_peripherals.microphone.errors import MicrophoneConfigError, MicrophoneError, MicrophoneOpenError, MicrophoneReadError
 
 
@@ -364,3 +365,39 @@ class TestExceptionHierarchy:
             raise MicrophoneReadError("Test")
         except MicrophoneError as e:
             assert "Test" in str(e)
+
+
+class TestClaimFirstAvailableMicrophone:
+    """Claim-aware device resolution used by Microphone auto-selection."""
+
+    def test_skips_already_claimed_microphones(self, mock_pw_dump):
+        mock_pw_dump(usb_ids=(50, 60))
+
+        assert _claim_first_available_microphone() == "plughw:CARD=SomeCard,DEV=0"
+        assert _claim_first_available_microphone() == "plughw:CARD=AnotherCard,DEV=0"
+
+    def test_falls_back_to_jack_under_media_carrier(self, mock_pw_dump, monkeypatch):
+        monkeypatch.setenv("CONFIGURED_CARRIERS", "media-carrier")
+        mock_pw_dump(usb_ids=(50,), builtin_ids=(52,))
+
+        assert _claim_first_available_microphone() == "plughw:CARD=SomeCard,DEV=0"
+        assert _claim_first_available_microphone() == "pipewire:NODE=alsa_input.platform-sound.Source-52"
+
+    def test_raises_when_all_microphones_are_claimed(self, mock_pw_dump):
+        mock_pw_dump(usb_ids=(50,))
+
+        _claim_first_available_microphone()
+        with pytest.raises(MicrophoneOpenError):
+            _claim_first_available_microphone()
+
+    def test_raises_when_no_microphone_is_plugged(self, mock_pw_dump):
+        mock_pw_dump(usb_ids=(), builtin_ids=())
+
+        with pytest.raises(MicrophoneOpenError):
+            _claim_first_available_microphone()
+
+    def test_never_selects_bluetooth_or_hdmi_microphones(self, mock_pw_dump, monkeypatch):
+        monkeypatch.setenv("CONFIGURED_CARRIERS", "media-carrier")
+        mock_pw_dump(builtin_ids=(54,), bluetooth_ids=(50,), hdmi_ids=(52,))
+
+        assert _claim_first_available_microphone() == "pipewire:NODE=alsa_input.platform-sound.Source-54"

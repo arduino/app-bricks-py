@@ -19,7 +19,7 @@ logger = Logger("Camera")
 
 
 class CameraInfo(TypedDict):
-    """A plugged camera as listed by a camera implementation, a plain dict ready to be serialized."""
+    """A plugged camera as listed by a camera implementation."""
 
     name: str
     """Human-readable name, not unique: identical cameras share it."""

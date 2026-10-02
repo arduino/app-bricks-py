@@ -25,6 +25,12 @@ def clean_microphone_registry():
     yield
 
 
+@pytest.fixture(autouse=True)
+def _no_carrier(monkeypatch):
+    """Default to a non-media-carrier environment unless a test opts in."""
+    monkeypatch.delenv("CONFIGURED_CARRIERS", raising=False)
+
+
 def build_pw_dump(usb_ids=(), builtin_ids=(), bluetooth_ids=(), hdmi_ids=()):
     """
     Build a minimal pw-dump JSON payload.

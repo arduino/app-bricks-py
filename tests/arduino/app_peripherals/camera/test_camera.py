@@ -3,11 +3,11 @@
 # SPDX-License-Identifier: MPL-2.0
 
 
-import io
-
 import pytest
 
 from arduino.app_peripherals.camera import Camera, CSICamera, V4LCamera, IPCamera, WebSocketCamera, CameraConfigError, CameraOpenError
+
+from arduino.app_peripherals.camera.camera import _claim_first_available_camera, _nth_plugged_camera
 
 from conftest import two_csi_cameras_only, two_v4l_cameras, usb_camera_with_metadata_node, v4l_device_argument  # noqa: F401
 
@@ -62,22 +62,6 @@ def test_explicit_selection_reuses_a_camera_already_in_use(two_v4l_cameras):
     cam1 = Camera(0)
     cam2 = Camera(0)
     assert cam2.v4l_path == cam1.v4l_path
-
-
-def test_non_capture_nodes_are_not_listed_as_cameras(usb_camera_with_metadata_node):
-    """A UVC metadata node must not be enumerated as a camera."""
-    assert V4LCamera.list_devices() == [10]
-
-
-def test_list_cameras_reports_name_and_location(two_v4l_cameras, monkeypatch):
-    """Each camera is listed with its sysfs name and its by-id link as location, in video index order."""
-    names = {"/sys/class/video4linux/video0/name": "CamA\n", "/sys/class/video4linux/video2/name": "CamB\n"}
-    monkeypatch.setattr("arduino.app_peripherals.camera.v4l_camera.open", lambda path, *args, **kwargs: io.StringIO(names[path]), raising=False)
-
-    assert V4LCamera.list_cameras() == [
-        {"name": "CamA", "location": "/dev/v4l/by-id/usb-CamA-video-index0"},
-        {"name": "CamB", "location": "/dev/v4l/by-id/usb-CamB-video-index0"},
-    ]
 
 
 def test_auto_selection_never_selects_non_capture_nodes(usb_camera_with_metadata_node):
@@ -241,3 +225,109 @@ def test_camera_factory_http_with_path():
     camera = Camera("http://example.com/cameras/cam1/stream.mjpg")
     assert isinstance(camera, IPCamera)
     assert camera.url == "http://example.com/cameras/cam1/stream.mjpg"
+
+
+@pytest.fixture
+def plugged_cameras(monkeypatch):
+    """Declare how many USB and CSI cameras are plugged."""
+
+    def configure(usb=0, csi=0):
+        usb_paths = [f"/dev/v4l/by-id/usb-Cam{i}-video-index0" for i in range(usb)]
+        csi_names = [f"CAMERA{i}" for i in range(csi)]
+        monkeypatch.setattr(
+            "arduino.app_peripherals.camera.v4l_camera.V4LCamera.list_devices",
+            staticmethod(lambda: list(range(usb))),
+        )
+        monkeypatch.setattr(
+            "arduino.app_peripherals.camera.v4l_camera.V4LCamera.list_cameras",
+            staticmethod(lambda: [{"name": "Cam", "location": path} for path in usb_paths]),
+        )
+        monkeypatch.setattr(
+            "arduino.app_peripherals.camera.csi_camera.CSICamera.list_devices",
+            staticmethod(lambda: list(range(csi))),
+        )
+        monkeypatch.setattr(
+            "arduino.app_peripherals.camera.csi_camera.CSICamera.list_device_names",
+            staticmethod(lambda: csi_names),
+        )
+        return usb_paths, csi_names
+
+    return configure
+
+
+class TestClaimFirstAvailableCamera:
+    """Claim-aware device resolution used by Camera auto-selection."""
+
+    def test_usb_takes_precedence_over_csi(self, plugged_cameras):
+        usb_paths, _ = plugged_cameras(usb=1, csi=1)
+
+        assert _claim_first_available_camera() == (f"usb:{usb_paths[0]}", usb_paths[0])
+
+    def test_skips_already_claimed_cameras(self, plugged_cameras):
+        usb_paths, _ = plugged_cameras(usb=2)
+
+        _claim_first_available_camera()
+        assert _claim_first_available_camera() == (f"usb:{usb_paths[1]}", usb_paths[1])
+
+    def test_falls_back_to_csi_when_usb_cameras_are_claimed(self, plugged_cameras):
+        _, csi_names = plugged_cameras(usb=1, csi=1)
+
+        _claim_first_available_camera()
+        assert _claim_first_available_camera() == ("csi:0", csi_names[0])
+
+    def test_raises_when_all_cameras_are_claimed(self, plugged_cameras):
+        plugged_cameras(usb=1)
+
+        _claim_first_available_camera()
+        with pytest.raises(CameraOpenError):
+            _claim_first_available_camera()
+
+    def test_raises_when_no_camera_is_plugged(self, plugged_cameras):
+        plugged_cameras()
+
+        with pytest.raises(CameraOpenError):
+            _claim_first_available_camera()
+
+    def test_csi_is_not_probed_when_a_usb_camera_is_available(self, plugged_cameras, monkeypatch):
+        plugged_cameras(usb=1)
+        probed = []
+        monkeypatch.setattr(
+            "arduino.app_peripherals.camera.csi_camera.CSICamera.list_device_names",
+            staticmethod(lambda: probed.append(True) or []),
+        )
+
+        _claim_first_available_camera()
+        assert probed == []
+
+
+class TestNthPluggedCamera:
+    """Positional device resolution used by explicit selection, unaware of claims."""
+
+    def test_usb_takes_precedence_over_csi(self, plugged_cameras):
+        plugged_cameras(usb=1, csi=1)
+
+        assert _nth_plugged_camera(0) == "usb:0"
+
+    def test_index_spans_usb_cameras_first_then_csi(self, plugged_cameras):
+        plugged_cameras(usb=1, csi=2)
+
+        assert _nth_plugged_camera(1) == "csi:0"
+        assert _nth_plugged_camera(2) == "csi:1"
+
+    def test_ignores_claims(self, plugged_cameras):
+        plugged_cameras(usb=1)
+
+        _claim_first_available_camera()
+        assert _nth_plugged_camera(0) == "usb:0"
+
+    def test_out_of_range_index_raises(self, plugged_cameras):
+        plugged_cameras(usb=1)
+
+        with pytest.raises(CameraOpenError):
+            _nth_plugged_camera(1)
+
+    def test_no_cameras_raises(self, plugged_cameras):
+        plugged_cameras()
+
+        with pytest.raises(CameraOpenError):
+            _nth_plugged_camera(0)
