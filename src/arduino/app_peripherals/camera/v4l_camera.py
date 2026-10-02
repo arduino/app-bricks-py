@@ -288,8 +288,8 @@ class V4LCamera(BaseCamera):
                         logger.info(f"Camera {self.name} driver runs at {actual_fps} FPS, throttling to requested {self.fps} FPS")
 
             # Verify camera with a test read
-            ret, frame = self._cap.read()
-            if not ret and frame is None:
+            ret, _ = self._cap.read()
+            if not ret:
                 raise RuntimeError(f"Read test failed for camera {self.name}")
 
             self._set_status("connected", {"camera_name": self.name, "camera_path": self.v4l_path})
@@ -334,7 +334,7 @@ class V4LCamera(BaseCamera):
             if cap is None:
                 raise CameraReadError("Camera is not open")
             ret, frame = cap.read()
-            if (not ret and frame is None) or not cap.isOpened():
+            if not ret or not cap.isOpened():
                 raise CameraReadError(f"Invalid frame returned")
 
             return frame

@@ -197,7 +197,7 @@ class CSICamera(BaseCamera):
 
             # Verify camera with a test read
             ret, frame = self._cap.read()
-            if not ret or frame is None:
+            if not ret:
                 raise RuntimeError(f"Read test failed for camera {self.name}")
 
             if self.resolution and self.resolution[0] and self.resolution[1]:
@@ -252,7 +252,7 @@ class CSICamera(BaseCamera):
             if cap is None:
                 raise CameraReadError("Camera is not open")
             ret, frame = cap.read()
-            if (not ret and frame is None) or not cap.isOpened():
+            if not ret or not cap.isOpened():
                 raise CameraReadError(f"Invalid frame returned")
 
             return frame

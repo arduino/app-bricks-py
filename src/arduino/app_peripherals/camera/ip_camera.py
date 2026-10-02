@@ -87,8 +87,8 @@ class IPCamera(BaseCamera):
             self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer to minimize latency
 
             # Test by reading one frame
-            ret, frame = self._cap.read()
-            if not ret and frame is None:
+            ret, _ = self._cap.read()
+            if not ret:
                 raise RuntimeError(f"Read test failed for IP camera at {self.url}")
 
             self._set_status("connected", {"camera_url": self.url})
@@ -160,7 +160,7 @@ class IPCamera(BaseCamera):
             if cap is None:
                 raise CameraReadError("Camera is not open")
             ret, frame = cap.read()
-            if (not ret and frame is None) or not cap.isOpened():
+            if not ret or not cap.isOpened():
                 raise CameraReadError(f"Invalid frame returned")
 
             return frame
