@@ -394,7 +394,7 @@ class ALSAMicrophone(BaseMicrophone):
                 card_idx, device_idx = self._resolve_runtime_ref(self.device_stable_ref)
                 device = f"plughw:CARD={card_idx},DEV={device_idx}"
 
-            self._pcm = alsaaudio.PCM(
+            pcm = alsaaudio.PCM(
                 type=alsaaudio.PCM_CAPTURE,
                 mode=alsaaudio.PCM_NORMAL,
                 device=device,
@@ -403,8 +403,9 @@ class ALSAMicrophone(BaseMicrophone):
                 format=self._alsa_format_idx,
                 periodsize=self.buffer_size,
             )
+            self._pcm = pcm
 
-            info = self._pcm.info()
+            info = pcm.info()
 
             actual_rate = info["rate"]
             if self.sample_rate != actual_rate:
@@ -472,7 +473,10 @@ class ALSAMicrophone(BaseMicrophone):
                 self._open_microphone()
                 self.logger.info(f"Successfully reopened microphone {self.name}")
 
-            length, audio_chunk = self._pcm.read()
+            pcm = self._pcm
+            if pcm is None:
+                raise MicrophoneReadError("Microphone is not open")
+            length, audio_chunk = pcm.read()
             if length == 0:
                 self.logger.debug("No audio data read from PCM device.")
                 return None

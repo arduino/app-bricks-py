@@ -66,7 +66,7 @@ class V4LCamera(BaseCamera):
         self.name = f"usb:{self._resolve_name(self.v4l_path)}"  # Override parent name with a human-readable name
         self.logger = logger
 
-        self._cap = None
+        self._cap: cv2.VideoCapture | None = None
 
         self._last_reconnection_attempt = 0.0  # Used for auto-reconnection when _read_frame is called
 
@@ -330,8 +330,11 @@ class V4LCamera(BaseCamera):
                 self._open_camera()
                 self.logger.info(f"Successfully reopened camera {self.name} at {self.v4l_path}")
 
-            ret, frame = self._cap.read()
-            if (not ret and frame is None) or not self._cap.isOpened():
+            cap = self._cap
+            if cap is None:
+                raise CameraReadError("Camera is not open")
+            ret, frame = cap.read()
+            if (not ret and frame is None) or not cap.isOpened():
                 raise CameraReadError(f"Invalid frame returned")
 
             return frame

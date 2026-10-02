@@ -395,7 +395,7 @@ class ALSASpeaker(BaseSpeaker):
                 card_idx, device_idx = self._resolve_runtime_ref(self.device_stable_ref)
                 device = f"plughw:CARD={card_idx},DEV={device_idx}"
 
-            self._pcm = alsaaudio.PCM(
+            pcm = alsaaudio.PCM(
                 type=alsaaudio.PCM_PLAYBACK,
                 mode=alsaaudio.PCM_NORMAL,
                 device=device,
@@ -404,8 +404,9 @@ class ALSASpeaker(BaseSpeaker):
                 format=self._alsa_format_idx,
                 periodsize=self.buffer_size,
             )
+            self._pcm = pcm
 
-            info = self._pcm.info()
+            info = pcm.info()
 
             actual_rate = info["rate"]
             if self.sample_rate != actual_rate:
@@ -473,11 +474,14 @@ class ALSASpeaker(BaseSpeaker):
                 self._open_speaker()
                 self.logger.info(f"Successfully reopened speaker {self.name}")
 
-            result = self._pcm.write(audio_chunk.tobytes())
+            pcm = self._pcm
+            if pcm is None:
+                raise SpeakerWriteError("Speaker is not open")
+            result = pcm.write(audio_chunk.tobytes())
             if result < 0:
                 # Oops, a click already occurred before writing, the best we can do is retry this write
                 logger.debug(f"PCM write returned error code: {'EPIPE' if result == -32 else result}")
-                self._pcm.write(audio_chunk.tobytes())
+                pcm.write(audio_chunk.tobytes())
 
         except (alsaaudio.ALSAAudioError, SpeakerOpenError, SpeakerWriteError, Exception) as e:
             if self._is_device_disconnected():
