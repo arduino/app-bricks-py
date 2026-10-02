@@ -4,6 +4,7 @@
 
 import threading
 import numpy as np
+from typing import Any
 
 
 class SlidingWindowBuffer:
@@ -42,8 +43,9 @@ class SlidingWindowBuffer:
         if self.capacity < self.window_size + self.slide_amount:
             raise ValueError("Capacity is too small for the given window_size and slide_amount.")
 
-        self._buffer: np.ndarray = None
-        self._dtype: np.dtype = None
+        # Allocated by the first push, which sets the item shape and dtype
+        self._buffer: np.ndarray | None = None
+        self._dtype: np.dtype[Any] | None = None
         self._condition = threading.Condition()
 
         self._write_index: int = 0
@@ -61,11 +63,8 @@ class SlidingWindowBuffer:
             bool: True if the data was successfully pushed, False if it would overflow the buffer.
 
         Raises:
-            TypeError: If data_array has wrong type with respect to the buffer's declared dtype.
+            TypeError: If the dtype of data does not match the buffer's dtype, set by the first push.
         """
-        if not isinstance(data, np.ndarray):
-            raise TypeError(f"Input data must be a np.ndarray, not {type(data)}.")
-
         num_items = len(data)
         if num_items == 0:
             return True
@@ -129,16 +128,19 @@ class SlidingWindowBuffer:
                 else:
                     return np.array([], dtype=self._dtype)  # Return a simple 1D empty array.
 
+            buffer = self._buffer
+            if buffer is None:  # has_data() is True only once the first push allocated it
+                raise RuntimeError("buffer not allocated")
             start = self._read_index
             end = start + self.window_size
 
             if end <= self.capacity:
                 # No wrap-around: return a direct view of the data. O(1) operation.
-                window = self._buffer[start:end]
+                window = buffer[start:end]
             else:
                 # Wraps around: concatenate two views. Creates a copy.
                 end_wrapped = end % self.capacity
-                window = np.concatenate((self._buffer[start:], self._buffer[:end_wrapped]))
+                window = np.concatenate((buffer[start:], buffer[:end_wrapped]))
 
             self._read_index = (self._read_index + self.slide_amount) % self.capacity
             self._data_count -= self.slide_amount
