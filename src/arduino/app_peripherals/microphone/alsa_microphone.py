@@ -99,7 +99,7 @@ class ALSAMicrophone(BaseMicrophone):
         return _dtype_to_alsa_format_name(self.format, self.format_is_packed)
 
     @staticmethod
-    def list_devices() -> list:
+    def list_devices() -> list[str]:
         """
         Return all the available microphones as full ALSA device paths.
 
@@ -109,7 +109,7 @@ class ALSAMicrophone(BaseMicrophone):
         return ALSAMicrophone.list_usb_devices() + ALSAMicrophone.list_jack_devices()
 
     @staticmethod
-    def list_usb_devices() -> list:
+    def list_usb_devices() -> list[str]:
         """
         Return only the available USB microphones as full ALSA device paths.
 
@@ -133,7 +133,7 @@ class ALSAMicrophone(BaseMicrophone):
         return usb_devices
 
     @staticmethod
-    def list_jack_devices() -> list:
+    def list_jack_devices() -> list[str]:
         """
         Return only the supported built-in (jack) microphones as full ALSA device
         paths.
@@ -360,7 +360,7 @@ class ALSAMicrophone(BaseMicrophone):
 
         raise MicrophoneOpenError(f"Invalid device reference for name resolution: {device_ref} (type:{type(device_ref)})")
 
-    def _alsa_capture_devices(self) -> list:
+    def _alsa_capture_devices(self) -> list[str]:
         """
         Return a list of available ALSA microphones (plughw only) as full
         "plughw:CARD=<name>,DEV=<n>" device paths. This is a cheap lookup used

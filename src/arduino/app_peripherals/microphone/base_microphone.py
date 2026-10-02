@@ -5,7 +5,7 @@
 import time
 import threading
 from types import TracebackType
-from typing import Literal, Self
+from typing import Any, Literal, Self
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
@@ -100,7 +100,7 @@ class BaseMicrophone(ABC):
 
         # Status handling
         self._status: Literal["disconnected", "connected", "streaming", "paused"] = "disconnected"
-        self._on_status_changed_cb: Callable[[str, dict], None] | None = None
+        self._on_status_changed_cb: Callable[[str, dict[str, Any]], None] | None = None
         self._event_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="MicrophoneCallbacksRunner")
 
     @property
@@ -240,7 +240,7 @@ class BaseMicrophone(ABC):
         """Check if the microphone is started."""
         return self._is_started
 
-    def on_status_changed(self, callback: Callable[[str, dict], None] | None) -> None:
+    def on_status_changed(self, callback: Callable[[str, dict[str, Any]], None] | None) -> None:
         """Registers or removes a callback to be triggered on microphone lifecycle events.
 
         When a microphone status changes, the provided callback function will be invoked.
@@ -269,7 +269,7 @@ class BaseMicrophone(ABC):
             self._on_status_changed_cb = None
         else:
 
-            def _callback_wrapper(new_status: str, data: dict) -> None:
+            def _callback_wrapper(new_status: str, data: dict[str, Any]) -> None:
                 try:
                     callback(new_status, data)
                 except Exception as e:
@@ -458,7 +458,7 @@ class BaseMicrophone(ABC):
         """Read a single audio chunk from the microphone. Must be implemented by subclasses."""
         pass
 
-    def _set_status(self, new_status: Literal["disconnected", "connected", "streaming", "paused"], data: dict | None = None) -> None:
+    def _set_status(self, new_status: Literal["disconnected", "connected", "streaming", "paused"], data: dict[str, Any] | None = None) -> None:
         """
         Updates the current status of the microphone and invokes the registered status
         changed callback in the background, if any.

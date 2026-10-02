@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 from collections import deque
+from typing import Any
 
 import numpy as np
 
@@ -80,7 +81,7 @@ def _nth_plugged_microphone(idx: int) -> str:
     )
 
 
-def list_audio_sources() -> tuple[list[dict], list[dict]]:
+def list_audio_sources() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """
     Discover audio capture devices via pw-dump, partitioned into USB and
     built-in. USB sources are ordered by ascending PipeWire node id (lowest
@@ -134,7 +135,7 @@ def node_description(node_name: str) -> str | None:
     return None
 
 
-def _pw_dump() -> list:
+def _pw_dump() -> list[dict[str, Any]]:
     """Run pw-dump and parse its JSON output."""
     try:
         result = subprocess.run(
@@ -155,7 +156,7 @@ _HDMI = "hdmi"
 _BUILTIN = "builtin"
 
 
-def _categorize_node(node: dict, devices: dict) -> str:
+def _categorize_node(node: dict[str, Any], devices: dict[Any, dict[str, Any]]) -> str:
     """Categorize an audio node by its transport: USB, Bluetooth, HDMI or built-in."""
     device = devices.get(_props(node).get("device.id"), {})
     device_props = _props(device)
@@ -168,7 +169,7 @@ def _categorize_node(node: dict, devices: dict) -> str:
     return _BUILTIN
 
 
-def _alsa_path_order(node: dict) -> tuple[str, int]:
+def _alsa_path_order(node: dict[str, Any]) -> tuple[str, int]:
     """Boot-stable ordering key: the node's ALSA card path with its numeric device suffix."""
     path = _props(node).get("api.alsa.path", "")
     card, sep, device = path.rpartition(",")
@@ -177,7 +178,7 @@ def _alsa_path_order(node: dict) -> tuple[str, int]:
     return path, -1
 
 
-def _routes_through_hdmi(node: dict, device: dict) -> bool:
+def _routes_through_hdmi(node: dict[str, Any], device: dict[str, Any]) -> bool:
     """Tell whether an audio node is routed through an HDMI port of its device."""
     profile_device = _props(node).get("card.profile.device")
     if profile_device is None:
@@ -192,7 +193,7 @@ def _routes_through_hdmi(node: dict, device: dict) -> bool:
     return False
 
 
-def _props(obj: dict) -> dict:
+def _props(obj: dict[str, Any]) -> dict[str, Any]:
     """Return the properties dict of a pw-dump object, or an empty dict."""
     return obj.get("info", {}).get("props", {})
 

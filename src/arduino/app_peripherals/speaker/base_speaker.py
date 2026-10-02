@@ -5,7 +5,7 @@
 import time
 import threading
 from types import TracebackType
-from typing import Literal, Self
+from typing import Any, Literal, Self
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -100,7 +100,7 @@ class BaseSpeaker(ABC):
 
         # Status handling
         self._status: Literal["disconnected", "connected"] = "disconnected"
-        self._on_status_changed_cb: Callable[[str, dict], None] | None = None
+        self._on_status_changed_cb: Callable[[str, dict[str, Any]], None] | None = None
         self._event_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="SpeakerCallbacksRunner")
 
     @property
@@ -383,7 +383,7 @@ class BaseSpeaker(ABC):
         """Check if the speaker is started."""
         return self._is_started
 
-    def on_status_changed(self, callback: Callable[[str, dict], None] | None) -> None:
+    def on_status_changed(self, callback: Callable[[str, dict[str, Any]], None] | None) -> None:
         """Registers or removes a callback to be triggered on speaker lifecycle events.
 
         When a speaker status changes, the provided callback function will be invoked.
@@ -410,7 +410,7 @@ class BaseSpeaker(ABC):
             self._on_status_changed_cb = None
         else:
 
-            def _callback_wrapper(new_status: str, data: dict) -> None:
+            def _callback_wrapper(new_status: str, data: dict[str, Any]) -> None:
                 try:
                     callback(new_status, data)
                 except Exception as e:
@@ -433,7 +433,7 @@ class BaseSpeaker(ABC):
         """Write a single audio chunk to the speaker. Must be implemented by subclasses."""
         pass
 
-    def _set_status(self, new_status: Literal["disconnected", "connected"], data: dict | None = None) -> None:
+    def _set_status(self, new_status: Literal["disconnected", "connected"], data: dict[str, Any] | None = None) -> None:
         """
         Updates the current status of the speaker and invokes the registered status
         changed callback in the background, if any.

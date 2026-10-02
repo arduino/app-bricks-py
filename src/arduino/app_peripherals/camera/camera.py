@@ -173,7 +173,7 @@ def _claim_key(camera: BaseCamera) -> str | None:
     return None
 
 
-def _supported_kwargs(camera_cls: type[BaseCamera], kwargs: dict) -> dict:
+def _supported_kwargs(camera_cls: type[BaseCamera], kwargs: dict[str, Any]) -> dict[str, Any]:
     """
     Keep only the keyword arguments supported by the target camera implementation.
 

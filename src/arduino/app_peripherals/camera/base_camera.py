@@ -7,7 +7,7 @@ import time
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from types import TracebackType
-from typing import Literal, Self
+from typing import Any, Literal, Self
 from collections.abc import Callable, Iterator
 import numpy as np
 
@@ -69,7 +69,7 @@ class BaseCamera(ABC):
         self._consecutive_none_frames = 0
 
         # Event handling
-        self._on_status_changed_cb: Callable[[str, dict], None] | None = None
+        self._on_status_changed_cb: Callable[[str, dict[str, Any]], None] | None = None
         self._event_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="CameraEvent")
 
     @property
@@ -324,7 +324,7 @@ class BaseCamera(ABC):
         """Check if the camera has been started."""
         return self._is_started
 
-    def on_status_changed(self, callback: Callable[[str, dict], None] | None) -> None:
+    def on_status_changed(self, callback: Callable[[str, dict[str, Any]], None] | None) -> None:
         """Registers or removes a callback to be triggered on camera lifecycle events.
 
         When a camera status changes, the provided callback function will be invoked.
@@ -352,7 +352,7 @@ class BaseCamera(ABC):
             self._on_status_changed_cb = None
         else:
 
-            def _callback_wrapper(new_status: str, data: dict) -> None:
+            def _callback_wrapper(new_status: str, data: dict[str, Any]) -> None:
                 try:
                     callback(new_status, data)
                 except Exception as e:
@@ -387,7 +387,7 @@ class BaseCamera(ABC):
         """
         pass
 
-    def _set_status(self, new_status: Literal["disconnected", "connected", "streaming", "paused"], data: dict | None = None) -> None:
+    def _set_status(self, new_status: Literal["disconnected", "connected", "streaming", "paused"], data: dict[str, Any] | None = None) -> None:
         """
         Updates the current status of the camera and invokes the registered status
         changed callback in the background, if any.

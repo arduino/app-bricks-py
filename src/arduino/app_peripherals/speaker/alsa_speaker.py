@@ -100,7 +100,7 @@ class ALSASpeaker(BaseSpeaker):
         return _dtype_to_alsa_format_name(self.format, self.format_is_packed)
 
     @staticmethod
-    def list_devices() -> list:
+    def list_devices() -> list[str]:
         """
         Return all the available speakers as full ALSA device paths.
 
@@ -110,7 +110,7 @@ class ALSASpeaker(BaseSpeaker):
         return ALSASpeaker.list_usb_devices() + ALSASpeaker.list_jack_devices()
 
     @staticmethod
-    def list_usb_devices() -> list:
+    def list_usb_devices() -> list[str]:
         """
         Return only the available USB speakers as full ALSA device paths.
 
@@ -134,7 +134,7 @@ class ALSASpeaker(BaseSpeaker):
         return usb_devices
 
     @staticmethod
-    def list_jack_devices() -> list:
+    def list_jack_devices() -> list[str]:
         """
         Return only the supported built-in (jack) speakers as full ALSA device
         paths.
@@ -361,7 +361,7 @@ class ALSASpeaker(BaseSpeaker):
 
         raise SpeakerOpenError(f"Invalid device reference for name resolution: {device_ref} (type:{type(device_ref)})")
 
-    def _alsa_playback_devices(self) -> list:
+    def _alsa_playback_devices(self) -> list[str]:
         """
         Return a list of available ALSA speakers (plughw only) as full
         "plughw:CARD=<name>,DEV=<n>" device paths. This is a cheap lookup used
