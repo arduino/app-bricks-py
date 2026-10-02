@@ -11,9 +11,9 @@ def _image() -> Image.Image:
     return Image.new("RGB", (64, 48), "white")
 
 
-def test_shape_accepts_the_enum_and_the_plain_string():
+def test_bounding_boxes_accept_supported_unsupported_and_missing_shapes():
     detection = {"detection": [{"class_name": "cat", "bounding_box_xyxy": [4, 4, 20, 20], "confidence": 90}]}
-    for shape in (Shape.CIRCLE, "circle", Shape.RECTANGLE, "rectangle", "hexagon", None):
+    for shape in (Shape.CIRCLE, Shape.RECTANGLE, "hexagon", None):
         out = draw_bounding_boxes(_image(), detection, shape=shape)
         assert isinstance(out, Image.Image)
 

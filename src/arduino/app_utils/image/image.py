@@ -4,7 +4,6 @@
 
 import io
 import os
-from enum import StrEnum
 from typing import Any
 
 from PIL import Image, ImageDraw, ImageFont
@@ -13,9 +12,7 @@ from arduino.app_utils import Logger
 logger = Logger(__name__)
 
 
-class Shape(StrEnum):
-    """Shape of a drawn bounding box; the plain strings "rectangle" and "circle" are accepted too."""
-
+class Shape:
     RECTANGLE = "rectangle"
     CIRCLE = "circle"
 
@@ -99,7 +96,7 @@ def draw_bounding_boxes(
     image: Image.Image | bytes,
     detection: dict[str, Any] | None,
     draw: ImageDraw.ImageDraw | None = None,
-    shape: Shape | str | None = Shape.RECTANGLE,
+    shape: str | None = Shape.RECTANGLE,
 ) -> Image.Image | None:
     """Draw bounding boxes on an image using PIL.
 
@@ -111,7 +108,7 @@ def draw_bounding_boxes(
             'confidence', as returned by the detection bricks. None, i.e. no detection result, is accepted so the output of
             a detection call can be passed straight in: with None or an empty dict the image is returned untouched.
         draw (ImageDraw.ImageDraw, optional): An existing ImageDraw object to use. If None, a new one is created.
-        shape (Shape | str | None, optional): Shape of the bounding box, Shape.RECTANGLE/"rectangle" or
+        shape (str | None, optional): Shape of the bounding box, Shape.RECTANGLE/"rectangle" or
             Shape.CIRCLE/"circle". Defaults to rectangle, None included, as do unsupported values (with a warning).
     """
     if isinstance(image, bytes):
