@@ -4,6 +4,7 @@
 
 import os
 import threading
+from typing import TypedDict
 from pathlib import Path
 from cryptography import x509
 from cryptography.x509.oid import NameOID
@@ -14,7 +15,20 @@ from datetime import datetime, timedelta, UTC
 
 
 DEFAULT_CERTS_DIR = "/app/certs"
-DEFAULT_CERTS_PARAMS = {
+
+
+class CertsParams(TypedDict):
+    """The subject and validity of the generated certificates."""
+
+    country_name: str
+    state_or_province_name: str
+    locality_name: str
+    organization_name: str
+    common_name: str
+    validity_days: int
+
+
+DEFAULT_CERTS_PARAMS: CertsParams = {
     "country_name": "IT",
     "state_or_province_name": "Piedmont",
     "locality_name": "Turin",
