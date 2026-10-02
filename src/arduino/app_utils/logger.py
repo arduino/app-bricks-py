@@ -5,8 +5,7 @@
 import logging
 import os
 
-# _configure_library_logger is for the package __init__ only
-__all__ = ["Logger", "_configure_library_logger"]
+__all__ = ["Logger"]
 
 
 def _resolve_level(level: int) -> int:
@@ -28,7 +27,7 @@ def _build_handler() -> logging.Handler:
     return handler
 
 
-def _configure_library_logger(name: str, display_name: str | None = None, level: int = logging.INFO) -> None:
+def configure_library_logger(name: str, display_name: str | None = None, level: int = logging.INFO) -> None:
     """Overrides the named logger's handler, format and log level with the ones used by the Bricks framework.
 
     Args:
