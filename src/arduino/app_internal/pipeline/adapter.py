@@ -3,9 +3,11 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import asyncio
+import inspect
 import queue
 import threading
-from typing import Any
+from collections.abc import Callable
+from typing import Any, Literal, overload
 from .constants import _SHUTDOWN
 from .limiter import AsyncRateLimiter
 from arduino.app_utils import Logger
@@ -28,6 +30,11 @@ class AsyncBrickAdapter:
     def set_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         self._loop = loop
 
+    def _running_loop(self) -> asyncio.AbstractEventLoop:
+        if self._loop is None:
+            raise RuntimeError("Loop not set for adapter execution")
+        return self._loop
+
     async def start(self) -> Any:  # noqa: ANN401
         """Normalized async start method."""
         logger.debug(f"Running start method for {type(self.original_brick).__name__}")
@@ -40,8 +47,7 @@ class AsyncBrickAdapter:
 
     async def _execute_maybe_sync(self, method_name: str, *args: Any) -> Any:  # noqa: ANN401
         """Helper to execute a method, handling sync/async via executor."""
-        if not self._loop:
-            raise RuntimeError("Loop not set for adapter execution")
+        loop = self._running_loop()
         if not hasattr(self.original_brick, method_name):
             # The start and stop methods are optional
             return
@@ -50,10 +56,10 @@ class AsyncBrickAdapter:
         if not callable(method):
             raise TypeError(f"Method {method_name} is not callable on {type(self.original_brick).__name__}")
 
-        if asyncio.iscoroutinefunction(method):
+        if inspect.iscoroutinefunction(method):
             return await method(*args)
         else:
-            return await self._loop.run_in_executor(None, method, *args)
+            return await loop.run_in_executor(None, method, *args)
 
 
 class AsyncSourceAdapter(AsyncBrickAdapter):
@@ -62,9 +68,10 @@ class AsyncSourceAdapter(AsyncBrickAdapter):
     def __init__(self, original_brick: Any, rate_limit: int | None = None) -> None:  # noqa: ANN401
         super().__init__(original_brick, rate_limit)
 
-        self._produce_method = getattr(self.original_brick, "produce", None)
-        if not callable(self._produce_method) or not asyncio.iscoroutinefunction(self._produce_method):
+        produce_method = getattr(self.original_brick, "produce", None)
+        if not callable(produce_method) or not inspect.iscoroutinefunction(produce_method):
             raise TypeError(f"Method 'produce' not found or not async on {type(self.original_brick).__name__}")
+        self._produce_method: Callable[..., Any] = produce_method
         self._limiter = AsyncRateLimiter(rate_limit) if rate_limit else None
 
     async def produce(self, *args: Any) -> Any:  # noqa: ANN401
@@ -82,15 +89,16 @@ class AsyncBlockingSourceAdapter(AsyncBrickAdapter):
     def __init__(self, original_brick: Any, rate_limit: int | None = None) -> None:  # noqa: ANN401
         super().__init__(original_brick, rate_limit)
 
-        self._produce_method = getattr(self.original_brick, "produce", None)
-        if not callable(self._produce_method) or asyncio.iscoroutinefunction(self._produce_method):
+        produce_method = getattr(self.original_brick, "produce", None)
+        if not callable(produce_method) or inspect.iscoroutinefunction(produce_method):
             raise TypeError(f"Method 'produce' not found or async on {type(self.original_brick).__name__}")
+        self._produce_method: Callable[..., Any] = produce_method
 
         # Dedicated limiter for the data emission by this adapter
         self._limiter = AsyncRateLimiter(rate_limit) if rate_limit else None
 
         # Internal queue for daemon thread -> async communication
-        self._data_queue = queue.Queue(1)
+        self._data_queue: queue.Queue[object] = queue.Queue(1)
         self._stop_event = threading.Event()
         self._producer_thread: threading.Thread | None = None
 
@@ -198,56 +206,66 @@ class AsyncProcessorAdapter(AsyncBrickAdapter):
     def __init__(self, original_brick: Any, rate_limit: int | None = None) -> None:  # noqa: ANN401
         super().__init__(original_brick, rate_limit)
 
-        self._process_method = getattr(self.original_brick, "process", None)
-        if not callable(self._process_method):
+        process_method = getattr(self.original_brick, "process", None)
+        if not callable(process_method):
             raise TypeError(f"Method 'process' not found on {type(self.original_brick).__name__}")
+        self._process_method: Callable[..., Any] = process_method
 
-        self._is_sync = not asyncio.iscoroutinefunction(self._process_method)
+        self._is_sync = not inspect.iscoroutinefunction(process_method)
         self._limiter = AsyncRateLimiter(rate_limit) if rate_limit else None
 
     async def process(self, *args: Any) -> Any:  # noqa: ANN401
-        if not self._loop and self._is_sync:
-            raise RuntimeError("Loop not set for executing sync process")
+        loop = self._running_loop() if self._is_sync else None
 
         if self._limiter:
             await self._limiter.wait()
 
-        if self._is_sync:
-            return await self._loop.run_in_executor(None, self._process_method, *args)
-        else:
-            return await self._process_method(*args)
+        if loop is not None:
+            return await loop.run_in_executor(None, self._process_method, *args)
+        return await self._process_method(*args)
 
 
 class AsyncSinkAdapter(AsyncBrickAdapter):
     def __init__(self, original_brick: Any, rate_limit: int | None = None) -> None:  # noqa: ANN401
         super().__init__(original_brick, rate_limit)
 
-        self._consume_method = getattr(self.original_brick, "consume", None)
-        if not callable(self._consume_method):
+        consume_method = getattr(self.original_brick, "consume", None)
+        if not callable(consume_method):
             raise TypeError(f"Method 'consume' not found on {type(self.original_brick).__name__}")
+        self._consume_method: Callable[..., Any] = consume_method
 
-        self._is_sync = not asyncio.iscoroutinefunction(self._consume_method)
+        self._is_sync = not inspect.iscoroutinefunction(consume_method)
         self._limiter = AsyncRateLimiter(rate_limit) if rate_limit else None
 
     async def consume(self, *args: Any) -> Any:  # noqa: ANN401
-        if not self._loop and self._is_sync:
-            raise RuntimeError("Loop not set for executing sync consume")
+        loop = self._running_loop() if self._is_sync else None
 
         if self._limiter:
             await self._limiter.wait()
 
-        if self._is_sync:
-            return await self._loop.run_in_executor(None, self._consume_method, *args)
-        else:
-            return await self._consume_method(*args)
+        if loop is not None:
+            return await loop.run_in_executor(None, self._consume_method, *args)
+        return await self._consume_method(*args)
+
+
+@overload
+def create_adapter(brick: Any, brick_type: Literal["source"], rate_limit: int | None = None) -> AsyncSourceAdapter | AsyncBlockingSourceAdapter: ...  # noqa: ANN401
+
+
+@overload
+def create_adapter(brick: Any, brick_type: Literal["processor"], rate_limit: int | None = None) -> AsyncProcessorAdapter: ...  # noqa: ANN401
+
+
+@overload
+def create_adapter(brick: Any, brick_type: Literal["sink"], rate_limit: int | None = None) -> AsyncSinkAdapter: ...  # noqa: ANN401
 
 
 def create_adapter(brick: Any, brick_type: str, rate_limit: int | None = None) -> AsyncBrickAdapter:  # noqa: ANN401
     """Factory function that creates the appropriate adapter for the provided brick_type."""
     original_brick = brick
     method_name = ""
-    SyncAdapterClass = None
-    AsyncAdapterClass = None
+    SyncAdapterClass: type[AsyncBrickAdapter]
+    AsyncAdapterClass: type[AsyncBrickAdapter]
 
     # Determine adapter classes and method based on type
     if brick_type == "source":
@@ -283,7 +301,7 @@ def create_adapter(brick: Any, brick_type: str, rate_limit: int | None = None) -
         raise TypeError(f"{brick_type.capitalize()} brick must have a callable '{method_name}' method.")
 
     # Decide which adapter to use based on sync/async nature
-    is_sync = not asyncio.iscoroutinefunction(core_method)
+    is_sync = not inspect.iscoroutinefunction(core_method)
     AdapterClass = SyncAdapterClass if is_sync else AsyncAdapterClass
 
     try:
