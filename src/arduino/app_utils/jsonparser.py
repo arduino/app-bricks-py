@@ -13,8 +13,7 @@ class JSONParser:
     def __init__(self, silent: bool = False) -> None:
         self.silent = silent
 
-    def parse(self, item: str) -> dict[str, Any] | list[Any] | None:
-        """The JSON document in item, an object or an array; None when it does not parse."""
+    def parse(self, item: str) -> dict[str, Any] | None:
         try:
             return json.loads(item)
         except Exception as e:
