@@ -1,0 +1,3 @@
+# Only the QNN models, everything else comes from the server context
+*
+!models/

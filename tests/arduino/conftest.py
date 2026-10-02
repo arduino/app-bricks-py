@@ -286,3 +286,214 @@ def pcm_registry():
 from arduino.router_bridge import Bridge
 
 patch.object(Bridge, "connect", return_value=True).start()
+
+# ---------------------------------------------------------------------------
+# Fake Edge Impulse inference service, speaking the socket protocol of the edge-impulse-runner containers
+# ---------------------------------------------------------------------------
+
+import os
+import queue
+import socket
+import tempfile
+import threading
+
+from arduino.app_internal.ei_inference import protocol as EI
+
+
+class FakeInferenceService:
+    """A server on a Unix socket that answers OPEN, FRAM and CONF like the real one, with scripted boxes.
+
+    ``models`` maps a model name to its details: ``width``, ``height``, ``resize_mode``, ``labels``, ``model_type``,
+    ``slots`` (the frames the client may keep in flight, 1 by default), ``object_tracking`` and ``thresholds`` (the
+    blocks a CONF message changes, each with an ``id`` and a ``type``), ``boxes``, a list of boxes in frame
+    coordinates (as the real service maps them back) or a callable (seq, image) returning the list or a
+    ``{"code", "error"}`` dict for a frame error, ``tracks``, the same for the tracked objects, with their ``id``, and
+    ``classes``, a ``{label: score}`` dict or a callable returning one. A connection asking for a confidence, in OPEN
+    or CONF, receives only the boxes, tracks and classes reaching it.
+    ``frames`` records every (model, seq, image) received, ``configured`` every (model, values) set through CONF,
+    ``grant(n)`` sends a SLOT message to every connection.
+    """
+
+    def __init__(self):
+        self.dir = tempfile.mkdtemp(prefix="ei-fake-")
+        self.socket_path = os.path.join(self.dir, "ei.sock")
+        self.models = {}
+        self.frames = []
+        self.configured = []
+        self.reply_delay = 0.0
+        self.open_delay = 0.0
+        self.opened = threading.Event()
+        self.closed = threading.Event()
+        self._server = None
+        self._threads = []
+        self._connections = []
+        self._lock = threading.Lock()
+
+    def start(self):
+        self._server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self._server.bind(self.socket_path)
+        self._server.listen(8)
+        thread = threading.Thread(target=self._accept, daemon=True)
+        thread.start()
+        self._threads.append(thread)
+        return self
+
+    def stop(self):
+        """Stop listening and drop every connection, the service can be started again."""
+        if self._server is not None:
+            self._server.close()
+            self._server = None
+        with self._lock:
+            connections, self._connections = self._connections, []
+        for conn in connections:
+            try:
+                conn.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            conn.close()
+        if os.path.exists(self.socket_path):
+            os.unlink(self.socket_path)
+
+    def cleanup(self):
+        self.stop()
+        os.rmdir(self.dir)
+
+    def grant(self, slots):
+        """Tell every connection it may keep `slots` frames in flight, as the real service does when it adds an instance."""
+        with self._lock:
+            for conn in self._connections:
+                EI.send_json(conn, EI.SLOTS, {"slots": slots})
+
+    def _accept(self):
+        server = self._server  # stop() drops the attribute, the closed socket ends the loop
+        while True:
+            try:
+                conn, _ = server.accept()
+            except OSError:
+                return
+            with self._lock:
+                self._connections.append(conn)
+            thread = threading.Thread(target=self._serve, args=(conn,), daemon=True)
+            thread.start()
+            self._threads.append(thread)
+
+    def _serve(self, conn):
+        reader = EI.Reader(conn)
+        try:
+            kind, payload = reader.read()
+            request = EI.parse_json(payload)
+            name = request.get("model") if request else None
+            if kind != EI.OPEN or name not in self.models:
+                EI.send_json(conn, EI.ERROR, {"op": "open", "code": EI.E_UNKNOWN_MODEL, "error": f"model '{name}' not found"})
+                return
+            model = self.models[name]
+            connection = {"confidence": request.get("confidence")}  # shared with the answering thread
+            if self.open_delay:
+                threading.Event().wait(self.open_delay)
+            details = {
+                "model": name,
+                "project": "fake",
+                "width": model["width"],
+                "height": model["height"],
+                "channels": 3,
+                "labels": model.get("labels", []),
+                "model_type": model.get("model_type", "object_detection"),
+                "resize_mode": model.get("resize_mode", "squash"),
+                "object_tracking": model.get("object_tracking", False),
+                "thresholds": [dict(block) for block in model.get("thresholds", [])],
+                "confidence": connection["confidence"],
+                "slots": model.get("slots", 1),
+            }
+            send_lock = threading.Lock()  # the reader answers CONF while the worker sends results
+            with send_lock:
+                EI.send_json(conn, EI.OPENED, details)
+            self.opened.set()
+            # Like the real service, frames are read as they arrive and answered by a worker, so a client with
+            # several frames in flight never blocks on the socket while one is being "inferred"
+            pending = queue.Queue()
+            threading.Thread(target=self._answer, args=(conn, model, connection, pending, send_lock), daemon=True).start()
+            while True:
+                kind, payload = reader.read()
+                if kind == EI.CONFIGURE:
+                    with send_lock:
+                        self._configure(conn, name, model, connection, EI.parse_json(payload))
+                    continue
+                seq, ts_ns, image, color = EI.parse_frame(payload)
+                image = image.copy()
+                self.frames.append((name, seq, image))
+                pending.put((seq, ts_ns, image))
+        except (ConnectionError, OSError, EI.ProtocolError, ValueError):
+            pass
+        finally:
+            conn.close()
+            self.closed.set()
+
+    def _configure(self, conn, name, model, connection, values):
+        """Apply a CONF message like the real service: the confidence of the connection, or values of a block that must exist and expose the keys."""
+        values = values or {}
+        if "id" not in values:
+            if set(values) == {"confidence"}:
+                connection["confidence"] = values["confidence"]
+                self.configured.append((name, values))
+                EI.send_json(conn, EI.CONFIGURE, {"thresholds": [dict(b) for b in model.get("thresholds", [])], "confidence": values["confidence"]})
+            else:
+                EI.send_json(
+                    conn, EI.ERROR, {"op": "configure", "code": EI.E_BAD_REQUEST, "error": 'without a block id CONF takes {"confidence": value}'}
+                )
+            return
+        block = next((b for b in model.get("thresholds", []) if b.get("id") == values.get("id")), None)
+        changes = {key: value for key, value in values.items() if key != "id"}
+        if block is None or any(key not in block or key in ("id", "type", "min_score") for key in changes) or not changes:
+            knobs = ", ".join(key for key in (block or {}) if key not in ("id", "type", "min_score"))
+            error = (
+                f"no threshold block {values.get('id')!r}" if block is None else f"the block exposes {knobs}, not {', '.join(changes) or 'nothing'}"
+            )
+            EI.send_json(conn, EI.ERROR, {"op": "configure", "code": EI.E_BAD_REQUEST, "error": error})
+            return
+        block.update(changes)
+        self.configured.append((name, values))
+        EI.send_json(conn, EI.CONFIGURE, {"thresholds": [dict(b) for b in model["thresholds"]], "confidence": connection["confidence"]})
+
+    def _answer(self, conn, model, connection, pending, send_lock):
+        try:
+            while True:
+                seq, ts_ns, image = pending.get()
+                if self.reply_delay:
+                    threading.Event().wait(self.reply_delay)
+                boxes, tracks, classes = model.get("boxes", []), model.get("tracks", []), model.get("classes", {})
+                if callable(boxes):
+                    boxes = boxes(seq, image)
+                if callable(tracks):
+                    tracks = tracks(seq, image)
+                if callable(classes):
+                    classes = classes(seq, image)
+                confidence = connection["confidence"]
+                if confidence is not None:
+                    boxes = [box for box in boxes if box["score"] >= confidence] if isinstance(boxes, list) else boxes
+                    tracks = [track for track in tracks if track["score"] >= confidence]
+                    classes = {label: score for label, score in classes.items() if score >= confidence}
+                with send_lock:
+                    if isinstance(boxes, dict):
+                        EI.send_json(conn, EI.ERROR, {"op": "frame", "seq": seq, **boxes})
+                        continue
+                    result = {"seq": seq, "ts_ns": ts_ns, "boxes": boxes, "tracks": tracks, "classes": classes, "anomaly": 0.0, "timing_ms": {}}
+                    EI.send_json(conn, EI.RESULT, result)
+        except (ConnectionError, OSError, ValueError):
+            pass
+
+
+@pytest.fixture
+def ei_service():
+    """A running FakeInferenceService with a 100x100 "det" model whose boxes the test sets."""
+    service = FakeInferenceService()
+    service.models["det"] = {
+        "width": 100,
+        "height": 100,
+        "resize_mode": "squash",
+        "labels": ["cat", "dog"],
+        "thresholds": [{"id": 12, "type": "object_detection", "min_score": 0.3}],
+        "boxes": [],
+    }
+    service.start()
+    yield service
+    service.cleanup()

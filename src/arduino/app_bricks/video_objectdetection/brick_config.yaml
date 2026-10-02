@@ -2,28 +2,26 @@ id: arduino:video_object_detection
 name: Video Object Detection
 description: |
   This object detection brick utilizes a pre-trained model to analyze video streams from a camera.
-  It identifies objects, returning their predicted class labels, bounding boxes, and confidence scores.
-  The output is a video stream featuring bounding boxes around detected objects, with the added capability to trigger actions based on these detections.
+  It identifies objects, returning their predicted class labels, bounding boxes, and confidence scores, with the capability to trigger actions based on these detections.
   It supports pre-trained models provided by the framework and custom object detection models trained on the Edge Impulse platform.
 category: video
+ports:
+  - 4912
 required_devices:
   - camera
+requires_services: ["arduino:edge_impulse"]
 model_by_boards:
     - platform: ventunoq
       model: yolox-qnn-object-detection
     - platform: unoq
-      model: yolox-object-detection      
+      model: yolox-object-detection
 ai_frameworks_compatibility:
   - edgeimpulse
 model_configuration_variables:
   - EI_V_OBJ_DETECTION_MODEL
 variables:
-- name: CUSTOM_MODEL_PATH
-  description: Path to the custom model directory
-  hidden: true
-  default_value: /home/arduino/.arduino-bricks/ei-models
 - name: BIND_ADDRESS
-  description: Bind address
+  description: Bind address of the video stream
   hidden: true
   default_value: 0.0.0.0
 - name: VIDEO_DEVICE
