@@ -39,7 +39,7 @@ class AudioDetector(EdgeImpulseRunnerFacade):
         self.confidence = confidence
 
         self._debounce_sec = debounce_sec
-        self._last_detected = {}
+        self._last_detected: dict[str, float] = {}
 
         model_info = self.get_model_info()
         if not model_info:
@@ -54,7 +54,7 @@ class AudioDetector(EdgeImpulseRunnerFacade):
         self._duration = model_info.input_features_count / model_info.axis_count * model_info.interval_ms
         self._buffer = SlidingWindowBuffer(self._window_size, slide_amount=math.floor(self._window_size * 0.4))
 
-        self.handlers = {}  # Dictionary to hold handlers for different keywords
+        self.handlers: dict[str, Callable[[], None]] = {}  # Dictionary to hold handlers for different keywords
         self.handlers_lock = threading.Lock()
 
     def on_detect(self, keyword: str, callback: Callable[[], None]) -> None:

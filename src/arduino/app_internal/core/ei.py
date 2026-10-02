@@ -218,7 +218,7 @@ class EdgeImpulseRunnerFacade:
             if class_results and "classification" in class_results:
                 class_results = class_results["classification"]
 
-                classification = []
+                classification: list[dict[str, str]] = []
                 for class_name in class_results:
                     class_confidence = float(class_results[class_name])
 

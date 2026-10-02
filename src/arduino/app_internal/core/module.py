@@ -128,7 +128,7 @@ def get_bricks_static_assets_directory() -> str | None:
 @dataclass
 class ModelBrickConfig:
     id: str
-    model_configuration: dict[str, str] = field(default_factory=dict)
+    model_configuration: dict[str, str] = field(default_factory=dict[str, str])
 
     @staticmethod
     def from_dict(data: dict[str, Any]) -> "ModelBrickConfig":
@@ -141,8 +141,8 @@ class ModelBrickConfig:
 @dataclass
 class ModelDeployment:
     handler: str = ""
-    platforms: dict[str, dict[str, Any]] = field(default_factory=dict)
-    metadata: dict[str, str] = field(default_factory=dict)
+    platforms: dict[str, dict[str, Any]] = field(default_factory=dict[str, dict[str, Any]])
+    metadata: dict[str, str] = field(default_factory=dict[str, str])
 
     @staticmethod
     def from_dict(data: dict[str, Any]) -> "ModelDeployment":
@@ -163,10 +163,10 @@ class ModelEntry:
     model_id: str
     name: str = ""
     description: str = ""
-    metadata: dict[str, str] = field(default_factory=dict)
-    supported_boards: list[str] = field(default_factory=list)
+    metadata: dict[str, str] = field(default_factory=dict[str, str])
+    supported_boards: list[str] = field(default_factory=list[str])
     deployment: ModelDeployment | None = None
-    bricks: list[ModelBrickConfig] = field(default_factory=list)
+    bricks: list[ModelBrickConfig] = field(default_factory=list[ModelBrickConfig])
 
     @staticmethod
     def from_dict(model_id: str, data: dict[str, Any]) -> "ModelEntry":
@@ -201,7 +201,7 @@ def load_model_list() -> dict[str, ModelEntry] | None:
                 model_list_content = model_list_content["models"]
             if not isinstance(model_list_content, list):
                 return None
-            models = {}
+            models: dict[str, ModelEntry] = {}
             for entry in model_list_content:
                 if isinstance(entry, dict):
                     for model_id, model_data in entry.items():
@@ -275,7 +275,7 @@ def _model_name(value: object) -> str | None:
     return name or None
 
 
-def parse_docker_compose_variable(variable_string: str) -> list[tuple[str, str]] | str:
+def parse_docker_compose_variable(variable_string: str) -> list[tuple[str, str | None]] | str:
     """Parses a Docker Compose-style environment variable string, including nested variables.
 
     Args:
@@ -288,7 +288,7 @@ def parse_docker_compose_variable(variable_string: str) -> list[tuple[str, str]]
     """
     matches = re.findall(r"\${([^:]+)(:\-)?([^}]+)?}", variable_string)
     if matches:
-        results = []
+        results: list[tuple[str, str | None]] = []
         for match in matches:
             if len(match) == 3:
                 var_name = match[0]
