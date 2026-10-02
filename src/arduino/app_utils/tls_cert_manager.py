@@ -46,7 +46,7 @@ class TLSCertificateManager:
     Components can use their own certificates by providing a different certs_dir path.
     """
 
-    _locks = {}
+    _locks: dict[str, threading.Lock] = {}
     _locks_lock = threading.Lock()
 
     @classmethod

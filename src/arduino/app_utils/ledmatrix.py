@@ -107,7 +107,7 @@ class Frame:
 
         # Case: comma-separated numeric strings
         if isinstance(rows[0], str):
-            parsed = []
+            parsed: list[list[int]] = []
             for i, row in enumerate(rows):
                 if not isinstance(row, str):
                     raise ValueError(f"row {i} is not a string")

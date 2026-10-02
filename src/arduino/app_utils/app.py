@@ -80,8 +80,8 @@ class AppController:
     """
 
     def __init__(self) -> None:
-        self._waiting_queue = deque()
-        self._running_queue = deque()
+        self._waiting_queue: deque[object] = deque()
+        self._running_queue: deque[object] = deque()
         self._brick_states: dict[object, list[tuple[threading.Thread, threading.Event]]] = {}
         self._app_lock = threading.Lock()
         self._running = False
@@ -362,8 +362,8 @@ class AppController:
 
     def _discover_runnable_methods(self, brick: object) -> list[tuple[Callable[..., object], str]]:
         """Discovers and validates all methods marked with @loop/@execute or named loop/execute."""
-        methods = []
-        processed_names = set()
+        methods: list[tuple[Callable[..., object], str]] = []
+        processed_names: set[str] = set()
 
         for name in dir(brick):
             if name.startswith("__") or name in processed_names:
