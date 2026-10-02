@@ -3,13 +3,18 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import io
+from enum import StrEnum
+from typing import Any
+
 from PIL import Image, ImageDraw, ImageFont
 from arduino.app_utils import Logger
 
 logger = Logger(__name__)
 
 
-class Shape:
+class Shape(StrEnum):
+    """Shape of a drawn bounding box; the plain strings "rectangle" and "circle" are accepted too."""
+
     RECTANGLE = "rectangle"
     CIRCLE = "circle"
 
@@ -47,9 +52,10 @@ def get_image_type(image_bytes: bytes | Image.Image) -> str | None:
             # If the input is already a PIL Image, we can directly get its format
             if image_bytes.format is not None:
                 return image_bytes.format.lower()
-        elif isinstance(image_bytes, bytes):
+        else:
             image = Image.open(io.BytesIO(image_bytes))
-            return image.format.lower()  # Returns 'jpeg', 'png', etc.
+            if image.format is not None:
+                return image.format.lower()  # Returns 'jpeg', 'png', etc.
         return None
     except Exception as e:
         print(f"Error detecting image type: {e}")
@@ -77,7 +83,7 @@ def get_image_bytes(image: str | Image.Image | bytes | None) -> bytes | None:
             return byte_io.getvalue()
         elif isinstance(image, bytes):
             return image
-        elif isinstance(image, str):
+        else:
             with open(image, "rb") as f:
                 return f.read()
     except Exception as e:
@@ -87,9 +93,9 @@ def get_image_bytes(image: str | Image.Image | bytes | None) -> bytes | None:
 
 def draw_bounding_boxes(
     image: Image.Image | bytes,
-    detection: dict | None,
+    detection: dict[str, Any] | None,
     draw: ImageDraw.ImageDraw | None = None,
-    shape: Shape = Shape.RECTANGLE,
+    shape: Shape | str | None = Shape.RECTANGLE,
 ) -> Image.Image | None:
     """Draw bounding boxes on an image using PIL.
 
@@ -101,8 +107,8 @@ def draw_bounding_boxes(
             'confidence', as returned by the detection bricks. None, i.e. no detection result, is accepted so the output of
             a detection call can be passed straight in: with None or an empty dict the image is returned untouched.
         draw (ImageDraw.ImageDraw, optional): An existing ImageDraw object to use. If None, a new one is created.
-        shape (Shape, optional): Shape of the bounding box. Defaults to rectangle.
-        itself. Defaults to False.
+        shape (Shape | str | None, optional): Shape of the bounding box, Shape.RECTANGLE/"rectangle" or
+            Shape.CIRCLE/"circle". Defaults to rectangle, None included, as do unsupported values (with a warning).
     """
     if isinstance(image, bytes):
         image_box = Image.open(io.BytesIO(image))
@@ -115,28 +121,29 @@ def draw_bounding_boxes(
     if not detection:
         return image_box
 
+    boxes: list[dict[str, Any]]
     if "detection" not in detection:
         # Convert simple dictionary to expected format if needed
-        detection_object = []
+        boxes = []
         for label, details in detection.items():
             for detail in details:
-                detection_object.append({
+                boxes.append({
                     "class_name": label,
                     "bounding_box_xyxy": detail.get("bounding_box_xyxy", [0, 0, 0, 0]),
                     "confidence": detail.get("confidence", 0),
                 })
-
-        detection = detection_object
     else:
-        detection = detection["detection"]
+        boxes = detection["detection"]
 
-    if shape not in (Shape.RECTANGLE, Shape.CIRCLE):
+    if shape is None:
+        shape = Shape.RECTANGLE
+    elif shape not in (Shape.RECTANGLE, Shape.CIRCLE):
         logger.warning(f"Unsupported shape '{shape}'. Defaulting to rectangle.")
         shape = Shape.RECTANGLE
 
     # Scale font size and box thickness based on image size and number of detections
     ref_dim = max(image_box.size)
-    n_detections = max(1, len(detection))
+    n_detections = max(1, len(boxes))
     # More aggressive scaling for many detections or small images
     font_size = max(8, int(ref_dim / (28 + n_detections * 3)))
     box_thickness = max(1, int(ref_dim / 250))
@@ -149,7 +156,7 @@ def draw_bounding_boxes(
         logger.warning(f"Error loading custom font: {e}. Using default font.")
         font = ImageFont.load_default(14)
 
-    for i, obj_det in enumerate(detection):
+    for obj_det in boxes:
         if "class_name" not in obj_det or "bounding_box_xyxy" not in obj_det or "confidence" not in obj_det:
             continue
 
@@ -201,7 +208,7 @@ def draw_bounding_boxes(
     return image_box
 
 
-def draw_anomaly_markers(image: Image.Image | bytes, detection: dict | None, draw: ImageDraw.ImageDraw | None = None) -> Image.Image | None:
+def draw_anomaly_markers(image: Image.Image | bytes, detection: dict[str, Any] | None, draw: ImageDraw.ImageDraw | None = None) -> Image.Image | None:
     """Draw bounding boxes on an image using PIL.
 
     The thickness of the box and font size are scaled based on image size.
@@ -234,7 +241,7 @@ def draw_anomaly_markers(image: Image.Image | bytes, detection: dict | None, dra
     ref_dim = max(image_box.size)
     box_thickness = max(1, int(ref_dim / 400))
 
-    for i, obj_det in enumerate(anomalies):
+    for obj_det in anomalies:
         if "class_name" not in obj_det or "bounding_box_xyxy" not in obj_det or "score" not in obj_det:
             continue
 
