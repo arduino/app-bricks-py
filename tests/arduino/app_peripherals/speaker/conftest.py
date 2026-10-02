@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from arduino.app_peripherals.speaker.utils import _speaker_registry
+from arduino.app_peripherals.speaker.speaker import _speaker_registry
 
 
 @pytest.fixture(autouse=True)
@@ -23,6 +23,12 @@ def clean_speaker_registry():
     """Give each test a clean slate of auto-selected speaker claims."""
     _speaker_registry.clear()
     yield
+
+
+@pytest.fixture(autouse=True)
+def _no_carrier(monkeypatch):
+    """Default to a non-media-carrier environment unless a test opts in."""
+    monkeypatch.delenv("CONFIGURED_CARRIERS", raising=False)
 
 
 def build_pw_dump(usb_ids=(), builtin_ids=(), bluetooth_ids=(), hdmi_ids=()):

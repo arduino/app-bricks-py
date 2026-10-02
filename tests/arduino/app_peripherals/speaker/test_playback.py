@@ -81,13 +81,13 @@ class TestPlayPCM:
 
         assert "empty" in str(exc_info.value).lower()
 
-    def test_play_pcm_validates_none_data(self):
-        """Test that play_pcm validates None data."""
+    def test_play_pcm_rejects_none_data(self):
+        """Test that play_pcm rejects None data as a wrong type."""
         spkr = MockSpeaker()
         spkr.start()
 
-        with pytest.raises(ValueError):
-            spkr.play_pcm(None)
+        with pytest.raises(TypeError):
+            spkr.play_pcm(None)  # type: ignore
 
     def test_play_pcm_requires_started_speaker(self):
         """Test that play_pcm requires speaker to be started."""

@@ -11,7 +11,7 @@ import numpy as np
 
 from .base_speaker import BaseSpeaker, FormatPlain, FormatPacked
 from .errors import SpeakerError, SpeakerOpenError, SpeakerWriteError, SpeakerConfigError
-from .utils import has_media_carrier, list_audio_sinks, _nth_plugged_speaker, node_description
+from .utils import has_media_carrier, list_audio_sinks, node_description
 from arduino.app_utils.logger import Logger
 
 logger = Logger("ALSASpeaker")
@@ -100,7 +100,7 @@ class ALSASpeaker(BaseSpeaker):
         return _dtype_to_alsa_format_name(self.format, self.format_is_packed)
 
     @staticmethod
-    def list_devices() -> list:
+    def list_devices() -> list[str]:
         """
         Return all the available speakers as full ALSA device paths.
 
@@ -110,7 +110,7 @@ class ALSASpeaker(BaseSpeaker):
         return ALSASpeaker.list_usb_devices() + ALSASpeaker.list_jack_devices()
 
     @staticmethod
-    def list_usb_devices() -> list:
+    def list_usb_devices() -> list[str]:
         """
         Return only the available USB speakers as full ALSA device paths.
 
@@ -134,7 +134,7 @@ class ALSASpeaker(BaseSpeaker):
         return usb_devices
 
     @staticmethod
-    def list_jack_devices() -> list:
+    def list_jack_devices() -> list[str]:
         """
         Return only the supported built-in (jack) speakers as full ALSA device
         paths.
@@ -176,21 +176,22 @@ class ALSASpeaker(BaseSpeaker):
             SpeakerConfigError: If the identifier is of an unsupported type or format
             SpeakerOpenError: If the requested speaker is not available
         """
-        if not isinstance(identifier, (str, int)):
-            raise SpeakerConfigError(f"Invalid device type: {type(identifier)}")
-
-        # An ordinal index selects the n-th plugged speaker
-        if isinstance(identifier, int) or (isinstance(identifier, str) and identifier.isdigit()):
-            identifier = _nth_plugged_speaker(int(identifier))  # -> "usb:X" / "jack:X"
+        match identifier:
+            case str() if not identifier.isdigit():
+                pass  # A device name or path, resolved below
+            case int() | str():
+                # An ordinal index selects the n-th plugged speaker
+                identifier = _nth_plugged_speaker(int(identifier))  # -> "usb:X" / "jack:X"
+            case _:
+                raise SpeakerConfigError(f"Invalid device type: {type(identifier)}")
 
         # Complete device strings are opened as given
-        if isinstance(identifier, str):
-            if identifier.startswith("pipewire"):
-                return identifier
-            if identifier.startswith("jack:"):
-                return self._resolve_jack_ref(identifier)
-            if identifier.startswith("usb:"):
-                return self._resolve_usb_ref(identifier)
+        if identifier.startswith("pipewire"):
+            return identifier
+        if identifier.startswith("jack:"):
+            return self._resolve_jack_ref(identifier)
+        if identifier.startswith("usb:"):
+            return self._resolve_usb_ref(identifier)
 
         # Everything else resolves to a card-based device
         playback_devices = self._alsa_playback_devices()
@@ -351,7 +352,7 @@ class ALSASpeaker(BaseSpeaker):
                 except Exception as e:
                     raise SpeakerOpenError(f"Failed to resolve speaker name from stable ref {device_ref}: {e}")
 
-        elif isinstance(device_ref, int):
+        else:
             # This is a card index like 0, 1, ...
             cards = alsaaudio.cards()
             if device_ref < 0 or device_ref >= len(cards):
@@ -361,7 +362,7 @@ class ALSASpeaker(BaseSpeaker):
 
         raise SpeakerOpenError(f"Invalid device reference for name resolution: {device_ref} (type:{type(device_ref)})")
 
-    def _alsa_playback_devices(self) -> list:
+    def _alsa_playback_devices(self) -> list[str]:
         """
         Return a list of available ALSA speakers (plughw only) as full
         "plughw:CARD=<name>,DEV=<n>" device paths. This is a cheap lookup used
@@ -395,7 +396,7 @@ class ALSASpeaker(BaseSpeaker):
                 card_idx, device_idx = self._resolve_runtime_ref(self.device_stable_ref)
                 device = f"plughw:CARD={card_idx},DEV={device_idx}"
 
-            self._pcm = alsaaudio.PCM(
+            pcm = alsaaudio.PCM(
                 type=alsaaudio.PCM_PLAYBACK,
                 mode=alsaaudio.PCM_NORMAL,
                 device=device,
@@ -404,8 +405,9 @@ class ALSASpeaker(BaseSpeaker):
                 format=self._alsa_format_idx,
                 periodsize=self.buffer_size,
             )
+            self._pcm = pcm
 
-            info = self._pcm.info()
+            info = pcm.info()
 
             actual_rate = info["rate"]
             if self.sample_rate != actual_rate:
@@ -473,11 +475,14 @@ class ALSASpeaker(BaseSpeaker):
                 self._open_speaker()
                 self.logger.info(f"Successfully reopened speaker {self.name}")
 
-            result = self._pcm.write(audio_chunk.tobytes())
+            pcm = self._pcm
+            if pcm is None:
+                raise SpeakerWriteError("Speaker is not open")
+            result = pcm.write(audio_chunk.tobytes())
             if result < 0:
                 # Oops, a click already occurred before writing, the best we can do is retry this write
                 logger.debug(f"PCM write returned error code: {'EPIPE' if result == -32 else result}")
-                self._pcm.write(audio_chunk.tobytes())
+                pcm.write(audio_chunk.tobytes())
 
         except (alsaaudio.ALSAAudioError, SpeakerOpenError, SpeakerWriteError, Exception) as e:
             if self._is_device_disconnected():
@@ -502,6 +507,39 @@ class ALSASpeaker(BaseSpeaker):
         except Exception as e:
             logger.debug(f"Error checking device status: {e}")
             return True  # Assume disconnected if we can't check
+
+
+def _nth_plugged_speaker(idx: int) -> str:
+    """
+    Find the n-th plugged speaker, regardless of whether it is already in use.
+
+    The index spans USB speakers first, then jack speakers, if supported
+    by the current platform.
+
+    Args:
+        idx (int): Index of the speaker to select (0-based).
+
+    Returns:
+        str: Identifier of the n-th plugged speaker, "usb:X" or "jack:X",
+            where X is the 1-based ordinal index within its type.
+
+    Raises:
+        SpeakerOpenError: If no speaker is plugged at the given index.
+    """
+    usb_spkrs, builtin_spkrs = list_audio_sinks()
+
+    usb_count = len(usb_spkrs)
+    if idx < usb_count:
+        return f"usb:{idx + 1}"
+
+    jack_count = len(builtin_spkrs) if has_media_carrier() else 0
+    if idx - usb_count < jack_count:
+        return f"jack:{idx - usb_count + 1}"
+
+    raise SpeakerOpenError(
+        f"No speaker found at index {idx}: only {usb_count + jack_count} speaker(s) plugged",
+        hint="Connect a speaker (or check the audio configuration) and restart the app.",
+    )
 
 
 def _alsa_path_device_index(alsa_path: str) -> int:

@@ -153,7 +153,7 @@ class WebSocketCamera(BaseCamera):
 
     def _open_camera(self) -> None:
         """Start the WebSocket server."""
-        server_future = Future()
+        server_future: Future[bool] = Future()
 
         self._server_thread = threading.Thread(target=self._start_server_thread, args=(server_future,), daemon=True)
         self._server_thread.start()
@@ -168,7 +168,7 @@ class WebSocketCamera(BaseCamera):
                 raise CameraOpenError(f"Failed to bind WebSocket server on {self.url}: {e}") from e
             raise
 
-    def _start_server_thread(self, future: Future) -> None:
+    def _start_server_thread(self, future: Future[bool]) -> None:
         """Run WebSocket server in its own thread with event loop."""
         try:
             self._loop = asyncio.new_event_loop()
@@ -179,7 +179,7 @@ class WebSocketCamera(BaseCamera):
                 self._loop.close()
                 self._loop = None
 
-    async def _start_server(self, future: Future) -> None:
+    async def _start_server(self, future: Future[bool]) -> None:
         """Start the WebSocket server."""
         try:
             self._server = await asyncio.wait_for(
