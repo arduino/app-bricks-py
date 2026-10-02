@@ -147,12 +147,14 @@ class Camera:
             _camera_registry.bind(key, camera)
             return camera
 
-        if not isinstance(source, (str, int)):
-            raise CameraConfigError(f"Invalid source type: {type(source)}. Must be str, int or None.")
-
-        if isinstance(source, int) or (isinstance(source, str) and source.isdigit()):
-            # Positional selection of the n-th plugged camera
-            source = _nth_plugged_camera(int(source))
+        match source:
+            case str() if not source.isdigit():
+                pass  # A device path or a URL, resolved by _create_camera
+            case int() | str():
+                # Positional selection of the n-th plugged camera
+                source = _nth_plugged_camera(int(source))
+            case _:
+                raise CameraConfigError(f"Invalid source type: {type(source)}. Must be str, int or None.")
 
         camera = _create_camera(source, resolution, fps, adjustments, **kwargs)
 

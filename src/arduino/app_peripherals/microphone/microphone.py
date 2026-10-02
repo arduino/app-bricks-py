@@ -205,11 +205,6 @@ class Microphone:
             _microphone_registry.bind(device, mic)
             return mic
 
-        if not isinstance(device, (str, int)):
-            from .errors import MicrophoneConfigError
-
-            raise MicrophoneConfigError(f"Invalid device type: {type(device)}")
-
         mic = _create_microphone(device, sample_rate, channels, format, buffer_size, **kwargs)
 
         from .alsa_microphone import ALSAMicrophone

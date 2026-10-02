@@ -175,21 +175,22 @@ class ALSAMicrophone(BaseMicrophone):
             MicrophoneConfigError: If the identifier is of an unsupported type or format
             MicrophoneOpenError: If the requested microphone is not available
         """
-        if not isinstance(identifier, (str, int)):
-            raise MicrophoneConfigError(f"Invalid device type: {type(identifier)}")
-
-        # An ordinal index selects the n-th plugged microphone
-        if isinstance(identifier, int) or (isinstance(identifier, str) and identifier.isdigit()):
-            identifier = _nth_plugged_microphone(int(identifier))  # -> "usb:X" / "jack:X"
+        match identifier:
+            case str() if not identifier.isdigit():
+                pass  # A device name or path, resolved below
+            case int() | str():
+                # An ordinal index selects the n-th plugged microphone
+                identifier = _nth_plugged_microphone(int(identifier))  # -> "usb:X" / "jack:X"
+            case _:
+                raise MicrophoneConfigError(f"Invalid device type: {type(identifier)}")
 
         # Complete device strings are opened as given
-        if isinstance(identifier, str):
-            if identifier.startswith("pipewire"):
-                return identifier
-            if identifier.startswith("jack:"):
-                return self._resolve_jack_ref(identifier)
-            if identifier.startswith("usb:"):
-                return self._resolve_usb_ref(identifier)
+        if identifier.startswith("pipewire"):
+            return identifier
+        if identifier.startswith("jack:"):
+            return self._resolve_jack_ref(identifier)
+        if identifier.startswith("usb:"):
+            return self._resolve_usb_ref(identifier)
 
         # Everything else resolves to a card-based device
         capture_devices = self._alsa_capture_devices()
@@ -350,7 +351,7 @@ class ALSAMicrophone(BaseMicrophone):
                 except Exception as e:
                     raise MicrophoneOpenError(f"Failed to resolve microphone name from stable ref {device_ref}: {e}")
 
-        elif isinstance(device_ref, int):
+        else:
             # This is a card index like 0, 1, ...
             cards = alsaaudio.cards()
             if device_ref < 0 or device_ref >= len(cards):

@@ -184,11 +184,6 @@ class Speaker:
             _speaker_registry.bind(device, speaker)
             return speaker
 
-        if not isinstance(device, (str, int)):
-            from .errors import SpeakerConfigError
-
-            raise SpeakerConfigError(f"Invalid device type: {type(device)}")
-
         speaker = _create_speaker(device, sample_rate, channels, format, buffer_size, **kwargs)
 
         from .alsa_speaker import ALSASpeaker

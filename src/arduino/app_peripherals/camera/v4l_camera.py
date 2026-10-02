@@ -153,26 +153,30 @@ class V4LCamera(BaseCamera):
         Raises:
             CameraOpenError: If camera cannot be resolved
         """
-        if isinstance(device, str) and device.startswith("/dev/v4l/by-id"):
-            # Already a stable link, resolve video device
-            device_path = os.path.realpath(device)
-        elif isinstance(device, str) and device.startswith("/dev/v4l/by-path"):
-            # A stable link, but not the one we want, resolve video device
-            if not os.path.exists(device):
-                raise CameraOpenError(f"Device path {device} does not exist")
-            device_path = os.path.realpath(device)
-        elif isinstance(device, int) or (isinstance(device, str) and device.isdigit()):
-            # Resolve video device as /dev/video<device>
-            device_index = int(device)
-            device_indices = V4LCamera.list_devices()
-            if device_index < 0 or device_index >= len(device_indices):
-                raise CameraOpenError(f"Camera index {device_index} out of range. Available: 0-{len(device_indices)}")
-            device_path = f"/dev/video{device_indices[device_index]}"
-        elif isinstance(device, str) and device.startswith("/dev/video"):
-            # Already a video device
-            device_path = device
-        else:
-            raise CameraOpenError(f"Unrecognized device identifier: {device}")
+        match device:
+            case str() if not device.isdigit():
+                if device.startswith("/dev/v4l/by-id"):
+                    # Already a stable link, resolve video device
+                    device_path = os.path.realpath(device)
+                elif device.startswith("/dev/v4l/by-path"):
+                    # A stable link, but not the one we want, resolve video device
+                    if not os.path.exists(device):
+                        raise CameraOpenError(f"Device path {device} does not exist")
+                    device_path = os.path.realpath(device)
+                elif device.startswith("/dev/video"):
+                    # Already a video device
+                    device_path = device
+                else:
+                    raise CameraOpenError(f"Unrecognized device identifier: {device}")
+            case int() | str():
+                # Resolve video device as /dev/video<device>
+                device_index = int(device)
+                device_indices = V4LCamera.list_devices()
+                if device_index < 0 or device_index >= len(device_indices):
+                    raise CameraOpenError(f"Camera index {device_index} out of range. Available: 0-{len(device_indices)}")
+                device_path = f"/dev/video{device_indices[device_index]}"
+            case _:
+                raise CameraOpenError(f"Unrecognized device identifier: {device}")
 
         # Now map /dev/videoX to a stable link under /dev/v4l/by-id
         by_id_dir = "/dev/v4l/by-id/"
@@ -206,7 +210,7 @@ class V4LCamera(BaseCamera):
         Raises:
             CameraOpenError: If device cannot be resolved at all
         """
-        if not isinstance(stable_path, str) or not stable_path.startswith("/dev/v4l/by-id"):
+        if not stable_path.startswith("/dev/v4l/by-id"):
             raise CameraOpenError(f"Invalid stable path provided: {stable_path}")
 
         if not os.path.exists(stable_path):

@@ -141,27 +141,28 @@ class CSICamera(BaseCamera):
         """
         camera_ids = self._backend.list_camera_ids()
 
-        if isinstance(device, int) or (isinstance(device, str) and device.isdigit()):
-            ordinal = int(device)
-            if ordinal < 0 or ordinal >= len(camera_ids):
-                raise CameraOpenError(f"Camera index {ordinal} out of range. Available: 0-{len(camera_ids) - 1}")
+        match device:
+            case str() if not device.isdigit():
+                if "CAMERA" not in device.upper():
+                    raise CameraOpenError(f"Invalid camera name: {device}. Expected format like 'CAMERA0'")
 
-            return camera_ids[ordinal]
+                m = re.search(r"(\d+)", device)
+                if not m:
+                    raise CameraOpenError(f"Invalid camera device string: {device}")
+                requested = int(m.group(1))
+                if requested not in camera_ids:
+                    raise CameraOpenError(f"Camera id {requested} not available. Available: {camera_ids}")
+                return requested
 
-        elif isinstance(device, str):
-            if "CAMERA" not in device.upper():
-                raise CameraOpenError(f"Invalid camera name: {device}. Expected format like 'CAMERA0'")
+            case int() | str():
+                ordinal = int(device)
+                if ordinal < 0 or ordinal >= len(camera_ids):
+                    raise CameraOpenError(f"Camera index {ordinal} out of range. Available: 0-{len(camera_ids) - 1}")
 
-            m = re.search(r"(\d+)", device)
-            if not m:
-                raise CameraOpenError(f"Invalid camera device string: {device}")
-            requested = int(m.group(1))
-            if requested not in camera_ids:
-                raise CameraOpenError(f"Camera id {requested} not available. Available: {camera_ids}")
-            return requested
+                return camera_ids[ordinal]
 
-        else:
-            raise CameraOpenError(f"Invalid device identifier: {device}")
+            case _:
+                raise CameraOpenError(f"Invalid device identifier: {device}")
 
     def _open_camera(self) -> None:
         """
