@@ -4,7 +4,7 @@ name = "python-base"
 version = "0"
 requires-python = "==3.13.*"
 dependencies = [
-    "pandas==2.3.2",
+    "pandas==3.0.6",
     "pillow",
     "pyyaml",
     "requests",
