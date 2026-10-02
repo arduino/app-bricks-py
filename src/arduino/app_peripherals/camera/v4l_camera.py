@@ -253,7 +253,7 @@ class V4LCamera(BaseCamera):
                 def fourcc_to_str(fourcc_int: float) -> str:
                     return "".join([chr((int(fourcc_int) >> 8 * i) & 0xFF) for i in range(4)])
 
-                self._cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*self.codec))
+                self._cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc(*self.codec))
                 fourcc = fourcc_to_str(self._cap.get(cv2.CAP_PROP_FOURCC))
                 if fourcc != self.codec:
                     logger.warning(f"Camera {self.name} codec set to {fourcc} instead of requested {self.codec}")
