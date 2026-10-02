@@ -2,6 +2,8 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import io
+
 from PIL import Image
 
 from arduino.app_utils.image.image import Shape, draw_anomaly_markers, draw_bounding_boxes, get_image_bytes, get_image_type
@@ -30,8 +32,6 @@ def test_no_detection_returns_the_image_or_none():
 
 
 def test_image_type_of_bytes_and_images():
-    import io
-
     buf = io.BytesIO()
     _image().save(buf, "PNG")
     assert get_image_type(buf.getvalue()) == "png"
