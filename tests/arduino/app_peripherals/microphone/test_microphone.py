@@ -196,6 +196,9 @@ class TestMicrophoneConfiguration:
         with pytest.raises(MicrophoneConfigError):
             ALSAMicrophone(device=None)  # type: ignore
 
+        with pytest.raises(MicrophoneConfigError, match="Invalid device type"):
+            Microphone(device=1.5)  # type: ignore
+
     def test_no_devices_found_raises_open_error(self, mock_pw_dump):
         """Test that no USB devices found raises an open error."""
         mock_pw_dump(usb_ids=(), builtin_ids=())
