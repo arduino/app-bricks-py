@@ -12,13 +12,11 @@ from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 
+from ..audio_format import FormatPacked, FormatPlain, parse_format
 from .errors import MicrophoneConfigError, MicrophoneOpenError, MicrophoneReadError
 from arduino.app_utils import Logger, peripheral
 
 logger = Logger("Microphone")
-
-type FormatPlain = type | np.dtype | str
-type FormatPacked = tuple[FormatPlain, bool]
 
 
 @peripheral
@@ -62,20 +60,7 @@ class BaseMicrophone(ABC):
             raise MicrophoneConfigError("Number of channels must be positive")
         self.channels = channels
 
-        if format is None:
-            raise MicrophoneConfigError("Format must be specified")
-        if isinstance(format, tuple):
-            if len(format) != 2:
-                raise MicrophoneConfigError("Format tuple must be of the form (format: FormatPlain, is_packed: bool)")
-            format, self.format_is_packed = format
-        else:
-            self.format_is_packed = False
-        if isinstance(format, str) and format.strip() == "":
-            raise MicrophoneConfigError("Format must be a non-empty string or a valid numpy dtype/type or a tuple")
-        try:
-            self.format: np.dtype = np.dtype(format)
-        except TypeError as e:
-            raise MicrophoneConfigError(f"Invalid format: {format}") from e
+        self.format, self.format_is_packed = parse_format(format, MicrophoneConfigError)
 
         if buffer_size <= 0:
             raise MicrophoneConfigError("Buffer size must be positive")
