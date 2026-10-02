@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from arduino.app_peripherals.speaker.utils import _speaker_registry
+from arduino.app_peripherals.speaker.speaker import _speaker_registry
 
 
 @pytest.fixture(autouse=True)

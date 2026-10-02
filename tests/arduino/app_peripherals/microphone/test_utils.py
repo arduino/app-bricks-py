@@ -8,7 +8,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from arduino.app_peripherals.microphone.errors import MicrophoneOpenError
-from arduino.app_peripherals.microphone.utils import _claim_first_available_microphone, list_audio_sources, _nth_plugged_microphone
+from arduino.app_peripherals.microphone.alsa_microphone import _nth_plugged_microphone
+from arduino.app_peripherals.microphone.microphone import _claim_first_available_microphone
+from arduino.app_peripherals.microphone.utils import list_audio_sources
 
 _CARRIER_ENV = "CONFIGURED_CARRIERS"
 

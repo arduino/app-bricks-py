@@ -6,7 +6,12 @@ from typing import Any
 
 import numpy as np
 
+from ..device_registry import DeviceRegistry
 from .base_speaker import BaseSpeaker, FormatPlain, FormatPacked
+from .errors import SpeakerOpenError
+
+_speaker_registry = DeviceRegistry()
+"""Tracks the speakers assigned to auto-selected Speaker instances."""
 
 
 class Speaker:
@@ -168,12 +173,8 @@ class Speaker:
             speaker = Speaker("pipewire:NODE=MyPipewireNode")  # Using PipeWire node name
             ```
         """
-        from .utils import _speaker_registry
-
         if device is None:
             # Auto-selection: claim the first available speaker so other instances don't select it
-            from .utils import _claim_first_available_speaker
-
             device = _claim_first_available_speaker()
             try:
                 speaker = _create_speaker(device, sample_rate, channels, format, buffer_size, **kwargs)
@@ -316,3 +317,27 @@ def _create_speaker(
         buffer_size=buffer_size,
         **kwargs,
     )
+
+
+def _claim_first_available_speaker() -> str:
+    """
+    Find and claim the first plugged speaker not assigned to another instance.
+
+    USB speakers take precedence over jack ones, if supported by the platform.
+    The claim is keyed on the speaker's stable reference so it survives device
+    reordering, and must be released back to _speaker_registry, either
+    explicitly or by binding it to its owner.
+
+    Returns:
+        str: Stable reference of the claimed speaker, either
+            "plughw:CARD=<name>,DEV=<n>" or "pipewire:NODE=<node.name>".
+
+    Raises:
+        SpeakerOpenError: If no speaker is plugged or all are already in use.
+    """
+    from .alsa_speaker import ALSASpeaker
+
+    device = _speaker_registry.select(ALSASpeaker.list_usb_devices, ALSASpeaker.list_jack_devices)
+    if device is None:
+        raise SpeakerOpenError("No available speakers found: either none is plugged or all are already in use")
+    return device

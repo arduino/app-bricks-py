@@ -5,7 +5,7 @@
 import pytest
 
 from arduino.app_peripherals.camera.errors import CameraOpenError
-from arduino.app_peripherals.camera.utils import _claim_first_available_camera, _nth_plugged_camera
+from arduino.app_peripherals.camera.camera import _claim_first_available_camera, _nth_plugged_camera
 
 
 @pytest.fixture

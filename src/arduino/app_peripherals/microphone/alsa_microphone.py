@@ -11,7 +11,7 @@ import numpy as np
 
 from .base_microphone import BaseMicrophone, FormatPlain, FormatPacked
 from .errors import MicrophoneError, MicrophoneOpenError, MicrophoneReadError, MicrophoneConfigError
-from .utils import has_media_carrier, list_audio_sources, _nth_plugged_microphone, node_description
+from .utils import has_media_carrier, list_audio_sources, node_description
 from arduino.app_utils.logger import Logger
 
 logger = Logger("ALSAMicrophone")
@@ -506,6 +506,39 @@ class ALSAMicrophone(BaseMicrophone):
         except Exception as e:
             logger.debug(f"Error checking device status: {e}")
             return True  # Assume disconnected if we can't check
+
+
+def _nth_plugged_microphone(idx: int) -> str:
+    """
+    Find the n-th plugged microphone, regardless of whether it is already in use.
+
+    The index spans USB microphones first, then jack microphones, if supported
+    by the current platform.
+
+    Args:
+        idx (int): Index of the microphone to select (0-based).
+
+    Returns:
+        str: Identifier of the n-th plugged microphone, "usb:X" or "jack:X",
+            where X is the 1-based ordinal index within its type.
+
+    Raises:
+        MicrophoneOpenError: If no microphone is plugged at the given index.
+    """
+    usb_mics, builtin_mics = list_audio_sources()
+
+    usb_count = len(usb_mics)
+    if idx < usb_count:
+        return f"usb:{idx + 1}"
+
+    jack_count = len(builtin_mics) if has_media_carrier() else 0
+    if idx - usb_count < jack_count:
+        return f"jack:{idx - usb_count + 1}"
+
+    raise MicrophoneOpenError(
+        f"No microphone found at index {idx}: only {usb_count + jack_count} microphone(s) plugged",
+        hint="Connect a microphone (or check the audio configuration) and restart the app.",
+    )
 
 
 def _alsa_path_device_index(alsa_path: str) -> int:

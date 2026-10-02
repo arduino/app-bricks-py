@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from arduino.app_peripherals.microphone.utils import _microphone_registry
+from arduino.app_peripherals.microphone.microphone import _microphone_registry
 
 
 @pytest.fixture(autouse=True)

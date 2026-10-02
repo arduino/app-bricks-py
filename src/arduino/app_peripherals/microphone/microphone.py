@@ -6,7 +6,12 @@ from typing import Any
 
 import numpy as np
 
+from ..device_registry import DeviceRegistry
 from .base_microphone import BaseMicrophone, FormatPlain, FormatPacked
+from .errors import MicrophoneOpenError
+
+_microphone_registry = DeviceRegistry()
+"""Tracks the microphones assigned to auto-selected Microphone instances."""
 
 
 class Microphone:
@@ -189,12 +194,8 @@ class Microphone:
             microphone = Microphone("ws://0.0.0.0:8080", secret="topsecret", encrypt=True)
             ```
         """
-        from .utils import _microphone_registry
-
         if device is None:
             # Auto-selection: claim the first available microphone so other instances don't select it
-            from .utils import _claim_first_available_microphone
-
             device = _claim_first_available_microphone()
             try:
                 mic = _create_microphone(device, sample_rate, channels, format, buffer_size, **kwargs)
@@ -349,3 +350,27 @@ def _create_microphone(
             buffer_size=buffer_size,
             **kwargs,
         )
+
+
+def _claim_first_available_microphone() -> str:
+    """
+    Find and claim the first plugged microphone not assigned to another instance.
+
+    USB microphones take precedence over jack ones, if supported by the
+    platform. The claim is keyed on the microphone's stable reference so it
+    survives device reordering, and must be released back to
+    _microphone_registry, either explicitly or by binding it to its owner.
+
+    Returns:
+        str: Stable reference of the claimed microphone, either
+            "plughw:CARD=<name>,DEV=<n>" or "pipewire:NODE=<node.name>".
+
+    Raises:
+        MicrophoneOpenError: If no microphone is plugged or all are already in use.
+    """
+    from .alsa_microphone import ALSAMicrophone
+
+    device = _microphone_registry.select(ALSAMicrophone.list_usb_devices, ALSAMicrophone.list_jack_devices)
+    if device is None:
+        raise MicrophoneOpenError("No available microphones found: either none is plugged or all are already in use")
+    return device

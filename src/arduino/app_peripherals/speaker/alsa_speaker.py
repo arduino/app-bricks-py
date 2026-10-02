@@ -11,7 +11,7 @@ import numpy as np
 
 from .base_speaker import BaseSpeaker, FormatPlain, FormatPacked
 from .errors import SpeakerError, SpeakerOpenError, SpeakerWriteError, SpeakerConfigError
-from .utils import has_media_carrier, list_audio_sinks, _nth_plugged_speaker, node_description
+from .utils import has_media_carrier, list_audio_sinks, node_description
 from arduino.app_utils.logger import Logger
 
 logger = Logger("ALSASpeaker")
@@ -502,6 +502,39 @@ class ALSASpeaker(BaseSpeaker):
         except Exception as e:
             logger.debug(f"Error checking device status: {e}")
             return True  # Assume disconnected if we can't check
+
+
+def _nth_plugged_speaker(idx: int) -> str:
+    """
+    Find the n-th plugged speaker, regardless of whether it is already in use.
+
+    The index spans USB speakers first, then jack speakers, if supported
+    by the current platform.
+
+    Args:
+        idx (int): Index of the speaker to select (0-based).
+
+    Returns:
+        str: Identifier of the n-th plugged speaker, "usb:X" or "jack:X",
+            where X is the 1-based ordinal index within its type.
+
+    Raises:
+        SpeakerOpenError: If no speaker is plugged at the given index.
+    """
+    usb_spkrs, builtin_spkrs = list_audio_sinks()
+
+    usb_count = len(usb_spkrs)
+    if idx < usb_count:
+        return f"usb:{idx + 1}"
+
+    jack_count = len(builtin_spkrs) if has_media_carrier() else 0
+    if idx - usb_count < jack_count:
+        return f"jack:{idx - usb_count + 1}"
+
+    raise SpeakerOpenError(
+        f"No speaker found at index {idx}: only {usb_count + jack_count} speaker(s) plugged",
+        hint="Connect a speaker (or check the audio configuration) and restart the app.",
+    )
 
 
 def _alsa_path_device_index(alsa_path: str) -> int:

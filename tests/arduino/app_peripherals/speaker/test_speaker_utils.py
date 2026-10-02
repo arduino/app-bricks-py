@@ -8,7 +8,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from arduino.app_peripherals.speaker.errors import SpeakerOpenError
-from arduino.app_peripherals.speaker.utils import _claim_first_available_speaker, list_audio_sinks, _nth_plugged_speaker
+from arduino.app_peripherals.speaker.alsa_speaker import _nth_plugged_speaker
+from arduino.app_peripherals.speaker.speaker import _claim_first_available_speaker
+from arduino.app_peripherals.speaker.utils import list_audio_sinks
 
 _CARRIER_ENV = "CONFIGURED_CARRIERS"
 

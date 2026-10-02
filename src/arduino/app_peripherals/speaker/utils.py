@@ -7,75 +7,14 @@ import os
 import subprocess
 from typing import Any
 
-from ..device_registry import DeviceRegistry
 from .errors import SpeakerOpenError
 
 _MEDIA_CARRIER = "media-carrier"
-
-_speaker_registry = DeviceRegistry()
-"""Tracks the speakers assigned to auto-selected Speaker instances."""
 
 
 def has_media_carrier() -> bool:
     """Tell whether the media carrier is currently configured on the board."""
     return os.environ.get("CONFIGURED_CARRIERS") == _MEDIA_CARRIER
-
-
-def _claim_first_available_speaker() -> str:
-    """
-    Find and claim the first plugged speaker not assigned to another instance.
-
-    USB speakers take precedence over jack ones, if supported by the platform.
-    The claim is keyed on the speaker's stable reference so it survives device
-    reordering, and must be released back to _speaker_registry, either
-    explicitly or by binding it to its owner.
-
-    Returns:
-        str: Stable reference of the claimed speaker, either
-            "plughw:CARD=<name>,DEV=<n>" or "pipewire:NODE=<node.name>".
-
-    Raises:
-        SpeakerOpenError: If no speaker is plugged or all are already in use.
-    """
-    from .alsa_speaker import ALSASpeaker
-
-    device = _speaker_registry.select(ALSASpeaker.list_usb_devices, ALSASpeaker.list_jack_devices)
-    if device is None:
-        raise SpeakerOpenError("No available speakers found: either none is plugged or all are already in use")
-    return device
-
-
-def _nth_plugged_speaker(idx: int) -> str:
-    """
-    Find the n-th plugged speaker, regardless of whether it is already in use.
-
-    The index spans USB speakers first, then jack speakers, if supported
-    by the current platform.
-
-    Args:
-        idx (int): Index of the speaker to select (0-based).
-
-    Returns:
-        str: Identifier of the n-th plugged speaker, "usb:X" or "jack:X",
-            where X is the 1-based ordinal index within its type.
-
-    Raises:
-        SpeakerOpenError: If no speaker is plugged at the given index.
-    """
-    usb_spkrs, builtin_spkrs = list_audio_sinks()
-
-    usb_count = len(usb_spkrs)
-    if idx < usb_count:
-        return f"usb:{idx + 1}"
-
-    jack_count = len(builtin_spkrs) if has_media_carrier() else 0
-    if idx - usb_count < jack_count:
-        return f"jack:{idx - usb_count + 1}"
-
-    raise SpeakerOpenError(
-        f"No speaker found at index {idx}: only {usb_count + jack_count} speaker(s) plugged",
-        hint="Connect a speaker (or check the audio configuration) and restart the app.",
-    )
 
 
 def list_audio_sinks() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
