@@ -180,7 +180,7 @@ class BaseSpeaker(ABC):
             if not self.is_started():
                 raise SpeakerWriteError(f"Attempted to write to {self.name} before starting it.")
 
-            if audio_chunk is None or len(audio_chunk) == 0:
+            if len(audio_chunk) == 0:
                 raise ValueError("Audio data must not be empty.")
 
             if audio_chunk.dtype != self.format:
@@ -205,7 +205,7 @@ class BaseSpeaker(ABC):
             ValueError: If pcm_audio is empty or invalid.
             Exception: If the underlying implementation fails to write a frame.
         """
-        if pcm_audio is None or len(pcm_audio) == 0:
+        if len(pcm_audio) == 0:
             raise ValueError("Audio data cannot be empty")
 
         if pcm_audio.dtype != self.format:
@@ -256,7 +256,7 @@ class BaseSpeaker(ABC):
         import io
         import wave
 
-        if wav_audio is None or len(wav_audio) == 0:
+        if len(wav_audio) == 0:
             raise ValueError("WAV data cannot be empty")
 
         # Read WAV from numpy array
