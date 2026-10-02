@@ -157,6 +157,29 @@ with wsclient.connect("ws://<board-address>:8080") as websocket:
                 break
 ```
 
+## Sharing a Camera
+
+A camera can be read by one consumer at a time: two bricks reading the same camera would split its frames between them. Wrap it in a `SharedCamera` to give every consumer every frame:
+
+```python
+from arduino.app_peripherals.camera import Camera, SharedCamera
+from arduino.app_bricks.camera_code_detection import CameraCodeDetection
+from arduino.app_bricks.video_objectdetection import VideoObjectDetection
+from arduino.app_utils import App
+
+camera = SharedCamera(Camera())
+
+code_detection = CameraCodeDetection(camera=camera)
+object_detection = VideoObjectDetection(camera=camera)
+
+App.run()
+```
+
+- Consumers are told apart by thread: each thread calling `capture()` (or iterating `stream()`) receives every frame once. A slow consumer skips the frames it missed and gets the latest one, without slowing down the others. A frame older than one frame interval is never handed out: a new one is read instead, so consumers that are all slower than the camera FPS may receive different frames.
+- All consumers receive the same frame object, which is read-only: copy it before modifying it in place.
+- Resolution, FPS and adjustments are those of the wrapped camera; adjustments run once per frame.
+- The wrapped camera starts with the first `start()` and stops with the last `stop()`, so stopping one brick does not stop the camera for the others. Start and stop it only through the `SharedCamera`.
+
 ## Migration from Legacy Camera
 
 The new Camera abstraction is backward compatible with the existing Camera implementation. Existing code using the old API will continue to work, but will use the new Camera backend. New code should use the improved abstraction for better flexibility and features.
