@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 from __future__ import annotations
+from collections.abc import Sequence
 import numpy as np
 from typing import Any
 
@@ -80,11 +81,11 @@ class Frame:
 
     # -- factory methods ----------------------------------------------
     @classmethod
-    def from_rows(cls, rows: list[list[int]] | list[str] | None, brightness_levels: int = 256) -> Frame:
+    def from_rows(cls, rows: Sequence[list[int]] | Sequence[str] | None, brightness_levels: int = 256) -> Frame:
         """Create a Frame from frontend rows.
 
         Args:
-            rows (list[list[int]] | list[str]): Either a list of 8 lists each with 13 ints, or a list of 8
+            rows (Sequence[list[int]] | Sequence[str]): Either a list or tuple of 8 lists each with 13 ints, or of 8
                 CSV strings with 13 numeric values each.
             brightness_levels (int): Number of discrete brightness levels for the
                 resulting Frame (2..256).

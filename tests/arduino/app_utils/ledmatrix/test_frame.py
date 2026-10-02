@@ -134,3 +134,8 @@ def test_rescale_without_scale_max_returns_the_array():
 
     frame = Frame.from_rows([[1] * 13 for _ in range(8)], brightness_levels=2)
     assert np.array_equal(frame.rescale_quantized_frame(scale_max=None), frame.arr)
+
+
+def test_from_rows_accepts_a_tuple_of_rows():
+    frame = Frame.from_rows(tuple([0] * 13 for _ in range(8)))
+    assert frame.shape == (8, 13)
