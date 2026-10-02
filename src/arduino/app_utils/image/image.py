@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import io
+import os
 from enum import StrEnum
 from typing import Any
 
@@ -62,11 +63,11 @@ def get_image_type(image_bytes: bytes | Image.Image) -> str | None:
         return None
 
 
-def get_image_bytes(image: str | Image.Image | bytes | None) -> bytes | None:
+def get_image_bytes(image: str | os.PathLike[str] | Image.Image | bytes | None) -> bytes | None:
     """Convert different type of image objects to bytes.
 
     Args:
-        image (str | Image.Image | bytes | None): The image to convert: a file path, a PIL Image or
+        image (str | os.PathLike | Image.Image | bytes | None): The image to convert: a file path, a PIL Image or
             raw bytes (returned as they are). None, e.g. the result of an image helper that found
             nothing to process, is accepted and yields None.
 
@@ -77,15 +78,18 @@ def get_image_bytes(image: str | Image.Image | bytes | None) -> bytes | None:
     if image is None:
         return None
     try:
-        if isinstance(image, Image.Image):
-            byte_io = io.BytesIO()
-            image.save(byte_io, "PNG")
-            return byte_io.getvalue()
-        elif isinstance(image, bytes):
-            return image
-        else:
-            with open(image, "rb") as f:
-                return f.read()
+        match image:
+            case Image.Image():
+                byte_io = io.BytesIO()
+                image.save(byte_io, "PNG")
+                return byte_io.getvalue()
+            case bytes():
+                return image
+            case str() | os.PathLike():
+                with open(image, "rb") as f:
+                    return f.read()
+            case _:
+                return None
     except Exception as e:
         logger.error(f"Error converting image to bytes: {e}")
         return None

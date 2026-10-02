@@ -4,7 +4,7 @@
 
 from PIL import Image
 
-from arduino.app_utils.image.image import Shape, draw_anomaly_markers, draw_bounding_boxes, get_image_type
+from arduino.app_utils.image.image import Shape, draw_anomaly_markers, draw_bounding_boxes, get_image_bytes, get_image_type
 
 
 def _image() -> Image.Image:
@@ -36,3 +36,10 @@ def test_image_type_of_bytes_and_images():
     _image().save(buf, "PNG")
     assert get_image_type(buf.getvalue()) == "png"
     assert get_image_type(_image()) is None  # an in-memory image has no format
+
+
+def test_image_bytes_of_a_path(tmp_path):
+    path = tmp_path / "image.png"
+    path.write_bytes(b"png")
+    assert get_image_bytes(path) == b"png"
+    assert get_image_bytes(str(path)) == b"png"
