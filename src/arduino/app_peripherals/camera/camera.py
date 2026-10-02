@@ -197,7 +197,7 @@ def _claim_first_available_camera() -> tuple[str, str]:
     """
     from .v4l_camera import V4LCamera
 
-    path = _camera_registry.select(V4LCamera._list_stable_paths)
+    path = _camera_registry.select(lambda: [camera["location"] for camera in V4LCamera.list_cameras()])
     if path is not None:
         return f"usb:{path}", path
 

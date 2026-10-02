@@ -3,6 +3,8 @@
 # SPDX-License-Identifier: MPL-2.0
 
 
+import io
+
 import pytest
 
 from arduino.app_peripherals.camera import Camera, CSICamera, V4LCamera, IPCamera, WebSocketCamera, CameraConfigError, CameraOpenError
@@ -65,6 +67,17 @@ def test_explicit_selection_reuses_a_camera_already_in_use(two_v4l_cameras):
 def test_non_capture_nodes_are_not_listed_as_cameras(usb_camera_with_metadata_node):
     """A UVC metadata node must not be enumerated as a camera."""
     assert V4LCamera.list_devices() == [10]
+
+
+def test_list_cameras_reports_name_and_location(two_v4l_cameras, monkeypatch):
+    """Each camera is listed with its sysfs name and its by-id link as location, in video index order."""
+    names = {"/sys/class/video4linux/video0/name": "CamA\n", "/sys/class/video4linux/video2/name": "CamB\n"}
+    monkeypatch.setattr("arduino.app_peripherals.camera.v4l_camera.open", lambda path, *args, **kwargs: io.StringIO(names[path]), raising=False)
+
+    assert V4LCamera.list_cameras() == [
+        {"name": "CamA", "location": "/dev/v4l/by-id/usb-CamA-video-index0"},
+        {"name": "CamB", "location": "/dev/v4l/by-id/usb-CamB-video-index0"},
+    ]
 
 
 def test_auto_selection_never_selects_non_capture_nodes(usb_camera_with_metadata_node):

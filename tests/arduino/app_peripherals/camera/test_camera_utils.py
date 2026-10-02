@@ -20,8 +20,8 @@ def plugged_cameras(monkeypatch):
             staticmethod(lambda: list(range(usb))),
         )
         monkeypatch.setattr(
-            "arduino.app_peripherals.camera.v4l_camera.V4LCamera._list_stable_paths",
-            staticmethod(lambda: usb_paths),
+            "arduino.app_peripherals.camera.v4l_camera.V4LCamera.list_cameras",
+            staticmethod(lambda: [{"name": "Cam", "location": path} for path in usb_paths]),
         )
         monkeypatch.setattr(
             "arduino.app_peripherals.camera.csi_camera.CSICamera.list_devices",

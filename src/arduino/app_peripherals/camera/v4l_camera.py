@@ -14,6 +14,7 @@ from collections.abc import Callable
 
 from arduino.app_utils import Logger
 
+from .base_camera import CameraInfo
 from .camera import BaseCamera
 from .errors import CameraOpenError, CameraReadError
 
@@ -81,15 +82,21 @@ class V4LCamera(BaseCamera):
         return [index for index, _ in V4LCamera._scan_stable_links()]
 
     @staticmethod
-    def _list_stable_paths() -> list[str]:
+    def list_cameras() -> list[CameraInfo]:
         """
-        Return the stable /dev/v4l/by-id links of the available USB cameras,
-        ordered by their video device index.
+        Return the available USB cameras, ordered by their video device index.
 
         Returns:
-            list[str]: List of stable USB camera paths.
+            list[CameraInfo]: Name and location of each camera. Identical cameras share the same
+                name, the location ("/dev/v4l/by-id/...", stable across reconnections) tells them apart.
         """
-        return [path for _, path in V4LCamera._scan_stable_links()]
+        cameras: list[CameraInfo] = []
+        for _, path in V4LCamera._scan_stable_links():
+            try:
+                cameras.append({"name": V4LCamera._resolve_name(path), "location": path})
+            except CameraOpenError:
+                continue  # Unplugged while listing
+        return cameras
 
     @staticmethod
     def _scan_stable_links() -> list[tuple[int, str]]:
@@ -195,7 +202,8 @@ class V4LCamera(BaseCamera):
 
         raise CameraOpenError(f"No stable link found for device {device} (resolved as {device_path})")
 
-    def _resolve_name(self, stable_path: str) -> str:
+    @staticmethod
+    def _resolve_name(stable_path: str) -> str:
         """
         Resolve a human-readable name for the camera whose stable path is provided
         by looking at /sys/class/video4linux/<video>/name. Falls back to the device

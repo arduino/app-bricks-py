@@ -7,7 +7,7 @@ import time
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from types import TracebackType
-from typing import Any, Literal, Self
+from typing import Any, Literal, Self, TypedDict
 from collections.abc import Callable, Iterator
 import numpy as np
 
@@ -16,6 +16,16 @@ from arduino.app_utils import Logger, peripheral
 from .errors import CameraOpenError, CameraReadError, CameraTransformError
 
 logger = Logger("Camera")
+
+
+class CameraInfo(TypedDict):
+    """A plugged camera as listed by a camera implementation, a plain dict ready to be serialized."""
+
+    name: str
+    """Human-readable name, not unique: identical cameras share it."""
+
+    location: str
+    """Where the camera is plugged, the device argument that opens this same camera, as stable as the platform allows."""
 
 
 @peripheral
