@@ -82,7 +82,7 @@ class AppController:
     def __init__(self) -> None:
         self._waiting_queue = deque()
         self._running_queue = deque()
-        self._brick_states: dict[any, list[tuple[threading.Thread, threading.Event]]] = {}
+        self._brick_states: dict[object, list[tuple[threading.Thread, threading.Event]]] = {}
         self._app_lock = threading.Lock()
         self._running = False
         self._stopping = False
@@ -151,7 +151,7 @@ class AppController:
         with self._app_lock:
             self._stop(brick)
 
-    def run(self, user_loop: callable = None) -> None:
+    def run(self, user_loop: Callable[[], Any] | None = None) -> None:
         """Starts all registered bricks and keeps the main thread alive, waiting for a shutdown signal (Ctrl+C).
 
         If a user_loop callable is provided, it will be executed instead of the default infinite loop.
@@ -271,7 +271,7 @@ class AppController:
 
         return False
 
-    def loop(self, user_loop: callable = None) -> int:
+    def loop(self, user_loop: Callable[[], Any] | None = None) -> int:
         """This method keeps the application running, blocking until a KeyboardInterrupt (Ctrl+C) occurs.
 
         If a user_loop callable is provided, it will be executed inside an infinite loop and
