@@ -191,9 +191,12 @@ class Speaker:
 
         speaker = _create_speaker(device, sample_rate, channels, format, buffer_size, **kwargs)
 
-        # Claim the device so auto-selection doesn't pick it
-        _speaker_registry.claim(speaker.device_stable_ref)
-        _speaker_registry.bind(speaker.device_stable_ref, speaker)
+        from .alsa_speaker import ALSASpeaker
+
+        if isinstance(speaker, ALSASpeaker):
+            # Claim local devices so auto-selection doesn't pick them
+            _speaker_registry.claim(speaker.device_stable_ref)
+            _speaker_registry.bind(speaker.device_stable_ref, speaker)
         return speaker
 
     @staticmethod
