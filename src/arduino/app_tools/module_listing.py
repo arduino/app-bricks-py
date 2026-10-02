@@ -74,16 +74,16 @@ class ArduinoBrick:
         ports: list[int],
         fs_path: str,
         model_name: str,
-        category: str = "miscellaneous",
+        category: str | None = "miscellaneous",
         mount_devices_into_container: bool = False,
-        requires_display: str = None,
-        required_device_classes: list[str] = None,
-        env_variables: dict[str, str] = None,
-        supported_boards: list[str] = None,
-        requires_services: list[str] = None,
-        ai_frameworks_compatibility: list[str] = None,
-        model_by_boards: list[dict[str, str]] = None,
-        model_configuration_variables: list[str] = None,
+        requires_display: str | None = None,
+        required_device_classes: list[str] | None = None,
+        env_variables: list[dict[str, Any]] | None = None,
+        supported_boards: list[str] | None = None,
+        requires_services: list[str] | None = None,
+        ai_frameworks_compatibility: list[str] | None = None,
+        model_by_boards: list[dict[str, str]] | None = None,
+        model_configuration_variables: list[str] | None = None,
     ) -> None:
         self.id = id
         self.name = name
@@ -93,19 +93,21 @@ class ArduinoBrick:
         self.compose_file: str | None = self.get_compose_file()
         self.readme_file: str | None = self.get_readme_file()
         self.model_name: str = model_name
-        self.category = category
+        # A brick_config.yaml without a category, read as None, gets the default
+        self.category: str = category or "miscellaneous"
         self.mount_devices_into_container: bool = mount_devices_into_container
         self.requires_display: str | None = requires_display
         self.required_device_classes: list[str] | None = required_device_classes
-        self.env_variables: dict[str, str] | None = env_variables
+        # The `variables` entries of brick_config.yaml, one mapping per variable
+        self.env_variables: list[dict[str, Any]] | None = env_variables
         self.supported_boards: list[str] | None = supported_boards
         self.requires_services: list[str] | None = requires_services
         self.ai_frameworks_compatibility: list[str] | None = ai_frameworks_compatibility
         self.model_by_boards: list[dict[str, str]] | None = model_by_boards
         self.model_configuration_variables: list[str] | None = model_configuration_variables
 
-    def to_dict(self) -> dict:
-        out_dict: dict = {
+    def to_dict(self) -> dict[str, Any]:
+        out_dict: dict[str, Any] = {
             "id": self.id,
             "name": self.name,
             "description": self.brick_description,
@@ -133,6 +135,9 @@ class ArduinoBrick:
             additional_vars: list[EnvVariable] = []
             for var in self.env_variables:
                 name = var.get("name")
+                if not name:
+                    logger.warning(f"Variable without a name in the configuration of {self.id}, skipped")
+                    continue
                 description = var.get("description", "")
                 default = var.get("default_value", "")
                 hidden = var.get("hidden", False)
@@ -167,23 +172,23 @@ class ArduinoService:
         name: str,
         brick_description: str,
         fs_path: str,
-        category: str = "miscellaneous",
-        env_variables: dict[str, str] = None,
-        supported_boards: list[str] = None,
-        root_path: str = None,
+        category: str | None = "miscellaneous",
+        env_variables: list[dict[str, Any]] | None = None,
+        supported_boards: list[str] | None = None,
+        root_path: str | pathlib.Path | None = None,
     ) -> None:
         self.service_id = service_id
         self.name = name
         self.brick_description = brick_description
         self.path = fs_path
         self.compose_file: str | None = self.get_compose_file()
-        self.category = category
-        self.env_variables: dict[str, str] | None = env_variables
+        self.category: str = category or "miscellaneous"
+        self.env_variables: list[dict[str, Any]] | None = env_variables
         self.supported_boards: list[str] | None = supported_boards
-        self.root_path = root_path
+        self.root_path: str | None = str(root_path) if root_path is not None else None
 
-    def to_dict(self) -> dict:
-        out_dict: dict = {
+    def to_dict(self) -> dict[str, Any]:
+        out_dict: dict[str, Any] = {
             "service_id": self.service_id,
             "name": self.name,
             "description": self.brick_description,
@@ -198,6 +203,9 @@ class ArduinoService:
             additional_vars: list[EnvVariable] = []
             for var in self.env_variables:
                 name = var.get("name")
+                if not name:
+                    logger.warning(f"Variable without a name in the configuration of {self.service_id}, skipped")
+                    continue
                 description = var.get("description", "")
                 default = var.get("default_value", "")
                 hidden = var.get("hidden", False)
@@ -219,7 +227,7 @@ class ArduinoService:
         return f"Name: {self.name}\nDescription: {self.brick_description}\nPath: {self.path}\nCompose file: {self.get_compose_file()}\n"
 
 
-def find_config_yaml(root_path: str) -> tuple[list[ArduinoBrick], list[ArduinoService]]:
+def find_config_yaml(root_path: str | pathlib.Path) -> tuple[list[ArduinoBrick], list[ArduinoService]]:
     """Scans all subfolders within the given root_path to find 'config.yaml'.
 
     Args:
@@ -247,7 +255,7 @@ def find_config_yaml(root_path: str) -> tuple[list[ArduinoBrick], list[ArduinoSe
             editable_module: pathlib.Path = item / editable_module_config
             if config_file.is_file():
                 try:
-                    config: dict = yaml.safe_load(config_file.read_text())
+                    config: dict[str, Any] = yaml.safe_load(config_file.read_text())
                     if "id" not in config or "name" not in config or "description" not in config:
                         continue
 
@@ -278,7 +286,7 @@ def find_config_yaml(root_path: str) -> tuple[list[ArduinoBrick], list[ArduinoSe
                     logger.error(f"Error: {config_file} is not a valid YAML file.")
             elif service_config_file.is_file():
                 try:
-                    config: dict = yaml.safe_load(service_config_file.read_text())
+                    config: dict[str, Any] = yaml.safe_load(service_config_file.read_text())
                     if "service_id" not in config or "name" not in config or "description" not in config:
                         continue
 
@@ -302,9 +310,9 @@ def find_config_yaml(root_path: str) -> tuple[list[ArduinoBrick], list[ArduinoSe
             elif editable_module.is_file():
                 try:
                     with open(editable_module) as editable_module_cfg:
-                        content: dict = json.load(editable_module_cfg)
+                        content: dict[str, Any] = json.load(editable_module_cfg)
                         if "url" in content and "dir_info" in content:
-                            editable_c: dict = content["dir_info"]
+                            editable_c: dict[str, Any] = content["dir_info"]
                             if "editable" in editable_c and editable_c["editable"]:
                                 url: str = content["url"]
                                 parsed_url = urlparse(url)
@@ -313,8 +321,7 @@ def find_config_yaml(root_path: str) -> tuple[list[ArduinoBrick], list[ArduinoSe
                                 if os.name == "nt" and local_file_path.startswith("/"):
                                     local_file_path = local_file_path[1:]
 
-                                local_file_path = pathlib.Path(local_file_path) / "src"
-                                sub_bricks, sub_services = find_config_yaml(local_file_path)
+                                sub_bricks, sub_services = find_config_yaml(pathlib.Path(local_file_path) / "src")
                                 discovered_modules.extend(sub_bricks)
                                 discovered_services.extend(sub_services)
 
@@ -340,7 +347,7 @@ def list_installed_packages_pkg_resources() -> tuple[dict[str, list[ArduinoBrick
     paths = set(site.getsitepackages())
     paths.add(site.getusersitepackages())
     for local_path in paths:
-        if local_path is None or local_path == "":
+        if not local_path:
             continue
         logger.debug(f"Checking local path: {local_path}")
         local_bricks, local_svc = find_config_yaml(local_path)
@@ -353,7 +360,7 @@ def list_installed_packages_pkg_resources() -> tuple[dict[str, list[ArduinoBrick
         for svs in checked_svc_paths[key]:
             local_path = svs.root_path
             logger.info(f"Searching for app_services folder in root path: {local_path}")
-            if local_path is None or local_path == "":
+            if not local_path:
                 continue
             if "app_services" in str(local_path):
                 logger.info(f"Found app_services folder directly in: {local_path}")
