@@ -5,6 +5,9 @@
 import inspect
 import os
 
+# The underscore helpers are shared with the other modules of this package only
+__all__ = ["get_board_name", "_has_callable_method", "_brick_name"]
+
 
 def _has_callable_method(obj_or_cls: object, method_name: str) -> bool:
     """Checks if an object or class has a callable method with the correct signature.

@@ -5,6 +5,9 @@
 import logging
 import os
 
+# _configure_library_logger is for the package __init__ only
+__all__ = ["Logger", "_configure_library_logger"]
+
 
 def _resolve_level(level: int) -> int:
     """Applies the APP_BRICKS_LOG_LEVEL environment override to the given level."""
