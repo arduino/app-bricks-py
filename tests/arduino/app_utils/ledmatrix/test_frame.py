@@ -120,3 +120,17 @@ def test_to_board_bytes():
     assert len(b) == 8 * 13
     # Check that the first byte corresponds to the first pixel set to 255 (rescaled value for 7 when 8 levels)
     assert b[0] == 255
+
+
+def test_from_rows_rejects_missing_rows():
+    import pytest
+
+    with pytest.raises(ValueError):
+        Frame.from_rows(None)
+
+
+def test_rescale_without_scale_max_returns_the_array():
+    import numpy as np
+
+    frame = Frame.from_rows([[1] * 13 for _ in range(8)], brightness_levels=2)
+    assert np.array_equal(frame.rescale_quantized_frame(scale_max=None), frame.arr)

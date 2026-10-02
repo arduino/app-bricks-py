@@ -201,7 +201,7 @@ def draw_bounding_boxes(
     return image_box
 
 
-def draw_anomaly_markers(image: Image.Image | bytes, detection: dict | None, draw: ImageDraw.ImageDraw = None) -> Image.Image | None:
+def draw_anomaly_markers(image: Image.Image | bytes, detection: dict | None, draw: ImageDraw.ImageDraw | None = None) -> Image.Image | None:
     """Draw bounding boxes on an image using PIL.
 
     The thickness of the box and font size are scaled based on image size.

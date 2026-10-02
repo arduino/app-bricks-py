@@ -17,7 +17,7 @@ class SlidingWindowBuffer:
     is never repeated and only new data (with window_size length) is always available.
     """
 
-    def __init__(self, window_size: int, slide_amount: int, capacity: int = None) -> None:
+    def __init__(self, window_size: int, slide_amount: int, capacity: int | None = None) -> None:
         """Initializes the sliding window buffer.
 
         Args:
@@ -108,7 +108,7 @@ class SlidingWindowBuffer:
 
         return True
 
-    def pull(self, timeout: float = None) -> np.ndarray:
+    def pull(self, timeout: float | None = None) -> np.ndarray:
         """Retrieves a window of data as a NumPy array.
         Blocks until a window of window_size with at least slide_amount of
         new data is available or the provided timeout expires.
