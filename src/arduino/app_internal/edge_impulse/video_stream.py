@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""Drawing of the detections on the frames and the HTTP server streaming them as MJPEG.
+"""Drawing of the boxes on the frames, their steadying across results and the HTTP server streaming the video as MJPEG.
 
 Replaces the video pages the Edge Impulse runner container used to serve on port 4912. The root is the
 multipart/x-mixed-replace stream, which browsers render like an image at its natural size. /embed is the
@@ -18,18 +18,21 @@ import socket
 import threading
 import time
 from dataclasses import dataclass
+from typing import Any
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import cv2
 import numpy as np
 
+from arduino.app_internal.ei_inference import Box
+from arduino.app_utils.image.colors import color_difference
 from arduino.app_utils import Logger
 
-logger = Logger("VideoObjectDetection")
+logger = Logger("VideoStream")
 
 BOUNDARY = b"frame"
 EMBED_PAGE = b"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Video Object Detection</title>
+<html><head><meta charset="utf-8"><title>Video</title>
 <style>html,body{margin:0;height:100%}img{display:block;width:100%;height:100%;object-fit:contain}</style></head>
 <body><img src="/" alt="video"></body></html>
 """
@@ -41,14 +44,24 @@ class LabelColors:
     """A color per label, picked the first time the label is seen and kept for the whole run.
 
     The first hue is random, the following ones step around the color wheel by the golden ratio, so the
-    labels of a run are always distinct from each other.
+    labels of a run are always distinct from each other. A color the eye would confuse with one of the colors
+    to avoid, by their CIEDE2000 difference, is stepped over.
     """
 
     HUE_STEP = 0.618034
+    MIN_DIFFERENCE = 23.0  # the CIEDE2000 difference a label color keeps from every color to avoid
+    MAX_STEPS = 100  # hues stepped over at most, when the colors to avoid leave no room
 
-    def __init__(self, seed: int | None = None) -> None:
+    def __init__(self, seed: int | None = None, avoid: tuple[tuple[int, int, int], ...] = ()) -> None:
+        """
+        Args:
+            seed (int | None): Seed of the random first hue, for a palette that repeats. Default is None.
+            avoid (tuple[tuple[int, int, int], ...]): BGR colors drawn on the same frames, which the label
+                colors keep clearly different from. Default is none.
+        """
         self._random = random.Random(seed)
         self._hue = self._random.random()
+        self._avoided = avoid
         self._colors: dict[str, tuple[int, int, int]] = {}
         self._lock = threading.Lock()
 
@@ -56,10 +69,25 @@ class LabelColors:
         with self._lock:
             if label not in self._colors:
                 # Light, moderately saturated colors keep the white label text readable
-                r, g, b = colorsys.hsv_to_rgb(self._hue, self._random.uniform(0.35, 0.6), 0.95)
-                self._colors[label] = (int(b * 255), int(g * 255), int(r * 255))
+                saturation = self._random.uniform(0.35, 0.6)
+                color = _bgr(self._hue, saturation)
+                for _ in range(self.MAX_STEPS):
+                    if self._clear_of_avoided(color):
+                        break
+                    self._hue = (self._hue + self.HUE_STEP) % 1.0
+                    color = _bgr(self._hue, saturation)
+                self._colors[label] = color
                 self._hue = (self._hue + self.HUE_STEP) % 1.0
             return self._colors[label]
+
+    def _clear_of_avoided(self, color: tuple[int, int, int]) -> bool:
+        return all(color_difference(color, avoided) >= self.MIN_DIFFERENCE for avoided in self._avoided)
+
+
+def _bgr(hue: float, saturation: float) -> tuple[int, int, int]:
+    """The light BGR color of the hue at the saturation."""
+    r, g, b = colorsys.hsv_to_rgb(hue, saturation, 0.95)
+    return (int(b * 255), int(g * 255), int(r * 255))
 
 
 @dataclass
@@ -73,18 +101,17 @@ class _Track:
 class BoxStabilizer:
     """Steadies the boxes drawn on the video across results.
 
-    A box appears when its score passes the threshold, then follows the matching box of the next results,
-    its position and score smoothed. It keeps showing while the matching score stays within `margin` below
-    the threshold, and for `hold` seconds after the last match, so scores hovering around the threshold and
-    single missed results do not make it flicker. The smoothing depends on the size of the change relative to
-    the box, so it behaves the same at every resolution and distance: the noise of a still object is ignored,
-    small changes are followed slowly and large ones almost at once, so a still box stays still and a moving
-    one keeps up. The callbacks of the brick see the raw detections, this only shapes what the viewers see.
+    A box appears with its first result, then follows the matching box of the next results, its position and
+    score smoothed, and keeps showing for `hold` seconds after the last match, so a single missed result does
+    not make it flicker. The smoothing depends on the size of the change relative to the box, so it behaves
+    the same at every resolution and distance: the noise of a still object is ignored, small changes are
+    followed slowly and large ones almost at once, so a still box stays still and a moving one keeps up. The
+    boxes are the ones the model reports at the confidence of the brick: the callbacks see them raw, this only
+    shapes what the viewers see.
     """
 
     MIN_HOLD = 0.25  # seconds a box outlives its last match, at least...
     HOLD_PERIODS = 2  # ...or this many times its inference took: a model that stops answering leaves no ghost boxes
-    MARGIN = 0.15  # a box already shown survives scores this far below the threshold
     MIN_IOU = 0.3  # the overlap a box must have with a track of the same label to be its next position
     JITTER = 0.03  # an edge moving less than this fraction of the box size is noise on a still object and is ignored
     MOTION = 0.5  # an edge moving this fraction of the box size is movement and is followed at FAST_SMOOTHING
@@ -97,31 +124,31 @@ class BoxStabilizer:
         self._hold = self.MIN_HOLD
         self._lock = threading.Lock()
 
-    def update(self, boxes: list, threshold: float, round_trip: float) -> None:
-        """Feed the boxes of one result (objects with label, score, x, y, w, h) and the seconds it took."""
+    def update(self, boxes: list[Box], round_trip: float) -> None:
+        """Feed the boxes of one result and the seconds it took."""
         now = time.monotonic()
         with self._lock:
             self._hold = max(self.MIN_HOLD, self.HOLD_PERIODS * round_trip)
             unmatched = sorted(boxes, key=lambda box: box.score, reverse=True)
             for track in self._tracks:
                 match = self._best_match(track, unmatched)
-                if match is None or match.score < threshold - self.MARGIN:
+                if match is None:
                     continue
                 unmatched.remove(match)
                 new = (match.x, match.y, match.x + match.w, match.y + match.h)
                 width, height = track.box[2] - track.box[0], track.box[3] - track.box[1]
-                track.box = tuple(self._follow(old, n, size) for old, n, size in zip(track.box, new, (width, height, width, height)))
+                x1, y1, x2, y2 = (self._follow(old, n, size) for old, n, size in zip(track.box, new, (width, height, width, height)))
+                track.box = (x1, y1, x2, y2)
                 track.score += self.SCORE_SMOOTHING * (match.score - track.score)
                 track.last_seen = now
             for box in unmatched:
-                if box.score >= threshold:
-                    self._tracks.append(_Track(box.label, (box.x, box.y, box.x + box.w, box.y + box.h), box.score, now))
+                self._tracks.append(_Track(box.label, (box.x, box.y, box.x + box.w, box.y + box.h), box.score, now))
             self._tracks = [track for track in self._tracks if now - track.last_seen <= self._hold]
 
-    def visible(self) -> dict[str, list[dict]]:
+    def visible(self) -> dict[str, list[dict[str, Any]]]:
         """The boxes to draw now, in the shape of the brick's detections."""
         now = time.monotonic()
-        detections: dict[str, list[dict]] = {}
+        detections: dict[str, list[dict[str, Any]]] = {}
         with self._lock:
             for track in self._tracks:
                 if now - track.last_seen <= self._hold:
@@ -142,7 +169,7 @@ class BoxStabilizer:
         return old + weight * delta
 
     @classmethod
-    def _best_match(cls, track: _Track, boxes: list) -> object | None:
+    def _best_match(cls, track: _Track, boxes: list[Box]) -> Box | None:
         best, best_iou = None, cls.MIN_IOU
         for box in boxes:
             if box.label != track.label:
@@ -163,7 +190,7 @@ def _iou(a: tuple[float, float, float, float], b: tuple[float, float, float, flo
     return inter / union if union > 0 else 0.0
 
 
-def draw_detections(frame: np.ndarray, detections: dict[str, list[dict]], colors: LabelColors) -> np.ndarray:
+def draw_detections(frame: np.ndarray, detections: dict[str, list[dict[str, Any]]], colors: LabelColors) -> np.ndarray:
     """A copy of the frame with a box around every detection and a filled label chip at its top-right corner, "label" and "(score)".
 
     Args:

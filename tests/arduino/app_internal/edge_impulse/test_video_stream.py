@@ -4,6 +4,7 @@
 
 import colorsys
 import http.client
+import random
 import threading
 import urllib.error
 import urllib.request
@@ -11,7 +12,8 @@ import urllib.request
 import numpy as np
 import pytest
 
-from arduino.app_bricks.video_objectdetection.video_stream import BoxStabilizer, LabelColors, VideoStreamServer, draw_detections
+from arduino.app_internal.edge_impulse import BoxStabilizer, LabelColors, VideoStreamServer, draw_detections
+from arduino.app_utils.image.colors import color_difference
 from arduino.app_internal.ei_inference import Box
 
 JPEG_A = b"\xff\xd8A\xff\xd9"
@@ -120,6 +122,45 @@ def test_the_labels_of_a_run_get_well_separated_hues():
             assert min(abs(a - b), 1 - abs(a - b)) > 0.04, (a, b)
 
 
+def _hue(color: tuple[int, int, int]) -> float:
+    b, g, r = color
+    return colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)[0]
+
+
+def test_the_label_colors_stay_clearly_different_from_the_colors_to_avoid():
+    yellow, magenta = (0, 255, 255), (255, 0, 255)
+    for seed in range(200):
+        colors = LabelColors(seed=seed, avoid=(yellow, magenta))
+        for i in range(12):
+            color = colors[f"label{i}"]
+            for avoided in (yellow, magenta):
+                assert color_difference(color, avoided) >= LabelColors.MIN_DIFFERENCE, (seed, i, color)
+
+
+def test_without_colors_to_avoid_the_palette_is_the_golden_ratio_walk():
+    seed = 3
+    walk = random.Random(seed)
+    hue = walk.random()
+    expected = []
+    for _ in range(5):
+        r, g, b = colorsys.hsv_to_rgb(hue, walk.uniform(0.35, 0.6), 0.95)
+        expected.append((int(b * 255), int(g * 255), int(r * 255)))
+        hue = (hue + LabelColors.HUE_STEP) % 1.0
+
+    colors = LabelColors(seed=seed)
+
+    assert [colors[f"label{i}"] for i in range(5)] == expected
+
+
+def test_avoiding_colors_keeps_the_labels_of_a_run_apart():
+    for seed in range(200):
+        colors = LabelColors(seed=seed, avoid=((0, 255, 255), (255, 0, 255)))
+        hues = [_hue(colors[f"label{i}"]) for i in range(8)]
+        for i, a in enumerate(hues):
+            for b in hues[i + 1 :]:
+                assert min(abs(a - b), 1 - abs(a - b)) > 0.03, (seed, a, b)
+
+
 def test_detections_are_drawn_as_a_box_with_a_label_chip_at_the_top_right():
     colors = LabelColors(seed=3)
     frame = np.zeros((480, 640, 3), np.uint8)
@@ -151,25 +192,10 @@ def box(label, score, x=100, y=100, w=50, h=50):
     return Box(label, score, x, y, w, h)
 
 
-def test_a_score_hovering_around_the_threshold_keeps_its_box():
+def test_a_box_missing_from_one_result_is_held_then_dropped():
     steady = BoxStabilizer()
-    shown = []
-    for score in (0.55, 0.45, 0.52, 0.41, 0.56, 0.48):
-        steady.update([box("cat", score)], threshold=0.5, round_trip=0.01)
-        shown.append("cat" in steady.visible())
-    assert all(shown), shown
-
-
-def test_a_box_below_the_threshold_never_appears():
-    steady = BoxStabilizer()
-    steady.update([box("cat", 0.45)], threshold=0.5, round_trip=0.01)
-    assert steady.visible() == {}
-
-
-def test_a_box_disappears_when_its_score_falls_well_below_the_threshold():
-    steady = BoxStabilizer()
-    steady.update([box("cat", 0.9)], threshold=0.5, round_trip=0.01)
-    steady.update([box("cat", 0.2)], threshold=0.5, round_trip=0.01)
+    steady.update([box("cat", 0.9)], round_trip=0.01)
+    steady.update([], round_trip=0.01)
     assert "cat" in steady.visible(), "held for a moment after the last match"
     steady._tracks[0].last_seen -= 1.0  # the hold elapsed
     assert steady.visible() == {}
@@ -177,27 +203,27 @@ def test_a_box_disappears_when_its_score_falls_well_below_the_threshold():
 
 def test_edge_noise_on_a_still_object_does_not_move_its_box():
     steady = BoxStabilizer()
-    steady.update([box("cat", 0.9, x=100, w=200, h=200)], threshold=0.5, round_trip=0.01)
+    steady.update([box("cat", 0.9, x=100, w=200, h=200)], round_trip=0.01)
     for dx, dw in ((4, -5), (-5, 5), (2, 4), (-3, -2)):  # within 3% of a 200 px box
-        steady.update([box("cat", 0.9, x=100 + dx, w=200 + dw, h=200)], threshold=0.5, round_trip=0.01)
+        steady.update([box("cat", 0.9, x=100 + dx, w=200 + dw, h=200)], round_trip=0.01)
         (cat,) = steady.visible()["cat"]
         assert cat["bounding_box_xyxy"] == (100, 100, 300, 300), "still, with the size it had"
 
 
 def test_the_jitter_scales_with_the_box_so_a_small_box_still_moves_by_the_same_fraction():
     steady = BoxStabilizer()
-    steady.update([box("cat", 0.9, x=100, w=20, h=20)], threshold=0.5, round_trip=0.01)
-    steady.update([box("cat", 0.9, x=104, w=20, h=20)], threshold=0.5, round_trip=0.01)
+    steady.update([box("cat", 0.9, x=100, w=20, h=20)], round_trip=0.01)
+    steady.update([box("cat", 0.9, x=104, w=20, h=20)], round_trip=0.01)
     (cat,) = steady.visible()["cat"]
     assert cat["bounding_box_xyxy"][0] > 100, "4 px is a fifth of a 20 px box, movement, not noise"
 
 
 def test_a_small_change_is_followed_slowly_and_a_large_one_at_once():
     steady = BoxStabilizer()
-    steady.update([box("cat", 0.9, x=100, w=100, h=100)], threshold=0.5, round_trip=0.01)
-    steady.update([box("cat", 0.9, x=110, w=100, h=100)], threshold=0.5, round_trip=0.01)
+    steady.update([box("cat", 0.9, x=100, w=100, h=100)], round_trip=0.01)
+    steady.update([box("cat", 0.9, x=110, w=100, h=100)], round_trip=0.01)
     small = steady.visible()["cat"][0]["bounding_box_xyxy"][0]
-    steady.update([box("cat", 0.9, x=150, w=100, h=100)], threshold=0.5, round_trip=0.01)  # half the box, still overlapping
+    steady.update([box("cat", 0.9, x=150, w=100, h=100)], round_trip=0.01)  # half the box, still overlapping
     (cat,) = steady.visible()["cat"]
     large = cat["bounding_box_xyxy"][0]
     assert 100 < small < 105, small
@@ -206,23 +232,23 @@ def test_a_small_change_is_followed_slowly_and_a_large_one_at_once():
 
 def test_the_displayed_score_is_smoothed():
     steady = BoxStabilizer()
-    steady.update([box("cat", 0.9)], threshold=0.5, round_trip=0.01)
-    steady.update([box("cat", 0.4)], threshold=0.5, round_trip=0.01)
+    steady.update([box("cat", 0.9)], round_trip=0.01)
+    steady.update([box("cat", 0.4)], round_trip=0.01)
     (cat,) = steady.visible()["cat"]
     assert cat["confidence"] == 0.8
 
 
 def test_tracks_are_per_label_and_a_moved_object_is_followed_not_duplicated():
     steady = BoxStabilizer()
-    steady.update([box("cat", 0.9), box("dog", 0.9)], threshold=0.5, round_trip=0.01)
-    steady.update([box("cat", 0.9, x=110)], threshold=0.5, round_trip=0.01)
+    steady.update([box("cat", 0.9), box("dog", 0.9)], round_trip=0.01)
+    steady.update([box("cat", 0.9, x=110)], round_trip=0.01)
     visible = steady.visible()
     assert len(visible["cat"]) == 1 and len(visible["dog"]) == 1
 
 
 def test_the_hold_follows_the_inference_time():
     steady = BoxStabilizer()
-    steady.update([box("cat", 0.9)], threshold=0.5, round_trip=0.4)
+    steady.update([box("cat", 0.9)], round_trip=0.4)
     steady._tracks[0].last_seen -= 0.5
     assert "cat" in steady.visible(), "a slow model gets a longer hold, two inference times"
     steady._tracks[0].last_seen -= 0.4

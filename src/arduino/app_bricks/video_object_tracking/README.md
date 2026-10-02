@@ -1,0 +1,207 @@
+# Video Object Tracking Brick
+
+This Brick provides a Python interface for **tracking objects in real time from a USB camera video stream**.
+It sends the camera frames to the Edge Impulse inference service running on the board, continuously analyzes them, and produces tracking events where each object carries a **stable identity** across frames.
+
+Because every object keeps the same ID while it stays visible, the Brick can answer questions plain detection cannot: *how many distinct objects have I seen*, *how many crossed this line*, and *which way are they moving*.
+It supports both **pre-trained models** provided by the framework and **custom models** trained with Edge Impulse.
+
+## Overview
+
+The Video Object Tracking Brick allows you to:
+
+- Continuously track objects from a live camera or video stream, each with a persistent object ID.
+- Count **unique** objects per label, instead of counting the same object again on every frame.
+- Count objects crossing a virtual line (horizontal, vertical or diagonal).
+- Watch an area of the video: objects entering and leaving it, and the ones inside.
+- Follow the movement direction of each tracked object.
+- Trigger custom Python functions when certain objects are tracked.
+- Handle all tracked objects of a frame in a single callback if desired.
+- Restrict counting and direction bookkeeping to a subset of labels.
+- Change the tracker parameters at runtime.
+
+## Features
+
+- Real-time tracking stream with persistent object identities.
+- Outputs:
+  - **Class label** (e.g., "person", "bicycle")
+  - **Object ID**, stable for as long as the object is tracked
+  - **Bounding boxes** for localized detections, in the coordinates of the camera frame
+- Two callback styles:
+  - `on_detect("<label>", callback)` → React to a specific label.
+  - `on_detect_all(callback)` → React to all tracked objects of a frame at once.
+- Counters, readable at any time:
+  - `get_unique_objects_count()` → distinct objects seen per label
+  - `get_line_crossing_counts()` → line crossings per label
+  - `get_objects_in_area()` / `get_area_counts()` → objects inside the area now, entries and exits per label
+  - `get_objects_directions()` → movement history per object ID
+- Virtual counting line via `set_horizontal_crossing_line(y)`, `set_vertical_crossing_line(x)` or `set_crossing_line_coordinates(x1, y1, x2, y2)`.
+- Watched area via `set_rectangular_area(x1, y1, x2, y2)` or `set_area_coordinates(points)`, with `on_area_enter(callback)` and `on_area_exit(callback)`.
+- Configurable confidence threshold (default: `0.4`) and debounce time between repeated callback invocations (default: `0s`, i.e. no debounce).
+- Runtime tracker overrides: `override_threshold(value)`, `override_keep_grace(value)`, `override_min_detections(value)`, `override_iou_threshold(value)`, `override_euclidean_distance_threshold(value)`.
+- Clean lifecycle control with `start()` / `stop()` and integration with `App.run()`.
+- Video stream with the tracked boxes and their identities on port `4912`, for browsers and embedded iframes.
+
+## How it works
+
+The models run in the **Edge Impulse inference service** (`arduino:edge_impulse`), one container shared by the bricks of the app, on the NPU where the board has one. The brick opens the model configured for it over the service socket, sends each camera frame as it is, and receives the objects the model tracks in the coordinates of that frame: the service resizes the frame to the model input in the model's own resize mode. The model is released when the brick stops.
+
+The model is the one selected for the brick in the app configuration, or the default of the brick for the board (`EI_V_OBJ_TRACKING_MODEL`, set by the app CLI to the `.eim` file under its models directory).
+
+The brick opens the model while the app is starting and refuses one without the **object tracking** block, since such a model can never report a tracked object. The framework ships `yolox-qnn-object-tracker` as the default; custom Edge Impulse models are supported as long as they include the object tracking block.
+
+## Video stream
+
+The brick serves the camera video with the tracked boxes drawn on it on port `4912`: `http://<board>:4912/` is an MJPEG stream, which browsers show like an image, and `http://<board>:4912/embed` is a bare page for embedding in an iframe. Every box is labelled with the object label and its ID, `person #3`, so an object keeps its color while it stays in view. Frames are rendered only while someone is watching.
+`stream_port=None` in the constructor disables the stream.
+
+## Prerequisites
+
+To use this Brick you should have a USB camera connected to your board.
+
+**Tip**: Use a USB-C® Hub with USB-A connectors to support commercial web cameras.
+
+## Code example and usage
+
+```python
+from arduino.app_utils import App
+from arduino.app_bricks.video_object_tracking import VideoObjectTracking
+
+# Track only people, with a 1.5s debounce between repeated callbacks
+tracker = VideoObjectTracking(confidence=0.4, debounce_sec=1.5, labels_to_track=["person"])
+
+# Count people crossing a horizontal line at y=240
+tracker.set_horizontal_crossing_line(240)
+
+
+# Callback when a "person" is tracked
+def on_person_tracked(details: dict):
+    # Example: {"object_id": 7, "confidence": 0.87, "bounding_box_xyxy": (10, 20, 110, 220)}
+    print(f"🚶 Person {details['object_id']} at {details['bounding_box_xyxy']}")
+
+
+tracker.on_detect("person", on_person_tracked)
+
+
+# Callback for all tracked objects of a frame (takes one dict argument)
+def on_all_tracked(objects: dict):
+    # Example: {"person": [{"object_id": 7, "confidence": 0.87, "bounding_box_xyxy": (10, 20, 110, 220)}]}
+    print("Tracked:", objects)
+    print("Unique so far:", tracker.get_unique_objects_count())
+    print("Line crossings:", tracker.get_line_crossing_counts())
+    print("Directions:", tracker.get_objects_directions())
+
+
+tracker.on_detect_all(on_all_tracked)
+
+# Run the application (keeps the video tracking loop active)
+App.run()
+```
+
+Callback signatures:
+
+- `on_detect(label, callback)`: the callback must be a plain function. With no parameters it is simply invoked; with one parameter it receives the tracking details dict `{"object_id": int, "confidence": float, "bounding_box_xyxy": (x1, y1, x2, y2)}`, once per object of that label in the frame.
+- `on_detect_all(callback)`: the callback receives one dict argument mapping each tracked label to the list of its objects in the frame: `{label: [{"object_id": int, "confidence": float, "bounding_box_xyxy": (x1, y1, x2, y2)}, ...], ...}`, so `len()` of a list is how many objects of that label are in view.
+
+The constructor also accepts a `camera` parameter (`BaseCamera`) to use a specific camera instead of the default one, which is where the capture frame rate and resolution are set. The frame rate bounds how far an object can move between two observations, so it bounds how reliably the tracker keeps an identity.
+
+## Counting unique objects
+
+`get_unique_objects_count()` returns a `{label: count}` dictionary of how many **distinct** objects have been seen since the last reset. An object is counted once, the first time its ID appears, so a person standing in front of the camera for a minute is counted once and not once per frame.
+
+```python
+tracker = VideoObjectTracking(labels_to_track=["car", "truck"])
+# ...
+print(tracker.get_unique_objects_count())  # {"car": 12, "truck": 3}
+```
+
+`reset_counters()` clears the unique-object counts, the line-crossing counts and the last-seen positions, so counting starts from scratch. The same identifiers are also forgotten whenever the brick reconnects to the inference service, because the tracker numbers its tracks from zero on every run.
+
+## Counting line crossings
+
+Define a virtual line and the Brick counts, per label, every tracked object whose **bounding box centre** moves from one side of it to the other. Without a line, nothing is counted:
+
+```python
+tracker.set_horizontal_crossing_line(240)  # horizontal line at y=240
+tracker.set_vertical_crossing_line(320)  # vertical line at x=320
+tracker.set_crossing_line_coordinates(0, 100, 640, 380)  # arbitrary, diagonal line
+
+print(tracker.get_line_crossing_counts())  # {"person": {"left": 3, "right": 2, "all": 5}}
+```
+
+Every line runs across the whole frame, whatever its resolution: the helpers set a horizontal or vertical one, `set_crossing_line_coordinates()` the line through any two points, a diagonal one included.
+
+To react to each crossing as it happens, register a callback with `on_line_crossing()`: it receives `{"label": str, "object_id": int, "direction": str}`.
+
+```python
+def on_crossing(crossing: dict) -> None:
+    logger.info(f"{crossing['label']} #{crossing['object_id']} went {crossing['direction']}")
+
+tracker.on_line_crossing(on_crossing)
+```
+
+Every crossing is counted under the direction it happened in, as seen on the screen: perpendicular to the line, towards the side the object reached. The direction is one of `up`, `down`, `left`, `right`, `up-left`, `up-right`, `down-left`, `down-right`: a line within 22.5° of horizontal is crossed `up` or `down`, one within 22.5° of vertical `left` or `right`, any other line in the two diagonal directions across it.
+
+The video stream shows the line drawn across the whole frame: a crossing is counted wherever the object passes the line, not only between its two points. Pass `visible=False` to any of the three methods to count without drawing it.
+
+Setting the line leaves every count untouched: call `reset_counters()` yourself if you want to start over.
+
+## Watching an area
+
+Define an area of the video and the Brick follows, per label, the tracked objects whose **bounding box centre** is inside it. The area is a polygon in the coordinates of the camera frame, concave ones included, or a rectangle through the helper:
+
+```python
+tracker.set_rectangular_area(200, 150, 440, 330)  # two opposite corners
+tracker.set_area_coordinates([(100, 100), (300, 80), (320, 300), (120, 320)])  # any polygon, from 3 to 100 points
+
+print(tracker.get_objects_in_area())  # {"apple": 1}
+print(tracker.get_area_counts())  # {"apple": {"entered": 3, "exited": 2}}
+```
+
+The points follow the border in order, and the border must not cross itself: `set_area_coordinates()` raises `ValueError` for one that does, as it does for fewer than three distinct points or more than 100. A point repeated right after itself, or the first one repeated at the end to close the polygon, is left out.
+
+An object **enters** the area when it is seen inside and was not inside already, also when it first appears there. It **leaves** when it is seen outside, by more than `min_movement_threshold` pixels so that a centre wobbling on the border does not enter again and again, or when it disappears while inside and the tracker gives it up, after `keep_grace` frames. Setting the area again, or a new run of the tracker, empties the objects inside without reporting them as gone.
+
+To react as it happens, register a callback for each event: both receive `{"label": str, "object_id": int}`.
+
+```python
+def on_enter(event: dict) -> None:
+    logger.info(f"{event['label']} #{event['object_id']} entered the area")
+
+def on_exit(event: dict) -> None:
+    logger.info(f"{event['label']} #{event['object_id']} left the area")
+
+tracker.on_area_enter(on_enter)
+tracker.on_area_exit(on_exit)
+```
+
+The video stream shows the outline of the area in yellow, unless it is set with `visible=False`: an app drawing its own overlay on the video still gets the events and the counts. `reset_counters()` clears the entries and exits, not the objects inside now.
+
+## Tracking movement direction
+
+`get_objects_directions()` returns `{object_id: [direction, ...]}`, the sequence of direction changes observed for each tracked object. Consecutive repeats are collapsed, so a straight walk yields a single entry and the last element is the object's current direction.
+
+Possible values are `up`, `down`, `left`, `right`, `up-left`, `up-right`, `down-left`, `down-right`, as seen on the screen: an object moving rightwards across the frame is reported as `right`. Each name covers 45 degrees, so a movement within 22.5° of an axis is `up`, `down`, `left` or `right`, the line crossings use the same names.
+
+`min_movement_threshold` (default `10` px) is the minimum displacement needed for a movement to count as a direction change, which keeps bounding-box jitter from producing spurious directions.
+
+## Tracker parameters
+
+The constructor accepts the tracker knobs below, and each one has a matching `override_*` method to change it at runtime:
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `confidence` | `0.4` | Minimum detection confidence, applied by the model. |
+| `keep_grace` | `3` | Frames an object is kept alive after it disappears, before its ID is dropped. |
+| `min_detections` | `3` | Detections an object needs before the tracker reports it as a track of its own. |
+| `iou_threshold` | `0.1` | Intersection-over-Union used to match tracks between frames. For bounding-box models such as YOLO. |
+| `euclidean_distance_threshold` | `50` | Maximum distance in pixels used to match tracks between frames. For centroid models such as FOMO. |
+| `debounce_sec` | `0.0` | Minimum seconds between repeated callback invocations for the same label. |
+| `labels_to_track` | `None` | Labels included in the counters. `None` means all labels. |
+| `min_movement_threshold` | `10` | Minimum displacement in pixels for a direction change. |
+
+The knobs are set on the model as soon as it is opened and again on every reconnection. `iou_threshold` and `euclidean_distance_threshold` are alternatives: which one the model uses depends on its type, and each `override_*` method is a no-op on a model of the other type. An `override_*` method raises `RuntimeError` when the tracking block of the model has no such knob.
+
+**Note**: the thresholds belong to the model, so they hold for every brick of the app using the same model.
+
+**Note**: `labels_to_track` filters everything the Brick reports: the counters, the line crossings, the direction history and the callbacks.

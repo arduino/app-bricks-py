@@ -48,7 +48,7 @@ The `adjustments` parameter allows you to apply custom transformations to captur
 ```python
 import cv2
 from arduino.app_peripherals.camera import Camera
-from arduino.app_utils.image import greyscaled
+from arduino.app_utils.image import PipeableFunction, greyscaled
 
 
 def blurred():
@@ -57,12 +57,12 @@ def blurred():
     return PipeableFunction(apply_blur)
 
 # Using adjustments with Camera
-with Camera(adjustments=greyscaled) as camera:
+with Camera(adjustments=greyscaled()) as camera:
     frame = camera.capture()
     # frame is now grayscale
 
 # Or with multiple transformations
-with Camera(adjustments=greyscaled | blurred) as camera:
+with Camera(adjustments=greyscaled() | blurred()) as camera:
     frame = camera.capture()
     # frame is now greyscaled and blurred
 ```

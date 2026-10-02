@@ -497,3 +497,41 @@ def ei_service():
     service.start()
     yield service
     service.cleanup()
+
+
+# ---------------------------------------------------------------------------
+# Fake camera for the video bricks
+# ---------------------------------------------------------------------------
+
+
+class FakeCamera:
+    """A camera whose frames the test pushes, capture() blocks briefly when there is none."""
+
+    fps = 30
+
+    def __init__(self, shape=(120, 160, 3)):
+        self.shape = shape  # 160x120 frames by default
+        self.frames = queue.Queue()
+        self.started = False
+
+    def start(self):
+        self.started = True
+
+    def stop(self):
+        self.started = False
+
+    def capture(self):
+        try:
+            return self.frames.get(timeout=0.05)
+        except queue.Empty:
+            return None
+
+    def push(self, count=1):
+        for _ in range(count):
+            self.frames.put(np.zeros(self.shape, np.uint8))
+
+
+@pytest.fixture
+def camera():
+    """A FakeCamera the test feeds with push()."""
+    return FakeCamera()
