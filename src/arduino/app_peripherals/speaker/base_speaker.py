@@ -57,17 +57,17 @@ class BaseSpeaker(ABC):
         """
         if sample_rate <= 0:
             raise SpeakerConfigError("Sample rate must be positive")
-        self.sample_rate = sample_rate
+        self.sample_rate: int = sample_rate
 
         if channels <= 0:
             raise SpeakerConfigError("Number of channels must be positive")
-        self.channels = channels
+        self.channels: int = channels
 
         self.format, self.format_is_packed = parse_format(format, SpeakerConfigError)
 
         if buffer_size <= 0:
             raise SpeakerConfigError("Buffer size must be positive")
-        self.buffer_size = buffer_size
+        self.buffer_size: int = buffer_size
 
         self.logger = logger  # This will be overridden by subclasses if needed
         self.name = self.__class__.__name__  # This will be overridden by subclasses if needed
