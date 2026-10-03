@@ -19,7 +19,7 @@ class BrickDecorator:
     @overload
     def __call__[C](self, user_class: type[C]) -> type[C]: ...
 
-    def __call__(self, user_class: type | None = None) -> type | Callable[[type], type]:
+    def __call__(self, user_class: type[object] | None = None) -> type[object] | Callable[[type[object]], type[object]]:
         """Handles decorating the class.
         Can be used as @brick or @brick().
         """
