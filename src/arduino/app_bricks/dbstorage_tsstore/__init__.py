@@ -54,7 +54,10 @@ class _InfluxDBHandler:
         infra = self.load_default_infra()
         env_dict = infra["services"]["dbstorage-influx"]["environment"]
         self.url = f"http://{self.host}:{self.port}"
-        self.token = parse_docker_compose_variable(env_dict["DOCKER_INFLUXDB_INIT_ADMIN_TOKEN"])[0][1]
+        token = parse_docker_compose_variable(env_dict["DOCKER_INFLUXDB_INIT_ADMIN_TOKEN"])[0][1]
+        if token is None:
+            raise TimeSeriesStoreError("The brick compose file declares no default InfluxDB admin token.")
+        self.token = token
         self.org = env_dict["DOCKER_INFLUXDB_INIT_ORG"]
         self.bucket = env_dict["DOCKER_INFLUXDB_INIT_BUCKET"]
         self.client: InfluxDBClient = None
@@ -159,6 +162,9 @@ class TimeSeriesStore(_InfluxDBHandler):
                 Defaults to 8086.
             retention_days (int, optional): The number of days to retain data in the
                 InfluxDB bucket. Defaults to 7.
+
+        Raises:
+            TimeSeriesStoreError: If the brick compose file declares no default admin token.
         """
         super().__init__(host, port, retention_days)
 

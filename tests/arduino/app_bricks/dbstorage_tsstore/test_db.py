@@ -3,8 +3,11 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import pytest
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 from typing import Any
+
+from arduino.app_bricks.dbstorage_tsstore import TimeSeriesStore, TimeSeriesStoreError
 
 
 @pytest.fixture
@@ -250,3 +253,29 @@ def test_database_retrieval_process(mock_db_retrieval_class: MagicMock) -> None:
     assert "sensor2" in dict_result
     assert dict_result["sensor1"][2] == 25.5
     assert dict_result["sensor2"][2] == "active"
+
+
+def _compose_with_token(tmp_path: Path, token: str) -> str:
+    compose = tmp_path / "brick_compose.yaml"
+    compose.write_text(
+        "services:\n"
+        "  dbstorage-influx:\n"
+        "    environment:\n"
+        "      DOCKER_INFLUXDB_INIT_ORG: arduino\n"
+        "      DOCKER_INFLUXDB_INIT_BUCKET: arduinostorage\n"
+        f'      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: "{token}"\n'
+    )
+    return str(compose)
+
+
+def test_store_reads_the_default_token_from_the_compose_file(tmp_path: Path) -> None:
+    compose = _compose_with_token(tmp_path, "${INFLUXDB_ADMIN_TOKEN:-secret}")
+    with patch("arduino.app_bricks.dbstorage_tsstore.get_brick_compose_file", return_value=compose):
+        assert TimeSeriesStore().token == "secret"
+
+
+def test_store_rejects_a_compose_file_without_default_token(tmp_path: Path) -> None:
+    compose = _compose_with_token(tmp_path, "${INFLUXDB_ADMIN_TOKEN}")
+    with patch("arduino.app_bricks.dbstorage_tsstore.get_brick_compose_file", return_value=compose):
+        with pytest.raises(TimeSeriesStoreError):
+            TimeSeriesStore()
