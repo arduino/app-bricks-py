@@ -325,7 +325,7 @@ def _accumulate_docker_compose_variables(discovered_vars: list[tuple[str, str | 
 
 class ModuleVariable:
     def __init__(self, name: str, description: str | None, default_value: str | None = None) -> None:
-        """Represents a variable in a Docker Compose file; description and default are optional."""
+        """Represents a variable in a Docker Compose file; description and default value may be None."""
         self.name = name
         self.default_value = default_value
         self.description = description
