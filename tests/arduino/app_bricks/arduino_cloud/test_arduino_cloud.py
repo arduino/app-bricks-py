@@ -7,6 +7,7 @@ import json
 import os
 import socket
 import socketserver
+import tempfile
 import threading
 import time
 import warnings
@@ -846,9 +847,16 @@ def test_daemon_client_plain_http_has_no_socket():
     assert client._socket_path is None
 
 
+@pytest.fixture
+def socket_dir():
+    """A short-lived directory whose path fits the Unix socket path limit."""
+    with tempfile.TemporaryDirectory(prefix="cloud") as path:
+        yield path
+
+
 @pytest.mark.skipif(not _HAS_AF_UNIX, reason="AF_UNIX not available on this platform")
-def test_put_and_sse_over_unix_socket(tmp_path):
-    sock_path = str(tmp_path / "daemon.sock")
+def test_put_and_sse_over_unix_socket(socket_dir):
+    sock_path = f"{socket_dir}/daemon.sock"
     received = {}
 
     class Handler(http.server.BaseHTTPRequestHandler):
