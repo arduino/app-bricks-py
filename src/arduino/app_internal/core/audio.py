@@ -89,12 +89,12 @@ class AudioDetector(EdgeImpulseRunnerFacade):
         self._buffer.flush()
 
     @staticmethod
-    def get_best_match(item: dict[str, Any] | None, confidence: float | None) -> tuple[str, float] | None:
+    def get_best_match(item: dict[str, Any] | None, confidence: float) -> tuple[str, float] | None:
         """Extract the best matched keyword from the classification results.
 
         Args:
         item (dict | None): The classification result from the inference, None when the inference failed.
-        confidence (float | None): The confidence threshold for classification; None is rejected.
+        confidence (float): The confidence threshold for classification.
 
         Returns:
         tuple[str, float] | None: The best matched keyword and its confidence, or None if no match is found.
@@ -102,8 +102,11 @@ class AudioDetector(EdgeImpulseRunnerFacade):
         Raises:
         ValueError: If confidence level is not provided.
         """
-        if confidence is None:
-            raise ValueError("Confidence level must be provided.")
+        match confidence:
+            case float() | int():
+                pass
+            case _:
+                raise ValueError("Confidence level must be provided.")
 
         classification = _extract_classification(item, confidence)
         if not classification:
