@@ -4,7 +4,6 @@
 
 import asyncio
 from concurrent.futures import CancelledError as FutureCancelledError
-from .constants import _SHUTDOWN, _Shutdown
 from .adapter import AsyncBlockingSourceAdapter, AsyncBrickAdapter, AsyncProcessorAdapter, AsyncSinkAdapter, AsyncSourceAdapter
 from arduino.app_utils import Logger
 
@@ -63,7 +62,7 @@ class SourceTask[T_OUT](PipelineTask):
     def __init__(self, adapter: AsyncSourceAdapter | AsyncBlockingSourceAdapter, queue_size: int = 1) -> None:
         super().__init__(adapter)
         self.adapter: AsyncSourceAdapter | AsyncBlockingSourceAdapter = adapter
-        self.output_queue: asyncio.Queue[T_OUT | _Shutdown] = asyncio.Queue(queue_size)
+        self.output_queue: asyncio.Queue[T_OUT | None] = asyncio.Queue(queue_size)
 
     async def _run(self) -> None:
         brick_name = type(self.adapter.original_brick).__name__
@@ -91,15 +90,15 @@ class SourceTask[T_OUT](PipelineTask):
                     break
         finally:
             logger.info(f"Source task {brick_name} finished. Signaling downstream.")
-            await self.output_queue.put(_SHUTDOWN)
+            await self.output_queue.put(None)
 
 
 class ProcessorTask[T_IN, T_OUT](PipelineTask):
     def __init__(self, adapter: AsyncProcessorAdapter, queue_size: int = 1) -> None:
         super().__init__(adapter)
         self.adapter: AsyncProcessorAdapter = adapter
-        self.input_queue: asyncio.Queue[T_IN | _Shutdown] | None = None
-        self.output_queue: asyncio.Queue[T_OUT | _Shutdown] = asyncio.Queue(queue_size)
+        self.input_queue: asyncio.Queue[T_IN | None] | None = None
+        self.output_queue: asyncio.Queue[T_OUT | None] = asyncio.Queue(queue_size)
 
     async def _run(self) -> None:
         brick_name = type(self.adapter.original_brick).__name__
@@ -112,7 +111,7 @@ class ProcessorTask[T_IN, T_OUT](PipelineTask):
             while True:
                 data_in = await self.input_queue.get()
                 try:
-                    if data_in is _SHUTDOWN:
+                    if data_in is None:
                         logger.debug(f"Processor {brick_name} got sentinel.")
                         break
                     # Handles rate limit and sync/async variations internally
@@ -134,14 +133,14 @@ class ProcessorTask[T_IN, T_OUT](PipelineTask):
                     self.input_queue.task_done()
         finally:
             logger.info(f"Processor task {brick_name} finished. Signaling downstream.")
-            await self.output_queue.put(_SHUTDOWN)
+            await self.output_queue.put(None)
 
 
 class SinkTask[T_IN](PipelineTask):
     def __init__(self, adapter: AsyncSinkAdapter, queue_size: int = 1) -> None:
         super().__init__(adapter)
         self.adapter: AsyncSinkAdapter = adapter
-        self.input_queue: asyncio.Queue[T_IN | _Shutdown] | None = None
+        self.input_queue: asyncio.Queue[T_IN | None] | None = None
 
     async def _run(self) -> None:
         brick_name = type(self.adapter.original_brick).__name__
@@ -154,7 +153,7 @@ class SinkTask[T_IN](PipelineTask):
             while True:
                 data_in = await self.input_queue.get()
                 try:
-                    if data_in is _SHUTDOWN:
+                    if data_in is None:
                         logger.debug(f"Sink {brick_name} got sentinel.")
                         break
                     # Handles rate limit, sync/async internally

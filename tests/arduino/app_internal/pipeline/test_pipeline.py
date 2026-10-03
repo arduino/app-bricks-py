@@ -47,3 +47,20 @@ def test_pipeline_rejects_bricks_without_the_expected_method():
 
     with pytest.raises(TypeError):
         Pipeline().add_source(NoProduce())
+
+
+def test_pipeline_stops_an_endless_source():
+    def produce() -> int:
+        time.sleep(0.01)
+        return 1
+
+    got: list[int] = []
+    pipeline = Pipeline()
+    pipeline.add_source(produce).add_sink(got.append)
+    pipeline.start()
+    _wait_for(lambda: len(got) > 0)
+    pipeline.stop()
+
+    received = len(got)
+    time.sleep(0.1)
+    assert len(got) == received

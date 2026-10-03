@@ -8,7 +8,6 @@ import queue
 import threading
 from collections.abc import Callable
 from typing import Any, Literal, overload
-from .constants import _SHUTDOWN
 from .limiter import AsyncRateLimiter
 from arduino.app_utils import Logger
 
@@ -98,7 +97,7 @@ class AsyncBlockingSourceAdapter(AsyncBrickAdapter):
         self._limiter = AsyncRateLimiter(rate_limit) if rate_limit else None
 
         # Internal queue for daemon thread -> async communication
-        self._data_queue: queue.Queue[object] = queue.Queue(1)
+        self._data_queue: queue.Queue[Any] = queue.Queue(1)
         self._stop_event = threading.Event()
         self._producer_thread: threading.Thread | None = None
 
@@ -141,7 +140,7 @@ class AsyncBlockingSourceAdapter(AsyncBrickAdapter):
 
             # Put sentinel to unblock the _data_queue.get() call in produce()
             try:
-                self._data_queue.put_nowait(_SHUTDOWN)
+                self._data_queue.put_nowait(None)
             except queue.Full:
                 logger.warning(f"Adapter for {type(self.original_brick).__name__}: could not inject sentinel, queue full.")
             except Exception as e:
@@ -164,15 +163,13 @@ class AsyncBlockingSourceAdapter(AsyncBrickAdapter):
             await self._limiter.wait()
 
         data = await loop.run_in_executor(None, self._data_queue.get)
-        if data is _SHUTDOWN:
+        if data is None:
             logger.debug(f"Adapter {type(self.original_brick).__name__} received sentinel from internal queue.")
             return None
         self._data_queue.task_done()
 
         return data
 
-    # TODO: we can probably avoid propagating the _SHUTDOWN sentinel and simply return.
-    # self._producer_thread.is_alive() in produce() should take care of this situation.
     def _producer_loop(self) -> None:
         """Target for the internal daemon thread. Transfers data from the blocking produce method to the async one."""
         try:
@@ -181,7 +178,7 @@ class AsyncBlockingSourceAdapter(AsyncBrickAdapter):
                     data = self._produce_method()
                     if data is None:
                         logger.debug(f"Internal producer thread ({type(self.original_brick).__name__}): produce returned None. Stopping.")
-                        self._data_queue.put(_SHUTDOWN)
+                        self._data_queue.put(None)
                         break
                     if not self._stop_event.is_set():
                         self._data_queue.put(data)
@@ -189,12 +186,12 @@ class AsyncBlockingSourceAdapter(AsyncBrickAdapter):
                         break
                 except Exception as e:
                     logger.exception(f"Error in internal producer thread ({type(self.original_brick).__name__}): {e}")
-                    self._data_queue.put(_SHUTDOWN)  # Signal error
+                    self._data_queue.put(None)  # Signal error
                     break
         finally:
             logger.debug(f"Internal producer thread finished for {type(self.original_brick).__name__}.")
             try:
-                self._data_queue.put_nowait(_SHUTDOWN)  # Ensure sentinel
+                self._data_queue.put_nowait(None)  # Ensure sentinel
             except queue.Full:
                 pass
             except Exception as e:
