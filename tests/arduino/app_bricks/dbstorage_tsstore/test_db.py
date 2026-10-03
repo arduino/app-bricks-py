@@ -268,13 +268,22 @@ def _compose_with_token(tmp_path: Path, token: str) -> str:
     return str(compose)
 
 
-def test_store_reads_the_default_token_from_the_compose_file(tmp_path: Path) -> None:
+def test_store_reads_the_default_token_from_the_compose_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("INFLUXDB_ADMIN_TOKEN", raising=False)
     compose = _compose_with_token(tmp_path, "${INFLUXDB_ADMIN_TOKEN:-secret}")
     with patch("arduino.app_bricks.dbstorage_tsstore.get_brick_compose_file", return_value=compose):
         assert TimeSeriesStore().token == "secret"
 
 
-def test_store_rejects_a_compose_file_without_default_token(tmp_path: Path) -> None:
+def test_store_prefers_the_token_set_for_the_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("INFLUXDB_ADMIN_TOKEN", "custom")
+    compose = _compose_with_token(tmp_path, "${INFLUXDB_ADMIN_TOKEN:-secret}")
+    with patch("arduino.app_bricks.dbstorage_tsstore.get_brick_compose_file", return_value=compose):
+        assert TimeSeriesStore().token == "custom"
+
+
+def test_store_rejects_a_missing_token(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("INFLUXDB_ADMIN_TOKEN", raising=False)
     compose = _compose_with_token(tmp_path, "${INFLUXDB_ADMIN_TOKEN}")
     with patch("arduino.app_bricks.dbstorage_tsstore.get_brick_compose_file", return_value=compose):
         with pytest.raises(TimeSeriesStoreError):

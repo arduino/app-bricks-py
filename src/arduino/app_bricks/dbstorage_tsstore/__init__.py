@@ -4,6 +4,7 @@
 
 from arduino.app_utils import Logger
 from typing import Any
+import os
 import yaml
 import time
 
@@ -54,9 +55,11 @@ class _InfluxDBHandler:
         infra = self.load_default_infra()
         env_dict = infra["services"]["dbstorage-influx"]["environment"]
         self.url = f"http://{self.host}:{self.port}"
-        token = parse_docker_compose_variable(env_dict["DOCKER_INFLUXDB_INIT_ADMIN_TOKEN"])[0][1]
+        # Resolved as compose does, so the app gets the token the container was set up with
+        token_variable, default_token = parse_docker_compose_variable(env_dict["DOCKER_INFLUXDB_INIT_ADMIN_TOKEN"])[0]
+        token = os.getenv(token_variable) or default_token
         if token is None:
-            raise TimeSeriesStoreError("The brick compose file declares no default InfluxDB admin token.")
+            raise TimeSeriesStoreError(f"{token_variable} is not set and the brick compose file declares no default for it.")
         self.token = token
         self.org = env_dict["DOCKER_INFLUXDB_INIT_ORG"]
         self.bucket = env_dict["DOCKER_INFLUXDB_INIT_BUCKET"]
@@ -164,7 +167,7 @@ class TimeSeriesStore(_InfluxDBHandler):
                 InfluxDB bucket. Defaults to 7.
 
         Raises:
-            TimeSeriesStoreError: If the brick compose file declares no default admin token.
+            TimeSeriesStoreError: If INFLUXDB_ADMIN_TOKEN is not set and the brick compose file declares no default for it.
         """
         super().__init__(host, port, retention_days)
 
