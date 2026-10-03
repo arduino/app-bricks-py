@@ -153,8 +153,7 @@ class AsyncBlockingSourceAdapter(AsyncBrickAdapter):
         """Normalized async produce, gets data from internal queue populated by the daemon thread
         and applies emission rate limit.
         """
-        if not self._loop:
-            raise RuntimeError("Loop not set for adapter execution")
+        loop = self._running_loop()
         if self._stop_event.is_set() or not self._producer_thread or not self._producer_thread.is_alive():
             logger.debug(f"Producer thread for {type(self.original_brick).__name__} not running in produce().")
             # Might happen if start wasn't called or thread died. Return None to signal end.
@@ -164,7 +163,7 @@ class AsyncBlockingSourceAdapter(AsyncBrickAdapter):
         if self._limiter:
             await self._limiter.wait()
 
-        data = await self._loop.run_in_executor(None, self._data_queue.get)
+        data = await loop.run_in_executor(None, self._data_queue.get)
         if data is _SHUTDOWN:
             logger.debug(f"Adapter {type(self.original_brick).__name__} received sentinel from internal queue.")
             return None
