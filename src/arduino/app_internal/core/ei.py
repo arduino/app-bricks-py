@@ -101,25 +101,25 @@ class EdgeImpulseRunnerFacade:
                 'image_type' is optional while 'image' contains image as bytes.
         """
         try:
-            if isinstance(item, str):
-                # Use this like a file path
-                with open(item, "rb") as f:
-                    return self.infer_from_image(f.read(), item.split(".")[-1])
-            # Pipeline items of other kinds pass through untouched (see the test suite): the
-            # check is for them, beyond what the signature the bricks override declares.
-            elif isinstance(item, dict) and "image" in item and item["image"] != "":  # pyright: ignore[reportUnnecessaryIsInstance]
-                image = item["image"]
-                if "image_type" in item and item["image_type"] != "":
-                    image_type = item["image_type"]
-                else:
-                    image_type = get_image_type(image)
+            match item:
+                case str():
+                    # Use this like a file path
+                    with open(item, "rb") as f:
+                        return self.infer_from_image(f.read(), item.split(".")[-1])
+                case dict() if "image" in item and item["image"] != "":
+                    image = item["image"]
+                    if "image_type" in item and item["image_type"] != "":
+                        image_type = item["image_type"]
+                    else:
+                        image_type = get_image_type(image)
 
-                if image_type is None:
-                    logger.debug(f"[{self.__class__}] Discarding not supported file type")
-                    return None
+                    if image_type is None:
+                        logger.debug(f"[{self.__class__}] Discarding not supported file type")
+                        return None
 
-                return self.infer_from_image(image, image_type.lower())
-            return item  # No processing needed
+                    return self.infer_from_image(image, image_type.lower())
+                case _:
+                    return item  # No processing needed
         except FileNotFoundError:
             logger.error(f"[{self.__class__}] File not found: {item}")
         except Exception as e:
