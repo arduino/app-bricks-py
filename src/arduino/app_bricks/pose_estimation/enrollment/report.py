@@ -110,6 +110,8 @@ def render_report(
     if n < MIN_PHOTOS_TO_MEASURE:
         lines.append(f"verdict: NOT ACCEPTED (at least {MIN_PHOTOS_TO_MEASURE} usable photos are needed to measure; you have {n})")
         lines.append("next step: add photos")
+    elif measure is None:
+        raise ValueError(f"pose {spec.name!r}: {n} usable photos are reported without their measure")
     elif n < MIN_PHOTOS_TO_ACCEPT:
         forming = (
             "the pose is forming well"
@@ -123,6 +125,8 @@ def render_report(
     elif n_groups < MIN_GROUPS:
         lines.append(f"verdict: NOT ACCEPTED (at least {MIN_GROUPS} groups are needed; you have {n_groups})")
         lines.append("next step: add photos taken at different times, distances or angles")
+    elif curve is None:
+        raise ValueError(f"pose {spec.name!r}: {n} usable photos in {n_groups} groups are reported without their learning curve")
     else:
         lines.append(f"verdict: NOT ACCEPTED ({100 * measure.recall:.0f}% of your photos fire, {100 * PASS_RECALL:.0f}% needed)")
         if curve.verdict == "mixed":

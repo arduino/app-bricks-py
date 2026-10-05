@@ -14,7 +14,7 @@ from typing import Any
 
 import cv2
 import numpy as np
-from websockets.sync.client import connect
+from websockets.sync.client import ClientConnection, connect
 
 from arduino.app_utils.image.adjustments import compress_to_jpeg
 
@@ -48,7 +48,8 @@ class PersonReader:
 
     def __init__(self, send_url: str, recv_url: str, config: dict[str, Any]) -> None:
         self._send_url, self._recv_url, self._config = send_url, recv_url, config
-        self._send = self._recv = None
+        self._send: ClientConnection | None = None
+        self._recv: ClientConnection | None = None
         self._cleared = False
 
     def __enter__(self) -> "PersonReader":
@@ -76,22 +77,25 @@ class PersonReader:
         self._send = self._recv = None
 
     def _infer(self, jpeg: bytes) -> dict[str, Any]:
-        self._send.send(json.dumps({"frame": base64.b64encode(jpeg).decode("utf-8")}))
-        answer = json.loads(self._recv.recv(timeout=ANSWER_TIMEOUT_SEC))
+        send, recv = self._send, self._recv
+        if send is None or recv is None:
+            raise RuntimeError("the pose model runner is not connected: read the photos inside the PersonReader context")
+        send.send(json.dumps({"frame": base64.b64encode(jpeg).decode("utf-8")}))
+        answer = json.loads(recv.recv(timeout=ANSWER_TIMEOUT_SEC))
         return answer.get("metadata", {})
 
     def people(self, image: np.ndarray, min_score: float) -> list[Person]:
         """Detect the people of one BGR image with the runner's two-pass reading."""
         jpeg = compress_to_jpeg(image)
-        if jpeg is None:
+        black = compress_to_jpeg(np.zeros_like(image))
+        if jpeg is None or black is None:
             raise RuntimeError("the photo could not be encoded as JPEG")
-        black = compress_to_jpeg(np.zeros_like(image)).tobytes()
         if not self._cleared:
-            self._infer(black)
+            self._infer(black.tobytes())
             self._cleared = True
         self._infer(jpeg.tobytes())
         metadata = self._infer(jpeg.tobytes())
-        self._infer(black)
+        self._infer(black.tobytes())
         return parse_people(metadata, min_score)
 
 

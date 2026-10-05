@@ -280,7 +280,8 @@ class PoseKNN:
         the distance factor when vote_weighting is "distance". Neighbors are
         picked by distance alone. All zeros when the query is rejected.
         """
-        if self._db is None:
+        labels = self._labels
+        if self._db is None or labels is None:
             raise RuntimeError("fit() must be called first")
 
         d = self._distances(np.asarray(embedding, dtype=np.float32))
@@ -290,7 +291,7 @@ class PoseKNN:
         if float(np.median(d[top_idx])) > self.reject_distance:
             return probs
 
-        top_labels = self._labels[top_idx]
+        top_labels = labels[top_idx]
         votes = np.ones(len(top_idx), dtype=np.float64)
         if label_weights:
             votes *= np.asarray([label_weights.get(str(lbl), 1.0) for lbl in top_labels], dtype=np.float64)

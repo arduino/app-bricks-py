@@ -964,6 +964,11 @@ class TestPersonReader:
         assert people[0].keypoints["nose"].x == 200  # the second answer of the first photo (x = 100 * 2)
         assert more[0].keypoints["nose"].x == 500
 
+    def test_reading_outside_the_context_is_a_clear_error(self):
+        reader = PersonReader("ws://127.0.0.1:9", "ws://127.0.0.1:9", {})
+        with pytest.raises(RuntimeError, match="not connected"):
+            reader.people(np.zeros((48, 64, 3), np.uint8), 0.3)
+
     def test_an_unreachable_runner_is_a_clear_error(self, monkeypatch):
         from arduino.app_bricks.pose_estimation.enrollment import photos
 

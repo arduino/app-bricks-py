@@ -265,6 +265,16 @@ def test_a_mixed_bucket_gets_no_photo_estimate():
     assert "about 60 in total for 70% recall" in report  # never fewer than the photos already there
 
 
+def test_a_report_refuses_a_measured_bucket_without_its_numbers():
+    spec = PoseSpec(name="p", builtin=False)
+    bucket = _bucket("p", _cloud(NEW, 60))
+    with pytest.raises(ValueError, match="60 usable photos are reported without their measure"):
+        render_report(NOW, spec, bucket, None, 3000, {}, np.asarray([]), None, 20, None, None, {}, {}, 9)
+    measure = Measure(own_shares=np.full(60, 0.4), own_neighbours=3.4, n0=69.0)
+    with pytest.raises(ValueError, match="60 usable photos in 20 groups are reported without their learning curve"):
+        render_report(NOW, spec, bucket, None, 3000, {}, np.asarray([]), measure, 20, None, None, {}, {}, 9)
+
+
 def test_a_shipped_pose_re_taught_from_its_own_rows_is_accepted(tmp_path):
     shipped = np.load(ASSET)
     labels = shipped["labels"].astype(str)
