@@ -499,25 +499,24 @@ class CloudLLM:
         loops = 0
 
         while True:
-            message = model.invoke(input=input_messages, config={"callbacks": self._callbacks})
-            if message is None:
-                raise RuntimeError("Received empty response from the LLM.")
+            match model.invoke(input=input_messages, config={"callbacks": self._callbacks}):
+                case AIMessage() as response:
+                    logger.debug(f"Model invoked. Full response: {response}")
+                case _:
+                    raise RuntimeError("Received empty response from the LLM.")
 
-            logger.debug(f"Model invoked. Full response: {message}")
-
-            tool_calls = getattr(message, "tool_calls", None) or []
-            if not tool_calls:
+            if not response.tool_calls:
                 break
 
             loops += 1
             if loops > self._max_tool_loops:
                 raise RuntimeError(f"Too many consecutive tool-call loops ({self._max_tool_loops}). Possible tool loop.")
 
-            input_messages = self._run_tool_exchange(message, tool_calls, input_messages)
+            input_messages = self._run_tool_exchange(response, response.tool_calls, input_messages)
 
         # Add the AI message to long term history
-        self._history.add_messages([message])
-        return self._content_to_text(message.content)
+        self._history.add_messages([response])
+        return self._content_to_text(response.content)
 
     def chat_stream(self, message: str, images: Sequence[str | bytes] | None = None) -> Iterator[str]:
         """Sends a message to the AI and yields response tokens as they are generated.
