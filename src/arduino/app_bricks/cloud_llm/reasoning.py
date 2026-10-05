@@ -159,7 +159,7 @@ class ChatOpenAIReasoning(ChatOpenAI):
         self,
         chunk: Any,  # noqa: ANN401
         state: _ResponsesStreamState,
-        headers: dict,
+        headers: dict[str, Any],
     ) -> ChatGenerationChunk | None:
         """Convert one raw Responses API event into a ``ChatGenerationChunk``.
 

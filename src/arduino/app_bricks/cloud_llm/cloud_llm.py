@@ -157,9 +157,9 @@ class CloudLLM:
         self._model_name = model
 
         # Registered tools
-        self._tools_map = {}
+        self._tools_map: dict[str, BaseTool] = {}
         if tools is None:
-            self._tools = []
+            self._tools: list[BaseTool] = []
         else:
             self._tools = [t if isinstance(t, BaseTool) else StructuredTool.from_function(t) for t in tools]
             for tool_func in self._tools:
@@ -277,7 +277,7 @@ class CloudLLM:
             # Images are placed before the text: vision models are trained on
             # image-first ordering, and text-first degrades instruction
             # following on small local VLMs.
-            content = []
+            content: list[str | dict[str, Any]] = []
             for img in images:
                 image_b64 = self._image_to_base64(img)
                 content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}})
@@ -653,7 +653,7 @@ class CloudLLM:
 
         base_model = self._base_model
         if isinstance(base_model, ChatOpenAIReasoning):
-            update = {"use_responses_api": True, "output_version": "responses/v1"}
+            update: dict[str, Any] = {"use_responses_api": True, "output_version": "responses/v1"}
             update.update(self._openai_effort_update(base_model, reasoning_effort))
             reasoning_model = base_model.model_copy(update=update)
         elif self._is_google_model(base_model):
@@ -729,7 +729,7 @@ class CloudLLM:
             return
         raise TypeError(f"reasoning_effort must be ReasoningEffort, str, int, or None, got {type(reasoning_effort).__name__}.")
 
-    def _openai_effort_update(self, model: BaseChatModel, reasoning_effort: Union["ReasoningEffort", str, int, None]) -> dict:
+    def _openai_effort_update(self, model: BaseChatModel, reasoning_effort: Union["ReasoningEffort", str, int, None]) -> dict[str, Any]:
         """Builds the model-copy update applying reasoning effort for OpenAI models.
 
         Since reasoning streaming goes through the Responses API, effort and the
@@ -753,7 +753,7 @@ class CloudLLM:
             reasoning_effort (ReasoningEffort | str | int | None): Effort level or budget.
 
         Returns:
-            dict: Fields to apply via ``model_copy``.
+            dict[str, Any]: Fields to apply via ``model_copy``.
         """
         if isinstance(reasoning_effort, int) and not isinstance(reasoning_effort, bool):
             extra_body = dict(getattr(model, "extra_body", None) or {})
@@ -763,7 +763,7 @@ class CloudLLM:
             extra_body["chat_template_kwargs"] = chat_template_kwargs
             return {"extra_body": extra_body}
 
-        reasoning: dict = {"summary": "auto"}
+        reasoning: dict[str, Any] = {"summary": "auto"}
         if reasoning_effort is not None:
             reasoning["effort"] = self._resolve_effort_level(reasoning_effort).value
         return {"reasoning": reasoning}
@@ -795,7 +795,7 @@ class CloudLLM:
         minor = int(match.group(2) or 0)
         return major > 5 or (major == 5 and minor >= 1)
 
-    def _gemini_effort_update(self, model: BaseChatModel, reasoning_effort: Union["ReasoningEffort", str, int, None]) -> dict:
+    def _gemini_effort_update(self, model: BaseChatModel, reasoning_effort: Union["ReasoningEffort", str, int, None]) -> dict[str, Any]:
         """Builds the model-copy update applying reasoning effort for Gemini models.
 
         An integer maps directly to ``thinking_budget`` (``-1`` dynamic, ``0`` off,
@@ -808,7 +808,7 @@ class CloudLLM:
             reasoning_effort (ReasoningEffort | str | int | None): Effort level or budget.
 
         Returns:
-            dict: Fields to apply via ``model_copy``.
+            dict[str, Any]: Fields to apply via ``model_copy``.
         """
         if reasoning_effort is None:
             return {}
@@ -825,7 +825,7 @@ class CloudLLM:
             return {"reasoning_effort": level.value}
         return {"thinking_budget": EFFORT_TO_BUDGET[level]}
 
-    def _anthropic_effort_update(self, model: BaseChatModel, reasoning_effort: Union["ReasoningEffort", str, int, None]) -> dict:
+    def _anthropic_effort_update(self, model: BaseChatModel, reasoning_effort: Union["ReasoningEffort", str, int, None]) -> dict[str, Any]:
         """Builds the model-copy update applying reasoning effort for Anthropic models.
 
         Anthropic exposes reasoning via extended thinking, but the API differs by model
@@ -859,7 +859,7 @@ class CloudLLM:
             reasoning_effort (ReasoningEffort | str | int | None): Effort level or budget.
 
         Returns:
-            dict: Fields to apply via ``model_copy``.
+            dict[str, Any]: Fields to apply via ``model_copy``.
         """
         model_name = getattr(model, "model", "") or ""
         is_budget = isinstance(reasoning_effort, int) and not isinstance(reasoning_effort, bool)
@@ -884,7 +884,7 @@ class CloudLLM:
         else:
             budget = max(EFFORT_TO_BUDGET[self._resolve_effort_level(reasoning_effort)], ANTHROPIC_MIN_THINKING_BUDGET)
 
-        update: dict = {"thinking": {"type": "enabled", "budget_tokens": budget}}
+        update: dict[str, Any] = {"thinking": {"type": "enabled", "budget_tokens": budget}}
         if self._temperature is not None:
             update["temperature"] = self._temperature
         max_tokens = getattr(model, "max_tokens", None)
@@ -892,7 +892,7 @@ class CloudLLM:
             update["max_tokens"] = budget + ANTHROPIC_MIN_THINKING_BUDGET
         return update
 
-    def _anthropic_adaptive_update(self, model_name: str, level: Optional["ReasoningEffort"]) -> dict:
+    def _anthropic_adaptive_update(self, model_name: str, level: Optional["ReasoningEffort"]) -> dict[str, Any]:
         """Builds the model-copy update for Anthropic adaptive thinking.
 
         Adaptive thinking (``{"type": "adaptive"}``) lets the model choose its own reasoning
@@ -907,10 +907,10 @@ class CloudLLM:
                 ``output_config.effort`` (only on adaptive-only models).
 
         Returns:
-            dict: Fields to apply via ``model_copy``.
+            dict[str, Any]: Fields to apply via ``model_copy``.
         """
-        thinking: dict = {"type": "adaptive"}
-        update: dict = {"thinking": thinking}
+        thinking: dict[str, Any] = {"type": "adaptive"}
+        update: dict[str, Any] = {"thinking": thinking}
         if self._temperature is not None:
             update["temperature"] = self._temperature
         if self._anthropic_requires_adaptive(model_name):
