@@ -588,6 +588,34 @@ def test_override_threshold_does_not_retry_on_invalid_value(detector: VideoObjec
     connection.send.assert_not_called()
 
 
+def test_override_threshold_before_model_info_sends_nothing(detector: VideoObjectDetection, monkeypatch: pytest.MonkeyPatch):
+    """Before the model runner said hello there is no threshold to override: nothing is sent, confidence is kept."""
+    connection = MagicMock()
+    connection.__enter__.return_value = connection
+    monkeypatch.setattr("arduino.app_bricks.video_objectdetection.connect", lambda uri: connection)
+
+    detector.override_threshold(0.75)
+
+    connection.send.assert_not_called()
+    assert detector._confidence == pytest.approx(0.3)
+
+
+def test_hello_applies_confidence_and_enables_camera_preview():
+    """The model runner's hello triggers the confidence override and, when requested, the camera preview."""
+    d = VideoObjectDetection(confidence=0.6, camera_preview=True)
+    ws = MagicMock()
+    hello = {"type": "hello", "modelParameters": {"thresholds": [{"id": 3, "type": "object_detection", "min_score": 0.5}]}}
+
+    d._process_message(ws, json.dumps(hello))
+    d._executor.shutdown(wait=True)
+
+    sent = [json.loads(call.args[0]) for call in ws.send.call_args_list]
+    assert sent == [
+        {"type": "threshold-override", "id": 3, "key": "min_score", "value": 0.6},
+        {"type": "toggle-camera-preview", "enabled": True},
+    ]
+
+
 def test_override_threshold_accepts_an_integer(detector: VideoObjectDetection, monkeypatch: pytest.MonkeyPatch):
     """An integer threshold is a valid number and is sent as is."""
     detector._model_info = _FakeModelInfo()
