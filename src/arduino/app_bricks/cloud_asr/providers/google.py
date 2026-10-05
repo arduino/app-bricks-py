@@ -76,17 +76,17 @@ class GoogleSpeech:
         return self.GOOGLE_LANG_MAP.get(key, language)
 
     def _build_config(self) -> StreamingRecognitionConfig:
-        config_kwargs = dict(
+        recognition_config = RecognitionConfig(
             encoding=RecognitionConfig.AudioEncoding.LINEAR16,
             sample_rate_hertz=self._sample_rate,
             language_code=self._language,
             enable_automatic_punctuation=True,
         )
         if self._use_short_model:
-            config_kwargs["model"] = "latest_short"
+            recognition_config.model = "latest_short"
 
         return StreamingRecognitionConfig(
-            config=RecognitionConfig(**config_kwargs),
+            config=recognition_config,
             interim_results=True,
             enable_voice_activity_events=True,
             single_utterance=self._use_short_model,
