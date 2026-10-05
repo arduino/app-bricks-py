@@ -8,7 +8,10 @@ import os
 import yaml
 import time
 
-from influxdb_client import InfluxDBClient, Point, WritePrecision, BucketRetentionRules
+from influxdb_client.client.influxdb_client import InfluxDBClient
+from influxdb_client.client.write.point import Point
+from influxdb_client.domain.bucket_retention_rules import BucketRetentionRules
+from influxdb_client.domain.write_precision import WritePrecision
 
 from arduino.app_internal.core import get_brick_compose_file, parse_docker_compose_variable
 from arduino.app_utils import brick, Logger
