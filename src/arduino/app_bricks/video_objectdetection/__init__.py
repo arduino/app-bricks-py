@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import base64
 from collections.abc import Callable
+from typing import Any
 
 from websockets.sync.client import connect
 from websockets.sync.connection import Connection
@@ -24,9 +25,9 @@ from arduino.app_utils import brick, Logger
 
 logger = Logger("VideoObjectDetection")
 
-type DetectionCallback = Callable[[], None] | Callable[[dict], None] | Callable[[dict, bytes | None], None]
+type DetectionCallback = Callable[[], None] | Callable[[dict[str, Any]], None] | Callable[[dict[str, Any], bytes | None], None]
 """Callback accepted by `on_detect`: no arguments, the detection details dict, or the dict plus the camera `frame`."""
-type AllDetectionsCallback = Callable[[dict], None] | Callable[[dict, bytes | None], None]
+type AllDetectionsCallback = Callable[[dict[str, Any]], None] | Callable[[dict[str, Any], bytes | None], None]
 """Callback accepted by `on_detect_all`: the detections dict, optionally followed by the camera `frame`."""
 
 
@@ -78,9 +79,9 @@ class VideoObjectDetection:
         self._camera_preview_lock = threading.Lock()
 
         self._handlers_lock = threading.Lock()
-        self._handlers = {}  # Dictionary to hold handlers for different actions
+        self._handlers: dict[str, Callable[..., None]] = {}  # Handlers by label, invoked according to their signature
 
-        self._detection_locks = {}  # Per-detection locks for fine-grained concurrency control
+        self._detection_locks: dict[str, threading.Lock] = {}  # Per-detection locks for fine-grained concurrency control
         self._detection_locks_lock = threading.Lock()  # Lock to protect _detection_locks dict
 
         self._executor = ThreadPoolExecutor(max_workers=5, thread_name_prefix="VideoObjectDetectionHandler")
@@ -273,7 +274,7 @@ class VideoObjectDetection:
                 frame = self._decode_preview_frame()
 
                 # Process each bounding box
-                detections = {}
+                detections: dict[str, list[dict[str, Any]]] = {}
                 for box in bounding_boxes:
                     detected_object = box.get("label")
                     if detected_object is None:
@@ -291,7 +292,7 @@ class VideoObjectDetection:
                         box.get("y", 0) + box.get("height", 0),
                     )
 
-                    detection_details = {"confidence": confidence, "bounding_box_xyxy": xyxy_bbox}
+                    detection_details: dict[str, Any] = {"confidence": confidence, "bounding_box_xyxy": xyxy_bbox}
                     if detected_object not in detections:
                         detections[detected_object] = []
                     detections[detected_object].append(detection_details)
@@ -358,7 +359,7 @@ class VideoObjectDetection:
                 self._detection_locks[detection] = threading.Lock()
             return self._detection_locks[detection]
 
-    def _execute_handler(self, key: str, payload: dict | None = None, frame: bytes | None = None) -> None:
+    def _execute_handler(self, key: str, payload: dict[str, Any] | None = None, frame: bytes | None = None) -> None:
         """Execute the handler registered for the given key.
 
         Args:
@@ -407,7 +408,7 @@ class VideoObjectDetection:
             # Executor was shut down before the task could be submitted
             detection_lock.release()
 
-    def _send_ws_message(self, ws: Connection, message: dict) -> None:
+    def _send_ws_message(self, ws: Connection, message: dict[str, Any]) -> None:
         try:
             ws.send(json.dumps(message))
         except Exception as e:
