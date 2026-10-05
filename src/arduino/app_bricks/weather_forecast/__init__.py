@@ -143,14 +143,13 @@ class WeatherForecast:
             CityLookupError: If the city is not found.
             WeatherForecastLookupError: If the weather forecast cannot be retrieved.
         """
-        output = {}
-        if isinstance(item, dict):
-            if "latitude" in item and "longitude" in item:
-                return self.get_forecast_by_coords(item["latitude"], item["longitude"])
-            elif "city" in item:
-                return self.get_forecast_by_city(item["city"])
-
-        return output
+        match item:
+            case {"latitude": latitude, "longitude": longitude}:
+                return self.get_forecast_by_coords(latitude, longitude)
+            case {"city": city}:
+                return self.get_forecast_by_city(city)
+            case _:
+                return {}
 
 
 class CityLookupError(Exception):
