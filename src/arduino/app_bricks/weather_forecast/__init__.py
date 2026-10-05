@@ -30,7 +30,7 @@ class WeatherData:
 
 
 # The weather codes have been taken from here: https://www.nodc.noaa.gov/archive/arc0021/0002199/1.1/data/0-data/HTML/WMO-CODE/WMO4677.HTM
-with importlib.resources.open_text(__package__, "weather_data.json") as file:
+with importlib.resources.files(__name__).joinpath("weather_data.json").open(encoding="utf-8") as file:
     weather_data = json.load(file)
 
 
