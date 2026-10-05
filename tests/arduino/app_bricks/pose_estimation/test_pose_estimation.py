@@ -616,7 +616,13 @@ class TestSetConfidence:
             pe.set_confidence("high")
         with pytest.raises(ValueError):
             pe.set_confidence(True)
+        with pytest.raises(ValueError):
+            pe.set_confidence(float("nan"))
+        with pytest.raises(ValueError):
+            pe.set_confidence(np.float32(0.5))  # not a Python number
         assert pe._confidence == 0.8
+        pe.set_confidence(np.float64(0.5))  # a float subclass
+        assert pe._confidence == 0.5
 
 
 class TestSetDrawBboxes:

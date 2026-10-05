@@ -49,6 +49,17 @@ _CUSTOM_POSES_DIR = "/app/poses"
 BUILTIN_POSE_NAMES: tuple[str, ...] = load_pose_classifier(_POSE_CLASSIFIER_PATH)[2]
 
 
+def _is_unit_number(value: float) -> bool:
+    """Whether value is a number in [0.0, 1.0], booleans excluded."""
+    match value:
+        case bool():
+            return False
+        case int() | float():
+            return 0.0 <= value <= 1.0
+        case _:
+            return False
+
+
 @brick
 class PoseEstimation:
     def __init__(
@@ -337,7 +348,7 @@ class PoseEstimation:
         Raises:
             ValueError: If confidence is not a number in [0.0, 1.0].
         """
-        if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not 0.0 <= float(confidence) <= 1.0:
+        if not _is_unit_number(confidence):
             raise ValueError(f"confidence must be a number in [0.0, 1.0], got {confidence!r}")
         self._confidence = float(confidence)
         logger.debug(f"detection confidence set to {self._confidence}")
@@ -352,9 +363,11 @@ class PoseEstimation:
         Raises:
             ValueError: If draw_bboxes is not a boolean.
         """
-        if not isinstance(draw_bboxes, bool):
-            raise ValueError(f"draw_bboxes must be a boolean, got {draw_bboxes!r}")
-        self._draw_bboxes = draw_bboxes
+        match draw_bboxes:
+            case bool():
+                self._draw_bboxes = draw_bboxes
+            case _:
+                raise ValueError(f"draw_bboxes must be a boolean, got {draw_bboxes!r}")
         logger.debug(f"bbox overlay {'enabled' if draw_bboxes else 'disabled'}")
 
     def set_draw_low_confidence_points(self, draw_low_confidence_points: bool) -> None:
@@ -367,9 +380,11 @@ class PoseEstimation:
         Raises:
             ValueError: If draw_low_confidence_points is not a boolean.
         """
-        if not isinstance(draw_low_confidence_points, bool):
-            raise ValueError(f"draw_low_confidence_points must be a boolean, got {draw_low_confidence_points!r}")
-        self._draw_low_confidence_points = draw_low_confidence_points
+        match draw_low_confidence_points:
+            case bool():
+                self._draw_low_confidence_points = draw_low_confidence_points
+            case _:
+                raise ValueError(f"draw_low_confidence_points must be a boolean, got {draw_low_confidence_points!r}")
         logger.debug(f"uncertain keypoints overlay {'enabled' if draw_low_confidence_points else 'disabled'}")
 
     def set_bbox_padding(self, padding: float | tuple[float, float, float, float]) -> None:
@@ -396,7 +411,7 @@ class PoseEstimation:
         if len(values) != 4:
             raise ValueError(f"padding must be a number or a (top, right, bottom, left) tuple, got {padding!r}")
         for value in values:
-            if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0.0 <= float(value) <= 1.0:
+            if not _is_unit_number(value):
                 raise ValueError(f"padding values must be numbers in [0.0, 1.0], got {value!r}")
         return tuple(float(value) for value in values)
 
