@@ -242,12 +242,10 @@ class AirQualityLookupError(Exception):
             AirQualityLookupError: An instance of AirQualityLookupError with the error message and status.
         """
         status = data.get("status")
-        # 'data' field can be a string or a dict with 'message' attribute
         if status != "error":
             raise ValueError("Status must be 'error'")
-        if status is None:
-            raise ValueError("Status cannot be None")
 
+        # 'data' field can be a string or a dict with 'message' attribute
         match data.get("data"):
             case {"message": message} | (str() as message):
                 return cls(message=message, status=status)
