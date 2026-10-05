@@ -130,7 +130,7 @@ class CloudASR:
             raise TranscriptionStreamError("No transcription received.")
 
     @contextmanager
-    def transcribe_stream(self, duration: float = 60.0) -> Iterator[Iterator[ASREvent]]:
+    def transcribe_stream(self, duration: float = 60.0) -> Generator[Iterator[ASREvent]]:
         """
         Perform continuous speech-to-text recognition.
 
@@ -169,7 +169,7 @@ class CloudASR:
         raise TranscriptionStreamError("No transcription received.")
 
     @contextmanager
-    def transcribe_sentence_stream(self, timeout: float = 60.0) -> Iterator[Iterator[ASREvent]]:
+    def transcribe_sentence_stream(self, timeout: float = 60.0) -> Generator[Iterator[ASREvent]]:
         """
         Yield transcription events for a single sentence.
 
@@ -202,7 +202,7 @@ class CloudASR:
                 gen.close()
 
     @contextmanager
-    def transcribe_until_cancelled(self) -> Iterator[Iterator[str]]:
+    def transcribe_until_cancelled(self) -> Generator[Iterator[str]]:
         """
         Yield one sentence per ``text`` event until ``cancel()`` is called
         or the silence timeout fires. VAD is managed by the cloud provider.
@@ -229,7 +229,7 @@ class CloudASR:
                 gen.close()
 
     @contextmanager
-    def _session_scope(self, duration: float) -> Iterator[SessionInfo]:
+    def _session_scope(self, duration: float) -> Generator[SessionInfo]:
         if not self._active_session_lock.acquire(blocking=False):
             raise TranscriptionStreamError("transcription session already active")
         now = time.monotonic()
