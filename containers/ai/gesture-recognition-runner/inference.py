@@ -7,6 +7,10 @@ import numpy as np
 from ai_edge_litert.interpreter import Interpreter
 
 
+from aihub.image_processing import denormalize_coordinates, resize_pad
+from aihub.model_io_processing import dequantize
+from aihub.tf import load_qnn_delegate
+
 from utils.constants import (
     INPUT_WIDTH,
     INPUT_HEIGHT,
@@ -17,10 +21,7 @@ from utils.constants import (
     GESTURE_LABELS,
     HAND_LANDMARK_CONNECTIONS,
 )
-from utils.tf import load_qnn_delegate
 from utils.image_processing import (
-    resize_pad,
-    denormalize_coordinates,
     apply_affine_to_coordinates,
     apply_batched_affines_to_frame,
 )
@@ -30,7 +31,6 @@ from utils.model_io_processing import (
     compute_object_roi,
     split_into_singleton_arrays,
     preprocess_hand_x64,
-    dequantize,
 )
 from utils.draw import draw_predictions
 

@@ -21,32 +21,27 @@ apps:
     venv:
       project: containers/base/python-base
 
-  - name: aihub-models-runner
+  # The `aihub` framework's dependencies plus OpenCV and ai-edge-litert, shared by every
+  # runner built on this base (gesture-recognition-runner, pose-estimation-runner).
+  - name: aihub-litert-models-runner
     source_path: .
     sources:
       pip: true
     python:
-      virtual_env_dir: "/venvs/aihub-models-runner"
+      virtual_env_dir: "/venvs/aihub-litert-models-runner"
     venv:
-      project: containers/ai/aihub-models-runner
+      project: containers/ai/aihub-litert-models-runner
 
-  - name: gesture-recognition-runner
+  # The `aihub` framework's dependencies plus OpenCV and ONNX Runtime with its QNN
+  # execution provider, shared by every runner built on this base (ocr-runner).
+  - name: aihub-onnx-models-runner
     source_path: .
     sources:
       pip: true
     python:
-      virtual_env_dir: "/venvs/gesture-recognition-runner"
+      virtual_env_dir: "/venvs/aihub-onnx-models-runner"
     venv:
-      project: containers/ai/gesture-recognition-runner
-
-  - name: pose-estimation-runner
-    source_path: .
-    sources:
-      pip: true
-    python:
-      virtual_env_dir: "/venvs/pose-estimation-runner"
-    venv:
-      project: containers/ai/pose-estimation-runner
+      project: containers/ai/aihub-onnx-models-runner
 
   - name: models-downloader
     source_path: .

@@ -1,0 +1,51 @@
+# Python packages this image installs, pinned with hashes in uv.lock, see containers/README.md
+#
+# Everything the ONNX runners share, installed once in this base rather than per runner:
+#
+#   websockets, flask, waitress  the `aihub` framework's own runtime dependencies
+#   opencv-python-headless       the `aihub` framework itself needs cv2 - the websocket input
+#                                decodes frames with it - so every runner on this base does.
+#                                One ~90 MB wheel in the base instead of one per runner.
+#   onnxruntime, onnxruntime-qnn the runtime and its QNN plugin execution provider
+#
+# onnxruntime-qnn is a plugin EP compiled against one onnxruntime release and one QAIRT
+# release, and it bundles that QAIRT (~190 MB of libQnnHtp*.so plus the Hexagon skels). That
+# bundled QAIRT is the only one in this image - unlike qairt-common-base, python-slim ships no
+# QAIRT SDK of its own - so the wheel decides the QAIRT the NPU runs, and the HTP context
+# binaries a runner ships have to be compiled against it. Both wheels are pinned with == for
+# that reason: bumping either one means recompiling the context binaries.
+#
+# Pairs, from the release notes (https://github.com/onnxruntime/onnxruntime-qnn/releases) and
+# measured on the 21q with the EasyOCR recognizer:
+#   2.5.0 -> ORT 1.29.0, QAIRT 2.49.40   correct (pinned)
+#
+# The line below records the QAIRT of the pinned wheel. It is read by
+# tests/containers/ai/test_ocr_runner_context_binaries.py and compared with the `qnn_version`
+# recorded in every runner's models/**/*.qnn_ctx.json, so bumping the wheel without
+# recompiling the context binaries turns CI red.
+# qairt-version: 2.49.40
+[project]
+name = "aihub-onnx-models-runner"
+version = "0"
+requires-python = "==3.13.*"
+dependencies = [
+    "websockets",
+    "flask",
+    "waitress",
+    "numpy==2.5.3",
+    "opencv-python-headless==5.0.0.93",
+    "onnxruntime==1.29.0",
+    # Board-only: the QNN execution provider has no use, and no macOS wheel, off the board
+    "onnxruntime-qnn==2.5.0; sys_platform == 'linux' and platform_machine == 'aarch64'",
+]
+
+[tool.uv]
+# The images run on aarch64 Linux, the lock must resolve for that target but installs on developer machines too
+required-environments = ["sys_platform == 'linux' and platform_machine == 'aarch64'"]
+# Declared by the onnxruntime-qnn wheel but never imported at runtime: sympy (+ mpmath, ~80 MB)
+# is only used by onnxruntime's offline tooling, coloredlogs (+ humanfriendly) by its CLI.
+# A marker that never holds keeps them out of the lock, and so out of the image.
+override-dependencies = [
+    "sympy; sys_platform == 'never'",
+    "coloredlogs; sys_platform == 'never'",
+]
