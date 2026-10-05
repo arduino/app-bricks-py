@@ -37,7 +37,7 @@ class ImageClassification(EdgeImpulseRunnerFacade):
         # configured model is flagged with `requires_softmax` in the models list.
         self.apply_softmax = brick_model_requires_softmax(self.__class__)
 
-    def classify_from_file(self, image_path: str, confidence: float | None = None) -> dict | None:
+    def classify_from_file(self, image_path: str, confidence: float | None = None) -> dict[str, Any] | None:
         """Process a local image file to be classified.
 
         Args:
@@ -52,7 +52,7 @@ class ImageClassification(EdgeImpulseRunnerFacade):
         ret = self._apply_softmax_if_required(super().infer_from_file(image_path))
         return self._extract_classification(ret, confidence or self._confidence)
 
-    def classify(self, image_bytes: bytes | Image.Image, image_type: str = "jpg", confidence: float | None = None) -> dict | None:
+    def classify(self, image_bytes: bytes | Image.Image, image_type: str = "jpg", confidence: float | None = None) -> dict[str, Any] | None:
         """Process an in-memory image to be classified.
 
         Args:
@@ -68,7 +68,7 @@ class ImageClassification(EdgeImpulseRunnerFacade):
         ret = self._apply_softmax_if_required(super().infer_from_image(image_bytes, image_type))
         return self._extract_classification(ret, confidence or self._confidence)
 
-    def process(self, item: str | dict) -> dict | None:
+    def process(self, item: str | dict[str, Any]) -> dict[str, Any] | None:
         """Process an item to classify objects in an image.
 
         This method supports two input formats:
@@ -96,7 +96,7 @@ class ImageClassification(EdgeImpulseRunnerFacade):
         """
         if not self.apply_softmax or not item:
             return item
-        result: Any = item.get("result")
+        result: dict[str, Any] | None = item.get("result")
         if not isinstance(result, dict) or not result.get("classification"):
             return item
         # Softmax over the full logit vector, so probabilities keep the network calibration.
