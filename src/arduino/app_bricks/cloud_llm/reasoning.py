@@ -80,6 +80,8 @@ class ChatOpenAIReasoning(ChatOpenAI):
         async variant via ``_convert_responses_stream_chunk``.
         """
         import openai
+
+        # Stock langchain-openai drops response.reasoning_text.delta, so this mirror uses its private helpers.
         from langchain_openai.chat_models import base as _oai_base
 
         self._ensure_sync_client_available()
@@ -105,9 +107,9 @@ class ChatOpenAIReasoning(ChatOpenAI):
                         run_manager.on_llm_new_token(generation_chunk.text, chunk=generation_chunk)
                     yield generation_chunk
         except openai.BadRequestError as e:
-            _oai_base._handle_openai_bad_request(e)
+            _oai_base._handle_openai_bad_request(e)  # pyright: ignore[reportPrivateUsage]
         except openai.APIError as e:
-            _oai_base._handle_openai_api_error(e)
+            _oai_base._handle_openai_api_error(e)  # pyright: ignore[reportPrivateUsage]
 
     async def _astream(self, *args: Any, **kwargs: Any) -> AsyncIterator[ChatGenerationChunk]:
         """Route to our reasoning-aware async Responses streaming when applicable."""
@@ -151,9 +153,9 @@ class ChatOpenAIReasoning(ChatOpenAI):
                         await run_manager.on_llm_new_token(generation_chunk.text, chunk=generation_chunk)
                     yield generation_chunk
         except openai.BadRequestError as e:
-            _oai_base._handle_openai_bad_request(e)
+            _oai_base._handle_openai_bad_request(e)  # pyright: ignore[reportPrivateUsage]
         except openai.APIError as e:
-            _oai_base._handle_openai_api_error(e)
+            _oai_base._handle_openai_api_error(e)  # pyright: ignore[reportPrivateUsage]
 
     def _convert_responses_stream_chunk(
         self,
@@ -184,7 +186,7 @@ class ChatOpenAIReasoning(ChatOpenAI):
             state.current_output_index,
             state.current_sub_index,
             generation_chunk,
-        ) = _oai_base._convert_responses_chunk_to_generation_chunk(
+        ) = _oai_base._convert_responses_chunk_to_generation_chunk(  # pyright: ignore[reportPrivateUsage]
             chunk,
             state.current_index,
             state.current_output_index,
