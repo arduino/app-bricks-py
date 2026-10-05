@@ -26,7 +26,11 @@ def test_draw_bounding_box_outlines_the_code():
     assert annotated.getpixel((70, 75)) == BLACK
 
 
-@pytest.mark.parametrize("coords", [None, np.zeros((3, 2), dtype=int)], ids=["missing", "wrong-shape"])
+@pytest.mark.parametrize(
+    "coords",
+    [None, np.zeros((3, 2), dtype=int), [[20, 40], [120, 40], [120, 110], [20, 110]]],
+    ids=["missing", "wrong-shape", "not-an-array"],
+)
 def test_draw_bounding_box_returns_the_frame_untouched_on_invalid_coordinates(coords, capsys):
     frame = Image.new("RGB", (200, 150))
 
