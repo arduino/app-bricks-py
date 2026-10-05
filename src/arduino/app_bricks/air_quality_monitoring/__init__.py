@@ -248,11 +248,8 @@ class AirQualityLookupError(Exception):
         if status is None:
             raise ValueError("Status cannot be None")
 
-        raw_data = data.get("data")
-        if isinstance(raw_data, dict) and "message" in raw_data:
-            message = raw_data["message"]
-        elif isinstance(raw_data, str):
-            message = raw_data
-        else:
-            message = str(raw_data)
-        return cls(message=message, status=status)
+        match data.get("data"):
+            case {"message": message} | (str() as message):
+                return cls(message=message, status=status)
+            case raw_data:
+                return cls(message=str(raw_data), status=status)
