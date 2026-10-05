@@ -16,6 +16,7 @@ import pytest
 from arduino.app_bricks.pose_estimation import BUILTIN_POSE_NAMES, KEYPOINT_NAMES, Keypoint, Person, PoseEstimation
 from arduino.app_bricks.pose_estimation.pose_estimation import _POSE_CLASSIFIER_PATH
 from arduino.app_bricks.pose_estimation.classifier import embed_person
+from arduino.app_bricks.pose_estimation.enrollment import Enrollment, Outcome
 from arduino.app_bricks.pose_estimation.enrollment.photos import PersonReader
 from arduino.app_bricks.pose_estimation.vocabulary import PoseSpec
 from arduino.app_bricks.pose_estimation.classifier import PoseKNN, load_pose_classifier
@@ -888,6 +889,19 @@ class TestCustomPoses:
         )
         assert not pe._camera.start.called
         assert len(list((root / "forehand").glob("report_*.txt"))) == 1
+
+    def test_an_accepted_pose_without_thresholds_stops_start_before_installing_anything(self, monkeypatch, tmp_path):
+        root = _poses_dir(tmp_path, {"forehand": 3})
+        pe = _construct(monkeypatch, poses=["forehand"], custom_poses_dir=str(root))
+        knn, thresholds = pe._pose_knn, {edge: dict(values) for edge, values in pe._pose_thresholds.items()}
+        outcome = Outcome(name="forehand", accepted=True, report="verdict: ACCEPTED", enter=0.6)
+        monkeypatch.setattr(
+            PoseEstimation, "_enroll_custom_poses", lambda self: Enrollment(knn=PoseKNN(), outcomes={"forehand": outcome}, set_aside={})
+        )
+        with pytest.raises(RuntimeError, match="custom pose 'forehand' was accepted without an operating point"):
+            pe.start()
+        assert pe._pose_knn is knn and pe._pose_thresholds == thresholds
+        assert not pe._camera.start.called
 
     def test_discarded_photos_and_the_other_folder_reach_the_report(self, monkeypatch, tmp_path):
         root = _poses_dir(tmp_path, {"forehand": 60, "other": 10})

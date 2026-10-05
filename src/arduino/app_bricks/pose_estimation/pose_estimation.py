@@ -476,11 +476,17 @@ class PoseEstimation:
         if refused:
             summaries = "\n".join(f"  {outcome.name}: {outcome.summary}" for outcome in refused)
             raise ValueError(f"custom pose(s) not accepted (the full report is in the log and in the pose folder):\n{summaries}")
+        points: dict[str, tuple[float, float]] = {}
+        for name, outcome in enrollment.outcomes.items():
+            enter, exit_ = outcome.enter, outcome.exit
+            if enter is None or exit_ is None:
+                raise RuntimeError(f"custom pose {name!r} was accepted without an operating point")
+            points[name] = (enter, exit_)
         self._pose_knn = enrollment.knn
         self._pose_label_weights = None
-        for name, outcome in enrollment.outcomes.items():
-            self._pose_thresholds["enter"][name] = outcome.enter
-            self._pose_thresholds["exit"][name] = outcome.exit
+        for name, (enter, exit_) in points.items():
+            self._pose_thresholds["enter"][name] = enter
+            self._pose_thresholds["exit"][name] = exit_
         self._pose_ema = EmaHysteresis(
             classes=self._pose_names,
             smoothing_tau=self._pose_smoothing,
