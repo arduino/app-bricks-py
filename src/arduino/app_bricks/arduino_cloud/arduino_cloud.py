@@ -40,7 +40,7 @@ _SUB_CHECK_INTERVAL = 5.0
 
 # Sentinel for the deprecated constructor arguments: lets us tell "not passed"
 # apart from a real value (so the common ArduinoCloud() call stays silent).
-_DEPRECATED = object()
+_DEPRECATED: Any = object()
 
 
 @brick
