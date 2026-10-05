@@ -162,8 +162,8 @@ class MQTT:
             raise ValueError("Topic must be a non-empty string")
 
         try:
-            if isinstance(message, dict) and len(message) > 0:
-                message = json.dumps(message)
+            if isinstance(message, dict):
+                message = json.dumps(message) if message else ""
 
             if message and message != "":
                 res = self.client.publish(topic, message)
