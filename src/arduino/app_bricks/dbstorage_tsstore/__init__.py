@@ -64,8 +64,8 @@ class _InfluxDBHandler:
         if token is None:
             raise TimeSeriesStoreError(f"{token_variable} is not set and the brick compose file declares no default for it.")
         self.token = token
-        self.org = env_dict["DOCKER_INFLUXDB_INIT_ORG"]
-        self.bucket = env_dict["DOCKER_INFLUXDB_INIT_BUCKET"]
+        self.org: str = env_dict["DOCKER_INFLUXDB_INIT_ORG"]
+        self.bucket: str = env_dict["DOCKER_INFLUXDB_INIT_BUCKET"]
         self.client: InfluxDBClient = None
         self.retention_days = retention_days
 
@@ -101,7 +101,7 @@ class _InfluxDBHandler:
         """
         self.client.close()
 
-    def load_default_infra(self) -> dict | None:
+    def load_default_infra(self) -> dict[str, Any] | None:
         """Load the default InfluxDB compose file for the brick.
 
         This method looks for a YAML file named 'module_compose.yaml' in the current module's directory.
@@ -109,7 +109,7 @@ class _InfluxDBHandler:
         If the file is not found, it logs an error message.
 
         Returns:
-            dict: The content of the compose file as a dictionary.
+            dict[str, Any] | None: The content of the compose file as a dictionary, None if the file is not found.
         """
         pathfile = get_brick_compose_file(self.__class__)
         if pathfile:
@@ -203,7 +203,7 @@ class TimeSeriesStore(_InfluxDBHandler):
         except Exception as e:
             raise TimeSeriesStoreError(f"Error writing sample to InfluxDB: {e}") from e
 
-    def read_last_sample(self, measure: str, measurement_name: str = "arduino", start_from: str = "-1d") -> tuple | None:
+    def read_last_sample(self, measure: str, measurement_name: str = "arduino", start_from: str = "-1d") -> tuple[str, str, Any] | None:
         """Read the last sample of a specific measurement from the InfluxDB database.
 
         Retrieves the latest data point for the specified measurement field within
@@ -218,7 +218,7 @@ class TimeSeriesStore(_InfluxDBHandler):
                 RFC3339 timestamps like "2024-01-01T00:00:00Z". Defaults to "-1d".
 
         Returns:
-            tuple | None: A tuple containing (field_name, timestamp_iso, value) where:
+            tuple[str, str, Any] | None: A tuple containing (field_name, timestamp_iso, value) where:
                 - field_name (str): The measurement field name
                 - timestamp_iso (str): ISO format timestamp string
                 - value (Any): The stored value
@@ -261,7 +261,7 @@ class TimeSeriesStore(_InfluxDBHandler):
         aggr_func: str | None = None,
         limit: int = 1000,
         order: str = "asc",
-    ) -> list:
+    ) -> list[tuple[str, str, Any]]:
         """Read all samples of a specific measurement from the InfluxDB database.
 
         Retrieves multiple data points for the specified measurement field with support
@@ -286,7 +286,7 @@ class TimeSeriesStore(_InfluxDBHandler):
                 (ascending, oldest first) or "desc" (descending, newest first). Defaults to "asc".
 
         Returns:
-            list: List of tuples, each containing (field_name, timestamp_iso, value) where:
+            list[tuple[str, str, Any]]: List of tuples, each containing (field_name, timestamp_iso, value) where:
                 - field_name (str): The measurement field name
                 - timestamp_iso (str): ISO format timestamp string
                 - value (Any): The stored or aggregated value
@@ -338,7 +338,7 @@ class TimeSeriesStore(_InfluxDBHandler):
 
             result = self.query_api.query(org=self.org, query=query)
 
-            samples = []
+            samples: list[tuple[str, str, Any]] = []
             if result:
                 for table in result:
                     for record in table.records:
