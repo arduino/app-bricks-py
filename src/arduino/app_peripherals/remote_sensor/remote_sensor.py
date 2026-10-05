@@ -11,7 +11,7 @@ import websockets
 import asyncio
 from urllib.parse import urlparse, parse_qs
 from types import TracebackType
-from typing import Literal, Self
+from typing import Any, Literal, Self
 from collections.abc import Callable
 from concurrent.futures import CancelledError, ThreadPoolExecutor, Future
 
@@ -132,7 +132,7 @@ class RemoteSensor:
         # Event handling
         # These callbacks don't require locking as long as we're running on CPython
         self._on_datapoint_cb: Callable[[bytes], None] | None = None
-        self._on_status_changed_cb: Callable[[str, dict], None] | None = None
+        self._on_status_changed_cb: Callable[[str, dict[str, Any]], None] | None = None
         self._event_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="RemoteSensorCallbackRunner")
 
     @property
@@ -202,7 +202,7 @@ class RemoteSensor:
         """Check if the sensor is started and running."""
         return self._is_started
 
-    def on_status_changed(self, callback: Callable[[str, dict], None] | None) -> None:
+    def on_status_changed(self, callback: Callable[[str, dict[str, Any]], None] | None) -> None:
         """Registers or removes a callback to be triggered on camera lifecycle events.
 
         When a camera status changes, the provided callback function will be invoked.
@@ -230,7 +230,7 @@ class RemoteSensor:
             self._on_status_changed_cb = None
         else:
 
-            def _callback_wrapper(new_status: str, data: dict) -> None:
+            def _callback_wrapper(new_status: str, data: dict[str, Any]) -> None:
                 try:
                     callback(new_status, data)
                 except Exception as e:
@@ -256,7 +256,7 @@ class RemoteSensor:
 
     def _open_sensor(self) -> None:
         """Start the WebSocket server."""
-        server_future = Future()
+        server_future: Future[bool] = Future()
 
         self._server_thread = threading.Thread(target=self._start_server_thread, args=(server_future,), daemon=True)
         self._server_thread.start()
@@ -271,7 +271,7 @@ class RemoteSensor:
                 raise RemoteSensorOpenError(f"Failed to bind WebSocket server on {self.url}: {e}") from e
             raise
 
-    def _start_server_thread(self, future: Future) -> None:
+    def _start_server_thread(self, future: Future[bool]) -> None:
         """Run WebSocket server in its own thread with event loop."""
         try:
             self._loop = asyncio.new_event_loop()
@@ -282,7 +282,7 @@ class RemoteSensor:
                 self._loop.close()
                 self._loop = None
 
-    async def _start_server(self, future: Future) -> None:
+    async def _start_server(self, future: Future[bool]) -> None:
         """Start the WebSocket server."""
         try:
             self._server = await asyncio.wait_for(
@@ -396,7 +396,7 @@ class RemoteSensor:
                     self._set_status("disconnected", {"client_address": client_addr, "client_name": client_name})
                     self.logger.debug(f"Client removed: {client_addr}")
 
-    def _set_status(self, new_status: Literal["disconnected", "connected", "streaming", "paused"], data: dict | None = None) -> None:
+    def _set_status(self, new_status: Literal["disconnected", "connected", "streaming", "paused"], data: dict[str, Any] | None = None) -> None:
         """
         Updates the current status of the camera and invokes the registered status
         changed callback in the background, if any.

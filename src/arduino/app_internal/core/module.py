@@ -7,6 +7,7 @@ import re
 import yaml
 import sys
 from dataclasses import dataclass, field
+from typing import Any
 
 from arduino.app_utils.utils import get_board_name
 
@@ -209,7 +210,7 @@ def load_model_list() -> dict[str, ModelEntry] | None:
     return None
 
 
-def get_brick_configured_model(brick_id: str, brick_config: dict = None) -> str | None:
+def get_brick_configured_model(brick_id: str | None, brick_config: dict[str, Any] | None = None) -> str | None:
     """Helper method to extract the model name from the app configuration for this brick.
     This allows dynamic configuration of the model via the app's config file, overriding defaults.
 
@@ -224,13 +225,16 @@ def get_brick_configured_model(brick_id: str, brick_config: dict = None) -> str 
         brick_config (Dict, optional): The brick configuration dictionary. If provided, it will load the default model from this configuration,
             if not specified into app.yaml.
     Returns:
-        Optional[str]: The model name if found in the app configuration, otherwise None.
+        Optional[str]: The model name, stripped of surrounding whitespace, if found in the app
+            configuration or in the brick configuration; otherwise None, an empty name included:
+            the caller decides whether a missing model is an error.
     Raises:
-        ValueError: If `brick_id` is not provided (empty string).
+        RuntimeError: If `brick_id` is None or empty. A brick always has an id in its
+            brick_config.yaml, so this means the brick configuration is missing or invalid.
     """
 
     if brick_id is None or brick_id.strip() == "":
-        raise ValueError("Invalid brick_id provided to get_brick_configured_model")
+        raise RuntimeError("Invalid brick configuration: the brick has no id, so its model cannot be resolved")
 
     app_cfg = get_app_config()
     if app_cfg and "bricks" in app_cfg:
@@ -240,7 +244,7 @@ def get_brick_configured_model(brick_id: str, brick_config: dict = None) -> str 
                 print(f"Found brick entry for '{brick_id}' in app.yaml: {brick_entry}")
                 brick_section = brick_entry[brick_id]
                 if isinstance(brick_section, dict) and "model" in brick_section:
-                    return brick_section["model"]
+                    return _model_name(brick_section["model"])
 
     # No model found in app config, check if it's specified in the brick_config.yaml as default for the brick
     if brick_config is None:
@@ -253,13 +257,21 @@ def get_brick_configured_model(brick_id: str, brick_config: dict = None) -> str 
         for board_entry in brick_config["model_by_boards"]:
             if "platform" in board_entry and board_entry["platform"] == board_name:
                 print(f"Found matching board entry for platform '{board_name}': {board_entry}")
-                return board_entry["model"]
+                return _model_name(board_entry["model"])
 
     if brick_config and "model" in brick_config:
         print(f"Found model configuration in brick_config.yaml for brick '{brick_id}': {brick_config['model']}")
-        return brick_config["model"]
+        return _model_name(brick_config["model"])
 
     return None
+
+
+def _model_name(value: object) -> str | None:
+    """A configured model name normalized for the callers: stripped, None when empty or missing."""
+    if value is None:
+        return None
+    name = str(value).strip()
+    return name or None
 
 
 def parse_docker_compose_variable(variable_string: str) -> list[tuple[str, str]] | str:

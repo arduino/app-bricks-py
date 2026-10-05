@@ -64,10 +64,13 @@ class Frame:
 
         Returns a numpy ndarray view with the writeable flag turned off so
         callers cannot mutate the internal storage in-place. Use
-        `set_array` to replace the whole array.
+        `set_array` to replace the whole array. A frame whose array has not
+        been set reads as a blank frame, every LED off.
         """
         if getattr(self, "_arr", None) is None:
-            return None
+            blank = np.zeros((self.height, self.width), dtype=np.int32)
+            blank.flags.writeable = False
+            return blank
         v = self._arr.view()
         try:
             v.flags.writeable = False

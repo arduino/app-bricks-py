@@ -166,7 +166,7 @@ check_streamlit_ui() {
 install_streamlit() {
   if check_streamlit_ui && ! uv pip show streamlit > /dev/null 2>&1; then
     echo "streamlit not found, installing..."
-    uv pip install --no-cache-dir --link-mode=copy --compile-bytecode pyarrow==20.0.0 streamlit
+    uv pip install --no-cache-dir --link-mode=copy --compile-bytecode streamlit
   fi
 }
 

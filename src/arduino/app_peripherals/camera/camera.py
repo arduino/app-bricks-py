@@ -11,11 +11,14 @@ import numpy as np
 
 from arduino.app_utils import Logger
 
+from ..device_registry import DeviceRegistry
 from .base_camera import BaseCamera
-from .errors import CameraConfigError
-from .utils import _camera_registry, _claim_first_available_camera, _nth_plugged_camera
+from .errors import CameraConfigError, CameraOpenError
 
 logger = Logger("Camera")
+
+_camera_registry = DeviceRegistry()
+"""Tracks the cameras assigned to auto-selected Camera instances."""
 
 
 class Camera:
@@ -144,12 +147,14 @@ class Camera:
             _camera_registry.bind(key, camera)
             return camera
 
-        if not isinstance(source, (str, int)):
-            raise CameraConfigError(f"Invalid source type: {type(source)}. Must be str, int or None.")
-
-        if isinstance(source, int) or (isinstance(source, str) and source.isdigit()):
-            # Positional selection of the n-th plugged camera
-            source = _nth_plugged_camera(int(source))
+        match source:
+            case str() if not source.isdigit():
+                pass  # A device path or a URL, resolved by _create_camera
+            case int() | str():
+                # Positional selection of the n-th plugged camera
+                source = _nth_plugged_camera(int(source))
+            case _:
+                raise CameraConfigError(f"Invalid source type: {type(source)}. Must be str, int or None.")
 
         camera = _create_camera(source, resolution, fps, adjustments, **kwargs)
 
@@ -173,7 +178,74 @@ def _claim_key(camera: BaseCamera) -> str | None:
     return None
 
 
-def _supported_kwargs(camera_cls: type[BaseCamera], kwargs: dict) -> dict:
+def _claim_first_available_camera() -> tuple[str, str]:
+    """
+    Find and claim the first plugged camera not assigned to another instance.
+
+    USB cameras take precedence over CSI ones, if supported by the current
+    platform. The claim is keyed on the camera's stable identity so it survives
+    device reordering, and must be released back to _camera_registry, either
+    explicitly or by binding it to its owner.
+
+    Returns:
+        tuple[str, str]: The claimed camera as (source, claim key), where
+            source is a Camera factory source string and claim key is the
+            camera's stable identity.
+
+    Raises:
+        CameraOpenError: If no camera is plugged or all are already in use.
+    """
+    from .v4l_camera import V4LCamera
+
+    path = _camera_registry.select(lambda: [camera["location"] for camera in V4LCamera.list_cameras()])
+    if path is not None:
+        return f"usb:{path}", path
+
+    from .csi_camera import CSICamera
+
+    names = CSICamera.list_device_names()
+    name = _camera_registry.select(lambda: names)
+    if name is not None:
+        return f"csi:{names.index(name)}", name
+
+    raise CameraOpenError("No available cameras found: either none is plugged or all are already in use")
+
+
+def _nth_plugged_camera(idx: int) -> str:
+    """
+    Find the n-th plugged camera, regardless of whether it is already in use.
+
+    The index spans USB cameras first, then CSI cameras, if supported by the
+    current platform.
+
+    Args:
+        idx (int): Index of the camera to select (0-based).
+
+    Returns:
+        str: Identifier of the n-th plugged camera ("usb:X" or "csi:X").
+
+    Raises:
+        CameraOpenError: If no camera is plugged at the given index.
+    """
+    from .v4l_camera import V4LCamera
+
+    usb_count = len(V4LCamera.list_devices())
+    if idx < usb_count:
+        return f"usb:{idx}"
+
+    from .csi_camera import CSICamera
+
+    csi_count = len(CSICamera.list_devices())
+    if idx - usb_count < csi_count:
+        return f"csi:{idx - usb_count}"
+
+    raise CameraOpenError(
+        f"No camera found at index {idx}: only {usb_count + csi_count} camera(s) plugged",
+        hint="Connect a camera (or check the camera configuration) and restart the app.",
+    )
+
+
+def _supported_kwargs(camera_cls: type[BaseCamera], kwargs: dict[str, Any]) -> dict[str, Any]:
     """
     Keep only the keyword arguments supported by the target camera implementation.
 
