@@ -2,7 +2,9 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-from langchain_core.language_models import BaseChatModel
+from langchain_core.language_models import BaseChatModel, LanguageModelInput
+from langchain_core.messages import AIMessage
+from langchain_core.runnables import Runnable
 
 from arduino.app_bricks.cloud_llm import ReasoningEffort
 from arduino.app_bricks.cloud_llm.cloud_llm import ToolLike
@@ -73,14 +75,15 @@ class VisionLanguageModel(LargeLanguageModel):
         )
         super().with_memory(0)  # Initialize without memory enabled (0 means no history)
 
-    def get_client(self) -> BaseChatModel:
+    def get_client(self) -> BaseChatModel | Runnable[LanguageModelInput, AIMessage]:
         """Returns the underlying LangChain model instance.
 
         This allows for advanced users to access the full capabilities of the model
         directly, such as calling `generate()` or `stream()` with custom message formats.
 
         Returns:
-            BaseChatModel: The LangChain chat model instance used internally.
+            BaseChatModel | Runnable[LanguageModelInput, AIMessage]: The LangChain chat model
+                used internally, or the `Runnable` binding it to the registered tools.
         """
         return self._model
 
