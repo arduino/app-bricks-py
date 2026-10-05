@@ -137,9 +137,8 @@ def make_llm(fake_model, monkeypatch):
 def test_model_factory_routes_to_provider(monkeypatch, model_name, provider_path, expected_model):
     captured = {}
 
-    def fake_ctor(model, **kwargs):
-        captured["model"] = model
-        captured["kwargs"] = kwargs
+    def fake_ctor(**kwargs):
+        captured.update(kwargs)
         return "CHAT_MODEL"
 
     monkeypatch.setattr(provider_path, fake_ctor)
@@ -147,8 +146,9 @@ def test_model_factory_routes_to_provider(monkeypatch, model_name, provider_path
     result = model_factory(model_name, api_key="k", temperature=0.1)
 
     assert result == "CHAT_MODEL"
-    assert captured["model"] == expected_model
-    assert captured["kwargs"]["api_key"] == "k"
+    # ChatAnthropic declares its model field under the `model_name` alias
+    assert captured.get("model", captured.get("model_name")) == expected_model
+    assert captured["api_key"] == "k"
 
 
 def test_model_factory_defaults_to_openai_when_base_url_and_no_prefix(monkeypatch):

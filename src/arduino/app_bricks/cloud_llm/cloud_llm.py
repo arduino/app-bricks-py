@@ -1176,7 +1176,7 @@ class CloudLLM:
             self._history.clear()
 
 
-def model_factory(model_name: CloudModel, **kwargs: Any) -> BaseChatModel:
+def model_factory(model_name: str | CloudModel, **kwargs: Any) -> BaseChatModel:
     """Factory function to instantiate the specific LangChain chat model.
 
     This function maps the supported `CloudModel` enum values to their respective
@@ -1184,7 +1184,7 @@ def model_factory(model_name: CloudModel, **kwargs: Any) -> BaseChatModel:
     it extracts the provider and model name accordingly.
 
     Args:
-        model_name (CloudModel): The enum or string identifier for the model.
+        model_name (str | CloudModel): The enum or string identifier for the model.
             Model name can include provider prefixes like 'openai:', 'anthropic:', or 'google:'
             to specify the provider. If no prefix is provided, the model will be defaulted to an OpenAI compatible model.
         **kwargs: Additional arguments passed to the model constructor (e.g., api_key, temperature).
@@ -1211,7 +1211,7 @@ def model_factory(model_name: CloudModel, **kwargs: Any) -> BaseChatModel:
         if model_name.startswith(f"{CloudModelProvider.ANTHROPIC}:"):
             model_name = model_name.split(":", 1)[1]
 
-        return ChatAnthropic(model=model_name, **kwargs)
+        return ChatAnthropic(model_name=model_name, **kwargs)
     elif model_name == CloudModel.OPENAI_GPT or model_name.startswith(f"{CloudModelProvider.OPENAI}:"):
         from .reasoning import ChatOpenAIReasoning
 
