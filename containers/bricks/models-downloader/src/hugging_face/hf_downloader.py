@@ -128,6 +128,8 @@ from common.model_metadata import (
     identify_model,
     is_bookkeeping_name,
     prune_metadata_records,
+    read_metadata,
+    record_for_file,
     write_metadata,
 )
 from common.models_list import MODELS_LIST_PATH, _iter_platform_variables, load_models_list
@@ -366,6 +368,31 @@ def interrupted_patterns(marker_path: Path) -> list[str]:
     if isinstance(patterns, list) and all(isinstance(p, str) for p in patterns):
         return patterns
     return []
+
+
+def unfinished_files(output_dir: str, patterns: list[str]) -> list[Path]:
+    """The files of *patterns* a stopped download left without a record.
+
+    A download writes its record before it clears the marker, so a file the marker names
+    but no record covers landed and was never finished: the listing ignores it and the
+    API cannot delete it, so --check must not call it installed. Only the marker's own
+    patterns count — a sibling quantization installed before, recorded or not, is not
+    what the marker stood for — and a legacy marker naming none counts nothing.
+    """
+    marker = Path(output_dir) / MARKER_NAME
+    in_flight = interrupted_patterns(marker) if marker.is_file() else []
+    if not in_flight:
+        return []
+    data = read_metadata(output_dir)
+    base = Path(output_dir)
+    unfinished = []
+    for path in matching_files(output_dir, patterns):
+        rel = path.relative_to(base).as_posix()
+        if path.suffix != ".gguf" or "mmproj" in path.name:
+            continue
+        if any(matches_pattern(rel, pattern) for pattern in in_flight) and record_for_file(data, rel) is None:
+            unfinished.append(path)
+    return unfinished
 
 
 def discard_incomplete_download(output_dir: str, base_dir: str, patterns: list[str]) -> None:
@@ -1657,7 +1684,9 @@ def main():
         # Files first, marker second: the marker is per repository, but a repository
         # directory holds several quantizations, so a download in progress there says
         # nothing about the one being asked for — which may well be installed already.
-        if is_installed(output_dir, patterns):
+        # A file the marker's own download left without a record is not installed either:
+        # it reads as the download still in progress, which the next download clears.
+        if is_installed(output_dir, patterns) and not unfinished_files(output_dir, patterns):
             present = [str(p) for p in matching_files(output_dir, patterns) if p.suffix == ".gguf"]
             emit_json_info(f"Model exists: {allow_pattern}", downloading=False, size_mb=downloaded_size_mb(present))
         elif (Path(output_dir) / MARKER_NAME).is_file():

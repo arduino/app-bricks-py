@@ -30,6 +30,7 @@ from common.download_marker import MARKER_NAME, read_marker
 from common.model_metadata import METADATA_NAME, metadata_records, read_metadata
 from hugging_face import hf_downloader
 from hugging_face.hf_downloader import (
+    unfinished_files,
     BOARD_QUANTIZATIONS,
     DEFAULT_MMPROJ_QUANTIZATIONS,
     DEFAULT_QUANTIZATIONS,
@@ -1276,6 +1277,59 @@ def test_check_answers_for_the_requested_quantization_only(tmp_path, monkeypatch
     with pytest.raises(SystemExit):
         _run_main(monkeypatch, "--check", "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q3_K_S", "--output-dir", str(models_dir))
     assert read_events(capsys)[-1] == {"event": "error", "description": "Model does not exist: *Q3_K_S*.gguf", "downloading": False}
+
+
+def test_check_does_not_call_a_file_its_stopped_download_left_installed(tmp_path, monkeypatch, capsys):
+    """Seen on a board: a download stopped after its file landed, before the record.
+
+    The file is complete, the marker names it, no record covers it: the listing ignores
+    it and the API cannot delete it. --check used to answer "Model exists", which made
+    the host refuse every new download of it; it is a download still in progress.
+    """
+    models_dir, repo = _qwen_repo(tmp_path, "Qwen3-0.6B-Q3_K_S.gguf")
+    (repo / MARKER_NAME).write_text(json.dumps({"status": "downloading", "file_patterns": ["*Q3_K_S*.gguf"]}))
+
+    _run_main(monkeypatch, "--check", "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q3_K_S", "--output-dir", str(models_dir))
+
+    assert read_events(capsys)[-1] == {
+        "event": "info",
+        "description": "Model downloading: unsloth/Qwen3-0.6B-GGUF",
+        "downloading": True,
+    }
+
+
+def test_check_calls_a_recorded_file_installed_despite_its_marker(tmp_path, monkeypatch, capsys):
+    """A stop after the record but before the marker went: the record makes it an install."""
+    models_dir, repo = _qwen_repo(tmp_path, "Qwen3-0.6B-Q3_K_S.gguf")
+    (repo / MARKER_NAME).write_text(json.dumps({"status": "downloading", "file_patterns": ["*Q3_K_S*.gguf"]}))
+    (repo / METADATA_NAME).write_text("models:\n  - handler: hf-handler\n    files:\n      - Qwen3-0.6B-Q3_K_S.gguf\n")
+
+    _run_main(monkeypatch, "--check", "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q3_K_S", "--output-dir", str(models_dir))
+
+    assert read_events(capsys)[-1]["description"] == "Model exists: *Q3_K_S*.gguf"
+
+
+def test_check_leaves_an_unrecorded_sibling_installed(tmp_path, monkeypatch, capsys):
+    """The marker names Q3_K_S only: an unrecorded Q4_0 installed before is not its leftover."""
+    models_dir, repo = _qwen_repo(tmp_path, "Qwen3-0.6B-Q4_0.gguf", "Qwen3-0.6B-Q3_K_S.gguf")
+    (repo / MARKER_NAME).write_text(json.dumps({"status": "downloading", "file_patterns": ["*Q3_K_S*.gguf"]}))
+
+    _run_main(monkeypatch, "--check", "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q4_0", "--output-dir", str(models_dir))
+
+    assert read_events(capsys)[-1]["description"] == "Model exists: *Q4_0*.gguf"
+
+
+def test_unfinished_files_needs_a_marker_naming_them(tmp_path):
+    _models_dir, repo = _qwen_repo(tmp_path, "Qwen3-0.6B-Q3_K_S.gguf")
+    patterns = ["*Q3_K_S*.gguf"]
+
+    # No marker, or a legacy one naming no patterns: nothing is known to be unfinished.
+    assert unfinished_files(str(repo), patterns) == []
+    (repo / MARKER_NAME).write_text("{}")
+    assert unfinished_files(str(repo), patterns) == []
+
+    (repo / MARKER_NAME).write_text(json.dumps({"file_patterns": patterns}))
+    assert [p.name for p in unfinished_files(str(repo), patterns)] == ["Qwen3-0.6B-Q3_K_S.gguf"]
 
 
 # --------------------------------------------------------------------------- #
