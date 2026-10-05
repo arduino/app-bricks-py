@@ -165,17 +165,17 @@ class AirQualityMonitoring:
         Raises:
             ValueError: If the input dictionary is not valid.
         """
-        if not isinstance(item, dict):
-            raise ValueError("Input must be a dict")
-        # method selection
-        if "city" in item:
-            return self.get_air_quality_by_city(item["city"])
-        elif "latitude" in item and "longitude" in item:
-            return self.get_air_quality_by_coords(item["latitude"], item["longitude"])
-        elif "ip" in item and item["ip"]:
-            return self.get_air_quality_by_ip()
-        else:
-            raise ValueError("Input dict must contain 'city', 'latitude' and 'longitude', or 'ip': True")
+        match item:
+            case {"city": city}:
+                return self.get_air_quality_by_city(city)
+            case {"latitude": latitude, "longitude": longitude}:
+                return self.get_air_quality_by_coords(latitude, longitude)
+            case {"ip": ip} if ip:
+                return self.get_air_quality_by_ip()
+            case dict():
+                raise ValueError("Input dict must contain 'city', 'latitude' and 'longitude', or 'ip': True")
+            case _:
+                raise ValueError("Input must be a dict")
 
     def assemble_data(self, data: dict[str, Any]) -> AirQualityData:
         """Create a payload for the air quality data.
