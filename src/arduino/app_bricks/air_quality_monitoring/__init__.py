@@ -4,6 +4,7 @@
 
 import requests
 from dataclasses import dataclass
+from typing import Any
 
 from arduino.app_utils import brick
 
@@ -48,7 +49,7 @@ class AirQualityData:
         last_update (str): Last update timestamp of the air quality data.
         aqi (int): Air Quality Index value.
         dominantpol (str): Dominant pollutant in the air.
-        iaqi (dict): Individual AQI values for various pollutants.
+        iaqi (dict[str, Any]): Individual AQI values for various pollutants.
     """
 
     city: str
@@ -58,11 +59,11 @@ class AirQualityData:
     last_update: str
     aqi: int
     dominantpol: str
-    iaqi: dict
+    iaqi: dict[str, Any]
 
     # Properties for easy access to IAQI values
     @property
-    def pandas_dict(self) -> dict:
+    def pandas_dict(self) -> dict[str, list[Any]]:
         """Return the data as a dictionary suitable for pandas DataFrame."""
         return {
             "city": [self.city],
@@ -152,11 +153,11 @@ class AirQualityMonitoring:
             raise AirQualityLookupError.from_api_response(data)
         return self.assemble_data(data["data"])
 
-    def process(self, item: dict) -> dict:
+    def process(self, item: dict[str, Any]) -> dict:
         """Process the input dictionary to get air quality data.
 
         Args:
-            item (dict): Input dictionary containing either 'city', 'latitude' and 'longitude', or 'ip'.
+            item (dict[str, Any]): Input dictionary containing either 'city', 'latitude' and 'longitude', or 'ip'.
 
         Returns:
             dict: Air quality data.
@@ -176,11 +177,11 @@ class AirQualityMonitoring:
         else:
             raise ValueError("Input dict must contain 'city', 'latitude' and 'longitude', or 'ip': True")
 
-    def assemble_data(self, data: dict) -> AirQualityData:
+    def assemble_data(self, data: dict[str, Any]) -> AirQualityData:
         """Create a payload for the air quality data.
 
         Args:
-            data (dict): Air quality data.
+            data (dict[str, Any]): Air quality data.
 
         Returns:
             dict: Payload with relevant air quality information.
@@ -221,7 +222,7 @@ class AirQualityLookupError(Exception):
         self.message = message
 
     @classmethod
-    def from_api_response(cls, data: dict) -> "AirQualityLookupError":
+    def from_api_response(cls, data: dict[str, Any]) -> "AirQualityLookupError":
         """AirQualityLookupError error handling based on response provided by AQI API.
 
         Documented errors:
@@ -235,7 +236,7 @@ class AirQualityLookupError(Exception):
         - {"status": "error", "data": {"message": "..."}}
 
         Args:
-            data (dict): Response data from the AQI API.
+            data (dict[str, Any]): Response data from the AQI API.
 
         Returns:
             AirQualityLookupError: An instance of AirQualityLookupError with the error message and status.
