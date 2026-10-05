@@ -13,7 +13,7 @@ from concurrent.futures import CancelledError, Future
 from dataclasses import dataclass, field
 from types import TracebackType
 from contextlib import AbstractContextManager
-from typing import Literal
+from typing import Literal, Protocol
 
 import numpy as np
 import requests
@@ -49,6 +49,23 @@ class AudioSourceExhausted(Exception):
     Raised by finite-source adapters (WAV/ndarray) to signal end-of-data.
     Never raised by real BaseMicrophone implementations.
     """
+
+
+class AudioSource(Protocol):
+    """The subset of BaseMicrophone attributes and methods that ASR uses."""
+
+    sample_rate: int
+    channels: int
+    format: np.dtype
+    format_is_packed: bool
+
+    def is_started(self) -> bool: ...
+
+    def start(self) -> None: ...
+
+    def stop(self) -> None: ...
+
+    def capture(self) -> np.ndarray | None: ...
 
 
 def _dtype_to_pcm_format(dtype: np.dtype, is_packed: bool = False) -> str:
@@ -289,7 +306,7 @@ class BaseASR:
         """
         return self._active_session is not None
 
-    def _build_source(self, source: object) -> tuple:
+    def _build_source(self, source: object) -> tuple[AudioSource, bool]:
         """Bind the audio source. Subclasses must override."""
         raise NotImplementedError("Subclasses must override _build_source")
 
@@ -938,7 +955,7 @@ class AutomaticSpeechRecognition(BaseASR):
         """
         super().__init__(source=mic, language=language, translate=translate)
 
-    def _build_source(self, source: object) -> tuple:
+    def _build_source(self, source: object) -> tuple[BaseMicrophone, bool]:
         if source is None:
             return Microphone(0), True  # First plugged mic, shared with other consumers
         if isinstance(source, BaseMicrophone):
