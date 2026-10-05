@@ -4,7 +4,7 @@
 
 import requests
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Self
 
 from arduino.app_utils import brick
 
@@ -222,7 +222,7 @@ class AirQualityLookupError(Exception):
         self.message = message
 
     @classmethod
-    def from_api_response(cls, data: dict[str, Any]) -> "AirQualityLookupError":
+    def from_api_response(cls, data: dict[str, Any]) -> Self:
         """AirQualityLookupError error handling based on response provided by AQI API.
 
         Documented errors:
