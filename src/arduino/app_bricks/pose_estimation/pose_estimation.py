@@ -413,7 +413,8 @@ class PoseEstimation:
         for value in values:
             if not _is_unit_number(value):
                 raise ValueError(f"padding values must be numbers in [0.0, 1.0], got {value!r}")
-        return tuple(float(value) for value in values)
+        top, right, bottom, left = values
+        return float(top), float(right), float(bottom), float(left)
 
     @staticmethod
     def _declared_threshold(spec: PoseSpec, edge: str, shipped: dict[str, dict[str, float]]) -> float:
