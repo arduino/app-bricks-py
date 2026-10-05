@@ -16,9 +16,9 @@ logger = Logger("AnomalyDetection")
 
 
 class AnomalyClassificationCallback(Protocol):
-    """Anomaly callback that also receives the label scores of the model's classification head."""
+    """Anomaly callback that also receives the classification, None when the model has no classification head."""
 
-    def __call__(self, anomaly_score: float, /, classification: dict[str, Any]) -> None: ...
+    def __call__(self, anomaly_score: float, /, classification: dict[str, Any] | None) -> None: ...
 
 
 type AnomalyCallback = Callable[[], None] | Callable[[float], None] | AnomalyClassificationCallback
@@ -131,7 +131,7 @@ class VibrationAnomalyDetection(EdgeImpulseRunnerFacade):
         The callback signature can be one of:
             - `callback()`
             - `callback(anomaly_score: float)`
-            - `callback(anomaly_score: float, classification: dict)`
+            - `callback(anomaly_score: float, classification: dict | None)`
 
         Args:
             callback (AnomalyCallback): Function to invoke when `anomaly_score >= threshold`.

@@ -19,7 +19,7 @@ The Vibration Anomaly Detection Brick allows you to:
 - **Flexible callback signatures**:
   - `callback()`
   - `callback(anomaly_score: float)`
-  - `callback(anomaly_score: float, classification: dict)` (if your model returns a classification head alongside anomaly)
+  - `callback(anomaly_score: float, classification: dict | None)` (`classification` is None unless your model returns a classification head alongside anomaly)
 
 ## Code Example and Usage
 
