@@ -817,9 +817,7 @@ class CloudLLM:
 
         level = self._resolve_effort_level(reasoning_effort)
 
-        from langchain_google_genai.chat_models import _is_gemini_3_or_later
-
-        if _is_gemini_3_or_later(getattr(model, "model", "") or ""):
+        if self._gemini_supports_thinking_level(getattr(model, "model", "") or ""):
             # ``reasoning_effort`` is the field name (serialization alias ``thinking_level``);
             # ``model_copy(update=...)`` requires the field name, not the alias.
             return {"reasoning_effort": level.value}
@@ -944,6 +942,21 @@ class CloudLLM:
         major = int(match.group(1))
         minor = int(match.group(2) or 0)
         return major >= 5 or (major == 4 and minor >= 7)
+
+    @staticmethod
+    def _gemini_supports_thinking_level(model_name: str) -> bool:
+        """Returns True when a Gemini model accepts ``thinking_level``.
+
+        Gemini 3 models take a discrete ``thinking_level``; Gemini 2.5 models only take a
+        ``thinking_budget`` token count. Mirrors the check ``langchain-google-genai`` applies.
+
+        Args:
+            model_name (str): The Gemini model identifier (e.g. ``gemini-3.5-flash``).
+
+        Returns:
+            bool: True if the model accepts ``thinking_level``.
+        """
+        return "gemini-3" in model_name.lower()
 
     @staticmethod
     def _is_google_model(model: BaseChatModel) -> bool:
