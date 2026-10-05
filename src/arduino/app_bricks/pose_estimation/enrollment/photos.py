@@ -10,6 +10,7 @@ import json
 import re
 import time
 from pathlib import Path
+from typing import Any
 
 import cv2
 import numpy as np
@@ -45,7 +46,7 @@ class PersonReader:
     another black frame.
     """
 
-    def __init__(self, send_url: str, recv_url: str, config: dict) -> None:
+    def __init__(self, send_url: str, recv_url: str, config: dict[str, Any]) -> None:
         self._send_url, self._recv_url, self._config = send_url, recv_url, config
         self._send = self._recv = None
         self._cleared = False
@@ -74,7 +75,7 @@ class PersonReader:
                 socket.close()
         self._send = self._recv = None
 
-    def _infer(self, jpeg: bytes) -> dict:
+    def _infer(self, jpeg: bytes) -> dict[str, Any]:
         self._send.send(json.dumps({"frame": base64.b64encode(jpeg).decode("utf-8")}))
         answer = json.loads(self._recv.recv(timeout=ANSWER_TIMEOUT_SEC))
         return answer.get("metadata", {})
@@ -121,7 +122,7 @@ def _box_area(person: Person) -> int:
 
 
 def embed_photos(
-    paths: list[Path], send_url: str, recv_url: str, config: dict, min_score: float, out_of_frame_tolerance: float
+    paths: list[Path], send_url: str, recv_url: str, config: dict[str, Any], min_score: float, out_of_frame_tolerance: float
 ) -> dict[Path, tuple[np.ndarray | None, str | None]]:
     """Read every photo through the runner: its embedding, or None and the reason it was discarded."""
     out: dict[Path, tuple[np.ndarray | None, str | None]] = {}

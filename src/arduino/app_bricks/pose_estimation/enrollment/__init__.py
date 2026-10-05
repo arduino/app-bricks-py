@@ -19,6 +19,8 @@ from .measure import (
     PASS_RECALL,
     Bucket,
     Enrollment,
+    LearningCurve,
+    Measure,
     Outcome,
     confusion_table,
     learning_curve,
@@ -80,7 +82,7 @@ def enroll(asset_path: Path, specs: tuple[PoseSpec, ...], buckets: dict[str, Buc
         idx, dist = nearest_rows(db[other_idx], db, k, [np.array([i]) for i in other_idx])
         other_shares = vote_shares(idx, dist, labels, reject, measured) if measured else None
 
-    pending: dict[str, tuple] = {}
+    pending: dict[str, tuple[PoseSpec, Bucket, Measure | None, int, LearningCurve | None]] = {}
     accepted: dict[str, tuple[float, float, str]] = {}
     for spec in specs:
         if spec.builtin:

@@ -126,7 +126,7 @@ class PoseEstimation:
         self._bbox_padding = self._validate_bbox_padding(bbox_padding)
 
         # Callbacks
-        self._callbacks: dict[str, Callable] = {}
+        self._callbacks: dict[str, Callable[..., None]] = {}
         self._callbacks_lock = threading.Lock()
 
         self._frame_hw: tuple[int, int] | None = None
@@ -141,7 +141,7 @@ class PoseEstimation:
         self._readable_since: float | None = None
         self._is_running = False
 
-        self._camera_frame_queue = queue.Queue(maxsize=2)
+        self._camera_frame_queue: queue.Queue[np.ndarray] = queue.Queue(maxsize=2)
 
         # Callback executor and per-callback in-progress locks
         self._executor: ThreadPoolExecutor | None = None
@@ -491,7 +491,7 @@ class PoseEstimation:
         """
         self._register_callback("error", callback)
 
-    def _register_callback(self, key: str, callback: Callable | None) -> None:
+    def _register_callback(self, key: str, callback: Callable[..., None] | None) -> None:
         with self._callbacks_lock:
             if callback is None:
                 self._callbacks.pop(key, None)
@@ -501,7 +501,7 @@ class PoseEstimation:
                 if key not in self._callback_locks:
                     self._callback_locks[key] = threading.Lock()
 
-    def _get_callback(self, key: str) -> Callable | None:
+    def _get_callback(self, key: str) -> Callable[..., None] | None:
         with self._callbacks_lock:
             return self._callbacks.get(key)
 
@@ -561,7 +561,7 @@ class PoseEstimation:
         while self._is_running:
             try:
                 async with websockets.connect(self._ws_send_url) as ws:
-                    sent_config: dict | None = None
+                    sent_config: dict[str, Any] | None = None
                     while self._is_running:
                         top, right, bottom, left = self._bbox_padding
                         config = {
@@ -609,7 +609,7 @@ class PoseEstimation:
                     logger.error(f"Error in receive detections task: {e}. Reconnecting...")
                     await asyncio.sleep(3)
 
-    def _process_detection(self, metadata: dict) -> None:
+    def _process_detection(self, metadata: dict[str, Any]) -> None:
         """Process detection data and dispatch appropriate events."""
         try:
             people = parse_people(metadata, self._confidence)
@@ -752,7 +752,7 @@ class PoseEstimation:
             # Executor was shut down before the task could be submitted
             lock.release()
 
-    def _run_callback(self, lock: threading.Lock, callback: Callable, *args: Any, unroll: bool = False) -> None:
+    def _run_callback(self, lock: threading.Lock, callback: Callable[..., None], *args: Any, unroll: bool = False) -> None:
         """Run a callback and release its lock when done.
 
         With `unroll=True` the first argument is a list and the callback is invoked once per item.

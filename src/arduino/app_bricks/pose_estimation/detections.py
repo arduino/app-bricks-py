@@ -5,7 +5,7 @@
 """The data the pose estimation brick hands to an app: keypoints, people and pose events."""
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 
 @dataclass
@@ -68,7 +68,7 @@ class Pose:
     bounding_box_xyxy: tuple[int, int, int, int]
 
 
-def parse_people(metadata: dict, min_score: float) -> list[Person]:
+def parse_people(metadata: dict[str, Any], min_score: float) -> list[Person]:
     """The people of one runner result whose detection score reaches min_score."""
     people = []
     for entry in metadata.get("persons", []):
