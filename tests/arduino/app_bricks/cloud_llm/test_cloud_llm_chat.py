@@ -272,7 +272,7 @@ def test_init_openai_with_tools_stays_on_chat_completions():
         """Get the weather."""
         return "sunny"
 
-    llm = CloudLLM(model="openai:gpt-5.6-terra", api_key="x", tools=[get_weather])
+    llm = CloudLLM(model=f"openai:{CloudModel.OPENAI_GPT}", api_key="x", tools=[get_weather])
 
     inner = getattr(llm._model, "bound", llm._model)
     assert inner._use_responses_api({}) is False
@@ -282,7 +282,7 @@ def test_init_openai_with_tools_stays_on_chat_completions():
 
 def test_init_openai_without_tools_uses_chat_completions():
     # Without tools the base model is left on the default (chat completions) path.
-    llm = CloudLLM(model="openai:gpt-5.6-terra", api_key="x")
+    llm = CloudLLM(model=f"openai:{CloudModel.OPENAI_GPT}", api_key="x")
 
     assert llm._model._use_responses_api({}) is False
 
@@ -295,7 +295,7 @@ def test_init_with_tools_keeps_the_base_model_unbound_for_the_reasoning_flow():
         """Get the weather."""
         return "sunny"
 
-    llm = CloudLLM(model="openai:gpt-5.6-terra", api_key="x", tools=[get_weather])
+    llm = CloudLLM(model=f"openai:{CloudModel.OPENAI_GPT}", api_key="x", tools=[get_weather])
 
     assert llm._base_model is not llm._model
     assert getattr(llm._base_model, "bound", None) is None
@@ -309,7 +309,7 @@ def test_reasoning_model_uses_responses_api_with_tools_bound():
         """Get the weather."""
         return "sunny"
 
-    llm = CloudLLM(model="openai:gpt-5.6-terra", api_key="x", tools=[get_weather])
+    llm = CloudLLM(model=f"openai:{CloudModel.OPENAI_GPT}", api_key="x", tools=[get_weather])
 
     reasoning_model = llm._get_reasoning_model("high")
 

@@ -97,11 +97,11 @@ The Brick is initialized with the following parameters:
 
 You can select a model using the `CloudModel` enum or by passing the corresponding raw string identifier.
 
-| Enum Constant                 | Raw String ID              | Provider Documentation                                                      |
-| :---------------------------- | :------------------------- | :-------------------------------------------------------------------------- |
-| `CloudModel.ANTHROPIC_CLAUDE` | `claude-sonnet-5`          | [Anthropic Models](https://docs.anthropic.com/en/docs/about-claude/models)  |
-| `CloudModel.OPENAI_GPT`       | `gpt-5.6-terra`            | [OpenAI Models](https://platform.openai.com/docs/models)                    |
-| `CloudModel.GOOGLE_GEMINI`    | `gemini-3.6-flash`         | [Google Gemini Models](https://ai.google.dev/gemini-api/docs/models/gemini) |
+| Enum Constant                 | Raw String ID              | Provider Documentation                                                               |
+| :---------------------------- | :------------------------- | :----------------------------------------------------------------------------------- |
+| `CloudModel.ANTHROPIC_CLAUDE` | `claude-sonnet-5-5`        | [Anthropic Models](https://platform.claude.com/docs/en/about-claude/models/overview) |
+| `CloudModel.OPENAI_GPT`       | `gpt-6-luna`               | [OpenAI Models](https://developers.openai.com/api/docs/models)                       |
+| `CloudModel.GOOGLE_GEMINI`    | `gemini-3.5-flash-lite`    | [Google Gemini Models](https://ai.google.dev/gemini-api/docs/models)                 |
 
 ## Methods
 

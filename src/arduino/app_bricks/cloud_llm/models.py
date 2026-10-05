@@ -6,9 +6,9 @@ from enum import StrEnum
 
 
 class CloudModel(StrEnum):
-    ANTHROPIC_CLAUDE = "claude-sonnet-5"  # https://platform.claude.com/docs/en/about-claude/models/overview#latest-models-comparison
-    OPENAI_GPT = "gpt-5.6-terra"  # https://platform.openai.com/docs/models
-    GOOGLE_GEMINI = "gemini-3.6-flash"  # https://ai.google.dev/gemini-api/docs/models
+    ANTHROPIC_CLAUDE = "claude-sonnet-5-5"  # https://platform.claude.com/docs/en/about-claude/models/overview
+    OPENAI_GPT = "gpt-6-luna"  # https://developers.openai.com/api/docs/models
+    GOOGLE_GEMINI = "gemini-3.5-flash-lite"  # https://ai.google.dev/gemini-api/docs/models
 
 
 class CloudModelProvider(StrEnum):

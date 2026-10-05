@@ -130,7 +130,11 @@ class CloudLLM:
                 (``chat`` without an effort, ``chat_stream``), since chat completions rejects
                 function tools while reasoning is active. To reason with tools, pass a
                 ``reasoning_effort`` or use ``chat_stream_reasoning``, which go through the
-                Responses API.
+                Responses API. This holds for the models that accept ``reasoning_effort='none'``
+                (the gpt-5.1+ series, ``gpt-6-luna``); GPT-6 models that reject ``'none'``
+                (``gpt-6.1-sol``, ``gpt-6-astra``) do not support function tools on chat
+                completions at all, so with them tools are only available through that
+                Responses path.
             **kwargs: Additional arguments passed to the model constructor
 
         Raises:
@@ -206,6 +210,8 @@ class CloudLLM:
             # through the reasoning flow: ``_get_reasoning_model`` derives its own client from
             # the untouched ``_base_model``, enables the Responses API on it (which does accept
             # tools while reasoning) and binds the tools itself.
+            # GPT-6 models that reject ``'none'`` (``gpt-6.1-sol``, ``gpt-6-astra``) have no
+            # function tools on chat completions at all: see the ``tools`` argument docstring.
             tools_model = self._model
             if isinstance(tools_model, ChatOpenAIReasoning) and self._openai_supports_effort_none(getattr(tools_model, "model_name", "")):
                 tools_model = tools_model.model_copy(update={"reasoning_effort": "none"})
@@ -778,6 +784,10 @@ class CloudLLM:
         because they accept tools while reasoning and reject the ``'none'`` value (``gpt-5``,
         ``gpt-5-mini``, the ``o`` series) or because they do not reason at all (``*-chat*``
         variants, non-OpenAI models served through an OpenAI-compatible endpoint).
+
+        GPT-6 models that reject ``'none'`` (``gpt-6.1-sol``, ``gpt-6-astra``) are not
+        special-cased: they have no function tools on chat completions at all, so the rejected
+        value changes nothing for them (see the ``tools`` argument of ``CloudLLM.__init__``).
 
         Args:
             model_name (str): The model identifier (e.g. ``gpt-5.1-mini``).
