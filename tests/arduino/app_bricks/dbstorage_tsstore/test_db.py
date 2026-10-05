@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import pytest
+from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 from typing import Any
@@ -288,3 +289,34 @@ def test_store_rejects_a_missing_token(tmp_path: Path, monkeypatch: pytest.Monke
     with patch("arduino.app_bricks.dbstorage_tsstore.get_brick_compose_file", return_value=compose):
         with pytest.raises(TimeSeriesStoreError):
             TimeSeriesStore()
+
+
+@pytest.fixture
+def store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TimeSeriesStore:
+    monkeypatch.delenv("INFLUXDB_ADMIN_TOKEN", raising=False)
+    compose = _compose_with_token(tmp_path, "${INFLUXDB_ADMIN_TOKEN:-secret}")
+    with patch("arduino.app_bricks.dbstorage_tsstore.get_brick_compose_file", return_value=compose):
+        return TimeSeriesStore()
+
+
+@pytest.fixture
+def influx() -> Iterator[MagicMock]:
+    """The client a started store holds, with a server that has the brick bucket."""
+    with patch("arduino.app_bricks.dbstorage_tsstore.InfluxDBClient") as client_class:
+        yield client_class.return_value.__enter__.return_value
+
+
+def test_stop_before_start_does_nothing(store: TimeSeriesStore) -> None:
+    store.stop()
+
+
+def test_get_client_before_start_raises(store: TimeSeriesStore) -> None:
+    with pytest.raises(TimeSeriesStoreError, match=r"InfluxDB client is not available, call start\(\) first\."):
+        store.get_client()
+
+
+def test_get_client_returns_the_started_client(store: TimeSeriesStore, influx: MagicMock) -> None:
+    store.start()
+    assert store.get_client() is influx
+    store.stop()
+    influx.close.assert_called_once()

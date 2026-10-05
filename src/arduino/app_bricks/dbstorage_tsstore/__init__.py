@@ -66,7 +66,7 @@ class _InfluxDBHandler:
         self.token = token
         self.org: str = env_dict["DOCKER_INFLUXDB_INIT_ORG"]
         self.bucket: str = env_dict["DOCKER_INFLUXDB_INIT_BUCKET"]
-        self.client: InfluxDBClient = None
+        self.client: InfluxDBClient | None = None
         self.retention_days = retention_days
 
     def start(self) -> None:
@@ -85,9 +85,9 @@ class _InfluxDBHandler:
                 self.write_api = client.write_api(write_precision=WritePrecision.MS)
                 self.query_api = client.query_api()
                 # Update data retention of the bucket
-                bucket = self.client.buckets_api().find_bucket_by_name(self.bucket)
+                bucket = client.buckets_api().find_bucket_by_name(self.bucket)
                 bucket.retention_rules = [BucketRetentionRules(type="expire", every_seconds=_convert_days_to_seconds(self.retention_days))]
-                self.client.buckets_api().update_bucket(bucket)
+                client.buckets_api().update_bucket(bucket)
             logger.info(f"Connected to InfluxDB: {self.url}")
         except Exception as e:
             raise TimeSeriesStoreError(f"Error connecting to InfluxDB: {e}") from e
@@ -97,9 +97,11 @@ class _InfluxDBHandler:
 
         Properly closes the client connection and releases associated resources.
         Should be called when finished with the time series store to ensure
-        proper cleanup.
+        proper cleanup. Does nothing if the store was never started.
         """
-        self.client.close()
+        client = self.client
+        if client is not None:
+            client.close()
 
     def load_default_infra(self) -> dict[str, Any] | None:
         """Load the default InfluxDB compose file for the brick.
@@ -122,8 +124,15 @@ class _InfluxDBHandler:
             return None
 
     def get_client(self) -> InfluxDBClient:
-        """Returns the InfluxDB client instance."""
-        return self.client
+        """Returns the InfluxDB client instance.
+
+        Raises:
+            TimeSeriesStoreError: If the store was never started.
+        """
+        client = self.client
+        if client is None:
+            raise TimeSeriesStoreError("InfluxDB client is not available, call start() first.")
+        return client
 
 
 def _is_valid_time(value: str) -> bool:
