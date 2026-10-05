@@ -153,14 +153,14 @@ class AirQualityMonitoring:
             raise AirQualityLookupError.from_api_response(data)
         return self.assemble_data(data["data"])
 
-    def process(self, item: dict[str, Any]) -> dict:
+    def process(self, item: dict[str, Any]) -> AirQualityData:
         """Process the input dictionary to get air quality data.
 
         Args:
             item (dict[str, Any]): Input dictionary containing either 'city', 'latitude' and 'longitude', or 'ip'.
 
         Returns:
-            dict: Air quality data.
+            AirQualityData: Air quality assembled data.
 
         Raises:
             ValueError: If the input dictionary is not valid.
@@ -184,7 +184,7 @@ class AirQualityMonitoring:
             data (dict[str, Any]): Air quality data.
 
         Returns:
-            dict: Payload with relevant air quality information.
+            AirQualityData: Payload with relevant air quality information.
         """
         aqi_data = AirQualityData(
             city=data.get("city", {}).get("name", "N/A"),
