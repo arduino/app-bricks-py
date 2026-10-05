@@ -300,7 +300,7 @@ requires-dist = [
     { name = "arduino-app-bricks", extras = ["streamlit-ui"], marker = "extra == 'all'" },
     { name = "arduino-app-bricks", extras = ["telegram-bot"], marker = "extra == 'all'" },
     { name = "arduino-app-bricks", extras = ["web-ui"], marker = "extra == 'all'" },
-    { name = "arduino-router-bridge", specifier = ">=0.5.0" },
+    { name = "arduino-router-bridge", specifier = ">=0.5.1" },
     { name = "cryptography", marker = "extra == 'web-ui'" },
     { name = "deepeval", marker = "extra == 'dev'" },
     { name = "docstring-parser", marker = "extra == 'dev'", specifier = ">=0.16" },
@@ -347,14 +347,14 @@ build = [{ name = "docstring-parser", specifier = ">=0.16" }]
 
 [[package]]
 name = "arduino-router-bridge"
-version = "0.5.0"
+version = "0.5.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "msgpack" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/7c/56/83b5b1c2151f6f0c7a784e769811f83b8c5f1f605d9a2516fe1f4de33db2/arduino_router_bridge-0.5.0.tar.gz", hash = "sha256:ed73c36d7795b30c45855171d9a89e7c940a088271c9577b5727e8798bdce66d", size = 38720, upload-time = "2026-09-08T08:40:56.363Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/4b/21/e064e44c06a376c4fee1320841713c80379e01e34598a87420944eec3801/arduino_router_bridge-0.5.1.tar.gz", hash = "sha256:c5b55db4db7956b220846ad6fec5787e28b36fbec8698b5378198aca2c5d14f4", size = 38799, upload-time = "2026-10-05T07:24:03.104Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/89/2c/90df715cc64463214a537886b3e776c4d084ea603b5fab025dc900c3e19f/arduino_router_bridge-0.5.0-py3-none-any.whl", hash = "sha256:b7d280d239d471d7b28d5690467129dd0bc0b74177b25c505d565b8c980c991b", size = 24728, upload-time = "2026-09-08T08:40:54.992Z" },
+    { url = "https://files.pythonhosted.org/packages/5f/15/cc1d289002e1cbc22a269b26c611d85e3f97d55bc67b014ab0ec98908a0b/arduino_router_bridge-0.5.1-py3-none-any.whl", hash = "sha256:f05b317a8894fa83dce123f5f4f6a0ffa92d29cbb76cbae93e4a7fbab7bb4b94", size = 24781, upload-time = "2026-10-05T07:24:01.729Z" },
 ]
 
 [[package]]

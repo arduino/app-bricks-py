@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import inspect
 import signal
 import sys
 import threading
@@ -9,7 +10,6 @@ from collections import deque
 import time
 
 from . import peripheral_registry
-from .utils import _has_callable_method, _brick_name
 from .logger import Logger
 from collections.abc import Callable
 from types import FrameType
@@ -66,6 +66,67 @@ WORKER_JOIN_TIMEOUT_S = 5.0
 """Per-worker-thread join timeout used when no global deadline applies, i.e. by stop_brick()."""
 
 
+def _has_callable_method(obj_or_cls: object, method_name: str) -> bool:
+    """Checks if an object or class has a callable method with the correct signature.
+    The method must only accept the `self` parameter.
+    This function correctly handles both bound methods (on instances) and
+    unbound functions (on classes).
+
+    Args:
+        obj_or_cls: The object instance or class to check.
+        method_name: The name of the method to check.
+
+    Returns:
+        bool: True if the method exists and has the right signature, False otherwise.
+
+    Raises:
+        TypeError: If the method exists but has an incorrect signature.
+    """
+    if not hasattr(obj_or_cls, method_name):
+        return False
+
+    method = getattr(obj_or_cls, method_name)
+    if not callable(method):
+        return False
+
+    # Handle both bound and unbound methods
+    func = getattr(method, "__func__", method)
+
+    sig = inspect.signature(func)
+    params = list(sig.parameters.values())
+
+    if len(params) == 1:
+        if params[0].name == "self":
+            return True
+
+        # Wrong parameter name
+        raise TypeError(
+            f"Method '{method_name}' has an invalid signature. "
+            f"The '{method_name}' method is expected to only have the 'self' parameter, "
+            f"but it is defined with the name {params[0].name}. Please rename the "
+            f"method signature to avoid conflict."
+        )
+    elif len(params) > 1:
+        # Wrong parameter count
+        raise TypeError(
+            f"Method '{method_name}' has an invalid signature. "
+            f"The '{method_name}' method is expected to only have the 'self' parameter, "
+            f"but it is defined with {len(params)} total parameters. Please correct the "
+            f"method signature to avoid conflict."
+        )
+    else:
+        # No parameters at all
+        raise TypeError(
+            f"Method '{method_name}' has an invalid signature. "
+            f"The '{method_name}' method is expected to only have the 'self' parameter, "
+            f"but it is defined with no parameters. Please correct the method signature to avoid conflict."
+        )
+
+
+def _brick_name(brick: object) -> str:
+    return type(brick).__name__
+
+
 class AppController:
     """AppController orchestrates the entire application lifecycle by managing brick startup, shutdown, and their
     loops execution in a controlled, structured way.
@@ -80,9 +141,9 @@ class AppController:
     """
 
     def __init__(self) -> None:
-        self._waiting_queue = deque()
-        self._running_queue = deque()
-        self._brick_states: dict[any, list[tuple[threading.Thread, threading.Event]]] = {}
+        self._waiting_queue: deque[object] = deque()
+        self._running_queue: deque[object] = deque()
+        self._brick_states: dict[object, list[tuple[threading.Thread, threading.Event]]] = {}
         self._app_lock = threading.Lock()
         self._running = False
         self._stopping = False
@@ -151,7 +212,7 @@ class AppController:
         with self._app_lock:
             self._stop(brick)
 
-    def run(self, user_loop: callable = None) -> None:
+    def run(self, user_loop: Callable[[], Any] | None = None) -> None:
         """Starts all registered bricks and keeps the main thread alive, waiting for a shutdown signal (Ctrl+C).
 
         If a user_loop callable is provided, it will be executed instead of the default infinite loop.
@@ -271,7 +332,7 @@ class AppController:
 
         return False
 
-    def loop(self, user_loop: callable = None) -> int:
+    def loop(self, user_loop: Callable[[], Any] | None = None) -> int:
         """This method keeps the application running, blocking until a KeyboardInterrupt (Ctrl+C) occurs.
 
         If a user_loop callable is provided, it will be executed inside an infinite loop and
@@ -362,8 +423,8 @@ class AppController:
 
     def _discover_runnable_methods(self, brick: object) -> list[tuple[Callable[..., object], str]]:
         """Discovers and validates all methods marked with @loop/@execute or named loop/execute."""
-        methods = []
-        processed_names = set()
+        methods: list[tuple[Callable[..., object], str]] = []
+        processed_names: set[str] = set()
 
         for name in dir(brick):
             if name.startswith("__") or name in processed_names:
