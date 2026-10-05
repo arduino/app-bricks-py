@@ -262,8 +262,6 @@ class CloudASR:
                 for chunk in self._mic.stream():
                     if session.cancelled.is_set() or self._shutdown.is_set():
                         break
-                    if chunk is None:
-                        continue
                     pcm_chunk_np = np.asarray(chunk, dtype=np.int16)
                     self._provider.send_audio(pcm_chunk_np.tobytes())
             except Exception as exc:
