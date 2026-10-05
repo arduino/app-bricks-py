@@ -379,22 +379,29 @@ def test_case_6_atexit_fallback_is_a_noop_after_a_normal_shutdown(app_instance, 
     assert peripheral.stop_count == 1
 
 
-def test_case_6_the_shutdown_runs_when_the_user_loop_calls_sys_exit(app_instance, peripherals):
+def test_case_6_the_shutdown_runs_when_the_user_loop_calls_sys_exit(app_instance, peripherals, monkeypatch):
     """Condition: the user loop calls sys.exit(), so a SystemExit escapes the app loop.
     Expectation: the bricks are stopped and the peripherals released, in that order, before the
-    SystemExit carries on. The shutdown used to be skipped entirely on this path, leaving the
-    release to the interpreter-exit fallback, which stops no bricks at all.
+    process exits with the code passed to sys.exit(). The shutdown used to be skipped entirely on
+    this path, leaving the release to the interpreter-exit fallback, which stops no bricks at all.
     """
     timeline: list[str] = []
     recording = RecordingBrick("brick-1", timeline)
     peripheral = RecordingPeripheral(timeline)
     peripherals.register(peripheral)
 
+    # The real _exit() ends the process with os._exit(), which would take pytest down with it
+    def fake_exit(code: int):
+        timeline.append(f"exit({code})")
+        raise SystemExit(code)
+
+    monkeypatch.setattr(app_instance, "_exit", fake_exit)
+
     escaped = _run_until_it_returns(app_instance, _raiser(SystemExit(7)))
 
     assert isinstance(escaped, SystemExit), f"escaped={escaped!r}"
-    assert escaped.code == 7, "the exit code must reach the interpreter unchanged"
-    assert timeline == ["brick-1", "peripheral"]
+    assert escaped.code == 7, "the exit code must reach the process unchanged"
+    assert timeline == ["brick-1", "peripheral", "exit(7)"]
     assert recording.stop_called.is_set()
     assert not app_instance._running
 
