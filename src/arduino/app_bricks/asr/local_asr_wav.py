@@ -19,7 +19,7 @@ from .local_asr import (
 
 class InMemoryAudioSource:
     """
-    Audio source wrapping WAV bytes or a raw PCM ndarray.
+    Audio source wrapping WAV bytes or bytearray, or a raw PCM ndarray.
 
     Exposes only the subset of BaseMicrophone attributes/methods that ASR uses,
     so it can be used uniformly. ``capture()`` raises ``AudioSourceExhausted``
@@ -30,7 +30,7 @@ class InMemoryAudioSource:
     _DEFAULT_CHANNELS = 1
     _DEFAULT_BUFFER_SIZE = 1024
 
-    def __init__(self, samples: bytes | np.ndarray) -> None:
+    def __init__(self, samples: bytes | bytearray | np.ndarray) -> None:
         if isinstance(samples, (bytes, bytearray)):
             with wave.open(io.BytesIO(bytes(samples)), "rb") as wf:
                 self.sample_rate = wf.getframerate()
@@ -117,9 +117,11 @@ class WAVAutomaticSpeechRecognition(BaseASR):
         super().__init__(source=wav, language=language, translate=translate)
 
     def _build_source(self, source: object) -> tuple[InMemoryAudioSource, bool]:
-        if not isinstance(source, (np.ndarray, bytes, bytearray)):
-            raise TypeError(f"Unsupported source type: {type(source)!r}")
-        return InMemoryAudioSource(source), False
+        match source:
+            case bytes() | bytearray() | np.ndarray():
+                return InMemoryAudioSource(source), False
+            case _:
+                raise TypeError(f"Unsupported source type: {type(source)!r}")
 
     def transcribe(self) -> str:
         """
