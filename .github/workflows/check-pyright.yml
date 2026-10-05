@@ -99,7 +99,8 @@ jobs:
           # Tolerant per-package install: a package that still fails to build on
           # the runner only degrades the affected types to Unknown, it must not
           # fail the job.
-          cat container-deps.txt library-deps.txt | while IFS= read -r pkg; do
+          # streamlit: installed at app start by run.sh for apps that declare the streamlit_ui brick.
+          { cat container-deps.txt library-deps.txt; echo streamlit; } | while IFS= read -r pkg; do
             pkg="${pkg%%#*}"
             [ -z "${pkg// /}" ] && continue
             ./checkenv/bin/pip install -q "$pkg" < /dev/null || echo "::notice::package not installed in the check venv: $pkg"
