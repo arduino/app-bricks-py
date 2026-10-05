@@ -10,6 +10,7 @@ from paho.mqtt.reasoncodes import ReasonCode
 import json
 import uuid
 from collections.abc import Callable
+from typing import Any
 from arduino.app_utils import Logger, brick
 
 logger = Logger("MQTT")
@@ -147,7 +148,7 @@ class MQTT:
         except Exception as e:
             logger.error("Error during MQTT client shutdown: %s", e)
 
-    def publish(self, topic: str, message: str | dict) -> None:
+    def publish(self, topic: str, message: str | dict[str, Any]) -> None:
         """Publish a message to the MQTT topic.
 
         Args:
