@@ -8,7 +8,7 @@ from collections.abc import Callable
 from typing import BinaryIO
 
 from arduino.app_internal.core.audio import AudioDetector
-from arduino.app_peripherals.microphone import Microphone
+from arduino.app_peripherals.microphone import BaseMicrophone
 from arduino.app_utils import brick, Logger
 
 logger = Logger("AudioClassification")
@@ -24,11 +24,12 @@ class AudioClassificationException(Exception):
 class AudioClassification(AudioDetector):
     """AudioClassification module for detecting sounds and classifying audio using a specified model."""
 
-    def __init__(self, mic: Microphone | None = None, confidence: float = 0.8) -> None:
+    def __init__(self, mic: BaseMicrophone | None = None, confidence: float = 0.8) -> None:
         """Initialize the AudioClassification class.
 
         Args:
-            mic (Microphone, optional): Microphone instance used as the audio source. If None, a default Microphone will be initialized.
+            mic (BaseMicrophone, optional): Microphone used as the audio source, e.g. the one Microphone() returns.
+                If None, a default Microphone will be initialized.
             confidence (float, optional): Minimum confidence threshold (0.0–1.0) required
                 for a detection to be considered valid. Defaults to 0.8 (80%).
 
