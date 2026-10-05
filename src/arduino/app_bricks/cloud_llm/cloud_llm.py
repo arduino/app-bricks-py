@@ -12,7 +12,7 @@ from typing import Optional, Union, Any
 from collections.abc import Iterator, Sequence, Callable
 
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage, AIMessage, ToolCall, message_chunk_to_message
+from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage, AIMessage, AIMessageChunk, ToolCall, message_chunk_to_message
 from langchain_core.tools import BaseTool, StructuredTool
 
 from arduino.app_utils import brick
@@ -367,6 +367,19 @@ class CloudLLM:
         self._history.add_messages(updated[len(input_messages) - 1 :])
         return updated
 
+    @staticmethod
+    def _merge_streamed(gathered: AIMessage | None, token: AIMessage) -> AIMessage:
+        """Merges a streamed token into the message gathered so far.
+
+        Chunks add up, reassembling the tool calls split across them; a complete message,
+        streamed by models that do not stream natively, replaces what was gathered.
+        """
+        match gathered, token:
+            case AIMessageChunk() as left, AIMessageChunk() as right:
+                return left + right
+            case _:
+                return token
+
     def _image_to_base64(self, path: str | bytes) -> str:
         """Encodes an image file to a base64 string.
         Args:
@@ -577,7 +590,7 @@ class CloudLLM:
             loops = 0
 
             while True:
-                gathered = None
+                gathered: AIMessage | None = None
                 for token in self._model.stream(input=input_messages, config={"callbacks": self._callbacks}):
                     if not self._keep_streaming.is_set():
                         break  # This stops the iteration and halts further token generation
@@ -592,20 +605,19 @@ class CloudLLM:
                     # Accumulate the chunks carrying tool calls so they can be assembled:
                     # a single chunk only holds a fragment of the arguments JSON.
                     if getattr(token, "tool_call_chunks", None) or getattr(token, "tool_calls", None):
-                        gathered = token if gathered is None else gathered + token
+                        gathered = self._merge_streamed(gathered, token)
 
                 if not self._keep_streaming.is_set():
                     break
 
-                tool_calls = getattr(gathered, "tool_calls", None) or [] if gathered is not None else []
-                if not tool_calls:
+                if gathered is None or not gathered.tool_calls:
                     break
 
                 loops += 1
                 if loops > self._max_tool_loops:
                     raise RuntimeError(f"Too many consecutive tool-call loops ({self._max_tool_loops}). Possible tool loop.")
 
-                input_messages = self._run_tool_exchange(gathered, tool_calls, input_messages)
+                input_messages = self._run_tool_exchange(gathered, gathered.tool_calls, input_messages)
                 # The text streamed alongside the tool calls is already part of the
                 # recorded assistant message: only the answer that follows the tool
                 # results is persisted below.
@@ -1118,7 +1130,7 @@ class CloudLLM:
             loops = 0
 
             while True:
-                gathered = None
+                gathered: AIMessage | None = None
                 for token in reasoning_model.stream(input_messages):
                     if not self._keep_streaming.is_set():
                         break  # This stops the iteration and halts further token generation
@@ -1133,20 +1145,19 @@ class CloudLLM:
                         yield ContentChunk(content=content)
 
                     # Accumulate chunks so streamed tool calls can be assembled.
-                    gathered = token if gathered is None else gathered + token
+                    gathered = self._merge_streamed(gathered, token)
 
                 if not self._keep_streaming.is_set():
                     break
 
-                tool_calls = getattr(gathered, "tool_calls", None) or [] if gathered is not None else []
-                if not tool_calls:
+                if gathered is None or not gathered.tool_calls:
                     break
 
                 loops += 1
                 if loops > self._max_tool_loops:
                     raise RuntimeError(f"Too many consecutive tool-call loops ({self._max_tool_loops}). Possible tool loop.")
 
-                input_messages = self._run_tool_exchange(gathered, tool_calls, input_messages)
+                input_messages = self._run_tool_exchange(gathered, gathered.tool_calls, input_messages)
                 # The text streamed alongside the tool calls is already part of the
                 # recorded assistant message: only the answer that follows the tool
                 # results is persisted below.
