@@ -294,7 +294,7 @@ class ArduinoCloud:
                     logger.warning("ArduinoCloud: '%s' has no live SSE listener; re-subscribing", leaf.name)
                     self._subscribe_leaf(leaf)
 
-    def _make_handler(self, leaf: CloudObject) -> Callable[[str, dict], None]:
+    def _make_handler(self, leaf: CloudObject) -> Callable[[str, dict[str, Any]], None]:
         """Build the SSE event handler for a leaf.
 
         Dispatches on the event name (see daemon_client): the sync frames
@@ -315,7 +315,7 @@ class ArduinoCloud:
         held by other listeners and the poll loop.
         """
 
-        def handle(event: str, payload: dict) -> None:
+        def handle(event: str, payload: dict[str, Any]) -> None:
             owner_to_fire = None
             with self._lock:
                 if event == EVENT_THING_UNAVAILABLE:

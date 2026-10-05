@@ -27,6 +27,7 @@ from datetime import datetime
 from urllib.parse import quote, unquote, urlparse
 
 from collections.abc import Callable, Iterator
+from typing import Any
 
 import requests
 
@@ -132,7 +133,8 @@ class DaemonClient:
         """
         url = f"{self._base}/v1/variables/{quote(name, safe='')}"
         try:
-            resp = self._session.put(url, json={"value": value}, timeout=_PUT_TIMEOUT)
+            payload: dict[str, Any] = {"value": value}
+            resp = self._session.put(url, json=payload, timeout=_PUT_TIMEOUT)
         except requests.exceptions.ReadTimeout:
             self._put_fail_count += 1
             logger.warning(
@@ -178,7 +180,7 @@ class DaemonClient:
             self._put_fail_count = 0
 
     def stream_events(
-        self, name: str, handler: Callable[[str, dict], None], stop_event: threading.Event, ready: threading.Event | None = None
+        self, name: str, handler: Callable[[str, dict[str, Any]], None], stop_event: threading.Event, ready: threading.Event | None = None
     ) -> None:
         """Stream SSE events for a variable until stop_event is set.
 
@@ -219,7 +221,7 @@ class DaemonClient:
             backoff = min(backoff * 2, _RECONNECT_MAX)
 
     @staticmethod
-    def _iter_events(resp: requests.Response, stop_event: threading.Event) -> Iterator[tuple[str, dict]]:
+    def _iter_events(resp: requests.Response, stop_event: threading.Event) -> Iterator[tuple[str, dict[str, Any]]]:
         """Parse the SSE byte stream, yielding each complete event as
         ``(event_name, payload_dict)``. Stops when stop_event is set or the
         stream ends."""
