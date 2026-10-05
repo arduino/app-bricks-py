@@ -332,3 +332,27 @@ def test_get_client_returns_the_started_client(store: TimeSeriesStore, influx: M
     assert store.get_client() is influx
     store.stop()
     influx.close.assert_called_once()
+
+
+@pytest.mark.parametrize("start_from", ["-1d", "-30m", "2024-06-25T12:34:56Z", "now()"])
+def test_read_samples_accepts_supported_times(store: TimeSeriesStore, influx: MagicMock, start_from: str) -> None:
+    store.start()
+    assert store.read_samples("temp", start_from=start_from) == []
+
+
+@pytest.mark.parametrize("start_from", ["yesterday", "1d", 123, None])
+def test_read_samples_rejects_an_invalid_start(store: TimeSeriesStore, start_from: Any) -> None:  # noqa: ANN401
+    with pytest.raises(TimeSeriesStoreError, match=f"Invalid start_from value: {start_from}\\. Must be a valid time period or timestamp\\."):
+        store.read_samples("temp", start_from=start_from)
+
+
+@pytest.mark.parametrize("end_to", ["tomorrow", 123])
+def test_read_samples_rejects_an_invalid_end(store: TimeSeriesStore, end_to: Any) -> None:  # noqa: ANN401
+    with pytest.raises(TimeSeriesStoreError, match=f"Invalid end_to value: {end_to}\\. Must be a valid time period or timestamp\\."):
+        store.read_samples("temp", end_to=end_to)
+
+
+@pytest.mark.parametrize("start_from", ["yesterday", 123])
+def test_read_last_sample_rejects_an_invalid_start(store: TimeSeriesStore, start_from: Any) -> None:  # noqa: ANN401
+    with pytest.raises(TimeSeriesStoreError, match=f"Invalid start_from value: {start_from}\\. Must be a valid time period or timestamp\\."):
+        store.read_last_sample("temp", start_from=start_from)

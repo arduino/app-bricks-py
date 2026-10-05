@@ -143,24 +143,23 @@ def _is_valid_time(value: str) -> bool:
     import re
     from datetime import datetime
 
-    try:
-        if not isinstance(value, str):
+    match value:
+        case str():
+            # Check for relative period (e.g., -1d, -2h, -30m)
+            if re.fullmatch(r"-\d+[smhdw]", value):
+                return True
+            # Check for RFC3339 timestamp
+            try:
+                # Accepts e.g. 2024-06-25T12:34:56Z
+                datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ")
+                return True
+            except ValueError:
+                pass
+            if value == "now()":
+                return True
             return False
-        # Check for relative period (e.g., -1d, -2h, -30m)
-        if re.fullmatch(r"-\d+[smhdw]", value):
-            return True
-        # Check for RFC3339 timestamp
-        try:
-            # Accepts e.g. 2024-06-25T12:34:56Z
-            datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ")
-            return True
-        except ValueError:
-            pass
-        if value == "now()":
-            return True
-        return False
-    except Exception as e:
-        raise e
+        case _:
+            return False
 
 
 @brick
