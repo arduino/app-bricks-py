@@ -12,7 +12,7 @@ from arduino.app_utils import Logger, brick
 from arduino.app_internal.core import get_brick_config, get_brick_configured_model
 
 import openai
-from typing import Any
+from typing import Any, Self
 from collections.abc import Iterator, Sequence
 
 logger = Logger("VisionLanguageModel")
@@ -157,7 +157,7 @@ class VisionLanguageModel(LargeLanguageModel):
         self,
         max_messages: int = 0,
         persistence: bool | MessagePersistence | None = None,
-    ) -> "VisionLanguageModel":
+    ) -> Self:
         """Enables conversational memory for this instance.
 
         Configures the Brick to retain a window of previous messages, allowing the
@@ -172,6 +172,6 @@ class VisionLanguageModel(LargeLanguageModel):
                 `MessagePersistence` implementation directly for full control.
 
         Returns:
-            VisionLanguageModel: The current instance, allowing for method chaining.
+            Self: The current instance, allowing for method chaining.
         """
         return super().with_memory(max_messages=max_messages, persistence=persistence)
