@@ -159,7 +159,7 @@ class VibrationAnomalyDetection(EdgeImpulseRunnerFacade):
         """
         try:
             features = self._buffer.pull()
-            if features is None or len(features) == 0:
+            if len(features) == 0:
                 return
 
             ret = self.infer_from_features(features.flatten().tolist())
