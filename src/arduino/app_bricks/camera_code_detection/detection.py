@@ -55,7 +55,7 @@ class CameraCodeDetection:
 
     def __init__(
         self,
-        camera: BaseCamera = None,
+        camera: BaseCamera | None = None,
         detect_qr: bool = True,
         detect_barcode: bool = True,
     ) -> None:
