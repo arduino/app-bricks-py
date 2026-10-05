@@ -66,7 +66,7 @@ def draw_bounding_box(frame: Image, detection: Detection) -> Image:
 
     # Draw the bounding box and text on the frame
     if code_coords is not None and code_coords.shape == (4, 2):
-        draw.polygon(code_coords, outline=(0, 255, 0), width=3)
+        draw.polygon([(int(x), int(y)) for x, y in code_coords], outline=(0, 255, 0), width=3)
 
         # Calculate text position
         min_x = int(np.min(code_coords[:, 0]))
