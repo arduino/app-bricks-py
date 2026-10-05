@@ -238,7 +238,7 @@ class SQLStore:
             order_by (Optional[str], optional): ORDER BY clause for sorting results
                 (e.g., "name ASC"). Defaults to None.
             limit (Optional[int], optional): Maximum number of rows to return.
-                Use -1 for no limit. Defaults to -1.
+                Use -1 or None for no limit. Defaults to -1.
 
         Returns:
             list[dict[str, Any]]: List of dictionaries representing the rows, where each
@@ -257,7 +257,7 @@ class SQLStore:
             sql += f" WHERE {condition}"
         if order_by:
             sql += f" ORDER BY {order_by}"
-        if limit > 0:
+        if limit is not None and limit > 0:
             sql += f" LIMIT {limit}"
 
         try:
