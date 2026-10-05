@@ -5,6 +5,7 @@
 import streamlit as st
 from .addons import arduino_header
 
-st.arduino_header = arduino_header
+# Kept for existing apps, an attribute added to a third-party module cannot be declared to pyright
+st.arduino_header = arduino_header  # pyright: ignore[reportAttributeAccessIssue]
 
-__all__ = ["st"]
+__all__ = ["st", "arduino_header"]

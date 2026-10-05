@@ -34,7 +34,13 @@ def arduino_header(title: str) -> "DeltaGenerator":
         st.title("My App")
         st.button("Click me")
 
-    Additionally, custom components like `st.arduino_header()` are provided to streamline Arduino integration.
+    Additionally, custom components like `arduino_header()` are provided to streamline Arduino integration:
+
+        from arduino.app_bricks.streamlit_ui import st, arduino_header
+
+        arduino_header("My App")
+
+    Existing apps can keep calling it as `st.arduino_header()`.
     """
     svg_path = os.path.join(os.path.dirname(__file__), "assets", "RGB-Arduino-Logo-Color-Inline-Loop.svg")
     svg_path = os.path.abspath(svg_path)
