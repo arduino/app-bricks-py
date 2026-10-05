@@ -28,7 +28,7 @@ def _generate_client_id(name: str) -> str:
     return name + "-" + str(uuid.uuid4())
 
 
-def _load_client(client_id: str, username: str | None, password: str | None, topics: list[str] = None) -> mqtt.Client:
+def _load_client(client_id: str, username: str | None, password: str | None, topics: list[str] | None = None) -> mqtt.Client:
     """Load and configure an MQTT client with connection and disconnection handlers.
 
     Args:
@@ -104,8 +104,8 @@ class MQTT:
         broker_port: int,
         username: str | None = None,
         password: str | None = None,
-        topics: list[str] = None,
-        client_id: str = None,
+        topics: list[str] | None = None,
+        client_id: str | None = None,
     ) -> None:
         """Initialize the MQTT Publisher.
 
