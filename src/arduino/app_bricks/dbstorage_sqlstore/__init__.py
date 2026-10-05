@@ -191,19 +191,19 @@ class SQLStore:
                 self._connect()
 
         if create_table:
-            columns = {}
+            column_types: dict[str, str] = {}
             for k, v in data.items():
                 if isinstance(v, int):
-                    columns[k] = "INTEGER"
+                    column_types[k] = "INTEGER"
                 elif isinstance(v, float):
-                    columns[k] = "REAL"
+                    column_types[k] = "REAL"
                 elif isinstance(v, str):
-                    columns[k] = "TEXT"
+                    column_types[k] = "TEXT"
                 elif isinstance(v, bytes):
-                    columns[k] = "BLOB"
+                    column_types[k] = "BLOB"
                 else:
                     raise DBStorageSQLStoreError(f"Unsupported data type for column {k}: {type(v)}")
-            self.create_table(table, columns)
+            self.create_table(table, column_types)
 
         columns = ", ".join(data.keys())
         placeholders = ", ".join(["?"] * len(data))
@@ -222,7 +222,7 @@ class SQLStore:
     def read(
         self,
         table: str,
-        columns: list | None = None,
+        columns: list[str] | None = None,
         condition: str | None = None,
         order_by: str | None = None,
         limit: int | None = -1,
@@ -231,7 +231,7 @@ class SQLStore:
 
         Args:
             table (str): Name of the table to read from.
-            columns (Optional[list], optional): List of column names to select.
+            columns (Optional[list[str]], optional): List of column names to select.
                 If None, selects all columns. Defaults to None.
             condition (Optional[str], optional): WHERE clause for filtering results
                 (e.g., "age > 18"). Defaults to None.
@@ -251,8 +251,8 @@ class SQLStore:
             if not self.conn:
                 self._connect()
 
-        columns = ", ".join(columns) if columns else "*"
-        sql = f"SELECT {columns} FROM {table}"
+        selected = ", ".join(columns) if columns else "*"
+        sql = f"SELECT {selected} FROM {table}"
         if condition:
             sql += f" WHERE {condition}"
         if order_by:
@@ -333,7 +333,7 @@ class SQLStore:
         except sqlite3.Error as e:
             raise DBStorageSQLStoreError(f"Error deleting data from {table}: {e}")
 
-    def execute_sql(self, sql: str, args: tuple | None = None) -> list[dict[str, Any]] | None:
+    def execute_sql(self, sql: str, args: tuple[Any, ...] | None = None) -> list[dict[str, Any]] | None:
         """Execute a raw SQL command.
 
         Args:
@@ -420,8 +420,8 @@ class SQLStore:
             to_remove = [col for col in existing_cols if col not in columns]
             type_changed = [col for col in columns if col in existing_cols and columns[col].upper() != existing_cols[col].upper()]
             logger.debug(f"Columns to add: {to_add}, to remove: {to_remove}, type changed: {type_changed}")
-            dropped = []
-            failed_drop = []
+            dropped: list[str] = []
+            failed_drop: list[str] = []
             # Try to drop columns, handle errors as non-simple
             for col in to_remove:
                 try:
