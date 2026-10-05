@@ -19,7 +19,7 @@ from .daemon_client import (
     EVENT_LASTVALUE_MISSING,
     EVENT_THING_UNAVAILABLE,
 )
-from .objects import CloudObject, CLOUD_WINS  # noqa: F401 (CLOUD_WINS re-exported)
+from .objects import CloudObject, CLOUD_WINS as CLOUD_WINS  # re-exported
 
 logger = Logger("ArduinoCloud")
 
