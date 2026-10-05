@@ -3,8 +3,10 @@
 # SPDX-License-Identifier: MPL-2.0
 
 from dataclasses import dataclass
+import inspect
 import threading
 from collections.abc import Callable
+from typing import TypeIs
 
 from pyzbar.pyzbar import decode, ZBarSymbol, PyZbarError
 import numpy as np
@@ -37,6 +39,21 @@ class Detection:
     content: str
     type: str
     coords: np.ndarray
+
+
+def _expects_list(
+    callback: Callable[[Image, list[Detection]], None] | Callable[[Image, Detection], None],
+) -> TypeIs[Callable[[Image, list[Detection]], None]]:
+    """Tell an on_detect callback taking all detections at once by the annotation of its second parameter."""
+    params = list(inspect.signature(callback).parameters.values())
+    return len(params) >= 2 and params[1].annotation == list[Detection]
+
+
+def _expects_single(
+    callback: Callable[[Image, list[Detection]], None] | Callable[[Image, Detection], None],
+) -> TypeIs[Callable[[Image, Detection], None]]:
+    """Tell an on_detect callback taking one detection per call, the default for any other annotation."""
+    return not _expects_list(callback)
 
 
 @brick
@@ -72,9 +89,9 @@ class CameraCodeDetection:
         self._on_frame_cb = None
         self._on_error_cb = None
 
-        self._on_detect_cb = None
-        self._on_detect_cb_expects_list = False
-        self._on_detect_cb_lock = threading.Lock()  # Synchronizes access to both callback and bool flag
+        self._on_detect_list_cb: Callable[[Image, list[Detection]], None] | None = None
+        self._on_detect_single_cb: Callable[[Image, Detection], None] | None = None
+        self._on_detect_cb_lock = threading.Lock()  # Synchronizes access to both callbacks
 
         self.already_seen_codes: set[str] = set()
 
@@ -110,15 +127,8 @@ class CameraCodeDetection:
             detector.on_detect(on_code_detected)
         """
         with self._on_detect_cb_lock:
-            self._on_detect_cb = callback
-            self._on_detect_cb_expects_list = False
-            if callback is not None:
-                import inspect
-
-                sig = inspect.signature(callback)
-                params = list(sig.parameters.values())
-                if len(params) >= 2 and params[1].annotation == list[Detection]:
-                    self._on_detect_cb_expects_list = True
+            self._on_detect_list_cb = callback if callback is not None and _expects_list(callback) else None
+            self._on_detect_single_cb = callback if callback is not None and _expects_single(callback) else None
 
     def on_frame(self, callback: Callable[[Image], None] | None) -> None:
         """Registers a callback function to be called when a new camera frame is captured.
@@ -200,13 +210,13 @@ class CameraCodeDetection:
 
     def _on_detect(self, frame: Image, detections: list[Detection]) -> None:
         with self._on_detect_cb_lock:
-            if self._on_detect_cb and len(detections) > 0:
+            if len(detections) > 0:
                 try:
-                    if self._on_detect_cb_expects_list:
-                        self._on_detect_cb(frame, detections)
-                    else:
+                    if self._on_detect_list_cb is not None:
+                        self._on_detect_list_cb(frame, detections)
+                    elif self._on_detect_single_cb is not None:
                         for detection in detections:
-                            self._on_detect_cb(frame, detection)
+                            self._on_detect_single_cb(frame, detection)
                 except Exception as e:
                     logger.error(f"Failed to run on_detect callback: {e}")
                     self._on_error(e)
