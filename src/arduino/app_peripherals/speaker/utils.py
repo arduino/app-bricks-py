@@ -5,14 +5,11 @@
 import json
 import os
 import subprocess
+from typing import Any
 
-from ..device_registry import DeviceRegistry
 from .errors import SpeakerOpenError
 
 _MEDIA_CARRIER = "media-carrier"
-
-_speaker_registry = DeviceRegistry()
-"""Tracks the speakers assigned to auto-selected Speaker instances."""
 
 
 def has_media_carrier() -> bool:
@@ -20,64 +17,7 @@ def has_media_carrier() -> bool:
     return os.environ.get("CONFIGURED_CARRIERS") == _MEDIA_CARRIER
 
 
-def _claim_first_available_speaker() -> str:
-    """
-    Find and claim the first plugged speaker not assigned to another instance.
-
-    USB speakers take precedence over jack ones, if supported by the platform.
-    The claim is keyed on the speaker's stable reference so it survives device
-    reordering, and must be released back to _speaker_registry, either
-    explicitly or by binding it to its owner.
-
-    Returns:
-        str: Stable reference of the claimed speaker, either
-            "plughw:CARD=<name>,DEV=<n>" or "pipewire:NODE=<node.name>".
-
-    Raises:
-        SpeakerOpenError: If no speaker is plugged or all are already in use.
-    """
-    from .alsa_speaker import ALSASpeaker
-
-    device = _speaker_registry.select(ALSASpeaker.list_usb_devices, ALSASpeaker.list_jack_devices)
-    if device is None:
-        raise SpeakerOpenError("No available speakers found: either none is plugged or all are already in use")
-    return device
-
-
-def _nth_plugged_speaker(idx: int) -> str:
-    """
-    Find the n-th plugged speaker, regardless of whether it is already in use.
-
-    The index spans USB speakers first, then jack speakers, if supported
-    by the current platform.
-
-    Args:
-        idx (int): Index of the speaker to select (0-based).
-
-    Returns:
-        str: Identifier of the n-th plugged speaker, "usb:X" or "jack:X",
-            where X is the 1-based ordinal index within its type.
-
-    Raises:
-        SpeakerOpenError: If no speaker is plugged at the given index.
-    """
-    usb_spkrs, builtin_spkrs = list_audio_sinks()
-
-    usb_count = len(usb_spkrs)
-    if idx < usb_count:
-        return f"usb:{idx + 1}"
-
-    jack_count = len(builtin_spkrs) if has_media_carrier() else 0
-    if idx - usb_count < jack_count:
-        return f"jack:{idx - usb_count + 1}"
-
-    raise SpeakerOpenError(
-        f"No speaker found at index {idx}: only {usb_count + jack_count} speaker(s) plugged",
-        hint="Connect a speaker (or check the audio configuration) and restart the app.",
-    )
-
-
-def list_audio_sinks() -> tuple[list[dict], list[dict]]:
+def list_audio_sinks() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """
     Discover audio playback devices via pw-dump, partitioned into USB and
     built-in. USB sinks are ordered by ascending PipeWire node id (lowest
@@ -131,7 +71,7 @@ def node_description(node_name: str) -> str | None:
     return None
 
 
-def _pw_dump() -> list:
+def _pw_dump() -> list[dict[str, Any]]:
     """Run pw-dump and parse its JSON output."""
     try:
         result = subprocess.run(
@@ -152,7 +92,7 @@ _HDMI = "hdmi"
 _BUILTIN = "builtin"
 
 
-def _categorize_node(node: dict, devices: dict) -> str:
+def _categorize_node(node: dict[str, Any], devices: dict[Any, dict[str, Any]]) -> str:
     """Categorize an audio node by its transport: USB, Bluetooth, HDMI or built-in."""
     device = devices.get(_props(node).get("device.id"), {})
     device_props = _props(device)
@@ -165,7 +105,7 @@ def _categorize_node(node: dict, devices: dict) -> str:
     return _BUILTIN
 
 
-def _alsa_path_order(node: dict) -> tuple[str, int]:
+def _alsa_path_order(node: dict[str, Any]) -> tuple[str, int]:
     """Boot-stable ordering key: the node's ALSA card path with its numeric device suffix."""
     path = _props(node).get("api.alsa.path", "")
     card, sep, device = path.rpartition(",")
@@ -174,7 +114,7 @@ def _alsa_path_order(node: dict) -> tuple[str, int]:
     return path, -1
 
 
-def _routes_through_hdmi(node: dict, device: dict) -> bool:
+def _routes_through_hdmi(node: dict[str, Any], device: dict[str, Any]) -> bool:
     """Tell whether an audio node is routed through an HDMI port of its device."""
     profile_device = _props(node).get("card.profile.device")
     if profile_device is None:
@@ -189,6 +129,6 @@ def _routes_through_hdmi(node: dict, device: dict) -> bool:
     return False
 
 
-def _props(obj: dict) -> dict:
+def _props(obj: dict[str, Any]) -> dict[str, Any]:
     """Return the properties dict of a pw-dump object, or an empty dict."""
     return obj.get("info", {}).get("props", {})

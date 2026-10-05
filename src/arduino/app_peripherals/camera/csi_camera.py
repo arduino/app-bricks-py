@@ -89,7 +89,7 @@ class CSICamera(BaseCamera):
         self.name = f"csi:{self.csi_path}"  # Override parent name with a human-readable name
         self.logger = logger
 
-        self._cap = None
+        self._cap: cv2.VideoCapture | None = None
 
         self._last_reconnection_attempt = 0.0  # Used for auto-reconnection when _read_frame is called
 
@@ -141,27 +141,28 @@ class CSICamera(BaseCamera):
         """
         camera_ids = self._backend.list_camera_ids()
 
-        if isinstance(device, int) or (isinstance(device, str) and device.isdigit()):
-            ordinal = int(device)
-            if ordinal < 0 or ordinal >= len(camera_ids):
-                raise CameraOpenError(f"Camera index {ordinal} out of range. Available: 0-{len(camera_ids) - 1}")
+        match device:
+            case str() if not device.isdigit():
+                if "CAMERA" not in device.upper():
+                    raise CameraOpenError(f"Invalid camera name: {device}. Expected format like 'CAMERA0'")
 
-            return camera_ids[ordinal]
+                m = re.search(r"(\d+)", device)
+                if not m:
+                    raise CameraOpenError(f"Invalid camera device string: {device}")
+                requested = int(m.group(1))
+                if requested not in camera_ids:
+                    raise CameraOpenError(f"Camera id {requested} not available. Available: {camera_ids}")
+                return requested
 
-        elif isinstance(device, str):
-            if "CAMERA" not in device.upper():
-                raise CameraOpenError(f"Invalid camera name: {device}. Expected format like 'CAMERA0'")
+            case int() | str():
+                ordinal = int(device)
+                if ordinal < 0 or ordinal >= len(camera_ids):
+                    raise CameraOpenError(f"Camera index {ordinal} out of range. Available: 0-{len(camera_ids) - 1}")
 
-            m = re.search(r"(\d+)", device)
-            if not m:
-                raise CameraOpenError(f"Invalid camera device string: {device}")
-            requested = int(m.group(1))
-            if requested not in camera_ids:
-                raise CameraOpenError(f"Camera id {requested} not available. Available: {camera_ids}")
-            return requested
+                return camera_ids[ordinal]
 
-        else:
-            raise CameraOpenError(f"Invalid device identifier: {device}")
+            case _:
+                raise CameraOpenError(f"Invalid device identifier: {device}")
 
     def _open_camera(self) -> None:
         """
@@ -197,7 +198,7 @@ class CSICamera(BaseCamera):
 
             # Verify camera with a test read
             ret, frame = self._cap.read()
-            if not ret or frame is None:
+            if not ret:
                 raise RuntimeError(f"Read test failed for camera {self.name}")
 
             if self.resolution and self.resolution[0] and self.resolution[1]:
@@ -248,8 +249,11 @@ class CSICamera(BaseCamera):
                 self._open_camera()
                 self.logger.info(f"Successfully reopened camera {self.name} at {self.csi_path}")
 
-            ret, frame = self._cap.read()
-            if (not ret and frame is None) or not self._cap.isOpened():
+            cap = self._cap
+            if cap is None:
+                raise CameraReadError("Camera is not open")
+            ret, frame = cap.read()
+            if not ret or not cap.isOpened():
                 raise CameraReadError(f"Invalid frame returned")
 
             return frame

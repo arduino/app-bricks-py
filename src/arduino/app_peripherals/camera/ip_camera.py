@@ -56,7 +56,7 @@ class IPCamera(BaseCamera):
         self.timeout = timeout
         self.logger = logger
 
-        self._cap = None
+        self._cap: cv2.VideoCapture | None = None
 
         self._last_reconnection_attempt = 0.0  # Used for auto-reconnection when _read_frame is called
 
@@ -87,8 +87,8 @@ class IPCamera(BaseCamera):
             self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer to minimize latency
 
             # Test by reading one frame
-            ret, frame = self._cap.read()
-            if not ret and frame is None:
+            ret, _ = self._cap.read()
+            if not ret:
                 raise RuntimeError(f"Read test failed for IP camera at {self.url}")
 
             self._set_status("connected", {"camera_url": self.url})
@@ -156,8 +156,11 @@ class IPCamera(BaseCamera):
                 self._open_camera()
                 self.logger.info(f"Successfully reconnected to IP camera at {self.url}")
 
-            ret, frame = self._cap.read()
-            if (not ret and frame is None) or not self._cap.isOpened():
+            cap = self._cap
+            if cap is None:
+                raise CameraReadError("Camera is not open")
+            ret, frame = cap.read()
+            if not ret or not cap.isOpened():
                 raise CameraReadError(f"Invalid frame returned")
 
             return frame

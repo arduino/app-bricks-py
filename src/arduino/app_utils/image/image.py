@@ -35,16 +35,6 @@ def get_box_color(confid: float) -> str:
     return "#1EFF00"  # Default to Green if out of range
 
 
-def _read(file_path: str) -> bytes:
-    """Read an image from a file path and return a PIL Image object."""
-    try:
-        with open(file_path, "rb") as f:
-            return f.read()
-    except Exception as e:
-        logger.error(f"Error reading image: {e}")
-        return None
-
-
 def get_image_type(image_bytes: bytes | Image.Image) -> str | None:
     """Detect the type of image from bytes or a PIL Image object.
 
@@ -88,7 +78,8 @@ def get_image_bytes(image: str | Image.Image | bytes | None) -> bytes | None:
         elif isinstance(image, bytes):
             return image
         elif isinstance(image, str):
-            return _read(image)
+            with open(image, "rb") as f:
+                return f.read()
     except Exception as e:
         logger.error(f"Error converting image to bytes: {e}")
         return None
@@ -210,17 +201,21 @@ def draw_bounding_boxes(
     return image_box
 
 
-def draw_anomaly_markers(image: Image.Image | bytes, detection: dict, draw: ImageDraw.ImageDraw = None) -> Image.Image | None:
+def draw_anomaly_markers(image: Image.Image | bytes, detection: dict | None, draw: ImageDraw.ImageDraw = None) -> Image.Image | None:
     """Draw bounding boxes on an image using PIL.
 
     The thickness of the box and font size are scaled based on image size.
 
     Args:
         image (Image.Image|bytes): The image to draw on, can be a PIL Image or bytes.
-        detection (dict): A dictionary containing detection results with keys 'class_name', 'bounding_box_xyxy', and
-            'score'.
+        detection (dict | None): A dictionary containing detection results with keys 'class_name', 'bounding_box_xyxy',
+            and 'score', as returned by the anomaly detection brick. None, i.e. no detection result, is accepted so the
+            output of a detection call can be passed straight in: with None or no 'detection' key, None is returned.
         draw (ImageDraw.ImageDraw, optional): An existing ImageDraw object to use. If None, a new one is created.
     """
+    if not detection or "detection" not in detection:
+        return None
+
     if isinstance(image, bytes):
         image_box = Image.open(io.BytesIO(image))
     else:
@@ -233,16 +228,13 @@ def draw_anomaly_markers(image: Image.Image | bytes, detection: dict, draw: Imag
         draw = ImageDraw.Draw(image_box)
 
     max_anomaly_score = detection.get("anomaly_max_score", 0.0)
-
-    if not detection or "detection" not in detection:
-        return None
-    detection = detection["detection"]
+    anomalies = detection["detection"]
 
     # Scale font size and box thickness based on image size
     ref_dim = max(image_box.size)
     box_thickness = max(1, int(ref_dim / 400))
 
-    for i, obj_det in enumerate(detection):
+    for i, obj_det in enumerate(anomalies):
         if "class_name" not in obj_det or "bounding_box_xyxy" not in obj_det or "score" not in obj_det:
             continue
 
