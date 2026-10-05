@@ -58,7 +58,7 @@ def test_auto_selection_skips_explicitly_selected_cameras(two_v4l_cameras):
 
 
 def test_explicit_selection_reuses_a_camera_already_in_use(two_v4l_cameras):
-    """Explicit selection tolerates reuse: contention only surfaces at start()."""
+    """Explicit selection tolerates reuse: the camera is shared with the instance holding it."""
     cam1 = Camera(0)
     cam2 = Camera(0)
     assert cam2.v4l_path == cam1.v4l_path
