@@ -11,8 +11,9 @@ from dataclasses import dataclass
 from typing import Optional, Union, Any
 from collections.abc import Iterator, Sequence, Callable
 
-from langchain_core.language_models import BaseChatModel
+from langchain_core.language_models import BaseChatModel, LanguageModelInput
 from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage, AIMessage, AIMessageChunk, ToolCall, message_chunk_to_message
+from langchain_core.runnables import Runnable
 from langchain_core.tools import BaseTool, StructuredTool
 
 from arduino.app_utils import brick
@@ -177,7 +178,7 @@ class CloudLLM:
         if self._temperature is not None:
             model_kwargs["temperature"] = self._temperature
 
-        self._model = model_factory(
+        base_model = model_factory(
             model,
             api_key=self._api_key,
             timeout=self._timeout,
@@ -186,9 +187,10 @@ class CloudLLM:
 
         # Keep a reference to the unbound model so a reasoning-capable client can
         # be derived lazily (see `_get_reasoning_model`).
-        self._base_model = self._model
-        self._reasoning_model = None
-        self._reasoning_effort = None
+        self._base_model: BaseChatModel = base_model
+        self._model: BaseChatModel | Runnable[LanguageModelInput, AIMessage] = base_model
+        self._reasoning_model: BaseChatModel | Runnable[LanguageModelInput, AIMessage] | None = None
+        self._reasoning_effort: ReasoningEffort | str | int | None = None
 
         if self._tools and len(self._tools) > 0:
             logger.info(f"Binding {len(self._tools)} tool(s) to the model.")
@@ -206,7 +208,7 @@ class CloudLLM:
             # through the reasoning flow: ``_get_reasoning_model`` derives its own client from
             # the untouched ``_base_model``, enables the Responses API on it (which does accept
             # tools while reasoning) and binds the tools itself.
-            tools_model = self._model
+            tools_model = base_model
             if isinstance(tools_model, ChatOpenAIReasoning) and self._openai_supports_effort_none(getattr(tools_model, "model_name", "")):
                 tools_model = tools_model.model_copy(update={"reasoning_effort": "none"})
             self._model = tools_model.bind_tools(tools=self._tools)
@@ -412,14 +414,15 @@ class CloudLLM:
 
         return str(content)
 
-    def get_client(self) -> BaseChatModel:
+    def get_client(self) -> BaseChatModel | Runnable[LanguageModelInput, AIMessage]:
         """Returns the underlying LangChain model instance.
 
         This allows for advanced users to access the full capabilities of the model
         directly, such as calling `generate()` or `stream()` with custom message formats.
 
         Returns:
-            BaseChatModel: The LangChain chat model instance used internally.
+            BaseChatModel | Runnable[LanguageModelInput, AIMessage]: The LangChain chat model
+                used internally, or the `Runnable` binding it to the registered tools.
         """
         return self._model
 
@@ -628,7 +631,9 @@ class CloudLLM:
                 full_response = "".join(assistant_chunks)
                 self._history.add_messages([AIMessage(content=full_response)])
 
-    def _get_reasoning_model(self, reasoning_effort: Union["ReasoningEffort", str, int, None] = None) -> BaseChatModel:
+    def _get_reasoning_model(
+        self, reasoning_effort: Union["ReasoningEffort", str, int, None] = None
+    ) -> BaseChatModel | Runnable[LanguageModelInput, AIMessage]:
         """Returns a reasoning-capable client that streams reasoning tokens.
 
         The client is derived lazily from the base model depending on the provider:
@@ -649,7 +654,8 @@ class CloudLLM:
                 default.
 
         Returns:
-            BaseChatModel: A model configured to stream reasoning tokens.
+            BaseChatModel | Runnable[LanguageModelInput, AIMessage]: A model configured to
+                stream reasoning tokens, or the `Runnable` binding it to the registered tools.
 
         Raises:
             RuntimeError: If the underlying model does not support reasoning streaming.
