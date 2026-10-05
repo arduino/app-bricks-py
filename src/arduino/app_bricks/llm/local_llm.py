@@ -24,6 +24,9 @@ logger = Logger("LargeLanguageModel")
 LIST_MODELS_MAX_ATTEMPTS = 10
 LIST_MODELS_RETRY_DELAY_S = 1.0
 
+# Local runners don't check the API key, but the OpenAI clients require one.
+_RUNNER_API_KEY = "api_key"
+
 
 @brick
 class LargeLanguageModel(CloudLLM):
@@ -119,7 +122,7 @@ class LargeLanguageModel(CloudLLM):
         model = f"{CloudModelProvider.OPENAI}:{model}"
 
         super().__init__(
-            api_key="api_key",
+            api_key=_RUNNER_API_KEY,
             model=model,
             system_prompt=system_prompt,
             temperature=temperature,
@@ -131,6 +134,7 @@ class LargeLanguageModel(CloudLLM):
         )
         self._model_name = local_model_name
         self._runner_host = host
+        self._runner_base_url = base_url
 
         available_models = self.list_models()
         if plain_model_name not in available_models:
@@ -153,7 +157,7 @@ class LargeLanguageModel(CloudLLM):
         for attempt in range(1, LIST_MODELS_MAX_ATTEMPTS + 1):
             try:
                 # Retries are handled here (not by the OpenAI client) so the runner has time to come up.
-                with OpenAI(base_url=self._model.openai_api_base, api_key=self._model.openai_api_key, max_retries=0) as openai_client:
+                with OpenAI(base_url=self._runner_base_url, api_key=_RUNNER_API_KEY, max_retries=0) as openai_client:
                     models_response = openai_client.models.list()
                     return [model.id for model in models_response.data]
             except APIConnectionError as e:
