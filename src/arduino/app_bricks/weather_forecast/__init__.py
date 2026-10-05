@@ -5,6 +5,7 @@
 import requests
 import json
 from dataclasses import dataclass
+from typing import Any
 import importlib.resources
 
 from arduino.app_utils import brick
@@ -126,7 +127,7 @@ class WeatherForecast:
             category=weather_data[weather_code]["category"],
         )
 
-    def process(self, item: dict) -> WeatherData | dict:
+    def process(self, item: dict[str, Any]) -> WeatherData | dict[str, Any]:
         """Process dictionary input to get weather forecast.
 
         This method checks if the item is a dictionary with latitude and longitude or city name.
@@ -134,10 +135,10 @@ class WeatherForecast:
         If it is a dictionary with city name, it retrieves the weather forecast by city.
 
         Args:
-            item (dict): Dictionary with either "city" key or "latitude"/"longitude" keys.
+            item (dict[str, Any]): Dictionary with either "city" key or "latitude"/"longitude" keys.
 
         Returns:
-            WeatherData | dict: WeatherData object if valid input provided, empty dict if input format is invalid.
+            WeatherData | dict[str, Any]: WeatherData object if valid input provided, empty dict if input format is invalid.
 
         Raises:
             CityLookupError: If the city is not found.
