@@ -149,7 +149,7 @@ class CloudLLM:
         # Model configuration
         self._system_prompt = system_prompt
         self._temperature = temperature
-        self._validate_reasoning_effort(reasoning_effort)
+        self._parse_reasoning_effort(reasoning_effort)
         self._reasoning_effort_default = reasoning_effort
         self._max_tool_loops = max_tool_loops
         self._timeout = timeout
@@ -657,21 +657,21 @@ class CloudLLM:
         if self._reasoning_model is not None and self._reasoning_effort == reasoning_effort:
             return self._reasoning_model
 
-        self._validate_reasoning_effort(reasoning_effort)
+        effort = self._parse_reasoning_effort(reasoning_effort)
 
         from .reasoning import ChatOpenAIReasoning
 
         base_model = self._base_model
         if isinstance(base_model, ChatOpenAIReasoning):
             update: dict[str, Any] = {"use_responses_api": True, "output_version": "responses/v1"}
-            update.update(self._openai_effort_update(base_model, reasoning_effort))
+            update.update(self._openai_effort_update(base_model, effort))
             reasoning_model = base_model.model_copy(update=update)
         elif self._is_google_model(base_model):
             update = {"include_thoughts": True}
-            update.update(self._gemini_effort_update(base_model, reasoning_effort))
+            update.update(self._gemini_effort_update(base_model, effort))
             reasoning_model = base_model.model_copy(update=update)
         elif self._is_anthropic_model(base_model):
-            reasoning_model = base_model.model_copy(update=self._anthropic_effort_update(base_model, reasoning_effort))
+            reasoning_model = base_model.model_copy(update=self._anthropic_effort_update(base_model, effort))
         else:
             raise RuntimeError("Reasoning streaming is only supported for OpenAI-compatible, Google Gemini, and Anthropic Claude models.")
 
@@ -702,8 +702,8 @@ class CloudLLM:
             raise ValueError(f"Unsupported reasoning effort '{reasoning_effort}'. Expected one of: {allowed}, or an integer token budget.")
 
     @staticmethod
-    def _validate_reasoning_effort(reasoning_effort: Union["ReasoningEffort", str, int, None]) -> None:
-        """Guards the ``reasoning_effort`` argument to avoid level/budget confusion.
+    def _parse_reasoning_effort(reasoning_effort: Union["ReasoningEffort", str, int, None]) -> ReasoningEffort | int | None:
+        """Validates and normalizes the ``reasoning_effort`` argument to avoid level/budget confusion.
 
         Accepted forms:
         - ``None`` (use the model default),
@@ -717,29 +717,33 @@ class CloudLLM:
         Args:
             reasoning_effort (ReasoningEffort | str | int | None): The value to validate.
 
+        Returns:
+            ReasoningEffort | int | None: The effort level, the integer token budget, or ``None``.
+
         Raises:
             ValueError: If a bool is passed, a numeric string is passed, or a string
                 is not a supported effort level.
             TypeError: If the value is not a ``ReasoningEffort``, ``str``, ``int``, or ``None``.
         """
-        if reasoning_effort is None:
-            return
-        if isinstance(reasoning_effort, bool):
-            raise ValueError("reasoning_effort must be an effort level (str) or an int token budget, not a bool.")
-        if isinstance(reasoning_effort, int):
-            return
-        if isinstance(reasoning_effort, str):
-            if reasoning_effort.strip().lstrip("-").isdigit():
+        match reasoning_effort:
+            case None:
+                return None
+            case bool():
+                raise ValueError("reasoning_effort must be an effort level (str) or an int token budget, not a bool.")
+            case int():
+                return reasoning_effort
+            case str() if reasoning_effort.strip().lstrip("-").isdigit():
                 allowed = ", ".join(e.value for e in ReasoningEffort)
                 raise ValueError(
                     f"reasoning_effort '{reasoning_effort}' is a numeric string. Pass an int "
                     f"(e.g. {int(reasoning_effort)}) for a token budget, or a level ({allowed})."
                 )
-            CloudLLM._resolve_effort_level(reasoning_effort)
-            return
-        raise TypeError(f"reasoning_effort must be ReasoningEffort, str, int, or None, got {type(reasoning_effort).__name__}.")
+            case str():
+                return CloudLLM._resolve_effort_level(reasoning_effort)
+            case _:
+                raise TypeError(f"reasoning_effort must be ReasoningEffort, str, int, or None, got {type(reasoning_effort).__name__}.")
 
-    def _openai_effort_update(self, model: BaseChatModel, reasoning_effort: Union["ReasoningEffort", str, int, None]) -> dict[str, Any]:
+    def _openai_effort_update(self, model: BaseChatModel, reasoning_effort: ReasoningEffort | int | None) -> dict[str, Any]:
         """Builds the model-copy update applying reasoning effort for OpenAI models.
 
         Since reasoning streaming goes through the Responses API, effort and the
@@ -760,12 +764,12 @@ class CloudLLM:
 
         Args:
             model (BaseChatModel): The base OpenAI-compatible model.
-            reasoning_effort (ReasoningEffort | str | int | None): Effort level or budget.
+            reasoning_effort (ReasoningEffort | int | None): Parsed effort level or budget.
 
         Returns:
             dict[str, Any]: Fields to apply via ``model_copy``.
         """
-        if isinstance(reasoning_effort, int) and not isinstance(reasoning_effort, bool):
+        if isinstance(reasoning_effort, int):
             extra_body = dict(getattr(model, "extra_body", None) or {})
             extra_body["thinking_budget_tokens"] = reasoning_effort
             chat_template_kwargs = dict(extra_body.get("chat_template_kwargs") or {})
@@ -775,7 +779,7 @@ class CloudLLM:
 
         reasoning: dict[str, Any] = {"summary": "auto"}
         if reasoning_effort is not None:
-            reasoning["effort"] = self._resolve_effort_level(reasoning_effort).value
+            reasoning["effort"] = reasoning_effort.value
         return {"reasoning": reasoning}
 
     @staticmethod
@@ -805,7 +809,7 @@ class CloudLLM:
         minor = int(match.group(2) or 0)
         return major > 5 or (major == 5 and minor >= 1)
 
-    def _gemini_effort_update(self, model: BaseChatModel, reasoning_effort: Union["ReasoningEffort", str, int, None]) -> dict[str, Any]:
+    def _gemini_effort_update(self, model: BaseChatModel, reasoning_effort: ReasoningEffort | int | None) -> dict[str, Any]:
         """Builds the model-copy update applying reasoning effort for Gemini models.
 
         An integer maps directly to ``thinking_budget`` (``-1`` dynamic, ``0`` off,
@@ -815,25 +819,23 @@ class CloudLLM:
 
         Args:
             model (BaseChatModel): The base Gemini model.
-            reasoning_effort (ReasoningEffort | str | int | None): Effort level or budget.
+            reasoning_effort (ReasoningEffort | int | None): Parsed effort level or budget.
 
         Returns:
             dict[str, Any]: Fields to apply via ``model_copy``.
         """
         if reasoning_effort is None:
             return {}
-        if isinstance(reasoning_effort, int) and not isinstance(reasoning_effort, bool):
+        if isinstance(reasoning_effort, int):
             return {"thinking_budget": reasoning_effort}
-
-        level = self._resolve_effort_level(reasoning_effort)
 
         if self._gemini_supports_thinking_level(getattr(model, "model", "") or ""):
             # ``reasoning_effort`` is the field name (serialization alias ``thinking_level``);
             # ``model_copy(update=...)`` requires the field name, not the alias.
-            return {"reasoning_effort": level.value}
-        return {"thinking_budget": EFFORT_TO_BUDGET[level]}
+            return {"reasoning_effort": reasoning_effort.value}
+        return {"thinking_budget": EFFORT_TO_BUDGET[reasoning_effort]}
 
-    def _anthropic_effort_update(self, model: BaseChatModel, reasoning_effort: Union["ReasoningEffort", str, int, None]) -> dict[str, Any]:
+    def _anthropic_effort_update(self, model: BaseChatModel, reasoning_effort: ReasoningEffort | int | None) -> dict[str, Any]:
         """Builds the model-copy update applying reasoning effort for Anthropic models.
 
         Anthropic exposes reasoning via extended thinking, but the API differs by model
@@ -864,33 +866,32 @@ class CloudLLM:
 
         Args:
             model (BaseChatModel): The base Anthropic model.
-            reasoning_effort (ReasoningEffort | str | int | None): Effort level or budget.
+            reasoning_effort (ReasoningEffort | int | None): Parsed effort level or budget.
 
         Returns:
             dict[str, Any]: Fields to apply via ``model_copy``.
         """
         model_name = getattr(model, "model", "") or ""
-        is_budget = isinstance(reasoning_effort, int) and not isinstance(reasoning_effort, bool)
 
         # An explicit 0 disables thinking; a negative budget defers the amount to the model.
-        if is_budget and reasoning_effort == 0:
+        if isinstance(reasoning_effort, int) and reasoning_effort == 0:
             return {}
-        if is_budget and reasoning_effort < 0:
+        if isinstance(reasoning_effort, int) and reasoning_effort < 0:
             return self._anthropic_adaptive_update(model_name, level=None)
 
         # Newer models only accept adaptive thinking guided by ``output_config.effort``; an
         # explicit token budget is not supported, so only a discrete level (if any) is used.
         if self._anthropic_requires_adaptive(model_name):
-            level = None if (is_budget or reasoning_effort is None) else self._resolve_effort_level(reasoning_effort)
+            level = reasoning_effort if isinstance(reasoning_effort, ReasoningEffort) else None
             return self._anthropic_adaptive_update(model_name, level)
 
         # Legacy models use enabled thinking with an explicit token budget.
         if reasoning_effort is None:
             budget = ANTHROPIC_DEFAULT_THINKING_BUDGET
-        elif is_budget:
+        elif isinstance(reasoning_effort, int):
             budget = max(reasoning_effort, ANTHROPIC_MIN_THINKING_BUDGET)
         else:
-            budget = max(EFFORT_TO_BUDGET[self._resolve_effort_level(reasoning_effort)], ANTHROPIC_MIN_THINKING_BUDGET)
+            budget = max(EFFORT_TO_BUDGET[reasoning_effort], ANTHROPIC_MIN_THINKING_BUDGET)
 
         update: dict[str, Any] = {"thinking": {"type": "enabled", "budget_tokens": budget}}
         if self._temperature is not None:
