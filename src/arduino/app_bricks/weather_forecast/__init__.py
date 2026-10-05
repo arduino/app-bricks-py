@@ -127,30 +127,31 @@ class WeatherForecast:
             category=weather_data[weather_code]["category"],
         )
 
-    def process(self, item: dict[str, Any]) -> WeatherData | dict[str, Any]:
+    def process(self, item: dict[str, Any]) -> WeatherData:
         """Process dictionary input to get weather forecast.
 
-        This method checks if the item is a dictionary with latitude and longitude or city name.
-        If it is a dictionary with latitude and longitude, it retrieves the weather forecast by coordinates.
-        If it is a dictionary with city name, it retrieves the weather forecast by city.
+        If the dictionary has latitude and longitude, it retrieves the weather forecast by coordinates.
+        Otherwise, if it has a city name, it retrieves the weather forecast by city.
 
         Args:
-            item (dict[str, Any]): Dictionary with either "city" key or "latitude"/"longitude" keys.
+            item (dict[str, Any]): Dictionary with either "latitude"/"longitude" keys or "city" key.
 
         Returns:
-            WeatherData | dict[str, Any]: WeatherData object if valid input provided, empty dict if input format is invalid.
+            WeatherData: Weather forecast with code, description, and category.
 
         Raises:
-            CityLookupError: If the city is not found.
-            WeatherForecastLookupError: If the weather forecast cannot be retrieved.
+            ValueError: If the input is not a dictionary or has neither "latitude"/"longitude" nor "city".
+            RuntimeError: If city lookup or weather data retrieval fails.
         """
         match item:
             case {"latitude": latitude, "longitude": longitude}:
                 return self.get_forecast_by_coords(latitude, longitude)
             case {"city": city}:
                 return self.get_forecast_by_city(city)
+            case dict():
+                raise ValueError("Input dict must contain 'latitude' and 'longitude', or 'city'")
             case _:
-                return {}
+                raise ValueError("Input must be a dict")
 
 
 class CityLookupError(Exception):

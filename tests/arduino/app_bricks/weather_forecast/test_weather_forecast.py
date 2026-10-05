@@ -53,7 +53,15 @@ def test_process_dispatches_on_the_item_keys(get, item, latitude, longitude):
     assert get.call_args.kwargs["params"]["longitude"] == longitude
 
 
-@pytest.mark.parametrize("item", [{}, {"latitude": "45.07"}, "Turin", None])
-def test_process_returns_an_empty_dict_on_an_unsupported_item(get, item):
-    assert WeatherForecast().process(item) == {}
+@pytest.mark.parametrize("item", [{}, {"latitude": "45.07"}, {"longitude": "7.68"}])
+def test_process_rejects_a_dict_without_coordinates_or_city(get, item):
+    with pytest.raises(ValueError, match="Input dict must contain 'latitude' and 'longitude', or 'city'"):
+        WeatherForecast().process(item)
+    get.assert_not_called()
+
+
+@pytest.mark.parametrize("item", ["Turin", None, 42])
+def test_process_rejects_a_non_dict_item(get, item):
+    with pytest.raises(ValueError, match="Input must be a dict"):
+        WeatherForecast().process(item)
     get.assert_not_called()
