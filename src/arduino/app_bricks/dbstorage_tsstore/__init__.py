@@ -56,6 +56,8 @@ class _InfluxDBHandler:
         self.host = host
         self.port = port
         infra = self.load_default_infra()
+        if infra is None:
+            raise TimeSeriesStoreError("Could not find the brick compose file.")
         env_dict = infra["services"]["dbstorage-influx"]["environment"]
         self.url = f"http://{self.host}:{self.port}"
         # Resolved as compose does, so the app gets the token the container was set up with
@@ -77,7 +79,7 @@ class _InfluxDBHandler:
         with the parameters specified during initialization.
 
         Raises:
-            TimeSeriesStoreError: If there is an error connecting to the InfluxDB server.
+            TimeSeriesStoreError: If there is an error connecting to the InfluxDB server or its bucket is missing.
         """
         try:
             with InfluxDBClient(url=self.url, token=self.token, org=self.org) as client:
@@ -86,6 +88,8 @@ class _InfluxDBHandler:
                 self.query_api = client.query_api()
                 # Update data retention of the bucket
                 bucket = client.buckets_api().find_bucket_by_name(self.bucket)
+                if bucket is None:
+                    raise TimeSeriesStoreError(f"Bucket {self.bucket} not found.")
                 bucket.retention_rules = [BucketRetentionRules(type="expire", every_seconds=_convert_days_to_seconds(self.retention_days))]
                 client.buckets_api().update_bucket(bucket)
             logger.info(f"Connected to InfluxDB: {self.url}")
@@ -179,7 +183,8 @@ class TimeSeriesStore(_InfluxDBHandler):
                 InfluxDB bucket. Defaults to 7.
 
         Raises:
-            TimeSeriesStoreError: If INFLUXDB_ADMIN_TOKEN is not set and the brick compose file declares no default for it.
+            TimeSeriesStoreError: If the brick compose file is missing, or INFLUXDB_ADMIN_TOKEN is not set and the
+                brick compose file declares no default for it.
         """
         super().__init__(host, port, retention_days)
 

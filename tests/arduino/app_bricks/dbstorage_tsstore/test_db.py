@@ -306,6 +306,18 @@ def influx() -> Iterator[MagicMock]:
         yield client_class.return_value.__enter__.return_value
 
 
+def test_store_rejects_a_missing_compose_file() -> None:
+    with patch("arduino.app_bricks.dbstorage_tsstore.get_brick_compose_file", return_value=None):
+        with pytest.raises(TimeSeriesStoreError, match=r"^Could not find the brick compose file\.$"):
+            TimeSeriesStore()
+
+
+def test_start_rejects_a_missing_bucket(store: TimeSeriesStore, influx: MagicMock) -> None:
+    influx.buckets_api.return_value.find_bucket_by_name.return_value = None
+    with pytest.raises(TimeSeriesStoreError, match=r"^Error connecting to InfluxDB: Bucket arduinostorage not found\.$"):
+        store.start()
+
+
 def test_stop_before_start_does_nothing(store: TimeSeriesStore) -> None:
     store.stop()
 
