@@ -116,7 +116,7 @@ The Brick is initialized with the following parameters:
 | `temperature` | `float` \| `None` | `0.7` | Controls randomness. Lower values are more deterministic; higher values are more varied. |
 | `max_tokens` | `int` | `512` | Maximum number of tokens to generate in the response. |
 | `timeout` | `int` \| `None` | `None` | Maximum time in seconds to wait for a response. |
-| `tools` | `list[Callable]` | `None` | Optional tool functions the model can call, declared with the `@tool` decorator exported by the Brick. |
+| `tools` | `Sequence[ToolLike]` \| `None` | `None` | Optional tools the model can call: `BaseTool` objects declared with the `@tool` decorator exported by the Brick, or plain callables (auto-wrapped into tools). |
 | `model` | `str` \| `None` | App Lab configured model | Local model identifier configured for `arduino:vlm` in App Lab. |
 | `**kwargs` | `dict` | `{}` | Additional keyword arguments passed to the underlying model constructor. |
 

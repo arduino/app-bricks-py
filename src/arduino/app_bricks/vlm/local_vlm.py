@@ -5,6 +5,7 @@
 from langchain_core.language_models import BaseChatModel
 
 from arduino.app_bricks.cloud_llm import ReasoningEffort
+from arduino.app_bricks.cloud_llm.cloud_llm import ToolLike
 from arduino.app_bricks.cloud_llm.memory import MessagePersistence
 from arduino.app_bricks.llm import LargeLanguageModel
 from arduino.app_utils import Logger, brick
@@ -12,7 +13,7 @@ from arduino.app_internal.core import get_brick_config, get_brick_configured_mod
 
 import openai
 from typing import Any
-from collections.abc import Iterator, Callable, Sequence
+from collections.abc import Iterator, Sequence
 
 logger = Logger("VisionLanguageModel")
 
@@ -32,14 +33,14 @@ class VisionLanguageModel(LargeLanguageModel):
         temperature: float | None = 0.7,
         max_tokens: int = 512,
         timeout: int | None = None,
-        tools: list[Callable[..., Any]] = None,
-        model: str = None,
+        tools: Sequence[ToolLike] | None = None,
+        model: str | None = None,
         **kwargs: Any,
     ) -> None:
         """Initializes the VisionLanguageModel brick with the specified provider and configuration.
 
         Args:
-            model (str): The specific model name or identifier to use (e.g., "genie:qwen3-4b").
+            model (str | None): The specific model name or identifier to use (e.g., "genie:qwen3-4b").
                 If not provided, model will be determined from app configuration or default brick configuration.
             system_prompt (str): A system-level instruction that defines the AI's persona
                 and constraints (e.g., "You are a helpful assistant"). Defaults to empty.
@@ -50,7 +51,8 @@ class VisionLanguageModel(LargeLanguageModel):
                 Defaults to 256.
             timeout (Optional[int]): The maximum duration in seconds to wait for a response before
                 timing out. Defaults to None.
-            tools (List[Callable[..., Any]]): A list of callable tool functions to register. Defaults to None.
+            tools (Sequence[ToolLike] | None): BaseTool objects (from @tool or MCPClient.get_tools()) or plain
+                callables (auto-wrapped into tools). Defaults to None.
             **kwargs: Additional arguments passed to the model constructor
         """
 
