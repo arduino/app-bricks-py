@@ -2,11 +2,12 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import HumanMessage
+from langchain_core.language_models import BaseChatModel, LanguageModelInput
+from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.runnables import Runnable
 
 import time
-from typing import Any, NoReturn
+from typing import Any, NoReturn, Self
 
 from arduino.app_bricks.cloud_llm import CloudLLM, CloudModelProvider
 from arduino.app_bricks.cloud_llm.cloud_llm import DEFAULT_MEMORY, ToolLike
@@ -175,7 +176,7 @@ class LargeLanguageModel(CloudLLM):
         self,
         max_messages: int = DEFAULT_MEMORY,
         persistence: bool | MessagePersistence | None = None,
-    ) -> "LargeLanguageModel":
+    ) -> Self:
         """Enables conversational memory for this instance.
 
         Configures the Brick to retain a window of previous messages, allowing the
@@ -190,18 +191,19 @@ class LargeLanguageModel(CloudLLM):
                 control.
 
         Returns:
-            LargeLanguageModel: The current instance, allowing for method chaining.
+            Self: The current instance, allowing for method chaining.
         """
         return super().with_memory(max_messages=max_messages, persistence=persistence)
 
-    def get_client(self) -> BaseChatModel:
+    def get_client(self) -> BaseChatModel | Runnable[LanguageModelInput, AIMessage]:
         """Returns the underlying LangChain model instance.
 
         This allows for advanced users to access the full capabilities of the model
         directly, such as calling `generate()` or `stream()` with custom message formats.
 
         Returns:
-            BaseChatModel: The LangChain chat model instance used internally.
+            BaseChatModel | Runnable[LanguageModelInput, AIMessage]: The LangChain chat model
+                used internally, or the `Runnable` binding it to the registered tools.
         """
         return self._model
 
