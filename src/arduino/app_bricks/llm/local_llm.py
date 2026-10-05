@@ -263,8 +263,6 @@ class LargeLanguageModel(CloudLLM):
         """
         try:
             # Canary call to force the model load and ensure the runner is responsive.
-            if self._base_model is None:
-                raise RuntimeError("Internal model is not initialized. Please check the configuration.")
             self._base_model.invoke([HumanMessage(content="ping")], max_tokens=1)
         except (BadRequestError, APIError) as e:
             self._handle_api_error(logger, e)
@@ -322,7 +320,7 @@ class LargeLanguageModel(CloudLLM):
                 if "</think>" in chunk:
                     in_thinking = False
                     chunk = chunk.split("</think>")[-1]  # Take content after </think>
-                    if chunk is not None and chunk.strip() != "":
+                    if chunk.strip() != "":
                         yield chunk
                 continue
 
