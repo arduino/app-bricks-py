@@ -274,7 +274,6 @@ class CloudLLM:
             self._model_loaded = True
 
         messages = self._history.get_messages()
-        message = None
         if images is not None and len(images) > 0:
             # Images are placed before the text: vision models are trained on
             # image-first ordering, and text-first degrades instruction
@@ -289,9 +288,8 @@ class CloudLLM:
         else:
             message = HumanMessage(content=user_input)
 
-        if message is not None:
-            messages.append(message)
-            self._history.add_messages([message])
+        messages.append(message)
+        self._history.add_messages([message])
 
         return messages
 
@@ -459,9 +457,6 @@ class CloudLLM:
             ValueError: If `reasoning_effort` is not a supported level or budget.
             TypeError: If `reasoning_effort` is not a ReasoningEffort, str, int, or None.
         """
-        if self._model is None:
-            raise RuntimeError("Model has not been declared properly. Please check the model configuration.")
-
         try:
             return self._chat_invoke(message, images, reasoning_effort)
         except (ValueError, TypeError):
@@ -580,8 +575,6 @@ class CloudLLM:
             RuntimeError: If the internal chain is not initialized or if the API request fails.
             AlreadyGenerating: If a streaming session is already active.
         """
-        if self._model is None:
-            raise RuntimeError("Model has not been declared properly. Please check the model configuration.")
         if self._keep_streaming.is_set():
             raise AlreadyGenerating("A streaming response is already in progress. Please stop it before starting a new one.")
         assistant_chunks: list[str] = []
