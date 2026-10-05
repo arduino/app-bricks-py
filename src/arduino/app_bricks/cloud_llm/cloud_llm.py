@@ -8,7 +8,7 @@ import os
 import re
 import threading
 from dataclasses import dataclass
-from typing import Optional, Union, Any
+from typing import Optional, Self, Union, Any
 from collections.abc import Iterator, Sequence, Callable
 
 from langchain_core.language_models import BaseChatModel, LanguageModelInput
@@ -222,7 +222,7 @@ class CloudLLM:
         self,
         max_messages: int = DEFAULT_MEMORY,
         persistence: bool | MessagePersistence | None = None,
-    ) -> "CloudLLM":
+    ) -> Self:
         """Enables conversational memory for this instance.
 
         Configures the Brick to retain a window of previous messages, allowing the
@@ -238,7 +238,7 @@ class CloudLLM:
                 `SQLMessagePersistence(thread_id="user-42")`) for full control.
 
         Returns:
-            CloudLLM: The current instance, allowing for method chaining.
+            Self: The current instance, allowing for method chaining.
         """
         if persistence is True:
             store: MessagePersistence | None = SQLMessagePersistence()
