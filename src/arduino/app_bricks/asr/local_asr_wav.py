@@ -19,7 +19,7 @@ from .local_asr import (
 
 class InMemoryAudioSource:
     """
-    Audio source wrapping WAV bytes or a raw PCM ndarray.
+    Audio source wrapping WAV bytes or bytearray, or a raw PCM ndarray.
 
     Exposes only the subset of BaseMicrophone attributes/methods that ASR uses,
     so it can be used uniformly. ``capture()`` raises ``AudioSourceExhausted``
@@ -30,26 +30,27 @@ class InMemoryAudioSource:
     _DEFAULT_CHANNELS = 1
     _DEFAULT_BUFFER_SIZE = 1024
 
-    def __init__(self, samples: bytes | np.ndarray) -> None:
-        if isinstance(samples, (bytes, bytearray)):
-            with wave.open(io.BytesIO(bytes(samples)), "rb") as wf:
-                self.sample_rate = wf.getframerate()
-                self.channels = wf.getnchannels()
-                sample_width = wf.getsampwidth()
-                frames = wf.readframes(wf.getnframes())
-            # Derive numpy dtype from WAV sample width (signed int, little-endian — WAV convention)
-            dtype_map = {1: np.uint8, 2: np.int16, 4: np.int32}
-            if sample_width not in dtype_map:
-                raise ValueError(f"Unsupported WAV sample width: {sample_width}")
-            self.format = np.dtype(dtype_map[sample_width])
-            self._samples = np.frombuffer(frames, dtype=self.format)
-        elif isinstance(samples, np.ndarray):
-            self.sample_rate = self._DEFAULT_SAMPLING_RATE
-            self.channels = self._DEFAULT_CHANNELS
-            self.format = samples.dtype
-            self._samples = samples
-        else:
-            raise TypeError(f"Unsupported in-memory audio source type: {type(samples)!r}")
+    def __init__(self, samples: bytes | bytearray | np.ndarray) -> None:
+        match samples:
+            case bytes() | bytearray():
+                with wave.open(io.BytesIO(bytes(samples)), "rb") as wf:
+                    self.sample_rate = wf.getframerate()
+                    self.channels = wf.getnchannels()
+                    sample_width = wf.getsampwidth()
+                    frames = wf.readframes(wf.getnframes())
+                # Derive numpy dtype from WAV sample width (signed int, little-endian — WAV convention)
+                dtype_map = {1: np.uint8, 2: np.int16, 4: np.int32}
+                if sample_width not in dtype_map:
+                    raise ValueError(f"Unsupported WAV sample width: {sample_width}")
+                self.format: np.dtype = np.dtype(dtype_map[sample_width])
+                self._samples = np.frombuffer(frames, dtype=self.format)
+            case np.ndarray():
+                self.sample_rate = self._DEFAULT_SAMPLING_RATE
+                self.channels = self._DEFAULT_CHANNELS
+                self.format = samples.dtype
+                self._samples = samples
+            case _:
+                raise TypeError(f"Unsupported in-memory audio source type: {type(samples)!r}")
 
         self.format_is_packed = False
         self.buffer_size = self._DEFAULT_BUFFER_SIZE
@@ -114,12 +115,14 @@ class WAVAutomaticSpeechRecognition(BaseASR):
         Note:
             Only one transcription can be active at a time.
         """
-        super().__init__(source=wav, language=language, translate=translate)  # type: ignore[arg-type]
+        super().__init__(source=wav, language=language, translate=translate)
 
-    def _build_source(self, source: object) -> tuple:
-        if not isinstance(source, (np.ndarray, bytes, bytearray)):
-            raise TypeError(f"Unsupported source type: {type(source)!r}")
-        return InMemoryAudioSource(source), False
+    def _build_source(self, source: object) -> tuple[InMemoryAudioSource, bool]:
+        match source:
+            case bytes() | bytearray() | np.ndarray():
+                return InMemoryAudioSource(source), False
+            case _:
+                raise TypeError(f"Unsupported source type: {type(source)!r}")
 
     def transcribe(self) -> str:
         """
