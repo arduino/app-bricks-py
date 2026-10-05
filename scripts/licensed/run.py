@@ -89,7 +89,9 @@ def build_venv(app):
     export = ["uv", "export", "--frozen", "--no-dev", "--no-emit-project", "--project", str(project_dir(app))]
     export += [f"--extra={extra}" for extra in app["venv"].get("extras", [])]
     requirements = subprocess.run(export, check=True, capture_output=True, text=True).stdout
-    install = ["uv", "pip", "install", "-q", "--python", str(venv_dir / "bin/python"), "--require-hashes", "-r", "-"]
+    # The export is the whole locked closure: --no-deps installs exactly it, as the images that
+    # override dependencies out of their lock do (see aihub-onnx-models-runner)
+    install = ["uv", "pip", "install", "-q", "--python", str(venv_dir / "bin/python"), "--no-deps", "--require-hashes", "-r", "-"]
     subprocess.run(install, input=requirements, check=True, text=True)
     for entry in venv_dir.glob("lib/python*/site-packages/*"):
         if entry.name not in KEEP_IN_SITE_PACKAGES and not entry.name.endswith(".dist-info"):

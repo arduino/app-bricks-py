@@ -112,6 +112,8 @@ reviewed:
     - certifi           # MPL-2.0, modified ca-bundle notice not recognised by licensee 9.20
     - backports.strenum # PSF-2.0, ships CPython's LICENSE file while its metadata says MIT
     - typing_extensions # PSF-2.0, ships CPython's LICENSE file with its history preamble, not matched by newer licensee
+    - onnxruntime       # MIT, declared in the wheel metadata, which ships no license text
+    - onnxruntime-qnn   # MIT, declared in the wheel metadata, which ships no license text
 
 allowed:
   - mpl-2.0

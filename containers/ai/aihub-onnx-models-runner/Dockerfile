@@ -94,7 +94,9 @@ RUN --mount=from=uv,source=/uv,target=/bin/uv \
     set -ex; \
     # Make the venv the default for child images
     python -m venv --system-site-packages /opt/venv; \
-    uv export --frozen --project /tmp/deps | uv pip install --python /opt/venv/bin/python --no-cache-dir --require-hashes -r -; \
+    # --no-deps: the export is the whole locked closure, and without it uv would resolve the
+    # dependencies the wheels declare again, the ones overridden out of the lock included
+    uv export --frozen --project /tmp/deps | uv pip install --python /opt/venv/bin/python --no-cache-dir --no-deps --require-hashes -r -; \
     /opt/venv/bin/python -m compileall -q /opt/venv/lib; \
     rm -rf /tmp/deps
 
