@@ -7,7 +7,7 @@ import queue
 import inspect
 import numpy as np
 import time
-from collections.abc import Iterable
+from collections.abc import Sequence
 from arduino.app_internal.core import EdgeImpulseRunnerFacade
 from arduino.app_utils import Logger, SlidingWindowBuffer, brick
 
@@ -89,13 +89,13 @@ class VibrationAnomalyDetection(EdgeImpulseRunnerFacade):
 
         return threshold
 
-    def accumulate_samples(self, sensor_samples: Iterable[float]) -> None:
+    def accumulate_samples(self, sensor_samples: Sequence[float]) -> None:
         """Append one or more accelerometer samples to the sliding window buffer.
 
         Args:
-            sensor_samples (Iterable[float]): A sequence of numeric values. This can
+            sensor_samples (Sequence[float]): A sequence of numeric values. This can
                 be a single 3-axis sample `(ax, ay, az)`, multiple concatenated
-                triples, or any iterable whose flattened length contributes toward
+                triples, or any sequence whose flattened length contributes toward
                 the model’s `input_features_count`.
 
         Raises:
