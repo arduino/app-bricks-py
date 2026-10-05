@@ -5,13 +5,20 @@
 import struct
 import wave
 from collections.abc import Callable
-from typing import BinaryIO
+from typing import BinaryIO, TypedDict
 
 from arduino.app_internal.core.audio import AudioDetector
 from arduino.app_peripherals.microphone import BaseMicrophone
 from arduino.app_utils import brick, Logger
 
 logger = Logger("AudioClassification")
+
+
+class AudioClassificationResult(TypedDict):
+    """A classification of an audio file: the detected class and its confidence in percent."""
+
+    class_name: str
+    confidence: float
 
 
 class AudioClassificationException(Exception):
@@ -69,7 +76,7 @@ class AudioClassification(AudioDetector):
         super().stop()
 
     @staticmethod
-    def classify_from_file(audio_path: str | BinaryIO, confidence: float = 0.8) -> dict | None:
+    def classify_from_file(audio_path: str | BinaryIO, confidence: float = 0.8) -> AudioClassificationResult | None:
         """Classify audio content from a WAV file.
 
         Supported sample widths:
@@ -103,7 +110,7 @@ class AudioClassification(AudioDetector):
                 frames = wf.readframes(n_frames)
 
                 # Unpack audio data
-                features = []
+                features: list[float] = []
                 if samp_width == 1:
                     # 8-bit audio (unsigned char)
                     fmt = f"{n_frames * n_channels}B"
