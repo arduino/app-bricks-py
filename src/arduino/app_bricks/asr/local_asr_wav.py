@@ -41,7 +41,7 @@ class InMemoryAudioSource:
             dtype_map = {1: np.uint8, 2: np.int16, 4: np.int32}
             if sample_width not in dtype_map:
                 raise ValueError(f"Unsupported WAV sample width: {sample_width}")
-            self.format = np.dtype(dtype_map[sample_width])
+            self.format: np.dtype = np.dtype(dtype_map[sample_width])
             self._samples = np.frombuffer(frames, dtype=self.format)
         elif isinstance(samples, np.ndarray):
             self.sample_rate = self._DEFAULT_SAMPLING_RATE
@@ -114,9 +114,9 @@ class WAVAutomaticSpeechRecognition(BaseASR):
         Note:
             Only one transcription can be active at a time.
         """
-        super().__init__(source=wav, language=language, translate=translate)  # type: ignore[arg-type]
+        super().__init__(source=wav, language=language, translate=translate)
 
-    def _build_source(self, source: object) -> tuple:
+    def _build_source(self, source: object) -> tuple[InMemoryAudioSource, bool]:
         if not isinstance(source, (np.ndarray, bytes, bytearray)):
             raise TypeError(f"Unsupported source type: {type(source)!r}")
         return InMemoryAudioSource(source), False
