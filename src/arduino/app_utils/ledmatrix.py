@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 from __future__ import annotations
+from collections.abc import Sequence
 import numpy as np
 from typing import Any
 
@@ -64,10 +65,13 @@ class Frame:
 
         Returns a numpy ndarray view with the writeable flag turned off so
         callers cannot mutate the internal storage in-place. Use
-        `set_array` to replace the whole array.
+        `set_array` to replace the whole array. A frame whose array has not
+        been set reads as a blank frame, every LED off.
         """
         if getattr(self, "_arr", None) is None:
-            return None
+            blank = np.zeros((self.height, self.width), dtype=np.int32)
+            blank.flags.writeable = False
+            return blank
         v = self._arr.view()
         try:
             v.flags.writeable = False
@@ -77,11 +81,11 @@ class Frame:
 
     # -- factory methods ----------------------------------------------
     @classmethod
-    def from_rows(cls, rows: list[list[int]] | list[str], brightness_levels: int = 256) -> Frame:
+    def from_rows(cls, rows: Sequence[list[int]] | Sequence[str] | None, brightness_levels: int = 256) -> Frame:
         """Create a Frame from frontend rows.
 
         Args:
-            rows (list[list[int]] | list[str]): Either a list of 8 lists each with 13 ints, or a list of 8
+            rows (Sequence[list[int]] | Sequence[str]): Either a list or tuple of 8 lists each with 13 ints, or of 8
                 CSV strings with 13 numeric values each.
             brightness_levels (int): Number of discrete brightness levels for the
                 resulting Frame (2..256).
@@ -90,7 +94,7 @@ class Frame:
             frame: A validated `Frame` instance.
 
         Raises:
-            ValueError: on malformed rows or out-of-range values.
+            ValueError: on missing or malformed rows, or out-of-range values.
         """
         brightness_levels = int(brightness_levels)
         if not (2 <= brightness_levels <= 256):
@@ -99,12 +103,12 @@ class Frame:
         if rows is None:
             raise ValueError("rows missing")
         # Expect exactly 8 rows and 13 columns
-        if not isinstance(rows, list) or len(rows) != 8:
+        if len(rows) != 8:
             raise ValueError("rows must be a list of 8 rows")
 
         # Case: comma-separated numeric strings
         if isinstance(rows[0], str):
-            parsed = []
+            parsed: list[list[int]] = []
             for i, row in enumerate(rows):
                 if not isinstance(row, str):
                     raise ValueError(f"row {i} is not a string")
@@ -119,7 +123,7 @@ class Frame:
             np_arr = np.asarray(parsed, dtype=int)
 
         # Case: list of lists
-        elif isinstance(rows[0], list):
+        else:
             # ensure every row is a list of length 13
             for i, row in enumerate(rows):
                 if not isinstance(row, list) or len(row) != 13:
@@ -128,8 +132,6 @@ class Frame:
             # Validate values are within declared brightness range
             if np.any(np_arr < 0) or np.any(np_arr >= brightness_levels):
                 raise ValueError(f"row values must be in 0..{brightness_levels - 1}")
-        else:
-            raise ValueError("unsupported rows format")
 
         return Frame(arr=np_arr, brightness_levels=brightness_levels)
 
@@ -208,7 +210,7 @@ class Frame:
         Raises:
             ValueError: if the attribute is not a valid integer in range.
         """
-        if not (isinstance(self.brightness_levels, int) and 2 <= self.brightness_levels <= 256):
+        if not 2 <= self.brightness_levels <= 256:
             raise ValueError("brightness_levels must be an integer in 2..256")
 
     def _validate_array_input(self) -> None:
@@ -222,8 +224,6 @@ class Frame:
         """
         if getattr(self, "_arr", None) is None:
             raise TypeError("array is not set")
-        if not isinstance(self._arr, np.ndarray):
-            raise TypeError("array must be a numpy.ndarray")
         if self._arr.ndim != 2:
             raise ValueError("array must be 2-dimensional")
         if self._arr.shape != (self.height, self.width):
@@ -246,11 +246,12 @@ class Frame:
             raise ValueError(f"array values out of range 0..{maxv} (found min={a_min}, max={a_max})")
 
     # -- utility methods -------------------------------------------------
-    def rescale_quantized_frame(self, scale_max: int = 255) -> np.ndarray:
+    def rescale_quantized_frame(self, scale_max: int | None = 255) -> np.ndarray:
         """Return a scaled numpy array with values mapped from [0, brightness_levels-1] -> [0, scale_max].
 
         This does not mutate self.arr; it returns a new numpy array of dtype
         uint8 suitable for sending to the board or for further formatting.
+        With scale_max None no scaling is applied and the array itself is returned.
         """
         # If no scaling requested, return integer copy
         if scale_max is None:

@@ -6,7 +6,7 @@ The ASR brick provides on-device automatic speech recognition (ASR) capabilities
 
 - **Offline Operation:** All transcriptions are performed locally, ensuring data privacy and eliminating network dependencies.
 - **Multi-Language Support:** Supports the transcription of multiple spoken languages. Language is auto-detected by default and can be overridden with the `language` constructor argument (e.g. `"en"`).
-- **Speech Translation:** With `translate=True` the brick returns English text instead of a transcription in the spoken language. Valid only for models that support translation, such as `whisper-small-quantized`, the model this brick runs. The ASR model itself does the translating, so it needs no additional model and no network. English is the only possible target language.
+- **Speech Translation:** With `translate=True` the brick returns English text instead of a transcription in the spoken language. Valid only for models that support translation, such as the Whisper models this brick runs, including the default `whisper-small-quantized`. The ASR model itself does the translating, so it needs no additional model and no network. English is the only possible target language.
 - **Flexible Audio Input:** `AutomaticSpeechRecognition` accepts a `BaseMicrophone` instance or `None` to use a default `Microphone()`. `WAVAutomaticSpeechRecognition` accepts a `bytes` WAV container or a raw `np.ndarray` of PCM samples (16 kHz mono).
 - **Single-Session Semantics:** Each instance handles one transcription session at a time. For concurrent transcriptions on different microphones, create multiple `AutomaticSpeechRecognition` instances.
 
@@ -102,14 +102,14 @@ Both classes share the same transcription API (durations/timeouts apply to the m
 Both classes accept these, on top of their own audio source (`mic` / `wav`):
 
 - `language: str | None = None`: ISO 639-1 code of the spoken language (e.g. `"it"`). `None` lets the model detect it.
-- `translate: bool = False`: return English instead of the spoken language. Valid only for models that support translation. `whisper-small-quantized`, the model this brick runs, supports it; its translate task always targets English, from any of its supported source languages.
+- `translate: bool = False`: return English instead of the spoken language. Valid only for models that support translation. The Whisper models this brick runs, including the default `whisper-small-quantized`, support it; their translate task always targets English, from any of their supported source languages.
 
 Both are exposed as attributes of the same name and can be reassigned at runtime. A
 change takes effect on the next transcription session.
 
 ## Errors
 
-- `ASRBusyError`: raised if you call `transcribe()` / `transcribe_stream()` while the instance already has an active session. Fix by awaiting the current session or using a separate instance.
+- `ASRBusyError`: raised if you call `transcribe()` / `transcribe_stream()` while the instance already has a session running. A session stopped with `cancel()` does not count: the new one waits for it to close. Fix by cancelling or awaiting the current session, or by using a separate instance.
 - `ASRServiceBusyError`: raised when the inference server rejects session creation because it is currently serving another client. The caller decides whether to retry.
 - `ASRUnavailableError`: raised when the inference service is unreachable (container down, network error) or the WebSocket connection drops mid-session. The caller decides whether to retry.
 - `ASRError`: base class for all of the above.

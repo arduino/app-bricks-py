@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from arduino.app_utils._lazy_exports import lazy_exports as _lazy_exports
 
 from .camera import Camera
-from .base_camera import BaseCamera
+from .base_camera import BaseCamera, CameraInfo
 from .errors import *
 
 if TYPE_CHECKING:
@@ -34,6 +34,7 @@ if not TYPE_CHECKING:  # Type checkers resolve the names through the imports abo
 __all__ = [
     "Camera",
     "BaseCamera",
+    "CameraInfo",
     "V4LCamera",
     "IPCamera",
     "WebSocketCamera",

@@ -35,10 +35,10 @@ def camx_socket_available() -> bool:
 
 def _gst() -> Any:  # noqa: ANN401
     """Import and initialize GStreamer's Python bindings on first use."""
-    import gi
+    import gi  # pyright: ignore[reportMissingImports]
 
     gi.require_version("Gst", "1.0")
-    from gi.repository import Gst
+    from gi.repository import Gst  # pyright: ignore[reportMissingImports]
 
     Gst.init(None)
     return Gst

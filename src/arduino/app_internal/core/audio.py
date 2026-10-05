@@ -8,6 +8,7 @@ import inspect
 import threading
 
 from collections.abc import Callable
+from typing import Any
 
 from arduino.app_internal.core import EdgeImpulseRunnerFacade
 from arduino.app_peripherals.microphone import Microphone, BaseMicrophone
@@ -38,7 +39,7 @@ class AudioDetector(EdgeImpulseRunnerFacade):
         self.confidence = confidence
 
         self._debounce_sec = debounce_sec
-        self._last_detected = {}
+        self._last_detected: dict[str, float] = {}
 
         model_info = self.get_model_info()
         if not model_info:
@@ -53,7 +54,7 @@ class AudioDetector(EdgeImpulseRunnerFacade):
         self._duration = model_info.input_features_count / model_info.axis_count * model_info.interval_ms
         self._buffer = SlidingWindowBuffer(self._window_size, slide_amount=math.floor(self._window_size * 0.4))
 
-        self.handlers = {}  # Dictionary to hold handlers for different keywords
+        self.handlers: dict[str, Callable[[], None]] = {}  # Dictionary to hold handlers for different keywords
         self.handlers_lock = threading.Lock()
 
     def on_detect(self, keyword: str, callback: Callable[[], None]) -> None:
@@ -88,11 +89,11 @@ class AudioDetector(EdgeImpulseRunnerFacade):
         self._buffer.flush()
 
     @staticmethod
-    def get_best_match(item: dict, confidence: float) -> tuple[str, float] | None:
+    def get_best_match(item: dict[str, Any] | None, confidence: float) -> tuple[str, float] | None:
         """Extract the best matched keyword from the classification results.
 
         Args:
-        item (dict): The classification result from the inference.
+        item (dict | None): The classification result from the inference, None when the inference failed.
         confidence (float): The confidence threshold for classification.
 
         Returns:
@@ -101,8 +102,11 @@ class AudioDetector(EdgeImpulseRunnerFacade):
         Raises:
         ValueError: If confidence level is not provided.
         """
-        if confidence is None:
-            raise ValueError("Confidence level must be provided.")
+        match confidence:
+            case float() | int():
+                pass
+            case _:
+                raise ValueError("Confidence level must be provided.")
 
         classification = _extract_classification(item, confidence)
         if not classification:
@@ -119,14 +123,14 @@ class AudioDetector(EdgeImpulseRunnerFacade):
                 best_matched_keyword = keyword_name
                 best_matched_keyword_confidence = keyword_confidence
 
+        if best_matched_keyword is None:
+            return None
         return best_matched_keyword, best_matched_keyword_confidence
 
     @brick.loop
     def _read_mic_loop(self) -> None:
         try:
             for chunk in self._mic.stream():
-                if chunk is None:
-                    continue
                 self._buffer.push(chunk)
         except StopIteration:
             raise
@@ -172,7 +176,7 @@ class AudioDetector(EdgeImpulseRunnerFacade):
             time.sleep(1)  # Sleep briefly to avoid tight loop in case of errors
 
 
-def _extract_classification(item: dict | None, confidence: float) -> list | None:
+def _extract_classification(item: dict[str, Any] | None, confidence: float) -> list[dict[str, str]] | None:
     if not item:
         return None
 
@@ -181,7 +185,7 @@ def _extract_classification(item: dict | None, confidence: float) -> list | None
         if class_results and "classification" in class_results:
             class_results = class_results["classification"]
 
-            classification = []
+            classification: list[dict[str, str]] = []
             for class_name in class_results:
                 class_confidence = float(class_results[class_name])
 

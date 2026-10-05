@@ -8,6 +8,7 @@ import inspect
 import numpy as np
 import time
 from collections.abc import Iterable
+from typing import Any
 from arduino.app_internal.core import EdgeImpulseRunnerFacade
 from arduino.app_utils import brick, Logger, SlidingWindowBuffer
 
@@ -93,11 +94,11 @@ class MotionDetection(EdgeImpulseRunnerFacade):
                 continue
             yield acquired_samples
 
-    def _movement_spotted(self, item: dict) -> tuple[str, float, dict] | None:
+    def _movement_spotted(self, item: dict[str, Any] | None) -> tuple[str, float, dict[str, float]] | None:
         """Verify if a movement has been spotted.
 
         Args:
-            item (dict): The item containing classification results.
+            item (dict | None): The item containing classification results, None when the inference failed.
 
         Returns:
             tuple[str, float, dict] | None: A tuple containing the detected class name, confidence level, and complete
@@ -109,7 +110,7 @@ class MotionDetection(EdgeImpulseRunnerFacade):
 
         detected_class = None
         detected_class_confidence = 0.0
-        classification_dict = {}
+        classification_dict: dict[str, float] = {}
 
         class_results = classification["classification"]
         for class_detected in class_results:
@@ -123,6 +124,8 @@ class MotionDetection(EdgeImpulseRunnerFacade):
                 detected_class = class_name
                 detected_class_confidence = class_confidence
 
+        if detected_class is None:
+            return None
         return detected_class, detected_class_confidence, classification_dict
 
     @brick.loop

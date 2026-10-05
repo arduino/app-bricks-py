@@ -261,7 +261,7 @@ class WebUI:
         from fastapi.responses import StreamingResponse
         from arduino.app_utils.image import compress_to_jpeg
 
-        if not camera.is_started:
+        if not camera.is_started():
             camera.start()
 
         def generate_frames() -> Iterator[bytes]:

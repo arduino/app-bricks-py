@@ -120,17 +120,51 @@ class TestTranscribe:
         )
         assert asr.transcribe() == "hello world"
 
-    def test_falls_back_to_last_partial_when_no_full_text(self, monkeypatch):
+    def test_joins_partial_pieces_when_no_full_text(self, monkeypatch):
         asr = WAVAutomaticSpeechRecognition(wav=np.zeros(10, dtype=np.int16))
         _mock_transcribe_stream(
             monkeypatch,
             asr,
             [
-                ASREvent("partial_text", "hi"),
-                ASREvent("partial_text", "hello world"),
+                ASREvent("partial_text", " hello"),
+                ASREvent("partial_text", " world"),
             ],
         )
-        assert asr.transcribe() == "hello world"
+        assert asr.transcribe() == " hello world"
+
+    def test_keeps_the_pieces_of_a_sentence_left_open(self, monkeypatch):
+        # Stopped right after the speech: the last sentence never got its full_text.
+        # Sequence recorded on the board (it_1522, whisper-small-quantized).
+        asr = WAVAutomaticSpeechRecognition(wav=np.zeros(10, dtype=np.int16))
+        _mock_transcribe_stream(
+            monkeypatch,
+            asr,
+            [
+                ASREvent("partial_text", " La soluzione è offerta dalla tecnologia"),
+                ASREvent("full_text", " La soluzione è offerta dalla tecnologia con le gite virtuali."),
+                ASREvent("partial_text", " Gli studenti possono vedere i manufatti dei musei."),
+                ASREvent("partial_text", " visitare un acquario o ammirare bellissime opere d'arte"),
+                ASREvent("full_text", ""),
+            ],
+        )
+        assert asr.transcribe() == (
+            " La soluzione è offerta dalla tecnologia con le gite virtuali."
+            " Gli studenti possono vedere i manufatti dei musei."
+            " visitare un acquario o ammirare bellissime opere d'arte"
+        )
+
+    def test_full_text_replaces_its_pieces(self, monkeypatch):
+        asr = WAVAutomaticSpeechRecognition(wav=np.zeros(10, dtype=np.int16))
+        _mock_transcribe_stream(
+            monkeypatch,
+            asr,
+            [
+                ASREvent("partial_text", " hello"),
+                ASREvent("partial_text", " wor"),
+                ASREvent("full_text", " hello world"),
+            ],
+        )
+        assert asr.transcribe() == " hello world"
 
     def test_returns_empty_when_no_speech(self, monkeypatch):
         asr = WAVAutomaticSpeechRecognition(wav=np.zeros(10, dtype=np.int16))

@@ -4,7 +4,7 @@
 
 import pytest
 
-from arduino.app_peripherals.camera.utils import _camera_registry
+from arduino.app_peripherals.camera.camera import _camera_registry
 
 
 @pytest.fixture(autouse=True)

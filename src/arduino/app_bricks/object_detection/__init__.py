@@ -67,7 +67,7 @@ class ObjectDetection(EdgeImpulseRunnerFacade):
         ret = super().infer_from_image(image_bytes, image_type)
         return self._extract_detection(ret, confidence)
 
-    def draw_bounding_boxes(self, image: Image.Image | bytes | None, detections: dict | None) -> Image.Image | None:
+    def draw_bounding_boxes(self, image: Image.Image | bytes | None, detections: dict[str, Any] | None) -> Image.Image | None:
         """Draw bounding boxes on an image enclosing detected objects using PIL.
 
         Args:

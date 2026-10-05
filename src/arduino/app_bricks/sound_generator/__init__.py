@@ -7,6 +7,7 @@ from arduino.app_peripherals.speaker import Speaker
 import threading
 from collections.abc import Iterable
 import numpy as np
+from numpy.typing import NDArray
 import time
 from pathlib import Path
 from typing import Any
@@ -14,7 +15,7 @@ from collections import OrderedDict
 import math
 
 from .generator import WaveSamplesBuilder
-from .effects import *
+from .effects import AudioEffect as AudioEffect, SoundEffect as SoundEffect
 from .loaders import ABCNotationLoader
 from .composition import MusicComposition as MusicComposition
 
@@ -313,7 +314,7 @@ class SoundGeneratorStreamer:
             return None
         return self._notes.get(note.strip().upper())
 
-    def play_polyphonic(self, notes: list[list[tuple[str, float]]], as_tone: bool = False, volume: float = None) -> tuple[bytes, float]:
+    def play_polyphonic(self, notes: list[list[tuple[str, float]]], as_tone: bool = False, volume: float = None) -> tuple[NDArray[np.float32], float]:
         """Generate audio for multiple note sequences mixed together (polyphony).
 
         Produces multi-track audio by mixing a list of sequences, where each
@@ -326,6 +327,9 @@ class SoundGeneratorStreamer:
 
         Returns:
             tuple[np.ndarray, float]: The mixed audio block (float32) and its duration in seconds.
+
+        Raises:
+            ValueError: If no sequence holds a known note.
         """
         if volume is None:
             volume = self._master_volume
@@ -340,7 +344,7 @@ class SoundGeneratorStreamer:
             for note, duration in sequence:
                 sequence_duration += duration
                 frequency = self._get_note(note)
-                if frequency >= 0.0:
+                if frequency is not None and frequency >= 0.0:
                     if base_frequency is None:
                         base_frequency = frequency
                     if not as_tone:
@@ -357,7 +361,7 @@ class SoundGeneratorStreamer:
                     max_duration = sequence_duration
 
         if len(sequences_data) == 0:
-            return
+            raise ValueError("No valid note in the sequences")
 
         # Mix sequences - align lengths
         max_length = max(len(seq) for seq in sequences_data)
@@ -375,7 +379,7 @@ class SoundGeneratorStreamer:
         blk = self._apply_sound_effects(blk, base_frequency)
         return (blk, max_duration)
 
-    def play_chord(self, notes: list[str], note_duration: float | str = 1 / 4, volume: float = None) -> bytes:
+    def play_chord(self, notes: list[str], note_duration: float | str = 1 / 4, volume: float = None) -> NDArray[np.float32]:
         """Generate audio for a chord of simultaneous notes.
 
         Args:
@@ -385,12 +389,15 @@ class SoundGeneratorStreamer:
 
         Returns:
             np.ndarray: The audio block of the chord (float32).
+
+        Raises:
+            ValueError: If none of the notes is a known note.
         """
         duration = self._note_duration(note_duration)
         logger.debug(f"play_chord: notes={notes}, note_duration={note_duration}, duration={duration}s, volume={volume}")
         if len(notes) == 1:
-            self.play(notes[0], duration, volume)
-            return
+            # The note duration, not the seconds computed from it: play converts it itself.
+            return self.play(notes[0], note_duration, volume)
 
         waves = []
         base_frequency = None
@@ -407,7 +414,7 @@ class SoundGeneratorStreamer:
             else:
                 continue
         if len(waves) == 0:
-            return
+            raise ValueError(f"No valid note in chord {notes}")
         chord = np.sum(waves, axis=0, dtype=np.float32)
         chord /= np.max(np.abs(chord))  # Normalize to prevent clipping
         blk = chord.astype(np.float32)
@@ -415,7 +422,7 @@ class SoundGeneratorStreamer:
         logger.debug(f"  Chord generated: {len(blk)} samples")
         return blk
 
-    def play(self, note: str, note_duration: float | str = 1 / 4, volume: float = None) -> bytes:
+    def play(self, note: str, note_duration: float | str = 1 / 4, volume: float = None) -> NDArray[np.float32]:
         """Generate audio samples for a single musical note.
 
         Args:
@@ -424,7 +431,10 @@ class SoundGeneratorStreamer:
             volume (float, optional): Volume level (0.0 to 1.0). If None, uses master volume.
 
         Returns:
-            np.ndarray: The audio block (float32), or None if the note is invalid.
+            np.ndarray: The audio block (float32).
+
+        Raises:
+            ValueError: If the note is not a known note.
         """
         duration = self._note_duration(note_duration)
         frequency = self._get_note(note)
@@ -449,8 +459,9 @@ class SoundGeneratorStreamer:
             expected_frames = int(duration * self._sample_rate)
             logger.debug(f"  Generated audio: {len(data)} samples (expected {expected_frames} @ {self._sample_rate}Hz, duration={duration}s)")
             return data
+        raise ValueError(f"Invalid note '{note}'")
 
-    def play_tone(self, note: str, duration: float = 0.25, volume: float = None) -> bytes:
+    def play_tone(self, note: str, duration: float = 0.25, volume: float = None) -> NDArray[np.float32]:
         """Generate audio samples for a note with duration in seconds.
 
         Unlike ``play()`` which interprets duration as a musical note fraction,
@@ -462,7 +473,10 @@ class SoundGeneratorStreamer:
             volume (float, optional): Volume level (0.0 to 1.0). If None, uses master volume.
 
         Returns:
-            np.ndarray: The audio block (float32), or None if the note is invalid.
+            np.ndarray: The audio block (float32).
+
+        Raises:
+            ValueError: If the note is not a known note or the duration is not positive.
         """
         frequency = self._get_note(note)
         if frequency is not None and frequency >= 0.0 and duration > 0.0:
@@ -471,8 +485,9 @@ class SoundGeneratorStreamer:
             data = self._wave_gen.generate_block(float(frequency), duration, volume)
             data = self._apply_sound_effects(data, frequency)
             return data
+        raise ValueError(f"Invalid note '{note}' or non-positive duration {duration}")
 
-    def play_abc(self, abc_string: str, volume: float = None) -> Iterable[tuple[bytes, float]]:
+    def play_abc(self, abc_string: str, volume: float = None) -> Iterable[tuple[NDArray[np.float32], float]]:
         """Generate audio samples from an ABC notation string.
 
         Yields one audio block per note in the parsed ABC sequence.  The parser
@@ -526,8 +541,6 @@ class SoundGeneratorStreamer:
             if len(self._wav_cache) < 250 * 1024:  # 250 KB cache limit
                 self._wav_cache[wav_file] = (wav_data, duration)
             return (wav_data, duration)
-
-        return (None, None)
 
 
 @brick
@@ -695,7 +708,9 @@ class SoundGenerator(SoundGeneratorStreamer):
         """
         super().set_effects(effects)
 
-    def play_polyphonic(self, notes: list[list[tuple[str, float]]], as_tone: bool = False, volume: float = None, block: bool = False) -> None:
+    def play_polyphonic(
+        self, notes: list[list[tuple[str, float]]], as_tone: bool = False, volume: float = None, block: bool = False
+    ) -> tuple[NDArray[np.float32], float]:
         """
         Play multiple sequences of musical notes simultaneously (poliphony).
         It is possible to play multi track music by providing a list of sequences,
@@ -706,12 +721,15 @@ class SoundGenerator(SoundGeneratorStreamer):
             as_tone (bool): If True, play as tones, considering duration in seconds
             volume (float, optional): Volume level (0.0 to 1.0). If None, uses master volume.
             block (bool): If True, block until the entire sequence has been played.
+        Returns:
+            tuple[NDArray[np.float32], float]: The mixed audio block played and its duration in seconds.
         """
         self._ensure_speaker_ready()
         blk, duration = super().play_polyphonic(notes, as_tone, volume)
         self._output_device.play(blk)
         if block and duration > 0.0:
             time.sleep(duration)
+        return blk, duration
 
     def play_composition(
         self,
@@ -818,7 +836,7 @@ class SoundGenerator(SoundGeneratorStreamer):
             timed_stop_done.wait()
         self._wait_for_playback_session_end(session_id)
 
-    def play_chord(self, notes: list[str], note_duration: float | str = 1 / 4, volume: float = None, block: bool = False) -> None:
+    def play_chord(self, notes: list[str], note_duration: float | str = 1 / 4, volume: float = None, block: bool = False) -> NDArray[np.float32]:
         """
         Play a chord consisting of multiple musical notes simultaneously for a specified duration and volume.
         Args:
@@ -826,6 +844,8 @@ class SoundGenerator(SoundGeneratorStreamer):
             note_duration (float | str): Duration of the chord as a float (like 1/4, 1/8) or a symbol ('W', 'H', 'Q', etc.).
             volume (float, optional): Volume level (0.0 to 1.0). If None, uses master volume.
             block (bool): If True, block until the entire chord has been played.
+        Returns:
+            np.ndarray: The audio block played (float32).
         """
         self._ensure_speaker_ready()
         logger.debug(f"SoundGenerator.play_chord: notes={notes}")
@@ -835,8 +855,9 @@ class SoundGenerator(SoundGeneratorStreamer):
             duration = self._note_duration(note_duration)
             if duration > 0.0:
                 time.sleep(duration)
+        return blk
 
-    def play(self, note: str, note_duration: float | str = 1 / 4, volume: float = None, block: bool = False) -> None:
+    def play(self, note: str, note_duration: float | str = 1 / 4, volume: float = None, block: bool = False) -> NDArray[np.float32]:
         """
         Play a musical note for a specified duration and volume.
         Args:
@@ -844,6 +865,8 @@ class SoundGenerator(SoundGeneratorStreamer):
             note_duration (float | str): Duration of the note as a float (like 1/4, 1/8) or a symbol ('W', 'H', 'Q', etc.).
             volume (float, optional): Volume level (0.0 to 1.0). If None, uses master volume.
             block (bool): If True, block until the entire note has been played.
+        Returns:
+            np.ndarray: The audio block played (float32).
         """
         self._ensure_speaker_ready()
         logger.debug(f"SoundGenerator.play: note={note}")
@@ -853,8 +876,9 @@ class SoundGenerator(SoundGeneratorStreamer):
             duration = self._note_duration(note_duration)
             if duration > 0.0:
                 time.sleep(duration)
+        return data
 
-    def play_tone(self, note: str, duration: float = 0.25, volume: float = None, block: bool = False) -> None:
+    def play_tone(self, note: str, duration: float = 0.25, volume: float = None, block: bool = False) -> NDArray[np.float32]:
         """Play a musical note with duration specified in seconds.
 
         Unlike ``play()`` which interprets duration as a musical note fraction,
@@ -865,14 +889,18 @@ class SoundGenerator(SoundGeneratorStreamer):
             duration (float): Duration in seconds (default 0.25).
             volume (float, optional): Volume level (0.0 to 1.0). If None, uses master volume.
             block (bool): If True, block until the entire note has been played.
+
+        Returns:
+            np.ndarray: The audio block played (float32).
         """
         self._ensure_speaker_ready()
         data = super().play_tone(note, duration, volume)
         self._output_device.play(data)
         if block and duration > 0.0:
             time.sleep(duration)
+        return data
 
-    def play_abc(self, abc_string: str, volume: float = None, block: bool = False) -> None:
+    def play_abc(self, abc_string: str, volume: float = None, block: bool = False) -> list[tuple[NDArray[np.float32], float]]:
         """Play a sequence of musical notes defined in ABC notation.
 
         The parser is ABC 2.1 standard compliant (key signatures, accidentals,
@@ -883,19 +911,24 @@ class SoundGenerator(SoundGeneratorStreamer):
             abc_string (str): ABC notation string defining the sequence of notes.
             volume (float, optional): Volume level (0.0 to 1.0). If None, uses master volume.
             block (bool): If True, block until the entire sequence has been played.
+
+        Returns:
+            list[tuple[NDArray[np.float32], float]]: The audio blocks played, each with its duration in seconds.
         """
         if not abc_string or abc_string.strip() == "":
-            return
+            return []
         self._ensure_speaker_ready()
-        player = super().play_abc(abc_string, volume)
+        played: list[tuple[NDArray[np.float32], float]] = []
         overall_duration = 0.0
-        for data, duration in player:
+        for data, duration in super().play_abc(abc_string, volume):
             self._output_device.play(data)
+            played.append((data, duration))
             overall_duration += duration
         if block:
             time.sleep(overall_duration)
+        return played
 
-    def play_wav(self, wav_file: str, block: bool = False) -> None:
+    def play_wav(self, wav_file: str, block: bool = False) -> tuple[bytes, float]:
         """Play a WAV audio file through the output device.
 
         Only uncompressed PCM WAV files matching the output device configuration
@@ -904,22 +937,22 @@ class SoundGenerator(SoundGeneratorStreamer):
         Args:
             wav_file (str): The WAV audio file path.
             block (bool): If True, block until the entire WAV file has been played.
+
+        Returns:
+            tuple[bytes, float]: Raw PCM audio data of the file and its duration in seconds.
+
+        Raises:
+            FileNotFoundError: If the WAV file does not exist.
         """
-        import wave
-
         self._ensure_speaker_ready()
-        file_path = Path(wav_file)
-        if not file_path.exists() or not file_path.is_file():
-            raise FileNotFoundError(f"WAV file not found: {wav_file}")
-
-        with wave.open(wav_file, "rb") as wav:
-            duration = wav.getnframes() / wav.getframerate()
+        pcm_data, duration = super().play_wav(wav_file)
 
         # Delegate WAV validation and PCM conversion to the output device
-        wav_audio = np.frombuffer(file_path.read_bytes(), dtype=np.uint8)
+        wav_audio = np.frombuffer(Path(wav_file).read_bytes(), dtype=np.uint8)
         self._output_device.play_wav(wav_audio)
         if block and duration > 0.0:
             time.sleep(duration)
+        return pcm_data, duration
 
     def play_step_sequence(
         self,
@@ -1030,7 +1063,7 @@ class SoundGenerator(SoundGeneratorStreamer):
         with self._sequence_lock:
             return self._sequence_thread is not None and self._sequence_thread.is_alive()
 
-    def _render_sequence_step(self, notes: list[str], note_duration: float | str, volume: float) -> bytes:
+    def _render_sequence_step(self, notes: list[str], note_duration: float | str, volume: float) -> NDArray[np.float32]:
         """Render a single sequence step to a float32 audio buffer."""
         if notes and len(notes) > 0:
             if len(notes) == 1:
@@ -1121,7 +1154,7 @@ class SoundGenerator(SoundGeneratorStreamer):
                     next_step_index, next_notes = next_step
                     next_data = self._render_sequence_step(next_notes, note_duration, volume)
                     next_data_prequeued = len(future_steps) < prequeue_future_steps
-                    if next_data is not None and next_data_prequeued:
+                    if next_data_prequeued:
                         try:
                             self._output_device.play(next_data)
                         except Exception:

@@ -1608,8 +1608,6 @@ models:
       - da
       - hu
       - ta
-      # Quoted: bare "no" is a YAML 1.1 boolean, which would turn the
-      # Norwegian language code into False.
       - "no"
       - th
       - ur

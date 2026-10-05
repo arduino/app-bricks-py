@@ -11,7 +11,7 @@ import numpy as np
 
 from .base_microphone import BaseMicrophone, FormatPlain, FormatPacked
 from .errors import MicrophoneError, MicrophoneOpenError, MicrophoneReadError, MicrophoneConfigError
-from .utils import has_media_carrier, list_audio_sources, _nth_plugged_microphone, node_description
+from .utils import has_media_carrier, list_audio_sources, node_description
 from arduino.app_utils.logger import Logger
 
 logger = Logger("ALSAMicrophone")
@@ -99,7 +99,7 @@ class ALSAMicrophone(BaseMicrophone):
         return _dtype_to_alsa_format_name(self.format, self.format_is_packed)
 
     @staticmethod
-    def list_devices() -> list:
+    def list_devices() -> list[str]:
         """
         Return all the available microphones as full ALSA device paths.
 
@@ -109,7 +109,7 @@ class ALSAMicrophone(BaseMicrophone):
         return ALSAMicrophone.list_usb_devices() + ALSAMicrophone.list_jack_devices()
 
     @staticmethod
-    def list_usb_devices() -> list:
+    def list_usb_devices() -> list[str]:
         """
         Return only the available USB microphones as full ALSA device paths.
 
@@ -133,7 +133,7 @@ class ALSAMicrophone(BaseMicrophone):
         return usb_devices
 
     @staticmethod
-    def list_jack_devices() -> list:
+    def list_jack_devices() -> list[str]:
         """
         Return only the supported built-in (jack) microphones as full ALSA device
         paths.
@@ -175,21 +175,22 @@ class ALSAMicrophone(BaseMicrophone):
             MicrophoneConfigError: If the identifier is of an unsupported type or format
             MicrophoneOpenError: If the requested microphone is not available
         """
-        if not isinstance(identifier, (str, int)):
-            raise MicrophoneConfigError(f"Invalid device type: {type(identifier)}")
-
-        # An ordinal index selects the n-th plugged microphone
-        if isinstance(identifier, int) or (isinstance(identifier, str) and identifier.isdigit()):
-            identifier = _nth_plugged_microphone(int(identifier))  # -> "usb:X" / "jack:X"
+        match identifier:
+            case str() if not identifier.isdigit():
+                pass  # A device name or path, resolved below
+            case int() | str():
+                # An ordinal index selects the n-th plugged microphone
+                identifier = _nth_plugged_microphone(int(identifier))  # -> "usb:X" / "jack:X"
+            case _:
+                raise MicrophoneConfigError(f"Invalid device type: {type(identifier)}")
 
         # Complete device strings are opened as given
-        if isinstance(identifier, str):
-            if identifier.startswith("pipewire"):
-                return identifier
-            if identifier.startswith("jack:"):
-                return self._resolve_jack_ref(identifier)
-            if identifier.startswith("usb:"):
-                return self._resolve_usb_ref(identifier)
+        if identifier.startswith("pipewire"):
+            return identifier
+        if identifier.startswith("jack:"):
+            return self._resolve_jack_ref(identifier)
+        if identifier.startswith("usb:"):
+            return self._resolve_usb_ref(identifier)
 
         # Everything else resolves to a card-based device
         capture_devices = self._alsa_capture_devices()
@@ -350,7 +351,7 @@ class ALSAMicrophone(BaseMicrophone):
                 except Exception as e:
                     raise MicrophoneOpenError(f"Failed to resolve microphone name from stable ref {device_ref}: {e}")
 
-        elif isinstance(device_ref, int):
+        else:
             # This is a card index like 0, 1, ...
             cards = alsaaudio.cards()
             if device_ref < 0 or device_ref >= len(cards):
@@ -360,7 +361,7 @@ class ALSAMicrophone(BaseMicrophone):
 
         raise MicrophoneOpenError(f"Invalid device reference for name resolution: {device_ref} (type:{type(device_ref)})")
 
-    def _alsa_capture_devices(self) -> list:
+    def _alsa_capture_devices(self) -> list[str]:
         """
         Return a list of available ALSA microphones (plughw only) as full
         "plughw:CARD=<name>,DEV=<n>" device paths. This is a cheap lookup used
@@ -394,7 +395,7 @@ class ALSAMicrophone(BaseMicrophone):
                 card_idx, device_idx = self._resolve_runtime_ref(self.device_stable_ref)
                 device = f"plughw:CARD={card_idx},DEV={device_idx}"
 
-            self._pcm = alsaaudio.PCM(
+            pcm = alsaaudio.PCM(
                 type=alsaaudio.PCM_CAPTURE,
                 mode=alsaaudio.PCM_NORMAL,
                 device=device,
@@ -403,8 +404,9 @@ class ALSAMicrophone(BaseMicrophone):
                 format=self._alsa_format_idx,
                 periodsize=self.buffer_size,
             )
+            self._pcm = pcm
 
-            info = self._pcm.info()
+            info = pcm.info()
 
             actual_rate = info["rate"]
             if self.sample_rate != actual_rate:
@@ -472,7 +474,10 @@ class ALSAMicrophone(BaseMicrophone):
                 self._open_microphone()
                 self.logger.info(f"Successfully reopened microphone {self.name}")
 
-            length, audio_chunk = self._pcm.read()
+            pcm = self._pcm
+            if pcm is None:
+                raise MicrophoneReadError("Microphone is not open")
+            length, audio_chunk = pcm.read()
             if length == 0:
                 self.logger.debug("No audio data read from PCM device.")
                 return None
@@ -506,6 +511,39 @@ class ALSAMicrophone(BaseMicrophone):
         except Exception as e:
             logger.debug(f"Error checking device status: {e}")
             return True  # Assume disconnected if we can't check
+
+
+def _nth_plugged_microphone(idx: int) -> str:
+    """
+    Find the n-th plugged microphone, regardless of whether it is already in use.
+
+    The index spans USB microphones first, then jack microphones, if supported
+    by the current platform.
+
+    Args:
+        idx (int): Index of the microphone to select (0-based).
+
+    Returns:
+        str: Identifier of the n-th plugged microphone, "usb:X" or "jack:X",
+            where X is the 1-based ordinal index within its type.
+
+    Raises:
+        MicrophoneOpenError: If no microphone is plugged at the given index.
+    """
+    usb_mics, builtin_mics = list_audio_sources()
+
+    usb_count = len(usb_mics)
+    if idx < usb_count:
+        return f"usb:{idx + 1}"
+
+    jack_count = len(builtin_mics) if has_media_carrier() else 0
+    if idx - usb_count < jack_count:
+        return f"jack:{idx - usb_count + 1}"
+
+    raise MicrophoneOpenError(
+        f"No microphone found at index {idx}: only {usb_count + jack_count} microphone(s) plugged",
+        hint="Connect a microphone (or check the audio configuration) and restart the app.",
+    )
 
 
 def _alsa_path_device_index(alsa_path: str) -> int:

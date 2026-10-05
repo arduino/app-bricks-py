@@ -5,20 +5,18 @@
 import time
 import threading
 from types import TracebackType
-from typing import Literal, Self
+from typing import Any, Literal, Self
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 
+from ..audio_format import FormatPacked, FormatPlain, parse_format
 from .errors import SpeakerConfigError, SpeakerOpenError, SpeakerWriteError
 from arduino.app_utils import Logger, peripheral
 
 logger = Logger("Speaker")
-
-type FormatPlain = type | np.dtype | str
-type FormatPacked = tuple[FormatPlain, bool]
 
 
 @peripheral
@@ -59,30 +57,17 @@ class BaseSpeaker(ABC):
         """
         if sample_rate <= 0:
             raise SpeakerConfigError("Sample rate must be positive")
-        self.sample_rate = sample_rate
+        self.sample_rate: int = sample_rate
 
         if channels <= 0:
             raise SpeakerConfigError("Number of channels must be positive")
-        self.channels = channels
+        self.channels: int = channels
 
-        if format is None:
-            raise SpeakerConfigError("Format must be specified")
-        if isinstance(format, tuple):
-            if len(format) != 2:
-                raise SpeakerConfigError("Format tuple must be of the form (format: FormatPlain, is_packed: bool)")
-            format, self.format_is_packed = format
-        else:
-            self.format_is_packed = False
-        if isinstance(format, str) and format.strip() == "":
-            raise SpeakerConfigError("Format must be a non-empty string or a valid numpy dtype/type or a tuple")
-        try:
-            self.format: np.dtype = np.dtype(format)
-        except TypeError as e:
-            raise SpeakerConfigError(f"Invalid format: {format}") from e
+        self.format, self.format_is_packed = parse_format(format, SpeakerConfigError)
 
         if buffer_size <= 0:
             raise SpeakerConfigError("Buffer size must be positive")
-        self.buffer_size = buffer_size
+        self.buffer_size: int = buffer_size
 
         self.logger = logger  # This will be overridden by subclasses if needed
         self.name = self.__class__.__name__  # This will be overridden by subclasses if needed
@@ -100,7 +85,7 @@ class BaseSpeaker(ABC):
 
         # Status handling
         self._status: Literal["disconnected", "connected"] = "disconnected"
-        self._on_status_changed_cb: Callable[[str, dict], None] | None = None
+        self._on_status_changed_cb: Callable[[str, dict[str, Any]], None] | None = None
         self._event_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="SpeakerCallbacksRunner")
 
     @property
@@ -195,7 +180,7 @@ class BaseSpeaker(ABC):
             if not self.is_started():
                 raise SpeakerWriteError(f"Attempted to write to {self.name} before starting it.")
 
-            if audio_chunk is None or len(audio_chunk) == 0:
+            if len(audio_chunk) == 0:
                 raise ValueError("Audio data must not be empty.")
 
             if audio_chunk.dtype != self.format:
@@ -220,7 +205,7 @@ class BaseSpeaker(ABC):
             ValueError: If pcm_audio is empty or invalid.
             Exception: If the underlying implementation fails to write a frame.
         """
-        if pcm_audio is None or len(pcm_audio) == 0:
+        if len(pcm_audio) == 0:
             raise ValueError("Audio data cannot be empty")
 
         if pcm_audio.dtype != self.format:
@@ -271,7 +256,7 @@ class BaseSpeaker(ABC):
         import io
         import wave
 
-        if wav_audio is None or len(wav_audio) == 0:
+        if len(wav_audio) == 0:
             raise ValueError("WAV data cannot be empty")
 
         # Read WAV from numpy array
@@ -383,7 +368,7 @@ class BaseSpeaker(ABC):
         """Check if the speaker is started."""
         return self._is_started
 
-    def on_status_changed(self, callback: Callable[[str, dict], None] | None) -> None:
+    def on_status_changed(self, callback: Callable[[str, dict[str, Any]], None] | None) -> None:
         """Registers or removes a callback to be triggered on speaker lifecycle events.
 
         When a speaker status changes, the provided callback function will be invoked.
@@ -410,7 +395,7 @@ class BaseSpeaker(ABC):
             self._on_status_changed_cb = None
         else:
 
-            def _callback_wrapper(new_status: str, data: dict) -> None:
+            def _callback_wrapper(new_status: str, data: dict[str, Any]) -> None:
                 try:
                     callback(new_status, data)
                 except Exception as e:
@@ -433,7 +418,7 @@ class BaseSpeaker(ABC):
         """Write a single audio chunk to the speaker. Must be implemented by subclasses."""
         pass
 
-    def _set_status(self, new_status: Literal["disconnected", "connected"], data: dict | None = None) -> None:
+    def _set_status(self, new_status: Literal["disconnected", "connected"], data: dict[str, Any] | None = None) -> None:
         """
         Updates the current status of the speaker and invokes the registered status
         changed callback in the background, if any.

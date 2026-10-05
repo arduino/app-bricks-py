@@ -7,6 +7,7 @@ import re
 import yaml
 import sys
 from dataclasses import dataclass, field
+from typing import Any
 
 from arduino.app_utils.utils import get_board_name
 
@@ -15,7 +16,7 @@ config_file_name: str = "brick_config.yaml"
 compose_config_file_name: str = "brick_compose.yaml"
 
 
-def get_app_config() -> dict | None:
+def get_app_config() -> dict[str, Any] | None:
     """Gets app.yaml application configuration."""
     config_path = None
     app_root_dir = os.getenv("APP_HOME")
@@ -32,8 +33,9 @@ def get_app_config() -> dict | None:
 
     if config_path is None:
         main_module = sys.modules["__main__"]
-        if hasattr(main_module, "__file__"):
-            main_path = os.path.abspath(main_module.__file__)
+        main_file = getattr(main_module, "__file__", None)
+        if main_file:
+            main_path = os.path.abspath(main_file)
             app_root_dir = os.path.dirname(os.path.dirname(main_path))
             config_path = os.path.join(app_root_dir, application_config_file_name)
             if not os.path.exists(config_path):
@@ -47,7 +49,7 @@ def get_app_config() -> dict | None:
     return None
 
 
-def get_brick_config(cls: type) -> dict | None:
+def get_brick_config(cls: type) -> dict[str, Any] | None:
     """Gets resolved brick_config.yaml file."""
     config_file = get_brick_linked_resource_file(cls, config_file_name)
     if config_file and os.path.exists(config_file):
@@ -67,7 +69,7 @@ def get_brick_compose_file(cls: type) -> str | None:
     return get_brick_linked_resource_file(cls, compose_config_file_name)
 
 
-def load_brick_compose_file(cls: type) -> dict | None:
+def load_brick_compose_file(cls: type) -> dict[str, Any] | None:
     """Loads the brick_compose.yaml file and returns its content."""
     pathfile = get_brick_compose_file(cls)
     if pathfile:
@@ -126,10 +128,10 @@ def get_bricks_static_assets_directory() -> str | None:
 @dataclass
 class ModelBrickConfig:
     id: str
-    model_configuration: dict[str, str] = field(default_factory=dict)
+    model_configuration: dict[str, str] = field(default_factory=dict[str, str])
 
     @staticmethod
-    def from_dict(data: dict) -> "ModelBrickConfig":
+    def from_dict(data: dict[str, Any]) -> "ModelBrickConfig":
         return ModelBrickConfig(
             id=data.get("id", ""),
             model_configuration=data.get("model_configuration", {}),
@@ -139,12 +141,12 @@ class ModelBrickConfig:
 @dataclass
 class ModelDeployment:
     handler: str = ""
-    platforms: dict[str, dict] = field(default_factory=dict)
-    metadata: dict[str, str] = field(default_factory=dict)
+    platforms: dict[str, dict[str, Any]] = field(default_factory=dict[str, dict[str, Any]])
+    metadata: dict[str, str] = field(default_factory=dict[str, str])
 
     @staticmethod
-    def from_dict(data: dict) -> "ModelDeployment":
-        platforms = {}
+    def from_dict(data: dict[str, Any]) -> "ModelDeployment":
+        platforms: dict[str, dict[str, Any]] = {}
         for p in data.get("platforms", []):
             if isinstance(p, dict):
                 for platform_name, platform_config in p.items():
@@ -161,13 +163,13 @@ class ModelEntry:
     model_id: str
     name: str = ""
     description: str = ""
-    metadata: dict[str, str] = field(default_factory=dict)
-    supported_boards: list[str] = field(default_factory=list)
+    metadata: dict[str, str] = field(default_factory=dict[str, str])
+    supported_boards: list[str] = field(default_factory=list[str])
     deployment: ModelDeployment | None = None
-    bricks: list[ModelBrickConfig] = field(default_factory=list)
+    bricks: list[ModelBrickConfig] = field(default_factory=list[ModelBrickConfig])
 
     @staticmethod
-    def from_dict(model_id: str, data: dict) -> "ModelEntry":
+    def from_dict(model_id: str, data: dict[str, Any]) -> "ModelEntry":
         deployment = ModelDeployment.from_dict(data["deployment"]) if "deployment" in data else None
         bricks = [ModelBrickConfig.from_dict(b) for b in data.get("bricks", [])]
         return ModelEntry(
@@ -199,7 +201,7 @@ def load_model_list() -> dict[str, ModelEntry] | None:
                 model_list_content = model_list_content["models"]
             if not isinstance(model_list_content, list):
                 return None
-            models = {}
+            models: dict[str, ModelEntry] = {}
             for entry in model_list_content:
                 if isinstance(entry, dict):
                     for model_id, model_data in entry.items():
@@ -209,7 +211,7 @@ def load_model_list() -> dict[str, ModelEntry] | None:
     return None
 
 
-def get_brick_configured_model(brick_id: str, brick_config: dict = None) -> str | None:
+def get_brick_configured_model(brick_id: str | None, brick_config: dict[str, Any] | None = None) -> str | None:
     """Helper method to extract the model name from the app configuration for this brick.
     This allows dynamic configuration of the model via the app's config file, overriding defaults.
 
@@ -224,13 +226,16 @@ def get_brick_configured_model(brick_id: str, brick_config: dict = None) -> str 
         brick_config (Dict, optional): The brick configuration dictionary. If provided, it will load the default model from this configuration,
             if not specified into app.yaml.
     Returns:
-        Optional[str]: The model name if found in the app configuration, otherwise None.
+        Optional[str]: The model name, stripped of surrounding whitespace, if found in the app
+            configuration or in the brick configuration; otherwise None, an empty name included:
+            the caller decides whether a missing model is an error.
     Raises:
-        ValueError: If `brick_id` is not provided (empty string).
+        RuntimeError: If `brick_id` is None or empty. A brick always has an id in its
+            brick_config.yaml, so this means the brick configuration is missing or invalid.
     """
 
     if brick_id is None or brick_id.strip() == "":
-        raise ValueError("Invalid brick_id provided to get_brick_configured_model")
+        raise RuntimeError("Invalid brick configuration: the brick has no id, so its model cannot be resolved")
 
     app_cfg = get_app_config()
     if app_cfg and "bricks" in app_cfg:
@@ -240,7 +245,7 @@ def get_brick_configured_model(brick_id: str, brick_config: dict = None) -> str 
                 print(f"Found brick entry for '{brick_id}' in app.yaml: {brick_entry}")
                 brick_section = brick_entry[brick_id]
                 if isinstance(brick_section, dict) and "model" in brick_section:
-                    return brick_section["model"]
+                    return _model_name(brick_section["model"])
 
     # No model found in app config, check if it's specified in the brick_config.yaml as default for the brick
     if brick_config is None:
@@ -253,16 +258,24 @@ def get_brick_configured_model(brick_id: str, brick_config: dict = None) -> str 
         for board_entry in brick_config["model_by_boards"]:
             if "platform" in board_entry and board_entry["platform"] == board_name:
                 print(f"Found matching board entry for platform '{board_name}': {board_entry}")
-                return board_entry["model"]
+                return _model_name(board_entry["model"])
 
     if brick_config and "model" in brick_config:
         print(f"Found model configuration in brick_config.yaml for brick '{brick_id}': {brick_config['model']}")
-        return brick_config["model"]
+        return _model_name(brick_config["model"])
 
     return None
 
 
-def parse_docker_compose_variable(variable_string: str) -> list[tuple[str, str]] | str:
+def _model_name(value: object) -> str | None:
+    """A configured model name normalized for the callers: stripped, None when empty or missing."""
+    if value is None:
+        return None
+    name = str(value).strip()
+    return name or None
+
+
+def parse_docker_compose_variable(variable_string: str) -> list[tuple[str, str | None]] | str:
     """Parses a Docker Compose-style environment variable string, including nested variables.
 
     Args:
@@ -275,7 +288,7 @@ def parse_docker_compose_variable(variable_string: str) -> list[tuple[str, str]]
     """
     matches = re.findall(r"\${([^:]+)(:\-)?([^}]+)?}", variable_string)
     if matches:
-        results = []
+        results: list[tuple[str, str | None]] = []
         for match in matches:
             if len(match) == 3:
                 var_name = match[0]
@@ -297,7 +310,7 @@ def _accumulate_docker_compose_variables(discovered_vars: list[tuple[str, str | 
             for t in tp:
                 discovered_vars.append(t)
     elif isinstance(value, dict):
-        for k, val in value.items():
+        for val in value.values():
             tp = parse_docker_compose_variable(val)
             if tp and isinstance(tp, list):
                 for t in tp:
@@ -311,18 +324,18 @@ def _accumulate_docker_compose_variables(discovered_vars: list[tuple[str, str | 
 
 
 class ModuleVariable:
-    def __init__(self, name: str, description: str, default_value: str = None) -> None:
-        """Represents a variable in a Docker Compose file."""
+    def __init__(self, name: str, description: str | None, default_value: str | None = None) -> None:
+        """Represents a variable in a Docker Compose file; description and default value may be None."""
         self.name = name
         self.default_value = default_value
         self.description = description
 
-    def to_dict(self) -> dict:
-        """Converts the ModuleVarable object to a dictionary."""
-        dict_out = {"name": self.name, "default_value": self.default_value, "description": self.description}
-        if self.default_value is None or self.default_value == "":
+    def to_dict(self) -> dict[str, Any]:
+        """Converts the ModuleVarable object to a dictionary, without the empty optional fields."""
+        dict_out: dict[str, Any] = {"name": self.name, "default_value": self.default_value, "description": self.description}
+        if not self.default_value:
             del dict_out["default_value"]
-        if self.description is None or self.description == "":
+        if not self.description:
             del dict_out["description"]
         return dict_out
 
@@ -357,21 +370,21 @@ def load_module_supported_variables(file_path: str) -> list[ModuleVariable] | No
             content = file.read()
             docker_c = yaml.safe_load(content)
 
-            discovered_vars = []
+            discovered_vars: list[tuple[str, str | None]] = []
             if "services" in docker_c:
                 for service in docker_c["services"]:
-                    for key, value in docker_c["services"][service].items():
+                    for value in docker_c["services"][service].values():
                         if isinstance(value, str):
                             _accumulate_docker_compose_variables(discovered_vars, value)
                         elif isinstance(value, list):
                             for v in value:
                                 _accumulate_docker_compose_variables(discovered_vars, v)
                         elif isinstance(value, dict):
-                            for k, v in value.items():
+                            for v in value.values():
                                 _accumulate_docker_compose_variables(discovered_vars, v)
 
             if len(discovered_vars) > 0:
-                out_vars = []
+                out_vars: list[ModuleVariable] = []
                 discovered_vars = list(set(discovered_vars))
                 for name, default_value in sorted(discovered_vars):
                     out_vars.append(ModuleVariable(name, descriptions.get(name, None), default_value))

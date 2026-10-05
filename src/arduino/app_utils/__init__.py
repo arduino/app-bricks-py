@@ -8,7 +8,7 @@ from ._lazy_exports import lazy_exports as _lazy_exports
 from .app import *
 from .app import install_startup_signal_handler
 from .bridge import *
-from .logger import _configure_library_logger
+from .logger import configure_library_logger as _configure_library_logger
 from .brick import *
 from .errors import *
 from .errors import install_excepthook as _install_excepthook

@@ -6,7 +6,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 
 import time
-from typing import Any
+from typing import Any, NoReturn
 
 from arduino.app_bricks.cloud_llm import CloudLLM, CloudModelProvider
 from arduino.app_bricks.cloud_llm.cloud_llm import DEFAULT_MEMORY, ToolLike
@@ -81,13 +81,9 @@ class LargeLanguageModel(CloudLLM):
         if model is None:
             logger.info("No model specified in constructor. Attempting to retrieve from app configuration or default brick configuration...")
             brick_config = get_brick_config(self.__class__)
-            app_configured_model = get_brick_configured_model(brick_config.get("id") if brick_config else None, brick_config=brick_config)
-            if app_configured_model:
-                logger.info(f"Using model: '{app_configured_model}'.")
-                model = app_configured_model
-            else:
-                model = brick_config.get("model", None)
-                logger.info(f"Using default model: '{model}'.")
+            # app.yaml override first, then the brick default (model_by_boards or model)
+            model = get_brick_configured_model(brick_config.get("id") if brick_config else None, brick_config=brick_config)
+            logger.info(f"Using model: '{model}'.")
         else:
             logger.debug(f"Forcing use of model: '{model}'.")
 
@@ -97,7 +93,7 @@ class LargeLanguageModel(CloudLLM):
             if base_url is None or base_url.strip() == "":
                 raise ValueError("Empty or wrongly configured 'base_url'")
 
-        if model is None or model.strip() == "":
+        if not model or not model.strip():
             raise ValueError("Model name must be provided either via constructor or configuration.")
 
         else:
@@ -217,7 +213,7 @@ class LargeLanguageModel(CloudLLM):
         """
         return "failed to load" in (server_msg or "").lower()
 
-    def _handle_api_error(self, ilogger: Logger, e: Exception) -> None:
+    def _handle_api_error(self, ilogger: Logger, e: Exception) -> NoReturn:
         """Handles OpenAI API errors by logging details and raising RuntimeError.
 
         Args:
