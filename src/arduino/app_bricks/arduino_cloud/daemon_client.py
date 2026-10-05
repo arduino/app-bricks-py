@@ -227,11 +227,11 @@ class DaemonClient:
         stream ends."""
         event = None
         data_lines: list[str] = []
-        for raw in resp.iter_lines(decode_unicode=True):
+        for line in resp.iter_lines(decode_unicode=True):
             if stop_event.is_set():
                 return
-            if raw is None:
-                continue
+            # requests yields bytes instead of str when the response declares no encoding
+            raw = line.decode("utf-8") if isinstance(line, bytes) else line
             if raw == "":  # blank line terminates an event
                 if data_lines:
                     try:
