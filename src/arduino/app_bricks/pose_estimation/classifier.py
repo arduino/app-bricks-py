@@ -17,7 +17,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .detections import Person
+from .detections import Person, PoseEvent
 
 """Names of the 17 body keypoints detected for each person, in model output order."""
 KEYPOINT_NAMES: tuple[str, ...] = (
@@ -363,7 +363,7 @@ class EmaHysteresis:
     def _per_class(spec: float | dict[str, float], cls: str) -> float:
         return spec[cls] if isinstance(spec, dict) else spec
 
-    def update(self, probs: dict[str, float] | None, dt: float, person_present: bool = True) -> list[tuple[str, str]]:
+    def update(self, probs: dict[str, float] | None, dt: float, person_present: bool = True) -> list[tuple[PoseEvent, str]]:
         """Feed one frame of probabilities observed dt seconds after the previous one.
 
         probs=None marks an invalid frame (see class docstring for the two
@@ -379,7 +379,7 @@ class EmaHysteresis:
             self._invalid_time = 0.0
 
         dt = max(dt, 1e-3)
-        events = []
+        events: list[tuple[PoseEvent, str]] = []
         for cls in self.classes:
             alpha = 1.0 - math.exp(-dt / self._per_class(self.smoothing_tau, cls))
             p = probs.get(cls, 0.0)
@@ -396,7 +396,7 @@ class EmaHysteresis:
                 events.append(("exit", cls))
         return events
 
-    def _update_action(self, cls: str, above_enter: bool, below_exit: bool) -> list[tuple[str, str]]:
+    def _update_action(self, cls: str, above_enter: bool, below_exit: bool) -> list[tuple[PoseEvent, str]]:
         duration = self.action_duration[cls]
         pending_since = self._pending_since[cls]
         if self.active[cls]:

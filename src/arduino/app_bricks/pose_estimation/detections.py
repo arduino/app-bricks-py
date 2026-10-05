@@ -7,6 +7,9 @@
 from dataclasses import dataclass
 from typing import Any, Literal
 
+"""The edge of a pose event: "enter" when the person assumes the pose, "exit" when they leave it."""
+PoseEvent = Literal["enter", "exit"]
+
 
 @dataclass
 class Keypoint:
@@ -62,7 +65,7 @@ class Pose:
     """
 
     name: str
-    event: Literal["enter", "exit"]
+    event: PoseEvent
     confidence: float
     keypoints: dict[str, Keypoint]
     bounding_box_xyxy: tuple[int, int, int, int]
