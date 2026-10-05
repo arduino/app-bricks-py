@@ -76,7 +76,7 @@ class CameraCodeDetection:
         self._on_detect_cb_expects_list = False
         self._on_detect_cb_lock = threading.Lock()  # Synchronizes access to both callback and bool flag
 
-        self.already_seen_codes = set()
+        self.already_seen_codes: set[str] = set()
 
     def start(self) -> None:
         """Start the detector and begin scanning for codes."""
@@ -172,10 +172,10 @@ class CameraCodeDetection:
 
     def _scan_frame(self, frame: np.ndarray) -> list[Detection]:
         """Scan the frame for a single barcode or QR code."""
-        detections = []
+        detections: list[Detection] = []
 
         try:
-            symbols = []
+            symbols: list[ZBarSymbol] = []
             if self._detect_qr:
                 symbols += qrcodes_only
             if self._detect_barcode:
