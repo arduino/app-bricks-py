@@ -67,7 +67,7 @@ class ArduinoCloud:
         secret: str = _DEPRECATED,
         server: str = _DEPRECATED,
         port: int = _DEPRECATED,
-        daemon_url: str = None,
+        daemon_url: str | None = None,
     ) -> None:
         """Initialize the Arduino Cloud client.
 
