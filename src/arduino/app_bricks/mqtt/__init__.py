@@ -4,6 +4,7 @@
 
 import paho.mqtt.client as mqtt
 from paho.mqtt.client import ConnectFlags, DisconnectFlags, MQTTMessage
+from paho.mqtt.enums import CallbackAPIVersion
 from paho.mqtt.properties import Properties
 from paho.mqtt.reasoncodes import ReasonCode
 import json
@@ -40,7 +41,7 @@ def _load_client(client_id: str, username: str | None, password: str | None, top
     Returns:
         mqtt.Client: Configured MQTT client instance.
     """
-    client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2, client_id=client_id)
+    client = mqtt.Client(callback_api_version=CallbackAPIVersion.VERSION2, client_id=client_id)
     if username and password:
         client.username_pw_set(username, password)
 
