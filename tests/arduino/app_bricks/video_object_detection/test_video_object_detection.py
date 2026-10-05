@@ -574,10 +574,27 @@ def test_override_threshold_retries_on_incomplete_handshake(detector: VideoObjec
     connection.send.assert_called_once()
 
 
-def test_override_threshold_does_not_retry_on_invalid_value(detector: VideoObjectDetection, monkeypatch: pytest.MonkeyPatch, no_retry_delay):
-    """Argument validation still happens once a connection is available."""
+@pytest.mark.parametrize("value", ["high", None, 0, 0.0])
+def test_override_threshold_does_not_retry_on_invalid_value(detector: VideoObjectDetection, monkeypatch: pytest.MonkeyPatch, no_retry_delay, value):
+    """Argument validation still happens once a connection is available: anything but a non-zero number is rejected."""
     detector._model_info = _FakeModelInfo()
-    monkeypatch.setattr("arduino.app_bricks.video_objectdetection.connect", lambda uri: MagicMock())
+    connection = MagicMock()
+    connection.__enter__.return_value = connection
+    monkeypatch.setattr("arduino.app_bricks.video_objectdetection.connect", lambda uri: connection)
 
-    with pytest.raises(TypeError):
-        detector.override_threshold("high")
+    with pytest.raises(TypeError, match="Invalid types for value."):
+        detector.override_threshold(value)
+
+    connection.send.assert_not_called()
+
+
+def test_override_threshold_accepts_an_integer(detector: VideoObjectDetection, monkeypatch: pytest.MonkeyPatch):
+    """An integer threshold is a valid number and is sent as is."""
+    detector._model_info = _FakeModelInfo()
+    connection = MagicMock()
+    connection.__enter__.return_value = connection
+    monkeypatch.setattr("arduino.app_bricks.video_objectdetection.connect", lambda uri: connection)
+
+    detector.override_threshold(1)
+
+    assert json.loads(connection.send.call_args[0][0])["value"] == 1

@@ -466,8 +466,11 @@ class VideoObjectDetection:
             TypeError: If the value is not a number.
             RuntimeError: If the model information is not available or does not support threshold override.
         """
-        if not value or not isinstance(value, (int, float)):
-            raise TypeError("Invalid types for value.")
+        match value:
+            case float() | int() if value:
+                pass
+            case _:
+                raise TypeError("Invalid types for value.")
 
         if getattr(self, "_model_info", None) is None:
             logger.warning("Model information is not available. Cannot override threshold.")
@@ -496,8 +499,11 @@ class VideoObjectDetection:
         Raises:
             TypeError: If `enabled` is not a boolean.
         """
-        if not isinstance(enabled, bool):
-            raise TypeError("Enabled must be a boolean value.")
+        match enabled:
+            case bool():
+                pass
+            case _:
+                raise TypeError("Enabled must be a boolean value.")
 
         message = {"type": "toggle-camera-preview", "enabled": enabled}
         logger.info(f"Toggling camera preview to {'enabled' if enabled else 'disabled'}.")
