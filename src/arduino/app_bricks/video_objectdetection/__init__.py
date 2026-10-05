@@ -90,7 +90,7 @@ class VideoObjectDetection:
         infra = load_brick_compose_file(self.__class__)
         if infra is None or "services" not in infra:
             raise RuntimeError("Infrastructure configuration could not be loaded.")
-        for k, v in infra["services"].items():
+        for k in infra["services"]:
             self._host = k
             break  # Only one service is expected
 
