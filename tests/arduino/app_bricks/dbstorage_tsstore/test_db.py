@@ -5,7 +5,7 @@
 import pytest
 from collections.abc import Iterator
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 from typing import Any
 
 from arduino.app_bricks.dbstorage_tsstore import TimeSeriesStore, TimeSeriesStoreError
@@ -300,10 +300,16 @@ def store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TimeSeriesStore:
 
 
 @pytest.fixture
-def influx() -> Iterator[MagicMock]:
-    """The client a started store holds, with a server that has the brick bucket."""
+def influx_class() -> Iterator[MagicMock]:
+    """The InfluxDB client class, talking to a server that has the brick bucket."""
     with patch("arduino.app_bricks.dbstorage_tsstore.InfluxDBClient") as client_class:
-        yield client_class.return_value.__enter__.return_value
+        yield client_class
+
+
+@pytest.fixture
+def influx(influx_class: MagicMock) -> MagicMock:
+    """The client a started store holds."""
+    return influx_class.return_value
 
 
 def test_store_rejects_a_missing_compose_file() -> None:
@@ -316,6 +322,10 @@ def test_start_rejects_a_missing_bucket(store: TimeSeriesStore, influx: MagicMoc
     influx.buckets_api.return_value.find_bucket_by_name.return_value = None
     with pytest.raises(TimeSeriesStoreError, match=r"^Error connecting to InfluxDB: Bucket arduinostorage not found\.$"):
         store.start()
+    influx.write_api.return_value.close.assert_called_once()
+    influx.close.assert_called_once()
+    with pytest.raises(TimeSeriesStoreError):
+        store.get_client()
 
 
 def test_stop_before_start_does_nothing(store: TimeSeriesStore) -> None:
@@ -327,11 +337,37 @@ def test_get_client_before_start_raises(store: TimeSeriesStore) -> None:
         store.get_client()
 
 
-def test_get_client_returns_the_started_client(store: TimeSeriesStore, influx: MagicMock) -> None:
+def test_get_client_returns_a_client_open_until_stop(store: TimeSeriesStore, influx: MagicMock) -> None:
     store.start()
     assert store.get_client() is influx
+    influx.close.assert_not_called()
+    influx.write_api.return_value.close.assert_not_called()
+
     store.stop()
     influx.close.assert_called_once()
+    with pytest.raises(TimeSeriesStoreError):
+        store.get_client()
+
+
+def test_stop_flushes_pending_writes_before_closing_the_client(store: TimeSeriesStore, influx: MagicMock) -> None:
+    store.start()
+    store.stop()
+    closes = [c for c in influx.mock_calls if c in (call.write_api().close(), call.close())]
+    assert closes == [call.write_api().close(), call.close()]
+
+
+def test_start_twice_keeps_the_open_client(store: TimeSeriesStore, influx_class: MagicMock) -> None:
+    store.start()
+    store.start()
+    influx_class.assert_called_once()
+
+
+def test_start_after_stop_opens_a_new_client(store: TimeSeriesStore, influx_class: MagicMock) -> None:
+    store.start()
+    store.stop()
+    store.start()
+    assert influx_class.call_count == 2
+    assert store.get_client() is influx_class.return_value
 
 
 @pytest.mark.parametrize("start_from", ["-1d", "-30m", "2024-06-25T12:34:56Z", "now()"])

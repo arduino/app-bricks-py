@@ -10,6 +10,7 @@ import time
 
 from influxdb_client.client.influxdb_client import InfluxDBClient
 from influxdb_client.client.write.point import Point
+from influxdb_client.client.write_api import WriteApi
 from influxdb_client.domain.bucket_retention_rules import BucketRetentionRules
 from influxdb_client.domain.write_precision import WritePrecision
 
@@ -31,6 +32,13 @@ class TimeSeriesStoreError(Exception):
 def _convert_days_to_seconds(days: int) -> int:
     """Convert days to seconds."""
     return days * 24 * 60 * 60
+
+
+def _close(client: InfluxDBClient, write_api: WriteApi | None) -> None:
+    """Flush and close the write API, then close the client."""
+    if write_api is not None:
+        write_api.close()
+    client.close()
 
 
 class _InfluxDBHandler:
@@ -76,36 +84,47 @@ class _InfluxDBHandler:
 
         This method creates the InfluxDB client connection, initializes write and query APIs,
         and configures the data retention policy for the bucket. The connection is established
-        with the parameters specified during initialization.
+        with the parameters specified during initialization and stays open until stop().
+        Does nothing if the store is already started.
 
         Raises:
             TimeSeriesStoreError: If there is an error connecting to the InfluxDB server or its bucket is missing.
         """
+        if self.client is not None:
+            return
+        client = None
+        write_api = None
         try:
-            with InfluxDBClient(url=self.url, token=self.token, org=self.org) as client:
-                self.client = client
-                self.write_api = client.write_api(write_precision=WritePrecision.MS)
-                self.query_api = client.query_api()
-                # Update data retention of the bucket
-                bucket = client.buckets_api().find_bucket_by_name(self.bucket)
-                if bucket is None:
-                    raise TimeSeriesStoreError(f"Bucket {self.bucket} not found.")
-                bucket.retention_rules = [BucketRetentionRules(type="expire", every_seconds=_convert_days_to_seconds(self.retention_days))]
-                client.buckets_api().update_bucket(bucket)
-            logger.info(f"Connected to InfluxDB: {self.url}")
+            client = InfluxDBClient(url=self.url, token=self.token, org=self.org)
+            write_api = client.write_api(write_precision=WritePrecision.MS)
+            query_api = client.query_api()
+            # Update data retention of the bucket
+            bucket = client.buckets_api().find_bucket_by_name(self.bucket)
+            if bucket is None:
+                raise TimeSeriesStoreError(f"Bucket {self.bucket} not found.")
+            bucket.retention_rules = [BucketRetentionRules(type="expire", every_seconds=_convert_days_to_seconds(self.retention_days))]
+            client.buckets_api().update_bucket(bucket)
         except Exception as e:
+            if client is not None:
+                _close(client, write_api)
             raise TimeSeriesStoreError(f"Error connecting to InfluxDB: {e}") from e
+        self.write_api = write_api
+        self.query_api = query_api
+        self.client = client
+        logger.info(f"Connected to InfluxDB: {self.url}")
 
     def stop(self) -> None:
         """Close the InfluxDB database connection.
 
-        Properly closes the client connection and releases associated resources.
+        Flushes the pending writes, closes the client connection and releases associated resources.
         Should be called when finished with the time series store to ensure
-        proper cleanup. Does nothing if the store was never started.
+        proper cleanup. Does nothing if the store is not started.
         """
         client = self.client
-        if client is not None:
-            client.close()
+        if client is None:
+            return
+        self.client = None
+        _close(client, self.write_api)
 
     def load_default_infra(self) -> dict[str, Any] | None:
         """Load the default InfluxDB compose file for the brick.
@@ -131,7 +150,7 @@ class _InfluxDBHandler:
         """Returns the InfluxDB client instance.
 
         Raises:
-            TimeSeriesStoreError: If the store was never started.
+            TimeSeriesStoreError: If the store is not started.
         """
         client = self.client
         if client is None:
