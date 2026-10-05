@@ -58,7 +58,7 @@ class AudioClassification(AudioDetector):
             TypeError: If `callback` is not callable.
             ValueError: If `callback` accepts any argument.
         """
-        super().on_detect(class_name, callback)
+        self._register_handler(class_name, callback)
 
     def start(self) -> None:
         """Start real-time audio classification.

@@ -4,6 +4,7 @@
 
 import io
 import struct
+import threading
 import wave
 
 import pytest
@@ -46,3 +47,20 @@ def test_classify_from_file_reads_24_bit_samples(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(AudioClassification, "infer_from_features", classmethod(infer))
     AudioClassification.classify_from_file(_wav(sample_width=3), confidence=0.5)
     assert seen == [[0, 0, 0, 0]]
+
+
+def test_on_detect_registers_the_class_by_name_or_position():
+    # Bypass __init__: no microphone and no model runner are needed to register handlers
+    detector = AudioClassification.__new__(AudioClassification)
+    detector.handlers = {}
+    detector.handlers_lock = threading.Lock()
+
+    def callback() -> None:
+        pass
+
+    detector.on_detect("Glass", callback)
+    detector.on_detect(class_name="noise", callback=callback)
+
+    assert detector.handlers == {"glass": callback, "noise": callback}
+    with pytest.raises(ValueError):
+        detector.on_detect("glass", lambda x: None)
