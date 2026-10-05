@@ -159,6 +159,9 @@ class GoogleSpeech:
                 return ASRProviderEvent(type="speech_stop")
             case StreamingRecognizeResponse.SpeechEventType.END_OF_SINGLE_UTTERANCE:
                 return ASRProviderEvent(type="utterance_end")
+            case _:
+                # No speech event: the response carries recognition results, read below
+                pass
         results = getattr(message, "results", None)
         if not results:
             return None

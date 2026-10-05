@@ -154,6 +154,10 @@ class OpenAITranscribe:
                 payload = self._extract_error_payload(message)
                 raise ASRProviderError(f"OpenAI error: {payload}")
 
+            case _:
+                # Other realtime events (session, rate limits, ...) carry nothing to report
+                pass
+
         return None
 
     def recv(self) -> ASRProviderEvent | None:
