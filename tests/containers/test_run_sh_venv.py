@@ -54,8 +54,9 @@ def _run(app: Path, tmp_path: Path) -> list[str]:
     (home / ".asoundrc").write_text("# baked\n")  # As in the image: no ALSA provisioning at start
     log = tmp_path / "calls.log"
     log.write_text("")
+    # Without the venv pytest itself runs in (`uv run` exports it): in the container nothing activates one
     env = {
-        **os.environ,
+        **{k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"},
         "PATH": f"{bin_dir}:{os.environ['PATH']}",
         "HOME": str(home),
         "FAKE_LOG": str(log),
