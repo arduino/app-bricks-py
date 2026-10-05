@@ -20,13 +20,13 @@ from .measure import (
     Bucket,
     Enrollment,
     Outcome,
-    _confusion_table,
-    _learning_curve,
-    _measure,
-    _nearest,
-    _operating_point,
-    _rows_to_keep,
-    _shares,
+    confusion_table,
+    learning_curve,
+    measure_pose,
+    nearest_rows,
+    operating_point,
+    rows_to_keep,
+    vote_shares,
     group_photos,
     look_alikes,
 )
@@ -58,7 +58,7 @@ def enroll(asset_path: Path, specs: tuple[PoseSpec, ...], buckets: dict[str, Buc
 
     custom_rows = np.vstack([buckets[name].embeddings for name in measured]) if measured else np.empty((0, shipped_rows.shape[1]), np.float32)
     custom_labels = np.concatenate([np.full(buckets[name].usable, name) for name in measured]) if measured else np.empty(0, str)
-    keep = _rows_to_keep(shipped_rows, shipped_labels, custom_rows, custom_labels, measured, k, scale, reject)
+    keep = rows_to_keep(shipped_rows, shipped_labels, custom_rows, custom_labels, measured, k, scale, reject)
     set_aside = {label: int(((~keep) & (shipped_labels == label)).sum()) for label in np.unique(shipped_labels[~keep])}
 
     kept_labels = np.where(np.isin(shipped_labels[keep], active), shipped_labels[keep], OTHER)
@@ -73,12 +73,12 @@ def enroll(asset_path: Path, specs: tuple[PoseSpec, ...], buckets: dict[str, Buc
     alike = {name: look_alikes(buckets[name].embeddings, scale) for name in custom}
     groups = {name: group_photos(alike[name]) for name in custom}
     own_idx = {name: np.where(labels == name)[0] for name in measured}
-    measures = {name: _measure(db, labels, own_idx[name], alike[name], k, reject, name) for name in measured}
+    measures = {name: measure_pose(db, labels, own_idx[name], alike[name], k, reject, name) for name in measured}
     other_idx = np.where(labels == OTHER)[0][-len(other_rows) :] if len(other_rows) else np.empty(0, np.int64)
     other_shares = None
     if len(other_idx):
-        idx, dist = _nearest(db[other_idx], db, k, [np.array([i]) for i in other_idx])
-        other_shares = _shares(idx, dist, labels, reject, measured) if measured else None
+        idx, dist = nearest_rows(db[other_idx], db, k, [np.array([i]) for i in other_idx])
+        other_shares = vote_shares(idx, dist, labels, reject, measured) if measured else None
 
     pending: dict[str, tuple] = {}
     accepted: dict[str, tuple[float, float, str]] = {}
@@ -90,15 +90,15 @@ def enroll(asset_path: Path, specs: tuple[PoseSpec, ...], buckets: dict[str, Buc
         n, n_groups = bucket.usable, int(len(np.unique(groups[spec.name]))) if bucket.usable else 0
         curve = None
         if measure is not None and n >= MIN_PHOTOS_TO_ACCEPT and n_groups >= MIN_GROUPS:
-            curve = _learning_curve(db, labels, own_idx[spec.name], groups[spec.name], alike[spec.name], k, reject, spec.name)
+            curve = learning_curve(db, labels, own_idx[spec.name], groups[spec.name], alike[spec.name], k, reject, spec.name)
         if measure is not None and curve is not None and measure.recall > PASS_RECALL:
-            accepted[spec.name] = _operating_point(
+            accepted[spec.name] = operating_point(
                 measure.own_shares, other_shares[:, measured.index(spec.name)] if other_shares is not None else None, spec
             )
         pending[spec.name] = (spec, bucket, measure, n_groups, curve)
 
     confusion_rows = tuple(name for name in active if name in measured or (name in builtin_names and (labels == name).any()))
-    table = _confusion_table(db, labels, k, reject, confusion_rows, {name: alike[name] for name in measured})
+    table = confusion_table(db, labels, k, reject, confusion_rows, {name: alike[name] for name in measured})
     row_counts = {name: int((labels == name).sum()) for name in confusion_rows}
 
     results: dict[str, Outcome] = {}

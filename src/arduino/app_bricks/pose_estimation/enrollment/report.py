@@ -24,8 +24,8 @@ from .measure import (
     PASS_RECALL,
     REFERENCE_THRESHOLD,
     Bucket,
-    _LearningCurve,
-    _Measure,
+    LearningCurve,
+    Measure,
 )
 
 
@@ -47,9 +47,9 @@ def render_report(
     kept: int,
     set_aside: dict[str, int],
     shipped_labels: np.ndarray,
-    measure: _Measure | None,
+    measure: Measure | None,
     n_groups: int,
-    curve: _LearningCurve | None,
+    curve: LearningCurve | None,
     point: tuple[float, float, str] | None,
     table: dict[str, dict[str, float]],
     row_counts: dict[str, int],
