@@ -1247,6 +1247,56 @@ def test_a_stale_marker_still_discards_its_own_partial_files(tmp_path, monkeypat
     assert (repo / "Qwen3-0.6B-Q4_0.gguf").is_file()
 
 
+def test_a_stop_before_the_record_discards_the_landed_file(tmp_path, monkeypatch, stub_download):
+    """A stop after the transfer but before the record is written leaves nothing behind.
+
+    Seen on a board: the file landed, the stop came while the download was being
+    finished, and a complete but unrecorded file stayed with its marker — ignored by the
+    listing, impossible to delete through the API, and reported installed by --check.
+    """
+    models_dir, repo = _qwen_repo(tmp_path)
+
+    def interrupted_write(*args, **kwargs):
+        raise KeyboardInterrupt("received signal 15")
+
+    monkeypatch.setattr(hf_downloader, "write_metadata", interrupted_write)
+    with pytest.raises(KeyboardInterrupt):
+        _run_main(monkeypatch, "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q3_K_S", "--output-dir", str(models_dir))
+
+    assert stub_download == ["*Q3_K_S*.gguf"]
+    assert not (repo / "Q3_K_S.gguf").exists(), "an unrecorded file is not an install"
+    assert not (repo / MARKER_NAME).exists()
+
+
+def test_a_stop_before_the_record_keeps_a_sibling(tmp_path, monkeypatch, stub_download):
+    models_dir, repo = _qwen_repo(tmp_path, "Qwen3-0.6B-Q4_0.gguf")
+
+    def interrupted_write(*args, **kwargs):
+        raise KeyboardInterrupt("received signal 15")
+
+    monkeypatch.setattr(hf_downloader, "write_metadata", interrupted_write)
+    with pytest.raises(KeyboardInterrupt):
+        _run_main(monkeypatch, "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q3_K_S", "--output-dir", str(models_dir))
+
+    assert not (repo / "Q3_K_S.gguf").exists()
+    assert (repo / "Qwen3-0.6B-Q4_0.gguf").is_file(), "the quantization installed before is untouched"
+
+
+def test_a_stop_after_the_record_keeps_the_install(tmp_path, monkeypatch, stub_download):
+    """Once recorded the file is an install: a stop while the rest finishes keeps it."""
+    models_dir, repo = _qwen_repo(tmp_path)
+
+    def interrupted_ini(*args, **kwargs):
+        raise KeyboardInterrupt("received signal 15")
+
+    monkeypatch.setattr(hf_downloader, "generate_models_ini", interrupted_ini)
+    with pytest.raises(KeyboardInterrupt):
+        _run_main(monkeypatch, "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q3_K_S", "--output-dir", str(models_dir))
+
+    assert (repo / "Q3_K_S.gguf").is_file()
+    assert (repo / METADATA_NAME).is_file()
+
+
 def test_interrupted_patterns_reads_what_the_marker_recorded(tmp_path):
     marker = tmp_path / MARKER_NAME
     marker.write_text(json.dumps({"file_patterns": ["*Q3_K_S*.gguf"]}))
