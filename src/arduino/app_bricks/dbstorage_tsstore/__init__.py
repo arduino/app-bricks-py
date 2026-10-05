@@ -256,9 +256,9 @@ class TimeSeriesStore(_InfluxDBHandler):
         measure: str,
         measurement_name: str = "arduino",
         start_from: str = "-1d",
-        end_to: str = None,
-        aggr_window: str = None,
-        aggr_func: str = None,
+        end_to: str | None = None,
+        aggr_window: str | None = None,
+        aggr_func: str | None = None,
         limit: int = 1000,
         order: str = "asc",
     ) -> list:
