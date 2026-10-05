@@ -241,7 +241,8 @@ class LargeLanguageModel(CloudLLM):
             raise RuntimeError(error_msg) from e
         elif isinstance(e, APIError):
             server_msg = e.message if hasattr(e, "message") else str(e)
-            if e.code == 503:
+            # The stub types the body code as str, but runners send it as a JSON number
+            if str(e.code) == "503":
                 error_msg = f"Cannot load model due to a potential memory exhaustion on NPU sessions. message={server_msg}"
             elif self._is_model_load_failure(server_msg):
                 ilogger.error(f"Model runner reported a load failure: status_code={e.code}, message={server_msg}")
