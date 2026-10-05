@@ -209,12 +209,12 @@ class AirQualityMonitoring:
 class AirQualityLookupError(Exception):
     """Custom exception for air quality lookup errors."""
 
-    def __init__(self, message: str, status: str = None) -> None:
+    def __init__(self, message: str, status: str | None = None) -> None:
         """Initialize the AirQualityLookupError with a message and status.
 
         Args:
             message (str): Error message.
-            status (str): Status of the error, defaults to None.
+            status (str | None): Status of the error, defaults to None.
         """
         super().__init__(message)
         self.status = status
