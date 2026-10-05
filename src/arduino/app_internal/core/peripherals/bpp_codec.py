@@ -108,7 +108,7 @@ class BPPCodec:
         """
         self.secret = secret.encode() if secret else b""
         self.enable_encryption = enable_encryption and bool(secret)
-        self.cc_cipher = None
+        self.cc_cipher: ChaCha20Poly1305 | None = None
 
         if self.enable_encryption:
             # Derive 32-byte key for ChaCha20
@@ -163,7 +163,7 @@ class BPPCodec:
             return None
 
         try:
-            ver, mode, timestamp_us, random_val = struct.unpack(HEADER_FORMAT, message[:HEADER_SIZE])
+            ver, mode, timestamp_us, _ = struct.unpack(HEADER_FORMAT, message[:HEADER_SIZE])
         except struct.error:
             logger.warning("Header parsing failed")
             return None
@@ -203,6 +203,9 @@ class BPPCodec:
         # Decrypt/verify
         try:
             if mode == MODE_ENC:
+                if self.cc_cipher is None:
+                    logger.warning("Encrypted message received but encryption is not enabled")
+                    return None
                 iv = replay_id
                 ciphertext_with_tag = message[HEADER_SIZE:]
                 return self.cc_cipher.decrypt(iv, ciphertext_with_tag, header_bytes)
