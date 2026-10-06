@@ -20,7 +20,9 @@ if TYPE_CHECKING:
 class HTTPEndpoint:
     """A class to communicate with remote MCP server via HTTP protocol to perform various tasks."""
 
-    def __init__(self, name: str, url: str, headers: dict | None = None, token: str | None = None, auth: "httpx.Auth | None" = None) -> None:
+    def __init__(
+        self, name: str, url: str, headers: dict[str, str] | None = None, token: str | None = None, auth: "httpx.Auth | None" = None
+    ) -> None:
         """Initialize the HTTPEndpoint with the given name, URL, and optional authentication.
         Configure url to point to the /mcp endpoint of the remote MCP server.
 
@@ -36,17 +38,17 @@ class HTTPEndpoint:
         Args:
             name (str): A unique name for the MCP endpoint configuration.
             url (str): The URL of the remote MCP server's /mcp endpoint (e.g., http://localhost:8080/mcp).
-            headers (dict, optional): Optional HTTP headers for authentication or other purposes. Defaults to None.
+            headers (dict[str, str], optional): Optional HTTP headers for authentication or other purposes. Defaults to None.
             token (str, optional): Bearer token added as an ``Authorization: Bearer`` header. Defaults to None.
             auth (httpx.Auth, optional): An httpx authentication object passed through to the HTTP client. Defaults to None.
         """
-        headers = dict(headers) if headers else {}
+        request_headers = dict(headers) if headers else {}
         if token:
-            headers.setdefault("Authorization", f"Bearer {token}")
+            request_headers.setdefault("Authorization", f"Bearer {token}")
         self.name = name
-        self.config: dict = {"url": url}
-        if headers:
-            self.config["headers"] = headers
+        self.config: dict[str, Any] = {"url": url}
+        if request_headers:
+            self.config["headers"] = request_headers
         if auth is not None:
             self.config["auth"] = auth
 
