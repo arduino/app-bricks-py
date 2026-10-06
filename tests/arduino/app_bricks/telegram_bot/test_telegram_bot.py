@@ -840,3 +840,17 @@ def test_handlers_only_receive_new_messages(mock_telegram_app):
     assert not text_handler.check_update(Update(update_id=2, edited_message=tg_message("hi")))
     assert not text_handler.check_update(Update(update_id=3, channel_post=tg_message("hi")))
     assert not command_handler.check_update(Update(update_id=4, edited_message=tg_message("/ping")))
+
+
+@pytest.mark.asyncio
+async def test_text_handler_ignores_a_message_without_sender():
+    """A message sent on behalf of a channel has no effective_user: the callback is not invoked."""
+    bot = TelegramBot(token="test_token")
+    called: list[bool] = []
+    wrapped = bot._create_text_handler(lambda sender, message: called.append(True))
+
+    update = MagicMock()
+    update.effective_user = None
+    await wrapped(update, MagicMock())
+
+    assert called == []

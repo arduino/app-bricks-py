@@ -234,18 +234,25 @@ class TelegramBot:
         """
 
         async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+            message_in = update.message
+            user = update.effective_user
+            if message_in is None or user is None:
+                # A message sent on behalf of a chat (channel, anonymous admin) has no sender
+                logger.debug("Ignoring an update without a message or a sender")
+                return
+
             sender = Sender(
-                chat_id=update.message.chat_id,
-                user_id=update.effective_user.id,
-                first_name=update.effective_user.first_name,
-                last_name=update.effective_user.last_name,
-                username=update.effective_user.username,
+                chat_id=message_in.chat_id,
+                user_id=user.id,
+                first_name=user.first_name,
+                last_name=user.last_name,
+                username=user.username,
                 _bot=self,
             )
 
             message = Message(
-                message_id=update.message.message_id,
-                text=update.message.text,
+                message_id=message_in.message_id,
+                text=message_in.text,
                 caption=None,
             )
 
@@ -270,36 +277,49 @@ class TelegramBot:
         """
 
         async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+            message_in = update.message
+            user = update.effective_user
+            if message_in is None or user is None:
+                # A message sent on behalf of a chat (channel, anonymous admin) has no sender
+                logger.debug("Ignoring an update without a message or a sender")
+                return
+
             sender = Sender(
-                chat_id=update.message.chat_id,
-                user_id=update.effective_user.id,
-                first_name=update.effective_user.first_name,
-                last_name=update.effective_user.last_name,
-                username=update.effective_user.username,
+                chat_id=message_in.chat_id,
+                user_id=user.id,
+                first_name=user.first_name,
+                last_name=user.last_name,
+                username=user.username,
                 _bot=self,
             )
 
             message = Message(
-                message_id=update.message.message_id,
+                message_id=message_in.message_id,
                 text=None,
-                caption=update.message.caption,
+                caption=message_in.caption,
             )
 
             # Get media-specific attributes from update
             if media_type == "photo":
-                media_obj = update.message.photo[-1]
+                media_obj = message_in.photo[-1]
                 filename = "photo.jpg"  # Telegram doesn't provide original photo names
                 size = media_obj.file_size
             elif media_type == "audio":
-                media_obj = update.message.audio
+                media_obj = message_in.audio
+                if media_obj is None:
+                    return
                 filename = media_obj.file_name or "audio.mp3"
                 size = media_obj.file_size
             elif media_type == "video":
-                media_obj = update.message.video
+                media_obj = message_in.video
+                if media_obj is None:
+                    return
                 filename = media_obj.file_name or "video.mp4"
                 size = media_obj.file_size
             elif media_type == "document":
-                media_obj = update.message.document
+                media_obj = message_in.document
+                if media_obj is None:
+                    return
                 filename = media_obj.file_name or "document"
                 size = media_obj.file_size
             else:
@@ -315,7 +335,7 @@ class TelegramBot:
                     log.info(f"Downloaded {media_type} '{filename}': {size / 1024:.1f} KB")
             except Exception as e:
                 error_msg = f"❌ Errore download '{filename}': {str(e)}"
-                await update.message.reply_text(error_msg)
+                await message_in.reply_text(error_msg)
                 log.error(f"Failed to download {media_type}: {e}")
                 return
 
@@ -934,7 +954,11 @@ class TelegramBot:
             async def builtin_start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 """Built-in handler for /start command."""
                 user = update.effective_user
-                chat_id = update.message.chat_id
+                message_in = update.message
+                if message_in is None or user is None:
+                    logger.debug("Ignoring /start without a message or a sender")
+                    return
+                chat_id = message_in.chat_id
 
                 log = TelegramLoggerAdapter(logger, user_id=user.id, chat_id=chat_id)
 
@@ -950,7 +974,7 @@ class TelegramBot:
                 welcome_msg = f"👋 Hi {user.first_name}!\n\nThis is your user_id: {user.id}\nThis is your chat_id: {chat_id}"
 
                 log.info("Built-in /start command triggered")
-                await update.message.reply_text(welcome_msg)
+                await message_in.reply_text(welcome_msg)
 
                 # Update cooldown timestamp
                 self._welcome_cooldown[user.id] = current_time
@@ -966,6 +990,8 @@ class TelegramBot:
         async def my_chat_member_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             """Handler for my_chat_member updates (bot blocked/unblocked)."""
             chat_member_update = update.my_chat_member
+            if chat_member_update is None:
+                return
 
             # Check if user unblocked the bot (status changed from 'kicked' to 'member')
             old_status = chat_member_update.old_chat_member.status
