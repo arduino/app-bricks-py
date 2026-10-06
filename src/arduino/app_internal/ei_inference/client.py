@@ -91,11 +91,11 @@ class Result:
     seq: int
     ts_ns: int  # timestamp of the submitted frame (CLOCK_MONOTONIC)
     source_size: tuple[int, int]  # (w, h) of the image the boxes refer to
-    boxes: list[Box] = field(default_factory=list)
-    tracks: list[Box] = field(default_factory=list)  # the boxes with their ids, only from a model with the object tracking block
-    classes: dict[str, float] = field(default_factory=dict)
+    boxes: list[Box] = field(default_factory=list[Box])
+    tracks: list[Box] = field(default_factory=list[Box])  # the boxes with their ids, only from a model with the object tracking block
+    classes: dict[str, float] = field(default_factory=dict[str, float])
     anomaly: float = 0.0
-    timing_ms: dict[str, float] = field(default_factory=dict)
+    timing_ms: dict[str, float] = field(default_factory=dict[str, float])
     frame: np.ndarray | None = None  # copy of the submitted image, only with keep_frame=True
     error: str | None = None
     error_code: str | None = None
