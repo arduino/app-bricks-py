@@ -3,53 +3,37 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import time
-import json
-import inspect
-import threading
-import socket
-from concurrent.futures import ThreadPoolExecutor
-import numpy as np
-import base64
-from collections.abc import Callable
 from typing import Any
 
-from websockets.sync.client import connect
-from websockets.sync.connection import Connection
-from websockets.exceptions import ConnectionClosedOK, ConnectionClosedError, InvalidHandshake
+import numpy as np
 
-from arduino.app_peripherals.camera import Camera, BaseCamera
-from arduino.app_internal.core import load_brick_compose_file, resolve_address
-from arduino.app_internal.core import EdgeImpulseRunnerFacade
-from arduino.app_internal.core.ei import EdgeImpulseModelInfo
-from arduino.app_utils.image.adjustments import compress_to_jpeg
-from arduino.app_utils import brick, Logger
+from arduino.app_internal.edge_impulse import AllDetectionsCallback, BoxStabilizer, DetectionCallback, LabelColors, VideoInference, draw_detections
+from arduino.app_internal.ei_inference import Result
+from arduino.app_peripherals.camera import BaseCamera
+from arduino.app_utils import Logger, brick
 
 logger = Logger("VideoObjectDetection")
 
-type DetectionCallback = Callable[[], None] | Callable[[dict[str, Any]], None] | Callable[[dict[str, Any], bytes | None], None]
-"""Callback accepted by `on_detect`: no arguments, the detection details dict, or the dict plus the camera `frame`."""
-type AllDetectionsCallback = Callable[[dict[str, Any]], None] | Callable[[dict[str, Any], bytes | None], None]
-"""Callback accepted by `on_detect_all`: the detections dict, optionally followed by the camera `frame`."""
+MODEL_VARIABLE = "EI_V_OBJ_DETECTION_MODEL"
+STREAM_PORT = VideoInference.STREAM_PORT
+
+__all__ = ["AllDetectionsCallback", "DetectionCallback", "VideoObjectDetection"]
 
 
 @brick
-class VideoObjectDetection:
+class VideoObjectDetection(VideoInference):
     """Module for object detection on a **live video stream** using a specified machine learning model.
 
     This brick:
-      - Connects to a model runner over WebSocket.
-      - Parses incoming classification messages with bounding boxes.
-      - Filters detections by a configurable confidence threshold.
+      - Streams the camera frames to the Edge Impulse inference service over its Unix socket.
+      - Receives the bounding boxes reaching the confidence, in the coordinates of the camera frame.
       - Debounces repeated triggers of the same label.
       - Invokes per-label callbacks and/or a catch-all callback.
+      - Streams the video with the bounding boxes on port 4912, for browsers and embedded iframes: every camera
+        frame is drawn with the boxes of the latest inference, steadied across results.
     """
 
-    ALL_HANDLERS_KEY = "__ALL"
-
-    _DETECTION_LOCK_TO = 0.01  # Seconds to wait for a detection lock before discarding the detection signal
-
-    _WS_CONNECT_RETRIES = 5  # Attempts to open a one-shot WebSocket connection to the model runner
-    _WS_CONNECT_RETRY_DELAY = 1.0  # Seconds between connection attempts
+    MODEL_VARIABLE = MODEL_VARIABLE
 
     def __init__(
         self,
@@ -57,6 +41,7 @@ class VideoObjectDetection:
         confidence: float = 0.3,
         debounce_sec: float = 0.0,
         camera_preview: bool = False,
+        stream_port: int | None = STREAM_PORT,
     ) -> None:
         """Initialize the VideoObjectDetection class.
 
@@ -66,45 +51,17 @@ class VideoObjectDetection:
             debounce_sec (float): Minimum seconds between repeated detections of the same object. Default is 0 seconds.
             camera_preview (bool): Receive current camera frame on callback invocation.
                 Frame is a raw jpeg-encoded image without bounding boxes applied on it. Default is False.
+            stream_port (int | None): Port of the MJPEG stream of the video with the bounding boxes, the one
+                external viewers embed. Default is 4912, None disables the stream.
 
         Raises:
-            RuntimeError: If the host address could not be resolved.
+            RuntimeError: If no model is configured.
         """
-        self._camera = camera if camera else Camera()
+        super().__init__(camera=camera, confidence=confidence, debounce_sec=debounce_sec, camera_preview=camera_preview, stream_port=stream_port)
+        self._colors = LabelColors()
+        self._boxes = BoxStabilizer()  # what the video shows: the boxes of the results, steadied across them
 
-        self._confidence = confidence
-        self._model_info: EdgeImpulseModelInfo | None = None  # Received from the model runner on connection
-        self._debounce_sec = debounce_sec
-        self._last_detected: dict[str, float] = {}
-        self._camera_preview = camera_preview
-        self._last_camera_frame: str | None = None
-        self._camera_preview_lock = threading.Lock()
-
-        self._handlers_lock = threading.Lock()
-        self._handlers: dict[str, Callable[..., None]] = {}  # Handlers by label, invoked according to their signature
-
-        self._detection_locks: dict[str, threading.Lock] = {}  # Per-detection locks for fine-grained concurrency control
-        self._detection_locks_lock = threading.Lock()  # Lock to protect _detection_locks dict
-
-        self._executor = ThreadPoolExecutor(max_workers=5, thread_name_prefix="VideoObjectDetectionHandler")
-
-        self._is_running = threading.Event()
-
-        infra = load_brick_compose_file(self.__class__)
-        if infra is None or "services" not in infra:
-            raise RuntimeError("Infrastructure configuration could not be loaded.")
-        for k in infra["services"]:
-            self._host = k
-            break  # Only one service is expected
-
-        self._host = resolve_address(self._host)
-        if not self._host:
-            raise RuntimeError("Host address could not be resolved. Please check your configuration.")
-
-        self._uri = f"ws://{self._host}:4912"
-        logger.info(f"[{self.__class__.__name__}] Host: {self._host} - URL: {self._uri}")
-
-    def on_detect(self, object: str, callback: DetectionCallback) -> None:
+    def on_detect(self, object: str, callback: DetectionCallback) -> None:  # noqa: A002
         """Register a callback invoked when a **specific label** is detected.
 
         Args:
@@ -118,13 +75,7 @@ class VideoObjectDetection:
         Raises:
             TypeError: If `callback` is not a function.
         """
-        if not inspect.isfunction(callback):
-            raise TypeError("Callback must be a callable function.")
-
-        with self._handlers_lock:
-            if object in self._handlers:
-                logger.warning(f"Handler for object '{object}' already exists. Overwriting.")
-            self._handlers[object] = callback
+        super().on_detect(object, callback)
 
     def on_detect_all(self, callback: AllDetectionsCallback) -> None:
         """Register a callback invoked for **every detection event**.
@@ -142,372 +93,36 @@ class VideoObjectDetection:
         Raises:
             TypeError: If `callback` is not a function.
         """
-        if not inspect.isfunction(callback):
-            raise TypeError("Callback must be a callable function.")
-
-        with self._handlers_lock:
-            self._handlers[self.ALL_HANDLERS_KEY] = callback
+        super().on_detect_all(callback)
 
     def start(self) -> None:
         """Start the video object detection process."""
-        self._camera.start()
-        self._is_running.set()
+        super().start()
 
     def stop(self) -> None:
-        """Stop the video object detection process and release resources."""
-        self._is_running.clear()
-        self._camera.stop()
-        self._executor.shutdown(wait=False, cancel_futures=True)
+        """Stop the video object detection process and release resources, the service releases the model."""
+        super().stop()
 
-    @brick.execute
-    def object_detection_loop(self) -> None:
-        """Object detection main loop.
-
-        Maintains WebSocket connection to the model runner and processes object detection messages.
-        Retries on connection errors until stopped.
-        """
-        while self._is_running.is_set():
-            try:
-                with connect(self._uri) as ws:
-                    logger.info("WebSocket connection established")
-                    while self._is_running.is_set():
-                        try:
-                            message = ws.recv()
-                            if not message:
-                                continue
-                            if isinstance(message, (bytes, bytearray, memoryview)):
-                                message = bytes(message).decode("utf-8")
-                            self._process_message(ws, message)
-                        except ConnectionClosedOK:
-                            raise
-                        except (TimeoutError, ConnectionRefusedError, ConnectionClosedError):
-                            logger.warning(f"WebSocket connection lost. Retrying...")
-                            raise
-                        except Exception as e:
-                            logger.exception(f"Failed to process detection: {e}")
-            except ConnectionClosedOK:
-                logger.debug(f"WebSocket disconnected cleanly, exiting loop.")
-                return
-            except (TimeoutError, ConnectionRefusedError, ConnectionClosedError):
-                logger.debug(f"Waiting for model runner. Retrying...")
-                time.sleep(2)
-                continue
-            except Exception as e:
-                logger.exception(f"Failed to establish WebSocket connection to {self._host}: {e}")
-                time.sleep(2)
-
-    @brick.execute
-    def camera_loop(self) -> None:
-        """Camera main loop.
-
-        Captures images from the camera and forwards them over the TCP connection.
-        Retries on connection errors until stopped.
-        """
-        while self._is_running.is_set():
-            try:
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as tcp_socket:
-                    tcp_socket.connect((self._host, 5050))
-                    logger.info(f"TCP connection established to {self._host}:5050")
-
-                    # Send a priming frame to initialize the EI pipeline and its web server
-                    res = (self._camera.resolution[1], self._camera.resolution[0], 3)
-                    frame = np.zeros(res, dtype=np.uint8)
-                    jpeg_frame = compress_to_jpeg(frame)
-                    if jpeg_frame is not None:
-                        tcp_socket.sendall(jpeg_frame.tobytes())
-
-                    while self._is_running.is_set():
-                        try:
-                            frame = self._camera.capture()
-                            if frame is None:
-                                time.sleep(0.01)  # Brief sleep if no image available
-                                continue
-
-                            jpeg_frame = compress_to_jpeg(frame)
-                            if jpeg_frame is not None:
-                                tcp_socket.sendall(jpeg_frame.tobytes())
-
-                        except (BrokenPipeError, ConnectionResetError, OSError) as e:
-                            logger.warning(f"TCP connection lost: {e}. Retrying...")
-                            break
-                        except Exception as e:
-                            logger.exception(f"Error sending image: {e}")
-
-            except (ConnectionRefusedError, OSError) as e:
-                logger.debug(f"TCP connection failed: {e}. Retrying in 2 seconds...")
-                time.sleep(2)
-            except Exception as e:
-                logger.exception(f"Unexpected error in TCP loop: {e}")
-                time.sleep(2)
-
-    def _process_message(self, ws: Connection, message: str) -> None:
-        jmsg = json.loads(message)
-        if jmsg.get("type") == "hello":
-            # Parse hello message to extract model info if needed
-            logger.debug(
-                f"Connected to model runner: {jmsg}. Configure confidence threshold: {self._confidence}, camera preview: {self._camera_preview}"
-            )
-            try:
-                self._model_info = EdgeImpulseRunnerFacade.parse_model_info_message(jmsg)
-                if self._model_info and self._model_info.thresholds is not None:
-                    self._override_threshold(ws, self._confidence)
-                if self._camera_preview:
-                    self._toogle_camera_preview(ws, True)
-
-            except Exception as e:
-                logger.error(f"Error parsing WS hello message: {e}")
+    def _process_result(self, result: Result) -> None:
+        """Turn the boxes of one frame into detections, feed the video boxes and invoke the handlers."""
+        if not result.ok:
+            logger.warning(f"Inference failed ({result.error_code}): {result.error}")
             return
 
-        elif jmsg.get("type") == "handling-message-success":
-            # Ignore handling-message-success messages
+        detections: dict[str, list[dict[str, Any]]] = {}
+        for box in result.boxes:
+            xyxy_bbox = (round(box.x), round(box.y), round(box.x + box.w), round(box.y + box.h))
+            detections.setdefault(box.label, []).append({"confidence": box.score, "bounding_box_xyxy": xyxy_bbox})
+        self._boxes.update(result.boxes, (time.monotonic_ns() - result.ts_ns) / 1e9)
+        if not detections:
             return
 
-        elif jmsg.get("type") == "classification":
-            result = jmsg.get("result", {})
-            if not isinstance(result, dict):
-                return
+        preview = self._encode_preview(result.frame)
+        for label, label_detections in detections.items():
+            for detection_details in label_detections:
+                self._execute_handler(key=label, payload=detection_details, frame=preview)
+        self._execute_handler(key=self.ALL_HANDLERS_KEY, payload=detections, frame=preview)
 
-            bounding_boxes = result.get("bounding_boxes", [])
-            if bounding_boxes:
-                if len(bounding_boxes) == 0:
-                    return
-
-                # If camera preview is enabled, decode the last received frame to pass to handlers
-                frame = self._decode_preview_frame()
-
-                # Process each bounding box
-                detections: dict[str, list[dict[str, Any]]] = {}
-                for box in bounding_boxes:
-                    detected_object = box.get("label")
-                    if detected_object is None:
-                        continue
-
-                    confidence = box.get("value", 0.0)
-                    if confidence < self._confidence:
-                        continue
-
-                    # Extract bounding box coordinates if needed
-                    xyxy_bbox = (
-                        box.get("x", 0),
-                        box.get("y", 0),
-                        box.get("x", 0) + box.get("width", 0),
-                        box.get("y", 0) + box.get("height", 0),
-                    )
-
-                    detection_details: dict[str, Any] = {"confidence": confidence, "bounding_box_xyxy": xyxy_bbox}
-                    if detected_object not in detections:
-                        detections[detected_object] = []
-                    detections[detected_object].append(detection_details)
-
-                    # Check if the class_id matches any registered handlers
-                    self._execute_handler(key=detected_object, payload=detection_details, frame=frame)
-
-                if len(detections) > 0:
-                    # If there are detections, invoke the all-detection handler
-                    self._execute_handler(key=self.ALL_HANDLERS_KEY, payload=detections, frame=frame)
-
-        elif jmsg.get("type") == "camera-preview":
-            # Keep last camera preview frame if needed for callbacks
-            img_base64 = jmsg.get("image")
-            if img_base64 and self._camera_preview and isinstance(img_base64, str) and img_base64 != "":
-                with self._camera_preview_lock:
-                    # Image data is base64-encoded string (i.e. data:image/jpeg;base64,...)
-                    self._last_camera_frame = img_base64
-            return
-
-        else:
-            # Leave logging for unknown message types for debugging purposes
-            logger.warning(f"Unknown message type: {jmsg.get('type')}")
-
-    def _decode_preview_frame(self) -> bytes | None:
-        """Decode the last received camera preview frame from base64 to a NumPy array.
-
-        Returns:
-            bytes: The decoded image data as bytes, or None if no valid preview frame is available.
-                Image is jpeg encoded.
-
-        """
-
-        if self._camera_preview is False:
-            return None
-
-        last_frame = None
-        with self._camera_preview_lock:
-            if self._last_camera_frame is not None:
-                last_frame = self._last_camera_frame
-
-        if last_frame is not None and last_frame != "":
-            try:
-                split_frame = last_frame.split(",")
-                if len(split_frame) != 2:
-                    logger.debug(f"Unexpected format for camera preview frame: {last_frame[:50]}...")
-                    return None
-                return base64.b64decode(split_frame[1])
-            except Exception as e:
-                logger.error(f"Failed to decode camera preview frame: {e}")
-                return None
-
-    def _get_detection_lock(self, detection: str) -> threading.Lock:
-        """Get or create a lock for a specific detection label.
-
-        Args:
-            detection (str): The detection label to get a lock for.
-
-        Returns:
-            threading.Lock: The lock for the specified detection.
-        """
-        with self._detection_locks_lock:
-            if detection not in self._detection_locks:
-                self._detection_locks[detection] = threading.Lock()
-            return self._detection_locks[detection]
-
-    def _execute_handler(self, key: str, payload: dict[str, Any] | None = None, frame: bytes | None = None) -> None:
-        """Execute the handler registered for the given key.
-
-        Args:
-            key (str): The handler key — either a detection label or ``ALL_HANDLERS_KEY``.
-            payload (dict): The data to pass to the handler (detection details or full detections dict).
-            frame (bytes): The raw jpeg-encoded camera frame, if available.
-        """
-        with self._handlers_lock:
-            handler = self._handlers.get(key)
-
-        if not handler:
-            return
-
-        detection_lock = self._get_detection_lock(key)
-        if not detection_lock.acquire(timeout=self._DETECTION_LOCK_TO):
-            # Lock is already held by a running handler — discard this detection
-            logger.debug(f"Handler for '{key}' is already running, skipping.")
-            return
-
-        # Debounce logic: check if enough time has passed since the last detection before invoking the handler
-        now = time.time()
-        last_time = self._last_detected.get(key, 0)
-        if now - last_time >= self._debounce_sec:
-            self._last_detected[key] = now
-        else:
-            detection_lock.release()
-            return
-
-        def _run() -> None:
-            try:
-                logger.debug(f"Detected: {key}, invoking handler.")
-                sig_args = inspect.signature(handler).parameters
-                if len(sig_args) == 0:
-                    handler()
-                else:
-                    if sig_args.get("frame") is not None:
-                        handler(payload, frame=frame)
-                    else:
-                        handler(payload)
-            finally:
-                detection_lock.release()
-
-        try:
-            self._executor.submit(_run)
-        except RuntimeError:
-            # Executor was shut down before the task could be submitted
-            detection_lock.release()
-
-    def _send_ws_message(self, ws: Connection, message: dict[str, Any]) -> None:
-        try:
-            ws.send(json.dumps(message))
-        except Exception as e:
-            logger.error(f"Failed to send message over WebSocket: {e}")
-
-    def _connect_with_retry(self) -> Connection:
-        """Open a WebSocket connection to the model runner, retrying while it is still starting up.
-
-        The model runner accepts connections only once its inference pipeline is up, so a
-        connection opened right after the app starts can be refused. Retry a few times
-        before giving up.
-
-        Returns:
-            Connection: The established WebSocket connection.
-
-        Raises:
-            ConnectionError: If the connection could not be established after all attempts.
-        """
-        last_error: Exception | None = None
-        for attempt in range(1, self._WS_CONNECT_RETRIES + 1):
-            try:
-                return connect(self._uri)
-            except (OSError, InvalidHandshake) as e:
-                # OSError covers ConnectionRefusedError and TimeoutError: the model runner is
-                # not accepting connections yet. InvalidHandshake: listening, but not ready.
-                last_error = e
-                logger.debug(f"WebSocket connection to {self._uri} failed (attempt {attempt}/{self._WS_CONNECT_RETRIES}): {e}")
-                if attempt < self._WS_CONNECT_RETRIES:
-                    time.sleep(self._WS_CONNECT_RETRY_DELAY)
-
-        raise ConnectionError(f"Could not connect to the model runner at {self._uri} after {self._WS_CONNECT_RETRIES} attempts") from last_error
-
-    def override_threshold(self, value: float) -> None:
-        """Override the threshold for object detection model.
-
-        Args:
-            value (float): The new value for the threshold in the range [0.0, 1.0].
-
-        Raises:
-            TypeError: If the value is not a number.
-            RuntimeError: If the model information is not available or does not support threshold override.
-            ConnectionError: If the model runner could not be reached.
-        """
-        with self._connect_with_retry() as ws:
-            self._override_threshold(ws, value)
-
-    def _override_threshold(self, ws: Connection, value: float) -> None:
-        """Override the threshold for object detection model.
-
-        Args:
-            ws (ClientConnection): The WebSocket connection to send the message through.
-            value (float): The new value for the threshold.
-
-        Raises:
-            TypeError: If the value is not a number.
-            RuntimeError: If the model information is not available or does not support threshold override.
-        """
-        match value:
-            case float() | int() if value:
-                pass
-            case _:
-                raise TypeError("Invalid types for value.")
-
-        model_info = self._model_info
-        if model_info is None:
-            logger.warning("Model information is not available. Cannot override threshold.")
-            return  # Model info is not available, cannot override threshold
-
-        if model_info.thresholds is None or len(model_info.thresholds) == 0:
-            raise RuntimeError("Model information is not available or does not support threshold override.")
-
-        # Get first threshold and extract id. Then override it with the new confidence value.
-        th = model_info.thresholds[0]
-        id = th["id"]
-        message = {"type": "threshold-override", "id": id, "key": "min_score", "value": value}
-
-        logger.info(f"Overriding detection threshold. New confidence: {value}")
-        ws.send(json.dumps(message))
-        # Update local confidence value
-        self._confidence = value
-
-    def _toogle_camera_preview(self, ws: Connection, enabled: bool) -> None:
-        """Toggle the camera preview on the model runner's web server.
-
-        Args:
-            ws (ClientConnection): The WebSocket connection to send the message through.
-            enabled (bool): Whether to enable or disable the camera preview.
-
-        Raises:
-            TypeError: If `enabled` is not a boolean.
-        """
-        match enabled:
-            case bool():
-                pass
-            case _:
-                raise TypeError("Enabled must be a boolean value.")
-
-        message = {"type": "toggle-camera-preview", "enabled": enabled}
-        logger.info(f"Toggling camera preview to {'enabled' if enabled else 'disabled'}.")
-        ws.send(json.dumps(message))
+    def _annotate(self, frame: np.ndarray) -> np.ndarray:
+        """A copy of the frame with the steadied boxes and their labels drawn on it."""
+        return draw_detections(frame, self._boxes.visible(), self._colors)
