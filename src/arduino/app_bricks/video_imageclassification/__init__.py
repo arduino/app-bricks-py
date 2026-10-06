@@ -55,11 +55,11 @@ class VideoImageClassification:
 
         self._confidence = confidence
         self._debounce_sec = debounce_sec
-        self._last_detected = {}
+        self._last_detected: dict[str, float] = {}
 
-        self._handlers = {}  # Dictionary to hold handlers for different actions
+        self._handlers: dict[str, Callable[..., None]] = {}  # Handlers by label, invoked according to their signature
         self._handlers_lock = threading.Lock()
-        self._detection_locks = {}  # Per-detection locks for fine-grained concurrency control
+        self._detection_locks: dict[str, threading.Lock] = {}  # Per-detection locks for fine-grained concurrency control
         self._detection_locks_lock = threading.Lock()  # Lock to protect _detection_locks dict
 
         self._executor = ThreadPoolExecutor(max_workers=5, thread_name_prefix="VideoImageClassificationHandler")
@@ -69,7 +69,7 @@ class VideoImageClassification:
         infra = load_brick_compose_file(self.__class__)
         if infra is None or "services" not in infra:
             raise RuntimeError("Infrastructure configuration could not be loaded.")
-        for k, v in infra["services"].items():
+        for k in infra["services"]:
             self._host = k
             break  # Only one service is expected
 
@@ -84,14 +84,14 @@ class VideoImageClassification:
         self._uri = f"ws://{self._host}:4912"
         logger.info(f"[{self.__class__.__name__}] Host: {self._host} - URL: {self._uri}")
 
-    def on_detect_all(self, callback: Callable[[dict], None]) -> None:
+    def on_detect_all(self, callback: Callable[[dict[str, float]], None]) -> None:
         """Register a callback invoked for **every classification event**.
 
         This callback is useful if you want to process all classified labels in a single
         place, or be notified about any classification regardless of its type.
 
         Args:
-            callback (Callable[[dict], None]):
+            callback (Callable[[dict[str, float]], None]):
                 A function that accepts **exactly one argument**: a dictionary of
                 classifications above the confidence threshold, in the form
                 ``{"label": confidence, ...}``.
@@ -255,7 +255,7 @@ class VideoImageClassification:
             if not isinstance(result, dict):
                 return
 
-            det_classifications = {}
+            det_classifications: dict[str, float] = {}
             classifications = result.get("classification", [])
             if classifications:
                 if self.apply_softmax:
@@ -290,7 +290,7 @@ class VideoImageClassification:
                 self._detection_locks[classification] = threading.Lock()
             return self._detection_locks[classification]
 
-    def _execute_handler(self, classification: str, classifications: dict | None = None) -> None:
+    def _execute_handler(self, classification: str, classifications: dict[str, float] | None = None) -> None:
         """Execute the handler for the detected object if it exists.
 
         Args:
