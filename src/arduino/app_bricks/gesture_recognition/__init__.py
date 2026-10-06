@@ -9,7 +9,7 @@ import queue
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from typing import Literal
+from typing import Any, Literal
 from collections.abc import Callable
 
 import numpy as np
@@ -32,21 +32,21 @@ class GestureRecognition:
         self._confidence = confidence
 
         # Callbacks
-        self._gesture_callbacks = {}  # {(gesture, hand): callback}
-        self._enter_callback = None
-        self._exit_callback = None
-        self._frame_callback = None
+        self._gesture_callbacks: dict[tuple[str, str], Callable[[dict[str, Any]], None]] = {}  # {(gesture, hand): callback}
+        self._enter_callback: Callable[[], None] | None = None
+        self._exit_callback: Callable[[], None] | None = None
+        self._frame_callback: Callable[[np.ndarray], None] | None = None
         self._callbacks_lock = threading.Lock()
 
         # State tracking
         self._had_hands = False
         self._is_running = False
 
-        self._camera_frame_queue = queue.Queue(maxsize=2)
+        self._camera_frame_queue: queue.Queue[np.ndarray] = queue.Queue(maxsize=2)
 
         # Callback executor and per-callback in-progress locks
         self._executor: ThreadPoolExecutor | None = None
-        self._callback_locks: dict[str | tuple, threading.Lock] = {}  # keyed by "enter", "exit", or (gesture, hand)
+        self._callback_locks: dict[str | tuple[str, str], threading.Lock] = {}  # keyed by "enter", "exit", or (gesture, hand)
 
         # WebSocket endpoints
         infra = load_brick_compose_file(self.__class__)
@@ -77,13 +77,13 @@ class GestureRecognition:
             self._executor.shutdown(wait=False, cancel_futures=True)
             self._executor = None
 
-    def on_gesture(self, gesture: str, callback: Callable[[dict], None], hand: Literal["left", "right", "both"] = "both") -> None:
+    def on_gesture(self, gesture: str, callback: Callable[[dict[str, Any]], None] | None, hand: Literal["left", "right", "both"] = "both") -> None:
         """
         Register or unregister a gesture callback.
 
         Args:
             gesture (str): The gesture name to detect
-            callback (Callable[[dict], None]): Function to call when gesture is detected. None to unregister.
+            callback (Callable[[dict], None] | None): Function to call when gesture is detected. None to unregister.
                 The callback receives a metadata dictionary with details about the detection, including:
                 - "hand": Which hand performed the gesture ("left" or "right")
                 - "gesture": Name of the detected gesture
@@ -110,12 +110,12 @@ class GestureRecognition:
                 if key not in self._callback_locks:
                     self._callback_locks[key] = threading.Lock()
 
-    def on_enter(self, callback: Callable[[], None]) -> None:
+    def on_enter(self, callback: Callable[[], None] | None) -> None:
         """
         Register a callback for when hands become visible.
 
         Args:
-            callback (Callable[[], None]): Function to call when at least one hand is detected
+            callback (Callable[[], None] | None): Function to call when at least one hand is detected. None to unregister.
         """
         with self._callbacks_lock:
             self._enter_callback = callback
@@ -124,12 +124,12 @@ class GestureRecognition:
             else:
                 self._callback_locks.pop("enter", None)
 
-    def on_exit(self, callback: Callable[[], None]) -> None:
+    def on_exit(self, callback: Callable[[], None] | None) -> None:
         """
         Register a callback for when hands are no longer visible.
 
         Args:
-            callback (Callable[[], None]): Function to call when no hands are detected anymore
+            callback (Callable[[], None] | None): Function to call when no hands are detected anymore. None to unregister.
         """
         with self._callbacks_lock:
             self._exit_callback = callback
@@ -138,12 +138,12 @@ class GestureRecognition:
             else:
                 self._callback_locks.pop("exit", None)
 
-    def on_frame(self, callback: Callable[[np.ndarray], None]) -> None:
+    def on_frame(self, callback: Callable[[np.ndarray], None] | None) -> None:
         """
         Register a callback that receives each camera frame.
 
         Args:
-            callback (Callable[[np.ndarray], None]): Function to call with camera frame data. None to unregister.
+            callback (Callable[[np.ndarray], None] | None): Function to call with camera frame data. None to unregister.
         """
         with self._callbacks_lock:
             self._frame_callback = callback
@@ -239,7 +239,7 @@ class GestureRecognition:
                     logger.error(f"Error in receive detections task: {e}. Reconnecting...")
                     await asyncio.sleep(3)
 
-    def _process_detection(self, metadata: dict) -> None:
+    def _process_detection(self, metadata: dict[str, Any]) -> None:
         """Process detection data and dispatch appropriate events."""
         hands_data = metadata.get("hands", [])
         has_hands = bool(hands_data)
@@ -276,7 +276,7 @@ class GestureRecognition:
         if callback:
             self._submit_callback("exit", callback)
 
-    def _dispatch_gesture(self, gesture: str, hand: Literal["left", "right"], metadata: dict) -> None:
+    def _dispatch_gesture(self, gesture: str, hand: Literal["left", "right"], metadata: dict[str, Any]) -> None:
         """Dispatch gesture event to registered callbacks."""
         with self._callbacks_lock:
             exact_key = (gesture, hand)
@@ -286,7 +286,7 @@ class GestureRecognition:
         for key, callback in keys_and_callbacks:
             self._submit_callback(key, callback, metadata)
 
-    def _submit_callback(self, key: str | tuple, callback: Callable, *args: object) -> None:
+    def _submit_callback(self, key: str | tuple[str, str], callback: Callable[..., None], *args: object) -> None:
         """Acquire the per-callback lock and submit callback to the executor.
 
         If the lock is already held (callback still running), the event is discarded.
@@ -298,7 +298,7 @@ class GestureRecognition:
             return
         self._executor.submit(self._run_callback, lock, callback, *args)
 
-    def _run_callback(self, lock: threading.Lock, callback: Callable, *args: object) -> None:
+    def _run_callback(self, lock: threading.Lock, callback: Callable[..., None], *args: object) -> None:
         """Run a callback and release its lock when done."""
         try:
             callback(*args)
