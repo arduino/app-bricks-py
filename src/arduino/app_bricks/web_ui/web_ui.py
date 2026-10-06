@@ -362,8 +362,7 @@ class WebUI:
         self.app.mount(url_path, NonCachedStaticFiles(directory=self._assets_dir_path, html=True), name="static")
 
     def _init_socketio(self) -> None:
-        @self.sio.on("connect")
-        async def handle_connect(sid: str, environ: dict, auth: str) -> None:
+        async def handle_connect(sid: str, environ: dict[str, Any], auth: str) -> None:
             logger.debug(f"Client connected: {sid}")
             if self._on_connect_cb:
                 try:
@@ -371,7 +370,6 @@ class WebUI:
                 except Exception as e:
                     logger.exception(f"Error in 'on_connect' callback for {sid}: {e}")
 
-        @self.sio.on("disconnect")
         async def handle_disconnect(sid: str, reason: str) -> None:
             logger.debug(f"Client disconnected ({reason}): {sid}")
             if self._on_disconnect_cb:
@@ -380,18 +378,15 @@ class WebUI:
                 except Exception as e:
                     logger.exception(f"Error in 'on_disconnect' callback for {sid}: {e}")
 
-        @self.sio.on("enter_room")
         async def handle_enter_room(sid: str, room: str) -> None:
             logger.debug(f"Client {sid} entering room {room}")
             await self.sio.enter_room(sid, room)
 
-        @self.sio.on("leave_room")
         async def handle_leave_room(sid: str, room: str) -> None:
             logger.debug(f"Client {sid} leaving room {room}")
             await self.sio.leave_room(sid, room)
 
-        @self.sio.on("*")
-        async def handle_generic_event(event: str, sid: str, data: dict) -> None:
+        async def handle_generic_event(event: str, sid: str, data: dict[str, Any]) -> None:
             """Handles generic messages from clients intended for the registered callbacks."""
             logger.debug(f"Received event'{event}' from {sid} containing: {data}")
 
@@ -416,3 +411,9 @@ class WebUI:
             else:
                 logger.warning(f"No listener registered for '{event}'")
                 await self.sio.emit("error", f"No listener registered for '{event}'", room=sid)
+
+        self.sio.on("connect", handle_connect)
+        self.sio.on("disconnect", handle_disconnect)
+        self.sio.on("enter_room", handle_enter_room)
+        self.sio.on("leave_room", handle_leave_room)
+        self.sio.on("*", handle_generic_event)
