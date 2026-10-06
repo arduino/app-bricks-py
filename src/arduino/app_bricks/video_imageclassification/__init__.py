@@ -19,6 +19,7 @@ from arduino.app_peripherals.camera import Camera, BaseCamera
 from arduino.app_internal.core.module import load_brick_compose_file, resolve_address
 from arduino.app_internal.core.ei import brick_model_requires_softmax, compute_softmax_over_ei_classification
 from arduino.app_internal.core import EdgeImpulseRunnerFacade
+from arduino.app_internal.core.ei import EdgeImpulseModelInfo
 from arduino.app_utils.image.adjustments import compress_to_jpeg
 from arduino.app_utils import brick, Logger
 
@@ -54,6 +55,7 @@ class VideoImageClassification:
         self._camera = camera if camera else Camera()
 
         self._confidence = confidence
+        self._model_info: EdgeImpulseModelInfo | None = None  # Received from the model runner on connection
         self._debounce_sec = debounce_sec
         self._last_detected: dict[str, float] = {}
 
@@ -388,18 +390,22 @@ class VideoImageClassification:
             TypeError: If the value is not a number.
             RuntimeError: If the model information is not available or does not support threshold override.
         """
-        if not value or not isinstance(value, (int, float)):
-            raise TypeError("Invalid types for value.")
+        match value:
+            case float() | int() if value:
+                pass
+            case _:
+                raise TypeError("Invalid types for value.")
 
-        if getattr(self, "_model_info", None) is None:
+        model_info = self._model_info
+        if model_info is None:
             logger.warning("Model information is not available. Cannot override threshold.")
             return  # Model info is not available, cannot override threshold
 
-        if self._model_info.thresholds is None or len(self._model_info.thresholds) == 0:
+        if model_info.thresholds is None or len(model_info.thresholds) == 0:
             raise RuntimeError("Model information is not available or does not support threshold override.")
 
         # Get first threshold and extract id. Then override it with the new confidence value.
-        th = self._model_info.thresholds[0]
+        th = model_info.thresholds[0]
         id = th["id"]
         message = {"type": "threshold-override", "id": id, "key": "min_score", "value": value}
 

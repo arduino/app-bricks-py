@@ -460,3 +460,41 @@ def test_override_threshold_raises_after_exhausting_retries(classifier: VideoIma
 
     assert len(attempts) == classifier._WS_CONNECT_RETRIES, "Every attempt should be used before giving up"
     assert isinstance(excinfo.value.__cause__, ConnectionRefusedError)
+
+
+@pytest.mark.parametrize("value", ["high", None, 0, 0.0])
+def test_override_threshold_rejects_invalid_values(classifier: VideoImageClassification, monkeypatch: pytest.MonkeyPatch, value):
+    """Anything but a non-zero number is rejected before a message is sent."""
+    classifier._model_info = _FakeModelInfo()
+    connection = MagicMock()
+    connection.__enter__.return_value = connection
+    monkeypatch.setattr("arduino.app_bricks.video_imageclassification.connect", lambda uri: connection)
+
+    with pytest.raises(TypeError, match="Invalid types for value."):
+        classifier.override_threshold(value)
+
+    connection.send.assert_not_called()
+
+
+def test_override_threshold_before_model_info_sends_nothing(classifier: VideoImageClassification, monkeypatch: pytest.MonkeyPatch):
+    """Before the model runner said hello there is no threshold to override: nothing is sent, confidence is kept."""
+    connection = MagicMock()
+    connection.__enter__.return_value = connection
+    monkeypatch.setattr("arduino.app_bricks.video_imageclassification.connect", lambda uri: connection)
+
+    classifier.override_threshold(0.75)
+
+    connection.send.assert_not_called()
+    assert classifier._confidence == pytest.approx(0.3)
+
+
+def test_override_threshold_accepts_an_integer(classifier: VideoImageClassification, monkeypatch: pytest.MonkeyPatch):
+    """An integer threshold is a valid number and is sent as is."""
+    classifier._model_info = _FakeModelInfo()
+    connection = MagicMock()
+    connection.__enter__.return_value = connection
+    monkeypatch.setattr("arduino.app_bricks.video_imageclassification.connect", lambda uri: connection)
+
+    classifier.override_threshold(1)
+
+    assert json.loads(connection.send.call_args[0][0])["value"] == 1
