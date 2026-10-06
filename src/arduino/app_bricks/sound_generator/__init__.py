@@ -123,7 +123,7 @@ class SoundGeneratorStreamer:
             notes = self._fill_node_frequencies(octave)
             self._notes.update(notes)
 
-        self._wav_cache = LRUDict(maxsize=10)
+        self._wav_cache: LRUDict[str, tuple[bytes, float]] = LRUDict(maxsize=10)
 
     def start(self) -> None:
         pass
@@ -339,11 +339,11 @@ class SoundGeneratorStreamer:
             volume = self._master_volume
 
         # Multi track mixing
-        sequences_data = []
+        sequences_data: list[NDArray[np.float32]] = []
         base_frequency = None
         max_duration = 0.0
         for sequence in notes:
-            sequence_waves = []
+            sequence_waves: list[NDArray[np.float32]] = []
             sequence_duration = 0.0
             for note, duration in sequence:
                 sequence_duration += duration
@@ -403,7 +403,7 @@ class SoundGeneratorStreamer:
             # The note duration, not the seconds computed from it: play converts it itself.
             return self.play(notes[0], note_duration, volume)
 
-        waves = []
+        waves: list[NDArray[np.float32]] = []
         base_frequency = None
         for note in notes:
             frequency = self._get_note(note)
@@ -786,11 +786,11 @@ class SoundGenerator(SoundGeneratorStreamer):
         self.set_master_volume(composition.volume)
         self.set_effects(composition.effects)
 
-        sequence = []
+        sequence: list[list[str]] = []
         step_duration = None
 
         for step_data in composition.composition:
-            step_notes = []
+            step_notes: list[str] = []
             for note, duration in step_data:
                 if step_duration is None:
                     step_duration = duration  # Use first note's duration as step duration
@@ -1122,7 +1122,7 @@ class SoundGenerator(SoundGeneratorStreamer):
             current_step_index, current_notes = current_step
             current_data = self._render_sequence_step(current_notes, note_duration, volume)
             current_data_prequeued = False
-            future_steps = []
+            future_steps: list[tuple[int, list[str], NDArray[np.float32], bool]] = []
 
             processed_steps = 0
             # The loop ends on its breaks: current_step is never reassigned
@@ -1134,7 +1134,7 @@ class SoundGenerator(SoundGeneratorStreamer):
                     break
 
                 # --- Send audio to speaker ---
-                if current_data is not None and not current_data_prequeued:
+                if not current_data_prequeued:
                     try:
                         self._output_device.play(current_data)
                     except Exception:

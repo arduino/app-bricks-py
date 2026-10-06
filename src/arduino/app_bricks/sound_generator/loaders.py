@@ -311,7 +311,7 @@ class ABCNotationLoader:
         metadata: ABCMetadata = {}
 
         lines = abc_string.split("\n")
-        music_lines = []
+        music_lines: list[str] = []
 
         # --- Parse Header Fields ---
         for line in lines:
