@@ -104,13 +104,21 @@ class EdgeImpulseModel:
         """Override the confidence threshold of the detections.
 
         Args:
-            value (float): The new value for the threshold in the range [0.0, 1.0].
+            value (float): The new value for the threshold in the range (0.0, 1.0].
 
         Raises:
             TypeError: If the value is not a number.
+            ValueError: If the value is zero.
         """
-        if not isinstance(value, (int, float)) or isinstance(value, bool):
-            raise TypeError("Invalid types for value.")
+        match value:
+            case bool():
+                raise TypeError("Invalid types for value.")
+            case 0:
+                raise ValueError("The threshold must not be zero.")
+            case float() | int():
+                pass
+            case _:
+                raise TypeError("Invalid types for value.")
         logger.info(f"Overriding detection threshold. New confidence: {value}")
         self._confidence = float(value)
         client = self._connected()
