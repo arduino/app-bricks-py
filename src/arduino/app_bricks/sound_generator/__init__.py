@@ -5,7 +5,7 @@
 from arduino.app_utils import brick, Logger
 from arduino.app_peripherals.speaker import Speaker
 import threading
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 import numpy as np
 from numpy.typing import NDArray
 import time
@@ -964,8 +964,8 @@ class SoundGenerator(SoundGeneratorStreamer):
         note_duration: float | str = 1 / 16,
         bpm: int | None = None,
         loop: bool = False,
-        on_step_callback: callable = None,
-        on_complete_callback: callable = None,
+        on_step_callback: Callable[[int, int], None] | None = None,
+        on_complete_callback: Callable[[], None] | None = None,
         volume: float | None = None,
     ) -> None:
         """
@@ -980,9 +980,9 @@ class SoundGenerator(SoundGeneratorStreamer):
             note_duration (float | str): Duration of each step as a float (like 1/16) or symbol ('E', 'Q', etc.).
             bpm (int, optional): Tempo in beats per minute. If None, uses instance BPM.
             loop (bool): If True, the sequence will loop indefinitely until stop_sequence() is called.
-            on_step_callback (callable, optional): Callback function called for each step.
+            on_step_callback (Callable[[int, int], None], optional): Callback function called for each step.
                 Signature: on_step_callback(current_step: int, total_steps: int)
-            on_complete_callback (callable, optional): Callback function called when sequence completes (only if loop=False).
+            on_complete_callback (Callable[[], None], optional): Callback function called when sequence completes (only if loop=False).
                 Signature: on_complete_callback()
             volume (float, optional): Volume level (0.0 to 1.0). If None, uses master volume.
 
@@ -1081,8 +1081,8 @@ class SoundGenerator(SoundGeneratorStreamer):
         note_duration: float | str,
         bpm: int,
         loop: bool,
-        on_step_callback: callable,
-        on_complete_callback: callable,
+        on_step_callback: Callable[[int, int], None] | None,
+        on_complete_callback: Callable[[], None] | None,
         volume: float,
         session_id: int,
     ) -> None:
