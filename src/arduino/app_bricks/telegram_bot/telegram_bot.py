@@ -6,14 +6,17 @@ import os
 import asyncio
 import threading
 import time
-from typing import Optional
-from collections.abc import Callable
+from typing import Any, Optional
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from arduino.app_utils import brick, Logger
 from telegram import Update, BotCommand, InputFile
 from telegram.ext import Application, CommandHandler, MessageHandler, ChatMemberHandler, filters, ContextTypes
 from telegram.error import NetworkError, TimedOut
 from .logger_adapter import TelegramLoggerAdapter
+
+# The async callbacks python-telegram-bot handlers run
+UpdateHandler = Callable[[Update, ContextTypes.DEFAULT_TYPE], Coroutine[Any, Any, None]]
 
 logger = Logger("TelegramBot")
 
@@ -216,7 +219,7 @@ class TelegramBot:
         self._commands_registry: dict[str, str] = {}
         self._welcome_cooldown: dict[int, float] = {}  # Track last welcome message timestamp per user_id
 
-    def _create_text_handler(self, callback: Callable[[Sender, Message], None]) -> Callable:
+    def _create_text_handler(self, callback: Callable[[Sender, Message], None]) -> UpdateHandler:
         """Create a Telegram handler for text messages.
 
         Args:
@@ -248,7 +251,7 @@ class TelegramBot:
 
         return wrapper
 
-    def _create_media_handler(self, callback: Callable[[Sender, Message, bytes, str, int], None], media_type: str) -> Callable:
+    def _create_media_handler(self, callback: Callable[[Sender, Message, bytes, str, int], None], media_type: str) -> UpdateHandler:
         """Create a unified Telegram handler for media messages (photo/audio/video/document).
 
         All media types share the same signature and similar download logic,
