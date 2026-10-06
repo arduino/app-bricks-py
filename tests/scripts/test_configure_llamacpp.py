@@ -9,7 +9,8 @@ built on, the sizing itself, and a regression table of what the measured models 
 (containers/ai/llamacpp-npu-runner/SESSION_ALLOCATION.md) — and, for
 both runners, whose scripts deliberately duplicate the code, the served model names,
 which are derived from the ".arduino_metadata.yaml" download records rather than from
-a catalog baked into the images.
+a catalog baked into the images, and the per-model preset keys a decision model gets in
+models.ini so that its whole prompt fits in one micro-batch.
 """
 
 from __future__ import annotations
@@ -1272,3 +1273,141 @@ def test_models_ini_serves_a_gguf_with_a_projector_as_its_text_and_multimodal_mo
     assert sorted(config.sections()) == ["gemma-4-E4B_q4_0-it", "gemma-4-E4B_q4_0-it-multimodal"]
     assert dict(config["gemma-4-E4B_q4_0-it"]) == {"model": model.as_posix()}
     assert dict(config["gemma-4-E4B_q4_0-it-multimodal"]) == {"model": model.as_posix(), "mmproj": mmproj.as_posix()}
+
+
+# --------------------------------------------------------------------------- #
+# Decision models: the per-model preset keys of models.ini
+#
+# A decision model evaluates its whole prompt in one micro-batch, and the service
+# configures a small one for the chat models (LLAMA_ARG_UBATCH=128 on the UNO Q), so its
+# section gets LLAMA_ARG_* keys of its own. Both runner scripts carry the same code, and
+# the tests write real headers: the decision model is told by its <arch>.decision.type key.
+# --------------------------------------------------------------------------- #
+
+DECISION_MODEL_BATCH = configure_llamacpp.DECISION_MODEL_BATCH
+DEFAULT_CTX_SIZE = configure_llamacpp.DEFAULT_CTX_SIZE
+
+
+def decision_model(path: Path, *, context_length: int = 8192, architecture: str = "modern-bert", decision_type: str = "laya") -> Path:
+    """A decision model's header, as llama.cpp's convert script writes it for Laya: one
+    layer, and the decision type key that marks the model as one."""
+    metadata = {
+        "general.architecture": architecture,
+        f"{architecture}.decision.type": decision_type,
+        f"{architecture}.context_length": context_length,
+        f"{architecture}.block_count": 1,
+    }
+    return write_gguf(path, metadata, [("blk.0.attn_k.weight", (768,), Q8_0)])
+
+
+def test_a_decision_model_gets_a_micro_batch_as_big_as_its_prompt_room(runner, tmp_path, monkeypatch, capsys):
+    """Laya holds 8192 tokens: at the service's 16k context its section gets that context
+    and a batch and micro-batch of DECISION_MODEL_BATCH, where the router's own micro-batch
+    (128 on the UNO Q) would fail any prompt longer than that."""
+    monkeypatch.setenv("LLAMA_ARG_CTX_SIZE", "16384")
+    gguf = decision_model(tmp_path / "Laya-Q8_0.gguf")
+
+    assert runner.decision_model_options(gguf) == {
+        "LLAMA_ARG_CTX_SIZE": "8192",
+        "LLAMA_ARG_BATCH": "2048",
+        "LLAMA_ARG_UBATCH": "2048",
+    }
+    assert "Laya-Q8_0: decision model (laya), ctx 8192, batch 2048" in capsys.readouterr().err
+
+
+def test_the_batch_never_exceeds_what_the_model_holds(runner, tmp_path, monkeypatch):
+    """A model trained on 512 tokens cannot take a 2048-token batch: the batch and the
+    micro-batch are capped by its context, which the section then runs at."""
+    monkeypatch.setenv("LLAMA_ARG_CTX_SIZE", "16384")
+    gguf = decision_model(tmp_path / "small.gguf", context_length=512)
+
+    assert runner.decision_model_options(gguf) == {
+        "LLAMA_ARG_CTX_SIZE": "512",
+        "LLAMA_ARG_BATCH": "512",
+        "LLAMA_ARG_UBATCH": "512",
+    }
+
+
+@pytest.mark.parametrize(
+    ("model_ctx", "expected_ctx"),
+    [(8192, "8192"), (32768, str(DEFAULT_CTX_SIZE))],
+    ids=["model smaller than the default", "model larger than the default"],
+)
+def test_an_unset_context_is_the_default_one_or_the_models_whichever_is_smaller(runner, tmp_path, monkeypatch, model_ctx, expected_ctx):
+    """Without LLAMA_ARG_CTX_SIZE the server runs at the context the service configures
+    out of the box, so that is what the section is sized against."""
+    monkeypatch.delenv("LLAMA_ARG_CTX_SIZE", raising=False)
+    gguf = decision_model(tmp_path / "m.gguf", context_length=model_ctx)
+
+    options = runner.decision_model_options(gguf)
+
+    assert options["LLAMA_ARG_CTX_SIZE"] == expected_ctx
+    assert options["LLAMA_ARG_BATCH"] == options["LLAMA_ARG_UBATCH"] == str(DECISION_MODEL_BATCH)
+
+
+def test_a_smaller_configured_context_wins_over_the_models(runner, tmp_path, monkeypatch):
+    """The user's LLAMA_ARG_CTX_SIZE is a ceiling the section respects, like every other
+    model's: the preset only ever lowers the context, never raises it past what was asked."""
+    monkeypatch.setenv("LLAMA_ARG_CTX_SIZE", "4096")
+    gguf = decision_model(tmp_path / "m.gguf", context_length=8192)
+
+    options = runner.decision_model_options(gguf)
+
+    assert options["LLAMA_ARG_CTX_SIZE"] == "4096"
+    assert options["LLAMA_ARG_UBATCH"] == "2048"
+
+
+def test_a_chat_model_gets_no_preset_keys(runner, tmp_path, monkeypatch, capsys):
+    """A header without the decision type key is a chat model, which keeps the router's
+    arguments: an empty dict adds nothing to its section."""
+    monkeypatch.setenv("LLAMA_ARG_CTX_SIZE", "16384")
+    gguf = attention_model(tmp_path / "chat.gguf", layers=2)
+
+    assert runner.decision_model_options(gguf) == {}
+    assert "decision model" not in capsys.readouterr().err
+
+
+def test_an_unreadable_header_gets_no_preset_keys(runner, tmp_path):
+    """The naming tests install 1-byte GGUFs, and a corrupt download is possible on the
+    board: neither may fail the container start, so an unreadable header is not a decision
+    model rather than an error."""
+    assert runner.decision_model_options(_gguf(tmp_path / "stub.gguf")) == {}
+    assert runner.decision_model_options(tmp_path / "missing.gguf") == {}
+
+
+def test_models_ini_carries_the_decision_model_keys_in_their_own_case(runner, tmp_path, monkeypatch):
+    """End to end: the decision model's section gets its LLAMA_ARG_* keys spelled as the
+    environment variables they stand for — llama-server matches them case-sensitively,
+    and configparser would lowercase them by default — and the chat model's section is
+    untouched."""
+    monkeypatch.setenv("LLAMA_ARG_CTX_SIZE", "16384")
+    decision_model(tmp_path / "ggml-org" / "Laya-GGUF" / "Laya-Q8_0.gguf")
+    _gguf(tmp_path / "unsloth" / "Qwen3-0.6B-GGUF" / "Qwen3-0.6B-Q4_0.gguf")
+
+    runner.generate_models_ini(tmp_path)
+
+    raw = (tmp_path / "models.ini").read_text()
+    decision_section = raw[raw.index("[Laya-Q8_0]") :].split("\n[", 1)[0]
+    assert "LLAMA_ARG_UBATCH = 2048" in decision_section
+    assert "llama_arg_ubatch" not in raw
+
+    config = configparser.ConfigParser()
+    config.optionxform = str
+    config.read(tmp_path / "models.ini")
+    assert sorted(config.sections()) == ["Laya-Q8_0", "Qwen3-0.6B-Q4_0"]
+    assert list(config["Laya-Q8_0"]) == ["model", "LLAMA_ARG_CTX_SIZE", "LLAMA_ARG_BATCH", "LLAMA_ARG_UBATCH"]
+    assert config["Laya-Q8_0"]["LLAMA_ARG_CTX_SIZE"] == "8192"
+    assert config["Laya-Q8_0"]["LLAMA_ARG_BATCH"] == "2048"
+    assert list(config["Qwen3-0.6B-Q4_0"]) == ["model"]
+
+
+def test_the_hexagon_sizing_survives_a_decision_model_header(tmp_path, monkeypatch):
+    """The NPU runner sizes its sessions from the same headers: a ModernBERT header, which
+    says nothing about heads or head sizes, must still come out as a session count rather
+    than an exception, whether sized from the header or by file size."""
+    monkeypatch.setenv("LLAMA_ARG_CTX_SIZE", "16384")
+    gguf = decision_model(tmp_path / "Laya-Q8_0.gguf")
+
+    sessions = detect_hexagon_sessions({"Laya-Q8_0": {"model": str(gguf)}}, 16384)
+
+    assert isinstance(sessions, int) and sessions >= 1
