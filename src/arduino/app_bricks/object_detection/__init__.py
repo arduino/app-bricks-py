@@ -36,7 +36,7 @@ class ObjectDetection(EdgeImpulseRunnerFacade):
         if not self._model_info:
             raise ValueError("Failed to retrieve model information. Ensure the Edge Impulse service is running.")
 
-    def detect_from_file(self, image_path: str, confidence: float | None = None) -> dict | None:
+    def detect_from_file(self, image_path: str, confidence: float | None = None) -> dict[str, list[Any]] | None:
         """Process a local image file to detect and identify objects.
 
         Args:
@@ -91,7 +91,7 @@ class ObjectDetection(EdgeImpulseRunnerFacade):
             shape = Shape.CIRCLE
         return draw_bounding_boxes(image, detections, shape=shape)
 
-    def _extract_detection(self, item: dict | None, confidence: float | None = None) -> dict[str, list[Any]] | None:
+    def _extract_detection(self, item: dict[str, Any] | None, confidence: float | None = None) -> dict[str, list[Any]] | None:
         if not item:
             return None
 
@@ -102,7 +102,7 @@ class ObjectDetection(EdgeImpulseRunnerFacade):
             else:
                 return None
 
-            detection = []
+            detection: list[dict[str, Any]] = []
             for result in results:
                 if "label" in result and "value" in result:
                     class_name = result["label"]
@@ -128,7 +128,7 @@ class ObjectDetection(EdgeImpulseRunnerFacade):
 
         return None
 
-    def process(self, item: str | dict) -> dict[str, list[Any]] | None:
+    def process(self, item: str | dict[str, Any]) -> dict[str, list[Any]] | None:
         """Process an item to detect objects in an image.
 
         This method supports two input formats:
