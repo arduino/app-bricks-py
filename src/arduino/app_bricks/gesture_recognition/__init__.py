@@ -77,13 +77,13 @@ class GestureRecognition:
             self._executor.shutdown(wait=False, cancel_futures=True)
             self._executor = None
 
-    def on_gesture(self, gesture: str, callback: Callable[[dict], None], hand: Literal["left", "right", "both"] = "both") -> None:
+    def on_gesture(self, gesture: str, callback: Callable[[dict], None] | None, hand: Literal["left", "right", "both"] = "both") -> None:
         """
         Register or unregister a gesture callback.
 
         Args:
             gesture (str): The gesture name to detect
-            callback (Callable[[dict], None]): Function to call when gesture is detected. None to unregister.
+            callback (Callable[[dict], None] | None): Function to call when gesture is detected. None to unregister.
                 The callback receives a metadata dictionary with details about the detection, including:
                 - "hand": Which hand performed the gesture ("left" or "right")
                 - "gesture": Name of the detected gesture
@@ -110,12 +110,12 @@ class GestureRecognition:
                 if key not in self._callback_locks:
                     self._callback_locks[key] = threading.Lock()
 
-    def on_enter(self, callback: Callable[[], None]) -> None:
+    def on_enter(self, callback: Callable[[], None] | None) -> None:
         """
         Register a callback for when hands become visible.
 
         Args:
-            callback (Callable[[], None]): Function to call when at least one hand is detected
+            callback (Callable[[], None] | None): Function to call when at least one hand is detected. None to unregister.
         """
         with self._callbacks_lock:
             self._enter_callback = callback
@@ -124,12 +124,12 @@ class GestureRecognition:
             else:
                 self._callback_locks.pop("enter", None)
 
-    def on_exit(self, callback: Callable[[], None]) -> None:
+    def on_exit(self, callback: Callable[[], None] | None) -> None:
         """
         Register a callback for when hands are no longer visible.
 
         Args:
-            callback (Callable[[], None]): Function to call when no hands are detected anymore
+            callback (Callable[[], None] | None): Function to call when no hands are detected anymore. None to unregister.
         """
         with self._callbacks_lock:
             self._exit_callback = callback
@@ -138,12 +138,12 @@ class GestureRecognition:
             else:
                 self._callback_locks.pop("exit", None)
 
-    def on_frame(self, callback: Callable[[np.ndarray], None]) -> None:
+    def on_frame(self, callback: Callable[[np.ndarray], None] | None) -> None:
         """
         Register a callback that receives each camera frame.
 
         Args:
-            callback (Callable[[np.ndarray], None]): Function to call with camera frame data. None to unregister.
+            callback (Callable[[np.ndarray], None] | None): Function to call with camera frame data. None to unregister.
         """
         with self._callbacks_lock:
             self._frame_callback = callback
