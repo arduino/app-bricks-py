@@ -510,7 +510,7 @@ class SoundGeneratorStreamer:
             return
         if volume is None:
             volume = self._master_volume
-        metadata, notes = ABCNotationLoader.parse_abc_notation(abc_string)
+        _, notes = ABCNotationLoader.parse_abc_notation(abc_string)
         for note, duration in notes:
             frequency = self._get_note(note)
             if frequency is not None and frequency >= 0.0:
