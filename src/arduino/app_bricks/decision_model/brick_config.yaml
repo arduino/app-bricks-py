@@ -7,7 +7,7 @@ model_by_boards:
   - platform: ventunoq
     model: llamacpp:Laya-Q8_0
   - platform: unoq
-    model: llamacpp:Laya-Q8_0
+    model: llamacpp:Julia-1-Q8_0
 supported_boards: ["unoq", "ventunoq"]
 ai_frameworks_compatibility:
   - llamacpp

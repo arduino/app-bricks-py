@@ -12,7 +12,9 @@ Three question types are supported:
 - **`Score`**: place the state on a scale of 2 to 10 described levels (urgency, severity, quality). The answer is the expected level plus the probability of every level.
 - **`Noul`**: a yes/no question (checks, filters, flags). The answer is the probability that the answer is yes.
 
-Available models (download them in Arduino App Lab): `llamacpp:Laya-Q8_0` (default, 0.42B parameters, up to 255 options), `llamacpp:Julia-1-Q8_0` (0.14B, the smallest and fastest, 2 to 20 options) and `llamacpp:Kev-0.8B-Q8_0` (0.8B, up to 255 options, best on long states). The model can be changed in `app.yaml` under `arduino:decision_model`.
+Available models (download them in Arduino App Lab): `llamacpp:Julia-1-Q8_0` (default on the UNO Q, 0.14B parameters, the smallest and fastest, 2 to 20 options), `llamacpp:Laya-Q8_0` (default on the boards with the Qualcomm NPU, 0.42B, up to 255 options, more accurate) and `llamacpp:Kev-0.8B-Q8_0` (0.8B, up to 255 options, best on long states). The model can be changed in `app.yaml` under `arduino:decision_model`.
+
+The answer time grows with the input tokens: the state is read once per question, so a long state with many questions costs more. Measured on the UNO Q (CPU): Laya answers three questions about a two-sentence message in about 9 seconds and loads in about 13 seconds the first time, Julia-1 answers the same in about 1 second, Kev-0.8B in about 8 seconds (and over ten minutes for a 4000-token state). Keep the state short and to the point, and use `decide()` to ask everything about a state in one request. Laya and Julia-1 read the whole state in one pass and refuse one longer than about 2000 tokens with a `DecisionModelError`.
 
 ## Features
 
