@@ -93,7 +93,7 @@ class SoundGeneratorStreamer:
         octaves: int = 8,
         wave_form: str = "sine",
         master_volume: float = 1.0,
-        sound_effects: list = None,
+        sound_effects: list | None = None,
     ) -> None:
         """Initialize the SoundGeneratorStreamer. Generates sound blocks for streaming, without internal playback.
         Args:
@@ -314,7 +314,9 @@ class SoundGeneratorStreamer:
             return None
         return self._notes.get(note.strip().upper())
 
-    def play_polyphonic(self, notes: list[list[tuple[str, float]]], as_tone: bool = False, volume: float = None) -> tuple[NDArray[np.float32], float]:
+    def play_polyphonic(
+        self, notes: list[list[tuple[str, float]]], as_tone: bool = False, volume: float | None = None
+    ) -> tuple[NDArray[np.float32], float]:
         """Generate audio for multiple note sequences mixed together (polyphony).
 
         Produces multi-track audio by mixing a list of sequences, where each
@@ -379,7 +381,7 @@ class SoundGeneratorStreamer:
         blk = self._apply_sound_effects(blk, base_frequency)
         return (blk, max_duration)
 
-    def play_chord(self, notes: list[str], note_duration: float | str = 1 / 4, volume: float = None) -> NDArray[np.float32]:
+    def play_chord(self, notes: list[str], note_duration: float | str = 1 / 4, volume: float | None = None) -> NDArray[np.float32]:
         """Generate audio for a chord of simultaneous notes.
 
         Args:
@@ -422,7 +424,7 @@ class SoundGeneratorStreamer:
         logger.debug(f"  Chord generated: {len(blk)} samples")
         return blk
 
-    def play(self, note: str, note_duration: float | str = 1 / 4, volume: float = None) -> NDArray[np.float32]:
+    def play(self, note: str, note_duration: float | str = 1 / 4, volume: float | None = None) -> NDArray[np.float32]:
         """Generate audio samples for a single musical note.
 
         Args:
@@ -461,7 +463,7 @@ class SoundGeneratorStreamer:
             return data
         raise ValueError(f"Invalid note '{note}'")
 
-    def play_tone(self, note: str, duration: float = 0.25, volume: float = None) -> NDArray[np.float32]:
+    def play_tone(self, note: str, duration: float = 0.25, volume: float | None = None) -> NDArray[np.float32]:
         """Generate audio samples for a note with duration in seconds.
 
         Unlike ``play()`` which interprets duration as a musical note fraction,
@@ -487,7 +489,7 @@ class SoundGeneratorStreamer:
             return data
         raise ValueError(f"Invalid note '{note}' or non-positive duration {duration}")
 
-    def play_abc(self, abc_string: str, volume: float = None) -> Iterable[tuple[NDArray[np.float32], float]]:
+    def play_abc(self, abc_string: str, volume: float | None = None) -> Iterable[tuple[NDArray[np.float32], float]]:
         """Generate audio samples from an ABC notation string.
 
         Yields one audio block per note in the parsed ABC sequence.  The parser
@@ -547,13 +549,13 @@ class SoundGeneratorStreamer:
 class SoundGenerator(SoundGeneratorStreamer):
     def __init__(
         self,
-        output_device: Speaker = None,
+        output_device: Speaker | None = None,
         bpm: int = 120,
         time_signature: tuple = (4, 4),
         octaves: int = 8,
         wave_form: str = "sine",
         master_volume: float = 1.0,
-        sound_effects: list = None,
+        sound_effects: list | None = None,
     ) -> None:
         """Initialize the SoundGenerator.
 
@@ -709,7 +711,7 @@ class SoundGenerator(SoundGeneratorStreamer):
         super().set_effects(effects)
 
     def play_polyphonic(
-        self, notes: list[list[tuple[str, float]]], as_tone: bool = False, volume: float = None, block: bool = False
+        self, notes: list[list[tuple[str, float]]], as_tone: bool = False, volume: float | None = None, block: bool = False
     ) -> tuple[NDArray[np.float32], float]:
         """
         Play multiple sequences of musical notes simultaneously (poliphony).
@@ -836,7 +838,9 @@ class SoundGenerator(SoundGeneratorStreamer):
             timed_stop_done.wait()
         self._wait_for_playback_session_end(session_id)
 
-    def play_chord(self, notes: list[str], note_duration: float | str = 1 / 4, volume: float = None, block: bool = False) -> NDArray[np.float32]:
+    def play_chord(
+        self, notes: list[str], note_duration: float | str = 1 / 4, volume: float | None = None, block: bool = False
+    ) -> NDArray[np.float32]:
         """
         Play a chord consisting of multiple musical notes simultaneously for a specified duration and volume.
         Args:
@@ -857,7 +861,7 @@ class SoundGenerator(SoundGeneratorStreamer):
                 time.sleep(duration)
         return blk
 
-    def play(self, note: str, note_duration: float | str = 1 / 4, volume: float = None, block: bool = False) -> NDArray[np.float32]:
+    def play(self, note: str, note_duration: float | str = 1 / 4, volume: float | None = None, block: bool = False) -> NDArray[np.float32]:
         """
         Play a musical note for a specified duration and volume.
         Args:
@@ -878,7 +882,7 @@ class SoundGenerator(SoundGeneratorStreamer):
                 time.sleep(duration)
         return data
 
-    def play_tone(self, note: str, duration: float = 0.25, volume: float = None, block: bool = False) -> NDArray[np.float32]:
+    def play_tone(self, note: str, duration: float = 0.25, volume: float | None = None, block: bool = False) -> NDArray[np.float32]:
         """Play a musical note with duration specified in seconds.
 
         Unlike ``play()`` which interprets duration as a musical note fraction,
@@ -900,7 +904,7 @@ class SoundGenerator(SoundGeneratorStreamer):
             time.sleep(duration)
         return data
 
-    def play_abc(self, abc_string: str, volume: float = None, block: bool = False) -> list[tuple[NDArray[np.float32], float]]:
+    def play_abc(self, abc_string: str, volume: float | None = None, block: bool = False) -> list[tuple[NDArray[np.float32], float]]:
         """Play a sequence of musical notes defined in ABC notation.
 
         The parser is ABC 2.1 standard compliant (key signatures, accidentals,
@@ -958,11 +962,11 @@ class SoundGenerator(SoundGeneratorStreamer):
         self,
         sequence: list[list[str]],
         note_duration: float | str = 1 / 16,
-        bpm: int = None,
+        bpm: int | None = None,
         loop: bool = False,
         on_step_callback: callable = None,
         on_complete_callback: callable = None,
-        volume: float = None,
+        volume: float | None = None,
     ) -> None:
         """
         Play a step sequence with automatic timing.
