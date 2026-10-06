@@ -78,10 +78,10 @@ class VisualAnomalyDetection(EdgeImpulseRunnerFacade):
         ret = super().infer_from_image(image_bytes, image_type)
         return self._extract_anomalies(ret)
 
-    def _extract_anomalies(self, item: dict | None) -> dict | None:
+    def _extract_anomalies(self, item: dict[str, Any] | None) -> dict[str, Any] | None:
         if not item:
             return None
-        out_result = {}
+        out_result: dict[str, Any] = {}
 
         if "result" in item:
             results = item["result"]
@@ -94,7 +94,7 @@ class VisualAnomalyDetection(EdgeImpulseRunnerFacade):
             else:
                 return None
 
-            anomalies = []
+            anomalies: list[dict[str, Any]] = []
             for result in results:
                 if "label" in result and "value" in result:
                     class_name = result["label"]
@@ -117,7 +117,7 @@ class VisualAnomalyDetection(EdgeImpulseRunnerFacade):
 
         return None
 
-    def process(self, item: str | dict) -> dict | None:
+    def process(self, item: str | dict[str, Any]) -> dict[str, Any] | None:
         """Process an item to detect anomalies (file path or in-memory image).
 
         This method supports two input formats:
