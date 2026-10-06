@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import threading
-from typing import Literal, cast
+from typing import Literal
 
 import numpy as np
 
@@ -138,7 +138,7 @@ class WaveGenerator:
         if wave_type not in valid_types:
             raise ValueError(f"Invalid wave_type '{wave_type}'. Must be one of {valid_types}")
 
-        self._wave_type = cast(WaveType, wave_type)
+        self._wave_type = wave_type
 
     @property
     def sample_rate(self) -> int:
