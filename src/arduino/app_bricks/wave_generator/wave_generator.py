@@ -147,13 +147,7 @@ class WaveGenerator:
 
         Returns:
             int: Sample rate in Hz.
-
-        Raises:
-            RuntimeError: If no speaker is configured.
         """
-        if self._speaker is None:
-            raise RuntimeError("Speaker is not configured")
-
         return self._speaker.sample_rate
 
     @property
