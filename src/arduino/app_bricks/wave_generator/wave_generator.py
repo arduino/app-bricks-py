@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import threading
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 
@@ -314,7 +314,7 @@ class WaveGenerator:
         self._speaker.volume = volume
 
     @property
-    def state(self) -> dict:
+    def state(self) -> dict[str, Any]:
         """
         Get current generator state.
 
