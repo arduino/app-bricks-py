@@ -57,12 +57,14 @@ class AudioDetector(EdgeImpulseRunnerFacade):
         self.handlers: dict[str, Callable[[], None]] = {}  # Dictionary to hold handlers for different keywords
         self.handlers_lock = threading.Lock()
 
-    def on_detect(self, keyword: str, callback: Callable[[], None]) -> None:
-        """Register a callback function to be invoked when a specific keyword is detected.
+    def _register_handler(self, label: str, callback: Callable[[], None]) -> None:
+        """Register a callback function to be invoked when a label (a class or a keyword) is detected.
+
+        Each brick exposes it through its own public on_detect, named after what it detects.
 
         Args:
-            keyword (str): The keyword to check for in the classification results.
-            callback (callable): a callback function to handle the keyword spotted.
+            label (str): The label to check for in the classification results.
+            callback (callable): a callback function to handle the label detected.
 
         Raises:
             TypeError: If callback is not callable.
@@ -74,11 +76,11 @@ class AudioDetector(EdgeImpulseRunnerFacade):
         if len(sig_args) > 0:
             raise ValueError("Callback must not accept any arguments.")
 
-        keyword = keyword.lower()
+        label = label.lower()
         with self.handlers_lock:
-            if keyword in self.handlers:
-                logger.warning(f"Handler for keyword '{keyword}' already exists. Overwriting.")
-            self.handlers[keyword] = callback
+            if label in self.handlers:
+                logger.warning(f"Handler for '{label}' already exists. Overwriting.")
+            self.handlers[label] = callback
 
     def start(self) -> None:
         self._buffer.flush()
