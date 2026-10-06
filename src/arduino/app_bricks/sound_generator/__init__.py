@@ -1125,7 +1125,8 @@ class SoundGenerator(SoundGeneratorStreamer):
             future_steps = []
 
             processed_steps = 0
-            while current_step is not None:
+            # The loop ends on its breaks: current_step is never reassigned
+            while True:
                 step_start = time.monotonic()
 
                 if self._sequence_stop_event.is_set():
