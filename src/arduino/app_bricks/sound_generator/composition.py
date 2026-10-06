@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 from dataclasses import dataclass, field
-from .effects import SoundEffect
+from .effects import AudioEffect, SoundEffect
 
 
 @dataclass
@@ -65,4 +65,4 @@ class MusicComposition:
     bpm: int = 120
     waveform: str = "sine"
     volume: float = 0.8
-    effects: list = field(default_factory=lambda: [SoundEffect.adsr()])
+    effects: list[AudioEffect] = field(default_factory=lambda: [SoundEffect.adsr()])

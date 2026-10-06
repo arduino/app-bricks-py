@@ -89,11 +89,11 @@ class SoundGeneratorStreamer:
     def __init__(
         self,
         bpm: int = 120,
-        time_signature: tuple = (4, 4),
+        time_signature: tuple[int, int] = (4, 4),
         octaves: int = 8,
         wave_form: str = "sine",
         master_volume: float = 1.0,
-        sound_effects: list | None = None,
+        sound_effects: list[AudioEffect] | None = None,
     ) -> None:
         """Initialize the SoundGeneratorStreamer. Generates sound blocks for streaming, without internal playback.
         Args:
@@ -118,7 +118,7 @@ class SoundGeneratorStreamer:
         self._master_volume = master_volume
         self._sound_effects = sound_effects
 
-        self._notes = {}
+        self._notes: dict[str, float] = {}
         for octave in range(octaves):
             notes = self._fill_node_frequencies(octave)
             self._notes.update(notes)
@@ -170,16 +170,16 @@ class SoundGeneratorStreamer:
             self._bpm = bpm
         logger.debug(f"BPM updated to {bpm}")
 
-    def set_effects(self, effects: list) -> None:
+    def set_effects(self, effects: list[AudioEffect]) -> None:
         """
         Set the list of sound effects to apply to the audio signal.
         Args:
-            effects (list): List of sound effect instances (e.g., [SoundEffect.adsr()]).
+            effects (list[AudioEffect]): List of sound effect instances (e.g., [SoundEffect.adsr()]).
         """
         with self._cfg_lock:
             self._sound_effects = effects
 
-    def _fill_node_frequencies(self, octave: int) -> dict:
+    def _fill_node_frequencies(self, octave: int) -> dict[str, float]:
         """Generate note-name-to-frequency mappings for a given octave.
 
         Args:
@@ -188,7 +188,7 @@ class SoundGeneratorStreamer:
         Returns:
             dict: Mapping of note names (e.g., 'C4', 'A#3') to frequencies in Hz.
         """
-        notes = {}
+        notes: dict[str, float] = {}
 
         notes[f"REST"] = 0.0  # Rest note
 
@@ -302,8 +302,10 @@ class SoundGeneratorStreamer:
 
             processed_signal = signal
             for effect in self._sound_effects:
-                if hasattr(effect, "apply_with_tone"):
-                    processed_signal = effect.apply_with_tone(processed_signal, frequency)
+                # Custom effects may also take the note frequency through apply_with_tone
+                apply_with_tone = getattr(effect, "apply_with_tone", None)
+                if apply_with_tone is not None:
+                    processed_signal = apply_with_tone(processed_signal, frequency)
                 else:
                     processed_signal = effect.apply(processed_signal)
 
@@ -551,11 +553,11 @@ class SoundGenerator(SoundGeneratorStreamer):
         self,
         output_device: BaseSpeaker | None = None,
         bpm: int = 120,
-        time_signature: tuple = (4, 4),
+        time_signature: tuple[int, int] = (4, 4),
         octaves: int = 8,
         wave_form: str = "sine",
         master_volume: float = 1.0,
-        sound_effects: list | None = None,
+        sound_effects: list[AudioEffect] | None = None,
     ) -> None:
         """Initialize the SoundGenerator.
 
@@ -703,11 +705,11 @@ class SoundGenerator(SoundGeneratorStreamer):
         """
         super().set_master_volume(volume)
 
-    def set_effects(self, effects: list) -> None:
+    def set_effects(self, effects: list[AudioEffect]) -> None:
         """
         Set the list of sound effects to apply to the audio signal.
         Args:
-            effects (list): List of sound effect instances (e.g., [SoundEffect.adsr()]).
+            effects (list[AudioEffect]): List of sound effect instances (e.g., [SoundEffect.adsr()]).
         """
         super().set_effects(effects)
 
