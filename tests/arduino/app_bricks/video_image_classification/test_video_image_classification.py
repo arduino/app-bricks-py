@@ -405,6 +405,18 @@ def test_classification_message_with_empty_classifications(classifier: VideoImag
     assert not called.is_set()
 
 
+@pytest.mark.parametrize("message", [{"type": "classification"}, {"type": "classification", "result": ["cat"]}])
+def test_classification_message_without_a_result_dict_is_ignored(classifier: VideoImageClassification, ws, message):
+    """A classification message whose result is missing or not a dict must not trigger any handler."""
+    called = threading.Event()
+    classifier.on_detect_all(lambda classifications: called.set())
+
+    classifier._process_message(ws, json.dumps(message))
+    classifier._executor.shutdown(wait=True)
+
+    assert not called.is_set()
+
+
 # ---------------------------------------------------------------------------
 # override_threshold — WebSocket connection retry
 # ---------------------------------------------------------------------------

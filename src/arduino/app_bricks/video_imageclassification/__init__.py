@@ -10,6 +10,7 @@ import socket
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 from collections.abc import Callable
+from typing import Any
 
 from websockets.sync.client import connect
 from websockets.sync.connection import Connection
@@ -253,12 +254,12 @@ class VideoImageClassification:
             return
 
         elif jmsg.get("type") == "classification":
-            result = jmsg.get("result", {})
+            result: dict[str, Any] | None = jmsg.get("result")
             if not isinstance(result, dict):
                 return
 
             det_classifications: dict[str, float] = {}
-            classifications = result.get("classification", [])
+            classifications: dict[str, Any] = result.get("classification", {})
             if classifications:
                 if self.apply_softmax:
                     # Softmax over the full logit vector; top_k just trims the returned classes.
