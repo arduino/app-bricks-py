@@ -30,12 +30,11 @@ MIN_SCORE_LEVELS = 2
 MAX_SCORE_LEVELS = 10
 
 _CONFIGURE_MODEL_HINT = (
-    "Configure a llama.cpp decision model such as Laya in app.yaml under arduino:decision_model;"
+    "Configure a llama.cpp decision model such as llamacpp:Laya-Q8_0 in app.yaml under arduino:decision_model;"
     " the DecisionModel brick does not support genie models."
 )
 _RUNNER_RESPONSE_HINT = (
-    "The llama.cpp models runner returned an unexpected payload: make sure it supports the /v1/systemone endpoint"
-    " and check runner logs."
+    "The llama.cpp models runner returned an unexpected payload: make sure it supports the /v1/systemone endpoint and check runner logs."
 )
 
 
@@ -71,6 +70,32 @@ def _as_sequence(value: object) -> Sequence[object] | None:
     if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
         return None
     return cast(Sequence[object], value)
+
+
+def _as_indexed_list(value: object) -> list[object] | None:
+    """A JSON array, or an object keyed by the index as a string, as a list in index order.
+
+    llama.cpp documents the `legend` and `probabilities` of a score answer as arrays but serves
+    them as objects keyed "0", "1", ... — both shapes are accepted here.
+
+    Args:
+        value (object): A decoded JSON value.
+
+    Returns:
+        list[object] | None: The items in order, or None when the value is neither shape.
+    """
+    sequence = _as_sequence(value)
+    if sequence is not None:
+        return list(sequence)
+    mapping = _as_mapping(value)
+    if mapping is None:
+        return None
+    indexed: dict[int, object] = {}
+    for key, item in mapping.items():
+        if not isinstance(key, str) or not key.isdigit():
+            return None
+        indexed[int(key)] = item
+    return [indexed[index] for index in sorted(indexed)]
 
 
 def _json_length(value: object) -> int | None:
@@ -483,8 +508,8 @@ def _parse_answer(question: Question, raw: object) -> Answer:
             parsed_probabilities[option] = _as_float(probability)
         return ChoiceAnswer(choice=choice, probabilities=parsed_probabilities, confidence=_as_float(answer.get("confidence", 0.0)))
     if isinstance(question, Score):
-        legend = _as_sequence(answer.get("legend"))
-        probabilities = _as_sequence(answer.get("probabilities"))
+        legend = _as_indexed_list(answer.get("legend"))
+        probabilities = _as_indexed_list(answer.get("probabilities"))
         if legend is None:
             raise TypeError("a score answer needs a 'legend' array")
         if probabilities is None:
@@ -863,6 +888,11 @@ class DecisionModel:
         lowered = message.lower()
         if "model is not loaded" in lowered or "failed to load" in lowered or "not found" in lowered:
             return f"Download the model '{self._model_id}' from Arduino App Lab and check the app.yaml configuration."
+        if "too large to process" in lowered:
+            return (
+                "Shorten the state or split the questions over several requests: the runner processes a decision"
+                " model prompt in one batch, and this one does not fit it."
+            )
         if "too many options" in lowered:
             return "Reduce the number of options of the choice question: every decision model has a limit (255 for Laya and Kev, 20 for Julia-1)."
         if "decision model" in lowered:
