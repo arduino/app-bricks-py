@@ -29,6 +29,8 @@ if [[ "$(lower "$DST_OWNER")" == "$(lower "$SRC_OWNER")" ]]; then
 fi
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "$WORKDIR"' EXIT
+# crane keeps its ghcr.io login here, so the user's Docker login is left untouched.
+export DOCKER_CONFIG="$WORKDIR/docker"
 
 # --- 1. Images: every container package of the source owner under PACKAGE_PREFIX,
 # numeric tags only. Matching digests are skipped, crane skips blobs already present. ---
