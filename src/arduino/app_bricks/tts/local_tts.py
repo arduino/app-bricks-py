@@ -23,8 +23,6 @@ logger = Logger("TextToSpeech")
 TTS_MAX_CHARS = 1024
 TTS_MAX_QUEUE_SIZE = 128
 
-_SPEECH_QUEUE_STOP = object()
-
 
 class VoiceConfig(TypedDict):
     """Voice the runner synthesizes with, resolved from the configured model."""
@@ -106,7 +104,8 @@ class TextToSpeech:
         self._active_session_lock = threading.Lock()
         self._cancelled: threading.Event | None = None
         self._speak_thread: threading.Thread | None = None
-        self._speech_queue: queue.Queue = queue.Queue(maxsize=max_queue_size)
+        # Each item is (cancel epoch, text chunks); None stops the worker.
+        self._speech_queue: queue.Queue[tuple[int, list[str]] | None] = queue.Queue(maxsize=max_queue_size)
         self._worker_lock = threading.Lock()
         self._cancel_epoch = 0
         self._pending_speech = 0
@@ -124,7 +123,7 @@ class TextToSpeech:
             self._speak_thread = None
         if speak_thread is not None and speak_thread.is_alive():
             try:
-                self._speech_queue.put_nowait(_SPEECH_QUEUE_STOP)
+                self._speech_queue.put_nowait(None)
             except queue.Full:
                 logger.warning("Speech queue is full, the worker cannot be notified to stop")
             speak_thread.join(timeout=1.0)
@@ -205,7 +204,7 @@ class TextToSpeech:
         """Consume queued speech requests sequentially until the stop sentinel arrives."""
         while True:
             item = self._speech_queue.get()
-            if item is _SPEECH_QUEUE_STOP:
+            if item is None:
                 return
             epoch, chunks = item
             try:
@@ -231,7 +230,7 @@ class TextToSpeech:
                 item = self._speech_queue.get_nowait()
             except queue.Empty:
                 return
-            if item is _SPEECH_QUEUE_STOP:
+            if item is None:
                 self._speech_queue.put(item)
                 return
             self._pending_speech -= 1
