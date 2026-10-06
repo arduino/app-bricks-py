@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 from arduino.app_utils import brick, Logger
-from arduino.app_peripherals.speaker import Speaker
+from arduino.app_peripherals.speaker import BaseSpeaker, Speaker
 import threading
 from collections.abc import Callable, Iterable
 import numpy as np
@@ -549,7 +549,7 @@ class SoundGeneratorStreamer:
 class SoundGenerator(SoundGeneratorStreamer):
     def __init__(
         self,
-        output_device: Speaker | None = None,
+        output_device: BaseSpeaker | None = None,
         bpm: int = 120,
         time_signature: tuple = (4, 4),
         octaves: int = 8,
@@ -560,7 +560,7 @@ class SoundGenerator(SoundGeneratorStreamer):
         """Initialize the SoundGenerator.
 
         Args:
-            output_device (Speaker, optional): The output device to play sound through.
+            output_device (BaseSpeaker, optional): The output device to play sound through, e.g. the one Speaker() returns.
                 When omitted, SoundGenerator creates an internal shared speaker so
                 multiple instances can overlap playback on the same device.
             bpm (int): The tempo in beats per minute for note duration calculations.
@@ -584,6 +584,7 @@ class SoundGenerator(SoundGeneratorStreamer):
         )
 
         self._started = threading.Event()
+        self._output_device: BaseSpeaker
         if output_device is None:
             self.external_speaker = False
             # Use shared mode by default so multiple SoundGenerator instances can
