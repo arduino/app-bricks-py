@@ -7,7 +7,7 @@ import queue
 import inspect
 import numpy as np
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from typing import Any
 from arduino.app_internal.core import EdgeImpulseRunnerFacade
 from arduino.app_utils import brick, Logger, SlidingWindowBuffer
@@ -50,12 +50,13 @@ class MotionDetection(EdgeImpulseRunnerFacade):
     def stop(self) -> None:
         self._buffer.flush()
 
-    def on_movement_detection(self, movement: str, callback: callable) -> None:
+    def on_movement_detection(self, movement: str, callback: Callable[..., None]) -> None:
         """Register a callback function to be invoked when a specific motion pattern is detected.
 
         Args:
             movement (str): The motion pattern name to check for in the classification results.
-            callback (callable): Function to call when the specified motion pattern is detected.
+            callback (Callable[..., None]): Function to call when the specified motion pattern is detected. It takes
+                no argument, or one receiving the classification results, or a ``classification`` keyword argument.
         """
         with self._handlers_lock:
             if movement in self._handlers:
