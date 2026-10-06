@@ -48,16 +48,21 @@ def _connection_error() -> APIConnectionError:
 
 
 @pytest.fixture
-def llm(monkeypatch):
+def fake_runner(monkeypatch) -> list[float]:
+    """Routes the OpenAI client to `FakeOpenAI` and returns the recorded retry sleeps."""
     FakeOpenAI.outcomes = []
     FakeOpenAI.constructor_kwargs = []
     sleeps: list[float] = []
     monkeypatch.setattr(local_llm_module, "OpenAI", FakeOpenAI)
     monkeypatch.setattr(local_llm_module.time, "sleep", lambda s: sleeps.append(s))
+    return sleeps
 
+
+@pytest.fixture
+def llm(fake_runner):
     instance = LargeLanguageModel.__new__(LargeLanguageModel)
-    instance._model = SimpleNamespace(openai_api_base="http://llamacpp-models-runner:9999/v1", openai_api_key="api_key")
-    instance.sleeps = sleeps  # type: ignore[attr-defined]
+    instance._runner_base_url = "http://llamacpp-models-runner:9999/v1"
+    instance.sleeps = fake_runner  # type: ignore[attr-defined]
     return instance
 
 
@@ -97,3 +102,18 @@ def test_list_models_disables_the_client_builtin_retries(llm):
     llm.list_models()
 
     assert FakeOpenAI.constructor_kwargs[0]["max_retries"] == 0
+
+
+@pytest.mark.parametrize(
+    ("model", "base_url"),
+    [
+        ("llamacpp:gemma-4-E4B_q4_0-it", "http://llamacpp-models-runner:9999/v1"),
+        ("genie:qwen3_4b_instruct_2507", "http://genie-models-runner:9001/v1"),
+    ],
+)
+def test_list_models_queries_the_runner_of_the_configured_model(fake_runner, model, base_url):
+    FakeOpenAI.outcomes = [[model.split(":")[-1]]]
+
+    LargeLanguageModel(model=model)
+
+    assert FakeOpenAI.constructor_kwargs[0]["base_url"] == base_url

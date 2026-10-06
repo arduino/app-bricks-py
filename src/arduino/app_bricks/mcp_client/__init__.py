@@ -5,11 +5,12 @@
 
 import asyncio
 from fnmatch import fnmatchcase
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypedDict
 from collections.abc import Iterable
 
 from langchain_core.tools import BaseTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_mcp_adapters.sessions import Connection, StreamableHttpConnection
 
 from arduino.app_utils import brick
 
@@ -17,10 +18,20 @@ if TYPE_CHECKING:
     import httpx
 
 
+class ToolInfo(TypedDict):
+    """The details of an MCP tool: its name, description and argument schema."""
+
+    name: str
+    description: str
+    parameters: dict[str, Any]
+
+
 class HTTPEndpoint:
     """A class to communicate with remote MCP server via HTTP protocol to perform various tasks."""
 
-    def __init__(self, name: str, url: str, headers: dict | None = None, token: str | None = None, auth: "httpx.Auth | None" = None) -> None:
+    def __init__(
+        self, name: str, url: str, headers: dict[str, str] | None = None, token: str | None = None, auth: "httpx.Auth | None" = None
+    ) -> None:
         """Initialize the HTTPEndpoint with the given name, URL, and optional authentication.
         Configure url to point to the /mcp endpoint of the remote MCP server.
 
@@ -36,32 +47,35 @@ class HTTPEndpoint:
         Args:
             name (str): A unique name for the MCP endpoint configuration.
             url (str): The URL of the remote MCP server's /mcp endpoint (e.g., http://localhost:8080/mcp).
-            headers (dict, optional): Optional HTTP headers for authentication or other purposes. Defaults to None.
+            headers (dict[str, str], optional): Optional HTTP headers for authentication or other purposes. Defaults to None.
             token (str, optional): Bearer token added as an ``Authorization: Bearer`` header. Defaults to None.
             auth (httpx.Auth, optional): An httpx authentication object passed through to the HTTP client. Defaults to None.
         """
-        headers = dict(headers) if headers else {}
+        request_headers = dict(headers) if headers else {}
         if token:
-            headers.setdefault("Authorization", f"Bearer {token}")
+            request_headers.setdefault("Authorization", f"Bearer {token}")
         self.name = name
-        self.config: dict = {"url": url}
-        if headers:
-            self.config["headers"] = headers
+        self.config: dict[str, Any] = {"url": url}
+        if request_headers:
+            self.config["headers"] = request_headers
         if auth is not None:
             self.config["auth"] = auth
 
-    def to_conn(self) -> dict:
+    def to_conn(self) -> dict[str, StreamableHttpConnection]:
         """Build the connection configuration consumed by MultiServerMCPClient.
 
+        The transport is ``streamable_http``, the name langchain-mcp-adapters types; it treats the
+        ``http`` alias the brick used before in the same way.
+
         Returns:
-            dict: A mapping of the endpoint name to its transport configuration.
+            dict[str, StreamableHttpConnection]: A mapping of the endpoint name to its transport configuration.
         """
-        return {
-            self.name: {
-                "transport": "http",
-                **self.config,
-            }
-        }
+        connection: StreamableHttpConnection = {"transport": "streamable_http", "url": self.config["url"]}
+        if "headers" in self.config:
+            connection["headers"] = self.config["headers"]
+        if "auth" in self.config:
+            connection["auth"] = self.config["auth"]
+        return {self.name: connection}
 
 
 @brick
@@ -78,7 +92,7 @@ class MCPClient:
             **kwargs: Additional keyword arguments to pass to the MultiServerMCPClient.
 
         """
-        connections = {}
+        connections: dict[str, Connection] = {}
         for endpoint in endpoints:
             connections.update(endpoint.to_conn())
         self._client = MultiServerMCPClient(
@@ -135,7 +149,7 @@ class MCPClient:
         """
         return {tool.name: tool.description for tool in self.get_tools()}
 
-    def inspect_tool(self, name: str) -> dict | None:
+    def inspect_tool(self, name: str) -> ToolInfo | None:
         """Return the details of a single tool, or None if no tool has that name.
 
         Args:
