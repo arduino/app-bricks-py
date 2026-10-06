@@ -311,7 +311,7 @@ class SoundGeneratorStreamer:
 
             return processed_signal
 
-    def _get_note(self, note: str) -> float | None:
+    def _get_note(self, note: str | None) -> float | None:
         if note is None:
             return None
         return self._notes.get(note.strip().upper())
