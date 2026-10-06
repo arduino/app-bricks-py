@@ -339,7 +339,7 @@ class InferenceClient:
             with self._cond:
                 if not self._cond.wait_for(lambda: self._configured is not None or self.closed, timeout):
                     raise TimeoutError(f"no reply from '{self.model}' to the configuration")
-                reply, self._configured = self._configured, None
+                reply = self._take_configured()
                 if reply is None:
                     raise ConnectionError("connection closed")
                 if isinstance(reply, ServerError):
@@ -347,6 +347,11 @@ class InferenceClient:
                 self.thresholds = list(reply.get("thresholds", self.thresholds))
                 self.confidence = reply.get("confidence")
                 return reply
+
+    def _take_configured(self) -> dict[str, Any] | ServerError | None:
+        """The reply to the configuration in progress, cleared for the next one; call it holding the condition."""
+        reply, self._configured = self._configured, None
+        return reply
 
     def get_result(self, timeout: float | None = 0) -> Result | None:
         """The oldest result not read yet, timeout=0 does not wait and None waits indefinitely.
