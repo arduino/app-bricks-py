@@ -1081,7 +1081,10 @@ class TelegramBot:
         try:
             self._loop.run_until_complete(self.application.initialize())
             self._loop.run_until_complete(self.application.start())
-            self._loop.run_until_complete(self.application.updater.start_polling(allowed_updates=Update.ALL_TYPES))
+            updater = self.application.updater
+            if updater is None:
+                raise RuntimeError("Telegram application built without an updater, polling is not available")
+            self._loop.run_until_complete(updater.start_polling(allowed_updates=Update.ALL_TYPES))
 
             # Auto-register commands with Telegram after polling starts
             if self.auto_set_commands:
