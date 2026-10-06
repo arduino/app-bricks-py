@@ -24,6 +24,9 @@ updates:
       default-days: 7
     rebase-strategy: disabled
     ignore:
+      # Patch releases ride along with the next minor one, security fixes still arrive right away
+      - dependency-name: "*"
+        update-types: ["version-update:semver-patch"]
       # python-base ships a custom build of this wheel, bumped by hand
       - dependency-name: opencv-python-headless
     groups:
@@ -46,6 +49,9 @@ updates:
       default-days: 7
     rebase-strategy: disabled
     ignore:
+      # Patch releases ride along with the next minor one, security fixes still arrive right away
+      - dependency-name: "*"
+        update-types: ["version-update:semver-patch"]
       # Digest refreshes only, moving to another Python release is a deliberate change
       - dependency-name: python
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
@@ -68,6 +74,9 @@ updates:
       default-days: 7
     rebase-strategy: disabled
     ignore:
+      # Patch releases ride along with the next minor one, security fixes still arrive right away
+      - dependency-name: "*"
+        update-types: ["version-update:semver-patch"]
       # The Qualcomm services from artifacts.codelinaro.org, bumped by hand
       - dependency-name: iot-solutions-microservices/*
     groups:
