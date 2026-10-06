@@ -64,6 +64,16 @@ def _extract_all_exports(tree: ast.AST) -> list[str] | None:
     return all_exports
 
 
+def _is_dataclass_decorator(decorator: ast.expr) -> bool:
+    """Whether *decorator* applies ``dataclass``: bare (``@dataclass``), qualified
+    (``@dataclasses.dataclass``) or called with options (``@dataclass(frozen=True)``)."""
+    if isinstance(decorator, ast.Call):
+        decorator = decorator.func
+    if isinstance(decorator, ast.Attribute):
+        return decorator.attr == "dataclass"
+    return isinstance(decorator, ast.Name) and decorator.id == "dataclass"
+
+
 def _get_property_setters(class_node: ast.ClassDef) -> set[str]:
     setter_names = set()
     for stmt in class_node.body:
@@ -269,7 +279,7 @@ def extract_docstrings_with_types(file_path: str, module_name: str) -> list[Docs
             methods = _merge_members(methods, inherited_methods)
             properties = _merge_members(properties, inherited_properties)
             # Class signature: if dataclass use attributes, else use __init__ params (with type)
-            is_dataclass = any(d.id == "dataclass" if isinstance(d, ast.Name) else False for d in getattr(node, "decorator_list", []))
+            is_dataclass = any(_is_dataclass_decorator(d) for d in getattr(node, "decorator_list", []))
             # DEBUG: Log class name, init_params, attrs
             logger.debug(f"Class: {node.name}, is_dataclass: {is_dataclass},")
             logger.debug(f"init_params: {init_params},")
