@@ -34,11 +34,11 @@ class MotionDetection(EdgeImpulseRunnerFacade):
             raise ValueError("Model parameters are missing or incomplete in the retrieved model information.")
         self._model_info = model_info
 
-        self._handlers = {}  # Dictionary to hold handlers for different keywords
+        self._handlers: dict[str, Callable[..., None]] = {}  # Dictionary to hold handlers for different keywords
         self._handlers_lock = threading.Lock()
 
         # TODO: remove this queue and its handling
-        self._external_notification_queue = queue.Queue(
+        self._external_notification_queue: queue.Queue[tuple[float, float, float]] = queue.Queue(
             maxsize=100
         )  # Queue to hold chunks of sensor data for external notifications (like processing them in a chart)
 
@@ -90,10 +90,7 @@ class MotionDetection(EdgeImpulseRunnerFacade):
             iterable: An iterable containing the accumulated sensor data (x, y, z acceleration values).
         """
         while True:
-            acquired_samples = self._external_notification_queue.get()
-            if acquired_samples is None:
-                continue
-            yield acquired_samples
+            yield self._external_notification_queue.get()
 
     def _movement_spotted(self, item: dict[str, Any] | None) -> tuple[str, float, dict[str, float]] | None:
         """Verify if a movement has been spotted.
