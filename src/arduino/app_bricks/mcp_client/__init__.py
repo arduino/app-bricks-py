@@ -5,7 +5,7 @@
 
 import asyncio
 from fnmatch import fnmatchcase
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypedDict
 from collections.abc import Iterable
 
 from langchain_core.tools import BaseTool
@@ -15,6 +15,14 @@ from arduino.app_utils import brick
 
 if TYPE_CHECKING:
     import httpx
+
+
+class ToolInfo(TypedDict):
+    """The details of an MCP tool: its name, description and argument schema."""
+
+    name: str
+    description: str
+    parameters: dict[str, Any]
 
 
 class HTTPEndpoint:
@@ -137,7 +145,7 @@ class MCPClient:
         """
         return {tool.name: tool.description for tool in self.get_tools()}
 
-    def inspect_tool(self, name: str) -> dict | None:
+    def inspect_tool(self, name: str) -> ToolInfo | None:
         """Return the details of a single tool, or None if no tool has that name.
 
         Args:
