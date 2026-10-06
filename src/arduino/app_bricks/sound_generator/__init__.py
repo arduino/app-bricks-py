@@ -364,7 +364,7 @@ class SoundGeneratorStreamer:
                 if sequence_duration > max_duration:
                     max_duration = sequence_duration
 
-        if len(sequences_data) == 0:
+        if len(sequences_data) == 0 or base_frequency is None:
             raise ValueError("No valid note in the sequences")
 
         # Mix sequences - align lengths
@@ -417,7 +417,7 @@ class SoundGeneratorStreamer:
                 logger.debug(f"  Generated wave for {note} @ {frequency}Hz, {len(data)} samples")
             else:
                 continue
-        if len(waves) == 0:
+        if len(waves) == 0 or base_frequency is None:
             raise ValueError(f"No valid note in chord {notes}")
         chord = np.sum(waves, axis=0, dtype=np.float32)
         chord /= np.max(np.abs(chord))  # Normalize to prevent clipping
