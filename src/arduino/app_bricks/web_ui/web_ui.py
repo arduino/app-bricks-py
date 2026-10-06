@@ -221,8 +221,13 @@ class WebUI:
             startup_log += f"\n  - Network URL: {self.url}"
         logger.info(startup_log)
 
+        server = self._server
+        if server is None:
+            logger.error("Cannot run the server: start() was not called")
+            return
+
         try:
-            self._server.run()
+            server.run()
         except Exception as e:
             logger.exception(f"Error running server: {e}")
 
