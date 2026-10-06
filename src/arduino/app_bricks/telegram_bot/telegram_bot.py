@@ -330,8 +330,12 @@ class TelegramBot:
             log = TelegramLoggerAdapter(logger, user_id=sender.user_id, message_id=message.message_id)
             try:
                 media_file = await media_obj.get_file()
-                media_bytes = await media_file.download_as_bytearray()
-                if size and size > 1024:  # Log only if > 1 KB
+                # The callbacks are declared to receive bytes and an int size: Telegram may omit
+                # file_size, the downloaded content has it anyway
+                media_bytes = bytes(await media_file.download_as_bytearray())
+                if size is None:
+                    size = len(media_bytes)
+                if size > 1024:  # Log only if > 1 KB
                     log.info(f"Downloaded {media_type} '{filename}': {size / 1024:.1f} KB")
             except Exception as e:
                 error_msg = f"❌ Errore download '{filename}': {str(e)}"

@@ -227,7 +227,8 @@ async def test_create_media_handler_downloads_photo():
     assert received_message.text is None
 
     # Verify photo was downloaded
-    assert received_media_bytes == bytearray(b"photo_data_123")
+    assert received_media_bytes == b"photo_data_123"
+    assert type(received_media_bytes) is bytes
     assert received_filename == "photo.jpg"
     assert received_size == 5000
 
@@ -854,3 +855,20 @@ async def test_text_handler_ignores_a_message_without_sender():
     await wrapped(update, MagicMock())
 
     assert called == []
+
+
+@pytest.mark.asyncio
+async def test_media_handler_reports_the_downloaded_size_when_telegram_omits_it():
+    bot = TelegramBot(token="test_token")
+    received: list[int] = []
+    wrapped = bot._create_media_handler(lambda sender, message, data, filename, size: received.append(size), "document")
+
+    update = MagicMock()
+    update.message.document.file_size = None
+    update.message.document.file_name = "notes.txt"
+    media_file = AsyncMock()
+    media_file.download_as_bytearray = AsyncMock(return_value=bytearray(b"12345"))
+    update.message.document.get_file = AsyncMock(return_value=media_file)
+    await wrapped(update, MagicMock())
+
+    assert received == [5]
