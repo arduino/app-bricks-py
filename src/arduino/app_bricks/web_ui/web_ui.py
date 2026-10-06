@@ -112,7 +112,7 @@ class WebUI:
         self._server_loop: asyncio.AbstractEventLoop | None = None
         self._on_connect_cb: Callable[[str], None] | None = None
         self._on_disconnect_cb: Callable[[str], None] | None = None
-        self._on_message_cbs = {}
+        self._on_message_cbs: dict[str, Callable[[str, Any], Any]] = {}
         self._on_message_cbs_lock = threading.Lock()
 
     @property
@@ -226,7 +226,7 @@ class WebUI:
         except Exception as e:
             logger.exception(f"Error running server: {e}")
 
-    def expose_api(self, method: str, path: str, function: Callable) -> None:
+    def expose_api(self, method: str, path: str, function: Callable[..., Any]) -> None:
         """Register a route with the specified HTTP method and path.
 
         The path will be prefixed with the api_path_prefix configured during initialization.
@@ -234,7 +234,7 @@ class WebUI:
         Args:
             method (str): HTTP method to use (e.g., "GET", "POST").
             path (str): URL path for the API endpoint (without the prefix).
-            function (Callable): Function to execute when the route is accessed.
+            function (Callable[..., Any]): Function to execute when the route is accessed.
         """
         self.app.add_api_route(self._api_path_prefix + path, function, methods=[method])
 
@@ -318,7 +318,7 @@ class WebUI:
             self._on_message_cbs[message_type] = callback
         logger.debug(f"Registered listener for message '{message_type}'")
 
-    def send_message(self, message_type: str, message: dict | list | str, room: str | None = None) -> None:
+    def send_message(self, message_type: str, message: dict[str, Any] | list[Any] | str, room: str | None = None) -> None:
         """Send a message to connected WebSocket clients.
 
         Args:
