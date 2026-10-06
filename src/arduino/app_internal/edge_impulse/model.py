@@ -100,7 +100,7 @@ class EdgeImpulseModel:
                 return brick.model_configuration[cls.MODEL_VARIABLE]
         return None
 
-    def override_threshold(self, value: object) -> None:
+    def override_threshold(self, value: float) -> None:
         """Override the confidence threshold of the detections.
 
         Args:
