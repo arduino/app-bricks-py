@@ -128,28 +128,35 @@ def env_int(name: str, default: int) -> int:
 #
 # A decision model (llama.cpp's /v1/systemone: a ModernBERT, or a Qwen3.5-Base with a
 # decision head, marked by the <arch>.decision.type key of its header) does not generate
-# text: it evaluates its whole prompt in one micro-batch and answers with probabilities.
-# A prompt longer than the server's micro-batch therefore fails outright, and the service
-# configures a small one for the chat models (LLAMA_ARG_UBATCH=128 on the UNO Q). So every
-# decision model gets a preset of its own in models.ini: a batch as big as its prompt room.
+# text: it answers with probabilities. The non-causal ones (ModernBERT: Laya, Julia-1, with
+# <arch>.attention.causal false in the header) evaluate their whole prompt in one micro-batch,
+# since every token attends to every other: a prompt longer than the server's micro-batch
+# fails outright, and the service configures a small one for the chat models
+# (LLAMA_ARG_UBATCH=128 on the UNO Q). So a non-causal decision model gets a preset of its
+# own in models.ini: a batch as big as its prompt room. A causal one (Kev, a Qwen3.5) reads
+# its prompt in chunks like a chat model and keeps the router's arguments: measured on the
+# UNO Q, a 2048-token micro-batch only pushed it past the 2500m limit of the service
+# (OOM-killed on a 4000-token state) where the chat models' 128 serves it fine.
 # --------------------------------------------------------------------------- #
 
-# Tokens of prompt a decision model gets room for: its batch and its micro-batch, since it
-# evaluates the whole prompt in one. Capped by the model's own context (Laya holds 8192),
-# and to be confirmed against the 2500m memory limit of the UNO Q service, where the
-# compute buffer of a non-causal 2048-token batch is what grows with it.
+# Tokens of prompt a non-causal decision model gets room for: its batch and its micro-batch,
+# since it evaluates the whole prompt in one. Capped by the model's own context (Laya holds
+# 8192). Measured on the UNO Q with Laya-Q8_0: 523 MiB of RSS at this size, and a 3453-token
+# state is refused by the server with a clear error rather than crashing.
 DECISION_MODEL_BATCH = 2048
 
 
 def decision_model_options(gguf_file: Path) -> dict[str, str]:
-    """Per-model preset keys for a decision model, {} for anything else or an unreadable header.
+    """Per-model preset keys for a non-causal decision model, {} for anything else or an unreadable header.
 
     The keys are LLAMA_ARG_* environment variable names, which is how a llama-server
     --models-preset spells the arguments of one model (LLAMA_ARG_UBATCH renders to
     --ubatch-size for that child): they override the router's own for that model only.
     The context is the configured one — LLAMA_ARG_CTX_SIZE, or DEFAULT_CTX_SIZE when it
     is unset — never more than the model holds; the batch and the micro-batch are one
-    and the same number, the prompt room, capped at DECISION_MODEL_BATCH.
+    and the same number, the prompt room, capped at DECISION_MODEL_BATCH. A causal
+    decision model is told apart by its header (no <arch>.attention.causal false) and
+    keeps the router's arguments.
     """
     try:
         metadata = read_gguf_metadata(gguf_file)
@@ -157,6 +164,9 @@ def decision_model_options(gguf_file: Path) -> dict[str, str]:
         return {}
     arch = metadata.get("general.architecture")
     if not arch or f"{arch}.decision.type" not in metadata:
+        return {}
+    if metadata.get(f"{arch}.attention.causal") is not False:
+        print(f"  {gguf_file.stem}: causal decision model ({metadata[f'{arch}.decision.type']}), served like a chat model", file=sys.stderr)
         return {}
 
     ctx = env_int("LLAMA_ARG_CTX_SIZE", DEFAULT_CTX_SIZE)

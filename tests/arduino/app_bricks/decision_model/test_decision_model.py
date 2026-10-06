@@ -59,6 +59,16 @@ class AliasedTeam(Enum):
 CHOICE_RAW = {"choice": "billing", "probabilities": {"billing": 0.85, "shipping": 0.15}, "confidence": 0.7}
 SCORE_RAW = {"score": 1.8, "legend": ["low", "mid", "high"], "probabilities": [0.1, 0.0, 0.9], "confidence": 0.58}
 NOUL_RAW = {"noul": 0.92}
+# What llama.cpp build 11441 really returns for a score question (recorded on an UNO Q, Laya-Q8_0): the
+# `legend` and `probabilities` arrays of the README come back as objects keyed by the index, and every
+# answer carries its `type`.
+SCORE_RAW_INDEXED = {
+    "type": "score",
+    "score": 0.9783136922867559,
+    "legend": {"0": "low", "1": "medium", "2": "high", "3": "critical"},
+    "probabilities": {"0": 0.22455608332934687, "1": 0.6238827455571152, "2": 0.10025256661097276, "3": 0.05130860450256507},
+    "confidence": 0.5725741410545502,
+}
 
 
 def answers_response(**answers):
@@ -235,6 +245,36 @@ def test_decide_posts_the_systemone_body(brick, runner):
         "urgency": ScoreAnswer(score=1.8, legend=["low", "mid", "high"], probabilities=[0.1, 0.0, 0.9], confidence=0.58),
         "angry": NoulAnswer(probability=0.92),
     }
+
+
+def test_a_score_answer_keyed_by_index_is_read_in_index_order(brick, runner):
+    """The server serves the legend and the probabilities as objects keyed "0", "1", ...; the brick lists them."""
+    runner.responses = [answers_response(urgency=SCORE_RAW_INDEXED)]
+
+    answer = brick.decide("s", {"urgency": Score("?", ["low", "medium", "high", "critical"])}).score("urgency")
+
+    assert answer.legend == ["low", "medium", "high", "critical"]
+    assert answer.probabilities == pytest.approx([0.22455608332934687, 0.6238827455571152, 0.10025256661097276, 0.05130860450256507])
+    assert answer.level == "medium"
+    assert answer.score == pytest.approx(0.9783136922867559)
+
+
+def test_a_score_legend_with_non_index_keys_is_malformed(brick, runner):
+    runner.responses = [answers_response(q={"score": 1.0, "legend": {"a": "low", "b": "high"}, "probabilities": [0.5, 0.5]})]
+
+    with pytest.raises(DecisionModelError, match="Malformed answer to question 'q'"):
+        brick.decide("s", {"q": Score("?", ["low", "high"])})
+
+
+def test_a_prompt_too_large_for_the_batch_gets_a_shorten_the_state_hint(brick, runner):
+    """What the runner answers to a state longer than the batch of the decision model (observed: 3453 tokens vs 2048)."""
+    message = "input (3453 tokens) is too large to process. increase the physical batch size (current batch size: 2048)"
+    runner.responses = [FakeResponse(500, {"error": {"code": 500, "message": message, "type": "server_error"}})]
+
+    with pytest.raises(DecisionModelError, match="3453 tokens") as info:
+        brick.decide("s" * 10, {"q": Noul("?")})
+
+    assert "Shorten the state" in (info.value.hint or "")
 
 
 def test_decide_returns_answers_with_typed_accessors(brick, runner):
@@ -528,13 +568,15 @@ def test_model_comes_from_the_brick_configuration_when_not_given(runner, monkeyp
     assert brick._model_name == "Julia-1-Q8_0"
 
 
-@pytest.mark.parametrize("board", ["unoq", "ventunoq"])
-def test_default_brick_configuration_points_to_laya(runner, monkeypatch, board):
+@pytest.mark.parametrize(("board", "expected"), [("unoq", "llamacpp:Julia-1-Q8_0"), ("ventunoq", "llamacpp:Laya-Q8_0")])
+def test_default_brick_configuration_is_julia_on_unoq_and_laya_on_ventunoq(runner, monkeypatch, board, expected):
+    """Measured on the UNO Q: Laya takes ~9 s for three questions where Julia-1 takes ~1 s, so the
+    CPU board defaults to the small model and the NPU board to the more accurate one."""
     # No app.yaml in the test environment: the brick default (model_by_boards) applies.
     monkeypatch.setattr("arduino.app_internal.core.module.get_board_name", lambda: board)
     brick = DecisionModel()
     App.unregister(brick)
-    assert brick._model_id == MODEL_ID
+    assert brick._model_id == expected
 
 
 def test_genie_model_is_rejected(runner):

@@ -1288,15 +1288,21 @@ DECISION_MODEL_BATCH = configure_llamacpp.DECISION_MODEL_BATCH
 DEFAULT_CTX_SIZE = configure_llamacpp.DEFAULT_CTX_SIZE
 
 
-def decision_model(path: Path, *, context_length: int = 8192, architecture: str = "modern-bert", decision_type: str = "laya") -> Path:
+def decision_model(
+    path: Path, *, context_length: int = 8192, architecture: str = "modern-bert", decision_type: str = "laya", causal: bool | None = False
+) -> Path:
     """A decision model's header, as llama.cpp's convert script writes it for Laya: one
-    layer, and the decision type key that marks the model as one."""
+    layer, the decision type key that marks the model as one, and the non-causal attention
+    of a ModernBERT. *causal* None leaves the key out, as the convert script does for a
+    causal Qwen (Kev)."""
     metadata = {
         "general.architecture": architecture,
         f"{architecture}.decision.type": decision_type,
         f"{architecture}.context_length": context_length,
         f"{architecture}.block_count": 1,
     }
+    if causal is not None:
+        metadata[f"{architecture}.attention.causal"] = causal
     return write_gguf(path, metadata, [("blk.0.attn_k.weight", (768,), Q8_0)])
 
 
@@ -1355,6 +1361,19 @@ def test_a_smaller_configured_context_wins_over_the_models(runner, tmp_path, mon
 
     assert options["LLAMA_ARG_CTX_SIZE"] == "4096"
     assert options["LLAMA_ARG_UBATCH"] == "2048"
+
+
+@pytest.mark.parametrize("causal", [None, True])
+def test_a_causal_decision_model_keeps_the_routers_arguments(runner, tmp_path, monkeypatch, capsys, causal):
+    """Kev is a Qwen3.5 with a decision head: it reads its prompt in chunks like a chat
+    model, and the big micro-batch only cost it memory — OOM-killed on the UNO Q on a
+    4000-token state at ubatch 2048, where the router's 128 serves it. Its header has no
+    attention.causal key (None), a causal True would say the same."""
+    monkeypatch.setenv("LLAMA_ARG_CTX_SIZE", "16384")
+    gguf = decision_model(tmp_path / "Kev-0.8B-Q8_0.gguf", architecture="qwen35", decision_type="kev", context_length=262144, causal=causal)
+
+    assert runner.decision_model_options(gguf) == {}
+    assert "Kev-0.8B-Q8_0: causal decision model (kev)" in capsys.readouterr().err
 
 
 def test_a_chat_model_gets_no_preset_keys(runner, tmp_path, monkeypatch, capsys):
