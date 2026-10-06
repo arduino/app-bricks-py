@@ -130,7 +130,7 @@ class MotionDetection(EdgeImpulseRunnerFacade):
     def _detection_loop(self) -> None:
         """Main loop for motion detection, processing sensor data and invoking callbacks when movements are detected."""
         features = self._buffer.pull()
-        if features is None or len(features) == 0:
+        if len(features) == 0:
             return
 
         try:
