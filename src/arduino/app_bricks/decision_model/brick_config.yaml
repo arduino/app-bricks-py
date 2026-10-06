@@ -11,3 +11,7 @@ model_by_boards:
 supported_boards: ["unoq", "ventunoq"]
 ai_frameworks_compatibility:
   - llamacpp
+variables:
+- name: LLAMA_ARG_CTX_SIZE
+  description: Context size
+  default_value: 8192
