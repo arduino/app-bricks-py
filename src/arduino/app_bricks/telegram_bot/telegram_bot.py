@@ -15,6 +15,10 @@ from telegram.ext import Application, CommandHandler, MessageHandler, ChatMember
 from telegram.error import NetworkError, TimedOut
 from .logger_adapter import TelegramLoggerAdapter
 
+# Only new messages reach the brick handlers: edits, channel posts and business messages are not
+# conversation turns, and carry no update.message the handlers could read
+NEW_MESSAGES = filters.UpdateType.MESSAGE
+
 # The async callbacks python-telegram-bot handlers run
 UpdateHandler = Callable[[Update, ContextTypes.DEFAULT_TYPE], Coroutine[Any, Any, None]]
 
@@ -334,10 +338,8 @@ class TelegramBot:
         handler = self._create_text_handler(callback)
 
         # Apply authorization filter if whitelist is configured
-        if self._auth_filter:
-            self.application.add_handler(CommandHandler(command, handler, filters=self._auth_filter))
-        else:
-            self.application.add_handler(CommandHandler(command, handler))
+        command_filter = NEW_MESSAGES & self._auth_filter if self._auth_filter else NEW_MESSAGES
+        self.application.add_handler(CommandHandler(command, handler, filters=command_filter))
 
         if description:
             self._commands_registry[command] = description
@@ -354,7 +356,7 @@ class TelegramBot:
         handler = self._create_text_handler(callback)
 
         # Build filter with authorization if whitelist is configured
-        base_filter = filters.TEXT & ~filters.COMMAND
+        base_filter = NEW_MESSAGES & filters.TEXT & ~filters.COMMAND
         final_filter = base_filter & self._auth_filter if self._auth_filter else base_filter
 
         self.application.add_handler(MessageHandler(final_filter, handler))
@@ -378,7 +380,7 @@ class TelegramBot:
         handler = self._create_media_handler(callback, "photo")
 
         # Build filter with authorization if whitelist is configured
-        final_filter = filters.PHOTO & self._auth_filter if self._auth_filter else filters.PHOTO
+        final_filter = NEW_MESSAGES & filters.PHOTO & self._auth_filter if self._auth_filter else NEW_MESSAGES & filters.PHOTO
 
         self.application.add_handler(MessageHandler(final_filter, handler))
         logger.info("Registered photo message handler")
@@ -402,7 +404,7 @@ class TelegramBot:
         handler = self._create_media_handler(callback, "audio")
 
         # Build filter with authorization if whitelist is configured
-        final_filter = filters.AUDIO & self._auth_filter if self._auth_filter else filters.AUDIO
+        final_filter = NEW_MESSAGES & filters.AUDIO & self._auth_filter if self._auth_filter else NEW_MESSAGES & filters.AUDIO
 
         self.application.add_handler(MessageHandler(final_filter, handler))
         logger.info("Registered audio message handler")
@@ -426,7 +428,7 @@ class TelegramBot:
         handler = self._create_media_handler(callback, "video")
 
         # Build filter with authorization if whitelist is configured
-        final_filter = filters.VIDEO & self._auth_filter if self._auth_filter else filters.VIDEO
+        final_filter = NEW_MESSAGES & filters.VIDEO & self._auth_filter if self._auth_filter else NEW_MESSAGES & filters.VIDEO
 
         self.application.add_handler(MessageHandler(final_filter, handler))
         logger.info("Registered video message handler")
@@ -450,7 +452,7 @@ class TelegramBot:
         handler = self._create_media_handler(callback, "document")
 
         # Build filter with authorization if whitelist is configured
-        final_filter = filters.Document.ALL & self._auth_filter if self._auth_filter else filters.Document.ALL
+        final_filter = NEW_MESSAGES & filters.Document.ALL & self._auth_filter if self._auth_filter else NEW_MESSAGES & filters.Document.ALL
 
         self.application.add_handler(MessageHandler(final_filter, handler))
         logger.info("Registered document message handler")
@@ -954,10 +956,8 @@ class TelegramBot:
                 self._welcome_cooldown[user.id] = current_time
 
             # Apply authorization filter if whitelist configured
-            if self._auth_filter:
-                self.application.add_handler(CommandHandler("start", builtin_start_handler, filters=self._auth_filter))
-            else:
-                self.application.add_handler(CommandHandler("start", builtin_start_handler))
+            start_filter = NEW_MESSAGES & self._auth_filter if self._auth_filter else NEW_MESSAGES
+            self.application.add_handler(CommandHandler("start", builtin_start_handler, filters=start_filter))
 
             self._commands_registry["start"] = "Get your user ID and chat ID"
             logger.info("Registered built-in /start command handler")
