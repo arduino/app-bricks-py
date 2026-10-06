@@ -387,7 +387,7 @@ class TextToSpeech:
         input_chars = len(text)
 
         text = text.strip()
-        chunks = []
+        chunks: list[str] = []
 
         while len(text) > TTS_MAX_CHARS:
             window = text[:TTS_MAX_CHARS]
