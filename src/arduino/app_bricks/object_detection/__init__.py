@@ -36,7 +36,7 @@ class ObjectDetection(EdgeImpulseRunnerFacade):
         if not self._model_info:
             raise ValueError("Failed to retrieve model information. Ensure the Edge Impulse service is running.")
 
-    def detect_from_file(self, image_path: str, confidence: float = None) -> dict | None:
+    def detect_from_file(self, image_path: str, confidence: float | None = None) -> dict | None:
         """Process a local image file to detect and identify objects.
 
         Args:
@@ -51,7 +51,7 @@ class ObjectDetection(EdgeImpulseRunnerFacade):
         ret = super().infer_from_file(image_path)
         return self._extract_detection(ret, confidence)
 
-    def detect(self, image_bytes: bytes | Image.Image, image_type: str = "jpg", confidence: float = None) -> dict[str, list[Any]] | None:
+    def detect(self, image_bytes: bytes | Image.Image, image_type: str = "jpg", confidence: float | None = None) -> dict[str, list[Any]] | None:
         """Process an in-memory image to detect and identify objects.
 
         Args:
@@ -91,7 +91,7 @@ class ObjectDetection(EdgeImpulseRunnerFacade):
             shape = Shape.CIRCLE
         return draw_bounding_boxes(image, detections, shape=shape)
 
-    def _extract_detection(self, item: dict | None, confidence: float = None) -> dict[str, list[Any]] | None:
+    def _extract_detection(self, item: dict | None, confidence: float | None = None) -> dict[str, list[Any]] | None:
         if not item:
             return None
 
