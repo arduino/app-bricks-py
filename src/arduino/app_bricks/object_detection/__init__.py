@@ -32,9 +32,10 @@ class ObjectDetection(EdgeImpulseRunnerFacade):
         """
         self.confidence = confidence
         super().__init__()
-        self._model_info = self.get_model_info()
-        if not self._model_info:
+        model_info = self.get_model_info()
+        if not model_info:
             raise ValueError("Failed to retrieve model information. Ensure the Edge Impulse service is running.")
+        self._model_info = model_info
 
     def detect_from_file(self, image_path: str, confidence: float | None = None) -> dict[str, list[Any]] | None:
         """Process a local image file to detect and identify objects.
