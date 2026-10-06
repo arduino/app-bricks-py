@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 from arduino.app_utils import brick, Logger
-from arduino.app_peripherals.speaker import BaseSpeaker, Speaker
+from arduino.app_peripherals.speaker import ALSASpeaker, BaseSpeaker, Speaker
 import threading
 from collections.abc import Callable, Iterable
 import numpy as np
@@ -1108,9 +1108,9 @@ class SoundGenerator(SoundGeneratorStreamer):
             logger.info(f"Starting sequence: {total_steps} steps at {bpm} BPM")
             speaker_buffer = float(self._output_device.buffer_size or 0)
             speaker_rate = float(self._sample_rate or self._output_device.sample_rate or 0)
-            shared_prequeue_lead = (
-                (speaker_buffer / speaker_rate) if self._output_device.shared and speaker_buffer > 0.0 and speaker_rate > 0.0 else 0.0
-            )
+            # A shared ALSA device goes through the mixer, which imposes a period as long as a step: queue the next steps ahead.
+            shared = isinstance(self._output_device, ALSASpeaker) and self._output_device.shared
+            shared_prequeue_lead = (speaker_buffer / speaker_rate) if shared and speaker_buffer > 0.0 and speaker_rate > 0.0 else 0.0
             prequeue_future_steps = max(1, int(math.ceil(shared_prequeue_lead / duration))) if shared_prequeue_lead > 0.0 and duration > 0.0 else 0
             render_ahead_steps = max(1, prequeue_future_steps)
 

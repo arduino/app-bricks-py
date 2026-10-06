@@ -9,6 +9,7 @@ import pytest
 
 from arduino.app_bricks.sound_generator import MusicComposition, SoundGenerator
 import arduino.app_bricks.sound_generator as sound_generator_module
+from arduino.app_peripherals.speaker import ALSASpeaker
 
 
 class DummySpeaker:
@@ -21,10 +22,13 @@ def test_playback_sequence_thread_prequeues_enough_future_steps_to_cover_speaker
     events = []
     current_time = {"value": 0.0}
 
-    class SequencerSpeaker:
+    class SequencerSpeaker(ALSASpeaker):
         sample_rate = 10
         buffer_size = 1
         shared = True
+
+        def __init__(self):
+            pass
 
         def play(self, data):
             events.append(("play", round(current_time["value"], 3), len(data)))
