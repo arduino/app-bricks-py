@@ -49,12 +49,13 @@ class PoseSpec:
 
         custom_names are the pose folders found next to the built-in names; any other name is refused.
         """
-        if isinstance(item, str):
-            options: dict[str, Any] = {"name": item}
-        elif isinstance(item, dict):
-            options = dict(item)
-        else:
-            raise ValueError(f"each pose must be a name or a dict, got {item!r}")
+        match item:
+            case str():
+                options: dict[str, Any] = {"name": item}
+            case dict():
+                options = dict(item)
+            case _:
+                raise ValueError(f"each pose must be a name or a dict, got {item!r}")
         name = options.get("name")
         if not isinstance(name, str) or not name:
             raise ValueError(f"pose {item!r}: 'name' must be a non-empty string")
@@ -94,12 +95,17 @@ class PoseSpec:
         return cls(name=name, builtin=builtin, type=pose_type, duration=duration, enter=enter, exit=exit_, smoothing=smoothing)
 
 
-def parse_poses(poses: list[str | dict[str, Any]] | None, builtin_names: tuple[str, ...], custom_names: tuple[str, ...] = ()) -> tuple[PoseSpec, ...]:
+def parse_poses(
+    poses: list[str | dict[str, Any]] | tuple[str | dict[str, Any], ...] | None, builtin_names: tuple[str, ...], custom_names: tuple[str, ...] = ()
+) -> tuple[PoseSpec, ...]:
     """Normalize the `poses` constructor argument to one spec per active pose."""
     if poses is None:
         return tuple(PoseSpec(name=name, builtin=True) for name in builtin_names)
-    if not isinstance(poses, (list, tuple)):
-        raise ValueError(f"poses must be a list of pose names or dicts, got {poses!r}")
+    match poses:
+        case list() | tuple():
+            pass
+        case _:
+            raise ValueError(f"poses must be a list of pose names or dicts, got {poses!r}")
     if not poses:
         raise ValueError("poses must list at least one pose (None selects the built-in poses)")
     specs = tuple(PoseSpec.from_item(item, builtin_names, custom_names) for item in poses)
