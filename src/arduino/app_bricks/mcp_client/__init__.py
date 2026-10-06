@@ -10,6 +10,7 @@ from collections.abc import Iterable
 
 from langchain_core.tools import BaseTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_mcp_adapters.sessions import Connection, StreamableHttpConnection
 
 from arduino.app_utils import brick
 
@@ -60,18 +61,21 @@ class HTTPEndpoint:
         if auth is not None:
             self.config["auth"] = auth
 
-    def to_conn(self) -> dict:
+    def to_conn(self) -> dict[str, StreamableHttpConnection]:
         """Build the connection configuration consumed by MultiServerMCPClient.
 
+        The transport is ``streamable_http``, the name langchain-mcp-adapters types; it treats the
+        ``http`` alias the brick used before in the same way.
+
         Returns:
-            dict: A mapping of the endpoint name to its transport configuration.
+            dict[str, StreamableHttpConnection]: A mapping of the endpoint name to its transport configuration.
         """
-        return {
-            self.name: {
-                "transport": "http",
-                **self.config,
-            }
-        }
+        connection: StreamableHttpConnection = {"transport": "streamable_http", "url": self.config["url"]}
+        if "headers" in self.config:
+            connection["headers"] = self.config["headers"]
+        if "auth" in self.config:
+            connection["auth"] = self.config["auth"]
+        return {self.name: connection}
 
 
 @brick
@@ -88,7 +92,7 @@ class MCPClient:
             **kwargs: Additional keyword arguments to pass to the MultiServerMCPClient.
 
         """
-        connections = {}
+        connections: dict[str, Connection] = {}
         for endpoint in endpoints:
             connections.update(endpoint.to_conn())
         self._client = MultiServerMCPClient(
