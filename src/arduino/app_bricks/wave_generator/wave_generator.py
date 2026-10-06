@@ -86,15 +86,15 @@ class WaveGenerator:
         self._glide = float(glide)
 
         # Internal audio state (set by audio thread)
-        self._prev_frequency = self._frequency
-        self._prev_amplitude = self._amplitude
+        self._prev_frequency: float = self._frequency
+        self._prev_amplitude: float = self._amplitude
         self._prev_phase = 0.0
-        self._amp_ramp_start = self._amplitude  # Amplitude at start of current ramp
-        self._amp_ramp_target = self._amplitude  # Target amplitude for current ramp
+        self._amp_ramp_start: float = self._amplitude  # Amplitude at start of current ramp
+        self._amp_ramp_target: float = self._amplitude  # Target amplitude for current ramp
         self._amp_ramp_duration = 0.0  # Total duration of current ramp
         self._amp_ramp_elapsed = 0.0  # Time elapsed in current ramp
-        self._freq_glide_start = self._frequency  # Frequency at start of current glide
-        self._freq_glide_target = self._frequency  # Target frequency for current glide
+        self._freq_glide_start: float = self._frequency  # Frequency at start of current glide
+        self._freq_glide_target: float = self._frequency  # Target frequency for current glide
         self._freq_glide_elapsed = 0.0  # Time elapsed in current glide
 
         # Number of ALSA frames to generate for each audio block produced
