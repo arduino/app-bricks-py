@@ -7,7 +7,7 @@ import asyncio
 import threading
 from contextlib import asynccontextmanager
 from typing import Any
-from collections.abc import AsyncIterator, Callable, Iterator
+from collections.abc import AsyncGenerator, Callable, Iterator
 
 import uvicorn
 from fastapi import FastAPI
@@ -73,7 +73,7 @@ class WebUI:
             use_tls = use_ssl
 
         @asynccontextmanager
-        async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
             await self._on_startup()
             yield
 
