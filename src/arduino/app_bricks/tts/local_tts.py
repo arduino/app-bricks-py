@@ -500,7 +500,7 @@ class TextToSpeech:
             logger.warning(f"Failed to cancel remote TTS session: {e}")
 
     def _play_pcm(self, pcm_audio: np.ndarray, cancelled: threading.Event) -> None:
-        if pcm_audio is None or len(pcm_audio) == 0:
+        if len(pcm_audio) == 0:
             raise ValueError("Audio data cannot be empty")
 
         if pcm_audio.dtype != self._speaker.format:
