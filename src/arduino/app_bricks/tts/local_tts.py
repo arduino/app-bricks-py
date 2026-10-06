@@ -9,6 +9,7 @@ import time
 from collections.abc import Generator, Iterator
 from contextlib import AbstractContextManager
 from types import TracebackType
+from typing import Any, TypedDict
 
 import numpy as np
 import requests
@@ -23,6 +24,14 @@ TTS_MAX_CHARS = 1024
 TTS_MAX_QUEUE_SIZE = 128
 
 _SPEECH_QUEUE_STOP = object()
+
+
+class VoiceConfig(TypedDict):
+    """Voice the runner synthesizes with, resolved from the configured model."""
+
+    model: str
+    name: str
+    language: str | None
 
 
 class TTSError(AppError):
@@ -331,7 +340,7 @@ class TextToSpeech:
         stripped of `-` and `_`."""
         return name.replace("-", "").replace("_", "").lower()
 
-    def _resolve_voice(self, model_name: str) -> dict:
+    def _resolve_voice(self, model_name: str) -> VoiceConfig:
         """Fetch available TTS models from the runner and return the voice config for `model_name`."""
         try:
             response = requests.get(f"{self.api_base_url}/tts/models")
@@ -349,11 +358,12 @@ class TextToSpeech:
             raise RuntimeError(error_msg)
 
         wanted = self._normalize_model_name(model_name)
-        for entry in response.json() or []:
-            entry_name = entry.get("name")
+        entries: list[dict[str, Any]] = response.json() or []
+        for entry in entries:
+            entry_name: str | None = entry.get("name")
             if not entry_name or self._normalize_model_name(entry_name) != wanted:
                 continue
-            voices = entry.get("voices") or []
+            voices: list[dict[str, Any]] = entry.get("voices") or []
             if voices:
                 voice = voices[0]
                 return {
