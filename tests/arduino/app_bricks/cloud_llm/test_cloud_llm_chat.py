@@ -137,9 +137,8 @@ def make_llm(fake_model, monkeypatch):
 def test_model_factory_routes_to_provider(monkeypatch, model_name, provider_path, expected_model):
     captured = {}
 
-    def fake_ctor(model, **kwargs):
-        captured["model"] = model
-        captured["kwargs"] = kwargs
+    def fake_ctor(**kwargs):
+        captured.update(kwargs)
         return "CHAT_MODEL"
 
     monkeypatch.setattr(provider_path, fake_ctor)
@@ -147,8 +146,9 @@ def test_model_factory_routes_to_provider(monkeypatch, model_name, provider_path
     result = model_factory(model_name, api_key="k", temperature=0.1)
 
     assert result == "CHAT_MODEL"
-    assert captured["model"] == expected_model
-    assert captured["kwargs"]["api_key"] == "k"
+    # ChatAnthropic declares its model field under the `model_name` alias
+    assert captured.get("model", captured.get("model_name")) == expected_model
+    assert captured["api_key"] == "k"
 
 
 def test_model_factory_defaults_to_openai_when_base_url_and_no_prefix(monkeypatch):
@@ -585,6 +585,27 @@ def test_chat_stream_assembles_parallel_tool_calls_by_index(make_llm, fake_model
 
     assert "".join(llm.chat_stream("weather in Rome and Turin?")) == "Both are sunny."
     assert seen == ["Rome", "Turin"]
+
+
+def test_chat_stream_runs_tool_calls_of_a_complete_message(make_llm, fake_model):
+    # Models that do not stream natively (e.g. `disable_streaming="tool_calling"`) yield one
+    # complete message instead of chunks.
+    seen = []
+
+    @tool
+    def get_current_weather(location: str) -> str:
+        """Return the weather for a location."""
+        seen.append(location)
+        return f"sunny in {location}"
+
+    fake_model.queue_stream(
+        [_tool_message("get_current_weather", {"location": "Rome"}, "c1")],
+        [_text_chunk("Rome is sunny.")],
+    )
+    llm = make_llm(tools=[get_current_weather])
+
+    assert "".join(llm.chat_stream("weather in Rome?")) == "Rome is sunny."
+    assert seen == ["Rome"]
 
 
 def test_chat_stream_sends_the_tool_call_message_before_the_tool_results(make_llm, fake_model):
