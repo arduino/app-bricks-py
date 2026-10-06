@@ -427,7 +427,7 @@ class TextToSpeech:
         text: str,
         cancelled: threading.Event | None = None,
         keep_alive: bool = False,
-    ) -> Iterator[bytes]:
+    ) -> Generator[bytes]:
         if cancelled is not None and cancelled.is_set():
             logger.debug("Speech session cancelled before synthesis")
             return
