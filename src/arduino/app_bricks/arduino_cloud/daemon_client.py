@@ -11,11 +11,13 @@ variable values with it over two endpoints (RFC-13 §8):
   for ordered delivery to the cloud.
 * ``GET /v1/variables/{name}/events`` — a Server-Sent Events stream. The first
   event is always one of three "sync" events telling the client how to seed its
-  local value: ``thing_unavailable`` (no thing assigned yet), ``lastvalue`` (the
-  variable's stored cloud value, replayed with ``last_value: true``) or
-  ``lastvalue_missing`` (thing assigned, no cloud value). Once the cloud reaches
-  steady state a ``lastvalue``/``lastvalue_missing`` resync frame follows for
-  clients that connected while unprovisioned. Every subsequent live change is an
+  local value: ``thing_unavailable`` (thing not reachable: the board has no
+  internet connectivity, has not been provisioned or has no thing assigned),
+  ``lastvalue`` (the variable's stored cloud value, replayed with
+  ``last_value: true``) or ``lastvalue_missing`` (thing reachable, no cloud
+  value). Once the cloud reaches steady state a ``lastvalue``/``lastvalue_missing``
+  resync frame follows for clients that connected while the thing was not
+  reachable. Every subsequent live change is an
   ``event: update``. Each event's JSON payload is ``{name, value, timestamp,
   last_value}`` (``thing_unavailable``/``lastvalue_missing`` carry only ``name``).
 """
@@ -164,8 +166,9 @@ class DaemonClient:
             return
 
         if resp.status_code == 409:
-            # No thing assigned yet (cloud not steady): the daemon deliberately
-            # did not queue the value. Expected during startup/reprovision — the
+            # Thing not reachable (cloud not steady: the board has no internet
+            # connectivity, has not been provisioned or has no thing assigned):
+            # the daemon deliberately did not queue the value. Expected during startup/reprovision — the
             # value is kept locally and pushed at sync time; log as a warning.
             logger.warning(
                 "ArduinoCloud: '%s' not sent — no thing assigned yet (cloud not steady); value kept locally until sync",

@@ -166,11 +166,8 @@ class ArduinoCloud:
         objects never set the flag — they fire on_write immediately from the SSE
         handler — so this is a no-op for them.
         """
-        fire = False
         with self._lock:
-            if record._on_write_pending:
-                record._on_write_pending = False
-                fire = True
+            fire = record.take_on_write_request()
         if fire:
             record.fire_on_write(self)
 
@@ -302,7 +299,9 @@ class ArduinoCloud:
         local value against the sync policy (``apply_cloud``) and move it in/out
         of the pending state; live ``update`` events are applied with no policy
         at all (``apply_live``), and are ignored while pending since only a sync
-        frame ends the "no thing assigned" state. Whenever either call actually
+        frame ends the "thing not reachable" state (the board has no internet
+        connectivity, has not been provisioned or has no thing assigned).
+        Whenever either call actually
         changes the local value (it returns True) on_write is delivered: for a scalar variable it fires immediately,
         as soon as the message arrives (C++ ArduinoIoTCloud synchronous onUpdate
         parity). For a complex object each sub-property arrives as its own frame,
@@ -319,31 +318,27 @@ class ArduinoCloud:
             owner_to_fire = None
             with self._lock:
                 if event == EVENT_THING_UNAVAILABLE:
-                    if not leaf._pending:
-                        leaf._pending = True
+                    if leaf.mark_unavailable():
                         logger.warning(
-                            "ArduinoCloud: '%s' — no thing assigned yet; keeping local value, will sync when the thing becomes available",
+                            "ArduinoCloud: '%s' — thing not reachable; check the board has internet connectivity, "
+                            "has been provisioned and has a thing assigned. Keeping local value, will sync when the thing is reachable",
                             leaf.name,
                         )
                     return
 
                 if event == EVENT_LASTVALUE_MISSING:
-                    leaf._pending = False
                     logger.debug("ArduinoCloud: '%s' has no cloud value; local value wins", leaf.name)
                     leaf.apply_missing()
                     return
 
                 if event == EVENT_LASTVALUE:
-                    leaf._pending = False
                     value = payload.get("value")
                     ts = parse_timestamp(payload.get("timestamp"))
                     logger.debug("ArduinoCloud: '%s' sync lastvalue=%r ts=%s", leaf.name, value, ts)
                     changed = leaf.apply_cloud(value, ts)
                 else:
-                    # Live update. Ignore while pending: only a sync frame ends
-                    # the "no thing assigned" state.
-                    if leaf._pending:
-                        return
+                    # Live update. apply_live ignores it while pending: only a
+                    # sync frame ends the pending state.
                     value = payload.get("value")
                     ts = parse_timestamp(payload.get("timestamp"))
                     logger.debug("ArduinoCloud: cloud update for '%s': value=%r ts=%s", leaf.name, value, ts)
@@ -352,17 +347,14 @@ class ArduinoCloud:
                     changed = leaf.apply_live(value, ts)
 
                 if changed:
-                    owner = leaf._owner
-                    if owner.is_complex:
-                        # Coalesce: the sub-properties of one complex object
-                        # arrive as separate per-leaf frames (initial sync or a
-                        # multi-attribute cloud change). Flag the owner and let
-                        # register() (after seeding) or the loop fire on_write
-                        # once, with the whole object populated — not once per
-                        # sub-property.
-                        owner._on_write_pending = True
-                    else:
-                        owner_to_fire = owner
+                    # A complex owner is coalesced: the sub-properties of one
+                    # complex object arrive as separate per-leaf frames
+                    # (initial sync or a multi-attribute cloud change), so
+                    # notify_owner flags it and register() (after seeding) or
+                    # the loop fire on_write once, with the whole object
+                    # populated — not once per sub-property. A scalar owner is
+                    # returned to fire right away.
+                    owner_to_fire = leaf.notify_owner()
 
             # Scalars fire on_write immediately (outside the lock) so a
             # cloud→device update invokes the callback the moment the message
