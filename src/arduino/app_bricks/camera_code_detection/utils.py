@@ -62,28 +62,28 @@ def draw_bounding_box(frame: Image, detection: Detection) -> Image:
 
     code_content = detection.content
     code_type = detection.type
-    code_coords = detection.coords
 
     # Draw the bounding box and text on the frame
-    if code_coords is not None and code_coords.shape == (4, 2):
-        draw.polygon(code_coords, outline=(0, 255, 0), width=3)
+    match detection.coords:
+        case np.ndarray() as code_coords if code_coords.shape == (4, 2):
+            draw.polygon([(int(x), int(y)) for x, y in code_coords], outline=(0, 255, 0), width=3)
 
-        # Calculate text position
-        min_x = int(np.min(code_coords[:, 0]))
-        min_y = int(np.min(code_coords[:, 1]))
-        text_x = min_x
-        text_y = min_y - (font_size + 5)
+            # Calculate text position
+            min_x = int(np.min(code_coords[:, 0]))
+            min_y = int(np.min(code_coords[:, 1]))
+            text_x = min_x
+            text_y = min_y - (font_size + 5)
 
-        if text_y < 5:  # If we're close to the top of the image
-            # Move the text below the first point of the bounding box
-            first_point_y = int(code_coords[0, 1])  # Assuming the first point is at index 0 of the second dimension
-            text_y = first_point_y + 10  # Place text below the first point with some padding
+            if text_y < 5:  # If we're close to the top of the image
+                # Move the text below the first point of the bounding box
+                first_point_y = int(code_coords[0, 1])  # Assuming the first point is at index 0 of the second dimension
+                text_y = first_point_y + 10  # Place text below the first point with some padding
 
-        # Draw the text
-        text_to_draw = f"[{code_type}] {code_content}"
-        draw.text((text_x, text_y), text_to_draw, fill=(0, 255, 0), font=font)
-    else:
-        print("Warning: Invalid or missing coordinates. Returning original image.")
-        return frame
+            # Draw the text
+            text_to_draw = f"[{code_type}] {code_content}"
+            draw.text((text_x, text_y), text_to_draw, fill=(0, 255, 0), font=font)
+        case _:
+            print("Warning: Invalid or missing coordinates. Returning original image.")
+            return frame
 
     return frame

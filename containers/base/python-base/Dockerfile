@@ -10,8 +10,8 @@ FROM ghcr.io/astral-sh/uv:0.12.21@sha256:a7aed3216253ee804de3e2d8afa5073baa1a177
 FROM python:3.13-slim-trixie@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS builder
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG OPENCV_WHL_URL=https://github.com/arduino/app-bricks-py/releases/download/opencv%2F4.13.0.92-20260610/opencv_python_headless-4.13.0+1ddb20b-cp313-cp313-linux_aarch64.whl
-ARG OPENCV_WHL_DIGEST=sha256:8d5e8319df040b93a07c91155afea515e3629fcb55510d4eee4716fc165b9c0a
+ARG OPENCV_WHL_URL=https://github.com/arduino/app-bricks-py/releases/download/media-stack%2F1.0.0/opencv_python_headless-4.14.0+031876b-cp313-cp313-linux_aarch64.whl
+ARG OPENCV_WHL_DIGEST=sha256:0cb5866296af37676aae5ad58e4a85d88650b71481692363f0c0a667b88b4b71
 ARG PYGOBJECT_VERSION=3.58.0
 
 COPY ./pyproject.toml ./uv.lock /tmp/deps/
@@ -51,22 +51,25 @@ RUN set -ex; \
 FROM ${REGISTRY}app-bricks/python-slim:${BASE_IMAGE_VERSION} AS production
 
 ARG DEBIAN_FRONTEND=noninteractive
+ARG FFMPEG_LIBS_URL=https://github.com/arduino/app-bricks-py/releases/download/media-stack%2F1.0.0/ffmpeg-libs-7.1.5-0+deb13u1.tar.gz
+ARG FFMPEG_LIBS_DIGEST=sha256:b58853685fb49553d10ed03be4f352b73b411234d2469902d2bd983901594fe9
 ARG LIBCAMERA_DEB_URL=https://github.com/arduino/app-bricks-py/releases/download/libcamera%2F0.7.1-qcom4/libcamera0.7_0.7.1-1.bpo13+1qcom4_arm64.deb
 ARG LIBCAMERA_DEB_DIGEST=sha256:958b7fb3d1a851542fddd5f54a259c685f1301945a3b10bce4fa15cf7886ef0f
 ARG LIBCAMERA_IPA_DEB_URL=https://github.com/arduino/app-bricks-py/releases/download/libcamera%2F0.7.1-qcom4/libcamera-ipa_0.7.1-1.bpo13+1qcom4_arm64.deb
 ARG LIBCAMERA_IPA_DEB_DIGEST=sha256:04ed476cd08acc897297f47b2a35e13fc71e459156b69be0bf7364a80bfac283
 ARG GSTREAMER_LIBCAMERA_DEB_URL=https://github.com/arduino/app-bricks-py/releases/download/libcamera%2F0.7.1-qcom4/gstreamer1.0-libcamera_0.7.1-1.bpo13+1qcom4_arm64.deb
 ARG GSTREAMER_LIBCAMERA_DEB_DIGEST=sha256:c5c38c5ddd9689cc4dd07cc433c85c325c408a67e631499679e67a616099e4f1
-ARG GSTREAMER_QTIQMMFSRC_DEB_URL=https://github.com/robgee86/app-bricks-py/releases/download/qtiqmmfsrc%2F1.8.1/qtiqmmfsrc-1.8.1.deb
-ARG GSTREAMER_QTIQMMFSRC_DEB_DIGEST=sha256:b0b764a2f7ebf369de5cc9827c2952397d2ead757de7bee3f2c9c2f468d714a9
-ARG GSTREAMER_LIBGSTREAMER_PLUGINS_BASE_DEB_URL=https://github.com/robgee86/app-bricks-py/releases/download/qtiqmmfsrc%2F1.8.1/libgstreamer-plugins-base1.0-0_1.26.2-1+deb13u1_arm64.deb
-ARG GSTREAMER_LIBGSTREAMER_PLUGINS_BASE_DEB_DIGEST=sha256:a6e1aaadbac810957f5c4ce981d955c686734e85c23cbb5b89ddd33299f920c6
+ARG QTIQMMFSRC_URL=https://github.com/arduino/app-bricks-py/releases/download/media-stack%2F1.0.0/qtiqmmfsrc-0.1.3.tar.gz
+ARG QTIQMMFSRC_DIGEST=sha256:0aa5e217560373010636db83aeeba6699ef4c40489aac07598283cf2362faabf
+ARG GSTREAMER_PLUGINS_GOOD_DEB_URL=https://github.com/arduino/app-bricks-py/releases/download/media-stack%2F1.0.0/gstreamer1.0-plugins-good_1.26.2-1+deb13u2_arm64.deb
+ARG GSTREAMER_PLUGINS_GOOD_DEB_DIGEST=sha256:639ef6ba154641fb36d8b84aafee4e57b38e54fc12da8403648671152a4b8219
 
+ADD --checksum=${FFMPEG_LIBS_DIGEST} ${FFMPEG_LIBS_URL} /tmp/ffmpeg-libs.tar.gz
 ADD --checksum=${LIBCAMERA_DEB_DIGEST} ${LIBCAMERA_DEB_URL} /tmp/libcamera0.7.deb
 ADD --checksum=${LIBCAMERA_IPA_DEB_DIGEST} ${LIBCAMERA_IPA_DEB_URL} /tmp/libcamera-ipa.deb
 ADD --checksum=${GSTREAMER_LIBCAMERA_DEB_DIGEST} ${GSTREAMER_LIBCAMERA_DEB_URL} /tmp/gstreamer1.0-libcamera.deb
-ADD --checksum=${GSTREAMER_QTIQMMFSRC_DEB_DIGEST} ${GSTREAMER_QTIQMMFSRC_DEB_URL} /tmp/qtiqmmfsrc.deb
-ADD --checksum=${GSTREAMER_LIBGSTREAMER_PLUGINS_BASE_DEB_DIGEST} ${GSTREAMER_LIBGSTREAMER_PLUGINS_BASE_DEB_URL} /tmp/libgstreamer-plugins-base.deb
+ADD --checksum=${QTIQMMFSRC_DIGEST} ${QTIQMMFSRC_URL} /tmp/qtiqmmfsrc.tar.gz
+ADD --checksum=${GSTREAMER_PLUGINS_GOOD_DEB_DIGEST} ${GSTREAMER_PLUGINS_GOOD_DEB_URL} /tmp/gstreamer-good.deb
 ADD --checksum=sha256:c53aceea2dcf5b4098099c0c4d0a061d17e178a049317b42a422b1a9f7f8eb59 https://raw.githubusercontent.com/googlefonts/opensans/bd7e37632246368c60fdcbd374dbf9bad11969b6/fonts/ttf/OpenSans-Regular.ttf /home/app/.fonts/OpenSans.ttf
 
 # Copy the installed dependencies from the 'builder' stage
@@ -95,14 +98,21 @@ RUN set -ex; \
     # Install dependencies for pipewire
     apt-get install -y --no-install-recommends --no-install-suggests pipewire-alsa; \
     # Install dependencies for running OpenCV with Gstreamer backend
-    apt-get install -y --no-install-recommends --no-install-suggests libavcodec61 libavformat61 libavutil59 libswscale8; \
     apt-get install -y --no-install-recommends --no-install-suggests libjpeg62-turbo libtiff6 libpng16-16t64 libwebp7 libwebpdecoder3 libwebpdemux2 libwebpmux3 libopenblas0 liblapacke; \
-    apt-get install -y --no-install-recommends --no-install-suggests libgstreamer1.0-0 libgstreamer-plugins-base1.0-0 gstreamer1.0-plugins-good gstreamer1.0-plugins-base-apps; \
+    apt-get install -y --no-install-recommends --no-install-suggests libgstreamer1.0-0 libgstreamer-plugins-base1.0-0 gstreamer1.0-plugins-base-apps; \
+    # Install custom minimal FFmpeg and GStreamer Good plugins
+    mkdir -p /tmp/ffmpeg-libs; \
+    tar -xzf /tmp/ffmpeg-libs.tar.gz -C /tmp/ffmpeg-libs; \
+    apt-get install -y --no-install-recommends --no-install-suggests /tmp/ffmpeg-libs/*.deb /tmp/gstreamer-good.deb; \
+    apt-mark hold libavcodec61 libavformat61 libavutil59 libswscale8 libswresample5 gstreamer1.0-plugins-good; \
     # Install dependencies for running CSI cameras (libcamera, gstreamer introspection, qtiqmmfsrc)
     apt-get install -y --no-install-recommends --no-install-suggests libgirepository-2.0-0 gir1.2-glib-2.0 gir1.2-gstreamer-1.0 libpisp-common libboost-filesystem1.83.0 libboost-log1.83.0 libboost-thread1.83.0 libpisp1 libegl1 libgles2 libyaml-0-2 liblttng-ust1 libdw1t64 libyuv0; \
     dpkg -i /tmp/libcamera0.7.deb /tmp/libcamera-ipa.deb /tmp/gstreamer1.0-libcamera.deb; \
-    apt-get install -y --no-install-recommends --no-install-suggests --allow-downgrades /tmp/qtiqmmfsrc.deb /tmp/libgstreamer-plugins-base.deb; \
-    rm /tmp/libcamera0.7.deb /tmp/libcamera-ipa.deb /tmp/gstreamer1.0-libcamera.deb /tmp/qtiqmmfsrc.deb /tmp/libgstreamer-plugins-base.deb; \
+    mkdir -p /tmp/qtiqmmfsrc; \
+    tar -xzf /tmp/qtiqmmfsrc.tar.gz -C /tmp/qtiqmmfsrc; \
+    apt-get install -y --no-install-recommends --no-install-suggests --allow-downgrades /tmp/qtiqmmfsrc/*.deb; \
+    apt-mark hold libgstreamer-plugins-base1.0-0; \
+    rm -rf /tmp/*.deb /tmp/ffmpeg-libs /tmp/ffmpeg-libs.tar.gz /tmp/qtiqmmfsrc /tmp/qtiqmmfsrc.tar.gz; \
     # Install other runtime dependencies
     apt-get install -y --no-install-recommends --no-install-suggests libglib2.0-0 inotify-tools libzbar0; \
     # Install the FastRPC client libraries used to reach the Hexagon DSP:
@@ -127,18 +137,16 @@ RUN set -ex; \
         /usr/share/man/* \
         /usr/share/locale/* \
         /var/cache/debconf/* \
-        /var/lib/dpkg/info/* \
         /var/cache/apt/*.bin; \
+    # keep the rest of /var/lib/dpkg/info, or derived images cannot apt-get upgrade
+    rm -fr /var/lib/dpkg/info/*.symbols \
+        /var/lib/dpkg/info/*.shlibs \
+        /var/lib/dpkg/info/*.templates; \
     find /usr/share/doc -type f ! -name 'copyright' -delete; \
     find /usr/share/doc -type d -empty -delete; \
     # precompile python files to .pyc to speed up startup time
     python -m compileall /usr/local/bin; \
-    python -m compileall /usr/local/lib; \
-    # HACK: Remove VPX plugin
-    rm -f /usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstvpx.so; \
-    # Ensure libvpx and libx265 are not present
-    dpkg -r --force-depends libx265-215 libvpx9; \
-    ldconfig
+    python -m compileall /usr/local/lib
 
 COPY conf/libcamera.yaml /etc/libcamera/configuration.yaml
 

@@ -16,6 +16,7 @@ import pytest
 from arduino.app_bricks.pose_estimation import BUILTIN_POSE_NAMES, KEYPOINT_NAMES, Keypoint, Person, PoseEstimation
 from arduino.app_bricks.pose_estimation.pose_estimation import _POSE_CLASSIFIER_PATH
 from arduino.app_bricks.pose_estimation.classifier import embed_person
+from arduino.app_bricks.pose_estimation.enrollment import Enrollment, Outcome
 from arduino.app_bricks.pose_estimation.enrollment.photos import PersonReader
 from arduino.app_bricks.pose_estimation.vocabulary import PoseSpec
 from arduino.app_bricks.pose_estimation.classifier import PoseKNN, load_pose_classifier
@@ -616,7 +617,13 @@ class TestSetConfidence:
             pe.set_confidence("high")
         with pytest.raises(ValueError):
             pe.set_confidence(True)
+        with pytest.raises(ValueError):
+            pe.set_confidence(float("nan"))
+        with pytest.raises(ValueError):
+            pe.set_confidence(np.float32(0.5))  # not a Python number
         assert pe._confidence == 0.8
+        pe.set_confidence(np.float64(0.5))  # a float subclass
+        assert pe._confidence == 0.5
 
 
 class TestSetDrawBboxes:
@@ -883,6 +890,19 @@ class TestCustomPoses:
         assert not pe._camera.start.called
         assert len(list((root / "forehand").glob("report_*.txt"))) == 1
 
+    def test_an_accepted_pose_without_thresholds_stops_start_before_installing_anything(self, monkeypatch, tmp_path):
+        root = _poses_dir(tmp_path, {"forehand": 3})
+        pe = _construct(monkeypatch, poses=["forehand"], custom_poses_dir=str(root))
+        knn, thresholds = pe._pose_knn, {edge: dict(values) for edge, values in pe._pose_thresholds.items()}
+        outcome = Outcome(name="forehand", accepted=True, report="verdict: ACCEPTED", enter=0.6)
+        monkeypatch.setattr(
+            PoseEstimation, "_enroll_custom_poses", lambda self: Enrollment(knn=PoseKNN(), outcomes={"forehand": outcome}, set_aside={})
+        )
+        with pytest.raises(RuntimeError, match="custom pose 'forehand' was accepted without an operating point"):
+            pe.start()
+        assert pe._pose_knn is knn and pe._pose_thresholds == thresholds
+        assert not pe._camera.start.called
+
     def test_discarded_photos_and_the_other_folder_reach_the_report(self, monkeypatch, tmp_path):
         root = _poses_dir(tmp_path, {"forehand": 60, "other": 10})
         scale = load_pose_classifier(_POSE_CLASSIFIER_PATH)[0].scale
@@ -957,6 +977,11 @@ class TestPersonReader:
         assert [("frame" in d) for d in received[1:]] == [True] * 7  # clear, then photo, photo, clear twice
         assert people[0].keypoints["nose"].x == 200  # the second answer of the first photo (x = 100 * 2)
         assert more[0].keypoints["nose"].x == 500
+
+    def test_reading_outside_the_context_is_a_clear_error(self):
+        reader = PersonReader("ws://127.0.0.1:9", "ws://127.0.0.1:9", {})
+        with pytest.raises(RuntimeError, match="not connected"):
+            reader.people(np.zeros((48, 64, 3), np.uint8), 0.3)
 
     def test_an_unreachable_runner_is_a_clear_error(self, monkeypatch):
         from arduino.app_bricks.pose_estimation.enrollment import photos

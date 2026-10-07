@@ -9,6 +9,7 @@ import time
 from collections.abc import Generator, Iterator
 from contextlib import AbstractContextManager
 from types import TracebackType
+from typing import Any, TypedDict
 
 import numpy as np
 import requests
@@ -22,7 +23,13 @@ logger = Logger("TextToSpeech")
 TTS_MAX_CHARS = 1024
 TTS_MAX_QUEUE_SIZE = 128
 
-_SPEECH_QUEUE_STOP = object()
+
+class VoiceConfig(TypedDict):
+    """Voice the runner synthesizes with, resolved from the configured model."""
+
+    model: str
+    name: str
+    language: str | None
 
 
 class TTSError(AppError):
@@ -97,7 +104,8 @@ class TextToSpeech:
         self._active_session_lock = threading.Lock()
         self._cancelled: threading.Event | None = None
         self._speak_thread: threading.Thread | None = None
-        self._speech_queue: queue.Queue = queue.Queue(maxsize=max_queue_size)
+        # Each item is (cancel epoch, text chunks); None stops the worker.
+        self._speech_queue: queue.Queue[tuple[int, list[str]] | None] = queue.Queue(maxsize=max_queue_size)
         self._worker_lock = threading.Lock()
         self._cancel_epoch = 0
         self._pending_speech = 0
@@ -115,7 +123,7 @@ class TextToSpeech:
             self._speak_thread = None
         if speak_thread is not None and speak_thread.is_alive():
             try:
-                self._speech_queue.put_nowait(_SPEECH_QUEUE_STOP)
+                self._speech_queue.put_nowait(None)
             except queue.Full:
                 logger.warning("Speech queue is full, the worker cannot be notified to stop")
             speak_thread.join(timeout=1.0)
@@ -196,7 +204,7 @@ class TextToSpeech:
         """Consume queued speech requests sequentially until the stop sentinel arrives."""
         while True:
             item = self._speech_queue.get()
-            if item is _SPEECH_QUEUE_STOP:
+            if item is None:
                 return
             epoch, chunks = item
             try:
@@ -222,7 +230,7 @@ class TextToSpeech:
                 item = self._speech_queue.get_nowait()
             except queue.Empty:
                 return
-            if item is _SPEECH_QUEUE_STOP:
+            if item is None:
                 self._speech_queue.put(item)
                 return
             self._pending_speech -= 1
@@ -331,7 +339,7 @@ class TextToSpeech:
         stripped of `-` and `_`."""
         return name.replace("-", "").replace("_", "").lower()
 
-    def _resolve_voice(self, model_name: str) -> dict:
+    def _resolve_voice(self, model_name: str) -> VoiceConfig:
         """Fetch available TTS models from the runner and return the voice config for `model_name`."""
         try:
             response = requests.get(f"{self.api_base_url}/tts/models")
@@ -349,11 +357,12 @@ class TextToSpeech:
             raise RuntimeError(error_msg)
 
         wanted = self._normalize_model_name(model_name)
-        for entry in response.json() or []:
-            entry_name = entry.get("name")
+        entries: list[dict[str, Any]] = response.json() or []
+        for entry in entries:
+            entry_name: str | None = entry.get("name")
             if not entry_name or self._normalize_model_name(entry_name) != wanted:
                 continue
-            voices = entry.get("voices") or []
+            voices: list[dict[str, Any]] = entry.get("voices") or []
             if voices:
                 voice = voices[0]
                 return {
@@ -378,7 +387,7 @@ class TextToSpeech:
         input_chars = len(text)
 
         text = text.strip()
-        chunks = []
+        chunks: list[str] = []
 
         while len(text) > TTS_MAX_CHARS:
             window = text[:TTS_MAX_CHARS]
@@ -418,7 +427,7 @@ class TextToSpeech:
         text: str,
         cancelled: threading.Event | None = None,
         keep_alive: bool = False,
-    ) -> Iterator[bytes]:
+    ) -> Generator[bytes]:
         if cancelled is not None and cancelled.is_set():
             logger.debug("Speech session cancelled before synthesis")
             return
@@ -491,7 +500,7 @@ class TextToSpeech:
             logger.warning(f"Failed to cancel remote TTS session: {e}")
 
     def _play_pcm(self, pcm_audio: np.ndarray, cancelled: threading.Event) -> None:
-        if pcm_audio is None or len(pcm_audio) == 0:
+        if len(pcm_audio) == 0:
             raise ValueError("Audio data cannot be empty")
 
         if pcm_audio.dtype != self._speaker.format:

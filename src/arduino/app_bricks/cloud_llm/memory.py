@@ -77,7 +77,7 @@ class SQLMessagePersistence:
             return []
 
         sql = f"SELECT message_data FROM {self._table_name} WHERE thread_id = ? ORDER BY id DESC"
-        params: tuple = (self._thread_id,)
+        params: tuple[str | int, ...] = (self._thread_id,)
         if limit is not None:
             sql += " LIMIT ?"
             params = (self._thread_id, limit)

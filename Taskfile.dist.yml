@@ -1,8 +1,8 @@
 version: "3"
 
 # Task names are <intent>:<component>[:<detail>]. The intent is one of init, deps, test, build,
-# check, fix, new, show; the component is bricks (the library) or containers, and a bare intent
-# covers both. check:* tasks only verify and exit non-zero, fix:* tasks apply the same rules.
+# check, fix, new, show, mirror; the component is bricks (the library) or containers, and a bare
+# intent covers both. check:* tasks only verify and exit non-zero, fix:* tasks apply the same rules.
 # Every task here runs on a developer machine. What runs only in CI lives in Taskfile.ci.yml.
 
 vars:
@@ -279,3 +279,8 @@ tasks:
     desc: "Show the base image, parent, children and files of one container: task show:container -- <name>"
     cmds:
       - python3 -m scripts.container show {{.CLI_ARGS}}
+
+  mirror:
+    desc: "Mirror the GitHub releases and the release images into another owner's repo, Actions paused there meanwhile: task mirror -- <owner/repo>"
+    cmds:
+      - scripts/mirror_releases.sh {{.CLI_ARGS}}

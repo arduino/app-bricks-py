@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import base64
 import json
+from typing import Any
 
 import numpy as np
 import websocket
@@ -109,11 +110,8 @@ class OpenAITranscribe:
                 return raw
         return raw
 
-    def _extract_error_code(self, message: object) -> str | None:
+    def _extract_error_code(self, message: dict[str, Any]) -> str | None:
         """Try to find an error code either nested under 'error' or at top-level."""
-        if not isinstance(message, dict):
-            return None
-
         err = message.get("error")
         if isinstance(err, dict):
             code = err.get("code")
@@ -123,13 +121,13 @@ class OpenAITranscribe:
         code = message.get("code")
         return code if isinstance(code, str) else None
 
-    def _extract_error_payload(self, message: object) -> object:
+    def _extract_error_payload(self, message: dict[str, Any]) -> object:
         """Prefer nested 'error' payload if present, otherwise return message."""
-        if isinstance(message, dict) and "error" in message:
+        if "error" in message:
             return message.get("error")
         return message
 
-    def _format_event(self, message: dict) -> ASRProviderEvent | None:
+    def _format_event(self, message: dict[str, Any]) -> ASRProviderEvent | None:
         match message.get("type"):
             case "input_audio_buffer.speech_started":
                 return ASRProviderEvent(type="speech_start", data=None)
@@ -158,6 +156,10 @@ class OpenAITranscribe:
                     return None
                 payload = self._extract_error_payload(message)
                 raise ASRProviderError(f"OpenAI error: {payload}")
+
+            case _:
+                # Other realtime events (session, rate limits, ...) carry nothing to report
+                pass
 
         return None
 

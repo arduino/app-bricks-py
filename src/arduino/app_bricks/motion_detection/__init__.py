@@ -7,7 +7,7 @@ import queue
 import inspect
 import numpy as np
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from typing import Any
 from arduino.app_internal.core import EdgeImpulseRunnerFacade
 from arduino.app_utils import brick, Logger, SlidingWindowBuffer
@@ -34,11 +34,11 @@ class MotionDetection(EdgeImpulseRunnerFacade):
             raise ValueError("Model parameters are missing or incomplete in the retrieved model information.")
         self._model_info = model_info
 
-        self._handlers = {}  # Dictionary to hold handlers for different keywords
+        self._handlers: dict[str, Callable[..., None]] = {}  # Dictionary to hold handlers for different keywords
         self._handlers_lock = threading.Lock()
 
         # TODO: remove this queue and its handling
-        self._external_notification_queue = queue.Queue(
+        self._external_notification_queue: queue.Queue[tuple[float, float, float]] = queue.Queue(
             maxsize=100
         )  # Queue to hold chunks of sensor data for external notifications (like processing them in a chart)
 
@@ -50,12 +50,13 @@ class MotionDetection(EdgeImpulseRunnerFacade):
     def stop(self) -> None:
         self._buffer.flush()
 
-    def on_movement_detection(self, movement: str, callback: callable) -> None:
+    def on_movement_detection(self, movement: str, callback: Callable[..., None]) -> None:
         """Register a callback function to be invoked when a specific motion pattern is detected.
 
         Args:
             movement (str): The motion pattern name to check for in the classification results.
-            callback (callable): Function to call when the specified motion pattern is detected.
+            callback (Callable[..., None]): Function to call when the specified motion pattern is detected. It takes
+                no argument, or one receiving the classification results, or a ``classification`` keyword argument.
         """
         with self._handlers_lock:
             if movement in self._handlers:
@@ -89,10 +90,7 @@ class MotionDetection(EdgeImpulseRunnerFacade):
             iterable: An iterable containing the accumulated sensor data (x, y, z acceleration values).
         """
         while True:
-            acquired_samples = self._external_notification_queue.get()
-            if acquired_samples is None:
-                continue
-            yield acquired_samples
+            yield self._external_notification_queue.get()
 
     def _movement_spotted(self, item: dict[str, Any] | None) -> tuple[str, float, dict[str, float]] | None:
         """Verify if a movement has been spotted.
@@ -132,7 +130,7 @@ class MotionDetection(EdgeImpulseRunnerFacade):
     def _detection_loop(self) -> None:
         """Main loop for motion detection, processing sensor data and invoking callbacks when movements are detected."""
         features = self._buffer.pull()
-        if features is None or len(features) == 0:
+        if len(features) == 0:
             return
 
         try:

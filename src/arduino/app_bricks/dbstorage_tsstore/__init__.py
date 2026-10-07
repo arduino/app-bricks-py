@@ -8,7 +8,11 @@ import os
 import yaml
 import time
 
-from influxdb_client import InfluxDBClient, Point, WritePrecision, BucketRetentionRules
+from influxdb_client.client.influxdb_client import InfluxDBClient
+from influxdb_client.client.write.point import Point
+from influxdb_client.client.write_api import WriteApi
+from influxdb_client.domain.bucket_retention_rules import BucketRetentionRules
+from influxdb_client.domain.write_precision import WritePrecision
 
 from arduino.app_internal.core import get_brick_compose_file, parse_docker_compose_variable
 from arduino.app_utils import brick, Logger
@@ -28,6 +32,13 @@ class TimeSeriesStoreError(Exception):
 def _convert_days_to_seconds(days: int) -> int:
     """Convert days to seconds."""
     return days * 24 * 60 * 60
+
+
+def _close(client: InfluxDBClient, write_api: WriteApi | None) -> None:
+    """Flush and close the write API, then close the client."""
+    if write_api is not None:
+        write_api.close()
+    client.close()
 
 
 class _InfluxDBHandler:
@@ -53,6 +64,8 @@ class _InfluxDBHandler:
         self.host = host
         self.port = port
         infra = self.load_default_infra()
+        if infra is None:
+            raise TimeSeriesStoreError("Could not find the brick compose file.")
         env_dict = infra["services"]["dbstorage-influx"]["environment"]
         self.url = f"http://{self.host}:{self.port}"
         # Resolved as compose does, so the app gets the token the container was set up with
@@ -61,9 +74,9 @@ class _InfluxDBHandler:
         if token is None:
             raise TimeSeriesStoreError(f"{token_variable} is not set and the brick compose file declares no default for it.")
         self.token = token
-        self.org = env_dict["DOCKER_INFLUXDB_INIT_ORG"]
-        self.bucket = env_dict["DOCKER_INFLUXDB_INIT_BUCKET"]
-        self.client: InfluxDBClient = None
+        self.org: str = env_dict["DOCKER_INFLUXDB_INIT_ORG"]
+        self.bucket: str = env_dict["DOCKER_INFLUXDB_INIT_BUCKET"]
+        self.client: InfluxDBClient | None = None
         self.retention_days = retention_days
 
     def start(self) -> None:
@@ -71,34 +84,49 @@ class _InfluxDBHandler:
 
         This method creates the InfluxDB client connection, initializes write and query APIs,
         and configures the data retention policy for the bucket. The connection is established
-        with the parameters specified during initialization.
+        with the parameters specified during initialization and stays open until stop().
+        Does nothing if the store is already started.
 
         Raises:
-            TimeSeriesStoreError: If there is an error connecting to the InfluxDB server.
+            TimeSeriesStoreError: If there is an error connecting to the InfluxDB server or its bucket is missing.
         """
+        if self.client is not None:
+            return
+        client = None
+        write_api = None
         try:
-            with InfluxDBClient(url=self.url, token=self.token, org=self.org) as client:
-                self.client = client
-                self.write_api = client.write_api(write_precision=WritePrecision.MS)
-                self.query_api = client.query_api()
-                # Update data retention of the bucket
-                bucket = self.client.buckets_api().find_bucket_by_name(self.bucket)
-                bucket.retention_rules = [BucketRetentionRules(type="expire", every_seconds=_convert_days_to_seconds(self.retention_days))]
-                self.client.buckets_api().update_bucket(bucket)
-            logger.info(f"Connected to InfluxDB: {self.url}")
+            client = InfluxDBClient(url=self.url, token=self.token, org=self.org)
+            write_api = client.write_api(write_precision=WritePrecision.MS)
+            query_api = client.query_api()
+            # Update data retention of the bucket
+            bucket = client.buckets_api().find_bucket_by_name(self.bucket)
+            if bucket is None:
+                raise TimeSeriesStoreError(f"Bucket {self.bucket} not found.")
+            bucket.retention_rules = [BucketRetentionRules(type="expire", every_seconds=_convert_days_to_seconds(self.retention_days))]
+            client.buckets_api().update_bucket(bucket)
         except Exception as e:
+            if client is not None:
+                _close(client, write_api)
             raise TimeSeriesStoreError(f"Error connecting to InfluxDB: {e}") from e
+        self.write_api = write_api
+        self.query_api = query_api
+        self.client = client
+        logger.info(f"Connected to InfluxDB: {self.url}")
 
     def stop(self) -> None:
         """Close the InfluxDB database connection.
 
-        Properly closes the client connection and releases associated resources.
+        Flushes the pending writes, closes the client connection and releases associated resources.
         Should be called when finished with the time series store to ensure
-        proper cleanup.
+        proper cleanup. Does nothing if the store is not started.
         """
-        self.client.close()
+        client = self.client
+        if client is None:
+            return
+        self.client = None
+        _close(client, self.write_api)
 
-    def load_default_infra(self) -> dict | None:
+    def load_default_infra(self) -> dict[str, Any] | None:
         """Load the default InfluxDB compose file for the brick.
 
         This method looks for a YAML file named 'module_compose.yaml' in the current module's directory.
@@ -106,7 +134,7 @@ class _InfluxDBHandler:
         If the file is not found, it logs an error message.
 
         Returns:
-            dict: The content of the compose file as a dictionary.
+            dict[str, Any] | None: The content of the compose file as a dictionary, None if the file is not found.
         """
         pathfile = get_brick_compose_file(self.__class__)
         if pathfile:
@@ -119,32 +147,38 @@ class _InfluxDBHandler:
             return None
 
     def get_client(self) -> InfluxDBClient:
-        """Returns the InfluxDB client instance."""
-        return self.client
+        """Returns the InfluxDB client instance.
+
+        Raises:
+            TimeSeriesStoreError: If the store is not started.
+        """
+        client = self.client
+        if client is None:
+            raise TimeSeriesStoreError("InfluxDB client is not available, call start() first.")
+        return client
 
 
 def _is_valid_time(value: str) -> bool:
     import re
     from datetime import datetime
 
-    try:
-        if not isinstance(value, str):
+    match value:
+        case str():
+            # Check for relative period (e.g., -1d, -2h, -30m)
+            if re.fullmatch(r"-\d+[smhdw]", value):
+                return True
+            # Check for RFC3339 timestamp
+            try:
+                # Accepts e.g. 2024-06-25T12:34:56Z
+                datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ")
+                return True
+            except ValueError:
+                pass
+            if value == "now()":
+                return True
             return False
-        # Check for relative period (e.g., -1d, -2h, -30m)
-        if re.fullmatch(r"-\d+[smhdw]", value):
-            return True
-        # Check for RFC3339 timestamp
-        try:
-            # Accepts e.g. 2024-06-25T12:34:56Z
-            datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ")
-            return True
-        except ValueError:
-            pass
-        if value == "now()":
-            return True
-        return False
-    except Exception as e:
-        raise e
+        case _:
+            return False
 
 
 @brick
@@ -167,7 +201,8 @@ class TimeSeriesStore(_InfluxDBHandler):
                 InfluxDB bucket. Defaults to 7.
 
         Raises:
-            TimeSeriesStoreError: If INFLUXDB_ADMIN_TOKEN is not set and the brick compose file declares no default for it.
+            TimeSeriesStoreError: If the brick compose file is missing, or INFLUXDB_ADMIN_TOKEN is not set and the
+                brick compose file declares no default for it.
         """
         super().__init__(host, port, retention_days)
 
@@ -200,7 +235,7 @@ class TimeSeriesStore(_InfluxDBHandler):
         except Exception as e:
             raise TimeSeriesStoreError(f"Error writing sample to InfluxDB: {e}") from e
 
-    def read_last_sample(self, measure: str, measurement_name: str = "arduino", start_from: str = "-1d") -> tuple | None:
+    def read_last_sample(self, measure: str, measurement_name: str = "arduino", start_from: str = "-1d") -> tuple[str, str, Any] | None:
         """Read the last sample of a specific measurement from the InfluxDB database.
 
         Retrieves the latest data point for the specified measurement field within
@@ -215,7 +250,7 @@ class TimeSeriesStore(_InfluxDBHandler):
                 RFC3339 timestamps like "2024-01-01T00:00:00Z". Defaults to "-1d".
 
         Returns:
-            tuple | None: A tuple containing (field_name, timestamp_iso, value) where:
+            tuple[str, str, Any] | None: A tuple containing (field_name, timestamp_iso, value) where:
                 - field_name (str): The measurement field name
                 - timestamp_iso (str): ISO format timestamp string
                 - value (Any): The stored value
@@ -253,12 +288,12 @@ class TimeSeriesStore(_InfluxDBHandler):
         measure: str,
         measurement_name: str = "arduino",
         start_from: str = "-1d",
-        end_to: str = None,
-        aggr_window: str = None,
-        aggr_func: str = None,
+        end_to: str | None = None,
+        aggr_window: str | None = None,
+        aggr_func: str | None = None,
         limit: int = 1000,
         order: str = "asc",
-    ) -> list:
+    ) -> list[tuple[str, str, Any]]:
         """Read all samples of a specific measurement from the InfluxDB database.
 
         Retrieves multiple data points for the specified measurement field with support
@@ -283,7 +318,7 @@ class TimeSeriesStore(_InfluxDBHandler):
                 (ascending, oldest first) or "desc" (descending, newest first). Defaults to "asc".
 
         Returns:
-            list: List of tuples, each containing (field_name, timestamp_iso, value) where:
+            list[tuple[str, str, Any]]: List of tuples, each containing (field_name, timestamp_iso, value) where:
                 - field_name (str): The measurement field name
                 - timestamp_iso (str): ISO format timestamp string
                 - value (Any): The stored or aggregated value
@@ -335,7 +370,7 @@ class TimeSeriesStore(_InfluxDBHandler):
 
             result = self.query_api.query(org=self.org, query=query)
 
-            samples = []
+            samples: list[tuple[str, str, Any]] = []
             if result:
                 for table in result:
                     for record in table.records:
