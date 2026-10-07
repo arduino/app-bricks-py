@@ -10,7 +10,8 @@ import threading
 
 from arduino.app_utils import Logger
 from google.api_core.client_options import ClientOptions
-from google.cloud.speech import SpeechClient, StreamingRecognitionConfig, RecognitionConfig, StreamingRecognizeRequest, StreamingRecognizeResponse
+from google.cloud.speech import StreamingRecognitionConfig, RecognitionConfig, StreamingRecognizeRequest, StreamingRecognizeResponse
+from google.cloud.speech_v1.services.speech import SpeechClient
 
 from .types import ASRProviderEvent, ASRProviderError
 
@@ -99,6 +100,8 @@ class GoogleSpeech:
         self._thread.start()
 
     def _request_loop(self, session_end: threading.Event) -> Generator[StreamingRecognizeRequest]:
+        # The stream opens with its configuration, then carries the audio.
+        yield StreamingRecognizeRequest(streaming_config=self._config)
         while not self._stop_event.is_set() and not session_end.is_set():
             try:
                 chunk = self._audio_q.get(timeout=0.1)
@@ -130,10 +133,7 @@ class GoogleSpeech:
             while not self._stop_event.is_set():
                 session_end = threading.Event()
                 try:
-                    for response in self._client.streaming_recognize(
-                        config=self._config,
-                        requests=self._request_loop(session_end),
-                    ):
+                    for response in self._client.streaming_recognize(requests=self._request_loop(session_end)):
                         ev = self._format_event(response)
                         if ev is None:
                             continue
