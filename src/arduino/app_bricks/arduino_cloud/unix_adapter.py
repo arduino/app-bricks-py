@@ -46,7 +46,11 @@ class _UnixHTTPConnectionPool(HTTPConnectionPool):
         super().__init__("localhost", **kwargs)
         self._unix_socket_path = socket_path
 
-    def _new_conn(self) -> _UnixHTTPConnection:
+    # The override is sound; the error comes from urllib3's own typing:
+    # HTTPConnection does not satisfy the BaseHTTPConnection protocol that
+    # _new_conn declares (host is a property, default_socket_options is Final,
+    # the protocol expects mutable attributes), so no subclass of it can.
+    def _new_conn(self) -> _UnixHTTPConnection:  # pyright: ignore[reportIncompatibleMethodOverride]
         return _UnixHTTPConnection(self._unix_socket_path, timeout=self.timeout)
 
 
