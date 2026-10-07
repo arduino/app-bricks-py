@@ -6,14 +6,21 @@ import os
 import asyncio
 import threading
 import time
-from typing import Optional
-from collections.abc import Callable
+from typing import Any, Optional
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from arduino.app_utils import brick, Logger
 from telegram import Update, BotCommand, InputFile
 from telegram.ext import Application, CommandHandler, MessageHandler, ChatMemberHandler, filters, ContextTypes
 from telegram.error import NetworkError, TimedOut
 from .logger_adapter import TelegramLoggerAdapter
+
+# Only new messages reach the brick handlers: edits, channel posts and business messages are not
+# conversation turns, and carry no update.message the handlers could read
+NEW_MESSAGES = filters.UpdateType.MESSAGE
+
+# The async callbacks python-telegram-bot handlers run
+UpdateHandler = Callable[[Update, ContextTypes.DEFAULT_TYPE], Coroutine[Any, Any, None]]
 
 logger = Logger("TelegramBot")
 
@@ -216,7 +223,7 @@ class TelegramBot:
         self._commands_registry: dict[str, str] = {}
         self._welcome_cooldown: dict[int, float] = {}  # Track last welcome message timestamp per user_id
 
-    def _create_text_handler(self, callback: Callable[[Sender, Message], None]) -> Callable:
+    def _create_text_handler(self, callback: Callable[[Sender, Message], None]) -> UpdateHandler:
         """Create a Telegram handler for text messages.
 
         Args:
@@ -227,18 +234,25 @@ class TelegramBot:
         """
 
         async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+            message_in = update.message
+            user = update.effective_user
+            if message_in is None or user is None:
+                # A message sent on behalf of a chat (channel, anonymous admin) has no sender
+                logger.debug("Ignoring an update without a message or a sender")
+                return
+
             sender = Sender(
-                chat_id=update.message.chat_id,
-                user_id=update.effective_user.id,
-                first_name=update.effective_user.first_name,
-                last_name=update.effective_user.last_name,
-                username=update.effective_user.username,
+                chat_id=message_in.chat_id,
+                user_id=user.id,
+                first_name=user.first_name,
+                last_name=user.last_name,
+                username=user.username,
                 _bot=self,
             )
 
             message = Message(
-                message_id=update.message.message_id,
-                text=update.message.text,
+                message_id=message_in.message_id,
+                text=message_in.text,
                 caption=None,
             )
 
@@ -248,7 +262,7 @@ class TelegramBot:
 
         return wrapper
 
-    def _create_media_handler(self, callback: Callable[[Sender, Message, bytes, str, int], None], media_type: str) -> Callable:
+    def _create_media_handler(self, callback: Callable[[Sender, Message, bytes, str, int], None], media_type: str) -> UpdateHandler:
         """Create a unified Telegram handler for media messages (photo/audio/video/document).
 
         All media types share the same signature and similar download logic,
@@ -263,36 +277,49 @@ class TelegramBot:
         """
 
         async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+            message_in = update.message
+            user = update.effective_user
+            if message_in is None or user is None:
+                # A message sent on behalf of a chat (channel, anonymous admin) has no sender
+                logger.debug("Ignoring an update without a message or a sender")
+                return
+
             sender = Sender(
-                chat_id=update.message.chat_id,
-                user_id=update.effective_user.id,
-                first_name=update.effective_user.first_name,
-                last_name=update.effective_user.last_name,
-                username=update.effective_user.username,
+                chat_id=message_in.chat_id,
+                user_id=user.id,
+                first_name=user.first_name,
+                last_name=user.last_name,
+                username=user.username,
                 _bot=self,
             )
 
             message = Message(
-                message_id=update.message.message_id,
+                message_id=message_in.message_id,
                 text=None,
-                caption=update.message.caption,
+                caption=message_in.caption,
             )
 
             # Get media-specific attributes from update
             if media_type == "photo":
-                media_obj = update.message.photo[-1]
+                media_obj = message_in.photo[-1]
                 filename = "photo.jpg"  # Telegram doesn't provide original photo names
                 size = media_obj.file_size
             elif media_type == "audio":
-                media_obj = update.message.audio
+                media_obj = message_in.audio
+                if media_obj is None:
+                    return
                 filename = media_obj.file_name or "audio.mp3"
                 size = media_obj.file_size
             elif media_type == "video":
-                media_obj = update.message.video
+                media_obj = message_in.video
+                if media_obj is None:
+                    return
                 filename = media_obj.file_name or "video.mp4"
                 size = media_obj.file_size
             elif media_type == "document":
-                media_obj = update.message.document
+                media_obj = message_in.document
+                if media_obj is None:
+                    return
                 filename = media_obj.file_name or "document"
                 size = media_obj.file_size
             else:
@@ -303,12 +330,16 @@ class TelegramBot:
             log = TelegramLoggerAdapter(logger, user_id=sender.user_id, message_id=message.message_id)
             try:
                 media_file = await media_obj.get_file()
-                media_bytes = await media_file.download_as_bytearray()
-                if size and size > 1024:  # Log only if > 1 KB
+                # The callbacks are declared to receive bytes and an int size: Telegram may omit
+                # file_size, the downloaded content has it anyway
+                media_bytes = bytes(await media_file.download_as_bytearray())
+                if size is None:
+                    size = len(media_bytes)
+                if size > 1024:  # Log only if > 1 KB
                     log.info(f"Downloaded {media_type} '{filename}': {size / 1024:.1f} KB")
             except Exception as e:
                 error_msg = f"❌ Errore download '{filename}': {str(e)}"
-                await update.message.reply_text(error_msg)
+                await message_in.reply_text(error_msg)
                 log.error(f"Failed to download {media_type}: {e}")
                 return
 
@@ -331,10 +362,8 @@ class TelegramBot:
         handler = self._create_text_handler(callback)
 
         # Apply authorization filter if whitelist is configured
-        if self._auth_filter:
-            self.application.add_handler(CommandHandler(command, handler, filters=self._auth_filter))
-        else:
-            self.application.add_handler(CommandHandler(command, handler))
+        command_filter = NEW_MESSAGES & self._auth_filter if self._auth_filter else NEW_MESSAGES
+        self.application.add_handler(CommandHandler(command, handler, filters=command_filter))
 
         if description:
             self._commands_registry[command] = description
@@ -351,7 +380,7 @@ class TelegramBot:
         handler = self._create_text_handler(callback)
 
         # Build filter with authorization if whitelist is configured
-        base_filter = filters.TEXT & ~filters.COMMAND
+        base_filter = NEW_MESSAGES & filters.TEXT & ~filters.COMMAND
         final_filter = base_filter & self._auth_filter if self._auth_filter else base_filter
 
         self.application.add_handler(MessageHandler(final_filter, handler))
@@ -375,7 +404,7 @@ class TelegramBot:
         handler = self._create_media_handler(callback, "photo")
 
         # Build filter with authorization if whitelist is configured
-        final_filter = filters.PHOTO & self._auth_filter if self._auth_filter else filters.PHOTO
+        final_filter = NEW_MESSAGES & filters.PHOTO & self._auth_filter if self._auth_filter else NEW_MESSAGES & filters.PHOTO
 
         self.application.add_handler(MessageHandler(final_filter, handler))
         logger.info("Registered photo message handler")
@@ -399,7 +428,7 @@ class TelegramBot:
         handler = self._create_media_handler(callback, "audio")
 
         # Build filter with authorization if whitelist is configured
-        final_filter = filters.AUDIO & self._auth_filter if self._auth_filter else filters.AUDIO
+        final_filter = NEW_MESSAGES & filters.AUDIO & self._auth_filter if self._auth_filter else NEW_MESSAGES & filters.AUDIO
 
         self.application.add_handler(MessageHandler(final_filter, handler))
         logger.info("Registered audio message handler")
@@ -423,7 +452,7 @@ class TelegramBot:
         handler = self._create_media_handler(callback, "video")
 
         # Build filter with authorization if whitelist is configured
-        final_filter = filters.VIDEO & self._auth_filter if self._auth_filter else filters.VIDEO
+        final_filter = NEW_MESSAGES & filters.VIDEO & self._auth_filter if self._auth_filter else NEW_MESSAGES & filters.VIDEO
 
         self.application.add_handler(MessageHandler(final_filter, handler))
         logger.info("Registered video message handler")
@@ -447,7 +476,7 @@ class TelegramBot:
         handler = self._create_media_handler(callback, "document")
 
         # Build filter with authorization if whitelist is configured
-        final_filter = filters.Document.ALL & self._auth_filter if self._auth_filter else filters.Document.ALL
+        final_filter = NEW_MESSAGES & filters.Document.ALL & self._auth_filter if self._auth_filter else NEW_MESSAGES & filters.Document.ALL
 
         self.application.add_handler(MessageHandler(final_filter, handler))
         logger.info("Registered document message handler")
@@ -929,7 +958,11 @@ class TelegramBot:
             async def builtin_start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 """Built-in handler for /start command."""
                 user = update.effective_user
-                chat_id = update.message.chat_id
+                message_in = update.message
+                if message_in is None or user is None:
+                    logger.debug("Ignoring /start without a message or a sender")
+                    return
+                chat_id = message_in.chat_id
 
                 log = TelegramLoggerAdapter(logger, user_id=user.id, chat_id=chat_id)
 
@@ -945,16 +978,14 @@ class TelegramBot:
                 welcome_msg = f"👋 Hi {user.first_name}!\n\nThis is your user_id: {user.id}\nThis is your chat_id: {chat_id}"
 
                 log.info("Built-in /start command triggered")
-                await update.message.reply_text(welcome_msg)
+                await message_in.reply_text(welcome_msg)
 
                 # Update cooldown timestamp
                 self._welcome_cooldown[user.id] = current_time
 
             # Apply authorization filter if whitelist configured
-            if self._auth_filter:
-                self.application.add_handler(CommandHandler("start", builtin_start_handler, filters=self._auth_filter))
-            else:
-                self.application.add_handler(CommandHandler("start", builtin_start_handler))
+            start_filter = NEW_MESSAGES & self._auth_filter if self._auth_filter else NEW_MESSAGES
+            self.application.add_handler(CommandHandler("start", builtin_start_handler, filters=start_filter))
 
             self._commands_registry["start"] = "Get your user ID and chat ID"
             logger.info("Registered built-in /start command handler")
@@ -963,6 +994,8 @@ class TelegramBot:
         async def my_chat_member_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             """Handler for my_chat_member updates (bot blocked/unblocked)."""
             chat_member_update = update.my_chat_member
+            if chat_member_update is None:
+                return
 
             # Check if user unblocked the bot (status changed from 'kicked' to 'member')
             old_status = chat_member_update.old_chat_member.status
@@ -1078,7 +1111,10 @@ class TelegramBot:
         try:
             self._loop.run_until_complete(self.application.initialize())
             self._loop.run_until_complete(self.application.start())
-            self._loop.run_until_complete(self.application.updater.start_polling(allowed_updates=Update.ALL_TYPES))
+            updater = self.application.updater
+            if updater is None:
+                raise RuntimeError("Telegram application built without an updater, polling is not available")
+            self._loop.run_until_complete(updater.start_polling(allowed_updates=Update.ALL_TYPES))
 
             # Auto-register commands with Telegram after polling starts
             if self.auto_set_commands:

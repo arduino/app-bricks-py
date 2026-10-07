@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import threading
-from typing import Literal, cast
+from typing import Any, Literal
 
 import numpy as np
 
@@ -86,15 +86,15 @@ class WaveGenerator:
         self._glide = float(glide)
 
         # Internal audio state (set by audio thread)
-        self._prev_frequency = self._frequency
-        self._prev_amplitude = self._amplitude
+        self._prev_frequency: float = self._frequency
+        self._prev_amplitude: float = self._amplitude
         self._prev_phase = 0.0
-        self._amp_ramp_start = self._amplitude  # Amplitude at start of current ramp
-        self._amp_ramp_target = self._amplitude  # Target amplitude for current ramp
+        self._amp_ramp_start: float = self._amplitude  # Amplitude at start of current ramp
+        self._amp_ramp_target: float = self._amplitude  # Target amplitude for current ramp
         self._amp_ramp_duration = 0.0  # Total duration of current ramp
         self._amp_ramp_elapsed = 0.0  # Time elapsed in current ramp
-        self._freq_glide_start = self._frequency  # Frequency at start of current glide
-        self._freq_glide_target = self._frequency  # Target frequency for current glide
+        self._freq_glide_start: float = self._frequency  # Frequency at start of current glide
+        self._freq_glide_target: float = self._frequency  # Target frequency for current glide
         self._freq_glide_elapsed = 0.0  # Time elapsed in current glide
 
         # Number of ALSA frames to generate for each audio block produced
@@ -138,7 +138,7 @@ class WaveGenerator:
         if wave_type not in valid_types:
             raise ValueError(f"Invalid wave_type '{wave_type}'. Must be one of {valid_types}")
 
-        self._wave_type = cast(WaveType, wave_type)
+        self._wave_type = wave_type
 
     @property
     def sample_rate(self) -> int:
@@ -147,13 +147,7 @@ class WaveGenerator:
 
         Returns:
             int: Sample rate in Hz.
-
-        Raises:
-            RuntimeError: If no speaker is configured.
         """
-        if self._speaker is None:
-            raise RuntimeError("Speaker is not configured")
-
         return self._speaker.sample_rate
 
     @property
@@ -314,7 +308,7 @@ class WaveGenerator:
         self._speaker.volume = volume
 
     @property
-    def state(self) -> dict:
+    def state(self) -> dict[str, Any]:
         """
         Get current generator state.
 
