@@ -71,3 +71,16 @@ if st.button("Send Command"):
     
 ```
 
+### Arduino header
+
+`arduino_header()` renders the app title with the Arduino logo. Import it next to `st`:
+
+```python
+from arduino.app_bricks.streamlit_ui import st, arduino_header
+
+arduino_header("Arduino Streamlit UI Example")
+st.write("Interact with your Arduino modules using this web interface.")
+```
+
+Existing apps can keep calling it as `st.arduino_header()`.
+

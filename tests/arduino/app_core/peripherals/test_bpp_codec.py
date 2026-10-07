@@ -156,8 +156,7 @@ def test_tampered_header_aad(codec_enc):
     Result: Poly1305 verification should fail because Header is AAD.
     """
     packet = bytearray(codec_enc.encode(PAYLOAD))
-    # Note: This is a bit manual, assuming big-endian layout
-    packet[9] += 1  # Increment LSB of Timestamp
+    packet[9] ^= 0x01  # Flip the lowest bit of the big-endian timestamp, never overflows the byte
 
     decoded = codec_enc.decode(bytes(packet))
     assert decoded is None  # Rejected

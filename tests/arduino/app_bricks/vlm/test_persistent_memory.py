@@ -51,6 +51,12 @@ def test_vlm_with_memory_default_is_in_memory_only():
     assert vlm._history._store is None
 
 
+def test_vlm_with_memory_returns_the_instance_for_chaining():
+    vlm = _bare_vlm()
+
+    assert vlm.with_memory(max_messages=5) is vlm
+
+
 def test_vlm_with_memory_persistence_true_uses_default_sql_backend(sql_store):
     vlm = _bare_vlm()
     with patch("arduino.app_bricks.cloud_llm.cloud_llm.SQLMessagePersistence") as mock_store:

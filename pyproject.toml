@@ -132,7 +132,7 @@ where = ["src"]
 include = ["*"]
 
 [tool.setuptools.package-data]
-"*" = ["*.yaml", "*.md", "*.json"]
+"*" = ["*.yaml", "*.md", "*.json", "assets/**"]
 
 
 [tool.setuptools.dynamic]

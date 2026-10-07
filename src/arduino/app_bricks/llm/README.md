@@ -68,7 +68,7 @@ App.run(ask_prompt)
 
 ## Methods
 
-- **`chat(message, images=None)`**: Sends a message (with optional image file paths or raw bytes) and returns the complete response string. Blocks until generation is finished.
+- **`chat(message, images=None, reasoning_effort=None)`**: Sends a message (with optional image file paths or raw bytes) and returns the complete response string. Blocks until generation is finished. `reasoning_effort` optionally sets how much a reasoning model thinks before answering, as a discrete level or an integer token budget, when the local runner supports it.
 - **`chat_stream(message, images=None)`**: Returns a generator yielding response tokens as they arrive.
 - **`stop_stream()`**: Interrupts an active streaming generation.
 - **`with_memory(max_messages=10, persistence=None)`**: Enables history tracking. `max_messages` is the window size sent to the model. `persistence=True` enables persistence with a dedicated default database/thread; pass a `MessagePersistence` (e.g. `SQLMessagePersistence`) for full control.

@@ -227,7 +227,8 @@ async def test_create_media_handler_downloads_photo():
     assert received_message.text is None
 
     # Verify photo was downloaded
-    assert received_media_bytes == bytearray(b"photo_data_123")
+    assert received_media_bytes == b"photo_data_123"
+    assert type(received_media_bytes) is bytes
     assert received_filename == "photo.jpg"
     assert received_size == 5000
 
@@ -819,3 +820,55 @@ async def test_send_document_converts_bytearray(mock_telegram_app):
 
     # Verify send_document was called
     mock_telegram_app.bot.send_document.assert_called_once()
+
+
+def test_handlers_only_receive_new_messages(mock_telegram_app):
+    """Edited messages, channel posts and business messages carry no update.message: they are filtered out."""
+    from telegram import Chat, Message as TgMessage, Update, User
+    from datetime import datetime
+
+    bot = TelegramBot(token="test_token")
+    bot.on_text(lambda sender, message: None)
+    bot.add_command("ping", lambda sender, message: None)
+    text_handler = mock_telegram_app.add_handler.call_args_list[0].args[0]
+    command_handler = mock_telegram_app.add_handler.call_args_list[1].args[0]
+
+    def tg_message(text: str) -> TgMessage:
+        user = User(id=1, first_name="A", is_bot=False)
+        return TgMessage(message_id=1, date=datetime.now(), chat=Chat(id=1, type="private"), from_user=user, text=text)
+
+    assert text_handler.check_update(Update(update_id=1, message=tg_message("hi")))
+    assert not text_handler.check_update(Update(update_id=2, edited_message=tg_message("hi")))
+    assert not text_handler.check_update(Update(update_id=3, channel_post=tg_message("hi")))
+    assert not command_handler.check_update(Update(update_id=4, edited_message=tg_message("/ping")))
+
+
+@pytest.mark.asyncio
+async def test_text_handler_ignores_a_message_without_sender():
+    """A message sent on behalf of a channel has no effective_user: the callback is not invoked."""
+    bot = TelegramBot(token="test_token")
+    called: list[bool] = []
+    wrapped = bot._create_text_handler(lambda sender, message: called.append(True))
+
+    update = MagicMock()
+    update.effective_user = None
+    await wrapped(update, MagicMock())
+
+    assert called == []
+
+
+@pytest.mark.asyncio
+async def test_media_handler_reports_the_downloaded_size_when_telegram_omits_it():
+    bot = TelegramBot(token="test_token")
+    received: list[int] = []
+    wrapped = bot._create_media_handler(lambda sender, message, data, filename, size: received.append(size), "document")
+
+    update = MagicMock()
+    update.message.document.file_size = None
+    update.message.document.file_name = "notes.txt"
+    media_file = AsyncMock()
+    media_file.download_as_bytearray = AsyncMock(return_value=bytearray(b"12345"))
+    update.message.document.get_file = AsyncMock(return_value=media_file)
+    await wrapped(update, MagicMock())
+
+    assert received == [5]

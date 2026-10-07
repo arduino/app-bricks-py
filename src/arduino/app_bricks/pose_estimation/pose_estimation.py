@@ -49,6 +49,17 @@ _CUSTOM_POSES_DIR = "/app/poses"
 BUILTIN_POSE_NAMES: tuple[str, ...] = load_pose_classifier(_POSE_CLASSIFIER_PATH)[2]
 
 
+def _is_unit_number(value: float) -> bool:
+    """Whether value is a number in [0.0, 1.0], booleans excluded."""
+    match value:
+        case bool():
+            return False
+        case int() | float():
+            return 0.0 <= value <= 1.0
+        case _:
+            return False
+
+
 @brick
 class PoseEstimation:
     def __init__(
@@ -126,7 +137,7 @@ class PoseEstimation:
         self._bbox_padding = self._validate_bbox_padding(bbox_padding)
 
         # Callbacks
-        self._callbacks: dict[str, Callable] = {}
+        self._callbacks: dict[str, Callable[..., None]] = {}
         self._callbacks_lock = threading.Lock()
 
         self._frame_hw: tuple[int, int] | None = None
@@ -141,7 +152,7 @@ class PoseEstimation:
         self._readable_since: float | None = None
         self._is_running = False
 
-        self._camera_frame_queue = queue.Queue(maxsize=2)
+        self._camera_frame_queue: queue.Queue[np.ndarray] = queue.Queue(maxsize=2)
 
         # Callback executor and per-callback in-progress locks
         self._executor: ThreadPoolExecutor | None = None
@@ -337,7 +348,7 @@ class PoseEstimation:
         Raises:
             ValueError: If confidence is not a number in [0.0, 1.0].
         """
-        if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not 0.0 <= float(confidence) <= 1.0:
+        if not _is_unit_number(confidence):
             raise ValueError(f"confidence must be a number in [0.0, 1.0], got {confidence!r}")
         self._confidence = float(confidence)
         logger.debug(f"detection confidence set to {self._confidence}")
@@ -352,9 +363,11 @@ class PoseEstimation:
         Raises:
             ValueError: If draw_bboxes is not a boolean.
         """
-        if not isinstance(draw_bboxes, bool):
-            raise ValueError(f"draw_bboxes must be a boolean, got {draw_bboxes!r}")
-        self._draw_bboxes = draw_bboxes
+        match draw_bboxes:
+            case bool():
+                self._draw_bboxes = draw_bboxes
+            case _:
+                raise ValueError(f"draw_bboxes must be a boolean, got {draw_bboxes!r}")
         logger.debug(f"bbox overlay {'enabled' if draw_bboxes else 'disabled'}")
 
     def set_draw_low_confidence_points(self, draw_low_confidence_points: bool) -> None:
@@ -367,9 +380,11 @@ class PoseEstimation:
         Raises:
             ValueError: If draw_low_confidence_points is not a boolean.
         """
-        if not isinstance(draw_low_confidence_points, bool):
-            raise ValueError(f"draw_low_confidence_points must be a boolean, got {draw_low_confidence_points!r}")
-        self._draw_low_confidence_points = draw_low_confidence_points
+        match draw_low_confidence_points:
+            case bool():
+                self._draw_low_confidence_points = draw_low_confidence_points
+            case _:
+                raise ValueError(f"draw_low_confidence_points must be a boolean, got {draw_low_confidence_points!r}")
         logger.debug(f"uncertain keypoints overlay {'enabled' if draw_low_confidence_points else 'disabled'}")
 
     def set_bbox_padding(self, padding: float | tuple[float, float, float, float]) -> None:
@@ -396,9 +411,10 @@ class PoseEstimation:
         if len(values) != 4:
             raise ValueError(f"padding must be a number or a (top, right, bottom, left) tuple, got {padding!r}")
         for value in values:
-            if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0.0 <= float(value) <= 1.0:
+            if not _is_unit_number(value):
                 raise ValueError(f"padding values must be numbers in [0.0, 1.0], got {value!r}")
-        return tuple(float(value) for value in values)
+        top, right, bottom, left = values
+        return float(top), float(right), float(bottom), float(left)
 
     @staticmethod
     def _declared_threshold(spec: PoseSpec, edge: str, shipped: dict[str, dict[str, float]]) -> float:
@@ -460,11 +476,17 @@ class PoseEstimation:
         if refused:
             summaries = "\n".join(f"  {outcome.name}: {outcome.summary}" for outcome in refused)
             raise ValueError(f"custom pose(s) not accepted (the full report is in the log and in the pose folder):\n{summaries}")
+        points: dict[str, tuple[float, float]] = {}
+        for name, outcome in enrollment.outcomes.items():
+            enter, exit_ = outcome.enter, outcome.exit
+            if enter is None or exit_ is None:
+                raise RuntimeError(f"custom pose {name!r} was accepted without an operating point")
+            points[name] = (enter, exit_)
         self._pose_knn = enrollment.knn
         self._pose_label_weights = None
-        for name, outcome in enrollment.outcomes.items():
-            self._pose_thresholds["enter"][name] = outcome.enter
-            self._pose_thresholds["exit"][name] = outcome.exit
+        for name, (enter, exit_) in points.items():
+            self._pose_thresholds["enter"][name] = enter
+            self._pose_thresholds["exit"][name] = exit_
         self._pose_ema = EmaHysteresis(
             classes=self._pose_names,
             smoothing_tau=self._pose_smoothing,
@@ -491,7 +513,7 @@ class PoseEstimation:
         """
         self._register_callback("error", callback)
 
-    def _register_callback(self, key: str, callback: Callable | None) -> None:
+    def _register_callback(self, key: str, callback: Callable[..., None] | None) -> None:
         with self._callbacks_lock:
             if callback is None:
                 self._callbacks.pop(key, None)
@@ -501,7 +523,7 @@ class PoseEstimation:
                 if key not in self._callback_locks:
                     self._callback_locks[key] = threading.Lock()
 
-    def _get_callback(self, key: str) -> Callable | None:
+    def _get_callback(self, key: str) -> Callable[..., None] | None:
         with self._callbacks_lock:
             return self._callbacks.get(key)
 
@@ -561,7 +583,7 @@ class PoseEstimation:
         while self._is_running:
             try:
                 async with websockets.connect(self._ws_send_url) as ws:
-                    sent_config: dict | None = None
+                    sent_config: dict[str, Any] | None = None
                     while self._is_running:
                         top, right, bottom, left = self._bbox_padding
                         config = {
@@ -609,7 +631,7 @@ class PoseEstimation:
                     logger.error(f"Error in receive detections task: {e}. Reconnecting...")
                     await asyncio.sleep(3)
 
-    def _process_detection(self, metadata: dict) -> None:
+    def _process_detection(self, metadata: dict[str, Any]) -> None:
         """Process detection data and dispatch appropriate events."""
         try:
             people = parse_people(metadata, self._confidence)
@@ -752,7 +774,7 @@ class PoseEstimation:
             # Executor was shut down before the task could be submitted
             lock.release()
 
-    def _run_callback(self, lock: threading.Lock, callback: Callable, *args: Any, unroll: bool = False) -> None:
+    def _run_callback(self, lock: threading.Lock, callback: Callable[..., None], *args: Any, unroll: bool = False) -> None:
         """Run a callback and release its lock when done.
 
         With `unroll=True` the first argument is a list and the callback is invoked once per item.

@@ -10,7 +10,7 @@ import pytest
 
 from arduino.app_bricks.pose_estimation.classifier import load_pose_classifier
 from arduino.app_bricks.pose_estimation.enrollment import Bucket, enroll, group_photos, look_alikes
-from arduino.app_bricks.pose_estimation.enrollment.measure import _LearningCurve, _Measure, _operating_point
+from arduino.app_bricks.pose_estimation.enrollment.measure import LearningCurve, Measure, operating_point
 from arduino.app_bricks.pose_estimation.enrollment.report import render_report
 from arduino.app_bricks.pose_estimation.vocabulary import PoseSpec
 
@@ -183,23 +183,23 @@ class TestOperatingPoint:
     def test_without_negatives_the_point_is_the_20th_percentile_floored_at_the_reference(self):
         spec = PoseSpec(name="p", builtin=False)
         high = np.linspace(0.6, 1.0, 50)
-        enter, exit_, note = _operating_point(high, None, spec)
+        enter, exit_, note = operating_point(high, None, spec)
         assert enter == pytest.approx(np.percentile(high, 20)) and exit_ == pytest.approx(enter - 0.20)
         assert note == "80% of your photos fire"
         low = np.linspace(0.3, 0.6, 50)
-        assert _operating_point(low, None, spec)[0] == 0.55
+        assert operating_point(low, None, spec)[0] == 0.55
 
     def test_with_negatives_ties_go_to_the_highest_threshold(self):
         spec = PoseSpec(name="p", builtin=False)
         own = np.full(40, 0.9)  # every threshold up to 0.9 gives recall 1
         other = np.full(40, 0.1)  # and silence 1: a flat tie
-        enter, _, note = _operating_point(own, other, spec)
+        enter, _, note = operating_point(own, other, spec)
         assert enter == 0.9
         assert note == "100% of your photos fire, 0% of other fires"
 
     def test_the_action_exit_never_drops_below_the_floor(self):
         spec = PoseSpec(name="p", builtin=False, type="action")
-        assert _operating_point(np.full(40, 0.3), np.full(40, 0.0), spec)[1] == 0.10
+        assert operating_point(np.full(40, 0.3), np.full(40, 0.0), spec)[1] == 0.10
 
 
 class TestConfusionAndWarnings:
@@ -210,7 +210,7 @@ class TestConfusionAndWarnings:
     def test_a_collision_in_the_table_is_a_warning(self):
         spec = PoseSpec(name="variant", builtin=False)
         table = {"standing": {"standing": 0.55, "variant": 0.40, "none": 0.05}, "variant": {"standing": 0.09, "variant": 0.88, "none": 0.03}}
-        measure = _Measure(own_shares=np.full(60, 0.9), own_neighbours=7.3, n0=15.0)
+        measure = Measure(own_shares=np.full(60, 0.9), own_neighbours=7.3, n0=15.0)
         report = render_report(
             NOW,
             spec,
@@ -250,19 +250,29 @@ class TestConfusionAndWarnings:
 def test_a_mixed_bucket_gets_no_photo_estimate():
     spec = PoseSpec(name="p", builtin=False)
     bucket = _bucket("p", _cloud(NEW, 60))
-    measure = _Measure(own_shares=np.full(60, 0.4), own_neighbours=3.4, n0=69.0)
-    curve = _LearningCurve(rows=(15, 22, 30, 45, 60), recalls=(0.1, 0.2, 0.2, 0.3, 0.3), n0s=(40.0, 50.0, 60.0, 65.0, 69.0), verdict="mixed")
+    measure = Measure(own_shares=np.full(60, 0.4), own_neighbours=3.4, n0=69.0)
+    curve = LearningCurve(rows=(15, 22, 30, 45, 60), recalls=(0.1, 0.2, 0.2, 0.3, 0.3), n0s=(40.0, 50.0, 60.0, 65.0, 69.0), verdict="mixed")
     report = render_report(NOW, spec, bucket, None, 3000, {}, np.asarray([]), measure, 20, curve, None, {}, {}, 9)
     assert report.endswith(
         "next step: keep one variant of the pose, or split the folder into two poses\n"
         "  (the number of photos needed cannot be estimated while the photos mix variants)"
     )
-    good = _LearningCurve(rows=curve.rows, recalls=curve.recalls, n0s=curve.n0s, verdict="good")
+    good = LearningCurve(rows=curve.rows, recalls=curve.recalls, n0s=curve.n0s, verdict="good")
     report = render_report(NOW, spec, bucket, None, 3000, {}, np.asarray([]), measure, 20, good, None, {}, {}, 9)
     assert report.endswith("next step: add photos like these, about 140 in total for 70% recall, about 410 for 90%")
-    close = _Measure(own_shares=np.full(42, 0.5), own_neighbours=5.5, n0=27.0)
+    close = Measure(own_shares=np.full(42, 0.5), own_neighbours=5.5, n0=27.0)
     report = render_report(NOW, spec, _bucket("p", _cloud(NEW, 42)), None, 3000, {}, np.asarray([]), close, 20, good, None, {}, {}, 9)
     assert "about 60 in total for 70% recall" in report  # never fewer than the photos already there
+
+
+def test_a_report_refuses_a_measured_bucket_without_its_numbers():
+    spec = PoseSpec(name="p", builtin=False)
+    bucket = _bucket("p", _cloud(NEW, 60))
+    with pytest.raises(ValueError, match="60 usable photos are reported without their measure"):
+        render_report(NOW, spec, bucket, None, 3000, {}, np.asarray([]), None, 20, None, None, {}, {}, 9)
+    measure = Measure(own_shares=np.full(60, 0.4), own_neighbours=3.4, n0=69.0)
+    with pytest.raises(ValueError, match="60 usable photos in 20 groups are reported without their learning curve"):
+        render_report(NOW, spec, bucket, None, 3000, {}, np.asarray([]), measure, 20, None, None, {}, {}, 9)
 
 
 def test_a_shipped_pose_re_taught_from_its_own_rows_is_accepted(tmp_path):
