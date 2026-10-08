@@ -119,6 +119,8 @@ class WebUI:
         self._protocol = "https" if self._use_tls else "http"
         self._server: uvicorn.Server | None = None
         self._server_loop: asyncio.AbstractEventLoop | None = None
+        self._force_stop_timer: threading.Timer | None = None
+        self._server_exited = threading.Event()
         self._on_connect_cb: Callable[[str], None] | None = None
         self._on_disconnect_cb: Callable[[str], None] | None = None
         self._on_message_cbs: dict[str, Callable[[str, Any], Any]] = {}
@@ -216,6 +218,10 @@ class WebUI:
         timer = threading.Timer(FORCE_SHUTDOWN_TIMEOUT_S, force_stop)
         timer.daemon = True
         timer.start()
+        self._force_stop_timer = timer
+        # The server may have exited before the timer was stored, too late for execute() to cancel it
+        if self._server_exited.is_set():
+            timer.cancel()
 
     def execute(self) -> None:
         logger.debug(f"Serving static web files from {self._assets_dir_path}")
@@ -235,10 +241,17 @@ class WebUI:
             logger.error("Cannot run the server: start() was not called")
             return
 
+        self._server_exited.clear()
         try:
             server.run()
         except Exception as e:
             logger.exception(f"Error running server: {e}")
+        finally:
+            # The server is down: the escalation armed by stop() has nothing left to force. Set before
+            # reading the timer, so that a stop() storing it afterwards sees the server gone
+            self._server_exited.set()
+            if self._force_stop_timer is not None:
+                self._force_stop_timer.cancel()
 
     def expose_api(self, method: str, path: str, function: Callable[..., Any]) -> None:
         """Register a route with the specified HTTP method and path.
