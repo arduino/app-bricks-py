@@ -35,8 +35,8 @@ class TestAppUtilsLazyImports(unittest.TestCase):
         self.assertIs(app_utils.SlidingWindowBuffer, slidingwindowbuffer.SlidingWindowBuffer)
 
     def test_from_import_loads_on_demand(self):
-        loaded = _loaded_after("from arduino.app_utils import HttpClient", ["requests", "numpy"])
-        self.assertEqual(loaded, {"requests": True, "numpy": False})
+        loaded = _loaded_after("from arduino.app_utils import HttpClient", ["arduino.app_utils.httprequest", "numpy"])
+        self.assertEqual(loaded, {"arduino.app_utils.httprequest": True, "numpy": False})
 
     def test_star_import_still_exports_every_public_name(self):
         code = "from arduino.app_utils import *\nimport arduino.app_utils as m\nassert all(n in globals() for n in m.__all__), m.__all__"
@@ -45,9 +45,9 @@ class TestAppUtilsLazyImports(unittest.TestCase):
     def test_resolved_name_is_cached_in_the_package(self):
         loaded = _loaded_after(
             "import arduino.app_utils as m\nassert 'HttpClient' not in vars(m)\nm.HttpClient\nassert 'HttpClient' in vars(m)",
-            ["requests"],
+            ["arduino.app_utils.httprequest"],
         )
-        self.assertEqual(loaded, {"requests": True})
+        self.assertEqual(loaded, {"arduino.app_utils.httprequest": True})
 
     def test_dir_lists_the_lazy_names_without_loading_them(self):
         loaded = _loaded_after(
