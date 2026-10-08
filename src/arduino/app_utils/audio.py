@@ -2,9 +2,15 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+from __future__ import annotations
+
 import math
-import numpy as np
-from numpy.typing import NDArray
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    # numpy is imported where it is used: loading it costs ~300 ms at app start, also for a star import of arduino.app_utils
+    import numpy as np
+    from numpy.typing import NDArray
 
 
 class SineGenerator:
@@ -29,6 +35,8 @@ class SineGenerator:
             sample_rate (int): The playback sample rate (Hz) used to compute
                 phase increments and buffer sizes.
         """
+        import numpy as np
+
         self.sample_rate = int(sample_rate)
         # envelope parameters (attack/release in seconds)
         self.attack = 0.01
@@ -126,6 +134,8 @@ class SineGenerator:
             numpy.ndarray: A 1-D float32 NumPy array containing the generated
             audio samples for the requested block.
         """
+        import numpy as np
+
         N = max(1, int(self.sample_rate * block_dur))
         if N > self._buf_N:
             self._buf_N = N

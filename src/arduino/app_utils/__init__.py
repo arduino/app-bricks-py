@@ -24,8 +24,9 @@ if TYPE_CHECKING:
     from .ledmatrix import Frame, FrameDesigner
     from .slidingwindowbuffer import SlidingWindowBuffer
 
-# Loaded on first access: these pull in numpy, requests or watchdog, which cost
-# about a second of app start time on the board even when the app never uses them.
+# Loaded on first access: their submodules need numpy, requests or watchdog, which cost about a second
+# of app start time on the board even when the app never uses them. A star import resolves every name
+# in __all__, so the submodules also defer those dependencies to the code that uses them.
 _LAZY_EXPORTS = {
     "SineGenerator": "audio",
     "FolderWatcher": "folderwatch",

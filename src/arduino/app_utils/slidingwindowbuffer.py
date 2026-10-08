@@ -2,9 +2,14 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+from __future__ import annotations
+
 import threading
-import numpy as np
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    # numpy is imported where it is used: loading it costs ~300 ms at app start, also for a star import of arduino.app_utils
+    import numpy as np
 
 
 class SlidingWindowBuffer:
@@ -65,6 +70,8 @@ class SlidingWindowBuffer:
         Raises:
             TypeError: If the dtype of data does not match the buffer's dtype, set by the first push.
         """
+        import numpy as np
+
         num_items = len(data)
         if num_items == 0:
             return True
@@ -118,6 +125,8 @@ class SlidingWindowBuffer:
         Returns:
             np.ndarray: A NumPy array containing the data in the sliding window.
         """
+        import numpy as np
+
         with self._condition:
             has_data = self._condition.wait_for(lambda: self.has_data(), timeout=timeout)
             if not has_data:
