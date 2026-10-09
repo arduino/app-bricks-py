@@ -15,6 +15,6 @@ def judge_model():
         raise RuntimeError("GEMINI_API_KEY environment variable is not set for judge model")
 
     return GeminiModel(
-        model=os.getenv("DEEPEVAL_JUDGE_MODEL", "gemini-3-pro-preview"),
+        model=os.getenv("DEEPEVAL_JUDGE_MODEL", "gemini-3.1-pro-preview"),
         api_key=api_key,
     )
