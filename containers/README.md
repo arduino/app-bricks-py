@@ -30,9 +30,11 @@ container by globbing `containers/*/<name>/Dockerfile`, so names must be unique 
 | `python-apps-base` | bricks | `python-base` | App runtime: installs the Arduino App Bricks `.whl` and the Streamlit config |
 | `models-downloader` | bricks | `python-slim` | Downloads models from AI Hub, Edge Impulse and Hugging Face per `models/models-list.yaml` |
 | `tps` | bricks | `python-slim` | Wi-Fi scan server of the TPS Location API brick, serves `iw` results to the app over a Unix socket |
-| `aihub-models-runner` | ai | `qairt-common-base` | Runs Qualcomm AI Hub models, with GStreamer/WebSocket input and MJPEG/WebSocket output |
-| `gesture-recognition-runner` | ai | `aihub-models-runner` | Hand-gesture recognition on the MediaPipe palm/landmark/classifier models |
-| `pose-estimation-runner` | ai | `aihub-models-runner` | Body pose estimation on the PoseNet MobileNet model, 17 keypoints per person, custom pose models supported |
+| `aihub-litert-models-runner` | ai | `qairt-common-base` | Runs Qualcomm AI Hub models on LiteRT, with GStreamer/WebSocket input and MJPEG/WebSocket output. Installs OpenCV and `ai-edge-litert` for its runners |
+| `gesture-recognition-runner` | ai | `aihub-litert-models-runner` | Hand-gesture recognition on the MediaPipe palm/landmark/classifier models |
+| `pose-estimation-runner` | ai | `aihub-litert-models-runner` | Body pose estimation on the PoseNet MobileNet model, 17 keypoints per person, custom pose models supported |
+| `aihub-onnx-models-runner` | ai | `python-slim` | Same framework on ONNX Runtime: the QNN execution provider plus Debian's FastRPC libraries and OpenCV, without the QAIRT SDK |
+| `ocr-runner` | ai | `aihub-onnx-models-runner` | EasyOCR text detection and recognition on the Hexagon NPU |
 | `ei-models-runner` | ai | Edge Impulse inference image | Edge Impulse inference with the bundled out-of-the-box models |
 | `ei-qnn-models-runner` | ai | Edge Impulse QNN inference image | Same, on the NPU-accelerated (QNN) models |
 | `llamacpp-runner` | ai | `python-slim` | llama.cpp model router, CPU build |
@@ -43,16 +45,22 @@ graph LR
   slim[python-slim] --> base[python-base] --> apps[python-apps-base]
   slim --> dl[models-downloader]
   slim --> lcpp[llamacpp-runner]
-  qairt[qairt-common-base] --> aihub[aihub-models-runner] --> gesture[gesture-recognition-runner]
+  qairt[qairt-common-base] --> aihub[aihub-litert-models-runner] --> gesture[gesture-recognition-runner]
   aihub --> pose[pose-estimation-runner]
   qairt --> lcppnpu[llamacpp-npu-runner]
   ei[ei-models-runner]
   eiqnn[ei-qnn-models-runner]
   slim --> tps[tps]
+  slim --> aihubonnx[aihub-onnx-models-runner] --> ocr[ocr-runner]
 ```
 
 `ei-models-runner` and `ei-qnn-models-runner` build on external Edge Impulse images and have no upstream
 inside this repo.
+
+`base/aihub-framework/` is not a container: it holds the `aihub` runner framework and the app skeleton
+shared by `aihub-litert-models-runner` and `aihub-onnx-models-runner`. Both targets read it from the
+`framework` named context of `docker-bake.hcl` (`COPY --from=framework ...`), so the two runner bases
+carry one copy of the sources while installing the framework's dependencies from their own `pyproject.toml`.
 
 ## Anatomy of a container directory
 
