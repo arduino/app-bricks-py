@@ -12,7 +12,7 @@ Before scanning, run.py refuses to start if an app has no `venv.project`, if a `
 
 ## What is scanned
 
-Every container that installs Python packages, under its own name. `python-apps-base` stands for the library with all its extras, which is exactly what that image installs. Containers without Python packages, such as the Edge Impulse and Qualcomm images, have nothing to scan. System packages are covered by the SBOMs generated at release, not by this scan.
+Every container that installs Python packages, under its own name. `python-apps-base` stands for the library with all its extras, which is exactly what that image installs. A uv project is scanned once under the project's name when several images install it, such as `edge-impulse-server` for the two `edge-impulse-*-runner` images. Containers without Python packages, such as the Edge Impulse and Qualcomm images, have nothing to scan. System packages are covered by the SBOMs generated at release, not by this scan.
 
 ## Adding a container
 

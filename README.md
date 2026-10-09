@@ -135,6 +135,13 @@ export DOCKER_PYTHON_BASE_IMAGE=app-bricks/python-apps-base:dev-pose-classificat
 ```
 Development containers are published by the dev CI (`dev-release.yml`) tagged as `dev-<branch-name>` (e.g. branch `pose-classification` → tag `dev-pose-classification`).
 
+To test the current branch on a board without CI, build the wheel and the images locally:
+```sh
+task build                                       # every image
+task build -- python-apps-base ei-models-runner  # a subset, their parents are built but not saved
+```
+Images are tagged with the branch name under `dev.local/`, a registry that never resolves so boards can't pull them by mistake (override with `REGISTRY=...`). Each one is saved to `dist/<name>-<branch>.tar.gz`, next to the wheel whose compose files reference them. Load them on the board with `docker load -i <file>` and point `arduino-app-cli` at them with `DOCKER_REGISTRY_BASE=dev.local/` and `DOCKER_PYTHON_BASE_IMAGE=app-bricks/python-apps-base:<branch>`. The wheel references every runner under `dev.local/` too, so load the runners the app uses, or retag the released ones on the board with `docker tag ghcr.io/arduino/app-bricks/<runner>:<version> dev.local/app-bricks/<runner>:<branch>`.
+
 ## Pyright checks
 
 Type checking is driven by `pyright-rules.json` at the repository root, shipped in the wheel as `arduino/app_bricks/static/pyright-rules.json` so that the same rules reach the CI of this repository, the CI of [app-bricks-examples](https://github.com/arduino/app-bricks-examples) and the App Lab editor. The library owns the rules, through two profiles: `app-bricks-py` for its own sources (strict, so the public API carries complete and truthful annotations) and `api-user` for code written against its API (standard, for the published examples and the apps edited in App Lab). The tools own the environment: paths, interpreter, execution root.
