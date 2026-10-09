@@ -2,7 +2,9 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import atexit
 import inspect
+import os
 import signal
 import sys
 import threading
@@ -64,6 +66,29 @@ is held at shutdown must not cost the bricks the time they need to stop.
 
 WORKER_JOIN_TIMEOUT_S = 5.0
 """Per-worker-thread join timeout used when no global deadline applies, i.e. by stop_brick()."""
+
+
+def install_startup_signal_handler() -> None:
+    """Makes SIGTERM end the process while the app is still loading.
+
+    The app is PID 1 of its container, and the kernel ignores a signal left at its default
+    action for PID 1: a stop requested while the imports are still running (a restart right after
+    a start, in App Lab) would wait for the launcher to kill the process, 5 s later. Until
+    App.run() installs its own handler, SIGTERM exits through the interpreter, so the exit
+    handlers (the peripherals release among them) run as usual.
+
+    Main thread only, and only when nothing else owns the signal: a framework such as Streamlit
+    keeps its handlers.
+    """
+    if threading.current_thread() is not threading.main_thread():
+        return
+    if signal.getsignal(signal.SIGTERM) is not signal.SIG_DFL:
+        return
+
+    def exit_on_sigterm(signum: int, frame: FrameType | None) -> Never:
+        raise SystemExit(min(128 + signum, 255))
+
+    signal.signal(signal.SIGTERM, exit_on_sigterm)
 
 
 def _has_callable_method(obj_or_cls: object, method_name: str) -> bool:
@@ -241,17 +266,55 @@ class AppController:
 
         try:
             exit_code = self.loop(user_loop)
+        except SystemExit as e:
+            # sys.exit() from user code, or SIGTERM caught by the startup handler before loop()
+            # took the signal over: the process is ending either way, so it ends as on the
+            # signal path, right after the shutdown.
+            self._shutdown_quietly()
+            self._exit(e.code if isinstance(e.code, int) else (0 if e.code is None else 1))
         except BaseException:
-            # loop() handles Exception itself, so getting here means SystemExit from user code or
-            # a BaseException raised into the main thread. The shutdown is the only thing that
-            # releases the peripherals in order, so it has to run on this path too.
+            # loop() handles Exception itself, so getting here means a BaseException raised into
+            # the main thread. The shutdown is the only thing that releases the peripherals in
+            # order, so it has to run on this path too.
             self._shutdown_quietly()
             raise
 
         self._shutdown()
 
         if exit_code:
-            sys.exit(exit_code)
+            self._exit(exit_code)
+
+    def _exit(self, code: int) -> Never:
+        """Ends the process right after a clean shutdown, without the interpreter teardown.
+
+        With the app's modules loaded, tearing the interpreter down costs about a second on the
+        board, twice the SHUTDOWN_HEADROOM_S budgeted for it, and it is paid at every stop and
+        restart. The bricks are stopped and the peripherals released by now: what is left to do
+        is what the exit handlers and the flushes below do, as they would on a regular exit.
+
+        One difference from sys.exit(): a non-daemon thread the app left running is not waited
+        for. A stop is a request to end, and the launcher would kill the process anyway once the
+        grace period is over.
+        """
+        # A second signal must not interrupt the exit, which would leave the interpreter to end the
+        # process the slow way. Main thread only: elsewhere signal.signal() is not allowed.
+        try:
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+            signal.signal(signal.SIGINT, signal.SIG_IGN)
+        except (ValueError, OSError):
+            pass
+        try:
+            try:
+                atexit._run_exitfuncs()  # pyright: ignore[reportPrivateUsage]  # Exit handlers, logging.shutdown() among them
+            except BaseException as e:
+                logger.exception(f"An exit handler failed: {e}")
+            for stream in (sys.stdout, sys.stderr):
+                try:
+                    stream.flush()
+                except Exception:
+                    pass
+        finally:
+            os._exit(code)
 
     def _shutdown_quietly(self) -> None:
         """Runs the shutdown while an exception is already propagating, swallowing its failures."""
@@ -355,10 +418,12 @@ class AppController:
         def handle_signal(signum: int, frame: FrameType | None) -> Never:
             raise SignalReceived(signum)
 
-        if threading.current_thread() is threading.main_thread():
-            signal.signal(signal.SIGTERM, handle_signal)
-
         try:
+            # Installed inside the try: a signal landing right after the installation is
+            # handled here like any other, instead of escaping loop() unhandled.
+            if threading.current_thread() is threading.main_thread():
+                signal.signal(signal.SIGTERM, handle_signal)
+
             if user_loop:
                 while True:
                     user_loop()

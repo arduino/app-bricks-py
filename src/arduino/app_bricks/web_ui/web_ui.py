@@ -6,17 +6,26 @@ import os
 import asyncio
 import threading
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from collections.abc import AsyncGenerator, Callable, Iterator
 
-import uvicorn
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
-from fastapi_socketio import SocketManager
-
-from arduino.app_peripherals.camera.base_camera import BaseCamera
 from arduino.app_utils import brick, Logger
+
+from ._fast_imports import defer_pydantic_model_builds, defer_socketio_client_dependencies, gc_paused
+
+# The web stack is most of an app's start time on the board: import it without the work WebUI never needs
+with gc_paused(), defer_pydantic_model_builds():
+    import uvicorn
+    from fastapi import FastAPI
+    from fastapi.middleware.cors import CORSMiddleware
+    from fastapi.responses import FileResponse
+
+    with defer_socketio_client_dependencies():
+        from fastapi_socketio import SocketManager
+
+if TYPE_CHECKING:
+    # Type hint only: importing the camera package at runtime would load cv2 in every app using WebUI
+    from arduino.app_peripherals.camera.base_camera import BaseCamera
 
 logger = Logger("WebUI")
 
@@ -110,6 +119,8 @@ class WebUI:
         self._protocol = "https" if self._use_tls else "http"
         self._server: uvicorn.Server | None = None
         self._server_loop: asyncio.AbstractEventLoop | None = None
+        self._force_stop_timer: threading.Timer | None = None
+        self._server_exited = threading.Event()
         self._on_connect_cb: Callable[[str], None] | None = None
         self._on_disconnect_cb: Callable[[str], None] | None = None
         self._on_message_cbs: dict[str, Callable[[str, Any], Any]] = {}
@@ -207,6 +218,10 @@ class WebUI:
         timer = threading.Timer(FORCE_SHUTDOWN_TIMEOUT_S, force_stop)
         timer.daemon = True
         timer.start()
+        self._force_stop_timer = timer
+        # The server may have exited before the timer was stored, too late for execute() to cancel it
+        if self._server_exited.is_set():
+            timer.cancel()
 
     def execute(self) -> None:
         logger.debug(f"Serving static web files from {self._assets_dir_path}")
@@ -226,10 +241,17 @@ class WebUI:
             logger.error("Cannot run the server: start() was not called")
             return
 
+        self._server_exited.clear()
         try:
             server.run()
         except Exception as e:
             logger.exception(f"Error running server: {e}")
+        finally:
+            # The server is down: the escalation armed by stop() has nothing left to force. Set before
+            # reading the timer, so that a stop() storing it afterwards sees the server gone
+            self._server_exited.set()
+            if self._force_stop_timer is not None:
+                self._force_stop_timer.cancel()
 
     def expose_api(self, method: str, path: str, function: Callable[..., Any]) -> None:
         """Register a route with the specified HTTP method and path.
@@ -243,7 +265,7 @@ class WebUI:
         """
         self.app.add_api_route(self._api_path_prefix + path, function, methods=[method])
 
-    def expose_camera(self, path: str, camera: BaseCamera, jpeg_quality: int = 80) -> None:
+    def expose_camera(self, path: str, camera: "BaseCamera", jpeg_quality: int = 80) -> None:
         """
         Expose a camera stream at the specified URL path in MJPEG format.
 

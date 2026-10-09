@@ -2,7 +2,8 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-from watchdog.observers import Observer
+# watchdog.observers is imported where it is used: its platform backend (inotify through ctypes) costs ~50 ms at app
+# start, also for a star import of arduino.app_utils. FolderEventHandler subclasses a watchdog.events class, so that stays.
 from watchdog.events import FileSystemEvent, PatternMatchingEventHandler
 import queue
 from typing import Any
@@ -11,6 +12,8 @@ from typing import Any
 # TODO: add support to event types other than file creation
 class FolderWatcher:
     def __init__(self, path: str, patterns: list[str] = ["*"], ignore_patterns: list[str] = []) -> None:
+        from watchdog.observers import Observer
+
         self._path = path
         self._observer = Observer()
         self._handler = FolderEventHandler(patterns=patterns, ignore_patterns=ignore_patterns, ignore_directories=True)

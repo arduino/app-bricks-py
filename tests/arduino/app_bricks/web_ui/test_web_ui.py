@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import os
+import threading
 import time
 from unittest.mock import patch
 
@@ -233,6 +234,33 @@ def test_stop_forces_the_server_to_exit_when_the_graceful_path_stalls(monkeypatc
         time.sleep(0.01)
 
     assert server.force_exit is True, "the server was never forced to stop"
+
+
+class _StoppingServer(_FakeServer):
+    """Runs until asked to exit, as uvicorn.Server.run() does when the graceful shutdown completes."""
+
+    def run(self):
+        while not self.should_exit:
+            time.sleep(0.01)
+
+
+def test_a_server_stopping_in_time_leaves_no_timer_behind():
+    """The force-stop timer must end with the server, not linger for its whole timeout."""
+    ui = WebUI()
+    server = _StoppingServer()
+    ui._server = server
+    serving = threading.Thread(target=ui.execute)
+    serving.start()
+
+    ui.stop()
+    serving.join(2)
+    timer = ui._force_stop_timer
+
+    assert not serving.is_alive()
+    assert timer is not None
+    timer.join(1)
+    assert not timer.is_alive(), "the timer outlived the server"
+    assert server.force_exit is False
 
 
 def test_stop_without_a_running_server_loop_is_safe():

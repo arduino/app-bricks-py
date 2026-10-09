@@ -21,6 +21,8 @@ RUN set -ex; \
     uv export --frozen --project /app --extra all --no-dev --no-emit-project --no-emit-package opencv-python-headless | uv pip install --system --no-cache-dir --require-hashes -r -; \
     uv pip install --system --no-cache-dir --no-deps /app/*.whl; \
     rm /app/*.whl /app/pyproject.toml /app/uv.lock; \
+    # ALSA dsnoop/dmix wrappers: the file is static, generate it once here instead of at every app start
+    HOME=/home/app bash /provision-alsa-devices.sh; \    
     # fix permissions for /home/app
     chown arduino:arduino -R /home/app; \
     chmod 777 -R /home/app; \
