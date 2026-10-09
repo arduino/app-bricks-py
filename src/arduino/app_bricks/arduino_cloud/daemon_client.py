@@ -11,28 +11,34 @@ variable values with it over two endpoints (RFC-13 §8):
   for ordered delivery to the cloud.
 * ``GET /v1/variables/{name}/events`` — a Server-Sent Events stream. The first
   event is always one of three "sync" events telling the client how to seed its
-  local value: ``thing_unavailable`` (no thing assigned yet), ``lastvalue`` (the
-  variable's stored cloud value, replayed with ``last_value: true``) or
-  ``lastvalue_missing`` (thing assigned, no cloud value). Once the cloud reaches
-  steady state a ``lastvalue``/``lastvalue_missing`` resync frame follows for
-  clients that connected while unprovisioned. Every subsequent live change is an
+  local value: ``thing_unavailable`` (thing not reachable: the board has no
+  internet connectivity, has not been provisioned or has no thing assigned),
+  ``lastvalue`` (the variable's stored cloud value, replayed with
+  ``last_value: true``) or ``lastvalue_missing`` (thing reachable, no cloud
+  value). Once the cloud reaches steady state a ``lastvalue``/``lastvalue_missing``
+  resync frame follows for clients that connected while the thing was not
+  reachable. Every subsequent live change is an
   ``event: update``. Each event's JSON payload is ``{name, value, timestamp,
   last_value}`` (``thing_unavailable``/``lastvalue_missing`` carry only ``name``).
+
+The daemon URL forms are described in ``unix_adapter``.
 """
 
+import http.client
 import json
+import socket
 import threading
 import uuid
 from datetime import datetime
-from urllib.parse import quote, unquote, urlparse
+from urllib.parse import quote
 
-from collections.abc import Callable, Iterator
-
-import requests
+from collections.abc import Callable, Generator, Iterable, Iterator
+from contextlib import contextmanager
+from typing import Any
 
 from arduino.app_utils import Logger
 
-from .unix_adapter import UnixHTTPAdapter
+from .unix_adapter import HTTPEndpoint
 
 logger = Logger("ArduinoCloud")
 
@@ -93,32 +99,37 @@ class DaemonClient:
 
     def __init__(self, base_url: str) -> None:
         self._base = base_url.rstrip("/")
-        # If the URL uses the http+unix:// scheme, every session must mount the
-        # UNIX-socket adapter; the socket path is the percent-encoded host part.
-        parsed = urlparse(self._base)
-        self._socket_path = unquote(parsed.netloc) if parsed.scheme == "http+unix" else None
+        self._endpoint = HTTPEndpoint(self._base)
         # One identity per app instance, generated here and never configurable:
         # if two apps could be made to share it they would silently stop seeing
         # each other's writes. Being per-app rather than per-stream also means
         # it survives an SSE reconnect, so a PUT in flight across a reconnect
-        # still matches. Must be set before the first session is built.
+        # still matches. Sent on every request, streams included.
         self._client_id = str(uuid.uuid4())
-        self._session = self._new_session()
-        self._sse_sessions: list[requests.Session] = []
-        self._sse_lock = threading.Lock()
+        self._headers = {CLIENT_ID_HEADER: self._client_id}
+        # Open SSE connections, shut down by close() to unblock their reads
+        self._streams: set[socket.socket] = set()
+        self._streams_lock = threading.Lock()
+        self._closed = threading.Event()
         # Count of consecutive PUT failures, to distinguish a transient glitch
         # from a persistent stall in the daemon and to log a clear recovery.
         self._put_fail_count = 0
 
-    def _new_session(self) -> requests.Session:
-        session = requests.Session()
-        if self._socket_path:
-            session.mount("http+unix://", UnixHTTPAdapter(self._socket_path))
-        # Set on the session rather than per call, so every request — including
-        # the ones a reconnected SSE stream makes — carries it without anyone
-        # having to remember.
-        session.headers[CLIENT_ID_HEADER] = self._client_id
-        return session
+    def _put(self, path: str, value: object) -> tuple[int, str]:
+        """Send a value PUT and return the response status and body."""
+        body = json.dumps({"value": value}, allow_nan=False)
+        conn = self._endpoint.connection(_PUT_TIMEOUT)
+        try:
+            try:
+                conn.connect()
+            except OSError as e:
+                # Report a connect timeout as unreachable, not as a stalled daemon
+                raise ConnectionError(str(e)) from e
+            conn.request("PUT", path, body=body, headers={**self._headers, "Content-Type": "application/json"})
+            resp = conn.getresponse()
+            return resp.status, resp.read().decode("utf-8", errors="replace")
+        finally:
+            conn.close()
 
     def put_value(self, name: str, value: object) -> None:
         """Send a variable value to the daemon (best-effort; logs on failure).
@@ -130,10 +141,10 @@ class DaemonClient:
         persistent stall is distinguishable from a one-off glitch, and a clear
         recovery line is logged once PUTs succeed again.
         """
-        url = f"{self._base}/v1/variables/{quote(name, safe='')}"
+        path = f"{self._endpoint.path_prefix}/v1/variables/{quote(name, safe='')}"
         try:
-            resp = self._session.put(url, json={"value": value}, timeout=_PUT_TIMEOUT)
-        except requests.exceptions.ReadTimeout:
+            status, text = self._put(path, value)
+        except TimeoutError:
             self._put_fail_count += 1
             logger.warning(
                 "ArduinoCloud: PUT '%s' timed out after %.0fs (consecutive failure #%d) — "
@@ -145,7 +156,7 @@ class DaemonClient:
                 self._put_fail_count,
             )
             return
-        except requests.exceptions.ConnectionError as e:
+        except ConnectionError as e:
             self._put_fail_count += 1
             logger.warning(
                 "ArduinoCloud: cannot reach the daemon at %s to send '%s' (consecutive "
@@ -156,29 +167,30 @@ class DaemonClient:
                 e,
             )
             return
-        except requests.RequestException as e:
+        except (OSError, http.client.HTTPException, ValueError) as e:
             self._put_fail_count += 1
             logger.warning("ArduinoCloud: failed to send '%s' (consecutive failure #%d): %s", name, self._put_fail_count, e)
             return
 
-        if resp.status_code == 409:
-            # No thing assigned yet (cloud not steady): the daemon deliberately
-            # did not queue the value. Expected during startup/reprovision — the
+        if status == 409:
+            # Thing not reachable (cloud not steady: the board has no internet
+            # connectivity, has not been provisioned or has no thing assigned):
+            # the daemon deliberately did not queue the value. Expected during startup/reprovision — the
             # value is kept locally and pushed at sync time; log as a warning.
             logger.warning(
                 "ArduinoCloud: '%s' not sent — no thing assigned yet (cloud not steady); value kept locally until sync",
                 name,
             )
             return
-        if resp.status_code >= 400:
-            logger.warning("ArduinoCloud: PUT '%s' rejected by daemon: HTTP %s %s", name, resp.status_code, resp.text.strip())
+        if status >= 400:
+            logger.warning("ArduinoCloud: PUT '%s' rejected by daemon: HTTP %s %s", name, status, text.strip())
             return
         if self._put_fail_count:
             logger.info("ArduinoCloud: '%s' delivered again after %d consecutive failure(s)", name, self._put_fail_count)
             self._put_fail_count = 0
 
     def stream_events(
-        self, name: str, handler: Callable[[str, dict], None], stop_event: threading.Event, ready: threading.Event | None = None
+        self, name: str, handler: Callable[[str, dict[str, Any]], None], stop_event: threading.Event, ready: threading.Event | None = None
     ) -> None:
         """Stream SSE events for a variable until stop_event is set.
 
@@ -195,41 +207,60 @@ class DaemonClient:
         updates — so the last value is delivered on a single stream, not
         re-announced by a second connection.
         """
-        url = f"{self._base}/v1/variables/{quote(name, safe='')}/events"
-        session = self._new_session()
-        with self._sse_lock:
-            self._sse_sessions.append(session)
-
+        path = f"{self._endpoint.path_prefix}/v1/variables/{quote(name, safe='')}/events"
         backoff = 0.5
-        while not stop_event.is_set():
+        while not (stop_event.is_set() or self._closed.is_set()):
             try:
-                with session.get(url, stream=True, timeout=(_SSE_CONNECT_TIMEOUT, None)) as resp:
-                    resp.raise_for_status()
+                with self._subscribe(path) as resp:
                     backoff = 0.5  # reset after a successful connect
                     for event, payload in self._iter_events(resp, stop_event):
                         handler(event, payload)
                         if ready is not None and not ready.is_set():
                             ready.set()  # first frame delivered → unblock register's seed
             except Exception as e:  # noqa: BLE001 - reconnect on any transport error
-                if stop_event.is_set():
+                if stop_event.is_set() or self._closed.is_set():
                     break
                 logger.debug("ArduinoCloud: SSE '%s' disconnected (%s); reconnecting in %.1fs", name, e, backoff)
             if stop_event.wait(backoff):
                 break
             backoff = min(backoff * 2, _RECONNECT_MAX)
 
+    @contextmanager
+    def _subscribe(self, path: str) -> Generator[http.client.HTTPResponse]:
+        """Open an SSE stream that close() can interrupt."""
+        conn = self._endpoint.connection(_SSE_CONNECT_TIMEOUT)
+        try:
+            conn.connect()
+            sock = conn.sock
+            # Frames can be minutes apart and the daemon sends no heartbeat
+            sock.settimeout(None)
+            with self._streams_lock:
+                if self._closed.is_set():
+                    raise ConnectionAbortedError("daemon client closed")
+                self._streams.add(sock)
+            try:
+                conn.request("GET", path, headers=self._headers)
+                with conn.getresponse() as resp:
+                    if resp.status != 200:
+                        raise http.client.HTTPException(f"HTTP {resp.status} {resp.reason}")
+                    yield resp
+            finally:
+                with self._streams_lock:
+                    self._streams.discard(sock)
+        finally:
+            conn.close()
+
     @staticmethod
-    def _iter_events(resp: requests.Response, stop_event: threading.Event) -> Iterator[tuple[str, dict]]:
+    def _iter_events(lines: Iterable[bytes], stop_event: threading.Event) -> Iterator[tuple[str, dict[str, Any]]]:
         """Parse the SSE byte stream, yielding each complete event as
         ``(event_name, payload_dict)``. Stops when stop_event is set or the
         stream ends."""
         event = None
         data_lines: list[str] = []
-        for raw in resp.iter_lines(decode_unicode=True):
+        for line in lines:
             if stop_event.is_set():
                 return
-            if raw is None:
-                continue
+            raw = line.decode("utf-8", errors="replace").rstrip("\r\n")
             if raw == "":  # blank line terminates an event
                 if data_lines:
                     try:
@@ -252,16 +283,11 @@ class DaemonClient:
                 data_lines.append(val)
 
     def close(self) -> None:
-        """Close all sessions, unblocking any in-flight SSE reads."""
-        with self._sse_lock:
-            sessions = list(self._sse_sessions)
-            self._sse_sessions.clear()
-        for s in sessions:
-            try:
-                s.close()
-            except Exception:  # noqa: BLE001
-                pass
-        try:
-            self._session.close()
-        except Exception:  # noqa: BLE001
-            pass
+        """Shut down every open stream, unblocking its read; streams do not reconnect afterwards."""
+        with self._streams_lock:
+            self._closed.set()
+            for sock in self._streams:
+                try:
+                    sock.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass  # already closed by its stream
