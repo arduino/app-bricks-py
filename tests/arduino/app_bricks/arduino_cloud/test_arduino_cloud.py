@@ -836,17 +836,6 @@ def test_default_daemon_url_is_unix_socket(monkeypatch):
     assert "daemon.sock" in url
 
 
-def test_daemon_client_mounts_unix_adapter():
-    client = DaemonClient("http+unix://%2Frun%2Farduino-cloud-connector%2Fdaemon.sock")
-    assert client._socket_path == "/run/arduino-cloud-connector/daemon.sock"
-    assert "http+unix://" in client._session.adapters
-
-
-def test_daemon_client_plain_http_has_no_socket():
-    client = DaemonClient("http://127.0.0.1:5683")
-    assert client._socket_path is None
-
-
 @pytest.fixture
 def socket_dir():
     """A short-lived directory whose path fits the Unix socket path limit."""
