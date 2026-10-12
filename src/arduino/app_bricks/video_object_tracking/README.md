@@ -160,7 +160,7 @@ print(tracker.get_area_counts())  # {"apple": {"entered": 3, "exited": 2}}
 
 The points follow the border in order, and the border must not cross itself: `set_area_coordinates()` raises `ValueError` for one that does, as it does for fewer than three distinct points or more than 100. A point repeated right after itself, or the first one repeated at the end to close the polygon, is left out.
 
-An object **enters** the area when it is seen inside and was not inside already, also when it first appears there. It **leaves** when it is seen outside, by more than `min_movement_threshold` pixels so that a centre wobbling on the border does not enter again and again, or when it disappears while inside and the tracker gives it up, after `keep_grace` frames. Setting the area again, or a new run of the tracker, empties the objects inside without reporting them as gone.
+An object **enters** the area when it is seen inside and was not inside already, also when it first appears there. It **leaves** when it is seen outside, by more than `min_movement_threshold` pixels so that a centre wobbling on the border does not enter again and again, or when it has not been seen for a second while inside: the tracker may leave an object it still follows out of a few frames, and a second outlasts those gaps. Setting the area again, or a new run of the tracker, empties the objects inside without reporting them as gone.
 
 To react as it happens, register a callback for each event: both receive `{"label": str, "object_id": int}`.
 
