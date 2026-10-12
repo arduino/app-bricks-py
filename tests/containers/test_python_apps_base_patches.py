@@ -2,46 +2,70 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""python-apps-base patches FastAPI at build time: the patch must apply to the version the image installs and keep FastAPI working."""
+"""python-apps-base applies the source patches of its patches/ directory at build time: each must apply to the version
+the image installs, and the FastAPI one must keep FastAPI working."""
 
 import os
+import re
 import shutil
 import subprocess
 import sys
 import textwrap
 import tomllib
-from importlib.metadata import version
+from importlib.metadata import packages_distributions, version
+from importlib.util import find_spec
 from pathlib import Path
 
-import fastapi
 import pytest
 
 ROOT = Path(__file__).parents[2]
 IMAGE_DIR = ROOT / "containers" / "bricks" / "python-apps-base"
-PATCH = IMAGE_DIR / "patches" / "fastapi-defer-openapi-model-build.patch"
+PATCHES = sorted((IMAGE_DIR / "patches").glob("*.patch"))
+FASTAPI_PATCH = IMAGE_DIR / "patches" / "fastapi-defer-openapi-model-build.patch"
 
 PATCH_FLAGS = ["-p1", "--forward", "--fuzz=0", "--no-backup-if-mismatch"]
-IMAGE_PATCH_COMMAND = " ".join(["patch", *PATCH_FLAGS, "-d", "/usr/local/lib/python3.13/site-packages", "-i", f"/tmp/patches/{PATCH.name}"])
+IMAGE_PATCH_COMMAND = " ".join(["patch", *PATCH_FLAGS, "-d", "/usr/local/lib/python3.13/site-packages", "-i", '"$p"'])
 
 PATCH_TOOL = shutil.which("patch")
 needs_patch = pytest.mark.skipif(PATCH_TOOL is None, reason="needs GNU patch, as the image build")
 
 
-def _locked_version(package: str) -> str:
+def _canonical(distribution: str) -> str:
+    return re.sub(r"[-_.]+", "-", distribution).lower()
+
+
+def _locked_versions() -> dict[str, str]:
     lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
-    return next(p["version"] for p in lock["package"] if p["name"] == package)
+    return {p["name"]: p["version"] for p in lock["package"] if "version" in p}  # The project itself has none
+
+
+def _apply_to_a_copy(patch: Path, site_packages: Path) -> None:
+    """Copy the installed packages or modules the patch changes into site_packages and apply it there, as the image build does."""
+    targets = sorted(set(re.findall(r"^\+\+\+ b/([^/\s]+)", patch.read_text(encoding="utf-8"), re.MULTILINE)))
+    assert targets, f"{patch.name} changes no file"
+    locked = _locked_versions()
+    site_packages.mkdir(parents=True)
+    for target in targets:
+        name = target.removesuffix(".py")
+        spec = find_spec(name)
+        assert spec is not None and spec.origin is not None, f"{patch.name} changes {target}, which is not installed"
+        for distribution in packages_distributions().get(name, []):
+            assert version(distribution) == locked[_canonical(distribution)], f"the venv is not on the {distribution} of uv.lock, run `uv sync`"
+        if spec.submodule_search_locations:
+            shutil.copytree(spec.submodule_search_locations[0], site_packages / target, ignore=shutil.ignore_patterns("__pycache__"))
+        else:
+            shutil.copy2(spec.origin, site_packages / target)
+
+    assert PATCH_TOOL is not None
+    result = subprocess.run([PATCH_TOOL, *PATCH_FLAGS, "-d", str(site_packages), "-i", str(patch)], capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, f"{patch.name} no longer applies to the installed {', '.join(targets)}:\n{result.stdout}{result.stderr}"
 
 
 @pytest.fixture
 def patched_site_packages(tmp_path: Path) -> Path:
-    """The installed FastAPI, patched with the flags of the image build, in a directory that shadows it on PYTHONPATH."""
-    assert version("fastapi") == _locked_version("fastapi"), "the venv is not on the FastAPI version of uv.lock, run `uv sync`"
+    """The installed FastAPI, patched as the image does, in a directory that shadows it on PYTHONPATH."""
     site_packages = tmp_path / "site-packages"
-    shutil.copytree(Path(fastapi.__file__).parent, site_packages / "fastapi", ignore=shutil.ignore_patterns("__pycache__"))
-
-    assert PATCH_TOOL is not None
-    result = subprocess.run([PATCH_TOOL, *PATCH_FLAGS, "-d", str(site_packages), "-i", str(PATCH)], capture_output=True, text=True, timeout=60)
-    assert result.returncode == 0, f"the patch no longer applies to FastAPI {version('fastapi')}:\n{result.stdout}{result.stderr}"
+    _apply_to_a_copy(FASTAPI_PATCH, site_packages)
     return site_packages
 
 
@@ -58,11 +82,17 @@ def _run_with(site_packages: Path, code: str) -> None:
     assert result.returncode == 0, result.stderr
 
 
-def test_image_applies_the_patch_with_the_tested_flags_before_compiling():
+def test_image_applies_every_patch_with_the_tested_flags_before_compiling():
     dockerfile = (IMAGE_DIR / "Dockerfile").read_text()
-    assert "COPY ./patches/*.patch /tmp/patches/" in dockerfile
-    assert IMAGE_PATCH_COMMAND in dockerfile
+    assert "COPY ./patches/ /tmp/patches/" in dockerfile
+    assert f'for p in "$@"; do {IMAGE_PATCH_COMMAND}; done' in dockerfile
     assert dockerfile.index(IMAGE_PATCH_COMMAND) < dockerfile.index("python -m compileall /usr/local/lib")
+
+
+@needs_patch
+@pytest.mark.parametrize("patch", PATCHES, ids=[p.name for p in PATCHES])
+def test_patch_applies_to_the_locked_version(patch: Path, tmp_path: Path):
+    _apply_to_a_copy(patch, tmp_path / "site-packages")
 
 
 @needs_patch
