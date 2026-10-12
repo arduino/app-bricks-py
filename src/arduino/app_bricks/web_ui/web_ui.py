@@ -113,8 +113,6 @@ class WebUI:
         self._protocol = "https" if self._use_tls else "http"
         self._server: uvicorn.Server | None = None
         self._server_loop: asyncio.AbstractEventLoop | None = None
-        self._force_stop_timer: threading.Timer | None = None
-        self._server_exited = threading.Event()
         self._on_connect_cb: Callable[[str], None] | None = None
         self._on_disconnect_cb: Callable[[str], None] | None = None
         self._on_message_cbs: dict[str, Callable[[str, Any], Any]] = {}
@@ -184,10 +182,15 @@ class WebUI:
         are therefore cut off.
         """
         logger.debug("Stopping server...")
-        if not self._server:
+        server = self._server
+        if not server:
             return
 
-        self._server.should_exit = True  # Ask to stop the server
+        server.should_exit = True  # Ask to stop the server
+
+        loop = self._server_loop
+        if loop is None or not loop.is_running():
+            return  # Not serving, or not yet: there is no connection to wait for
 
         # Stop the Socket.IO background task and close the client connections. Without this the
         # server keeps waiting on an open websocket, or on an engine.io long poll parked for up to
@@ -196,26 +199,25 @@ class WebUI:
         # SocketManager does not expose shutdown(), it only keeps the underlying server on the
         # FastAPI app as `sio`.
         sio_server = getattr(self.app, "sio", None)
-        if sio_server is not None and self._server_loop is not None and self._server_loop.is_running():
+        if sio_server is not None:
             try:
-                asyncio.run_coroutine_threadsafe(sio_server.shutdown(), self._server_loop)
+                asyncio.run_coroutine_threadsafe(sio_server.shutdown(), loop)
             except Exception as e:
                 logger.debug(f"Failed to shut down the Socket.IO layer: {e}")
 
         # Escalate if the graceful path does not complete: dropping connections is preferable to
-        # overrunning the app's shutdown budget and having the process killed instead.
-        def force_stop() -> None:
-            if self._server and not getattr(self._server, "force_exit", False):
+        # overrunning the app's shutdown budget and having the process killed instead. Scheduled on
+        # the server's loop, the escalation is dropped with the loop when the server stops in time,
+        # and it can only reach this server, not one started after it.
+        def force_exit() -> None:
+            if not server.force_exit:
                 logger.debug("Graceful shutdown timed out, forcing the server to stop")
-                self._server.force_exit = True
+                server.force_exit = True
 
-        timer = threading.Timer(FORCE_SHUTDOWN_TIMEOUT_S, force_stop)
-        timer.daemon = True
-        timer.start()
-        self._force_stop_timer = timer
-        # The server may have exited before the timer was stored, too late for execute() to cancel it
-        if self._server_exited.is_set():
-            timer.cancel()
+        try:
+            loop.call_soon_threadsafe(loop.call_later, FORCE_SHUTDOWN_TIMEOUT_S, force_exit)
+        except RuntimeError:
+            pass  # The loop closed in the meantime: the server is down already
 
     def execute(self) -> None:
         logger.debug(f"Serving static web files from {self._assets_dir_path}")
@@ -235,17 +237,10 @@ class WebUI:
             logger.error("Cannot run the server: start() was not called")
             return
 
-        self._server_exited.clear()
         try:
             server.run()
         except Exception as e:
             logger.exception(f"Error running server: {e}")
-        finally:
-            # The server is down: the escalation armed by stop() has nothing left to force. Set before
-            # reading the timer, so that a stop() storing it afterwards sees the server gone
-            self._server_exited.set()
-            if self._force_stop_timer is not None:
-                self._force_stop_timer.cancel()
 
     def expose_api(self, method: str, path: str, function: Callable[..., Any]) -> None:
         """Register a route with the specified HTTP method and path.
