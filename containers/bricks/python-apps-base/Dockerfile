@@ -16,11 +16,23 @@ COPY ./streamlit/config.toml /home/app/.streamlit/config.toml
 COPY ./scripts/*.sh /
 # The wheel and the lock it was built from, from the bake context filled by `task build:bricks`
 COPY --from=wheel arduino*.whl pyproject.toml uv.lock /app/
+COPY ./patches/*.patch /tmp/patches/
 # OpenCV is left out, python-base ships its own GStreamer build of it
 RUN set -ex; \
     uv export --frozen --project /app --extra all --no-dev --no-emit-project --no-emit-package opencv-python-headless | uv pip install --system --no-cache-dir --require-hashes -r -; \
     uv pip install --system --no-cache-dir --no-deps /app/*.whl; \
     rm /app/*.whl /app/pyproject.toml /app/uv.lock; \
+    # Source patches to the installed packages, made against the locked versions: a patch that no longer
+    # applies exactly fails the build. Applied before compileall, which compiles the patched sources.
+    # GNU patch comes in through dpkg: apt-get install refuses to run on the packages python-base removes
+    # with --force-depends, dpkg checks only the dependencies of patch
+    apt-get update -y; \
+    (cd /tmp && apt-get download patch); \
+    dpkg -i /tmp/patch_*.deb; \
+    patch -p1 --forward --fuzz=0 --no-backup-if-mismatch -d /usr/local/lib/python3.13/site-packages -i /tmp/patches/fastapi-defer-openapi-model-build.patch; \
+    dpkg --purge patch; \
+    apt-get dist-clean; \
+    rm -rf /var/lib/apt/lists/* /var/lib/dpkg/*-old /tmp/patch_*.deb /tmp/patches; \
     # ALSA dsnoop/dmix wrappers: the file is static, generate it once here instead of at every app start
     HOME=/home/app bash /provision-alsa-devices.sh; \    
     # fix permissions for /home/app

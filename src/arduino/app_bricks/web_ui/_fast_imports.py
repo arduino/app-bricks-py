@@ -2,54 +2,13 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""Import-time shortcuts for the web stack (FastAPI, Uvicorn, Socket.IO), which is most of an app's start time on the board."""
+"""Import-time shortcut for Socket.IO: load the server without the dependencies of the sync client, part of an app's start time on the board."""
 
-import gc
 import importlib
 import importlib.util
 import sys
 from collections.abc import Generator, Sequence
 from contextlib import contextmanager
-
-
-@contextmanager
-def gc_paused() -> Generator[None]:
-    """Keep the cyclic garbage collector off inside the block.
-
-    Importing the web stack allocates enough objects to trigger ~50 collections that find almost nothing
-    to free, about 0.2 s on the board. The previous state is restored on exit.
-    """
-    was_enabled = gc.isenabled()
-    gc.disable()
-    try:
-        yield
-    finally:
-        if was_enabled:
-            gc.enable()
-
-
-@contextmanager
-def defer_pydantic_model_builds() -> Generator[None]:
-    """Make pydantic models defined inside the block build their validators on first use instead of at class creation.
-
-    Importing FastAPI builds ~25 pydantic models for its OpenAPI schema, about 0.35 s of app start time on the
-    board. WebUI disables OpenAPI (``openapi_url=None``), so those models are never used and, deferred, never built.
-    Models defined after the block, such as the app's own request bodies, are built as usual.
-
-    It relies on a pydantic internal: if that is gone, models are built at import time as before.
-    """
-    try:
-        from pydantic._internal._config import config_defaults  # pyright: ignore[reportPrivateImportUsage]
-    except ImportError:
-        yield
-        return
-
-    previous = config_defaults.get("defer_build", False)
-    config_defaults["defer_build"] = True
-    try:
-        yield
-    finally:
-        config_defaults["defer_build"] = previous
 
 
 SOCKETIO_CLIENT_DEPENDENCIES = ("requests", "websocket")
