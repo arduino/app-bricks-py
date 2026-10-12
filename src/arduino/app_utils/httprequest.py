@@ -2,6 +2,8 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+from collections.abc import Collection
+from typing import Any
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -20,8 +22,8 @@ class HttpClient:
         self,
         total_retries: int = 5,
         backoff_factor: int = 1,
-        status_forcelist: frozenset = (411, 500, 502, 503, 504),
-        allowed_methods: frozenset = frozenset(["GET", "POST", "PUT", "DELETE"]),
+        status_forcelist: Collection[int] = (411, 500, 502, 503, 504),
+        allowed_methods: Collection[str] = frozenset(["GET", "POST", "PUT", "DELETE"]),
     ) -> None:
         self.__total_retries = total_retries
         self.__backoff_factor = backoff_factor
@@ -48,9 +50,9 @@ class HttpClient:
         self,
         url: str,
         method: str = "GET",
-        data: dict | str | None = None,
-        json: dict | None = None,
-        headers: dict | None = None,
+        data: dict[str, Any] | str | None = None,
+        json: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
         timeout: int = 5,
     ) -> requests.Response | None:
         """Performs a GET or POST request to a given URL with a retry mechanism using requests.
@@ -71,7 +73,7 @@ class HttpClient:
         Returns:
             requests.Response or None: The response object if successful, None otherwise.
         """
-        if url is None:
+        if not url:
             logger.error("Invalid URL provided. URL must be a non-empty string.")
             return None
 

@@ -337,6 +337,22 @@ def test_threshold_property_update_controls_callback(app_instance: AppController
     assert anomaly_trigger_called
 
 
+def test_classification_callback_receives_none_without_classification_head(monkeypatch: pytest.MonkeyPatch):
+    classifier = VibrationAnomalyDetection()
+    monkeypatch.setattr(classifier._buffer, "pull", lambda: np.array([0.0] * 600))
+    monkeypatch.setattr(classifier, "infer_from_features", lambda features: {"result": {"anomaly": 2.5}})
+
+    received = []
+
+    def callback_for_anomaly(anomaly_score: float, classification: dict | None):
+        received.append((anomaly_score, classification))
+
+    classifier.on_anomaly(callback_for_anomaly)
+    classifier.loop()
+
+    assert received == [(2.5, None)]
+
+
 @pytest.mark.parametrize("threshold", [0, 0.1, 1.0, 5, "7.5"])
 def test_threshold_property_accepts_finite_non_negative_values(threshold):
     classifier = VibrationAnomalyDetection(anomaly_detection_threshold=threshold)

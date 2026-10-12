@@ -19,7 +19,7 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "arduino-router-bridge>=0.5.0",
+    "arduino-router-bridge>=0.5.1",
     "pyyaml",
     "requests",
     "Pillow",
@@ -132,7 +132,7 @@ where = ["src"]
 include = ["*"]
 
 [tool.setuptools.package-data]
-"*" = ["*.yaml", "*.md", "*.json"]
+"*" = ["*.yaml", "*.md", "*.json", "assets/**"]
 
 
 [tool.setuptools.dynamic]

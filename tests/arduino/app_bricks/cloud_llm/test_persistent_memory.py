@@ -255,6 +255,11 @@ def _bare_llm(system_prompt: str = ""):
     return llm
 
 
+def test_with_memory_returns_the_instance_for_chaining():
+    llm = _bare_llm()
+    assert llm.with_memory(max_messages=5) is llm
+
+
 def test_with_memory_default_is_in_memory_only():
     llm = _bare_llm()
     llm.with_memory(max_messages=5)

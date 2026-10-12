@@ -128,6 +128,8 @@ from common.model_metadata import (
     identify_model,
     is_bookkeeping_name,
     prune_metadata_records,
+    read_metadata,
+    record_for_file,
     write_metadata,
 )
 from common.models_list import MODELS_LIST_PATH, _iter_platform_variables, load_models_list
@@ -366,6 +368,31 @@ def interrupted_patterns(marker_path: Path) -> list[str]:
     if isinstance(patterns, list) and all(isinstance(p, str) for p in patterns):
         return patterns
     return []
+
+
+def unfinished_files(output_dir: str, patterns: list[str]) -> list[Path]:
+    """The files of *patterns* a stopped download left without a record.
+
+    A download writes its record before it clears the marker, so a file the marker names
+    but no record covers landed and was never finished: the listing ignores it and the
+    API cannot delete it, so --check must not call it installed. Only the marker's own
+    patterns count — a sibling quantization installed before, recorded or not, is not
+    what the marker stood for — and a legacy marker naming none counts nothing.
+    """
+    marker = Path(output_dir) / MARKER_NAME
+    in_flight = interrupted_patterns(marker) if marker.is_file() else []
+    if not in_flight:
+        return []
+    data = read_metadata(output_dir)
+    base = Path(output_dir)
+    unfinished = []
+    for path in matching_files(output_dir, patterns):
+        rel = path.relative_to(base).as_posix()
+        if path.suffix != ".gguf" or "mmproj" in path.name:
+            continue
+        if any(matches_pattern(rel, pattern) for pattern in in_flight) and record_for_file(data, rel) is None:
+            unfinished.append(path)
+    return unfinished
 
 
 def discard_incomplete_download(output_dir: str, base_dir: str, patterns: list[str]) -> None:
@@ -1657,7 +1684,9 @@ def main():
         # Files first, marker second: the marker is per repository, but a repository
         # directory holds several quantizations, so a download in progress there says
         # nothing about the one being asked for — which may well be installed already.
-        if is_installed(output_dir, patterns):
+        # A file the marker's own download left without a record is not installed either:
+        # it reads as the download still in progress, which the next download clears.
+        if is_installed(output_dir, patterns) and not unfinished_files(output_dir, patterns):
             present = [str(p) for p in matching_files(output_dir, patterns) if p.suffix == ".gguf"]
             emit_json_info(f"Model exists: {allow_pattern}", downloading=False, size_mb=downloaded_size_mb(present))
         elif (Path(output_dir) / MARKER_NAME).is_file():
@@ -1759,6 +1788,11 @@ def main():
 
         tqdm_class = JsonProgress
 
+        # Until the record is written the files are not an install: a signal or an error
+        # anywhere before it, during the transfer or while it is being finished, discards
+        # them. A stop landing after the transfer but before the record used to leave a
+        # complete file the listing ignores and the API cannot delete.
+        recorded = None
         try:
             if url_filename:
                 # Single-file download via direct URL
@@ -1800,9 +1834,34 @@ def main():
                             f"Downloading mmproj model file from Hugging Face repository: {repo_id} with allow pattern: {mmproj_allow_pattern}"
                         )
                     download_matched_files(repo_id, mmproj_allow_pattern, output_dir, tqdm_class, verbose=args.verbose)
+
+            # Remove download caches
+            cache_path = Path(output_dir) / ".cache"
+            if cache_path.is_dir():
+                shutil.rmtree(cache_path)
+
+            # The absolute path(s) of the downloaded model file(s): the files this request
+            # named, not every quantization the shared repository directory holds — a
+            # sibling was not downloaded now, and must not name this model either.
+            matched_gguf = [p for p in matching_files(output_dir, patterns) if p.suffix == ".gguf"]
+            downloaded = sorted(str(p.resolve()) for p in matched_gguf)
+            # The same files relative to the repo directory, recorded in the metadata so
+            # each record of the shared directory says which quantization it stands for.
+            recorded_files = sorted(p.relative_to(Path(output_dir)).as_posix() for p in matched_gguf)
+
+            # Resolved once and used for both the record and the completion event, so the
+            # id the host is told is the id on disk. Any repository can be downloaded
+            # without a models-list.yaml entry, so name it after the file that arrived
+            # rather than leaving it unidentified.
+            identity = identify_model(metadata_env, fallback_model_id=fallback_model_id(source["model_type"], downloaded, args.output_dir))
+
+            # Record what was downloaded, then clear the in-progress marker: while the
+            # marker is still there the repo directory counts as incomplete, so a crash
+            # in between makes the next run retry instead of leaving it unrecorded.
+            recorded = write_metadata(output_dir, handler="hf-handler", env=metadata_env, identity=identity, files=recorded_files)
         except BaseException as exc:
             # Network/extraction errors and SIGINT/SIGTERM-driven KeyboardInterrupt
-            # leave a partial download behind; discard it before exiting, without
+            # leave an unrecorded download behind; discard it before exiting, without
             # taking another quantization of the same repository down with it.
             if os.path.isdir(output_dir):
                 discard_incomplete_download(output_dir, args.output_dir, patterns)
@@ -1811,30 +1870,6 @@ def main():
                 emit_json_error(f"Download failed: {exc}")
             raise
 
-        # Remove download caches
-        cache_path = Path(output_dir) / ".cache"
-        if cache_path.is_dir():
-            shutil.rmtree(cache_path)
-
-        # The absolute path(s) of the downloaded model file(s): the files this request
-        # named, not every quantization the shared repository directory holds — a
-        # sibling was not downloaded now, and must not name this model either.
-        matched_gguf = [p for p in matching_files(output_dir, patterns) if p.suffix == ".gguf"]
-        downloaded = sorted(str(p.resolve()) for p in matched_gguf)
-        # The same files relative to the repo directory, recorded in the metadata so
-        # each record of the shared directory says which quantization it stands for.
-        recorded_files = sorted(p.relative_to(Path(output_dir)).as_posix() for p in matched_gguf)
-
-        # Resolved once and used for both the record and the completion event, so the
-        # id the host is told is the id on disk. Any repository can be downloaded
-        # without a models-list.yaml entry, so name it after the file that arrived
-        # rather than leaving it unidentified.
-        identity = identify_model(metadata_env, fallback_model_id=fallback_model_id(source["model_type"], downloaded, args.output_dir))
-
-        # Record what was downloaded, then clear the in-progress marker: while the
-        # marker is still there the repo directory counts as incomplete, so a crash
-        # in between makes the next run retry instead of leaving it unrecorded.
-        recorded = write_metadata(output_dir, handler="hf-handler", env=metadata_env, identity=identity, files=recorded_files)
         if recorded is None:
             # The record is required, not best-effort: the host deletes an ad-hoc model
             # by the inputs recorded here, so an installed-but-unrecorded model could

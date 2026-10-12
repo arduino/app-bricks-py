@@ -4,6 +4,7 @@
 
 import requests
 from dataclasses import dataclass
+from typing import Any, Self
 
 from arduino.app_utils import brick
 
@@ -48,7 +49,7 @@ class AirQualityData:
         last_update (str): Last update timestamp of the air quality data.
         aqi (int): Air Quality Index value.
         dominantpol (str): Dominant pollutant in the air.
-        iaqi (dict): Individual AQI values for various pollutants.
+        iaqi (dict[str, Any]): Individual AQI values for various pollutants.
     """
 
     city: str
@@ -58,11 +59,11 @@ class AirQualityData:
     last_update: str
     aqi: int
     dominantpol: str
-    iaqi: dict
+    iaqi: dict[str, Any]
 
     # Properties for easy access to IAQI values
     @property
-    def pandas_dict(self) -> dict:
+    def pandas_dict(self) -> dict[str, list[Any]]:
         """Return the data as a dictionary suitable for pandas DataFrame."""
         return {
             "city": [self.city],
@@ -152,38 +153,38 @@ class AirQualityMonitoring:
             raise AirQualityLookupError.from_api_response(data)
         return self.assemble_data(data["data"])
 
-    def process(self, item: dict) -> dict:
+    def process(self, item: dict[str, Any]) -> AirQualityData:
         """Process the input dictionary to get air quality data.
 
         Args:
-            item (dict): Input dictionary containing either 'city', 'latitude' and 'longitude', or 'ip'.
+            item (dict[str, Any]): Input dictionary containing either 'city', 'latitude' and 'longitude', or 'ip'.
 
         Returns:
-            dict: Air quality data.
+            AirQualityData: Air quality assembled data.
 
         Raises:
             ValueError: If the input dictionary is not valid.
         """
-        if not isinstance(item, dict):
-            raise ValueError("Input must be a dict")
-        # method selection
-        if "city" in item:
-            return self.get_air_quality_by_city(item["city"])
-        elif "latitude" in item and "longitude" in item:
-            return self.get_air_quality_by_coords(item["latitude"], item["longitude"])
-        elif "ip" in item and item["ip"]:
-            return self.get_air_quality_by_ip()
-        else:
-            raise ValueError("Input dict must contain 'city', 'latitude' and 'longitude', or 'ip': True")
+        match item:
+            case {"city": city}:
+                return self.get_air_quality_by_city(city)
+            case {"latitude": latitude, "longitude": longitude}:
+                return self.get_air_quality_by_coords(latitude, longitude)
+            case {"ip": ip} if ip:
+                return self.get_air_quality_by_ip()
+            case dict():
+                raise ValueError("Input dict must contain 'city', 'latitude' and 'longitude', or 'ip': True")
+            case _:
+                raise ValueError("Input must be a dict")
 
-    def assemble_data(self, data: dict) -> AirQualityData:
+    def assemble_data(self, data: dict[str, Any]) -> AirQualityData:
         """Create a payload for the air quality data.
 
         Args:
-            data (dict): Air quality data.
+            data (dict[str, Any]): Air quality data.
 
         Returns:
-            dict: Payload with relevant air quality information.
+            AirQualityData: Payload with relevant air quality information.
         """
         aqi_data = AirQualityData(
             city=data.get("city", {}).get("name", "N/A"),
@@ -209,19 +210,19 @@ class AirQualityMonitoring:
 class AirQualityLookupError(Exception):
     """Custom exception for air quality lookup errors."""
 
-    def __init__(self, message: str, status: str = None) -> None:
+    def __init__(self, message: str, status: str | None = None) -> None:
         """Initialize the AirQualityLookupError with a message and status.
 
         Args:
             message (str): Error message.
-            status (str): Status of the error, defaults to None.
+            status (str | None): Status of the error, defaults to None.
         """
         super().__init__(message)
         self.status = status
         self.message = message
 
     @classmethod
-    def from_api_response(cls, data: dict) -> "AirQualityLookupError":
+    def from_api_response(cls, data: dict[str, Any]) -> Self:
         """AirQualityLookupError error handling based on response provided by AQI API.
 
         Documented errors:
@@ -235,23 +236,18 @@ class AirQualityLookupError(Exception):
         - {"status": "error", "data": {"message": "..."}}
 
         Args:
-            data (dict): Response data from the AQI API.
+            data (dict[str, Any]): Response data from the AQI API.
 
         Returns:
             AirQualityLookupError: An instance of AirQualityLookupError with the error message and status.
         """
         status = data.get("status")
-        # 'data' field can be a string or a dict with 'message' attribute
         if status != "error":
             raise ValueError("Status must be 'error'")
-        if status is None:
-            raise ValueError("Status cannot be None")
 
-        raw_data = data.get("data")
-        if isinstance(raw_data, dict) and "message" in raw_data:
-            message = raw_data["message"]
-        elif isinstance(raw_data, str):
-            message = raw_data
-        else:
-            message = str(raw_data)
-        return cls(message=message, status=status)
+        # 'data' field can be a string or a dict with 'message' attribute
+        match data.get("data"):
+            case {"message": message} | (str() as message):
+                return cls(message=message, status=status)
+            case raw_data:
+                return cls(message=str(raw_data), status=status)

@@ -19,7 +19,7 @@ logger = Logger(__name__)
 class EdgeImpulseModelInfo:
     """Class to hold Edge Impulse model information."""
 
-    def __init__(self, model_info: dict) -> None:
+    def __init__(self, model_info: dict[str, Any]) -> None:
         """Initialize the EdgeImpulseModelInfo with model information."""
         if not model_info:
             raise ValueError("Model information cannot be empty.")
@@ -55,7 +55,7 @@ class EdgeImpulseRunnerFacade:
         self.url = self._get_ei_url()
         logger.info(f"[{self.__class__.__name__}] URL: {self.url}")
 
-    def infer_from_file(self, image_path: str) -> dict | None:
+    def infer_from_file(self, image_path: str) -> dict[str, Any] | None:
         if not image_path or image_path == "":
             return None
         with open(image_path, "rb") as f:
@@ -65,7 +65,7 @@ class EdgeImpulseRunnerFacade:
                 logger.error(f"Error: {e}")
                 return None
 
-    def infer_from_image(self, image_bytes: bytes | Image.Image, image_type: str = "jpg") -> dict | None:
+    def infer_from_image(self, image_bytes: bytes | Image.Image, image_type: str = "jpg") -> dict[str, Any] | None:
         data = get_image_bytes(image_bytes)
         if not data or not image_type:
             return None
@@ -93,7 +93,7 @@ class EdgeImpulseRunnerFacade:
             logger.warning(f"[{self.__class__}] error: {response.status_code}. Message: {response.text}")
             return None
 
-    def process(self, item: str | dict) -> dict | None:
+    def process(self, item: str | dict[str, Any]) -> dict[str, Any] | None:
         """Process an item to detect objects in an image.
 
         Args:
@@ -101,23 +101,25 @@ class EdgeImpulseRunnerFacade:
                 'image_type' is optional while 'image' contains image as bytes.
         """
         try:
-            if isinstance(item, str):
-                # Use this like a file path
-                with open(item, "rb") as f:
-                    return self.infer_from_image(f.read(), item.split(".")[-1])
-            elif isinstance(item, dict) and "image" in item and item["image"] != "":
-                image = item["image"]
-                if "image_type" in item and item["image_type"] != "":
-                    image_type = item["image_type"]
-                else:
-                    image_type = get_image_type(image)
+            match item:
+                case str():
+                    # Use this like a file path
+                    with open(item, "rb") as f:
+                        return self.infer_from_image(f.read(), item.split(".")[-1])
+                case dict() if "image" in item and item["image"] != "":
+                    image = item["image"]
+                    if "image_type" in item and item["image_type"] != "":
+                        image_type = item["image_type"]
+                    else:
+                        image_type = get_image_type(image)
 
-                if image_type is None:
-                    logger.debug(f"[{self.__class__}] Discarding not supported file type")
-                    return None
+                    if image_type is None:
+                        logger.debug(f"[{self.__class__}] Discarding not supported file type")
+                        return None
 
-                return self.infer_from_image(image, image_type.lower())
-            return item  # No processing needed
+                    return self.infer_from_image(image, image_type.lower())
+                case _:
+                    return item  # No processing needed
         except FileNotFoundError:
             logger.error(f"[{self.__class__}] File not found: {item}")
         except Exception as e:
@@ -125,13 +127,13 @@ class EdgeImpulseRunnerFacade:
         return None
 
     @classmethod
-    def infer_from_features(cls, features: list) -> dict | None:
+    def infer_from_features(cls, features: list[float]) -> dict[str, Any] | None:
         """
         Infer from features using the Edge Impulse API.
 
         Args:
             cls: The class method caller.
-            features (list): A list of features to send to the Edge Impulse API.
+            features (list[float]): The features to send to the Edge Impulse API.
 
         Returns:
             dict | None: The response from the Edge Impulse API as a dictionary, or None if an error occurs.
@@ -139,6 +141,9 @@ class EdgeImpulseRunnerFacade:
         try:
             url = cls._get_ei_url()
             model_info = cls.get_model_info(url)
+            if model_info is None:
+                logger.warning(f"[{cls.__name__}] Model info not available, cannot run the inference")
+                return None
             features = features[: int(model_info.input_features_count)]
 
             response = requests.post(f"{url}/api/features", json={"features": features})
@@ -152,7 +157,7 @@ class EdgeImpulseRunnerFacade:
             return None
 
     @classmethod
-    def get_model_info(cls, url: str = None) -> EdgeImpulseModelInfo | None:
+    def get_model_info(cls, url: str | None = None) -> EdgeImpulseModelInfo | None:
         """Get model information from the Edge Impulse API.
 
         Args:
@@ -168,6 +173,9 @@ class EdgeImpulseRunnerFacade:
         http_client = HttpClient(total_retries=6)  # Initialize the HTTP client with retry logic
         try:
             response = http_client.request_with_retry(f"{url}/api/info")
+            if response is None:
+                logger.warning(f"[{cls.__name__}] No response fetching model info from {url}/api/info")
+                return None
             if response.status_code == 200:
                 logger.debug(f"[{cls.__name__}] Fetching model info from {url}/api/info -> {response.status_code} {response.json}")
                 return EdgeImpulseModelInfo(response.json())
@@ -181,7 +189,7 @@ class EdgeImpulseRunnerFacade:
             http_client.close()  # Close the HTTP client session
 
     @staticmethod
-    def parse_model_info_message(model_info: dict) -> EdgeImpulseModelInfo | None:
+    def parse_model_info_message(model_info: dict[str, Any]) -> EdgeImpulseModelInfo | None:
         """Parse Edge Impulse model definition message.
 
         Args:
@@ -192,7 +200,7 @@ class EdgeImpulseRunnerFacade:
         """
         return EdgeImpulseModelInfo(model_info)
 
-    def _extract_classification(self, item: dict | None, confidence: float = 0.0) -> dict | None:
+    def _extract_classification(self, item: dict[str, Any] | None, confidence: float = 0.0) -> dict[str, Any] | None:
         """Extract classification results from the item.
 
         Args:
@@ -210,7 +218,7 @@ class EdgeImpulseRunnerFacade:
             if class_results and "classification" in class_results:
                 class_results = class_results["classification"]
 
-                classification = []
+                classification: list[dict[str, str]] = []
                 for class_name in class_results:
                     class_confidence = float(class_results[class_name])
 
@@ -230,7 +238,7 @@ class EdgeImpulseRunnerFacade:
 
         return None
 
-    def _extract_anomaly_score(self, item: dict | None) -> float | None:
+    def _extract_anomaly_score(self, item: dict[str, Any] | None) -> float | None:
         """Extract anomaly score for anomaly detection use case.
 
         Args:
@@ -254,10 +262,7 @@ class EdgeImpulseRunnerFacade:
         infra = load_brick_compose_file(cls)
         if not infra or "services" not in infra:
             raise RuntimeError("Cannot load Brick Compose file to resolve Edge Impulse runner address.")
-        host = None
-        for k, v in infra["services"].items():
-            host = k
-            break
+        host = next(iter(infra["services"]), None)
         if not host:
             raise RuntimeError("Cannot resolve Edge Impulse runner address from Brick Compose file.")
         addr = resolve_address(host)

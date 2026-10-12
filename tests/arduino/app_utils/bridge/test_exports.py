@@ -15,7 +15,7 @@ import unittest
 from contextlib import redirect_stderr
 from unittest.mock import patch
 
-from arduino.app_utils.logger import _build_handler, _configure_library_logger
+from arduino.app_utils.logger import _build_handler, configure_library_logger
 
 
 class TestBridgeExports(unittest.TestCase):
@@ -63,7 +63,7 @@ class TestConfigureLibraryLogger(unittest.TestCase):
     def _configure_and_log(self, **kwargs):
         stderr = io.StringIO()
         with redirect_stderr(stderr):  # The handler binds the redirected stream at configuration time
-            _configure_library_logger("some.test.lib", **kwargs)
+            configure_library_logger("some.test.lib", **kwargs)
             logging.getLogger("some.test.lib.child").info("hello from lib")
         return stderr.getvalue()
 

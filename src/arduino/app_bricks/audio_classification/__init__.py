@@ -5,13 +5,20 @@
 import struct
 import wave
 from collections.abc import Callable
-from typing import BinaryIO
+from typing import BinaryIO, TypedDict
 
 from arduino.app_internal.core.audio import AudioDetector
-from arduino.app_peripherals.microphone import Microphone
+from arduino.app_peripherals.microphone import BaseMicrophone
 from arduino.app_utils import brick, Logger
 
 logger = Logger("AudioClassification")
+
+
+class AudioClassificationResult(TypedDict):
+    """A classification of an audio file: the detected class and its confidence in percent."""
+
+    class_name: str
+    confidence: float
 
 
 class AudioClassificationException(Exception):
@@ -24,11 +31,12 @@ class AudioClassificationException(Exception):
 class AudioClassification(AudioDetector):
     """AudioClassification module for detecting sounds and classifying audio using a specified model."""
 
-    def __init__(self, mic: Microphone = None, confidence: float = 0.8) -> None:
+    def __init__(self, mic: BaseMicrophone | None = None, confidence: float = 0.8) -> None:
         """Initialize the AudioClassification class.
 
         Args:
-            mic (Microphone, optional): Microphone instance used as the audio source. If None, a default Microphone will be initialized.
+            mic (BaseMicrophone, optional): Microphone used as the audio source, e.g. the one Microphone() returns.
+                If None, a default Microphone will be initialized.
             confidence (float, optional): Minimum confidence threshold (0.0–1.0) required
                 for a detection to be considered valid. Defaults to 0.8 (80%).
 
@@ -50,7 +58,7 @@ class AudioClassification(AudioDetector):
             TypeError: If `callback` is not callable.
             ValueError: If `callback` accepts any argument.
         """
-        super().on_detect(class_name, callback)
+        self._register_handler(class_name, callback)
 
     def start(self) -> None:
         """Start real-time audio classification.
@@ -68,7 +76,7 @@ class AudioClassification(AudioDetector):
         super().stop()
 
     @staticmethod
-    def classify_from_file(audio_path: str | BinaryIO, confidence: float = 0.8) -> dict | None:
+    def classify_from_file(audio_path: str | BinaryIO, confidence: float = 0.8) -> AudioClassificationResult | None:
         """Classify audio content from a WAV file.
 
         Supported sample widths:
@@ -102,7 +110,7 @@ class AudioClassification(AudioDetector):
                 frames = wf.readframes(n_frames)
 
                 # Unpack audio data
-                features = []
+                features: list[float] = []
                 if samp_width == 1:
                     # 8-bit audio (unsigned char)
                     fmt = f"{n_frames * n_channels}B"

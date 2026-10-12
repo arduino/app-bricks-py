@@ -144,6 +144,7 @@ EXPECTED_LLM_SIGNATURES = {
         ("self", _P.POSITIONAL_OR_KEYWORD, False),
         ("message", _P.POSITIONAL_OR_KEYWORD, False),
         ("images", _P.POSITIONAL_OR_KEYWORD, True),
+        ("reasoning_effort", _P.POSITIONAL_OR_KEYWORD, True),
     ],
     "chat_stream": [
         ("self", _P.POSITIONAL_OR_KEYWORD, False),

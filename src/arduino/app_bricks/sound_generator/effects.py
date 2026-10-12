@@ -199,7 +199,7 @@ class SoundEffect:
                 expanded = expanded[: len(signal)]  # taglia se serve
 
                 # Quantization
-                levels = 2**self.bit_depth
+                levels = float(2**self.bit_depth)
                 crushed = np.round(expanded * (levels / 2)) / (levels / 2)
                 crushed = np.clip(crushed, -1.0, 1.0)
                 return crushed.astype(np.float32)

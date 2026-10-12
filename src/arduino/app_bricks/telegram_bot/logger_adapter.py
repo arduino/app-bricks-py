@@ -7,7 +7,7 @@ from collections.abc import MutableMapping
 from typing import Any
 
 
-class TelegramLoggerAdapter(logging.LoggerAdapter):
+class TelegramLoggerAdapter(logging.LoggerAdapter[logging.Logger]):
     """Logger adapter that automatically adds Telegram context to log messages.
 
     This adapter prepends user ID, message ID, or chat ID to log messages,
@@ -39,7 +39,7 @@ class TelegramLoggerAdapter(logging.LoggerAdapter):
         message_id: int | None = None,
         chat_id: int | None = None,
     ) -> None:
-        extra = {}
+        extra: dict[str, int] = {}
         if user_id is not None:
             extra["user"] = user_id
         if message_id is not None:
@@ -59,13 +59,14 @@ class TelegramLoggerAdapter(logging.LoggerAdapter):
         Returns:
             Tuple of (modified_message, kwargs).
         """
-        parts = []
-        if "user" in self.extra:
-            parts.append(f"user={self.extra['user']}")
-        if "msg" in self.extra:
-            parts.append(f"msg={self.extra['msg']}")
-        if "chat" in self.extra:
-            parts.append(f"chat={self.extra['chat']}")
+        parts: list[str] = []
+        extra = self.extra or {}
+        if "user" in extra:
+            parts.append(f"user={extra['user']}")
+        if "msg" in extra:
+            parts.append(f"msg={extra['msg']}")
+        if "chat" in extra:
+            parts.append(f"chat={extra['chat']}")
 
         prefix = f"[{', '.join(parts)}] " if parts else ""
         return f"{prefix}{msg}", kwargs

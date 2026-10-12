@@ -65,7 +65,7 @@ class BPPStreamCodec:
             if len(self._buffer) < HEADER_SIZE:
                 break  # Need more data, wait for next chunk
 
-            magic, length, checksum = struct.unpack(HEADER_FORMAT, self._buffer[:HEADER_SIZE])
+            _, length, checksum = struct.unpack(HEADER_FORMAT, self._buffer[:HEADER_SIZE])
             if self._calc_header_checksum(length) != checksum:
                 del self._buffer[0]
                 continue

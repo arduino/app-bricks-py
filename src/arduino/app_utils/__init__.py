@@ -4,7 +4,7 @@
 
 from .app import *
 from .bridge import *
-from .logger import _configure_library_logger
+from .logger import configure_library_logger as _configure_library_logger
 from .audio import *
 from .brick import *
 from .errors import *

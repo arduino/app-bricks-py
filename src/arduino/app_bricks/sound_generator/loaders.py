@@ -4,8 +4,24 @@
 
 from arduino.app_utils.logger import Logger
 import re
+from typing import TypedDict
 
 logger = Logger(__name__)
+
+
+class ABCMetadata(TypedDict, total=False):
+    """The header fields of an ABC tune, plus what the parser derives from them."""
+
+    reference: str
+    title: str
+    key: str
+    default_length: str
+    tempo: str
+    meter: str
+    composer: str
+    rhythm: str
+    transpose: int
+    actual_bpm: int
 
 
 class ABCNotationLoader:
@@ -277,7 +293,7 @@ class ABCNotationLoader:
             return default_duration_in_seconds
 
     @staticmethod
-    def parse_abc_notation(abc_string: str, default_octave: int = 4) -> tuple[dict, list[tuple[str, float]]]:
+    def parse_abc_notation(abc_string: str, default_octave: int = 4) -> tuple[ABCMetadata, list[tuple[str, float]]]:
         """Parse an ABC notation string into ``(note, duration_in_seconds)`` tuples.
 
         See :class:`ABCNotationLoader` for the full list of supported ABC 2.1
@@ -292,10 +308,10 @@ class ABCNotationLoader:
                 of (note, duration) tuples.
         """
 
-        metadata = {}
+        metadata: ABCMetadata = {}
 
         lines = abc_string.split("\n")
-        music_lines = []
+        music_lines: list[str] = []
 
         # --- Parse Header Fields ---
         for line in lines:

@@ -443,6 +443,17 @@ def test_reasoning_effort_gemini25_maps_level_to_budget(make_llm):
     assert reasoning_model.thinking_level is None
 
 
+def test_gemini_supports_thinking_level_version_detection():
+    supports = CloudLLM._gemini_supports_thinking_level
+
+    assert supports("gemini-3.6-flash") is True
+    assert supports("models/gemini-3-pro") is True
+    assert supports("Gemini-3.5-Flash") is True
+    assert supports("gemini-2.5-flash") is False
+    assert supports("gemini-2.0-flash") is False
+    assert supports("") is False
+
+
 def test_reasoning_effort_gemini_int_budget(make_llm):
     from langchain_google_genai import ChatGoogleGenerativeAI
 

@@ -10,6 +10,7 @@ import socket
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 from collections.abc import Callable
+from typing import Any
 
 from websockets.sync.client import connect
 from websockets.sync.connection import Connection
@@ -19,6 +20,7 @@ from arduino.app_peripherals.camera import Camera, BaseCamera
 from arduino.app_internal.core.module import load_brick_compose_file, resolve_address
 from arduino.app_internal.core.ei import brick_model_requires_softmax, compute_softmax_over_ei_classification
 from arduino.app_internal.core import EdgeImpulseRunnerFacade
+from arduino.app_internal.core.ei import EdgeImpulseModelInfo
 from arduino.app_utils.image.adjustments import compress_to_jpeg
 from arduino.app_utils import brick, Logger
 
@@ -54,12 +56,13 @@ class VideoImageClassification:
         self._camera = camera if camera else Camera()
 
         self._confidence = confidence
+        self._model_info: EdgeImpulseModelInfo | None = None  # Received from the model runner on connection
         self._debounce_sec = debounce_sec
-        self._last_detected = {}
+        self._last_detected: dict[str, float] = {}
 
-        self._handlers = {}  # Dictionary to hold handlers for different actions
+        self._handlers: dict[str, Callable[..., None]] = {}  # Handlers by label, invoked according to their signature
         self._handlers_lock = threading.Lock()
-        self._detection_locks = {}  # Per-detection locks for fine-grained concurrency control
+        self._detection_locks: dict[str, threading.Lock] = {}  # Per-detection locks for fine-grained concurrency control
         self._detection_locks_lock = threading.Lock()  # Lock to protect _detection_locks dict
 
         self._executor = ThreadPoolExecutor(max_workers=5, thread_name_prefix="VideoImageClassificationHandler")
@@ -69,7 +72,7 @@ class VideoImageClassification:
         infra = load_brick_compose_file(self.__class__)
         if infra is None or "services" not in infra:
             raise RuntimeError("Infrastructure configuration could not be loaded.")
-        for k, v in infra["services"].items():
+        for k in infra["services"]:
             self._host = k
             break  # Only one service is expected
 
@@ -84,14 +87,14 @@ class VideoImageClassification:
         self._uri = f"ws://{self._host}:4912"
         logger.info(f"[{self.__class__.__name__}] Host: {self._host} - URL: {self._uri}")
 
-    def on_detect_all(self, callback: Callable[[dict], None]) -> None:
+    def on_detect_all(self, callback: Callable[[dict[str, float]], None]) -> None:
         """Register a callback invoked for **every classification event**.
 
         This callback is useful if you want to process all classified labels in a single
         place, or be notified about any classification regardless of its type.
 
         Args:
-            callback (Callable[[dict], None]):
+            callback (Callable[[dict[str, float]], None]):
                 A function that accepts **exactly one argument**: a dictionary of
                 classifications above the confidence threshold, in the form
                 ``{"label": confidence, ...}``.
@@ -251,12 +254,12 @@ class VideoImageClassification:
             return
 
         elif jmsg.get("type") == "classification":
-            result = jmsg.get("result", {})
+            result: dict[str, Any] | None = jmsg.get("result")
             if not isinstance(result, dict):
                 return
 
-            det_classifications = {}
-            classifications = result.get("classification", [])
+            det_classifications: dict[str, float] = {}
+            classifications: dict[str, Any] = result.get("classification", {})
             if classifications:
                 if self.apply_softmax:
                     # Softmax over the full logit vector; top_k just trims the returned classes.
@@ -290,7 +293,7 @@ class VideoImageClassification:
                 self._detection_locks[classification] = threading.Lock()
             return self._detection_locks[classification]
 
-    def _execute_handler(self, classification: str, classifications: dict | None = None) -> None:
+    def _execute_handler(self, classification: str, classifications: dict[str, float] | None = None) -> None:
         """Execute the handler for the detected object if it exists.
 
         Args:
@@ -388,18 +391,22 @@ class VideoImageClassification:
             TypeError: If the value is not a number.
             RuntimeError: If the model information is not available or does not support threshold override.
         """
-        if not value or not isinstance(value, (int, float)):
-            raise TypeError("Invalid types for value.")
+        match value:
+            case float() | int() if value:
+                pass
+            case _:
+                raise TypeError("Invalid types for value.")
 
-        if getattr(self, "_model_info", None) is None:
+        model_info = self._model_info
+        if model_info is None:
             logger.warning("Model information is not available. Cannot override threshold.")
             return  # Model info is not available, cannot override threshold
 
-        if self._model_info.thresholds is None or len(self._model_info.thresholds) == 0:
+        if model_info.thresholds is None or len(model_info.thresholds) == 0:
             raise RuntimeError("Model information is not available or does not support threshold override.")
 
         # Get first threshold and extract id. Then override it with the new confidence value.
-        th = self._model_info.thresholds[0]
+        th = model_info.thresholds[0]
         id = th["id"]
         message = {"type": "threshold-override", "id": id, "key": "min_score", "value": value}
 

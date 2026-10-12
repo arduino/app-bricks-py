@@ -42,44 +42,36 @@ def mock_load_client(monkeypatch: pytest.MonkeyPatch):
             self.connected = False
             self.connected_to = None
 
-        def publish(self, msg, topic):
-            if msg == "" or msg == {} or msg is None:
-                return None
-            if isinstance(msg, dict):
-                msg = json.dumps(msg)
-            token = MagicMock()
-            token.topic = topic
-            token.message = msg
-            self.published.append((topic, msg))
-            return token
+        def publish(self, topic, payload):
+            self.published.append((topic, payload))
+            return MagicMock(rc=mqtt.MQTT_ERR_SUCCESS)
 
         def subscribe(self, topic):
             self.subscribed_to.append(topic)
             return (mqtt.MQTT_ERR_SUCCESS, 1)  # Simulate success with dummy mid
 
-    monkeypatch.setattr("arduino.app_bricks.mqtt._load_client", lambda username, password, client_id, subscribe_topic=None: FakeClient())
+    monkeypatch.setattr("arduino.app_bricks.mqtt._load_client", lambda client_id, username, password, topics=None: FakeClient())
 
 
 def test_mqtt_publish():
-    """Test MQTT client publishes messages correctly."""
+    """Test MQTT publishes strings as is, dicts as JSON and skips empty messages."""
     client = MQTT("127.0.0.1", 1883, "user", "pass")
-    fake_client = client.client
-    # write a plain string
-    token1 = fake_client.publish("hello", topic="test/topic")
-    assert token1.topic == "test/topic"
-    assert token1.message == "hello"
-    # write a dict → serialized JSON
-    token2 = fake_client.publish({"a": 1}, topic="test/topic")
-    assert token2.topic == "test/topic"
-    assert json.loads(token2.message) == {"a": 1}
-    # empty message or {} or None → returns None
-    assert fake_client.publish("", topic="test/topic") is None
-    assert fake_client.publish({}, topic="test/topic") is None
-    assert fake_client.publish(None, topic="test/topic") is None
-    # stop should call loop_stop and disconnect on the fake client
-    client.stop()
-    assert fake_client.started is False
-    assert fake_client.connected is False
+    client.publish("test/topic", "hello")
+    client.publish("test/topic", {"a": 1})
+    client.publish("test/topic", "")
+    client.publish("test/topic", {})
+    topics = [topic for topic, _ in client.client.published]
+    payloads = [payload for _, payload in client.client.published]
+    assert topics == ["test/topic", "test/topic"]
+    assert payloads[0] == "hello"
+    assert json.loads(payloads[1]) == {"a": 1}
+
+
+def test_mqtt_publish_rejects_empty_topic():
+    """Test MQTT refuses to publish without a topic."""
+    client = MQTT("127.0.0.1", 1883, "user", "pass")
+    with pytest.raises(ValueError, match="Topic must be a non-empty string"):
+        client.publish("", "hello")
 
 
 def test_mqtt_subscribe():

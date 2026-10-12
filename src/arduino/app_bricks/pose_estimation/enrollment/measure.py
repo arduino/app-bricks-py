@@ -106,25 +106,43 @@ class Enrollment:
 
 
 @dataclass(frozen=True)
-class _Measure:
+class Measure:
+    """How well one pose forms among the database rows.
+
+    Attributes:
+        own_shares (np.ndarray): Own vote share of each photo, its look-alikes held out.
+        own_neighbours (float): Mean own rows among the k nearest of each photo.
+        n0 (float): Photos at which own and foreign neighbours would balance.
+    """
+
     own_shares: np.ndarray
     own_neighbours: float
     n0: float
 
     @property
     def recall(self) -> float:
+        """Share of the photos that fire at the reference threshold."""
         return float((self.own_shares >= REFERENCE_THRESHOLD).mean())
 
 
 @dataclass(frozen=True)
-class _LearningCurve:
+class LearningCurve:
+    """Recall and n0 of one pose at growing sizes of its bucket, and the verdict on how n0 moves.
+
+    Attributes:
+        rows (tuple[int, ...]): Photos drawn at each size.
+        recalls (tuple[float, ...]): Recall at each size.
+        n0s (tuple[float, ...]): n0 at each size.
+        verdict (Literal["good", "mixed", "unclear"]): Whether more photos like these keep helping.
+    """
+
     rows: tuple[int, ...]
     recalls: tuple[float, ...]
     n0s: tuple[float, ...]
     verdict: Literal["good", "mixed", "unclear"]
 
 
-def _nearest(queries: np.ndarray, db: np.ndarray, k: int, skip: list[np.ndarray] | None = None) -> tuple[np.ndarray, np.ndarray]:
+def nearest_rows(queries: np.ndarray, db: np.ndarray, k: int, skip: list[np.ndarray] | None = None) -> tuple[np.ndarray, np.ndarray]:
     """Indices and distances of the k nearest database rows for each query, both already in the metric space.
 
     skip lists, per query, the database rows to leave out (the row itself, its group).
@@ -146,7 +164,7 @@ def _nearest(queries: np.ndarray, db: np.ndarray, k: int, skip: list[np.ndarray]
     return idx, dist
 
 
-def _shares(idx: np.ndarray, dist: np.ndarray, labels: np.ndarray, reject_distance: float, classes: tuple[str, ...]) -> np.ndarray:
+def vote_shares(idx: np.ndarray, dist: np.ndarray, labels: np.ndarray, reject_distance: float, classes: tuple[str, ...]) -> np.ndarray:
     """Distance-weighted vote share of each class, per query; all zeros for rejected queries."""
     weights = 1.0 / np.maximum(dist, 1e-6)
     weights[np.median(dist, axis=1) > reject_distance] = 0.0
@@ -180,23 +198,23 @@ def group_photos(alike: np.ndarray) -> np.ndarray:
     return group
 
 
-def _measure(db: np.ndarray, labels: np.ndarray, own_idx: np.ndarray, alike: np.ndarray, k: int, reject: float, cls: str) -> _Measure:
+def measure_pose(db: np.ndarray, labels: np.ndarray, own_idx: np.ndarray, alike: np.ndarray, k: int, reject: float, cls: str) -> Measure:
     """Own vote share of each row of a pose, with the rows alike to it held out of the database."""
     skip = [own_idx[alike[i]] for i in range(len(own_idx))]
-    idx, dist = _nearest(db[own_idx], db, k, skip)
-    shares = _shares(idx, dist, labels, reject, (cls,))[:, 0]
+    idx, dist = nearest_rows(db[own_idx], db, k, skip)
+    shares = vote_shares(idx, dist, labels, reject, (cls,))[:, 0]
     own = float(((labels[idx] == cls) & np.isfinite(dist)).sum(axis=1).mean())
     n0 = len(own_idx) * (k - own) / max(own, 1e-9)
-    return _Measure(own_shares=shares, own_neighbours=own, n0=n0)
+    return Measure(own_shares=shares, own_neighbours=own, n0=n0)
 
 
-def _learning_curve(
+def learning_curve(
     db: np.ndarray, labels: np.ndarray, own_idx: np.ndarray, groups: np.ndarray, alike: np.ndarray, k: int, reject: float, cls: str
-) -> _LearningCurve:
+) -> LearningCurve:
     """n0 and recall at five sizes of the bucket (whole groups drawn), and the verdict on how n0 moves."""
     own = db[own_idx].astype(np.float64)
     foreign = db[labels != cls].astype(np.float64)
-    _, fdist = _nearest(own, foreign, k)
+    _, fdist = nearest_rows(own, foreign, k)
     own_sq = np.sum(own**2, axis=1)
     d_own = np.sqrt(np.maximum(own_sq[:, None] + own_sq[None, :] - 2.0 * own @ own.T, 0.0))
     units = np.unique(groups)
@@ -231,10 +249,10 @@ def _learning_curve(
     spread = float(np.sum((np.asarray(xs) - np.mean(xs)) ** 2))
     se = float(np.sqrt(np.sum(residuals**2) / max(len(xs) - 2, 1) / max(spread, 1e-12)))
     verdict = "good" if slope <= 0 else "mixed" if slope > 2 * se else "unclear"
-    return _LearningCurve(rows=tuple(rows), recalls=tuple(recalls), n0s=tuple(n0s), verdict=verdict)
+    return LearningCurve(rows=tuple(rows), recalls=tuple(recalls), n0s=tuple(n0s), verdict=verdict)
 
 
-def _operating_point(own_shares: np.ndarray, other_shares: np.ndarray | None, spec: PoseSpec) -> tuple[float, float, str]:
+def operating_point(own_shares: np.ndarray, other_shares: np.ndarray | None, spec: PoseSpec) -> tuple[float, float, str]:
     """Enter and exit thresholds of an accepted pose, and the note printed next to them."""
     if spec.enter is not None and spec.exit is not None:
         return spec.enter, spec.exit, "set by you"
@@ -251,7 +269,7 @@ def _operating_point(own_shares: np.ndarray, other_shares: np.ndarray | None, sp
     return enter, exit_, note
 
 
-def _rows_to_keep(
+def rows_to_keep(
     shipped_rows: np.ndarray,
     shipped_labels: np.ndarray,
     custom_rows: np.ndarray,
@@ -266,11 +284,11 @@ def _rows_to_keep(
         return np.ones(len(shipped_rows), bool)
     probe = np.vstack([shipped_rows, custom_rows]) / scale
     probe_labels = np.concatenate([shipped_labels, custom_labels])
-    idx, dist = _nearest(probe[: len(shipped_rows)], probe, k, [np.array([i]) for i in range(len(shipped_rows))])
-    return _shares(idx, dist, probe_labels, reject, custom_names).sum(axis=1) < CLEANING_SHARE
+    idx, dist = nearest_rows(probe[: len(shipped_rows)], probe, k, [np.array([i]) for i in range(len(shipped_rows))])
+    return vote_shares(idx, dist, probe_labels, reject, custom_names).sum(axis=1) < CLEANING_SHARE
 
 
-def _confusion_table(
+def confusion_table(
     db: np.ndarray, labels: np.ndarray, k: int, reject: float, poses: tuple[str, ...], alike: dict[str, np.ndarray]
 ) -> dict[str, dict[str, float]]:
     """For each pose (rows), the share of its rows on which each pose (columns) fires at the reference threshold.
@@ -285,7 +303,7 @@ def _confusion_table(
             skip = [row_idx[alike[name][i]] for i in range(len(row_idx))]
         else:
             skip = [np.array([i]) for i in row_idx]
-        shares = _shares(*_nearest(db[row_idx], db, k, skip), labels, reject, poses)
+        shares = vote_shares(*nearest_rows(db[row_idx], db, k, skip), labels, reject, poses)
         fires = {column: float((shares[:, j] >= REFERENCE_THRESHOLD).mean()) for j, column in enumerate(poses)}
         fires["none"] = max(0.0, 1.0 - sum(fires.values()))
         table[name] = fires

@@ -76,7 +76,7 @@ def _build_payload(scan_result: dict[str, Any], street_address: bool) -> dict[st
         raise RuntimeError("No access points found for location request.")
 
     scan_age_ms = int(scan_result.get("age_ms", 0))
-    wifi_aps = []
+    wifi_aps: list[dict[str, Any]] = []
     for ap in access_points:
         signal = ap.get("signal")
         entry = {
@@ -92,7 +92,7 @@ def _build_payload(scan_result: dict[str, Any], street_address: bool) -> dict[st
             entry["connected"] = True
         wifi_aps.append(entry)
 
-    payload = {"considerIp": "false", "includeBeaconCounts": "true", "wifiAccessPoints": wifi_aps}
+    payload: dict[str, Any] = {"considerIp": "false", "includeBeaconCounts": "true", "wifiAccessPoints": wifi_aps}
     if street_address:
         payload["streetAddressLookupType"] = "full"
     return payload
