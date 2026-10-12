@@ -14,6 +14,11 @@ from arduino.app_utils import Logger, SlidingWindowBuffer, brick
 
 logger = Logger("AnomalyDetection")
 
+# Bounded wait on the sensor window: pull() returns an empty window on timeout, the loop returns and
+# the worker checks whether the brick is still running before pulling again. Without it stop() leaves
+# the loop waiting for a window that never comes, and the worker thread never terminates.
+_WINDOW_PULL_TIMEOUT_S = 0.1
+
 
 class AnomalyClassificationCallback(Protocol):
     """Anomaly callback that also receives the classification, None when the model has no classification head."""
@@ -169,7 +174,7 @@ class VibrationAnomalyDetection(EdgeImpulseRunnerFacade):
               to avoid tight loops.
         """
         try:
-            features = self._buffer.pull()
+            features = self._buffer.pull(timeout=_WINDOW_PULL_TIMEOUT_S)
             if len(features) == 0:
                 return
 

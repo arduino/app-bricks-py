@@ -239,3 +239,19 @@ def test_classify_success_with_more_arguments(app_instance: AppController, monke
     assert "snake" in all_classification
     assert "wave" in all_classification
     assert float(all_classification["updown"]) == 80.0
+
+
+def test_stop_terminates_the_detection_loop_waiting_for_a_window(app_instance: AppController):
+    """The loop waits for a full sensor window: stopping the brick before one arrives must still end its worker thread."""
+    MotionDetection()
+
+    app_thread = threading.Thread(target=app_instance.run, daemon=True)
+    app_thread.start()
+    time.sleep(0.1)
+    worker = next(t for t in threading.enumerate() if t.name == "MotionDetection._detection_loop")
+
+    app_instance._stop_all_bricks()
+    app_thread.join(timeout=1)
+
+    worker.join(timeout=1)
+    assert not worker.is_alive()
