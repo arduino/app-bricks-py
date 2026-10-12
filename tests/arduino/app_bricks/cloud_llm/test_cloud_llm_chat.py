@@ -429,6 +429,39 @@ def test_chat_next_turn_resends_the_recorded_tool_exchange(make_llm, fake_model)
     ]
 
 
+def test_chat_keeps_anthropic_thinking_within_the_turn_but_not_in_history(make_llm, fake_model):
+    # Anthropic needs the thinking block back while the tool loop of its turn runs, but binds
+    # it to the conversation: once the memory window moves it would be rejected on replay.
+    @tool
+    def get_weather(city: str) -> str:
+        """Return the weather for a city."""
+        return f"sunny in {city}"
+
+    thinking = {"type": "thinking", "thinking": "", "signature": "sig-1"}
+    tool_use = {"type": "tool_use", "id": "call-1", "name": "get_weather", "input": {"city": "Turin"}}
+    fake_model.queue_invoke(
+        AIMessage(
+            content=[thinking, tool_use],
+            tool_calls=[{"name": "get_weather", "args": {"city": "Turin"}, "id": "call-1", "type": "tool_call"}],
+            response_metadata={"model_provider": "anthropic"},
+        ),
+        AIMessage(content=[thinking, {"type": "text", "text": "It's sunny in Turin."}], response_metadata={"model_provider": "anthropic"}),
+        AIMessage(content="You're welcome."),
+    )
+    llm = make_llm(tools=[get_weather])
+
+    assert llm.chat("weather in Turin?") == "It's sunny in Turin."
+    llm.chat("thanks")
+
+    # Same turn: the tool-call message goes back with its thinking block.
+    assert fake_model.invoke_inputs[1][1].content == [thinking, tool_use]
+    # Next turn: the history replays both assistant messages without it.
+    next_turn = fake_model.invoke_inputs[2]
+    assert next_turn[1].content == [tool_use]
+    assert [tc["id"] for tc in next_turn[1].tool_calls] == ["call-1"]
+    assert next_turn[3].content == [{"type": "text", "text": "It's sunny in Turin."}]
+
+
 def test_chat_raises_when_tool_loop_limit_exceeded(make_llm, fake_model):
     @tool
     def loop_tool(x: int) -> str:
