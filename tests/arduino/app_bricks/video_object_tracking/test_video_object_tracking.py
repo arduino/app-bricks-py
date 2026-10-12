@@ -22,6 +22,7 @@ from arduino.app_internal.ei_inference import Box, Result
 TIMEOUT = 3.0  # seconds to wait for a callback
 TRACKER = "ootb/ei/tracker"  # the name of the configured model on the service
 RECORDED_WALK = Path(__file__).parent / "data" / "walk_640x480.json"
+CLOCK_START_NS = time.monotonic_ns()  # the capture clock of the replayed results starts here
 # The threshold blocks of a tracking model, as the service reports them
 DETECTION_BLOCK = {"id": 27, "type": "object_detection", "min_score": 0.2}
 TRACKING_BLOCK = {"id": 28, "type": "object_tracking", "max_age": 1, "min_hits": 3, "iou_threshold": 0.3}
@@ -32,14 +33,17 @@ def _track(label: str = "person", object_id: int = 1, x: int = 0, y: int = 0, wi
     return {"label": label, "score": value, "x": x, "y": y, "w": width, "h": height, "id": object_id}
 
 
-def _result(tracks: list[dict], seq: int = 1) -> Result:
-    return Result(model=TRACKER, seq=seq, ts_ns=time.monotonic_ns(), source_size=(640, 480), tracks=[Box(**track) for track in tracks])
+def _result(tracks: list[dict], seq: int = 1, t: float = 0.0) -> Result:
+    """The result of a frame captured `t` seconds after the clock of the replays started."""
+    return Result(model=TRACKER, seq=seq, ts_ns=CLOCK_START_NS + int(t * 1e9), source_size=(640, 480), tracks=[Box(**track) for track in tracks])
 
 
-def _replay(tracker: VideoObjectTracking, frames: list[list[dict]]) -> None:
-    """Feed the brick the results of consecutive frames, as its receiver does."""
-    for seq, tracks in enumerate(frames, 1):
-        tracker._process_result(_result(tracks, seq))
+def _replay(tracker: VideoObjectTracking, frames: list[list[dict]], times: list[float] | None = None, start: float = 0.0, step: float = 0.1) -> None:
+    """Feed the brick the results of consecutive frames, as its receiver does, each captured at its instant in `times`
+    or, without them, every `step` seconds from `start`, a 10 fps camera."""
+    times = [start + i * step for i in range(len(frames))] if times is None else times
+    for seq, (tracks, t) in enumerate(zip(frames, times, strict=True), 1):
+        tracker._process_result(_result(tracks, seq, t))
 
 
 def _walk(points: list[tuple[int, int]], label: str = "person", object_id: int = 1, size: tuple[int, int] = (80, 200)) -> list[list[dict]]:
@@ -340,10 +344,13 @@ def test_a_live_track_keeps_its_position_whatever_the_crowd(tracker):
     assert tracker.get_unique_objects_count() == {"person": 201}, "the object back from the gap is not counted again"
 
 
-def test_an_id_the_tracker_gave_up_is_forgotten(tracker):
-    _replay(tracker, [[_track(object_id=i)] for i in range(500)] + [[], [], [], []])
+def test_an_id_not_reported_for_a_second_is_forgotten(tracker):
+    _replay(tracker, [[_track(object_id=i)] for i in range(500)] + [[]] * 10)
+    assert tracker._recent_objects == {499: (40, 100)}, "within a second the last id is still kept"
 
-    assert tracker._recent_objects == {} and tracker._last_seen == {}, "keep_grace is 3: after 4 results nothing is kept"
+    _replay(tracker, [[]], start=51.0)
+
+    assert tracker._recent_objects == {} and tracker._last_seen == {}
 
 
 # ---------------------------------------------------------------- area
@@ -382,12 +389,12 @@ def test_an_object_leaving_the_area_exits_it(tracker):
     assert tracker.get_objects_in_area() == {}
 
 
-def test_an_object_disappearing_inside_exits_once_the_tracker_gives_it_up(tracker):
+def test_an_object_disappearing_inside_exits_after_a_second_unseen(tracker):
     tracker.set_rectangular_area(*AREA)
-    _replay(tracker, [[_at(300, 300)], [], [], []])
-    assert tracker.get_objects_in_area() == {"person": 1}, "within keep_grace, 3, the tracker may still bring it back"
+    _replay(tracker, [[_at(300, 300)]] + [[]] * 10)
+    assert tracker.get_objects_in_area() == {"person": 1}, "within a second the tracker may still bring it back"
 
-    _replay(tracker, [[]])
+    _replay(tracker, [[]], start=1.1)
 
     assert tracker.get_objects_in_area() == {}
     assert tracker.get_area_counts() == {"person": {"entered": 1, "exited": 1}}

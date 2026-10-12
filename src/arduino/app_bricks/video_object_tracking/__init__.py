@@ -29,6 +29,7 @@ STARTUP_TIMEOUT = 10.0  # seconds the constructor waits for the service to open 
 CENTROID_MODEL_TYPE = "constrained_object_detection"  # FOMO reports centroids, matched by distance instead of overlap
 TRACKING_BLOCK = "object_tracking"  # the threshold block holding the tracker knobs
 MAX_AREA_POINTS = 100  # every side of the area is checked against every other one for crossings
+OBJECT_MEMORY_SEC = 1.0  # seconds an object stays known after its last report: the tracker leaves a track it still follows out of a few results
 
 type LineCrossingCallback = Callable[[dict[str, Any]], None]
 """Callback accepted by `on_line_crossing`: one dict argument, `{"label": str, "object_id": int, "direction": str}`."""
@@ -105,8 +106,7 @@ class VideoObjectTracking(VideoInference):
         self._counter_lock = threading.RLock()
         self._object_counters: Counter[str] = Counter()  # distinct objects seen, per label
         self._recent_objects: dict[int, tuple[int, int]] = {}  # last seen position (x, y) of the ids the tracker still follows
-        self._last_seen: dict[int, int] = {}  # number of the result that last reported each of those ids
-        self._results = 0  # results processed, to tell when the tracker has given an id up
+        self._last_seen: dict[int, float] = {}  # instant of the last result that reported each of those ids, on the frame clock
         self._line_coordinates: tuple[int, int, int, int] | None = None  # x1, y1, x2, y2 of the crossing line
         self._line_visible = True
         self._crossing_line_object: dict[str, Counter[str]] = {}  # crossings of the line, per label and direction
@@ -115,7 +115,7 @@ class VideoObjectTracking(VideoInference):
         self._min_movement_threshold = min_movement_threshold
         self._area: np.ndarray | None = None  # the vertices of the watched area, as OpenCV takes a polygon
         self._area_visible = True
-        self._area_present: dict[int, tuple[str, int]] = {}  # objects inside the area: id -> (label, results since last seen)
+        self._area_present: dict[int, tuple[str, float]] = {}  # objects inside the area: id -> (label, instant last seen inside)
         self._area_counts: dict[str, Counter[str]] = {}  # entries and exits of the area, per label
         self._area_enter_handler: AreaCallback | None = None
         self._area_exit_handler: AreaCallback | None = None
@@ -242,11 +242,12 @@ class VideoObjectTracking(VideoInference):
         if handler is not None:
             self._submit_event(handler, {"label": detected_object_label, "object_id": object_id, "direction": direction})
 
-    def _record_area(self, tracked: list[tuple[str, int, int, int]]) -> None:
-        """Follow the objects of one result in and out of the area, (label, id, x, y) each at its reference point.
+    def _record_area(self, tracked: list[tuple[str, int, int, int]], now: float) -> None:
+        """Follow the objects of one result in and out of the area, (label, id, x, y) each at its reference point, `now`
+        being the instant of the result on the frame clock.
 
         An object enters when it is seen inside and is not among the ones present, and leaves when it is seen more
-        than `min_movement_threshold` pixels outside or has been missing for more results than `keep_grace`.
+        than `min_movement_threshold` pixels outside or has not been seen for more than OBJECT_MEMORY_SEC seconds.
         """
         events: list[tuple[str, str, int]] = []
         with self._counter_lock:
@@ -261,18 +262,14 @@ class VideoObjectTracking(VideoInference):
                         del self._area_present[object_id]
                         events.append(("exited", label, object_id))
                     else:
-                        self._area_present[object_id] = (label, 0)
+                        self._area_present[object_id] = (label, now)
                 elif distance >= 0:
-                    self._area_present[object_id] = (label, 0)
+                    self._area_present[object_id] = (label, now)
                     events.append(("entered", label, object_id))
-            for object_id, (label, missing) in list(self._area_present.items()):
-                if object_id in seen:
-                    continue
-                if missing + 1 > self._tracker["max_age"]:
+            for object_id, (label, last_seen) in list(self._area_present.items()):
+                if object_id not in seen and now - last_seen > OBJECT_MEMORY_SEC:
                     del self._area_present[object_id]
                     events.append(("exited", label, object_id))
-                else:
-                    self._area_present[object_id] = (label, missing + 1)
             for kind, label, _ in events:
                 self._area_counts.setdefault(label, Counter())[kind] += 1
             handlers = {"entered": self._area_enter_handler, "exited": self._area_exit_handler}
@@ -315,15 +312,15 @@ class VideoObjectTracking(VideoInference):
                 self._object_directions[object_id].append(direction)
                 logger.debug(f"Object ID {object_id} moved {direction} from ({last_x}, {last_y}) to ({x}, {y})")
 
-    def _expire_objects(self, seen: set[int]) -> None:
-        """Forget the ids missing from more results than `keep_grace`: the tracker has given them up and never
-        uses them again, while the ids it still follows keep their position and their place in the counts."""
+    def _expire_objects(self, seen: set[int], now: float) -> None:
+        """Forget the ids not reported for more than OBJECT_MEMORY_SEC seconds, `now` being the instant of the result
+        on the frame clock: the tracker leaves a track it still follows out of a few results, and a second outlasts
+        those gaps, while an id reported again after longer counts as a new object."""
         with self._counter_lock:
-            self._results += 1
             for object_id in seen:
-                self._last_seen[object_id] = self._results
+                self._last_seen[object_id] = now
             for object_id, last_seen in list(self._last_seen.items()):
-                if self._results - last_seen > self._tracker["max_age"]:
+                if now - last_seen > OBJECT_MEMORY_SEC:
                     del self._last_seen[object_id]
                     self._recent_objects.pop(object_id, None)
 
@@ -374,7 +371,7 @@ class VideoObjectTracking(VideoInference):
 
         Returns:
             dict: `{label: {"entered": count, "exited": count}}`; an object that disappears inside the area counts
-                as exited once the tracker has lost it. Only the events seen appear.
+                as exited once it has not been seen for a second. Only the events seen appear.
         """
         with self._counter_lock:
             return {label: dict(counts) for label, counts in self._area_counts.items()}
@@ -560,6 +557,7 @@ class VideoObjectTracking(VideoInference):
             logger.warning(f"Inference failed ({result.error_code}): {result.error}")
             return
 
+        now = result.ts_ns / 1e9
         tracked = [(track, track.id) for track in result.tracks if track.id is not None and self._is_label_enabled(track.label)]
         detections: dict[str, list[dict[str, Any]]] = {}
         centres: list[tuple[str, int, int, int]] = []
@@ -570,8 +568,8 @@ class VideoObjectTracking(VideoInference):
             self._record_object(track.label, object_id, (x1 + x2) // 2, (y1 + y2) // 2)
             centres.append((track.label, object_id, (x1 + x2) // 2, (y1 + y2) // 2))
             self._execute_handler(key=track.label, payload=details)
-        self._record_area(centres)
-        self._expire_objects({object_id for _, object_id in tracked})
+        self._record_area(centres, now)
+        self._expire_objects({object_id for _, object_id in tracked}, now)
         # The video shows every tracked object under its label and id
         self._boxes.update(
             [replace(track, label=f"{track.label} #{object_id}") for track, object_id in tracked], (time.monotonic_ns() - result.ts_ns) / 1e9
