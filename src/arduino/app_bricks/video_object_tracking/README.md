@@ -109,13 +109,15 @@ The constructor also accepts a `camera` parameter (`BaseCamera`) to use a specif
 
 `get_unique_objects_count()` returns a `{label: count}` dictionary of how many **distinct** objects have been seen since the last reset. An object is counted once, the first time its ID appears, so a person standing in front of the camera for a minute is counted once and not once per frame.
 
+The tracker in the model opens a new track, with a new ID, when it loses an object for a few frames or when the model changes the label it gives it, a bottle seen as a vase for a moment. The Brick lets such a track continue the object: a new track whose box covers the last box of an object no track represents any more, seen less than a second before, by at least half of the smaller box, the two boxes within a factor of two in area, carries on the number and the label of that object, the ones of its first track. Only the labels in `labels_to_track` take part, so with the person left out the objects a person holds never merge into the person. That second is the memory the Brick keeps of a missing object, the same one that keeps it inside the area and in the counts: an object out of sight for longer is a new object when it comes back. `keep_identities=False` turns this off and reports the tracks as the tracker numbers them.
+
 ```python
 tracker = VideoObjectTracking(labels_to_track=["car", "truck"])
 # ...
 print(tracker.get_unique_objects_count())  # {"car": 12, "truck": 3}
 ```
 
-`reset_counters()` clears the unique-object counts, the line-crossing counts and the last-seen positions, so counting starts from scratch. The same identifiers are also forgotten whenever the brick reconnects to the inference service, because the tracker numbers its tracks from zero on every run.
+`reset_counters()` clears the unique-object counts, the line-crossing counts and the last-seen positions, so counting starts from scratch; the identities are untouched, an object in view keeps its number through a reset. The same identifiers are also forgotten whenever the brick reconnects to the inference service, because the tracker numbers its tracks from zero on every run.
 
 ## Counting line crossings
 
@@ -199,6 +201,7 @@ The constructor accepts the tracker knobs below, and each one has a matching `ov
 | `debounce_sec` | `0.0` | Minimum seconds between repeated callback invocations for the same label. |
 | `labels_to_track` | `None` | Labels included in the counters. `None` means all labels. |
 | `min_movement_threshold` | `10` | Minimum displacement in pixels for a direction change. |
+| `keep_identities` | `True` | Keep the identity of an object across the tracks the tracker opens on it, after a short loss or a change of label. |
 
 The knobs are set on the model as soon as it is opened and again on every reconnection. `iou_threshold` and `euclidean_distance_threshold` are alternatives: which one the model uses depends on its type, and each `override_*` method is a no-op on a model of the other type. An `override_*` method raises `RuntimeError` when the tracking block of the model has no such knob.
 
