@@ -20,6 +20,7 @@ from arduino.app_peripherals.camera import BaseCamera
 from arduino.app_utils import AppError, Logger, brick
 
 from .drawing import AREA_COLOR, LINE_COLOR, draw_area, draw_crossing_line
+from .identities import OVERLAP, SIZE_RATIO, ObjectIdentities
 
 logger = Logger("VideoObjectTracking")
 
@@ -29,7 +30,7 @@ STARTUP_TIMEOUT = 10.0  # seconds the constructor waits for the service to open 
 CENTROID_MODEL_TYPE = "constrained_object_detection"  # FOMO reports centroids, matched by distance instead of overlap
 TRACKING_BLOCK = "object_tracking"  # the threshold block holding the tracker knobs
 MAX_AREA_POINTS = 100  # every side of the area is checked against every other one for crossings
-OBJECT_MEMORY_SEC = 1.0  # seconds an object stays known after its last report: the tracker leaves a track it still follows out of a few results
+OBJECT_MEMORY_SEC = 1.0  # seconds an object missing from the results stays known, in the area and in the counts, and can be continued by a new track
 
 type LineCrossingCallback = Callable[[dict[str, Any]], None]
 """Callback accepted by `on_line_crossing`: one dict argument, `{"label": str, "object_id": int, "direction": str}`."""
@@ -48,7 +49,7 @@ class VideoObjectTracking(VideoInference):
     This brick:
       - Streams the camera frames to the Edge Impulse inference service, as VideoObjectDetection does.
       - Receives the objects the model tracks at the confidence of the brick, each with an identity that stays
-        the same while it is in view.
+        the same while it is in view, through a short loss or a change of label.
       - Counts the distinct objects per label and the ones crossing a line, and follows their direction.
       - Invokes per-label callbacks and/or a catch-all callback with the tracked objects.
       - Streams the video with the tracked boxes, labelled with their identities, on port 4912.
@@ -67,6 +68,7 @@ class VideoObjectTracking(VideoInference):
         debounce_sec: float = 0.0,
         labels_to_track: list[str] | None = None,
         min_movement_threshold: int = 10,
+        keep_identities: bool = True,
         stream_port: int | None = STREAM_PORT,
     ) -> None:
         """Initialize the VideoObjectTracking class.
@@ -83,6 +85,9 @@ class VideoObjectTracking(VideoInference):
             labels_to_track (list[str], optional): List of labels to track. If None, all labels are tracked.
             min_movement_threshold(int): Minimum distance in pixels to consider a movement significant for
                 direction tracking. Default is 10.
+            keep_identities (bool): Keep the identity of an object across the tracks the tracker opens on it, after
+                a short loss or a change of label: the object keeps the number and the label of its first track.
+                Default is True; False reports the tracks as the tracker numbers them.
             stream_port (int | None): Port of the MJPEG stream of the video with the tracked boxes, the one
                 external viewers embed. Default is 4912, None disables the stream.
 
@@ -94,6 +99,7 @@ class VideoObjectTracking(VideoInference):
         self._colors = LabelColors(avoid=(LINE_COLOR, AREA_COLOR))
         self._boxes = BoxStabilizer()  # what the video shows: the tracked boxes, steadied across results
         self._labels_to_track = labels_to_track
+        self._identities = ObjectIdentities(OBJECT_MEMORY_SEC, OVERLAP, SIZE_RATIO) if keep_identities else None
         # The knobs of the tracking block as the model names them: keep_grace is max_age, min_detections is min_hits,
         # iou_threshold matches the boxes of a detection model and threshold the centroids of a FOMO one
         self._tracker: dict[str, float] = {
@@ -327,6 +333,8 @@ class VideoObjectTracking(VideoInference):
     def _forget_tracks(self) -> None:
         """Forget the identifiers seen so far, keeping the counts: the tracker numbers tracks from zero on each run."""
         with self._counter_lock:
+            if self._identities is not None:
+                self._identities.forget()
             self._recent_objects.clear()
             self._last_seen.clear()
             self._object_directions.clear()
@@ -558,21 +566,25 @@ class VideoObjectTracking(VideoInference):
             return
 
         now = result.ts_ns / 1e9
-        tracked = [(track, track.id) for track in result.tracks if track.id is not None and self._is_label_enabled(track.label)]
+        tracks = [track for track in result.tracks if track.id is not None and self._is_label_enabled(track.label)]
+        tracked = (
+            self._identities.resolve(tracks, now)
+            if self._identities is not None
+            else [(track.id, track.label, track) for track in tracks if track.id is not None]
+        )
         detections: dict[str, list[dict[str, Any]]] = {}
         centres: list[tuple[str, int, int, int]] = []
-        for track, object_id in tracked:
+        for object_id, label, track in tracked:
             x1, y1, x2, y2 = round(track.x), round(track.y), round(track.x + track.w), round(track.y + track.h)
             details = {"object_id": object_id, "confidence": track.score, "bounding_box_xyxy": (x1, y1, x2, y2)}
-            detections.setdefault(track.label, []).append(details)
-            self._record_object(track.label, object_id, (x1 + x2) // 2, (y1 + y2) // 2)
-            centres.append((track.label, object_id, (x1 + x2) // 2, (y1 + y2) // 2))
-            self._execute_handler(key=track.label, payload=details)
+            detections.setdefault(label, []).append(details)
+            self._record_object(label, object_id, (x1 + x2) // 2, (y1 + y2) // 2)
+            centres.append((label, object_id, (x1 + x2) // 2, (y1 + y2) // 2))
+            self._execute_handler(key=label, payload=details)
         self._record_area(centres, now)
-        self._expire_objects({object_id for _, object_id in tracked}, now)
-        # The video shows every tracked object under its label and id
+        self._expire_objects({object_id for object_id, _, _ in tracked}, now)
         self._boxes.update(
-            [replace(track, label=f"{track.label} #{object_id}") for track, object_id in tracked], (time.monotonic_ns() - result.ts_ns) / 1e9
+            [replace(track, label=f"{label} #{object_id}") for object_id, label, track in tracked], (time.monotonic_ns() - result.ts_ns) / 1e9
         )
         if detections:
             self._execute_handler(key=self.ALL_HANDLERS_KEY, payload=detections)

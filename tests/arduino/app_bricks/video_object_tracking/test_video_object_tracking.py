@@ -22,6 +22,7 @@ from arduino.app_internal.ei_inference import Box, Result
 TIMEOUT = 3.0  # seconds to wait for a callback
 TRACKER = "ootb/ei/tracker"  # the name of the configured model on the service
 RECORDED_WALK = Path(__file__).parent / "data" / "walk_640x480.json"
+RECORDED_TIE = Path(__file__).parent / "data" / "tie_640x480.json"
 CLOCK_START_NS = time.monotonic_ns()  # the capture clock of the replayed results starts here
 # The threshold blocks of a tracking model, as the service reports them
 DETECTION_BLOCK = {"id": 27, "type": "object_detection", "min_score": 0.2}
@@ -54,10 +55,13 @@ def _straight(start: tuple[int, int], end: tuple[int, int], steps: int) -> list[
     return [(round(start[0] + (end[0] - start[0]) * i / steps), round(start[1] + (end[1] - start[1]) * i / steps)) for i in range(steps + 1)]
 
 
-def _recorded_walk_frames() -> list[list[dict]]:
-    recording = json.loads(RECORDED_WALK.read_text())
+def _recorded(path: Path) -> tuple[list[list[dict]], list[float] | None]:
+    """The frames of a recording and their capture instants, when it has them."""
+    recording = json.loads(path.read_text())
     fields = recording["track_fields"]
-    return [[_track(**dict(zip(fields, track, strict=True))) for track in frame["tracks"]] for frame in recording["frames"]]
+    frames = [[_track(**dict(zip(fields, track, strict=True))) for track in frame["tracks"]] for frame in recording["frames"]]
+    times = [frame["t"] for frame in recording["frames"]] if "t" in recording["frames"][0] else None
+    return frames, times
 
 
 def _wait_for(condition, timeout: float = TIMEOUT) -> bool:
@@ -345,8 +349,8 @@ def test_a_live_track_keeps_its_position_whatever_the_crowd(tracker):
 
 
 def test_an_id_not_reported_for_a_second_is_forgotten(tracker):
-    _replay(tracker, [[_track(object_id=i)] for i in range(500)] + [[]] * 10)
-    assert tracker._recent_objects == {499: (40, 100)}, "within a second the last id is still kept"
+    _replay(tracker, [[_track(object_id=i, x=200 * i)] for i in range(500)] + [[]] * 10)
+    assert tracker._recent_objects == {499: (200 * 499 + 40, 100)}, "within a second the last id is still kept"
 
     _replay(tracker, [[]], start=51.0)
 
@@ -730,8 +734,65 @@ def test_reset_counters_keeps_the_direction_history(tracker):
 def test_recorded_walk_is_one_track_crossing_the_line_eight_times(tracker):
     tracker.set_vertical_crossing_line(320)
 
-    _replay(tracker, _recorded_walk_frames())
+    _replay(tracker, _recorded(RECORDED_WALK)[0])
 
     assert tracker.get_unique_objects_count() == {"person": 1}
     assert tracker.get_line_crossing_counts() == {"person": {"left": 4, "right": 4, "all": 8}}
     assert len(tracker.get_objects_directions()[3]) == 35
+
+
+# ---------------------------------------------------------------- identities
+
+
+def _box(label: str, object_id: int, x: int = 260, y: int = 200) -> dict:
+    """A tracked object with the 80x200 box of `_walk` at (x, y)."""
+    return _track(label=label, object_id=object_id, x=x, y=y)
+
+
+def test_a_new_track_on_a_lost_object_keeps_its_identity(tracker):
+    seen = []
+    tracker.on_detect("bottle", lambda details: seen.append(details["object_id"]))
+    tracker.set_rectangular_area(200, 150, 400, 450)
+
+    _replay(tracker, [[_box("bottle", 1)], [_box("bottle", 1)], [], [], [_box("vase", 2, x=265)], [_box("vase", 2, x=270)]])
+
+    assert tracker.get_unique_objects_count() == {"bottle": 1}, "the vase track continues the bottle"
+    assert tracker.get_area_counts() == {"bottle": {"entered": 1}}
+    assert set(tracker._boxes.visible()) == {"bottle #1"}
+    assert _wait_for(lambda: seen) and set(seen) == {1}
+
+
+def test_keep_identities_off_reports_the_tracks_as_the_tracker_numbers_them(service, camera):
+    tracker = VideoObjectTracking(camera=camera, stream_port=0, keep_identities=False)
+    try:
+        _replay(tracker, [[_box("bottle", 1)], [], [], [_box("vase", 2)]])
+
+        assert tracker.get_unique_objects_count() == {"bottle": 1, "vase": 1}
+    finally:
+        tracker.stop()
+
+
+def test_a_second_track_on_an_object_in_view_is_another_object(tracker):
+    _replay(tracker, [[_box("potted plant", 1)], [_box("potted plant", 1), _box("vase", 2, x=270)]])
+
+    assert tracker.get_unique_objects_count() == {"potted plant": 1, "vase": 1}
+
+
+def test_an_object_out_of_sight_for_more_than_a_second_comes_back_as_a_new_one(tracker):
+    _replay(tracker, [[_box("bottle", 1)]])
+    _replay(tracker, [[_box("bottle", 2)]], start=0.9)
+    _replay(tracker, [[_box("bottle", 3)]], start=2.0)
+
+    assert tracker.get_unique_objects_count() == {"bottle": 2}, "track 2 continued the bottle, track 3 came too late"
+
+
+def test_recorded_tie_is_eight_objects_for_thirteen_tracks(service, camera):
+    frames, times = _recorded(RECORDED_TIE)
+    for keep_identities, expected in ((True, {"tie": 5, "vase": 3}), (False, {"tie": 8, "vase": 6})):
+        tracker = VideoObjectTracking(camera=camera, stream_port=0, labels_to_track=["tie", "vase"], keep_identities=keep_identities)
+        try:
+            _replay(tracker, frames, times=times)
+
+            assert tracker.get_unique_objects_count() == expected, "13 tracks, one of them back after 1.1 s unseen"
+        finally:
+            tracker.stop()
