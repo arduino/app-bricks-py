@@ -11,7 +11,9 @@ for code written against its API; this script adds the environment (paths,
 interpreter, execution root). Modes:
 
   deps      Print a project's dependencies (core + recursively expanded extra),
-            so the check venv can be built without building the library itself.
+            so the check venv can be built without building the library itself;
+            --runtime prints the whole app runtime instead (library, python-base
+            container and run.sh packages), the environment the examples run in.
   run       Run pyright over the examples trees against a library source path
             (profile api-user) and save the diagnostics as JSON.
   typing    Run pyright over the library sources themselves (profile
@@ -70,10 +72,20 @@ DEFAULT_VENV_PYTHON = ".venv/bin/python"
 # to Unknown and hiding real errors instead of reporting an unresolved import.
 NAMESPACE_DEPENDENCIES = ["arduino.router_bridge"]
 SELF_EXTRA_RE = re.compile(r"^arduino[-_]app[-_]bricks\[(.+)\]$")
+REPO_ROOT = Path(__file__).resolve().parents[1]
+# The packages of the app container besides the library's own dependencies: the ones
+# python-base installs from its lock, and the ones run.sh installs at app start
+# (streamlit, for the apps that declare the streamlit_ui brick). PyGObject, built by
+# the python-base Dockerfile, is left out: no example imports it and it does not
+# build on a plain runner.
+CONTAINER_PYPROJECT = "containers/base/python-base/pyproject.toml"
+RUNTIME_SCRIPT_PACKAGES = ["streamlit"]
 
 
-def cmd_deps(args) -> int:
-    project = tomllib.loads(Path(args.pyproject).read_text())["project"]
+def project_deps(pyproject: Path, extra: str) -> list[str]:
+    """The dependencies of a pyproject: core plus the given extra, with the self-referencing
+    extras (arduino_app_bricks[x]) expanded recursively."""
+    project = tomllib.loads(pyproject.read_text())["project"]
     optional = project.get("optional-dependencies", {})
     deps: list[str] = []
     seen_extras: set[str] = set()
@@ -82,15 +94,34 @@ def cmd_deps(args) -> int:
         for entry in entries:
             match = SELF_EXTRA_RE.match(entry.replace(" ", ""))
             if match:
-                for extra in match.group(1).split(","):
-                    if extra not in seen_extras:
-                        seen_extras.add(extra)
-                        expand(optional.get(extra, []))
+                for name in match.group(1).split(","):
+                    if name not in seen_extras:
+                        seen_extras.add(name)
+                        expand(optional.get(name, []))
             elif entry not in deps:
                 deps.append(entry)
 
     expand(project.get("dependencies", []))
-    expand(optional.get(args.extra, []))
+    expand(optional.get(extra, []))
+    return deps
+
+
+def dep_name(requirement: str) -> str:
+    """The normalized package name of a requirement string (PEP 503), for de-duplication."""
+    return re.split(r"[\s;<>=!~\[]", requirement.strip(), maxsplit=1)[0].lower().replace("_", "-")
+
+
+def cmd_deps(args) -> int:
+    if args.runtime:
+        root = Path(args.root)
+        deps = project_deps(root / "pyproject.toml", args.extra)
+        names = {dep_name(dep) for dep in deps}
+        for dep in project_deps(root / CONTAINER_PYPROJECT, "") + RUNTIME_SCRIPT_PACKAGES:
+            if dep_name(dep) not in names:
+                names.add(dep_name(dep))
+                deps.append(dep)
+    else:
+        deps = project_deps(Path(args.pyproject), args.extra)
     print("\n".join(deps))
     return 0
 
@@ -583,6 +614,12 @@ def main() -> int:
     deps = sub.add_parser("deps", help="print a pyproject's dependencies for the check venv")
     deps.add_argument("--pyproject", default="pyproject.toml")
     deps.add_argument("--extra", default="all")
+    deps.add_argument(
+        "--runtime",
+        action="store_true",
+        help="print the app runtime instead: the library dependencies, the python-base container packages and the run.sh ones",
+    )
+    deps.add_argument("--root", default=str(REPO_ROOT), help="the app-bricks-py checkout --runtime reads, default: the one holding this script")
     deps.set_defaults(func=cmd_deps)
 
     def add_analysis_options(parser, default_profile: str) -> None:
