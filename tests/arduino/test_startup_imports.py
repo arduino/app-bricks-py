@@ -43,6 +43,14 @@ STARTUP_IMPORTS = {
     "import arduino.app_bricks.web_ui": StartupImports(
         frozenset({"arduino.router_bridge", "fastapi", "fastapi_socketio", "uvicorn", "watchdog"}), max_modules=770
     ),
+    # Every AI brick: the Edge Impulse facade loads its HTTP client, PIL and OpenCV when an inference needs them
+    "import arduino.app_internal.core": StartupImports(frozenset({"arduino.router_bridge", "watchdog"}), max_modules=110),
+    # Apps with a microphone: each backend loads its own dependencies (websockets, asyncio, ...) when Microphone() picks it
+    "from arduino.app_peripherals.microphone import Microphone": StartupImports(
+        frozenset({"arduino.router_bridge", "numpy", "watchdog"}), max_modules=220
+    ),
+    # An image brick: PIL for its images, without OpenCV, which only the image adjustments need
+    "import arduino.app_bricks.object_detection": StartupImports(frozenset({"arduino.router_bridge", "PIL", "watchdog"}), max_modules=165),
 }
 
 # Runs the entry point in a fresh interpreter and prints, as JSON, the third-party packages that library code

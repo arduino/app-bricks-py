@@ -8,10 +8,12 @@ import hashlib
 import hmac
 import secrets
 import struct
-from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
-from cryptography.exceptions import InvalidTag
+from typing import TYPE_CHECKING
 
 from arduino.app_utils.logger import Logger
+
+if TYPE_CHECKING:
+    from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 
 logger = Logger("BPPCodec")
 
@@ -111,9 +113,12 @@ class BPPCodec:
         self.cc_cipher: ChaCha20Poly1305 | None = None
 
         if self.enable_encryption:
+            # Imported here: the plain and signed modes do not need cryptography, a slow import at app start
+            from cryptography.hazmat.primitives.ciphers import aead
+
             # Derive 32-byte key for ChaCha20
             key = hashlib.sha256(self.secret).digest()
-            self.cc_cipher = ChaCha20Poly1305(key)
+            self.cc_cipher = aead.ChaCha20Poly1305(key)
 
         self.replay_protection = ReplayProtection()
 
@@ -206,9 +211,15 @@ class BPPCodec:
                 if self.cc_cipher is None:
                     logger.warning("Encrypted message received but encryption is not enabled")
                     return None
+                from cryptography.exceptions import InvalidTag  # Loaded with the cipher, by the encrypted mode only
+
                 iv = replay_id
                 ciphertext_with_tag = message[HEADER_SIZE:]
-                return self.cc_cipher.decrypt(iv, ciphertext_with_tag, header_bytes)
+                try:
+                    return self.cc_cipher.decrypt(iv, ciphertext_with_tag, header_bytes)
+                except InvalidTag:
+                    logger.warning(f"Decryption failed: encryption key or data integrity issue")
+                    return None
 
             elif mode == MODE_SIGN:
                 if len(message) < HEADER_SIZE + 32:
@@ -229,9 +240,6 @@ class BPPCodec:
             elif mode == MODE_NONE:
                 return message[HEADER_SIZE:]
 
-        except InvalidTag:
-            logger.warning(f"Decryption failed: encryption key or data integrity issue")
-            return None
         except Exception as e:
             logger.error(f"Unknown error while decoding: {e} ({type(e)})")
             return None

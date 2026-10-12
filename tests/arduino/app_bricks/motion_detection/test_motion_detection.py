@@ -7,7 +7,6 @@ import pytest
 import random
 import time
 from arduino.app_bricks.motion_detection import MotionDetection
-from arduino.app_utils import HttpClient
 
 import arduino.app_utils.app as app
 from arduino.app_utils import AppController
@@ -78,8 +77,8 @@ def mock_dependencies(monkeypatch: pytest.MonkeyPatch):
     ):
         return FakeResp()
 
-    # Mock the requests.get method to return a fake response
-    monkeypatch.setattr(HttpClient, "request_with_retry", fake_get)
+    # Mock the model info request to return a fake response
+    monkeypatch.setattr("arduino.app_internal._http.get_with_retry", lambda url, **kwargs: fake_get(None, url))
 
 
 def test_classify_success(app_instance: AppController, monkeypatch: pytest.MonkeyPatch):
@@ -98,8 +97,8 @@ def test_classify_success(app_instance: AppController, monkeypatch: pytest.Monke
 
     classifier = MotionDetection()
 
-    # Mock the requests.post method to return a fake response
-    monkeypatch.setattr("arduino.app_internal.core.ei.requests.post", fake_post)
+    # Mock the inference request to return a fake response
+    monkeypatch.setattr("arduino.app_internal._http.post", fake_post)
 
     updown_called = False
 
@@ -145,8 +144,8 @@ def test_classify_success_with_arguments(app_instance: AppController, monkeypatc
 
     classifier = MotionDetection()
 
-    # Mock the requests.post method to return a fake response
-    monkeypatch.setattr("arduino.app_internal.core.ei.requests.post", fake_post)
+    # Mock the inference request to return a fake response
+    monkeypatch.setattr("arduino.app_internal._http.post", fake_post)
 
     updown_called = False
     all_classification = None
@@ -201,8 +200,8 @@ def test_classify_success_with_more_arguments(app_instance: AppController, monke
 
     classifier = MotionDetection()
 
-    # Mock the requests.post method to return a fake response
-    monkeypatch.setattr("arduino.app_internal.core.ei.requests.post", fake_post)
+    # Mock the inference request to return a fake response
+    monkeypatch.setattr("arduino.app_internal._http.post", fake_post)
 
     updown_called = False
     all_classification = None

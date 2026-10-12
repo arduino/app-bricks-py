@@ -2,11 +2,22 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-import requests
 from dataclasses import dataclass
 from typing import Any, Self
 
+from arduino.app_internal import _http
 from arduino.app_utils import brick
+
+_URL_SAFE = "!#$%&'()*+,/:;=?@[]~"
+"""Characters left as they are when a URL is percent-encoded, as requests does: the others, like spaces, get encoded."""
+
+
+def _get(url: str, params: dict[str, str]) -> tuple[int, Any]:
+    """GET url with the query parameters, and return the status and the JSON body, whatever the status."""
+    from urllib.parse import quote, urlencode
+
+    response = _http.request("GET", f"{quote(url, safe=_URL_SAFE)}?{urlencode(params)}")
+    return response.status_code, response.json()
 
 
 @dataclass(frozen=True)
@@ -109,9 +120,8 @@ class AirQualityMonitoring:
         """
         url = f"{self.city_api_url}{city}/"
         params = {"token": self.__token}
-        response = requests.get(url, params=params)
-        data = response.json()
-        if response.status_code != 200 or data.get("status") != "ok":
+        status, data = _get(url, params)
+        if status != 200 or data.get("status") != "ok":
             raise AirQualityLookupError.from_api_response(data)
         return self.assemble_data(data["data"])
 
@@ -130,9 +140,8 @@ class AirQualityMonitoring:
         """
         url = self.geo_api_url.format(lat=latitude, lng=longitude)
         params = {"token": self.__token}
-        response = requests.get(url, params=params)
-        data = response.json()
-        if response.status_code != 200 or data.get("status") != "ok":
+        status, data = _get(url, params)
+        if status != 200 or data.get("status") != "ok":
             raise AirQualityLookupError.from_api_response(data)
         return self.assemble_data(data["data"])
 
@@ -147,9 +156,8 @@ class AirQualityMonitoring:
         """
         url = self.ip_api_url
         params = {"token": self.__token}
-        response = requests.get(url, params=params)
-        data = response.json()
-        if response.status_code != 200 or data.get("status") != "ok":
+        status, data = _get(url, params)
+        if status != 200 or data.get("status") != "ok":
             raise AirQualityLookupError.from_api_response(data)
         return self.assemble_data(data["data"])
 

@@ -4,7 +4,6 @@
 
 """Wi-Fi based geolocation through the TPS Location API cloud service."""
 
-import http.client
 import json
 import os
 import re
@@ -14,12 +13,14 @@ import time
 import uuid
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
 
-import requests
-
+from arduino.app_internal import _http
 from arduino.app_utils import Logger, brick
+
+if TYPE_CHECKING:
+    import http.client
 
 logger = Logger("TPS")
 
@@ -98,17 +99,17 @@ def _build_payload(scan_result: dict[str, Any], street_address: bool) -> dict[st
     return payload
 
 
-class _UnixSocketConnection(http.client.HTTPConnection):
-    """HTTP connection over a Unix domain socket."""
+def _unix_socket_connection(path: str, timeout: float) -> "http.client.HTTPConnection":
+    """An HTTP connection over a Unix domain socket."""
+    import http.client  # Imported here: with ssl and email it is a slow import at app start
 
-    def __init__(self, path: str, timeout: float) -> None:
-        super().__init__("localhost", timeout=timeout)
-        self._path = path
+    class UnixSocketConnection(http.client.HTTPConnection):
+        def connect(self) -> None:
+            self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            self.sock.settimeout(self.timeout)
+            self.sock.connect(path)
 
-    def connect(self) -> None:
-        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self.sock.settimeout(self.timeout)
-        self.sock.connect(self._path)
+    return UnixSocketConnection("localhost", timeout=timeout)
 
 
 @brick
@@ -177,10 +178,10 @@ class TPS:
         headers = self._build_headers(request_token, device_id, opt_in)
         payload = _build_payload(self._scan(), street_address)
         try:
-            response = requests.post(self.loc_api_url, json=payload, headers=headers, timeout=HTTP_REQ_TIMEOUT_SEC)
+            response = _http.post(self.loc_api_url, json=payload, headers=headers, timeout=HTTP_REQ_TIMEOUT_SEC)
             response.raise_for_status()
             data = response.json()
-        except (requests.RequestException, ValueError) as e:
+        except (_http.ConnectionFailed, _http.HTTPStatusError, ValueError) as e:
             raise RuntimeError(f"Location request failed: {e}") from e
 
         location = data.get("location", {})
@@ -273,7 +274,7 @@ class TPS:
         Raises:
             RuntimeError: If the scanner is unreachable or the scan failed.
         """
-        connection = _UnixSocketConnection(self.scanner_socket_path, HTTP_REQ_TIMEOUT_SEC)
+        connection = _unix_socket_connection(self.scanner_socket_path, HTTP_REQ_TIMEOUT_SEC)
         try:
             connection.request("GET", "/scan")
             response = connection.getresponse()

@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import json
 import queue
 import re
 import threading
@@ -12,8 +13,8 @@ from types import TracebackType
 from typing import Any, TypedDict
 
 import numpy as np
-import requests
 
+from arduino.app_internal import _http
 from arduino.app_peripherals.speaker import Speaker, BaseSpeaker
 from arduino.app_internal.core import resolve_address, get_brick_config, get_brick_configured_model
 from arduino.app_utils import brick, AppError, Logger
@@ -342,7 +343,7 @@ class TextToSpeech:
     def _resolve_voice(self, model_name: str) -> VoiceConfig:
         """Fetch available TTS models from the runner and return the voice config for `model_name`."""
         try:
-            response = requests.get(f"{self.api_base_url}/tts/models")
+            response = _http.request("GET", f"{self.api_base_url}/tts/models")
         except Exception as e:
             raise RuntimeError(f"Failed to fetch TTS models: {e}.")
 
@@ -442,58 +443,56 @@ class TextToSpeech:
         }
         url = f"{self.api_base_url}/tts/synthesize"
         started_at = time.perf_counter()
-        response = requests.post(url, json=payload, stream=True)
         total_audio_bytes = 0
         first_chunk_logged = False
 
-        try:
-            if response.status_code != 200:
-                error_msg = f"Failed to synthesize text."
-                try:
-                    error_data = response.json()
-                    if "error" in error_data:
-                        error_msg = error_data["error"].get("message", error_msg)
-                except:
-                    pass
-                raise RuntimeError(error_msg)
+        with _http.stream("POST", url, json=payload) as response:
+            try:
+                if response.status != 200:
+                    error_msg = f"Failed to synthesize text."
+                    try:
+                        error_data = json.loads(response.read())
+                        if "error" in error_data:
+                            error_msg = error_data["error"].get("message", error_msg)
+                    except:
+                        pass
+                    raise RuntimeError(error_msg)
 
-            if cancelled is not None and cancelled.is_set():
-                logger.debug("Speech session cancelled before reading synthesis stream")
-                return
-
-            stream_chunk_size = self._speaker.buffer_size * self._speaker.channels * self._speaker.format.itemsize
-            for audio_chunk in response.iter_content(chunk_size=stream_chunk_size):
                 if cancelled is not None and cancelled.is_set():
-                    logger.debug("Speech session cancelled while reading synthesis stream")
+                    logger.debug("Speech session cancelled before reading synthesis stream")
                     return
-                if not audio_chunk:
-                    continue
 
-                total_audio_bytes += len(audio_chunk)
-                if not first_chunk_logged:
-                    first_chunk_logged = True
-                    first_chunk_ms = (time.perf_counter() - started_at) * 1000
-                    logger.debug(
-                        f"TTS PCM stream first chunk received in {first_chunk_ms:.2f} ms "
-                        f"(input_chars={len(text)}, pcm_chunk_bytes={len(audio_chunk)}, keep_alive={keep_alive})"
-                    )
-                yield audio_chunk
+                stream_chunk_size = self._speaker.buffer_size * self._speaker.channels * self._speaker.format.itemsize
+                # read1 returns what has arrived, at most stream_chunk_size bytes, as soon as it arrives
+                while audio_chunk := response.read1(stream_chunk_size):
+                    if cancelled is not None and cancelled.is_set():
+                        logger.debug("Speech session cancelled while reading synthesis stream")
+                        return
 
-            if total_audio_bytes == 0 and (cancelled is None or not cancelled.is_set()):
-                raise RuntimeError("No audio data returned from synthesis API")
+                    total_audio_bytes += len(audio_chunk)
+                    if not first_chunk_logged:
+                        first_chunk_logged = True
+                        first_chunk_ms = (time.perf_counter() - started_at) * 1000
+                        logger.debug(
+                            f"TTS PCM stream first chunk received in {first_chunk_ms:.2f} ms "
+                            f"(input_chars={len(text)}, pcm_chunk_bytes={len(audio_chunk)}, keep_alive={keep_alive})"
+                        )
+                    yield audio_chunk
 
-        finally:
-            response.close()
-            elapsed_ms = (time.perf_counter() - started_at) * 1000
-            logger.debug(
-                f"TTS PCM stream completed in {elapsed_ms:.2f} ms "
-                f"(input_chars={len(text)}, status_code={response.status_code}, "
-                f"pcm_bytes={total_audio_bytes}, keep_alive={keep_alive})"
-            )
+                if total_audio_bytes == 0 and (cancelled is None or not cancelled.is_set()):
+                    raise RuntimeError("No audio data returned from synthesis API")
+
+            finally:
+                elapsed_ms = (time.perf_counter() - started_at) * 1000
+                logger.debug(
+                    f"TTS PCM stream completed in {elapsed_ms:.2f} ms "
+                    f"(input_chars={len(text)}, status_code={response.status}, "
+                    f"pcm_bytes={total_audio_bytes}, keep_alive={keep_alive})"
+                )
 
     def _cancel_remote_tts(self) -> None:
         try:
-            response = requests.post(f"{self.api_base_url}/tts/cancel")
+            response = _http.post(f"{self.api_base_url}/tts/cancel")
             if response.status_code >= 400:
                 logger.warning(f"Failed to cancel remote TTS session: status_code={response.status_code}")
         except Exception as e:
