@@ -13,14 +13,9 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi_socketio import SocketManager
 
 from arduino.app_utils import brick, Logger
-
-from ._fast_imports import defer_socketio_client_dependencies
-
-# WebUI runs only the Socket.IO server: import it without the dependencies of the sync client
-with defer_socketio_client_dependencies():
-    from fastapi_socketio import SocketManager
 
 if TYPE_CHECKING:
     # Type hint only: importing the camera package at runtime would load cv2 in every app using WebUI
