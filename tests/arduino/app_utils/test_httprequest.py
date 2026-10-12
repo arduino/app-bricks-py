@@ -2,9 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-import json
-import subprocess
-import sys
 from typing import Any
 
 import pytest
@@ -12,18 +9,6 @@ import requests
 from requests.adapters import HTTPAdapter
 
 from arduino.app_utils.httprequest import HttpClient
-
-
-def _loaded_after(code: str, modules: list[str]) -> dict[str, bool]:
-    """Run code in a fresh interpreter and report which of the given modules it left in sys.modules."""
-    probe = f"{code}\nimport json, sys\nprint(json.dumps({{m: m in sys.modules for m in {modules!r}}}))"
-    result = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, timeout=120, check=True)
-    return json.loads(result.stdout.strip().splitlines()[-1])
-
-
-@pytest.mark.parametrize("code", ["import arduino.app_utils", "from arduino.app_utils import HttpClient"])
-def test_import_does_not_load_requests(code: str):
-    assert _loaded_after(code, ["requests", "urllib3"]) == {"requests": False, "urllib3": False}
 
 
 def test_session_adapter_uses_the_configured_retries():

@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    # numpy is imported where it is used: loading it costs ~300 ms at app start, also for a star import of arduino.app_utils
+    # numpy is imported where it is used: arduino.app_utils imports this module, a module-level import would slow down every app start
     import numpy as np
 
 

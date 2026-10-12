@@ -2,8 +2,8 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# watchdog.observers is imported where it is used: its platform backend (inotify through ctypes) costs ~50 ms at app
-# start, also for a star import of arduino.app_utils. FolderEventHandler subclasses a watchdog.events class, so that stays.
+# watchdog.observers is imported where it is used: arduino.app_utils imports this module, and its platform backend (inotify
+# through ctypes) would slow down every app start. FolderEventHandler subclasses a watchdog.events class, so that one stays.
 from watchdog.events import FileSystemEvent, PatternMatchingEventHandler
 import queue
 from typing import Any

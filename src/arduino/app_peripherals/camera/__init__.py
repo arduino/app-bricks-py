@@ -4,8 +4,6 @@
 
 from typing import TYPE_CHECKING
 
-from arduino.app_utils._lazy_exports import lazy_exports as _lazy_exports
-
 from .camera import Camera
 from .base_camera import BaseCamera, CameraInfo
 from .errors import *
@@ -27,8 +25,20 @@ _LAZY_EXPORTS = {
 }
 
 
-if not TYPE_CHECKING:  # Type checkers resolve the names through the imports above
-    __getattr__, __dir__ = _lazy_exports(__name__, globals(), _LAZY_EXPORTS)
+if not TYPE_CHECKING:  # Type checkers resolve the names through the imports above, and still reject unknown ones
+
+    def __getattr__(name: str) -> object:
+        import importlib
+
+        submodule = _LAZY_EXPORTS.get(name)
+        if submodule is None:
+            raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+        value = getattr(importlib.import_module(f".{submodule}", __name__), name)
+        globals()[name] = value  # Later accesses skip __getattr__
+        return value
+
+    def __dir__() -> list[str]:
+        return sorted({*globals(), *_LAZY_EXPORTS})
 
 
 __all__ = [

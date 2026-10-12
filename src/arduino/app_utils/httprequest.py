@@ -2,12 +2,16 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+from __future__ import annotations
+
 from collections.abc import Collection
 from typing import TYPE_CHECKING, Any
-from arduino.app_utils import Logger
+
+from .logger import Logger
 
 if TYPE_CHECKING:
-    # requests (and urllib3) are imported where they are used: loading them costs ~400 ms at app start
+    # requests and urllib3 are imported where they are used: arduino.app_utils imports this module, a module-level
+    # import would slow down every app start
     import requests
 
 logger = Logger("HttpClient")
@@ -59,7 +63,7 @@ class HttpClient:
         json: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
         timeout: int = 5,
-    ) -> "requests.Response | None":
+    ) -> requests.Response | None:
         """Performs a GET or POST request to a given URL with a retry mechanism using requests.
 
         Session and urllib3's Retry utility for built-in exponential backoff.
