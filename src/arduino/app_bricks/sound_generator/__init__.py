@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 from arduino.app_utils import brick, Logger
-from arduino.app_peripherals.speaker import ALSASpeaker, BaseSpeaker, Speaker
+from arduino.app_peripherals.speaker import BaseSpeaker, Speaker
 import threading
 from collections.abc import Callable, Iterable
 import numpy as np
@@ -1037,9 +1037,10 @@ class SoundGenerator(SoundGeneratorStreamer):
         """
         Stop the currently playing step sequence.
 
-        Signals the playback thread to stop and closes the internal speaker to
-        immediately drop any pending audio in the ALSA buffer.  The speaker is
-        transparently restarted on the next play call via _ensure_speaker_ready.
+        Signals the playback thread to stop and closes the speaker to immediately
+        drop the audio queued ahead in the device buffer.  The internal speaker is
+        transparently restarted on the next play call via _ensure_speaker_ready; a
+        speaker passed by the user is restarted right away, so it stays usable.
         """
         logger.debug("stop_sequence() called")
         should_stop_speaker = False
@@ -1057,8 +1058,13 @@ class SoundGenerator(SoundGeneratorStreamer):
         # immediately drops all pending audio and causes any in-flight
         # speaker.play() in the sequence thread to finish, after which the
         # next play() call will raise SpeakerWriteError and the thread exits.
-        if should_stop_speaker and not self.external_speaker:
+        if should_stop_speaker:
             self._output_device.stop()
+            if self.external_speaker:
+                try:
+                    self._output_device.start()
+                except Exception as e:
+                    logger.warning(f"Could not restart the output device after stopping the sequence: {e}")
 
     def is_sequence_playing(self) -> bool:
         """
@@ -1108,10 +1114,13 @@ class SoundGenerator(SoundGeneratorStreamer):
             logger.info(f"Starting sequence: {total_steps} steps at {bpm} BPM")
             speaker_buffer = float(self._output_device.buffer_size or 0)
             speaker_rate = float(self._sample_rate or self._output_device.sample_rate or 0)
-            # A shared ALSA device goes through the mixer, which imposes a period as long as a step: queue the next steps ahead.
-            shared = isinstance(self._output_device, ALSASpeaker) and self._output_device.shared
-            shared_prequeue_lead = (speaker_buffer / speaker_rate) if shared and speaker_buffer > 0.0 and speaker_rate > 0.0 else 0.0
-            prequeue_future_steps = max(1, int(math.ceil(shared_prequeue_lead / duration))) if shared_prequeue_lead > 0.0 and duration > 0.0 else 0
+            # The device consumes audio one buffer at a time, so its latency is one buffer. When that is comparable
+            # to a step (e.g. the ALSA shared mixer imposes a 125 ms period, as long as a 1/16 step at 120 BPM) the
+            # next steps are written ahead, or any delay on the Python side starves the device: notes get cut and
+            # the playback drifts. The cost is a constant delay of one latency. A latency well below the step
+            # needs no pre-queue: the wall-clock pacing keeps up.
+            device_latency = (speaker_buffer / speaker_rate) if speaker_buffer > 0.0 and speaker_rate > 0.0 else 0.0
+            prequeue_future_steps = int(math.ceil(device_latency / duration)) if duration > 0.0 and device_latency >= duration / 2.0 else 0
             render_ahead_steps = max(1, prequeue_future_steps)
 
             step_iterator = cycle(enumerate(sequence)) if loop else enumerate(sequence)
