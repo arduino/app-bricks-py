@@ -258,22 +258,25 @@ class V4LCamera(BaseCamera):
             if not self._cap.isOpened():
                 raise RuntimeError(f"Failed to open camera {self.name}")
 
-            self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer to minimize latency
+            # Two buffers: at most one frame of latency while keeping the full frame rate.
+            # A single buffer makes the driver drop every other frame, halving the rate.
+            self._configure(cv2.CAP_PROP_BUFFERSIZE, 2)
 
             if self.codec:
 
                 def fourcc_to_str(fourcc_int: float) -> str:
                     return "".join([chr((int(fourcc_int) >> 8 * i) & 0xFF) for i in range(4)])
 
-                self._cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc(*self.codec))
+                if fourcc_to_str(self._cap.get(cv2.CAP_PROP_FOURCC)) != self.codec:
+                    self._cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc(*self.codec))
                 fourcc = fourcc_to_str(self._cap.get(cv2.CAP_PROP_FOURCC))
                 if fourcc != self.codec:
                     logger.warning(f"Camera {self.name} codec set to {fourcc} instead of requested {self.codec}")
                     self.codec = fourcc
 
             if self.resolution and self.resolution[0] and self.resolution[1]:
-                self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.resolution[0])
-                self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.resolution[1])
+                self._configure(cv2.CAP_PROP_FRAME_WIDTH, self.resolution[0])
+                self._configure(cv2.CAP_PROP_FRAME_HEIGHT, self.resolution[1])
 
                 # Verify resolution setting
                 actual_width = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -286,7 +289,7 @@ class V4LCamera(BaseCamera):
                     self.resolution = (actual_width, actual_height)
 
             if self.fps:
-                self._cap.set(cv2.CAP_PROP_FPS, self.fps)
+                self._configure(cv2.CAP_PROP_FPS, self.fps)
 
                 configured_fps = self._cap.get(cv2.CAP_PROP_FPS)
                 if math.isnan(configured_fps) or configured_fps <= 0:
@@ -312,6 +315,11 @@ class V4LCamera(BaseCamera):
                 self._cap.release()
                 self._cap = None
             raise
+
+    def _configure(self, prop: int, value: float) -> None:
+        """Sets a capture property only when it differs: every set makes OpenCV renegotiate the stream format with the driver."""
+        if self._cap is not None and self._cap.get(prop) != value:
+            self._cap.set(prop, value)
 
     def _close_camera(self) -> None:
         """Close the V4L camera connection."""
