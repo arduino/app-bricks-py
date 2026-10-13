@@ -45,24 +45,48 @@ if [ "${OPENCV_DEBUG:-0}" = "1" ]; then
   export GST_DEBUG_NO_COLOR="${GST_DEBUG_NO_COLOR:-1}"
 fi
 
+check_streamlit_ui() {
+  grep -q "arduino:streamlit_ui" "$APP_YAML"
+}
+
+has_requirements() { # <file>: exists with at least one non-blank line
+  [ -f "$1" ] && [ "$(grep -c '[^[:space:]]' "$1")" -ne 0 ]
+}
+
+# The venv holds what the app adds to the image: its requirements, its wheels, the
+# requirements of its custom bricks, streamlit. An app that adds nothing runs on the
+# system interpreter as it is: `uv venv` costs 0.4 s on the board at every first start.
+# A venv that exists is kept, whatever the app needs now.
+needs_venv() {
+  [ -d "$CACHE_DIR/.venv" ] && return 0
+  [ -d "$PYTHON_LIBS_DIR" ] && return 0
+  has_requirements "$REQUIREMENTS_FILE" && return 0
+  for brick_requirements in "$BASE_DIR"/bricks/*/requirements.txt; do
+    has_requirements "$brick_requirements" && return 0
+  done
+  check_streamlit_ui
+}
+
 mkdir -p "$CACHE_DIR"
-if [ ! -d "$CACHE_DIR/.venv" ]; then
-  uv venv "$CACHE_DIR/.venv" --system-site-packages
+if needs_venv; then
+  if [ ! -d "$CACHE_DIR/.venv" ]; then
+    uv venv "$CACHE_DIR/.venv" --system-site-packages
 
-  if [ -d "$PYTHON_LIBS_DIR" ]; then
-    echo "Installing Python libraries from $PYTHON_LIBS_DIR"
-    # Iterate over each .whl.installed file in the directory and revert them to .whl
-    for installed_file in "$PYTHON_LIBS_DIR"/*.whl.installed; do
-      if [ -f "$installed_file" ]; then
-        original_file="${installed_file%.installed}"
-        echo "  Restoring: $installed_file -> $original_file"
-        mv "$installed_file" "$original_file"
-      fi
-    done
+    if [ -d "$PYTHON_LIBS_DIR" ]; then
+      echo "Installing Python libraries from $PYTHON_LIBS_DIR"
+      # Iterate over each .whl.installed file in the directory and revert them to .whl
+      for installed_file in "$PYTHON_LIBS_DIR"/*.whl.installed; do
+        if [ -f "$installed_file" ]; then
+          original_file="${installed_file%.installed}"
+          echo "  Restoring: $installed_file -> $original_file"
+          mv "$installed_file" "$original_file"
+        fi
+      done
+    fi
   fi
-fi
 
-. "$CACHE_DIR/.venv/bin/activate"
+  . "$CACHE_DIR/.venv/bin/activate"
+fi
 
 if [ -d "$PYTHON_LIBS_DIR" ]; then
   echo "Installing Python libraries from $PYTHON_LIBS_DIR"
@@ -141,8 +165,9 @@ if [ -d "$BASE_DIR/bricks" ]; then
   uv cache clean
 fi
 
-# Pre-provision ALSA wrapped devices
-bash /provision-alsa-devices.sh
+# Pre-provision ALSA wrapped devices. The image bakes the file at build time;
+# generate it only when missing (e.g. HOME overridden).
+[ -f "$HOME/.asoundrc" ] || bash /provision-alsa-devices.sh
 
 # Merge the host DSP payload and yaml config into /usr/share/hexagon-dsp,
 # where the fastrpc client libraries look for them. The script ships with the
@@ -158,10 +183,6 @@ if [ -d "$BASE_DIR/bricks" ]; then
         export PYTHONPATH="$PYTHONPATH:$BASE_DIR/bricks"
     fi
 fi
-
-check_streamlit_ui() {
-  grep -q "arduino:streamlit_ui" "$APP_YAML"
-}
 
 install_streamlit() {
   if check_streamlit_ui && ! uv pip show streamlit > /dev/null 2>&1; then

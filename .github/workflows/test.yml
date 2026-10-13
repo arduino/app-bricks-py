@@ -22,10 +22,11 @@ jobs:
     env:
       TASKFILE_PATH: '/home/runner/go/bin'
     steps:
-      - name: Install git
+      # patch: tests/containers applies the source patches of python-apps-base, as its image build
+      - name: Install git and patch
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends --no-install-suggests git ca-certificates curl
+          apt-get install -y --no-install-recommends --no-install-suggests git ca-certificates curl patch
           git config --global --add safe.directory '*'
 
       - name: Checkout repository

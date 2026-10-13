@@ -2,12 +2,17 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+from __future__ import annotations
+
 from collections.abc import Collection
-from typing import Any
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
-from arduino.app_utils import Logger
+from typing import TYPE_CHECKING, Any
+
+from .logger import Logger
+
+if TYPE_CHECKING:
+    # requests and urllib3 are imported where they are used: arduino.app_utils imports this module, a module-level
+    # import would slow down every app start
+    import requests
 
 logger = Logger("HttpClient")
 
@@ -28,6 +33,10 @@ class HttpClient:
         self.__total_retries = total_retries
         self.__backoff_factor = backoff_factor
         self.__status_forcelist = status_forcelist
+
+        import requests
+        from requests.adapters import HTTPAdapter
+        from urllib3.util.retry import Retry
 
         # Configure the Retry strategy
         retries_strategy = Retry(
@@ -73,6 +82,8 @@ class HttpClient:
         Returns:
             requests.Response or None: The response object if successful, None otherwise.
         """
+        import requests
+
         if not url:
             logger.error("Invalid URL provided. URL must be a non-empty string.")
             return None

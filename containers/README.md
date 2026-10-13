@@ -27,7 +27,7 @@ container by globbing `containers/*/<name>/Dockerfile`, so names must be unique 
 | `python-slim` | base | `python:3.13-slim-trixie` | Minimal Python layer shared by everything else |
 | `python-base` | base | `python-slim` | System deps, non-root user, fonts, OpenCV wheel with trimmed FFmpeg and GStreamer plugins-good builds, libcamera + GStreamer packages |
 | `qairt-common-base` | base | `python:3.13-slim-trixie` | Qualcomm AI Runtime and FastRPC libraries shared by the NPU runners |
-| `python-apps-base` | bricks | `python-base` | App runtime: installs the Arduino App Bricks `.whl` and the Streamlit config |
+| `python-apps-base` | bricks | `python-base` | App runtime: installs the Arduino App Bricks `.whl` and the Streamlit config, patches FastAPI to build its OpenAPI models on first use |
 | `models-downloader` | bricks | `python-slim` | Downloads models from AI Hub, Edge Impulse and Hugging Face per `models/models-list.yaml` |
 | `tps` | bricks | `python-slim` | Wi-Fi scan server of the TPS Location API brick, serves `iw` results to the app over a Unix socket |
 | `aihub-models-runner` | ai | `qairt-common-base` | Runs Qualcomm AI Hub models, with GStreamer/WebSocket input and MJPEG/WebSocket output |
@@ -63,7 +63,7 @@ repository expects, see [Adding a New Container](../.github/README.md#adding-a-n
 |---|---|---|
 | `Dockerfile` | yes | Build recipe, with the image's build arguments (download URLs, digests) as `ARG` defaults. The directory itself is the build context, declared by the container's `docker-bake.hcl` target. |
 | `pyproject.toml` + `uv.lock` | if Python packages are installed | The Python packages the image installs, declared in `pyproject.toml` and pinned with hashes in `uv.lock` by `task deps:lock`. The Dockerfile installs from the lock, `task init:containers` installs the same packages into a local `.venv` for IDE support. Board-only packages carry an environment marker. Never install packages inline, the [dependency license scan](../scripts/licensed/README.md) only sees the lock |
-
+| `patches/` | no | Source patches to the installed Python packages, in `git format-patch` format, applied by the Dockerfile with GNU `patch --fuzz=0` to the locked versions the image installs, every `*.patch` of the directory in name order (see its README), with a test in `tests/containers/` that applies them the same way. A patch that stops applying exactly, after a bump of its package or once upstream has merged it, fails the build and the test: regenerate it against the new version, or drop it |
 | `tests/` | no | Python tests run by `task test` in the container's `.venv`, with the packages of its `test` dependency group; shell tests exercise the built image |
 
 SBOMs are not kept in the tree: they are generated from the published images at release time (see
