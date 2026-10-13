@@ -167,6 +167,23 @@ def test_labels_to_track_filters_the_callbacks_too(running, service, camera):
     assert brick.get_unique_objects_count() == {}
 
 
+def test_labels_to_ignore_leave_their_objects_out_of_everything(service, camera):
+    brick = VideoObjectTracking(camera=camera, stream_port=0, labels_to_track=["person", "cup", "dog"], labels_to_ignore=["person", "dog"])
+    received = queue.Queue()
+    try:
+        brick.on_detect_all(lambda detections: received.put(detections))
+        brick.set_rectangular_area(0, 0, 640, 480)
+
+        _replay(brick, [[_track(object_id=1), _track(label="cup", object_id=2, x=300), _track(label="microwave", object_id=3, x=500)]])
+
+        assert set(received.get(timeout=TIMEOUT)) == {"cup"}, "ignored after labels_to_track, which leaves out the microwave"
+        assert brick.get_unique_objects_count() == {"cup": 1}
+        assert brick.get_objects_in_area() == {"cup": 1}
+        assert set(brick._boxes.visible()) == {"cup #2"}, "the ignored objects are not drawn either"
+    finally:
+        brick.stop()
+
+
 def test_the_confidence_is_applied_by_the_service(running, service, camera):
     service.models[TRACKER]["tracks"] = [_track(value=0.1)]
     received = queue.Queue()
