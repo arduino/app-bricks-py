@@ -14,8 +14,8 @@ import pytest
 
 import arduino.app_internal.ei_inference as ei_inference
 from arduino.app_bricks.video_object_tracking import MAX_AREA_POINTS, VideoObjectTracking, VideoObjectTrackingError
-from arduino.app_bricks.video_object_tracking.drawing import AREA_COLOR, LINE_COLOR
-from arduino.app_internal.edge_impulse.video_stream import LabelColors
+from arduino.app_bricks.video_object_tracking.drawing import DASH_COLOR, EDGE_COLOR
+from arduino.app_internal.edge_impulse.video_stream import PALETTE, LabelColors
 from arduino.app_utils.image.colors import color_difference
 from arduino.app_internal.ei_inference import Box, Result
 
@@ -306,12 +306,13 @@ def test_overrides_before_the_connection_are_set_when_the_model_is_opened(servic
 
 
 def test_the_crossing_line_is_drawn_on_the_video_once_set(tracker):
-    frame = np.zeros((120, 160, 3), np.uint8)
-    assert not tracker._annotate(frame).any(), "without a line and without boxes the video shows the plain frame"
-    tracker.set_vertical_crossing_line(80)
+    frame = np.full((480, 640, 3), 128, np.uint8)
+    assert (tracker._annotate(frame) == 128).all(), "without a line and without boxes the video shows the plain frame"
+    tracker.set_vertical_crossing_line(320)
     annotated = tracker._annotate(frame)
-    assert (annotated[:, 80] == (255, 0, 255)).all(), "the magenta line runs from the top to the bottom of the frame"
-    assert not frame.any(), "the camera frame itself is left untouched"
+    assert tuple(annotated[0, 320]) == DASH_COLOR and tuple(annotated[479, 320]) == DASH_COLOR, "the line runs from top to bottom"
+    assert {tuple(pixel) for pixel in annotated[:, 320]} == {DASH_COLOR, EDGE_COLOR, (128, 128, 128)}, "in dashes"
+    assert (frame == 128).all(), "the camera frame itself is left untouched"
 
 
 # ---------------------------------------------------------------- the model
@@ -593,22 +594,34 @@ def test_setting_again_without_visible_shows_it_again(tracker):
     assert tracker._annotate(np.zeros((480, 640, 3), np.uint8))[300, 200].any()
 
 
-def test_the_area_outline_is_drawn_on_the_video_in_yellow(tracker):
-    frame = np.zeros((480, 640, 3), np.uint8)
+def test_the_area_outline_is_drawn_on_the_video_in_dashes(tracker):
+    frame = np.full((480, 640, 3), 128, np.uint8)
     tracker.set_rectangular_area(*AREA)
 
     annotated = tracker._annotate(frame)
 
-    assert tuple(annotated[300, 200]) == (0, 255, 255), "the left side of the outline"
-    assert not annotated[300, 300].any(), "the inside stays as the camera shows it"
-    assert not frame.any(), "the camera frame itself is left untouched"
+    assert tuple(annotated[200, 200]) == DASH_COLOR, "a dash at the corner"
+    assert {tuple(pixel) for pixel in annotated[201:400, 200]} == {DASH_COLOR, EDGE_COLOR, (128, 128, 128)}, "the left side, in dashes"
+    assert tuple(annotated[300, 300]) == (128, 128, 128), "the inside stays as the camera shows it"
+    assert (frame == 128).all(), "the camera frame itself is left untouched"
 
 
-def test_the_box_colors_stay_clearly_different_from_the_line_and_the_area(tracker):
-    for i in range(12):
-        color = tracker._colors[f"label #{i}"]
-        for drawn in (LINE_COLOR, AREA_COLOR):
-            assert color_difference(color, drawn) >= LabelColors.MIN_DIFFERENCE, (i, color)
+def test_the_boxes_are_drawn_over_the_area(tracker):
+    tracker.set_rectangular_area(*AREA)
+    _replay(tracker, [[_track(label="cup", object_id=1, x=250, y=210, width=80, height=90)]])
+
+    annotated = tracker._annotate(np.full((480, 640, 3), 128, np.uint8))
+
+    assert tuple(annotated[200, 252]) == tracker._colors["cup"], "the chip above the box covers the top side of the area"
+
+
+def test_the_box_colors_stay_clearly_different_from_the_dashes_of_the_line_and_the_area(tracker):
+    colors = [tracker._colors[f"label {i}"] for i in range(len(PALETTE))]
+
+    assert set(colors) == set(PALETTE), "no color of the palette is too close to white or black"
+    for color in colors:
+        for drawn in (DASH_COLOR, EDGE_COLOR):
+            assert color_difference(color, drawn) >= LabelColors.MIN_DIFFERENCE, color
 
 
 # ---------------------------------------------------------------- counting

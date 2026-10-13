@@ -20,7 +20,7 @@ from arduino.app_internal.ei_inference import InferenceClient, Result, ServerErr
 from arduino.app_peripherals.camera import BaseCamera
 from arduino.app_utils import AppError, Logger, brick
 
-from .drawing import AREA_COLOR, LINE_COLOR, draw_area, draw_crossing_line
+from .drawing import DASH_COLOR, EDGE_COLOR, draw_area, draw_crossing_line
 from .identities import OVERLAP, SIZE_RATIO, ObjectIdentities
 
 logger = Logger("VideoObjectTracking")
@@ -100,7 +100,7 @@ class VideoObjectTracking(VideoInference):
             VideoObjectTrackingError: If the model has no object tracking block.
         """
         super().__init__(camera=camera, confidence=confidence, debounce_sec=debounce_sec, stream_port=stream_port)
-        self._colors = LabelColors(avoid=(LINE_COLOR, AREA_COLOR))
+        self._colors = LabelColors(avoid=(DASH_COLOR, EDGE_COLOR))
         self._boxes = BoxStabilizer()  # what the video shows: the tracked boxes, steadied across results
         self._labels_to_track = labels_to_track
         self._labels_to_ignore = labels_to_ignore
@@ -597,8 +597,8 @@ class VideoObjectTracking(VideoInference):
             self._execute_handler(key=self.ALL_HANDLERS_KEY, payload=detections)
 
     def _annotate(self, frame: np.ndarray) -> np.ndarray:
-        """A copy of the frame with the tracked boxes and, when set, the crossing line and the outline of the area."""
-        annotated = draw_detections(frame, self._boxes.visible(), self._colors, color_key=_class_of)
+        """A copy of the frame with, when set, the crossing line and the outline of the area, and the tracked boxes over them."""
+        annotated = frame.copy()
         with self._counter_lock:
             line = self._line_coordinates if self._line_visible else None
             area = self._area if self._area_visible else None
@@ -606,7 +606,7 @@ class VideoObjectTracking(VideoInference):
             draw_crossing_line(annotated, line)
         if area is not None:
             draw_area(annotated, area)
-        return annotated
+        return draw_detections(annotated, self._boxes.visible(), self._colors, color_key=_class_of)
 
     def override_keep_grace(self, keep_grace: int) -> None:
         """Override keep grace for object tracking model.
