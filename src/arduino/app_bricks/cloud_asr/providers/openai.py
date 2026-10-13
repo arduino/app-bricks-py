@@ -30,17 +30,20 @@ def _resample_pcm16(pcm_chunk: bytes, input_rate: int, output_rate: int) -> byte
 class OpenAITranscribe:
     """
     OpenAI ASR cloud provider implementation.
-    It leverages the Realtime API with a transcription-only session: audio is
-    streamed over WebSocket, server-side voice activity detection (VAD) segments
-    utterances, and transcripts arrive as incremental deltas plus a final text.
-    The API only accepts 24 kHz mono PCM16 input, so audio is transparently
-    resampled from the configured microphone sample rate.
+    It leverages the Realtime API with a transcription-only session running the
+    `gpt-live-transcribe` model: audio is streamed over WebSocket, server-side
+    voice activity detection (VAD) segments utterances, and transcripts arrive as
+    incremental deltas plus a final text. The configured language is sent as a
+    one-element `languages` hint list, which the model uses instead of the singular
+    `language` field (the two must not be sent together). The API only accepts
+    24 kHz mono PCM16 input, so audio is transparently resampled from the configured
+    microphone sample rate.
     """
 
     provider_name = "openai-transcribe"
     partial_mode = "append"
 
-    TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
+    TRANSCRIPTION_MODEL = "gpt-live-transcribe"
     BASE_URL = "wss://api.openai.com/v1/realtime"
     TARGET_SAMPLE_RATE = 24000
     IGNORED_COMMIT_CODES = {
@@ -86,7 +89,7 @@ class OpenAITranscribe:
                             "format": {"type": "audio/pcm", "rate": self.TARGET_SAMPLE_RATE},
                             "transcription": {
                                 "model": self.TRANSCRIPTION_MODEL,
-                                "language": self._language,
+                                "languages": [self._language],
                             },
                             "turn_detection": {"type": "server_vad"},
                         },

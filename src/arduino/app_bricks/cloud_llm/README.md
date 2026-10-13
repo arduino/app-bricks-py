@@ -86,7 +86,7 @@ The Brick is initialized with the following parameters:
 | `api_key`          | `str`                 | `os.getenv("API_KEY", "")`    | The authentication key for the LLM provider. **Recommended:** Set this via the **Brick Configuration** menu in App Lab instead of code. |
 | `model`            | `str` \| `CloudModel` | `CloudModel.ANTHROPIC_CLAUDE` | The specific model to use. Accepts a `CloudModel` enum or its string value. String values need a provider prefix (`openai:`, `anthropic:` or `google:`, e.g. `'openai:gpt-5-mini'`); without a prefix, an OpenAI-compatible endpoint is assumed. |
 | `system_prompt`    | `str`                 | `""`                          | A base instruction that defines the AI's behavior and persona.                                                                           |
-| `temperature`      | `float`               | `None`                        | Controls randomness. `0.0` is deterministic, `1.0` is creative. When `None` the provider default is used and no temperature is sent (required by models that deprecated it, e.g. Claude Sonnet 5+). |
+| `temperature`      | `float`               | `None`                        | Controls randomness. `0.0` is deterministic, `1.0` is creative. When `None` the provider default is used and no temperature is sent. Leave it `None` with newer Claude models (Opus 4.7+, Sonnet 5+, including the default `CloudModel.ANTHROPIC_CLAUDE`), which reject any custom value with an error. |
 | `reasoning_effort` | `ReasoningEffort` \| `str` \| `int` | `None`          | Default reasoning effort applied to every `chat`/`chat_stream_reasoning` call that does not pass its own.                                |
 | `max_tool_loops`   | `int`                 | `8`                           | Maximum number of consecutive tool-call loops allowed during a single chat interaction.                                                  |
 | `timeout`          | `int`                 | `None`                        | Maximum time (in seconds) to wait for a response.                                                                                        |
@@ -97,11 +97,11 @@ The Brick is initialized with the following parameters:
 
 You can select a model using the `CloudModel` enum or by passing the corresponding raw string identifier.
 
-| Enum Constant                 | Raw String ID              | Provider Documentation                                                      |
-| :---------------------------- | :------------------------- | :-------------------------------------------------------------------------- |
-| `CloudModel.ANTHROPIC_CLAUDE` | `claude-sonnet-5`          | [Anthropic Models](https://docs.anthropic.com/en/docs/about-claude/models)  |
-| `CloudModel.OPENAI_GPT`       | `gpt-5.6-terra`            | [OpenAI Models](https://platform.openai.com/docs/models)                    |
-| `CloudModel.GOOGLE_GEMINI`    | `gemini-3.6-flash`         | [Google Gemini Models](https://ai.google.dev/gemini-api/docs/models/gemini) |
+| Enum Constant                 | Raw String ID              | Provider Documentation                                                               |
+| :---------------------------- | :------------------------- | :----------------------------------------------------------------------------------- |
+| `CloudModel.ANTHROPIC_CLAUDE` | `claude-sonnet-5-5`        | [Anthropic Models](https://platform.claude.com/docs/en/about-claude/models/overview) |
+| `CloudModel.OPENAI_GPT`       | `gpt-6-luna`               | [OpenAI Models](https://developers.openai.com/api/docs/models)                       |
+| `CloudModel.GOOGLE_GEMINI`    | `gemini-3.5-flash-lite`    | [Google Gemini Models](https://ai.google.dev/gemini-api/docs/models)                 |
 
 ## Methods
 
