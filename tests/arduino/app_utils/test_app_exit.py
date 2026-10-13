@@ -74,6 +74,38 @@ def test_sigterm_while_running_ends_the_process_right_after_the_shutdown():
     assert "AFTER RUN" not in out
 
 
+def test_sigterm_while_the_bricks_start_stops_the_ones_already_running():
+    """Starting the bricks is the slow part of the startup: a stop landing then still goes through the shutdown."""
+    proc = _spawn("""
+        import time
+        from arduino.app_utils import App
+
+        class Fast:
+            def start(self):
+                pass
+
+            def stop(self):
+                print("FAST STOPPED", flush=True)
+
+        class Slow:
+            def start(self):
+                print("SLOW STARTING", flush=True)
+                time.sleep(60)  # A device that takes long to open
+
+        App.register(Fast())
+        App.register(Slow())
+        App.run()
+    """)
+    _wait_for(proc, "SLOW STARTING")
+    t = time.monotonic()
+    proc.send_signal(signal.SIGTERM)
+    out = proc.communicate(timeout=30)[0]
+    assert time.monotonic() - t < 15, "the process did not end promptly on SIGTERM"
+    assert proc.returncode == 128 + signal.SIGTERM
+    assert "FAST STOPPED" in out, "a brick already started must be stopped"
+    assert "App shutdown completed" in out
+
+
 def test_a_user_loop_that_stops_returns_from_run_as_before():
     """The fast exit is for the signal path only: a loop that ends by itself hands control back to the script."""
     result = subprocess.run(

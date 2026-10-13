@@ -257,14 +257,17 @@ class AppController:
         self._stopping = False
         # Re-arm the one-shot peripheral release so a restarted app releases its peripherals again
         peripheral_registry.Peripherals.reset()
-        self._start_managed_bricks()
-        logger.info("App started")
-
-        if self._is_framework_managed():
-            logger.info("Running in framework-managed mode (process lifecycle handled externally)")
-            return
 
         try:
+            # Starting the bricks is the slow part of the startup: inside the try, a SIGTERM
+            # landing while they start still stops the ones already running.
+            self._start_managed_bricks()
+            logger.info("App started")
+
+            if self._is_framework_managed():
+                logger.info("Running in framework-managed mode (process lifecycle handled externally)")
+                return
+
             exit_code = self.loop(user_loop)
         except SystemExit as e:
             # sys.exit() from user code, or SIGTERM caught by the startup handler before loop()
@@ -273,9 +276,9 @@ class AppController:
             self._shutdown_quietly()
             self._exit(e.code if isinstance(e.code, int) else (0 if e.code is None else 1))
         except BaseException:
-            # loop() handles Exception itself, so getting here means a BaseException raised into
-            # the main thread. The shutdown is the only thing that releases the peripherals in
-            # order, so it has to run on this path too.
+            # _start() and loop() handle Exception themselves, so getting here means a BaseException
+            # raised into the main thread. The shutdown is the only thing that releases the
+            # peripherals in order, so it has to run on this path too.
             self._shutdown_quietly()
             raise
 
