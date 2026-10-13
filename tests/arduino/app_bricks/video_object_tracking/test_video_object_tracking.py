@@ -205,6 +205,14 @@ def test_the_video_boxes_carry_the_object_ids(tracker):
     assert set(tracker._boxes.visible()) == {"person #7", "dog #2"}
 
 
+def test_the_objects_of_a_class_share_its_color_on_the_video(tracker):
+    _replay(tracker, [[_track(label="cup", object_id=1, x=100, y=100), _track(label="cup", object_id=2, x=400, y=100)]])
+
+    annotated = tracker._annotate(np.zeros((480, 640, 3), np.uint8))
+
+    assert tuple(annotated[200, 100]) == tuple(annotated[200, 400]) == tracker._colors["cup"], "the left side of both boxes"
+
+
 def test_the_tracked_boxes_are_drawn_on_the_video(tracker):
     frame = np.zeros((480, 640, 3), np.uint8)
     assert not tracker._annotate(frame).any(), "without tracked objects the video shows the plain frame"
