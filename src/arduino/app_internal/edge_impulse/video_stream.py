@@ -13,12 +13,12 @@ completes a document.
 
 from __future__ import annotations
 
-import colorsys
-import random
 import select
 import socket
 import threading
 import time
+import zlib
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -44,54 +44,66 @@ FONT = cv2.FONT_HERSHEY_SIMPLEX
 TEXT_COLOR = (255, 255, 255)
 
 
-class LabelColors:
-    """A color per label, picked the first time the label is seen and kept for the whole run.
+def _bgr(hex_color: str) -> tuple[int, int, int]:
+    """The BGR color of an "#RRGGBB" one."""
+    rgb = int(hex_color.lstrip("#"), 16)
+    return (rgb & 0xFF, (rgb >> 8) & 0xFF, rgb >> 16)
 
-    The first hue is random, the following ones step around the color wheel by the golden ratio, so the
-    labels of a run are always distinct from each other. A color the eye would confuse with one of the colors
-    to avoid, by their CIEDE2000 difference, is stepped over.
+
+# The label colors of the App Lab design
+PALETTE = tuple(
+    _bgr(hex_color)
+    for hex_color in (
+        "#EB2F83",
+        "#EB8100",
+        "#FFF533",
+        "#19FFFF",
+        "#5EEB73",
+        "#4D70FF",
+        "#66A3FF",
+        "#C24EBC",
+        "#FF004D",
+        "#FFB200",
+        "#FF66C9",
+        "#3AC28C",
+    )
+)
+
+
+class LabelColors:
+    """A color of the palette per label, picked the first time the label is seen and kept for the whole run.
+
+    A label takes the color its name hashes to, so it gets the same color on every run, or the next free one when
+    another label of the run holds that color already; once every color is taken, the palette starts again from its
+    first color. The colors the eye would confuse with one of the colors to avoid, by their CIEDE2000 difference,
+    are left out of the palette.
     """
 
-    HUE_STEP = 0.618034
     MIN_DIFFERENCE = 23.0  # the CIEDE2000 difference a label color keeps from every color to avoid
-    MAX_STEPS = 100  # hues stepped over at most, when the colors to avoid leave no room
 
-    def __init__(self, seed: int | None = None, avoid: tuple[tuple[int, int, int], ...] = ()) -> None:
+    def __init__(self, avoid: tuple[tuple[int, int, int], ...] = ()) -> None:
         """
         Args:
-            seed (int | None): Seed of the random first hue, for a palette that repeats. Default is None.
             avoid (tuple[tuple[int, int, int], ...]): BGR colors drawn on the same frames, which the label
                 colors keep clearly different from. Default is none.
         """
-        self._random = random.Random(seed)
-        self._hue = self._random.random()
-        self._avoided = avoid
+        clear = [color for color in PALETTE if all(color_difference(color, avoided) >= self.MIN_DIFFERENCE for avoided in avoid)]
+        self._palette = clear or list(PALETTE)
         self._colors: dict[str, tuple[int, int, int]] = {}
         self._lock = threading.Lock()
 
     def __getitem__(self, label: str) -> tuple[int, int, int]:
         with self._lock:
             if label not in self._colors:
-                # Light, moderately saturated colors keep the white label text readable
-                saturation = self._random.uniform(0.35, 0.6)
-                color = _bgr(self._hue, saturation)
-                for _ in range(self.MAX_STEPS):
-                    if self._clear_of_avoided(color):
-                        break
-                    self._hue = (self._hue + self.HUE_STEP) % 1.0
-                    color = _bgr(self._hue, saturation)
-                self._colors[label] = color
-                self._hue = (self._hue + self.HUE_STEP) % 1.0
+                self._colors[label] = self._pick(label)
             return self._colors[label]
 
-    def _clear_of_avoided(self, color: tuple[int, int, int]) -> bool:
-        return all(color_difference(color, avoided) >= self.MIN_DIFFERENCE for avoided in self._avoided)
-
-
-def _bgr(hue: float, saturation: float) -> tuple[int, int, int]:
-    """The light BGR color of the hue at the saturation."""
-    r, g, b = colorsys.hsv_to_rgb(hue, saturation, 0.95)
-    return (int(b * 255), int(g * 255), int(r * 255))
+    def _pick(self, label: str) -> tuple[int, int, int]:
+        size = len(self._palette)
+        start = zlib.crc32(label.encode()) % size
+        taken = set(self._colors.values())
+        free = [color for color in (self._palette[(start + step) % size] for step in range(size)) if color not in taken]
+        return free[0] if free else self._palette[len(self._colors) % size]
 
 
 @dataclass
@@ -194,13 +206,17 @@ def _iou(a: tuple[float, float, float, float], b: tuple[float, float, float, flo
     return inter / union if union > 0 else 0.0
 
 
-def draw_detections(frame: np.ndarray, detections: dict[str, list[dict[str, Any]]], colors: LabelColors) -> np.ndarray:
+def draw_detections(
+    frame: np.ndarray, detections: dict[str, list[dict[str, Any]]], colors: LabelColors, color_key: Callable[[str], str] | None = None
+) -> np.ndarray:
     """A copy of the frame with a box around every detection and a filled label chip at its top-right corner, "label" and "(score)".
 
     Args:
         frame (np.ndarray): HxWx3 BGR frame.
         detections (dict): The detections of the frame, as the brick passes them to the callbacks.
         colors (LabelColors): The color of every label.
+        color_key (Callable[[str], str] | None): The label whose color the boxes of a label take, the label
+            itself when None.
 
     Returns:
         np.ndarray: The annotated copy.
@@ -212,7 +228,7 @@ def draw_detections(frame: np.ndarray, detections: dict[str, list[dict[str, Any]
     line_h = cv2.getTextSize("Ag", FONT, font_scale, font_thickness)[0][1]
     pad = max(3, round(5 * scale))
     for label, label_detections in detections.items():
-        color = colors[label]
+        color = colors[color_key(label) if color_key is not None else label]
         for detection in label_detections:
             x1, y1, x2, y2 = (int(v) for v in detection["bounding_box_xyxy"])
             cv2.rectangle(image, (x1, y1), (x2, y2), color, thickness)

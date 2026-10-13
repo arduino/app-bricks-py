@@ -591,14 +591,14 @@ class VideoObjectTracking(VideoInference):
         self._record_area(centres, now)
         self._expire_objects({object_id for object_id, _, _ in tracked}, now)
         self._boxes.update(
-            [replace(track, label=f"{label} #{object_id}") for object_id, label, track in tracked], (time.monotonic_ns() - result.ts_ns) / 1e9
+            [replace(track, label=_video_label(label, object_id)) for object_id, label, track in tracked], (time.monotonic_ns() - result.ts_ns) / 1e9
         )
         if detections:
             self._execute_handler(key=self.ALL_HANDLERS_KEY, payload=detections)
 
     def _annotate(self, frame: np.ndarray) -> np.ndarray:
         """A copy of the frame with the tracked boxes and, when set, the crossing line and the outline of the area."""
-        annotated = draw_detections(frame, self._boxes.visible(), self._colors)
+        annotated = draw_detections(frame, self._boxes.visible(), self._colors, color_key=_class_of)
         with self._counter_lock:
             line = self._line_coordinates if self._line_visible else None
             area = self._area if self._area_visible else None
@@ -704,6 +704,16 @@ class VideoObjectTracking(VideoInference):
 
 
 COMPASS = ("right", "down-right", "down", "down-left", "left", "up-left", "up", "up-right")  # clockwise on the screen, y down
+
+
+def _video_label(label: str, object_id: int) -> str:
+    """The label of an object on the video, its class and its number: every object is a box of its own."""
+    return f"{label} #{object_id}"
+
+
+def _class_of(video_label: str) -> str:
+    """The class in the label of an object on the video, whose color all the objects of the class take."""
+    return video_label.rsplit(" #", 1)[0]
 
 
 def _compass(dx: float, dy: float) -> str:
