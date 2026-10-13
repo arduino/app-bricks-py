@@ -315,7 +315,7 @@ def test_classify_success_with_more_arguments(app_instance: AppController, monke
 def test_threshold_property_update_controls_callback(app_instance: AppController, monkeypatch: pytest.MonkeyPatch):
     classifier = VibrationAnomalyDetection(anomaly_detection_threshold=1.0)
 
-    monkeypatch.setattr(classifier._buffer, "pull", lambda: np.array([0.0] * 600))
+    monkeypatch.setattr(classifier._buffer, "pull", lambda timeout=None: np.array([0.0] * 600))
     monkeypatch.setattr(classifier, "infer_from_features", lambda features: {"result": {"anomaly": 2.5}})
 
     anomaly_trigger_called = False
@@ -339,7 +339,7 @@ def test_threshold_property_update_controls_callback(app_instance: AppController
 
 def test_classification_callback_receives_none_without_classification_head(monkeypatch: pytest.MonkeyPatch):
     classifier = VibrationAnomalyDetection()
-    monkeypatch.setattr(classifier._buffer, "pull", lambda: np.array([0.0] * 600))
+    monkeypatch.setattr(classifier._buffer, "pull", lambda timeout=None: np.array([0.0] * 600))
     monkeypatch.setattr(classifier, "infer_from_features", lambda features: {"result": {"anomaly": 2.5}})
 
     received = []
@@ -364,3 +364,19 @@ def test_threshold_property_accepts_finite_non_negative_values(threshold):
 def test_threshold_property_rejects_invalid_values(threshold):
     with pytest.raises(ValueError, match="finite non-negative"):
         VibrationAnomalyDetection(anomaly_detection_threshold=threshold)
+
+
+def test_stop_terminates_the_detection_loop_waiting_for_a_window(app_instance: AppController):
+    """The loop waits for a full sensor window: stopping the brick before one arrives must still end its worker thread."""
+    VibrationAnomalyDetection()
+
+    app_thread = threading.Thread(target=app_instance.run, daemon=True)
+    app_thread.start()
+    time.sleep(0.1)
+    worker = next(t for t in threading.enumerate() if t.name == "VibrationAnomalyDetection.loop")
+
+    app_instance._stop_all_bricks()
+    app_thread.join(timeout=1)
+
+    worker.join(timeout=1)
+    assert not worker.is_alive()

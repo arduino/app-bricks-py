@@ -353,3 +353,28 @@ def test_full_report_is_capped_and_says_how_many_more(tmp_path):
     # New errors are never cut: they are the signal of the PR.
     _code, summary, _out = run_diff(tmp_path, clean, many)
     assert summary.split("#### New errors")[1].split("<details>")[0].count("| `src/arduino/") == check.FULL_REPORT_MAX_ROWS + 5
+
+
+def test_deps_runtime_merges_the_library_the_container_and_the_run_sh_packages(tmp_path: Path):
+    """--runtime lists the whole app runtime once: library (extras expanded), python-base container and run.sh packages."""
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname = 'lib'\ndependencies = ['requests', 'Pillow']\n"
+        "[project.optional-dependencies]\ncamera = ['opencv-python-headless>=4.13']\nall = ['arduino_app_bricks[camera]']\n"
+    )
+    container = tmp_path / "containers" / "base" / "python-base"
+    container.mkdir(parents=True)
+    (container / "pyproject.toml").write_text(
+        "[project]\nname = 'python-base'\ndependencies = ['pandas', 'pillow', \"pyalsaaudio==0.11.0; sys_platform == 'linux'\"]\n"
+    )
+
+    code, out = run_mode(tmp_path, "deps", "--runtime", "--root", str(tmp_path))
+
+    assert code == 0
+    assert out.split("\n")[:-1] == [
+        "requests",
+        "Pillow",
+        "opencv-python-headless>=4.13",
+        "pandas",
+        "pyalsaaudio==0.11.0; sys_platform == 'linux'",
+        "streamlit",
+    ]
