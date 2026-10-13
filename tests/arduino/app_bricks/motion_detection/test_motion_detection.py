@@ -78,7 +78,7 @@ def mock_dependencies(monkeypatch: pytest.MonkeyPatch):
         return FakeResp()
 
     # Mock the model info request to return a fake response
-    monkeypatch.setattr("arduino.app_internal._http.get_with_retry", lambda url, **kwargs: fake_get(None, url))
+    monkeypatch.setattr("arduino.app_internal._http.get", lambda url, **kwargs: fake_get(None, url))
 
 
 def test_classify_success(app_instance: AppController, monkeypatch: pytest.MonkeyPatch):

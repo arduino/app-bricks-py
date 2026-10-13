@@ -17,32 +17,19 @@ from arduino.app_utils import App
 
 
 class FakeResponse:
-    """A runner response: read whole (status_code, json()) or as a stream (status, read1(), read())."""
+    """A runner response: read whole (status_code, json()) or streamed (status_code, iter_content(), json())."""
 
     def __init__(self, status_code=200, json_data=None, content=b"", chunks=None):
         self.status_code = status_code
         self._json_data = json_data
         self.content = content
         self._chunks = chunks
-        self._stream = None
         self.close_called = False
-
-    @property
-    def status(self):
-        return self.status_code
 
     def json(self):
         return self._json_data
 
-    def read(self):
-        return json.dumps(self._json_data).encode() if self._json_data is not None else self.content
-
-    def read1(self, size):
-        if self._stream is None:
-            self._stream = self._iter_content(size)
-        return next(self._stream, b"")
-
-    def _iter_content(self, chunk_size):
+    def iter_content(self, chunk_size):
         if self._chunks is not None:
             yield from self._chunks
             return
@@ -113,7 +100,7 @@ def make_tts(monkeypatch, speaker, post_response, cancel_response=None, **tts_kw
         finally:
             response.close()
 
-    monkeypatch.setattr("arduino.app_internal._http.request", lambda method, url, **kwargs: FakeResponse(json_data=models))
+    monkeypatch.setattr("arduino.app_internal._http.get", lambda url, **kwargs: FakeResponse(json_data=models))
     monkeypatch.setattr("arduino.app_internal._http.post", post)
     monkeypatch.setattr("arduino.app_internal._http.stream", stream)
 

@@ -4,20 +4,10 @@
 
 from dataclasses import dataclass
 from typing import Any, Self
+from urllib.parse import quote
 
 from arduino.app_internal import _http
 from arduino.app_utils import brick
-
-_URL_SAFE = "!#$%&'()*+,/:;=?@[]~"
-"""Characters left as they are when a URL is percent-encoded, as requests does: the others, like spaces, get encoded."""
-
-
-def _get(url: str, params: dict[str, str]) -> tuple[int, Any]:
-    """GET url with the query parameters, and return the status and the JSON body, whatever the status."""
-    from urllib.parse import quote, urlencode
-
-    response = _http.request("GET", f"{quote(url, safe=_URL_SAFE)}?{urlencode(params)}")
-    return response.status_code, response.json()
 
 
 @dataclass(frozen=True)
@@ -118,10 +108,10 @@ class AirQualityMonitoring:
         Raises:
             AirQualityLookupError: If the API request fails.
         """
-        url = f"{self.city_api_url}{city}/"
-        params = {"token": self.__token}
-        status, data = _get(url, params)
-        if status != 200 or data.get("status") != "ok":
+        url = f"{self.city_api_url}{quote(city)}/"
+        response = _http.get(url, params={"token": self.__token})
+        data = response.json()
+        if response.status_code != 200 or data.get("status") != "ok":
             raise AirQualityLookupError.from_api_response(data)
         return self.assemble_data(data["data"])
 
@@ -139,9 +129,9 @@ class AirQualityMonitoring:
             AirQualityLookupError: If the API request fails.
         """
         url = self.geo_api_url.format(lat=latitude, lng=longitude)
-        params = {"token": self.__token}
-        status, data = _get(url, params)
-        if status != 200 or data.get("status") != "ok":
+        response = _http.get(url, params={"token": self.__token})
+        data = response.json()
+        if response.status_code != 200 or data.get("status") != "ok":
             raise AirQualityLookupError.from_api_response(data)
         return self.assemble_data(data["data"])
 
@@ -154,10 +144,9 @@ class AirQualityMonitoring:
         Raises:
             AirQualityLookupError: If the API request fails.
         """
-        url = self.ip_api_url
-        params = {"token": self.__token}
-        status, data = _get(url, params)
-        if status != 200 or data.get("status") != "ok":
+        response = _http.get(self.ip_api_url, params={"token": self.__token})
+        data = response.json()
+        if response.status_code != 200 or data.get("status") != "ok":
             raise AirQualityLookupError.from_api_response(data)
         return self.assemble_data(data["data"])
 

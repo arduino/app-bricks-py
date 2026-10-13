@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""The standard-library HTTP client: requests against a local server, and urllib3's retry rules for GET."""
+"""The stdlib HTTP client against a local HTTP server: encoding, bodies, statuses, streaming, retries and its imports."""
 
 import json
 import socket
@@ -22,49 +22,60 @@ from arduino.app_internal import _http
 
 
 @dataclass
-class Reply:
-    status: int = 200
-    body: bytes = b"{}"
-    headers: dict[str, str] = field(default_factory=dict)
-    delay: float = 0.0
-
-
-@dataclass
-class Received:
-    method: str
-    path: str
-    headers: dict[str, str]
-    body: bytes
-
-
-@dataclass
 class Server:
     url: str
-    replies: list[Reply]
-    """Answered in order; the last one is repeated once the others are used up."""
-    received: list[Received] = field(default_factory=list)
+    received: list[tuple[str, str, dict[str, str], bytes]] = field(default_factory=list)
+    """(method, path, headers, body) of each request."""
+    flaky_statuses: list[int] = field(default_factory=lambda: [503, 503, 200])
+    """Statuses answered to /flaky, in order; the last one is repeated."""
+    release_stream: threading.Event = field(default_factory=threading.Event)
+    """Lets /stream send its second chunk."""
 
 
 @pytest.fixture
 def server() -> Iterator[Server]:
-    state = Server(url="", replies=[Reply()])
+    state = Server(url="")
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
-        def _answer(self) -> None:
-            length = int(self.headers.get("Content-Length") or 0)
-            state.received.append(Received(self.command, self.path, dict(self.headers), self.rfile.read(length)))
-            reply = state.replies.pop(0) if len(state.replies) > 1 else state.replies[0]
-            time.sleep(reply.delay)
-            self.send_response(reply.status)
-            for name, value in reply.headers.items():
-                self.send_header(name, value)
-            self.send_header("Content-Length", str(len(reply.body)))
+        def _handle(self) -> None:
+            body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
+            state.received.append((self.command, self.path, dict(self.headers), body))
+            path = self.path.split("?")[0]
+            if path == "/stream":
+                self.send_response(200)
+                self.send_header("Transfer-Encoding", "chunked")
+                self.end_headers()
+                for index, chunk in enumerate([b"first", b"second"]):
+                    if index == 1:
+                        state.release_stream.wait(5)
+                    self.wfile.write(f"{len(chunk):x}\r\n".encode() + chunk + b"\r\n")
+                    self.wfile.flush()
+                self.wfile.write(b"0\r\n\r\n")
+                return
+            if path == "/slow":
+                time.sleep(0.5)  # The client gives up meanwhile: the answer below lands on a closed socket
+            if path.startswith("/status/"):
+                status = int(path.rsplit("/", 1)[1])
+            elif path == "/flaky":
+                status = state.flaky_statuses.pop(0) if len(state.flaky_statuses) > 1 else state.flaky_statuses[0]
+            else:
+                status = 200
+            payload = json.dumps({"status": status, "method": self.command, "body": body.decode(errors="replace")}).encode()
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
             self.end_headers()
-            self.wfile.write(reply.body)
+            self.wfile.write(payload)
 
-        do_GET = do_POST = _answer
+        def handle(self) -> None:
+            try:
+                super().handle()
+            except (BrokenPipeError, ConnectionResetError):  # The client went away: /slow
+                pass
+
+        do_GET = do_POST = _handle
 
         def log_message(self, format: str, *args: object) -> None:
             pass
@@ -73,6 +84,7 @@ def server() -> Iterator[Server]:
     threading.Thread(target=httpd.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True).start()
     state.url = f"http://127.0.0.1:{httpd.server_address[1]}"
     yield state
+    state.release_stream.set()
     httpd.shutdown()
     httpd.server_close()
 
@@ -85,144 +97,138 @@ def sleeps(monkeypatch: pytest.MonkeyPatch) -> list[float]:
     return recorded
 
 
-def closed_port_url() -> str:
-    with socket.socket() as s:  # A port the OS just handed out and nobody listens on
-        s.bind(("127.0.0.1", 0))
-        return f"http://127.0.0.1:{s.getsockname()[1]}/"
+@pytest.fixture
+def closed_port() -> str:
+    """A URL on a port nothing listens to."""
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return f"http://127.0.0.1:{sock.getsockname()[1]}"
 
 
-def test_import_loads_no_http_stack():
-    """App start time: the HTTP modules load with the first request."""
-    heavy = ["urllib.request", "http.client", "ssl", "email.utils"]
-    code = f"import json, sys\nimport arduino.app_internal._http\nprint(json.dumps([m for m in {heavy!r} if m in sys.modules]))"
-    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120, check=True)
-    assert json.loads(result.stdout.strip().splitlines()[-1]) == []
+def test_get_encodes_the_query_parameters_and_sends_the_headers(server: Server):
+    response = _http.get(f"{server.url}/items", params={"q": "a b", "t": "x&y"}, headers={"X-Token": "secret"})
+
+    assert response.status_code == 200
+    assert response.json()["method"] == "GET"
+    method, path, headers, _ = server.received[0]
+    assert (method, path, headers["X-Token"]) == ("GET", "/items?q=a+b&t=x%26y", "secret")
+    assert response.headers.get("Content-Type") == "application/json"
 
 
-def test_request_returns_error_statuses_with_their_body(server: Server):
-    server.replies = [Reply(status=409, body=b'{"error": "busy"}')]
+def test_post_sends_json_with_its_content_type(server: Server):
+    response = _http.post(f"{server.url}/items", json={"features": [1.0, 2.5]})
 
-    response = _http.request("GET", f"{server.url}/x")
-
-    assert response.status_code == 409
-    assert response.json() == {"error": "busy"}
-    assert response.text == '{"error": "busy"}'
-
-
-def test_post_sends_json(server: Server):
-    _http.post(f"{server.url}/api/features", json={"features": [1.5, 2]})
-
-    received = server.received[0]
-    assert (received.method, received.path) == ("POST", "/api/features")
-    assert received.headers["Content-Type"] == "application/json"
-    assert json.loads(received.body) == {"features": [1.5, 2]}
+    assert response.status_code == 200
+    _, _, headers, body = server.received[0]
+    assert headers["Content-Type"] == "application/json"
+    assert json.loads(body) == {"features": [1.0, 2.5]}
 
 
-def test_post_rejects_nan_as_requests_does():
+def test_post_rejects_nan_in_json_as_requests_does(server: Server):
     with pytest.raises(ValueError):
-        _http.post("http://127.0.0.1:9/", json={"features": [float("nan")]})
+        _http.post(f"{server.url}/items", json={"value": float("nan")})
+    assert server.received == []
 
 
-@pytest.mark.parametrize("as_file", [False, True], ids=["bytes", "file object"])
-def test_post_sends_a_multipart_file_intact(server: Server, as_file: bool):
-    import io
+def test_post_sends_files_as_multipart_form_data(server: Server):
+    _http.post(f"{server.url}/image", files={"file": ("image.jpeg", b"\xff\xd8 jpeg bytes", "image/jpeg")})
 
-    content = b"\x89PNG\r\n\x00\xff binary\r\n--not-the-boundary"
-    _http.post(f"{server.url}/api/image", files={"file": ("image.png", io.BytesIO(content) if as_file else content, "image/png")})
-
-    received = server.received[0]
-    message = BytesParser(policy=default_policy).parsebytes(f"Content-Type: {received.headers['Content-Type']}\r\n\r\n".encode() + received.body)
+    _, _, headers, body = server.received[0]
+    message = BytesParser(policy=default_policy).parsebytes(f"Content-Type: {headers['Content-Type']}\r\n\r\n".encode() + body)
     (part,) = list(message.iter_parts())
     assert part.get_param("name", header="content-disposition") == "file"
-    assert part.get_filename() == "image.png"
-    assert part.get_content_type() == "image/png"
-    assert part.get_payload(decode=True) == content
+    assert part.get_filename() == "image.jpeg"
+    assert part.get_content_type() == "image/jpeg"
+    assert part.get_payload(decode=True) == b"\xff\xd8 jpeg bytes"
 
 
-def test_no_response_raises_connection_failed():
-    with pytest.raises(_http.ConnectionFailed):
-        _http.request("GET", closed_port_url())
+@pytest.mark.parametrize("status", [404, 409, 500])
+def test_error_statuses_are_returned_with_their_body(server: Server, status: int):
+    response = _http.get(f"{server.url}/status/{status}")
+
+    assert response.status_code == status
+    assert response.json()["status"] == status
+    assert response.text.startswith('{"status"')
+    with pytest.raises(_http.HTTPStatusError, match=f"HTTP {status}: ") as info:
+        response.raise_for_status()
+    assert info.value.response is response
 
 
-def test_timeout_raises_connection_failed(server: Server):
-    server.replies = [Reply(delay=1.0)]
-
-    with pytest.raises(_http.ConnectionFailed):
-        _http.request("GET", f"{server.url}/slow", timeout=0.2)
+def test_a_successful_response_passes_raise_for_status(server: Server):
+    _http.get(f"{server.url}/ok").raise_for_status()
 
 
-def test_get_with_retry_waits_like_urllib3_and_gives_up_after_total_retries(server: Server, sleeps: list[float]):
-    server.replies = [Reply(status=503)]
-
-    with pytest.raises(_http.HTTPStatusError) as exc_info:
-        _http.get_with_retry(f"{server.url}/api/info", total=6)
-
-    assert exc_info.value.response.status_code == 503
-    assert len(server.received) == 7
-    assert sleeps == [0.0, 2.0, 4.0, 8.0, 16.0, 32.0]
+def test_no_response_raises_connection_failed(closed_port: str):
+    with pytest.raises(_http.ConnectionFailed, match="GET") as info:
+        _http.get(f"{closed_port}/items")
+    assert isinstance(info.value, OSError)
+    with pytest.raises(_http.ConnectionFailed, match="POST"):
+        _http.post(f"{closed_port}/items", json={})
 
 
-def test_get_with_retry_returns_the_first_good_response(server: Server, sleeps: list[float]):
-    server.replies = [Reply(status=502), Reply(status=504), Reply(status=200, body=b'{"ok": true}')]
+def test_a_timeout_raises_connection_failed(server: Server):
+    with pytest.raises(_http.ConnectionFailed, match="timed out"):
+        _http.get(f"{server.url}/slow", timeout=0.1)
 
-    response = _http.get_with_retry(f"{server.url}/api/info", total=6)
 
-    assert response.json() == {"ok": True}
+def test_get_retries_5xx_responses_with_an_exponential_backoff(server: Server, sleeps: list[float]):
+    response = _http.get(f"{server.url}/flaky", retries=5)
+
+    assert response.status_code == 200
+    assert [path for _, path, _, _ in server.received] == ["/flaky"] * 3
     assert sleeps == [0.0, 2.0]
 
 
-def test_retry_after_replaces_the_backoff(server: Server, sleeps: list[float]):
-    server.replies = [Reply(status=503), Reply(status=503, headers={"Retry-After": "7"}), Reply(status=200)]
+def test_get_returns_the_last_5xx_response_after_the_retries(server: Server, sleeps: list[float]):
+    response = _http.get(f"{server.url}/status/503", retries=3, backoff_factor=0.5)
 
-    _http.get_with_retry(f"{server.url}/api/info", total=6)
-
-    assert sleeps == [0.0, 7.0]
-
-
-def test_status_with_retry_after_is_retried_only_with_the_header(server: Server, sleeps: list[float]):
-    server.replies = [Reply(status=429, headers={"Retry-After": "1"}), Reply(status=200)]
-    assert _http.get_with_retry(f"{server.url}/a", total=6).status_code == 200
-
-    server.replies = [Reply(status=429)]
-    with pytest.raises(_http.HTTPStatusError):
-        _http.get_with_retry(f"{server.url}/b", total=6)
-    assert sleeps == [1.0]
+    assert response.status_code == 503
+    assert len(server.received) == 4
+    assert sleeps == [0.0, 1.0, 2.0]
 
 
-def test_other_errors_are_not_retried(server: Server, sleeps: list[float]):
-    server.replies = [Reply(status=404)]
-
-    with pytest.raises(_http.HTTPStatusError):
-        _http.get_with_retry(f"{server.url}/missing", total=6)
-
+def test_get_does_not_retry_4xx_responses(server: Server, sleeps: list[float]):
+    assert _http.get(f"{server.url}/status/404", retries=3).status_code == 404
     assert len(server.received) == 1
     assert sleeps == []
 
 
-def test_no_response_is_retried(sleeps: list[float]):
+def test_get_retries_connection_failures_then_raises(closed_port: str, sleeps: list[float]):
     with pytest.raises(_http.ConnectionFailed):
-        _http.get_with_retry(closed_port_url(), total=3)
-
-    assert sleeps == [0.0, 2.0, 4.0]
-
-
-def test_stream_reads_the_body_as_it_arrives(server: Server):
-    server.replies = [Reply(body=b"x" * 10_000)]
-
-    with _http.stream("POST", f"{server.url}/tts", json={"text": "hi"}) as response:
-        assert response.status == 200
-        chunks = []
-        while chunk := response.read1(4096):
-            assert len(chunk) <= 4096
-            chunks.append(chunk)
-
-    assert b"".join(chunks) == b"x" * 10_000
-    assert json.loads(server.received[0].body) == {"text": "hi"}
+        _http.get(f"{closed_port}/items", retries=2)
+    assert sleeps == [0.0, 2.0]
 
 
-def test_stream_yields_error_responses_with_their_body(server: Server):
-    server.replies = [Reply(status=500, body=b'{"detail": "boom"}')]
+def test_the_backoff_is_capped():
+    assert [_http._backoff(attempt, 1.0) for attempt in range(1, 8)] == [0.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0]  # pyright: ignore[reportPrivateUsage]
+    assert _http._backoff(20, 1.0) == _http.BACKOFF_MAX_S  # pyright: ignore[reportPrivateUsage]
 
-    with _http.stream("POST", f"{server.url}/tts") as response:
-        assert response.status == 500
-        assert json.loads(response.read()) == {"detail": "boom"}
+
+def test_stream_yields_the_body_as_it_arrives(server: Server):
+    with _http.stream("POST", f"{server.url}/stream", json={"text": "hello"}) as response:
+        assert response.status_code == 200
+        chunks = response.iter_content(1024)
+        assert next(chunks) == b"first"  # Before the server sends the rest
+        server.release_stream.set()
+        assert list(chunks) == [b"second"]
+
+
+def test_stream_returns_error_statuses_with_their_body(server: Server):
+    with _http.stream("POST", f"{server.url}/status/500", json={}) as response:
+        assert response.status_code == 500
+        assert response.json()["status"] == 500
+
+
+def test_stream_raises_connection_failed_without_a_response(closed_port: str):
+    with pytest.raises(_http.ConnectionFailed):
+        with _http.stream("POST", f"{closed_port}/stream", json={}):
+            pass
+
+
+def test_importing_the_client_loads_no_http_library():
+    """App start time: the stdlib client, like requests, loads with the first request."""
+    heavy = ["requests", "urllib3", "urllib.request", "http.client", "ssl"]
+    code = f"import json, sys\nimport arduino.app_internal._http\nprint(json.dumps([m for m in {heavy!r} if m in sys.modules]))"
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120, check=True)
+
+    assert json.loads(result.stdout.strip().splitlines()[-1]) == []

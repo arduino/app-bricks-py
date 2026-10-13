@@ -189,8 +189,8 @@ class EdgeImpulseRunnerFacade:
             url = cls._get_ei_url()
 
         try:
-            response = _http.get_with_retry(f"{url}/api/info", total=MODEL_INFO_RETRIES, timeout=5)
-        except (_http.ConnectionFailed, _http.HTTPStatusError) as e:
+            response = _http.get(f"{url}/api/info", timeout=5, retries=MODEL_INFO_RETRIES)
+        except _http.ConnectionFailed as e:
             logger.warning(f"[{cls.__name__}] No response fetching model info from {url}/api/info: {e}")
             return None
         try:

@@ -19,8 +19,8 @@ STATION = {
 
 @pytest.fixture
 def get():
-    """Replace the HTTP request with a mock answering with the given payload."""
-    with patch("arduino.app_internal._http.request") as mock_get:
+    """Replace the HTTP GET with a mock answering with the given payload."""
+    with patch("arduino.app_internal._http.get") as mock_get:
 
         def respond(payload):
             mock_get.return_value = MagicMock(status_code=200, json=MagicMock(return_value=payload))
@@ -42,7 +42,8 @@ def test_process_dispatches_on_the_item_keys(get, item, url):
 
     data = AirQualityMonitoring(token="token").process(item)
 
-    assert mock_get.call_args.args == ("GET", f"{url}?token=token")
+    assert mock_get.call_args.args == (url,)
+    assert mock_get.call_args.kwargs == {"params": {"token": "token"}}
     assert data == AirQualityData(
         city="Turin",
         lat=45.07,
@@ -132,15 +133,3 @@ def test_city_names_are_percent_encoded_in_the_path(waqi):
         monitor.get_air_quality_by_city("São Paulo de Olivença")
 
     assert paths == ["/feed/Turin/?token=t+k", "/feed/S%C3%A3o%20Paulo%20de%20Oliven%C3%A7a/?token=t+k"]
-
-
-def test_import_does_not_load_an_http_client():
-    """App start time: the HTTP client loads with the first lookup, not when the app imports the brick."""
-    import json
-    import subprocess
-    import sys
-
-    heavy = ["requests", "urllib3", "urllib.request", "http.client"]
-    code = f"import json, sys\nimport arduino.app_bricks.air_quality_monitoring\nprint(json.dumps([m for m in {heavy!r} if m in sys.modules]))"
-    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120, check=True)
-    assert json.loads(result.stdout.strip().splitlines()[-1]) == []

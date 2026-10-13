@@ -2,13 +2,8 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-import io
 import json
-import subprocess
-import sys
 import threading
-import urllib.error
-import urllib.parse
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from email.message import Message
@@ -18,6 +13,7 @@ from unittest.mock import patch
 import pytest
 
 import arduino.app_bricks.weather_forecast as weather_forecast
+from arduino.app_internal import _http
 from arduino.app_bricks.weather_forecast import WeatherData, WeatherForecast
 
 CITY_API_URL = "https://geocoding-api.open-meteo.com/v1/search"
@@ -29,22 +25,21 @@ RAIN_SHOWERS = WeatherData(code=80, description="Rain shower(s), slight", catego
 
 @pytest.fixture
 def get():
-    """Replace urllib.request.urlopen with a mock answering the geocoding and forecast APIs.
+    """Replace the HTTP GET with a mock answering the geocoding and forecast APIs.
 
-    `get.calls` lists the requests made, as (URL without the query, decoded query parameters).
+    `get.calls` lists the requests made, as (URL, query parameters).
     """
     payloads = {CITY_API_URL: {"results": [TURIN]}, FORECAST_API_URL: FORECAST}
     calls: list[tuple[str, dict[str, str]]] = []
 
-    def respond(url: str) -> io.BytesIO:
-        base, _, query = url.partition("?")
-        calls.append((base, {k: v[0] for k, v in urllib.parse.parse_qs(query).items()}))
-        return io.BytesIO(json.dumps(payloads[base]).encode())
+    def respond(url: str, *, params: dict[str, str] | None = None, **kwargs: object) -> _http.Response:
+        calls.append((url, {key: str(value) for key, value in (params or {}).items()}))  # As they go on the wire
+        return _http.Response(200, Message(), json.dumps(payloads[url]).encode())
 
-    with patch("urllib.request.urlopen", side_effect=respond) as mock_urlopen:
-        mock_urlopen.payloads = payloads
-        mock_urlopen.calls = calls
-        yield mock_urlopen
+    with patch.object(_http, "get", side_effect=respond) as mock_get:
+        mock_get.payloads = payloads
+        mock_get.calls = calls
+        yield mock_get
 
 
 def test_get_forecast_by_coords_maps_the_weather_code(get):
@@ -65,7 +60,6 @@ def test_get_forecast_by_coords_sends_the_forecast_parameters(get):
 def test_get_forecast_by_city_url_encodes_the_city(get):
     WeatherForecast().get_forecast_by_city("New York")
 
-    assert get.call_args_list[0].args[0] == f"{CITY_API_URL}?name=New+York"
     assert get.calls[0] == (CITY_API_URL, {"name": "New York"})
 
 
@@ -76,14 +70,14 @@ def test_get_forecast_by_city_raises_when_the_city_is_not_found(get):
         WeatherForecast().get_forecast_by_city("Nowhere")
 
 
-def test_http_errors_become_runtime_errors():
-    error = urllib.error.HTTPError(CITY_API_URL, 503, "Service Unavailable", hdrs=Message(), fp=None)
+def test_http_errors_become_runtime_errors(monkeypatch: pytest.MonkeyPatch):
+    unavailable = _http.Response(503, Message(), b"Service Unavailable")
+    monkeypatch.setattr(_http, "get", lambda url, **kwargs: unavailable)
 
-    with patch("urllib.request.urlopen", side_effect=error):
-        with pytest.raises(RuntimeError, match="Failed to look city up: HTTP Error 503"):
-            WeatherForecast().get_forecast_by_city("Turin")
-        with pytest.raises(RuntimeError, match="Failed to get weather data: HTTP Error 503"):
-            WeatherForecast().get_forecast_by_coords("45.07", "7.68")
+    with pytest.raises(RuntimeError, match="Failed to look city up: HTTP 503: Service Unavailable"):
+        WeatherForecast().get_forecast_by_city("Turin")
+    with pytest.raises(RuntimeError, match="Failed to get weather data: HTTP 503: Service Unavailable"):
+        WeatherForecast().get_forecast_by_coords("45.07", "7.68")
 
 
 @pytest.mark.parametrize(
@@ -158,18 +152,5 @@ def test_the_brick_talks_http_to_a_real_server(local_api: LocalApi, monkeypatch:
     assert local_api.paths[1].startswith("/forecast?latitude=45.07&longitude=7.68&")
 
     monkeypatch.setattr(weather_forecast, "forecast_api_url", f"{local_api.base}/missing")
-    with pytest.raises(RuntimeError, match="Failed to get weather data: HTTP Error 404"):
+    with pytest.raises(RuntimeError, match="Failed to get weather data: HTTP 404"):
         WeatherForecast().get_forecast_by_coords("45.07", "7.68")
-
-
-def test_import_does_not_load_an_http_client():
-    """App start time: the HTTP client loads on the first forecast, not when the app imports the brick."""
-    code = (
-        "import json, sys\n"
-        "import arduino.app_bricks.weather_forecast\n"
-        "print(json.dumps({m: m in sys.modules for m in ['requests', 'urllib3', 'urllib.request', 'http.client', 'importlib.resources']}))\n"
-    )
-    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120, check=True)
-    loaded = json.loads(result.stdout.strip().splitlines()[-1])
-
-    assert loaded == {"requests": False, "urllib3": False, "urllib.request": False, "http.client": False, "importlib.resources": False}

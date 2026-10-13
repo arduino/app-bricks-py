@@ -10,17 +10,21 @@ from typing import Any
 
 from arduino.app_utils.utils import get_board_name
 
-# yaml is imported by the functions that read a YAML file: at module level it would slow down every app start
-
 application_config_file_name: str = "app.yaml"
 config_file_name: str = "brick_config.yaml"
 compose_config_file_name: str = "brick_compose.yaml"
 
 
+def _read_yaml(path: str) -> Any:  # noqa: ANN401
+    """Load a YAML file."""
+    import yaml  # Imported here: at module level it would slow down every app start
+
+    with open(path, encoding="utf-8") as f:
+        return yaml.safe_load(f)
+
+
 def get_app_config() -> dict[str, Any] | None:
     """Gets app.yaml application configuration."""
-    import yaml
-
     config_path = None
     app_root_dir = os.getenv("APP_HOME")
     if app_root_dir and app_root_dir != "":
@@ -45,22 +49,16 @@ def get_app_config() -> dict[str, Any] | None:
                 return None
 
     if config_path and os.path.exists(config_path):
-        with open(config_path, encoding="utf-8") as f:
-            config_content = yaml.safe_load(f)
-            return config_content
+        return _read_yaml(config_path)
 
     return None
 
 
 def get_brick_config(cls: type) -> dict[str, Any] | None:
     """Gets resolved brick_config.yaml file."""
-    import yaml
-
     config_file = get_brick_linked_resource_file(cls, config_file_name)
     if config_file and os.path.exists(config_file):
-        with open(config_file, encoding="utf-8") as f:
-            config_content = yaml.safe_load(f)
-            return config_content
+        return _read_yaml(config_file)
     return None
 
 
@@ -76,13 +74,9 @@ def get_brick_compose_file(cls: type) -> str | None:
 
 def load_brick_compose_file(cls: type) -> dict[str, Any] | None:
     """Loads the brick_compose.yaml file and returns its content."""
-    import yaml
-
     pathfile = get_brick_compose_file(cls)
     if pathfile:
-        with open(pathfile, encoding="utf-8") as f:
-            compose_content = yaml.safe_load(f)
-            return compose_content
+        return _read_yaml(pathfile)
     else:
         return None
 
@@ -196,14 +190,11 @@ def load_model_list() -> dict[str, ModelEntry] | None:
     Returns:
         A dictionary of model_id -> ModelEntry, or None if the file is not found.
     """
-    import yaml
-
     static_assets_dir = get_bricks_static_assets_directory()
     if static_assets_dir:
         model_list_path = os.path.join(static_assets_dir, "models-list.yaml")
         if os.path.exists(model_list_path):
-            with open(model_list_path, encoding="utf-8") as f:
-                model_list_content = yaml.safe_load(f)
+            model_list_content = _read_yaml(model_list_path)
             if not model_list_content:
                 return None
             if isinstance(model_list_content, dict) and "models" in model_list_content:
@@ -358,7 +349,7 @@ def load_module_supported_variables(file_path: str) -> list[ModuleVariable] | No
     Returns:
         A list of ModuleVarable objects representing the variables found in the Docker Compose file.
     """
-    import yaml
+    import yaml  # Imported here: at module level it would slow down every app start
 
     try:
         with open(file_path) as file:

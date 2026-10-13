@@ -193,7 +193,7 @@ def test_get_model_info(monkeypatch: pytest.MonkeyPatch, facade: EdgeImpulseRunn
         return FakeResp()
 
     # Mock the model info request to return a fake response
-    monkeypatch.setattr("arduino.app_internal._http.get_with_retry", lambda url, **kwargs: fake_get(None, url))
+    monkeypatch.setattr("arduino.app_internal._http.get", lambda url, **kwargs: fake_get(None, url))
 
     info = facade.get_model_info()
     assert captured["url"].endswith("/api/info")
@@ -285,7 +285,7 @@ def test_infer_from_features(monkeypatch: pytest.MonkeyPatch, facade: EdgeImpuls
         return FakeResp2()
 
     # Mock the model info request to return a fake response
-    monkeypatch.setattr("arduino.app_internal._http.get_with_retry", lambda url, **kwargs: fake_get(None, url))
+    monkeypatch.setattr("arduino.app_internal._http.get", lambda url, **kwargs: fake_get(None, url))
 
     # Mock docker-compose related functions
     fake_compose = {"services": {"ei-inference": {"ports": ["${BIND_ADDRESS:-127.0.0.1}:1337:1337"]}}}

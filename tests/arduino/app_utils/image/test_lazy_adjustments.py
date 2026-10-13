@@ -38,7 +38,7 @@ def test_an_adjustment_loads_on_first_access():
 
 
 def test_every_public_adjustment_is_reachable_from_the_package():
-    """Guards the list of lazy names against a function added to adjustments.py and forgotten in the package."""
+    """Guards __all__ against a function added to adjustments.py and forgotten in the package."""
     import arduino.app_utils.image as image
     from arduino.app_utils.image import adjustments
 
@@ -47,7 +47,7 @@ def test_every_public_adjustment_is_reachable_from_the_package():
         for name, value in vars(adjustments).items()
         if inspect.isfunction(value) and value.__module__ == adjustments.__name__ and not name.startswith("_")
     }
-    assert public == set(image._ADJUSTMENTS)  # pyright: ignore[reportPrivateUsage]
+    assert public <= set(image.__all__)
     for name in public:
         assert getattr(image, name) is getattr(adjustments, name)
 

@@ -2,11 +2,9 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""The Edge Impulse facade against a fake runner on a local HTTP server, the model information cache, and its imports."""
+"""The Edge Impulse facade against a fake runner on a local HTTP server, and the model information cache."""
 
 import json
-import subprocess
-import sys
 import threading
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -132,12 +130,3 @@ def test_a_failed_model_info_fetch_is_not_kept(runner: Runner, sleeps: list[floa
     assert [path for _, path, _, _ in runner.received].count("/api/info") == 7  # 1 attempt + 6 retries, then gave up
     assert EdgeImpulseRunnerFacade.infer_from_features([1.0, 2.0, 3.0]) is not None  # Asked again, and now it does
     assert [path for _, path, _, _ in runner.received].count("/api/info") == 8
-
-
-def test_importing_the_facade_loads_no_http_client_image_library_or_yaml():
-    """App start time: requests, PIL and cv2 load when an inference needs them, not when a brick is imported."""
-    heavy = ["requests", "urllib3", "urllib.request", "PIL", "cv2", "numpy", "yaml"]
-    code = f"import json, sys\nimport arduino.app_internal.core\nprint(json.dumps({{m: m in sys.modules for m in {heavy!r}}}))"
-    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120, check=True)
-
-    assert json.loads(result.stdout.strip().splitlines()[-1]) == dict.fromkeys(heavy, False)

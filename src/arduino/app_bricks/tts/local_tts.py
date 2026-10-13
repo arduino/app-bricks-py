@@ -2,7 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-import json
 import queue
 import re
 import threading
@@ -343,7 +342,7 @@ class TextToSpeech:
     def _resolve_voice(self, model_name: str) -> VoiceConfig:
         """Fetch available TTS models from the runner and return the voice config for `model_name`."""
         try:
-            response = _http.request("GET", f"{self.api_base_url}/tts/models")
+            response = _http.get(f"{self.api_base_url}/tts/models")
         except Exception as e:
             raise RuntimeError(f"Failed to fetch TTS models: {e}.")
 
@@ -448,10 +447,10 @@ class TextToSpeech:
 
         with _http.stream("POST", url, json=payload) as response:
             try:
-                if response.status != 200:
+                if response.status_code != 200:
                     error_msg = f"Failed to synthesize text."
                     try:
-                        error_data = json.loads(response.read())
+                        error_data = response.json()
                         if "error" in error_data:
                             error_msg = error_data["error"].get("message", error_msg)
                     except:
@@ -463,8 +462,7 @@ class TextToSpeech:
                     return
 
                 stream_chunk_size = self._speaker.buffer_size * self._speaker.channels * self._speaker.format.itemsize
-                # read1 returns what has arrived, at most stream_chunk_size bytes, as soon as it arrives
-                while audio_chunk := response.read1(stream_chunk_size):
+                for audio_chunk in response.iter_content(chunk_size=stream_chunk_size):
                     if cancelled is not None and cancelled.is_set():
                         logger.debug("Speech session cancelled while reading synthesis stream")
                         return
@@ -486,7 +484,7 @@ class TextToSpeech:
                 elapsed_ms = (time.perf_counter() - started_at) * 1000
                 logger.debug(
                     f"TTS PCM stream completed in {elapsed_ms:.2f} ms "
-                    f"(input_chars={len(text)}, status_code={response.status}, "
+                    f"(input_chars={len(text)}, status_code={response.status_code}, "
                     f"pcm_bytes={total_audio_bytes}, keep_alive={keep_alive})"
                 )
 

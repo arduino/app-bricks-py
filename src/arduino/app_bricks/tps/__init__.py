@@ -99,17 +99,20 @@ def _build_payload(scan_result: dict[str, Any], street_address: bool) -> dict[st
     return payload
 
 
-def _unix_socket_connection(path: str, timeout: float) -> "http.client.HTTPConnection":
-    """An HTTP connection over a Unix domain socket."""
+def _connect_scanner(path: str, timeout: float) -> "http.client.HTTPConnection":
+    """Open an HTTP connection to the scanner over its Unix domain socket.
+
+    Raises:
+        OSError: The socket cannot be connected.
+    """
     import http.client  # Imported here: with ssl and email it is a slow import at app start
 
-    class UnixSocketConnection(http.client.HTTPConnection):
-        def connect(self) -> None:
-            self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            self.sock.settimeout(self.timeout)
-            self.sock.connect(path)
-
-    return UnixSocketConnection("localhost", timeout=timeout)
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    sock.settimeout(timeout)
+    sock.connect(path)
+    connection = http.client.HTTPConnection("localhost", timeout=timeout)
+    connection.sock = sock  # Already connected: request() only connects when sock is None
+    return connection
 
 
 @brick
@@ -274,15 +277,16 @@ class TPS:
         Raises:
             RuntimeError: If the scanner is unreachable or the scan failed.
         """
-        connection = _unix_socket_connection(self.scanner_socket_path, HTTP_REQ_TIMEOUT_SEC)
         try:
-            connection.request("GET", "/scan")
-            response = connection.getresponse()
-            body = response.read()
+            connection = _connect_scanner(self.scanner_socket_path, HTTP_REQ_TIMEOUT_SEC)
+            try:
+                connection.request("GET", "/scan")
+                response = connection.getresponse()
+                body = response.read()
+            finally:
+                connection.close()
         except OSError as e:
             raise RuntimeError(f"Wi-Fi scanner unreachable at {self.scanner_socket_path}: {e}") from e
-        finally:
-            connection.close()
 
         if response.status != 200:
             raise RuntimeError(f"Wi-Fi scan failed: scanner returned HTTP {response.status}")
