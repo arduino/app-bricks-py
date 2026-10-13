@@ -52,7 +52,7 @@ The brick opens the model while the app is starting and refuses one without the 
 
 ## Video stream
 
-The brick serves the camera video with the tracked boxes drawn on it on port `4912`: `http://<board>:4912/` is an MJPEG stream, which browsers show like an image, and `http://<board>:4912/embed` is a bare page for embedding in an iframe. Every box is labelled with the object label and its ID, `person #3`, and takes the color of its label from a fixed palette: the objects of a label share it, and a label gets the same color on every run. Frames are rendered only while someone is watching.
+The brick serves the camera video with the tracked boxes drawn on it on port `4912`: `http://<board>:4912/` is an MJPEG stream, which browsers show like an image, and `http://<board>:4912/embed` is a bare page for embedding in an iframe. Every box is labelled with the object label and its ID, `Person #3`, and its confidence, and takes the color of its label from a fixed palette: the objects of a label share it, and a label gets the same color on every run. Frames are rendered only while someone is watching.
 `stream_port=None` in the constructor disables the stream.
 
 ## Prerequisites

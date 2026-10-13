@@ -11,7 +11,18 @@ import zlib
 import numpy as np
 import pytest
 
-from arduino.app_internal.edge_impulse.video_stream import PALETTE, BoxStabilizer, LabelColors, VideoStreamServer, draw_detections
+from arduino.app_internal.edge_impulse.video_stream import (
+    MIN_TEXT_PX,
+    PALETTE,
+    TEXT_FONT,
+    BoxStabilizer,
+    LabelColors,
+    VideoStreamServer,
+    _chip_lines,
+    _rendered,
+    _text_px,
+    draw_detections,
+)
 from arduino.app_utils.image.colors import color_difference
 from arduino.app_internal.edge_impulse.client import Box
 
@@ -154,7 +165,7 @@ def test_the_boxes_take_the_color_of_their_color_key():
     assert tuple(image[300, 100]) == tuple(image[300, 400]) == colors["cup"]
 
 
-def test_detections_are_drawn_as_a_box_with_a_label_chip_at_the_top_right():
+def test_detections_are_drawn_as_a_box_with_a_label_chip_above_its_top_left_corner():
     colors = LabelColors()
     frame = np.zeros((480, 640, 3), np.uint8)
     detections = {"cat": [{"confidence": 0.57, "bounding_box_xyxy": (200, 200, 300, 400)}]}
@@ -163,19 +174,43 @@ def test_detections_are_drawn_as_a_box_with_a_label_chip_at_the_top_right():
     color = colors["cat"]
     assert tuple(image[300, 200]) == color, "left border"
     assert tuple(image[300, 299]) == color, "right border"
-    assert tuple(image[190, 295]) == color, "the chip above the box, at its right corner, has the same color"
-    assert (image[160:199, 200:300] >= 230).all(axis=2).any(), "white text in the chip"
-    assert tuple(image[190, 210]) == (0, 0, 0), "the chip is as wide as its text, not as the box"
+    assert tuple(image[190, 201]) == color, "the chip above the box, at its left corner, has the same color"
+    assert (image[160:199, 200:300].max(axis=2) < 110).any(), "dark text in the chip"
+    assert tuple(image[190, 290]) == (0, 0, 0), "the chip is as wide as its text, not as the box"
     assert tuple(image[150, 250]) == (0, 0, 0), "the chip is compact"
     assert tuple(image[300, 250]) == (0, 0, 0), "the box is not filled"
     assert tuple(image[450, 500]) == (0, 0, 0), "nothing drawn far from the box"
 
 
+def test_the_chip_shows_the_label_with_a_capital_initial_and_the_confidence():
+    assert _chip_lines("cell phone #4", 0.857) == ["Cell phone #4", "(0.86)"]
+    assert _chip_lines("cup #1", 1.0) == ["Cup #1", "(1.00)"]
+
+
+def test_the_chip_text_follows_the_frame_height():
+    assert _text_px(720) == 11, "12 px of a 720p video shown 1440 px wide, the size of the design"
+    assert _text_px(1080) == 16
+    assert _text_px(480) == MIN_TEXT_PX, "never smaller than the minimum"
+
+
+def test_the_chip_font_ships_with_the_library_and_renders():
+    assert TEXT_FONT.exists() and (TEXT_FONT.parent / "OFL.txt").exists()
+    rendered = _rendered("Cup #1", 11)
+    assert rendered.ndim == 2 and rendered.shape[0] >= 11 and rendered.shape[1] > rendered.shape[0]
+    assert rendered.max() == 1.0 and rendered.min() == 0.0, "solid strokes on a clear background"
+
+
 def test_label_chip_moves_inside_the_box_when_there_is_no_room_above():
     colors = LabelColors()
     image = draw_detections(np.zeros((480, 640, 3), np.uint8), {"cat": [{"confidence": 0.9, "bounding_box_xyxy": (10, 5, 200, 300)}]}, colors)
-    assert tuple(image[15, 190]) == colors["cat"], "the chip starts at the top-right corner of the box"
-    assert tuple(image[15, 20]) == (0, 0, 0), "and does not span the box"
+    assert tuple(image[15, 12]) == colors["cat"], "the chip starts at the top-left corner of the box"
+    assert tuple(image[15, 190]) == (0, 0, 0), "and does not span the box"
+
+
+def test_label_chip_stays_inside_the_frame_for_a_box_on_its_right_edge():
+    colors = LabelColors()
+    image = draw_detections(np.zeros((480, 640, 3), np.uint8), {"cat": [{"confidence": 0.9, "bounding_box_xyxy": (620, 200, 639, 300)}]}, colors)
+    assert tuple(image[190, 639]) == colors["cat"], "the chip ends at the right edge of the frame"
 
 
 # ---------------------------------------------------------------- box stabilizer
