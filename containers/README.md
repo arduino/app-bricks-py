@@ -27,6 +27,7 @@ container by globbing `containers/*/<name>/Dockerfile`, so names must be unique 
 | `python-slim` | base | `python:3.13-slim-trixie` | Minimal Python layer shared by everything else |
 | `python-base` | base | `python-slim` | System deps, non-root user, fonts, OpenCV wheel with trimmed FFmpeg and GStreamer plugins-good builds, libcamera + GStreamer packages |
 | `qairt-common-base` | base | `python:3.13-slim-trixie` | Qualcomm AI Runtime and FastRPC libraries shared by the NPU runners |
+| `aihub-framework` | base | `scratch` | Layer, never run: the `aihub` runner framework and the app skeleton, copied by `aihub-litert-models-runner` and `aihub-onnx-models-runner` |
 | `python-apps-base` | bricks | `python-base` | App runtime: installs the Arduino App Bricks `.whl` and the Streamlit config |
 | `models-downloader` | bricks | `python-slim` | Downloads models from AI Hub, Edge Impulse and Hugging Face per `models/models-list.yaml` |
 | `tps` | bricks | `python-slim` | Wi-Fi scan server of the TPS Location API brick, serves `iw` results to the app over a Unix socket |
@@ -52,15 +53,17 @@ graph LR
   eiqnn[ei-qnn-models-runner]
   slim --> tps[tps]
   slim --> aihubonnx[aihub-onnx-models-runner] --> ocr[ocr-runner]
+  fw[aihub-framework] -.-> aihub
+  fw -.-> aihubonnx
 ```
 
 `ei-models-runner` and `ei-qnn-models-runner` build on external Edge Impulse images and have no upstream
 inside this repo.
 
-`base/aihub-framework/` is not a container: it holds the `aihub` runner framework and the app skeleton
-shared by `aihub-litert-models-runner` and `aihub-onnx-models-runner`. Both targets read it from the
-`framework` named context of `docker-bake.hcl` (`COPY --from=framework ...`), so the two runner bases
-carry one copy of the sources while installing the framework's dependencies from their own `pyproject.toml`.
+Dashed edges add a layer (see below): `aihub-framework` is an image `FROM scratch` holding only the
+`aihub` package at `/opt/aihub/` and the app skeleton at `/app/`. Both runner bases add its layers, put
+`/opt` on `PYTHONPATH` so their runners `import aihub`, and install the framework's dependencies from
+their own `pyproject.toml`, since the layer has no Python.
 
 ## Anatomy of a container directory
 
@@ -82,6 +85,37 @@ An image that derives from another container in this repo declares it once, in i
 `docker-bake.hcl` target links the same parent with `parent_context()`, so bake builds the parent
 in-graph first; `scripts/container.py` reads the `FROM` line for everything else (dev build
 selection, SBOM base image, `task show:containers`) and the release fails if the two disagree.
+
+An image that adds a **layer** of this repo, an image that is never run like `aihub-framework`, imports
+it the same way through a stage of its own, and links it next to its parent:
+
+```dockerfile
+ARG REGISTRY
+ARG BASE_IMAGE_VERSION=latest
+
+FROM ${REGISTRY}app-bricks/aihub-framework:${BASE_IMAGE_VERSION} AS aihub-framework
+
+FROM ${REGISTRY}app-bricks/python-slim:${BASE_IMAGE_VERSION}
+# ...
+ENV PYTHONPATH="/opt"
+COPY --link --from=aihub-framework /opt/aihub/ /opt/aihub/
+```
+
+```hcl
+contexts = merge(
+  parent_context("python-slim"),
+  parent_context("aihub-framework"),
+)
+```
+
+`--link` is what makes it the layer rather than a copy: BuildKit builds the `COPY` apart from what is
+below it, so it reproduces the layer image's own layer byte for byte, on any base, and the registry
+stores one blob for the layer image and every image adding it. A plain `COPY --from` copies the files
+into a new layer of each image instead. On a base where `/app` belongs to `arduino` (as in
+`python-slim`), the layer's root-owned `/app` takes over, which the runners, running as root, do not mind.
+
+`scripts/container.py` reads every `FROM ${REGISTRY}app-bricks/...` stage that is not the parent as a
+layer: `check-bake` requires its link, and a dev build of the layer rebuilds every image adding it.
 
 See the [docker-bake.hcl reference](../.github/README.md#docker-bakehcl-reference) for the variables CI sets.
 
@@ -110,7 +144,8 @@ Every image is pushed with the SBOM BuildKit generated while building it, readab
 `docker buildx imagetools inspect <image> --format '{{ json .SBOM }}'`. Each release also attaches
 `sboms.zip` to the GitHub Release, covering **every image it publishes**: `scripts/sbom_delta.py` reads
 those attestations and computes, for each image, the delta against the base image of its Dockerfile,
-the attestation of the parent container or a Syft scan of the external base. The archive holds one
+the attestation of the parent container, a Syft scan of the external base, or an empty SBOM for a layer
+`FROM scratch`. The archive holds one
 `<name>-<version>/` folder per image with `base`, `full` and `delta` SPDX documents. A failed delta never
 blocks the release: the image is reported as a warning and listed in `MISSING.txt` inside the archive.
 
@@ -118,8 +153,8 @@ blocks the release: the image is reported as a warning and listed in `MISSING.tx
 
 `dev-release.yml` is manual (`workflow_dispatch`): pick a branch, and either `all` or a comma-separated
 list of container names. The selection is widened by `scripts/container.py` — selecting a leaf
-pulls in its bases, selecting a base pulls in everything derived from it — and bake builds the result in
-dependency order. Images are published as
+pulls in its bases and the layers they copy from, selecting a base or a layer pulls in everything derived
+from it or copying from it — and bake builds the result in dependency order. Images are published as
 `ghcr.io/arduino/app-bricks/<name>:dev-<branch>`. The wheel installed in `python-apps-base` is built with
 `BRICKS_RELEASE_VERSION=dev-<branch>`, so its compose files reference the dev images. They are deleted
 automatically when the branch is.

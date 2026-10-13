@@ -7,9 +7,15 @@
 # A container deriving from another container of this repository declares it
 # in its Dockerfile (FROM ${REGISTRY}app-bricks/<parent>:${BASE_IMAGE_VERSION})
 # and links it here with parent_context(): bake then builds the parent in-graph,
-# in dependency order, however deep the chain. scripts/container.py reads
-# the same FROM lines and the release checks that the two agree. Targets are
-# listed parents first, each followed by the containers deriving from it.
+# in dependency order, however deep the chain. A container copying files out of
+# a layer of this repository, an image like aihub-framework that is never run,
+# declares it the same way in a stage of its own
+# (FROM ${REGISTRY}app-bricks/<layer>:${BASE_IMAGE_VERSION} AS <alias>, then
+# COPY --link --from=<alias>, which adds the layer's own blobs) and links it with
+# parent_context() next to its parent.
+# scripts/container.py reads the same FROM lines and the release checks that the
+# two agree. Targets are listed parents and layers first, each followed by the
+# containers deriving from it.
 #
 # Build arguments specific to a container (download URLs and digests) are the
 # ARG defaults of its Dockerfile, so it also builds standalone.
@@ -20,8 +26,7 @@
 #
 # python-apps-base installs the wheel from the "wheel" context (dist/, filled by
 # `task build:bricks`), models-downloader reads models-list.yaml from the "models"
-# context (models/), aihub-litert-models-runner and aihub-onnx-models-runner read the
-# shared `aihub` framework from the "framework" context (containers/base/aihub-framework/).
+# context (models/).
 
 # Registry prefix the images are published under, with a trailing slash.
 variable "REGISTRY" {
@@ -125,6 +130,7 @@ target "_downstream" {
 # Every container: a release builds and publishes them all.
 group "default" {
   targets = [
+    "aihub-framework",
     "python-slim",
     "llamacpp-runner",
     "models-downloader",
@@ -141,6 +147,16 @@ group "default" {
     "ei-models-runner",
     "ei-qnn-models-runner",
   ]
+}
+
+# The `aihub` runner framework and the app skeleton, a layer FROM scratch that
+# aihub-litert-models-runner and aihub-onnx-models-runner copy from.
+target "aihub-framework" {
+  inherits   = ["_common"]
+  context    = "containers/base/aihub-framework"
+  tags       = image_tags("aihub-framework")
+  cache-from = cache_from("aihub-framework")
+  cache-to   = cache_to("aihub-framework")
 }
 
 target "python-slim" {
@@ -209,8 +225,8 @@ target "aihub-onnx-models-runner" {
   cache-from = cache_from("aihub-onnx-models-runner")
   cache-to   = cache_to("aihub-onnx-models-runner")
   contexts = merge(
-    { framework = "containers/base/aihub-framework" },
     parent_context("python-slim"),
+    parent_context("aihub-framework"),
   )
 }
 
@@ -238,8 +254,8 @@ target "aihub-litert-models-runner" {
   cache-from = cache_from("aihub-litert-models-runner")
   cache-to   = cache_to("aihub-litert-models-runner")
   contexts = merge(
-    { framework = "containers/base/aihub-framework" },
     parent_context("qairt-common-base"),
+    parent_context("aihub-framework"),
   )
 }
 

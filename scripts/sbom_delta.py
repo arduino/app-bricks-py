@@ -9,8 +9,8 @@
 The SBOM of a published container is the SPDX attestation BuildKit attached to
 it at build time, read with `docker buildx imagetools inspect`. The delta is
 computed against the base image of its Dockerfile: a parent container of this
-repository, whose attestation is read the same way, or an external image, the
-only kind still scanned with Syft.
+repository, whose attestation is read the same way, an external image, the
+only kind still scanned with Syft, or ``scratch``, which has no packages.
 """
 
 from __future__ import annotations
@@ -465,6 +465,17 @@ def fetch_attested_sbom(image: str, output_path: Path) -> None:
     output_path.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+# The empty image a layer like aihub-framework builds on: nothing to scan, no packages.
+SCRATCH = "scratch"
+
+
+def write_empty_sbom(output_path: Path) -> None:
+    """Save the SPDX SBOM of ``scratch``: a document with no packages."""
+    document = {"spdxVersion": "SPDX-2.3", "SPDXID": "SPDXRef-DOCUMENT", "name": SCRATCH, "packages": []}
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
 def scan_image(image: str, output_path: Path) -> None:
     """Scan an image with Syft and save the SPDX JSON report."""
     print(f"    syft scan: {image}", file=sys.stderr)
@@ -512,6 +523,9 @@ def generate_delta_for_container(
     if containers.parent[container]:
         print("  reading the base attestation...")
         fetch_attested_sbom(image=base_image, output_path=base_sbom)
+    elif base_image == SCRATCH:
+        print("  empty base, nothing to scan...")
+        write_empty_sbom(output_path=base_sbom)
     else:
         print("  scanning the external base...")
         scan_image(image=base_image, output_path=base_sbom)

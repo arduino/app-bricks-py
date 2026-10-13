@@ -9,6 +9,9 @@ ARG BASE_IMAGE_VERSION=latest
 
 FROM ghcr.io/astral-sh/uv:0.12.21@sha256:a7aed3216253ee804de3e2d8afa5073baa1a177335345d43845cd4165e43b711 AS uv
 
+# The `aihub` framework and the app skeleton, shared with aihub-onnx-models-runner.
+FROM ${REGISTRY}app-bricks/aihub-framework:${BASE_IMAGE_VERSION} AS aihub-framework
+
 FROM ${REGISTRY}app-bricks/qairt-common-base:${BASE_IMAGE_VERSION}
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -32,14 +35,16 @@ RUN --mount=from=uv,source=/uv,target=/bin/uv \
 ENV PATH="/opt/venv/bin:${PATH}"
 ENV VIRTUAL_ENV="/opt/venv"
 
-# The `aihub` framework and the app skeleton are shared with aihub-onnx-models-runner:
-# "framework" is the bake context pointing at containers/base/aihub-framework.
+# The `aihub` framework, importable as `aihub`, and the app skeleton: the layers of aihub-framework
+# themselves, not a copy of their files. --link builds each one apart from what is below it, so
+# it comes out as the very blob of the layer image, shared with aihub-onnx-models-runner
+# and never rebuilt when the base changes. The /app it carries is root's, like the runners.
 ENV PYTHONPATH="/opt"
-COPY --from=framework aihub/ /opt/aihub/
+COPY --link --from=aihub-framework /opt/aihub/ /opt/aihub/
 
 # Prepare the app directory for child images
 RUN mkdir -p /app
 WORKDIR /app
-COPY --from=framework app/ ./
+COPY --link --from=aihub-framework /app/ ./
 
 ENTRYPOINT [ "/qairt-entrypoint.sh", "python", "main.py", "--input", "websocket", "--output", "mjpeg", "websocket" ]

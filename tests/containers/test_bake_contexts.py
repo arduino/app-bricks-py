@@ -6,8 +6,7 @@
 
 A Dockerfile can ``COPY --from=<name>`` (or ``RUN --mount=from=<name>``) out of three things:
 a stage of its own, an image reference, or a named context the bake target provides, like
-``framework`` (containers/base/aihub-framework/, the `aihub` sources shared by the two runner
-bases), ``models`` or ``wheel``. ``check-bake`` verifies only the parent links, so a target
+``models`` or ``wheel``. ``check-bake`` verifies only the parent and layer links, so a target
 missing one of its named contexts goes unnoticed until bake fails, or, worse, BuildKit resolves
 the name as an image on Docker Hub. These tests read the Dockerfiles and docker-bake.hcl as
 text, so they run without Docker.
@@ -37,7 +36,7 @@ NAMED_CONTEXT = re.compile(r'^\s*(?:\{\s*)?([A-Za-z0-9_-]+)\s*=\s*"([^"]+)"', re
 
 def named_contexts_read(dockerfile: Path) -> set[str]:
     """The names a Dockerfile copies or mounts from that are neither its own stages nor image references."""
-    text = dockerfile.read_text(encoding="utf-8")
+    text = "\n".join(line for line in dockerfile.read_text(encoding="utf-8").splitlines() if not line.lstrip().startswith("#"))
     stages = {match.group(2).lower() for line in text.splitlines() if (match := FROM_PATTERN.match(line)) and match.group(2)}
     names = {match.group(1) for match in FROM_REFERENCE.finditer(text)}
     return {name for name in names if name.lower() not in stages and not re.search(r"[:/@$]", name)}
@@ -67,26 +66,21 @@ def test_every_declared_named_context_exists(target: str):
         assert (REPO_ROOT / path).is_dir(), f"bake target '{target}' declares context '{name}' = {path}, which is not a directory"
 
 
-@pytest.mark.parametrize("runner", ["aihub-litert-models-runner", "aihub-onnx-models-runner"])
-def test_the_runner_bases_share_the_aihub_framework_sources(runner: str):
-    """The framework is a source directory, not a container: both bases copy it from the same context."""
-    assert declared_contexts(runner).get("framework") == "containers/base/aihub-framework"
-    framework = REPO_ROOT / "containers" / "base" / "aihub-framework"
-    assert not (framework / "Dockerfile").exists(), "aihub-framework is shared through a bake context, it is not an image"
-    assert (framework / "aihub" / "__init__.py").is_file() and (framework / "app" / "main.py").is_file()
-
-
 def test_named_contexts_are_told_apart_from_stages_and_images(tmp_path: Path):
     dockerfile = tmp_path / "Dockerfile"
     dockerfile.write_text(
+        "# An example in a comment is not an instruction:\n"
+        "#   COPY --from=documented /x /x\n"
         "FROM ghcr.io/astral-sh/uv:0.12.21 AS uv\n"
         "FROM python:3.13 AS builder\n"
+        "FROM ${REGISTRY}app-bricks/aihub-framework:${BASE_IMAGE_VERSION} AS aihub-framework\n"
         "FROM ${REGISTRY}app-bricks/python-slim:${BASE_IMAGE_VERSION}\n"
         "COPY --from=builder /a /a\n"
-        "COPY --from=framework aihub/ /opt/aihub/\n"
+        "COPY --from=aihub-framework /opt/aihub/ /opt/aihub/\n"
+        "COPY --from=wheel *.whl /tmp/\n"
         "COPY --from=models --chown=arduino:arduino models-list.yaml /app/\n"
         "COPY --from=ghcr.io/example/image:1 /b /b\n"
         "RUN --mount=from=uv,source=/uv,target=/bin/uv true\n",
         encoding="utf-8",
     )
-    assert named_contexts_read(dockerfile) == {"framework", "models"}
+    assert named_contexts_read(dockerfile) == {"models", "wheel"}

@@ -2,11 +2,6 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-# Not a container: the `aihub` runner framework (aihub/) and the app skeleton (app/) shared
-# by aihub-litert-models-runner and aihub-onnx-models-runner, which read them from the
-# "framework" bake context (see docker-bake.hcl). Their Python dependencies are declared in
-# each runner base's pyproject.toml.
-
-# Development-only material that must not end up in the images.
+# Development-only material that must not end up in the layer.
 **/__pycache__
 **/*.pyc

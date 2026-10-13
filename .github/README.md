@@ -145,9 +145,11 @@ Variables the workflows set, all optional for local builds:
 | `SKIP_CACHE` | `false` | When `true`, the cache is not imported but still exported |
 
 Some targets take extra named contexts: `python-apps-base` installs the wheel from `wheel` (`dist/`,
-filled by `task build:bricks` with the wheel, `pyproject.toml` and `uv.lock`), `models-downloader` reads
-`models-list.yaml` from `models` (the repository's `models/` directory), and `aihub-litert-models-runner` and
-`aihub-onnx-models-runner` copy the shared `aihub` framework from `framework` (`containers/base/aihub-framework/`).
+filled by `task build:bricks` with the wheel, `pyproject.toml` and `uv.lock`), and `models-downloader` reads
+`models-list.yaml` from `models` (the repository's `models/` directory). `aihub-litert-models-runner` and
+`aihub-onnx-models-runner` take no named context for the shared `aihub` framework: they add the layers of
+the `aihub-framework` image with `COPY --link`, linked with `parent_context("aihub-framework")` next to
+their parent.
 
 ## SBOMs
 
