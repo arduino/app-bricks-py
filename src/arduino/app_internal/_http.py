@@ -2,17 +2,17 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""A small HTTP client on the Python standard library.
+"""The HTTP client of the library, on the Python standard library.
 
-The bricks reach the local inference runners and a few cloud APIs with it: one request at a time, JSON and multipart
-bodies, 4xx and 5xx responses returned like any other, a body read as it arrives, and a retry on GET. The stdlib
-client is imported with the first request: on the board it costs about a third of ``requests``, which every app with
-an AI brick would otherwise load before "App started". ``arduino.app_utils.HttpClient``, the public client on
-requests, is unaffected.
+Bricks and peripherals reach the local inference runners, the cloud APIs and the IP cameras with it: one request at a
+time, JSON and multipart bodies, basic authentication, 4xx and 5xx responses returned like any other, a body read as it
+arrives, and a retry on GET. The stdlib client is imported with the first request: on the board it costs about a third
+of ``requests``, which every app with an AI brick would otherwise load before "App started".
 """
 
 from __future__ import annotations
 
+import base64
 import functools
 import json as _json
 import os
@@ -29,6 +29,9 @@ if TYPE_CHECKING:
 
 Files = Mapping[str, tuple[str, bytes, str]]
 """Multipart file parts, as requests takes them: field name -> (file name, content, content type)."""
+
+Auth = tuple[str, str]
+"""Basic authentication credentials: (user name, password)."""
 
 BACKOFF_MAX_S = 120.0
 """Longest wait between two retries."""
@@ -93,6 +96,7 @@ def get(
     *,
     params: Mapping[str, str] | None = None,
     headers: Mapping[str, str] | None = None,
+    auth: Auth | None = None,
     timeout: float | None = None,
     retries: int = 0,
     backoff_factor: float = 1.0,
@@ -106,6 +110,7 @@ def get(
         url (str): The URL.
         params (Mapping[str, str] | None): Query parameters, URL-encoded and appended to the URL.
         headers (Mapping[str, str] | None): Headers added to the request.
+        auth (Auth | None): Basic authentication credentials.
         timeout (float | None): Seconds allowed to connect and for each read; None waits as long as the socket default.
         retries (int): Attempts after the first one.
         backoff_factor (float): Base of the exponential wait between retries, in seconds.
@@ -121,7 +126,7 @@ def get(
     attempt = 0
     while True:
         try:
-            response = _request("GET", url, headers=headers, timeout=timeout)
+            response = _request("GET", url, headers=headers, auth=auth, timeout=timeout)
         except ConnectionFailed:
             if attempt >= retries:
                 raise
@@ -132,12 +137,31 @@ def get(
         _sleep(_backoff(attempt, backoff_factor))
 
 
+def head(url: str, *, headers: Mapping[str, str] | None = None, auth: Auth | None = None, timeout: float | None = None) -> Response:
+    """Send a HEAD request and return the response, whatever its status. Redirects are followed.
+
+    Args:
+        url (str): The URL.
+        headers (Mapping[str, str] | None): Headers added to the request.
+        auth (Auth | None): Basic authentication credentials.
+        timeout (float | None): Seconds allowed to connect and for each read; None waits as long as the socket default.
+
+    Returns:
+        Response: The response, with an empty body.
+
+    Raises:
+        ConnectionFailed: No response arrived.
+    """
+    return _request("HEAD", url, headers=headers, auth=auth, timeout=timeout)
+
+
 def post(
     url: str,
     *,
     json: Any = None,  # noqa: ANN401
     files: Files | None = None,
     headers: Mapping[str, str] | None = None,
+    auth: Auth | None = None,
     timeout: float | None = None,
 ) -> Response:
     """Send a POST request and return the response, whatever its status.
@@ -147,6 +171,7 @@ def post(
         json (Any): A body to send as JSON. NaN and infinities are rejected, as requests does.
         files (Files | None): A body to send as multipart/form-data.
         headers (Mapping[str, str] | None): Headers added to the request.
+        auth (Auth | None): Basic authentication credentials.
         timeout (float | None): Seconds allowed to connect and for each read; None waits as long as the socket default.
 
     Returns:
@@ -156,7 +181,7 @@ def post(
         ConnectionFailed: No response arrived.
         ValueError: The json body cannot be serialized.
     """
-    return _request("POST", url, json=json, files=files, headers=headers, timeout=timeout)
+    return _request("POST", url, json=json, files=files, headers=headers, auth=auth, timeout=timeout)
 
 
 @contextmanager
@@ -194,11 +219,12 @@ def _request(
     json: Any = None,  # noqa: ANN401
     files: Files | None = None,
     headers: Mapping[str, str] | None = None,
+    auth: Auth | None = None,
     timeout: float | None = None,
 ) -> Response:
     import http.client
 
-    request = _build_request(method, url, json=json, files=files, headers=headers)
+    request = _build_request(method, url, json=json, files=files, headers=headers, auth=auth)
     try:
         with _open(request, timeout) as response:
             return Response(response.status, response.headers, response.read())
@@ -213,10 +239,13 @@ def _build_request(
     json: Any = None,  # noqa: ANN401
     files: Files | None = None,
     headers: Mapping[str, str] | None = None,
+    auth: Auth | None = None,
 ) -> urllib.request.Request:
     import urllib.request  # Imported here, with http.client: slow imports at app start, needed by the first request only
 
     all_headers = dict(headers or {})
+    if auth is not None:
+        all_headers["Authorization"] = "Basic " + base64.b64encode(f"{auth[0]}:{auth[1]}".encode()).decode()
     body = None
     if json is not None:
         body = _json.dumps(json, allow_nan=False).encode()

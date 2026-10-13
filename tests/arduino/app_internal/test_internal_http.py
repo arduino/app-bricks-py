@@ -67,7 +67,8 @@ def server() -> Iterator[Server]:
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(payload)))
             self.end_headers()
-            self.wfile.write(payload)
+            if self.command != "HEAD":
+                self.wfile.write(payload)
 
         def handle(self) -> None:
             try:
@@ -75,7 +76,7 @@ def server() -> Iterator[Server]:
             except (BrokenPipeError, ConnectionResetError):  # The client went away: /slow
                 pass
 
-        do_GET = do_POST = _handle
+        do_GET = do_POST = do_HEAD = _handle
 
         def log_message(self, format: str, *args: object) -> None:
             pass
@@ -122,6 +123,24 @@ def test_post_sends_json_with_its_content_type(server: Server):
     _, _, headers, body = server.received[0]
     assert headers["Content-Type"] == "application/json"
     assert json.loads(body) == {"features": [1.0, 2.5]}
+
+
+def test_head_sends_no_body_and_gets_none_back(server: Server):
+    response = _http.head(f"{server.url}/items", timeout=5)
+
+    assert response.status_code == 200
+    assert response.content == b""
+    assert response.headers.get("Content-Type") == "application/json"
+    method, path, _, body = server.received[0]
+    assert (method, path, body) == ("HEAD", "/items", b"")
+
+
+def test_basic_authentication_goes_in_the_authorization_header(server: Server):
+    _http.head(f"{server.url}/items", auth=("admin", "s:cret"))
+    _http.get(f"{server.url}/items", auth=("admin", "s:cret"))
+    _http.post(f"{server.url}/items", json={}, auth=("admin", "s:cret"))
+
+    assert [headers["Authorization"] for _, _, headers, _ in server.received] == ["Basic YWRtaW46czpjcmV0"] * 3
 
 
 def test_post_rejects_nan_in_json_as_requests_does(server: Server):

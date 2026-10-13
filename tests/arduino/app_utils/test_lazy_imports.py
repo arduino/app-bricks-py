@@ -22,12 +22,12 @@ class TestAppUtilsLazyImports(unittest.TestCase):
     def test_import_does_not_load_heavy_dependencies(self):
         """The package imports every submodule: the submodules themselves must not load what their classes need."""
         heavy = ["requests", "urllib3", "numpy", "watchdog.observers"]
-        for code in ("import arduino.app_utils", "from arduino.app_utils import *", "from arduino.app_utils import HttpClient"):
+        for code in ("import arduino.app_utils", "from arduino.app_utils import *"):
             with self.subTest(code=code):
                 self.assertEqual(_loaded_after(code, heavy), dict.fromkeys(heavy, False))
 
     def test_star_imported_classes_work_without_a_prior_import_of_their_dependencies(self):
-        """Every method that needs numpy or requests imports it itself."""
+        """Every method that needs numpy imports it itself."""
         code = textwrap.dedent("""
             import sys
             from arduino.app_utils import *
@@ -49,12 +49,8 @@ class TestAppUtilsLazyImports(unittest.TestCase):
             designer.flip_vertically(frame)
             assert frame.get_value(0, 0) == 0
             assert len(frame.to_board_bytes()) == 8 * 13
-
-            client = HttpClient()
-            assert client.request_with_retry("") is None
-            client.close()
         """)
-        self.assertEqual(_loaded_after(code, ["numpy", "requests"]), {"numpy": True, "requests": True})
+        self.assertEqual(_loaded_after(code, ["numpy", "requests"]), {"numpy": True, "requests": False})
 
     def test_star_imported_folder_watcher_starts_its_observer(self):
         code = textwrap.dedent("""
