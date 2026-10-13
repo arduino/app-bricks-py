@@ -73,7 +73,7 @@ You can select a provider using the `CloudProvider` enum or by passing its raw s
 
 | Enum Constant                       | Raw String ID         | Provider Documentation                                                                 |
 | :---------------------------------- | :-------------------- | :----------------------------------------------------------------------------------- |
-| `CloudProvider.OPENAI_TRANSCRIBE`   | `openai-transcribe`   | [GPT-4o-mini-transcribe](https://platform.openai.com/docs/models/gpt-4o-mini-transcribe), [OpenAI Realtime](https://platform.openai.com/docs/guides/realtime)                   |
+| `CloudProvider.OPENAI_TRANSCRIBE`   | `openai-transcribe`   | [gpt-live-transcribe](https://developers.openai.com/api/docs/models/gpt-live-transcribe), [OpenAI Realtime transcription](https://developers.openai.com/api/docs/guides/realtime-transcription)                   |
 | `CloudProvider.GOOGLE_SPEECH`       | `google-speech`       | [Google Speech-to-Text](https://cloud.google.com/speech-to-text/docs)                 |
 
 ## Methods

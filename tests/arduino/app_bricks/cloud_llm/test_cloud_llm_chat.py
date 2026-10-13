@@ -272,7 +272,7 @@ def test_init_openai_with_tools_stays_on_chat_completions():
         """Get the weather."""
         return "sunny"
 
-    llm = CloudLLM(model="openai:gpt-5.6-terra", api_key="x", tools=[get_weather])
+    llm = CloudLLM(model=f"openai:{CloudModel.OPENAI_GPT}", api_key="x", tools=[get_weather])
 
     inner = getattr(llm._model, "bound", llm._model)
     assert inner._use_responses_api({}) is False
@@ -282,7 +282,7 @@ def test_init_openai_with_tools_stays_on_chat_completions():
 
 def test_init_openai_without_tools_uses_chat_completions():
     # Without tools the base model is left on the default (chat completions) path.
-    llm = CloudLLM(model="openai:gpt-5.6-terra", api_key="x")
+    llm = CloudLLM(model=f"openai:{CloudModel.OPENAI_GPT}", api_key="x")
 
     assert llm._model._use_responses_api({}) is False
 
@@ -295,7 +295,7 @@ def test_init_with_tools_keeps_the_base_model_unbound_for_the_reasoning_flow():
         """Get the weather."""
         return "sunny"
 
-    llm = CloudLLM(model="openai:gpt-5.6-terra", api_key="x", tools=[get_weather])
+    llm = CloudLLM(model=f"openai:{CloudModel.OPENAI_GPT}", api_key="x", tools=[get_weather])
 
     assert llm._base_model is not llm._model
     assert getattr(llm._base_model, "bound", None) is None
@@ -309,7 +309,7 @@ def test_reasoning_model_uses_responses_api_with_tools_bound():
         """Get the weather."""
         return "sunny"
 
-    llm = CloudLLM(model="openai:gpt-5.6-terra", api_key="x", tools=[get_weather])
+    llm = CloudLLM(model=f"openai:{CloudModel.OPENAI_GPT}", api_key="x", tools=[get_weather])
 
     reasoning_model = llm._get_reasoning_model("high")
 
@@ -427,6 +427,39 @@ def test_chat_next_turn_resends_the_recorded_tool_exchange(make_llm, fake_model)
         "AIMessage",
         "HumanMessage",
     ]
+
+
+def test_chat_keeps_anthropic_thinking_within_the_turn_but_not_in_history(make_llm, fake_model):
+    # Anthropic needs the thinking block back while the tool loop of its turn runs, but binds
+    # it to the conversation: once the memory window moves it would be rejected on replay.
+    @tool
+    def get_weather(city: str) -> str:
+        """Return the weather for a city."""
+        return f"sunny in {city}"
+
+    thinking = {"type": "thinking", "thinking": "", "signature": "sig-1"}
+    tool_use = {"type": "tool_use", "id": "call-1", "name": "get_weather", "input": {"city": "Turin"}}
+    fake_model.queue_invoke(
+        AIMessage(
+            content=[thinking, tool_use],
+            tool_calls=[{"name": "get_weather", "args": {"city": "Turin"}, "id": "call-1", "type": "tool_call"}],
+            response_metadata={"model_provider": "anthropic"},
+        ),
+        AIMessage(content=[thinking, {"type": "text", "text": "It's sunny in Turin."}], response_metadata={"model_provider": "anthropic"}),
+        AIMessage(content="You're welcome."),
+    )
+    llm = make_llm(tools=[get_weather])
+
+    assert llm.chat("weather in Turin?") == "It's sunny in Turin."
+    llm.chat("thanks")
+
+    # Same turn: the tool-call message goes back with its thinking block.
+    assert fake_model.invoke_inputs[1][1].content == [thinking, tool_use]
+    # Next turn: the history replays both assistant messages without it.
+    next_turn = fake_model.invoke_inputs[2]
+    assert next_turn[1].content == [tool_use]
+    assert [tc["id"] for tc in next_turn[1].tool_calls] == ["call-1"]
+    assert next_turn[3].content == [{"type": "text", "text": "It's sunny in Turin."}]
 
 
 def test_chat_raises_when_tool_loop_limit_exceeded(make_llm, fake_model):
