@@ -67,6 +67,7 @@ class VideoObjectTracking(VideoInference):
         euclidean_distance_threshold: int = 50,
         debounce_sec: float = 0.0,
         labels_to_track: list[str] | None = None,
+        labels_to_ignore: list[str] | None = None,
         min_movement_threshold: int = 10,
         keep_identities: bool = True,
         stream_port: int | None = STREAM_PORT,
@@ -83,6 +84,8 @@ class VideoObjectTracking(VideoInference):
             euclidean_distance_threshold (int): Maximum distance in pixels. Default is 50 (px). This is used in case of centroids models, like FOMO.
             debounce_sec (float): Minimum seconds between repeated detections of the same object. Default is 0 seconds.
             labels_to_track (list[str], optional): List of labels to track. If None, all labels are tracked.
+            labels_to_ignore (list[str], optional): Labels left out after `labels_to_track`: their objects are not
+                reported, counted nor drawn on the video. If None, no label is left out.
             min_movement_threshold(int): Minimum distance in pixels to consider a movement significant for
                 direction tracking. Default is 10.
             keep_identities (bool): Keep the identity of an object across the tracks the tracker opens on it, after
@@ -99,6 +102,7 @@ class VideoObjectTracking(VideoInference):
         self._colors = LabelColors(avoid=(LINE_COLOR, AREA_COLOR))
         self._boxes = BoxStabilizer()  # what the video shows: the tracked boxes, steadied across results
         self._labels_to_track = labels_to_track
+        self._labels_to_ignore = labels_to_ignore
         self._identities = ObjectIdentities(OBJECT_MEMORY_SEC, OVERLAP, SIZE_RATIO) if keep_identities else None
         # The knobs of the tracking block as the model names them: keep_grace is max_age, min_detections is min_hits,
         # iou_threshold matches the boxes of a detection model and threshold the centroids of a FOMO one
@@ -193,6 +197,8 @@ class VideoObjectTracking(VideoInference):
         Returns:
             bool: True if the label is enabled for tracking, False otherwise.
         """
+        if self._labels_to_ignore is not None and label in self._labels_to_ignore:
+            return False
         if self._labels_to_track is None:
             return True
         return label in self._labels_to_track
