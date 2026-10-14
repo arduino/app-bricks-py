@@ -301,3 +301,17 @@ def clean_peripheral_registry():
     Peripherals.clear()
     yield
     Peripherals.clear()
+
+
+@pytest.fixture(autouse=True)
+def clean_edge_impulse_model_info_cache():
+    """Keep the Edge Impulse model information fetched by one test out of the others.
+
+    The facade keeps the runner address and model information of each class for the life of the process, so a
+    fake model served to one test would otherwise answer the next. Only cleared when a test already imported the
+    facade: importing it here would load it for the whole suite.
+    """
+    yield
+    ei = sys.modules.get("arduino.app_internal.core.ei")
+    if ei is not None:
+        ei._model_info_cache.clear()  # pyright: ignore[reportPrivateUsage]

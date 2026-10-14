@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from .websocket_camera import WebSocketCamera
 
 # Backends are loaded on first access (Camera() imports the one it needs): each
-# pulls in its own dependencies (cv2, requests, websockets, cryptography), which
+# pulls in its own dependencies (cv2, websockets, cryptography), which
 # would otherwise slow down the start of every app using a camera.
 _LAZY_EXPORTS = {
     "V4LCamera": "v4l_camera",
