@@ -5,7 +5,7 @@
 from dataclasses import dataclass
 from typing import Any, Self
 
-from arduino.app_internal import _http
+from arduino.app_utils import http
 from arduino.app_utils import brick
 
 
@@ -108,7 +108,7 @@ class AirQualityMonitoring:
             AirQualityLookupError: If the API request fails.
         """
         url = f"{self.city_api_url}{city}/"
-        response = _http.get(url, params={"token": self.__token})
+        response = http.get(url, params={"token": self.__token})
         data = response.json()
         if response.status_code != 200 or data.get("status") != "ok":
             raise AirQualityLookupError.from_api_response(data)
@@ -128,7 +128,7 @@ class AirQualityMonitoring:
             AirQualityLookupError: If the API request fails.
         """
         url = self.geo_api_url.format(lat=latitude, lng=longitude)
-        response = _http.get(url, params={"token": self.__token})
+        response = http.get(url, params={"token": self.__token})
         data = response.json()
         if response.status_code != 200 or data.get("status") != "ok":
             raise AirQualityLookupError.from_api_response(data)
@@ -143,7 +143,7 @@ class AirQualityMonitoring:
         Raises:
             AirQualityLookupError: If the API request fails.
         """
-        response = _http.get(self.ip_api_url, params={"token": self.__token})
+        response = http.get(self.ip_api_url, params={"token": self.__token})
         data = response.json()
         if response.status_code != 200 or data.get("status") != "ok":
             raise AirQualityLookupError.from_api_response(data)

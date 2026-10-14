@@ -7,7 +7,7 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
-from arduino.app_internal import _http
+from arduino.app_utils import http
 from arduino.app_utils import brick
 
 city_api_url = "https://geocoding-api.open-meteo.com/v1/search"
@@ -16,7 +16,7 @@ forecast_api_url = "https://api.open-meteo.com/v1/forecast"
 
 def _get_json(url: str, params: dict[str, str]) -> Any:  # noqa: ANN401
     """GET url with the query parameters and decode the JSON response. HTTP errors (4xx, 5xx) raise."""
-    response = _http.get(url, params=params)
+    response = http.get(url, params=params)
     response.raise_for_status()
     return response.json()
 

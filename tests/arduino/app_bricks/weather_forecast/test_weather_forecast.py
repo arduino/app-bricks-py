@@ -13,7 +13,7 @@ from unittest.mock import patch
 import pytest
 
 import arduino.app_bricks.weather_forecast as weather_forecast
-from arduino.app_internal import _http
+from arduino.app_utils import http
 from arduino.app_bricks.weather_forecast import WeatherData, WeatherForecast
 
 CITY_API_URL = "https://geocoding-api.open-meteo.com/v1/search"
@@ -32,11 +32,11 @@ def get():
     payloads = {CITY_API_URL: {"results": [TURIN]}, FORECAST_API_URL: FORECAST}
     calls: list[tuple[str, dict[str, str]]] = []
 
-    def respond(url: str, *, params: dict[str, str] | None = None, **kwargs: object) -> _http.Response:
+    def respond(url: str, *, params: dict[str, str] | None = None, **kwargs: object) -> http.Response:
         calls.append((url, {key: str(value) for key, value in (params or {}).items()}))  # As they go on the wire
-        return _http.Response(200, Message(), json.dumps(payloads[url]).encode())
+        return http.Response(200, Message(), json.dumps(payloads[url]).encode())
 
-    with patch.object(_http, "get", side_effect=respond) as mock_get:
+    with patch.object(http, "get", side_effect=respond) as mock_get:
         mock_get.payloads = payloads
         mock_get.calls = calls
         yield mock_get
@@ -71,8 +71,8 @@ def test_get_forecast_by_city_raises_when_the_city_is_not_found(get):
 
 
 def test_http_errors_become_runtime_errors(monkeypatch: pytest.MonkeyPatch):
-    unavailable = _http.Response(503, Message(), b"Service Unavailable")
-    monkeypatch.setattr(_http, "get", lambda url, **kwargs: unavailable)
+    unavailable = http.Response(503, Message(), b"Service Unavailable")
+    monkeypatch.setattr(http, "get", lambda url, **kwargs: unavailable)
 
     with pytest.raises(RuntimeError, match="Failed to look city up: HTTP 503: Service Unavailable"):
         WeatherForecast().get_forecast_by_city("Turin")

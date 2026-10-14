@@ -8,7 +8,7 @@ import pytest
 import numpy as np
 from unittest.mock import MagicMock, patch
 
-from arduino.app_internal import _http
+from arduino.app_utils import http
 from arduino.app_peripherals.camera import IPCamera, CameraConfigError, CameraOpenError
 
 
@@ -26,7 +26,7 @@ def mock_videocapture():
 @pytest.fixture
 def mock_head():
     """Replace the HEAD request of the connectivity check with a mock answering 200."""
-    with patch("arduino.app_internal._http.head") as head:
+    with patch("arduino.app_utils.http.head") as head:
         head.return_value = MagicMock(status_code=200)
         yield head
 
@@ -190,7 +190,7 @@ def test_ip_camera_start_http_connectivity_test_failed(mock_videocapture, mock_h
 
 def test_ip_camera_start_http_connectivity_network_fail(mock_videocapture, mock_head):
     """Test error when HTTP request raises exception."""
-    mock_head.side_effect = _http.ConnectionFailed("Network error")
+    mock_head.side_effect = http.ConnectionFailed("Network error")
 
     camera = IPCamera(url="http://192.168.1.100:8080/video")
     camera.auto_reconnect_delay = 0

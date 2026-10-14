@@ -7,10 +7,9 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING, Any
 
-from arduino.app_internal import _http
 from arduino.app_internal.core import load_brick_compose_file, resolve_address
 from arduino.app_internal.core.module import get_brick_config, get_brick_configured_model, load_model_list
-from arduino.app_utils import Logger
+from arduino.app_utils import Logger, http
 
 if TYPE_CHECKING:
     from PIL import Image
@@ -90,7 +89,7 @@ class EdgeImpulseRunnerFacade:
             logger.debug(f"[{self.__class__.__name__}] Detecting image of type: {image_type} -> {len(data)} bytes")
 
             files = {"file": (f"image.{image_type}", data, f"image/{image_type}")}
-            response = _http.post(f"{self.url}/api/image", files=files)
+            response = http.post(f"{self.url}/api/image", files=files)
 
         except Exception as e:
             logger.error(f"[{self.__class__.__name__}] Error: {e}")
@@ -164,7 +163,7 @@ class EdgeImpulseRunnerFacade:
                 url, model_info = cached
             features = features[: int(model_info.input_features_count)]
 
-            response = _http.post(f"{url}/api/features", json={"features": features})
+            response = http.post(f"{url}/api/features", json={"features": features})
             if response.status_code == 200:
                 return response.json()
             else:
@@ -189,8 +188,8 @@ class EdgeImpulseRunnerFacade:
             url = cls._get_ei_url()
 
         try:
-            response = _http.get(f"{url}/api/info", timeout=5, retries=MODEL_INFO_RETRIES)
-        except _http.ConnectionFailed as e:
+            response = http.get(f"{url}/api/info", timeout=5, retries=MODEL_INFO_RETRIES)
+        except http.ConnectionFailed as e:
             logger.warning(f"[{cls.__name__}] No response fetching model info from {url}/api/info: {e}")
             return None
         try:

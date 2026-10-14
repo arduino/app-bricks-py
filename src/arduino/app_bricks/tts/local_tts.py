@@ -13,7 +13,7 @@ from typing import Any, TypedDict
 
 import numpy as np
 
-from arduino.app_internal import _http
+from arduino.app_utils import http
 from arduino.app_peripherals.speaker import Speaker, BaseSpeaker
 from arduino.app_internal.core import resolve_address, get_brick_config, get_brick_configured_model
 from arduino.app_utils import brick, AppError, Logger
@@ -342,7 +342,7 @@ class TextToSpeech:
     def _resolve_voice(self, model_name: str) -> VoiceConfig:
         """Fetch available TTS models from the runner and return the voice config for `model_name`."""
         try:
-            response = _http.get(f"{self.api_base_url}/tts/models")
+            response = http.get(f"{self.api_base_url}/tts/models")
         except Exception as e:
             raise RuntimeError(f"Failed to fetch TTS models: {e}.")
 
@@ -445,7 +445,7 @@ class TextToSpeech:
         total_audio_bytes = 0
         first_chunk_logged = False
 
-        with _http.stream("POST", url, json=payload) as response:
+        with http.stream("POST", url, json=payload) as response:
             try:
                 if response.status_code != 200:
                     error_msg = f"Failed to synthesize text."
@@ -490,7 +490,7 @@ class TextToSpeech:
 
     def _cancel_remote_tts(self) -> None:
         try:
-            response = _http.post(f"{self.api_base_url}/tts/cancel")
+            response = http.post(f"{self.api_base_url}/tts/cancel")
             if response.status_code >= 400:
                 logger.warning(f"Failed to cancel remote TTS session: status_code={response.status_code}")
         except Exception as e:

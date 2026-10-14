@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 import pytest
 
 import arduino.app_bricks.tps as tps_module
-from arduino.app_internal import _http
+from arduino.app_utils import http
 from arduino.app_bricks.tps import TPS
 
 SCAN_RESULT = {
@@ -51,7 +51,7 @@ def post(monkeypatch):
     response.json.return_value = LOCATION_RESPONSE
     response.headers = {"Skyhook-Request-Token": "token-from-server"}
     mock = MagicMock(return_value=response)
-    monkeypatch.setattr(_http, "post", mock)
+    monkeypatch.setattr(http, "post", mock)
     return mock
 
 
@@ -119,7 +119,7 @@ def test_locate_fails_without_access_points(client, post, monkeypatch):
 
 
 def test_locate_wraps_location_api_errors(client, post):
-    post.return_value.raise_for_status.side_effect = _http.HTTPStatusError(_http.Response(401, Message(), b"Unauthorized"))
+    post.return_value.raise_for_status.side_effect = http.HTTPStatusError(http.Response(401, Message(), b"Unauthorized"))
     with pytest.raises(RuntimeError, match="Location request failed"):
         client.locate()
 
@@ -194,7 +194,7 @@ def test_async_locate_delivers_result(client, post):
 
 
 def test_async_locate_delivers_error(client, post):
-    post.side_effect = _http.ConnectionFailed("down")
+    post.side_effect = http.ConnectionFailed("down")
     done = threading.Event()
     outcome = {}
 

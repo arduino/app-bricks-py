@@ -100,9 +100,9 @@ def make_tts(monkeypatch, speaker, post_response, cancel_response=None, **tts_kw
         finally:
             response.close()
 
-    monkeypatch.setattr("arduino.app_internal._http.get", lambda url, **kwargs: FakeResponse(json_data=models))
-    monkeypatch.setattr("arduino.app_internal._http.post", post)
-    monkeypatch.setattr("arduino.app_internal._http.stream", stream)
+    monkeypatch.setattr("arduino.app_utils.http.get", lambda url, **kwargs: FakeResponse(json_data=models))
+    monkeypatch.setattr("arduino.app_utils.http.post", post)
+    monkeypatch.setattr("arduino.app_utils.http.stream", stream)
 
     tts = TextToSpeech(speaker=speaker, **tts_kwargs)
     App.unregister(tts)
@@ -498,9 +498,9 @@ def test_synthesis_streams_from_a_real_http_server(monkeypatch):
     """No mock of the HTTP client: each HTTP chunk is yielded as it arrives, and a JSON error body becomes the error."""
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-    from arduino.app_internal import _http
+    from arduino.app_utils import http
 
-    real_stream = _http.stream
+    real_stream = http.stream
     chunks = [np.arange(4, dtype=np.int16).tobytes(), np.arange(4, 8, dtype=np.int16).tobytes()]
     send_second_chunk = threading.Event()
 
@@ -535,7 +535,7 @@ def test_synthesis_streams_from_a_real_http_server(monkeypatch):
     try:
         speaker = BlockingSpeaker(buffer_size=4)  # Reads of 4 int16 samples: one chunk at a time
         tts = make_tts(monkeypatch, speaker, post_response=None)
-        monkeypatch.setattr(_http, "stream", real_stream)
+        monkeypatch.setattr(http, "stream", real_stream)
         tts.api_base_url = f"http://127.0.0.1:{server.server_address[1]}/audio-analytics/v1/api"
 
         audio = iter(tts.synthesize_pcm_stream("hello"))

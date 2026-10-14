@@ -14,7 +14,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from arduino.app_internal import _http
+from arduino.app_utils import http
 from arduino.app_internal.core.ei import EdgeImpulseRunnerFacade
 
 MODEL_INFO = {
@@ -71,7 +71,7 @@ def runner(monkeypatch: pytest.MonkeyPatch) -> Iterator[Runner]:
 @pytest.fixture
 def sleeps(monkeypatch: pytest.MonkeyPatch) -> list[float]:
     recorded: list[float] = []
-    monkeypatch.setattr(_http, "_sleep", recorded.append)
+    monkeypatch.setattr(http, "_sleep", recorded.append)
     return recorded
 
 

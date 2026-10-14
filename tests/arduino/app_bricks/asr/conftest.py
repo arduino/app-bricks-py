@@ -56,7 +56,7 @@ def _mock_session_endpoints(monkeypatch) -> list[dict]:
             return _FakeResponse({"session_id": "sess-1", "state": "asr_initialized"})
         return _FakeResponse({})
 
-    monkeypatch.setattr("arduino.app_internal._http.post", fake_post)
+    monkeypatch.setattr("arduino.app_utils.http.post", fake_post)
     return bodies
 
 

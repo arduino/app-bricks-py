@@ -2,13 +2,20 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""The HTTP client of the library, on the Python standard library.
+"""A small HTTP client on the Python standard library.
 
 Bricks and peripherals reach the local inference runners, the cloud APIs, the IP cameras and the services on a Unix
-domain socket with it: one request at a time, JSON and multipart bodies, basic authentication, 4xx and 5xx responses
-returned like any other, a body read as it arrives, and a retry on GET. The stdlib client is imported with the first
-request: on the board it costs about a third of ``requests``, which every app with an AI brick would otherwise load
-before "App started".
+domain socket with it, and an app can use it the same way: one request at a time, JSON and multipart bodies, basic
+authentication, 4xx and 5xx responses returned like any other, a body read as it arrives, and a retry on GET. The
+stdlib client is imported with the first request: on the board it costs about a third of ``requests``, which every
+app with an AI brick would otherwise load before "App started".
+
+Example:
+    from arduino.app_utils import http
+
+    response = http.get("https://api.open-meteo.com/v1/forecast", params={"latitude": "45.07", "longitude": "7.68"})
+    response.raise_for_status()
+    forecast = response.json()
 """
 
 from __future__ import annotations

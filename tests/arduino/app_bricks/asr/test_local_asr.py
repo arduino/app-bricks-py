@@ -301,7 +301,7 @@ class TestSessionCreate:
             seen["timeout"] = timeout
             return _FakeResponse(payload, status_code=status_code)
 
-        monkeypatch.setattr("arduino.app_internal._http.post", fake_post)
+        monkeypatch.setattr("arduino.app_utils.http.post", fake_post)
         return seen
 
     def test_conflict_raises_service_busy(self, monkeypatch):

@@ -9,7 +9,7 @@ import warnings
 from collections.abc import Callable
 from typing import Any
 
-from arduino.app_internal import _http
+from arduino.app_utils import http
 from arduino.app_utils import brick, Logger
 
 from .daemon_client import (
@@ -110,7 +110,7 @@ class ArduinoCloud:
         if url := os.getenv("ARDUINO_CLOUD_CONNECTOR_URL"):
             return url
         socket_path = os.getenv("ARDUINO_CLOUD_CONNECTOR_SOCKET", _DEFAULT_DAEMON_SOCKET)
-        return _http.unix_socket_url(socket_path)
+        return http.unix_socket_url(socket_path)
 
     # ── lifecycle (managed by the App framework) ────────────────────────────────
     def start(self) -> None:

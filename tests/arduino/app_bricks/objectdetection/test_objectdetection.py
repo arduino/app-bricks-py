@@ -75,7 +75,7 @@ def mock_dependencies(monkeypatch: pytest.MonkeyPatch):
         return FakeResp()
 
     # Mock the model info request to return a fake response
-    monkeypatch.setattr("arduino.app_internal._http.get", lambda url, **kwargs: fake_get(None, url))
+    monkeypatch.setattr("arduino.app_utils.http.get", lambda url, **kwargs: fake_get(None, url))
 
 
 @pytest.fixture
@@ -131,7 +131,7 @@ def test_detect_success(detector: ObjectDetection, monkeypatch: pytest.MonkeyPat
         captured["files"] = files
         return FakeResp()
 
-    monkeypatch.setattr("arduino.app_internal._http.post", fake_post)
+    monkeypatch.setattr("arduino.app_utils.http.post", fake_post)
     result = detector.detect(b"bytes", "jpg", confidence=0.25)
     assert result["detection"] == [{"class_name": "C", "confidence": "50.00", "bounding_box_xyxy": [1.0, 2.0, 4.0, 6.0]}]
 
@@ -163,7 +163,7 @@ def test_detect_from_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, detec
         captured["files"] = files
         return FakeResp()
 
-    monkeypatch.setattr("arduino.app_internal._http.post", fake_post)
+    monkeypatch.setattr("arduino.app_utils.http.post", fake_post)
     p = tmp_path / "img.jpg"
     p.write_bytes(b"123")
     result = detector.detect_from_file(str(p))
@@ -195,7 +195,7 @@ def test_process(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, detector: Obje
         captured["files"] = files
         return FakeResp()
 
-    monkeypatch.setattr("arduino.app_internal._http.post", fake_post)
+    monkeypatch.setattr("arduino.app_utils.http.post", fake_post)
     p = tmp_path / "img.jpg"
     p.write_bytes(b"123")
     result = detector.process(str(p))
@@ -216,7 +216,7 @@ def test_detect_http_error_status(detector: ObjectDetection, monkeypatch: pytest
         status_code = 500
         text = "Server error"
 
-    monkeypatch.setattr("arduino.app_internal._http.post", lambda url, files=None, headers=None: FakeResp())
+    monkeypatch.setattr("arduino.app_utils.http.post", lambda url, files=None, headers=None: FakeResp())
     assert detector.detect(b"bytes", "jpg") is None
 
 
@@ -236,7 +236,7 @@ def test_detect_status_not_ok(detector: ObjectDetection, monkeypatch: pytest.Mon
         def json(self):
             return {"status": "FAIL", "message": "oops"}
 
-    monkeypatch.setattr("arduino.app_internal._http.post", lambda url, files=None, headers=None: FakeResp())
+    monkeypatch.setattr("arduino.app_utils.http.post", lambda url, files=None, headers=None: FakeResp())
     assert detector.detect(b"bytes", "jpg") is None
 
 

@@ -80,7 +80,7 @@ def mock_dependencies(monkeypatch: pytest.MonkeyPatch):
         return FakeResp()
 
     # Mock the model info request to return a fake response
-    monkeypatch.setattr("arduino.app_internal._http.get", lambda url, **kwargs: fake_get(None, url))
+    monkeypatch.setattr("arduino.app_utils.http.get", lambda url, **kwargs: fake_get(None, url))
 
 
 def test_classify_no_anomaly(app_instance: AppController, monkeypatch: pytest.MonkeyPatch):
@@ -105,7 +105,7 @@ def test_classify_no_anomaly(app_instance: AppController, monkeypatch: pytest.Mo
     classifier = VibrationAnomalyDetection(anomaly_detection_threshold=1.5)
 
     # Mock the inference request to return a fake response
-    monkeypatch.setattr("arduino.app_internal._http.post", fake_post)
+    monkeypatch.setattr("arduino.app_utils.http.post", fake_post)
 
     anomaly_trigger_called = False
 
@@ -157,7 +157,7 @@ def test_classify_success(app_instance: AppController, monkeypatch: pytest.Monke
     classifier = VibrationAnomalyDetection(anomaly_detection_threshold=1.5)
 
     # Mock the inference request to return a fake response
-    monkeypatch.setattr("arduino.app_internal._http.post", fake_post)
+    monkeypatch.setattr("arduino.app_utils.http.post", fake_post)
 
     anomaly_trigger_called = False
 
@@ -209,7 +209,7 @@ def test_classify_success_with_arguments(app_instance: AppController, monkeypatc
     classifier = VibrationAnomalyDetection()
 
     # Mock the inference request to return a fake response
-    monkeypatch.setattr("arduino.app_internal._http.post", fake_post)
+    monkeypatch.setattr("arduino.app_utils.http.post", fake_post)
 
     anomaly_trigger_called = False
     score = None
@@ -266,7 +266,7 @@ def test_classify_success_with_more_arguments(app_instance: AppController, monke
     classifier = VibrationAnomalyDetection()
 
     # Mock the inference request to return a fake response
-    monkeypatch.setattr("arduino.app_internal._http.post", fake_post)
+    monkeypatch.setattr("arduino.app_utils.http.post", fake_post)
 
     anomaly_trigger_called = False
     score = None

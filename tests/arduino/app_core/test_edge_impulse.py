@@ -98,7 +98,7 @@ def test_infer_success_and_error(monkeypatch: pytest.MonkeyPatch, facade: EdgeIm
         seen["files"] = files
         return Resp()
 
-    monkeypatch.setattr("arduino.app_internal._http.post", fake_post)
+    monkeypatch.setattr("arduino.app_utils.http.post", fake_post)
     out = facade.infer_from_image(b"data", "jpg")
     assert out == {"foo": 1}
     assert seen["url"].endswith(":1337/api/image")
@@ -108,10 +108,10 @@ def test_infer_success_and_error(monkeypatch: pytest.MonkeyPatch, facade: EdgeIm
         status_code = 500
         text = "err"
 
-    monkeypatch.setattr("arduino.app_internal._http.post", lambda *a, **k: Bad())
+    monkeypatch.setattr("arduino.app_utils.http.post", lambda *a, **k: Bad())
     assert facade.infer_from_image(b"data", "png") is None
     # exception
-    monkeypatch.setattr("arduino.app_internal._http.post", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr("arduino.app_utils.http.post", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
     assert facade.infer_from_image(b"data", "png") is None
 
 
@@ -193,7 +193,7 @@ def test_get_model_info(monkeypatch: pytest.MonkeyPatch, facade: EdgeImpulseRunn
         return FakeResp()
 
     # Mock the model info request to return a fake response
-    monkeypatch.setattr("arduino.app_internal._http.get", lambda url, **kwargs: fake_get(None, url))
+    monkeypatch.setattr("arduino.app_utils.http.get", lambda url, **kwargs: fake_get(None, url))
 
     info = facade.get_model_info()
     assert captured["url"].endswith("/api/info")
@@ -233,7 +233,7 @@ def test_infer_from_features(monkeypatch: pytest.MonkeyPatch, facade: EdgeImpuls
         return FakeResp()
 
     # Mock the inference request to return a fake response
-    monkeypatch.setattr("arduino.app_internal._http.post", fake_post)
+    monkeypatch.setattr("arduino.app_utils.http.post", fake_post)
 
     class FakeResp2:
         status_code = 200
@@ -285,7 +285,7 @@ def test_infer_from_features(monkeypatch: pytest.MonkeyPatch, facade: EdgeImpuls
         return FakeResp2()
 
     # Mock the model info request to return a fake response
-    monkeypatch.setattr("arduino.app_internal._http.get", lambda url, **kwargs: fake_get(None, url))
+    monkeypatch.setattr("arduino.app_utils.http.get", lambda url, **kwargs: fake_get(None, url))
 
     # Mock docker-compose related functions
     fake_compose = {"services": {"ei-inference": {"ports": ["${BIND_ADDRESS:-127.0.0.1}:1337:1337"]}}}

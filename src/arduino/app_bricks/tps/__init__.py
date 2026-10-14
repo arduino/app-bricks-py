@@ -14,7 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 from urllib.parse import urlsplit
 
-from arduino.app_internal import _http
+from arduino.app_utils import http
 from arduino.app_utils import Logger, brick
 
 logger = Logger("TPS")
@@ -160,10 +160,10 @@ class TPS:
         headers = self._build_headers(request_token, device_id, opt_in)
         payload = _build_payload(self._scan(), street_address)
         try:
-            response = _http.post(self.loc_api_url, json=payload, headers=headers, timeout=HTTP_REQ_TIMEOUT_SEC)
+            response = http.post(self.loc_api_url, json=payload, headers=headers, timeout=HTTP_REQ_TIMEOUT_SEC)
             response.raise_for_status()
             data = response.json()
-        except (_http.ConnectionFailed, _http.HTTPStatusError, ValueError) as e:
+        except (http.ConnectionFailed, http.HTTPStatusError, ValueError) as e:
             raise RuntimeError(f"Location request failed: {e}") from e
 
         location = data.get("location", {})
@@ -257,8 +257,8 @@ class TPS:
             RuntimeError: If the scanner is unreachable or the scan failed.
         """
         try:
-            response = _http.get(f"{_http.unix_socket_url(self.scanner_socket_path)}/scan", timeout=HTTP_REQ_TIMEOUT_SEC)
-        except _http.ConnectionFailed as e:
+            response = http.get(f"{http.unix_socket_url(self.scanner_socket_path)}/scan", timeout=HTTP_REQ_TIMEOUT_SEC)
+        except http.ConnectionFailed as e:
             raise RuntimeError(f"Wi-Fi scanner unreachable at {self.scanner_socket_path}: {e}") from e
 
         if response.status_code != 200:

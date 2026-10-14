@@ -20,7 +20,7 @@ STATION = {
 @pytest.fixture
 def get():
     """Replace the HTTP GET with a mock answering with the given payload."""
-    with patch("arduino.app_internal._http.get") as mock_get:
+    with patch("arduino.app_utils.http.get") as mock_get:
 
         def respond(payload):
             mock_get.return_value = MagicMock(status_code=200, json=MagicMock(return_value=payload))
