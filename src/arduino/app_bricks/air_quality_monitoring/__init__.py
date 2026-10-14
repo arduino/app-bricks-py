@@ -2,10 +2,10 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-import requests
 from dataclasses import dataclass
 from typing import Any, Self
 
+from arduino.app_utils import http
 from arduino.app_utils import brick
 
 
@@ -108,8 +108,7 @@ class AirQualityMonitoring:
             AirQualityLookupError: If the API request fails.
         """
         url = f"{self.city_api_url}{city}/"
-        params = {"token": self.__token}
-        response = requests.get(url, params=params)
+        response = http.get(url, params={"token": self.__token})
         data = response.json()
         if response.status_code != 200 or data.get("status") != "ok":
             raise AirQualityLookupError.from_api_response(data)
@@ -129,8 +128,7 @@ class AirQualityMonitoring:
             AirQualityLookupError: If the API request fails.
         """
         url = self.geo_api_url.format(lat=latitude, lng=longitude)
-        params = {"token": self.__token}
-        response = requests.get(url, params=params)
+        response = http.get(url, params={"token": self.__token})
         data = response.json()
         if response.status_code != 200 or data.get("status") != "ok":
             raise AirQualityLookupError.from_api_response(data)
@@ -145,9 +143,7 @@ class AirQualityMonitoring:
         Raises:
             AirQualityLookupError: If the API request fails.
         """
-        url = self.ip_api_url
-        params = {"token": self.__token}
-        response = requests.get(url, params=params)
+        response = http.get(self.ip_api_url, params={"token": self.__token})
         data = response.json()
         if response.status_code != 200 or data.get("status") != "ok":
             raise AirQualityLookupError.from_api_response(data)

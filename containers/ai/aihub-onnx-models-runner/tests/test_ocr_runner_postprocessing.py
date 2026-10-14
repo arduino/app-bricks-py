@@ -16,7 +16,7 @@ from pathlib import Path
 
 import numpy as np
 
-_MODULE_PATH = Path(__file__).resolve().parents[3] / "containers" / "ai" / "ocr-runner" / "utils" / "post_processing.py"
+_MODULE_PATH = Path(__file__).resolve().parents[2] / "ocr-runner" / "utils" / "post_processing.py"
 _spec = importlib.util.spec_from_file_location("ocr_post_processing", _MODULE_PATH)
 post_processing = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(post_processing)

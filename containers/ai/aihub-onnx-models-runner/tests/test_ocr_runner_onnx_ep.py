@@ -5,10 +5,11 @@
 """ONNX Runtime / QNN plumbing of the ocr-runner: context binary lookup, fingerprinting,
 DSP library path selection and the quantized I/O wrapper.
 
-onnxruntime is not a test dependency, so the modules are loaded standalone by file path
-with a stub `onnxruntime` (and, where needed, `onnxruntime_qnn`) module in sys.modules.
-Only the pure-Python paths are exercised: everything that opens a real session is out of
-scope here and is what tools/compile_htp_context.py measures on the board.
+The modules are loaded standalone by file path with a stub `onnxruntime` (and, where
+needed, `onnxruntime_qnn`) module in sys.modules, so each test sets the runtime versions
+and the plugin it runs against, whatever this venv installs. Only the pure-Python paths
+are exercised: everything that opens a real session is out of scope here and is what
+tools/compile_htp_context.py measures on the board.
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-RUNNER_DIR = Path(__file__).resolve().parents[3] / "containers" / "ai" / "ocr-runner"
+RUNNER_DIR = Path(__file__).resolve().parents[2] / "ocr-runner"
 MODEL_DIR = RUNNER_DIR / "models" / "easyocr-onnx-float"
 
 

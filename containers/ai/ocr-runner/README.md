@@ -63,7 +63,7 @@ visible `youl` is better than a silent `bal!`.
 
 This is the recognizer, not the pre-processing: padding the cutouts with background
 (10-20% of their height) fixes single cases, e.g. `youl` -> `you!` on
-`tests/containers/ai/ocr_runner_images/hey-arduino.png`, and breaks as many others
+`containers/ai/aihub-onnx-models-runner/tests/ocr_runner_images/hey-arduino.png`, and breaks as many others
 (`Arduino!` -> `Arduinol`); over all the images the word accuracy moves by under 2% and
 `,` / `$` get worse. Reading each cutout at several paddings (0-20%) and keeping the most
 confident reading does not help either (81.3% -> 80.3-82.6% of the words): a wrong reading
@@ -76,8 +76,9 @@ orientation for 167 of 168 images. The previous per-box approach (EasyOCR's
 the `utils/orientation.py` docstring. Only 90 degrees was measured this way; 180 and 270
 use the same code path but have not been benchmarked.
 
-`tests/containers/ai/test_ocr_runner_model.py` reads the two reference images with the
-real models; it needs `onnxruntime` and is skipped without it.
+The runner's tests live with its base image, in `containers/ai/aihub-onnx-models-runner/tests/`,
+and `task test:containers` runs them in that image's venv, the one the runner runs in.
+`test_ocr_runner_model.py` there reads the two reference images with the real models, on the CPU.
 
 ## Everything is pinned
 
@@ -139,7 +140,7 @@ release, and the compile options. Each is fixed in git:
 To bump any of them, edit the base image's `pyproject.toml` and run `task deps:lock`, or
 replace the model files, and then **recompile the context binaries**.
 
-CI enforces it: `tests/containers/ai/test_ocr_runner_context_binaries.py` compares every
+CI enforces it: `containers/ai/aihub-onnx-models-runner/tests/test_ocr_runner_context_binaries.py` compares every
 committed `*.qnn_ctx.json` with the `==` pins in the base image's `pyproject.toml` (and
 checks `uv.lock` agrees), the `# qairt-version:` line next to them, the compile-time subset of
 `DEFAULT_QNN_OPTIONS` and the size of the `.onnx` it was compiled from, and checks they were
@@ -163,7 +164,7 @@ The SoC id in the name (`/sys/devices/soc0/soc_id`, 675 for the QCS8275) is what
 **multi-SoC image** possible: ship one pair per supported SoC side by side and the runner
 loads the one matching the board it is on. Supporting another SoC means running the
 compile script once on such a board and committing its pair; `SUPPORTED_SOCS` in
-`tests/containers/ai/test_ocr_runner_context_binaries.py` lists the SoCs that must have
+`containers/ai/aihub-onnx-models-runner/tests/test_ocr_runner_context_binaries.py` lists the SoCs that must have
 binaries. The unsuffixed `<model>.qnn_ctx.onnx` is only written and looked up when the SoC
 cannot be identified.
 

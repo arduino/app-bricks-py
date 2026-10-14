@@ -6,9 +6,8 @@
 
 The runner is executed in a subprocess, from its own directory, exactly as the container
 imports it (`import inference`), so its top-level `utils` package cannot clash with other
-runners' and the models load from their committed paths. Only numpy, OpenCV and
-onnxruntime are needed; without onnxruntime (not a dependency of this repository's test
-environment) the tests are skipped. Install it with `pip install onnxruntime` to run them.
+runners' and the models load from their committed paths. numpy, OpenCV and onnxruntime
+come from this image's venv, at the versions the runner runs with.
 
 `hey-arduino.png` holds "Hey, Arduino!" over "Nice to meet you!"; `hey-arduino-cw90.png` is
 the same text turned 90 degrees clockwise, running top to bottom.
@@ -24,12 +23,9 @@ from pathlib import Path
 
 import pytest
 
-pytest.importorskip("onnxruntime")
-pytest.importorskip("cv2")
-
-REPO = Path(__file__).resolve().parents[3]
-RUNNER_DIR = REPO / "containers" / "ai" / "ocr-runner"
-FRAMEWORK_DIR = REPO / "containers" / "base" / "aihub-framework"
+CONTAINERS = Path(__file__).resolve().parents[3]
+RUNNER_DIR = CONTAINERS / "ai" / "ocr-runner"
+FRAMEWORK_DIR = CONTAINERS / "base" / "aihub-framework"
 IMAGES = Path(__file__).resolve().parent / "ocr_runner_images"
 
 _SCRIPT = """

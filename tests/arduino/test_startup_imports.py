@@ -43,6 +43,20 @@ STARTUP_IMPORTS = {
     "import arduino.app_bricks.web_ui": StartupImports(
         frozenset({"arduino.router_bridge", "fastapi", "fastapi_socketio", "uvicorn", "watchdog"}), max_modules=770
     ),
+    # Every AI brick: the Edge Impulse facade loads its HTTP client, PIL and OpenCV when an inference needs them
+    "import arduino.app_internal.core": StartupImports(frozenset({"arduino.router_bridge", "watchdog"}), max_modules=110),
+    # Apps with a microphone: each backend loads its own dependencies (websockets, asyncio, ...) when Microphone() picks it
+    "from arduino.app_peripherals.microphone import Microphone": StartupImports(
+        frozenset({"arduino.router_bridge", "numpy", "watchdog"}), max_modules=220
+    ),
+    # An image brick: PIL for its images, without OpenCV, which only the image adjustments need
+    "import arduino.app_bricks.object_detection": StartupImports(frozenset({"arduino.router_bridge", "PIL", "watchdog"}), max_modules=165),
+    # Cloud API bricks: the HTTP client loads with the first request
+    "import arduino.app_bricks.air_quality_monitoring": StartupImports(frozenset({"arduino.router_bridge", "watchdog"}), max_modules=110),
+    "import arduino.app_bricks.weather_forecast": StartupImports(frozenset({"arduino.router_bridge", "watchdog"}), max_modules=110),
+    # Audio bricks: the microphone needs numpy; the ASR needs websockets (with asyncio and ssl) as soon as it starts
+    "import arduino.app_bricks.audio_classification": StartupImports(frozenset({"arduino.router_bridge", "numpy", "watchdog"}), max_modules=225),
+    "import arduino.app_bricks.asr": StartupImports(frozenset({"arduino.router_bridge", "numpy", "watchdog", "websockets"}), max_modules=345),
 }
 
 # Runs the entry point in a fresh interpreter and prints, as JSON, the third-party packages that library code

@@ -26,7 +26,8 @@ Choosing: every orientation is scored with the character-weighted mean confidenc
 what it read, and a rotated orientation replaces the upright one only when it scores at
 least ROTATION_MARGIN more. The one wrong pick in the measurement above was an upright
 image scoring 0.57 upright and 0.60 turned; genuinely rotated text scores far apart
-(0.50 upright against 0.89 turned on tests/containers/ai/ocr_runner_images/hey-arduino-cw90.png).
+(0.50 upright against 0.89 turned on hey-arduino-cw90.png, in the ocr_runner_images of
+containers/ai/aihub-onnx-models-runner/tests).
 """
 
 from __future__ import annotations

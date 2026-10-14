@@ -10,20 +10,10 @@ and ocr runner containers, which all rely on the exact semantics below.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 import numpy as np
-
-# Make the shared aihub package importable; it lives in its own source-only image, which
-# both aihub-litert-models-runner and aihub-onnx-models-runner copy it from.
-FRAMEWORK_DIR = Path(__file__).resolve().parents[3] / "containers" / "base" / "aihub-framework"
-if str(FRAMEWORK_DIR) not in sys.path:
-    sys.path.insert(0, str(FRAMEWORK_DIR))
-
-from aihub.draw import draw_box_from_xyxy, draw_connections, draw_points  # noqa: E402
-from aihub.image_processing import denormalize_coordinates, resize_pad  # noqa: E402
-from aihub.model_io_processing import dequantize, quantize  # noqa: E402
+from aihub.draw import draw_box_from_xyxy, draw_connections, draw_points
+from aihub.image_processing import denormalize_coordinates, resize_pad
+from aihub.model_io_processing import dequantize, quantize
 
 
 def test_resize_pad_centers_by_default():

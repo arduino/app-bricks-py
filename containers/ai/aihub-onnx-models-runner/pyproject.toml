@@ -20,7 +20,7 @@
 #   2.5.0 -> ORT 1.29.0, QAIRT 2.49.40   correct (pinned)
 #
 # The line below records the QAIRT of the pinned wheel. It is read by
-# tests/containers/ai/test_ocr_runner_context_binaries.py and compared with the `qnn_version`
+# tests/test_ocr_runner_context_binaries.py and compared with the `qnn_version`
 # recorded in every runner's models/**/*.qnn_ctx.json, so bumping the wheel without
 # recompiling the context binaries turns CI red.
 # qairt-version: 2.49.40
@@ -38,6 +38,10 @@ dependencies = [
     # Board-only: the QNN execution provider has no use, and no macOS wheel, off the board
     "onnxruntime-qnn==2.5.0; sys_platform == 'linux' and platform_machine == 'aarch64'",
 ]
+
+# Test-only packages, not exported into the image, task test runs the suite with them
+[dependency-groups]
+test = ["pytest"]
 
 [tool.uv]
 # The images run on aarch64 Linux, the lock must resolve for that target but installs on developer machines too

@@ -11,20 +11,11 @@ skip the frame, sinks with a metadata channel still deliver the metadata.
 from __future__ import annotations
 
 import json
-import sys
-import types
-from pathlib import Path
 
 import numpy as np
-
-# Make the shared aihub package importable; it lives in its own source-only image, which
-# both aihub-litert-models-runner and aihub-onnx-models-runner copy it from.
-FRAMEWORK_DIR = Path(__file__).resolve().parents[3] / "containers" / "base" / "aihub-framework"
-if str(FRAMEWORK_DIR) not in sys.path:
-    sys.path.insert(0, str(FRAMEWORK_DIR))
-
-from aihub.app import AIHubApp  # noqa: E402
-from aihub.websocket.output import WebSocketOutput  # noqa: E402
+from aihub.app import AIHubApp
+from aihub.mjpeg.output import MJPEGOutput
+from aihub.websocket.output import WebSocketOutput
 
 
 class RecordingSink:
@@ -35,25 +26,6 @@ class RecordingSink:
 
     def send_frame(self, frame: np.ndarray | None, metadata: dict) -> None:
         self.calls.append((frame, metadata))
-
-
-def _import_mjpeg_output(monkeypatch):
-    """Import MJPEGOutput, stubbing flask/waitress when they are not installed."""
-    for name, attrs in (
-        ("flask", {"Flask": lambda name: None, "Response": object}),
-        ("waitress", {"serve": lambda *args, **kwargs: None}),
-    ):
-        try:
-            __import__(name)
-        except ImportError:
-            module = types.ModuleType(name)
-            for attr, value in attrs.items():
-                setattr(module, attr, value)
-            monkeypatch.setitem(sys.modules, name, module)
-
-    from aihub.mjpeg.output import MJPEGOutput
-
-    return MJPEGOutput
 
 
 def test_frame_callback_forwards_none_frame_to_sinks():
@@ -87,8 +59,7 @@ def test_websocket_output_still_encodes_real_frames():
     assert decoded["metadata"] == {"text": "hello"}
 
 
-def test_mjpeg_output_skips_none_frame(monkeypatch):
-    MJPEGOutput = _import_mjpeg_output(monkeypatch)
+def test_mjpeg_output_skips_none_frame():
     output = MJPEGOutput()
 
     output.send_frame(None, {"text": "hello"})
@@ -96,8 +67,7 @@ def test_mjpeg_output_skips_none_frame(monkeypatch):
     assert output._latest_jpeg is None
 
 
-def test_mjpeg_output_still_encodes_real_frames(monkeypatch):
-    MJPEGOutput = _import_mjpeg_output(monkeypatch)
+def test_mjpeg_output_still_encodes_real_frames():
     output = MJPEGOutput()
 
     output.send_frame(np.zeros((2, 3, 3), dtype=np.uint8), {"text": "hello"})

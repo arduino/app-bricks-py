@@ -33,10 +33,10 @@ from pathlib import Path
 
 import pytest
 
-RUNNER_DIR = Path(__file__).resolve().parents[3] / "containers" / "ai" / "ocr-runner"
 # The base image owns the ONNX runtime pins: onnxruntime, the onnxruntime-qnn plugin EP and
 # the `# qairt-version:` declaration of the QAIRT that wheel bundles.
-ONNX_BASE_DIR = Path(__file__).resolve().parents[3] / "containers" / "ai" / "aihub-onnx-models-runner"
+ONNX_BASE_DIR = Path(__file__).resolve().parents[1]
+RUNNER_DIR = ONNX_BASE_DIR.parent / "ocr-runner"
 ONNX_BASE_LOCK = ONNX_BASE_DIR / "uv.lock"
 ONNX_BASE_SOURCE = ONNX_BASE_DIR / "pyproject.toml"
 MODEL_DIR = RUNNER_DIR / "models" / "easyocr-onnx-float"

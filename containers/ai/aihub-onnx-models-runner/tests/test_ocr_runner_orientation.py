@@ -18,7 +18,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-_MODULE_PATH = Path(__file__).resolve().parents[3] / "containers" / "ai" / "ocr-runner" / "utils" / "orientation.py"
+_MODULE_PATH = Path(__file__).resolve().parents[2] / "ocr-runner" / "utils" / "orientation.py"
 _spec = importlib.util.spec_from_file_location("ocr_orientation", _MODULE_PATH)
 orientation = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(orientation)
