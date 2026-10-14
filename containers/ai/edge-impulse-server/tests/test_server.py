@@ -316,10 +316,10 @@ def test_each_connection_receives_what_reaches_its_confidence(server):
     assert len(server.frame(high, seq=3)[1]["boxes"]) == 1
     low.close()
     assert server.wait_for(lambda: server.frame(high, seq=4)[1]["anomaly"] == 0.2), "the model follows the connections left"
-    high.close()
     plain, k, d = server.open_model("det")
-    assert k == P.OPENED and d["thresholds"][0]["min_score"] == 0.3, "back to the exported value when nobody asks for a confidence"
-    assert server.frame(plain, seq=1)[1]["anomaly"] == 0.3
+    assert k == P.OPENED and d["confidence"] is None, d
+    high.close()
+    assert server.wait_for(lambda: server.frame(plain, seq=1)[1]["anomaly"] == 0.3), "back to the exported value when nobody asks for a confidence"
     plain.close()
 
 
