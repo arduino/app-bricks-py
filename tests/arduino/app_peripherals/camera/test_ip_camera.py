@@ -8,6 +8,7 @@ import pytest
 import numpy as np
 from unittest.mock import MagicMock, patch
 
+from arduino.app_utils import http
 from arduino.app_peripherals.camera import IPCamera, CameraConfigError, CameraOpenError
 
 
@@ -23,13 +24,11 @@ def mock_videocapture():
 
 
 @pytest.fixture
-def mock_requests():
-    """Fixture for mocking requests."""
-    with patch("arduino.app_peripherals.camera.ip_camera.requests") as mock_req:
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_req.head.return_value = mock_response
-        yield mock_req
+def mock_head():
+    """Replace the HEAD request of the connectivity check with a mock answering 200."""
+    with patch("arduino.app_utils.http.head") as head:
+        head.return_value = MagicMock(status_code=200)
+        yield head
 
 
 def test_ip_camera_init_default():
@@ -116,7 +115,7 @@ def test_ip_camera_build_url_override_existing_auth():
     assert url == "rtsp://newuser:newpass@192.168.1.100/stream"
 
 
-def test_ip_camera_start_rtsp(mock_videocapture, mock_requests):
+def test_ip_camera_start_rtsp(mock_videocapture, mock_head):
     """Test starting RTSP camera."""
     mock_vc, _ = mock_videocapture
 
@@ -126,31 +125,29 @@ def test_ip_camera_start_rtsp(mock_videocapture, mock_requests):
     assert camera.is_started()
     mock_vc.assert_called_once_with("rtsp://192.168.1.100/stream", cv2.CAP_FFMPEG)
     # RTSP should not test HTTP connectivity
-    mock_requests.head.assert_not_called()
+    mock_head.assert_not_called()
 
 
-def test_ip_camera_start_http(mock_videocapture, mock_requests):
+def test_ip_camera_start_http(mock_videocapture, mock_head):
     """Test starting HTTP camera."""
     camera = IPCamera(url="http://192.168.1.100:8080/video")
     camera.start()
 
     assert camera.is_started()
     # HTTP should test HTTP connectivity
-    mock_requests.head.assert_called_once()
+    mock_head.assert_called_once()
 
 
-def test_ip_camera_start_http_with_auth(mock_videocapture, mock_requests):
+def test_ip_camera_start_http_with_auth(mock_videocapture, mock_head):
     """Test starting HTTP camera with authentication."""
     camera = IPCamera(url="http://192.168.1.100:8080/video", username="admin", password="secret")
     camera.start()
 
-    # Should pass auth to requests
-    mock_requests.head.assert_called_once()
-    call_kwargs = mock_requests.head.call_args[1]
-    assert call_kwargs["auth"] == ("admin", "secret")
+    mock_head.assert_called_once()
+    assert mock_head.call_args.kwargs["auth"] == ("admin", "secret")
 
 
-def test_ip_camera_start_fails_to_open(mock_videocapture, mock_requests):
+def test_ip_camera_start_fails_to_open(mock_videocapture, mock_head):
     """Test error when camera fails to open."""
     _, mock_cap = mock_videocapture
     mock_cap.isOpened.return_value = False
@@ -164,7 +161,7 @@ def test_ip_camera_start_fails_to_open(mock_videocapture, mock_requests):
     assert mock_cap.isOpened.call_count == 10
 
 
-def test_ip_camera_start_fails_to_read_frame(mock_videocapture, mock_requests):
+def test_ip_camera_start_fails_to_read_frame(mock_videocapture, mock_head):
     """Test error when cannot read initial frame."""
     _, mock_cap = mock_videocapture
     mock_cap.read.return_value = (False, None)
@@ -178,10 +175,9 @@ def test_ip_camera_start_fails_to_read_frame(mock_videocapture, mock_requests):
     assert mock_cap.read.call_count == 10
 
 
-def test_ip_camera_start_http_connectivity_test_failed(mock_videocapture, mock_requests):
+def test_ip_camera_start_http_connectivity_test_failed(mock_videocapture, mock_head):
     """Test error when HTTP connectivity test fails."""
-    mock_requests.head.return_value.status_code = 404
-    mock_requests.RequestException = Exception  # Mock the exception class
+    mock_head.return_value.status_code = 404
 
     camera = IPCamera(url="http://192.168.1.100:8080/video")
     camera.auto_reconnect_delay = 0
@@ -189,18 +185,12 @@ def test_ip_camera_start_http_connectivity_test_failed(mock_videocapture, mock_r
     with pytest.raises(CameraOpenError, match="HTTP camera returned status 404"):
         camera.start()
 
-    assert mock_requests.head.call_count == 10
+    assert mock_head.call_count == 10
 
 
-def test_ip_camera_start_http_connectivity_network_fail(mock_videocapture, mock_requests):
+def test_ip_camera_start_http_connectivity_network_fail(mock_videocapture, mock_head):
     """Test error when HTTP request raises exception."""
-
-    # Create a real exception to raise
-    class MockRequestException(Exception):
-        pass
-
-    mock_requests.RequestException = MockRequestException
-    mock_requests.head.side_effect = MockRequestException("Network error")
+    mock_head.side_effect = http.ConnectionFailed("Network error")
 
     camera = IPCamera(url="http://192.168.1.100:8080/video")
     camera.auto_reconnect_delay = 0
@@ -208,13 +198,13 @@ def test_ip_camera_start_http_connectivity_network_fail(mock_videocapture, mock_
     with pytest.raises(CameraOpenError, match="Cannot connect to HTTP camera"):
         camera.start()
 
-    assert mock_requests.head.call_count == 10
+    assert mock_head.call_count == 10
 
 
-def test_ip_camera_start_http_connectivity_test_206(mock_videocapture, mock_requests):
+def test_ip_camera_start_http_connectivity_test_206(mock_videocapture, mock_head):
     """Test HTTP connectivity with 206 Partial Content response."""
     _, mock_cap = mock_videocapture
-    mock_requests.head.return_value.status_code = 206
+    mock_head.return_value.status_code = 206
 
     camera = IPCamera(url="http://192.168.1.100:8080/video")
     camera.start()
@@ -223,7 +213,7 @@ def test_ip_camera_start_http_connectivity_test_206(mock_videocapture, mock_requ
     mock_cap.isOpened.assert_called_once()
 
 
-def test_ip_camera_stop(mock_videocapture, mock_requests):
+def test_ip_camera_stop(mock_videocapture, mock_head):
     """Test stopping IP camera."""
     _, mock_cap = mock_videocapture
 
@@ -235,7 +225,7 @@ def test_ip_camera_stop(mock_videocapture, mock_requests):
     mock_cap.release.assert_called_once()
 
 
-def test_ip_camera_read_frame(mock_videocapture, mock_requests):
+def test_ip_camera_read_frame(mock_videocapture, mock_head):
     """Test reading a frame from IP camera."""
     _, mock_cap = mock_videocapture
     test_frame = np.ones((480, 640, 3), dtype=np.uint8) * 100
@@ -251,7 +241,7 @@ def test_ip_camera_read_frame(mock_videocapture, mock_requests):
     assert np.array_equal(frame, test_frame)
 
 
-def test_ip_camera_read_frame_auto_reconnect(mock_videocapture, mock_requests):
+def test_ip_camera_read_frame_auto_reconnect(mock_videocapture, mock_head):
     """Test automatic reconnection when reading frame."""
     camera = IPCamera(url="rtsp://192.168.1.100/stream")
     # Don't start the camera, let _read_frame trigger reconnection
@@ -263,7 +253,7 @@ def test_ip_camera_read_frame_auto_reconnect(mock_videocapture, mock_requests):
     assert frame is not None
 
 
-def test_ip_camera_read_frame_reconnect_failure(mock_videocapture, mock_requests):
+def test_ip_camera_read_frame_reconnect_failure(mock_videocapture, mock_head):
     """Test when reconnection fails during frame read."""
     _, mock_cap = mock_videocapture
     mock_cap.isOpened.return_value = False
@@ -278,7 +268,7 @@ def test_ip_camera_read_frame_reconnect_failure(mock_videocapture, mock_requests
     assert frame is None
 
 
-def test_ip_camera_read_frame_connection_dropped(mock_videocapture, mock_requests):
+def test_ip_camera_read_frame_connection_dropped(mock_videocapture, mock_head):
     """Test when connection drops during frame read."""
     _, mock_cap = mock_videocapture
 
@@ -296,16 +286,15 @@ def test_ip_camera_read_frame_connection_dropped(mock_videocapture, mock_request
     assert camera._cap is None
 
 
-def test_ip_camera_timeout_custom(mock_videocapture, mock_requests):
+def test_ip_camera_timeout_custom(mock_videocapture, mock_head):
     """Test IP camera with custom timeout."""
     camera = IPCamera(url="http://192.168.1.100:8080/video", timeout=30)
     camera.start()
 
-    call_kwargs = mock_requests.head.call_args[1]
-    assert call_kwargs["timeout"] == 30
+    assert mock_head.call_args.kwargs["timeout"] == 30
 
 
-def test_events(mock_videocapture, mock_requests):
+def test_events(mock_videocapture, mock_head):
     """Test that IPCamera emits events on connect and disconnect."""
     camera = IPCamera(url="rtsp://192.168.1.100/stream")
     events = []

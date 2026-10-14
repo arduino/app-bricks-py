@@ -26,3 +26,22 @@ def _clear_scandir_cache():
     list_models._SEARCH_DIR_CACHE.clear()
     yield
     list_models._SEARCH_DIR_CACHE.clear()
+
+
+@pytest.fixture(autouse=True)
+def exit_refreshes(monkeypatch, tmp_path):
+    """Keep the materialized listing of the tests off the real /models.
+
+    The refreshes a downloader registers for its exit are collected here instead of
+    running when pytest exits, so a test runs them itself; the ones it runs right
+    away find no models root, and write nothing, unless the test points them at one.
+    """
+    import types
+
+    import list_models
+
+    registered = []
+    monkeypatch.setattr(list_models, "atexit", types.SimpleNamespace(register=registered.append))
+    monkeypatch.setattr(list_models, "_REFRESH_AT_EXIT", False)
+    monkeypatch.setattr(list_models, "MODELS_ROOT_DIR", str(tmp_path / "no-models-root"))
+    return registered

@@ -7,9 +7,15 @@
 # A container deriving from another container of this repository declares it
 # in its Dockerfile (FROM ${REGISTRY}app-bricks/<parent>:${BASE_IMAGE_VERSION})
 # and links it here with parent_context(): bake then builds the parent in-graph,
-# in dependency order, however deep the chain. scripts/container.py reads
-# the same FROM lines and the release checks that the two agree. Targets are
-# listed parents first, each followed by the containers deriving from it.
+# in dependency order, however deep the chain. A container copying files out of
+# a layer of this repository, an image like aihub-framework that is never run,
+# declares it the same way in a stage of its own
+# (FROM ${REGISTRY}app-bricks/<layer>:${BASE_IMAGE_VERSION} AS <alias>, then
+# COPY --link --from=<alias>, which adds the layer's own blobs) and links it with
+# parent_context() next to its parent.
+# scripts/container.py reads the same FROM lines and the release checks that the
+# two agree. Targets are listed parents and layers first, each followed by the
+# containers deriving from it.
 #
 # Build arguments specific to a container (download URLs and digests) are the
 # ARG defaults of its Dockerfile, so it also builds standalone.
@@ -124,20 +130,33 @@ target "_downstream" {
 # Every container: a release builds and publishes them all.
 group "default" {
   targets = [
+    "aihub-framework",
     "python-slim",
     "llamacpp-runner",
     "models-downloader",
     "python-base",
     "python-apps-base",
     "tps",
+    "aihub-onnx-models-runner",
+    "ocr-runner",
     "qairt-common-base",
-    "aihub-models-runner",
+    "aihub-litert-models-runner",
     "gesture-recognition-runner",
     "pose-estimation-runner",
     "llamacpp-npu-runner",
     "ei-models-runner",
     "ei-qnn-models-runner",
   ]
+}
+
+# The `aihub` runner framework and the app skeleton, a layer FROM scratch that
+# aihub-litert-models-runner and aihub-onnx-models-runner copy from.
+target "aihub-framework" {
+  inherits   = ["_common"]
+  context    = "containers/base/aihub-framework"
+  tags       = image_tags("aihub-framework")
+  cache-from = cache_from("aihub-framework")
+  cache-to   = cache_to("aihub-framework")
 }
 
 target "python-slim" {
@@ -199,6 +218,27 @@ target "tps" {
   contexts   = parent_context("python-slim")
 }
 
+target "aihub-onnx-models-runner" {
+  inherits   = ["_downstream"]
+  context    = "containers/ai/aihub-onnx-models-runner"
+  tags       = image_tags("aihub-onnx-models-runner")
+  cache-from = cache_from("aihub-onnx-models-runner")
+  cache-to   = cache_to("aihub-onnx-models-runner")
+  contexts = merge(
+    parent_context("python-slim"),
+    parent_context("aihub-framework"),
+  )
+}
+
+target "ocr-runner" {
+  inherits   = ["_downstream"]
+  context    = "containers/ai/ocr-runner"
+  tags       = image_tags("ocr-runner")
+  cache-from = cache_from("ocr-runner")
+  cache-to   = cache_to("ocr-runner")
+  contexts   = parent_context("aihub-onnx-models-runner")
+}
+
 target "qairt-common-base" {
   inherits   = ["_common"]
   context    = "containers/base/qairt-common-base"
@@ -207,13 +247,16 @@ target "qairt-common-base" {
   cache-to   = cache_to("qairt-common-base")
 }
 
-target "aihub-models-runner" {
+target "aihub-litert-models-runner" {
   inherits   = ["_downstream"]
-  context    = "containers/ai/aihub-models-runner"
-  tags       = image_tags("aihub-models-runner")
-  cache-from = cache_from("aihub-models-runner")
-  cache-to   = cache_to("aihub-models-runner")
-  contexts   = parent_context("qairt-common-base")
+  context    = "containers/ai/aihub-litert-models-runner"
+  tags       = image_tags("aihub-litert-models-runner")
+  cache-from = cache_from("aihub-litert-models-runner")
+  cache-to   = cache_to("aihub-litert-models-runner")
+  contexts = merge(
+    parent_context("qairt-common-base"),
+    parent_context("aihub-framework"),
+  )
 }
 
 target "gesture-recognition-runner" {
@@ -222,7 +265,7 @@ target "gesture-recognition-runner" {
   tags       = image_tags("gesture-recognition-runner")
   cache-from = cache_from("gesture-recognition-runner")
   cache-to   = cache_to("gesture-recognition-runner")
-  contexts   = parent_context("aihub-models-runner")
+  contexts   = parent_context("aihub-litert-models-runner")
 }
 
 target "pose-estimation-runner" {
@@ -231,7 +274,7 @@ target "pose-estimation-runner" {
   tags       = image_tags("pose-estimation-runner")
   cache-from = cache_from("pose-estimation-runner")
   cache-to   = cache_to("pose-estimation-runner")
-  contexts   = parent_context("aihub-models-runner")
+  contexts   = parent_context("aihub-litert-models-runner")
 }
 
 target "llamacpp-npu-runner" {

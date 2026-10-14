@@ -1,85 +1,29 @@
 version: 2
-# Dependency updates arrive as pull requests, where the license scan and the container builds review them.
-# Every entry runs once a week on the same morning and folds its updates into one pull request.
-# A version must be a week old before it is proposed, so short-lived releases are skipped, and Dependabot
-# never rebases on its own: comment "@dependabot rebase" when a pull request falls behind main.
+# Dependabot only proposes security fixes, as pull requests where the license scan and the container builds review them.
+# Version updates are disabled by the zero pull request limit, the schedule is required but unused.
+# Dependabot never rebases on its own: comment "@dependabot rebase" when a pull request falls behind main.
+# Docker and compose images have no entry, they are bumped by hand.
 updates:
   - package-ecosystem: uv
     directories:
       - /
-      - /containers/ai/aihub-models-runner
+      - /containers/ai/aihub-litert-models-runner
+      - /containers/ai/aihub-onnx-models-runner
       - /containers/ai/ei-qnn-models-runner
-      - /containers/ai/gesture-recognition-runner
       - /containers/ai/llamacpp-npu-runner
       - /containers/ai/llamacpp-runner
-      - /containers/ai/pose-estimation-runner
       - /containers/base/python-base
       - /containers/bricks/models-downloader
       - /containers/bricks/tps
     schedule:
       interval: weekly
-      day: monday
-      time: "06:00"
-      timezone: Europe/Rome
-    cooldown:
-      default-days: 7
+    open-pull-requests-limit: 0
     rebase-strategy: disabled
     ignore:
-      # Patch releases ride along with the next minor one, security fixes still arrive right away
-      - dependency-name: "*"
-        update-types: ["version-update:semver-patch"]
       # python-base ships a custom build of this wheel, bumped by hand
       - dependency-name: opencv-python-headless
     groups:
-      python:
-        patterns: ["*"]
-      # Security fixes arrive as soon as they are published, still as one pull request
+      # All security fixes of a run fold into one pull request
       python-security:
         applies-to: security-updates
-        patterns: ["*"]
-  - package-ecosystem: docker
-    directories:
-      - /containers/*/*
-      - /scripts/licensed
-    schedule:
-      interval: weekly
-      day: monday
-      time: "06:00"
-      timezone: Europe/Rome
-    cooldown:
-      default-days: 7
-    rebase-strategy: disabled
-    ignore:
-      # Patch releases ride along with the next minor one, security fixes still arrive right away
-      - dependency-name: "*"
-        update-types: ["version-update:semver-patch"]
-      # Digest refreshes only, moving to another Python release is a deliberate change
-      - dependency-name: python
-        update-types: ["version-update:semver-major", "version-update:semver-minor"]
-      # The Edge Impulse runtimes, bumped by hand
-      - dependency-name: g7a8t7v6/inference-container
-      - dependency-name: g7a8t7v6/inference-container-qnn
-    groups:
-      docker:
-        patterns: ["*"]
-  - package-ecosystem: docker-compose
-    directories:
-      - /src/arduino/app_bricks/*
-      - /src/arduino/app_services/*
-    schedule:
-      interval: weekly
-      day: monday
-      time: "06:00"
-      timezone: Europe/Rome
-    cooldown:
-      default-days: 7
-    rebase-strategy: disabled
-    ignore:
-      # Patch releases ride along with the next minor one, security fixes still arrive right away
-      - dependency-name: "*"
-        update-types: ["version-update:semver-patch"]
-      # The Qualcomm services from artifacts.codelinaro.org, bumped by hand
-      - dependency-name: iot-solutions-microservices/*
-    groups:
-      compose:
         patterns: ["*"]

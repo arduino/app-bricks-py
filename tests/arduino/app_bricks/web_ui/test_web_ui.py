@@ -2,11 +2,18 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import asyncio
+import importlib.util
 import os
+import socket
+import threading
 import time
+from collections.abc import Iterator
 from unittest.mock import patch
 
 import numpy as np
+import pytest
+from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
 
 from arduino.app_peripherals.camera.base_camera import BaseCamera
@@ -216,23 +223,81 @@ def test_start_bounds_the_graceful_shutdown():
     assert ui._server.config.timeout_graceful_shutdown > 0
 
 
-def test_stop_forces_the_server_to_exit_when_the_graceful_path_stalls(monkeypatch):
-    """A stalled graceful shutdown must not outlive the app's shutdown budget."""
-    monkeypatch.setattr(web_ui, "FORCE_SHUTDOWN_TIMEOUT_S", 0.05)
+@pytest.fixture
+def server_loop() -> Iterator[asyncio.AbstractEventLoop]:
+    """An event loop running in its own thread, as uvicorn's does while the server serves."""
+    loop = asyncio.new_event_loop()
+    thread = threading.Thread(target=loop.run_forever, daemon=True)
+    thread.start()
+    while not loop.is_running():
+        time.sleep(0.001)
+    yield loop
+    if not loop.is_closed():
+        _close(loop)
+    thread.join(2)
 
+
+def _close(loop: asyncio.AbstractEventLoop) -> None:
+    """Stop and close the loop of the server_loop fixture, as asyncio.run() does when the server has stopped."""
+    loop.call_soon_threadsafe(loop.stop)
+    while loop.is_running():
+        time.sleep(0.001)
+    loop.close()
+
+
+def _wait_for(condition, timeout: float = 3) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline and not condition():
+        time.sleep(0.01)
+    return condition()
+
+
+def _ui_serving_on(loop: asyncio.AbstractEventLoop, monkeypatch) -> tuple[WebUI, _FakeServer]:
+    """A WebUI whose fake server runs on loop. The Socket.IO layer, which stop() also shuts down, is left out."""
     ui = WebUI()
+    monkeypatch.setattr(ui.app, "sio", None)
     server = _FakeServer()
     ui._server = server
+    ui._server_loop = loop
+    return ui, server
+
+
+def test_stop_forces_the_server_to_exit_when_the_graceful_path_stalls(monkeypatch, server_loop):
+    """A stalled graceful shutdown must not outlive the app's shutdown budget."""
+    monkeypatch.setattr(web_ui, "FORCE_SHUTDOWN_TIMEOUT_S", 0.05)
+    ui, server = _ui_serving_on(server_loop, monkeypatch)
 
     ui.stop()
 
     assert server.should_exit is True
+    assert _wait_for(lambda: server.force_exit), "the server was never forced to stop"
 
-    deadline = time.monotonic() + 3
-    while time.monotonic() < deadline and not server.force_exit:
-        time.sleep(0.01)
 
-    assert server.force_exit is True, "the server was never forced to stop"
+def test_the_escalation_ends_with_the_server_loop(monkeypatch, server_loop):
+    """A server that stops in time leaves nothing behind: no thread, and no late force_exit."""
+    monkeypatch.setattr(web_ui, "FORCE_SHUTDOWN_TIMEOUT_S", 0.2)
+    ui, server = _ui_serving_on(server_loop, monkeypatch)
+    threads = threading.active_count()
+
+    ui.stop()
+    assert threading.active_count() == threads, "stop() started a thread"
+    _close(server_loop)  # The server stopped in time
+    time.sleep(0.4)
+
+    assert server.force_exit is False
+
+
+def test_the_escalation_reaches_only_the_server_being_stopped(monkeypatch, server_loop):
+    """After a stop and a start in the same process, the escalation of the first stop must spare the new server."""
+    monkeypatch.setattr(web_ui, "FORCE_SHUTDOWN_TIMEOUT_S", 0.1)
+    ui, stopped = _ui_serving_on(server_loop, monkeypatch)
+
+    ui.stop()
+    started = _FakeServer()
+    ui._server = started  # As start() does
+
+    assert _wait_for(lambda: stopped.force_exit)
+    assert started.force_exit is False
 
 
 def test_stop_without_a_running_server_loop_is_safe():
@@ -245,6 +310,65 @@ def test_stop_without_a_running_server_loop_is_safe():
     ui.stop()
 
     assert server.should_exit is True
+    assert server.force_exit is False
+
+
+def _serve_a_stream(ui: WebUI) -> tuple[threading.Thread, socket.socket]:
+    """Run the real server and keep a never-ending streaming response in flight, as expose_camera() does."""
+
+    def endless():
+        while True:
+            yield b"frame\n"
+            time.sleep(0.02)
+
+    ui.app.add_api_route("/stream", lambda: StreamingResponse(endless()), methods=["GET"])
+    ui.start()
+    serving = threading.Thread(target=ui.execute, daemon=True)
+    serving.start()
+    assert _wait_for(lambda: ui._server_loop is not None and ui._server is not None and ui._server.started), "the server did not start"
+    client = socket.create_connection(("127.0.0.1", ui._port), timeout=5)
+    client.sendall(b"GET /stream HTTP/1.1\r\nHost: localhost\r\n\r\n")
+    assert client.recv(64).startswith(b"HTTP/1.1 200")
+    return serving, client
+
+
+def test_stop_ends_a_real_server_with_a_stream_in_flight(monkeypatch):
+    """The graceful shutdown waits for the stream at most GRACEFUL_SHUTDOWN_TIMEOUT_S, then execute() returns."""
+    monkeypatch.setattr(web_ui, "GRACEFUL_SHUTDOWN_TIMEOUT_S", 0.5)
+    ui = WebUI(addr="127.0.0.1", port=0)
+    serving, client = _serve_a_stream(ui)
+
+    started = time.monotonic()
+    ui.stop()
+    serving.join(5)
+    elapsed = time.monotonic() - started
+    client.close()
+
+    assert not serving.is_alive(), "execute() did not return"
+    assert elapsed < 0.5 + 1.0, f"the stop took {elapsed:.2f} s"
+
+
+@pytest.mark.skipif(importlib.util.find_spec("uvloop") is None, reason="uvloop, which the image runs, lets force_exit end the wait")
+def test_the_escalation_ends_a_real_server_whose_graceful_shutdown_stalls(monkeypatch):
+    """With the graceful wait out of the way, force_exit alone must end the server.
+
+    On the asyncio loop, Server.wait_closed() waits for every connection since Python 3.12, and force_exit cannot cut
+    that wait short: only the graceful timeout can, which is why it comes first.
+    """
+    monkeypatch.setattr(web_ui, "GRACEFUL_SHUTDOWN_TIMEOUT_S", 30)
+    monkeypatch.setattr(web_ui, "FORCE_SHUTDOWN_TIMEOUT_S", 0.3)
+    ui = WebUI(addr="127.0.0.1", port=0)
+    serving, client = _serve_a_stream(ui)
+
+    started = time.monotonic()
+    ui.stop()
+    serving.join(5)
+    elapsed = time.monotonic() - started
+    client.close()
+
+    assert not serving.is_alive(), "execute() did not return"
+    assert ui._server is not None and ui._server.force_exit is True
+    assert elapsed < 0.3 + 1.0, f"the stop took {elapsed:.2f} s"
 
 
 def test_stop_without_a_server_is_a_noop():

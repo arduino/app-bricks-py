@@ -81,25 +81,29 @@ class TestV4LCameraInitialization:
             V4LCamera(device=1)
 
 
+def with_device_properties(mock_cap: MagicMock, **properties: float) -> None:
+    """Backs the mock get/set with a property store, as a real driver would."""
+    store = {getattr(cv2, f"CAP_PROP_{name}"): value for name, value in properties.items()}
+    mock_cap.get.side_effect = lambda prop: store.get(prop, 0)
+    mock_cap.set.side_effect = lambda prop, value: store.__setitem__(prop, value) or True
+
+
 @pytest.mark.usefixtures("v4l_device_argument")
 class TestV4LCameraStartStop:
     @patch("arduino.app_peripherals.camera.v4l_camera.cv2.VideoCapture")
     def test_start_success(self, mock_videocapture, mock_successful_connect):
-        """Test that V4LCamera start() calls V4L-specific _open_camera and sets up hardware correctly."""
-
-        def get_caps(prop):
-            if prop == cv2.CAP_PROP_FRAME_WIDTH:
-                return 640
-            elif prop == cv2.CAP_PROP_FRAME_HEIGHT:
-                return 480
-            elif prop == cv2.CAP_PROP_FPS:
-                return 10
-            return 0
-
-        mock_successful_connect.get.side_effect = get_caps
+        """Test that V4LCamera start() opens the device and applies the requested settings."""
+        with_device_properties(
+            mock_successful_connect,
+            BUFFERSIZE=4,
+            FOURCC=cv2.VideoWriter.fourcc(*"YUYV"),
+            FRAME_WIDTH=1280,
+            FRAME_HEIGHT=720,
+            FPS=30,
+        )
         mock_videocapture.return_value = mock_successful_connect
 
-        camera = V4LCamera(resolution=(640, 480), fps=10)
+        camera = V4LCamera(resolution=(640, 480), fps=10, codec="MJPG")
 
         assert not camera.is_started()
 
@@ -108,13 +112,36 @@ class TestV4LCameraStartStop:
         assert camera.is_started()
         mock_videocapture.assert_called_once_with("/dev/v4l/by-id/usb-Camera-video-index0", cv2.CAP_V4L2)
 
-        # Verify V4L camera setup calls
-        assert mock_successful_connect.set.call_count == 4
         set_call_args = [call.args for call in mock_successful_connect.set.call_args_list]
-        assert (cv2.CAP_PROP_BUFFERSIZE, 1) in set_call_args
-        assert (cv2.CAP_PROP_FRAME_WIDTH, 640) in set_call_args
-        assert (cv2.CAP_PROP_FRAME_HEIGHT, 480) in set_call_args
-        assert (cv2.CAP_PROP_FPS, 10) in set_call_args
+        assert sorted(set_call_args) == sorted([
+            (cv2.CAP_PROP_BUFFERSIZE, 2),
+            (cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc(*"MJPG")),
+            (cv2.CAP_PROP_FRAME_WIDTH, 640),
+            (cv2.CAP_PROP_FRAME_HEIGHT, 480),
+            (cv2.CAP_PROP_FPS, 10),
+        ])
+        assert camera.resolution == (640, 480)
+        assert camera.fps == 10
+        assert camera.codec == "MJPG"
+
+    @patch("arduino.app_peripherals.camera.v4l_camera.cv2.VideoCapture")
+    def test_start_skips_settings_already_in_place(self, mock_videocapture, mock_successful_connect):
+        """Test that V4LCamera start() leaves the device untouched when it already has the requested settings."""
+        with_device_properties(
+            mock_successful_connect,
+            BUFFERSIZE=2,
+            FOURCC=cv2.VideoWriter.fourcc(*"MJPG"),
+            FRAME_WIDTH=640,
+            FRAME_HEIGHT=480,
+            FPS=10,
+        )
+        mock_videocapture.return_value = mock_successful_connect
+
+        camera = V4LCamera(resolution=(640, 480), fps=10, codec="MJPG")
+        camera.start()
+
+        assert camera.is_started()
+        mock_successful_connect.set.assert_not_called()
 
     @patch("arduino.app_peripherals.camera.v4l_camera.cv2.VideoCapture")
     def test_start_already_started(self, mock_videocapture, mock_successful_connect):

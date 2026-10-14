@@ -19,8 +19,8 @@ STATION = {
 
 @pytest.fixture
 def get():
-    """Replace requests.get with a mock answering with the given payload."""
-    with patch("arduino.app_bricks.air_quality_monitoring.requests.get") as mock_get:
+    """Replace the HTTP GET with a mock answering with the given payload."""
+    with patch("arduino.app_utils.http.get") as mock_get:
 
         def respond(payload):
             mock_get.return_value = MagicMock(status_code=200, json=MagicMock(return_value=payload))
@@ -43,6 +43,7 @@ def test_process_dispatches_on_the_item_keys(get, item, url):
     data = AirQualityMonitoring(token="token").process(item)
 
     assert mock_get.call_args.args == (url,)
+    assert mock_get.call_args.kwargs == {"params": {"token": "token"}}
     assert data == AirQualityData(
         city="Turin",
         lat=45.07,
@@ -90,3 +91,45 @@ def test_failed_lookup_raises_the_api_message(get, data, message):
 def test_lookup_error_requires_an_error_status(data):
     with pytest.raises(ValueError, match="Status must be 'error'"):
         AirQualityLookupError.from_api_response(data)
+
+
+@pytest.fixture
+def waqi(monkeypatch: pytest.MonkeyPatch):
+    """A local stand-in for api.waqi.info: answers /feed/<station>/ for Turin, and a JSON error with a 404 otherwise."""
+    import json
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    paths: list[str] = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            paths.append(self.path)
+            found = self.path.startswith("/feed/Turin/")
+            body = json.dumps({"status": "ok", "data": STATION} if found else {"status": "error", "data": "Unknown station"}).encode()
+            self.send_response(200 if found else 404)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format: str, *args: object) -> None:
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True).start()
+    monitor = AirQualityMonitoring(token="t k")
+    monitor.city_api_url = f"http://127.0.0.1:{server.server_address[1]}/feed/"
+    yield monitor, paths
+    server.shutdown()
+    server.server_close()
+
+
+def test_city_names_are_percent_encoded_in_the_path(waqi):
+    monitor, paths = waqi
+
+    assert monitor.get_air_quality_by_city("Turin").city == "Turin"
+    with pytest.raises(AirQualityLookupError, match="Unknown station"):
+        monitor.get_air_quality_by_city("São Paulo de Olivença")
+
+    assert paths == ["/feed/Turin/?token=t+k", "/feed/S%C3%A3o%20Paulo%20de%20Oliven%C3%A7a/?token=t+k"]

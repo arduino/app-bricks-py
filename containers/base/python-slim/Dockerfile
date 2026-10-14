@@ -9,6 +9,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 RUN set -ex; \
     apt-get update -y; \
     apt-get upgrade -y; \
+    apt-get install -y --no-install-recommends libyaml-0-2 libbsd0 libmd0 libatomic1 netcat-openbsd; \
     apt-get autoclean -y; \
     apt-get autoremove -y; \
     apt-get dist-clean; \

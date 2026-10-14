@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 from huggingface_hub.hf_api import RepoFile
 from huggingface_hub.errors import (
@@ -54,7 +55,7 @@ from hugging_face.hf_downloader import (
     names_quantization,
     narrow_to_installed,
     narrow_to_published,
-    no_match_message,
+    no_match_error,
     parse_hf_url,
     parse_mmproj_key,
     parse_model_key,
@@ -578,38 +579,45 @@ def test_validate_hub_source_asks_anonymously_unless_a_token_is_given(monkeypatc
 
 
 @pytest.mark.parametrize(
-    ("error_class", "reason"),
+    ("error_class", "reason", "code"),
     [
-        (GatedRepoError, "is gated"),
-        (RepositoryNotFoundError, "does not exist, or is not public"),
-        (RevisionNotFoundError, "Revision '1894d1fc' does not exist"),
-        (DisabledRepoError, "has been disabled"),
+        (GatedRepoError, "is gated", "model_private_or_gated"),
+        (RepositoryNotFoundError, "does not exist, or is not public", "model_not_found"),
+        (RevisionNotFoundError, "Revision '1894d1fc' does not exist", "model_not_found"),
+        (DisabledRepoError, "has been disabled", "model_disabled"),
     ],
 )
-def test_validate_hub_source_reports_why_a_repo_cannot_be_used(monkeypatch, error_class, reason):
+def test_validate_hub_source_reports_why_a_repo_cannot_be_used(monkeypatch, error_class, reason, code):
     fake_hub(monkeypatch, error=_hub_error(error_class))
 
-    with pytest.raises(ValueError, match=reason):
+    with pytest.raises(ValueError, match=reason) as excinfo:
         validate_hub_source(resolve_model_source(GEMMA_URL))
+    assert excinfo.value.code == code
 
 
 @pytest.mark.parametrize(
-    ("flag", "reason"),
-    [({"private": True}, "is private"), ({"gated": "manual"}, "is gated"), ({"disabled": True}, "has been disabled")],
+    ("flag", "reason", "code"),
+    [
+        ({"private": True}, "is private", "model_private_or_gated"),
+        ({"gated": "manual"}, "is gated", "model_private_or_gated"),
+        ({"disabled": True}, "has been disabled", "model_disabled"),
+    ],
 )
-def test_validate_hub_source_rejects_a_repo_that_is_not_freely_downloadable(monkeypatch, flag, reason):
+def test_validate_hub_source_rejects_a_repo_that_is_not_freely_downloadable(monkeypatch, flag, reason, code):
     """With --hf-token the repo answers instead of 404ing, so the fields are checked too."""
     fake_hub(monkeypatch, _FakeModelInfo(files=["gemma-4-E2B_q4_0-it.gguf"], **flag))
 
-    with pytest.raises(ValueError, match=reason):
+    with pytest.raises(ValueError, match=reason) as excinfo:
         validate_hub_source(resolve_model_source(GEMMA_URL), token="hf_explicit")
+    assert excinfo.value.code == code
 
 
 def test_validate_hub_source_reports_an_unreachable_hub_without_blaming_the_url(monkeypatch):
     fake_hub(monkeypatch, error=OSError("no network"))
 
-    with pytest.raises(ValueError, match="Could not verify Hugging Face repository 'google/"):
+    with pytest.raises(ValueError, match="Could not verify Hugging Face repository 'google/") as excinfo:
         validate_hub_source(resolve_model_source(GEMMA_URL))
+    assert excinfo.value.code == "hub_unreachable"
 
 
 def test_validate_hub_source_lists_alternatives_for_a_file_that_is_not_there(monkeypatch):
@@ -618,6 +626,15 @@ def test_validate_hub_source_lists_alternatives_for_a_file_that_is_not_there(mon
     with pytest.raises(ValueError, match="Available GGUF files: gemma-4-E2B_q8_0-it.gguf") as excinfo:
         validate_hub_source(resolve_model_source(GEMMA_URL))
     assert "at revision '1894d1fc'" in str(excinfo.value)
+    assert excinfo.value.code == "model_not_found"
+
+
+def test_validate_hub_source_names_a_repo_without_gguf_files(monkeypatch):
+    fake_hub(monkeypatch, _FakeModelInfo(files=["model.safetensors", "README.md"]))
+
+    with pytest.raises(ValueError, match="contains no GGUF files at all") as excinfo:
+        validate_hub_source(resolve_model_source(GEMMA_URL))
+    assert excinfo.value.code == "no_compatible_file"
 
 
 def test_validate_hub_source_checks_the_mmproj_file_too(monkeypatch):
@@ -913,7 +930,7 @@ def test_generate_models_ini_backfills_the_scan(tmp_path, capsys):
 
 
 # --------------------------------------------------------------------------- #
-# no_match_message
+# no_match_error
 # --------------------------------------------------------------------------- #
 class _RepoFile:
     """Stand-in for huggingface_hub's RepoFile, which only needs a .path here."""
@@ -922,27 +939,32 @@ class _RepoFile:
         self.path = path
 
 
-def test_no_match_message_lists_the_available_gguf_files(monkeypatch):
+def test_no_match_error_lists_the_available_gguf_files(monkeypatch):
     files = [_RepoFile("Qwen3-0.6B-Q8_0.gguf"), _RepoFile("Qwen3-0.6B-BF16.gguf")]
     monkeypatch.setattr("hugging_face.hf_downloader.list_repo_matches", lambda *a, **k: files)
-    message = no_match_message("unsloth/Qwen3-0.6B-GGUF", "*Q4_0*.gguf")
+    error = no_match_error("unsloth/Qwen3-0.6B-GGUF", "*Q4_0*.gguf")
+    assert error.code == "model_not_found"
+    message = str(error)
     assert "No file matching '*Q4_0*.gguf' found in repository 'unsloth/Qwen3-0.6B-GGUF'" in message
     # Sorted, so the caller can see what to ask for instead.
     assert "Available GGUF files: Qwen3-0.6B-BF16.gguf, Qwen3-0.6B-Q8_0.gguf" in message
 
 
-def test_no_match_message_when_the_repo_has_no_gguf(monkeypatch):
+def test_no_match_error_when_the_repo_has_no_gguf(monkeypatch):
     monkeypatch.setattr("hugging_face.hf_downloader.list_repo_matches", lambda *a, **k: [])
-    assert "contains no GGUF files at all" in no_match_message("org/repo", "*Q4_0*.gguf")
+    error = no_match_error("org/repo", "*Q4_0*.gguf")
+    assert "contains no GGUF files at all" in str(error)
+    assert error.code == "no_compatible_file"
 
 
-def test_no_match_message_degrades_when_the_hub_is_unreachable(monkeypatch):
+def test_no_match_error_degrades_when_the_hub_is_unreachable(monkeypatch):
     def _boom(*_a, **_k):
         raise OSError("no network")
 
     monkeypatch.setattr("hugging_face.hf_downloader.list_repo_matches", _boom)
-    message = no_match_message("org/repo", "*Q4_0*.gguf")
-    assert message == "No file matching '*Q4_0*.gguf' found in repository 'org/repo'."
+    error = no_match_error("org/repo", "*Q4_0*.gguf")
+    assert str(error) == "No file matching '*Q4_0*.gguf' found in repository 'org/repo'."
+    assert error.code == "model_not_found"
 
 
 def test_download_matched_files_reports_what_is_available(monkeypatch):
@@ -1424,7 +1446,9 @@ def test_unsupported_quantization_is_refused_before_downloading(tmp_path, monkey
         _run_main(monkeypatch, *argv, "--output-dir", str(tmp_path))
 
     assert exc.value.code == 1
-    assert read_events(capsys)[-1]["description"].startswith("Cannot download model. Not supported quantization: Q4_0_")
+    event = read_events(capsys)[-1]
+    assert event["description"].startswith("Cannot download model. Not supported quantization: Q4_0_")
+    assert event["code"] == "model_incompatible"
     assert stub_download == []
 
 
@@ -1520,7 +1544,10 @@ def test_download_fails_when_the_record_cannot_be_written(tmp_path, monkeypatch,
         _run_main(monkeypatch, "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q4_0", "--output-dir", str(models_dir))
 
     assert exc.value.code == 1
-    assert read_events(capsys)[-1]["event"] == "error"
+    event = read_events(capsys)[-1]
+    assert event["event"] == "error"
+    # Nothing the user can act on: no code, so the host reports an internal error.
+    assert "code" not in event
     assert (models_dir / "unsloth" / "Qwen3-0.6B-GGUF" / MARKER_NAME).is_file()
 
 
@@ -1857,7 +1884,9 @@ def test_download_of_a_bare_repository_fails_before_writing_anything(tmp_path, m
     assert stub_download == []
     # No directory, so no marker and no leftovers to discard on the next run.
     assert not (models_dir / "unsloth" / "Qwen3-0.6B-GGUF").exists()
-    assert read_events(capsys)[-1]["event"] == "error"
+    event = read_events(capsys)[-1]
+    assert event["event"] == "error"
+    assert event["code"] == "model_not_found"
 
 
 def test_the_installed_fallback_is_not_downloaded_again(tmp_path, monkeypatch, stub_download, capsys):
@@ -1891,9 +1920,9 @@ def test_delete_removes_the_fallback_a_bare_repository_installed(tmp_path, monke
     assert not repo.exists()
 
 
-def test_no_match_message_names_each_pattern_that_was_tried(monkeypatch):
+def test_no_match_error_names_each_pattern_that_was_tried(monkeypatch):
     monkeypatch.setattr("hugging_face.hf_downloader.list_repo_matches", lambda *a, **k: [_RepoFile("m-Q2_K.gguf")])
-    message = no_match_message("org/repo", ["*Q4_0*.gguf", "*Q8_0*.gguf"])
+    message = str(no_match_error("org/repo", ["*Q4_0*.gguf", "*Q8_0*.gguf"]))
     assert message.startswith("No file matching any of '*Q4_0*.gguf', '*Q8_0*.gguf' found in repository 'org/repo'.")
 
 
@@ -2244,3 +2273,113 @@ def test_download_marker_carries_the_expected_size(tmp_path, monkeypatch, stub_d
     _run_main(monkeypatch, "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q3_K_S", "--output-dir", str(models_dir))
 
     assert seen[0]["size_mb"] == 380.5
+
+
+# --------------------------------------------------------------------------- #
+# main(): the materialized listing follows the download and the delete
+# --------------------------------------------------------------------------- #
+@pytest.fixture
+def listing_root(tmp_path, monkeypatch):
+    """A models root and catalog the listing refreshes run against; returns the file."""
+    import list_models
+
+    base = tmp_path / "models"
+    (base / "llamacpp").mkdir(parents=True)
+    catalog = tmp_path / "models-list.yaml"
+    catalog.write_text("models: []\n")
+    monkeypatch.setattr(list_models, "MODELS_ROOT_DIR", str(base))
+    monkeypatch.setattr(list_models, "MODELS_LIST_PATH", str(catalog))
+    return base / list_models.LISTING_NAME
+
+
+def _listed(listing):
+    return {m["id"]: m for m in yaml.safe_load(listing.read_text())["models"]}
+
+
+def test_download_materializes_the_listing_when_it_starts_and_when_it_ends(monkeypatch, stub_download, listing_root, exit_refreshes):
+    model_id = "llamacpp:unsloth/Qwen3-0.6B-GGUF/Q3_K_S"
+    during: list[dict] = []
+    download = hf_downloader.download_matched_files
+
+    def _download(*args, **kwargs):
+        during.append(_listed(listing_root))
+        download(*args, **kwargs)
+
+    monkeypatch.setattr(hf_downloader, "download_matched_files", _download)
+
+    _run_main(monkeypatch, "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q3_K_S", "--output-dir", str(listing_root.parent / "llamacpp"))
+
+    # Named from the marker while in flight (an id of its own, as the live listing gives it)
+    assert [m["downloading"] for m in during[0].values()] == [True]
+    # The end state is written at exit, after the marker is cleared.
+    for refresh in exit_refreshes:
+        refresh()
+    assert _listed(listing_root)[model_id]["installed"] is True
+    assert _listed(listing_root)[model_id]["downloading"] is False
+
+
+def test_failed_download_is_dropped_from_the_listing_at_exit(monkeypatch, stub_download, listing_root, exit_refreshes):
+    def _boom(*_args, **_kwargs):
+        raise OSError("connection reset")
+
+    monkeypatch.setattr(hf_downloader, "download_matched_files", _boom)
+    with pytest.raises(OSError):
+        _run_main(monkeypatch, "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q3_K_S", "--output-dir", str(listing_root.parent / "llamacpp"))
+
+    for refresh in exit_refreshes:
+        refresh()
+    assert _listed(listing_root) == {}
+
+
+def test_delete_materializes_the_listing_at_exit(monkeypatch, stub_download, listing_root, exit_refreshes):
+    import list_models
+
+    models_dir = str(listing_root.parent / "llamacpp")
+    _run_main(monkeypatch, "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q3_K_S", "--output-dir", models_dir)
+    exit_refreshes[0]()
+    assert _listed(listing_root)
+    exit_refreshes.clear()
+    monkeypatch.setattr(list_models, "_REFRESH_AT_EXIT", False)
+
+    _run_main(monkeypatch, "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q3_K_S", "--output-dir", models_dir, "--delete")
+
+    assert len(exit_refreshes) == 1
+    exit_refreshes[0]()
+    assert _listed(listing_root) == {}
+
+
+def test_check_and_info_leave_the_listing_alone(monkeypatch, stub_download, listing_root, exit_refreshes):
+    with pytest.raises(SystemExit):
+        _run_main(monkeypatch, "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q3_K_S", "--output-dir", str(listing_root.parent / "llamacpp"), "--check")
+    assert exit_refreshes == []
+    assert not listing_root.exists()
+
+
+# --------------------------------------------------------------------------- #
+# main(): every error a user can act on carries a code
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize(
+    "model_url",
+    [
+        "https://huggingface.co/org/repo/blob/main/README.md",
+        "../../etc:Q4_0",
+        "a:b:c:d:e",
+    ],
+)
+def test_a_model_url_that_does_not_parse_is_an_invalid_model_url(tmp_path, monkeypatch, capsys, model_url):
+    with pytest.raises(SystemExit):
+        _run_main(monkeypatch, "--model-url", model_url, "--output-dir", str(tmp_path))
+
+    assert read_events(capsys)[-1]["code"] == "invalid_model_url"
+
+
+def test_a_hub_rejection_reaches_the_host_with_its_code(tmp_path, monkeypatch, capsys):
+    fake_hub(monkeypatch, error=_hub_error(GatedRepoError))
+
+    with pytest.raises(SystemExit):
+        _run_main(monkeypatch, "--info", "--model-url", GEMMA_URL, "--output-dir", str(tmp_path))
+
+    event = read_events(capsys)[-1]
+    assert event["event"] == "error"
+    assert event["code"] == "model_private_or_gated"
+    assert "is gated" in event["description"]

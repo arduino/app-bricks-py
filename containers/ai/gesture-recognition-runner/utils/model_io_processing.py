@@ -163,11 +163,3 @@ def split_into_singleton_arrays(arr):
     """
     n = arr.shape[0]
     return [arr[i : i + 1] for i in range(n)]
-
-
-def dequantize(values, zero_points, scales):
-    """Dequantize model output values."""
-    if zero_points.size == 0 or scales.size == 0:
-        return values.astype(np.float32)
-
-    return ((values - np.int32(zero_points)) * np.float64(scales)).astype(np.float32)

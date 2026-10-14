@@ -2,16 +2,23 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-import requests
 import json
+import os
 from dataclasses import dataclass
 from typing import Any
-import importlib.resources
 
+from arduino.app_utils import http
 from arduino.app_utils import brick
 
 city_api_url = "https://geocoding-api.open-meteo.com/v1/search"
 forecast_api_url = "https://api.open-meteo.com/v1/forecast"
+
+
+def _get_json(url: str, params: dict[str, str]) -> Any:  # noqa: ANN401
+    """GET url with the query parameters and decode the JSON response. HTTP errors (4xx, 5xx) raise."""
+    response = http.get(url, params=params)
+    response.raise_for_status()
+    return response.json()
 
 
 @dataclass(frozen=True)
@@ -30,7 +37,7 @@ class WeatherData:
 
 
 # The weather codes have been taken from here: https://www.nodc.noaa.gov/archive/arc0021/0002199/1.1/data/0-data/HTML/WMO-CODE/WMO4677.HTM
-with importlib.resources.files(__name__).joinpath("weather_data.json").open(encoding="utf-8") as file:
+with open(os.path.join(os.path.dirname(__file__), "weather_data.json"), encoding="utf-8") as file:
     weather_data = json.load(file)
 
 
@@ -57,9 +64,7 @@ class WeatherForecast:
             RuntimeError: If city lookup or weather data retrieval fails.
         """
         try:
-            response = requests.get(city_api_url, params={"name": city})
-            response.raise_for_status()
-            data = response.json()
+            data = _get_json(city_api_url, {"name": city})
         except Exception as e:
             raise RuntimeError(f"Failed to look city up: {e}")
         results = data.get("results", [])
@@ -94,9 +99,7 @@ class WeatherForecast:
             "format": "json",
         }
         try:
-            response = requests.get(forecast_api_url, params=params)
-            response.raise_for_status()
-            data = response.json()
+            data = _get_json(forecast_api_url, params)
         except Exception as e:
             raise RuntimeError(f"Failed to get weather data: {e}")
 

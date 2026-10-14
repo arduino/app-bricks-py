@@ -9,7 +9,12 @@ cd /models
 model_folder="${model_name%.*}"
 
 rm -fr "${model_folder}"
-if [ $? -ne 0 ]; then
+rm_status=$?
+
+# Whatever rm managed to remove is gone from the materialized listing too.
+python /app/list_models.py --refresh
+
+if [ "${rm_status}" -ne 0 ]; then
     echo "{\"event\": \"error\", \"description\": \"Failed to remove model: ${model_name}\"}"
     exit 1
 fi
