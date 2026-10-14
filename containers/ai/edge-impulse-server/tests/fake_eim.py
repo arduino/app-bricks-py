@@ -26,6 +26,11 @@ tracker = name == "tracker"
 thresholds = [{"id": 12, "type": "object_detection", "min_score": 0.3}]
 if tracker:
     thresholds.append({"id": 28, "type": "object_tracking", "max_age": 1, "min_hits": 3, "iou_threshold": 0.3})
+# One box above the exported score threshold, one below it
+BOXES = [
+    {"label": "a", "value": 0.9, "x": 1, "y": 2, "width": 3, "height": 4},
+    {"label": "b", "value": 0.25, "x": 1, "y": 2, "width": 3, "height": 4},
+]
 srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 srv.bind(path)
 srv.listen(1)
@@ -87,7 +92,8 @@ while True:
             time.sleep(float(os.environ.get("EI_FAKE_SLEEP", "0.02")))  # the inference time
             reply.update({
                 "result": {
-                    "bounding_boxes": [{"label": "a", "value": 0.9, "x": 1, "y": 2, "width": 3, "height": 4}],
+                    # like a real .eim, only the boxes reaching the score threshold it holds
+                    "bounding_boxes": [box for box in BOXES if box["value"] >= thresholds[0]["min_score"]],
                     "classification": {"first_feature": feats[0]},
                     # the score threshold this process holds, so a test can tell which value reached which instance
                     "anomaly": thresholds[0]["min_score"],

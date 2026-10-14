@@ -52,7 +52,8 @@ exist or does not load, or if there are more pinned models than `--max-models`.
 ## Confidence, thresholds and object tracking
 
 A connection may ask for a confidence, in `OPEN` or later with `CONF {"confidence": value}`: it then
-receives only the boxes, tracks and class scores reaching it. The score threshold of the model itself
+receives only the boxes, tracks and class scores reaching it. Without one it receives those reaching the
+exported score threshold, whatever the other connections ask. The score threshold of the model itself
 (`min_score`) follows the lowest confidence among its connections, back to the exported value when none
 asks for one, so no connection misses a box it wants while the model never computes more than needed.
 

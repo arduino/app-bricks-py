@@ -28,9 +28,9 @@ sends results in arrival order, dropping one that completes after a later frame'
 A client that ignores the allowance and sends one frame at a time keeps working.
 
 Confidence: a connection may ask for one, in OPEN or with CONF {"confidence": value}; it then receives only
-the boxes, tracks and classes reaching it, and the score threshold of the model ("min_score") follows the
-lowest confidence among its connections, back to the exported value when none asks, so no connection
-misses a box it wants. Thresholds: the .eim exposes its threshold blocks, each with an "id" and a "type"
+the boxes, tracks and classes reaching it, without one those reaching the exported score threshold. The score
+threshold of the model ("min_score") follows the lowest confidence among its connections, back to the exported
+value when none asks, so no connection misses a box it wants. Thresholds: the .eim exposes its threshold blocks, each with an "id" and a "type"
 ("object_detection" with "min_score", "object_tracking" with "max_age", "min_hits" and "iou_threshold" or
 "threshold"...), "thresholds" in OPND. A CONF message naming a block sets its other values; they belong to
 the model, so they hold for every connection using it and for the instances added later. A model with the
