@@ -2,9 +2,12 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import contextlib
+import functools
 import gc
 import threading
 import time
+from collections.abc import Iterator
 
 import numpy as np
 import pytest
@@ -56,6 +59,25 @@ def _run_in_threads(*targets, timeout: float = 5.0) -> None:
         assert not thread.is_alive(), "consumer thread hung"
 
 
+def _shared(leader: BaseCamera, followers: int) -> list[BaseCamera]:
+    """The leader followed by the given number of follower handles on its device."""
+    return [leader, *(follow(leader, None) for _ in range(followers))]
+
+
+@contextlib.contextmanager
+def _started(handles: list[BaseCamera]) -> Iterator[None]:
+    """Start every handle, stopping them all on exit."""
+    with contextlib.ExitStack() as stack:
+        for handle in handles:
+            stack.enter_context(handle)
+        yield
+
+
+def _assert_increasing(ids: list[int]) -> None:
+    """A handle receives each frame once and in the order it was read."""
+    assert ids == sorted(set(ids))
+
+
 # Direct access, the behaviour of a camera that is not shared
 
 
@@ -86,25 +108,28 @@ def test_camera_returns_to_direct_access_once_followers_are_gone():
 # Frame fan-out
 
 
-def test_handles_capturing_together_receive_the_same_frames():
+@pytest.mark.parametrize("followers", [1, 2, 3])
+def test_handles_capturing_together_receive_the_same_frames(followers: int):
     """Handles capturing together get the same frame objects, read once from the device."""
     leader = CountingCamera()
-    follower = follow(leader, None)
-    barrier = threading.Barrier(2)
-    received: dict[str, list[np.ndarray]] = {"leader": [], "follower": []}
+    handles = _shared(leader, followers)
+    barrier = threading.Barrier(len(handles))
+    received: list[list[np.ndarray]] = [[] for _ in handles]
 
-    def consumer(name: str, handle: BaseCamera):
+    def consumer(index: int):
         for _ in range(8):
             barrier.wait()
-            frame = handle.capture()
+            frame = handles[index].capture()
             assert frame is not None
-            received[name].append(frame)
+            received[index].append(frame)
 
-    with leader, follower:
-        _run_in_threads(lambda: consumer("leader", leader), lambda: consumer("follower", follower))
+    with _started(handles):
+        _run_in_threads(*(functools.partial(consumer, index) for index in range(len(handles))))
 
-    assert [_frame_id(f) for f in received["leader"]] == list(range(1, 9))
-    assert all(a is b for a, b in zip(received["leader"], received["follower"]))
+    assert [_frame_id(f) for f in received[0]] == list(range(1, 9))
+    for frames in received[1:]:
+        assert len(frames) == 8
+        assert all(a is b for a, b in zip(received[0], frames))
     assert leader.read_count == 8
 
 
@@ -124,45 +149,133 @@ def test_handles_are_told_apart_even_on_the_same_thread():
     assert leader.read_count == 2
 
 
-def test_streams_on_different_handles_receive_every_frame():
-    leader = CountingCamera()
-    follower = follow(leader, None)
-    barrier = threading.Barrier(2)
-    received: dict[str, list[int]] = {"leader": [], "follower": []}
+@pytest.mark.parametrize("repeated", [0, 1], ids=["leader", "follower"])
+def test_same_handle_captured_repeatedly_on_one_thread(repeated: int):
+    """Each capture of the same handle waits for a new frame, read at the camera FPS."""
+    leader = CountingCamera(fps=20)
+    handles = _shared(leader, 1)
 
-    def consumer(name: str, handle: BaseCamera):
-        for frame in handle.stream():
-            received[name].append(_frame_id(frame))
-            if len(received[name]) == 5:
+    with _started(handles):
+        start = time.monotonic()
+        frames = [handles[repeated].capture() for _ in range(5)]
+        elapsed = time.monotonic() - start
+
+    assert [_frame_id(f) for f in frames if f is not None] == [1, 2, 3, 4, 5]
+    assert leader.read_count == 5
+    assert elapsed >= 4 / 20 * 0.9  # The first read is immediate, the next four wait a frame interval each
+
+
+@pytest.mark.parametrize(
+    ("schedule", "expected_ids"),
+    [
+        ([0, 1, 2, 3] * 3, [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3]),
+        ([0, 0, 1, 1, 2, 2, 3, 3], [1, 2, 2, 3, 3, 4, 4, 5]),
+        ([3, 3, 3, 0, 1, 2, 0], [1, 2, 3, 3, 3, 3, 4]),
+    ],
+    ids=["round-robin", "each-twice", "one-handle-first"],
+)
+def test_handles_captured_in_turn_on_one_thread(schedule: list[int], expected_ids: list[int]):
+    """
+    A handle asking again reads a new frame, which the others then reuse while it is fresh.
+
+    Every capture follows the previous one well within the frame interval, so the frame just read
+    is always fresh for a handle that has not received it yet.
+    """
+    leader = CountingCamera(fps=10)
+    handles = _shared(leader, 3)
+
+    with _started(handles):
+        frames = [handles[index].capture() for index in schedule]
+
+    assert [_frame_id(f) for f in frames if f is not None] == expected_ids
+    assert leader.read_count == max(expected_ids)
+    # Handles given the same frame id got the very same object
+    by_id: dict[int, np.ndarray] = {}
+    for frame in frames:
+        assert frame is not None
+        assert by_id.setdefault(_frame_id(frame), frame) is frame
+
+
+@pytest.mark.parametrize("followers", [1, 2, 3])
+def test_streams_on_different_handles_receive_every_frame(followers: int):
+    leader = CountingCamera()
+    handles = _shared(leader, followers)
+    barrier = threading.Barrier(len(handles))
+    received: list[list[int]] = [[] for _ in handles]
+
+    def consumer(index: int):
+        for frame in handles[index].stream():
+            received[index].append(_frame_id(frame))
+            if len(received[index]) == 5:
                 break
             barrier.wait()
 
-    with leader, follower:
-        _run_in_threads(lambda: consumer("leader", leader), lambda: consumer("follower", follower))
+    with _started(handles):
+        _run_in_threads(*(functools.partial(consumer, index) for index in range(len(handles))))
 
-    assert received["leader"] == received["follower"] == [1, 2, 3, 4, 5]
+    assert received == [[1, 2, 3, 4, 5]] * len(handles)
 
 
-def test_handle_never_receives_a_frame_twice():
+@pytest.mark.parametrize("followers", [1, 2, 3])
+def test_handle_never_receives_a_frame_twice(followers: int):
     leader = CountingCamera(fps=50)
-    follower = follow(leader, None)
-    received: dict[str, list[int]] = {"fast": [], "slow": []}
+    handles = _shared(leader, followers)
+    work = [0, 0.1, 0.03, 0.2][: len(handles)]  # Seconds spent on each frame, the leader being the fastest
+    received: list[list[int]] = [[] for _ in handles]
 
-    def consumer(name: str, handle: BaseCamera, work: float):
+    def consumer(index: int):
         deadline = time.monotonic() + 0.6
         while time.monotonic() < deadline:
-            frame = handle.capture()
+            frame = handles[index].capture()
             if frame is not None:
-                received[name].append(_frame_id(frame))
-            time.sleep(work)
+                received[index].append(_frame_id(frame))
+            time.sleep(work[index])
 
-    with leader, follower:
-        _run_in_threads(lambda: consumer("fast", leader, 0), lambda: consumer("slow", follower, 0.1))
+    with _started(handles):
+        _run_in_threads(*(functools.partial(consumer, index) for index in range(len(handles))))
 
-    for ids in received.values():
-        assert ids == sorted(set(ids))
-    # The slow handle skips the frames it was too slow to see instead of queuing them
-    assert len(received["slow"]) < len(received["fast"])
+    for ids in received:
+        _assert_increasing(ids)
+        assert all(frame_id <= leader.read_count for frame_id in ids)
+    # A slow handle skips the frames it was too slow to see instead of queuing them
+    for index in range(1, len(handles)):
+        assert len(received[index]) < len(received[0])
+
+
+def test_hammered_handle_does_not_starve_the_streaming_ones():
+    """A handle captured in a tight loop leaves the frames it reads to the handles streaming alongside."""
+    leader = CountingCamera(fps=20)
+    handles = _shared(leader, 3)
+    received: list[list[int]] = [[] for _ in handles]
+    done = threading.Event()
+
+    def hammer():
+        while not done.is_set():
+            frame = leader.capture()
+            if frame is not None:
+                received[0].append(_frame_id(frame))
+
+    def streamer(index: int):
+        for frame in handles[index].stream():
+            received[index].append(_frame_id(frame))
+            if done.is_set():
+                break
+
+    with _started(handles):
+        threads = [threading.Thread(target=hammer, daemon=True)]
+        threads += [threading.Thread(target=streamer, args=(index,), daemon=True) for index in range(1, len(handles))]
+        for thread in threads:
+            thread.start()
+        time.sleep(0.6)
+        done.set()
+        for thread in threads:
+            thread.join(2.0)
+            assert not thread.is_alive(), "consumer thread hung"
+
+    for ids in received:
+        _assert_increasing(ids)
+    for ids in received[1:]:
+        assert len(ids) >= leader.read_count // 2
 
 
 def test_slow_handle_gets_the_latest_frame_without_waiting():
@@ -372,6 +485,85 @@ def test_waiting_handle_wakes_up_on_stop():
     assert len(errors) == 2
 
 
+def test_handles_stopped_one_by_one_while_the_others_stream():
+    """App stops its bricks one at a time: the handles still started keep streaming meanwhile."""
+    leader = CountingCamera(fps=20)
+    handles = _shared(leader, 3)
+    received: list[list[tuple[int, float]]] = [[] for _ in handles]
+    ended = [0.0] * len(handles)
+
+    def streamer(index: int):
+        try:
+            for frame in handles[index].stream():
+                received[index].append((_frame_id(frame), time.monotonic()))
+        except CameraReadError:
+            pass  # Stopped between the stream's started check and its capture
+        ended[index] = time.monotonic()
+
+    for handle in handles:
+        handle.start()
+    threads = [threading.Thread(target=streamer, args=(index,), daemon=True) for index in range(len(handles))]
+    for thread in threads:
+        thread.start()
+
+    stop_order = [2, 0, 3, 1]  # A follower first, then the leader, so that the device outlives its owner
+    stopped_at: dict[int, float] = {}
+    for index in stop_order:
+        time.sleep(0.25)
+        stopped_at[index] = time.monotonic()
+        handles[index].stop()
+        threads[index].join(1.0)
+        assert not threads[index].is_alive(), f"handle {index} kept streaming after its stop"
+        assert ended[index] - stopped_at[index] < 0.5
+        assert leader.close_count == (1 if len(stopped_at) == len(handles) else 0)
+
+    assert leader.open_count == 1
+    for frames in received:
+        _assert_increasing([frame_id for frame_id, _ in frames])
+    # Each stop left the handles still started streaming
+    for position, index in enumerate(stop_order):
+        for later in stop_order[position + 1 :]:
+            assert any(at > stopped_at[index] for _, at in received[later]), f"handle {later} starved after the stop of {index}"
+
+
+def test_parallel_release_with_captures_in_flight():
+    """Releasing every handle at once, as the app shutdown does, while their threads are in capture()."""
+    Peripherals.clear()
+    leader = CountingCamera(fps=1)  # One handle sleeps in the FPS throttle for up to a second
+    handles = _shared(leader, 3)
+    errors: list[BaseException] = []
+
+    def consumer(index: int):
+        try:
+            while True:
+                handles[index].capture()
+        except CameraReadError as e:
+            errors.append(e)
+
+    for handle in handles:
+        handle.start()
+    threads = [threading.Thread(target=consumer, args=(index,), daemon=True) for index in range(len(handles))]
+    for thread in threads:
+        thread.start()
+    time.sleep(0.2)  # One handle reads the second frame from the device, the others wait for it
+
+    start = time.monotonic()
+    assert Peripherals.stop_all(timeout=2.0) == []
+    elapsed = time.monotonic() - start
+    for thread in threads:
+        thread.join(1.0)
+        assert not thread.is_alive()
+
+    assert elapsed < 0.5  # The throttle sleep is cut short rather than waited out
+    assert leader.close_count == 1
+    assert len(errors) == len(handles)
+
+    # The device opens again for the next run
+    with _started(handles):
+        assert handles[3].capture() is not None
+    assert leader.open_count == 2
+
+
 def test_device_read_error_does_not_hang_waiting_handles():
     leader = CountingCamera(fps=20, fail_read=True)
     follower = follow(leader, None)
@@ -437,20 +629,22 @@ def fake_v4l_stream(monkeypatch):
     return opened
 
 
-def test_factory_shares_a_camera_selected_twice(two_v4l_cameras, fake_v4l_stream):
-    first = Camera(0, fps=50)
-    second = Camera(0, fps=50)
+@pytest.mark.parametrize("count", [2, 4])
+def test_factory_shares_a_camera_selected_several_times(two_v4l_cameras, fake_v4l_stream, count: int):
+    handles = [Camera(0, fps=50) for _ in range(count)]
+    first = handles[0]
 
     assert isinstance(first, V4LCamera)  # A camera used once is unchanged
-    assert isinstance(second, CameraFollower)
-    assert second.v4l_path == first.v4l_path  # Camera-specific attributes come from the leader
+    for handle in handles[1:]:
+        assert isinstance(handle, CameraFollower)
+        assert handle.leader is first
+        assert handle.v4l_path == first.v4l_path  # Camera-specific attributes come from the leader
 
-    with first, second:
-        a = first.capture()
-        b = second.capture()
+    with _started(handles):
+        frames = [handle.capture() for handle in handles]
 
-    assert a is not None and b is not None
-    assert b is a
+    assert frames[0] is not None
+    assert all(frame is frames[0] for frame in frames)
     assert fake_v4l_stream == [first.v4l_path]  # Opened once
 
 
