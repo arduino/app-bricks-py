@@ -18,9 +18,10 @@ Usage:
     python list_models.py --json --write
     python list_models.py --refresh
 
-The same JSON document is materialized as ``models-list.json`` in the models root
+The same listing is materialized as ``models.yaml`` in the models root
 (/var/lib/arduino-app-cli/models on the host), so a reader that cannot afford a listing
-run reads that file instead. The listing container mounts that root at ``/models``; the
+run reads that file instead: the ``models`` list the list action prints, as YAML like
+the ".arduino_metadata.yaml" download records. The listing container mounts that root at ``/models``; the
 handler containers mount their own repository there and the root at ``/models-root``
 (models/models-handlers.yaml), which is where their refreshes write. Every action that changes the
 listing rewrites it: a download when it starts (its ".download" marker makes the model
@@ -38,6 +39,8 @@ import fnmatch
 import json
 import os
 import sys
+
+import yaml
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common.download_marker import read_marker
@@ -62,7 +65,9 @@ MODELS_BASE_DIR = "/models"
 # a handler container is not the root.
 MODELS_ROOT_DIR = "/models-root"
 
-# The materialized listing, in the models root, and its lock file. Writers hold an
+# The materialized listing, in the models root, and its lock file: every model the board
+# can run, installed or not, with its state on disk. Not the catalog, which is
+# models-list.yaml. Writers hold an
 # exclusive flock(2) on the lock file while they build the listing and replace the
 # file: two actions on the same volume each build it from the disk, and without the
 # lock the one that built first could write last, overwriting a newer state. Readers
@@ -70,7 +75,7 @@ MODELS_ROOT_DIR = "/models-root"
 # file while they read it. The lock cannot be the listing itself: it is replaced by
 # rename, so a lock held on it would be held on the file just replaced. A reader
 # without the lock still never sees a partial file, only a possibly older one.
-LISTING_NAME = "models-list.json"
+LISTING_NAME = "models.yaml"
 LISTING_LOCK_NAME = f"{LISTING_NAME}.lock"
 
 # "model_origin" says where a listed model comes from, using the same two values the
@@ -657,12 +662,27 @@ def listing_json(results):
     return json.dumps({"event": "info", "models": results}, indent=2)
 
 
+_LISTING_HEADER = (
+    "# Written by the Arduino models-downloader whenever the models on disk change.\n"
+    "# Do not edit: it is the output of the list action, rewritten by every download and delete.\n"
+)
+
+
 def write_listing(models_dir, results):
-    """Write *results* to ``<models_dir>/models-list.json`` atomically; return its path."""
+    """Write *results* to ``<models_dir>/models.yaml`` atomically; return its path.
+
+    The document is the ``models`` list and nothing else, dumped like the
+    ".arduino_metadata.yaml" records: the ``event`` wrapper belongs to the stdout
+    protocol of the list action, not to a file.
+    """
     path = os.path.join(models_dir, LISTING_NAME)
     tmp_path = f"{path}.tmp"
     with open(tmp_path, "w") as f:
-        f.write(listing_json(results) + "\n")
+        f.write(_LISTING_HEADER)
+        # width: keep long URLs and paths on one line rather than folded.
+        yaml.safe_dump({"models": results}, f, sort_keys=False, default_flow_style=False, allow_unicode=True, width=4096)
+        f.flush()
+        os.fsync(f.fileno())
     os.replace(tmp_path, path)
     return path
 

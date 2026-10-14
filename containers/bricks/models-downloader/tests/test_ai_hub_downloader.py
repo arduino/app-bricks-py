@@ -14,6 +14,7 @@ import json
 import subprocess
 
 import pytest
+import yaml
 
 from ai_hub import download_ai_hub_model
 
@@ -193,7 +194,7 @@ models:
     during = []
 
     def _extract(_url, output_dir, _json_progress):
-        during.append(json.loads(listing.read_text())["models"])
+        during.append(yaml.safe_load(listing.read_text())["models"])
         (tmp_path / model_directory / "model.bin").write_bytes(b"\0")
 
     monkeypatch.setattr(download_ai_hub_model, "download_and_extract", _extract)
@@ -203,6 +204,6 @@ models:
     assert [(m["id"], m["downloading"]) for m in during[0]] == [("qwen3-vl", True)]
     assert exit_refreshes == [list_models.refresh_listing]
     exit_refreshes[0]()
-    (entry,) = json.loads(listing.read_text())["models"]
+    (entry,) = yaml.safe_load(listing.read_text())["models"]
     assert entry["installed"] is True
     assert entry["downloading"] is False

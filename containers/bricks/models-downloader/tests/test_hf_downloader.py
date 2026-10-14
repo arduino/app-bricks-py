@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 from huggingface_hub.hf_api import RepoFile
 from huggingface_hub.errors import (
@@ -2264,7 +2265,7 @@ def listing_root(tmp_path, monkeypatch):
 
 
 def _listed(listing):
-    return {m["id"]: m for m in json.loads(listing.read_text())["models"]}
+    return {m["id"]: m for m in yaml.safe_load(listing.read_text())["models"]}
 
 
 def test_download_materializes_the_listing_when_it_starts_and_when_it_ends(monkeypatch, stub_download, listing_root, exit_refreshes):

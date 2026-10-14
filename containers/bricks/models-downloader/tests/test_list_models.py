@@ -8,6 +8,7 @@ import json
 import os
 
 import pytest
+import yaml
 
 import list_models
 from common.download_marker import write_marker
@@ -1340,19 +1341,19 @@ def test_catalog_declares_only_defined_handlers():
 
 
 # --------------------------------------------------------------------------- #
-# The materialized listing: models-list.json in the models root
+# The materialized listing: models.yaml in the models root
 # --------------------------------------------------------------------------- #
 def _gemma_path(models_dir):
     return models_dir / "llamacpp" / "google" / "gemma-4-E2B-it-qat-q4_0-gguf" / "gemma-4-E2B_q4_0-it.gguf"
 
 
 def test_write_materializes_the_printed_listing(monkeypatch, capsys, tmp_path):
-    """The file is the JSON document of the list action, byte for byte."""
+    """The file holds the models the list action prints, as YAML under its header."""
     models_dir, models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML, ["--write"])
 
     text = (models_dir / list_models.LISTING_NAME).read_text()
-    assert json.loads(text) == {"event": "info", "models": models}
-    assert text == list_models.listing_json(models) + "\n"
+    assert text.startswith("# Written by the Arduino models-downloader")
+    assert yaml.safe_load(text) == {"models": models}
     assert not (models_dir / f"{list_models.LISTING_NAME}.tmp").exists()
 
 
@@ -1361,7 +1362,7 @@ def test_write_ignores_the_installed_filters(monkeypatch, capsys, tmp_path):
     models_dir, models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML, ["--write", "--installed-only"])
 
     assert models == []
-    written = json.loads((models_dir / list_models.LISTING_NAME).read_text())["models"]
+    written = yaml.safe_load((models_dir / list_models.LISTING_NAME).read_text())["models"]
     assert {m["id"] for m in written} == {"llamacpp:gemma-4-E2B_q4_0-it", "ei:other-model"}
 
 
@@ -1381,7 +1382,7 @@ def test_refresh_writes_the_listing_of_board_name_and_prints_nothing(monkeypatch
     list_models.main()
 
     assert capsys.readouterr().out == ""
-    assert json.loads((models_dir / list_models.LISTING_NAME).read_text()) == {"event": "info", "models": []}
+    assert yaml.safe_load((models_dir / list_models.LISTING_NAME).read_text()) == {"models": []}
 
 
 def test_refresh_sees_what_changed_since_the_previous_build(tmp_path):
@@ -1395,7 +1396,7 @@ def test_refresh_sees_what_changed_since_the_previous_build(tmp_path):
     _make_gguf(str(_gemma_path(models_dir)))
     list_models.refresh_listing(str(models_dir), str(yaml_path))
 
-    written = json.loads((models_dir / list_models.LISTING_NAME).read_text())["models"]
+    written = yaml.safe_load((models_dir / list_models.LISTING_NAME).read_text())["models"]
     (gemma,) = [m for m in written if m["id"] == "llamacpp:gemma-4-E2B_q4_0-it"]
     assert gemma["installed"] is True
 
@@ -1476,10 +1477,11 @@ def test_refresh_from_a_handler_container_writes_what_the_list_action_writes(mon
 
     monkeypatch.setattr("sys.argv", ["list_models.py", "--models-dir", str(root), "--model-list", str(yaml_path), "--json", "--write"])
     list_models.main()
-    listed = capsys.readouterr().out.replace(str(root), "/models")
+    capsys.readouterr()
+    listed = (root / list_models.LISTING_NAME).read_text().replace(str(root), "/models")
 
     assert refreshed == listed
-    paths = [m[k] for m in json.loads(refreshed)["models"] for k in ("path", "mmproj") if k in m]
+    paths = [m[k] for m in yaml.safe_load(refreshed)["models"] for k in ("path", "mmproj") if k in m]
     assert paths and all(p.startswith("/models/llamacpp/") for p in paths)
 
 
