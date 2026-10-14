@@ -131,8 +131,9 @@ class InferenceClient:
             socket_path (str): Path of the service socket.
             open_timeout (float | None): Seconds to wait for the model to load, None waits indefinitely.
             confidence (float | None): Score the boxes, tracks and classes must reach to be returned, between 0 and 1;
-                None returns everything the model reports. The model's own score threshold follows the lowest
-                confidence of the connections using it.
+                None returns the boxes and tracks reaching the score threshold the model was exported with, and
+                every class score. The model's own score threshold follows the lowest confidence of the connections
+                using it.
 
         Raises:
             ServerError: If the service refuses the model (unknown_model, too_many_models, low_memory, load_failed,
