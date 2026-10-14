@@ -31,6 +31,8 @@ import pytest
 HERE = os.path.dirname(os.path.abspath(__file__))
 # Runner start deadline and request timeout of the server under test (run_server.py)
 TIMEOUT = int(os.environ.get("EI_TEST_TIMEOUT", "4"))
+# Seconds a server failing at startup has to exit: the first one of a fresh venv loads OpenCV for about 15 s on macOS
+EXIT_TIMEOUT = 60
 W, H = 96, 64
 STD = ["--max-models", "2", "--max-clients", "3", "--memory-reserve-mb", "512"]
 FAKES = [
@@ -210,14 +212,14 @@ def server(harness):
 )
 def test_startup_fails(harness, args, expect):
     p = harness.start(*args, wait_socket=False)
-    p.wait(15)
+    p.wait(EXIT_TIMEOUT)
     assert p.returncode != 0
     assert expect in harness.log_text(), harness.last_line()
 
 
 def test_startup_failure_after_a_pinned_load_stops_the_loaded_model(harness):
     p = harness.start(*STD, "--pinned-models", "det,broken", wait_socket=False)
-    p.wait(15)
+    p.wait(EXIT_TIMEOUT)
     time.sleep(0.3)
     assert p.returncode != 0, harness.last_line()
     assert not harness.eim_running("det")
@@ -225,7 +227,7 @@ def test_startup_failure_after_a_pinned_load_stops_the_loaded_model(harness):
 
 def test_startup_pinned_load_below_memory_reserve_fails(harness):
     p = harness.start(*STD, "--pinned-models", "det", wait_socket=False, env={"FAKE_MEM_MB": "100"})
-    p.wait(10)
+    p.wait(EXIT_TIMEOUT)
     assert p.returncode != 0, harness.last_line()
     assert "available memory 100 MB" in harness.log_text()
 
