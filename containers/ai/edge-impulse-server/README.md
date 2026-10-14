@@ -63,7 +63,8 @@ detection block its `min_score`, the object tracking block its `max_age`, `min_h
 values with `CONF {"id": block, key: value, ...}` and receives the blocks as they stand, or `bad_request`
 for an unknown block or key, or for `min_score`, which only the confidence drives. The values are set on
 every instance of the model, on the ones added later too, and belong to the model: they hold for every
-connection using it.
+connection using it. The `thresholds` in `OPND` and `CONF` are the values when the reply is sent: `min_score`
+moves as connections come, go or change their confidence.
 
 A model with the object tracking block reports `object_tracking` true in `OPND` and its `tracks` in every
 result, the boxes with the `id` of the object, stable while it stays in view. Such a model runs on one
