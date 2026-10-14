@@ -8,6 +8,7 @@ import json
 import os
 
 import pytest
+import yaml
 
 import list_models
 from common.download_marker import write_marker
@@ -1337,3 +1338,166 @@ def test_catalog_declares_only_defined_handlers():
     entries = list_models.load_models_list(os.path.join(REPO_MODELS_DIR, "models-list.yaml"))
     declared = {data["deployment"]["handler"] for entry in entries for data in entry.values() if data.get("deployment")}
     assert declared <= _defined_handlers()
+
+
+# --------------------------------------------------------------------------- #
+# The materialized listing: models.yaml in the models root
+# --------------------------------------------------------------------------- #
+def _gemma_path(models_dir):
+    return models_dir / "llamacpp" / "google" / "gemma-4-E2B-it-qat-q4_0-gguf" / "gemma-4-E2B_q4_0-it.gguf"
+
+
+def test_write_materializes_the_printed_listing(monkeypatch, capsys, tmp_path):
+    """The file holds the models the list action prints, as YAML under its header."""
+    models_dir, models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML, ["--write"])
+
+    text = (models_dir / list_models.LISTING_NAME).read_text()
+    assert text.startswith("# Written by the Arduino models-downloader")
+    assert yaml.safe_load(text) == {"models": models}
+    assert not (models_dir / f"{list_models.LISTING_NAME}.tmp").exists()
+
+
+def test_write_ignores_the_installed_filters(monkeypatch, capsys, tmp_path):
+    """The file always holds every model: readers filter it themselves."""
+    models_dir, models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML, ["--write", "--installed-only"])
+
+    assert models == []
+    written = yaml.safe_load((models_dir / list_models.LISTING_NAME).read_text())["models"]
+    assert {m["id"] for m in written} == {"llamacpp:gemma-4-E2B_q4_0-it", "ei:other-model"}
+
+
+def test_listing_without_write_leaves_no_file(monkeypatch, capsys, tmp_path):
+    models_dir, _models = _run_main(monkeypatch, capsys, tmp_path, SAMPLE_YAML)
+    assert not (models_dir / list_models.LISTING_NAME).exists()
+
+
+def test_refresh_writes_the_listing_of_board_name_and_prints_nothing(monkeypatch, capsys, tmp_path):
+    yaml_path = tmp_path / "models-list.yaml"
+    yaml_path.write_text(SAMPLE_YAML)
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    monkeypatch.setenv("BOARD_NAME", "unoq")  # supported by neither entry
+    monkeypatch.setattr("sys.argv", ["list_models.py", "--models-dir", str(models_dir), "--model-list", str(yaml_path), "--refresh"])
+
+    list_models.main()
+
+    assert capsys.readouterr().out == ""
+    assert yaml.safe_load((models_dir / list_models.LISTING_NAME).read_text()) == {"models": []}
+
+
+def test_refresh_sees_what_changed_since_the_previous_build(tmp_path):
+    """One process refreshes at the start and at the end of a download: no stale scan."""
+    yaml_path = tmp_path / "models-list.yaml"
+    yaml_path.write_text(SAMPLE_YAML)
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+
+    list_models.refresh_listing(str(models_dir), str(yaml_path))
+    _make_gguf(str(_gemma_path(models_dir)))
+    list_models.refresh_listing(str(models_dir), str(yaml_path))
+
+    written = yaml.safe_load((models_dir / list_models.LISTING_NAME).read_text())["models"]
+    (gemma,) = [m for m in written if m["id"] == "llamacpp:gemma-4-E2B_q4_0-it"]
+    assert gemma["installed"] is True
+
+
+@pytest.mark.parametrize("missing", ["models_dir", "yaml_path"])
+def test_refresh_writes_nothing_outside_the_container(tmp_path, missing):
+    yaml_path = tmp_path / "models-list.yaml"
+    models_dir = tmp_path / "models"
+    if missing != "yaml_path":
+        yaml_path.write_text(SAMPLE_YAML)
+    if missing != "models_dir":
+        models_dir.mkdir()
+
+    assert list_models.refresh_listing(str(models_dir), str(yaml_path)) is None
+    assert not (models_dir / list_models.LISTING_NAME).exists()
+
+
+def test_refresh_never_fails_the_action(monkeypatch, capsys, tmp_path):
+    yaml_path = tmp_path / "models-list.yaml"
+    yaml_path.write_text(SAMPLE_YAML)
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+
+    def _boom(*_args):
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr(list_models, "write_listing", _boom)
+
+    assert list_models.refresh_listing(str(models_dir), str(yaml_path)) is None
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    (event,) = [json.loads(line) for line in captured.err.splitlines()]
+    assert event["event"] == "info"
+    assert "read-only file system" in event["description"]
+
+
+def test_refresh_at_exit_registers_once(exit_refreshes):
+    list_models.refresh_listing_at_exit()
+    list_models.refresh_listing_at_exit()
+    assert exit_refreshes == [list_models.refresh_listing]
+
+
+def test_writer_waits_for_a_reader_holding_the_lock(tmp_path):
+    """A reader's shared lock on the lock file keeps the listing from changing under it."""
+    import fcntl
+    import threading
+
+    yaml_path = tmp_path / "models-list.yaml"
+    yaml_path.write_text(SAMPLE_YAML)
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    listing = models_dir / list_models.LISTING_NAME
+
+    with open(models_dir / list_models.LISTING_LOCK_NAME, "a") as reader_lock:
+        fcntl.flock(reader_lock, fcntl.LOCK_SH)
+        writer = threading.Thread(target=list_models.refresh_listing, args=(str(models_dir), str(yaml_path)))
+        writer.start()
+        writer.join(timeout=0.5)
+        assert writer.is_alive()
+        assert not listing.exists()
+    writer.join(timeout=5)
+
+    assert not writer.is_alive()
+    assert listing.is_file()
+
+
+def test_refresh_from_a_handler_container_writes_what_the_list_action_writes(monkeypatch, capsys, tmp_path):
+    """A handler sees the root at /models-root: the file still reads as listed from /models."""
+    yaml_path = tmp_path / "models-list.yaml"
+    yaml_path.write_text(SAMPLE_YAML)
+    root = tmp_path / "models-root"
+    _make_gguf(str(_gemma_path(root)))
+    _make_gguf(str(root / "llamacpp" / "org" / "repo" / "m-Q4_0.gguf"))
+    _make_gguf(str(root / "llamacpp" / "org" / "repo" / "mmproj-BF16.gguf"))
+
+    list_models.refresh_listing(str(root), str(yaml_path))
+    refreshed = (root / list_models.LISTING_NAME).read_text()
+
+    monkeypatch.setattr("sys.argv", ["list_models.py", "--models-dir", str(root), "--model-list", str(yaml_path), "--json", "--write"])
+    list_models.main()
+    capsys.readouterr()
+    listed = (root / list_models.LISTING_NAME).read_text().replace(str(root), "/models")
+
+    assert refreshed == listed
+    paths = [m[k] for m in yaml.safe_load(refreshed)["models"] for k in ("path", "mmproj") if k in m]
+    assert paths and all(p.startswith("/models/llamacpp/") for p in paths)
+
+
+def test_refresh_writes_into_the_models_root_mount_never_into_models(monkeypatch, tmp_path):
+    """In a handler container /models is one repository: --refresh reads /models-root only."""
+    yaml_path = tmp_path / "models-list.yaml"
+    yaml_path.write_text(SAMPLE_YAML)
+    root = tmp_path / "models-root"
+    root.mkdir()
+    repository = tmp_path / "models"
+    repository.mkdir()
+    monkeypatch.setattr(list_models, "MODELS_ROOT_DIR", str(root))
+    monkeypatch.setattr(list_models, "MODELS_BASE_DIR", str(repository))
+    monkeypatch.setattr("sys.argv", ["list_models.py", "--model-list", str(yaml_path), "--refresh"])
+
+    list_models.main()
+
+    assert (root / list_models.LISTING_NAME).is_file()
+    assert not (repository / list_models.LISTING_NAME).exists()
