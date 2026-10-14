@@ -15,13 +15,32 @@ Usage:
     python list_models.py --models-dir /custom/models
     python list_models.py --model-list /path/to/models-list.yaml
     python list_models.py --json
+    python list_models.py --json --write
+    python list_models.py --refresh
+
+The same listing is materialized as ``models.yaml`` in the models root
+(/var/lib/arduino-app-cli/models on the host), so a reader that cannot afford a listing
+run reads that file instead: the ``models`` list the list action prints, as YAML like
+the ".arduino_metadata.yaml" download records. The listing container mounts that root at ``/models``; the
+handler containers mount their own repository there and the root at ``/models-root``
+(models/models-handlers.yaml), which is where their refreshes write. Every action that changes the
+listing rewrites it: a download when it starts (its ".download" marker makes the model
+"downloading") and when it ends however it ends, a delete, and the list action itself
+(``--write``), which also brings it up to date with a new models-list.yaml. The file is a
+cache, written best effort: the listing is the authority, and a failed write never
+fails the action that triggered it. A SIGKILLed download leaves it saying
+"downloading", which is what the listing says too, as the marker survives as well.
 """
 
 import argparse
+import atexit
+import fcntl
 import fnmatch
 import json
 import os
 import sys
+
+import yaml
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common.download_marker import read_marker
@@ -40,6 +59,24 @@ from common.models_list import get_model_subdir, load_models_list, MODELS_LIST_P
 
 
 MODELS_BASE_DIR = "/models"
+
+# Where a handler container sees the models root: its /models is the repository of the
+# model it handles. Only a refresh reads it, and never falls back to /models, which in
+# a handler container is not the root.
+MODELS_ROOT_DIR = "/models-root"
+
+# The materialized listing, in the models root, and its lock file: every model the board
+# can run, installed or not, with its state on disk. Not the catalog, which is
+# models-list.yaml. Writers hold an
+# exclusive flock(2) on the lock file while they build the listing and replace the
+# file: two actions on the same volume each build it from the disk, and without the
+# lock the one that built first could write last, overwriting a newer state. Readers
+# that want the file consistent with the disk take a shared flock on the same lock
+# file while they read it. The lock cannot be the listing itself: it is replaced by
+# rename, so a lock held on it would be held on the file just replaced. A reader
+# without the lock still never sees a partial file, only a possibly older one.
+LISTING_NAME = "models.yaml"
+LISTING_LOCK_NAME = f"{LISTING_NAME}.lock"
 
 # "model_origin" says where a listed model comes from, using the same two values the
 # ".arduino_metadata.yaml" record does. A model declared in models-list.yaml is curated
@@ -484,59 +521,27 @@ def declared_model_id(declarations, rel_dir, filename, taken):
     return None
 
 
-def main():
-    parser = argparse.ArgumentParser(description="List all models and their filesystem status.")
-    parser.add_argument(
-        "--models-dir",
-        default=MODELS_BASE_DIR,
-        help=f"Base directory where models are mounted (default: {MODELS_BASE_DIR}).",
-    )
-    parser.add_argument(
-        "--model-list",
-        default=MODELS_LIST_PATH,
-        dest="yaml_path",
-        help=f"Path to models-list.yaml (default: {MODELS_LIST_PATH}).",
-    )
-    parser.add_argument(
-        "--json",
-        action="store_true",
-        dest="output_json",
-        help="Output results as JSON.",
-    )
-    parser.add_argument(
-        "--installed-only",
-        action="store_true",
-        help="Only show models that are installed.",
-    )
-    parser.add_argument(
-        "--not-installed-only",
-        action="store_true",
-        help="Only show models that are NOT installed.",
-    )
-    parser.add_argument(
-        "--supported-board",
-        type=str,
-        metavar="BOARD",
-        help="Filter models by supported board (e.g. ventunoq). Models without a supported_boards entry are always included.",
-    )
+def build_listing(models_dir, yaml_path, supported_board=None):
+    """Return the listing entries of every model, installed or not.
 
-    args = parser.parse_args()
-
-    if not os.path.isfile(args.yaml_path):
-        print(json.dumps({"event": "error", "description": f"models-list.yaml not found at {args.yaml_path}"}))
-        sys.exit(1)
-
-    models_list = load_models_list(args.yaml_path)
+    *supported_board* keeps only the models that board supports (and those that name
+    no board); it is also the platform whose variables drive the outdated check,
+    BOARD_NAME standing in for it when not given.
+    """
+    # A process can build the listing more than once (a download refreshes the file
+    # when it starts and when it ends): never answer from the previous scan.
+    _SEARCH_DIR_CACHE.clear()
+    models_list = load_models_list(yaml_path)
     all_models = []
     for entry in models_list:
         all_models.extend(get_model_info(entry))
 
     # Filter by supported board
-    if args.supported_board:
-        all_models = [m for m in all_models if not m["supported_boards"] or args.supported_board in m["supported_boards"]]
+    if supported_board:
+        all_models = [m for m in all_models if not m["supported_boards"] or supported_board in m["supported_boards"]]
 
     # Keep the platform of the board being listed (its variables drive the outdated check); the first one otherwise
-    board = args.supported_board or os.environ.get("BOARD_NAME", "")
+    board = supported_board or os.environ.get("BOARD_NAME", "")
     deduped = {}
     for info in all_models:
         current = deduped.get(info["id"])
@@ -561,9 +566,9 @@ def main():
             if model_info.get("model_size_mb") is not None:
                 entry["model_size_mb"] = model_info["model_size_mb"]
         else:
-            exists, path = check_model_exists(model_info, args.models_dir)
+            exists, path = check_model_exists(model_info, models_dir)
             # Per-model ".download" marker present => download in progress/incomplete.
-            downloading = bool(model_is_downloading(model_info, args.models_dir))
+            downloading = bool(model_is_downloading(model_info, models_dir))
             installed = exists and not downloading
             disk_size_mb = get_dir_size_mb(path) if installed else None
             entry = {
@@ -586,7 +591,7 @@ def main():
             # Read the record regardless of `exists`: check_model_exists() cannot
             # resolve the nested model_directory of a Hugging Face model, whose
             # status is only fixed up by the llamacpp merge below.
-            metadata = model_metadata(model_info, args.models_dir, path if exists else None)
+            metadata = model_metadata(model_info, models_dir, path if exists else None)
             if metadata is not None:
                 entry["download_metadata"] = metadata
                 stale = outdated_fields(model_info, metadata)
@@ -605,7 +610,7 @@ def main():
     info_by_id = {info["id"]: info for info in all_models}
     declarations = declared_gguf_files(models_list)
     merged_ids = set()
-    for m in find_llamacpp_models(args.models_dir, declarations):
+    for m in find_llamacpp_models(models_dir, declarations):
         rel_dir = m.pop("_rel_dir")
         filename = m.pop("_filename")
         declared_id = declared_model_id(declarations, rel_dir, filename, merged_ids)
@@ -649,6 +654,176 @@ def main():
             results.append(m)
             by_id[m["id"]] = m
 
+    return results
+
+
+def listing_json(results):
+    """The JSON document of the list action, exactly as ``--json`` prints it."""
+    return json.dumps({"event": "info", "models": results}, indent=2)
+
+
+_LISTING_HEADER = (
+    "# Written by the Arduino models-downloader whenever the models on disk change.\n"
+    "# Do not edit: it is the output of the list action, rewritten by every download and delete.\n"
+)
+
+
+def write_listing(models_dir, results):
+    """Write *results* to ``<models_dir>/models.yaml`` atomically; return its path.
+
+    The document is the ``models`` list and nothing else, dumped like the
+    ".arduino_metadata.yaml" records: the ``event`` wrapper belongs to the stdout
+    protocol of the list action, not to a file.
+    """
+    path = os.path.join(models_dir, LISTING_NAME)
+    tmp_path = f"{path}.tmp"
+    with open(tmp_path, "w") as f:
+        f.write(_LISTING_HEADER)
+        # width: keep long URLs and paths on one line rather than folded.
+        yaml.safe_dump({"models": results}, f, sort_keys=False, default_flow_style=False, allow_unicode=True, width=4096)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp_path, path)
+    return path
+
+
+def rebase_paths(results, models_dir, reported_dir):
+    """Report the paths of *results*, found under *models_dir*, under *reported_dir*.
+
+    A handler container lists the root it mounts at /models-root, and the file has to
+    read as the list action prints it, whose root is /models.
+    """
+    for entry in results:
+        for key in ("path", "mmproj"):
+            value = entry.get(key)
+            if value and (value == models_dir or value.startswith(models_dir + os.sep)):
+                entry[key] = reported_dir + value[len(models_dir) :]
+    return results
+
+
+def materialize_listing(models_dir, yaml_path, supported_board=None, reported_dir=None):
+    """Build the listing and write it to the models root; return its entries.
+
+    Built and written under the exclusive lock, so the file always holds the last
+    state built. *reported_dir* is the root the paths are written under, when it is not
+    where this process sees it. Raises on a write error: callers decide whether that
+    matters (see refresh_listing).
+    """
+    models_dir = os.path.normpath(models_dir)
+    with open(os.path.join(models_dir, LISTING_LOCK_NAME), "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        results = build_listing(models_dir, yaml_path, supported_board)
+        if reported_dir and reported_dir != models_dir:
+            rebase_paths(results, models_dir, reported_dir)
+        write_listing(models_dir, results)
+    return results
+
+
+def refresh_listing(models_dir=None, yaml_path=None):
+    """Rewrite the materialized listing after an action changed it; never raises.
+
+    Built for BOARD_NAME, the board the list action is run for, with the paths under
+    /models, so the file holds what list_models.sh prints. *models_dir* defaults to
+    the /models-root mount of a handler container: without it (an older handlers file,
+    or outside the container) or without a models-list.yaml there is nothing to list,
+    and nothing is written.
+    """
+    models_dir = models_dir or MODELS_ROOT_DIR
+    yaml_path = yaml_path or MODELS_LIST_PATH
+    if not os.path.isdir(models_dir) or not os.path.isfile(yaml_path):
+        return None
+    try:
+        materialize_listing(models_dir, yaml_path, os.environ.get("BOARD_NAME") or None, reported_dir=MODELS_BASE_DIR)
+    except Exception as exc:
+        # On stderr: stdout carries the action's own events, and a refresh at exit
+        # would land after its completion event.
+        print(json.dumps({"event": "info", "description": f"Could not write {LISTING_NAME}: {exc}"}), file=sys.stderr, flush=True)
+        return None
+    return os.path.join(models_dir, LISTING_NAME)
+
+
+_REFRESH_AT_EXIT = False
+
+
+def refresh_listing_at_exit():
+    """Have refresh_listing run once when the process exits, however it exits.
+
+    For the actions that change the listing: their every exit path (success,
+    an error, SIGINT/SIGTERM turned into an exit) runs it after the last bookkeeping
+    file was cleared. Registering more than once still refreshes once.
+    """
+    global _REFRESH_AT_EXIT
+    if not _REFRESH_AT_EXIT:
+        atexit.register(refresh_listing)
+        _REFRESH_AT_EXIT = True
+
+
+def main():
+    parser = argparse.ArgumentParser(description="List all models and their filesystem status.")
+    parser.add_argument(
+        "--models-dir",
+        help=f"Base directory where models are mounted (default: {MODELS_BASE_DIR}, {MODELS_ROOT_DIR} with --refresh).",
+    )
+    parser.add_argument(
+        "--model-list",
+        default=MODELS_LIST_PATH,
+        dest="yaml_path",
+        help=f"Path to models-list.yaml (default: {MODELS_LIST_PATH}).",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        dest="output_json",
+        help="Output results as JSON.",
+    )
+    parser.add_argument(
+        "--installed-only",
+        action="store_true",
+        help="Only show models that are installed.",
+    )
+    parser.add_argument(
+        "--not-installed-only",
+        action="store_true",
+        help="Only show models that are NOT installed.",
+    )
+    parser.add_argument(
+        "--supported-board",
+        type=str,
+        metavar="BOARD",
+        help="Filter models by supported board (e.g. ventunoq). Models without a supported_boards entry are always included.",
+    )
+    parser.add_argument(
+        "--write",
+        action="store_true",
+        help=f"Also write the listing to <models-dir>/{LISTING_NAME}, before the installed filters apply.",
+    )
+    parser.add_argument(
+        "--refresh",
+        action="store_true",
+        help=f"Only rewrite <models-dir>/{LISTING_NAME} for BOARD_NAME, printing nothing; for the actions that change the listing.",
+    )
+
+    args = parser.parse_args()
+
+    if args.refresh:
+        refresh_listing(args.models_dir, args.yaml_path)
+        return
+    args.models_dir = args.models_dir or MODELS_BASE_DIR
+
+    if not os.path.isfile(args.yaml_path):
+        print(json.dumps({"event": "error", "description": f"models-list.yaml not found at {args.yaml_path}"}))
+        sys.exit(1)
+
+    results = None
+    if args.write:
+        try:
+            results = materialize_listing(args.models_dir, args.yaml_path, args.supported_board)
+        except OSError as exc:
+            # The listing is still printed, alone on stdout: the file is only its cached copy.
+            print(json.dumps({"event": "info", "description": f"Could not write {LISTING_NAME}: {exc}"}), file=sys.stderr, flush=True)
+    if results is None:
+        results = build_listing(args.models_dir, args.yaml_path, args.supported_board)
+
     # Apply installed/not-installed filters once, after merging.
     if args.installed_only:
         results = [r for r in results if r["installed"]]
@@ -656,7 +831,7 @@ def main():
         results = [r for r in results if not r["installed"]]
 
     if args.output_json:
-        print(json.dumps({"event": "info", "models": results}, indent=2))
+        print(listing_json(results))
     else:
         installed_count = sum(1 for r in results if r["installed"])
         total_count = len(results)

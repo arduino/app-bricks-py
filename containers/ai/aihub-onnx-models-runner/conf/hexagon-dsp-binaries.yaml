@@ -1,0 +1,14 @@
+# SPDX-FileCopyrightText: Copyright (C) Arduino s.r.l. and/or its affiliated companies
+#
+# SPDX-License-Identifier: MPL-2.0
+
+# fastrpc DSP path config for all supported devices: maps the machine name read
+# from /sys/firmware/devicetree/base/model to the DSP payload directory, which
+# libfastrpc resolves relative to /usr/share/hexagon-dsp.
+machines:
+  Qualcomm Technologies, Inc. Monaco Monza addons:
+    DSP_LIBRARY_PATH: qcs8300/Qualcomm/QCS8300-RIDE/dsp
+  Qualcomm Technologies, Inc. Addons IQ 9075 EVK:
+    DSP_LIBRARY_PATH: sa8775p/Qualcomm/SA8775P-RIDE/dsp
+  Qualcomm Technologies, Inc. IQ8 8275 Pro SKU EVK:
+    DSP_LIBRARY_PATH: qcs8300/Qualcomm/QCS8300-RIDE/dsp

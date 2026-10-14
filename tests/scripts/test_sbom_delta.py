@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -16,9 +17,10 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from scripts import sbom_delta  # noqa: E402
 from scripts.container import Containers  # noqa: E402
 from scripts.sbom_delta import SbomDeltaError, extract_attested_sbom, parse_container_spec, resolve_runtime_base  # noqa: E402
-from tests.scripts.test_container import TREE, make_containers_dir  # noqa: E402
+from tests.scripts.test_container import LAYERED, TREE, make_containers_dir  # noqa: E402
 
 
 def test_runtime_base_of_a_derived_container_is_its_parent_at_the_scanned_version(tmp_path):
@@ -73,3 +75,28 @@ def test_attested_sbom_requires_exactly_one_platform():
 def test_image_without_attestation_is_rejected():
     with pytest.raises(SbomDeltaError, match="no SBOM attestation"):
         extract_attested_sbom("img", None)
+
+
+def test_delta_of_a_scratch_layer_is_its_whole_sbom_without_scanning_the_base(tmp_path, monkeypatch):
+    """scratch is not an image syft can pull: a layer FROM scratch is diffed against an empty SBOM."""
+    containers = Containers(make_containers_dir(tmp_path, LAYERED))
+    package = {
+        "SPDXID": "SPDXRef-Package-python-aihub",
+        "name": "aihub",
+        "versionInfo": "0",
+        "externalRefs": [{"referenceType": "purl", "referenceLocator": "pkg:pypi/aihub@0"}],
+    }
+
+    def fetch(image: str, output_path: Path) -> None:
+        assert image == "ghcr.io/arduino/app-bricks/aihub-framework:1.2.3"
+        output_path.write_text(json.dumps({"SPDXID": "SPDXRef-DOCUMENT", "packages": [package]}), encoding="utf-8")
+
+    def scan(image: str, output_path: Path) -> None:
+        raise AssertionError(f"scanned {image}")
+
+    monkeypatch.setattr(sbom_delta, "fetch_attested_sbom", fetch)
+    monkeypatch.setattr(sbom_delta, "scan_image", scan)
+    sbom_delta.generate_delta_for_container(containers, tmp_path / "out", "aihub-framework", "ghcr.io/arduino/", "1.2.3")
+
+    delta = json.loads((tmp_path / "out" / "delta.spdx.json").read_text(encoding="utf-8"))
+    assert [pkg["name"] for pkg in delta["packages"] if pkg["SPDXID"] != delta["documentDescribes"][0]] == ["aihub"]

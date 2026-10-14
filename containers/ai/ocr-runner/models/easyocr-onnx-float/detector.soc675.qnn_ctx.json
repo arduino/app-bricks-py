@@ -1,0 +1,11 @@
+{
+  "backend": "libQnnHtp.so",
+  "backend_qairt": "2.49.40",
+  "model_bytes": "164455",
+  "onnxruntime": "1.29.0",
+  "onnxruntime_qnn": "2.5.0",
+  "options": "{\"enable_htp_fp16_precision\": \"1\", \"htp_graph_finalization_optimization_mode\": \"0\", \"offload_graph_io_quantization\": \"1\"}",
+  "qnn_version": "2.49.40",
+  "soc_id": "675",
+  "soc_machine": "QCS8275"
+}
