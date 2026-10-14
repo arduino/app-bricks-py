@@ -261,6 +261,11 @@ mood-detector = [
 mqtt = [
     { name = "paho-mqtt" },
 ]
+ocr = [
+    { name = "numpy" },
+    { name = "opencv-python-headless" },
+    { name = "websockets" },
+]
 pose-estimation = [
     { name = "numpy" },
     { name = "websockets" },
@@ -295,6 +300,7 @@ requires-dist = [
     { name = "arduino-app-bricks", extras = ["microphone"], marker = "extra == 'all'" },
     { name = "arduino-app-bricks", extras = ["mood-detector"], marker = "extra == 'all'" },
     { name = "arduino-app-bricks", extras = ["mqtt"], marker = "extra == 'all'" },
+    { name = "arduino-app-bricks", extras = ["ocr"], marker = "extra == 'all'" },
     { name = "arduino-app-bricks", extras = ["pose-estimation"], marker = "extra == 'all'" },
     { name = "arduino-app-bricks", extras = ["stream"], marker = "extra == 'all'" },
     { name = "arduino-app-bricks", extras = ["streamlit-ui"], marker = "extra == 'all'" },
@@ -320,8 +326,10 @@ requires-dist = [
     { name = "msgpack" },
     { name = "nltk", marker = "extra == 'mood-detector'" },
     { name = "numpy", marker = "extra == 'microphone'" },
+    { name = "numpy", marker = "extra == 'ocr'" },
     { name = "numpy", marker = "extra == 'pose-estimation'" },
     { name = "opencv-python-headless", marker = "extra == 'camera'", specifier = ">=4.13,<4.14" },
+    { name = "opencv-python-headless", marker = "extra == 'ocr'", specifier = ">=4.13,<4.14" },
     { name = "paho-mqtt", marker = "extra == 'mqtt'", specifier = ">=2.1.0" },
     { name = "pillow" },
     { name = "pyalsaaudio", marker = "sys_platform == 'linux' and extra == 'microphone'", specifier = "==0.11.0" },
@@ -337,10 +345,11 @@ requires-dist = [
     { name = "watchdog", marker = "extra == 'folderwatcher'", specifier = ">=6.0.0" },
     { name = "websocket-client", marker = "extra == 'cloud-asr'" },
     { name = "websocket-client", marker = "extra == 'dev'" },
+    { name = "websockets", marker = "extra == 'ocr'" },
     { name = "websockets", marker = "extra == 'pose-estimation'" },
     { name = "websockets", marker = "extra == 'stream'" },
 ]
-provides-extras = ["dev", "dbstorage-influx", "mqtt", "folderwatcher", "camera", "microphone", "web-ui", "streamlit-ui", "mood-detector", "pose-estimation", "stream", "telegram-bot", "cloud-llm", "mcp-client", "cloud-asr", "all"]
+provides-extras = ["dev", "dbstorage-influx", "mqtt", "folderwatcher", "camera", "microphone", "web-ui", "streamlit-ui", "mood-detector", "pose-estimation", "ocr", "stream", "telegram-bot", "cloud-llm", "mcp-client", "cloud-asr", "all"]
 
 [package.metadata.requires-dev]
 build = [{ name = "docstring-parser", specifier = ">=0.16" }]

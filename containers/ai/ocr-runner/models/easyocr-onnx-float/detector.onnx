@@ -1,0 +1,2330 @@
+
+Qualcomm AI Hub Workbenchaihub-2026.08.14.0:¨Ñ
+
+í
+image
+viewsubnode_sub"SubJW
+	namespaceJ: qai_hub_models.models.easyocr.model.EasyOCRDetector/sub: aten.sub.TensorJl
+pkg.torch.onnx.class_hierarchyJ['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'aten.sub.Tensor']JÖ
+pkg.torch.onnx.fx_nodek%sub : [num_users=1] = call_function[target=torch.ops.aten.sub.Tensor](args = (%image, %view), kwargs = {})J)
+pkg.torch.onnx.name_scopes['', 'sub']JÙ
+pkg.torch.onnx.stack_trace’File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 82, in forward
+    image = normalize_image_torchvision(image)
+í
+sub
+view_1divnode_div"DivJW
+	namespaceJ: qai_hub_models.models.easyocr.model.EasyOCRDetector/div: aten.div.TensorJl
+pkg.torch.onnx.class_hierarchyJ['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'aten.div.Tensor']JÖ
+pkg.torch.onnx.fx_nodek%div : [num_users=1] = call_function[target=torch.ops.aten.div.Tensor](args = (%sub, %view_1), kwargs = {})J)
+pkg.torch.onnx.name_scopes['', 'div']JÙ
+pkg.torch.onnx.stack_trace’File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 82, in forward
+    image = normalize_image_torchvision(image)
+ê
+div
+%model.basenet.slice1.0.weight_fused_1
+#model.basenet.slice1.0.bias_fused_1getitemnode_Conv_13"Conv*
+group†*
+pads@@@@†*
+auto_pad"NOTSET†*
+strides@@†*
+	dilations@@†Jﬂ
+	namespace—: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.basenet: easyocr.model.modules.vgg16_bn/model.basenet.slice1: torch.nn.modules.container.Sequential/model.basenet.slice1.1: torch.nn.modules.batchnorm.BatchNorm2d/_native_batch_norm_legit_no_training: aten._native_batch_norm_legit_no_training.defaultJ:
+!pkg.onnxscript.rewriter.rule_nameFuseBatchNormIntoConvJõ
+pkg.torch.onnx.class_hierarchy¯['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.model.modules.vgg16_bn', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.batchnorm.BatchNorm2d', 'aten._native_batch_norm_legit_no_training.default']J‡
+pkg.torch.onnx.fx_node≈%_native_batch_norm_legit_no_training : [num_users=1] = call_function[target=torch.ops.aten._native_batch_norm_legit_no_training.default](args = (%conv2d, %p_model_basenet_slice1_1_weight, %p_model_basenet_slice1_1_bias, %b_model_basenet_slice1_1_running_mean, %b_model_basenet_slice1_1_running_var, 0.1, 1e-05), kwargs = {})Jñ
+pkg.torch.onnx.name_scopesx['', 'model', 'model.basenet', 'model.basenet.slice1', 'model.basenet.slice1.1', '_native_batch_norm_legit_no_training']Jâ	
+pkg.torch.onnx.stack_traceÍFile "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 60, in forward
+    sources = self.basenet(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/model/modules.py", line 68, in forward
+    h = self.slice1(X)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/batchnorm.py", line 194, in forward
+    return F.batch_norm(
+÷
+getitemrelu	node_relu"ReluJô
+	namespaceã: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.basenet: easyocr.model.modules.vgg16_bn/model.basenet.slice1: torch.nn.modules.container.Sequential/model.basenet.slice1.2: torch.nn.modules.activation.ReLU/relu: aten.relu.defaultJı
+pkg.torch.onnx.class_hierarchy“['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.model.modules.vgg16_bn', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.activation.ReLU', 'aten.relu.default']JÑ
+pkg.torch.onnx.fx_nodej%relu : [num_users=1] = call_function[target=torch.ops.aten.relu.default](args = (%getitem,), kwargs = {})Jv
+pkg.torch.onnx.name_scopesX['', 'model', 'model.basenet', 'model.basenet.slice1', 'model.basenet.slice1.2', 'relu']J†	
+pkg.torch.onnx.stack_traceÅ	File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 60, in forward
+    sources = self.basenet(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/model/modules.py", line 68, in forward
+    h = self.slice1(X)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/activation.py", line 143, in forward
+    return F.relu(input, inplace=self.inplace)
+õ
+relu
+%model.basenet.slice1.3.weight_fused_1
+#model.basenet.slice1.3.bias_fused_1	getitem_3node_Conv_14"Conv*
+group†*
+pads@@@@†*
+auto_pad"NOTSET†*
+strides@@†*
+	dilations@@†J·
+	namespace”: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.basenet: easyocr.model.modules.vgg16_bn/model.basenet.slice1: torch.nn.modules.container.Sequential/model.basenet.slice1.4: torch.nn.modules.batchnorm.BatchNorm2d/_native_batch_norm_legit_no_training_1: aten._native_batch_norm_legit_no_training.defaultJ:
+!pkg.onnxscript.rewriter.rule_nameFuseBatchNormIntoConvJõ
+pkg.torch.onnx.class_hierarchy¯['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.model.modules.vgg16_bn', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.batchnorm.BatchNorm2d', 'aten._native_batch_norm_legit_no_training.default']J‰
+pkg.torch.onnx.fx_node…%_native_batch_norm_legit_no_training_1 : [num_users=1] = call_function[target=torch.ops.aten._native_batch_norm_legit_no_training.default](args = (%conv2d_1, %p_model_basenet_slice1_4_weight, %p_model_basenet_slice1_4_bias, %b_model_basenet_slice1_4_running_mean, %b_model_basenet_slice1_4_running_var, 0.1, 1e-05), kwargs = {})Jò
+pkg.torch.onnx.name_scopesz['', 'model', 'model.basenet', 'model.basenet.slice1', 'model.basenet.slice1.4', '_native_batch_norm_legit_no_training_1']Jâ	
+pkg.torch.onnx.stack_traceÍFile "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 60, in forward
+    sources = self.basenet(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/model/modules.py", line 68, in forward
+    h = self.slice1(X)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/batchnorm.py", line 194, in forward
+    return F.batch_norm(
+‰
+	getitem_3relu_1node_relu_1"ReluJõ
+	namespaceç: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.basenet: easyocr.model.modules.vgg16_bn/model.basenet.slice1: torch.nn.modules.container.Sequential/model.basenet.slice1.5: torch.nn.modules.activation.ReLU/relu_1: aten.relu.defaultJı
+pkg.torch.onnx.class_hierarchy“['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.model.modules.vgg16_bn', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.activation.ReLU', 'aten.relu.default']Jà
+pkg.torch.onnx.fx_noden%relu_1 : [num_users=1] = call_function[target=torch.ops.aten.relu.default](args = (%getitem_3,), kwargs = {})Jx
+pkg.torch.onnx.name_scopesZ['', 'model', 'model.basenet', 'model.basenet.slice1', 'model.basenet.slice1.5', 'relu_1']J†	
+pkg.torch.onnx.stack_traceÅ	File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 60, in forward
+    sources = self.basenet(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/model/modules.py", line 68, in forward
+    h = self.slice1(X)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/activation.py", line 143, in forward
+    return F.relu(input, inplace=self.inplace)
+ë
+relu_1
+max_pool2dnode_max_pool2d"MaxPool*
+storage_order †*
+	dilations@@†*
+	ceil_mode †*
+pads@ @ @ @ †*
+auto_pad"NOTSET†*
+strides@@†*
+kernel_shape@@†Jß
+	namespaceô: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.basenet: easyocr.model.modules.vgg16_bn/model.basenet.slice1: torch.nn.modules.container.Sequential/model.basenet.slice1.6: torch.nn.modules.pooling.MaxPool2d/max_pool2d: aten.max_pool2d.defaultJ˝
+pkg.torch.onnx.class_hierarchy⁄['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.model.modules.vgg16_bn', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.pooling.MaxPool2d', 'aten.max_pool2d.default']Jü
+pkg.torch.onnx.fx_nodeÑ%max_pool2d : [num_users=1] = call_function[target=torch.ops.aten.max_pool2d.default](args = (%relu_1, [2, 2], [2, 2]), kwargs = {})J|
+pkg.torch.onnx.name_scopes^['', 'model', 'model.basenet', 'model.basenet.slice1', 'model.basenet.slice1.6', 'max_pool2d']Já	
+pkg.torch.onnx.stack_traceËFile "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 60, in forward
+    sources = self.basenet(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/model/modules.py", line 68, in forward
+    h = self.slice1(X)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/pooling.py", line 224, in forward
+    return F.max_pool2d(
+°
+
+max_pool2d
+%model.basenet.slice1.7.weight_fused_1
+#model.basenet.slice1.7.bias_fused_1	getitem_6node_Conv_15"Conv*
+group†*
+pads@@@@†*
+auto_pad"NOTSET†*
+strides@@†*
+	dilations@@†J·
+	namespace”: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.basenet: easyocr.model.modules.vgg16_bn/model.basenet.slice1: torch.nn.modules.container.Sequential/model.basenet.slice1.8: torch.nn.modules.batchnorm.BatchNorm2d/_native_batch_norm_legit_no_training_2: aten._native_batch_norm_legit_no_training.defaultJ:
+!pkg.onnxscript.rewriter.rule_nameFuseBatchNormIntoConvJõ
+pkg.torch.onnx.class_hierarchy¯['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.model.modules.vgg16_bn', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.batchnorm.BatchNorm2d', 'aten._native_batch_norm_legit_no_training.default']J‰
+pkg.torch.onnx.fx_node…%_native_batch_norm_legit_no_training_2 : [num_users=1] = call_function[target=torch.ops.aten._native_batch_norm_legit_no_training.default](args = (%conv2d_2, %p_model_basenet_slice1_8_weight, %p_model_basenet_slice1_8_bias, %b_model_basenet_slice1_8_running_mean, %b_model_basenet_slice1_8_running_var, 0.1, 1e-05), kwargs = {})Jò
+pkg.torch.onnx.name_scopesz['', 'model', 'model.basenet', 'model.basenet.slice1', 'model.basenet.slice1.8', '_native_batch_norm_legit_no_training_2']Jâ	
+pkg.torch.onnx.stack_traceÍFile "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 60, in forward
+    sources = self.basenet(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/model/modules.py", line 68, in forward
+    h = self.slice1(X)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/batchnorm.py", line 194, in forward
+    return F.batch_norm(
+‰
+	getitem_6relu_2node_relu_2"ReluJõ
+	namespaceç: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.basenet: easyocr.model.modules.vgg16_bn/model.basenet.slice1: torch.nn.modules.container.Sequential/model.basenet.slice1.9: torch.nn.modules.activation.ReLU/relu_2: aten.relu.defaultJı
+pkg.torch.onnx.class_hierarchy“['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.model.modules.vgg16_bn', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.activation.ReLU', 'aten.relu.default']Jà
+pkg.torch.onnx.fx_noden%relu_2 : [num_users=1] = call_function[target=torch.ops.aten.relu.default](args = (%getitem_6,), kwargs = {})Jx
+pkg.torch.onnx.name_scopesZ['', 'model', 'model.basenet', 'model.basenet.slice1', 'model.basenet.slice1.9', 'relu_2']J†	
+pkg.torch.onnx.stack_traceÅ	File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 60, in forward
+    sources = self.basenet(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/model/modules.py", line 68, in forward
+    h = self.slice1(X)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/activation.py", line 143, in forward
+    return F.relu(input, inplace=self.inplace)
+•
+relu_2
+&model.basenet.slice1.10.weight_fused_1
+$model.basenet.slice1.10.bias_fused_1	getitem_9node_Conv_16"Conv*
+group†*
+pads@@@@†*
+auto_pad"NOTSET†*
+strides@@†*
+	dilations@@†J‚
+	namespace‘: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.basenet: easyocr.model.modules.vgg16_bn/model.basenet.slice1: torch.nn.modules.container.Sequential/model.basenet.slice1.11: torch.nn.modules.batchnorm.BatchNorm2d/_native_batch_norm_legit_no_training_3: aten._native_batch_norm_legit_no_training.defaultJ:
+!pkg.onnxscript.rewriter.rule_nameFuseBatchNormIntoConvJõ
+pkg.torch.onnx.class_hierarchy¯['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.model.modules.vgg16_bn', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.batchnorm.BatchNorm2d', 'aten._native_batch_norm_legit_no_training.default']JË
+pkg.torch.onnx.fx_nodeÕ%_native_batch_norm_legit_no_training_3 : [num_users=1] = call_function[target=torch.ops.aten._native_batch_norm_legit_no_training.default](args = (%conv2d_3, %p_model_basenet_slice1_11_weight, %p_model_basenet_slice1_11_bias, %b_model_basenet_slice1_11_running_mean, %b_model_basenet_slice1_11_running_var, 0.1, 1e-05), kwargs = {})Jô
+pkg.torch.onnx.name_scopes{['', 'model', 'model.basenet', 'model.basenet.slice1', 'model.basenet.slice1.11', '_native_batch_norm_legit_no_training_3']Jâ	
+pkg.torch.onnx.stack_traceÍFile "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 60, in forward
+    sources = self.basenet(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/model/modules.py", line 68, in forward
+    h = self.slice1(X)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/batchnorm.py", line 194, in forward
+    return F.batch_norm(
+Ê
+	getitem_9relu_3node_relu_3"ReluJú
+	namespaceé: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.basenet: easyocr.model.modules.vgg16_bn/model.basenet.slice2: torch.nn.modules.container.Sequential/model.basenet.slice2.12: torch.nn.modules.activation.ReLU/relu_3: aten.relu.defaultJı
+pkg.torch.onnx.class_hierarchy“['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.model.modules.vgg16_bn', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.activation.ReLU', 'aten.relu.default']Jà
+pkg.torch.onnx.fx_noden%relu_3 : [num_users=2] = call_function[target=torch.ops.aten.relu.default](args = (%getitem_9,), kwargs = {})Jy
+pkg.torch.onnx.name_scopes[['', 'model', 'model.basenet', 'model.basenet.slice2', 'model.basenet.slice2.12', 'relu_3']J†	
+pkg.torch.onnx.stack_traceÅ	File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 60, in forward
+    sources = self.basenet(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/model/modules.py", line 70, in forward
+    h = self.slice2(h)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/activation.py", line 143, in forward
+    return F.relu(input, inplace=self.inplace)
+ù
+relu_3max_pool2d_1node_max_pool2d_1"MaxPool*
+storage_order †*
+	dilations@@†*
+	ceil_mode †*
+pads@ @ @ @ †*
+auto_pad"NOTSET†*
+strides@@†*
+kernel_shape@@†J™
+	namespaceú: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.basenet: easyocr.model.modules.vgg16_bn/model.basenet.slice2: torch.nn.modules.container.Sequential/model.basenet.slice2.13: torch.nn.modules.pooling.MaxPool2d/max_pool2d_1: aten.max_pool2d.defaultJ˝
+pkg.torch.onnx.class_hierarchy⁄['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.model.modules.vgg16_bn', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.pooling.MaxPool2d', 'aten.max_pool2d.default']J°
+pkg.torch.onnx.fx_nodeÜ%max_pool2d_1 : [num_users=1] = call_function[target=torch.ops.aten.max_pool2d.default](args = (%relu_3, [2, 2], [2, 2]), kwargs = {})J
+pkg.torch.onnx.name_scopesa['', 'model', 'model.basenet', 'model.basenet.slice2', 'model.basenet.slice2.13', 'max_pool2d_1']Já	
+pkg.torch.onnx.stack_traceËFile "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 60, in forward
+    sources = self.basenet(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/model/modules.py", line 70, in forward
+    h = self.slice2(h)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/pooling.py", line 224, in forward
+    return F.max_pool2d(
+¨
+max_pool2d_1
+&model.basenet.slice2.14.weight_fused_1
+$model.basenet.slice2.14.bias_fused_1
+getitem_12node_Conv_17"Conv*
+group†*
+pads@@@@†*
+auto_pad"NOTSET†*
+strides@@†*
+	dilations@@†J‚
+	namespace‘: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.basenet: easyocr.model.modules.vgg16_bn/model.basenet.slice2: torch.nn.modules.container.Sequential/model.basenet.slice2.15: torch.nn.modules.batchnorm.BatchNorm2d/_native_batch_norm_legit_no_training_4: aten._native_batch_norm_legit_no_training.defaultJ:
+!pkg.onnxscript.rewriter.rule_nameFuseBatchNormIntoConvJõ
+pkg.torch.onnx.class_hierarchy¯['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.model.modules.vgg16_bn', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.batchnorm.BatchNorm2d', 'aten._native_batch_norm_legit_no_training.default']JË
+pkg.torch.onnx.fx_nodeÕ%_native_batch_norm_legit_no_training_4 : [num_users=1] = call_function[target=torch.ops.aten._native_batch_norm_legit_no_training.default](args = (%conv2d_4, %p_model_basenet_slice2_15_weight, %p_model_basenet_slice2_15_bias, %b_model_basenet_slice2_15_running_mean, %b_model_basenet_slice2_15_running_var, 0.1, 1e-05), kwargs = {})Jô
+pkg.torch.onnx.name_scopes{['', 'model', 'model.basenet', 'model.basenet.slice2', 'model.basenet.slice2.15', '_native_batch_norm_legit_no_training_4']Jâ	
+pkg.torch.onnx.stack_traceÍFile "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 60, in forward
+    sources = self.basenet(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/model/modules.py", line 70, in forward
+    h = self.slice2(h)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/batchnorm.py", line 194, in forward
+    return F.batch_norm(
+Ë
+
+getitem_12relu_4node_relu_4"ReluJú
+	namespaceé: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.basenet: easyocr.model.modules.vgg16_bn/model.basenet.slice2: torch.nn.modules.container.Sequential/model.basenet.slice2.16: torch.nn.modules.activation.ReLU/relu_4: aten.relu.defaultJı
+pkg.torch.onnx.class_hierarchy“['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.model.modules.vgg16_bn', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.activation.ReLU', 'aten.relu.default']Jâ
+pkg.torch.onnx.fx_nodeo%relu_4 : [num_users=1] = call_function[target=torch.ops.aten.relu.default](args = (%getitem_12,), kwargs = {})Jy
+pkg.torch.onnx.name_scopes[['', 'model', 'model.basenet', 'model.basenet.slice2', 'model.basenet.slice2.16', 'relu_4']J†	
+pkg.torch.onnx.stack_traceÅ	File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 60, in forward
+    sources = self.basenet(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/model/modules.py", line 70, in forward
+    h = self.slice2(h)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/activation.py", line 143, in forward
+    return F.relu(input, inplace=self.inplace)
+¶
+relu_4
+&model.basenet.slice2.17.weight_fused_1
+$model.basenet.slice2.17.bias_fused_1
+getitem_15node_Conv_18"Conv*
+group†*
+pads@@@@†*
+auto_pad"NOTSET†*
+strides@@†*
+	dilations@@†J‚
+	namespace‘: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.basenet: easyocr.model.modules.vgg16_bn/model.basenet.slice2: torch.nn.modules.container.Sequential/model.basenet.slice2.18: torch.nn.modules.batchnorm.BatchNorm2d/_native_batch_norm_legit_no_training_5: aten._native_batch_norm_legit_no_training.defaultJ:
+!pkg.onnxscript.rewriter.rule_nameFuseBatchNormIntoConvJõ
+pkg.torch.onnx.class_hierarchy¯['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.model.modules.vgg16_bn', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.batchnorm.BatchNorm2d', 'aten._native_batch_norm_legit_no_training.default']JË
+pkg.torch.onnx.fx_nodeÕ%_native_batch_norm_legit_no_training_5 : [num_users=1] = call_function[target=torch.ops.aten._native_batch_norm_legit_no_training.default](args = (%conv2d_5, %p_model_basenet_slice2_18_weight, %p_model_basenet_slice2_18_bias, %b_model_basenet_slice2_18_running_mean, %b_model_basenet_slice2_18_running_var, 0.1, 1e-05), kwargs = {})Jô
+pkg.torch.onnx.name_scopes{['', 'model', 'model.basenet', 'model.basenet.slice2', 'model.basenet.slice2.18', '_native_batch_norm_legit_no_training_5']Jâ	
+pkg.torch.onnx.stack_traceÍFile "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 60, in forward
+    sources = self.basenet(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/model/modules.py", line 70, in forward
+    h = self.slice2(h)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/batchnorm.py", line 194, in forward
+    return F.batch_norm(
+Ë
+
+getitem_15relu_5node_relu_5"ReluJú
+	namespaceé: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.basenet: easyocr.model.modules.vgg16_bn/model.basenet.slice3: torch.nn.modules.container.Sequential/model.basenet.slice3.19: torch.nn.modules.activation.ReLU/relu_5: aten.relu.defaultJı
+pkg.torch.onnx.class_hierarchy“['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.model.modules.vgg16_bn', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.activation.ReLU', 'aten.relu.default']Jâ
+pkg.torch.onnx.fx_nodeo%relu_5 : [num_users=2] = call_function[target=torch.ops.aten.relu.default](args = (%getitem_15,), kwargs = {})Jy
+pkg.torch.onnx.name_scopes[['', 'model', 'model.basenet', 'model.basenet.slice3', 'model.basenet.slice3.19', 'relu_5']J†	
+pkg.torch.onnx.stack_traceÅ	File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 60, in forward
+    sources = self.basenet(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/model/modules.py", line 72, in forward
+    h = self.slice3(h)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/activation.py", line 143, in forward
+    return F.relu(input, inplace=self.inplace)
+¶
+relu_5
+&model.basenet.slice3.20.weight_fused_1
+$model.basenet.slice3.20.bias_fused_1
+getitem_18node_Conv_19"Conv*
+group†*
+pads@@@@†*
+auto_pad"NOTSET†*
+strides@@†*
+	dilations@@†J‚
+	namespace‘: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.basenet: easyocr.model.modules.vgg16_bn/model.basenet.slice3: torch.nn.modules.container.Sequential/model.basenet.slice3.21: torch.nn.modules.batchnorm.BatchNorm2d/_native_batch_norm_legit_no_training_6: aten._native_batch_norm_legit_no_training.defaultJ:
+!pkg.onnxscript.rewriter.rule_nameFuseBatchNormIntoConvJõ
+pkg.torch.onnx.class_hierarchy¯['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.model.modules.vgg16_bn', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.batchnorm.BatchNorm2d', 'aten._native_batch_norm_legit_no_training.default']JË
+pkg.torch.onnx.fx_nodeÕ%_native_batch_norm_legit_no_training_6 : [num_users=1] = call_function[target=torch.ops.aten._native_batch_norm_legit_no_training.default](args = (%conv2d_6, %p_model_basenet_slice3_21_weight, %p_model_basenet_slice3_21_bias, %b_model_basenet_slice3_21_running_mean, %b_model_basenet_slice3_21_running_var, 0.1, 1e-05), kwargs = {})Jô
+pkg.torch.onnx.name_scopes{['', 'model', 'model.basenet', 'model.basenet.slice3', 'model.basenet.slice3.21', '_native_batch_norm_legit_no_training_6']Jâ	
+pkg.torch.onnx.stack_traceÍFile "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 60, in forward
+    sources = self.basenet(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/model/modules.py", line 72, in forward
+    h = self.slice3(h)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/batchnorm.py", line 194, in forward
+    return F.batch_norm(
+Ë
+
+getitem_18relu_6node_relu_6"ReluJú
+	namespaceé: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.basenet: easyocr.model.modules.vgg16_bn/model.basenet.slice3: torch.nn.modules.container.Sequential/model.basenet.slice3.22: torch.nn.modules.activation.ReLU/relu_6: aten.relu.defaultJı
+pkg.torch.onnx.class_hierarchy“['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.model.modules.vgg16_bn', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.activation.ReLU', 'aten.relu.default']Jâ
+pkg.torch.onnx.fx_nodeo%relu_6 : [num_users=1] = call_function[target=torch.ops.aten.relu.default](args = (%getitem_18,), kwargs = {})Jy
+pkg.torch.onnx.name_scopes[['', 'model', 'model.basenet', 'model.basenet.slice3', 'model.basenet.slice3.22', 'relu_6']J†	
+pkg.torch.onnx.stack_traceÅ	File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 60, in forward
+    sources = self.basenet(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/model/modules.py", line 72, in forward
+    h = self.slice3(h)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/activation.py", line 143, in forward
+    return F.relu(input, inplace=self.inplace)
+ù
+relu_6max_pool2d_2node_max_pool2d_2"MaxPool*
+storage_order †*
+	dilations@@†*
+	ceil_mode †*
+pads@ @ @ @ †*
+auto_pad"NOTSET†*
+strides@@†*
+kernel_shape@@†J™
+	namespaceú: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.basenet: easyocr.model.modules.vgg16_bn/model.basenet.slice3: torch.nn.modules.container.Sequential/model.basenet.slice3.23: torch.nn.modules.pooling.MaxPool2d/max_pool2d_2: aten.max_pool2d.defaultJ˝
+pkg.torch.onnx.class_hierarchy⁄['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.model.modules.vgg16_bn', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.pooling.MaxPool2d', 'aten.max_pool2d.default']J°
+pkg.torch.onnx.fx_nodeÜ%max_pool2d_2 : [num_users=1] = call_function[target=torch.ops.aten.max_pool2d.default](args = (%relu_6, [2, 2], [2, 2]), kwargs = {})J
+pkg.torch.onnx.name_scopesa['', 'model', 'model.basenet', 'model.basenet.slice3', 'model.basenet.slice3.23', 'max_pool2d_2']Já	
+pkg.torch.onnx.stack_traceËFile "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 60, in forward
+    sources = self.basenet(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/model/modules.py", line 72, in forward
+    h = self.slice3(h)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/pooling.py", line 224, in forward
+    return F.max_pool2d(
+¨
+max_pool2d_2
+&model.basenet.slice3.24.weight_fused_1
+$model.basenet.slice3.24.bias_fused_1
+getitem_21node_Conv_20"Conv*
+group†*
+pads@@@@†*
+auto_pad"NOTSET†*
+strides@@†*
+	dilations@@†J‚
+	namespace‘: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.basenet: easyocr.model.modules.vgg16_bn/model.basenet.slice3: torch.nn.modules.container.Sequential/model.basenet.slice3.25: torch.nn.modules.batchnorm.BatchNorm2d/_native_batch_norm_legit_no_training_7: aten._native_batch_norm_legit_no_training.defaultJ:
+!pkg.onnxscript.rewriter.rule_nameFuseBatchNormIntoConvJõ
+pkg.torch.onnx.class_hierarchy¯['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.model.modules.vgg16_bn', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.batchnorm.BatchNorm2d', 'aten._native_batch_norm_legit_no_training.default']JË
+pkg.torch.onnx.fx_nodeÕ%_native_batch_norm_legit_no_training_7 : [num_users=1] = call_function[target=torch.ops.aten._native_batch_norm_legit_no_training.default](args = (%conv2d_7, %p_model_basenet_slice3_25_weight, %p_model_basenet_slice3_25_bias, %b_model_basenet_slice3_25_running_mean, %b_model_basenet_slice3_25_running_var, 0.1, 1e-05), kwargs = {})Jô
+pkg.torch.onnx.name_scopes{['', 'model', 'model.basenet', 'model.basenet.slice3', 'model.basenet.slice3.25', '_native_batch_norm_legit_no_training_7']Jâ	
+pkg.torch.onnx.stack_traceÍFile "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 60, in forward
+    sources = self.basenet(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/model/modules.py", line 72, in forward
+    h = self.slice3(h)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/batchnorm.py", line 194, in forward
+    return F.batch_norm(
+Ë
+
+getitem_21relu_7node_relu_7"ReluJú
+	namespaceé: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.basenet: easyocr.model.modules.vgg16_bn/model.basenet.slice3: torch.nn.modules.container.Sequential/model.basenet.slice3.26: torch.nn.modules.activation.ReLU/relu_7: aten.relu.defaultJı
+pkg.torch.onnx.class_hierarchy“['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.model.modules.vgg16_bn', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.activation.ReLU', 'aten.relu.default']Jâ
+pkg.torch.onnx.fx_nodeo%relu_7 : [num_users=1] = call_function[target=torch.ops.aten.relu.default](args = (%getitem_21,), kwargs = {})Jy
+pkg.torch.onnx.name_scopes[['', 'model', 'model.basenet', 'model.basenet.slice3', 'model.basenet.slice3.26', 'relu_7']J†	
+pkg.torch.onnx.stack_traceÅ	File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 60, in forward
+    sources = self.basenet(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/model/modules.py", line 72, in forward
+    h = self.slice3(h)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/activation.py", line 143, in forward
+    return F.relu(input, inplace=self.inplace)
+¶
+relu_7
+&model.basenet.slice3.27.weight_fused_1
+$model.basenet.slice3.27.bias_fused_1
+getitem_24node_Conv_21"Conv*
+group†*
+pads@@@@†*
+auto_pad"NOTSET†*
+strides@@†*
+	dilations@@†J‚
+	namespace‘: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.basenet: easyocr.model.modules.vgg16_bn/model.basenet.slice3: torch.nn.modules.container.Sequential/model.basenet.slice3.28: torch.nn.modules.batchnorm.BatchNorm2d/_native_batch_norm_legit_no_training_8: aten._native_batch_norm_legit_no_training.defaultJ:
+!pkg.onnxscript.rewriter.rule_nameFuseBatchNormIntoConvJõ
+pkg.torch.onnx.class_hierarchy¯['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.model.modules.vgg16_bn', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.batchnorm.BatchNorm2d', 'aten._native_batch_norm_legit_no_training.default']JË
+pkg.torch.onnx.fx_nodeÕ%_native_batch_norm_legit_no_training_8 : [num_users=1] = call_function[target=torch.ops.aten._native_batch_norm_legit_no_training.default](args = (%conv2d_8, %p_model_basenet_slice3_28_weight, %p_model_basenet_slice3_28_bias, %b_model_basenet_slice3_28_running_mean, %b_model_basenet_slice3_28_running_var, 0.1, 1e-05), kwargs = {})Jô
+pkg.torch.onnx.name_scopes{['', 'model', 'model.basenet', 'model.basenet.slice3', 'model.basenet.slice3.28', '_native_batch_norm_legit_no_training_8']Jâ	
+pkg.torch.onnx.stack_traceÍFile "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 60, in forward
+    sources = self.basenet(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/model/modules.py", line 72, in forward
+    h = self.slice3(h)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/batchnorm.py", line 194, in forward
+    return F.batch_norm(
+Ë
+
+getitem_24relu_8node_relu_8"ReluJú
+	namespaceé: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.basenet: easyocr.model.modules.vgg16_bn/model.basenet.slice4: torch.nn.modules.container.Sequential/model.basenet.slice4.29: torch.nn.modules.activation.ReLU/relu_8: aten.relu.defaultJı
+pkg.torch.onnx.class_hierarchy“['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.model.modules.vgg16_bn', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.activation.ReLU', 'aten.relu.default']Jâ
+pkg.torch.onnx.fx_nodeo%relu_8 : [num_users=2] = call_function[target=torch.ops.aten.relu.default](args = (%getitem_24,), kwargs = {})Jy
+pkg.torch.onnx.name_scopes[['', 'model', 'model.basenet', 'model.basenet.slice4', 'model.basenet.slice4.29', 'relu_8']J†	
+pkg.torch.onnx.stack_traceÅ	File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 60, in forward
+    sources = self.basenet(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/model/modules.py", line 74, in forward
+    h = self.slice4(h)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/activation.py", line 143, in forward
+    return F.relu(input, inplace=self.inplace)
+¶
+relu_8
+&model.basenet.slice4.30.weight_fused_1
+$model.basenet.slice4.30.bias_fused_1
+getitem_27node_Conv_22"Conv*
+group†*
+pads@@@@†*
+auto_pad"NOTSET†*
+strides@@†*
+	dilations@@†J‚
+	namespace‘: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.basenet: easyocr.model.modules.vgg16_bn/model.basenet.slice4: torch.nn.modules.container.Sequential/model.basenet.slice4.31: torch.nn.modules.batchnorm.BatchNorm2d/_native_batch_norm_legit_no_training_9: aten._native_batch_norm_legit_no_training.defaultJ:
+!pkg.onnxscript.rewriter.rule_nameFuseBatchNormIntoConvJõ
+pkg.torch.onnx.class_hierarchy¯['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.model.modules.vgg16_bn', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.batchnorm.BatchNorm2d', 'aten._native_batch_norm_legit_no_training.default']JË
+pkg.torch.onnx.fx_nodeÕ%_native_batch_norm_legit_no_training_9 : [num_users=1] = call_function[target=torch.ops.aten._native_batch_norm_legit_no_training.default](args = (%conv2d_9, %p_model_basenet_slice4_31_weight, %p_model_basenet_slice4_31_bias, %b_model_basenet_slice4_31_running_mean, %b_model_basenet_slice4_31_running_var, 0.1, 1e-05), kwargs = {})Jô
+pkg.torch.onnx.name_scopes{['', 'model', 'model.basenet', 'model.basenet.slice4', 'model.basenet.slice4.31', '_native_batch_norm_legit_no_training_9']Jâ	
+pkg.torch.onnx.stack_traceÍFile "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 60, in forward
+    sources = self.basenet(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/model/modules.py", line 74, in forward
+    h = self.slice4(h)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/batchnorm.py", line 194, in forward
+    return F.batch_norm(
+Ë
+
+getitem_27relu_9node_relu_9"ReluJú
+	namespaceé: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.basenet: easyocr.model.modules.vgg16_bn/model.basenet.slice4: torch.nn.modules.container.Sequential/model.basenet.slice4.32: torch.nn.modules.activation.ReLU/relu_9: aten.relu.defaultJı
+pkg.torch.onnx.class_hierarchy“['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.model.modules.vgg16_bn', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.activation.ReLU', 'aten.relu.default']Jâ
+pkg.torch.onnx.fx_nodeo%relu_9 : [num_users=1] = call_function[target=torch.ops.aten.relu.default](args = (%getitem_27,), kwargs = {})Jy
+pkg.torch.onnx.name_scopes[['', 'model', 'model.basenet', 'model.basenet.slice4', 'model.basenet.slice4.32', 'relu_9']J†	
+pkg.torch.onnx.stack_traceÅ	File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 60, in forward
+    sources = self.basenet(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/model/modules.py", line 74, in forward
+    h = self.slice4(h)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/activation.py", line 143, in forward
+    return F.relu(input, inplace=self.inplace)
+ù
+relu_9max_pool2d_3node_max_pool2d_3"MaxPool*
+storage_order †*
+	dilations@@†*
+	ceil_mode †*
+pads@ @ @ @ †*
+auto_pad"NOTSET†*
+strides@@†*
+kernel_shape@@†J™
+	namespaceú: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.basenet: easyocr.model.modules.vgg16_bn/model.basenet.slice4: torch.nn.modules.container.Sequential/model.basenet.slice4.33: torch.nn.modules.pooling.MaxPool2d/max_pool2d_3: aten.max_pool2d.defaultJ˝
+pkg.torch.onnx.class_hierarchy⁄['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.model.modules.vgg16_bn', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.pooling.MaxPool2d', 'aten.max_pool2d.default']J°
+pkg.torch.onnx.fx_nodeÜ%max_pool2d_3 : [num_users=1] = call_function[target=torch.ops.aten.max_pool2d.default](args = (%relu_9, [2, 2], [2, 2]), kwargs = {})J
+pkg.torch.onnx.name_scopesa['', 'model', 'model.basenet', 'model.basenet.slice4', 'model.basenet.slice4.33', 'max_pool2d_3']Já	
+pkg.torch.onnx.stack_traceËFile "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 60, in forward
+    sources = self.basenet(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/model/modules.py", line 74, in forward
+    h = self.slice4(h)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/pooling.py", line 224, in forward
+    return F.max_pool2d(
+∞
+max_pool2d_3
+&model.basenet.slice4.34.weight_fused_1
+$model.basenet.slice4.34.bias_fused_1
+getitem_30node_Conv_23"Conv*
+group†*
+pads@@@@†*
+auto_pad"NOTSET†*
+strides@@†*
+	dilations@@†J„
+	namespace’: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.basenet: easyocr.model.modules.vgg16_bn/model.basenet.slice4: torch.nn.modules.container.Sequential/model.basenet.slice4.35: torch.nn.modules.batchnorm.BatchNorm2d/_native_batch_norm_legit_no_training_10: aten._native_batch_norm_legit_no_training.defaultJ:
+!pkg.onnxscript.rewriter.rule_nameFuseBatchNormIntoConvJõ
+pkg.torch.onnx.class_hierarchy¯['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.model.modules.vgg16_bn', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.batchnorm.BatchNorm2d', 'aten._native_batch_norm_legit_no_training.default']JÍ
+pkg.torch.onnx.fx_nodeœ%_native_batch_norm_legit_no_training_10 : [num_users=1] = call_function[target=torch.ops.aten._native_batch_norm_legit_no_training.default](args = (%conv2d_10, %p_model_basenet_slice4_35_weight, %p_model_basenet_slice4_35_bias, %b_model_basenet_slice4_35_running_mean, %b_model_basenet_slice4_35_running_var, 0.1, 1e-05), kwargs = {})Jö
+pkg.torch.onnx.name_scopes|['', 'model', 'model.basenet', 'model.basenet.slice4', 'model.basenet.slice4.35', '_native_batch_norm_legit_no_training_10']Jâ	
+pkg.torch.onnx.stack_traceÍFile "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 60, in forward
+    sources = self.basenet(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/model/modules.py", line 74, in forward
+    h = self.slice4(h)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/batchnorm.py", line 194, in forward
+    return F.batch_norm(
+Ì
+
+getitem_30relu_10node_relu_10"ReluJù
+	namespaceè: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.basenet: easyocr.model.modules.vgg16_bn/model.basenet.slice4: torch.nn.modules.container.Sequential/model.basenet.slice4.36: torch.nn.modules.activation.ReLU/relu_10: aten.relu.defaultJı
+pkg.torch.onnx.class_hierarchy“['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.model.modules.vgg16_bn', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.activation.ReLU', 'aten.relu.default']Jä
+pkg.torch.onnx.fx_nodep%relu_10 : [num_users=1] = call_function[target=torch.ops.aten.relu.default](args = (%getitem_30,), kwargs = {})Jz
+pkg.torch.onnx.name_scopes\['', 'model', 'model.basenet', 'model.basenet.slice4', 'model.basenet.slice4.36', 'relu_10']J†	
+pkg.torch.onnx.stack_traceÅ	File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 60, in forward
+    sources = self.basenet(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/model/modules.py", line 74, in forward
+    h = self.slice4(h)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/activation.py", line 143, in forward
+    return F.relu(input, inplace=self.inplace)
+´
+relu_10
+&model.basenet.slice4.37.weight_fused_1
+$model.basenet.slice4.37.bias_fused_1
+getitem_33node_Conv_24"Conv*
+group†*
+pads@@@@†*
+auto_pad"NOTSET†*
+strides@@†*
+	dilations@@†J„
+	namespace’: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.basenet: easyocr.model.modules.vgg16_bn/model.basenet.slice4: torch.nn.modules.container.Sequential/model.basenet.slice4.38: torch.nn.modules.batchnorm.BatchNorm2d/_native_batch_norm_legit_no_training_11: aten._native_batch_norm_legit_no_training.defaultJ:
+!pkg.onnxscript.rewriter.rule_nameFuseBatchNormIntoConvJõ
+pkg.torch.onnx.class_hierarchy¯['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.model.modules.vgg16_bn', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.batchnorm.BatchNorm2d', 'aten._native_batch_norm_legit_no_training.default']JÍ
+pkg.torch.onnx.fx_nodeœ%_native_batch_norm_legit_no_training_11 : [num_users=1] = call_function[target=torch.ops.aten._native_batch_norm_legit_no_training.default](args = (%conv2d_11, %p_model_basenet_slice4_38_weight, %p_model_basenet_slice4_38_bias, %b_model_basenet_slice4_38_running_mean, %b_model_basenet_slice4_38_running_var, 0.1, 1e-05), kwargs = {})Jö
+pkg.torch.onnx.name_scopes|['', 'model', 'model.basenet', 'model.basenet.slice4', 'model.basenet.slice4.38', '_native_batch_norm_legit_no_training_11']Jâ	
+pkg.torch.onnx.stack_traceÍFile "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 60, in forward
+    sources = self.basenet(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/model/modules.py", line 74, in forward
+    h = self.slice4(h)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/batchnorm.py", line 194, in forward
+    return F.batch_norm(
+´
+
+getitem_33max_pool2d_4node_max_pool2d_4"MaxPool*
+storage_order †*
+	dilations@@†*
+	ceil_mode †*
+pads@@@@†*
+auto_pad"NOTSET†*
+strides@@†*
+kernel_shape@@†J©
+	namespaceõ: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.basenet: easyocr.model.modules.vgg16_bn/model.basenet.slice5: torch.nn.modules.container.Sequential/model.basenet.slice5.0: torch.nn.modules.pooling.MaxPool2d/max_pool2d_4: aten.max_pool2d.defaultJ˝
+pkg.torch.onnx.class_hierarchy⁄['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.model.modules.vgg16_bn', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.pooling.MaxPool2d', 'aten.max_pool2d.default']J≠
+pkg.torch.onnx.fx_nodeí%max_pool2d_4 : [num_users=1] = call_function[target=torch.ops.aten.max_pool2d.default](args = (%getitem_33, [3, 3], [1, 1], [1, 1]), kwargs = {})J~
+pkg.torch.onnx.name_scopes`['', 'model', 'model.basenet', 'model.basenet.slice5', 'model.basenet.slice5.0', 'max_pool2d_4']Já	
+pkg.torch.onnx.stack_traceËFile "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 60, in forward
+    sources = self.basenet(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/model/modules.py", line 76, in forward
+    h = self.slice5(h)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/pooling.py", line 224, in forward
+    return F.max_pool2d(
+Û
+max_pool2d_4
+model.basenet.slice5.1.weight
+model.basenet.slice5.1.bias	conv2d_12node_conv2d_12"Conv*
+group†*
+pads@@@@†*
+auto_pad"NOTSET†*
+strides@@†*
+	dilations@@†Jú
+	namespaceé: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.basenet: easyocr.model.modules.vgg16_bn/model.basenet.slice5: torch.nn.modules.container.Sequential/model.basenet.slice5.1: torch.nn.modules.conv.Conv2d/conv2d_12: aten.conv2d.defaultJÛ
+pkg.torch.onnx.class_hierarchy–['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.model.modules.vgg16_bn', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.conv.Conv2d', 'aten.conv2d.default']JÍ
+pkg.torch.onnx.fx_nodeœ%conv2d_12 : [num_users=1] = call_function[target=torch.ops.aten.conv2d.default](args = (%max_pool2d_4, %p_model_basenet_slice5_1_weight, %p_model_basenet_slice5_1_bias, [1, 1], [6, 6], [6, 6]), kwargs = {})J{
+pkg.torch.onnx.name_scopes]['', 'model', 'model.basenet', 'model.basenet.slice5', 'model.basenet.slice5.1', 'conv2d_12']J®	
+pkg.torch.onnx.stack_traceâ	File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 60, in forward
+    sources = self.basenet(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/model/modules.py", line 76, in forward
+    h = self.slice5(h)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/conv.py", line 553, in forward
+    return self._conv_forward(input, self.weight, self.bias)
+’
+	conv2d_12
+model.basenet.slice5.2.weight
+model.basenet.slice5.2.bias	conv2d_13node_conv2d_13"Conv*
+group†*
+pads@ @ @ @ †*
+auto_pad"NOTSET†*
+strides@@†*
+	dilations@@†Jú
+	namespaceé: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.basenet: easyocr.model.modules.vgg16_bn/model.basenet.slice5: torch.nn.modules.container.Sequential/model.basenet.slice5.2: torch.nn.modules.conv.Conv2d/conv2d_13: aten.conv2d.defaultJÛ
+pkg.torch.onnx.class_hierarchy–['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.model.modules.vgg16_bn', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.conv.Conv2d', 'aten.conv2d.default']Jœ
+pkg.torch.onnx.fx_node¥%conv2d_13 : [num_users=1] = call_function[target=torch.ops.aten.conv2d.default](args = (%conv2d_12, %p_model_basenet_slice5_2_weight, %p_model_basenet_slice5_2_bias), kwargs = {})J{
+pkg.torch.onnx.name_scopes]['', 'model', 'model.basenet', 'model.basenet.slice5', 'model.basenet.slice5.2', 'conv2d_13']J®	
+pkg.torch.onnx.stack_traceâ	File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 60, in forward
+    sources = self.basenet(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/model/modules.py", line 76, in forward
+    h = self.slice5(h)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/conv.py", line 553, in forward
+    return self._conv_forward(input, self.weight, self.bias)
+‰
+	conv2d_13
+
+getitem_33catnode_cat"Concat*
+axis†Js
+	namespacef: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/cat: aten.cat.defaultJÑ
+pkg.torch.onnx.class_hierarchyb['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'aten.cat.default']Jï
+pkg.torch.onnx.fx_node{%cat : [num_users=1] = call_function[target=torch.ops.aten.cat.default](args = ([%conv2d_13, %getitem_33], 1), kwargs = {})J2
+pkg.torch.onnx.name_scopes['', 'model', 'cat']Jﬁ
+pkg.torch.onnx.stack_traceøFile "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 63, in forward
+    y = torch.cat([sources[0], sources[1]], dim=1)
+Ò
+cat
+#model.upconv1.conv.0.weight_fused_1
+!model.upconv1.conv.0.bias_fused_1
+getitem_36node_Conv_25"Conv*
+group†*
+pads@ @ @ @ †*
+auto_pad"NOTSET†*
+strides@@†*
+	dilations@@†JŸ
+	namespaceÀ: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.upconv1: easyocr.craft.double_conv/model.upconv1.conv: torch.nn.modules.container.Sequential/model.upconv1.conv.1: torch.nn.modules.batchnorm.BatchNorm2d/_native_batch_norm_legit_no_training_12: aten._native_batch_norm_legit_no_training.defaultJ:
+!pkg.onnxscript.rewriter.rule_nameFuseBatchNormIntoConvJñ
+pkg.torch.onnx.class_hierarchyÛ['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.craft.double_conv', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.batchnorm.BatchNorm2d', 'aten._native_batch_norm_legit_no_training.default']Jﬁ
+pkg.torch.onnx.fx_node√%_native_batch_norm_legit_no_training_12 : [num_users=1] = call_function[target=torch.ops.aten._native_batch_norm_legit_no_training.default](args = (%conv2d_14, %p_model_upconv1_conv_1_weight, %p_model_upconv1_conv_1_bias, %b_model_upconv1_conv_1_running_mean, %b_model_upconv1_conv_1_running_var, 0.1, 1e-05), kwargs = {})Jï
+pkg.torch.onnx.name_scopesw['', 'model', 'model.upconv1', 'model.upconv1.conv', 'model.upconv1.conv.1', '_native_batch_norm_legit_no_training_12']J˘
+pkg.torch.onnx.stack_trace⁄File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 64, in forward
+    y = self.upconv1(y)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 26, in forward
+    x = self.conv(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/batchnorm.py", line 194, in forward
+    return F.batch_norm(
+…
+
+getitem_36relu_11node_relu_11"ReluJì
+	namespaceÖ: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.upconv1: easyocr.craft.double_conv/model.upconv1.conv: torch.nn.modules.container.Sequential/model.upconv1.conv.2: torch.nn.modules.activation.ReLU/relu_11: aten.relu.defaultJ
+pkg.torch.onnx.class_hierarchyÕ['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.craft.double_conv', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.activation.ReLU', 'aten.relu.default']Jä
+pkg.torch.onnx.fx_nodep%relu_11 : [num_users=1] = call_function[target=torch.ops.aten.relu.default](args = (%getitem_36,), kwargs = {})Ju
+pkg.torch.onnx.name_scopesW['', 'model', 'model.upconv1', 'model.upconv1.conv', 'model.upconv1.conv.2', 'relu_11']Jê	
+pkg.torch.onnx.stack_traceÒFile "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 64, in forward
+    y = self.upconv1(y)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 26, in forward
+    x = self.conv(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/activation.py", line 143, in forward
+    return F.relu(input, inplace=self.inplace)
+ı
+relu_11
+#model.upconv1.conv.3.weight_fused_1
+!model.upconv1.conv.3.bias_fused_1
+getitem_39node_Conv_26"Conv*
+group†*
+pads@@@@†*
+auto_pad"NOTSET†*
+strides@@†*
+	dilations@@†JŸ
+	namespaceÀ: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.upconv1: easyocr.craft.double_conv/model.upconv1.conv: torch.nn.modules.container.Sequential/model.upconv1.conv.4: torch.nn.modules.batchnorm.BatchNorm2d/_native_batch_norm_legit_no_training_13: aten._native_batch_norm_legit_no_training.defaultJ:
+!pkg.onnxscript.rewriter.rule_nameFuseBatchNormIntoConvJñ
+pkg.torch.onnx.class_hierarchyÛ['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.craft.double_conv', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.batchnorm.BatchNorm2d', 'aten._native_batch_norm_legit_no_training.default']Jﬁ
+pkg.torch.onnx.fx_node√%_native_batch_norm_legit_no_training_13 : [num_users=1] = call_function[target=torch.ops.aten._native_batch_norm_legit_no_training.default](args = (%conv2d_15, %p_model_upconv1_conv_4_weight, %p_model_upconv1_conv_4_bias, %b_model_upconv1_conv_4_running_mean, %b_model_upconv1_conv_4_running_var, 0.1, 1e-05), kwargs = {})Jï
+pkg.torch.onnx.name_scopesw['', 'model', 'model.upconv1', 'model.upconv1.conv', 'model.upconv1.conv.4', '_native_batch_norm_legit_no_training_13']J˘
+pkg.torch.onnx.stack_trace⁄File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 64, in forward
+    y = self.upconv1(y)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 26, in forward
+    x = self.conv(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/batchnorm.py", line 194, in forward
+    return F.batch_norm(
+…
+
+getitem_39relu_12node_relu_12"ReluJì
+	namespaceÖ: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.upconv1: easyocr.craft.double_conv/model.upconv1.conv: torch.nn.modules.container.Sequential/model.upconv1.conv.5: torch.nn.modules.activation.ReLU/relu_12: aten.relu.defaultJ
+pkg.torch.onnx.class_hierarchyÕ['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.craft.double_conv', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.activation.ReLU', 'aten.relu.default']Jä
+pkg.torch.onnx.fx_nodep%relu_12 : [num_users=1] = call_function[target=torch.ops.aten.relu.default](args = (%getitem_39,), kwargs = {})Ju
+pkg.torch.onnx.name_scopesW['', 'model', 'model.upconv1', 'model.upconv1.conv', 'model.upconv1.conv.5', 'relu_12']Jê	
+pkg.torch.onnx.stack_traceÒFile "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 64, in forward
+    y = self.upconv1(y)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 26, in forward
+    x = self.conv(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/activation.py", line 143, in forward
+    return F.relu(input, inplace=self.inplace)
+·
+
+relu_12
+ 
+ 
+val_106upsample_bilinear2dnode_upsample_bilinear2d"Resize*&
+keep_aspect_ratio_policy"stretch†*
+	antialias †*
+extrapolation_value    †*
+exclude_outside †*
+nearest_mode"floor†*/
+coordinate_transformation_mode"
+half_pixel†*
+cubic_coeff_a  @ø†*
+mode"linear†Jê
+	namespaceÇ: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/upsample_bilinear2d: aten.upsample_bilinear2d.vecJê
+pkg.torch.onnx.class_hierarchyn['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'aten.upsample_bilinear2d.vec']J∂
+pkg.torch.onnx.fx_nodeõ%upsample_bilinear2d : [num_users=1] = call_function[target=torch.ops.aten.upsample_bilinear2d.vec](args = (%relu_12, [76, 100], False, None), kwargs = {})JB
+pkg.torch.onnx.name_scopes$['', 'model', 'upsample_bilinear2d']JÜ
+pkg.torch.onnx.stack_traceÁFile "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 66, in forward
+    y = F.interpolate(y, size=sources[2].size()[2:], mode='bilinear', align_corners=False)
+Ú
+upsample_bilinear2d
+relu_8cat_1
+node_cat_1"Concat*
+axis†Ju
+	namespaceh: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/cat_1: aten.cat.defaultJÑ
+pkg.torch.onnx.class_hierarchyb['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'aten.cat.default']Jû
+pkg.torch.onnx.fx_nodeÉ%cat_1 : [num_users=1] = call_function[target=torch.ops.aten.cat.default](args = ([%upsample_bilinear2d, %relu_8], 1), kwargs = {})J4
+pkg.torch.onnx.name_scopes['', 'model', 'cat_1']J’
+pkg.torch.onnx.stack_trace∂File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 67, in forward
+    y = torch.cat([y, sources[2]], dim=1)
+Û
+cat_1
+#model.upconv2.conv.0.weight_fused_1
+!model.upconv2.conv.0.bias_fused_1
+getitem_42node_Conv_27"Conv*
+group†*
+pads@ @ @ @ †*
+auto_pad"NOTSET†*
+strides@@†*
+	dilations@@†JŸ
+	namespaceÀ: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.upconv2: easyocr.craft.double_conv/model.upconv2.conv: torch.nn.modules.container.Sequential/model.upconv2.conv.1: torch.nn.modules.batchnorm.BatchNorm2d/_native_batch_norm_legit_no_training_14: aten._native_batch_norm_legit_no_training.defaultJ:
+!pkg.onnxscript.rewriter.rule_nameFuseBatchNormIntoConvJñ
+pkg.torch.onnx.class_hierarchyÛ['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.craft.double_conv', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.batchnorm.BatchNorm2d', 'aten._native_batch_norm_legit_no_training.default']Jﬁ
+pkg.torch.onnx.fx_node√%_native_batch_norm_legit_no_training_14 : [num_users=1] = call_function[target=torch.ops.aten._native_batch_norm_legit_no_training.default](args = (%conv2d_16, %p_model_upconv2_conv_1_weight, %p_model_upconv2_conv_1_bias, %b_model_upconv2_conv_1_running_mean, %b_model_upconv2_conv_1_running_var, 0.1, 1e-05), kwargs = {})Jï
+pkg.torch.onnx.name_scopesw['', 'model', 'model.upconv2', 'model.upconv2.conv', 'model.upconv2.conv.1', '_native_batch_norm_legit_no_training_14']J˘
+pkg.torch.onnx.stack_trace⁄File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 68, in forward
+    y = self.upconv2(y)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 26, in forward
+    x = self.conv(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/batchnorm.py", line 194, in forward
+    return F.batch_norm(
+…
+
+getitem_42relu_13node_relu_13"ReluJì
+	namespaceÖ: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.upconv2: easyocr.craft.double_conv/model.upconv2.conv: torch.nn.modules.container.Sequential/model.upconv2.conv.2: torch.nn.modules.activation.ReLU/relu_13: aten.relu.defaultJ
+pkg.torch.onnx.class_hierarchyÕ['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.craft.double_conv', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.activation.ReLU', 'aten.relu.default']Jä
+pkg.torch.onnx.fx_nodep%relu_13 : [num_users=1] = call_function[target=torch.ops.aten.relu.default](args = (%getitem_42,), kwargs = {})Ju
+pkg.torch.onnx.name_scopesW['', 'model', 'model.upconv2', 'model.upconv2.conv', 'model.upconv2.conv.2', 'relu_13']Jê	
+pkg.torch.onnx.stack_traceÒFile "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 68, in forward
+    y = self.upconv2(y)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 26, in forward
+    x = self.conv(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/activation.py", line 143, in forward
+    return F.relu(input, inplace=self.inplace)
+ı
+relu_13
+#model.upconv2.conv.3.weight_fused_1
+!model.upconv2.conv.3.bias_fused_1
+getitem_45node_Conv_28"Conv*
+group†*
+pads@@@@†*
+auto_pad"NOTSET†*
+strides@@†*
+	dilations@@†JŸ
+	namespaceÀ: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.upconv2: easyocr.craft.double_conv/model.upconv2.conv: torch.nn.modules.container.Sequential/model.upconv2.conv.4: torch.nn.modules.batchnorm.BatchNorm2d/_native_batch_norm_legit_no_training_15: aten._native_batch_norm_legit_no_training.defaultJ:
+!pkg.onnxscript.rewriter.rule_nameFuseBatchNormIntoConvJñ
+pkg.torch.onnx.class_hierarchyÛ['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.craft.double_conv', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.batchnorm.BatchNorm2d', 'aten._native_batch_norm_legit_no_training.default']Jﬁ
+pkg.torch.onnx.fx_node√%_native_batch_norm_legit_no_training_15 : [num_users=1] = call_function[target=torch.ops.aten._native_batch_norm_legit_no_training.default](args = (%conv2d_17, %p_model_upconv2_conv_4_weight, %p_model_upconv2_conv_4_bias, %b_model_upconv2_conv_4_running_mean, %b_model_upconv2_conv_4_running_var, 0.1, 1e-05), kwargs = {})Jï
+pkg.torch.onnx.name_scopesw['', 'model', 'model.upconv2', 'model.upconv2.conv', 'model.upconv2.conv.4', '_native_batch_norm_legit_no_training_15']J˘
+pkg.torch.onnx.stack_trace⁄File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 68, in forward
+    y = self.upconv2(y)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 26, in forward
+    x = self.conv(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/batchnorm.py", line 194, in forward
+    return F.batch_norm(
+…
+
+getitem_45relu_14node_relu_14"ReluJì
+	namespaceÖ: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.upconv2: easyocr.craft.double_conv/model.upconv2.conv: torch.nn.modules.container.Sequential/model.upconv2.conv.5: torch.nn.modules.activation.ReLU/relu_14: aten.relu.defaultJ
+pkg.torch.onnx.class_hierarchyÕ['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.craft.double_conv', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.activation.ReLU', 'aten.relu.default']Jä
+pkg.torch.onnx.fx_nodep%relu_14 : [num_users=1] = call_function[target=torch.ops.aten.relu.default](args = (%getitem_45,), kwargs = {})Ju
+pkg.torch.onnx.name_scopesW['', 'model', 'model.upconv2', 'model.upconv2.conv', 'model.upconv2.conv.5', 'relu_14']Jê	
+pkg.torch.onnx.stack_traceÒFile "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 68, in forward
+    y = self.upconv2(y)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 26, in forward
+    x = self.conv(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/activation.py", line 143, in forward
+    return F.relu(input, inplace=self.inplace)
+Ï
+
+relu_14
+ 
+ 
+val_122upsample_bilinear2d_1node_upsample_bilinear2d_1"Resize*&
+keep_aspect_ratio_policy"stretch†*
+	antialias †*
+extrapolation_value    †*
+exclude_outside †*
+nearest_mode"floor†*/
+coordinate_transformation_mode"
+half_pixel†*
+cubic_coeff_a  @ø†*
+mode"linear†Jí
+	namespaceÑ: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/upsample_bilinear2d_1: aten.upsample_bilinear2d.vecJê
+pkg.torch.onnx.class_hierarchyn['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'aten.upsample_bilinear2d.vec']Jπ
+pkg.torch.onnx.fx_nodeû%upsample_bilinear2d_1 : [num_users=1] = call_function[target=torch.ops.aten.upsample_bilinear2d.vec](args = (%relu_14, [152, 200], False, None), kwargs = {})JD
+pkg.torch.onnx.name_scopes&['', 'model', 'upsample_bilinear2d_1']JÜ
+pkg.torch.onnx.stack_traceÁFile "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 70, in forward
+    y = F.interpolate(y, size=sources[3].size()[2:], mode='bilinear', align_corners=False)
+ˆ
+upsample_bilinear2d_1
+relu_5cat_2
+node_cat_2"Concat*
+axis†Ju
+	namespaceh: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/cat_2: aten.cat.defaultJÑ
+pkg.torch.onnx.class_hierarchyb['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'aten.cat.default']J†
+pkg.torch.onnx.fx_nodeÖ%cat_2 : [num_users=1] = call_function[target=torch.ops.aten.cat.default](args = ([%upsample_bilinear2d_1, %relu_5], 1), kwargs = {})J4
+pkg.torch.onnx.name_scopes['', 'model', 'cat_2']J’
+pkg.torch.onnx.stack_trace∂File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 71, in forward
+    y = torch.cat([y, sources[3]], dim=1)
+Û
+cat_2
+#model.upconv3.conv.0.weight_fused_1
+!model.upconv3.conv.0.bias_fused_1
+getitem_48node_Conv_29"Conv*
+group†*
+pads@ @ @ @ †*
+auto_pad"NOTSET†*
+strides@@†*
+	dilations@@†JŸ
+	namespaceÀ: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.upconv3: easyocr.craft.double_conv/model.upconv3.conv: torch.nn.modules.container.Sequential/model.upconv3.conv.1: torch.nn.modules.batchnorm.BatchNorm2d/_native_batch_norm_legit_no_training_16: aten._native_batch_norm_legit_no_training.defaultJ:
+!pkg.onnxscript.rewriter.rule_nameFuseBatchNormIntoConvJñ
+pkg.torch.onnx.class_hierarchyÛ['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.craft.double_conv', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.batchnorm.BatchNorm2d', 'aten._native_batch_norm_legit_no_training.default']Jﬁ
+pkg.torch.onnx.fx_node√%_native_batch_norm_legit_no_training_16 : [num_users=1] = call_function[target=torch.ops.aten._native_batch_norm_legit_no_training.default](args = (%conv2d_18, %p_model_upconv3_conv_1_weight, %p_model_upconv3_conv_1_bias, %b_model_upconv3_conv_1_running_mean, %b_model_upconv3_conv_1_running_var, 0.1, 1e-05), kwargs = {})Jï
+pkg.torch.onnx.name_scopesw['', 'model', 'model.upconv3', 'model.upconv3.conv', 'model.upconv3.conv.1', '_native_batch_norm_legit_no_training_16']J˘
+pkg.torch.onnx.stack_trace⁄File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 72, in forward
+    y = self.upconv3(y)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 26, in forward
+    x = self.conv(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/batchnorm.py", line 194, in forward
+    return F.batch_norm(
+…
+
+getitem_48relu_15node_relu_15"ReluJì
+	namespaceÖ: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.upconv3: easyocr.craft.double_conv/model.upconv3.conv: torch.nn.modules.container.Sequential/model.upconv3.conv.2: torch.nn.modules.activation.ReLU/relu_15: aten.relu.defaultJ
+pkg.torch.onnx.class_hierarchyÕ['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.craft.double_conv', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.activation.ReLU', 'aten.relu.default']Jä
+pkg.torch.onnx.fx_nodep%relu_15 : [num_users=1] = call_function[target=torch.ops.aten.relu.default](args = (%getitem_48,), kwargs = {})Ju
+pkg.torch.onnx.name_scopesW['', 'model', 'model.upconv3', 'model.upconv3.conv', 'model.upconv3.conv.2', 'relu_15']Jê	
+pkg.torch.onnx.stack_traceÒFile "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 72, in forward
+    y = self.upconv3(y)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 26, in forward
+    x = self.conv(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/activation.py", line 143, in forward
+    return F.relu(input, inplace=self.inplace)
+ı
+relu_15
+#model.upconv3.conv.3.weight_fused_1
+!model.upconv3.conv.3.bias_fused_1
+getitem_51node_Conv_30"Conv*
+group†*
+pads@@@@†*
+auto_pad"NOTSET†*
+strides@@†*
+	dilations@@†JŸ
+	namespaceÀ: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.upconv3: easyocr.craft.double_conv/model.upconv3.conv: torch.nn.modules.container.Sequential/model.upconv3.conv.4: torch.nn.modules.batchnorm.BatchNorm2d/_native_batch_norm_legit_no_training_17: aten._native_batch_norm_legit_no_training.defaultJ:
+!pkg.onnxscript.rewriter.rule_nameFuseBatchNormIntoConvJñ
+pkg.torch.onnx.class_hierarchyÛ['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.craft.double_conv', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.batchnorm.BatchNorm2d', 'aten._native_batch_norm_legit_no_training.default']Jﬁ
+pkg.torch.onnx.fx_node√%_native_batch_norm_legit_no_training_17 : [num_users=1] = call_function[target=torch.ops.aten._native_batch_norm_legit_no_training.default](args = (%conv2d_19, %p_model_upconv3_conv_4_weight, %p_model_upconv3_conv_4_bias, %b_model_upconv3_conv_4_running_mean, %b_model_upconv3_conv_4_running_var, 0.1, 1e-05), kwargs = {})Jï
+pkg.torch.onnx.name_scopesw['', 'model', 'model.upconv3', 'model.upconv3.conv', 'model.upconv3.conv.4', '_native_batch_norm_legit_no_training_17']J˘
+pkg.torch.onnx.stack_trace⁄File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 72, in forward
+    y = self.upconv3(y)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 26, in forward
+    x = self.conv(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/batchnorm.py", line 194, in forward
+    return F.batch_norm(
+…
+
+getitem_51relu_16node_relu_16"ReluJì
+	namespaceÖ: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.upconv3: easyocr.craft.double_conv/model.upconv3.conv: torch.nn.modules.container.Sequential/model.upconv3.conv.5: torch.nn.modules.activation.ReLU/relu_16: aten.relu.defaultJ
+pkg.torch.onnx.class_hierarchyÕ['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.craft.double_conv', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.activation.ReLU', 'aten.relu.default']Jä
+pkg.torch.onnx.fx_nodep%relu_16 : [num_users=1] = call_function[target=torch.ops.aten.relu.default](args = (%getitem_51,), kwargs = {})Ju
+pkg.torch.onnx.name_scopesW['', 'model', 'model.upconv3', 'model.upconv3.conv', 'model.upconv3.conv.5', 'relu_16']Jê	
+pkg.torch.onnx.stack_traceÒFile "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 72, in forward
+    y = self.upconv3(y)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 26, in forward
+    x = self.conv(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/activation.py", line 143, in forward
+    return F.relu(input, inplace=self.inplace)
+Ï
+
+relu_16
+ 
+ 
+val_138upsample_bilinear2d_2node_upsample_bilinear2d_2"Resize*&
+keep_aspect_ratio_policy"stretch†*
+	antialias †*
+extrapolation_value    †*
+exclude_outside †*
+nearest_mode"floor†*/
+coordinate_transformation_mode"
+half_pixel†*
+cubic_coeff_a  @ø†*
+mode"linear†Jí
+	namespaceÑ: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/upsample_bilinear2d_2: aten.upsample_bilinear2d.vecJê
+pkg.torch.onnx.class_hierarchyn['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'aten.upsample_bilinear2d.vec']Jπ
+pkg.torch.onnx.fx_nodeû%upsample_bilinear2d_2 : [num_users=1] = call_function[target=torch.ops.aten.upsample_bilinear2d.vec](args = (%relu_16, [304, 400], False, None), kwargs = {})JD
+pkg.torch.onnx.name_scopes&['', 'model', 'upsample_bilinear2d_2']JÜ
+pkg.torch.onnx.stack_traceÁFile "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 74, in forward
+    y = F.interpolate(y, size=sources[4].size()[2:], mode='bilinear', align_corners=False)
+ˆ
+upsample_bilinear2d_2
+relu_3cat_3
+node_cat_3"Concat*
+axis†Ju
+	namespaceh: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/cat_3: aten.cat.defaultJÑ
+pkg.torch.onnx.class_hierarchyb['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'aten.cat.default']J†
+pkg.torch.onnx.fx_nodeÖ%cat_3 : [num_users=1] = call_function[target=torch.ops.aten.cat.default](args = ([%upsample_bilinear2d_2, %relu_3], 1), kwargs = {})J4
+pkg.torch.onnx.name_scopes['', 'model', 'cat_3']J’
+pkg.torch.onnx.stack_trace∂File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 75, in forward
+    y = torch.cat([y, sources[4]], dim=1)
+˘
+cat_3
+#model.upconv4.conv.0.weight_fused_1
+!model.upconv4.conv.0.bias_fused_1
+getitem_54node_Conv_31"Conv*
+group†*
+pads@ @ @ @ †*
+auto_pad"NOTSET†*
+strides@@†*
+	dilations@@†JŸ
+	namespaceÀ: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.upconv4: easyocr.craft.double_conv/model.upconv4.conv: torch.nn.modules.container.Sequential/model.upconv4.conv.1: torch.nn.modules.batchnorm.BatchNorm2d/_native_batch_norm_legit_no_training_18: aten._native_batch_norm_legit_no_training.defaultJ:
+!pkg.onnxscript.rewriter.rule_nameFuseBatchNormIntoConvJñ
+pkg.torch.onnx.class_hierarchyÛ['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.craft.double_conv', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.batchnorm.BatchNorm2d', 'aten._native_batch_norm_legit_no_training.default']Jﬁ
+pkg.torch.onnx.fx_node√%_native_batch_norm_legit_no_training_18 : [num_users=1] = call_function[target=torch.ops.aten._native_batch_norm_legit_no_training.default](args = (%conv2d_20, %p_model_upconv4_conv_1_weight, %p_model_upconv4_conv_1_bias, %b_model_upconv4_conv_1_running_mean, %b_model_upconv4_conv_1_running_var, 0.1, 1e-05), kwargs = {})Jï
+pkg.torch.onnx.name_scopesw['', 'model', 'model.upconv4', 'model.upconv4.conv', 'model.upconv4.conv.1', '_native_batch_norm_legit_no_training_18']Jˇ
+pkg.torch.onnx.stack_trace‡File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 76, in forward
+    feature = self.upconv4(y)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 26, in forward
+    x = self.conv(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/batchnorm.py", line 194, in forward
+    return F.batch_norm(
+œ
+
+getitem_54relu_17node_relu_17"ReluJì
+	namespaceÖ: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.upconv4: easyocr.craft.double_conv/model.upconv4.conv: torch.nn.modules.container.Sequential/model.upconv4.conv.2: torch.nn.modules.activation.ReLU/relu_17: aten.relu.defaultJ
+pkg.torch.onnx.class_hierarchyÕ['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.craft.double_conv', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.activation.ReLU', 'aten.relu.default']Jä
+pkg.torch.onnx.fx_nodep%relu_17 : [num_users=1] = call_function[target=torch.ops.aten.relu.default](args = (%getitem_54,), kwargs = {})Ju
+pkg.torch.onnx.name_scopesW['', 'model', 'model.upconv4', 'model.upconv4.conv', 'model.upconv4.conv.2', 'relu_17']Jñ	
+pkg.torch.onnx.stack_trace˜File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 76, in forward
+    feature = self.upconv4(y)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 26, in forward
+    x = self.conv(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/activation.py", line 143, in forward
+    return F.relu(input, inplace=self.inplace)
+˚
+relu_17
+#model.upconv4.conv.3.weight_fused_1
+!model.upconv4.conv.3.bias_fused_1
+getitem_57node_Conv_32"Conv*
+group†*
+pads@@@@†*
+auto_pad"NOTSET†*
+strides@@†*
+	dilations@@†JŸ
+	namespaceÀ: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.upconv4: easyocr.craft.double_conv/model.upconv4.conv: torch.nn.modules.container.Sequential/model.upconv4.conv.4: torch.nn.modules.batchnorm.BatchNorm2d/_native_batch_norm_legit_no_training_19: aten._native_batch_norm_legit_no_training.defaultJ:
+!pkg.onnxscript.rewriter.rule_nameFuseBatchNormIntoConvJñ
+pkg.torch.onnx.class_hierarchyÛ['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.craft.double_conv', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.batchnorm.BatchNorm2d', 'aten._native_batch_norm_legit_no_training.default']Jﬁ
+pkg.torch.onnx.fx_node√%_native_batch_norm_legit_no_training_19 : [num_users=1] = call_function[target=torch.ops.aten._native_batch_norm_legit_no_training.default](args = (%conv2d_21, %p_model_upconv4_conv_4_weight, %p_model_upconv4_conv_4_bias, %b_model_upconv4_conv_4_running_mean, %b_model_upconv4_conv_4_running_var, 0.1, 1e-05), kwargs = {})Jï
+pkg.torch.onnx.name_scopesw['', 'model', 'model.upconv4', 'model.upconv4.conv', 'model.upconv4.conv.4', '_native_batch_norm_legit_no_training_19']Jˇ
+pkg.torch.onnx.stack_trace‡File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 76, in forward
+    feature = self.upconv4(y)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 26, in forward
+    x = self.conv(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/batchnorm.py", line 194, in forward
+    return F.batch_norm(
+œ
+
+getitem_57relu_18node_relu_18"ReluJì
+	namespaceÖ: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.upconv4: easyocr.craft.double_conv/model.upconv4.conv: torch.nn.modules.container.Sequential/model.upconv4.conv.5: torch.nn.modules.activation.ReLU/relu_18: aten.relu.defaultJ
+pkg.torch.onnx.class_hierarchyÕ['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'easyocr.craft.double_conv', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.activation.ReLU', 'aten.relu.default']Jä
+pkg.torch.onnx.fx_nodep%relu_18 : [num_users=1] = call_function[target=torch.ops.aten.relu.default](args = (%getitem_57,), kwargs = {})Ju
+pkg.torch.onnx.name_scopesW['', 'model', 'model.upconv4', 'model.upconv4.conv', 'model.upconv4.conv.5', 'relu_18']Jñ	
+pkg.torch.onnx.stack_trace˜File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 76, in forward
+    feature = self.upconv4(y)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 26, in forward
+    x = self.conv(x)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/activation.py", line 143, in forward
+    return F.relu(input, inplace=self.inplace)
+Ï
+relu_18
+model.conv_cls.0.weight
+model.conv_cls.0.bias	conv2d_22node_conv2d_22"Conv*
+group†*
+pads@@@@†*
+auto_pad"NOTSET†*
+strides@@†*
+	dilations@@†J‚
+	namespace‘: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.conv_cls: torch.nn.modules.container.Sequential/model.conv_cls.0: torch.nn.modules.conv.Conv2d/conv2d_22: aten.conv2d.defaultJ—
+pkg.torch.onnx.class_hierarchyÆ['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.conv.Conv2d', 'aten.conv2d.default']J—
+pkg.torch.onnx.fx_node∂%conv2d_22 : [num_users=1] = call_function[target=torch.ops.aten.conv2d.default](args = (%relu_18, %p_model_conv_cls_0_weight, %p_model_conv_cls_0_bias, [1, 1], [1, 1]), kwargs = {})J^
+pkg.torch.onnx.name_scopes@['', 'model', 'model.conv_cls', 'model.conv_cls.0', 'conv2d_22']Jƒ
+pkg.torch.onnx.stack_trace•File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 78, in forward
+    y = self.conv_cls(feature)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/conv.py", line 553, in forward
+    return self._conv_forward(input, self.weight, self.bias)
+å
+	conv2d_22relu_19node_relu_19"ReluJ‚
+	namespace‘: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.conv_cls: torch.nn.modules.container.Sequential/model.conv_cls.1: torch.nn.modules.activation.ReLU/relu_19: aten.relu.defaultJ”
+pkg.torch.onnx.class_hierarchy∞['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.activation.ReLU', 'aten.relu.default']Jâ
+pkg.torch.onnx.fx_nodeo%relu_19 : [num_users=1] = call_function[target=torch.ops.aten.relu.default](args = (%conv2d_22,), kwargs = {})J\
+pkg.torch.onnx.name_scopes>['', 'model', 'model.conv_cls', 'model.conv_cls.1', 'relu_19']Jº
+pkg.torch.onnx.stack_traceùFile "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 78, in forward
+    y = self.conv_cls(feature)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/activation.py", line 143, in forward
+    return F.relu(input, inplace=self.inplace)
+Ï
+relu_19
+model.conv_cls.2.weight
+model.conv_cls.2.bias	conv2d_23node_conv2d_23"Conv*
+group†*
+pads@@@@†*
+auto_pad"NOTSET†*
+strides@@†*
+	dilations@@†J‚
+	namespace‘: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.conv_cls: torch.nn.modules.container.Sequential/model.conv_cls.2: torch.nn.modules.conv.Conv2d/conv2d_23: aten.conv2d.defaultJ—
+pkg.torch.onnx.class_hierarchyÆ['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.conv.Conv2d', 'aten.conv2d.default']J—
+pkg.torch.onnx.fx_node∂%conv2d_23 : [num_users=1] = call_function[target=torch.ops.aten.conv2d.default](args = (%relu_19, %p_model_conv_cls_2_weight, %p_model_conv_cls_2_bias, [1, 1], [1, 1]), kwargs = {})J^
+pkg.torch.onnx.name_scopes@['', 'model', 'model.conv_cls', 'model.conv_cls.2', 'conv2d_23']Jƒ
+pkg.torch.onnx.stack_trace•File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 78, in forward
+    y = self.conv_cls(feature)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/conv.py", line 553, in forward
+    return self._conv_forward(input, self.weight, self.bias)
+å
+	conv2d_23relu_20node_relu_20"ReluJ‚
+	namespace‘: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.conv_cls: torch.nn.modules.container.Sequential/model.conv_cls.3: torch.nn.modules.activation.ReLU/relu_20: aten.relu.defaultJ”
+pkg.torch.onnx.class_hierarchy∞['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.activation.ReLU', 'aten.relu.default']Jâ
+pkg.torch.onnx.fx_nodeo%relu_20 : [num_users=1] = call_function[target=torch.ops.aten.relu.default](args = (%conv2d_23,), kwargs = {})J\
+pkg.torch.onnx.name_scopes>['', 'model', 'model.conv_cls', 'model.conv_cls.3', 'relu_20']Jº
+pkg.torch.onnx.stack_traceùFile "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 78, in forward
+    y = self.conv_cls(feature)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/activation.py", line 143, in forward
+    return F.relu(input, inplace=self.inplace)
+Ï
+relu_20
+model.conv_cls.4.weight
+model.conv_cls.4.bias	conv2d_24node_conv2d_24"Conv*
+group†*
+pads@@@@†*
+auto_pad"NOTSET†*
+strides@@†*
+	dilations@@†J‚
+	namespace‘: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.conv_cls: torch.nn.modules.container.Sequential/model.conv_cls.4: torch.nn.modules.conv.Conv2d/conv2d_24: aten.conv2d.defaultJ—
+pkg.torch.onnx.class_hierarchyÆ['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.conv.Conv2d', 'aten.conv2d.default']J—
+pkg.torch.onnx.fx_node∂%conv2d_24 : [num_users=1] = call_function[target=torch.ops.aten.conv2d.default](args = (%relu_20, %p_model_conv_cls_4_weight, %p_model_conv_cls_4_bias, [1, 1], [1, 1]), kwargs = {})J^
+pkg.torch.onnx.name_scopes@['', 'model', 'model.conv_cls', 'model.conv_cls.4', 'conv2d_24']Jƒ
+pkg.torch.onnx.stack_trace•File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 78, in forward
+    y = self.conv_cls(feature)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/conv.py", line 553, in forward
+    return self._conv_forward(input, self.weight, self.bias)
+å
+	conv2d_24relu_21node_relu_21"ReluJ‚
+	namespace‘: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.conv_cls: torch.nn.modules.container.Sequential/model.conv_cls.5: torch.nn.modules.activation.ReLU/relu_21: aten.relu.defaultJ”
+pkg.torch.onnx.class_hierarchy∞['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.activation.ReLU', 'aten.relu.default']Jâ
+pkg.torch.onnx.fx_nodeo%relu_21 : [num_users=1] = call_function[target=torch.ops.aten.relu.default](args = (%conv2d_24,), kwargs = {})J\
+pkg.torch.onnx.name_scopes>['', 'model', 'model.conv_cls', 'model.conv_cls.5', 'relu_21']Jº
+pkg.torch.onnx.stack_traceùFile "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 78, in forward
+    y = self.conv_cls(feature)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/activation.py", line 143, in forward
+    return F.relu(input, inplace=self.inplace)
+‹
+relu_21
+model.conv_cls.6.weight
+model.conv_cls.6.bias	conv2d_25node_conv2d_25"Conv*
+group†*
+pads@ @ @ @ †*
+auto_pad"NOTSET†*
+strides@@†*
+	dilations@@†J‚
+	namespace‘: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.conv_cls: torch.nn.modules.container.Sequential/model.conv_cls.6: torch.nn.modules.conv.Conv2d/conv2d_25: aten.conv2d.defaultJ—
+pkg.torch.onnx.class_hierarchyÆ['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.conv.Conv2d', 'aten.conv2d.default']J¡
+pkg.torch.onnx.fx_node¶%conv2d_25 : [num_users=1] = call_function[target=torch.ops.aten.conv2d.default](args = (%relu_21, %p_model_conv_cls_6_weight, %p_model_conv_cls_6_bias), kwargs = {})J^
+pkg.torch.onnx.name_scopes@['', 'model', 'model.conv_cls', 'model.conv_cls.6', 'conv2d_25']Jƒ
+pkg.torch.onnx.stack_trace•File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 78, in forward
+    y = self.conv_cls(feature)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/conv.py", line 553, in forward
+    return self._conv_forward(input, self.weight, self.bias)
+å
+	conv2d_25relu_22node_relu_22"ReluJ‚
+	namespace‘: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.conv_cls: torch.nn.modules.container.Sequential/model.conv_cls.7: torch.nn.modules.activation.ReLU/relu_22: aten.relu.defaultJ”
+pkg.torch.onnx.class_hierarchy∞['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.activation.ReLU', 'aten.relu.default']Jâ
+pkg.torch.onnx.fx_nodeo%relu_22 : [num_users=1] = call_function[target=torch.ops.aten.relu.default](args = (%conv2d_25,), kwargs = {})J\
+pkg.torch.onnx.name_scopes>['', 'model', 'model.conv_cls', 'model.conv_cls.7', 'relu_22']Jº
+pkg.torch.onnx.stack_traceùFile "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 78, in forward
+    y = self.conv_cls(feature)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/activation.py", line 143, in forward
+    return F.relu(input, inplace=self.inplace)
+‹
+relu_22
+model.conv_cls.8.weight
+model.conv_cls.8.bias	conv2d_26node_conv2d_26"Conv*
+group†*
+pads@ @ @ @ †*
+auto_pad"NOTSET†*
+strides@@†*
+	dilations@@†J‚
+	namespace‘: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/model.conv_cls: torch.nn.modules.container.Sequential/model.conv_cls.8: torch.nn.modules.conv.Conv2d/conv2d_26: aten.conv2d.defaultJ—
+pkg.torch.onnx.class_hierarchyÆ['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.conv.Conv2d', 'aten.conv2d.default']J¡
+pkg.torch.onnx.fx_node¶%conv2d_26 : [num_users=1] = call_function[target=torch.ops.aten.conv2d.default](args = (%relu_22, %p_model_conv_cls_8_weight, %p_model_conv_cls_8_bias), kwargs = {})J^
+pkg.torch.onnx.name_scopes@['', 'model', 'model.conv_cls', 'model.conv_cls.8', 'conv2d_26']Jƒ
+pkg.torch.onnx.stack_trace•File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 78, in forward
+    y = self.conv_cls(feature)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/container.py", line 253, in forward
+    input = module(input)
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/torch/nn/modules/conv.py", line 553, in forward
+    return self._conv_forward(input, self.weight, self.bias)
+Ò
+	conv2d_26resultsnode_permute"	Transpose*
+perm@ @@@†J{
+	namespacen: qai_hub_models.models.easyocr.model.EasyOCRDetector/model: easyocr.craft.CRAFT/permute: aten.permute.defaultJà
+pkg.torch.onnx.class_hierarchyf['qai_hub_models.models.easyocr.model.EasyOCRDetector', 'easyocr.craft.CRAFT', 'aten.permute.default']Jô
+pkg.torch.onnx.fx_node%permute : [num_users=1] = call_function[target=torch.ops.aten.permute.default](args = (%conv2d_26, [0, 2, 3, 1]), kwargs = {})J6
+pkg.torch.onnx.name_scopes['', 'model', 'permute']J“
+pkg.torch.onnx.stack_trace≥File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/src/qai_hub_models/models/easyocr/model.py", line 83, in forward
+    return self.model(image)[0]
+  File "/local/mnt/workspace/tetraservice-gh-runner/_work/ai-hub-models-internal/ai-hub-models-internal/build/ci-envs/qaihm-build/lib/python3.10/site-packages/easyocr/craft.py", line 80, in forward
+    return y.permute(0,2,3,1), feature
+main_graph*\ÄBmodel.basenet.slice5.1.biasj
+locationdetector.dataj
+offset0j
+length4096p*_ÄBmodel.basenet.slice5.2.biasj
+locationdetector.dataj
+offset4096j
+length4096p*û Bmodel.conv_cls.0.biasJÄ—êB=à´: Ë<q∂mΩˆHºÃcZªôîº¥S/Ω∫ÃB=äK∑<#^‹<Ù‰<rqb=¯ØñΩÉ|ªË…;T…ê;ÒrŸ<$úLΩ∏¶G=w°;“w9Ωêt¥<f60=b≠◊ª—7=ÀÉÎ:/<$í<q(âΩœ“<º∑œ:*û Bmodel.conv_cls.2.biasJÄ…"=Và2<“UB=Úã<:ÃŸ;Ωˇ<ﬂrÁºÖ/=d§rº>S=N∫=.Ÿªje”<ÜìÃ<Ω?=E^ΩH|ΩÉJ=÷ú±Ω@‘¶;’ÁS=‹”d<§N<àÀ< ˆ<æo£<≈â='¶E=ΩJ=c:=¢D=ÈP@Ω*]Bmodel.conv_cls.4.biasJ@^îˇ;§–[=‡Î=é£=Uì≤<€®
+ΩÏ8=C÷ØºBÍ=Å¥∂<≤Quºƒ$I=\!%=Ã‹x=Œ "æ\"w=*`Bmodel.conv_cls.6.weightj
+locationdetector.dataj
+offset8192j
+length1024p*]Bmodel.conv_cls.6.biasJ@úªb;5L{º#û˚:!÷b<qXºI9∫≠wÀ;.VºWHl∫ˇEºè¬∫≤Æè8h™1Ω⁄å§ª≠‘”:d√„∏*¶Bmodel.conv_cls.8.weightJÄK+KΩﬁi<ûyë>œh·æÏÜ>©€±>U\%>Ÿ ´æŒΩ≤>sùæc Fæ(êA;‰>¶><∆æ“"ú><É}>W´>ªÌßæÅ‰PΩ~€€>_[>|†ÏΩ @∏ædd]æ=/π·Óªæ…Ì/æõPB>ﬁæñÔ∏æ>BË=Lä?*%Bmodel.conv_cls.8.biasJ'Ô´;Ò/õª*BviewJÏQ¯>’xÈ>;ﬂœ>* Bview_1J˙~j>B`e>fff>*/Bval_106J               L       d       */Bval_122J        Ä       ò       »       */Bval_138J        @       0      ê      *¨@B#model.basenet.slice1.0.bias_fused_1JÄæÛœΩE´øèy∑k˝“ΩN˘æ•Ê%Ω©i=µ°ã∏?c πõc3øZΩê= êF∑-˚Ò>≤Ωí®π;V>L’)øŒ >»,“>8âéΩÓ ˛Ωù>(∏÷ ˘ºœó“>©Œ«∑Fv±Ωäπ<è>Ÿ¿Ÿ>›ÔG∑ßΩ_>a ]æ¥‚∂Ωgäg>	u∑∏ª•`∑…ß∑‚¥i>°r6∂RÛæ¬ë??ÌïºÇi«∏ı≈∏@‹ΩÔxãæ˛^æíl?E ùΩè’/ΩàΩ∆È`Ω0ù‡æí¶∑”„æ≤iªÄÏ-øñüæûY€∏lsÊª–Hü= ~-∑+ö™>*¨@B#model.basenet.slice1.3.bias_fused_1JÄ^ÿædq?n‰àæèâ?_9æ«¢r>¿Ω)∆®>®\?D3V>˛&?Oh!>‘\¢?å	?åf >&@ë>˛ÜÉæ¨aAΩ—*>Sìx?]Àó>÷¡¨>óû¸>â€ô>R6#>”∆B?‘p?x¥>ÑëúΩÔX,>CY>j‘å>∫? ˆ∫=„mµæHU>sÌæ§pàæ€>Ú-?Áœ—>¸Sî>X? Å∏∏P/ø?'?_Éµt’<À”
+>åπHæ.-øﬁA◊= B]? V>XÜ¶>¥uË=7~?™∑b>U8B?œ°ß>N¢>¯b≥>Ãg>Pmë>*≠ÄB#model.basenet.slice1.7.bias_fused_1JÄ=ΩA>sTE>ıh⁄∫•
+>/Ç>@'0ºvÇ∑æ≈(ª>
+P?
+ﬂîæEË>Ü˚Ÿ∏"ﬁ?¸œâ>A“c∏>ñ∑ê?J§ =¿ò˝;7>˙*?‘≠–>%e◊>@æ‚@{>ú°º>œóú∑™O4?‚°e?F¸@æ˙1>ó¿?èn!>f?‘f◊>Ú„›>„Ω≥>Y?·:ü≥ 	”>v3S?‰ªƒ>K5Ö?ÁC∏`§«>iu£∑’|Ã>uW>C∫∞(æΩ)B"?°Xà??⁄?úΩ2>˚>úÇ¯∫Ò.? #˚;Fw¬=–ævæ≈JÃ>^◊†>†V8?éá>a°ºÃùß>pÂ∑cµ¯= Ûëª`‘Ωèﬂ>‰‰=∑™W=>BTæ–e1Ω	›πø«Ñ∏Ö€"= ´ƒ<|çÜ>2‘∑‰ês>&∑+?Æ‡–æ§0ã∏ï‡W>Ï(
+æZ ?“»=?≈P?»(v=ÈÊø›|*∏€Ù?–9õæ2X¥>\U ?!?¯ı>v4.æ¶lÛ>*ñä?Ìn∏ñCÚ>DÛ·>∆°’>„^˚∏ﬂÙC>ª¬éºÊ	=|ªÛºØï¥ø£?]÷X>árF?Û4í∑"¥Ωº?G√?!˝Z?W#¥>†¶∏;‹vçªíE?°U.?¶é:?ˇ=ƒ<?*ÆÄB$model.basenet.slice1.10.bias_fused_1JÄπ5>9ã√=É·é>§gè>Ÿpá>7“≠>Q±¸=$Öì>Ç≈ç?äœv>>Õ∂>_ï6?ÿ=ÏΩÿuaΩVò>OÆÇ¥ô;Ï>ÿ>¨Ò7æü∏ıΩåÆù>àÌ?í∞Pæ¡>†≤>Û¬M? º£=⁄·T>∞“=Çÿ?Çi>Å˝=Ω„7?p>‡óè;˛aó>P∞Ë>ü µ>ë7E>&ºR>k¥à>V”K>ÌÕU>l¥J=≥’ˆ>,…7?œ»˛>Õ=S=ÄfL=o∞®>öZ=m•S>Nµ>Prå>?ü>OÒù∏që>ı	><Y‰ºåÕÌ>ˇFÖª»Ub>û‘>bTø¶ó>¿◊>N‹Lº–"â<X…U?Bdp>H4º>πﬁ>PàÓΩVï>µ}ÖΩ°È>t÷}>§ïo=˙óL>˚aá>Å_u>ê·É=≥N<>ê)ë<UΩ>4ôı=ìÔ>á* ?Ÿ>Ód??R!?˜6¢=R∑
+>ë∆=Ω‹2>{F.>e≥a>&ıw>ZŸè>	Héæí7ΩeEô>` ΩÉB|≥|â>hQ>0ZO<¬⁄-?®ÀÂ=f™¿>¨¯ ?˙Ÿò>æbè>$âØ=m·>ıô@>â:æﬂ¸ö∑‡=¨@ª d≈=”b∂¥ˆÓ=¡ôõ>*êÆ>ˇ=*hÄB$model.basenet.slice2.14.bias_fused_1j
+locationdetector.dataj
+offset9216j
+length1024p*iÄB$model.basenet.slice2.17.bias_fused_1j
+locationdetector.dataj
+offset10240j
+length1024p*iÄB$model.basenet.slice3.20.bias_fused_1j
+locationdetector.dataj
+offset11264j
+length1024p*iÄB$model.basenet.slice3.24.bias_fused_1j
+locationdetector.dataj
+offset12288j
+length2048p*iÄB$model.basenet.slice3.27.bias_fused_1j
+locationdetector.dataj
+offset14336j
+length2048p*iÄB$model.basenet.slice4.30.bias_fused_1j
+locationdetector.dataj
+offset16384j
+length2048p*iÄB$model.basenet.slice4.34.bias_fused_1j
+locationdetector.dataj
+offset18432j
+length2048p*iÄB$model.basenet.slice4.37.bias_fused_1j
+locationdetector.dataj
+offset20480j
+length2048p*fÄB!model.upconv1.conv.0.bias_fused_1j
+locationdetector.dataj
+offset22528j
+length2048p*fÄB!model.upconv1.conv.3.bias_fused_1j
+locationdetector.dataj
+offset24576j
+length1024p*fÄB!model.upconv2.conv.0.bias_fused_1j
+locationdetector.dataj
+offset25600j
+length1024p*´ÄB!model.upconv2.conv.3.bias_fused_1JÄt(¡>…§?Kp¯>e—w?~óÆ>¯«?G~ ?<Â„ø(
+Sæª˛^æÏéc?è¶1?5©À>Tmª<„ÃÉ?zxöæ
+’Å?jB?·">‚faæmô´>PÑ5?!§Ωª	#?¬¶÷>e√1?úÄ? ©3?.¸`?-)>ﬁ\ï?¶øx?12ó=Àó>#çC?DÀùæÍÂ(?Õ(>†f∂ΩU˙?ö^>è/¥æAÔ9>.	?°ræ∫ß?é∞˘ΩG>âú?C¸O?î÷>,D‚>òQ^=5%È>&8e?&ﬂÄæ®j ?ËŸ‰=èJ?»”>`Ò6?g∏≈>°à
+?™≈©æ]∫;? bb?™ä›?SñÎ=ã§Eø√N:?ò%Ù>≈ŸÈ>ﬂOs>Ï`.?>}=Ùã=Ãp?ábÄ?⁄‘ø=∂≤>/`? y>åx">øG æ–S7?E[Ã>…ôà?äW©?w#∞?eB„>–?¶ÇiΩ¥Ê#ºÃ˜>>© øBQ?HÇ:>G_Ã>Ri?ÓRc>Ã√1ΩW->Ø|:?‰úó>π&? ïá>. øÊW>ƒ˙â>h.6ΩÏ«l?,!>Ω†™Ä;Ω'{>n˜?BWÆ=¿¿ô?7?£à?rﬁøf9≈><¨ã?w-?ì˘ï>	ßL?D[KΩÆ?*´ÄB!model.upconv3.conv.0.bias_fused_1JÄI‚:?ö4¢>îâÏ=w>?OGx>Í\å?ﬂ?\ø§lÀ>⁄LΩ>Xñ÷ªG∆c=cª%?¥ÏN?'Û>>˘ç?y~[?çwÿ>¥¥œ?5›#?Zø?ãÒ>¨@6>§¶π>Dã?ƒ
+?†w>ÇQY>óS>ˇ˙3?4O?=Ñ?mN»=û^ÛΩ?ß?0	ò?<[>¡Õ÷>Ò√æÖüú>ﬁÀ"?ÃÀ©?Á7ÿ>˝TÇ>A÷Ñ?.›†?p  ?U5?ˇ˘/?3A>⁄©
+øôëÉæC©ë?âV?3q5?õMæ=¡„a>ún^?⁄iæø'∂¢?ûÁp?3‰-?√’¸>®§¿>nœJ?·&aæV0‚>∞ﬂ>˚´ﬁ>∂¨Á=vÅ?XhO>|£n?lñËº†ÌRºˇ·–ΩbŸ9?ç>mN?√Ωú=T.$?•7??…•æ˚3C?„)æ_e?GK?Àﬁ6?ˆ'æ¥t?'w>Öõ?Óøi?XMÃ>	ƒ‹Ωz—U? ÿo>tRx>f«	ø„ãîæ◊è™?Â≈â?ˆ9n?m˜%?∏îY?*»æ ;?≈hà?¸j?.QM?¿3ö?8i?*ùæäø¢ Ω¿E>Ó—æÃBT>Ç	ørZ6?tZÏæÖÉæﬁê>˛1=Œ}N?ïr‘Ω=>*™@B!model.upconv3.conv.3.bias_fused_1JÄ>CΩ∞∞ﬁ>ﬂ´vøVÔ>ó˜8?®Õ@Ò*(Ω<>œc?äk>~è$øéD√?Üû©?íöæ¯Y8?áúF? kﬂ>˙Œo?Ñ˜È>jj?Äâ<z¥˜æ5ç<æ{†<?$†Ö>˚`ò>¯€º>tÊ‹>AàÔ>&€æ< ˆΩx°û?•Eµ?ës⁄?ó(î>ÂﬁJ?~n-=àô∏>7î>•¨Ö?¬æ“©Ë>èú?†W4?ÿ≥q>å√é>ruﬂ>˜ä<#zî?2bj??"|>Øb?o∑1?3
+?nÜâ?3éJ?Ω‚—>˘≤?ÃfSøÍ!?ƒß?!ß±øk©‚>ÚÈL?*™@B!model.upconv4.conv.0.bias_fused_1JÄ<¸Ôª§TøuÏï>è7Ø?dÓ?]ƒ?ætJæ›ô<Ø¥?àÌ?áK{æ<ﬁΩ%J‡æ85 ?lY	øê~~?Øz≥=ã∆>DÒ;—Ùµ>øiæÎ£ü>©•y?ÿÜ1øƒXÅ?¡∫æΩ‡.æàˇæ–ˆ>UÌN=∂rΩ}2ørî3?0%?T&=?òy?]Øy?ßR"øO¥¬æc|æÙYóæDÉ ?ıø±¥—æÊY˚<ZR">}a??ÆÆæOò9?Ùe›>HN?≤Ÿíæí?’$@øtuç>¯,Ô>ñ'A?Ke?¨?√„PæáDææû@?‹öæd|jΩ*™ B!model.upconv4.conv.3.bias_fused_1JÄT>>Z√K?'(\?πÑ?Y	M?Q›?¡>3?‰f?∑?êæx¯?>¯ÇD?<À»>3a¯æÕπw?iuùæ±y)?™ëJ?|U“>QÕ?êk©>‰K3?à·I?_|Ô>=€L>9qÈ=¬É#?}ÃÉø]Rl?$†Ë=†Åæa~∂=îÖ?*mÄÄBmodel.basenet.slice5.1.weightj
+locationdetector.dataj
+offset26624j
+length18874368p*oÄÄBmodel.basenet.slice5.2.weightj
+locationdetector.dataj
+offset18900992j
+length4194304p*e  Bmodel.conv_cls.0.weightj
+locationdetector.dataj
+offset23095296j
+length36864p*e  Bmodel.conv_cls.2.weightj
+locationdetector.dataj
+offset23132160j
+length36864p*e Bmodel.conv_cls.4.weightj
+locationdetector.dataj
+offset23169024j
+length18432p*r@B%model.basenet.slice1.0.weight_fused_1j
+locationdetector.dataj
+offset23187456j
+length6912p*t@@B%model.basenet.slice1.3.weight_fused_1j
+locationdetector.dataj
+offset23194368j
+length147456p*uÄ@B%model.basenet.slice1.7.weight_fused_1j
+locationdetector.dataj
+offset23341824j
+length294912p*wÄÄB&model.basenet.slice1.10.weight_fused_1j
+locationdetector.dataj
+offset23636736j
+length589824p*xÄÄB&model.basenet.slice2.14.weight_fused_1j
+locationdetector.dataj
+offset24226560j
+length1179648p*xÄÄB&model.basenet.slice2.17.weight_fused_1j
+locationdetector.dataj
+offset25406208j
+length2359296p*xÄÄB&model.basenet.slice3.20.weight_fused_1j
+locationdetector.dataj
+offset27765504j
+length2359296p*xÄÄB&model.basenet.slice3.24.weight_fused_1j
+locationdetector.dataj
+offset30124800j
+length4718592p*xÄÄB&model.basenet.slice3.27.weight_fused_1j
+locationdetector.dataj
+offset34843392j
+length9437184p*xÄÄB&model.basenet.slice4.30.weight_fused_1j
+locationdetector.dataj
+offset44280576j
+length9437184p*xÄÄB&model.basenet.slice4.34.weight_fused_1j
+locationdetector.dataj
+offset53717760j
+length9437184p*xÄÄB&model.basenet.slice4.37.weight_fused_1j
+locationdetector.dataj
+offset63154944j
+length9437184p*uÄÄB#model.upconv1.conv.0.weight_fused_1j
+locationdetector.dataj
+offset72592128j
+length3145728p*uÄÄB#model.upconv1.conv.3.weight_fused_1j
+locationdetector.dataj
+offset75737856j
+length4718592p*tÄÄB#model.upconv2.conv.0.weight_fused_1j
+locationdetector.dataj
+offset80456448j
+length786432p*uÄÄB#model.upconv2.conv.3.weight_fused_1j
+locationdetector.dataj
+offset81242880j
+length1179648p*tÄÄB#model.upconv3.conv.0.weight_fused_1j
+locationdetector.dataj
+offset82422528j
+length196608p*s@ÄB#model.upconv3.conv.3.weight_fused_1j
+locationdetector.dataj
+offset82619136j
+length294912p*r@¿B#model.upconv4.conv.0.weight_fused_1j
+locationdetector.dataj
+offset82914048j
+length49152p*q @B#model.upconv4.conv.3.weight_fused_1j
+locationdetector.dataj
+offset82963200j
+length73728pZü
+image
+
+
+
+‡
+†"=
+/pkg.torch.export.graph_signature.InputSpec.kind
+USER_INPUT"=
+5pkg.torch.export.graph_signature.InputSpec.persistentNonebd
+results
+
+
+∞
+ê
+"?
+0pkg.torch.export.graph_signature.OutputSpec.kindUSER_OUTPUTjÎ
+model.basenet.slice5.1.bias
+	
+Ä"<
+/pkg.torch.export.graph_signature.InputSpec.kind	PARAMETER"=
+5pkg.torch.export.graph_signature.InputSpec.persistentNone"B
+!pkg.torch.onnx.original_node_namep_model_basenet_slice5_1_biasjÎ
+model.basenet.slice5.2.bias
+	
+Ä"<
+/pkg.torch.export.graph_signature.InputSpec.kind	PARAMETER"=
+5pkg.torch.export.graph_signature.InputSpec.persistentNone"B
+!pkg.torch.onnx.original_node_namep_model_basenet_slice5_2_biasjﬁ
+model.conv_cls.0.bias
+
+
+ "<
+/pkg.torch.export.graph_signature.InputSpec.kind	PARAMETER"=
+5pkg.torch.export.graph_signature.InputSpec.persistentNone"<
+!pkg.torch.onnx.original_node_namep_model_conv_cls_0_biasjﬁ
+model.conv_cls.2.bias
+
+
+ "<
+/pkg.torch.export.graph_signature.InputSpec.kind	PARAMETER"=
+5pkg.torch.export.graph_signature.InputSpec.persistentNone"<
+!pkg.torch.onnx.original_node_namep_model_conv_cls_2_biasjﬁ
+model.conv_cls.4.bias
+
+
+"<
+/pkg.torch.export.graph_signature.InputSpec.kind	PARAMETER"=
+5pkg.torch.export.graph_signature.InputSpec.persistentNone"<
+!pkg.torch.onnx.original_node_namep_model_conv_cls_4_biasjÓ
+model.conv_cls.6.weight
+
+
+
+
+"<
+/pkg.torch.export.graph_signature.InputSpec.kind	PARAMETER"=
+5pkg.torch.export.graph_signature.InputSpec.persistentNone">
+!pkg.torch.onnx.original_node_namep_model_conv_cls_6_weightjﬁ
+model.conv_cls.6.bias
+
+
+"<
+/pkg.torch.export.graph_signature.InputSpec.kind	PARAMETER"=
+5pkg.torch.export.graph_signature.InputSpec.persistentNone"<
+!pkg.torch.onnx.original_node_namep_model_conv_cls_6_biasjÓ
+model.conv_cls.8.weight
+
+
+
+
+"<
+/pkg.torch.export.graph_signature.InputSpec.kind	PARAMETER"=
+5pkg.torch.export.graph_signature.InputSpec.persistentNone">
+!pkg.torch.onnx.original_node_namep_model_conv_cls_8_weightjﬁ
+model.conv_cls.8.bias
+
+
+"<
+/pkg.torch.export.graph_signature.InputSpec.kind	PARAMETER"=
+5pkg.torch.export.graph_signature.InputSpec.persistentNone"<
+!pkg.torch.onnx.original_node_namep_model_conv_cls_8_biasj
+view
+
+
+
+
+"_
+$pkg.onnxscript.optimizer.folded_from7['clone', 'lifted_tensor_0', 'val_1', 'val_2', 'val_5']jÉ
+view_1
+
+
+
+
+"a
+$pkg.onnxscript.optimizer.folded_from9['clone_1', 'lifted_tensor_1', 'val_1', 'val_2', 'val_5']jk
+val_106
+
+
+"T
+$pkg.onnxscript.optimizer.folded_from,['relu_12', 'val_103', 'val_104', 'val_105']jk
+val_122
+
+
+"T
+$pkg.onnxscript.optimizer.folded_from,['relu_14', 'val_119', 'val_120', 'val_121']jk
+val_138
+
+
+"T
+$pkg.onnxscript.optimizer.folded_from,['relu_16', 'val_135', 'val_136', 'val_137']j1
+#model.basenet.slice1.0.bias_fused_1
+
+
+@j1
+#model.basenet.slice1.3.bias_fused_1
+
+
+@j2
+#model.basenet.slice1.7.bias_fused_1
+	
+Äj3
+$model.basenet.slice1.10.bias_fused_1
+	
+Äj3
+$model.basenet.slice2.14.bias_fused_1
+	
+Äj3
+$model.basenet.slice2.17.bias_fused_1
+	
+Äj3
+$model.basenet.slice3.20.bias_fused_1
+	
+Äj3
+$model.basenet.slice3.24.bias_fused_1
+	
+Äj3
+$model.basenet.slice3.27.bias_fused_1
+	
+Äj3
+$model.basenet.slice4.30.bias_fused_1
+	
+Äj3
+$model.basenet.slice4.34.bias_fused_1
+	
+Äj3
+$model.basenet.slice4.37.bias_fused_1
+	
+Äj0
+!model.upconv1.conv.0.bias_fused_1
+	
+Äj0
+!model.upconv1.conv.3.bias_fused_1
+	
+Äj0
+!model.upconv2.conv.0.bias_fused_1
+	
+Äj0
+!model.upconv2.conv.3.bias_fused_1
+	
+Äj0
+!model.upconv3.conv.0.bias_fused_1
+	
+Äj/
+!model.upconv3.conv.3.bias_fused_1
+
+
+@j/
+!model.upconv4.conv.0.bias_fused_1
+
+
+@j/
+!model.upconv4.conv.3.bias_fused_1
+
+
+ j¸
+model.basenet.slice5.1.weight
+
+Ä
+Ä
+
+"<
+/pkg.torch.export.graph_signature.InputSpec.kind	PARAMETER"=
+5pkg.torch.export.graph_signature.InputSpec.persistentNone"D
+!pkg.torch.onnx.original_node_namep_model_basenet_slice5_1_weightj¸
+model.basenet.slice5.2.weight
+
+Ä
+Ä
+
+"<
+/pkg.torch.export.graph_signature.InputSpec.kind	PARAMETER"=
+5pkg.torch.export.graph_signature.InputSpec.persistentNone"D
+!pkg.torch.onnx.original_node_namep_model_basenet_slice5_2_weightjÓ
+model.conv_cls.0.weight
+
+ 
+ 
+
+"<
+/pkg.torch.export.graph_signature.InputSpec.kind	PARAMETER"=
+5pkg.torch.export.graph_signature.InputSpec.persistentNone">
+!pkg.torch.onnx.original_node_namep_model_conv_cls_0_weightjÓ
+model.conv_cls.2.weight
+
+ 
+ 
+
+"<
+/pkg.torch.export.graph_signature.InputSpec.kind	PARAMETER"=
+5pkg.torch.export.graph_signature.InputSpec.persistentNone">
+!pkg.torch.onnx.original_node_namep_model_conv_cls_2_weightjÓ
+model.conv_cls.4.weight
+
+
+ 
+
+"<
+/pkg.torch.export.graph_signature.InputSpec.kind	PARAMETER"=
+5pkg.torch.export.graph_signature.InputSpec.persistentNone">
+!pkg.torch.onnx.original_node_namep_model_conv_cls_4_weightj?
+%model.basenet.slice1.0.weight_fused_1
+
+@
+
+
+j?
+%model.basenet.slice1.3.weight_fused_1
+
+@
+@
+
+j@
+%model.basenet.slice1.7.weight_fused_1
+
+Ä
+@
+
+jB
+&model.basenet.slice1.10.weight_fused_1
+
+Ä
+Ä
+
+jB
+&model.basenet.slice2.14.weight_fused_1
+
+Ä
+Ä
+
+jB
+&model.basenet.slice2.17.weight_fused_1
+
+Ä
+Ä
+
+jB
+&model.basenet.slice3.20.weight_fused_1
+
+Ä
+Ä
+
+jB
+&model.basenet.slice3.24.weight_fused_1
+
+Ä
+Ä
+
+jB
+&model.basenet.slice3.27.weight_fused_1
+
+Ä
+Ä
+
+jB
+&model.basenet.slice4.30.weight_fused_1
+
+Ä
+Ä
+
+jB
+&model.basenet.slice4.34.weight_fused_1
+
+Ä
+Ä
+
+jB
+&model.basenet.slice4.37.weight_fused_1
+
+Ä
+Ä
+
+j?
+#model.upconv1.conv.0.weight_fused_1
+
+Ä
+Ä
+
+j?
+#model.upconv1.conv.3.weight_fused_1
+
+Ä
+Ä
+
+j?
+#model.upconv2.conv.0.weight_fused_1
+
+Ä
+Ä
+
+j?
+#model.upconv2.conv.3.weight_fused_1
+
+Ä
+Ä
+
+j?
+#model.upconv3.conv.0.weight_fused_1
+
+Ä
+Ä
+
+j>
+#model.upconv3.conv.3.weight_fused_1
+
+@
+Ä
+
+j>
+#model.upconv4.conv.0.weight_fused_1
+
+@
+¿
+
+j=
+#model.upconv4.conv.3.weight_fused_1
+
+ 
+@
+
+j
+sub
+
+
+
+‡
+†j
+div
+
+
+
+‡
+†j#
+getitem
+
+
+@
+‡
+†j 
+relu
+
+
+@
+‡
+†j%
+	getitem_3
+
+
+@
+‡
+†j"
+relu_1
+
+
+@
+‡
+†j&
+
+max_pool2d
+
+
+@
+∞
+êj&
+	getitem_6
+
+
+Ä
+∞
+êj#
+relu_2
+
+
+Ä
+∞
+êj&
+	getitem_9
+
+
+Ä
+∞
+êj#
+relu_3
+
+
+Ä
+∞
+êj)
+max_pool2d_1
+
+
+Ä
+ò
+»j'
+
+getitem_12
+
+
+Ä
+ò
+»j#
+relu_4
+
+
+Ä
+ò
+»j'
+
+getitem_15
+
+
+Ä
+ò
+»j#
+relu_5
+
+
+Ä
+ò
+»j'
+
+getitem_18
+
+
+Ä
+ò
+»j#
+relu_6
+
+
+Ä
+ò
+»j'
+max_pool2d_2
+
+
+Ä
+L
+dj%
+
+getitem_21
+
+
+Ä
+L
+dj!
+relu_7
+
+
+Ä
+L
+dj%
+
+getitem_24
+
+
+Ä
+L
+dj!
+relu_8
+
+
+Ä
+L
+dj%
+
+getitem_27
+
+
+Ä
+L
+dj!
+relu_9
+
+
+Ä
+L
+dj'
+max_pool2d_3
+
+
+Ä
+&
+2j%
+
+getitem_30
+
+
+Ä
+&
+2j"
+relu_10
+
+
+Ä
+&
+2j%
+
+getitem_33
+
+
+Ä
+&
+2j'
+max_pool2d_4
+
+
+Ä
+&
+2j$
+	conv2d_12
+
+
+Ä
+&
+2j$
+	conv2d_13
+
+
+Ä
+&
+2j
+cat
+
+
+Ä
+&
+2j%
+
+getitem_36
+
+
+Ä
+&
+2j"
+relu_11
+
+
+Ä
+&
+2j%
+
+getitem_39
+
+
+Ä
+&
+2j"
+relu_12
+
+
+Ä
+&
+2j.
+upsample_bilinear2d
+
+
+Ä
+L
+dj 
+cat_1
+
+
+Ä
+L
+dj%
+
+getitem_42
+
+
+Ä
+L
+dj"
+relu_13
+
+
+Ä
+L
+dj%
+
+getitem_45
+
+
+Ä
+L
+dj"
+relu_14
+
+
+Ä
+L
+dj2
+upsample_bilinear2d_1
+
+
+Ä
+ò
+»j"
+cat_2
+
+
+Ä
+ò
+»j'
+
+getitem_48
+
+
+Ä
+ò
+»j$
+relu_15
+
+
+Ä
+ò
+»j&
+
+getitem_51
+
+
+@
+ò
+»j#
+relu_16
+
+
+@
+ò
+»j1
+upsample_bilinear2d_2
+
+
+@
+∞
+êj"
+cat_3
+
+
+¿
+∞
+êj&
+
+getitem_54
+
+
+@
+∞
+êj#
+relu_17
+
+
+@
+∞
+êj&
+
+getitem_57
+
+
+ 
+∞
+êj#
+relu_18
+
+
+ 
+∞
+êj%
+	conv2d_22
+
+
+ 
+∞
+êj#
+relu_19
+
+
+ 
+∞
+êj%
+	conv2d_23
+
+
+ 
+∞
+êj#
+relu_20
+
+
+ 
+∞
+êj%
+	conv2d_24
+
+
+
+∞
+êj#
+relu_21
+
+
+
+∞
+êj%
+	conv2d_25
+
+
+
+∞
+êj#
+relu_22
+
+
+
+∞
+êj%
+	conv2d_26
+
+
+
+∞
+êÇÛn
+0pkg.torch.export.ExportedProgram.graph_signatureæn
+# inputs
+p_model_basenet_slice1_0_weight: PARAMETER target='model.basenet.slice1.0.weight'
+p_model_basenet_slice1_0_bias: PARAMETER target='model.basenet.slice1.0.bias'
+p_model_basenet_slice1_1_weight: PARAMETER target='model.basenet.slice1.1.weight'
+p_model_basenet_slice1_1_bias: PARAMETER target='model.basenet.slice1.1.bias'
+p_model_basenet_slice1_3_weight: PARAMETER target='model.basenet.slice1.3.weight'
+p_model_basenet_slice1_3_bias: PARAMETER target='model.basenet.slice1.3.bias'
+p_model_basenet_slice1_4_weight: PARAMETER target='model.basenet.slice1.4.weight'
+p_model_basenet_slice1_4_bias: PARAMETER target='model.basenet.slice1.4.bias'
+p_model_basenet_slice1_7_weight: PARAMETER target='model.basenet.slice1.7.weight'
+p_model_basenet_slice1_7_bias: PARAMETER target='model.basenet.slice1.7.bias'
+p_model_basenet_slice1_8_weight: PARAMETER target='model.basenet.slice1.8.weight'
+p_model_basenet_slice1_8_bias: PARAMETER target='model.basenet.slice1.8.bias'
+p_model_basenet_slice1_10_weight: PARAMETER target='model.basenet.slice1.10.weight'
+p_model_basenet_slice1_10_bias: PARAMETER target='model.basenet.slice1.10.bias'
+p_model_basenet_slice1_11_weight: PARAMETER target='model.basenet.slice1.11.weight'
+p_model_basenet_slice1_11_bias: PARAMETER target='model.basenet.slice1.11.bias'
+p_model_basenet_slice2_14_weight: PARAMETER target='model.basenet.slice2.14.weight'
+p_model_basenet_slice2_14_bias: PARAMETER target='model.basenet.slice2.14.bias'
+p_model_basenet_slice2_15_weight: PARAMETER target='model.basenet.slice2.15.weight'
+p_model_basenet_slice2_15_bias: PARAMETER target='model.basenet.slice2.15.bias'
+p_model_basenet_slice2_17_weight: PARAMETER target='model.basenet.slice2.17.weight'
+p_model_basenet_slice2_17_bias: PARAMETER target='model.basenet.slice2.17.bias'
+p_model_basenet_slice2_18_weight: PARAMETER target='model.basenet.slice2.18.weight'
+p_model_basenet_slice2_18_bias: PARAMETER target='model.basenet.slice2.18.bias'
+p_model_basenet_slice3_20_weight: PARAMETER target='model.basenet.slice3.20.weight'
+p_model_basenet_slice3_20_bias: PARAMETER target='model.basenet.slice3.20.bias'
+p_model_basenet_slice3_21_weight: PARAMETER target='model.basenet.slice3.21.weight'
+p_model_basenet_slice3_21_bias: PARAMETER target='model.basenet.slice3.21.bias'
+p_model_basenet_slice3_24_weight: PARAMETER target='model.basenet.slice3.24.weight'
+p_model_basenet_slice3_24_bias: PARAMETER target='model.basenet.slice3.24.bias'
+p_model_basenet_slice3_25_weight: PARAMETER target='model.basenet.slice3.25.weight'
+p_model_basenet_slice3_25_bias: PARAMETER target='model.basenet.slice3.25.bias'
+p_model_basenet_slice3_27_weight: PARAMETER target='model.basenet.slice3.27.weight'
+p_model_basenet_slice3_27_bias: PARAMETER target='model.basenet.slice3.27.bias'
+p_model_basenet_slice3_28_weight: PARAMETER target='model.basenet.slice3.28.weight'
+p_model_basenet_slice3_28_bias: PARAMETER target='model.basenet.slice3.28.bias'
+p_model_basenet_slice4_30_weight: PARAMETER target='model.basenet.slice4.30.weight'
+p_model_basenet_slice4_30_bias: PARAMETER target='model.basenet.slice4.30.bias'
+p_model_basenet_slice4_31_weight: PARAMETER target='model.basenet.slice4.31.weight'
+p_model_basenet_slice4_31_bias: PARAMETER target='model.basenet.slice4.31.bias'
+p_model_basenet_slice4_34_weight: PARAMETER target='model.basenet.slice4.34.weight'
+p_model_basenet_slice4_34_bias: PARAMETER target='model.basenet.slice4.34.bias'
+p_model_basenet_slice4_35_weight: PARAMETER target='model.basenet.slice4.35.weight'
+p_model_basenet_slice4_35_bias: PARAMETER target='model.basenet.slice4.35.bias'
+p_model_basenet_slice4_37_weight: PARAMETER target='model.basenet.slice4.37.weight'
+p_model_basenet_slice4_37_bias: PARAMETER target='model.basenet.slice4.37.bias'
+p_model_basenet_slice4_38_weight: PARAMETER target='model.basenet.slice4.38.weight'
+p_model_basenet_slice4_38_bias: PARAMETER target='model.basenet.slice4.38.bias'
+p_model_basenet_slice5_1_weight: PARAMETER target='model.basenet.slice5.1.weight'
+p_model_basenet_slice5_1_bias: PARAMETER target='model.basenet.slice5.1.bias'
+p_model_basenet_slice5_2_weight: PARAMETER target='model.basenet.slice5.2.weight'
+p_model_basenet_slice5_2_bias: PARAMETER target='model.basenet.slice5.2.bias'
+p_model_upconv1_conv_0_weight: PARAMETER target='model.upconv1.conv.0.weight'
+p_model_upconv1_conv_0_bias: PARAMETER target='model.upconv1.conv.0.bias'
+p_model_upconv1_conv_1_weight: PARAMETER target='model.upconv1.conv.1.weight'
+p_model_upconv1_conv_1_bias: PARAMETER target='model.upconv1.conv.1.bias'
+p_model_upconv1_conv_3_weight: PARAMETER target='model.upconv1.conv.3.weight'
+p_model_upconv1_conv_3_bias: PARAMETER target='model.upconv1.conv.3.bias'
+p_model_upconv1_conv_4_weight: PARAMETER target='model.upconv1.conv.4.weight'
+p_model_upconv1_conv_4_bias: PARAMETER target='model.upconv1.conv.4.bias'
+p_model_upconv2_conv_0_weight: PARAMETER target='model.upconv2.conv.0.weight'
+p_model_upconv2_conv_0_bias: PARAMETER target='model.upconv2.conv.0.bias'
+p_model_upconv2_conv_1_weight: PARAMETER target='model.upconv2.conv.1.weight'
+p_model_upconv2_conv_1_bias: PARAMETER target='model.upconv2.conv.1.bias'
+p_model_upconv2_conv_3_weight: PARAMETER target='model.upconv2.conv.3.weight'
+p_model_upconv2_conv_3_bias: PARAMETER target='model.upconv2.conv.3.bias'
+p_model_upconv2_conv_4_weight: PARAMETER target='model.upconv2.conv.4.weight'
+p_model_upconv2_conv_4_bias: PARAMETER target='model.upconv2.conv.4.bias'
+p_model_upconv3_conv_0_weight: PARAMETER target='model.upconv3.conv.0.weight'
+p_model_upconv3_conv_0_bias: PARAMETER target='model.upconv3.conv.0.bias'
+p_model_upconv3_conv_1_weight: PARAMETER target='model.upconv3.conv.1.weight'
+p_model_upconv3_conv_1_bias: PARAMETER target='model.upconv3.conv.1.bias'
+p_model_upconv3_conv_3_weight: PARAMETER target='model.upconv3.conv.3.weight'
+p_model_upconv3_conv_3_bias: PARAMETER target='model.upconv3.conv.3.bias'
+p_model_upconv3_conv_4_weight: PARAMETER target='model.upconv3.conv.4.weight'
+p_model_upconv3_conv_4_bias: PARAMETER target='model.upconv3.conv.4.bias'
+p_model_upconv4_conv_0_weight: PARAMETER target='model.upconv4.conv.0.weight'
+p_model_upconv4_conv_0_bias: PARAMETER target='model.upconv4.conv.0.bias'
+p_model_upconv4_conv_1_weight: PARAMETER target='model.upconv4.conv.1.weight'
+p_model_upconv4_conv_1_bias: PARAMETER target='model.upconv4.conv.1.bias'
+p_model_upconv4_conv_3_weight: PARAMETER target='model.upconv4.conv.3.weight'
+p_model_upconv4_conv_3_bias: PARAMETER target='model.upconv4.conv.3.bias'
+p_model_upconv4_conv_4_weight: PARAMETER target='model.upconv4.conv.4.weight'
+p_model_upconv4_conv_4_bias: PARAMETER target='model.upconv4.conv.4.bias'
+p_model_conv_cls_0_weight: PARAMETER target='model.conv_cls.0.weight'
+p_model_conv_cls_0_bias: PARAMETER target='model.conv_cls.0.bias'
+p_model_conv_cls_2_weight: PARAMETER target='model.conv_cls.2.weight'
+p_model_conv_cls_2_bias: PARAMETER target='model.conv_cls.2.bias'
+p_model_conv_cls_4_weight: PARAMETER target='model.conv_cls.4.weight'
+p_model_conv_cls_4_bias: PARAMETER target='model.conv_cls.4.bias'
+p_model_conv_cls_6_weight: PARAMETER target='model.conv_cls.6.weight'
+p_model_conv_cls_6_bias: PARAMETER target='model.conv_cls.6.bias'
+p_model_conv_cls_8_weight: PARAMETER target='model.conv_cls.8.weight'
+p_model_conv_cls_8_bias: PARAMETER target='model.conv_cls.8.bias'
+c_lifted_tensor_0: CONSTANT_TENSOR target='lifted_tensor_0'
+c_lifted_tensor_1: CONSTANT_TENSOR target='lifted_tensor_1'
+b_model_basenet_slice1_1_running_mean: BUFFER target='model.basenet.slice1.1.running_mean' persistent=True
+b_model_basenet_slice1_1_running_var: BUFFER target='model.basenet.slice1.1.running_var' persistent=True
+b_model_basenet_slice1_1_num_batches_tracked: BUFFER target='model.basenet.slice1.1.num_batches_tracked' persistent=True
+b_model_basenet_slice1_4_running_mean: BUFFER target='model.basenet.slice1.4.running_mean' persistent=True
+b_model_basenet_slice1_4_running_var: BUFFER target='model.basenet.slice1.4.running_var' persistent=True
+b_model_basenet_slice1_4_num_batches_tracked: BUFFER target='model.basenet.slice1.4.num_batches_tracked' persistent=True
+b_model_basenet_slice1_8_running_mean: BUFFER target='model.basenet.slice1.8.running_mean' persistent=True
+b_model_basenet_slice1_8_running_var: BUFFER target='model.basenet.slice1.8.running_var' persistent=True
+b_model_basenet_slice1_8_num_batches_tracked: BUFFER target='model.basenet.slice1.8.num_batches_tracked' persistent=True
+b_model_basenet_slice1_11_running_mean: BUFFER target='model.basenet.slice1.11.running_mean' persistent=True
+b_model_basenet_slice1_11_running_var: BUFFER target='model.basenet.slice1.11.running_var' persistent=True
+b_model_basenet_slice1_11_num_batches_tracked: BUFFER target='model.basenet.slice1.11.num_batches_tracked' persistent=True
+b_model_basenet_slice2_15_running_mean: BUFFER target='model.basenet.slice2.15.running_mean' persistent=True
+b_model_basenet_slice2_15_running_var: BUFFER target='model.basenet.slice2.15.running_var' persistent=True
+b_model_basenet_slice2_15_num_batches_tracked: BUFFER target='model.basenet.slice2.15.num_batches_tracked' persistent=True
+b_model_basenet_slice2_18_running_mean: BUFFER target='model.basenet.slice2.18.running_mean' persistent=True
+b_model_basenet_slice2_18_running_var: BUFFER target='model.basenet.slice2.18.running_var' persistent=True
+b_model_basenet_slice2_18_num_batches_tracked: BUFFER target='model.basenet.slice2.18.num_batches_tracked' persistent=True
+b_model_basenet_slice3_21_running_mean: BUFFER target='model.basenet.slice3.21.running_mean' persistent=True
+b_model_basenet_slice3_21_running_var: BUFFER target='model.basenet.slice3.21.running_var' persistent=True
+b_model_basenet_slice3_21_num_batches_tracked: BUFFER target='model.basenet.slice3.21.num_batches_tracked' persistent=True
+b_model_basenet_slice3_25_running_mean: BUFFER target='model.basenet.slice3.25.running_mean' persistent=True
+b_model_basenet_slice3_25_running_var: BUFFER target='model.basenet.slice3.25.running_var' persistent=True
+b_model_basenet_slice3_25_num_batches_tracked: BUFFER target='model.basenet.slice3.25.num_batches_tracked' persistent=True
+b_model_basenet_slice3_28_running_mean: BUFFER target='model.basenet.slice3.28.running_mean' persistent=True
+b_model_basenet_slice3_28_running_var: BUFFER target='model.basenet.slice3.28.running_var' persistent=True
+b_model_basenet_slice3_28_num_batches_tracked: BUFFER target='model.basenet.slice3.28.num_batches_tracked' persistent=True
+b_model_basenet_slice4_31_running_mean: BUFFER target='model.basenet.slice4.31.running_mean' persistent=True
+b_model_basenet_slice4_31_running_var: BUFFER target='model.basenet.slice4.31.running_var' persistent=True
+b_model_basenet_slice4_31_num_batches_tracked: BUFFER target='model.basenet.slice4.31.num_batches_tracked' persistent=True
+b_model_basenet_slice4_35_running_mean: BUFFER target='model.basenet.slice4.35.running_mean' persistent=True
+b_model_basenet_slice4_35_running_var: BUFFER target='model.basenet.slice4.35.running_var' persistent=True
+b_model_basenet_slice4_35_num_batches_tracked: BUFFER target='model.basenet.slice4.35.num_batches_tracked' persistent=True
+b_model_basenet_slice4_38_running_mean: BUFFER target='model.basenet.slice4.38.running_mean' persistent=True
+b_model_basenet_slice4_38_running_var: BUFFER target='model.basenet.slice4.38.running_var' persistent=True
+b_model_basenet_slice4_38_num_batches_tracked: BUFFER target='model.basenet.slice4.38.num_batches_tracked' persistent=True
+b_model_upconv1_conv_1_running_mean: BUFFER target='model.upconv1.conv.1.running_mean' persistent=True
+b_model_upconv1_conv_1_running_var: BUFFER target='model.upconv1.conv.1.running_var' persistent=True
+b_model_upconv1_conv_1_num_batches_tracked: BUFFER target='model.upconv1.conv.1.num_batches_tracked' persistent=True
+b_model_upconv1_conv_4_running_mean: BUFFER target='model.upconv1.conv.4.running_mean' persistent=True
+b_model_upconv1_conv_4_running_var: BUFFER target='model.upconv1.conv.4.running_var' persistent=True
+b_model_upconv1_conv_4_num_batches_tracked: BUFFER target='model.upconv1.conv.4.num_batches_tracked' persistent=True
+b_model_upconv2_conv_1_running_mean: BUFFER target='model.upconv2.conv.1.running_mean' persistent=True
+b_model_upconv2_conv_1_running_var: BUFFER target='model.upconv2.conv.1.running_var' persistent=True
+b_model_upconv2_conv_1_num_batches_tracked: BUFFER target='model.upconv2.conv.1.num_batches_tracked' persistent=True
+b_model_upconv2_conv_4_running_mean: BUFFER target='model.upconv2.conv.4.running_mean' persistent=True
+b_model_upconv2_conv_4_running_var: BUFFER target='model.upconv2.conv.4.running_var' persistent=True
+b_model_upconv2_conv_4_num_batches_tracked: BUFFER target='model.upconv2.conv.4.num_batches_tracked' persistent=True
+b_model_upconv3_conv_1_running_mean: BUFFER target='model.upconv3.conv.1.running_mean' persistent=True
+b_model_upconv3_conv_1_running_var: BUFFER target='model.upconv3.conv.1.running_var' persistent=True
+b_model_upconv3_conv_1_num_batches_tracked: BUFFER target='model.upconv3.conv.1.num_batches_tracked' persistent=True
+b_model_upconv3_conv_4_running_mean: BUFFER target='model.upconv3.conv.4.running_mean' persistent=True
+b_model_upconv3_conv_4_running_var: BUFFER target='model.upconv3.conv.4.running_var' persistent=True
+b_model_upconv3_conv_4_num_batches_tracked: BUFFER target='model.upconv3.conv.4.num_batches_tracked' persistent=True
+b_model_upconv4_conv_1_running_mean: BUFFER target='model.upconv4.conv.1.running_mean' persistent=True
+b_model_upconv4_conv_1_running_var: BUFFER target='model.upconv4.conv.1.running_var' persistent=True
+b_model_upconv4_conv_1_num_batches_tracked: BUFFER target='model.upconv4.conv.1.num_batches_tracked' persistent=True
+b_model_upconv4_conv_4_running_mean: BUFFER target='model.upconv4.conv.4.running_mean' persistent=True
+b_model_upconv4_conv_4_running_var: BUFFER target='model.upconv4.conv.4.running_var' persistent=True
+b_model_upconv4_conv_4_num_batches_tracked: BUFFER target='model.upconv4.conv.4.num_batches_tracked' persistent=True
+image: USER_INPUT
+
+# outputs
+permute: USER_OUTPUT
+Ç8
+2pkg.torch.export.ExportedProgram.range_constraints{}B
+ 
