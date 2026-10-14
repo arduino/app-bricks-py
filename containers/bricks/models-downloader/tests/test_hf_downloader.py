@@ -2244,3 +2244,83 @@ def test_download_marker_carries_the_expected_size(tmp_path, monkeypatch, stub_d
     _run_main(monkeypatch, "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q3_K_S", "--output-dir", str(models_dir))
 
     assert seen[0]["size_mb"] == 380.5
+
+
+# --------------------------------------------------------------------------- #
+# main(): the materialized listing follows the download and the delete
+# --------------------------------------------------------------------------- #
+@pytest.fixture
+def listing_root(tmp_path, monkeypatch):
+    """A models root and catalog the listing refreshes run against; returns the file."""
+    import list_models
+
+    base = tmp_path / "models"
+    (base / "llamacpp").mkdir(parents=True)
+    catalog = tmp_path / "models-list.yaml"
+    catalog.write_text("models: []\n")
+    monkeypatch.setattr(list_models, "MODELS_ROOT_DIR", str(base))
+    monkeypatch.setattr(list_models, "MODELS_LIST_PATH", str(catalog))
+    return base / list_models.LISTING_NAME
+
+
+def _listed(listing):
+    return {m["id"]: m for m in json.loads(listing.read_text())["models"]}
+
+
+def test_download_materializes_the_listing_when_it_starts_and_when_it_ends(monkeypatch, stub_download, listing_root, exit_refreshes):
+    model_id = "llamacpp:unsloth/Qwen3-0.6B-GGUF/Q3_K_S"
+    during: list[dict] = []
+    download = hf_downloader.download_matched_files
+
+    def _download(*args, **kwargs):
+        during.append(_listed(listing_root))
+        download(*args, **kwargs)
+
+    monkeypatch.setattr(hf_downloader, "download_matched_files", _download)
+
+    _run_main(monkeypatch, "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q3_K_S", "--output-dir", str(listing_root.parent / "llamacpp"))
+
+    # Named from the marker while in flight (an id of its own, as the live listing gives it)
+    assert [m["downloading"] for m in during[0].values()] == [True]
+    # The end state is written at exit, after the marker is cleared.
+    for refresh in exit_refreshes:
+        refresh()
+    assert _listed(listing_root)[model_id]["installed"] is True
+    assert _listed(listing_root)[model_id]["downloading"] is False
+
+
+def test_failed_download_is_dropped_from_the_listing_at_exit(monkeypatch, stub_download, listing_root, exit_refreshes):
+    def _boom(*_args, **_kwargs):
+        raise OSError("connection reset")
+
+    monkeypatch.setattr(hf_downloader, "download_matched_files", _boom)
+    with pytest.raises(OSError):
+        _run_main(monkeypatch, "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q3_K_S", "--output-dir", str(listing_root.parent / "llamacpp"))
+
+    for refresh in exit_refreshes:
+        refresh()
+    assert _listed(listing_root) == {}
+
+
+def test_delete_materializes_the_listing_at_exit(monkeypatch, stub_download, listing_root, exit_refreshes):
+    import list_models
+
+    models_dir = str(listing_root.parent / "llamacpp")
+    _run_main(monkeypatch, "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q3_K_S", "--output-dir", models_dir)
+    exit_refreshes[0]()
+    assert _listed(listing_root)
+    exit_refreshes.clear()
+    monkeypatch.setattr(list_models, "_REFRESH_AT_EXIT", False)
+
+    _run_main(monkeypatch, "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q3_K_S", "--output-dir", models_dir, "--delete")
+
+    assert len(exit_refreshes) == 1
+    exit_refreshes[0]()
+    assert _listed(listing_root) == {}
+
+
+def test_check_and_info_leave_the_listing_alone(monkeypatch, stub_download, listing_root, exit_refreshes):
+    with pytest.raises(SystemExit):
+        _run_main(monkeypatch, "--model-url", "unsloth/Qwen3-0.6B-GGUF:Q3_K_S", "--output-dir", str(listing_root.parent / "llamacpp"), "--check")
+    assert exit_refreshes == []
+    assert not listing_root.exists()
