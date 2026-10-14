@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 """python-apps-base applies the source patches of its patches/ directory at build time: each must apply to the version
-the image installs, and the FastAPI one must keep FastAPI working."""
+the image installs, the FastAPI one must keep FastAPI working, and the engineio one must keep the Socket.IO client working."""
 
 import os
 import re
@@ -22,6 +22,7 @@ ROOT = Path(__file__).parents[2]
 IMAGE_DIR = ROOT / "containers" / "bricks" / "python-apps-base"
 PATCHES = sorted((IMAGE_DIR / "patches").glob("*.patch"))
 FASTAPI_PATCH = IMAGE_DIR / "patches" / "fastapi-defer-openapi-model-build.patch"
+ENGINEIO_PATCH = IMAGE_DIR / "patches" / "engineio-import-requests-and-websocket-on-first-use.patch"
 
 PATCH_FLAGS = ["-p1", "--forward", "--fuzz=0", "--no-backup-if-mismatch"]
 IMAGE_PATCH_COMMAND = " ".join(["patch", *PATCH_FLAGS, "-d", "/usr/local/lib/python3.13/site-packages", "-i", '"$p"'])
@@ -66,6 +67,14 @@ def patched_site_packages(tmp_path: Path) -> Path:
     """The installed FastAPI, patched as the image does, in a directory that shadows it on PYTHONPATH."""
     site_packages = tmp_path / "site-packages"
     _apply_to_a_copy(FASTAPI_PATCH, site_packages)
+    return site_packages
+
+
+@pytest.fixture
+def engineio_patched_site_packages(tmp_path: Path) -> Path:
+    """The installed engineio, patched as the image does, in a directory that shadows it on PYTHONPATH."""
+    site_packages = tmp_path / "site-packages"
+    _apply_to_a_copy(ENGINEIO_PATCH, site_packages)
     return site_packages
 
 
@@ -151,5 +160,56 @@ def test_openapi_models_build_on_first_use_and_app_models_as_usual(patched_site_
             model.model_rebuild()
             assert model.__pydantic_complete__, model.__name__
         assert models.Contact.model_validate({"name": "x"}).name == "x"
+        """,
+    )
+
+
+@needs_patch
+def test_webui_import_leaves_requests_and_websocket_client_unloaded(engineio_patched_site_packages: Path):
+    """App start time: the Socket.IO client's HTTP libraries load when a client connects, not with the server."""
+    _run_with(
+        engineio_patched_site_packages,
+        """
+        import sys
+        import arduino.app_bricks.web_ui
+        import engineio.client
+
+        assert engineio.client.__file__.startswith(sys.argv[1]), f"not the patched engineio: {engineio.client.__file__}"
+        loaded = [m for m in ("requests", "urllib3", "websocket") if m in sys.modules]
+        assert loaded == [], f"loaded with the web UI: {loaded}"
+        """,
+    )
+
+
+@needs_patch
+def test_socketio_client_still_connects_over_polling_and_websocket(engineio_patched_site_packages: Path):
+    _run_with(
+        engineio_patched_site_packages,
+        """
+        import sys
+        import tempfile
+        import threading
+        import time
+        from pathlib import Path
+
+        import socketio
+        from arduino.app_bricks.web_ui.web_ui import WebUI
+
+        with tempfile.TemporaryDirectory() as assets:
+            Path(assets, "index.html").write_text("<html><body>Hello</body></html>")
+            ui = WebUI(port=0, assets_dir_path=assets)
+            ui.start()
+            threading.Thread(target=ui.execute, daemon=True).start()
+            time.sleep(1)
+            try:
+                for transports in (["polling"], ["websocket"]):
+                    client = socketio.Client()
+                    client.connect(ui.local_url, transports=transports, wait_timeout=10)
+                    assert client.connected and client.transport() == transports[0], (transports, client.transport())
+                    client.emit("hello", {"transport": transports[0]})  # Through the write loop of that transport
+                    client.disconnect()
+                assert "requests" in sys.modules and "websocket" in sys.modules  # Imported by the connections
+            finally:
+                ui.stop()
         """,
     )
