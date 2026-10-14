@@ -40,8 +40,8 @@ class EdgeImpulseModel:
         """Resolve the model configured for the brick, without opening it yet.
 
         Args:
-            confidence (float | None): Score the results must reach, between 0 and 1. None takes everything the
-                model reports.
+            confidence (float | None): Score the results must reach, between 0 and 1. None takes the boxes and
+                tracks reaching the score threshold the model was exported with, and every class score.
 
         Raises:
             RuntimeError: If no model is configured.
