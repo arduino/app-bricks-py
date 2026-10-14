@@ -263,6 +263,7 @@ def test_open_and_infer(server):
     assert d["confidence"] is None, "without a confidence the connection receives what reaches the exported value"
     k, d = server.frame(s, fill=0)
     assert k == P.RESULT, d
+    assert d["classes"] == {"first_feature": 0}, "every class score without a confidence, even below the exported value"
     assert set(d) == {"seq", "ts_ns", "boxes", "tracks", "classes", "anomaly", "timing_ms", "slots"}
     assert d["tracks"] == [], "a model without object tracking reports no tracks"
     assert set(d["timing_ms"]) == {"recv", "resize", "encode", "lock", "inference", "dsp", "nn", "server"}
