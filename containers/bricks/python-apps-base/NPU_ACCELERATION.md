@@ -1,14 +1,13 @@
 # Running ONNX and LiteRT models on the NPU from an Arduino App
 
 This guide shows how an App's own Python code (`python/main.py`) can run a model on the
-board's Hexagon NPU, for example on the VENTUNO Q. It covers two frameworks:
+board's Hexagon NPU, like VENTUNO Q. It covers two frameworks:
 
 1. [ONNX Runtime](#1-onnx-runtime) with the QNN execution provider
 2. [LiteRT](#2-litert) (TensorFlow Lite) with the QNN delegate
 
 Each chapter lists what to install, how to configure it, and a minimal `main.py` that starts
-an accelerated App. Every command and snippet below was run on a board,
-through `arduino-app-cli app start` (see [Tested on](#tested-on)).
+and use an accelerated model.
 
 ## How it works
 
@@ -20,23 +19,17 @@ the calls from the CPU to the NPU, is installed and configured at every start.
 framework it uses: the framework itself plus Qualcomm's AI runtime, QAIRT (also called QNN).
 Each chapter below shows how to install it for its framework.
 
-QAIRT has two halves, and both must come from **the same QAIRT release**:
-
-- **CPU side**: `libQnnHtp.so` and its helpers, loaded by the framework inside the App's
-  process.
-- **NPU side**: the skel library for the Hexagon architecture of the NPU, like
-  `libQnnHtpV75Skel.so` for the Hexagon v75 architecture (for example the 8275). It runs on
-  the NPU, and the NPU does not look for it inside the App: fastrpc loads it from the folders
-  listed in the **`ADSP_LIBRARY_PATH`** environment variable. If that variable is missing, or
-  points at another release or another architecture, the NPU cannot open a session.
+All QAIRT files must come from **the same QAIRT release**. The NPU finds its part of them
+through the **`ADSP_LIBRARY_PATH`** environment variable: if it is missing or points at the
+wrong files, the model can't run on the NPU. The next chapters show how to set this up for
+each framework.
 
 ---
 
 ## 1. ONNX Runtime
 
 The `onnxruntime-qnn` package is a plugin execution provider. It ships the QAIRT release it
-was built with: CPU-side libraries and NPU-side skels, side by side in one folder. Nothing has
-to be downloaded by hand.
+was built with, so nothing has to be downloaded by hand.
 
 ### 1.1 Install
 
@@ -54,14 +47,7 @@ pair. If you pin one of them, pin the other to a version that matches it.
 At the first start, `run.sh` installs them into the App's `.cache/.venv`. Later starts skip
 the install.
 
-### 1.2 Provider options
-
-| Setting | Value | Why |
-|---|---|---|
-| `backend_path` option | `onnxruntime_qnn.get_qnn_htp_path()` | **Required.** Path of the wheel's `libQnnHtp.so`. The provider also points `ADSP_LIBRARY_PATH` at its folder, so the NPU loads the skel shipped with the wheel. Without it, session creation fails with `QNN_DEVICE_ERROR_INVALID_CONFIG`. |
-| `htp_performance_mode` option | `sustained_high_performance` | Raises the NPU clocks: about 3.5x faster than the default on MobileNet-v2. |
-
-### 1.3 Minimal App
+### 1.2 Minimal App
 
 ```text
 my-onnx-app/
@@ -118,11 +104,24 @@ def loop():
 App.run(user_loop=loop)
 ```
 
-QNN needs static input shapes, and AI Hub models have them. The quantized
-`mobilenet_v2-onnx-w8a8.zip` from the same release takes a `uint8` input instead of
-`float32`: read the type from `model_input.type`.
+How the code works:
 
-### 1.4 Expected output
+- **Imports.** `onnxruntime` is the standard ONNX Runtime. `onnxruntime_qnn` is the plugin
+  that adds the NPU to it: importing it is the first step to turn QNN on.
+- **Turning QNN on.** `register_execution_provider_library()` loads the plugin into ONNX
+  Runtime, and `get_ep_devices()` finds the NPU that the plugin exposes.
+  `add_provider_for_devices()` tells the session to run the model on that NPU, with the
+  options described in [1.4](#14-provider-options).
+- **Loading the model.** `InferenceSession` loads the model and prepares it for the NPU. This
+  happens once, when the App starts.
+- **The loop.** `App.run()` calls `loop()` again and again. Each call runs one inference and
+  prints how long it took. The input here is a dummy array of zeros: in a real App, pass your
+  own data, like a camera frame, in place of `data`.
+
+The quantized version of the model, `mobilenet_v2-onnx-w8a8.zip`, takes `uint8` input
+instead of `float32`: change the `dtype` of `data` to match.
+
+### 1.3 Expected output
 
 ```text
 ======== App is starting ============================
@@ -135,6 +134,15 @@ Inference: 2.6 ms
 
 Both warnings are expected. The second one is the provider pointing `ADSP_LIBRARY_PATH` at
 the wheel.
+
+### 1.4 Provider options
+
+The `main.py` above passes these options to the QNN execution provider:
+
+| Setting | Value | Why |
+|---|---|---|
+| `backend_path` option | `onnxruntime_qnn.get_qnn_htp_path()` | **Required.** Path of the wheel's `libQnnHtp.so`. The provider also points `ADSP_LIBRARY_PATH` at its folder, so the NPU uses the QAIRT files shipped with the wheel. Without it, session creation fails with `QNN_DEVICE_ERROR_INVALID_CONFIG`. |
+| `htp_performance_mode` option | `sustained_high_performance` | Raises the NPU clocks: about 3.5x faster than the default on MobileNet-v2. |
 
 ### 1.5 Checking that the model runs on the NPU
 
@@ -154,7 +162,7 @@ running it there.
 Opening a session compiles the graph for the NPU, and this takes longer as the graph gets
 bigger. ONNX Runtime can save the compiled graph (an "EP context" model) and load it on the
 next start. Keep it in `/app/.cache`, which is part of the App folder on the board and
-survives restarts. In the `main.py` of 1.3, add `import os` and replace the
+survives restarts. In the `main.py` of 1.2, add `import os` and replace the
 `session = ort.InferenceSession(...)` line with:
 
 ```python
@@ -177,8 +185,8 @@ change either.
 ## 2. LiteRT
 
 `ai-edge-litert` has no NPU support of its own. The NPU is reached through the **QNN TFLite
-delegate**, which comes from the QAIRT SDK: the App must carry the delegate, the CPU-side
-QNN libraries and the NPU-side skel, all from one SDK release.
+delegate**, which comes from the QAIRT SDK: the App must carry the delegate and the QNN
+libraries it needs, all from one SDK release.
 
 ### 2.1 Install the Python package
 
@@ -222,30 +230,22 @@ unzip -j ~/qairt.zip -d "$APP_DIR/qairt/dsp" \
 rm ~/qairt.zip
 ```
 
-| File | Size | Runs on | Role |
-|---|---|---|---|
-| `lib/libQnnTFLiteDelegate.so` | 1 MB | CPU | The delegate that `load_delegate()` opens. |
-| `lib/libQnnHtp.so` | 4.5 MB | CPU | QNN backend for the NPU (HTP). |
-| `lib/libQnnHtpPrepare.so` | 83 MB | CPU | Compiles the graph for the NPU when the model is loaded. Without it, LiteRT gives the delegate no nodes and the model runs on the CPU, with only error lines in the log. |
-| `lib/libQnnHtpV<arch>Stub.so`, like `libQnnHtpV75Stub.so` | 0.5 MB | CPU | Forwards calls to the NPU through fastrpc. |
-| `dsp/libQnnHtpV<arch>Skel.so`, like `libQnnHtpV75Skel.so` | 11-14 MB | NPU | Loaded by the NPU from `ADSP_LIBRARY_PATH`. |
+| File | Size | Role |
+|---|---|---|
+| `lib/libQnnTFLiteDelegate.so` | 1 MB | The delegate that `load_delegate()` opens. |
+| `lib/libQnnHtp.so` | 4.5 MB | QNN backend for the NPU. |
+| `lib/libQnnHtpPrepare.so` | 83 MB | Prepares the model for the NPU when it is loaded. Without it, the model runs on the CPU. |
+| `lib/libQnnHtpV<arch>Stub.so`, like `libQnnHtpV75Stub.so` | 0.5 MB | Connects the App to the NPU. |
+| `dsp/libQnnHtpV<arch>Skel.so`, like `libQnnHtpV75Skel.so` | 11-14 MB | The part of QAIRT that the NPU loads, from `ADSP_LIBRARY_PATH`. |
 
 Notes:
 
-- A stub and skel of the wrong architecture make the App fail at start (see
+- Files for the wrong Hexagon architecture make the App fail at start (see
   [Troubleshooting](#troubleshooting)).
 - The QAIRT libraries are covered by Qualcomm's license (`LICENSE.pdf` in the SDK zip).
   Check it before you share an App that contains them.
 
-### 2.3 Environment variables and delegate options
-
-| Setting | Value | Why |
-|---|---|---|
-| `ADSP_LIBRARY_PATH` | `/app/qairt/dsp` | **Required.** Without it the NPU can't find the skel (`Failed to load skel, error: 1002`) and `Interpreter()` raises `RuntimeError: Restored original execution plan after delegate application failure.` Set it before `load_delegate()`. The delegate option `"skel_library_dir": "/app/qairt/dsp"` works the same way. |
-| `backend_type` option | `htp` | Required: runs the model on the NPU. |
-| `htp_performance_mode` option | `1` (sustained high performance) | Raises the NPU clocks: about 3.5x faster than the default on MobileNet-v2. |
-
-### 2.4 Minimal App
+### 2.3 Minimal App
 
 ```text
 my-litert-app/
@@ -287,7 +287,7 @@ from arduino.app_utils import App
 QAIRT = "/app/qairt"
 MODEL = "/app/python/models/mobilenet_v2.tflite"
 
-# The NPU must run the skel libraries of the same QAIRT release as the delegate.
+# Tell the NPU where to find its QAIRT files.
 os.environ["ADSP_LIBRARY_PATH"] = f"{QAIRT}/dsp"
 
 delegate = load_delegate(
@@ -311,9 +311,24 @@ def loop():
 App.run(user_loop=loop)
 ```
 
-The quantized `mobilenet_v2-tflite-w8a8.zip` works with the same code.
+How the code works:
 
-### 2.5 Expected output
+- **Imports.** `ai_edge_litert` is the standard LiteRT interpreter. Here QNN is not a Python
+  package: it is the delegate library copied into `qairt/lib` in
+  [2.2](#22-install-qairt-into-the-app).
+- **Turning QNN on.** `ADSP_LIBRARY_PATH` tells the NPU where to find its part of QAIRT, in
+  `qairt/dsp`. `load_delegate()` opens the QNN delegate, with the options described in
+  [2.5](#25-environment-variables-and-delegate-options).
+- **Loading the model.** Passing the delegate to `Interpreter` makes LiteRT run the model on
+  the NPU, and `allocate_tensors()` prepares it. This happens once, when the App starts.
+- **The loop.** `App.run()` calls `loop()` again and again. Each call runs one inference and
+  prints how long it took. The input here is a dummy array of zeros, set once with
+  `set_tensor()`: in a real App, call `set_tensor()` with your own data, like a camera frame,
+  before each `invoke()`.
+
+The quantized version of the model, `mobilenet_v2-tflite-w8a8.zip`, works with the same code.
+
+### 2.4 Expected output
 
 ```text
 ======== App is starting ============================
@@ -329,6 +344,16 @@ Inference: 2.3 ms
 
 The `<E>` lines come from `htp_performance_mode` and are harmless: the speed-up applies
 anyway.
+
+### 2.5 Environment variables and delegate options
+
+The `main.py` above sets this environment variable and these delegate options:
+
+| Setting | Value | Why |
+|---|---|---|
+| `ADSP_LIBRARY_PATH` | `/app/qairt/dsp` | **Required.** Without it the NPU can't find its QAIRT files (`Failed to load skel, error: 1002`) and `Interpreter()` raises `RuntimeError: Restored original execution plan after delegate application failure.` Set it before `load_delegate()`. The delegate option `"skel_library_dir": "/app/qairt/dsp"` works the same way. |
+| `backend_type` option | `htp` | Required: runs the model on the NPU. |
+| `htp_performance_mode` option | `1` (sustained high performance) | Raises the NPU clocks: about 3.5x faster than the default on MobileNet-v2. |
 
 ### 2.6 Checking that the model runs on the NPU
 
@@ -349,10 +374,10 @@ INFO: [Qnn Delegate] TfLiteQnnDelegate delegate: 71 nodes delegated out of 71 no
 
 | Symptom in the App log | Cause | Fix |
 |---|---|---|
-| ONNX: `QNN SetupBackend failed ... QNN_DEVICE_ERROR_INVALID_CONFIG`, CPU-like timings | The `backend_path` option is missing | Pass it, as in 1.3 |
+| ONNX: `QNN SetupBackend failed ... QNN_DEVICE_ERROR_INVALID_CONFIG`, CPU-like timings | The `backend_path` option is missing | Pass it, as in 1.2 |
 | ONNX: `Unable to set HTP power configurations` | `htp_performance_mode` is `burst` | Use `sustained_high_performance` |
-| LiteRT: `Failed to load skel, error: 1002` ... `error=14001`, then `RuntimeError: Restored original execution plan after delegate application failure.` | `ADSP_LIBRARY_PATH` is missing or wrong, or the skel comes from another QAIRT release | Point it at `/app/qairt/dsp` before `load_delegate()`, and take every file from one SDK zip |
-| LiteRT: `Failed to load skel, error: 4000` ... `error: 14001`, then the same `RuntimeError` | The stub and skel in `qairt/` are for another Hexagon architecture | Extract the ones for the board's architecture (`HEXAGON_ARCH` in 2.2) |
+| LiteRT: `Failed to load skel, error: 1002` ... `error=14001`, then `RuntimeError: Restored original execution plan after delegate application failure.` | `ADSP_LIBRARY_PATH` is missing or wrong, or the files in `qairt/` come from different QAIRT releases | Point it at `/app/qairt/dsp` before `load_delegate()`, and take every file from one SDK zip |
+| LiteRT: `Failed to load skel, error: 4000` ... `error: 14001`, then the same `RuntimeError` | The files in `qairt/` are for another Hexagon architecture | Extract the ones for the board's architecture (`HEXAGON_ARCH` in 2.2) |
 | LiteRT: `PrepareLibLoader Failed loading libQnnHtpPrepare.so`, CPU-like timings | `libQnnHtpPrepare.so` is missing | Add it to `qairt/lib` |
 
 ## Measured performance
