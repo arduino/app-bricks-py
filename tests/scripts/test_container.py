@@ -183,6 +183,110 @@ def test_check_bake_reports_missing_wrong_and_spurious_parent_links(tmp_path):
     ]
 
 
+# --- layers
+
+
+def layer_stage(name: str, alias: str) -> str:
+    return parent_from(name).replace("\n", f" AS {alias}\n")
+
+
+# A layer image FROM scratch that two runner bases copy through a stage of their own, as aihub-framework.
+LAYERED = {
+    **TREE,
+    "aihub-framework": ("base", "FROM scratch\nCOPY aihub/ /opt/aihub/\n"),
+    "aihub-models-runner": (
+        "ai",
+        "FROM ghcr.io/astral-sh/uv:0.10.3 AS uv\n"
+        + layer_stage("aihub-framework", "framework")
+        + parent_from("qairt-common-base")
+        + "COPY --from=framework /opt/aihub/ /opt/aihub/\n",
+    ),
+    "aihub-onnx-models-runner": (
+        "ai",
+        layer_stage("aihub-framework", "framework") + parent_from("python-slim") + "COPY --from=framework /opt/aihub/ /opt/aihub/\n",
+    ),
+    "ocr-runner": ("ai", parent_from("aihub-onnx-models-runner")),
+}
+
+LAYER_LINKS = {
+    **PARENT_LINKS,
+    "aihub_models_runner": {
+        "ghcr.io/arduino/app-bricks/qairt-common-base:local": "target:qairt-common-base",
+        "ghcr.io/arduino/app-bricks/aihub-framework:local": "target:aihub-framework",
+    },
+    "aihub_onnx_models_runner": {
+        "ghcr.io/arduino/app-bricks/python-slim:local": "target:python-slim",
+        "ghcr.io/arduino/app-bricks/aihub-framework:local": "target:aihub-framework",
+    },
+    "ocr_runner": {"ghcr.io/arduino/app-bricks/aihub-onnx-models-runner:local": "target:aihub-onnx-models-runner"},
+}
+
+
+def layered_bake_definition(**contexts: dict[str, str]) -> dict:
+    return {"target": {name: {"contexts": contexts.get(name.replace("-", "_"), {})} for name in LAYERED}}
+
+
+def test_a_layer_is_a_repository_image_copied_from_through_a_stage(tmp_path):
+    containers = Containers(make_containers_dir(tmp_path, LAYERED))
+    assert containers.base["aihub-framework"] == "scratch"
+    assert containers.parent["aihub-framework"] is None
+    assert containers.layers["aihub-framework"] == []
+    # The layer stage does not change the image the runner builds on.
+    assert containers.parent["aihub-onnx-models-runner"] == "python-slim"
+    assert containers.layers["aihub-onnx-models-runner"] == ["aihub-framework"]
+    assert containers.layers["ocr-runner"] == [], "a child does not inherit the layers of its parent"
+    assert containers.dependents("aihub-framework") == ["aihub-models-runner", "aihub-onnx-models-runner"]
+
+
+def test_a_stage_from_the_parent_itself_is_not_a_layer(tmp_path):
+    spec = {
+        "python-slim": ("base", "FROM python:3.13\n"),
+        "builder-user": ("ai", layer_stage("python-slim", "builder") + parent_from("python-slim") + "COPY --from=builder /a /a\n"),
+    }
+    containers = Containers(make_containers_dir(tmp_path, spec))
+    assert containers.parent["builder-user"] == "python-slim"
+    assert containers.layers["builder-user"] == []
+
+
+def test_unknown_layer_is_rejected(tmp_path):
+    spec = {"python-slim": ("base", "FROM python:3.13\n"), "runner": ("ai", layer_stage("ghost", "g") + parent_from("python-slim"))}
+    with pytest.raises(ContainerError, match="copies from unknown container 'ghost'"):
+        Containers(make_containers_dir(tmp_path, spec))
+
+
+def test_closure_follows_layers_in_both_directions(tmp_path):
+    containers = Containers(make_containers_dir(tmp_path, LAYERED))
+    # A layer pulls in every image copying from it, their children and their bases.
+    assert containers.closure(["aihub-framework"]) == [
+        "aihub-framework",
+        "aihub-models-runner",
+        "aihub-onnx-models-runner",
+        "gesture-recognition-runner",
+        "ocr-runner",
+        "python-slim",
+        "qairt-common-base",
+    ]
+    # A leaf pulls in the layers its bases copy from, not the siblings sharing them.
+    assert containers.closure(["ocr-runner"]) == ["aihub-framework", "aihub-onnx-models-runner", "ocr-runner", "python-slim"]
+
+
+def test_check_bake_requires_the_layer_links(tmp_path):
+    containers = Containers(make_containers_dir(tmp_path, LAYERED))
+    assert containers.check_bake(layered_bake_definition(**LAYER_LINKS)) == []
+
+    links = dict(LAYER_LINKS)
+    links["aihub_onnx_models_runner"] = {"ghcr.io/arduino/app-bricks/python-slim:local": "target:python-slim"}
+    assert containers.check_bake(layered_bake_definition(**links)) == [
+        "bake target 'aihub-onnx-models-runner' links python-slim but its Dockerfile builds FROM python-slim and copies from aihub-framework",
+    ]
+
+
+def test_show_lists_the_layers_and_the_images_copying_from_them(tmp_path):
+    containers = Containers(make_containers_dir(tmp_path, LAYERED))
+    assert "  layers:     aihub-framework\n" in containers.describe("aihub-onnx-models-runner")
+    assert "  copied by:  aihub-models-runner, aihub-onnx-models-runner\n" in containers.describe("aihub-framework")
+
+
 # --- scaffold
 
 BAKE = """group "default" {

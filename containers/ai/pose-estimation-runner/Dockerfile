@@ -5,17 +5,10 @@
 ARG REGISTRY
 ARG BASE_IMAGE_VERSION=latest
 
-FROM ghcr.io/astral-sh/uv:0.13.0@sha256:cdc6093146eb3ff6a40107b38f008b789e050e77ad87865e381d9917da55a168 AS uv
-
-FROM ${REGISTRY}app-bricks/aihub-models-runner:${BASE_IMAGE_VERSION}
+FROM ${REGISTRY}app-bricks/aihub-litert-models-runner:${BASE_IMAGE_VERSION}
 
 ARG DEBIAN_FRONTEND=noninteractive
 
+# Code and models only: OpenCV and ai-edge-litert, which this runner used to install
+# itself, now come from the base image, where every LiteRT runner shares one copy.
 COPY . .
-
-# uv is only mounted while installing, it is not part of the image
-RUN --mount=from=uv,source=/uv,target=/bin/uv \
-    set -ex; \
-    uv export --frozen | uv pip install --python /opt/venv/bin/python --no-cache-dir --require-hashes -r -; \
-    rm pyproject.toml uv.lock; \
-    python -m compileall /opt/venv
