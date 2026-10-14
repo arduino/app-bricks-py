@@ -6,6 +6,7 @@
 
 import json
 import socket
+import socketserver
 import subprocess
 import sys
 import threading
@@ -249,6 +250,58 @@ def test_stream_raises_connection_failed_without_a_response(closed_port: str):
     with pytest.raises(_http.ConnectionFailed):
         with _http.stream("POST", f"{closed_port}/stream", json={}):
             pass
+
+
+@pytest.fixture
+def unix_server(tmp_path) -> Iterator[tuple[str, list[tuple[str, str, dict[str, str]]]]]:
+    """An HTTP server on a Unix domain socket, answering GET /scan with JSON; yields (socket path, received requests)."""
+    if not hasattr(socket, "AF_UNIX"):
+        pytest.skip("AF_UNIX not available on this platform")
+    received: list[tuple[str, str, dict[str, str]]] = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            received.append((self.command, self.path, dict(self.headers)))
+            body = json.dumps({"access_points": []} if self.path == "/scan" else {"error": "not found"}).encode()
+            self.send_response(200 if self.path == "/scan" else 404)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format: str, *args: object) -> None:
+            pass
+
+    class UnixHTTPServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
+        pass
+
+    path = str(tmp_path / "scanner with space.sock")
+    httpd = UnixHTTPServer(path, Handler)
+    threading.Thread(target=httpd.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True).start()
+    yield path, received
+    httpd.shutdown()
+    httpd.server_close()
+
+
+def test_a_service_on_a_unix_socket_is_reached_through_its_http_unix_url(unix_server):
+    path, received = unix_server
+    url = _http.unix_socket_url(path)
+
+    assert url == "http+unix://" + path.replace("/", "%2F").replace(" ", "%20")
+    response = _http.get(f"{url}/scan", timeout=5)
+    assert response.status_code == 200
+    assert response.json() == {"access_points": []}
+    assert _http.get(f"{url}/missing").status_code == 404
+    method, request_path, headers = received[0]
+    assert (method, request_path, headers["Host"]) == ("GET", "/scan", "localhost")
+
+
+def test_a_missing_unix_socket_raises_connection_failed(tmp_path):
+    if not hasattr(socket, "AF_UNIX"):
+        pytest.skip("AF_UNIX not available on this platform")
+    missing = _http.unix_socket_url(str(tmp_path / "missing.sock"))
+    with pytest.raises(_http.ConnectionFailed, match="scan"):
+        _http.get(f"{missing}/scan", timeout=1)
 
 
 def test_importing_the_client_loads_no_http_library():

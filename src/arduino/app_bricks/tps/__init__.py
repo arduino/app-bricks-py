@@ -4,23 +4,18 @@
 
 """Wi-Fi based geolocation through the TPS Location API cloud service."""
 
-import json
 import os
 import re
-import socket
 import threading
 import time
 import uuid
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from typing import TYPE_CHECKING, Any
+from typing import Any
 from urllib.parse import urlsplit
 
 from arduino.app_internal import _http
 from arduino.app_utils import Logger, brick
-
-if TYPE_CHECKING:
-    import http.client
 
 logger = Logger("TPS")
 
@@ -97,22 +92,6 @@ def _build_payload(scan_result: dict[str, Any], street_address: bool) -> dict[st
     if street_address:
         payload["streetAddressLookupType"] = "full"
     return payload
-
-
-def _connect_scanner(path: str, timeout: float) -> "http.client.HTTPConnection":
-    """Open an HTTP connection to the scanner over its Unix domain socket.
-
-    Raises:
-        OSError: The socket cannot be connected.
-    """
-    import http.client  # Imported here: with ssl and email it is a slow import at app start
-
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    sock.settimeout(timeout)
-    sock.connect(path)
-    connection = http.client.HTTPConnection("localhost", timeout=timeout)
-    connection.sock = sock  # Already connected: request() only connects when sock is None
-    return connection
 
 
 @brick
@@ -278,19 +257,13 @@ class TPS:
             RuntimeError: If the scanner is unreachable or the scan failed.
         """
         try:
-            connection = _connect_scanner(self.scanner_socket_path, HTTP_REQ_TIMEOUT_SEC)
-            try:
-                connection.request("GET", "/scan")
-                response = connection.getresponse()
-                body = response.read()
-            finally:
-                connection.close()
-        except OSError as e:
+            response = _http.get(f"{_http.unix_socket_url(self.scanner_socket_path)}/scan", timeout=HTTP_REQ_TIMEOUT_SEC)
+        except _http.ConnectionFailed as e:
             raise RuntimeError(f"Wi-Fi scanner unreachable at {self.scanner_socket_path}: {e}") from e
 
-        if response.status != 200:
-            raise RuntimeError(f"Wi-Fi scan failed: scanner returned HTTP {response.status}")
-        return json.loads(body)
+        if response.status_code != 200:
+            raise RuntimeError(f"Wi-Fi scan failed: scanner returned HTTP {response.status_code}")
+        return response.json()
 
     def _build_headers(self, request_token: str | None, device_id: str | None, opt_in: bool) -> dict[str, str]:
         headers = {

@@ -4,10 +4,11 @@
 
 """The HTTP client of the library, on the Python standard library.
 
-Bricks and peripherals reach the local inference runners, the cloud APIs and the IP cameras with it: one request at a
-time, JSON and multipart bodies, basic authentication, 4xx and 5xx responses returned like any other, a body read as it
-arrives, and a retry on GET. The stdlib client is imported with the first request: on the board it costs about a third
-of ``requests``, which every app with an AI brick would otherwise load before "App started".
+Bricks and peripherals reach the local inference runners, the cloud APIs, the IP cameras and the services on a Unix
+domain socket with it: one request at a time, JSON and multipart bodies, basic authentication, 4xx and 5xx responses
+returned like any other, a body read as it arrives, and a retry on GET. The stdlib client is imported with the first
+request: on the board it costs about a third of ``requests``, which every app with an AI brick would otherwise load
+before "App started".
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ import base64
 import functools
 import json as _json
 import os
+import socket
 import time
 from collections.abc import Generator, Iterator, Mapping
 from contextlib import contextmanager
@@ -40,6 +42,11 @@ _PATH_SAFE = "/:@!$&'()*+,;=%"
 """Characters a URL path holds as they are (RFC 3986 pchar), and % so that what is already percent-encoded stays so."""
 
 _sleep = time.sleep
+
+
+def unix_socket_url(socket_path: str) -> str:
+    """The URL of an HTTP server listening on a Unix domain socket: http+unix://<percent-encoded path>."""
+    return "http+unix://" + quote(socket_path, safe="")
 
 
 class Response:
@@ -273,7 +280,35 @@ def _open(request: urllib.request.Request, timeout: float | None) -> http.client
 
 @functools.cache
 def _opener() -> urllib.request.OpenerDirector:
+    import http.client
     import urllib.request
+
+    class UnixSocketConnection(http.client.HTTPConnection):
+        """An HTTP connection to a server on a Unix domain socket, whose path is the host of the URL."""
+
+        def __init__(self, socket_path: str, **kwargs: Any) -> None:
+            super().__init__("localhost", **kwargs)  # A path is no host name: it would fail the host validation
+            self.socket_path = socket_path
+
+        def connect(self) -> None:
+            self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            if isinstance(self.timeout, int | float):  # Otherwise urllib's "socket default" sentinel: the socket has it already
+                self.sock.settimeout(self.timeout)
+            self.sock.connect(self.socket_path)
+
+    class UnixSocketHandler(urllib.request.AbstractHTTPHandler):
+        """Opens http+unix:// URLs, see unix_socket_url(). No redirects: a service on a socket does not send any."""
+
+        def unix_request(self, request: urllib.request.Request) -> urllib.request.Request:
+            request.add_unredirected_header("Host", "localhost")  # Instead of the socket path
+            return self.do_request_(request)
+
+        def unix_open(self, request: urllib.request.Request) -> http.client.HTTPResponse:
+            return self.do_open(UnixSocketConnection, request)
+
+    # urllib finds the handlers of a scheme by method name, and "http+unix" is not an identifier
+    setattr(UnixSocketHandler, "http+unix_request", UnixSocketHandler.unix_request)  # noqa: B010
+    setattr(UnixSocketHandler, "http+unix_open", UnixSocketHandler.unix_open)  # noqa: B010
 
     class ReturnErrorResponses(urllib.request.HTTPErrorProcessor):
         """Return 4xx and 5xx responses like the others, instead of raising HTTPError; redirects are still followed."""
@@ -285,7 +320,7 @@ def _opener() -> urllib.request.OpenerDirector:
 
         https_response = http_response
 
-    return urllib.request.build_opener(ReturnErrorResponses)
+    return urllib.request.build_opener(ReturnErrorResponses, UnixSocketHandler)
 
 
 def _multipart(files: Files) -> tuple[bytes, str]:
