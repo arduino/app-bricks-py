@@ -103,8 +103,9 @@ class Connection:
     frame exactly a half period after the surviving one, so the spacing is restored in one step at the cost of
     a pause as long as the drift. The connection may ask for a confidence, in OPEN or in a CONF message: the
     model's score threshold follows the lowest one among its connections and each connection receives only the
-    boxes, tracks and classes that reach its own. A CONF message naming a block sets threshold values of the
-    model, for every connection using it. The model is released when the connection closes.
+    boxes, tracks and classes that reach its own, or the exported score threshold without one. A CONF message
+    naming a block sets threshold values of the model, for every connection using it. The model is released when
+    the connection closes.
     """
 
     def __init__(self, sock: socket.socket, registry: ModelRegistry, name: str):
@@ -118,7 +119,7 @@ class Connection:
         self._scratches: list = []  # work buffers of the model, one per frame in flight
         self._scratch_lock = threading.Lock()
         self.slots = 1  # frames the client may keep in flight
-        self.confidence: float | None = None  # the score the results must reach for this connection, None for everything
+        self.confidence: float | None = None  # the score the results must reach for this connection, None for the exported one
         self._pipelined = False  # more than one frame was ever allowed in flight: results may complete out of order
         self._last_sent_seq = 0
         self._last_sent_at: float | None = None
@@ -183,14 +184,15 @@ class Connection:
         self.model.set_confidence(self, confidence)
 
     def filtered(self, result: dict) -> dict:
-        """The result with only the boxes, tracks and classes reaching the confidence of the connection."""
-        if self.confidence is None:
+        """The result with only the boxes, tracks and classes reaching the confidence of the connection, the exported one without."""
+        confidence = self.confidence if self.confidence is not None else self.model.default_confidence
+        if confidence is None:
             return result
         return {
             **result,
-            "boxes": [box for box in result["boxes"] if box["score"] >= self.confidence],
-            "tracks": [track for track in result["tracks"] if track["score"] >= self.confidence],
-            "classes": {label: score for label, score in result["classes"].items() if score >= self.confidence},
+            "boxes": [box for box in result["boxes"] if box["score"] >= confidence],
+            "tracks": [track for track in result["tracks"] if track["score"] >= confidence],
+            "classes": {label: score for label, score in result["classes"].items() if score >= confidence},
         }
 
     def serve_frames(self) -> None:

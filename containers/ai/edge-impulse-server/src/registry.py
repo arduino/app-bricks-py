@@ -247,6 +247,11 @@ class Model:
             return [dict(t) for t in self.thresholds]
 
     @property
+    def default_confidence(self) -> float | None:
+        """The score threshold the .eim was exported with, None for a model without one."""
+        return self._exported_min_score
+
+    @property
     def runner(self) -> Runner:
         """The runner of the first instance, for the load log."""
         return self.instances[0].runner

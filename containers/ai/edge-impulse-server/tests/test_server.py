@@ -246,7 +246,7 @@ def test_open_and_infer(server):
     }
     assert d["slots"] == 1, "one frame in flight until the server runs more instances"
     assert d["object_tracking"] is False and d["thresholds"] == [{"id": 12, "type": "object_detection", "min_score": 0.3}]
-    assert d["confidence"] is None, "without a confidence the connection receives everything the model reports"
+    assert d["confidence"] is None, "without a confidence the connection receives what reaches the exported value"
     k, d = server.frame(s, fill=0)
     assert k == P.RESULT, d
     assert set(d) == {"seq", "ts_ns", "boxes", "tracks", "classes", "anomaly", "timing_ms", "slots"}
@@ -298,7 +298,7 @@ def open_with_confidence(server, name, confidence):
 
 
 def test_each_connection_receives_what_reaches_its_confidence(server):
-    """The fake det model reports one box scoring 0.9, and its score threshold as the anomaly score."""
+    """The fake det model reports the boxes scoring 0.9 and 0.25 that reach its score threshold, and the threshold as the anomaly score."""
     high, k, d = open_with_confidence(server, "det", 0.95)
     assert k == P.OPENED and d["confidence"] == 0.95, d
     assert d["thresholds"][0]["min_score"] == 0.95, "the threshold of the model follows its only connection"
@@ -313,13 +313,15 @@ def test_each_connection_receives_what_reaches_its_confidence(server):
     P.send_json(high, P.CONFIGURE, {"confidence": 0.2})
     k, d = server.read(high)
     assert k == P.CONFIGURE and d["confidence"] == 0.2 and d["thresholds"][0]["min_score"] == 0.2, "a lower confidence at runtime lowers the model"
-    assert len(server.frame(high, seq=3)[1]["boxes"]) == 1
+    assert len(server.frame(high, seq=3)[1]["boxes"]) == 2
     low.close()
     assert server.wait_for(lambda: server.frame(high, seq=4)[1]["anomaly"] == 0.2), "the model follows the connections left"
     plain, k, d = server.open_model("det")
     assert k == P.OPENED and d["confidence"] is None, d
+    k, d = server.frame(plain, seq=1)
+    assert [box["score"] for box in d["boxes"]] == [0.9] and d["anomaly"] == 0.2, "the exported value, whatever the others ask"
     high.close()
-    assert server.wait_for(lambda: server.frame(plain, seq=1)[1]["anomaly"] == 0.3), "back to the exported value when nobody asks for a confidence"
+    assert server.wait_for(lambda: server.frame(plain, seq=2)[1]["anomaly"] == 0.3), "back to the exported value when nobody asks for a confidence"
     plain.close()
 
 
