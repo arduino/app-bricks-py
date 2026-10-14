@@ -23,5 +23,7 @@ services:
     healthcheck:
       test: [ "CMD-SHELL", "wget -q --spider http://localhost:1337/api/info || exit 1" ]
       interval: 2s
+      start_period: 30s
+      start_interval: 250ms
       timeout: 2s
       retries: 25

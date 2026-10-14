@@ -20,5 +20,7 @@ services:
     healthcheck:
       test: [ "CMD-SHELL", "nc -zv gesture_recognition 5002 || exit 1" ]
       interval: 1s
+      start_period: 30s
+      start_interval: 250ms
       timeout: 2s
       retries: 30

@@ -37,5 +37,7 @@ services:
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8085/audio-analytics/v1/api/health"]
       interval: 5s
+      start_period: 30s
+      start_interval: 250ms
       timeout: 5s
       retries: 5
