@@ -116,6 +116,13 @@ def test_get_encodes_the_query_parameters_and_sends_the_headers(server: Server):
     assert response.headers.get("Content-Type") == "application/json"
 
 
+def test_the_url_path_is_percent_encoded_as_requests_does(server: Server):
+    """Spaces and non-ASCII letters get encoded; RFC 3986 path characters and what is already encoded stay as they are."""
+    _http.get(f"{server.url}/feed/São Paulo/geo:45.07;7.68/already%20done/", params={"token": "t k"})
+
+    assert server.received[0][1] == "/feed/S%C3%A3o%20Paulo/geo:45.07;7.68/already%20done/?token=t+k"
+
+
 def test_post_sends_json_with_its_content_type(server: Server):
     response = _http.post(f"{server.url}/items", json={"features": [1.0, 2.5]})
 

@@ -4,7 +4,6 @@
 
 from dataclasses import dataclass
 from typing import Any, Self
-from urllib.parse import quote
 
 from arduino.app_internal import _http
 from arduino.app_utils import brick
@@ -108,7 +107,7 @@ class AirQualityMonitoring:
         Raises:
             AirQualityLookupError: If the API request fails.
         """
-        url = f"{self.city_api_url}{quote(city)}/"
+        url = f"{self.city_api_url}{city}/"
         response = _http.get(url, params={"token": self.__token})
         data = response.json()
         if response.status_code != 200 or data.get("status") != "ok":

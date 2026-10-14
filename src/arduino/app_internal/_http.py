@@ -20,7 +20,7 @@ import time
 from collections.abc import Generator, Iterator, Mapping
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, cast
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode, urlsplit, urlunsplit
 
 if TYPE_CHECKING:
     import http.client
@@ -35,6 +35,9 @@ Auth = tuple[str, str]
 
 BACKOFF_MAX_S = 120.0
 """Longest wait between two retries."""
+
+_PATH_SAFE = "/:@!$&'()*+,;=%"
+"""Characters a URL path holds as they are (RFC 3986 pchar), and % so that what is already percent-encoded stays so."""
 
 _sleep = time.sleep
 
@@ -243,6 +246,7 @@ def _build_request(
 ) -> urllib.request.Request:
     import urllib.request  # Imported here, with http.client: slow imports at app start, needed by the first request only
 
+    url = _encode_path(url)
     all_headers = dict(headers or {})
     if auth is not None:
         all_headers["Authorization"] = "Basic " + base64.b64encode(f"{auth[0]}:{auth[1]}".encode()).decode()
@@ -253,6 +257,12 @@ def _build_request(
     elif files is not None:
         body, all_headers["Content-Type"] = _multipart(files)
     return urllib.request.Request(url, data=body, headers=all_headers, method=method)
+
+
+def _encode_path(url: str) -> str:
+    """Percent-encode what the URL path still holds in clear, like spaces and non-ASCII letters, as requests does."""
+    parts = urlsplit(url)
+    return urlunsplit(parts._replace(path=quote(parts.path, safe=_PATH_SAFE)))
 
 
 def _open(request: urllib.request.Request, timeout: float | None) -> http.client.HTTPResponse:
