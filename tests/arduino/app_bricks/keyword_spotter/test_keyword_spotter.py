@@ -4,7 +4,6 @@
 
 import pytest
 from arduino.app_bricks.keyword_spotting import KeywordSpotting
-from arduino.app_utils import HttpClient
 
 
 @pytest.fixture(autouse=True)
@@ -64,8 +63,8 @@ def mock_dependencies(monkeypatch: pytest.MonkeyPatch):
     ):
         return FakeResp()
 
-    # Mock the requests.get method to return a fake response
-    monkeypatch.setattr(HttpClient, "request_with_retry", fake_get)
+    # Mock the model info request to return a fake response
+    monkeypatch.setattr("arduino.app_utils.http.get", lambda url, **kwargs: fake_get(None, url))
 
 
 @pytest.fixture

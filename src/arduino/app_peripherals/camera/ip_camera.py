@@ -4,10 +4,10 @@
 
 import cv2
 import numpy as np
-import requests
 from urllib.parse import urlparse
 from collections.abc import Callable
 
+from arduino.app_utils import http
 from arduino.app_utils import Logger
 
 from .camera import BaseCamera
@@ -122,12 +122,12 @@ class IPCamera(BaseCamera):
             if self.username and self.password:
                 auth = (self.username, self.password)
 
-            response = requests.head(self.url, auth=auth, timeout=self.timeout, allow_redirects=True)
+            response = http.head(self.url, auth=auth, timeout=self.timeout)
 
             if response.status_code not in [200, 206]:  # 206 for partial content
                 raise RuntimeError(f"HTTP camera returned status {response.status_code}: {self.url}")
 
-        except requests.RequestException as e:
+        except http.ConnectionFailed as e:
             raise RuntimeError(f"Cannot connect to HTTP camera {self.url}: {e}")
 
     def _close_camera(self) -> None:

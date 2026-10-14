@@ -4,11 +4,8 @@
 
 """Wi-Fi based geolocation through the TPS Location API cloud service."""
 
-import http.client
-import json
 import os
 import re
-import socket
 import threading
 import time
 import uuid
@@ -17,8 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 from urllib.parse import urlsplit
 
-import requests
-
+from arduino.app_utils import http
 from arduino.app_utils import Logger, brick
 
 logger = Logger("TPS")
@@ -98,19 +94,6 @@ def _build_payload(scan_result: dict[str, Any], street_address: bool) -> dict[st
     return payload
 
 
-class _UnixSocketConnection(http.client.HTTPConnection):
-    """HTTP connection over a Unix domain socket."""
-
-    def __init__(self, path: str, timeout: float) -> None:
-        super().__init__("localhost", timeout=timeout)
-        self._path = path
-
-    def connect(self) -> None:
-        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self.sock.settimeout(self.timeout)
-        self.sock.connect(self._path)
-
-
 @brick
 class TPS:
     """Client for the TPS Location API cloud service.
@@ -177,10 +160,10 @@ class TPS:
         headers = self._build_headers(request_token, device_id, opt_in)
         payload = _build_payload(self._scan(), street_address)
         try:
-            response = requests.post(self.loc_api_url, json=payload, headers=headers, timeout=HTTP_REQ_TIMEOUT_SEC)
+            response = http.post(self.loc_api_url, json=payload, headers=headers, timeout=HTTP_REQ_TIMEOUT_SEC)
             response.raise_for_status()
             data = response.json()
-        except (requests.RequestException, ValueError) as e:
+        except (http.ConnectionFailed, http.HTTPStatusError, ValueError) as e:
             raise RuntimeError(f"Location request failed: {e}") from e
 
         location = data.get("location", {})
@@ -273,19 +256,14 @@ class TPS:
         Raises:
             RuntimeError: If the scanner is unreachable or the scan failed.
         """
-        connection = _UnixSocketConnection(self.scanner_socket_path, HTTP_REQ_TIMEOUT_SEC)
         try:
-            connection.request("GET", "/scan")
-            response = connection.getresponse()
-            body = response.read()
-        except OSError as e:
+            response = http.get(f"{http.unix_socket_url(self.scanner_socket_path)}/scan", timeout=HTTP_REQ_TIMEOUT_SEC)
+        except http.ConnectionFailed as e:
             raise RuntimeError(f"Wi-Fi scanner unreachable at {self.scanner_socket_path}: {e}") from e
-        finally:
-            connection.close()
 
-        if response.status != 200:
-            raise RuntimeError(f"Wi-Fi scan failed: scanner returned HTTP {response.status}")
-        return json.loads(body)
+        if response.status_code != 200:
+            raise RuntimeError(f"Wi-Fi scan failed: scanner returned HTTP {response.status_code}")
+        return response.json()
 
     def _build_headers(self, request_token: str | None, device_id: str | None, opt_in: bool) -> dict[str, str]:
         headers = {
