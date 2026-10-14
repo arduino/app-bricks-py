@@ -2,18 +2,25 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-import math
-from typing import Any
+from __future__ import annotations
 
-import requests
-import io
-from PIL import Image
+import math
+from typing import TYPE_CHECKING, Any
+
 from arduino.app_internal.core import load_brick_compose_file, resolve_address
 from arduino.app_internal.core.module import get_brick_config, get_brick_configured_model, load_model_list
-from arduino.app_utils.image import get_image_bytes, get_image_type
-from arduino.app_utils import Logger, HttpClient
+from arduino.app_utils import Logger, http
+
+if TYPE_CHECKING:
+    from PIL import Image
 
 logger = Logger(__name__)
+
+MODEL_INFO_RETRIES = 6
+"""Retries of the model information request, which the runner may not answer while it is still loading the model."""
+
+# The runner address and model information of each facade class, kept once fetched: a runner serves one model
+_model_info_cache: dict[type, tuple[str, EdgeImpulseModelInfo]] = {}
 
 
 class EdgeImpulseModelInfo:
@@ -66,6 +73,8 @@ class EdgeImpulseRunnerFacade:
                 return None
 
     def infer_from_image(self, image_bytes: bytes | Image.Image, image_type: str = "jpg") -> dict[str, Any] | None:
+        from arduino.app_utils.image import get_image_bytes  # Imported here: the image package needs PIL
+
         data = get_image_bytes(image_bytes)
         if not data or not image_type:
             return None
@@ -79,8 +88,8 @@ class EdgeImpulseRunnerFacade:
         try:
             logger.debug(f"[{self.__class__.__name__}] Detecting image of type: {image_type} -> {len(data)} bytes")
 
-            files = {"file": (f"image.{image_type}", io.BytesIO(data), f"image/{image_type}")}
-            response = requests.post(f"{self.url}/api/image", files=files)
+            files = {"file": (f"image.{image_type}", data, f"image/{image_type}")}
+            response = http.post(f"{self.url}/api/image", files=files)
 
         except Exception as e:
             logger.error(f"[{self.__class__.__name__}] Error: {e}")
@@ -111,6 +120,8 @@ class EdgeImpulseRunnerFacade:
                     if "image_type" in item and item["image_type"] != "":
                         image_type = item["image_type"]
                     else:
+                        from arduino.app_utils.image import get_image_type  # Imported here: the image package needs PIL
+
                         image_type = get_image_type(image)
 
                     if image_type is None:
@@ -131,6 +142,8 @@ class EdgeImpulseRunnerFacade:
         """
         Infer from features using the Edge Impulse API.
 
+        The runner address and model information are fetched on the first successful call of the class, and kept.
+
         Args:
             cls: The class method caller.
             features (list[float]): The features to send to the Edge Impulse API.
@@ -139,14 +152,18 @@ class EdgeImpulseRunnerFacade:
             dict | None: The response from the Edge Impulse API as a dictionary, or None if an error occurs.
         """
         try:
-            url = cls._get_ei_url()
-            model_info = cls.get_model_info(url)
-            if model_info is None:
-                logger.warning(f"[{cls.__name__}] Model info not available, cannot run the inference")
-                return None
+            cached = _model_info_cache.get(cls)
+            if cached is None:
+                url = cls._get_ei_url()
+                model_info = cls.get_model_info(url)
+                if model_info is None:
+                    logger.warning(f"[{cls.__name__}] Model info not available, cannot run the inference")
+                    return None
+            else:
+                url, model_info = cached
             features = features[: int(model_info.input_features_count)]
 
-            response = requests.post(f"{url}/api/features", json={"features": features})
+            response = http.post(f"{url}/api/features", json={"features": features})
             if response.status_code == 200:
                 return response.json()
             else:
@@ -170,23 +187,23 @@ class EdgeImpulseRunnerFacade:
         if not url:
             url = cls._get_ei_url()
 
-        http_client = HttpClient(total_retries=6)  # Initialize the HTTP client with retry logic
         try:
-            response = http_client.request_with_retry(f"{url}/api/info")
-            if response is None:
-                logger.warning(f"[{cls.__name__}] No response fetching model info from {url}/api/info")
-                return None
+            response = http.get(f"{url}/api/info", timeout=5, retries=MODEL_INFO_RETRIES)
+        except http.ConnectionFailed as e:
+            logger.warning(f"[{cls.__name__}] No response fetching model info from {url}/api/info: {e}")
+            return None
+        try:
             if response.status_code == 200:
-                logger.debug(f"[{cls.__name__}] Fetching model info from {url}/api/info -> {response.status_code} {response.json}")
-                return EdgeImpulseModelInfo(response.json())
+                logger.debug(f"[{cls.__name__}] Fetching model info from {url}/api/info -> {response.status_code}")
+                model_info = EdgeImpulseModelInfo(response.json())
+                _model_info_cache[cls] = (url, model_info)
+                return model_info
             else:
                 logger.warning(f"[{cls}] Error fetching model info: {response.status_code}. Message: {response.text}")
                 return None
         except Exception as e:
             logger.error(f"[{cls}] Error fetching model info: {e}")
             return None
-        finally:
-            http_client.close()  # Close the HTTP client session
 
     @staticmethod
     def parse_model_info_message(model_info: dict[str, Any]) -> EdgeImpulseModelInfo | None:

@@ -1,0 +1,68 @@
+From fd03e040981df8f33657fe911f0aefa6f26c69cb Mon Sep 17 00:00:00 2001
+From: Marco Colombo <ing.marco.colombo@gmail.com>
+Date: Thu, 8 Oct 2026 10:24:25 +0200
+Subject: [PATCH] =?UTF-8?q?=E2=9A=A1=EF=B8=8F=20Defer=20building=20the=20O?=
+ =?UTF-8?q?penAPI=20models=20to=20their=20first=20use?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The models in fastapi.openapi.models are only used to generate the OpenAPI
+schema, but pydantic built their validators and serializers at import time,
+on every `import fastapi`, even for apps that disable OpenAPI.
+
+With `defer_build` they are built on first use: when the schema is generated
+or a model is instantiated. Apps that never generate the schema never pay for
+them. The explicit `model_rebuild()` calls are no longer needed, pydantic
+resolves the forward references when the deferred build happens.
+
+Squashed from the models.py changes of
+https://github.com/rjtokenring/fastapi/tree/perf/defer-openapi-model-build
+(eb2be3e1, 771399a2), made against FastAPI 0.142.2: the file is unchanged
+in 0.141.1, the version in uv.lock.
+---
+ fastapi/openapi/models.py | 16 ++++++++++------
+ 1 file changed, 10 insertions(+), 6 deletions(-)
+
+diff --git a/fastapi/openapi/models.py b/fastapi/openapi/models.py
+index ca26bf93..fbaa3fc9 100644
+--- a/fastapi/openapi/models.py
++++ b/fastapi/openapi/models.py
+@@ -55,7 +55,10 @@ except ImportError:  # pragma: no cover
+ 
+ 
+ class BaseModelWithConfig(BaseModel):
+-    model_config = {"extra": "allow"}
++    # These models are only used to generate the OpenAPI schema, build them on
++    # first use instead of at import time: faster startup and less memory for apps
++    # that never generate it, which matters on small and edge devices
++    model_config = {"extra": "allow", "defer_build": True}
+ 
+ 
+ class Contact(BaseModelWithConfig):
+@@ -93,10 +96,16 @@ class Server(BaseModelWithConfig):
+ 
+ 
+ class Reference(BaseModel):
++    # See BaseModelWithConfig
++    model_config = {"defer_build": True}
++
+     ref: str = Field(alias="$ref")
+ 
+ 
+ class Discriminator(BaseModel):
++    # See BaseModelWithConfig
++    model_config = {"defer_build": True}
++
+     propertyName: str
+     mapping: dict[str, str] | None = None
+ 
+@@ -428,8 +437,3 @@ class OpenAPI(BaseModelWithConfig):
+     security: list[dict[str, list[str]]] | None = None
+     tags: list[Tag] | None = None
+     externalDocs: ExternalDocumentation | None = None
+-
+-
+-Schema.model_rebuild()
+-Operation.model_rebuild()
+-Encoding.model_rebuild()

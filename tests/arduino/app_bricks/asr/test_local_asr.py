@@ -301,7 +301,7 @@ class TestSessionCreate:
             seen["timeout"] = timeout
             return _FakeResponse(payload, status_code=status_code)
 
-        monkeypatch.setattr("arduino.app_bricks.asr.local_asr.requests.post", fake_post)
+        monkeypatch.setattr("arduino.app_utils.http.post", fake_post)
         return seen
 
     def test_conflict_raises_service_busy(self, monkeypatch):
@@ -351,6 +351,19 @@ class TestSessionCreate:
         # The server retries a failed NPU load 3 times: ~17 s on the board before it answers.
         assert seen["timeout"] == asr._CREATE_TIMEOUT_SECONDS
         assert seen["timeout"] >= 30
+
+    def test_an_unreachable_service_raises_asr_unavailable(self):
+        """No mock: the real HTTP client against a port nobody listens on."""
+        import socket
+
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            port = s.getsockname()[1]
+        asr = AutomaticSpeechRecognition(mic=_FakeMic())
+        asr.api_base_url = f"http://127.0.0.1:{port}/audio-analytics/v1/api"
+
+        with pytest.raises(ASRUnavailableError, match="Inference service unreachable"):
+            asr._create_transcription_session()
 
 
 class TestSessionSlot:

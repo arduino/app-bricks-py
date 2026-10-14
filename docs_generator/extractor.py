@@ -38,6 +38,13 @@ class DocstringInfo:
     is_readonly: bool = False
 
 
+def _annotation_to_str(node: ast.expr) -> str:
+    # A quoted annotation ("BaseCamera", used to avoid a runtime import) documents the same type as a bare one
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return ast.unparse(node)
+
+
 def _extract_all_exports(tree: ast.AST) -> list[str] | None:
     all_exports = None
     for node in ast.walk(tree):
@@ -113,14 +120,14 @@ def extract_docstrings_with_types(file_path: str, module_name: str) -> list[Docs
             for stmt in node.body:
                 # Public attributes
                 if isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name) and not stmt.target.id.startswith("_"):
-                    type_hints[stmt.target.id] = ast.unparse(stmt.annotation)
-                    attrs.append((stmt.target.id, ast.unparse(stmt.annotation)))
+                    type_hints[stmt.target.id] = _annotation_to_str(stmt.annotation)
+                    attrs.append((stmt.target.id, _annotation_to_str(stmt.annotation)))
                 # Public methods OR __init__
                 if isinstance(stmt, ast.FunctionDef) and (not stmt.name.startswith("_") or stmt.name == "__init__"):
                     if _is_property_getter(stmt):
                         p_docstring = ast.get_docstring(stmt)
                         if p_docstring:
-                            p_return_type = ast.unparse(stmt.returns) if stmt.returns else ""
+                            p_return_type = _annotation_to_str(stmt.returns) if stmt.returns else ""
                             p_signature = f"{stmt.name}: {p_return_type}" if p_return_type else stmt.name
                             properties.append(
                                 DocstringInfo(
@@ -144,7 +151,7 @@ def extract_docstrings_with_types(file_path: str, module_name: str) -> list[Docs
                         for arg in stmt.args.args:
                             if arg.arg == "self" or arg.arg.startswith("_"):
                                 continue
-                            t = ast.unparse(arg.annotation) if arg.annotation else ""
+                            t = _annotation_to_str(arg.annotation) if arg.annotation else ""
                             m_type_hints[arg.arg] = t
                             m_args.append((arg.arg, t))
                         m_sig = f"{stmt.name}({', '.join(f'{a[0]}: {a[1]}' if a[1] else a[0] for a in m_args)})"
@@ -164,7 +171,7 @@ def extract_docstrings_with_types(file_path: str, module_name: str) -> list[Docs
                         for arg in stmt.args.args:
                             if arg.arg == "self" or arg.arg.startswith("_"):
                                 continue
-                            t = ast.unparse(arg.annotation) if arg.annotation else ""
+                            t = _annotation_to_str(arg.annotation) if arg.annotation else ""
                             init_params.append((arg.arg, t))
             # Class signature: if dataclass use attributes, else use __init__ params (with type)
             is_dataclass = any(d.id == "dataclass" if isinstance(d, ast.Name) else False for d in getattr(node, "decorator_list", []))
@@ -207,7 +214,7 @@ def extract_docstrings_with_types(file_path: str, module_name: str) -> list[Docs
                 for arg in node.args.args:
                     if arg.arg == "self" or arg.arg.startswith("_"):
                         continue
-                    t = ast.unparse(arg.annotation) if arg.annotation else ""
+                    t = _annotation_to_str(arg.annotation) if arg.annotation else ""
                     type_hints[arg.arg] = t
                     args.append((arg.arg, t))
                 # Function signature: def func(arg1: type1, ...)

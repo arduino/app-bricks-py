@@ -31,7 +31,7 @@ def _wav_bytes(samples: np.ndarray, sample_rate: int = 16000, channels: int = 1)
 
 
 class _FakeResponse:
-    """Minimal stand-in for a ``requests`` response."""
+    """Minimal stand-in for an HTTP response."""
 
     def __init__(self, payload: dict, status_code: int = 200):
         self.status_code = status_code
@@ -44,7 +44,7 @@ class _FakeResponse:
 
 def _mock_session_endpoints(monkeypatch) -> list[dict]:
     """
-    Replace ``requests.post`` in the ASR module so session create/close succeed
+    Replace the HTTP POST of the ASR module so session create/close succeed
     offline. Returns the list of JSON bodies the brick posted, in order.
     """
     bodies: list[dict] = []
@@ -56,7 +56,7 @@ def _mock_session_endpoints(monkeypatch) -> list[dict]:
             return _FakeResponse({"session_id": "sess-1", "state": "asr_initialized"})
         return _FakeResponse({})
 
-    monkeypatch.setattr("arduino.app_bricks.asr.local_asr.requests.post", fake_post)
+    monkeypatch.setattr("arduino.app_utils.http.post", fake_post)
     return bodies
 
 
