@@ -345,16 +345,16 @@ class Connection:
             self._closed = True
             if self._grant is not None:
                 self._grant.cancel()
+        self.sock.close()  # nothing is sent once closed
+        if self.model is not None and self.confidence is not None:
+            try:
+                self.set_confidence(None)  # the score threshold of the model follows the connections left
+            except Exception as exc:
+                log.debug("[%s] confidence not withdrawn: %s", self.name, exc)
         if self._workers is not None:
             self._workers.shutdown(wait=True)  # the inferences in flight complete before the model is released
-        self.sock.close()
         if self.model is not None:
             log.debug("[%s] closed, releasing '%s'%s", self.name, self.model.name, f", {self.dropped} late results dropped" if self.dropped else "")
-            if self.confidence is not None:
-                try:
-                    self.set_confidence(None)  # the score threshold of the model follows the connections left
-                except Exception as exc:
-                    log.debug("[%s] confidence not withdrawn: %s", self.name, exc)
             self.registry.release(self.model.name)
             self.model = None
 
