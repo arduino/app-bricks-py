@@ -133,6 +133,7 @@ from common.model_metadata import (
     write_metadata,
 )
 from common.models_list import MODELS_LIST_PATH, _iter_platform_variables, load_models_list
+from list_models import refresh_listing, refresh_listing_at_exit
 
 # Quantizations tried, in order, when a model key names only a repository. Q4_0 comes
 # first because it is what the curated entries use and what the accelerated runners want,
@@ -1737,6 +1738,8 @@ def main():
             emit_json_error(f"Model does not exist: {allow_pattern}", downloading=False)
             raise SystemExit(1)
     elif args.delete:
+        # However the delete ends, the listing is rewritten without what it removed.
+        refresh_listing_at_exit()
         if args.verbose:
             emit_json_info(f"Deleting files matching '{allow_pattern}' in {output_dir}")
         delete_matched_files(output_dir, args.output_dir, allow_pattern, args.verbose)
@@ -1775,6 +1778,7 @@ def main():
         # the interrupted run have to go before the directory can be judged.
         marker = Path(output_dir) / MARKER_NAME
         if marker.is_file():
+            refresh_listing_at_exit()
             emit_json_info(f"Removing incomplete previous download: {repo_id}")
             discard_incomplete_download(output_dir, args.output_dir, interrupted_patterns(marker))
         if is_installed(output_dir, patterns):
@@ -1796,6 +1800,7 @@ def main():
         if os.path.isdir(output_dir) and not has_model_content(output_dir):
             # Bookkeeping-only leftover (e.g. killed between makedirs and the marker
             # write, or a deleted model): wipe it so the download starts clean.
+            refresh_listing_at_exit()
             emit_json_info(f"Removing incomplete previous download: {repo_id}")
             remove_model_dir(output_dir, args.output_dir)
         # Anything else the directory holds is another quantization of the same
@@ -1824,6 +1829,10 @@ def main():
             file_patterns=patterns,
             size_mb=expected_size_mb(repo_id, patterns),
         )
+        # The listing now reports the model as downloading, and reports it again
+        # however this run ends: installed (after the marker is cleared), or discarded.
+        refresh_listing()
+        refresh_listing_at_exit()
 
         emit_json_info(f"Downloading to: {os.path.abspath(output_dir)}", artifacts=[os.path.abspath(output_dir)])
 

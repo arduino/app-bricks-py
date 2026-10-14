@@ -17,6 +17,7 @@ from common.download_marker import write_marker
 from common.http_download import download, download_and_extract, emit_json_error, install_signal_handlers
 from common.model_metadata import write_metadata
 from common.model_size import path_size_bytes, size_mb
+from list_models import refresh_listing, refresh_listing_at_exit
 
 
 def _cli_failure_detail(exc: subprocess.CalledProcessError) -> str:
@@ -120,6 +121,10 @@ def main():
             model_directory=model_directory,
             model_url=os.environ.get("model_url", ""),
         )
+    # The listing now reports the model as downloading, and reports it again
+    # however this run ends: installed, wiped, or left behind with its marker.
+    refresh_listing()
+    refresh_listing_at_exit()
 
     # Build the qai_hub_models fetch command to retrieve the download URL.
     # model_name, model_type, quantization and chipset are mandatory;

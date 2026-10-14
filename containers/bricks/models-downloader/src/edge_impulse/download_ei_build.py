@@ -26,6 +26,7 @@ from common.download_marker import write_marker
 from common.http_download import check, download, emit_json_error, install_signal_handlers
 from common.model_metadata import write_metadata
 from common.model_size import path_size_bytes, size_mb
+from list_models import refresh_listing, refresh_listing_at_exit
 
 
 BASE_URL = "https://studio.edgeimpulse.com/v1/api/{project_id}/deployment/download?type={target}&impulseId={impulse_id}"
@@ -153,6 +154,10 @@ def main():
             model_directory=os.environ.get("model_directory") or os.path.basename(os.path.normpath(args.output_dir)),
             model_url=os.environ.get("model_url", ""),
         )
+        # The listing now reports the model as downloading, and reports it again
+        # however this run ends: installed, or wiped.
+        refresh_listing()
+        refresh_listing_at_exit()
 
     try:
         if args.info:
