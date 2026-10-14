@@ -59,6 +59,7 @@ class Harness:
     def __init__(self, work):
         self.sock, self.models, self.log = f"{work}/ei.sock", f"{work}/models", f"{work}/server.log"
         self.conns = 0
+        self.clients: list[socket.socket] = []
         self.proc = None
         os.environ["EI_FAKE_DIE"] = f"{work}/die"
         os.mkdir(self.models)
@@ -132,9 +133,16 @@ class Harness:
     def connect(self):
         self.conns += 1
         s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.clients.append(s)
         s.connect(self.sock)
         s.settimeout(10)
         return s
+
+    def close_clients(self):
+        """Close the sockets a test left open, so a failure does not hold connections in the tests after it."""
+        for s in self.clients:
+            s.close()
+        self.clients.clear()
 
     def raw(self, s, kind, payload):
         s.sendall(P.HEADER.pack(kind, len(payload)) + payload)
@@ -165,6 +173,12 @@ def harness():
     if h.proc is not None and h.proc.poll() is None:
         h.stop()
     shutil.rmtree(work, ignore_errors=True)
+
+
+@pytest.fixture(autouse=True)
+def close_clients(harness):
+    yield
+    harness.close_clients()
 
 
 @pytest.fixture(scope="module")
