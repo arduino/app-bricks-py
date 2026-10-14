@@ -16,10 +16,10 @@ from contextlib import AbstractContextManager
 from typing import Literal, Protocol
 
 import numpy as np
-import requests
 import websockets
 from websockets.exceptions import ConnectionClosed, ConnectionClosedOK
 
+from arduino.app_utils import http
 from arduino.app_internal.core import resolve_address
 from arduino.app_internal.core.module import get_brick_config, get_brick_configured_model
 from arduino.app_peripherals.microphone import BaseMicrophone, Microphone, PauseDetector, chunk_level
@@ -542,11 +542,11 @@ class BaseASR:
 
         try:
             start = time.monotonic()
-            response = requests.post(url=create_url, json=create_data, timeout=self._CREATE_TIMEOUT_SECONDS)
+            response = http.post(create_url, json=create_data, timeout=self._CREATE_TIMEOUT_SECONDS)
             elapsed = time.monotonic() - start
             if elapsed > 5:
                 logger.warning(f"Session creation took {elapsed:.1f}s")
-        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+        except http.ConnectionFailed as e:  # Refused, reset or timed out
             raise ASRUnavailableError(f"Inference service unreachable: {e}") from None
 
         # The server answers 409 (code "conflict") when another session is active
@@ -891,7 +891,7 @@ class BaseASR:
         logger.debug(f"Flushing transcription session {session_id}")
         url = f"{self.api_base_url}/transcriptions/flush"
         try:
-            response = requests.post(url, json={"session_id": session_id}, timeout=3)
+            response = http.post(url, json={"session_id": session_id}, timeout=3)
         except Exception as e:
             logger.warning(f"Failed to flush session {session_id}: {e}")
             return
@@ -904,7 +904,7 @@ class BaseASR:
         logger.debug(f"Closing transcription session {session_id}")
         url = f"{self.api_base_url}/transcriptions/close"
         try:
-            response = requests.post(url, json={"session_id": session_id}, timeout=20)
+            response = http.post(url, json={"session_id": session_id}, timeout=20)
         except Exception:
             raise
         if response.status_code != 200:

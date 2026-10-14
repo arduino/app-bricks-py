@@ -11,7 +11,6 @@ from .brick import *
 from .errors import *
 from .errors import install_excepthook as _install_excepthook
 from .folderwatch import *
-from .httprequest import *
 from .jsonparser import *
 from .ledmatrix import *
 from .logger import *
@@ -31,7 +30,6 @@ __all__ = [
     "FolderWatcher",
     "Frame",
     "FrameDesigner",
-    "HttpClient",
     "JSONParser",
     "Logger",
     "SineGenerator",
