@@ -1353,8 +1353,42 @@ def test_write_materializes_the_printed_listing(monkeypatch, capsys, tmp_path):
 
     text = (models_dir / list_models.LISTING_NAME).read_text()
     assert text.startswith("# Written by the Arduino models-downloader")
-    assert yaml.safe_load(text) == {"models": models}
+    assert yaml.safe_load(text) == {"bricks_release_version": None, "models": models}
     assert not (models_dir / f"{list_models.LISTING_NAME}.tmp").exists()
+
+
+@pytest.mark.parametrize("version", ["0.14.0", "1.0", "dev-model-list-cache"])
+def test_listing_names_the_release_that_wrote_it(monkeypatch, tmp_path, version):
+    """Every release rewrites the one file from its own catalog, and says which release it is."""
+    yaml_path = tmp_path / "models-list.yaml"
+    yaml_path.write_text(SAMPLE_YAML)
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    listing = models_dir / list_models.LISTING_NAME
+
+    monkeypatch.setenv(list_models.RELEASE_VERSION_ENV, "0.13.0")
+    list_models.refresh_listing(str(models_dir), str(yaml_path))
+    monkeypatch.setenv(list_models.RELEASE_VERSION_ENV, version)
+    list_models.refresh_listing(str(models_dir), str(yaml_path))
+
+    written = yaml.safe_load(listing.read_text())
+    # Leading, so a reader can tell the release before the models, and a string even
+    # when it reads as a number.
+    assert list(written) == ["bricks_release_version", "models"]
+    assert written["bricks_release_version"] == version
+
+
+def test_listing_written_outside_the_image_names_no_release(monkeypatch, tmp_path):
+    """An empty version is no release, like an unset one: it matches none."""
+    yaml_path = tmp_path / "models-list.yaml"
+    yaml_path.write_text(SAMPLE_YAML)
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    monkeypatch.setenv(list_models.RELEASE_VERSION_ENV, "")
+
+    list_models.refresh_listing(str(models_dir), str(yaml_path))
+
+    assert yaml.safe_load((models_dir / list_models.LISTING_NAME).read_text())["bricks_release_version"] is None
 
 
 def test_write_ignores_the_installed_filters(monkeypatch, capsys, tmp_path):
@@ -1382,7 +1416,7 @@ def test_refresh_writes_the_listing_of_board_name_and_prints_nothing(monkeypatch
     list_models.main()
 
     assert capsys.readouterr().out == ""
-    assert yaml.safe_load((models_dir / list_models.LISTING_NAME).read_text()) == {"models": []}
+    assert yaml.safe_load((models_dir / list_models.LISTING_NAME).read_text()) == {"bricks_release_version": None, "models": []}
 
 
 def test_refresh_sees_what_changed_since_the_previous_build(tmp_path):
