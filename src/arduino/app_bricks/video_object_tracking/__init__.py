@@ -95,6 +95,8 @@ class VideoObjectTracking(VideoInference):
                 external viewers embed. Default is 4912, None disables the stream.
 
         Raises:
+            TypeError: If the confidence is not a number.
+            ValueError: If the confidence is not above 0 and at most 1.
             RuntimeError: If no model is configured.
             VideoObjectTrackingError: If the model has no object tracking block.
         """
