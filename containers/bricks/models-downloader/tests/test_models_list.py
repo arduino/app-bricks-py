@@ -224,3 +224,11 @@ def test_load_models_list(tmp_path):
     path = tmp_path / "models-list.yaml"
     path.write_text(yaml.safe_dump({"models": [AI_HUB_ENTRY]}))
     assert load_models_list(str(path)) == [AI_HUB_ENTRY]
+
+
+@pytest.mark.skipif(not os.path.isfile(REAL_MODELS_LIST), reason="models/models-list.yaml not available")
+def test_load_matches_pure_python_loader():
+    # The C loader is a speed-up only: it must read the catalog as safe_load does.
+    with open(REAL_MODELS_LIST) as f:
+        expected = yaml.safe_load(f)["models"]
+    assert load_models_list(REAL_MODELS_LIST) == expected
