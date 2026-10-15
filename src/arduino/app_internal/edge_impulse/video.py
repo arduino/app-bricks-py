@@ -81,7 +81,8 @@ class VideoInference(EdgeImpulseModel):
         self._detection_locks_lock = threading.Lock()
         self._executor = ThreadPoolExecutor(max_workers=5, thread_name_prefix=f"{type(self).__name__}Handler")
 
-        self._is_running = threading.Event()
+        self._stopped = threading.Event()
+        self._stopped.set()
         self._stream = VideoStreamServer(os.getenv("BIND_ADDRESS", "0.0.0.0"), stream_port) if stream_port is not None else None
         logger.info(f"[{type(self).__name__}] Model: {self._model}")
 
@@ -140,11 +141,11 @@ class VideoInference(EdgeImpulseModel):
         self._camera.start()
         if self._stream:
             self._stream.start()
-        self._is_running.set()
+        self._stopped.clear()
 
     def stop(self) -> None:
         """Stop the brick and release its resources, the service releases the model."""
-        self._is_running.clear()
+        self._stopped.set()
         self._close()
         if self._stream:
             self._stream.stop()
@@ -162,14 +163,14 @@ class VideoInference(EdgeImpulseModel):
         video keeps the camera rate whatever the model takes. Waits for the service and its model, and
         reconnects when the connection is lost.
         """
-        while self._is_running.is_set():
-            client = self._connect(self._is_running)
+        while not self._stopped.is_set():
+            client = self._connect(self._stopped)
             if client is None:
                 continue
             receiver = threading.Thread(target=self._receive_results, args=(client,), daemon=True, name=f"{type(self).__name__}Results")
             receiver.start()
             try:
-                while self._is_running.is_set() and not client.closed:
+                while not self._stopped.is_set() and not client.closed:
                     if not self._has_viewers and not client.wait_idle(0.5):
                         continue  # the model is still busy, check the stop flag and wait again
                     frame = self._camera.capture()
@@ -179,14 +180,14 @@ class VideoInference(EdgeImpulseModel):
                     client.submit(frame, keep_frame=self._camera_preview)  # skipped while the slots are taken
                     if self._has_viewers:  # checked again: a viewer may have arrived during the wait
                         self._publish(frame)
-                if self._is_running.is_set():
+                if not self._stopped.is_set():
                     logger.warning("Inference service connection lost. Reconnecting...")
             except ConnectionError as e:
-                if self._is_running.is_set():
+                if not self._stopped.is_set():
                     logger.warning(f"Inference service connection lost: {e}. Reconnecting...")
             except Exception as e:
                 logger.exception(f"Failed to process the frames: {e}")
-                self._is_running.wait(self._RETRY_SEC)
+                self._stopped.wait(self._RETRY_SEC)
             finally:
                 self._close()
                 receiver.join()
