@@ -157,6 +157,29 @@ with wsclient.connect("ws://<board-address>:8080") as websocket:
                 break
 ```
 
+## Sharing a Camera
+
+A USB or CSI camera can be streamed by a single client at a time. To use the same camera from several bricks, select it explicitly in each of them: selecting a camera already held by another instance returns a new handle on the same device, and every handle receives every frame.
+
+```python
+from arduino.app_peripherals.camera import Camera
+from arduino.app_bricks.camera_code_detection import CameraCodeDetection
+from arduino.app_bricks.video_objectdetection import VideoObjectDetection
+from arduino.app_utils import App
+
+code_detection = CameraCodeDetection(camera=Camera(0))
+object_detection = VideoObjectDetection(camera=Camera(0))  # Same camera, same frames
+
+App.run()
+```
+
+- Only an explicit selection shares a camera: `Camera()` with no source keeps picking a camera not in use, so two `Camera()` instances get two different cameras.
+- The first instance sets the resolution, FPS and camera-specific settings: the following handles use them, and a warning is logged if they request different ones. Adjustments are per handle.
+- Each handle is started and stopped on its own: the device is opened by the first handle started and closed after the last one is stopped, so stopping one brick does not stop the camera for the others.
+- The device is read at the camera FPS by whichever handle first asks for a new frame. A slow handle skips the frames it missed and gets the latest one, without slowing down the others.
+- Frames read from a shared camera are the same object for all handles and are read-only: copy them before modifying them in place.
+- Sharing works within the app: a camera in use by another process still cannot be opened.
+
 ## Migration from Legacy Camera
 
 The new Camera abstraction is backward compatible with the existing Camera implementation. Existing code using the old API will continue to work, but will use the new Camera backend. New code should use the improved abstraction for better flexibility and features.
