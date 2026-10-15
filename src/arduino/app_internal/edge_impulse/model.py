@@ -185,19 +185,19 @@ class EdgeImpulseModel:
     def _configure(self, client: InferenceClient) -> None:
         """Set the parameters of the model every time it is opened; the base class has none beyond the confidence."""
 
-    def _connect(self, running: threading.Event) -> InferenceClient | None:
-        """The open connection to the model, or a new one once the service is ready, retrying while `running` is set."""
+    def _connect(self, stopped: threading.Event) -> InferenceClient | None:
+        """The open connection to the model, or a new one once the service is ready, retrying until `stopped` is set."""
         client = self._connected()
         if client is not None:
             return client
-        while running.is_set():
+        while not stopped.is_set():
             try:
                 return self._open()
             except ServerError as e:
                 logger.error(f"The inference service refused model '{self._model}' ({e.code}): {e}. Retrying...")
             except OSError:
                 logger.debug(f"Waiting for the inference service at {ei_inference.DEFAULT_SOCKET_PATH}. Retrying...")
-            running.wait(self._RETRY_SEC)
+            stopped.wait(self._RETRY_SEC)
         return None
 
     def _connected(self) -> InferenceClient | None:

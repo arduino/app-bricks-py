@@ -163,8 +163,8 @@ class VideoObjectTracking(VideoInference):
         if client.object_tracking:
             self._apply_tracker(client)
 
-    def _connect(self, running: threading.Event) -> InferenceClient | None:
-        client = super()._connect(running)
+    def _connect(self, stopped: threading.Event) -> InferenceClient | None:
+        client = super()._connect(stopped)
         if client is not None and not client.object_tracking:
             logger.error(
                 "This model has no object tracking block, so no object will ever be reported. "
