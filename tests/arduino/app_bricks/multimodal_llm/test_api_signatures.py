@@ -23,7 +23,15 @@ def _signature_fingerprint(cls, method_name):
 
 
 _P = inspect.Parameter
+# `audio` comes right after `images`; `chat` adds the inherited `reasoning_effort` after it.
 _CHAT = [
+    ("self", _P.POSITIONAL_OR_KEYWORD, False),
+    ("message", _P.POSITIONAL_OR_KEYWORD, False),
+    ("images", _P.POSITIONAL_OR_KEYWORD, True),
+    ("audio", _P.POSITIONAL_OR_KEYWORD, True),
+    ("reasoning_effort", _P.POSITIONAL_OR_KEYWORD, True),
+]
+_CHAT_STREAM = [
     ("self", _P.POSITIONAL_OR_KEYWORD, False),
     ("message", _P.POSITIONAL_OR_KEYWORD, False),
     ("images", _P.POSITIONAL_OR_KEYWORD, True),
@@ -42,7 +50,7 @@ EXPECTED_SIGNATURES = {
     ],
     "get_client": [("self", _P.POSITIONAL_OR_KEYWORD, False)],
     "chat": _CHAT,
-    "chat_stream": _CHAT,
+    "chat_stream": _CHAT_STREAM,
     "stop_stream": [("self", _P.POSITIONAL_OR_KEYWORD, False)],
     "clear_memory": [("self", _P.POSITIONAL_OR_KEYWORD, False)],
     "with_memory": [

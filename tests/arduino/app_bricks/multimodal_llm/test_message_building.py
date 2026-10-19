@@ -112,6 +112,17 @@ def test_chat_sends_audio_and_strips_thinking(brick):
     assert [part["type"] for part in brick._model.inputs[0][-1].content] == ["input_audio", "text"]
 
 
+def test_chat_forwards_reasoning_effort_with_audio(brick):
+    reasoning_model = RecordingModel(reply="<think>listening</think>Water is spilling over the levee.")
+
+    with patch.object(brick, "_get_reasoning_model", return_value=reasoning_model) as get_reasoning_model:
+        answer = brick.chat("Transcribe.", reasoning_effort="low", audio=[_pcm()])
+
+    get_reasoning_model.assert_called_once_with("low")
+    assert answer == "Water is spilling over the levee."
+    assert [part["type"] for part in reasoning_model.inputs[0][-1].content] == ["input_audio", "text"]
+
+
 def test_chat_stream_sends_images_and_audio_and_filters_thinking(brick):
     brick._model = RecordingModel(chunks=["<think>", "hmm", "</think>A", " car."])
 
