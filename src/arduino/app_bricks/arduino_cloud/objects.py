@@ -123,7 +123,7 @@ class CloudObject:
         self._push = None  # set by CloudObject.bind: callable(name, value)
         self._local_ts = None  # epoch secs of the last local change
         self._cloud_ts = None  # epoch secs of the last applied cloud value
-        self._pending = False  # True while no thing is assigned (thing_unavailable)
+        self._pending = False  # True while the thing is not reachable (thing_unavailable)
         # Complex objects only: a sub-property changed and on_write is owed. The
         # per-leaf cloud frames are coalesced into a single on_write (fired once
         # with the whole object populated) by register() after seeding and by the
@@ -250,7 +250,7 @@ class CloudObject:
         owner object's policy selector (see ``ON_CHANGE`` / ``interval`` in the
         module docstring). No-op when there is no value to send.
 
-        While no thing is assigned (``_pending``) the value cannot reach the
+        While the thing is not reachable (``_pending``) the value cannot reach the
         cloud, so instead of publishing it warns on each local change (see
         ``_warn_local_only``) that the variable is being updated only locally.
         """
@@ -272,13 +272,13 @@ class CloudObject:
                 self._do_push(now)
 
     def _warn_local_only(self, now: float) -> None:
-        """Warn that a local change cannot be synced because no thing is assigned.
+        """Warn that a local change cannot be synced because the thing is not reachable.
 
         Called from ``pump`` while ``_pending``. Fires only on a real local change
         (``_dirty``), throttled to ``_MIN_PUBLISH_INTERVAL`` like the ON_CHANGE
         publish so a fast ``on_read`` source does not flood the log — the same
-        cadence as the HTTP 409 warning the daemon returns once a thing is
-        assigned but the cloud is not steady. The dirty flag is then cleared: the
+        cadence as the HTTP 409 warning the daemon returns to a PUT while the
+        cloud is not steady. The dirty flag is then cleared: the
         current value is re-asserted to the cloud at sync time (``apply_cloud`` /
         ``apply_missing``) regardless of it, so nothing is lost.
         """
@@ -311,6 +311,7 @@ class CloudObject:
         on_write). ``cloud_ts`` is epoch seconds (the daemon's last-value
         timestamp for this variable), or None if the frame carried none.
         """
+        self._pending = False  # a sync frame ends the pending state
         if cloud_ts is None:
             cloud_ts = _now()
         self._cloud_ts = cloud_ts
@@ -362,8 +363,11 @@ class CloudObject:
 
         Returns True if the local value changed (so the caller schedules
         on_write). ``cloud_ts`` is epoch seconds, or None if the frame
-        carried none.
+        carried none. Ignored (returns False) while pending: only a sync frame
+        ends the pending state.
         """
+        if self._pending:
+            return False
         if cloud_ts is None:
             cloud_ts = _now()
         self._cloud_ts = cloud_ts
@@ -383,8 +387,47 @@ class CloudObject:
         cloud converges. Applies to every sync policy. No-op if there is no local
         value to assert yet. Immediate (convergence), not throttled by the policy.
         """
+        self._pending = False  # a sync frame ends the pending state
         if self._value is not None:
             self._do_push(_now())
+
+    def mark_unavailable(self) -> bool:
+        """Enter the pending state on a ``thing_unavailable`` sync frame.
+
+        Returns True only on the transition into pending. The sync frame is
+        replayed on every SSE reconnect, so the caller logs once per unavailable
+        period rather than once per reconnect.
+
+        Not locked: the caller must hold ArduinoCloud's state lock.
+        """
+        if self._pending:
+            return False
+        self._pending = True
+        return True
+
+    def notify_owner(self) -> "CloudObject | None":
+        """Report that a cloud change was applied to this leaf.
+
+        A complex owner's on_write is coalesced: the owner is flagged (see
+        ``take_on_write_request``) and None is returned. A scalar owner is
+        returned so the caller fires its on_write right away.
+
+        Not locked: the caller must hold ArduinoCloud's state lock.
+        """
+        if self._owner.is_complex:
+            self._owner._on_write_pending = True
+            return None
+        return self._owner
+
+    def take_on_write_request(self) -> bool:
+        """Consume an owed coalesced on_write: True once, then False until the
+        next cloud change flags it again (see ``notify_owner``).
+
+        Not locked: the caller must hold ArduinoCloud's state lock.
+        """
+        fire = self._on_write_pending
+        self._on_write_pending = False
+        return fire
 
     # ── loop execution ─────────────────────────────────────────────────────────
     def run_sync(self, client: "ArduinoCloud | None") -> None:

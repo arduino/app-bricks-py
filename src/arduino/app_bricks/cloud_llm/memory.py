@@ -15,6 +15,37 @@ DEFAULT_HISTORY_TABLE = "chat_history"
 DEFAULT_DATABASE = "llm.db"
 DEFAULT_THREAD_ID = "default"
 
+# Anthropic binds these content blocks to the conversation that produced them ("preserved
+# thinking"): replaying one after any earlier message changed is answered with a 400 on
+# enforced accounts, and the window changes the earlier messages every time it drops the oldest.
+ANTHROPIC_BOUND_THINKING_BLOCKS = frozenset({"thinking", "redacted_thinking"})
+
+
+def strip_anthropic_thinking(message: BaseMessage) -> BaseMessage:
+    """Returns ``message`` without the Anthropic thinking blocks bound to its conversation.
+
+    Only Anthropic assistant messages are touched (``response_metadata['model_provider']``):
+    other providers keep their reasoning blocks, which they need to replay (Gemini thought
+    signatures; OpenAI Responses rejects a ``function_call`` without its ``reasoning`` item).
+    The answer text and the tool calls are kept.
+
+    Args:
+        message (BaseMessage): The message to clean.
+
+    Returns:
+        BaseMessage: The original message when there is nothing to strip, otherwise a copy
+            without the thinking blocks.
+    """
+    if not isinstance(message, AIMessage) or message.response_metadata.get("model_provider") != "anthropic":
+        return message
+    if not isinstance(message.content, list):
+        return message
+
+    content = [b for b in message.content if not (isinstance(b, dict) and b.get("type") in ANTHROPIC_BOUND_THINKING_BLOCKS)]
+    if len(content) == len(message.content):
+        return message
+    return message.model_copy(update={"content": content or ""})
+
 
 @runtime_checkable
 class MessagePersistence(Protocol):
@@ -77,7 +108,7 @@ class SQLMessagePersistence:
             return []
 
         sql = f"SELECT message_data FROM {self._table_name} WHERE thread_id = ? ORDER BY id DESC"
-        params: tuple = (self._thread_id,)
+        params: tuple[str | int, ...] = (self._thread_id,)
         if limit is not None:
             sql += " LIMIT ?"
             params = (self._thread_id, limit)
@@ -118,7 +149,11 @@ class SQLMessagePersistence:
 
 
 class WindowedChatMessageHistory:
-    """A chat history store that automatically keeps a window of the last k messages."""
+    """A chat history store that automatically keeps a window of the last k messages.
+
+    Anthropic thinking blocks are stripped from stored messages (see
+    ``strip_anthropic_thinking``): moving the window would invalidate them on replay.
+    """
 
     k: int
 
@@ -130,8 +165,9 @@ class WindowedChatMessageHistory:
 
         if store is not None and k > 0:
             # Fetch a margin above k so the windowing logic can back up over
-            # tool-call boundaries without dropping context.
-            self._apply_window(store.load(limit=k * 2))
+            # tool-call boundaries without dropping context. Histories persisted before the
+            # thinking blocks were stripped on store may still carry them.
+            self._apply_window([strip_anthropic_thinking(m) for m in store.load(limit=k * 2)])
 
     def _apply_window(self, messages: list[BaseMessage]) -> None:
         """Append messages to the in-memory cache and enforce the window. No persistence."""
@@ -161,6 +197,7 @@ class WindowedChatMessageHistory:
         if self.k == 0:
             return
 
+        messages = [strip_anthropic_thinking(m) for m in messages]
         if self._store is not None:
             self._store.append(messages)
 

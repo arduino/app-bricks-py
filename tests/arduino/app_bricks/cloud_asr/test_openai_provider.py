@@ -97,7 +97,9 @@ def test_session_update_is_ga_shape(fake_sockets):
     assert session["type"] == "transcription"
     audio_input = session["audio"]["input"]
     assert audio_input["format"] == {"type": "audio/pcm", "rate": 24000}
-    assert audio_input["transcription"] == {"model": "gpt-4o-mini-transcribe", "language": "it"}
+    assert audio_input["transcription"] == {"model": "gpt-live-transcribe", "languages": ["it"]}
+    # gpt-live-transcribe takes `languages`; the API rejects sending the singular key alongside it.
+    assert "language" not in audio_input["transcription"]
     assert audio_input["turn_detection"] == {"type": "server_vad"}
     # Beta-only keys must not leak into the GA payload.
     for beta_key in ("modalities", "instructions", "input_audio_format", "input_audio_transcription"):
@@ -107,8 +109,16 @@ def test_session_update_is_ga_shape(fake_sockets):
 def test_language_defaults_to_en_when_empty(fake_sockets):
     provider = make_provider(language="")
     provider.start()
-    session = json.loads(fake_sockets[-1].sent[0])["session"]
-    assert session["audio"]["input"]["transcription"]["language"] == "en"
+    transcription = json.loads(fake_sockets[-1].sent[0])["session"]["audio"]["input"]["transcription"]
+    assert transcription["languages"] == ["en"]
+    assert "language" not in transcription
+
+
+def test_language_defaults_to_en_when_omitted(fake_sockets):
+    provider = OpenAITranscribe(api_key="test-key")
+    provider.start()
+    transcription = json.loads(fake_sockets[-1].sent[0])["session"]["audio"]["input"]["transcription"]
+    assert transcription == {"model": "gpt-live-transcribe", "languages": ["en"]}
 
 
 def recv_event(fake_sockets, message: object):

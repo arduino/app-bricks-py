@@ -2,13 +2,14 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import HumanMessage
+from langchain_core.language_models import BaseChatModel, LanguageModelInput
+from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.runnables import Runnable
 
 import time
-from typing import Any, NoReturn
+from typing import Any, NoReturn, Self
 
-from arduino.app_bricks.cloud_llm import CloudLLM, CloudModelProvider
+from arduino.app_bricks.cloud_llm import CloudLLM, CloudModelProvider, ReasoningEffort
 from arduino.app_bricks.cloud_llm.cloud_llm import DEFAULT_MEMORY, ToolLike
 from arduino.app_bricks.cloud_llm.memory import MessagePersistence
 from arduino.app_utils import Logger, brick
@@ -29,6 +30,9 @@ LIST_MODELS_RETRY_DELAY_S = 1.0
 # while processing it.
 MEDIA_NOT_SUPPORTED = "input is not supported"
 MEDIA_ENCODE_FAILURE = "failed to process mtmd chunk"
+
+# Local runners don't check the API key, but the OpenAI clients require one.
+_RUNNER_API_KEY = "api_key"
 
 
 @brick
@@ -87,13 +91,9 @@ class LargeLanguageModel(CloudLLM):
         if model is None:
             logger.info("No model specified in constructor. Attempting to retrieve from app configuration or default brick configuration...")
             brick_config = get_brick_config(self.__class__)
-            app_configured_model = get_brick_configured_model(brick_config.get("id") if brick_config else None, brick_config=brick_config)
-            if app_configured_model:
-                logger.info(f"Using model: '{app_configured_model}'.")
-                model = app_configured_model
-            else:
-                model = brick_config.get("model", None)
-                logger.info(f"Using default model: '{model}'.")
+            # app.yaml override first, then the brick default (model_by_boards or model)
+            model = get_brick_configured_model(brick_config.get("id") if brick_config else None, brick_config=brick_config)
+            logger.info(f"Using model: '{model}'.")
         else:
             logger.debug(f"Forcing use of model: '{model}'.")
 
@@ -103,7 +103,7 @@ class LargeLanguageModel(CloudLLM):
             if base_url is None or base_url.strip() == "":
                 raise ValueError("Empty or wrongly configured 'base_url'")
 
-        if model is None or model.strip() == "":
+        if not model or not model.strip():
             raise ValueError("Model name must be provided either via constructor or configuration.")
 
         else:
@@ -129,7 +129,7 @@ class LargeLanguageModel(CloudLLM):
         model = f"{CloudModelProvider.OPENAI}:{model}"
 
         super().__init__(
-            api_key="api_key",
+            api_key=_RUNNER_API_KEY,
             model=model,
             system_prompt=system_prompt,
             temperature=temperature,
@@ -141,6 +141,7 @@ class LargeLanguageModel(CloudLLM):
         )
         self._model_name = local_model_name
         self._runner_host = host
+        self._runner_base_url = base_url
 
         available_models = self.list_models()
         if plain_model_name not in available_models:
@@ -163,7 +164,7 @@ class LargeLanguageModel(CloudLLM):
         for attempt in range(1, LIST_MODELS_MAX_ATTEMPTS + 1):
             try:
                 # Retries are handled here (not by the OpenAI client) so the runner has time to come up.
-                with OpenAI(base_url=self._model.openai_api_base, api_key=self._model.openai_api_key, max_retries=0) as openai_client:
+                with OpenAI(base_url=self._runner_base_url, api_key=_RUNNER_API_KEY, max_retries=0) as openai_client:
                     models_response = openai_client.models.list()
                     return [model.id for model in models_response.data]
             except APIConnectionError as e:
@@ -181,7 +182,7 @@ class LargeLanguageModel(CloudLLM):
         self,
         max_messages: int = DEFAULT_MEMORY,
         persistence: bool | MessagePersistence | None = None,
-    ) -> "LargeLanguageModel":
+    ) -> Self:
         """Enables conversational memory for this instance.
 
         Configures the Brick to retain a window of previous messages, allowing the
@@ -196,18 +197,19 @@ class LargeLanguageModel(CloudLLM):
                 control.
 
         Returns:
-            LargeLanguageModel: The current instance, allowing for method chaining.
+            Self: The current instance, allowing for method chaining.
         """
         return super().with_memory(max_messages=max_messages, persistence=persistence)
 
-    def get_client(self) -> BaseChatModel:
+    def get_client(self) -> BaseChatModel | Runnable[LanguageModelInput, AIMessage]:
         """Returns the underlying LangChain model instance.
 
         This allows for advanced users to access the full capabilities of the model
         directly, such as calling `generate()` or `stream()` with custom message formats.
 
         Returns:
-            BaseChatModel: The LangChain chat model instance used internally.
+            BaseChatModel | Runnable[LanguageModelInput, AIMessage]: The LangChain chat model
+                used internally, or the `Runnable` binding it to the registered tools.
         """
         return self._model
 
@@ -245,7 +247,8 @@ class LargeLanguageModel(CloudLLM):
             raise RuntimeError(error_msg) from e
         elif isinstance(e, APIError):
             server_msg = e.message if hasattr(e, "message") else str(e)
-            if e.code == 503:
+            # The stub types the body code as str, but runners send it as a JSON number
+            if str(e.code) == "503":
                 error_msg = f"Cannot load model due to a potential memory exhaustion on NPU sessions. message={server_msg}"
             elif self._is_model_load_failure(server_msg):
                 ilogger.error(f"Model runner reported a load failure: status_code={e.code}, message={server_msg}")
@@ -281,13 +284,16 @@ class LargeLanguageModel(CloudLLM):
         """
         try:
             # Canary call to force the model load and ensure the runner is responsive.
-            if self._base_model is None:
-                raise RuntimeError("Internal model is not initialized. Please check the configuration.")
             self._base_model.invoke([HumanMessage(content="ping")], max_tokens=1)
         except (BadRequestError, APIError) as e:
             self._handle_api_error(logger, e)
 
-    def chat(self, message: str, images: Sequence[str | bytes] | None = None) -> str:
+    def chat(
+        self,
+        message: str,
+        images: Sequence[str | bytes] | None = None,
+        reasoning_effort: ReasoningEffort | str | int | None = None,
+    ) -> str:
         """Sends a message to the AI and blocks until the complete response is received.
 
         This method automatically manages conversation history if memory is enabled.
@@ -296,15 +302,19 @@ class LargeLanguageModel(CloudLLM):
             message (str): The input text prompt from the user.
             images (Sequence[str | bytes] | None): Optional sequence of image file paths or raw bytes to include in the prompt.
                 None (default) sends a text-only message.
+            reasoning_effort (ReasoningEffort | str | int | None): Optional effort level or token budget,
+                as in `CloudLLM.chat`. None (default) keeps the default behavior; support depends on the local runner.
 
         Returns:
             str: The complete text response generated by the AI.
 
         Raises:
             RuntimeError: If the internal chain is not initialized or if the API request fails.
+            ValueError: If `reasoning_effort` is not a supported level or budget.
+            TypeError: If `reasoning_effort` is not a ReasoningEffort, str, int, or None.
         """
         try:
-            return self._strip_think(super()._chat_invoke(message=message, images=images))
+            return self._strip_think(super()._chat_invoke(message=message, images=images, reasoning_effort=reasoning_effort))
         except (BadRequestError, APIError) as e:
             self._handle_api_error(logger, e)
 

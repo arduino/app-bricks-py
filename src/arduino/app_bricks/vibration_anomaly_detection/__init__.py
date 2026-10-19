@@ -7,11 +7,26 @@ import queue
 import inspect
 import numpy as np
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Sequence
+from typing import Any, Protocol
 from arduino.app_internal.core import EdgeImpulseRunnerFacade
 from arduino.app_utils import Logger, SlidingWindowBuffer, brick
 
 logger = Logger("AnomalyDetection")
+
+# Bounded wait on the sensor window: pull() returns an empty window on timeout, the loop returns and
+# the worker checks whether the brick is still running before pulling again. Without it stop() leaves
+# the loop waiting for a window that never comes, and the worker thread never terminates.
+_WINDOW_PULL_TIMEOUT_S = 0.1
+
+
+class AnomalyClassificationCallback(Protocol):
+    """Anomaly callback that also receives the classification, None when the model has no classification head."""
+
+    def __call__(self, anomaly_score: float, /, classification: dict[str, Any] | None) -> None: ...
+
+
+type AnomalyCallback = Callable[[], None] | Callable[[float], None] | AnomalyClassificationCallback
 
 
 @brick
@@ -57,7 +72,7 @@ class VibrationAnomalyDetection(EdgeImpulseRunnerFacade):
             raise ValueError("Model parameters are missing or incomplete in the retrieved model information.")
         self._model_info = model_info
 
-        self._handler = None  # Single handler for anomaly detection
+        self._handler: AnomalyCallback | None = None  # Single handler for anomaly detection
         self._handler_lock = threading.Lock()
 
         self._buffer = SlidingWindowBuffer(window_size=model_info.input_features_count, slide_amount=int(model_info.input_features_count))
@@ -89,13 +104,13 @@ class VibrationAnomalyDetection(EdgeImpulseRunnerFacade):
 
         return threshold
 
-    def accumulate_samples(self, sensor_samples: Iterable[float]) -> None:
+    def accumulate_samples(self, sensor_samples: Sequence[float]) -> None:
         """Append one or more accelerometer samples to the sliding window buffer.
 
         Args:
-            sensor_samples (Iterable[float]): A sequence of numeric values. This can
+            sensor_samples (Sequence[float]): A sequence of numeric values. This can
                 be a single 3-axis sample `(ax, ay, az)`, multiple concatenated
-                triples, or any iterable whose flattened length contributes toward
+                triples, or any sequence whose flattened length contributes toward
                 the model’s `input_features_count`.
 
         Raises:
@@ -115,18 +130,19 @@ class VibrationAnomalyDetection(EdgeImpulseRunnerFacade):
         if not self._buffer.push(chunk):
             logger.debug(f"Samples not pushed to the buffer. Buffer is full or has insufficient capacity.")
 
-    def on_anomaly(self, callback: callable) -> None:
+    def on_anomaly(self, callback: AnomalyCallback) -> None:
         """Register a handler to be invoked when an anomaly is detected.
 
         The callback signature can be one of:
             - `callback()`
             - `callback(anomaly_score: float)`
-            - `callback(anomaly_score: float, classification: dict)`
+            - `callback(anomaly_score: float, classification: dict | None)`
 
         Args:
-            callback (callable): Function to invoke when `anomaly_score >= threshold`.
+            callback (AnomalyCallback): Function to invoke when `anomaly_score >= threshold`.
                 If a signature with `classification` is used and the model returns
-                an auxiliary classification head, a dict with label scores is passed.
+                an auxiliary classification head, a dict with label scores is passed,
+                None otherwise.
 
         Notes:
             - Registration is thread-safe and **replaces** any previously set handler.
@@ -158,16 +174,17 @@ class VibrationAnomalyDetection(EdgeImpulseRunnerFacade):
               to avoid tight loops.
         """
         try:
-            features = self._buffer.pull()
-            if features is None or len(features) == 0:
+            features = self._buffer.pull(timeout=_WINDOW_PULL_TIMEOUT_S)
+            if len(features) == 0:
                 return
 
             ret = self.infer_from_features(features.flatten().tolist())
             logger.debug(f"Inference result: {ret}")
             spotted_anomaly = self._extract_anomaly_score(ret)
             if spotted_anomaly is not None:
-                if spotted_anomaly >= self._anomaly_detection_threshold and self._handler is not None:
-                    callback = self._handler
+                if spotted_anomaly >= self._anomaly_detection_threshold:
+                    with self._handler_lock:
+                        callback = self._handler
                     if callback is not None and inspect.isfunction(callback):
                         logger.debug(f"Invoking callback handler for anomaly.")
                         callback_signature = inspect.signature(callback)  # Validate callback signature

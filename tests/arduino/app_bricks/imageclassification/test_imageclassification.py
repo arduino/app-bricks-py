@@ -75,7 +75,7 @@ def test_classify_success(classifier: ImageClassification, monkeypatch: pytest.M
         captured["files"] = files
         return FakeResp()
 
-    monkeypatch.setattr("arduino.app_internal.core.ei.requests.post", fake_post)
+    monkeypatch.setattr("arduino.app_utils.http.post", fake_post)
 
     # call with explicit confidence
     out = classifier.classify(b"bytes", "jpg", confidence=0.33)
@@ -102,7 +102,7 @@ def test_classify_http_error_and_status_not_ok(classifier: ImageClassification, 
         status_code = 500
         text = "oops"
 
-    monkeypatch.setattr("arduino.app_internal.core.ei.requests.post", lambda *a, **k: Bad1())
+    monkeypatch.setattr("arduino.app_utils.http.post", lambda *a, **k: Bad1())
     assert classifier.classify(b"xyz", "png") is None
 
     # status_code==200 but status!='OK'
@@ -112,7 +112,7 @@ def test_classify_http_error_and_status_not_ok(classifier: ImageClassification, 
         def json(self):
             return {"status": "FAIL", "message": "err"}
 
-    monkeypatch.setattr("arduino.app_internal.core.ei.requests.post", lambda *a, **k: Bad2())
+    monkeypatch.setattr("arduino.app_utils.http.post", lambda *a, **k: Bad2())
     assert classifier.classify(b"xyz", "png") is None
 
 
@@ -127,7 +127,7 @@ def test_classify_exception_swallowed(classifier: ImageClassification, monkeypat
         monkeypatch (pytest.MonkeyPatch): Pytest fixture to mock dependencies.
     """
     monkeypatch.setattr(
-        "arduino.app_internal.core.ei.requests.post",
+        "arduino.app_utils.http.post",
         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")),
     )
     # exception inside request -> None
@@ -172,7 +172,7 @@ def test_classify_from_file(tmp_path: Path, classifier: ImageClassification, mon
         captured["files"] = files
         return FakeResp()
 
-    monkeypatch.setattr("arduino.app_internal.core.ei.requests.post", fake_post)
+    monkeypatch.setattr("arduino.app_utils.http.post", fake_post)
     out = classifier.classify_from_file(str(f), confidence=0.33)
     assert out == {"classification": [{"class_name": "church", "confidence": "50.00"}]}
 
@@ -220,7 +220,7 @@ def test_process(tmp_path: Path, classifier: ImageClassification, monkeypatch: p
         captured["files"] = files
         return FakeResp()
 
-    monkeypatch.setattr("arduino.app_internal.core.ei.requests.post", fake_post)
+    monkeypatch.setattr("arduino.app_utils.http.post", fake_post)
     out = classifier.process({"image": b"data", "image_type": "jpg"})
     assert out == {"classification": [{"class_name": "church", "confidence": "50.00"}]}
 
@@ -239,7 +239,7 @@ def test_classify_applies_softmax_only_when_model_requires_it(monkeypatch: pytes
         def json(self):
             return {"result": {"classification": dict(logits)}}
 
-    monkeypatch.setattr("arduino.app_internal.core.ei.requests.post", lambda *a, **k: FakeResp())
+    monkeypatch.setattr("arduino.app_utils.http.post", lambda *a, **k: FakeResp())
 
     # Model without the flag (e.g. default MobileNet): raw output untouched, so logits leak as >100%.
     monkeypatch.setattr("arduino.app_bricks.image_classification.brick_model_requires_softmax", lambda cls: False)

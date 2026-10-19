@@ -17,7 +17,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .detections import Person
+from .detections import Person, PoseEvent
 
 """Names of the 17 body keypoints detected for each person, in model output order."""
 KEYPOINT_NAMES: tuple[str, ...] = (
@@ -280,7 +280,8 @@ class PoseKNN:
         the distance factor when vote_weighting is "distance". Neighbors are
         picked by distance alone. All zeros when the query is rejected.
         """
-        if self._db is None:
+        labels = self._labels
+        if self._db is None or labels is None:
             raise RuntimeError("fit() must be called first")
 
         d = self._distances(np.asarray(embedding, dtype=np.float32))
@@ -290,7 +291,7 @@ class PoseKNN:
         if float(np.median(d[top_idx])) > self.reject_distance:
             return probs
 
-        top_labels = self._labels[top_idx]
+        top_labels = labels[top_idx]
         votes = np.ones(len(top_idx), dtype=np.float64)
         if label_weights:
             votes *= np.asarray([label_weights.get(str(lbl), 1.0) for lbl in top_labels], dtype=np.float64)
@@ -362,7 +363,7 @@ class EmaHysteresis:
     def _per_class(spec: float | dict[str, float], cls: str) -> float:
         return spec[cls] if isinstance(spec, dict) else spec
 
-    def update(self, probs: dict[str, float] | None, dt: float, person_present: bool = True) -> list[tuple[str, str]]:
+    def update(self, probs: dict[str, float] | None, dt: float, person_present: bool = True) -> list[tuple[PoseEvent, str]]:
         """Feed one frame of probabilities observed dt seconds after the previous one.
 
         probs=None marks an invalid frame (see class docstring for the two
@@ -378,7 +379,7 @@ class EmaHysteresis:
             self._invalid_time = 0.0
 
         dt = max(dt, 1e-3)
-        events = []
+        events: list[tuple[PoseEvent, str]] = []
         for cls in self.classes:
             alpha = 1.0 - math.exp(-dt / self._per_class(self.smoothing_tau, cls))
             p = probs.get(cls, 0.0)
@@ -395,7 +396,7 @@ class EmaHysteresis:
                 events.append(("exit", cls))
         return events
 
-    def _update_action(self, cls: str, above_enter: bool, below_exit: bool) -> list[tuple[str, str]]:
+    def _update_action(self, cls: str, above_enter: bool, below_exit: bool) -> list[tuple[PoseEvent, str]]:
         duration = self.action_duration[cls]
         pending_since = self._pending_since[cls]
         if self.active[cls]:

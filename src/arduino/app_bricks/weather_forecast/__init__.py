@@ -2,15 +2,23 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-import requests
 import json
+import os
 from dataclasses import dataclass
-import importlib.resources
+from typing import Any
 
+from arduino.app_utils import http
 from arduino.app_utils import brick
 
 city_api_url = "https://geocoding-api.open-meteo.com/v1/search"
 forecast_api_url = "https://api.open-meteo.com/v1/forecast"
+
+
+def _get_json(url: str, params: dict[str, str]) -> Any:  # noqa: ANN401
+    """GET url with the query parameters and decode the JSON response. HTTP errors (4xx, 5xx) raise."""
+    response = http.get(url, params=params)
+    response.raise_for_status()
+    return response.json()
 
 
 @dataclass(frozen=True)
@@ -29,7 +37,7 @@ class WeatherData:
 
 
 # The weather codes have been taken from here: https://www.nodc.noaa.gov/archive/arc0021/0002199/1.1/data/0-data/HTML/WMO-CODE/WMO4677.HTM
-with importlib.resources.open_text(__package__, "weather_data.json") as file:
+with open(os.path.join(os.path.dirname(__file__), "weather_data.json"), encoding="utf-8") as file:
     weather_data = json.load(file)
 
 
@@ -56,9 +64,7 @@ class WeatherForecast:
             RuntimeError: If city lookup or weather data retrieval fails.
         """
         try:
-            response = requests.get(city_api_url, params={"name": city})
-            response.raise_for_status()
-            data = response.json()
+            data = _get_json(city_api_url, {"name": city})
         except Exception as e:
             raise RuntimeError(f"Failed to look city up: {e}")
         results = data.get("results", [])
@@ -93,9 +99,7 @@ class WeatherForecast:
             "format": "json",
         }
         try:
-            response = requests.get(forecast_api_url, params=params)
-            response.raise_for_status()
-            data = response.json()
+            data = _get_json(forecast_api_url, params)
         except Exception as e:
             raise RuntimeError(f"Failed to get weather data: {e}")
 
@@ -126,31 +130,31 @@ class WeatherForecast:
             category=weather_data[weather_code]["category"],
         )
 
-    def process(self, item: dict) -> WeatherData | dict:
+    def process(self, item: dict[str, Any]) -> WeatherData:
         """Process dictionary input to get weather forecast.
 
-        This method checks if the item is a dictionary with latitude and longitude or city name.
-        If it is a dictionary with latitude and longitude, it retrieves the weather forecast by coordinates.
-        If it is a dictionary with city name, it retrieves the weather forecast by city.
+        If the dictionary has latitude and longitude, it retrieves the weather forecast by coordinates.
+        Otherwise, if it has a city name, it retrieves the weather forecast by city.
 
         Args:
-            item (dict): Dictionary with either "city" key or "latitude"/"longitude" keys.
+            item (dict[str, Any]): Dictionary with either "latitude"/"longitude" keys or "city" key.
 
         Returns:
-            WeatherData | dict: WeatherData object if valid input provided, empty dict if input format is invalid.
+            WeatherData: Weather forecast with code, description, and category.
 
         Raises:
-            CityLookupError: If the city is not found.
-            WeatherForecastLookupError: If the weather forecast cannot be retrieved.
+            ValueError: If the input is not a dictionary or has neither "latitude"/"longitude" nor "city".
+            RuntimeError: If city lookup or weather data retrieval fails.
         """
-        output = {}
-        if isinstance(item, dict):
-            if "latitude" in item and "longitude" in item:
-                return self.get_forecast_by_coords(item["latitude"], item["longitude"])
-            elif "city" in item:
-                return self.get_forecast_by_city(item["city"])
-
-        return output
+        match item:
+            case {"latitude": latitude, "longitude": longitude}:
+                return self.get_forecast_by_coords(latitude, longitude)
+            case {"city": city}:
+                return self.get_forecast_by_city(city)
+            case dict():
+                raise ValueError("Input dict must contain 'latitude' and 'longitude', or 'city'")
+            case _:
+                raise ValueError("Input must be a dict")
 
 
 class CityLookupError(Exception):

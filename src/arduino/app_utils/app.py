@@ -2,6 +2,9 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import atexit
+import inspect
+import os
 import signal
 import sys
 import threading
@@ -9,7 +12,6 @@ from collections import deque
 import time
 
 from . import peripheral_registry
-from .utils import _has_callable_method, _brick_name
 from .logger import Logger
 from collections.abc import Callable
 from types import FrameType
@@ -66,6 +68,90 @@ WORKER_JOIN_TIMEOUT_S = 5.0
 """Per-worker-thread join timeout used when no global deadline applies, i.e. by stop_brick()."""
 
 
+def install_startup_signal_handler() -> None:
+    """Makes SIGTERM end the process while the app is still loading.
+
+    The app is PID 1 of its container, and the kernel ignores a signal left at its default
+    action for PID 1: a stop requested while the imports are still running (a restart right after
+    a start, in App Lab) would wait for the launcher to kill the process, 5 s later. Until
+    App.run() installs its own handler, SIGTERM exits through the interpreter, so the exit
+    handlers (the peripherals release among them) run as usual.
+
+    Main thread only, and only when nothing else owns the signal: a framework such as Streamlit
+    keeps its handlers.
+    """
+    if threading.current_thread() is not threading.main_thread():
+        return
+    if signal.getsignal(signal.SIGTERM) is not signal.SIG_DFL:
+        return
+
+    def exit_on_sigterm(signum: int, frame: FrameType | None) -> Never:
+        raise SystemExit(min(128 + signum, 255))
+
+    signal.signal(signal.SIGTERM, exit_on_sigterm)
+
+
+def _has_callable_method(obj_or_cls: object, method_name: str) -> bool:
+    """Checks if an object or class has a callable method with the correct signature.
+    The method must only accept the `self` parameter.
+    This function correctly handles both bound methods (on instances) and
+    unbound functions (on classes).
+
+    Args:
+        obj_or_cls: The object instance or class to check.
+        method_name: The name of the method to check.
+
+    Returns:
+        bool: True if the method exists and has the right signature, False otherwise.
+
+    Raises:
+        TypeError: If the method exists but has an incorrect signature.
+    """
+    if not hasattr(obj_or_cls, method_name):
+        return False
+
+    method = getattr(obj_or_cls, method_name)
+    if not callable(method):
+        return False
+
+    # Handle both bound and unbound methods
+    func = getattr(method, "__func__", method)
+
+    sig = inspect.signature(func)
+    params = list(sig.parameters.values())
+
+    if len(params) == 1:
+        if params[0].name == "self":
+            return True
+
+        # Wrong parameter name
+        raise TypeError(
+            f"Method '{method_name}' has an invalid signature. "
+            f"The '{method_name}' method is expected to only have the 'self' parameter, "
+            f"but it is defined with the name {params[0].name}. Please rename the "
+            f"method signature to avoid conflict."
+        )
+    elif len(params) > 1:
+        # Wrong parameter count
+        raise TypeError(
+            f"Method '{method_name}' has an invalid signature. "
+            f"The '{method_name}' method is expected to only have the 'self' parameter, "
+            f"but it is defined with {len(params)} total parameters. Please correct the "
+            f"method signature to avoid conflict."
+        )
+    else:
+        # No parameters at all
+        raise TypeError(
+            f"Method '{method_name}' has an invalid signature. "
+            f"The '{method_name}' method is expected to only have the 'self' parameter, "
+            f"but it is defined with no parameters. Please correct the method signature to avoid conflict."
+        )
+
+
+def _brick_name(brick: object) -> str:
+    return type(brick).__name__
+
+
 class AppController:
     """AppController orchestrates the entire application lifecycle by managing brick startup, shutdown, and their
     loops execution in a controlled, structured way.
@@ -80,9 +166,9 @@ class AppController:
     """
 
     def __init__(self) -> None:
-        self._waiting_queue = deque()
-        self._running_queue = deque()
-        self._brick_states: dict[any, list[tuple[threading.Thread, threading.Event]]] = {}
+        self._waiting_queue: deque[object] = deque()
+        self._running_queue: deque[object] = deque()
+        self._brick_states: dict[object, list[tuple[threading.Thread, threading.Event]]] = {}
         self._app_lock = threading.Lock()
         self._running = False
         self._stopping = False
@@ -151,7 +237,7 @@ class AppController:
         with self._app_lock:
             self._stop(brick)
 
-    def run(self, user_loop: callable = None) -> None:
+    def run(self, user_loop: Callable[[], Any] | None = None) -> None:
         """Starts all registered bricks and keeps the main thread alive, waiting for a shutdown signal (Ctrl+C).
 
         If a user_loop callable is provided, it will be executed instead of the default infinite loop.
@@ -171,26 +257,67 @@ class AppController:
         self._stopping = False
         # Re-arm the one-shot peripheral release so a restarted app releases its peripherals again
         peripheral_registry.Peripherals.reset()
-        self._start_managed_bricks()
-        logger.info("App started")
-
-        if self._is_framework_managed():
-            logger.info("Running in framework-managed mode (process lifecycle handled externally)")
-            return
 
         try:
+            # Starting the bricks is the slow part of the startup: inside the try, a SIGTERM
+            # landing while they start still stops the ones already running.
+            self._start_managed_bricks()
+            logger.info("App started")
+
+            if self._is_framework_managed():
+                logger.info("Running in framework-managed mode (process lifecycle handled externally)")
+                return
+
             exit_code = self.loop(user_loop)
+        except SystemExit as e:
+            # sys.exit() from user code, or SIGTERM caught by the startup handler before loop()
+            # took the signal over: the process is ending either way, so it ends as on the
+            # signal path, right after the shutdown.
+            self._shutdown_quietly()
+            self._exit(e.code if isinstance(e.code, int) else (0 if e.code is None else 1))
         except BaseException:
-            # loop() handles Exception itself, so getting here means SystemExit from user code or
-            # a BaseException raised into the main thread. The shutdown is the only thing that
-            # releases the peripherals in order, so it has to run on this path too.
+            # _start() and loop() handle Exception themselves, so getting here means a BaseException
+            # raised into the main thread. The shutdown is the only thing that releases the
+            # peripherals in order, so it has to run on this path too.
             self._shutdown_quietly()
             raise
 
         self._shutdown()
 
         if exit_code:
-            sys.exit(exit_code)
+            self._exit(exit_code)
+
+    def _exit(self, code: int) -> Never:
+        """Ends the process right after a clean shutdown, without the interpreter teardown.
+
+        With the app's modules loaded, tearing the interpreter down costs about a second on the
+        board, twice the SHUTDOWN_HEADROOM_S budgeted for it, and it is paid at every stop and
+        restart. The bricks are stopped and the peripherals released by now: what is left to do
+        is what the exit handlers and the flushes below do, as they would on a regular exit.
+
+        One difference from sys.exit(): a non-daemon thread the app left running is not waited
+        for. A stop is a request to end, and the launcher would kill the process anyway once the
+        grace period is over.
+        """
+        # A second signal must not interrupt the exit, which would leave the interpreter to end the
+        # process the slow way. Main thread only: elsewhere signal.signal() is not allowed.
+        try:
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+            signal.signal(signal.SIGINT, signal.SIG_IGN)
+        except (ValueError, OSError):
+            pass
+        try:
+            try:
+                atexit._run_exitfuncs()  # pyright: ignore[reportPrivateUsage]  # Exit handlers, logging.shutdown() among them
+            except BaseException as e:
+                logger.exception(f"An exit handler failed: {e}")
+            for stream in (sys.stdout, sys.stderr):
+                try:
+                    stream.flush()
+                except Exception:
+                    pass
+        finally:
+            os._exit(code)
 
     def _shutdown_quietly(self) -> None:
         """Runs the shutdown while an exception is already propagating, swallowing its failures."""
@@ -271,7 +398,7 @@ class AppController:
 
         return False
 
-    def loop(self, user_loop: callable = None) -> int:
+    def loop(self, user_loop: Callable[[], Any] | None = None) -> int:
         """This method keeps the application running, blocking until a KeyboardInterrupt (Ctrl+C) occurs.
 
         If a user_loop callable is provided, it will be executed inside an infinite loop and
@@ -294,10 +421,12 @@ class AppController:
         def handle_signal(signum: int, frame: FrameType | None) -> Never:
             raise SignalReceived(signum)
 
-        if threading.current_thread() is threading.main_thread():
-            signal.signal(signal.SIGTERM, handle_signal)
-
         try:
+            # Installed inside the try: a signal landing right after the installation is
+            # handled here like any other, instead of escaping loop() unhandled.
+            if threading.current_thread() is threading.main_thread():
+                signal.signal(signal.SIGTERM, handle_signal)
+
             if user_loop:
                 while True:
                     user_loop()
@@ -362,8 +491,8 @@ class AppController:
 
     def _discover_runnable_methods(self, brick: object) -> list[tuple[Callable[..., object], str]]:
         """Discovers and validates all methods marked with @loop/@execute or named loop/execute."""
-        methods = []
-        processed_names = set()
+        methods: list[tuple[Callable[..., object], str]] = []
+        processed_names: set[str] = set()
 
         for name in dir(brick):
             if name.startswith("__") or name in processed_names:

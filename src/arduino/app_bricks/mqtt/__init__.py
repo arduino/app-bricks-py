@@ -4,11 +4,13 @@
 
 import paho.mqtt.client as mqtt
 from paho.mqtt.client import ConnectFlags, DisconnectFlags, MQTTMessage
+from paho.mqtt.enums import CallbackAPIVersion
 from paho.mqtt.properties import Properties
 from paho.mqtt.reasoncodes import ReasonCode
 import json
 import uuid
 from collections.abc import Callable
+from typing import Any
 from arduino.app_utils import Logger, brick
 
 logger = Logger("MQTT")
@@ -28,7 +30,7 @@ def _generate_client_id(name: str) -> str:
     return name + "-" + str(uuid.uuid4())
 
 
-def _load_client(client_id: str, username: str | None, password: str | None, topics: list[str] = None) -> mqtt.Client:
+def _load_client(client_id: str, username: str | None, password: str | None, topics: list[str] | None = None) -> mqtt.Client:
     """Load and configure an MQTT client with connection and disconnection handlers.
 
     Args:
@@ -40,7 +42,7 @@ def _load_client(client_id: str, username: str | None, password: str | None, top
     Returns:
         mqtt.Client: Configured MQTT client instance.
     """
-    client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2, client_id=client_id)
+    client = mqtt.Client(callback_api_version=CallbackAPIVersion.VERSION2, client_id=client_id)
     if username and password:
         client.username_pw_set(username, password)
 
@@ -104,8 +106,8 @@ class MQTT:
         broker_port: int,
         username: str | None = None,
         password: str | None = None,
-        topics: list[str] = None,
-        client_id: str = None,
+        topics: list[str] | None = None,
+        client_id: str | None = None,
     ) -> None:
         """Initialize the MQTT Publisher.
 
@@ -146,7 +148,7 @@ class MQTT:
         except Exception as e:
             logger.error("Error during MQTT client shutdown: %s", e)
 
-    def publish(self, topic: str, message: str | dict) -> None:
+    def publish(self, topic: str, message: str | dict[str, Any]) -> None:
         """Publish a message to the MQTT topic.
 
         Args:
@@ -161,8 +163,8 @@ class MQTT:
             raise ValueError("Topic must be a non-empty string")
 
         try:
-            if isinstance(message, dict) and len(message) > 0:
-                message = json.dumps(message)
+            if isinstance(message, dict):
+                message = json.dumps(message) if message else ""
 
             if message and message != "":
                 res = self.client.publish(topic, message)

@@ -1,6 +1,6 @@
 services:
   dbstorage-influx:
-    image: influxdb:2.7-alpine
+    image: influxdb:2.9-alpine
     logging:
       driver: "json-file"
       options:
@@ -20,5 +20,7 @@ services:
     healthcheck:
       test: [ "CMD-SHELL", "curl -f http://localhost:8086/health || exit 1" ]
       interval: 2s
+      start_period: 30s
+      start_interval: 250ms
       timeout: 3s
       retries: 10

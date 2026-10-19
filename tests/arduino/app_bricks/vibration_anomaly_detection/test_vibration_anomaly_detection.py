@@ -8,7 +8,6 @@ import random
 import time
 import numpy as np
 from arduino.app_bricks.vibration_anomaly_detection import VibrationAnomalyDetection
-from arduino.app_utils import HttpClient
 
 import arduino.app_utils.app as app
 from arduino.app_utils import AppController
@@ -80,8 +79,8 @@ def mock_dependencies(monkeypatch: pytest.MonkeyPatch):
     ):
         return FakeResp()
 
-    # Mock the requests.get method to return a fake response
-    monkeypatch.setattr(HttpClient, "request_with_retry", fake_get)
+    # Mock the model info request to return a fake response
+    monkeypatch.setattr("arduino.app_utils.http.get", lambda url, **kwargs: fake_get(None, url))
 
 
 def test_classify_no_anomaly(app_instance: AppController, monkeypatch: pytest.MonkeyPatch):
@@ -105,8 +104,8 @@ def test_classify_no_anomaly(app_instance: AppController, monkeypatch: pytest.Mo
 
     classifier = VibrationAnomalyDetection(anomaly_detection_threshold=1.5)
 
-    # Mock the requests.post method to return a fake response
-    monkeypatch.setattr("arduino.app_internal.core.ei.requests.post", fake_post)
+    # Mock the inference request to return a fake response
+    monkeypatch.setattr("arduino.app_utils.http.post", fake_post)
 
     anomaly_trigger_called = False
 
@@ -157,8 +156,8 @@ def test_classify_success(app_instance: AppController, monkeypatch: pytest.Monke
 
     classifier = VibrationAnomalyDetection(anomaly_detection_threshold=1.5)
 
-    # Mock the requests.post method to return a fake response
-    monkeypatch.setattr("arduino.app_internal.core.ei.requests.post", fake_post)
+    # Mock the inference request to return a fake response
+    monkeypatch.setattr("arduino.app_utils.http.post", fake_post)
 
     anomaly_trigger_called = False
 
@@ -209,8 +208,8 @@ def test_classify_success_with_arguments(app_instance: AppController, monkeypatc
 
     classifier = VibrationAnomalyDetection()
 
-    # Mock the requests.post method to return a fake response
-    monkeypatch.setattr("arduino.app_internal.core.ei.requests.post", fake_post)
+    # Mock the inference request to return a fake response
+    monkeypatch.setattr("arduino.app_utils.http.post", fake_post)
 
     anomaly_trigger_called = False
     score = None
@@ -266,8 +265,8 @@ def test_classify_success_with_more_arguments(app_instance: AppController, monke
 
     classifier = VibrationAnomalyDetection()
 
-    # Mock the requests.post method to return a fake response
-    monkeypatch.setattr("arduino.app_internal.core.ei.requests.post", fake_post)
+    # Mock the inference request to return a fake response
+    monkeypatch.setattr("arduino.app_utils.http.post", fake_post)
 
     anomaly_trigger_called = False
     score = None
@@ -315,7 +314,7 @@ def test_classify_success_with_more_arguments(app_instance: AppController, monke
 def test_threshold_property_update_controls_callback(app_instance: AppController, monkeypatch: pytest.MonkeyPatch):
     classifier = VibrationAnomalyDetection(anomaly_detection_threshold=1.0)
 
-    monkeypatch.setattr(classifier._buffer, "pull", lambda: np.array([0.0] * 600))
+    monkeypatch.setattr(classifier._buffer, "pull", lambda timeout=None: np.array([0.0] * 600))
     monkeypatch.setattr(classifier, "infer_from_features", lambda features: {"result": {"anomaly": 2.5}})
 
     anomaly_trigger_called = False
@@ -337,6 +336,22 @@ def test_threshold_property_update_controls_callback(app_instance: AppController
     assert anomaly_trigger_called
 
 
+def test_classification_callback_receives_none_without_classification_head(monkeypatch: pytest.MonkeyPatch):
+    classifier = VibrationAnomalyDetection()
+    monkeypatch.setattr(classifier._buffer, "pull", lambda timeout=None: np.array([0.0] * 600))
+    monkeypatch.setattr(classifier, "infer_from_features", lambda features: {"result": {"anomaly": 2.5}})
+
+    received = []
+
+    def callback_for_anomaly(anomaly_score: float, classification: dict | None):
+        received.append((anomaly_score, classification))
+
+    classifier.on_anomaly(callback_for_anomaly)
+    classifier.loop()
+
+    assert received == [(2.5, None)]
+
+
 @pytest.mark.parametrize("threshold", [0, 0.1, 1.0, 5, "7.5"])
 def test_threshold_property_accepts_finite_non_negative_values(threshold):
     classifier = VibrationAnomalyDetection(anomaly_detection_threshold=threshold)
@@ -348,3 +363,19 @@ def test_threshold_property_accepts_finite_non_negative_values(threshold):
 def test_threshold_property_rejects_invalid_values(threshold):
     with pytest.raises(ValueError, match="finite non-negative"):
         VibrationAnomalyDetection(anomaly_detection_threshold=threshold)
+
+
+def test_stop_terminates_the_detection_loop_waiting_for_a_window(app_instance: AppController):
+    """The loop waits for a full sensor window: stopping the brick before one arrives must still end its worker thread."""
+    VibrationAnomalyDetection()
+
+    app_thread = threading.Thread(target=app_instance.run, daemon=True)
+    app_thread.start()
+    time.sleep(0.1)
+    worker = next(t for t in threading.enumerate() if t.name == "VibrationAnomalyDetection.loop")
+
+    app_instance._stop_all_bricks()
+    app_thread.join(timeout=1)
+
+    worker.join(timeout=1)
+    assert not worker.is_alive()

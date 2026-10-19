@@ -8,15 +8,18 @@ Containers live in ``containers/<group>/<name>/``, the directory name being also
 the group (ai, base, bricks) telling what the image is for. The base image of each one is declared
 exactly once, in the ``FROM`` of its Dockerfile's final stage: this module resolves it through
 multi-stage builds and tells whether it is another container of this repository
-(``FROM ${REGISTRY}app-bricks/<parent>:${BASE_IMAGE_VERSION}``) or an external image. CI needs no
-second, drift-prone copy of the graph; ``docker-bake.hcl`` links the same parents so bake builds them
-in order, and ``check-bake`` verifies the two agree.
+(``FROM ${REGISTRY}app-bricks/<parent>:${BASE_IMAGE_VERSION}``) or an external image. An image can
+also copy files out of a container of this repository, a layer, through a stage of its own
+(``FROM ${REGISTRY}app-bricks/<layer>:${BASE_IMAGE_VERSION} AS <alias>`` then ``COPY --link --from=<alias>``):
+the layer is a build dependency like the parent, without being the image it builds on. CI needs no
+second, drift-prone copy of the graph; ``docker-bake.hcl`` links the same parents and layers so bake
+builds them in order, and ``check-bake`` verifies the two agree.
 
-    python3 -m scripts.container                  # JSON map of base image and parent per container
+    python3 -m scripts.container                  # JSON map of base image, parent and layers per container
     python3 -m scripts.container list             # JSON array of every container
-    python3 -m scripts.container closure NAME...  # the selection widened with its parents and children
+    python3 -m scripts.container closure NAME...  # the selection widened with its dependencies and dependents
     python3 -m scripts.container tree             # the hierarchy, grouped by external base image
-    python3 -m scripts.container show NAME        # base image, parent, children and files of one container
+    python3 -m scripts.container show NAME        # base image, parent, layers, children and files of one container
     docker buildx bake --print | python3 -m scripts.container check-bake
     python3 -m scripts.container new my-runner --group ai --from python-slim --desc "What it runs"
 
@@ -46,6 +49,16 @@ class ContainerError(RuntimeError):
     """Raised when the Dockerfiles do not describe a valid graph or a container cannot be scaffolded."""
 
 
+def read_stages(dockerfile: Path) -> list[tuple[str, str | None]]:
+    """Return the (image, alias) of every ``FROM`` of the Dockerfile, in order."""
+    stages: list[tuple[str, str | None]] = []
+    for line in dockerfile.read_text(encoding="utf-8").splitlines():
+        match = FROM_PATTERN.match(line)
+        if match:
+            stages.append((match.group(1), match.group(2)))
+    return stages
+
+
 def resolve_base_image(dockerfile: Path) -> str:
     """Return the image the Dockerfile's final stage builds on.
 
@@ -53,11 +66,7 @@ def resolve_base_image(dockerfile: Path) -> str:
     follows ``FROM <alias>`` references through earlier stages until it reaches
     an image that is not a stage of the same Dockerfile.
     """
-    stages: list[tuple[str, str | None]] = []
-    for line in dockerfile.read_text(encoding="utf-8").splitlines():
-        match = FROM_PATTERN.match(line)
-        if match:
-            stages.append((match.group(1), match.group(2)))
+    stages = read_stages(dockerfile)
     if not stages:
         raise ContainerError(f"No FROM instruction in {dockerfile}")
 
@@ -78,14 +87,20 @@ def parent_container(base_image: str) -> str | None:
     return match.group(1) if match else None
 
 
+def referenced_containers(dockerfile: Path) -> set[str]:
+    """Return the containers of this repository any ``FROM`` of the Dockerfile builds on, the parent included."""
+    return {container for image, _ in read_stages(dockerfile) if (container := parent_container(image))}
+
+
 class Containers:
-    """The containers of the repository, with their base image and parent."""
+    """The containers of the repository, with their base image, parent and layers."""
 
     def __init__(self, containers_dir: Path) -> None:
         """Read every ``containers/<group>/<name>/Dockerfile``."""
         self.directory: dict[str, Path] = {}
         self.base: dict[str, str] = {}
         self.parent: dict[str, str | None] = {}
+        self.layers: dict[str, list[str]] = {}
 
         dockerfiles = sorted(containers_dir.glob(DOCKERFILE_GLOB))
         if not dockerfiles:
@@ -101,10 +116,14 @@ class Containers:
             self.directory[name] = dockerfile.parent
             self.base[name] = resolve_base_image(dockerfile)
             self.parent[name] = parent_container(self.base[name])
+            self.layers[name] = sorted(referenced_containers(dockerfile) - {self.parent[name]})
 
         for name, parent in self.parent.items():
             if parent is not None and parent not in self.directory:
                 raise ContainerError(f"'{name}' builds FROM unknown container '{parent}'.")
+            for layer in self.layers[name]:
+                if layer not in self.directory:
+                    raise ContainerError(f"'{name}' copies from unknown container '{layer}'.")
 
     @property
     def names(self) -> list[str]:
@@ -115,12 +134,22 @@ class Containers:
         """The containers building FROM ``name``."""
         return sorted(child for child, parent in self.parent.items() if parent == name)
 
+    def dependencies(self, name: str) -> list[str]:
+        """The containers ``name`` is built from: its parent, then its layers."""
+        parent = self.parent[name]
+        return ([parent] if parent else []) + self.layers[name]
+
+    def dependents(self, name: str) -> list[str]:
+        """The containers building FROM ``name`` or copying from it."""
+        return sorted(other for other in self.names if name in self.dependencies(other))
+
     def closure(self, selection: list[str]) -> list[str]:
         """Widen a selection so related images stay consistent.
 
-        The containers deriving from the selection are added, so a parent is
-        never rebuilt without its children, then the parents of the whole set,
-        so every rebuilt image sits on a freshly built base.
+        The containers deriving from the selection or copying from it are added,
+        so an image is never rebuilt without the ones built from it, then the
+        parents and layers of the whole set, so every rebuilt image sits on a
+        freshly built base and copies freshly built files.
         """
         unknown = sorted(set(selection) - set(self.directory))
         if unknown:
@@ -129,11 +158,11 @@ class Containers:
         selected = set(selection)
         frontier = set(selection)
         while frontier:
-            frontier = {child for name in frontier for child in self.children(name)} - selected
+            frontier = {dependent for name in frontier for dependent in self.dependents(name)} - selected
             selected |= frontier
         frontier = set(selected)
         while frontier:
-            frontier = {parent for name in frontier if (parent := self.parent[name])} - selected
+            frontier = {dependency for name in frontier for dependency in self.dependencies(name)} - selected
             selected |= frontier
         return sorted(selected)
 
@@ -142,8 +171,9 @@ class Containers:
 
         Every container must be a target of the default group, every target must
         be a container, and a target must link exactly the parent its Dockerfile
-        builds FROM: bake rewrites that FROM to the freshly built parent only
-        through the link, without it the image is pulled from the registry instead.
+        builds FROM and the layers it copies from: bake rewrites those FROM lines
+        to the freshly built images only through the links, without them the
+        images are pulled from the registry instead.
         """
         targets = definition.get("target") or {}
         problems = [f"'{name}' has a Dockerfile but no bake target in the default group" for name in sorted(set(self.names) - set(targets))]
@@ -151,11 +181,11 @@ class Containers:
         for name in sorted(set(self.names) & set(targets)):
             contexts = targets[name].get("contexts") or {}
             linked = sorted(value.removeprefix("target:") for value in contexts.values() if value.startswith("target:"))
-            expected = [self.parent[name]] if self.parent[name] else []
-            if linked != expected:
+            if linked != sorted(self.dependencies(name)):
+                copies = f" and copies from {', '.join(self.layers[name])}" if self.layers[name] else ""
                 problems.append(
                     f"bake target '{name}' links {', '.join(linked) or 'no parent'} but its Dockerfile builds FROM "
-                    f"{expected[0] if expected else 'an external image'}"
+                    f"{self.parent[name] or 'an external image'}{copies}"
                 )
         return problems
 
@@ -169,15 +199,17 @@ class Containers:
             f"  directory:  {directory}",
             f"  base image: {self.base[name]}",
             f"  parent:     {self.parent[name] or '-'}",
+            f"  layers:     {', '.join(self.layers[name]) or '-'}",
             f"  children:   {', '.join(self.children(name)) or '-'}",
+            f"  copied by:  {', '.join(other for other in self.names if name in self.layers[other]) or '-'}",
             f"  python:     {'pyproject.toml + uv.lock' if (directory / 'pyproject.toml').exists() else '-'}",
             f"  tests:      {'tests/' if (directory / 'tests').is_dir() else '-'}",
         ]
         return "\n".join(lines)
 
-    def to_dict(self) -> dict[str, dict[str, str | None]]:
-        """Map every container to its base image and parent container."""
-        return {name: {"base": self.base[name], "parent": self.parent[name]} for name in self.names}
+    def to_dict(self) -> dict[str, dict[str, str | list[str] | None]]:
+        """Map every container to its base image, parent container and layers."""
+        return {name: {"base": self.base[name], "parent": self.parent[name], "layers": self.layers[name]} for name in self.names}
 
     def tree(self) -> str:
         """Render the hierarchy, grouped by external base image."""

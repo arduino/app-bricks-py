@@ -16,7 +16,7 @@ def _patch_brick_lookup(monkeypatch: pytest.MonkeyPatch):
     """Avoid hitting the real service-discovery."""
     monkeypatch.setattr("arduino.app_bricks.asr.local_asr.resolve_address", lambda host: "127.0.0.1")
     monkeypatch.setattr("arduino.app_bricks.asr.local_asr.get_brick_config", lambda cls: {"id": None, "model": "test-model"})
-    monkeypatch.setattr("arduino.app_bricks.asr.local_asr.get_brick_configured_model", lambda _id: None)
+    monkeypatch.setattr("arduino.app_bricks.asr.local_asr.get_brick_configured_model", lambda _id, brick_config=None: "test-model")
 
 
 def _wav_bytes(samples: np.ndarray, sample_rate: int = 16000, channels: int = 1) -> bytes:
@@ -31,7 +31,7 @@ def _wav_bytes(samples: np.ndarray, sample_rate: int = 16000, channels: int = 1)
 
 
 class _FakeResponse:
-    """Minimal stand-in for a ``requests`` response."""
+    """Minimal stand-in for an HTTP response."""
 
     def __init__(self, payload: dict, status_code: int = 200):
         self.status_code = status_code
@@ -44,7 +44,7 @@ class _FakeResponse:
 
 def _mock_session_endpoints(monkeypatch) -> list[dict]:
     """
-    Replace ``requests.post`` in the ASR module so session create/close succeed
+    Replace the HTTP POST of the ASR module so session create/close succeed
     offline. Returns the list of JSON bodies the brick posted, in order.
     """
     bodies: list[dict] = []
@@ -56,7 +56,7 @@ def _mock_session_endpoints(monkeypatch) -> list[dict]:
             return _FakeResponse({"session_id": "sess-1", "state": "asr_initialized"})
         return _FakeResponse({})
 
-    monkeypatch.setattr("arduino.app_bricks.asr.local_asr.requests.post", fake_post)
+    monkeypatch.setattr("arduino.app_utils.http.post", fake_post)
     return bodies
 
 

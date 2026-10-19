@@ -3,10 +3,11 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import os
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from arduino.app_peripherals.camera import csi_camss_discovery
+from arduino.app_peripherals.camera import CameraOpenError, csi_camss_discovery
 
 
 @pytest.fixture
@@ -64,3 +65,23 @@ def test_setup_gstreamer_honors_existing_plugin_path_override(plugin_dir, monkey
     filtered_dir = os.environ["GST_PLUGIN_SYSTEM_PATH_1_0"]
     assert filtered_dir != str(plugin_dir)
     assert sorted(os.listdir(filtered_dir)) == ["libgstlibcamera.so"]
+
+
+_DEVICE_MONITOR_OUTPUT = """Device found:
+
+        name  : imx219 2-0010
+        class : Video/Source
+"""
+
+
+def test_resolve_camera_name_matches_the_i2c_address():
+    """The camera name is the device monitor entry carrying the sensor I2C address."""
+    with patch.object(csi_camss_discovery.subprocess, "run", return_value=MagicMock(stdout=_DEVICE_MONITOR_OUTPUT)):
+        assert csi_camss_discovery.resolve_camera_name("2-0010") == "imx219 2-0010"
+
+
+def test_resolve_camera_name_raises_without_a_match():
+    """An I2C address no device monitor entry carries is not a camera."""
+    with patch.object(csi_camss_discovery.subprocess, "run", return_value=MagicMock(stdout=_DEVICE_MONITOR_OUTPUT)):
+        with pytest.raises(CameraOpenError, match="No camera matches I2C address"):
+            csi_camss_discovery.resolve_camera_name("3-0010")

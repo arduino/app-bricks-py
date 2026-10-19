@@ -48,7 +48,7 @@ class KeywordSpotting(AudioDetector):
             TypeError: If callback is not callable.
             ValueError: If callback accepts any argument.
         """
-        super().on_detect(keyword, callback)
+        self._register_handler(keyword, callback)
 
     def start(self) -> None:
         """Start the KeywordSpotting module and begin processing audio data.

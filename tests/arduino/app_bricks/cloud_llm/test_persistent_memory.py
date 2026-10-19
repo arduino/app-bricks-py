@@ -236,6 +236,66 @@ def test_history_window_never_starts_inside_a_tool_exchange(k):
     assert [m.type for m in msgs] == ["human", "ai", "tool", "ai"]
 
 
+_THINKING = {"type": "thinking", "thinking": "", "signature": "sig-1"}
+_REDACTED = {"type": "redacted_thinking", "data": "opaque"}
+_TEXT = {"type": "text", "text": "Paris."}
+
+
+def _anthropic_ai(content, **kwargs) -> AIMessage:
+    return AIMessage(content=content, response_metadata={"model_provider": "anthropic"}, **kwargs)
+
+
+def test_history_strips_anthropic_thinking_blocks():
+    history = WindowedChatMessageHistory(k=10)
+    history.add_messages([HumanMessage(content="capital of France?"), _anthropic_ai([_THINKING, _REDACTED, _TEXT])])
+
+    assert history.get_messages()[1].content == [_TEXT]
+
+
+def test_history_strip_keeps_tool_calls():
+    tool_use = {"type": "tool_use", "id": "call-1", "name": "get_weather", "input": {"city": "Turin"}}
+    tool_calls = [{"name": "get_weather", "args": {"city": "Turin"}, "id": "call-1", "type": "tool_call"}]
+    history = WindowedChatMessageHistory(k=10)
+    history.add_messages([HumanMessage(content="weather?"), _anthropic_ai([_THINKING, tool_use], tool_calls=tool_calls)])
+
+    stored = history.get_messages()[1]
+    assert stored.content == [tool_use]
+    assert [tc["id"] for tc in stored.tool_calls] == ["call-1"]
+
+
+def test_history_strip_leaves_an_empty_string_when_only_thinking_remains():
+    history = WindowedChatMessageHistory(k=10)
+    history.add_messages([HumanMessage(content="hi"), _anthropic_ai([_THINKING])])
+
+    assert history.get_messages()[1].content == ""
+
+
+@pytest.mark.parametrize("provider", ["google_genai", "openai", None])
+def test_history_keeps_thinking_blocks_of_other_providers(provider):
+    # Gemini replays its thought signatures from these blocks: only Anthropic binds them.
+    metadata = {"model_provider": provider} if provider else {}
+    message = AIMessage(content=[_THINKING, _TEXT], response_metadata=metadata)
+    history = WindowedChatMessageHistory(k=10)
+    history.add_messages([HumanMessage(content="hi"), message])
+
+    assert history.get_messages()[1].content == [_THINKING, _TEXT]
+
+
+def test_history_persists_messages_without_anthropic_thinking(sql_store):
+    store = SQLMessagePersistence(sql_store=sql_store, thread_id="strip-store")
+    WindowedChatMessageHistory(k=10, store=store).add_messages([HumanMessage(content="hi"), _anthropic_ai([_THINKING, _TEXT])])
+
+    assert store.load()[1].content == [_TEXT]
+
+
+def test_history_strips_anthropic_thinking_persisted_by_older_versions(sql_store):
+    store = SQLMessagePersistence(sql_store=sql_store, thread_id="strip-legacy")
+    store.append([HumanMessage(content="hi"), _anthropic_ai([_THINKING, _TEXT])])
+
+    reloaded = WindowedChatMessageHistory(k=10, store=SQLMessagePersistence(sql_store=sql_store, thread_id="strip-legacy"))
+    assert reloaded.get_messages()[1].content == [_TEXT]
+
+
 def test_history_without_store_is_in_memory_only():
     history = WindowedChatMessageHistory(k=10)
     history.add_messages([HumanMessage(content="hi"), AIMessage(content="hello")])
@@ -253,6 +313,11 @@ def _bare_llm(system_prompt: str = ""):
     llm._system_prompt = system_prompt
     llm._max_messages = 0
     return llm
+
+
+def test_with_memory_returns_the_instance_for_chaining():
+    llm = _bare_llm()
+    assert llm.with_memory(max_messages=5) is llm
 
 
 def test_with_memory_default_is_in_memory_only():

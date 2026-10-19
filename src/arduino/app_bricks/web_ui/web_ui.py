@@ -6,8 +6,8 @@ import os
 import asyncio
 import threading
 from contextlib import asynccontextmanager
-from typing import Any
-from collections.abc import AsyncIterator, Callable, Iterator
+from typing import TYPE_CHECKING, Any
+from collections.abc import AsyncGenerator, Callable, Iterator
 
 import uvicorn
 from fastapi import FastAPI
@@ -15,8 +15,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi_socketio import SocketManager
 
-from arduino.app_peripherals.camera.base_camera import BaseCamera
 from arduino.app_utils import brick, Logger
+
+if TYPE_CHECKING:
+    # Type hint only: importing the camera package at runtime would load cv2 in every app using WebUI
+    from arduino.app_peripherals.camera.base_camera import BaseCamera
 
 logger = Logger("WebUI")
 
@@ -73,7 +76,7 @@ class WebUI:
             use_tls = use_ssl
 
         @asynccontextmanager
-        async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
             await self._on_startup()
             yield
 
@@ -112,7 +115,7 @@ class WebUI:
         self._server_loop: asyncio.AbstractEventLoop | None = None
         self._on_connect_cb: Callable[[str], None] | None = None
         self._on_disconnect_cb: Callable[[str], None] | None = None
-        self._on_message_cbs = {}
+        self._on_message_cbs: dict[str, Callable[[str, Any], Any]] = {}
         self._on_message_cbs_lock = threading.Lock()
 
     @property
@@ -179,10 +182,15 @@ class WebUI:
         are therefore cut off.
         """
         logger.debug("Stopping server...")
-        if not self._server:
+        server = self._server
+        if not server:
             return
 
-        self._server.should_exit = True  # Ask to stop the server
+        server.should_exit = True  # Ask to stop the server
+
+        loop = self._server_loop
+        if loop is None or not loop.is_running():
+            return  # Not serving, or not yet: there is no connection to wait for
 
         # Stop the Socket.IO background task and close the client connections. Without this the
         # server keeps waiting on an open websocket, or on an engine.io long poll parked for up to
@@ -191,22 +199,25 @@ class WebUI:
         # SocketManager does not expose shutdown(), it only keeps the underlying server on the
         # FastAPI app as `sio`.
         sio_server = getattr(self.app, "sio", None)
-        if sio_server is not None and self._server_loop is not None and self._server_loop.is_running():
+        if sio_server is not None:
             try:
-                asyncio.run_coroutine_threadsafe(sio_server.shutdown(), self._server_loop)
+                asyncio.run_coroutine_threadsafe(sio_server.shutdown(), loop)
             except Exception as e:
                 logger.debug(f"Failed to shut down the Socket.IO layer: {e}")
 
         # Escalate if the graceful path does not complete: dropping connections is preferable to
-        # overrunning the app's shutdown budget and having the process killed instead.
-        def force_stop() -> None:
-            if self._server and not getattr(self._server, "force_exit", False):
+        # overrunning the app's shutdown budget and having the process killed instead. Scheduled on
+        # the server's loop, the escalation is dropped with the loop when the server stops in time,
+        # and it can only reach this server, not one started after it.
+        def force_exit() -> None:
+            if not server.force_exit:
                 logger.debug("Graceful shutdown timed out, forcing the server to stop")
-                self._server.force_exit = True
+                server.force_exit = True
 
-        timer = threading.Timer(FORCE_SHUTDOWN_TIMEOUT_S, force_stop)
-        timer.daemon = True
-        timer.start()
+        try:
+            loop.call_soon_threadsafe(loop.call_later, FORCE_SHUTDOWN_TIMEOUT_S, force_exit)
+        except RuntimeError:
+            pass  # The loop closed in the meantime: the server is down already
 
     def execute(self) -> None:
         logger.debug(f"Serving static web files from {self._assets_dir_path}")
@@ -221,12 +232,17 @@ class WebUI:
             startup_log += f"\n  - Network URL: {self.url}"
         logger.info(startup_log)
 
+        server = self._server
+        if server is None:
+            logger.error("Cannot run the server: start() was not called")
+            return
+
         try:
-            self._server.run()
+            server.run()
         except Exception as e:
             logger.exception(f"Error running server: {e}")
 
-    def expose_api(self, method: str, path: str, function: Callable) -> None:
+    def expose_api(self, method: str, path: str, function: Callable[..., Any]) -> None:
         """Register a route with the specified HTTP method and path.
 
         The path will be prefixed with the api_path_prefix configured during initialization.
@@ -234,11 +250,11 @@ class WebUI:
         Args:
             method (str): HTTP method to use (e.g., "GET", "POST").
             path (str): URL path for the API endpoint (without the prefix).
-            function (Callable): Function to execute when the route is accessed.
+            function (Callable[..., Any]): Function to execute when the route is accessed.
         """
         self.app.add_api_route(self._api_path_prefix + path, function, methods=[method])
 
-    def expose_camera(self, path: str, camera: BaseCamera, jpeg_quality: int = 80) -> None:
+    def expose_camera(self, path: str, camera: "BaseCamera", jpeg_quality: int = 80) -> None:
         """
         Expose a camera stream at the specified URL path in MJPEG format.
 
@@ -252,7 +268,7 @@ class WebUI:
         from fastapi.responses import StreamingResponse
         from arduino.app_utils.image import compress_to_jpeg
 
-        if not camera.is_started:
+        if not camera.is_started():
             camera.start()
 
         def generate_frames() -> Iterator[bytes]:
@@ -318,7 +334,7 @@ class WebUI:
             self._on_message_cbs[message_type] = callback
         logger.debug(f"Registered listener for message '{message_type}'")
 
-    def send_message(self, message_type: str, message: dict | list | str, room: str | None = None) -> None:
+    def send_message(self, message_type: str, message: dict[str, Any] | list[Any] | str, room: str | None = None) -> None:
         """Send a message to connected WebSocket clients.
 
         Args:
@@ -357,8 +373,7 @@ class WebUI:
         self.app.mount(url_path, NonCachedStaticFiles(directory=self._assets_dir_path, html=True), name="static")
 
     def _init_socketio(self) -> None:
-        @self.sio.on("connect")
-        async def handle_connect(sid: str, environ: dict, auth: str) -> None:
+        async def handle_connect(sid: str, environ: dict[str, Any], auth: str) -> None:
             logger.debug(f"Client connected: {sid}")
             if self._on_connect_cb:
                 try:
@@ -366,7 +381,6 @@ class WebUI:
                 except Exception as e:
                     logger.exception(f"Error in 'on_connect' callback for {sid}: {e}")
 
-        @self.sio.on("disconnect")
         async def handle_disconnect(sid: str, reason: str) -> None:
             logger.debug(f"Client disconnected ({reason}): {sid}")
             if self._on_disconnect_cb:
@@ -375,18 +389,15 @@ class WebUI:
                 except Exception as e:
                     logger.exception(f"Error in 'on_disconnect' callback for {sid}: {e}")
 
-        @self.sio.on("enter_room")
         async def handle_enter_room(sid: str, room: str) -> None:
             logger.debug(f"Client {sid} entering room {room}")
             await self.sio.enter_room(sid, room)
 
-        @self.sio.on("leave_room")
         async def handle_leave_room(sid: str, room: str) -> None:
             logger.debug(f"Client {sid} leaving room {room}")
             await self.sio.leave_room(sid, room)
 
-        @self.sio.on("*")
-        async def handle_generic_event(event: str, sid: str, data: dict) -> None:
+        async def handle_generic_event(event: str, sid: str, data: dict[str, Any]) -> None:
             """Handles generic messages from clients intended for the registered callbacks."""
             logger.debug(f"Received event'{event}' from {sid} containing: {data}")
 
@@ -411,3 +422,9 @@ class WebUI:
             else:
                 logger.warning(f"No listener registered for '{event}'")
                 await self.sio.emit("error", f"No listener registered for '{event}'", room=sid)
+
+        self.sio.on("connect", handle_connect)
+        self.sio.on("disconnect", handle_disconnect)
+        self.sio.on("enter_room", handle_enter_room)
+        self.sio.on("leave_room", handle_leave_room)
+        self.sio.on("*", handle_generic_event)

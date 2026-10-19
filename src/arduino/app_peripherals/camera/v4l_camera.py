@@ -14,6 +14,7 @@ from collections.abc import Callable
 
 from arduino.app_utils import Logger
 
+from .base_camera import CameraInfo
 from .camera import BaseCamera
 from .errors import CameraOpenError, CameraReadError
 
@@ -66,7 +67,7 @@ class V4LCamera(BaseCamera):
         self.name = f"usb:{self._resolve_name(self.v4l_path)}"  # Override parent name with a human-readable name
         self.logger = logger
 
-        self._cap = None
+        self._cap: cv2.VideoCapture | None = None
 
         self._last_reconnection_attempt = 0.0  # Used for auto-reconnection when _read_frame is called
 
@@ -81,15 +82,21 @@ class V4LCamera(BaseCamera):
         return [index for index, _ in V4LCamera._scan_stable_links()]
 
     @staticmethod
-    def _list_stable_paths() -> list[str]:
+    def list_cameras() -> list[CameraInfo]:
         """
-        Return the stable /dev/v4l/by-id links of the available USB cameras,
-        ordered by their video device index.
+        Return the available USB cameras, ordered by their video device index.
 
         Returns:
-            list[str]: List of stable USB camera paths.
+            list[CameraInfo]: Name and location of each camera. Identical cameras share the same
+                name, the location ("/dev/v4l/by-id/...", stable across reconnections) tells them apart.
         """
-        return [path for _, path in V4LCamera._scan_stable_links()]
+        cameras: list[CameraInfo] = []
+        for _, path in V4LCamera._scan_stable_links():
+            try:
+                cameras.append({"name": V4LCamera._resolve_name(path), "location": path})
+            except CameraOpenError:
+                continue  # Unplugged while listing
+        return cameras
 
     @staticmethod
     def _scan_stable_links() -> list[tuple[int, str]]:
@@ -153,26 +160,30 @@ class V4LCamera(BaseCamera):
         Raises:
             CameraOpenError: If camera cannot be resolved
         """
-        if isinstance(device, str) and device.startswith("/dev/v4l/by-id"):
-            # Already a stable link, resolve video device
-            device_path = os.path.realpath(device)
-        elif isinstance(device, str) and device.startswith("/dev/v4l/by-path"):
-            # A stable link, but not the one we want, resolve video device
-            if not os.path.exists(device):
-                raise CameraOpenError(f"Device path {device} does not exist")
-            device_path = os.path.realpath(device)
-        elif isinstance(device, int) or (isinstance(device, str) and device.isdigit()):
-            # Resolve video device as /dev/video<device>
-            device_index = int(device)
-            device_indices = V4LCamera.list_devices()
-            if device_index < 0 or device_index >= len(device_indices):
-                raise CameraOpenError(f"Camera index {device_index} out of range. Available: 0-{len(device_indices)}")
-            device_path = f"/dev/video{device_indices[device_index]}"
-        elif isinstance(device, str) and device.startswith("/dev/video"):
-            # Already a video device
-            device_path = device
-        else:
-            raise CameraOpenError(f"Unrecognized device identifier: {device}")
+        match device:
+            case str() if not device.isdigit():
+                if device.startswith("/dev/v4l/by-id"):
+                    # Already a stable link, resolve video device
+                    device_path = os.path.realpath(device)
+                elif device.startswith("/dev/v4l/by-path"):
+                    # A stable link, but not the one we want, resolve video device
+                    if not os.path.exists(device):
+                        raise CameraOpenError(f"Device path {device} does not exist")
+                    device_path = os.path.realpath(device)
+                elif device.startswith("/dev/video"):
+                    # Already a video device
+                    device_path = device
+                else:
+                    raise CameraOpenError(f"Unrecognized device identifier: {device}")
+            case int() | str():
+                # Resolve video device as /dev/video<device>
+                device_index = int(device)
+                device_indices = V4LCamera.list_devices()
+                if device_index < 0 or device_index >= len(device_indices):
+                    raise CameraOpenError(f"Camera index {device_index} out of range. Available: 0-{len(device_indices)}")
+                device_path = f"/dev/video{device_indices[device_index]}"
+            case _:
+                raise CameraOpenError(f"Unrecognized device identifier: {device}")
 
         # Now map /dev/videoX to a stable link under /dev/v4l/by-id
         by_id_dir = "/dev/v4l/by-id/"
@@ -191,7 +202,8 @@ class V4LCamera(BaseCamera):
 
         raise CameraOpenError(f"No stable link found for device {device} (resolved as {device_path})")
 
-    def _resolve_name(self, stable_path: str) -> str:
+    @staticmethod
+    def _resolve_name(stable_path: str) -> str:
         """
         Resolve a human-readable name for the camera whose stable path is provided
         by looking at /sys/class/video4linux/<video>/name. Falls back to the device
@@ -206,7 +218,7 @@ class V4LCamera(BaseCamera):
         Raises:
             CameraOpenError: If device cannot be resolved at all
         """
-        if not isinstance(stable_path, str) or not stable_path.startswith("/dev/v4l/by-id"):
+        if not stable_path.startswith("/dev/v4l/by-id"):
             raise CameraOpenError(f"Invalid stable path provided: {stable_path}")
 
         if not os.path.exists(stable_path):
@@ -246,22 +258,25 @@ class V4LCamera(BaseCamera):
             if not self._cap.isOpened():
                 raise RuntimeError(f"Failed to open camera {self.name}")
 
-            self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer to minimize latency
+            # Two buffers: at most one frame of latency while keeping the full frame rate.
+            # A single buffer makes the driver drop every other frame, halving the rate.
+            self._configure(cv2.CAP_PROP_BUFFERSIZE, 2)
 
             if self.codec:
 
                 def fourcc_to_str(fourcc_int: float) -> str:
                     return "".join([chr((int(fourcc_int) >> 8 * i) & 0xFF) for i in range(4)])
 
-                self._cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*self.codec))
+                if fourcc_to_str(self._cap.get(cv2.CAP_PROP_FOURCC)) != self.codec:
+                    self._cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc(*self.codec))
                 fourcc = fourcc_to_str(self._cap.get(cv2.CAP_PROP_FOURCC))
                 if fourcc != self.codec:
                     logger.warning(f"Camera {self.name} codec set to {fourcc} instead of requested {self.codec}")
                     self.codec = fourcc
 
             if self.resolution and self.resolution[0] and self.resolution[1]:
-                self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.resolution[0])
-                self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.resolution[1])
+                self._configure(cv2.CAP_PROP_FRAME_WIDTH, self.resolution[0])
+                self._configure(cv2.CAP_PROP_FRAME_HEIGHT, self.resolution[1])
 
                 # Verify resolution setting
                 actual_width = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -274,7 +289,7 @@ class V4LCamera(BaseCamera):
                     self.resolution = (actual_width, actual_height)
 
             if self.fps:
-                self._cap.set(cv2.CAP_PROP_FPS, self.fps)
+                self._configure(cv2.CAP_PROP_FPS, self.fps)
 
                 configured_fps = self._cap.get(cv2.CAP_PROP_FPS)
                 if math.isnan(configured_fps) or configured_fps <= 0:
@@ -288,8 +303,8 @@ class V4LCamera(BaseCamera):
                         logger.info(f"Camera {self.name} driver runs at {actual_fps} FPS, throttling to requested {self.fps} FPS")
 
             # Verify camera with a test read
-            ret, frame = self._cap.read()
-            if not ret and frame is None:
+            ret, _ = self._cap.read()
+            if not ret:
                 raise RuntimeError(f"Read test failed for camera {self.name}")
 
             self._set_status("connected", {"camera_name": self.name, "camera_path": self.v4l_path})
@@ -300,6 +315,11 @@ class V4LCamera(BaseCamera):
                 self._cap.release()
                 self._cap = None
             raise
+
+    def _configure(self, prop: int, value: float) -> None:
+        """Sets a capture property only when it differs: every set makes OpenCV renegotiate the stream format with the driver."""
+        if self._cap is not None and self._cap.get(prop) != value:
+            self._cap.set(prop, value)
 
     def _close_camera(self) -> None:
         """Close the V4L camera connection."""
@@ -330,8 +350,11 @@ class V4LCamera(BaseCamera):
                 self._open_camera()
                 self.logger.info(f"Successfully reopened camera {self.name} at {self.v4l_path}")
 
-            ret, frame = self._cap.read()
-            if (not ret and frame is None) or not self._cap.isOpened():
+            cap = self._cap
+            if cap is None:
+                raise CameraReadError("Camera is not open")
+            ret, frame = cap.read()
+            if not ret or not cap.isOpened():
                 raise CameraReadError(f"Invalid frame returned")
 
             return frame

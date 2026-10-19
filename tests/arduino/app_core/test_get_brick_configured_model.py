@@ -242,16 +242,25 @@ def test_returns_none_when_model_by_boards_has_no_match_and_no_model_key(mock_ap
 # ---------------------------------------------------------------------------
 
 
-def test_raises_value_error_for_none_brick_id():
-    with pytest.raises(ValueError):
+def test_raises_runtime_error_for_none_brick_id():
+    with pytest.raises(RuntimeError):
         get_brick_configured_model(None)
 
 
-def test_raises_value_error_for_empty_brick_id():
-    with pytest.raises(ValueError):
+def test_raises_runtime_error_for_empty_brick_id():
+    with pytest.raises(RuntimeError):
         get_brick_configured_model("")
 
 
-def test_raises_value_error_for_blank_brick_id():
-    with pytest.raises(ValueError):
+def test_raises_runtime_error_for_blank_brick_id():
+    with pytest.raises(RuntimeError):
         get_brick_configured_model("   ")
+
+
+@patch("arduino.app_internal.core.module.get_app_config")
+def test_model_name_is_stripped_and_empty_is_none(mock_app_cfg):
+    mock_app_cfg.return_value = _app_cfg(BRICK_ID, "  genie:qwen3  ")
+    assert get_brick_configured_model(BRICK_ID) == "genie:qwen3"
+
+    mock_app_cfg.return_value = None
+    assert get_brick_configured_model(BRICK_ID, brick_config=_brick_cfg_with_model("   ")) is None

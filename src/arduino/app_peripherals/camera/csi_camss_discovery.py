@@ -7,11 +7,11 @@ import fcntl
 import glob
 import os
 import re
+import subprocess
 import tempfile
 import threading
 
 from .errors import CameraOpenError
-from .utils import resolve_camera_name
 
 
 def _iowr(type_char: str, nr: int, size: int) -> int:
@@ -267,6 +267,34 @@ def find_sensor_i2c_addr(media_dev: str, csiphy_index: int) -> str:
         raise RuntimeError(f"Error scanning media graph: {e}")
 
     raise CameraOpenError(f"No sensor found on {csiphy_name}")
+
+
+def resolve_camera_name(i2c_addr: str) -> str:
+    """
+    Find the camera name corresponding to the given I2C address.
+
+    Args:
+        i2c_addr (str): I2C address of the camera.
+
+    Returns:
+        str: Camera name corresponding to the I2C address.
+
+    Raises:
+        CameraOpenError: If no camera matches the given I2C address.
+    """
+    output = subprocess.run(
+        ["gst-device-monitor-1.0", "Video/Source"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    ).stdout
+
+    for line in output.splitlines():
+        m = re.match(r"^\s+name\s+:\s+(.+)$", line)
+        if m and i2c_addr in m.group(1):
+            return m.group(1).strip()
+
+    raise CameraOpenError(f"No camera matches I2C address '{i2c_addr}'")
 
 
 # CAMSS BACKEND INTERFACE (used by CSICamera)

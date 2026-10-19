@@ -4,10 +4,10 @@
 
 import cv2
 import numpy as np
-import requests
 from urllib.parse import urlparse
 from collections.abc import Callable
 
+from arduino.app_utils import http
 from arduino.app_utils import Logger
 
 from .camera import BaseCamera
@@ -56,7 +56,7 @@ class IPCamera(BaseCamera):
         self.timeout = timeout
         self.logger = logger
 
-        self._cap = None
+        self._cap: cv2.VideoCapture | None = None
 
         self._last_reconnection_attempt = 0.0  # Used for auto-reconnection when _read_frame is called
 
@@ -87,8 +87,8 @@ class IPCamera(BaseCamera):
             self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer to minimize latency
 
             # Test by reading one frame
-            ret, frame = self._cap.read()
-            if not ret and frame is None:
+            ret, _ = self._cap.read()
+            if not ret:
                 raise RuntimeError(f"Read test failed for IP camera at {self.url}")
 
             self._set_status("connected", {"camera_url": self.url})
@@ -122,12 +122,12 @@ class IPCamera(BaseCamera):
             if self.username and self.password:
                 auth = (self.username, self.password)
 
-            response = requests.head(self.url, auth=auth, timeout=self.timeout, allow_redirects=True)
+            response = http.head(self.url, auth=auth, timeout=self.timeout)
 
             if response.status_code not in [200, 206]:  # 206 for partial content
                 raise RuntimeError(f"HTTP camera returned status {response.status_code}: {self.url}")
 
-        except requests.RequestException as e:
+        except http.ConnectionFailed as e:
             raise RuntimeError(f"Cannot connect to HTTP camera {self.url}: {e}")
 
     def _close_camera(self) -> None:
@@ -156,8 +156,11 @@ class IPCamera(BaseCamera):
                 self._open_camera()
                 self.logger.info(f"Successfully reconnected to IP camera at {self.url}")
 
-            ret, frame = self._cap.read()
-            if (not ret and frame is None) or not self._cap.isOpened():
+            cap = self._cap
+            if cap is None:
+                raise CameraReadError("Camera is not open")
+            ret, frame = cap.read()
+            if not ret or not cap.isOpened():
                 raise CameraReadError(f"Invalid frame returned")
 
             return frame

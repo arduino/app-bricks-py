@@ -19,7 +19,7 @@ import pytest
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 
 import arduino.app_bricks.cloud_llm.cloud_llm as cloud_llm_module
-from arduino.app_bricks.cloud_llm import CloudLLM, ContentChunk, ReasoningChunk, tool
+from arduino.app_bricks.cloud_llm import CloudLLM, CloudModel, ContentChunk, ReasoningChunk, tool
 from arduino.app_bricks.cloud_llm.cloud_llm import AlreadyGenerating
 from arduino.app_bricks.cloud_llm.reasoning import ChatOpenAIReasoning
 
@@ -367,9 +367,10 @@ def _openai_llm_with_tool(monkeypatch, model_name: str) -> CloudLLM:
 
 
 def test_tools_disable_reasoning_on_openai_chat_completions(monkeypatch):
-    # gpt-5.1+ reasons by default and rejects function tools while reasoning on
-    # /v1/chat/completions, so the tool-bound client must send reasoning_effort='none'.
-    llm = _openai_llm_with_tool(monkeypatch, "gpt-5.6-terra")
+    # gpt-5.1+ (including the shipped default, gpt-6-luna) reasons by default and rejects
+    # function tools while reasoning on /v1/chat/completions, so the tool-bound client must
+    # send reasoning_effort='none'.
+    llm = _openai_llm_with_tool(monkeypatch, str(CloudModel.OPENAI_GPT))
 
     assert llm._model.bound.reasoning_effort == "none"
     # The base model stays untouched, so the reasoning flow is unaffected.
@@ -377,7 +378,7 @@ def test_tools_disable_reasoning_on_openai_chat_completions(monkeypatch):
 
 
 def test_tools_keep_reasoning_available_through_responses_api(monkeypatch):
-    llm = _openai_llm_with_tool(monkeypatch, "gpt-5.6-terra")
+    llm = _openai_llm_with_tool(monkeypatch, str(CloudModel.OPENAI_GPT))
 
     reasoning_model = llm._get_reasoning_model("high")
 
@@ -407,6 +408,8 @@ def test_openai_supports_effort_none_version_detection():
     assert supports("gpt-5.1") is True
     assert supports("gpt-5.6-terra") is True
     assert supports("gpt-6") is True
+    assert supports("gpt-6-luna") is True
+    assert supports("gpt-6.1-sol") is True  # accepted by the regex; sol rejects the value but cannot do tools on chat completions anyway
     assert supports("gpt-5") is False
     assert supports("gpt-5-mini") is False
     assert supports("gpt-5-chat") is False
@@ -441,6 +444,17 @@ def test_reasoning_effort_gemini25_maps_level_to_budget(make_llm):
 
     assert reasoning_model.thinking_budget == EFFORT_TO_BUDGET[ReasoningEffort.HIGH]
     assert reasoning_model.thinking_level is None
+
+
+def test_gemini_supports_thinking_level_version_detection():
+    supports = CloudLLM._gemini_supports_thinking_level
+
+    assert supports("gemini-3.6-flash") is True
+    assert supports("models/gemini-3-pro") is True
+    assert supports("Gemini-3.5-Flash") is True
+    assert supports("gemini-2.5-flash") is False
+    assert supports("gemini-2.0-flash") is False
+    assert supports("") is False
 
 
 def test_reasoning_effort_gemini_int_budget(make_llm):
@@ -670,6 +684,7 @@ def test_anthropic_requires_adaptive_version_detection():
     # Adaptive-only (adaptive + effort)
     assert requires("claude-opus-4-7") is True
     assert requires("claude-sonnet-5") is True
+    assert requires("claude-sonnet-5-5") is True
     assert requires("claude-sonnet-5-20260101") is True
 
 

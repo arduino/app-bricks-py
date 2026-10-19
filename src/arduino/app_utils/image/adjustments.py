@@ -356,7 +356,7 @@ def adjust(frame: np.ndarray, brightness: float = 0.0, contrast: float = 1.0, sa
     return final_frame
 
 
-def split_channels(frame: np.ndarray) -> tuple:
+def split_channels(frame: np.ndarray) -> tuple[np.ndarray, ...]:
     """
     Split a multi-channel frame into individual channels using numpy indexing.
     This function provides better data type compatibility than cv2.split,

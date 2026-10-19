@@ -14,6 +14,7 @@ import json
 import subprocess
 
 import pytest
+import yaml
 
 from ai_hub import download_ai_hub_model
 
@@ -159,3 +160,50 @@ def test_info_reports_null_size_for_an_undeclared_model(monkeypatch, capsys, tmp
     assert event["event"] == "stat"
     assert event["size_mb"] is None
     assert event["size_bytes"] is None
+
+
+def test_download_materializes_the_listing_when_it_starts_and_at_exit(monkeypatch, tmp_path, exit_refreshes):
+    """Started: the model reads as downloading; however the run ends, refreshed again."""
+    import list_models
+
+    model_directory = "qwen3_vl_8b_instruct-genie-w4a16-qualcomm_qcs8275"
+    catalog = tmp_path / "models-list.yaml"
+    catalog.write_text(
+        f"""\
+models:
+ - "qwen3-vl":
+    name: "Qwen3 VL"
+    deployment:
+      handler: "ai-hub-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              model_directory: "{model_directory}"
+"""
+    )
+    monkeypatch.setattr(list_models, "MODELS_ROOT_DIR", str(tmp_path))
+    monkeypatch.setattr(list_models, "MODELS_LIST_PATH", str(catalog))
+    monkeypatch.setenv("model_directory", model_directory)
+    monkeypatch.setattr(download_ai_hub_model.sys, "argv", [*ARGV, "--output-dir", str(tmp_path)])
+    monkeypatch.setattr(
+        download_ai_hub_model.subprocess,
+        "run",
+        lambda *a, **k: subprocess.CompletedProcess(a, 0, stdout="https://example.com/model.zip\n", stderr=""),
+    )
+    listing = tmp_path / list_models.LISTING_NAME
+    during = []
+
+    def _extract(_url, output_dir, _json_progress):
+        during.append(yaml.safe_load(listing.read_text())["models"])
+        (tmp_path / model_directory / "model.bin").write_bytes(b"\0")
+
+    monkeypatch.setattr(download_ai_hub_model, "download_and_extract", _extract)
+
+    download_ai_hub_model.main()
+
+    assert [(m["id"], m["downloading"]) for m in during[0]] == [("qwen3-vl", True)]
+    assert exit_refreshes == [list_models.refresh_listing]
+    exit_refreshes[0]()
+    (entry,) = yaml.safe_load(listing.read_text())["models"]
+    assert entry["installed"] is True
+    assert entry["downloading"] is False

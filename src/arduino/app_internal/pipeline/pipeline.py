@@ -5,7 +5,7 @@
 import asyncio
 import logging
 import threading
-from concurrent.futures import Future, CancelledError as FutureCancelledError
+from concurrent.futures import CancelledError as FutureCancelledError
 from typing import Any
 from .adapter import create_adapter
 from .task import PipelineTask, SourceTask, ProcessorTask, SinkTask
@@ -22,7 +22,7 @@ class Pipeline:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._loop_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
-        self._pipeline_future: Future | None = None  # Represents the overall pipeline task
+        self._pipeline_future: asyncio.Future[list[None]] | None = None  # Represents the overall pipeline task
         self._running = False
 
     def add_source(self, brick: Any, rate_limit: int | None = None, queue_size: int = 1) -> "Pipeline":  # noqa: ANN401
@@ -36,7 +36,7 @@ class Pipeline:
         except TypeError:
             raise
 
-        self._steps.append(SourceTask(adapter))
+        self._steps.append(SourceTask[Any](adapter))
         logger.debug(f"Added Source task for: {type(adapter.original_brick).__name__}")
 
         return self
@@ -54,7 +54,7 @@ class Pipeline:
         except TypeError:
             raise
 
-        self._steps.append(ProcessorTask(adapter))
+        self._steps.append(ProcessorTask[Any, Any](adapter))
         logger.debug(f"Added Processor task for: {type(adapter.original_brick).__name__}")
 
         return self
@@ -72,7 +72,7 @@ class Pipeline:
         except TypeError:
             raise
 
-        self._steps.append(SinkTask(adapter))
+        self._steps.append(SinkTask[Any](adapter))
         logger.debug(f"Added Sink task for: {type(adapter.original_brick).__name__}")
 
         return self
@@ -165,23 +165,25 @@ class Pipeline:
             logger.exception(f"Exception in pipeline event loop: {e}")
             raise
         finally:
+            loop = self._loop
             try:
-                logger.debug("Closing internal event loop...")
-                # Ensure all pending tasks are cancelled/finished before stopping loop
-                tasks = asyncio.all_tasks(self._loop)
-                if tasks:
-                    logger.debug(f"Waiting for {len(tasks)} remaining tasks before stopping loop...")
-                    for task in tasks:
-                        if not task.done():
-                            task.cancel()
-                    self._loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
+                if loop is not None:
+                    logger.debug("Closing internal event loop...")
+                    # Ensure all pending tasks are cancelled/finished before stopping loop
+                    tasks = asyncio.all_tasks(loop)
+                    if tasks:
+                        logger.debug(f"Waiting for {len(tasks)} remaining tasks before stopping loop...")
+                        for task in tasks:
+                            if not task.done():
+                                task.cancel()
+                        loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
 
-                self._loop.run_until_complete(self._loop.shutdown_asyncgens())
+                    loop.run_until_complete(loop.shutdown_asyncgens())
             except Exception as e:
                 logger.exception(f"Error during event loop cleanup: {e}")
             finally:
-                if self._loop and not self._loop.is_closed():
-                    self._loop.close()
+                if loop is not None and not loop.is_closed():
+                    loop.close()
                 self._loop = None
                 logger.debug("Internal event loop stopped.")
 
@@ -201,9 +203,8 @@ class Pipeline:
         for i in range(len(self._steps) - 1):
             prev_step = self._steps[i]
             next_step = self._steps[i + 1]
-            prev_output_queue = getattr(prev_step, "output_queue", None)
-            if prev_output_queue and hasattr(next_step, "input_queue"):
-                next_step.input_queue = prev_output_queue
+            if isinstance(prev_step, (SourceTask, ProcessorTask)) and isinstance(next_step, (ProcessorTask, SinkTask)):
+                next_step.input_queue = prev_step.output_queue
                 logger.debug(f"Linked output queue of step {i} to input queue of step {i + 1}")
             else:
                 err_msg = f"Cannot link step {i} ({type(prev_step)}) to step {i + 1} ({type(next_step)}): incompatible queue attributes."
@@ -217,11 +218,12 @@ class Pipeline:
             logger.debug(f"Launched {len(steps)} steps.")
 
             # Gather and await them
-            self._pipeline_future = asyncio.gather(*steps)
-            await self._pipeline_future
+            pipeline_future = asyncio.gather(*steps)
+            self._pipeline_future = pipeline_future
+            await pipeline_future
             logger.debug("Pipeline async run completed normally (all tasks finished).")
         except (asyncio.CancelledError, FutureCancelledError):
-            logger.warn("Pipeline async run cancelled.")
+            logger.warning("Pipeline async run cancelled.")
         except Exception as e:
             logger.exception(f"Pipeline async run failed: {e}")
         finally:
@@ -253,17 +255,18 @@ class Pipeline:
             except Exception as e:
                 logger.exception(f"Error unblocking source adapter producer: {e}")
 
-        if self._pipeline_future and not self._pipeline_future.done():
+        pipeline_future = self._pipeline_future
+        if pipeline_future and not pipeline_future.done():
             logger.debug("Waiting for pipeline tasks to finish after stop initiated...")
             try:
-                await asyncio.wait_for(self._pipeline_future, timeout=60.0)
+                await asyncio.wait_for(pipeline_future, timeout=60.0)
                 logger.debug("Pipeline tasks finished after stop initiated.")
             except TimeoutError:
                 logger.warning("Pipeline tasks did not finish within timeout even after unblocking source. Cancelling remaining.")
-                if not self._pipeline_future.done():
-                    self._pipeline_future.cancel()
+                if not pipeline_future.done():
+                    pipeline_future.cancel()
                     try:
-                        await self._pipeline_future
+                        await pipeline_future
                     except (asyncio.CancelledError, FutureCancelledError):
                         pass  # Expected
             except (asyncio.CancelledError, FutureCancelledError):

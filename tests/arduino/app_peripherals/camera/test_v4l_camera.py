@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import io
 import threading
 import time
 import numpy as np
@@ -11,12 +12,7 @@ from unittest.mock import MagicMock, patch
 
 from arduino.app_peripherals.camera import V4LCamera, CameraOpenError
 
-from conftest import v4l_device_argument  # noqa: F401
-
-
-@pytest.fixture(autouse=True)
-def autouse_v4l_device_argument(v4l_device_argument):
-    return v4l_device_argument
+from conftest import two_v4l_cameras, usb_camera_with_metadata_node, v4l_device_argument  # noqa: F401
 
 
 @pytest.fixture
@@ -49,6 +45,7 @@ def mock_failed_connect_read() -> MagicMock:
     return mock_cap
 
 
+@pytest.mark.usefixtures("v4l_device_argument")
 class TestV4LCameraInitialization:
     def test_initialization_with_all_parameters(self, v4l_device_argument):
         """Test that V4LCamera properly initializes with all V4L-specific parameters."""
@@ -77,28 +74,36 @@ class TestV4LCameraInitialization:
         with pytest.raises(CameraOpenError, match="Unrecognized device identifier"):
             V4LCamera(device="invalid")
 
+        with pytest.raises(CameraOpenError, match="Unrecognized device identifier"):
+            V4LCamera(device=None)  # type: ignore
+
         with pytest.raises(CameraOpenError, match="out of range"):
             V4LCamera(device=1)
 
 
+def with_device_properties(mock_cap: MagicMock, **properties: float) -> None:
+    """Backs the mock get/set with a property store, as a real driver would."""
+    store = {getattr(cv2, f"CAP_PROP_{name}"): value for name, value in properties.items()}
+    mock_cap.get.side_effect = lambda prop: store.get(prop, 0)
+    mock_cap.set.side_effect = lambda prop, value: store.__setitem__(prop, value) or True
+
+
+@pytest.mark.usefixtures("v4l_device_argument")
 class TestV4LCameraStartStop:
     @patch("arduino.app_peripherals.camera.v4l_camera.cv2.VideoCapture")
     def test_start_success(self, mock_videocapture, mock_successful_connect):
-        """Test that V4LCamera start() calls V4L-specific _open_camera and sets up hardware correctly."""
-
-        def get_caps(prop):
-            if prop == cv2.CAP_PROP_FRAME_WIDTH:
-                return 640
-            elif prop == cv2.CAP_PROP_FRAME_HEIGHT:
-                return 480
-            elif prop == cv2.CAP_PROP_FPS:
-                return 10
-            return 0
-
-        mock_successful_connect.get.side_effect = get_caps
+        """Test that V4LCamera start() opens the device and applies the requested settings."""
+        with_device_properties(
+            mock_successful_connect,
+            BUFFERSIZE=4,
+            FOURCC=cv2.VideoWriter.fourcc(*"YUYV"),
+            FRAME_WIDTH=1280,
+            FRAME_HEIGHT=720,
+            FPS=30,
+        )
         mock_videocapture.return_value = mock_successful_connect
 
-        camera = V4LCamera(resolution=(640, 480), fps=10)
+        camera = V4LCamera(resolution=(640, 480), fps=10, codec="MJPG")
 
         assert not camera.is_started()
 
@@ -107,13 +112,36 @@ class TestV4LCameraStartStop:
         assert camera.is_started()
         mock_videocapture.assert_called_once_with("/dev/v4l/by-id/usb-Camera-video-index0", cv2.CAP_V4L2)
 
-        # Verify V4L camera setup calls
-        assert mock_successful_connect.set.call_count == 4
         set_call_args = [call.args for call in mock_successful_connect.set.call_args_list]
-        assert (cv2.CAP_PROP_BUFFERSIZE, 1) in set_call_args
-        assert (cv2.CAP_PROP_FRAME_WIDTH, 640) in set_call_args
-        assert (cv2.CAP_PROP_FRAME_HEIGHT, 480) in set_call_args
-        assert (cv2.CAP_PROP_FPS, 10) in set_call_args
+        assert sorted(set_call_args) == sorted([
+            (cv2.CAP_PROP_BUFFERSIZE, 2),
+            (cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc(*"MJPG")),
+            (cv2.CAP_PROP_FRAME_WIDTH, 640),
+            (cv2.CAP_PROP_FRAME_HEIGHT, 480),
+            (cv2.CAP_PROP_FPS, 10),
+        ])
+        assert camera.resolution == (640, 480)
+        assert camera.fps == 10
+        assert camera.codec == "MJPG"
+
+    @patch("arduino.app_peripherals.camera.v4l_camera.cv2.VideoCapture")
+    def test_start_skips_settings_already_in_place(self, mock_videocapture, mock_successful_connect):
+        """Test that V4LCamera start() leaves the device untouched when it already has the requested settings."""
+        with_device_properties(
+            mock_successful_connect,
+            BUFFERSIZE=2,
+            FOURCC=cv2.VideoWriter.fourcc(*"MJPG"),
+            FRAME_WIDTH=640,
+            FRAME_HEIGHT=480,
+            FPS=10,
+        )
+        mock_videocapture.return_value = mock_successful_connect
+
+        camera = V4LCamera(resolution=(640, 480), fps=10, codec="MJPG")
+        camera.start()
+
+        assert camera.is_started()
+        mock_successful_connect.set.assert_not_called()
 
     @patch("arduino.app_peripherals.camera.v4l_camera.cv2.VideoCapture")
     def test_start_already_started(self, mock_videocapture, mock_successful_connect):
@@ -245,6 +273,7 @@ class TestV4LCameraStartStop:
         assert not camera.is_started()
 
 
+@pytest.mark.usefixtures("v4l_device_argument")
 class TestV4LCameraRecovery:
     """Test suite for camera disconnection and recovery mechanisms."""
 
@@ -518,6 +547,7 @@ class TestV4LCameraRecovery:
         assert mock_videocapture.call_count == 2  # Initial + after device reappeared
 
 
+@pytest.mark.usefixtures("v4l_device_argument")
 class TestV4LCameraEventCallbacks:
     @patch("arduino.app_peripherals.camera.v4l_camera.cv2.VideoCapture")
     def test_events(self, mock_videocapture, mock_successful_connect):
@@ -542,3 +572,21 @@ class TestV4LCameraEventCallbacks:
         assert len(events) == 2
         assert "connected" in events[0][0]
         assert "disconnected" in events[1][0]
+
+
+class TestV4LCameraListing:
+    """Enumeration of the plugged USB cameras."""
+
+    def test_non_capture_nodes_are_not_listed_as_cameras(self, usb_camera_with_metadata_node):
+        """A UVC metadata node must not be enumerated as a camera."""
+        assert V4LCamera.list_devices() == [10]
+
+    def test_list_cameras_reports_name_and_location(self, two_v4l_cameras, monkeypatch):
+        """Each camera is listed with its sysfs name and its by-id link as location, in video index order."""
+        names = {"/sys/class/video4linux/video0/name": "CamA\n", "/sys/class/video4linux/video2/name": "CamB\n"}
+        monkeypatch.setattr("arduino.app_peripherals.camera.v4l_camera.open", lambda path, *args, **kwargs: io.StringIO(names[path]), raising=False)
+
+        assert V4LCamera.list_cameras() == [
+            {"name": "CamA", "location": "/dev/v4l/by-id/usb-CamA-video-index0"},
+            {"name": "CamB", "location": "/dev/v4l/by-id/usb-CamB-video-index0"},
+        ]

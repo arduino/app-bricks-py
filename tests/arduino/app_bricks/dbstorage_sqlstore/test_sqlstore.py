@@ -774,3 +774,13 @@ def test_insert_with_multiple_threads(open_sqlstore_database: SQLStore):
     # Verify data
     res = db.execute_sql("SELECT * FROM test_table")
     assert len(res) == 25, "Data not found in the table after multi-threaded insertions"
+
+
+def test_read_with_no_limit(open_sqlstore_database: SQLStore):
+    """None and -1 both read every row."""
+    db = open_sqlstore_database
+    db.store("limit_table", {"id": 1}, create_table=True)
+    db.store("limit_table", {"id": 2})
+
+    assert len(db.read("limit_table", limit=None)) == 2
+    assert len(db.read("limit_table", limit=-1)) == 2

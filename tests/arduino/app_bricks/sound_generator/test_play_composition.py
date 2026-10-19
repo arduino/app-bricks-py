@@ -17,14 +17,14 @@ class DummySpeaker:
     shared = True
 
 
-def test_playback_sequence_thread_prequeues_enough_future_steps_to_cover_speaker_period(monkeypatch):
+def test_playback_sequence_thread_prequeues_enough_future_steps_to_cover_the_device_latency(monkeypatch):
     events = []
     current_time = {"value": 0.0}
 
     class SequencerSpeaker:
+        # One buffer lasts 100 ms, longer than a 1/16 step at 180 BPM (83 ms): two steps are written ahead
         sample_rate = 10
         buffer_size = 1
-        shared = True
 
         def play(self, data):
             events.append(("play", round(current_time["value"], 3), len(data)))
@@ -241,3 +241,73 @@ def test_play_step_sequence_uses_non_daemon_thread(monkeypatch):
 
     assert captured["daemon"] is False
     assert captured["name"] == "SoundGen-StepSeq"
+
+
+def test_playback_sequence_thread_does_not_prequeue_on_a_low_latency_device(monkeypatch):
+    events = []
+    current_time = {"value": 0.0}
+
+    class LowLatencySpeaker:
+        # One buffer lasts 1 ms, far below a 1/16 step at 180 BPM (83 ms): each step is written at its own time
+        sample_rate = 1000
+        buffer_size = 1
+
+        def play(self, data):
+            events.append(("play", round(current_time["value"], 3), len(data)))
+
+    generator = SoundGenerator(output_device=LowLatencySpeaker(), bpm=180)
+
+    def fake_render(notes, note_duration, volume):
+        events.append(("render", round(current_time["value"], 3), tuple(notes)))
+        current_time["value"] += 0.01
+        return np.ones(8, dtype=np.float32)
+
+    def fake_sleep(delay):
+        current_time["value"] += delay
+
+    monkeypatch.setattr(generator, "_render_sequence_step", fake_render)
+    monkeypatch.setattr(sound_generator_module.time, "monotonic", lambda: current_time["value"])
+    monkeypatch.setattr(sound_generator_module.time, "sleep", fake_sleep)
+
+    generator._playback_sequence_thread(
+        sequence=[["C4"], ["D4"], ["E4"]],
+        note_duration=1 / 16,
+        bpm=180,
+        loop=False,
+        on_step_callback=None,
+        on_complete_callback=None,
+        volume=None,
+        session_id=1,
+    )
+
+    step = 60.0 / 180.0 * 4.0 / 16.0
+    first_step_start = 0.01  # the first step is rendered before its clock starts
+    assert events[:3] == [("render", 0.0, ("C4",)), ("play", 0.01, 8), ("render", 0.01, ("D4",))]
+    assert events[3][0] == "play" and events[3][1] == pytest.approx(first_step_start + step, abs=0.001)
+    assert events[5][0] == "play" and events[5][1] == pytest.approx(first_step_start + 2 * step, abs=0.001)
+
+
+def test_stop_sequence_restarts_an_external_speaker():
+    """The user's speaker is closed to drop the queued audio, then reopened so it stays usable."""
+    calls = []
+
+    class ExternalSpeaker:
+        sample_rate = 32000
+        buffer_size = 4096
+
+        def stop(self):
+            calls.append("stop")
+
+        def start(self):
+            calls.append("start")
+
+    generator = SoundGenerator(output_device=ExternalSpeaker())
+    running = threading.Event()
+    generator._sequence_thread = threading.Thread(target=running.wait, daemon=True)
+    generator._sequence_thread.start()
+
+    generator.stop_sequence()
+    running.set()
+
+    assert generator._sequence_stop_event.is_set()
+    assert calls == ["stop", "start"]

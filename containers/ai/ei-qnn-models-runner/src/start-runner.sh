@@ -6,8 +6,13 @@
 
 NODE_COMMAND=("node" "/app/linux/node/build/cli/linux/runner.js" "$@")
 
+# Bash runs a trap only once the foreground command returns, so the runner is
+# started in the background and the signal is forwarded to it: the container
+# stops when node exits instead of waiting for the kill timeout.
 trap_signal() {
-  echo "Caught signal $1. Exiting wrapper immediately..."
+  echo "Caught signal $1. Stopping the runner..."
+  kill -s "$1" "$NODE_PID" 2>/dev/null
+  wait "$NODE_PID"
   exit 0
 }
 
@@ -17,8 +22,9 @@ trap 'trap_signal INT' INT
 while true; do
   echo "🚀 Starting EI inference runner..."
 
-  "${NODE_COMMAND[@]}"
-
+  "${NODE_COMMAND[@]}" &
+  NODE_PID=$!
+  wait "$NODE_PID"
   EXIT_CODE=$?
 
   # Check the exit code

@@ -2,8 +2,15 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+from __future__ import annotations
+
 import math
-import numpy as np
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    # numpy is imported where it is used: arduino.app_utils imports this module, a module-level import would slow down every app start
+    import numpy as np
+    from numpy.typing import NDArray
 
 
 class SineGenerator:
@@ -28,6 +35,8 @@ class SineGenerator:
             sample_rate (int): The playback sample rate (Hz) used to compute
                 phase increments and buffer sizes.
         """
+        import numpy as np
+
         self.sample_rate = int(sample_rate)
         # envelope parameters (attack/release in seconds)
         self.attack = 0.01
@@ -35,11 +44,12 @@ class SineGenerator:
         self.glide = 0.02
 
         # reusable buffers
+        # grown on demand by generate_block, see there
         self._buf_N = 0
-        self._buf_phase_incs = None
-        self._buf_phases = None
-        self._buf_envelope = None
-        self._buf_samples = None
+        self._buf_phase_incs: NDArray[np.float32] = np.empty(0, dtype=np.float32)
+        self._buf_phases: NDArray[np.float32] = np.empty(0, dtype=np.float32)
+        self._buf_envelope: NDArray[np.float32] = np.empty(0, dtype=np.float32)
+        self._buf_samples: NDArray[np.float32] = np.empty(0, dtype=np.float32)
 
         # runtime state
         self._amp_current = 0.0
@@ -57,7 +67,7 @@ class SineGenerator:
         self._freq_last = 440.0
         self._phase = 0.0
 
-    def get_state(self) -> dict:
+    def get_state(self) -> dict[str, float]:
         """Return a snapshot of internal generator state.
 
         Returns a small dict containing ``phase``, ``amp_current`` and
@@ -73,7 +83,7 @@ class SineGenerator:
             "freq_last": float(self._freq_last),
         }
 
-    def set_state(self, state: dict) -> None:
+    def set_state(self, state: dict[str, float]) -> None:
         """Restore internal generator state from a snapshot.
 
         Args:
@@ -124,6 +134,8 @@ class SineGenerator:
             numpy.ndarray: A 1-D float32 NumPy array containing the generated
             audio samples for the requested block.
         """
+        import numpy as np
+
         N = max(1, int(self.sample_rate * block_dur))
         if N > self._buf_N:
             self._buf_N = N

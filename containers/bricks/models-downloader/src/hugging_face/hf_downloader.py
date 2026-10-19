@@ -128,9 +128,12 @@ from common.model_metadata import (
     identify_model,
     is_bookkeeping_name,
     prune_metadata_records,
+    read_metadata,
+    record_for_file,
     write_metadata,
 )
 from common.models_list import MODELS_LIST_PATH, _iter_platform_variables, load_models_list
+from list_models import refresh_listing, refresh_listing_at_exit
 
 # Quantizations tried, in order, when a model key names only a repository. Q4_0 comes
 # first because it is what the curated entries use and what the accelerated runners want,
@@ -250,6 +253,38 @@ URL_FORMAT_HINT = (
 )
 
 
+# The cause of an error event, one stable code per failure the user can act on. The host
+# passes it on unchanged, so the UI picks its message by code and the description is free
+# to change wording. An error without a code is an internal failure.
+ERR_INVALID_MODEL_URL = "invalid_model_url"
+ERR_MODEL_NOT_FOUND = "model_not_found"
+ERR_MODEL_PRIVATE_OR_GATED = "model_private_or_gated"
+ERR_MODEL_DISABLED = "model_disabled"
+ERR_MODEL_INCOMPATIBLE = "model_incompatible"
+ERR_NO_COMPATIBLE_FILE = "no_compatible_file"
+ERR_HUB_UNREACHABLE = "hub_unreachable"
+
+
+class ModelSourceError(ValueError):
+    """A ValueError that names its cause with one of the ``ERR_*`` codes."""
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+
+
+class NoMatchingFileError(FileNotFoundError):
+    """Nothing in the repository matches the requested quantization."""
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+
+
+def error_code(exc: BaseException, default: str | None = None) -> str | None:
+    return getattr(exc, "code", default)
+
+
 def emit_json_info(
     description: str,
     artifacts: list[str] | None = None,
@@ -276,8 +311,10 @@ def emit_json_info(
     print(json.dumps(data), flush=True)
 
 
-def emit_json_error(description: str, downloading: bool | None = None):
+def emit_json_error(description: str, downloading: bool | None = None, code: str | None = None):
     data: dict = {"event": "error", "description": description}
+    if code is not None:
+        data["code"] = code
     if downloading is not None:
         data["downloading"] = downloading
     print(json.dumps(data), flush=True)
@@ -366,6 +403,31 @@ def interrupted_patterns(marker_path: Path) -> list[str]:
     if isinstance(patterns, list) and all(isinstance(p, str) for p in patterns):
         return patterns
     return []
+
+
+def unfinished_files(output_dir: str, patterns: list[str]) -> list[Path]:
+    """The files of *patterns* a stopped download left without a record.
+
+    A download writes its record before it clears the marker, so a file the marker names
+    but no record covers landed and was never finished: the listing ignores it and the
+    API cannot delete it, so --check must not call it installed. Only the marker's own
+    patterns count — a sibling quantization installed before, recorded or not, is not
+    what the marker stood for — and a legacy marker naming none counts nothing.
+    """
+    marker = Path(output_dir) / MARKER_NAME
+    in_flight = interrupted_patterns(marker) if marker.is_file() else []
+    if not in_flight:
+        return []
+    data = read_metadata(output_dir)
+    base = Path(output_dir)
+    unfinished = []
+    for path in matching_files(output_dir, patterns):
+        rel = path.relative_to(base).as_posix()
+        if path.suffix != ".gguf" or "mmproj" in path.name:
+            continue
+        if any(matches_pattern(rel, pattern) for pattern in in_flight) and record_for_file(data, rel) is None:
+            unfinished.append(path)
+    return unfinished
 
 
 def discard_incomplete_download(output_dir: str, base_dir: str, patterns: list[str]) -> None:
@@ -528,9 +590,9 @@ class JsonProgress(tqdm):
         pass
 
 
-def invalid_url_error(url: str, reason: str) -> ValueError:
+def invalid_url_error(url: str, reason: str) -> ModelSourceError:
     """Build the one error every URL rejection raises, so callers can match on it."""
-    return ValueError(f"Invalid Hugging Face URL: {url}\n{reason}\n{URL_FORMAT_HINT}")
+    return ModelSourceError(ERR_INVALID_MODEL_URL, f"Invalid Hugging Face URL: {url}\n{reason}\n{URL_FORMAT_HINT}")
 
 
 def validate_repo_id(repo_id: str) -> None:
@@ -1099,7 +1161,7 @@ def narrow_slot_to_published(source: dict, available: list[str], mmproj: bool) -
         return
 
     if defaulted:
-        raise FileNotFoundError(no_match_message(repo_id, [gguf_pattern(q, mmproj=mmproj) for q in candidates]))
+        raise no_match_error(repo_id, [gguf_pattern(q, mmproj=mmproj) for q in candidates])
     # Asked for by name and not found: for the projector the spec may still be a substring
     # of a file that is there ("model-f16" for "mmproj-model-f16.gguf"), so the pattern is
     # left as it was and download_matched_files reports it with the repository's listing.
@@ -1115,7 +1177,7 @@ def narrow_to_published_or_exit(source: dict) -> None:
     try:
         narrow_to_published(source)
     except FileNotFoundError as exc:
-        emit_json_error(str(exc))
+        emit_json_error(str(exc), code=error_code(exc))
         raise SystemExit(1) from exc
 
 
@@ -1158,37 +1220,42 @@ def public_repo_files(repo_id: str, revision: str | None = None, token: str | No
     try:
         info = HfApi().model_info(repo_id, revision=revision, token=token or False)
     except GatedRepoError as exc:  # a subclass of RepositoryNotFoundError: must come first
-        raise ValueError(
+        raise ModelSourceError(
+            ERR_MODEL_PRIVATE_OR_GATED,
             f"Hugging Face repository '{repo_id}' is gated: its files are only served after its conditions "
-            "are accepted on huggingface.co. Only freely downloadable models can be configured."
+            "are accepted on huggingface.co. Only freely downloadable models can be configured.",
         ) from exc
     except RevisionNotFoundError as exc:
-        raise ValueError(f"Revision '{revision}' does not exist in Hugging Face repository '{repo_id}'.") from exc
+        raise ModelSourceError(ERR_MODEL_NOT_FOUND, f"Revision '{revision}' does not exist in Hugging Face repository '{repo_id}'.") from exc
     except RepositoryNotFoundError as exc:
-        raise ValueError(
-            f"Hugging Face model repository '{repo_id}' does not exist, or is not public. Only public model repositories can be downloaded."
+        raise ModelSourceError(
+            ERR_MODEL_NOT_FOUND,
+            f"Hugging Face model repository '{repo_id}' does not exist, or is not public. Only public model repositories can be downloaded.",
         ) from exc
     except DisabledRepoError as exc:
-        raise ValueError(f"Hugging Face repository '{repo_id}' has been disabled by its authors.") from exc
+        raise ModelSourceError(ERR_MODEL_DISABLED, f"Hugging Face repository '{repo_id}' has been disabled by its authors.") from exc
     except Exception as exc:  # noqa: BLE001 - HTTP, DNS and proxy failures all land here
-        raise ValueError(f"Could not verify Hugging Face repository '{repo_id}': {exc}") from exc
+        raise ModelSourceError(ERR_HUB_UNREACHABLE, f"Could not verify Hugging Face repository '{repo_id}': {exc}") from exc
 
     # The 404 above already covers a private repository seen anonymously; these fields are
     # what remains once --hf-token makes it visible, and are checked so the token widens
     # access to gated models the operator has accepted, not to repositories at large.
     if info.private:
-        raise ValueError(f"Hugging Face repository '{repo_id}' is private. Only public model repositories can be downloaded.")
+        raise ModelSourceError(
+            ERR_MODEL_PRIVATE_OR_GATED, f"Hugging Face repository '{repo_id}' is private. Only public model repositories can be downloaded."
+        )
     if info.gated:
-        raise ValueError(
+        raise ModelSourceError(
+            ERR_MODEL_PRIVATE_OR_GATED,
             f"Hugging Face repository '{repo_id}' is gated: its files are only served after its conditions "
-            "are accepted on huggingface.co. Only freely downloadable models can be configured."
+            "are accepted on huggingface.co. Only freely downloadable models can be configured.",
         )
     if info.disabled:
-        raise ValueError(f"Hugging Face repository '{repo_id}' has been disabled by its authors.")
+        raise ModelSourceError(ERR_MODEL_DISABLED, f"Hugging Face repository '{repo_id}' has been disabled by its authors.")
     return {sibling.rfilename for sibling in info.siblings or []}
 
 
-def missing_file_message(repo_id: str, filename: str, revision: str | None, available: set[str]) -> str:
+def missing_file_error(repo_id: str, filename: str, revision: str | None, available: set[str]) -> ModelSourceError:
     """Explain that *filename* is not in the repository, listing the GGUF files that are.
 
     The URL syntax pins one exact file, so a typo or a file renamed by a new commit ends as
@@ -1198,8 +1265,8 @@ def missing_file_message(repo_id: str, filename: str, revision: str | None, avai
     where = f"Hugging Face repository '{repo_id}' at revision '{revision}'" if revision else f"Hugging Face repository '{repo_id}'"
     ggufs = sorted(path for path in available if path.lower().endswith(".gguf"))
     if not ggufs:
-        return f"File '{filename}' does not exist in {where}, which contains no GGUF files at all."
-    return f"File '{filename}' does not exist in {where}. Available GGUF files: {', '.join(ggufs)}"
+        return ModelSourceError(ERR_NO_COMPATIBLE_FILE, f"File '{filename}' does not exist in {where}, which contains no GGUF files at all.")
+    return ModelSourceError(ERR_MODEL_NOT_FOUND, f"File '{filename}' does not exist in {where}. Available GGUF files: {', '.join(ggufs)}")
 
 
 def validate_hub_source(source: dict, token: str | None = None) -> None:
@@ -1232,7 +1299,7 @@ def validate_hub_source(source: dict, token: str | None = None) -> None:
         # The two URLs may pin different commits of the same repository.
         present = files if file_revision == revision else public_repo_files(repo_id, file_revision, token)
         if filename not in present:
-            raise ValueError(missing_file_message(repo_id, filename, file_revision, present))
+            raise missing_file_error(repo_id, filename, file_revision, present)
 
 
 def fallback_model_id(model_type: str, downloaded: list[str], models_dir: str) -> str | None:
@@ -1283,7 +1350,7 @@ def expected_size_mb(repo_id: str, patterns: list[str]) -> float | None:
     return size_mb(sum(sizes))
 
 
-def no_match_message(repo_id: str, pattern: str | list[str]) -> str:
+def no_match_error(repo_id: str, pattern: str | list[str]) -> NoMatchingFileError:
     """Explain that nothing matched *pattern*, listing the GGUF files the repo does have.
 
     Asking the Hub what is actually there turns "no file matching '*Q4_0*.gguf'" into an
@@ -1302,10 +1369,10 @@ def no_match_message(repo_id: str, pattern: str | list[str]) -> str:
     try:
         available = sorted(f.path for f in list_repo_matches(repo_id, ["*.gguf"]))
     except Exception:  # noqa: BLE001 - improving an error message must not raise a new one
-        return message
+        return NoMatchingFileError(ERR_MODEL_NOT_FOUND, message)
     if not available:
-        return f"{message} The repository contains no GGUF files at all."
-    return f"{message} Available GGUF files: {', '.join(available)}"
+        return NoMatchingFileError(ERR_NO_COMPATIBLE_FILE, f"{message} The repository contains no GGUF files at all.")
+    return NoMatchingFileError(ERR_MODEL_NOT_FOUND, f"{message} Available GGUF files: {', '.join(available)}")
 
 
 def download_matched_files(
@@ -1327,7 +1394,7 @@ def download_matched_files(
     """
     matched = list_repo_matches(repo_id, [allow_pattern], ignore_pattern=ignore_pattern)
     if not matched:
-        raise FileNotFoundError(no_match_message(repo_id, allow_pattern))
+        raise no_match_error(repo_id, allow_pattern)
     for file in matched:
         if verbose:
             emit_json_info(f"Downloading '{file.path}' from {repo_id}")
@@ -1497,7 +1564,7 @@ def validate_hub_source_or_exit(source: dict, token: str | None = None) -> None:
     try:
         validate_hub_source(source, token)
     except ValueError as exc:
-        emit_json_error(str(exc))
+        emit_json_error(str(exc), code=error_code(exc))
         raise SystemExit(1) from exc
 
 
@@ -1567,14 +1634,15 @@ def main():
     try:
         source = resolve_model_source(args.model_url, args.model_mmproj_url)
     except ValueError as exc:
-        emit_json_error(str(exc))
+        # Parsing reads only the arguments, so whatever it rejects is the model URL or key.
+        emit_json_error(str(exc), code=error_code(exc, ERR_INVALID_MODEL_URL))
         raise SystemExit(1) from exc
 
     # --delete stays allowed, so a model downloaded before this check can still be removed.
     if not args.delete:
         unsupported = unsupported_quantization(args.model_url) or unsupported_quantization(args.model_mmproj_url)
         if unsupported:
-            emit_json_error(f"Cannot download model. Not supported quantization: {unsupported}.")
+            emit_json_error(f"Cannot download model. Not supported quantization: {unsupported}.", code=ERR_MODEL_INCOMPATIBLE)
             raise SystemExit(1)
 
     repo_id = source["repo_id"]
@@ -1640,7 +1708,8 @@ def main():
         matched_files = [{"file": f.path, "size": f.size} for f in list_repo_matches(repo_id, patterns) if f.size]
         if not matched_files:
             # Reporting a 0-byte total would read as "this model is free to download".
-            emit_json_error(no_match_message(repo_id, allow_pattern))
+            error = no_match_error(repo_id, allow_pattern)
+            emit_json_error(str(error), code=error.code)
             raise SystemExit(1)
         total_bytes = sum(f["size"] for f in matched_files)
         print(
@@ -1657,7 +1726,9 @@ def main():
         # Files first, marker second: the marker is per repository, but a repository
         # directory holds several quantizations, so a download in progress there says
         # nothing about the one being asked for — which may well be installed already.
-        if is_installed(output_dir, patterns):
+        # A file the marker's own download left without a record is not installed either:
+        # it reads as the download still in progress, which the next download clears.
+        if is_installed(output_dir, patterns) and not unfinished_files(output_dir, patterns):
             present = [str(p) for p in matching_files(output_dir, patterns) if p.suffix == ".gguf"]
             emit_json_info(f"Model exists: {allow_pattern}", downloading=False, size_mb=downloaded_size_mb(present))
         elif (Path(output_dir) / MARKER_NAME).is_file():
@@ -1667,6 +1738,8 @@ def main():
             emit_json_error(f"Model does not exist: {allow_pattern}", downloading=False)
             raise SystemExit(1)
     elif args.delete:
+        # However the delete ends, the listing is rewritten without what it removed.
+        refresh_listing_at_exit()
         if args.verbose:
             emit_json_info(f"Deleting files matching '{allow_pattern}' in {output_dir}")
         delete_matched_files(output_dir, args.output_dir, allow_pattern, args.verbose)
@@ -1705,6 +1778,7 @@ def main():
         # the interrupted run have to go before the directory can be judged.
         marker = Path(output_dir) / MARKER_NAME
         if marker.is_file():
+            refresh_listing_at_exit()
             emit_json_info(f"Removing incomplete previous download: {repo_id}")
             discard_incomplete_download(output_dir, args.output_dir, interrupted_patterns(marker))
         if is_installed(output_dir, patterns):
@@ -1726,6 +1800,7 @@ def main():
         if os.path.isdir(output_dir) and not has_model_content(output_dir):
             # Bookkeeping-only leftover (e.g. killed between makedirs and the marker
             # write, or a deleted model): wipe it so the download starts clean.
+            refresh_listing_at_exit()
             emit_json_info(f"Removing incomplete previous download: {repo_id}")
             remove_model_dir(output_dir, args.output_dir)
         # Anything else the directory holds is another quantization of the same
@@ -1754,11 +1829,20 @@ def main():
             file_patterns=patterns,
             size_mb=expected_size_mb(repo_id, patterns),
         )
+        # The listing now reports the model as downloading, and reports it again
+        # however this run ends: installed (after the marker is cleared), or discarded.
+        refresh_listing()
+        refresh_listing_at_exit()
 
         emit_json_info(f"Downloading to: {os.path.abspath(output_dir)}", artifacts=[os.path.abspath(output_dir)])
 
         tqdm_class = JsonProgress
 
+        # Until the record is written the files are not an install: a signal or an error
+        # anywhere before it, during the transfer or while it is being finished, discards
+        # them. A stop landing after the transfer but before the record used to leave a
+        # complete file the listing ignores and the API cannot delete.
+        recorded = None
         try:
             if url_filename:
                 # Single-file download via direct URL
@@ -1800,41 +1884,42 @@ def main():
                             f"Downloading mmproj model file from Hugging Face repository: {repo_id} with allow pattern: {mmproj_allow_pattern}"
                         )
                     download_matched_files(repo_id, mmproj_allow_pattern, output_dir, tqdm_class, verbose=args.verbose)
+
+            # Remove download caches
+            cache_path = Path(output_dir) / ".cache"
+            if cache_path.is_dir():
+                shutil.rmtree(cache_path)
+
+            # The absolute path(s) of the downloaded model file(s): the files this request
+            # named, not every quantization the shared repository directory holds — a
+            # sibling was not downloaded now, and must not name this model either.
+            matched_gguf = [p for p in matching_files(output_dir, patterns) if p.suffix == ".gguf"]
+            downloaded = sorted(str(p.resolve()) for p in matched_gguf)
+            # The same files relative to the repo directory, recorded in the metadata so
+            # each record of the shared directory says which quantization it stands for.
+            recorded_files = sorted(p.relative_to(Path(output_dir)).as_posix() for p in matched_gguf)
+
+            # Resolved once and used for both the record and the completion event, so the
+            # id the host is told is the id on disk. Any repository can be downloaded
+            # without a models-list.yaml entry, so name it after the file that arrived
+            # rather than leaving it unidentified.
+            identity = identify_model(metadata_env, fallback_model_id=fallback_model_id(source["model_type"], downloaded, args.output_dir))
+
+            # Record what was downloaded, then clear the in-progress marker: while the
+            # marker is still there the repo directory counts as incomplete, so a crash
+            # in between makes the next run retry instead of leaving it unrecorded.
+            recorded = write_metadata(output_dir, handler="hf-handler", env=metadata_env, identity=identity, files=recorded_files)
         except BaseException as exc:
             # Network/extraction errors and SIGINT/SIGTERM-driven KeyboardInterrupt
-            # leave a partial download behind; discard it before exiting, without
+            # leave an unrecorded download behind; discard it before exiting, without
             # taking another quantization of the same repository down with it.
             if os.path.isdir(output_dir):
                 discard_incomplete_download(output_dir, args.output_dir, patterns)
             if not isinstance(exc, KeyboardInterrupt):
                 # KeyboardInterrupt gets its own event from the top-level handler.
-                emit_json_error(f"Download failed: {exc}")
+                emit_json_error(f"Download failed: {exc}", code=error_code(exc))
             raise
 
-        # Remove download caches
-        cache_path = Path(output_dir) / ".cache"
-        if cache_path.is_dir():
-            shutil.rmtree(cache_path)
-
-        # The absolute path(s) of the downloaded model file(s): the files this request
-        # named, not every quantization the shared repository directory holds — a
-        # sibling was not downloaded now, and must not name this model either.
-        matched_gguf = [p for p in matching_files(output_dir, patterns) if p.suffix == ".gguf"]
-        downloaded = sorted(str(p.resolve()) for p in matched_gguf)
-        # The same files relative to the repo directory, recorded in the metadata so
-        # each record of the shared directory says which quantization it stands for.
-        recorded_files = sorted(p.relative_to(Path(output_dir)).as_posix() for p in matched_gguf)
-
-        # Resolved once and used for both the record and the completion event, so the
-        # id the host is told is the id on disk. Any repository can be downloaded
-        # without a models-list.yaml entry, so name it after the file that arrived
-        # rather than leaving it unidentified.
-        identity = identify_model(metadata_env, fallback_model_id=fallback_model_id(source["model_type"], downloaded, args.output_dir))
-
-        # Record what was downloaded, then clear the in-progress marker: while the
-        # marker is still there the repo directory counts as incomplete, so a crash
-        # in between makes the next run retry instead of leaving it unrecorded.
-        recorded = write_metadata(output_dir, handler="hf-handler", env=metadata_env, identity=identity, files=recorded_files)
         if recorded is None:
             # The record is required, not best-effort: the host deletes an ad-hoc model
             # by the inputs recorded here, so an installed-but-unrecorded model could

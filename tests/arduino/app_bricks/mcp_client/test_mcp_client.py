@@ -54,10 +54,10 @@ def make_client(monkeypatch):
 # --- HTTPEndpoint configuration ----------------------------------------------
 
 
-def test_endpoint_conn_has_http_transport_and_url():
+def test_endpoint_conn_has_streamable_http_transport_and_url():
     conn = HTTPEndpoint(name="srv", url="http://host:8080/mcp").to_conn()
 
-    assert conn == {"srv": {"transport": "http", "url": "http://host:8080/mcp"}}
+    assert conn == {"srv": {"transport": "streamable_http", "url": "http://host:8080/mcp"}}
 
 
 def test_endpoint_token_becomes_bearer_header():

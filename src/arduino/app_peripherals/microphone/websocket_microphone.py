@@ -11,6 +11,7 @@ import numpy as np
 import websockets
 import asyncio
 from concurrent.futures import CancelledError, TimeoutError, Future
+from typing import Any
 from urllib.parse import urlparse, parse_qs
 
 from arduino.app_internal.core.peripherals import BPPCodec
@@ -160,7 +161,7 @@ class WebSocketMicrophone(BaseMicrophone):
 
     def _open_microphone(self) -> None:
         """Start the WebSocket server."""
-        server_future = Future()
+        server_future: Future[bool] = Future()
 
         self._server_thread = threading.Thread(target=self._start_server_thread, args=(server_future,), daemon=True)
         self._server_thread.start()
@@ -175,7 +176,7 @@ class WebSocketMicrophone(BaseMicrophone):
                 raise MicrophoneOpenError(f"Failed to bind WebSocket server on {self.url}: {e}") from e
             raise
 
-    def _start_server_thread(self, future: Future) -> None:
+    def _start_server_thread(self, future: Future[bool]) -> None:
         """Run WebSocket server in its own thread with event loop."""
         try:
             self._loop = asyncio.new_event_loop()
@@ -186,7 +187,7 @@ class WebSocketMicrophone(BaseMicrophone):
                 self._loop.close()
                 self._loop = None
 
-    async def _start_server(self, future: Future) -> None:
+    async def _start_server(self, future: Future[bool]) -> None:
         """Start the WebSocket server."""
         try:
             self._server = await asyncio.wait_for(
@@ -277,10 +278,7 @@ class WebSocketMicrophone(BaseMicrophone):
                     "buffer_size": self.buffer_size,
                 }
 
-                # Add universal format details if available
-                format_details = _get_format_details(self.format, self.format_is_packed)
-                if format_details:
-                    welcome.update(format_details)
+                welcome.update(_get_format_details(self.format, self.format_is_packed))
 
                 await self._send_to_client(json.dumps(welcome))
             except Exception as e:
@@ -405,7 +403,7 @@ class WebSocketMicrophone(BaseMicrophone):
             raise
 
 
-def _get_format_details(format: np.dtype, is_packed: bool = False) -> dict | None:
+def _get_format_details(format: np.dtype, is_packed: bool = False) -> dict[str, Any]:
     """Get detailed format information for clients by introspecting the numpy dtype."""
     bit_depth = format.itemsize * 8
 

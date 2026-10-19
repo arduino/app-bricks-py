@@ -19,7 +19,7 @@ The Vibration Anomaly Detection Brick allows you to:
 - **Flexible callback signatures**:
   - `callback()`
   - `callback(anomaly_score: float)`
-  - `callback(anomaly_score: float, classification: dict)` (if your model returns a classification head alongside anomaly)
+  - `callback(anomaly_score: float, classification: dict | None)` (`classification` is None unless your model returns a classification head alongside anomaly)
 
 ## Code Example and Usage
 
@@ -36,7 +36,7 @@ logger = Logger("Vibration Anomaly Example")
 vibration = VibrationAnomalyDetection(anomaly_detection_threshold=1.0)
 
 # Register the callback to run when an anomaly is detected
-def on_detected_anomaly(anomaly_score: float, classification: dict = None):
+def on_detected_anomaly(anomaly_score: float, classification: dict | None = None):
     print(f"[Anomaly] score={anomaly_score:.3f}")
 
 # Expose a function that Arduino can call via Router Bridge

@@ -8,6 +8,7 @@ from arduino.version import __version__
 from arduino.app_tools.module_listing import (
     RELEASE_VERSION_PLACEHOLDER,
     ArduinoBrick,
+    ArduinoService,
     resolve_release_version,
     save_compose_file,
     save_models_files,
@@ -80,3 +81,34 @@ def test_resolve_release_version_prefers_argument_then_environment_then_library_
 
     monkeypatch.delenv("BRICKS_RELEASE_VERSION")
     assert resolve_release_version() == __version__
+
+
+def test_brick_to_dict_lists_the_variables_of_brick_config(tmp_path):
+    variables = [
+        {"name": "API_KEY", "description": "The key", "secret": True},
+        {"name": "LEVEL", "default_value": "info", "hidden": True},
+    ]
+    brick = ArduinoBrick("arduino:foo", "Foo", "A brick", [], str(tmp_path), "", env_variables=variables)
+
+    out = brick.to_dict()
+
+    assert out["variables"] == [
+        {"name": "API_KEY", "description": "The key", "secret": True},
+        {"name": "LEVEL", "default_value": "info", "hidden": True},
+    ]
+
+
+def test_missing_category_falls_back_to_miscellaneous(tmp_path):
+    brick = ArduinoBrick("arduino:foo", "Foo", "A brick", [], str(tmp_path), "", category=None)
+    service = ArduinoService("arduino:svc", "Svc", "A service", str(tmp_path), category=None, root_path=tmp_path)
+
+    assert brick.to_dict()["category"] == "miscellaneous"
+    assert service.to_dict()["category"] == "miscellaneous"
+    assert service.root_path == str(tmp_path)
+
+
+def test_variables_without_a_name_are_skipped(tmp_path):
+    variables = [{"description": "no name here"}, {"name": "OK"}]
+    brick = ArduinoBrick("arduino:foo", "Foo", "A brick", [], str(tmp_path), "", env_variables=variables)
+
+    assert brick.to_dict()["variables"] == [{"name": "OK"}]

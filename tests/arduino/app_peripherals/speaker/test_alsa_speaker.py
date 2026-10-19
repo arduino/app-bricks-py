@@ -9,7 +9,7 @@ import alsaaudio
 import numpy as np
 
 from arduino.app_peripherals.speaker.speaker import Speaker
-from arduino.app_peripherals.speaker.alsa_speaker import ALSASpeaker, _alsa_format_name_to_dtype, _dtype_to_alsa_format_name
+from arduino.app_peripherals.speaker.alsa_speaker import ALSASpeaker, _nth_plugged_speaker, _alsa_format_name_to_dtype, _dtype_to_alsa_format_name
 from arduino.app_peripherals.speaker.errors import SpeakerConfigError, SpeakerOpenError
 
 
@@ -520,3 +520,69 @@ class TestALSASpeakerJackResolution:
         assert pcm_registry.get_last_instance().device == device
         # PipeWire devices are always considered present.
         assert spkr._is_device_disconnected() is False
+
+
+class TestNthPluggedSpeaker:
+    """External behavior of _nth_plugged_speaker device resolution."""
+
+    def test_usb_first_without_carrier(self, mock_pw_dump):
+        mock_pw_dump(usb_ids=(50,), builtin_ids=(52,))
+
+        assert _nth_plugged_speaker(0) == "usb:1"
+
+    def test_out_of_range_without_carrier_raises(self, mock_pw_dump):
+        mock_pw_dump(usb_ids=(50,), builtin_ids=(52,))
+
+        # Second position has no USB device and there is no built-in fallback without media carrier.
+        with pytest.raises(SpeakerOpenError):
+            _nth_plugged_speaker(1)
+
+    def test_usb_precedence_under_media_carrier(self, mock_pw_dump, monkeypatch):
+        monkeypatch.setenv("CONFIGURED_CARRIERS", "media-carrier")
+        mock_pw_dump(usb_ids=(50,), builtin_ids=(52,))
+
+        assert _nth_plugged_speaker(0) == "usb:1"
+
+    def test_jack_fallback_under_media_carrier(self, mock_pw_dump, monkeypatch):
+        monkeypatch.setenv("CONFIGURED_CARRIERS", "media-carrier")
+        mock_pw_dump(usb_ids=(), builtin_ids=(52,))
+
+        assert _nth_plugged_speaker(0) == "jack:1"
+
+    def test_index_spans_usb_then_jack_under_media_carrier(self, mock_pw_dump, monkeypatch):
+        monkeypatch.setenv("CONFIGURED_CARRIERS", "media-carrier")
+        mock_pw_dump(usb_ids=(50,), builtin_ids=(52,))
+
+        assert _nth_plugged_speaker(1) == "jack:1"
+
+    def test_second_jack_is_addressable_under_media_carrier(self, mock_pw_dump, monkeypatch):
+        monkeypatch.setenv("CONFIGURED_CARRIERS", "media-carrier")
+        mock_pw_dump(usb_ids=(), builtin_ids=(52, 54))
+
+        assert _nth_plugged_speaker(1) == "jack:2"
+
+    def test_out_of_range_jack_index_raises_under_media_carrier(self, mock_pw_dump, monkeypatch):
+        monkeypatch.setenv("CONFIGURED_CARRIERS", "media-carrier")
+        mock_pw_dump(usb_ids=(), builtin_ids=(52,))
+
+        with pytest.raises(SpeakerOpenError):
+            _nth_plugged_speaker(1)
+
+    def test_no_jack_fallback_without_carrier(self, mock_pw_dump):
+        mock_pw_dump(usb_ids=(), builtin_ids=(52,))
+
+        with pytest.raises(SpeakerOpenError):
+            _nth_plugged_speaker(0)
+
+    def test_no_jack_fallback_for_other_carrier(self, mock_pw_dump, monkeypatch):
+        monkeypatch.setenv("CONFIGURED_CARRIERS", "some-other-carrier")
+        mock_pw_dump(usb_ids=(), builtin_ids=(52,))
+
+        with pytest.raises(SpeakerOpenError):
+            _nth_plugged_speaker(0)
+
+    def test_no_devices_raises(self, mock_pw_dump):
+        mock_pw_dump(usb_ids=(), builtin_ids=())
+
+        with pytest.raises(SpeakerOpenError):
+            _nth_plugged_speaker(0)

@@ -2,16 +2,23 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import collections
 import threading
 import queue
 import inspect
 import numpy as np
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
+from typing import Any
 from arduino.app_internal.core import EdgeImpulseRunnerFacade
 from arduino.app_utils import brick, Logger, SlidingWindowBuffer
 
 logger = Logger("MotionDetection")
+
+# Bounded wait on the sensor window: pull() returns an empty window on timeout, the loop returns and
+# the worker checks whether the brick is still running before pulling again. Without it stop() leaves
+# the loop waiting for a window that never comes, and the worker thread never terminates.
+_WINDOW_PULL_TIMEOUT_S = 0.1
 
 
 @brick
@@ -33,13 +40,13 @@ class MotionDetection(EdgeImpulseRunnerFacade):
             raise ValueError("Model parameters are missing or incomplete in the retrieved model information.")
         self._model_info = model_info
 
-        self._handlers = {}  # Dictionary to hold handlers for different keywords
+        self._handlers: dict[str, Callable[..., None]] = {}  # Dictionary to hold handlers for different keywords
         self._handlers_lock = threading.Lock()
 
-        # TODO: remove this queue and its handling
-        self._external_notification_queue = queue.Queue(
-            maxsize=100
-        )  # Queue to hold chunks of sensor data for external notifications (like processing them in a chart)
+        # The latest samples, kept for get_sensor_samples() (e.g. to chart them): a full deque drops the
+        # oldest one in the same append, so the producer never races the reader on the drop.
+        self._sensor_samples: collections.deque[tuple[float, float, float]] = collections.deque(maxlen=100)
+        self._sensor_samples_available = threading.Condition()
 
         self._buffer = SlidingWindowBuffer(window_size=model_info.input_features_count, slide_amount=int(model_info.input_features_count))
 
@@ -49,12 +56,13 @@ class MotionDetection(EdgeImpulseRunnerFacade):
     def stop(self) -> None:
         self._buffer.flush()
 
-    def on_movement_detection(self, movement: str, callback: callable) -> None:
+    def on_movement_detection(self, movement: str, callback: Callable[..., None]) -> None:
         """Register a callback function to be invoked when a specific motion pattern is detected.
 
         Args:
             movement (str): The motion pattern name to check for in the classification results.
-            callback (callable): Function to call when the specified motion pattern is detected.
+            callback (Callable[..., None]): Function to call when the specified motion pattern is detected. It takes
+                no argument, or one receiving the classification results, or a ``classification`` keyword argument.
         """
         with self._handlers_lock:
             if movement in self._handlers:
@@ -76,10 +84,10 @@ class MotionDetection(EdgeImpulseRunnerFacade):
         if not self._buffer.push(chunk):
             logger.debug(f"Samples not pushed to the buffer. Buffer is full or has insufficient capacity.")
 
-        # Fill buffer of external notification queue with the latest accelerometer samples.
-        if self._external_notification_queue.full():
-            self._external_notification_queue.get_nowait()
-        self._external_notification_queue.put_nowait(accelerometer_samples)
+        # Keep the sample for get_sensor_samples().
+        with self._sensor_samples_available:
+            self._sensor_samples.append(accelerometer_samples)
+            self._sensor_samples_available.notify()
 
     def get_sensor_samples(self) -> Iterable[tuple[float, float, float]]:
         """Get the current sensor samples.
@@ -88,16 +96,16 @@ class MotionDetection(EdgeImpulseRunnerFacade):
             iterable: An iterable containing the accumulated sensor data (x, y, z acceleration values).
         """
         while True:
-            acquired_samples = self._external_notification_queue.get()
-            if acquired_samples is None:
-                continue
-            yield acquired_samples
+            with self._sensor_samples_available:
+                self._sensor_samples_available.wait_for(lambda: len(self._sensor_samples) > 0)
+                sample = self._sensor_samples.popleft()
+            yield sample
 
-    def _movement_spotted(self, item: dict) -> tuple[str, float, dict] | None:
+    def _movement_spotted(self, item: dict[str, Any] | None) -> tuple[str, float, dict[str, float]] | None:
         """Verify if a movement has been spotted.
 
         Args:
-            item (dict): The item containing classification results.
+            item (dict | None): The item containing classification results, None when the inference failed.
 
         Returns:
             tuple[str, float, dict] | None: A tuple containing the detected class name, confidence level, and complete
@@ -109,7 +117,7 @@ class MotionDetection(EdgeImpulseRunnerFacade):
 
         detected_class = None
         detected_class_confidence = 0.0
-        classification_dict = {}
+        classification_dict: dict[str, float] = {}
 
         class_results = classification["classification"]
         for class_detected in class_results:
@@ -123,13 +131,15 @@ class MotionDetection(EdgeImpulseRunnerFacade):
                 detected_class = class_name
                 detected_class_confidence = class_confidence
 
+        if detected_class is None:
+            return None
         return detected_class, detected_class_confidence, classification_dict
 
     @brick.loop
     def _detection_loop(self) -> None:
         """Main loop for motion detection, processing sensor data and invoking callbacks when movements are detected."""
-        features = self._buffer.pull()
-        if features is None or len(features) == 0:
+        features = self._buffer.pull(timeout=_WINDOW_PULL_TIMEOUT_S)
+        if len(features) == 0:
             return
 
         try:

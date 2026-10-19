@@ -5,20 +5,18 @@
 import time
 import threading
 from types import TracebackType
-from typing import Literal, Self
+from typing import Any, Literal, Self
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 
+from ..audio_format import FormatPacked, FormatPlain, parse_format
 from .errors import MicrophoneConfigError, MicrophoneOpenError, MicrophoneReadError
 from arduino.app_utils import Logger, peripheral
 
 logger = Logger("Microphone")
-
-type FormatPlain = type | np.dtype | str
-type FormatPacked = tuple[FormatPlain, bool]
 
 
 @peripheral
@@ -56,30 +54,17 @@ class BaseMicrophone(ABC):
         """
         if sample_rate <= 0:
             raise MicrophoneConfigError("Sample rate must be positive")
-        self.sample_rate = sample_rate
+        self.sample_rate: int = sample_rate
 
         if channels <= 0:
             raise MicrophoneConfigError("Number of channels must be positive")
-        self.channels = channels
+        self.channels: int = channels
 
-        if format is None:
-            raise MicrophoneConfigError("Format must be specified")
-        if isinstance(format, tuple):
-            if len(format) != 2:
-                raise MicrophoneConfigError("Format tuple must be of the form (format: FormatPlain, is_packed: bool)")
-            format, self.format_is_packed = format
-        else:
-            self.format_is_packed = False
-        if isinstance(format, str) and format.strip() == "":
-            raise MicrophoneConfigError("Format must be a non-empty string or a valid numpy dtype/type or a tuple")
-        try:
-            self.format: np.dtype = np.dtype(format)
-        except TypeError as e:
-            raise MicrophoneConfigError(f"Invalid format: {format}") from e
+        self.format, self.format_is_packed = parse_format(format, MicrophoneConfigError)
 
         if buffer_size <= 0:
             raise MicrophoneConfigError("Buffer size must be positive")
-        self.buffer_size = buffer_size
+        self.buffer_size: int = buffer_size
 
         self.logger = logger  # This will be overridden by subclasses if needed
         self.name = self.__class__.__name__  # This will be overridden by subclasses if needed
@@ -100,7 +85,7 @@ class BaseMicrophone(ABC):
 
         # Status handling
         self._status: Literal["disconnected", "connected", "streaming", "paused"] = "disconnected"
-        self._on_status_changed_cb: Callable[[str, dict], None] | None = None
+        self._on_status_changed_cb: Callable[[str, dict[str, Any]], None] | None = None
         self._event_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="MicrophoneCallbacksRunner")
 
     @property
@@ -240,7 +225,7 @@ class BaseMicrophone(ABC):
         """Check if the microphone is started."""
         return self._is_started
 
-    def on_status_changed(self, callback: Callable[[str, dict], None] | None) -> None:
+    def on_status_changed(self, callback: Callable[[str, dict[str, Any]], None] | None) -> None:
         """Registers or removes a callback to be triggered on microphone lifecycle events.
 
         When a microphone status changes, the provided callback function will be invoked.
@@ -269,7 +254,7 @@ class BaseMicrophone(ABC):
             self._on_status_changed_cb = None
         else:
 
-            def _callback_wrapper(new_status: str, data: dict) -> None:
+            def _callback_wrapper(new_status: str, data: dict[str, Any]) -> None:
                 try:
                     callback(new_status, data)
                 except Exception as e:
@@ -458,7 +443,7 @@ class BaseMicrophone(ABC):
         """Read a single audio chunk from the microphone. Must be implemented by subclasses."""
         pass
 
-    def _set_status(self, new_status: Literal["disconnected", "connected", "streaming", "paused"], data: dict | None = None) -> None:
+    def _set_status(self, new_status: Literal["disconnected", "connected", "streaming", "paused"], data: dict[str, Any] | None = None) -> None:
         """
         Updates the current status of the microphone and invokes the registered status
         changed callback in the background, if any.

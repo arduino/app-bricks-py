@@ -286,3 +286,32 @@ def pcm_registry():
 from arduino.router_bridge import Bridge
 
 patch.object(Bridge, "connect", return_value=True).start()
+
+from arduino.app_utils.peripheral_registry import Peripherals
+
+
+@pytest.fixture(autouse=True)
+def clean_peripheral_registry():
+    """Keep the peripherals built by one test out of the registry seen by the others.
+
+    Peripherals register themselves for automatic release, and the registry is process-wide. Left
+    alone, every peripheral built anywhere in this suite would pile up in it and get stopped by the
+    interpreter-exit hook, which logs after pytest has torn its logging down.
+    """
+    Peripherals.clear()
+    yield
+    Peripherals.clear()
+
+
+@pytest.fixture(autouse=True)
+def clean_edge_impulse_model_info_cache():
+    """Keep the Edge Impulse model information fetched by one test out of the others.
+
+    The facade keeps the runner address and model information of each class for the life of the process, so a
+    fake model served to one test would otherwise answer the next. Only cleared when a test already imported the
+    facade: importing it here would load it for the whole suite.
+    """
+    yield
+    ei = sys.modules.get("arduino.app_internal.core.ei")
+    if ei is not None:
+        ei._model_info_cache.clear()  # pyright: ignore[reportPrivateUsage]

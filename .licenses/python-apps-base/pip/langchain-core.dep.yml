@@ -1,6 +1,6 @@
 ---
 name: langchain-core
-version: 1.6.2
+version: 1.6.6
 type: pip
 summary: Building applications with LLMs through composability
 homepage: https://docs.langchain.com/

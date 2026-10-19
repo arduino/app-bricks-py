@@ -208,16 +208,14 @@ def call(method_name: str | None = None, timeout: float | None = 10) -> Callable
         if _is_unbound_or_class_method(func):
             raise TypeError(f"'{func.__name__}' is expected to be a function but is a method or a classmethod.")
 
+        # An optional 'timeout' keyword overrides the decorator's default
         @wraps(func)
-        def wrapper(*args: object, **kwargs: object) -> R:
-            # An optional 'timeout' keyword overrides the decorator's default
-            actual_timeout = kwargs.pop("timeout", timeout)
-
+        def wrapper(*args: object, timeout: float | None = timeout, **kwargs: object) -> R:
             # Any remaining kwargs passed to the decorated function are unexpected
             if kwargs:
                 raise TypeError(f"Unexpected {list(kwargs.keys())} keyword args: only positional args are supported.")
 
-            return _get_bridge().call(actual_method_name, *args, timeout=actual_timeout)
+            return _get_bridge().call(actual_method_name, *args, timeout=timeout)
 
         return wrapper
 

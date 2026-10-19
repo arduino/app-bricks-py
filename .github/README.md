@@ -46,13 +46,13 @@ A release is started by hand: run `release.yml` from the branch to release, givi
 **Every release publishes every container at `X.Y.Z`**, together with the Python `.whl` and `sboms.zip`
 on the GitHub Release. There is one release cycle: the library and the containers it runs always ship
 together. The version must be `X.Y.Z` with an optional `rcN`, `aN` or `bN` suffix, which marks a
-prerelease; anything else, or a version whose `release/X.Y.Z` tag already exists, fails the run before
+prerelease; anything else, or a version whose `bricks/X.Y.Z` tag already exists, fails the run before
 building.
 
 Two jobs: `build` validates the version, builds the wheel with `task build:bricks` on the runner (the version
 injected into `src/arduino/version.py`, the project plus its `build` dependency group installed by uv),
 then bakes and pushes every image; `publish` derives the SBOM deltas from the published images, assembles `sboms.zip`
-and creates the GitHub Release with the wheel attached, which creates the `release/X.Y.Z` tag on the
+and creates the GitHub Release with the wheel attached, which creates the `bricks/X.Y.Z` tag on the
 released commit. The tag therefore exists only for versions whose run succeeded; a failed run leaves
 images at that version in the registry, overwritten by the next attempt.
 
@@ -144,9 +144,12 @@ Variables the workflows set, all optional for local builds:
 | `CACHE_TAG` | empty | Tag of the per-image registry build cache, `buildcache` for releases and `<IMAGE_TAG>-buildcache` for dev builds; empty disables the cache |
 | `SKIP_CACHE` | `false` | When `true`, the cache is not imported but still exported |
 
-Two targets take extra named contexts: `python-apps-base` installs the wheel from `wheel` (`dist/`,
-filled by `task build:bricks` with the wheel, `pyproject.toml` and `uv.lock`) and `models-downloader` reads
-`models-list.yaml` from `models` (the repository's `models/` directory).
+Some targets take extra named contexts: `python-apps-base` installs the wheel from `wheel` (`dist/`,
+filled by `task build:bricks` with the wheel, `pyproject.toml` and `uv.lock`), and `models-downloader` reads
+`models-list.yaml` from `models` (the repository's `models/` directory). `aihub-litert-models-runner` and
+`aihub-onnx-models-runner` take no named context for the shared `aihub` framework: they add the layers of
+the `aihub-framework` image with `COPY --link`, linked with `parent_context("aihub-framework")` next to
+their parent.
 
 ## SBOMs
 
