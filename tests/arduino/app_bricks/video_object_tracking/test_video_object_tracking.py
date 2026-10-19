@@ -34,17 +34,24 @@ def _track(label: str = "person", object_id: int = 1, x: int = 0, y: int = 0, wi
     return {"label": label, "score": value, "x": x, "y": y, "w": width, "h": height, "id": object_id}
 
 
-def _result(tracks: list[dict], seq: int = 1, t: float = 0.0) -> Result:
-    """The result of a frame captured `t` seconds after the clock of the replays started."""
-    return Result(model=TRACKER, seq=seq, ts_ns=CLOCK_START_NS + int(t * 1e9), source_size=(640, 480), tracks=[Box(**track) for track in tracks])
+def _result(tracks: list[dict], seq: int = 1, t: float = 0.0, size: tuple[int, int] = (640, 480)) -> Result:
+    """The result of a frame of `size` (width, height) captured `t` seconds after the clock of the replays started."""
+    return Result(model=TRACKER, seq=seq, ts_ns=CLOCK_START_NS + int(t * 1e9), source_size=size, tracks=[Box(**track) for track in tracks])
 
 
-def _replay(tracker: VideoObjectTracking, frames: list[list[dict]], times: list[float] | None = None, start: float = 0.0, step: float = 0.1) -> None:
-    """Feed the brick the results of consecutive frames, as its receiver does, each captured at its instant in `times`
-    or, without them, every `step` seconds from `start`, a 10 fps camera."""
+def _replay(
+    tracker: VideoObjectTracking,
+    frames: list[list[dict]],
+    times: list[float] | None = None,
+    start: float = 0.0,
+    step: float = 0.1,
+    size: tuple[int, int] = (640, 480),
+) -> None:
+    """Feed the brick the results of consecutive frames of `size`, as its receiver does, each captured at its instant
+    in `times` or, without them, every `step` seconds from `start`, a 10 fps camera."""
     times = [start + i * step for i in range(len(frames))] if times is None else times
     for seq, (tracks, t) in enumerate(zip(frames, times, strict=True), 1):
-        tracker._process_result(_result(tracks, seq, t))
+        tracker._process_result(_result(tracks, seq, t, size))
 
 
 def _walk(points: list[tuple[int, int]], label: str = "person", object_id: int = 1, size: tuple[int, int] = (80, 200)) -> list[list[dict]]:
@@ -585,6 +592,43 @@ def test_a_hidden_line_and_area_still_count(tracker):
     _replay(tracker, [[_at(x, 300)] for x in (250, 350)])
     assert tracker.get_line_crossing_counts() == {"person": {"right": 1, "all": 1}}
     assert tracker.get_area_counts() == {"person": {"entered": 1}}
+
+
+def test_a_relative_coordinate_outside_0_to_1_is_refused_by_every_method(tracker):
+    for set_outside_the_frame in (
+        lambda: tracker.set_crossing_line_coordinates(0, 0, 1, 1.5, relative=True),
+        lambda: tracker.set_horizontal_crossing_line(-0.1, relative=True),
+        lambda: tracker.set_vertical_crossing_line(320, relative=True),
+        lambda: tracker.set_area_coordinates([(0.2, 0.2), (0.8, 0.2), (0.5, float("nan"))], relative=True),
+        lambda: tracker.set_rectangular_area(0.2, 0.2, 1.2, 0.8, relative=True),
+    ):
+        with pytest.raises(ValueError, match="from 0 to 1"):
+            set_outside_the_frame()
+
+
+@pytest.mark.parametrize("size", [(640, 480), (1280, 720)])
+def test_a_relative_line_and_area_keep_their_place_in_the_frame_at_any_resolution(tracker, size):
+    width, height = size
+    tracker.set_vertical_crossing_line(0.5, relative=True)
+    tracker.set_rectangular_area(0.6, 0.25, 0.9, 0.75, relative=True)
+
+    _replay(tracker, [[_at(round(width * fraction), height // 2)] for fraction in (0.3, 0.45, 0.55, 0.7)], size=size)
+
+    assert tracker.get_line_crossing_counts() == {"person": {"right": 1, "all": 1}}
+    assert tracker.get_area_counts() == {"person": {"entered": 1}}
+
+
+def test_a_relative_line_is_drawn_at_its_fraction_of_any_frame(tracker):
+    tracker.set_vertical_crossing_line(0.25, relative=True)
+
+    for width, height in ((640, 480), (1280, 720)):
+        annotated = tracker._annotate(np.full((height, width, 3), 128, np.uint8))
+        assert tuple(annotated[0, width // 4]) == DASH_COLOR, f"a quarter across the {width}x{height} frame"
+
+
+def test_a_relative_area_whose_side_runs_back_along_a_diagonal_is_refused(tracker):
+    with pytest.raises(ValueError, match="crosses itself"):
+        tracker.set_area_coordinates([(100 / 640, 100 / 480), (300 / 640, 300 / 480), (200 / 640, 200 / 480)], relative=True)
 
 
 def test_setting_again_without_visible_shows_it_again(tracker):

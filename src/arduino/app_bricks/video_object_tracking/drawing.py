@@ -20,12 +20,12 @@ EDGE_THICKNESS = 4
 type Point = tuple[float, float]
 
 
-def draw_crossing_line(frame: np.ndarray, line: tuple[int, int, int, int]) -> np.ndarray:
+def draw_crossing_line(frame: np.ndarray, line: tuple[float, float, float, float]) -> np.ndarray:
     """The frame with the straight line through the two points of `line` drawn from edge to edge, in place.
 
     Args:
         frame (np.ndarray): HxWx3 BGR frame.
-        line (tuple[int, int, int, int]): Two points of the line, x1, y1, x2, y2, in frame coordinates.
+        line (tuple[float, float, float, float]): Two points of the line, x1, y1, x2, y2, in frame coordinates.
 
     Returns:
         np.ndarray: The same frame, drawn on.

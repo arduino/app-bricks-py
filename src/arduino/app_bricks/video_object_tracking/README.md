@@ -35,8 +35,8 @@ The Video Object Tracking Brick allows you to:
   - `get_line_crossing_counts()` → line crossings per label
   - `get_objects_in_area()` / `get_area_counts()` → objects inside the area now, entries and exits per label
   - `get_objects_directions()` → movement history per object ID
-- Virtual counting line via `set_horizontal_crossing_line(y)`, `set_vertical_crossing_line(x)` or `set_crossing_line_coordinates(x1, y1, x2, y2)`.
-- Watched area via `set_rectangular_area(x1, y1, x2, y2)` or `set_area_coordinates(points)`, with `on_area_enter(callback)` and `on_area_exit(callback)`.
+- Virtual counting line via `set_horizontal_crossing_line(y)`, `set_vertical_crossing_line(x)` or `set_crossing_line_coordinates(x1, y1, x2, y2)`, in pixels or, with `relative=True`, in fractions of the frame.
+- Watched area via `set_rectangular_area(x1, y1, x2, y2)` or `set_area_coordinates(points)`, in pixels or, with `relative=True`, in fractions of the frame, with `on_area_enter(callback)` and `on_area_exit(callback)`.
 - Configurable confidence threshold (default: `0.4`) and debounce time between repeated callback invocations (default: `0s`, i.e. no debounce).
 - Runtime tracker overrides: `override_threshold(value)`, `override_keep_grace(value)`, `override_min_detections(value)`, `override_iou_threshold(value)`, `override_euclidean_distance_threshold(value)`.
 - Clean lifecycle control with `start()` / `stop()` and integration with `App.run()`.
@@ -133,6 +133,8 @@ print(tracker.get_line_crossing_counts())  # {"person": {"left": 3, "right": 2, 
 
 Every line runs across the whole frame, whatever its resolution: the helpers set a horizontal or vertical one, `set_crossing_line_coordinates()` the line through any two points, a diagonal one included.
 
+The coordinates are pixels of the camera frame. Pass `relative=True` to give them as fractions of the frame instead, from 0 to 1, x from the left edge and y from the top edge: `tracker.set_vertical_crossing_line(0.5, relative=True)` sets the line halfway across the frame, so it keeps its place whatever resolution the camera delivers. With `relative=True` a coordinate outside 0 to 1 raises `ValueError`. The bounding boxes the callbacks receive stay in pixels either way.
+
 To react to each crossing as it happens, register a callback with `on_line_crossing()`: it receives `{"label": str, "object_id": int, "direction": str}`.
 
 ```python
@@ -161,6 +163,8 @@ print(tracker.get_area_counts())  # {"apple": {"entered": 3, "exited": 2}}
 ```
 
 The points follow the border in order, and the border must not cross itself: `set_area_coordinates()` raises `ValueError` for one that does, as it does for fewer than three distinct points or more than 100. A point repeated right after itself, or the first one repeated at the end to close the polygon, is left out.
+
+Both methods take `relative=True` too, as the line does. The shape of a relative area then follows the proportions of the frame: `set_rectangular_area(0.3, 0.3, 0.7, 0.7, relative=True)` is a square on a square frame, and wider than tall on a 16:9 one.
 
 An object **enters** the area when it is seen inside and was not inside already, also when it first appears there. It **leaves** when it is seen outside, by more than `min_movement_threshold` pixels so that a centre wobbling on the border does not enter again and again, or when it has not been seen for a second while inside: the tracker may leave an object it still follows out of a few frames, and a second outlasts those gaps. Setting the area again, or a new run of the tracker, empties the objects inside without reporting them as gone.
 

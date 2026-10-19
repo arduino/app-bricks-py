@@ -31,6 +31,7 @@ STARTUP_TIMEOUT = 10.0  # seconds the constructor waits for the service to open 
 CENTROID_MODEL_TYPE = "constrained_object_detection"  # FOMO reports centroids, matched by distance instead of overlap
 TRACKING_BLOCK = "object_tracking"  # the threshold block holding the tracker knobs
 MAX_AREA_POINTS = 100  # every side of the area is checked against every other one for crossings
+ALIGNED_TOLERANCE = 1e-12  # a smaller turn of three points of the area is float rounding: they are aligned
 OBJECT_MEMORY_SEC = 1.0  # seconds an object missing from the results stays known, in the area and in the counts, and can be continued by a new track
 
 type LineCrossingCallback = Callable[[dict[str, Any]], None]
@@ -120,14 +121,16 @@ class VideoObjectTracking(VideoInference):
         self._object_counters: Counter[str] = Counter()  # distinct objects seen, per label
         self._recent_objects: dict[int, tuple[int, int]] = {}  # last seen position (x, y) of the ids the tracker still follows
         self._last_seen: dict[int, float] = {}  # instant of the last result that reported each of those ids, on the frame clock
-        self._line_coordinates: tuple[int, int, int, int] | None = None  # x1, y1, x2, y2 of the crossing line
+        self._line_coordinates: tuple[float, float, float, float] | None = None  # x1, y1, x2, y2 of the crossing line
         self._line_visible = True
+        self._line_relative = False
         self._crossing_line_object: dict[str, Counter[str]] = {}  # crossings of the line, per label and direction
         self._line_crossing_handler: LineCrossingCallback | None = None
         self._object_directions: dict[int, list[str]] = {}  # direction history, per object id
         self._min_movement_threshold = min_movement_threshold
-        self._area: np.ndarray | None = None  # the vertices of the watched area, as OpenCV takes a polygon
+        self._area: np.ndarray | None = None  # the vertices of the watched area, x and y one per row
         self._area_visible = True
+        self._area_relative = False
         self._area_present: dict[int, tuple[str, float]] = {}  # objects inside the area: id -> (label, instant last seen inside)
         self._area_counts: dict[str, Counter[str]] = {}  # entries and exits of the area, per label
         self._area_enter_handler: AreaCallback | None = None
@@ -206,7 +209,7 @@ class VideoObjectTracking(VideoInference):
             return True
         return label in self._labels_to_track
 
-    def _record_object(self, detected_object_label: str, object_id: int, x: int, y: int) -> None:
+    def _record_object(self, detected_object_label: str, object_id: int, x: int, y: int, frame_size: tuple[int, int]) -> None:
         """
         Record that an object with a specific label and ID has been seen.
 
@@ -215,6 +218,7 @@ class VideoObjectTracking(VideoInference):
             object_id (int): The unique ID of the detected object.
             x (int): The x-coordinate of the object reference point.
             y (int): The y-coordinate of the object reference point.
+            frame_size (tuple[int, int]): The width and height of the frame the point is in.
         """
 
         with self._counter_lock:
@@ -226,12 +230,12 @@ class VideoObjectTracking(VideoInference):
             if last_x == x and last_y == y:
                 # No movement detected; skip further processing
                 return
-            self._record_line_crossing(detected_object_label, object_id, x, y)
+            self._record_line_crossing(detected_object_label, object_id, x, y, frame_size)
             self._record_object_direction(detected_object_label, object_id, x, y)
         # Update the last seen position
         self._recent_objects[object_id] = (x, y)
 
-    def _record_line_crossing(self, detected_object_label: str, object_id: int, x: int, y: int) -> None:
+    def _record_line_crossing(self, detected_object_label: str, object_id: int, x: int, y: int, frame_size: tuple[int, int]) -> None:
         """Count a crossing of the line by the object, under the direction it moved in.
 
         Args:
@@ -239,12 +243,13 @@ class VideoObjectTracking(VideoInference):
             object_id (int): The unique ID of the detected object.
             x (int): The x-coordinate of the object reference point.
             y (int): The y-coordinate of the object reference point.
+            frame_size (tuple[int, int]): The width and height of the frame the point is in.
         """
         with self._counter_lock:
             if self._line_coordinates is None or object_id not in self._recent_objects:
                 return
             last_x, last_y = self._recent_objects[object_id]
-            x1, y1, x2, y2 = self._line_coordinates
+            x1, y1, x2, y2 = _scaled_line(self._line_coordinates, frame_size if self._line_relative else (1, 1))
             dx, dy = x2 - x1, y2 - y1
             before = (last_x - x1) * dy - (last_y - y1) * dx
             after = (x - x1) * dy - (y - y1) * dx
@@ -257,9 +262,9 @@ class VideoObjectTracking(VideoInference):
         if handler is not None:
             self._submit_event(handler, {"label": detected_object_label, "object_id": object_id, "direction": direction})
 
-    def _record_area(self, tracked: list[tuple[str, int, int, int]], now: float) -> None:
-        """Follow the objects of one result in and out of the area, (label, id, x, y) each at its reference point, `now`
-        being the instant of the result on the frame clock.
+    def _record_area(self, tracked: list[tuple[str, int, int, int]], now: float, frame_size: tuple[int, int]) -> None:
+        """Follow the objects of one result in and out of the area, (label, id, x, y) each at its reference point in a
+        frame of `frame_size` (width, height), `now` being the instant of the result on the frame clock.
 
         An object enters when it is seen inside and is not among the ones present, and leaves when it is seen more
         than `min_movement_threshold` pixels outside or has not been seen for more than OBJECT_MEMORY_SEC seconds.
@@ -268,10 +273,11 @@ class VideoObjectTracking(VideoInference):
         with self._counter_lock:
             if self._area is None:
                 return
+            area = (self._area * (frame_size if self._area_relative else (1, 1))).astype(np.float32)
             seen = set()
             for label, object_id, x, y in tracked:
                 seen.add(object_id)
-                distance = cv2.pointPolygonTest(self._area, (float(x), float(y)), True)  # positive inside, negative outside
+                distance = cv2.pointPolygonTest(area, (float(x), float(y)), True)  # positive inside, negative outside
                 if object_id in self._area_present:
                     if distance < -self._min_movement_threshold:
                         del self._area_present[object_id]
@@ -404,57 +410,81 @@ class VideoObjectTracking(VideoInference):
         with self._counter_lock:
             return dict(self._object_directions)
 
-    def set_crossing_line_coordinates(self, x1: int, y1: int, x2: int, y2: int, *, visible: bool = True) -> None:
+    def set_crossing_line_coordinates(self, x1: float, y1: float, x2: float, y2: float, *, visible: bool = True, relative: bool = False) -> None:
         """
         Set the line for counting objects crossing it: the straight line through the two points, across the whole
         frame, so an object crossing it beyond the two points counts too.
 
         Args:
-            x1 (int): The x-coordinate of the first point of the line.
-            y1 (int): The y-coordinate of the first point of the line.
-            x2 (int): The x-coordinate of the second point of the line.
-            y2 (int): The y-coordinate of the second point of the line.
+            x1 (float): The x-coordinate of the first point of the line.
+            y1 (float): The y-coordinate of the first point of the line.
+            x2 (float): The x-coordinate of the second point of the line.
+            y2 (float): The y-coordinate of the second point of the line.
             visible (bool): Draw it on the video stream. Default is True; counting works either way.
-        """
-        with self._counter_lock:
-            self._line_coordinates = (x1, y1, x2, y2)
-            self._line_visible = visible
+            relative (bool): Take the coordinates as fractions of the frame, from 0 to 1, x from the left edge and y
+                from the top edge, so the line keeps its place whatever resolution the camera delivers. Default is
+                False, pixels of the camera frame.
 
-    def set_horizontal_crossing_line(self, y: int, *, visible: bool = True) -> None:
+        Raises:
+            ValueError: If `relative` is True and a coordinate is not between 0 and 1.
+        """
+        if relative:
+            _require_fractions(x1, y1, x2, y2)
+        with self._counter_lock:
+            self._line_coordinates = (float(x1), float(y1), float(x2), float(y2))
+            self._line_visible = visible
+            self._line_relative = relative
+
+    def set_horizontal_crossing_line(self, y: float, *, visible: bool = True, relative: bool = False) -> None:
         """
         Set a horizontal line across the whole frame for counting objects crossing it.
 
         Args:
-            y (int): The y-coordinate of the horizontal line.
+            y (float): The y-coordinate of the horizontal line.
             visible (bool): Draw it on the video stream. Default is True; counting works either way.
-        """
-        self.set_crossing_line_coordinates(0, y, 1, y, visible=visible)
+            relative (bool): Take `y` as a fraction of the frame height, from 0 (top edge) to 1 (bottom edge).
+                Default is False, pixels of the camera frame.
 
-    def set_vertical_crossing_line(self, x: int, *, visible: bool = True) -> None:
+        Raises:
+            ValueError: If `relative` is True and `y` is not between 0 and 1.
+        """
+        self.set_crossing_line_coordinates(0, y, 1, y, visible=visible, relative=relative)
+
+    def set_vertical_crossing_line(self, x: float, *, visible: bool = True, relative: bool = False) -> None:
         """
         Set a vertical line across the whole frame for counting objects crossing it.
 
         Args:
-            x (int): The x-coordinate of the vertical line.
+            x (float): The x-coordinate of the vertical line.
             visible (bool): Draw it on the video stream. Default is True; counting works either way.
-        """
-        self.set_crossing_line_coordinates(x, 0, x, 1, visible=visible)
+            relative (bool): Take `x` as a fraction of the frame width, from 0 (left edge) to 1 (right edge).
+                Default is False, pixels of the camera frame.
 
-    def set_area_coordinates(self, points: list[tuple[int, int]], *, visible: bool = True) -> None:
+        Raises:
+            ValueError: If `relative` is True and `x` is not between 0 and 1.
+        """
+        self.set_crossing_line_coordinates(x, 0, x, 1, visible=visible, relative=relative)
+
+    def set_area_coordinates(self, points: list[tuple[float, float]], *, visible: bool = True, relative: bool = False) -> None:
         """
         Set the area watched for objects entering and leaving it: the polygon through the points, in the order they
         follow its border. The objects inside are counted again from their next appearance.
 
         Args:
-            points (list[tuple[int, int]]): From three to MAX_AREA_POINTS (100) distinct (x, y) points in frame
+            points (list[tuple[float, float]]): From three to MAX_AREA_POINTS (100) distinct (x, y) points in frame
                 coordinates, along a border that does not cross itself; the polygon may be concave. A point repeated
                 right after itself, or the first one repeated at the end, is left out.
             visible (bool): Draw it on the video stream. Default is True; counting works either way.
+            relative (bool): Take the coordinates as fractions of the frame, from 0 to 1, x from the left edge and y
+                from the top edge, so the area keeps its place whatever resolution the camera delivers. Default is
+                False, pixels of the camera frame.
 
         Raises:
-            ValueError: If fewer than three or more than MAX_AREA_POINTS distinct points are given, or if the border
-                crosses itself.
+            ValueError: If `relative` is True and a coordinate is not between 0 and 1, if fewer than three or more
+                than MAX_AREA_POINTS distinct points are given, or if the border crosses itself.
         """
+        if relative:
+            _require_fractions(*(coordinate for point in points for coordinate in point))
         border = _border(points)
         if len(set(border)) < 3:
             raise ValueError("An area needs at least three distinct points.")
@@ -462,29 +492,32 @@ class VideoObjectTracking(VideoInference):
             raise ValueError(f"An area takes at most {MAX_AREA_POINTS} points.")
         if _crosses_itself(border):
             raise ValueError("The border of the area crosses itself, so it does not enclose a single region.")
-        polygon = np.array(border, dtype=np.int32)
         with self._counter_lock:
-            self._area = polygon.reshape(-1, 1, 2)
+            self._area = np.array(border, dtype=np.float64)
             self._area_visible = visible
+            self._area_relative = relative
             self._area_present.clear()
 
-    def set_rectangular_area(self, x1: int, y1: int, x2: int, y2: int, *, visible: bool = True) -> None:
+    def set_rectangular_area(self, x1: float, y1: float, x2: float, y2: float, *, visible: bool = True, relative: bool = False) -> None:
         """
         Set a rectangular area watched for objects entering and leaving it.
 
         Args:
-            x1 (int): The x-coordinate of a corner.
-            y1 (int): The y-coordinate of a corner.
-            x2 (int): The x-coordinate of the opposite corner.
-            y2 (int): The y-coordinate of the opposite corner.
+            x1 (float): The x-coordinate of a corner.
+            y1 (float): The y-coordinate of a corner.
+            x2 (float): The x-coordinate of the opposite corner.
+            y2 (float): The y-coordinate of the opposite corner.
             visible (bool): Draw it on the video stream. Default is True; counting works either way.
+            relative (bool): Take the coordinates as fractions of the frame, from 0 to 1, x from the left edge and y
+                from the top edge. Default is False, pixels of the camera frame.
 
         Raises:
-            ValueError: If the rectangle has no width or no height.
+            ValueError: If `relative` is True and a coordinate is not between 0 and 1, or if the rectangle has no
+                width or no height.
         """
         left, right = sorted((x1, x2))
         top, bottom = sorted((y1, y2))
-        self.set_area_coordinates([(left, top), (right, top), (right, bottom), (left, bottom)], visible=visible)
+        self.set_area_coordinates([(left, top), (right, top), (right, bottom), (left, bottom)], visible=visible, relative=relative)
 
     def reset_counters(self) -> None:
         """Reset the counts of tracked objects."""
@@ -587,10 +620,10 @@ class VideoObjectTracking(VideoInference):
             x1, y1, x2, y2 = round(track.x), round(track.y), round(track.x + track.w), round(track.y + track.h)
             details = {"object_id": object_id, "confidence": track.score, "bounding_box_xyxy": (x1, y1, x2, y2)}
             detections.setdefault(label, []).append(details)
-            self._record_object(label, object_id, (x1 + x2) // 2, (y1 + y2) // 2)
+            self._record_object(label, object_id, (x1 + x2) // 2, (y1 + y2) // 2, result.source_size)
             centres.append((label, object_id, (x1 + x2) // 2, (y1 + y2) // 2))
             self._execute_handler(key=label, payload=details)
-        self._record_area(centres, now)
+        self._record_area(centres, now, result.source_size)
         self._expire_objects({object_id for object_id, _, _ in tracked}, now)
         self._boxes.update(
             [replace(track, label=_video_label(label, object_id)) for object_id, label, track in tracked], (time.monotonic_ns() - result.ts_ns) / 1e9
@@ -601,13 +634,16 @@ class VideoObjectTracking(VideoInference):
     def _annotate(self, frame: np.ndarray) -> np.ndarray:
         """A copy of the frame with, when set, the crossing line and the outline of the area, and the tracked boxes over them."""
         annotated = frame.copy()
+        frame_size = (frame.shape[1], frame.shape[0])
         with self._counter_lock:
             line = self._line_coordinates if self._line_visible else None
+            line_scale = frame_size if self._line_relative else (1, 1)
             area = self._area if self._area_visible else None
+            area_scale = frame_size if self._area_relative else (1, 1)
         if line is not None:
-            draw_crossing_line(annotated, line)
+            draw_crossing_line(annotated, _scaled_line(line, line_scale))
         if area is not None:
-            draw_area(annotated, area)
+            draw_area(annotated, area * area_scale)
         return draw_detections(annotated, self._boxes.visible(), self._colors, color_key=_class_of)
 
     def override_keep_grace(self, keep_grace: int) -> None:
@@ -727,7 +763,7 @@ def _compass(dx: float, dy: float) -> str:
     return COMPASS[math.floor(angle / 45 + 0.5) % 8]
 
 
-def _crossing_direction(dx: int, dy: int, before: int) -> str:
+def _crossing_direction(dx: float, dy: float, before: float) -> str:
     """The screen direction of a crossing of the line of direction (dx, dy): perpendicular to it, towards the side
     reached, given `before`, the signed side of the starting point, `(x - x1) * dy - (y - y1) * dx`.
     """
@@ -735,11 +771,26 @@ def _crossing_direction(dx: int, dy: int, before: int) -> str:
     return _compass(towards * dy, -towards * dx)
 
 
-def _border(points: list[tuple[int, int]]) -> list[tuple[int, int]]:
-    """The points as integer (x, y), without a point repeated right after itself nor the first one repeated at the end."""
-    border: list[tuple[int, int]] = []
+def _require_fractions(*values: float) -> None:
+    """Raise ValueError unless every value is a fraction of the frame, from 0 to 1."""
+    for value in values:
+        if not 0 <= value <= 1:
+            raise ValueError(f"A coordinate is a fraction of the frame width or height, from 0 to 1, not {value}.")
+
+
+def _scaled_line(line: tuple[float, float, float, float], scale: tuple[int, int]) -> tuple[float, float, float, float]:
+    """The two points of the line in pixels: x times the first factor of `scale` and y times the second, the frame
+    width and height for a line in fractions of the frame, 1 and 1 for one already in pixels."""
+    x1, y1, x2, y2 = line
+    scale_x, scale_y = scale
+    return x1 * scale_x, y1 * scale_y, x2 * scale_x, y2 * scale_y
+
+
+def _border(points: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    """The points as float (x, y), without a point repeated right after itself nor the first one repeated at the end."""
+    border: list[tuple[float, float]] = []
     for x, y in points:
-        point = (int(x), int(y))
+        point = (float(x), float(y))
         if not border or point != border[-1]:
             border.append(point)
     if len(border) > 1 and border[-1] == border[0]:
@@ -747,7 +798,7 @@ def _border(points: list[tuple[int, int]]) -> list[tuple[int, int]]:
     return border
 
 
-def _crosses_itself(border: list[tuple[int, int]]) -> bool:
+def _crosses_itself(border: list[tuple[float, float]]) -> bool:
     """True when two sides of the closed border share a point other than the corner joining two consecutive sides,
     or when a side runs back along the one before it."""
     count = len(border)
@@ -764,12 +815,14 @@ def _crosses_itself(border: list[tuple[int, int]]) -> bool:
     return False
 
 
-def _turn(a: tuple[int, int], b: tuple[int, int], c: tuple[int, int]) -> int:
-    """Positive when a, b, c turn one way, negative when they turn the other, zero when they are aligned."""
-    return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+def _turn(a: tuple[float, float], b: tuple[float, float], c: tuple[float, float]) -> float:
+    """Positive when a, b, c turn one way, negative when they turn the other, zero when they are aligned within
+    ALIGNED_TOLERANCE."""
+    turn = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+    return 0.0 if abs(turn) < ALIGNED_TOLERANCE else turn
 
 
-def _sides_touch(a: tuple[int, int], b: tuple[int, int], c: tuple[int, int], d: tuple[int, int]) -> bool:
+def _sides_touch(a: tuple[float, float], b: tuple[float, float], c: tuple[float, float], d: tuple[float, float]) -> bool:
     """True when the segments ab and cd share at least one point."""
     abc, abd, cda, cdb = _turn(a, b, c), _turn(a, b, d), _turn(c, d, a), _turn(c, d, b)
     if abc * abd < 0 and cda * cdb < 0:
@@ -777,7 +830,7 @@ def _sides_touch(a: tuple[int, int], b: tuple[int, int], c: tuple[int, int], d: 
     return any(turn == 0 and _between(p, q, r) for turn, p, q, r in ((abc, a, b, c), (abd, a, b, d), (cda, c, d, a), (cdb, c, d, b)))
 
 
-def _between(p: tuple[int, int], q: tuple[int, int], r: tuple[int, int]) -> bool:
+def _between(p: tuple[float, float], q: tuple[float, float], r: tuple[float, float]) -> bool:
     """True when r, aligned with p and q, lies on the segment pq."""
     return min(p[0], q[0]) <= r[0] <= max(p[0], q[0]) and min(p[1], q[1]) <= r[1] <= max(p[1], q[1])
 
