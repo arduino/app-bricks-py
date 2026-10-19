@@ -4,13 +4,15 @@
 
 import pytest
 
-from arduino.app_peripherals.camera.camera import _camera_registry
+from arduino.app_peripherals.camera.camera import _camera_registry, _open_cameras, _open_cameras_config
 
 
 @pytest.fixture(autouse=True)
 def clean_camera_registry():
-    """Give each test a clean slate of auto-selected camera claims."""
+    """Give each test a clean slate of auto-selected camera claims and shared devices."""
     _camera_registry.clear()
+    _open_cameras.clear()
+    _open_cameras_config.clear()
     yield
 
 
