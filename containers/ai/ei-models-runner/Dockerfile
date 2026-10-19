@@ -14,6 +14,7 @@ RUN set -ex; \
 # Add all EI OOTB models to the container with specific ownership
 COPY --chown=arduino:arduino ./models/ei-ootb-models/arm64/* /models/ootb/ei/
 COPY --chown=arduino:arduino ./src/start-runner.sh /home/arduino/start-runner.sh
+COPY --chown=arduino:arduino ./src/flush-compile-cache.js /home/arduino/flush-compile-cache.js
 
 RUN chmod +x /home/arduino/start-runner.sh
 
@@ -23,10 +24,12 @@ ENV HOME=/home/arduino
 USER arduino
 ENV USER=arduino
 
-# V8 compile cache of the runner's JavaScript, filled at build time: loading the runner's
-# modules dominates its start on the boards' Cortex cores and the cache cuts that by a fifth.
-# Node keeps the cache in a per-uid subdirectory, so it is filled as the user running the runner.
+# V8 compile cache of the runner's JavaScript: loading the runner's modules dominates its start
+# on the boards' Cortex cores and the cache cuts that by a fifth from the second start on. V8 keys
+# the cache on the CPU features of the machine, so it cannot be built here: the bricks mount a
+# volume at this path and the first start on the board fills it. The directory exists in the image,
+# owned by the runner's user, so that the volume takes that ownership when it is created.
 ENV NODE_COMPILE_CACHE=/home/arduino/.cache/node-compile-cache
-RUN node /app/linux/node/build/cli/linux/runner.js --help > /dev/null
+RUN mkdir -p $NODE_COMPILE_CACHE
 
 ENTRYPOINT ["/home/arduino/start-runner.sh"]
