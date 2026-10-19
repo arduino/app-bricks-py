@@ -14,9 +14,9 @@ services:
       - /var/lib/arduino-app-cli/models/edge-impulse:/var/lib/arduino-app-cli/models/edge-impulse
     command: ["--model-file", "${EI_V_CLASSIFICATION_MODEL:-/models/ootb/ei/mobilenet-v2-224px.eim}", "--gst-source", "tcpserversrc host=0.0.0.0 port=5050 ! jpegdec", "--dont-print-predictions", "--preview-original-resolution"]
     healthcheck:
-      test: [ "CMD-SHELL", "grep -i ':13BA' /proc/net/tcp | grep ' 0A ' || exit 1" ] # Hex encoding of port 5050
-      interval: 2s
+      test: [ "CMD-SHELL", "grep -iE ':13BA [0-9A-F:]+ (0A|01) ' /proc/net/tcp || exit 1" ] # Port 5050 (hex 13BA) listening or serving a client: tcpserversrc stops listening once the app connects
+      interval: 10s
       start_period: 30s
-      start_interval: 250ms
+      start_interval: 1s
       timeout: 2s
-      retries: 25
+      retries: 3

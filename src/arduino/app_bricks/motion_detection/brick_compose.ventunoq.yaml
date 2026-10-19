@@ -20,8 +20,8 @@ services:
     command: ["--model-file", "${EI_MOTION_DETECTION_MODEL:-/models/ootb/ei/updown-wave-motion-detection.eim}", "--run-http-server", "1337", "--dont-print-predictions"]
     healthcheck:
       test: [ "CMD-SHELL", "wget -q --spider http://localhost:1337/api/info || exit 1" ]
-      interval: 2s
+      interval: 10s
       start_period: 30s
-      start_interval: 250ms
+      start_interval: 1s
       timeout: 2s
-      retries: 25
+      retries: 3
