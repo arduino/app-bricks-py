@@ -4,16 +4,20 @@
 
 import threading
 import time
+import weakref
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from types import TracebackType
-from typing import Any, Literal, Self, TypedDict
+from typing import TYPE_CHECKING, Any, Literal, Self, TypedDict
 from collections.abc import Callable, Iterator
 import numpy as np
 
 from arduino.app_utils import Logger, peripheral
 
 from .errors import CameraOpenError, CameraReadError, CameraTransformError
+
+if TYPE_CHECKING:
+    from ._sharing import FrameHub
 
 logger = Logger("Camera")
 
@@ -35,6 +39,10 @@ class BaseCamera(ABC):
 
     This class defines the common interface that all camera implementations must follow,
     providing a unified API regardless of the underlying camera protocol or type.
+
+    A camera instance can share its device with other handles created by the Camera factory.
+    Each handle is then started, stopped and read independently, while the device is opened by
+    the first handle started and closed after the last one is stopped.
     """
 
     def __init__(
@@ -82,6 +90,12 @@ class BaseCamera(ABC):
         self._on_status_changed_cb: Callable[[str, dict[str, Any]], None] | None = None
         self._event_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="CameraEvent")
 
+        # Sharing with the other handles of the same device. The hub is only weakly referenced so
+        # that the camera falls back to direct access once all the other handles are gone.
+        self._user_started = False  # Whether this handle was started, as opposed to the device
+        self._hub_ref: weakref.ReferenceType[FrameHub] | None = None
+        self._shared_seq = 0  # Sequence number of the last shared frame handed to this handle
+
     @property
     def status(self) -> Literal["disconnected", "connected", "streaming", "paused"]:
         """Read-only property for camera status."""
@@ -106,16 +120,36 @@ class BaseCamera(ABC):
         """
         Start the camera capture with retries, if enabled.
 
+        When the device is shared with other handles, it is opened only if no other handle has
+        already done it.
+
         Raises:
             CameraOpenError: If the camera fails to start after the retries.
             Exception: If the underlying implementation fails to start the camera.
         """
+        hub = self._get_hub()
+        if hub is not None:
+            hub.start(self)
+            return
+
+        self._user_started = True
+        try:
+            self._start_device()
+        except BaseException:
+            self._user_started = False
+            raise
+
+    def _start_device(self) -> None:
+        """Open the device with retries, if enabled. A no-op if the device is already open."""
         with self._camera_lock:
+            if self._is_started:
+                return
+
             self.logger.info("Starting camera...")
             self._stop_requested.clear()
 
             attempt = 0
-            while not self.is_started():
+            while not self._is_started:
                 try:
                     self._open_camera()
                     self._is_started = True
@@ -141,13 +175,28 @@ class BaseCamera(ABC):
                     time.sleep(delay)
 
     def stop(self) -> None:
-        """Stop the camera and release resources."""
+        """
+        Stop the camera and release resources.
+
+        When the device is shared with other handles, it is closed only once all of them are
+        stopped.
+        """
+        hub = self._get_hub()
+        if hub is not None:
+            hub.stop(self)
+            return
+
+        self._user_started = False
+        self._stop_device()
+
+    def _stop_device(self) -> None:
+        """Close the device. A no-op if the device is not open."""
         # Signalled before acquiring the lock: capture() holds it while throttling to the target
         # FPS, which at a low FPS is long enough to matter during a time-boxed app shutdown.
         self._stop_requested.set()
 
         with self._camera_lock:
-            if not self.is_started():
+            if not self._is_started:
                 return
 
             self.logger.info("Stopping camera...")
@@ -165,10 +214,32 @@ class BaseCamera(ABC):
         Capture a frame from the camera, respecting the configured FPS.
 
         Returns:
-            Numpy array or None if no frame is available.
+            Numpy array or None if no frame is available. When the device is shared with other
+            handles, the frame read from the device is read-only.
 
         Raises:
             CameraReadError: If the camera is not started.
+            Exception: If the underlying implementation fails to read a frame.
+        """
+        hub = self._get_hub()
+        if hub is not None:
+            return hub.capture(self)
+
+        return self._capture_device(adjust=True)
+
+    def _capture_device(self, adjust: bool) -> np.ndarray | None:
+        """
+        Read a frame from the device, respecting the configured FPS.
+
+        Args:
+            adjust (bool): Whether to apply this camera's adjustments to the frame.
+
+        Returns:
+            Numpy array or None if no frame is available.
+
+        Raises:
+            CameraReadError: If the device is not open.
+            CameraTransformError: If the adjustments fail.
             Exception: If the underlying implementation fails to read a frame.
         """
         with self._camera_lock:
@@ -176,7 +247,7 @@ class BaseCamera(ABC):
             # thread that outlived the shutdown must fail here rather than reach the
             # auto-reconnect in _read_frame() and hand itself a freshly reopened device. On the
             # CSI stack that would re-acquire a camera the app has already given back.
-            if not self.is_started():
+            if not self._is_started:
                 raise CameraReadError(f"Attempted to read from {self.name} before starting it.")
 
             # Apply FPS throttling, interruptible so that a pending stop() is not kept waiting
@@ -199,13 +270,16 @@ class BaseCamera(ABC):
 
             self._consecutive_none_frames = 0
 
-            if self.adjustments is not None:
-                try:
-                    frame = self.adjustments(frame)
-                except Exception as e:
-                    raise CameraTransformError(f"Frame transformation failed ({self.adjustments}): {e}")
+            return self._apply_adjustments(frame) if adjust else frame
 
+    def _apply_adjustments(self, frame: np.ndarray) -> np.ndarray:
+        """Apply this camera's adjustments, if any, to a frame."""
+        if self.adjustments is None:
             return frame
+        try:
+            return self.adjustments(frame)
+        except Exception as e:
+            raise CameraTransformError(f"Frame transformation failed ({self.adjustments}): {e}")
 
     def stream(self) -> Iterator[np.ndarray]:
         """
@@ -332,7 +406,14 @@ class BaseCamera(ABC):
 
     def is_started(self) -> bool:
         """Check if the camera has been started."""
+        hub = self._get_hub()
+        if hub is not None:
+            return self._user_started and hub.leader._is_started
         return self._is_started
+
+    def _get_hub(self) -> "FrameHub | None":
+        """The hub sharing the device with other handles, if any."""
+        return self._hub_ref() if self._hub_ref is not None else None
 
     def on_status_changed(self, callback: Callable[[str, dict[str, Any]], None] | None) -> None:
         """Registers or removes a callback to be triggered on camera lifecycle events.
@@ -431,8 +512,13 @@ class BaseCamera(ABC):
         # Check if new_status is an allowed transition for the current status
         if new_status in allowed_transitions[self._status]:
             self._status = new_status
+            data = data if data is not None else {}
             if self._on_status_changed_cb is not None:
-                self._event_executor.submit(self._on_status_changed_cb, new_status, data if data is not None else {})
+                self._event_executor.submit(self._on_status_changed_cb, new_status, data)
+
+            hub = self._get_hub()
+            if hub is not None:
+                hub.notify_status(new_status, data)
 
     def __enter__(self) -> Self:
         """Context manager entry."""
