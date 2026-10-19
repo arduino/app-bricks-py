@@ -4,10 +4,17 @@
 
 """Unit tests of the DecisionModel brick against a fake llama.cpp `/v1/systemone` runner."""
 
+import base64
+import subprocess
+import sys
 from enum import Enum
+from pathlib import Path
 
+import cv2
+import numpy as np
 import pytest
 import requests
+import yaml
 
 import arduino.app_bricks.decision_model.decision_model as dm
 from arduino.app_bricks.decision_model import (
@@ -27,6 +34,9 @@ MODULE = "arduino.app_bricks.decision_model.decision_model"
 MODEL_ID = "llamacpp:Laya-Q8_0"
 MODEL_NAME = "Laya-Q8_0"
 BASE_URL = "http://127.0.0.1:9999"
+REPO_ROOT = Path(__file__).resolve().parents[4]
+BRICK_DIR = REPO_ROOT / "src" / "arduino" / "app_bricks" / "decision_model"
+MODELS_LIST = REPO_ROOT / "models" / "models-list.yaml"
 
 
 class FakeResponse:
@@ -568,10 +578,10 @@ def test_model_comes_from_the_brick_configuration_when_not_given(runner, monkeyp
     assert brick._model_name == "Julia-1-Q8_0"
 
 
-@pytest.mark.parametrize(("board", "expected"), [("unoq", "llamacpp:Julia-1-Q8_0"), ("ventunoq", "llamacpp:Laya-Q8_0")])
-def test_default_brick_configuration_is_julia_on_unoq_and_laya_on_ventunoq(runner, monkeypatch, board, expected):
-    """Measured on the UNO Q: Laya takes ~9 s for three questions where Julia-1 takes ~1 s, so the
-    CPU board defaults to the small model and the NPU board to the more accurate one."""
+@pytest.mark.parametrize(("board", "expected"), [("unoq", "llamacpp:vllm-d3-edge-Q8_0"), ("ventunoq", "llamacpp:vllm-d3-lite-Q8_0")])
+def test_default_brick_configuration_is_d3_edge_on_unoq_and_d3_lite_on_ventunoq(runner, monkeypatch, board, expected):
+    """The CPU board defaults to the smaller d3-edge (half the layers of d3-lite), the NPU board
+    to the more accurate d3-lite."""
     # No app.yaml in the test environment: the brick default (model_by_boards) applies.
     monkeypatch.setattr("arduino.app_internal.core.module.get_board_name", lambda: board)
     brick = DecisionModel()
@@ -579,10 +589,27 @@ def test_default_brick_configuration_is_julia_on_unoq_and_laya_on_ventunoq(runne
     assert brick._model_id == expected
 
 
+def test_every_default_model_is_in_the_catalog_for_its_board_and_this_brick():
+    """A default App Lab cannot download is a brick that fails at the first request: each model of
+    model_by_boards must be a catalog entry listing the board, deployable on it, and declared for this brick."""
+    brick_config = yaml.safe_load((BRICK_DIR / "brick_config.yaml").read_text(encoding="utf-8"))
+    catalog: dict = {}
+    for entry in yaml.safe_load(MODELS_LIST.read_text(encoding="utf-8"))["models"]:
+        catalog.update(entry)
+
+    for default in brick_config["model_by_boards"]:
+        board, model_id = default["platform"], default["model"]
+        assert model_id in catalog, f"{model_id} (default on {board}) is not in models-list.yaml"
+        model = catalog[model_id]
+        assert board in model["supported_boards"]
+        assert any(board in platform for platform in model["deployment"]["platforms"])
+        assert brick_config["id"] in [brick["id"] for brick in model["bricks"]]
+
+
 def test_genie_model_is_rejected(runner):
     with pytest.raises(DecisionModelError, match="Unsupported model 'genie:qwen'") as info:
         DecisionModel(model="genie:qwen")
-    assert "llamacpp:Laya-Q8_0" in info.value.hint
+    assert "llamacpp:vllm-d3-lite-Q8_0" in info.value.hint
     assert "genie" in info.value.hint
 
 
@@ -762,3 +789,114 @@ def test_shortcuts_validate_before_posting(brick, runner):
     with pytest.raises(ValueError):
         brick.check("text", "Is?", true_description="yes")
     assert runner.posts == []
+
+
+# ---------------------------------------------------------------------------
+# Images
+# ---------------------------------------------------------------------------
+
+
+def _frame(width, height):
+    """A BGR frame like the ones `Camera.capture()` returns, with a gradient so the JPEG is not trivial."""
+    row = np.linspace(0, 255, width, dtype=np.uint8)
+    return np.dstack([np.tile(row, (height, 1))] * 3)
+
+
+def _sent_image(runner):
+    """The image of the last request, decoded back from its data URL."""
+    images = runner.posts[-1]["json"]["images"]
+    assert len(images) == 1
+    prefix = "data:image/jpeg;base64,"
+    assert images[0].startswith(prefix)
+    return cv2.imdecode(np.frombuffer(base64.b64decode(images[0][len(prefix) :]), np.uint8), cv2.IMREAD_COLOR)
+
+
+def test_importing_the_brick_does_not_load_opencv_or_numpy():
+    """OpenCV and numpy cost ~0.4 s each to import on the UNO Q: only a request with an image loads them."""
+    code = "import sys, arduino.app_bricks.decision_model; print(sorted(m for m in ('cv2', 'numpy') if m in sys.modules))"
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True, cwd=REPO_ROOT)
+    assert result.stdout.strip() == "[]"
+
+
+def test_a_request_without_an_image_sends_no_images_field(brick, runner):
+    runner.responses = [answers_response(q=NOUL_RAW)]
+
+    brick.decide("s", {"q": Noul("?")})
+
+    assert "images" not in runner.posts[0]["json"]
+
+
+def test_a_frame_is_sent_as_one_jpeg_data_url_at_its_own_size(brick, runner):
+    runner.responses = [answers_response(q=NOUL_RAW)]
+
+    brick.decide("A frame of the garage camera", {"q": Noul("Is the door open?")}, image=_frame(640, 480))
+
+    assert runner.posts[0]["json"]["state"] == "A frame of the garage camera"
+    assert _sent_image(runner).shape[:2] == (480, 640)
+
+
+def test_an_image_above_one_megapixel_is_downscaled_keeping_its_aspect_ratio(brick, runner):
+    """llama.cpp gives the image half of the 2048-token micro-batch (1024 tokens of 32x32 pixels): a 12 MP photo
+    is brought under that before it leaves the brick, so the state and the options keep the other half."""
+    runner.responses = [answers_response(q=NOUL_RAW)]
+
+    brick.decide("s", {"q": Noul("?")}, image=_frame(4000, 3000))
+
+    height, width = _sent_image(runner).shape[:2]
+    assert height * width <= dm.MAX_IMAGE_PIXELS == 1024 * 1024
+    assert height * width > 0.99 * dm.MAX_IMAGE_PIXELS
+    assert width / height == pytest.approx(4 / 3, rel=0.01)
+
+
+@pytest.mark.parametrize("as_path", [False, True], ids=["bytes", "path"])
+def test_an_encoded_image_is_accepted_as_bytes_or_as_a_path(brick, runner, tmp_path, as_path):
+    ok, png = cv2.imencode(".png", _frame(320, 200))
+    assert ok
+    image = tmp_path / "frame.png" if as_path else png.tobytes()
+    if as_path:
+        image.write_bytes(png.tobytes())
+    runner.responses = [answers_response(q=NOUL_RAW)]
+
+    brick.decide("s", {"q": Noul("?")}, image=image)
+
+    assert _sent_image(runner).shape[:2] == (200, 320)
+
+
+@pytest.mark.parametrize(
+    ("image", "error"),
+    [(b"not an image", ValueError), (np.zeros((0, 0, 3), np.uint8), ValueError), (42, TypeError), ("missing.png", FileNotFoundError)],
+)
+def test_a_bad_image_is_rejected_before_posting(brick, runner, image, error):
+    with pytest.raises(error):
+        brick.decide("s", {"q": Noul("?")}, image=image)
+    assert runner.posts == []
+
+
+def test_an_image_sent_to_a_model_without_vision_hints_at_the_d3_models(brick, runner):
+    """What llama.cpp answers when the model has no vision projector (Laya, or d3 on the UNO Q)."""
+    message = "This server does not support image input for decisions. For a model that supports it, start it with `--mmproj`"
+    runner.responses = [FakeResponse(501, {"error": {"code": 501, "message": message, "type": "not_supported_error"}})]
+
+    with pytest.raises(DecisionModelError, match="HTTP 501") as info:
+        brick.decide("s", {"q": Noul("?")}, image=_frame(64, 64))
+
+    assert MODEL_ID in info.value.hint
+    assert "llamacpp:vllm-d3-lite-Q8_0" in info.value.hint
+    assert "is not a decision model" not in info.value.hint
+
+
+def test_the_shortcuts_send_the_image_with_their_question(brick, runner):
+    frame = _frame(64, 48)
+    runner.responses = [
+        answers_response(answer={"choice": "open", "probabilities": {"open": 0.9, "closed": 0.1}, "confidence": 0.8}),
+        answers_response(answer=SCORE_RAW),
+        answers_response(answer=NOUL_RAW),
+    ]
+
+    brick.choose("garage", "Door?", ["open", "closed"], image=frame)
+    brick.score("garage", "How tidy?", ["low", "mid", "high"], image=frame)
+    brick.check("garage", "Is a car parked?", image=frame)
+
+    assert len(runner.posts) == 3
+    for post in runner.posts:
+        assert len(post["json"]["images"]) == 1
