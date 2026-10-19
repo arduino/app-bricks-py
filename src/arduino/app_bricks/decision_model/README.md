@@ -4,7 +4,7 @@ The Decision Model Brick asks a locally hosted decision model typed questions ab
 
 ## Overview
 
-A decision model (TypeSafe "System One" API, served by llama.cpp) is an encoder-based classifier, not a chat model. You describe the state and the questions; the model answers all of them in one forward pass and returns, for every question, a probability distribution over the options you provided plus a confidence. There is no prompt engineering, no parsing of free text and no risk of a malformed reply: the answer is always one of your options.
+A decision model (TypeSafe "System One" API, served by llama.cpp) is a classifier, not a chat model. You describe the state and the questions; the model answers all of them in one forward pass and returns, for every question, a probability distribution over the options you provided plus a confidence. There is no prompt engineering, no parsing of free text and no risk of a malformed reply: the answer is always one of your options.
 
 Three question types are supported:
 
@@ -12,9 +12,9 @@ Three question types are supported:
 - **`Score`**: place the state on a scale of 2 to 10 described levels (urgency, severity, quality). The answer is the expected level plus the probability of every level.
 - **`Noul`**: a yes/no question (checks, filters, flags). The answer is the probability that the answer is yes.
 
-Available models (download them in Arduino App Lab): `llamacpp:Julia-1-Q8_0` (default on the UNO Q, 0.14B parameters, the smallest and fastest, 2 to 20 options), `llamacpp:Laya-Q8_0` (default on the boards with the Qualcomm NPU, 0.42B, up to 255 options, more accurate) and `llamacpp:Kev-0.8B-Q8_0` (0.8B, up to 255 options, best on long states). The model can be changed in `app.yaml` under `arduino:decision_model`.
+Available models (download them in Arduino App Lab): `llamacpp:vllm-d3-edge-Q8_0` (default on the UNO Q, 0.6B parameters, up to 255 options), `llamacpp:vllm-d3-lite-Q8_0` (default on the boards with the Qualcomm NPU, 0.8B, up to 255 options, the most accurate), `llamacpp:Julia-1-Q8_0` (0.14B, the smallest and fastest, 2 to 20 options), `llamacpp:Laya-Q8_0` (0.42B, up to 255 options) and `llamacpp:Kev-0.8B-Q8_0` (0.8B, up to 255 options, best on long states). The model can be changed in `app.yaml` under `arduino:decision_model`.
 
-The answer time grows with the input tokens: the state is read once per question, so a long state with many questions costs more. Measured on the UNO Q (CPU): Laya answers three questions about a two-sentence message in about 9 seconds and loads in about 13 seconds the first time, Julia-1 answers the same in about 1 second, Kev-0.8B in about 8 seconds (and over ten minutes for a 4000-token state). Keep the state short and to the point, and use `decide()` to ask everything about a state in one request. Laya and Julia-1 read the whole state in one pass and refuse one longer than about 2000 tokens with a `DecisionModelError`.
+The answer time grows with the input tokens: the state is read once per question, so a long state with many questions costs more. Measured on the UNO Q (CPU): Laya answers three questions about a two-sentence message in about 9 seconds and loads in about 13 seconds the first time, Julia-1 answers the same in about 1 second, Kev-0.8B in about 8 seconds (and over ten minutes for a 4000-token state). Keep the state short and to the point, and use `decide()` to ask everything about a state in one request. d3-edge, d3-lite, Laya and Julia-1 read the whole state in one pass and refuse one longer than about 2000 tokens with a `DecisionModelError`.
 
 ## Features
 
@@ -154,15 +154,50 @@ def assess_readings():
 App.run(assess_readings)
 ```
 
+### Asking about a Camera Image
+
+On the VENTUNO Q, d3-edge and d3-lite are installed with their vision projector, so every method also takes an `image`: a frame from `Camera.capture()` (a numpy array in BGR order), the bytes of a JPEG or PNG file, or the path to one. The questions see the image together with the state, which says what the image is. One image per request; an image above one megapixel is downscaled to one megapixel (keeping its aspect ratio) before it is sent, so that the state, the question and its options still fit the batch the model reads in one pass. On the UNO Q images are not supported yet: a request with an `image` raises a `DecisionModelError`.
+
+```python
+import time
+
+from arduino.app_bricks.decision_model import Choice, DecisionModel, Noul
+from arduino.app_peripherals.camera import Camera
+from arduino.app_utils import App
+
+decision_model = DecisionModel()
+camera = Camera()
+camera.start()
+
+
+def watch_garage():
+    frame = camera.capture()
+    if frame is None:
+        return
+    answers = decision_model.decide(
+        state="A frame of the camera pointed at the garage door",
+        questions={
+            "door": Choice(instructions="Is the garage door open?", options=["open", "half open", "closed"]),
+            "car": Noul(instructions="Is a car parked inside?"),
+        },
+        image=frame,
+    )
+    print(f"Door: {answers.choice('door').choice}, car parked: {answers.noul('car').is_true}")
+    time.sleep(10)
+
+
+App.run(watch_garage)
+```
+
 ## Methods
 
-- **`decide(state, questions)`**: Answers several questions about `state` in one request. `questions` maps an id of your choice to a `Choice`, `Score` or `Noul`; the result is an `Answers` dict mapping the same ids to a `ChoiceAnswer`, `ScoreAnswer` or `NoulAnswer`, with the typed accessors `answers.choice(id)`, `answers.score(id)` and `answers.noul(id)`.
-- **`choose(state, instructions, options)`**: Asks a single multiple-choice question and returns a `ChoiceAnswer` (`choice`, `probabilities`, `confidence`). `options` is a list of names, a dict of name to description (or `None`), or an `Enum` class.
-- **`score(state, instructions, levels)`**: Asks a single graded question and returns a `ScoreAnswer` (`score`, `legend`, `probabilities`, `confidence`, and the `level` property with the most probable level description). `levels` lists 2 to 10 level descriptions, lowest first.
-- **`check(state, instructions, true_description=None, false_description=None)`**: Asks a single yes/no question and returns a `NoulAnswer` (`probability` of yes, and the `is_true` property). The two descriptions are optional but must be given together.
+- **`decide(state, questions, image=None)`**: Answers several questions about `state` (and `image`, when given) in one request. `questions` maps an id of your choice to a `Choice`, `Score` or `Noul`; the result is an `Answers` dict mapping the same ids to a `ChoiceAnswer`, `ScoreAnswer` or `NoulAnswer`, with the typed accessors `answers.choice(id)`, `answers.score(id)` and `answers.noul(id)`.
+- **`choose(state, instructions, options, image=None)`**: Asks a single multiple-choice question and returns a `ChoiceAnswer` (`choice`, `probabilities`, `confidence`). `options` is a list of names, a dict of name to description (or `None`), or an `Enum` class.
+- **`score(state, instructions, levels, image=None)`**: Asks a single graded question and returns a `ScoreAnswer` (`score`, `legend`, `probabilities`, `confidence`, and the `level` property with the most probable level description). `levels` lists 2 to 10 level descriptions, lowest first.
+- **`check(state, instructions, true_description=None, false_description=None, image=None)`**: Asks a single yes/no question and returns a `NoulAnswer` (`probability` of yes, and the `is_true` property). The two descriptions are optional but must be given together.
 - **`list_models()`**: Returns the model identifiers available on the local inference service (without the `llamacpp:` prefix).
 - **`start()`**: Loads the model with a warm-up request so that the first real decision is fast. Called automatically by `App.run()`.
 
-All methods raise a `DecisionModelError` (with a hint on how to fix the problem) when the runner cannot be reached, the model is not downloaded or the request is rejected, and `TypeError`/`ValueError` for invalid questions (for example a `Score` with a single level or a `Choice` without options).
+All methods raise a `DecisionModelError` (with a hint on how to fix the problem) when the runner cannot be reached, the model is not downloaded or the request is rejected, and `TypeError`/`ValueError` for invalid questions (for example a `Score` with a single level or a `Choice` without options) or an image that cannot be decoded (`FileNotFoundError` for an image path that does not exist).
 
 On the UNO Q the llama.cpp runner serves one model at a time (`LLAMA_ARG_MODELS_MAX=1`): an app that alternates `DecisionModel` and `LargeLanguageModel` requests reloads a model at every switch, so keep the two kinds of requests grouped when latency matters.

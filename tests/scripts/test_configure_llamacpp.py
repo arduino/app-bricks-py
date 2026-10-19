@@ -1376,6 +1376,27 @@ def test_a_causal_decision_model_keeps_the_routers_arguments(runner, tmp_path, m
     assert "Kev-0.8B-Q8_0: causal decision model (kev)" in capsys.readouterr().err
 
 
+def test_a_vllm_d3_model_with_its_projector_gets_both_in_its_section(runner, tmp_path, monkeypatch, capsys):
+    """d3 is a Qwen3.5 like Kev, but its header says attention.causal false (llama.cpp
+    evaluates its whole prompt in one batch), so it takes the micro-batch preset; the
+    vision projector downloaded next to it on the VENTUNO Q stays attached to its section."""
+    monkeypatch.setenv("LLAMA_ARG_CTX_SIZE", "16384")
+    repo = tmp_path / "ggml-org" / "vllm-d3-lite-GGUF"
+    decision_model(repo / "vllm-d3-lite-Q8_0.gguf", architecture="qwen35", decision_type="vllm-d3", context_length=262144, causal=False)
+    _gguf(repo / "mmproj-vllm-d3-lite-BF16.gguf")
+
+    runner.generate_models_ini(tmp_path)
+
+    config = configparser.ConfigParser()
+    config.optionxform = str
+    config.read(tmp_path / "models.ini")
+    assert config.sections() == ["vllm-d3-lite-Q8_0"]
+    section = config["vllm-d3-lite-Q8_0"]
+    assert section["mmproj"].endswith("mmproj-vllm-d3-lite-BF16.gguf")
+    assert (section["LLAMA_ARG_CTX_SIZE"], section["LLAMA_ARG_BATCH"], section["LLAMA_ARG_UBATCH"]) == ("16384", "2048", "2048")
+    assert "vllm-d3-lite-Q8_0: decision model (vllm-d3), ctx 16384, batch 2048" in capsys.readouterr().err
+
+
 def test_a_chat_model_gets_no_preset_keys(runner, tmp_path, monkeypatch, capsys):
     """A header without the decision type key is a chat model, which keeps the router's
     arguments: an empty dict adds nothing to its section."""

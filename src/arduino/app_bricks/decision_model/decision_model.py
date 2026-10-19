@@ -2,16 +2,23 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+import base64
+import math
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
-from typing import cast
+from pathlib import Path
+from typing import TYPE_CHECKING, cast
 
 import requests
 
 from arduino.app_internal.core import resolve_address, get_brick_config, get_brick_configured_model
 from arduino.app_utils import AppError, Logger, brick
+
+if TYPE_CHECKING:
+    # Type hint only: numpy and OpenCV load when a request carries an image, not with the brick
+    import numpy as np
 
 logger = Logger("DecisionModel")
 
@@ -29,8 +36,16 @@ RUNNER_PORT = 9999
 MIN_SCORE_LEVELS = 2
 MAX_SCORE_LEVELS = 10
 
+# A decision model that reads images (d3, with its vision projector) evaluates the image and the text of
+# the prompt in one micro-batch of the runner (2048 tokens), and llama.cpp gives the image at most half of
+# it. d3 turns every 32x32 pixels into one token (16-pixel patches merged 2x2), so 1024 tokens are about
+# one megapixel: a larger image is downscaled to that before it is sent, keeping the aspect ratio, and
+# the other half of the micro-batch stays free for the state, the question and its options.
+MAX_IMAGE_PIXELS = 1024 * 32 * 32
+JPEG_QUALITY = 90
+
 _CONFIGURE_MODEL_HINT = (
-    "Configure a llama.cpp decision model such as llamacpp:Laya-Q8_0 in app.yaml under arduino:decision_model;"
+    "Configure a llama.cpp decision model such as llamacpp:vllm-d3-lite-Q8_0 in app.yaml under arduino:decision_model;"
     " the DecisionModel brick does not support genie models."
 )
 _RUNNER_RESPONSE_HINT = (
@@ -150,6 +165,53 @@ def _validate_state(state: object) -> None:
         raise ValueError("state must not be empty")
 
 
+def _image_data_url(image: object) -> str:
+    """Encodes an image as a JPEG data URL, downscaled to at most `MAX_IMAGE_PIXELS` pixels.
+
+    Args:
+        image (object): A numpy array in BGR channel order (as returned by `Camera.capture()`), the bytes of
+            an encoded image file (e.g. JPEG or PNG) or the path to one.
+
+    Returns:
+        str: The image as a `data:image/jpeg;base64,...` URL.
+
+    Raises:
+        TypeError: If the image is none of the supported types.
+        FileNotFoundError: If the image is a path to a file that does not exist.
+        ValueError: If the image cannot be decoded or encoded.
+    """
+    import cv2
+    import numpy as np
+
+    from arduino.app_utils.image.adjustments import compress_to_jpeg, resize
+
+    if isinstance(image, np.ndarray):
+        frame = cast("np.ndarray", image)
+    elif isinstance(image, (bytes, bytearray, memoryview)):
+        frame = cv2.imdecode(np.frombuffer(cast(bytes | bytearray | memoryview, image), np.uint8), cv2.IMREAD_COLOR)
+    elif isinstance(image, (str, Path)):
+        path = Path(image)
+        if not path.is_file():
+            raise FileNotFoundError(f"Image file not found: {path}")
+        frame = cv2.imdecode(np.frombuffer(path.read_bytes(), np.uint8), cv2.IMREAD_COLOR)
+    else:
+        raise TypeError(f"Unsupported image type {type(image).__name__}: pass a numpy array, encoded image bytes or a file path.")
+
+    if frame is None or frame.ndim not in (2, 3) or frame.size == 0:
+        raise ValueError("The image could not be decoded: pass a valid JPEG/PNG or a numpy image array.")
+
+    height, width = frame.shape[:2]
+    if height * width > MAX_IMAGE_PIXELS:
+        # Rounding both sides down keeps the product under the limit
+        scale = math.sqrt(MAX_IMAGE_PIXELS / (height * width))
+        frame = resize(frame, (max(1, int(width * scale)), max(1, int(height * scale))), interpolation=cv2.INTER_AREA)
+
+    jpeg = compress_to_jpeg(frame, JPEG_QUALITY)
+    if jpeg is None:
+        raise ValueError("The image could not be encoded to JPEG.")
+    return "data:image/jpeg;base64," + base64.b64encode(jpeg.tobytes()).decode("ascii")
+
+
 def _normalize_options(options: object) -> dict[str, str | None]:
     """Turns the options of a choice question into the `{option: description | None}` criteria the server expects.
 
@@ -230,7 +292,7 @@ class Choice:
         instructions (str | Mapping[str, Json] | Sequence[Json]): What to decide, e.g. "Which team should handle this ticket?".
         options (Mapping[str, str | None] | Sequence[str] | type[Enum]): The options to choose from: a dict mapping each option to a
             description (or None), a list of option names, or an Enum class whose member values are the option names.
-            Every decision model has a maximum number of options (255 for Laya and Kev, 20 for Julia-1).
+            Every decision model has a maximum number of options (255 for d3-edge, d3-lite, Laya and Kev, 20 for Julia-1).
     """
 
     instructions: str | Mapping[str, Json] | Sequence[Json]
@@ -562,12 +624,13 @@ def _model_ids(payload: object) -> list[str]:
 
 @brick
 class DecisionModel:
-    """A Brick that asks a local decision model typed questions about a text or JSON state.
+    """A Brick that asks a local decision model typed questions about a text or JSON state, and optionally an image.
 
     A decision model (TypeSafe "System One" API, served by llama.cpp) does not generate text: in a single
     forward pass it answers multiple-choice (`Choice`), graded (`Score`) and yes/no (`Noul`) questions about a
     state with calibrated probabilities. It is faster and more predictable than a chat LLM for routing,
-    classification, grading and checks.
+    classification, grading and checks. A model installed with its vision projector (d3-edge and d3-lite on
+    the VENTUNO Q) also reads an image that comes with the state.
     """
 
     LLAMACPP_MODEL = "llamacpp"
@@ -576,7 +639,7 @@ class DecisionModel:
         """Initializes the DecisionModel brick.
 
         Args:
-            model (str | None): The model identifier with the `llamacpp:` prefix (e.g. "llamacpp:Laya-Q8_0").
+            model (str | None): The model identifier with the `llamacpp:` prefix (e.g. "llamacpp:vllm-d3-lite-Q8_0").
                 If not provided, the model is read from the app configuration (app.yaml), falling back
                 to the brick default for the board.
             timeout (float | None): The maximum duration in seconds to wait for an answer. None waits forever.
@@ -640,23 +703,36 @@ class DecisionModel:
         elapsed_s = time.perf_counter() - started_at
         logger.info(f"Decision model '{self._model_id}' ready in {elapsed_s:.2f} s")
 
-    def decide(self, state: str | Mapping[str, Json] | Sequence[Json], questions: Mapping[str, Question]) -> Answers:
-        """Answers one or more questions about a state in a single request.
+    def decide(
+        self,
+        state: str | Mapping[str, Json] | Sequence[Json],
+        questions: Mapping[str, Question],
+        image: "np.ndarray | bytes | str | Path | None" = None,
+    ) -> Answers:
+        """Answers one or more questions about a state, and optionally an image, in a single request.
 
         Args:
             state (str | Mapping[str, Json] | Sequence[Json]): What the questions are about: free text, or a
-                JSON-serializable dict or list (e.g. sensor readings), sent to the model untouched.
+                JSON-serializable dict or list (e.g. sensor readings), sent to the model untouched. With an
+                image, the state says what the image is (e.g. "A frame of the garage camera").
             questions (Mapping[str, Question]): The questions keyed by an id of your choice; each value is a
                 `Choice`, `Score` or `Noul`.
+            image (np.ndarray | bytes | str | Path | None): An image every question also sees: a numpy array in
+                BGR channel order (as returned by `Camera.capture()`), the bytes of an encoded image file (e.g.
+                JPEG or PNG) or the path to one. An image above one megapixel is downscaled to one megapixel,
+                keeping its aspect ratio. Only a model installed with its vision projector reads images (d3-edge
+                and d3-lite on the VENTUNO Q). None (default) asks about the state alone.
 
         Returns:
             Answers: One answer per question id: a `ChoiceAnswer` for a `Choice`, a `ScoreAnswer` for a `Score`
                 and a `NoulAnswer` for a `Noul`. A dict, with the typed accessors `choice(id)`, `score(id)` and `noul(id)`.
 
         Raises:
-            TypeError: If `state` or `questions` have the wrong type.
-            ValueError: If `state` or `questions` are empty.
-            DecisionModelError: If the runner cannot be reached, rejects the request or returns an unexpected answer.
+            TypeError: If `state`, `questions` or `image` have the wrong type.
+            ValueError: If `state` or `questions` are empty, or `image` cannot be decoded.
+            FileNotFoundError: If `image` is a path to a file that does not exist.
+            DecisionModelError: If the runner cannot be reached, rejects the request (for example an image sent to a
+                model that does not read images) or returns an unexpected answer.
         """
         _validate_state(state)
         validated = _validate_questions(questions)
@@ -665,6 +741,8 @@ class DecisionModel:
             "state": state,
             "questions": {question_id: _question_to_request(question) for question_id, question in validated.items()},
         }
+        if image is not None:
+            body["images"] = [_image_data_url(image)]
         data = self._post(body, timeout=self._timeout)
         raw_answers = _as_mapping(data.get("answers"))
         if raw_answers is None:
@@ -685,6 +763,7 @@ class DecisionModel:
         state: str | Mapping[str, Json] | Sequence[Json],
         instructions: str | Mapping[str, Json] | Sequence[Json],
         options: Mapping[str, str | None] | Sequence[str] | type[Enum],
+        image: "np.ndarray | bytes | str | Path | None" = None,
     ) -> ChoiceAnswer:
         """Asks a single multiple-choice question. Shortcut for `decide()` with one `Choice`.
 
@@ -693,16 +772,18 @@ class DecisionModel:
             instructions (str | Mapping[str, Json] | Sequence[Json]): What to decide.
             options (Mapping[str, str | None] | Sequence[str] | type[Enum]): The options: a dict of option to description
                 (or None), a list of option names, or an Enum class whose member values are the option names.
+            image (np.ndarray | bytes | str | Path | None): An optional image the question is also about, as in `decide()`.
 
         Returns:
             ChoiceAnswer: The chosen option with the probability of every option.
 
         Raises:
             TypeError: If the arguments have the wrong type.
-            ValueError: If the arguments are empty.
+            ValueError: If the arguments are empty or the image cannot be decoded.
+            FileNotFoundError: If `image` is a path to a file that does not exist.
             DecisionModelError: If the runner cannot be reached, rejects the request or returns an unexpected answer.
         """
-        answer = self._decide_one(state, Choice(instructions=instructions, options=options))
+        answer = self._decide_one(state, Choice(instructions=instructions, options=options), image)
         if not isinstance(answer, ChoiceAnswer):
             raise DecisionModelError("The decision model returned an answer of the wrong type.", hint=_RUNNER_RESPONSE_HINT)
         return answer
@@ -712,6 +793,7 @@ class DecisionModel:
         state: str | Mapping[str, Json] | Sequence[Json],
         instructions: str | Mapping[str, Json] | Sequence[Json],
         levels: Sequence[str],
+        image: "np.ndarray | bytes | str | Path | None" = None,
     ) -> ScoreAnswer:
         """Asks a single graded question. Shortcut for `decide()` with one `Score`.
 
@@ -719,16 +801,18 @@ class DecisionModel:
             state (str | Mapping[str, Json] | Sequence[Json]): What the question is about (text, dict or list).
             instructions (str | Mapping[str, Json] | Sequence[Json]): What to grade.
             levels (Sequence[str]): The descriptions of the levels, lowest first (between 2 and 10).
+            image (np.ndarray | bytes | str | Path | None): An optional image the question is also about, as in `decide()`.
 
         Returns:
             ScoreAnswer: The expected level and the probability of every level.
 
         Raises:
             TypeError: If the arguments have the wrong type.
-            ValueError: If the arguments are empty or the number of levels is not between 2 and 10.
+            ValueError: If the arguments are empty, the number of levels is not between 2 and 10 or the image cannot be decoded.
+            FileNotFoundError: If `image` is a path to a file that does not exist.
             DecisionModelError: If the runner cannot be reached, rejects the request or returns an unexpected answer.
         """
-        answer = self._decide_one(state, Score(instructions=instructions, levels=levels))
+        answer = self._decide_one(state, Score(instructions=instructions, levels=levels), image)
         if not isinstance(answer, ScoreAnswer):
             raise DecisionModelError("The decision model returned an answer of the wrong type.", hint=_RUNNER_RESPONSE_HINT)
         return answer
@@ -739,6 +823,7 @@ class DecisionModel:
         instructions: str | Mapping[str, Json] | Sequence[Json],
         true_description: str | None = None,
         false_description: str | None = None,
+        image: "np.ndarray | bytes | str | Path | None" = None,
     ) -> NoulAnswer:
         """Asks a single yes/no question. Shortcut for `decide()` with one `Noul`.
 
@@ -747,16 +832,19 @@ class DecisionModel:
             instructions (str | Mapping[str, Json] | Sequence[Json]): The question.
             true_description (str | None): Optional description of when the answer is yes; requires `false_description`.
             false_description (str | None): Optional description of when the answer is no; requires `true_description`.
+            image (np.ndarray | bytes | str | Path | None): An optional image the question is also about, as in `decide()`.
 
         Returns:
             NoulAnswer: The probability that the answer is yes.
 
         Raises:
             TypeError: If the arguments have the wrong type.
-            ValueError: If the arguments are empty or only one of the two descriptions is given.
+            ValueError: If the arguments are empty, only one of the two descriptions is given or the image cannot be decoded.
+            FileNotFoundError: If `image` is a path to a file that does not exist.
             DecisionModelError: If the runner cannot be reached, rejects the request or returns an unexpected answer.
         """
-        answer = self._decide_one(state, Noul(instructions=instructions, true_description=true_description, false_description=false_description))
+        question = Noul(instructions=instructions, true_description=true_description, false_description=false_description)
+        answer = self._decide_one(state, question, image)
         if not isinstance(answer, NoulAnswer):
             raise DecisionModelError("The decision model returned an answer of the wrong type.", hint=_RUNNER_RESPONSE_HINT)
         return answer
@@ -767,7 +855,7 @@ class DecisionModel:
         Connection errors are retried for a few seconds, since the runner may still be starting up.
 
         Returns:
-            list[str]: The served model names without the `llamacpp:` prefix (e.g. ["Laya-Q8_0"]), or an
+            list[str]: The served model names without the `llamacpp:` prefix (e.g. ["vllm-d3-lite-Q8_0"]), or an
                 empty list if the runner cannot be reached.
         """
         url = f"{self._base_url}/v1/models"
@@ -788,17 +876,20 @@ class DecisionModel:
                 return []
         return []
 
-    def _decide_one(self, state: str | Mapping[str, Json] | Sequence[Json], question: Question) -> Answer:
+    def _decide_one(
+        self, state: str | Mapping[str, Json] | Sequence[Json], question: Question, image: "np.ndarray | bytes | str | Path | None"
+    ) -> Answer:
         """Sends a single question and returns its answer.
 
         Args:
             state (str | Mapping[str, Json] | Sequence[Json]): What the question is about.
             question (Question): The question.
+            image (np.ndarray | bytes | str | Path | None): The image the question is also about, or None.
 
         Returns:
             Answer: The answer to the question.
         """
-        return self.decide(state, {"answer": question})["answer"]
+        return self.decide(state, {"answer": question}, image)["answer"]
 
     def _post(self, body: dict[str, Json], timeout: float | None) -> Mapping[object, object]:
         """Posts a request to `/v1/systemone` and returns the decoded JSON body.
@@ -888,13 +979,21 @@ class DecisionModel:
         lowered = message.lower()
         if "model is not loaded" in lowered or "failed to load" in lowered or "not found" in lowered:
             return f"Download the model '{self._model_id}' from Arduino App Lab and check the app.yaml configuration."
+        if "does not support image input" in lowered:
+            return (
+                f"'{self._model_id}' does not read images on this board: send the request without `image`, or use a decision"
+                " model installed with its vision projector (llamacpp:vllm-d3-edge-Q8_0 or llamacpp:vllm-d3-lite-Q8_0 on the VENTUNO Q)."
+            )
         if "too large to process" in lowered:
             return (
                 "Shorten the state or split the questions over several requests: the runner processes a decision"
                 " model prompt in one batch, and this one does not fit it."
             )
         if "too many options" in lowered:
-            return "Reduce the number of options of the choice question: every decision model has a limit (255 for Laya and Kev, 20 for Julia-1)."
+            return (
+                "Reduce the number of options of the choice question: every decision model has a limit"
+                " (255 for d3-edge, d3-lite, Laya and Kev, 20 for Julia-1)."
+            )
         if "decision model" in lowered:
-            return f"'{self._model_id}' is not a decision model: pick one of the decision models of the catalog (e.g. llamacpp:Laya-Q8_0)."
+            return f"'{self._model_id}' is not a decision model: pick one of the decision models of the catalog (e.g. llamacpp:vllm-d3-lite-Q8_0)."
         return "Check the request and the logs of the llama.cpp models runner."

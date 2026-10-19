@@ -51,18 +51,21 @@ EXPECTED_SIGNATURES = {
         ("self", _P.POSITIONAL_OR_KEYWORD, False),
         ("state", _P.POSITIONAL_OR_KEYWORD, False),
         ("questions", _P.POSITIONAL_OR_KEYWORD, False),
+        ("image", _P.POSITIONAL_OR_KEYWORD, True),
     ],
     "choose": [
         ("self", _P.POSITIONAL_OR_KEYWORD, False),
         ("state", _P.POSITIONAL_OR_KEYWORD, False),
         ("instructions", _P.POSITIONAL_OR_KEYWORD, False),
         ("options", _P.POSITIONAL_OR_KEYWORD, False),
+        ("image", _P.POSITIONAL_OR_KEYWORD, True),
     ],
     "score": [
         ("self", _P.POSITIONAL_OR_KEYWORD, False),
         ("state", _P.POSITIONAL_OR_KEYWORD, False),
         ("instructions", _P.POSITIONAL_OR_KEYWORD, False),
         ("levels", _P.POSITIONAL_OR_KEYWORD, False),
+        ("image", _P.POSITIONAL_OR_KEYWORD, True),
     ],
     "check": [
         ("self", _P.POSITIONAL_OR_KEYWORD, False),
@@ -70,6 +73,7 @@ EXPECTED_SIGNATURES = {
         ("instructions", _P.POSITIONAL_OR_KEYWORD, False),
         ("true_description", _P.POSITIONAL_OR_KEYWORD, True),
         ("false_description", _P.POSITIONAL_OR_KEYWORD, True),
+        ("image", _P.POSITIONAL_OR_KEYWORD, True),
     ],
     "list_models": [
         ("self", _P.POSITIONAL_OR_KEYWORD, False),
