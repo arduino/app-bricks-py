@@ -24,7 +24,7 @@ services:
       - LLAMA_ARG_IMAGE_MAX_TOKENS=${LLAMA_ARG_IMAGE_MAX_TOKENS:-280}
       - LLAMA_ARG_FIT=off
       - GGML_HEXAGON_OPBATCH=2048
-      - GGML_HEXAGON_MBUF=1024
+      - GGML_HEXAGON_MBUF=256,256
       - XDG_CACHE_HOME=/models
     working_dir: /models
     ports:
