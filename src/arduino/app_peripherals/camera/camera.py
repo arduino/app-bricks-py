@@ -3,6 +3,8 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import inspect
+import threading
+import weakref
 from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlparse
@@ -20,6 +22,14 @@ logger = Logger("Camera")
 _camera_registry = DeviceRegistry()
 """Tracks the cameras assigned to auto-selected Camera instances."""
 
+_open_cameras: weakref.WeakValueDictionary[str, BaseCamera] = weakref.WeakValueDictionary()
+"""The camera holding each local device, by stable identity, to hand out handles sharing it."""
+
+_open_cameras_config: dict[str, tuple[tuple[int, int], int, dict[str, Any]]] = {}
+"""The configuration each local device was requested with by the camera holding it."""
+
+_open_cameras_lock = threading.Lock()
+
 
 class Camera:
     """
@@ -33,6 +43,10 @@ class Camera:
         - CSI Cameras (local cameras connected using MIPI CSI-2 interface)
         - IP Cameras (network-based cameras via RTSP, HLS)
         - WebSocket Cameras (input video streams via WebSocket client)
+
+    Local cameras (USB and CSI) can be shared: selecting a camera that is already
+    held by another instance returns a new handle on the same device, which
+    receives the same frames. See the source argument.
 
     Note: constructor arguments (except those in signature) must be provided in
     keyword format to forward them correctly to the specific camera implementations.
@@ -57,8 +71,7 @@ class Camera:
                     Raises if every plugged camera is already in use
                 - int | str: Select the n-th plugged camera (e.g., 0, 1, "0", "1",
                     ...) counting USB cameras first, then CSI ones, regardless of
-                    whether it is already in use: contention on a reused camera
-                    is only discovered when starting it
+                    whether it is already in use
                 - str: V4L camera ordinal index (e.g., "usb:0", "usb:1")
                 - str: V4L camera device path (e.g., "usb:/dev/video0",
                     "usb:/dev/v4l/by-id/...", "usb:/dev/v4l/by-path/...
@@ -68,6 +81,15 @@ class Camera:
                 - str: URL for IP cameras (e.g., "rtsp://...", "http://...")
                 - str: WebSocket URL for input streams (e.g., "ws://0.0.0.0:8080")
                 Default: None.
+                A local camera already held by another instance of this process
+                is shared with it: the returned handle receives the same frames
+                and uses the resolution, FPS and camera-specific settings of the
+                first instance, logging a warning if different ones are requested.
+                Its adjustments are its own. Each handle is started and stopped
+                independently: the device is opened by the first handle started
+                and closed after the last one is stopped. Frames read from a
+                shared device are read-only: copy them before modifying them in
+                place.
             resolution (tuple[int, int]): Frame resolution as (width, height).
                 Default: (640, 480).
             fps (int): Target frames per second. Default: 10.
@@ -107,6 +129,13 @@ class Camera:
             CameraOpenError: If no camera is available at the requested index
 
         Examples:
+            Shared camera, two handles on the same device:
+
+            ```python
+            code_camera = Camera(0)
+            object_camera = Camera(0)  # Receives the same frames as code_camera
+            ```
+
             V4L Camera:
 
             ```python
@@ -145,6 +174,11 @@ class Camera:
                 _camera_registry.release(key)
                 raise
             _camera_registry.bind(key, camera)
+            device = _claim_key(camera)
+            if device is not None:
+                with _open_cameras_lock:
+                    _open_cameras[device] = camera
+                    _open_cameras_config[device] = (resolution, fps, kwargs)
             return camera
 
         match source:
@@ -158,12 +192,58 @@ class Camera:
 
         camera = _create_camera(source, resolution, fps, adjustments, **kwargs)
 
-        # Claim local devices so auto-selection doesn't pick them
         key = _claim_key(camera)
         if key is not None:
+            # A local device held by another instance is shared with it rather than opened again
+            camera = _share_device(key, camera, resolution, fps, adjustments, kwargs)
+            # Claim local devices so auto-selection doesn't pick them
             _camera_registry.claim(key)
             _camera_registry.bind(key, camera)
         return camera
+
+
+def _share_device(
+    key: str,
+    camera: BaseCamera,
+    resolution: tuple[int, int],
+    fps: int,
+    adjustments: Callable[[np.ndarray], np.ndarray] | None,
+    kwargs: dict[str, Any],
+) -> BaseCamera:
+    """
+    Return a handle on the local device identified by key.
+
+    Args:
+        key (str): Stable identity of the device.
+        camera (BaseCamera): A new, never started, camera on the device.
+        resolution (tuple[int, int]): The requested resolution.
+        fps (int): The requested FPS.
+        adjustments (callable, optional): The requested adjustments.
+        kwargs (dict): The requested camera-specific settings.
+
+    Returns:
+        BaseCamera: camera itself if no other instance holds the device, otherwise a new handle
+            sharing the device with the instance holding it.
+    """
+    with _open_cameras_lock:
+        leader = _open_cameras.get(key)
+        if leader is None:
+            _open_cameras[key] = camera
+            _open_cameras_config[key] = (resolution, fps, kwargs)
+            return camera
+        leader_config = _open_cameras_config.get(key)
+
+    if leader_config is not None and leader_config != (resolution, fps, kwargs):
+        leader_resolution, leader_fps, leader_kwargs = leader_config
+        logger.warning(
+            f"Camera {leader.name} is already in use with resolution={leader_resolution}, fps={leader_fps}"
+            f"{f', {leader_kwargs}' if leader_kwargs else ''}: sharing it with these settings instead of the requested "
+            f"resolution={resolution}, fps={fps}{f', {kwargs}' if kwargs else ''}"
+        )
+
+    from ._sharing import follow
+
+    return follow(leader, adjustments)
 
 
 def _claim_key(camera: BaseCamera) -> str | None:
