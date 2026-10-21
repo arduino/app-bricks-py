@@ -34,7 +34,7 @@ JPEG = b"\xff\xd8\xff\xe0fake-jpeg"
 
 @pytest.fixture
 def brick():
-    with patch.object(LargeLanguageModel, "list_models", return_value=["gemma-4-E2B-it-Q4_0"]):
+    with patch.object(LargeLanguageModel, "list_models", return_value=["gemma-4-E2B_q4_0-it-multimodal"]):
         yield MultimodalLanguageModel()
 
 
@@ -43,7 +43,7 @@ def _pcm() -> np.ndarray:
 
 
 def test_defaults_to_the_catalog_model_on_the_llamacpp_runner(brick):
-    assert brick._model_name == "llamacpp:gemma-4-E2B-it-Q4_0"
+    assert brick._model_name == "llamacpp:gemma-4-E2B_q4_0-it-multimodal"
     assert brick._base_model.openai_api_base == "http://llamacpp-models-runner:9999/v1"
 
 

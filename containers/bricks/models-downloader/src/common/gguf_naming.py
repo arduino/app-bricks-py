@@ -24,6 +24,11 @@ would all act on whichever file happened to win.
   flashed onto a board before any download ran; the scan that regenerates models.ini
   backfills their records from the catalog afterwards (see hf_downloader).
 
+A GGUF with a multimodal projector (``*mmproj*.gguf``) in its directory is two models:
+the text model ``<name>``, loaded alone, and ``<name>-multimodal``
+(``multimodal_model_name``), loaded with the projector. The catalog declares them as
+two entries on the same file, the second one with a ``model_mmproj_url``.
+
 The same rule must name a model everywhere it appears: the listing id
 (``llamacpp:<name>``), the models.ini section (``<name>``) and the fallback metadata
 id. The LLM brick resolves ``llamacpp:<name>`` to the model llama-server serves under
@@ -38,10 +43,31 @@ exists, and tells the models.ini scan which recordless files are out-of-the-box
 models to backfill.
 """
 
+from typing import NamedTuple
+
 from common.model_metadata import ORIGIN_USER
 from common.models_list import MODELS_LIST_PATH, _iter_platform_variables, get_model_subdir, load_models_list
 
 GGUF_SUFFIX = ".gguf"
+
+# What turns the name of a text model into the name of the same GGUF loaded with its
+# multimodal projector.
+MULTIMODAL_SUFFIX = "-multimodal"
+
+
+def multimodal_model_name(name):
+    """The name of the multimodal model built on the text model *name*."""
+    return f"{name}{MULTIMODAL_SUFFIX}"
+
+
+class GgufDeclaration(NamedTuple):
+    """Where a llamacpp catalog entry expects its GGUF, and whether it adds a projector."""
+
+    directory: str
+    filename: str | None
+    model_id: str
+    multimodal: bool = False
+
 
 # The subdirectory of the models mount that holds GGUF models, and the id namespace
 # derived from it. The declarations below are relative to this directory.
@@ -63,10 +89,10 @@ def declared_gguf_files(models):
     """The file location every llamacpp-backed models-list.yaml entry declares.
 
     Returns:
-        ``(model_directory, filename, model_id)`` tuples, deduplicated across the
-        per-board platform repeats. ``filename`` is None when the entry's model_url
-        pins no file (a compact key naming a quantization); any GGUF inside the
-        directory then counts as declared.
+        ``GgufDeclaration`` tuples, deduplicated across the per-board platform repeats.
+        ``filename`` is None when the entry's model_url pins no file (a compact key
+        naming a quantization); any GGUF inside the directory then counts as declared.
+        ``multimodal`` is set for an entry that downloads a projector with its model.
     """
     declarations = []
     for model_id, _model_data, _platform, variables in _iter_platform_variables(models):
@@ -75,7 +101,7 @@ def declared_gguf_files(models):
         directory = (variables.get("model_directory") or "").strip("/")
         if not directory:
             continue
-        declaration = (directory, gguf_basename(variables.get("model_url", "")), model_id)
+        declaration = GgufDeclaration(directory, gguf_basename(variables.get("model_url", "")), model_id, bool(variables.get("model_mmproj_url")))
         if declaration not in declarations:
             declarations.append(declaration)
     return declarations
@@ -89,17 +115,21 @@ def catalog_gguf_declarations(models_list_path=MODELS_LIST_PATH):
         return ()
 
 
-def declaration_covers(directory, declared_name, rel_dir, filename):
-    """Whether a declaration covers the GGUF at *rel_dir*/*filename*.
+def declaration_covers(declaration, rel_dir, filename, multimodal=False):
+    """Whether *declaration* covers the GGUF at *rel_dir*/*filename*, loaded with its
+    projector when *multimodal* is set.
 
     The file may sit below the declared directory (some repositories nest their
     files in per-quantization folders). A declaration that pins no file name covers
     any GGUF in its directory; an unknown *filename* (a pending download whose
-    marker names no file) is only covered by those.
+    marker names no file) is only covered by those. The text model of a file is
+    covered only by a text declaration, its multimodal model only by a multimodal one.
     """
-    if rel_dir != directory and not rel_dir.startswith(directory + "/"):
+    if declaration.multimodal != multimodal:
         return False
-    return declared_name is None or declared_name == filename
+    if rel_dir != declaration.directory and not rel_dir.startswith(declaration.directory + "/"):
+        return False
+    return declaration.filename is None or declaration.filename == filename
 
 
 def gguf_model_name(rel_path, record):
@@ -108,8 +138,8 @@ def gguf_model_name(rel_path, record):
     *record* is the file's download record (``model_metadata.file_record``), None when
     it has none: the relative path without its extension for a user-configured model,
     the file stem for everything else — see the module docstring. Callers pass only
-    main model files: mmproj companions belong to the model in the same directory and
-    never name one.
+    main model files: mmproj companions never name a model, and the multimodal model
+    of a file is named from its text model's name (``multimodal_model_name``).
     """
     if isinstance(record, dict) and record.get("model_origin") == ORIGIN_USER:
         return rel_path[: -len(GGUF_SUFFIX)]

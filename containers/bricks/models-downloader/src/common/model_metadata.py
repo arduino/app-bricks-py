@@ -227,38 +227,47 @@ def _main_files(files):
     return [f for f in files if "mmproj" not in f.split("/")[-1]]
 
 
-def record_for_file(data, rel_path):
+def record_for_file(data, rel_path, multimodal=None):
     """The record describing the model file at *rel_path* (model-dir-relative, posix).
 
     Matched against the record's ``files`` by full relative path or by basename —
     the two ways download patterns match a file. None when no record names the file:
     it was installed by something that recorded nothing about it, and no other
     record's inputs may stand in for its own.
+
+    A GGUF can carry two records, its text model's and its multimodal model's (the one
+    that also names a projector). *multimodal* picks one of the two; None takes the
+    first record naming the file, whichever it is.
     """
     rel_path = rel_path or ""
     name = rel_path.split("/")[-1]
     for record in metadata_records(data):
-        if any(f == rel_path or f.split("/")[-1] == name for f in _record_files(record)):
+        files = _record_files(record)
+        names_projector = len(_main_files(files)) < len(files)
+        if multimodal is not None and names_projector != multimodal:
+            continue
+        if any(f == rel_path or f.split("/")[-1] == name for f in files):
             return record
     return None
 
 
-def file_record(model_file, base_dir):
+def file_record(model_file, base_dir, multimodal=None):
     """The download record describing *model_file*, or None when no record names it.
 
     The record lives in the directory the download landed in — for Hugging Face the
     repository directory, which can sit above a nested per-quantization folder — so
     every directory from the file's own up to *base_dir* is tried, matching the
-    file's path relative to each (see ``record_for_file``). Only the path is looked
-    at, never the file itself. The llamacpp runners' configure-llamacpp.py scripts
-    replicate this lookup; keep them in sync.
+    file's path relative to each (see ``record_for_file``, which also says what
+    *multimodal* selects). Only the path is looked at, never the file itself. The
+    llamacpp runners' configure-llamacpp.py scripts replicate this lookup; keep them
+    in sync.
     """
     path = os.path.abspath(model_file)
     base = os.path.abspath(base_dir)
     directory = os.path.dirname(path)
     while True:
         rel = os.path.relpath(path, directory).replace(os.sep, "/")
-        record = record_for_file(read_metadata(directory), rel)
+        record = record_for_file(read_metadata(directory), rel, multimodal)
         if record is not None:
             return record
         parent = os.path.dirname(directory)
@@ -318,12 +327,12 @@ def _write_document(model_dir, document):
 
 def _superseded(record, payload):
     """Whether *record* describes the install *payload* re-records: the same model id,
-    or the same main model file(s). The shared mmproj companion is not identity —
-    two quantizations fetched with the same mmproj each keep their own record."""
+    or the same files. Neither file alone is identity: two quantizations fetched with
+    the same mmproj each keep their own record, and so do a text model and the
+    multimodal model that adds a projector to the same GGUF."""
     if payload.get("model_id") and record.get("model_id") == payload["model_id"]:
         return True
-    new_main = set(_main_files(payload.get("files") or []))
-    return bool(new_main & set(_record_files(record)))
+    return bool(payload.get("files")) and set(payload["files"]) == set(_record_files(record))
 
 
 def write_metadata(
@@ -348,7 +357,7 @@ def write_metadata(
     it makes the record *merge* into the existing document instead of replacing it —
     one record per installed download, so the quantizations sharing a Hugging Face
     repository directory each keep their own; only the record(s) of the same model
-    (same id, or same main files) are replaced. Without it the whole file becomes this
+    (same id, or same files) are replaced. Without it the whole file becomes this
     one record, which is right exactly when the directory holds a single model (AI
     Hub, Edge Impulse). The written document has the same ``models`` shape either way.
     """

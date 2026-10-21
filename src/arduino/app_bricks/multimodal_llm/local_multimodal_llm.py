@@ -53,7 +53,7 @@ class MultimodalLanguageModel(LargeLanguageModel):
                 timing out. Defaults to None.
             tools (Sequence[ToolLike]): BaseTool objects (from @tool or MCPClient.get_tools()) or plain
                 callables (auto-wrapped into tools). Defaults to None.
-            model (str): The model identifier to use (e.g., "llamacpp:gemma-4-E2B-it-Q4_0").
+            model (str): The model identifier to use (e.g., "llamacpp:gemma-4-E2B_q4_0-it-multimodal").
                 If not provided, the model is taken from the app configuration or the default brick configuration.
             **kwargs: Additional arguments passed to the model constructor
         """

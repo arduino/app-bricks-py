@@ -1914,9 +1914,6 @@ models:
       - id: "arduino:llm"
         model_configuration:
           GGML_HEXAGON_DEVICES: 1
-      - id: "arduino:vlm"
-        model_configuration:
-          GGML_HEXAGON_DEVICES: 1          
     deployment:
       handler: "hf-handler"
       platforms:
@@ -1926,7 +1923,7 @@ models:
               models_repository: "llamacpp"
               model_directory: "google/gemma-4-E2B-it-qat-q4_0-gguf"
     metadata:
-      model_size_mb: 3194
+      model_size_mb: 3195
       source: "huggingface"
       source-model-id: "gemma-4-E2B-it-qat-q4_0-gguf"
       source-model-url: "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf"
@@ -1941,9 +1938,6 @@ models:
       - id: "arduino:llm"
         model_configuration:
           GGML_HEXAGON_DEVICES: 2
-      - id: "arduino:vlm"
-        model_configuration:
-          GGML_HEXAGON_DEVICES: 2          
     deployment:
       handler: "hf-handler"
       platforms:
@@ -1953,14 +1947,14 @@ models:
               models_repository: "llamacpp"
               model_directory: "google/gemma-4-E4B-it-qat-q4_0-gguf"
     metadata:
-      model_size_mb: 3194
+      model_size_mb: 4917
       source: "huggingface"
       source-model-id: "gemma-4-E4B-it-qat-q4_0-gguf"
       source-model-url: "https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf"
- - "llamacpp:gemma-4-E2B-it-Q4_0-multimodal":
+ - "llamacpp:gemma-4-E2B_q4_0-it-multimodal":
     name : "Gemma 4 E2B Multimodal"
     description: >-
-      Gemma 4 E2B is an efficient, open AI model developed by Google DeepMind, here in the Unsloth GGUF build.
+      Gemma 4 E2B is an efficient, open AI model developed by Google DeepMind.
       Activating an effective two billion parameters, it is engineered specifically for mobile and edge devices.
       It understands text, images and audio.
     supported_boards: ["ventunoq"]
@@ -1976,21 +1970,21 @@ models:
       platforms:
         - ventunoq:
             variables:
-              model_url: "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/blob/0314792d7f1f7e229411f620751375812bb9faf2/gemma-4-E2B-it-Q4_0.gguf"
-              model_mmproj_url: "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/blob/0314792d7f1f7e229411f620751375812bb9faf2/mmproj-F16.gguf"
+              model_url: "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf/blob/347eef722ec7f151f37d1ef0b5c7c77d8de4efcb/gemma-4-E2B_q4_0-it.gguf"
+              model_mmproj_url: "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf/blob/675cff42a74c774d6cb76f76d8eacb49b48c9b93/gemma-4-E2B-it-mmproj.gguf"
               models_repository: "llamacpp"
-              model_directory: "unsloth/gemma-4-E2B-it-GGUF"
+              model_directory: "google/gemma-4-E2B-it-qat-q4_0-gguf"
     metadata:
       model_size_mb: 4136
       source: "huggingface"
-      source-model-id: "gemma-4-E2B-it-GGUF"
-      source-model-url: "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF"
+      source-model-id: "gemma-4-E2B-it-qat-q4_0-gguf"
+      source-model-url: "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf"
  - "llamacpp:gemma-4-E4B_q4_0-it-multimodal":
-    name : "Gemma 4 E4B"
+    name : "Gemma 4 E4B Multimodal"
     description: >-
       Gemma 4 E4B is an efficient, open AI model developed by Google DeepMind.
       Activating an effective four billion parameters, it is engineered specifically for mobile and edge devices.
-      It's optimized for offline agentic workflows.
+      It understands text, images and audio.
     supported_boards: ["ventunoq"]
     bricks:
       - id: "arduino:multimodal_llm"
@@ -2012,7 +2006,7 @@ models:
       model_size_mb: 5862
       source: "huggingface"
       source-model-id: "gemma-4-E4B-it-qat-q4_0-gguf"
-      source-model-url: "https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf"      
+      source-model-url: "https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf"
  - "llamacpp:gemma-3-1b-it-Q4_0":
      name : "Gemma 3 1B"
      description: >-

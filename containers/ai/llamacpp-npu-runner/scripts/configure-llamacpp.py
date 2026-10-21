@@ -302,20 +302,16 @@ def read_gguf(path: Path):
 # Before resizing anything over such a failure, check the board's free RAM: the DSP
 # buffers come from plain system memory (/dev/dma_heap/system), so the same message
 # also appears when the board is simply out of it. Measured: a loaded model
-# costs about 1.6x its GGUF size in RAM. The third thing that message can mean is a single
-# tensor too big for one chunk, which no session count fixes — see oversized_tensor().
+# costs about 1.6x its GGUF size in RAM.
+#
+# GGML_HEXAGON_MBUF is not read here: it is the size of the buffers the backend cuts a
+# session's allocations into ("dyn,static[,total]" since llama.cpp #30126 — compute buffers,
+# then weights and KV cache), not what a session can hold. A weight tensor, or the KV cache
+# of one layer, bigger than the static buffer size gets a buffer of its own, so no single
+# tensor is a ceiling below the address space either. See ../SESSION_ALLOCATION.md.
 # --------------------------------------------------------------------------- #
 
 MIB = 1024 * 1024
-
-# The largest buffer the Hexagon backend maps at once, in MiB, as GGML_HEXAGON_MBUF sets it
-# (service_compose.yaml, 1024 since llama.cpp #29197; it is llama.cpp's own default). It does not change what a
-# session can hold — that is the address space below — but the granularity the backend gets
-# there in: an allocation is cut into chunks of this size, so a load fails on a whole chunk
-# rather than on the byte that overflowed. A tensor is never cut across chunks, so this is
-# also a ceiling on one tensor, and the only limit here that more sessions cannot work
-# around. Read through mbuf_bytes(), which takes the value the server will see.
-DEFAULT_MBUF_MIB = 1024
 
 # DSP address space one Hexagon session offers, in bytes, as the backend prints it when
 # the session opens ("ggml-hex: HTP0 op batching: ... vmem 3285696512", about 3134 MiB).
@@ -324,7 +320,8 @@ DEFAULT_MBUF_MIB = 1024
 # stayed under it loaded and one that did not failed, every time — where at 512 mapping a
 # 512 MiB chunk failed at random (3 loads in 5 for gemma-4-E4B, 0 in 9 once MBUF was 256),
 # which is what made loads succeed holding 2.9 GiB and fail holding 1.8 GiB. The service
-# runs at 1024 now, and nothing has been re-measured there — see ../SESSION_ALLOCATION.md.
+# runs at 256,256 now, with the build that allocates weights and KV cache in static
+# buffers — see ../SESSION_ALLOCATION.md.
 SESSION_VMEM = 3285696512
 
 # Fraction of it the sizing may fill, 2664 MiB. What is left over covers what the estimate
@@ -404,11 +401,6 @@ def n_ubatch() -> int:
     return env_int("LLAMA_ARG_UBATCH", DEFAULT_N_UBATCH)
 
 
-def mbuf_bytes() -> int:
-    """The largest buffer the Hexagon backend maps at once, in bytes."""
-    return env_int("GGML_HEXAGON_MBUF", DEFAULT_MBUF_MIB) * MIB
-
-
 def compute_buffer_bytes(sessions: int) -> int:
     """Bytes of compute buffers one of *sessions* sessions maps.
 
@@ -447,7 +439,7 @@ CPU_ONLY_TYPES = frozenset({"q2_K", "q3_K"})
 # whatever their type: the per-layer embeddings of the matformer gemmas, where gemma-4-E2B
 # keeps two thirds of its bytes — the whole of its apparent size problem. token_embd.weight
 # is the same case, but only when the model has a separate output projection, see
-# npu_tensors().
+# npu_weight_bytes().
 GET_ROWS_ONLY_TENSORS = frozenset({"per_layer_token_embd.weight"})
 
 # A hybrid model (Qwen3.5, LFM2) keeps a recurrent state per sequence on the NPU next to
@@ -487,9 +479,6 @@ class ModelShape(NamedTuple):
     kv_layers: tuple[KvLayer, ...]
     state_bytes: int
 
-    largest_npu_tensor: Tensor | None = None
-    """The biggest single tensor the backend puts on the NPU, None when it was not read."""
-
     def kv_cache_bytes(self, ctx_size: int) -> int:
         return sum(layer.bytes(ctx_size) for layer in self.kv_layers)
 
@@ -520,20 +509,6 @@ class ModelShape(NamedTuple):
     def fits(self, ctx_size: int) -> bool:
         """Whether the model fits the budget on any number of sessions at all."""
         return self.session_bytes(ctx_size, MAX_SESSIONS) <= SESSION_BUDGET
-
-    def oversized_tensor(self) -> Tensor | None:
-        """The largest NPU tensor when it is bigger than one chunk, None otherwise.
-
-        The backend cuts an allocation into chunks of GGML_HEXAGON_MBUF and never cuts a
-        tensor, so a tensor bigger than a chunk cannot be placed at all, and no session
-        count helps: whichever session holds that layer has to map it whole. Since
-        llama.cpp #29197 alloc_buffer refuses such a tensor outright rather than leaving
-        it to ggml, which is what made MBUF 256 unusable — gemma-4 keeps its tied token
-        embeddings in one tensor of 336 to 788 MiB across the family. Reported rather than
-        sized around: the service sets MBUF, this script only reads it.
-        """
-        tensor = self.largest_npu_tensor
-        return tensor if tensor is not None and tensor.bytes > mbuf_bytes() else None
 
     def describe(self, ctx_size: int) -> str:
         """How this model was sized, for the diagnostics."""
@@ -586,17 +561,13 @@ class FileSizeSizing(NamedTuple):
                 return count
         return 1
 
-    def oversized_tensor(self) -> None:
-        """Nothing can be said about the tensors of a file whose header would not parse."""
-        return None
-
     def describe(self, ctx_size: int) -> str:
         pinned = any(name in self.name for name, _ in FALLBACK_PINS)
         return f"{self.gguf_bytes / GB:.2f} GB on disk, {'pinned by name' if pinned else 'sized by file size'}"
 
 
-def npu_tensors(tensors) -> list[Tensor]:
-    """The tensors the Hexagon backend holds on the NPU.
+def npu_weight_bytes(tensors) -> int:
+    """Bytes of weights the Hexagon backend holds on the NPU.
 
     Every tensor but those of a type the backend does not repack (CPU_ONLY_TYPES), those
     only read by get_rows (GET_ROWS_ONLY_TENSORS), and the token embeddings of a model that
@@ -604,15 +575,15 @@ def npu_tensors(tensors) -> list[Tensor]:
     embeddings uses that same tensor as its output projection, and it does go to the NPU:
     gemma-4-E4B puts its 525 MiB of q6_K token embeddings there, the 12b its 788 MiB.
 
-    Their total reproduced the "HTP model buffer size" llama-server logs to within a MiB on
-    18 of the 19 models measured under the build that kept every K-quant on the CPU, and on
+    Reproduced the "HTP model buffer size" llama-server logs to within a MiB on 18 of the
+    19 models measured under the build that kept every K-quant on the CPU, and on
     gemma-4-E4B (2731 MiB) under the one that repacks them.
     """
     names = {tensor.name for tensor in tensors}
     dropped = set(GET_ROWS_ONLY_TENSORS)
     if {"output.weight", "token_embd.weight"} <= names:
         dropped.add("token_embd.weight")
-    return [tensor for tensor in tensors if tensor.type not in CPU_ONLY_TYPES and tensor.name not in dropped]
+    return sum(tensor.bytes for tensor in tensors if tensor.type not in CPU_ONLY_TYPES and tensor.name not in dropped)
 
 
 K_PROJECTION = re.compile(r"^blk\.(\d+)\.attn_k(?:_b)?\.weight$")
@@ -701,13 +672,11 @@ def read_model_shape(path: Path) -> ModelShape:
     # A layer that caches nothing is either recurrent, which costs a state, or sharing
     # another layer's cache, which costs nothing: the tensor names tell the two apart.
     recurrent = any(RECURRENT_TENSOR.search(tensor.name) for tensor in tensors)
-    on_npu = npu_tensors(tensors)
     return ModelShape(
         n_layer=max(block_count(metadata), len(layers), 1),
-        npu_weight_bytes=sum(tensor.bytes for tensor in on_npu),
+        npu_weight_bytes=npu_weight_bytes(tensors),
         kv_layers=layers,
         state_bytes=RECURRENT_STATE_ALLOWANCE if recurrent else 0,
-        largest_npu_tensor=max(on_npu, key=lambda tensor: tensor.bytes, default=None),
     )
 
 
@@ -771,14 +740,6 @@ def detect_hexagon_sessions(models, ctx_size: int) -> int:
         required = sizing.sessions_needed(ctx_size)
         verdict = "fits 1 session" if required == 1 else f"requires {sessions(required)}"
         print(f"  {name}: {sizing.describe(ctx_size)}, {verdict}", file=sys.stderr)
-        oversized = sizing.oversized_tensor()
-        if oversized is not None:
-            print(
-                f"  {name}: WARNING {oversized.name} is one {oversized.bytes / MIB:.0f} MiB {oversized.type} tensor,"
-                f" more than the {mbuf_bytes() / MIB:.0f} MiB GGML_HEXAGON_MBUF maps at once;"
-                f" no session count splits a tensor, so raise GGML_HEXAGON_MBUF if the load fails",
-                file=sys.stderr,
-            )
         needed = max(needed, required)
 
     return needed
@@ -819,6 +780,11 @@ def detect_ctx_size(models, ctx_size: int) -> int:
 # It is what tells an out-of-the-box model from a downloaded one, so the served
 # names need no catalog baked into this image.
 METADATA_NAME = ".arduino_metadata.yaml"
+
+# The name of a GGUF loaded with the multimodal projector next to it: the text model's
+# name plus this suffix (the models-downloader's common/gguf_naming.py). This code is
+# duplicated in the llamacpp-runner and llamacpp-npu-runner images.
+MULTIMODAL_SUFFIX = "-multimodal"
 
 
 def downloaded_records(directory: Path):
@@ -886,19 +852,22 @@ def gguf_model_name(gguf_file: Path, models_dir: Path) -> str:
 
 
 def find_models(models_dir: Path):
-    """Return {model name: {"model": path, "mmproj": path}} for every model in models_dir."""
+    """Return {model name: {"model": path[, "mmproj": path]}} for every model in models_dir.
+
+    A GGUF with a projector in its directory is two models: ``<name>``, the text model
+    alone, and ``<name>-multimodal``, the same GGUF with the projector.
+    """
     models = {}
 
     gguf_files = [p for p in sorted(models_dir.rglob("*.gguf")) if "mmproj" not in p.name]
     for gguf_file in gguf_files:
-        entry = {"model": gguf_file.as_posix()}
+        name = gguf_model_name(gguf_file, models_dir)
+        models[name] = {"model": gguf_file.as_posix()}
 
-        # Look for mmproj file in the same directory
+        # A projector in the same directory makes the multimodal model of this GGUF
         mmproj_files = sorted(gguf_file.parent.glob("*mmproj*.gguf"))
         if mmproj_files:
-            entry["mmproj"] = mmproj_files[0].as_posix()
-
-        models[gguf_model_name(gguf_file, models_dir)] = entry
+            models[name + MULTIMODAL_SUFFIX] = {"model": gguf_file.as_posix(), "mmproj": mmproj_files[0].as_posix()}
 
     return models
 

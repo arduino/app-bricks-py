@@ -228,19 +228,22 @@ def test_find_llamacpp_builtin_record_keeps_its_stem_name(tmp_path):
     assert results[0]["name"] == "model-a"
 
 
-def test_find_llamacpp_groups_mmproj(tmp_path):
+def test_find_llamacpp_lists_a_gguf_with_a_projector_as_two_models(tmp_path):
     base = tmp_path / "models"
     repo = base / "llamacpp" / "moondream" / "moondream2-gguf"
     _make_gguf(str(repo / "moondream2-text-model-f16.gguf"), size_bytes=1024 * 1024)
     _make_gguf(str(repo / "moondream2-mmproj-f16.gguf"), size_bytes=512 * 1024)
     results = list_models.find_llamacpp_models(str(base))
-    # The mmproj file is grouped into the text model, not listed separately.
-    assert len(results) == 1
-    entry = results[0]
-    assert entry["name"] == "moondream2-text-model-f16"
-    assert entry["mmproj"].endswith("moondream2-mmproj-f16.gguf")
+    # The mmproj file is never a model of its own: it makes the GGUF's multimodal model.
+    text, multimodal = results
+    assert text["name"] == "moondream2-text-model-f16"
+    assert "mmproj" not in text
+    assert text["disk_size_mb"] == 1.0
+    assert multimodal["name"] == "moondream2-text-model-f16-multimodal"
+    assert multimodal["path"] == text["path"]
+    assert multimodal["mmproj"].endswith("moondream2-mmproj-f16.gguf")
     # disk size is the sum of both files (1 MB + 0.5 MB).
-    assert entry["disk_size_mb"] == 1.5
+    assert multimodal["disk_size_mb"] == 1.5
 
 
 def test_find_llamacpp_downloading_marker(tmp_path):
@@ -1291,8 +1294,8 @@ def test_find_llamacpp_gguf_and_mmproj_size_matches_the_download_event(tmp_path)
     _make_gguf(files[0], size_bytes=3 * 1024 + 1)  # sizes chosen so per-file rounding would drift
     _make_gguf(files[1], size_bytes=3 * 1024 + 1)
 
-    [entry] = list_models.find_llamacpp_models(str(base))
-    assert entry["size_mb"] == entry["disk_size_mb"] == downloaded_size_mb(files) == 0.01
+    _text, multimodal = list_models.find_llamacpp_models(str(base))
+    assert multimodal["size_mb"] == multimodal["disk_size_mb"] == downloaded_size_mb(files) == 0.01
 
 
 def test_table_shows_size_mb(monkeypatch, capsys, tmp_path):
@@ -1501,3 +1504,141 @@ def test_refresh_writes_into_the_models_root_mount_never_into_models(monkeypatch
 
     assert (root / list_models.LISTING_NAME).is_file()
     assert not (repository / list_models.LISTING_NAME).exists()
+
+
+# --------------------------------------------------------------------------- #
+# The text and the multimodal model of one GGUF
+#
+# The catalog declares gemma-4-E4B twice on the same file: the text model, and the
+# multimodal model that adds the projector. Each is installed, downloading or absent
+# on its own, and each merges into its own entry.
+# --------------------------------------------------------------------------- #
+E4B_DIR = "google/gemma-4-E4B-it-qat-q4_0-gguf"
+E4B_TEXT = "gemma-4-E4B_q4_0-it.gguf"
+E4B_MMPROJ = "gemma-4-E4B-it-mmproj.gguf"
+E4B_TEXT_URL = f"https://huggingface.co/{E4B_DIR}/blob/e998672c/{E4B_TEXT}"
+E4B_MMPROJ_URL = f"https://huggingface.co/{E4B_DIR}/blob/4b4a2c1d/{E4B_MMPROJ}"
+E4B_TEXT_ID = "llamacpp:gemma-4-E4B_q4_0-it"
+E4B_MULTIMODAL_ID = "llamacpp:gemma-4-E4B_q4_0-it-multimodal"
+
+E4B_YAML = f"""\
+models:
+ - "{E4B_TEXT_ID}":
+    name: "Gemma 4 E4B"
+    supported_boards: ["ventunoq"]
+    deployment:
+      handler: "hf-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              model_url: "{E4B_TEXT_URL}"
+              models_repository: "llamacpp"
+              model_directory: "{E4B_DIR}"
+    metadata:
+      model_size_mb: 4917
+ - "{E4B_MULTIMODAL_ID}":
+    name: "Gemma 4 E4B Multimodal"
+    supported_boards: ["ventunoq"]
+    deployment:
+      handler: "hf-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              model_url: "{E4B_TEXT_URL}"
+              model_mmproj_url: "{E4B_MMPROJ_URL}"
+              models_repository: "llamacpp"
+              model_directory: "{E4B_DIR}"
+    metadata:
+      model_size_mb: 5862
+"""
+
+
+def _e4b_listing(tmp_path, *files, records=(), marker_patterns=None):
+    """List a models root holding *files* of the E4B repository, its *records* and marker."""
+    yaml_path = tmp_path / "models-list.yaml"
+    yaml_path.write_text(E4B_YAML)
+    models_dir = tmp_path / "models"
+    repo = models_dir / "llamacpp" / E4B_DIR
+    repo.mkdir(parents=True)
+    for name in files:
+        _make_gguf(str(repo / name), size_bytes=1024 * 1024)
+    for model_id, record_files, env in records:
+        write_metadata(
+            str(repo), "hf-handler", env=env, models_list_path="", identity={"model_id": model_id, "model_origin": "built_in"}, files=record_files
+        )
+    if marker_patterns is not None:
+        write_marker(
+            str(repo),
+            handler="hf-handler",
+            models_repository="llamacpp",
+            model_directory=E4B_DIR,
+            model_url=E4B_TEXT_URL,
+            file_patterns=marker_patterns,
+        )
+    return {m["id"]: m for m in list_models.build_listing(str(models_dir), str(yaml_path), "ventunoq")}
+
+
+E4B_TEXT_ENV = {"model_url": E4B_TEXT_URL, "models_repository": "llamacpp", "model_directory": E4B_DIR}
+E4B_MULTIMODAL_ENV = {**E4B_TEXT_ENV, "model_mmproj_url": E4B_MMPROJ_URL}
+E4B_TEXT_RECORD = (E4B_TEXT_ID, [E4B_TEXT], E4B_TEXT_ENV)
+E4B_MULTIMODAL_RECORD = (E4B_MULTIMODAL_ID, [E4B_MMPROJ, E4B_TEXT], E4B_MULTIMODAL_ENV)
+
+
+def test_the_text_model_alone_does_not_install_the_multimodal_one(tmp_path):
+    listed = _e4b_listing(tmp_path, E4B_TEXT, records=[E4B_TEXT_RECORD])
+
+    assert listed[E4B_TEXT_ID]["installed"] is True
+    assert listed[E4B_MULTIMODAL_ID]["installed"] is False
+    assert set(listed) == {E4B_TEXT_ID, E4B_MULTIMODAL_ID}
+
+
+def test_both_models_of_one_gguf_are_installed_each_with_its_own_record(tmp_path):
+    """The reported bug: the multimodal model never read as installed, because the
+    one GGUF was matched to the text entry only."""
+    listed = _e4b_listing(tmp_path, E4B_TEXT, E4B_MMPROJ, records=[E4B_TEXT_RECORD, E4B_MULTIMODAL_RECORD])
+
+    text, multimodal = listed[E4B_TEXT_ID], listed[E4B_MULTIMODAL_ID]
+    assert set(listed) == {E4B_TEXT_ID, E4B_MULTIMODAL_ID}
+    assert text["installed"] is multimodal["installed"] is True
+    assert text["path"] == multimodal["path"]
+    assert "mmproj" not in text
+    assert multimodal["mmproj"].endswith(E4B_MMPROJ)
+    assert text["disk_size_mb"] == 1.0
+    assert multimodal["disk_size_mb"] == 2.0
+    assert text["download_metadata"]["model_id"] == E4B_TEXT_ID
+    assert multimodal["download_metadata"]["model_id"] == E4B_MULTIMODAL_ID
+    assert text["outdated"] is multimodal["outdated"] is False
+
+
+def test_a_projector_fetched_over_the_text_model_leaves_it_installed(tmp_path):
+    """Only the projector is in flight: the text model stays usable throughout."""
+    listed = _e4b_listing(tmp_path, E4B_TEXT, records=[E4B_TEXT_RECORD], marker_patterns=[E4B_MMPROJ])
+
+    assert listed[E4B_TEXT_ID]["installed"] is True
+    assert listed[E4B_TEXT_ID]["downloading"] is False
+    assert listed[E4B_MULTIMODAL_ID]["installed"] is False
+    assert listed[E4B_MULTIMODAL_ID]["downloading"] is True
+
+
+def test_a_fresh_multimodal_download_reads_as_the_multimodal_model_downloading(tmp_path):
+    listed = _e4b_listing(tmp_path, marker_patterns=[E4B_TEXT, E4B_MMPROJ])
+
+    assert listed[E4B_MULTIMODAL_ID]["downloading"] is True
+    assert listed[E4B_TEXT_ID]["installed"] is False
+
+
+def test_an_ad_hoc_gguf_with_a_projector_lists_as_its_two_models(tmp_path):
+    """The ids match what the downloader reports for the same files (fallback_model_id)."""
+    from hugging_face.hf_downloader import fallback_model_id
+
+    base = tmp_path / "models"
+    repo = base / "llamacpp" / "unsloth" / "gemma-GGUF"
+    files = [str(repo / "gemma-Q4_0.gguf"), str(repo / "mmproj-F16.gguf")]
+    for path in files:
+        _make_gguf(path)
+    write_metadata(str(repo), "hf-handler", env={}, models_list_path="", fallback_model_id="x", files=["gemma-Q4_0.gguf", "mmproj-F16.gguf"])
+
+    listed = [m["id"] for m in list_models.find_llamacpp_models(str(base))]
+
+    assert listed == ["llamacpp:unsloth/gemma-GGUF/gemma-Q4_0", "llamacpp:unsloth/gemma-GGUF/gemma-Q4_0-multimodal"]
+    assert fallback_model_id("", files, str(base / "llamacpp")) == listed[1]

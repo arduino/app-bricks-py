@@ -33,12 +33,13 @@ on disk alone.
   the limit was hard — under it a session loaded, over it it failed, every time — while at
   512 mapping a 512 MiB chunk failed at random, which made loads succeed holding 2.9 GiB
   and fail holding 1.8 GiB. That is what the matrix below measured, and why its verdicts
-  near the edge were not reproducible. **The service runs at 1024 now and nothing has been
-  measured there** ([Running it again](#running-it-again)).
-- **What MBUF does constrain on its own is one tensor**, since a tensor is never cut across
-  chunks and no session count splits one. Since llama.cpp #29197 the backend refuses such a
-  tensor outright, which is what makes MBUF 256 unusable for gemma-4.
-  `configure-llamacpp.py` warns when a model's largest NPU tensor is over the chunk
+  near the edge were not reproducible. **The service runs at `256,256` now**, with the build
+  that allocates weights and KV cache in static buffers ([Running it again](#running-it-again)).
+- **No single tensor is a ceiling any more.** Since llama.cpp #30126 `GGML_HEXAGON_MBUF` is
+  `dyn,static[,total]` — the size of the compute buffers, then of the buffers weights and
+  KV cache are packed into — and a tensor bigger than the static size gets a buffer of its
+  own. The refusal #29197 brought in, which made MBUF 256 unusable for gemma-4, is gone, so
+  `configure-llamacpp.py` no longer reads MBUF at all
   ([The ceiling on one tensor](#the-ceiling-on-one-tensor)).
 - **What a session holds is weights, KV cache and compute buffers** — its own, sized by the
   micro-batch rather than the context, and from two sessions up a copy of the buffer of the
@@ -267,15 +268,23 @@ known at 256.
 
 ### The ceiling on one tensor
 
-An allocation is cut into chunks of `GGML_HEXAGON_MBUF`; a tensor is not. Whichever session
-holds a layer has to map that layer's tensors whole, so a tensor larger than a chunk is the
-one thing adding sessions cannot help with, and the only reason the chunk size belongs in
-the sizing at all. `configure-llamacpp.py` records the largest tensor it puts on the NPU
-(`ModelShape.oversized_tensor()`) and prints a warning when it is over the chunk, naming the
-tensor and the `GGML_HEXAGON_MBUF` that would hold it. It warns rather than resizing,
-because nothing it can change fixes it — the service sets MBUF, not the script.
+**There is none since llama.cpp #30126, which the image ships** (`alloc_buffer_n` in
+`libggml-hexagon.so` of the 20261020 package). `GGML_HEXAGON_MBUF` became
+`dyn,static[,total]`, sizes in MiB unless suffixed K, M or G, a missing field keeping the
+backend's default (512 MiB, 1 GiB, unconstrained): `dyn` bounds the compute buffers,
+`static` the buffers the weights and the KV cache are packed into, the KV tensors of one
+layer kept together. A unit bigger than `static` is not refused but placed in a buffer of its
+own, so the one size a session cannot exceed is its address space, which the budget above
+already keeps under. `configure-llamacpp.py` therefore does not read MBUF: the service's
+`256,256` moves neither what a session holds nor which tensor can be placed.
 
-**It is a hard refusal, since llama.cpp #29197.** Before that commit `alloc_buffer` left an
+What follows is the history of the ceiling, under the builds between #29197 and #30126.
+
+An allocation was cut into chunks of `GGML_HEXAGON_MBUF`; a tensor was not. Whichever session
+held a layer had to map that layer's tensors whole, so a tensor larger than a chunk was the
+one thing adding sessions could not help with, and the script warned about it.
+
+**It was a hard refusal, since llama.cpp #29197.** Before that commit `alloc_buffer` left an
 oversized tensor to ggml, which tolerated it; #29197 rejects it, and a failed `fastrpc_mmap`
 became fatal where it used to degrade to a copy via the host. That is what made MBUF 256
 unusable rather than merely slow: gemma-4 keeps its tied token embeddings in a single tensor
@@ -571,8 +580,8 @@ common_memory_breakdown_print: | - HTP0 (Hexagon) | 0 = 0 + (2361 = 1688 + 640 +
 Worth redoing after a llama.cpp bump, a DSP firmware change, or a change to
 `GGML_HEXAGON_MBUF` or `LLAMA_ARG_UBATCH` — any of them can move the envelope — and after any
 change to which tensor types the Hexagon backend keeps on the NPU. All of those have
-happened since the matrix was measured, and `GGML_HEXAGON_MBUF` has moved twice (512, then
-256, then 1024 when the gemmas grew an mmproj), so it is due. The trials worth running
+happened since the matrix was measured, and `GGML_HEXAGON_MBUF` has moved three times (512,
+then 256, then 1024 when the gemmas grew an mmproj, then `256,256` with #30126), so it is due. The trials worth running
 first, with `repro.sh` so that a verdict is repeated rather than sampled:
 
 - Nemotron-Mini-4B at 8k on one session and DeepSeek-R1-Distill-Llama-8B and Qwen3-8B at
@@ -587,8 +596,9 @@ first, with `repro.sh` so that a verdict is repeated rather than sampled:
   reserved 552 MiB at `n_ubatch` 512 with an mmproj attached, against 265 MiB at
   `n_ubatch` 1024 without one, so a vision encoder wants an allowance of its own rather
   than a larger per-token constant.
-- The gemmas at MBUF 256 with and without the mmproj in `models.ini`, which is what
-  separates the tensor ceiling from the mmproj as the reason nothing loaded there
+- The gemmas at `256,256` as their text and their `-multimodal` sections of `models.ini`,
+  without and with the mmproj, to size the projector's share of a session — the tensor
+  ceiling that used to be the other suspect is gone
   ([The ceiling on one tensor](#the-ceiling-on-one-tensor)).
 
 [`tools/`](tools/) holds the harness: `session-trial.sh` runs one (model, context, sessions)

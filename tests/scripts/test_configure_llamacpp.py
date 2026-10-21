@@ -5,8 +5,7 @@
 """Unit tests for the llama.cpp runners' configure-llamacpp.py scripts.
 
 Covers the Hexagon session sizing of the NPU runner — the GGUF header reading it is
-built on, the sizing itself, the ceiling GGML_HEXAGON_MBUF puts on a single tensor, and a
-regression table of what the measured models were measured to need
+built on, the sizing itself, and a regression table of what the measured models were measured to need
 (containers/ai/llamacpp-npu-runner/SESSION_ALLOCATION.md) — and, for
 both runners, whose scripts deliberately duplicate the code, the served model names,
 which are derived from the ".arduino_metadata.yaml" download records rather than from
@@ -193,24 +192,6 @@ def test_the_per_layer_embeddings_of_a_matformer_gemma_stay_on_the_cpu(tmp_path)
     gguf = write_gguf(tmp_path / "m.gguf", {"general.architecture": "gemma4", "gemma4.block_count": 1}, tensors)
 
     assert read_model_shape(gguf).npu_weight_bytes == pytest.approx(310 * MIB, rel=1e-3)
-
-
-def test_the_largest_tensor_on_the_npu_is_recorded(tmp_path):
-    """Only what the NPU holds can be the tensor that fails to map: a bigger one the CPU
-    keeps, whether by its type or because get_rows is all that reads it, does not count."""
-    tensors = [
-        ("token_embd.weight", (q4_0_elements(300),), Q4_0),
-        ("output.weight", (q4_0_elements(400),), Q4_0),
-        ("per_layer_token_embd.weight", (q4_0_elements(2000),), Q4_0),
-        ("blk.0.ffn_up.weight", (600 * MIB // 110 * 256,), Q3_K),
-        ("blk.0.attn_k.weight", (q4_0_elements(10),), Q4_0),
-    ]
-    gguf = write_gguf(tmp_path / "m.gguf", {"general.architecture": "llama", "llama.block_count": 1}, tensors)
-
-    largest = read_model_shape(gguf).largest_npu_tensor
-
-    assert largest.name == "output.weight"
-    assert largest.bytes == pytest.approx(400 * MIB, rel=1e-3)
 
 
 # --------------------------------------------------------------------------- #
@@ -752,12 +733,12 @@ def test_a_model_too_big_for_every_session_asks_for_them_all():
 
 
 # --------------------------------------------------------------------------- #
-# The chunk the backend maps at once
+# The environment the sizing reads
 #
-# GGML_HEXAGON_MBUF is the granularity an allocation is cut into, not a second budget: it
-# is why a load fails on a whole chunk rather than on the byte that overflowed. What it
-# constrains by itself is the largest single tensor, which is never cut across chunks and
-# so is the one thing more sessions cannot work around.
+# GGML_HEXAGON_MBUF is not among it: since llama.cpp #30126 it is "dyn,static[,total]",
+# the size of the compute and of the weight/KV buffers the backend cuts a session's
+# allocations into, and a tensor bigger than the static one gets a buffer of its own. It
+# moves neither what a session holds nor which tensor can be placed.
 # --------------------------------------------------------------------------- #
 
 
@@ -768,22 +749,12 @@ def service_environment() -> dict:
 
 
 def test_the_defaults_are_the_ones_the_service_configures():
-    """Both are read from the environment the server will see, with a default behind them,
-    and that default has to be what the service sets: sizing for a chunk or a micro-batch
+    """The micro-batch is read from the environment the server will see, with a default
+    behind it, and that default has to be what the service sets: sizing for a micro-batch
     the server is not running at is how the rule goes quietly wrong."""
     environment = service_environment()
 
-    assert int(environment["GGML_HEXAGON_MBUF"]) == configure_llamacpp.DEFAULT_MBUF_MIB
     assert int(environment["LLAMA_ARG_UBATCH"]) == configure_llamacpp.DEFAULT_N_UBATCH
-
-
-def test_the_chunk_size_is_read_from_the_environment(monkeypatch):
-    monkeypatch.setenv("GGML_HEXAGON_MBUF", "256")
-    assert configure_llamacpp.mbuf_bytes() == 256 * MIB
-
-    # Unset, or not a positive number, means what the service configures.
-    monkeypatch.delenv("GGML_HEXAGON_MBUF")
-    assert configure_llamacpp.mbuf_bytes() == configure_llamacpp.DEFAULT_MBUF_MIB * MIB
 
 
 def gemma_e2b_embedding(path: Path) -> Path:
@@ -799,42 +770,19 @@ def gemma_e2b_embedding(path: Path) -> Path:
     )
 
 
-def test_a_tensor_bigger_than_the_chunk_is_reported_and_a_smaller_one_is_not(tmp_path, monkeypatch):
-    """The 256 MiB the service ran at is below E2B's tied embedding; the 1024 it runs at
-    now leaves it room."""
-    shape = read_model_shape(gemma_e2b_embedding(tmp_path / "gemma-4-E2B.gguf"))
-
-    monkeypatch.setenv("GGML_HEXAGON_MBUF", "1024")
-    assert shape.oversized_tensor() is None
-
-    monkeypatch.setenv("GGML_HEXAGON_MBUF", "256")
-    oversized = shape.oversized_tensor()
-    assert oversized.name == "token_embd.weight"
-    assert oversized.bytes == pytest.approx(330 * MIB, rel=1e-3)
-
-
-def test_the_sizing_warns_about_a_tensor_no_session_count_can_split(tmp_path, monkeypatch, capsys):
-    """Sessions split the layers, never a tensor, so this one is reported rather than sized
-    around: the script does not set GGML_HEXAGON_MBUF, the service does."""
-    monkeypatch.setenv("GGML_HEXAGON_MBUF", "256")
+@pytest.mark.parametrize("mbuf", ["256,256", "256", "1024", None], ids=["service", "dyn-only", "1024", "unset"])
+def test_the_sizing_does_not_read_the_buffer_size(tmp_path, monkeypatch, capsys, mbuf):
+    """E2B's 330 MiB tied embedding is bigger than the 256 MiB buffers the service runs
+    with, and loads: the backend gives it a buffer of its own. The sizing neither warns
+    about it nor changes with GGML_HEXAGON_MBUF, whatever its spelling."""
+    if mbuf is None:
+        monkeypatch.delenv("GGML_HEXAGON_MBUF", raising=False)
+    else:
+        monkeypatch.setenv("GGML_HEXAGON_MBUF", mbuf)
     gemma_e2b_embedding(tmp_path / "gemma-4-E2B.gguf")
     models = configure_llamacpp.find_models(tmp_path)
 
     assert detect_hexagon_sessions(models, 16384) == 1
-
-    diagnostics = capsys.readouterr().err
-    assert "WARNING token_embd.weight is one 330 MiB q6_K tensor" in diagnostics
-    assert "more than the 256 MiB GGML_HEXAGON_MBUF maps at once" in diagnostics
-
-
-def test_a_model_sized_by_its_file_reports_no_tensor(tmp_path, monkeypatch, capsys):
-    """A header that would not parse says nothing about tensors, so the warning stays quiet
-    rather than guessing at one."""
-    monkeypatch.setenv("GGML_HEXAGON_MBUF", "256")
-    (tmp_path / "gemma-4-E4B_q4_0-it.gguf").write_bytes(b"GGUF" + bytes(64))
-    models = configure_llamacpp.find_models(tmp_path)
-
-    assert detect_hexagon_sessions(models, 16384) == 2
     assert "WARNING" not in capsys.readouterr().err
 
 
@@ -939,7 +887,7 @@ def test_the_measured_models_are_not_over_allocated_by_more_than_a_session():
 # The board run of 2026-09-21
 #
 # Every model installed on the 21q board, at 16k, on the session count the rule asks for,
-# under the environment the service runs now: GGML_HEXAGON_MBUF 1024, n_ubatch 512,
+# under the environment the service ran then: GGML_HEXAGON_MBUF 1024, n_ubatch 512,
 # LLAMA_ARG_BATCH 1024, and the build that repacks the K-quants. Two runs of the whole
 # set: 18 models, all of which loaded and generated on the count below.
 #
@@ -956,44 +904,39 @@ def test_the_measured_models_are_not_over_allocated_by_more_than_a_session():
 # --------------------------------------------------------------------------- #
 
 
-def board_shape(*, npu_weight_mib: float, n_layer: int, kv: tuple, largest: tuple, recurrent: bool = False) -> ModelShape:
+def board_shape(*, npu_weight_mib: float, n_layer: int, kv: tuple, recurrent: bool = False) -> ModelShape:
     """A shape as the board's headers give it.
 
-    *kv* is (bytes per cell, window, layers) per group of layers, *largest* the biggest
-    tensor the model puts on the NPU as (name, type, MiB).
+    *kv* is (bytes per cell, window, layers) per group of layers.
     """
     layers = tuple(KvLayer(cell, window) for cell, window, count in kv for _ in range(count))
-    name, type_name, mib = largest
     return ModelShape(
         n_layer=n_layer,
         npu_weight_bytes=int(npu_weight_mib * MIB),
         kv_layers=layers,
         state_bytes=configure_llamacpp.RECURRENT_STATE_ALLOWANCE if recurrent else 0,
-        largest_npu_tensor=configure_llamacpp.Tensor(name, type_name, int(mib * MIB)),
     )
 
 
-EMBD, OUT = "token_embd.weight", "output.weight"
-
 BOARD_2026_09_21 = {
-    "DeepSeek-R1-0528-Qwen3-8B-Q4_0": (board_shape(npu_weight_mib=4226, n_layer=36, kv=((4096, 0, 36),), largest=(OUT, "q6_K", 487)), 4),
-    "DeepSeek-R1-Distill-Llama-8B-Q4_0": (board_shape(npu_weight_mib=4170, n_layer=32, kv=((4096, 0, 32),), largest=(OUT, "q6_K", 411)), 4),
-    "LFM2.5-8B-A1B-Q4_0": (board_shape(npu_weight_mib=4612, n_layer=24, kv=((2048, 0, 6),), largest=(EMBD, "q6_K", 205), recurrent=True), 3),
-    "Nemotron-Mini-4B-Instruct-Q4_0": (board_shape(npu_weight_mib=2028, n_layer=32, kv=((4096, 0, 32),), largest=(OUT, "q6_K", 615)), 3),
-    "Qwen3-4B-Instruct-2507-Q4_0": (board_shape(npu_weight_mib=2260, n_layer=36, kv=((4096, 0, 36),), largest=(EMBD, "q6_K", 304)), 3),
-    "Qwen3.5-0.8B-Q4_0": (board_shape(npu_weight_mib=473, n_layer=24, kv=((2048, 0, 6),), largest=(EMBD, "q6_K", 199), recurrent=True), 1),
-    "Qwen3.5-4B-Q4_0": (board_shape(npu_weight_mib=2453, n_layer=32, kv=((4096, 0, 8),), largest=(EMBD, "q6_K", 497), recurrent=True), 2),
-    "Qwen3.5-4B-Q4_0-pure": (board_shape(npu_weight_mib=2259, n_layer=32, kv=((4096, 0, 8),), largest=(EMBD, "q4_0", 341), recurrent=True), 2),
-    "Qwen3.5-4B-Q8_0": (board_shape(npu_weight_mib=4264, n_layer=32, kv=((4096, 0, 8),), largest=(EMBD, "q8_0", 644), recurrent=True), 3),
-    "Qwen_Qwen3-8B-Q4_0": (board_shape(npu_weight_mib=4226, n_layer=36, kv=((4096, 0, 36),), largest=(OUT, "q6_K", 487)), 4),
-    "SmolVLM2-500M-Video-Instruct-Q8_0": (board_shape(npu_weight_mib=367, n_layer=32, kv=((1280, 0, 32),), largest=(OUT, "q8_0", 48)), 1),
-    "bar-Qwen_Qwen3.5-9B-Q4_0": (board_shape(npu_weight_mib=4919, n_layer=33, kv=((4096, 0, 9),), largest=(OUT, "q6_K", 796), recurrent=True), 4),
-    "gemma-3-1b-it-Q4_0": (board_shape(npu_weight_mib=682, n_layer=26, kv=((1024, 0, 26),), largest=(EMBD, "q8_0", 306)), 1),
-    "gemma-4-12b-it-qat-q4_0": (board_shape(npu_weight_mib=6638, n_layer=48, kv=((8192, 1024, 40), (2048, 0, 8)), largest=(EMBD, "q6_K", 788)), 4),
-    "gemma-4-E4B_q4_0-it": (board_shape(npu_weight_mib=2696, n_layer=42, kv=((2048, 512, 20), (4096, 0, 4)), largest=(EMBD, "q6_K", 525)), 2),
-    "granite-4.2-3b-Q4_0": (board_shape(npu_weight_mib=1889, n_layer=40, kv=((2048, 0, 40),), largest=(OUT, "q6_K", 201)), 2),
-    "granite-4.2-8b-Q4_0": (board_shape(npu_weight_mib=4598, n_layer=40, kv=((4096, 0, 40),), largest=(OUT, "q6_K", 322)), 4),
-    "microsoft_Phi-4-mini-instruct-Q4_0": (board_shape(npu_weight_mib=2216, n_layer=32, kv=((4096, 0, 32),), largest=(EMBD, "q6_K", 481)), 3),
+    "DeepSeek-R1-0528-Qwen3-8B-Q4_0": (board_shape(npu_weight_mib=4226, n_layer=36, kv=((4096, 0, 36),)), 4),
+    "DeepSeek-R1-Distill-Llama-8B-Q4_0": (board_shape(npu_weight_mib=4170, n_layer=32, kv=((4096, 0, 32),)), 4),
+    "LFM2.5-8B-A1B-Q4_0": (board_shape(npu_weight_mib=4612, n_layer=24, kv=((2048, 0, 6),), recurrent=True), 3),
+    "Nemotron-Mini-4B-Instruct-Q4_0": (board_shape(npu_weight_mib=2028, n_layer=32, kv=((4096, 0, 32),)), 3),
+    "Qwen3-4B-Instruct-2507-Q4_0": (board_shape(npu_weight_mib=2260, n_layer=36, kv=((4096, 0, 36),)), 3),
+    "Qwen3.5-0.8B-Q4_0": (board_shape(npu_weight_mib=473, n_layer=24, kv=((2048, 0, 6),), recurrent=True), 1),
+    "Qwen3.5-4B-Q4_0": (board_shape(npu_weight_mib=2453, n_layer=32, kv=((4096, 0, 8),), recurrent=True), 2),
+    "Qwen3.5-4B-Q4_0-pure": (board_shape(npu_weight_mib=2259, n_layer=32, kv=((4096, 0, 8),), recurrent=True), 2),
+    "Qwen3.5-4B-Q8_0": (board_shape(npu_weight_mib=4264, n_layer=32, kv=((4096, 0, 8),), recurrent=True), 3),
+    "Qwen_Qwen3-8B-Q4_0": (board_shape(npu_weight_mib=4226, n_layer=36, kv=((4096, 0, 36),)), 4),
+    "SmolVLM2-500M-Video-Instruct-Q8_0": (board_shape(npu_weight_mib=367, n_layer=32, kv=((1280, 0, 32),)), 1),
+    "bar-Qwen_Qwen3.5-9B-Q4_0": (board_shape(npu_weight_mib=4919, n_layer=33, kv=((4096, 0, 9),), recurrent=True), 4),
+    "gemma-3-1b-it-Q4_0": (board_shape(npu_weight_mib=682, n_layer=26, kv=((1024, 0, 26),)), 1),
+    "gemma-4-12b-it-qat-q4_0": (board_shape(npu_weight_mib=6638, n_layer=48, kv=((8192, 1024, 40), (2048, 0, 8))), 4),
+    "gemma-4-E4B_q4_0-it": (board_shape(npu_weight_mib=2696, n_layer=42, kv=((2048, 512, 20), (4096, 0, 4))), 2),
+    "granite-4.2-3b-Q4_0": (board_shape(npu_weight_mib=1889, n_layer=40, kv=((2048, 0, 40),)), 2),
+    "granite-4.2-8b-Q4_0": (board_shape(npu_weight_mib=4598, n_layer=40, kv=((4096, 0, 40),)), 4),
+    "microsoft_Phi-4-mini-instruct-Q4_0": (board_shape(npu_weight_mib=2216, n_layer=32, kv=((4096, 0, 32),)), 3),
 }
 
 
@@ -1019,27 +962,6 @@ def test_the_9b_is_kept_off_the_three_sessions_that_never_loaded(monkeypatch):
     assert shape.session_bytes(16384, 3) > configure_llamacpp.SESSION_BUDGET
     assert shape.session_bytes(16384, 4) / MIB == pytest.approx(2357, abs=1)
     assert shape.sessions_needed(16384) == 4
-
-
-def test_no_model_on_the_board_has_a_tensor_over_the_chunk(monkeypatch):
-    """Which is why they all load at MBUF 1024. The largest is bar-Qwen3.5-9B's 796 MiB
-    output projection, and gemma-4-12b's tied embedding is 788."""
-    monkeypatch.setenv("GGML_HEXAGON_MBUF", "1024")
-
-    assert [name for name, (shape, _) in BOARD_2026_09_21.items() if shape.oversized_tensor()] == []
-    assert max(shape.largest_npu_tensor.bytes for shape, _ in BOARD_2026_09_21.values()) / MIB == pytest.approx(796, abs=1)
-
-
-def test_most_of_the_board_would_be_refused_at_the_chunk_size_the_service_used_to_run(monkeypatch):
-    """What #29197 did to MBUF 256: 14 of the 18 carry one tensor bigger than that, so the
-    backend refuses them outright however many sessions they are given. Only the four
-    smallest — SmolVLM2 and the models whose embedding stays near 200 MiB — survive."""
-    monkeypatch.setenv("GGML_HEXAGON_MBUF", "256")
-    refused = [name for name, (shape, _) in BOARD_2026_09_21.items() if shape.oversized_tensor()]
-
-    assert len(refused) == 14
-    assert "gemma-4-12b-it-qat-q4_0" in refused
-    assert "SmolVLM2-500M-Video-Instruct-Q8_0" not in refused
 
 
 # --------------------------------------------------------------------------- #
@@ -1235,8 +1157,8 @@ def test_unreadable_metadata_degrades_to_out_of_the_box(runner, tmp_path):
 
 
 def test_models_ini_serves_each_model_under_its_derived_name(runner, tmp_path, capsys):
-    """End to end: one curated and one ad-hoc install become two sections, and the
-    mmproj companion in the ad-hoc repository is attached to its model."""
+    """End to end: one curated and one ad-hoc install become their sections, and the
+    mmproj companion in the ad-hoc repository makes its model's multimodal section."""
     curated = tmp_path / "google" / "gemma-4-E2B-it-qat-q4_0-gguf"
     _gguf(curated / "gemma-4-E2B_q4_0-it.gguf")
     _write_records(curated, ("built_in", ["gemma-4-E2B_q4_0-it.gguf"]))
@@ -1252,5 +1174,24 @@ def test_models_ini_serves_each_model_under_its_derived_name(runner, tmp_path, c
     assert sorted(config.sections()) == [
         "gemma-4-E2B_q4_0-it",
         "unsloth/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q4_0",
+        "unsloth/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q4_0-multimodal",
     ]
-    assert config["unsloth/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q4_0"]["mmproj"].endswith("mmproj-BF16.gguf")
+    assert config["unsloth/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q4_0-multimodal"]["mmproj"].endswith("mmproj-BF16.gguf")
+
+
+def test_models_ini_serves_a_gguf_with_a_projector_as_its_text_and_multimodal_models(runner, tmp_path, capsys):
+    """The text section loads the GGUF alone, so it never pays for the vision encoder;
+    the -multimodal section loads the same GGUF with the projector. The names are the
+    catalog ids the models-downloader lists the two under."""
+    repo = tmp_path / "google" / "gemma-4-E4B-it-qat-q4_0-gguf"
+    model = _gguf(repo / "gemma-4-E4B_q4_0-it.gguf")
+    mmproj = _gguf(repo / "gemma-4-E4B-it-mmproj.gguf")
+    _write_records(repo, ("built_in", ["gemma-4-E4B_q4_0-it.gguf"]), ("built_in", ["gemma-4-E4B-it-mmproj.gguf", "gemma-4-E4B_q4_0-it.gguf"]))
+
+    runner.generate_models_ini(tmp_path)
+
+    config = configparser.ConfigParser()
+    config.read(tmp_path / "models.ini")
+    assert sorted(config.sections()) == ["gemma-4-E4B_q4_0-it", "gemma-4-E4B_q4_0-it-multimodal"]
+    assert dict(config["gemma-4-E4B_q4_0-it"]) == {"model": model.as_posix()}
+    assert dict(config["gemma-4-E4B_q4_0-it-multimodal"]) == {"model": model.as_posix(), "mmproj": mmproj.as_posix()}

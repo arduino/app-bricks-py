@@ -28,6 +28,7 @@ from huggingface_hub.errors import (
 )
 
 from common.download_marker import MARKER_NAME, read_marker
+from common.gguf_naming import GgufDeclaration
 from common.model_metadata import METADATA_NAME, metadata_records, read_metadata
 from hugging_face import hf_downloader
 from hugging_face.hf_downloader import (
@@ -595,21 +596,86 @@ def test_validate_hub_source_reports_why_a_repo_cannot_be_used(monkeypatch, erro
     assert excinfo.value.code == code
 
 
-@pytest.mark.parametrize(
-    ("flag", "reason", "code"),
-    [
-        ({"private": True}, "is private", "model_private_or_gated"),
-        ({"gated": "manual"}, "is gated", "model_private_or_gated"),
-        ({"disabled": True}, "has been disabled", "model_disabled"),
-    ],
-)
-def test_validate_hub_source_rejects_a_repo_that_is_not_freely_downloadable(monkeypatch, flag, reason, code):
-    """With --hf-token the repo answers instead of 404ing, so the fields are checked too."""
+def test_validate_hub_source_without_a_token_rejects_a_gated_repo(monkeypatch):
+    """A gated repository shows its listing to anyone, and serves its files to no one
+    anonymous: refused, saying a token would open it."""
+    fake_hub(monkeypatch, _FakeModelInfo(files=["gemma-4-E2B_q4_0-it.gguf"], gated="manual"))
+
+    with pytest.raises(ValueError, match="is gated.*hf_token") as excinfo:
+        validate_hub_source(resolve_model_source(GEMMA_URL))
+    assert excinfo.value.code == "model_private_or_gated"
+
+
+def test_validate_hub_source_without_a_token_names_the_token_for_a_repo_it_cannot_see(monkeypatch):
+    fake_hub(monkeypatch, error=_hub_error(RepositoryNotFoundError))
+
+    with pytest.raises(ValueError, match="does not exist, or is not public.*hf_token"):
+        validate_hub_source(resolve_model_source(GEMMA_URL))
+
+
+@pytest.mark.parametrize("flag", [{"private": True}, {"gated": "manual"}], ids=["private", "gated"])
+def test_validate_hub_source_with_a_token_accepts_the_repos_it_opens(monkeypatch, flag):
+    """The token is the operator's own access: their private repositories, and the gated
+    ones whose conditions they accepted, are model sources like any public one."""
     fake_hub(monkeypatch, _FakeModelInfo(files=["gemma-4-E2B_q4_0-it.gguf"], **flag))
 
-    with pytest.raises(ValueError, match=reason) as excinfo:
+    assert validate_hub_source(resolve_model_source(GEMMA_URL), token="hf_explicit") is None
+
+
+def test_validate_hub_source_with_a_token_blames_the_token_for_a_repo_it_cannot_see(monkeypatch):
+    fake_hub(monkeypatch, error=_hub_error(RepositoryNotFoundError))
+
+    with pytest.raises(ValueError, match="does not exist, or the hf_token cannot read it") as excinfo:
         validate_hub_source(resolve_model_source(GEMMA_URL), token="hf_explicit")
-    assert excinfo.value.code == code
+    assert excinfo.value.code == "model_not_found"
+
+
+def test_validate_hub_source_rejects_a_disabled_repo_even_with_a_token(monkeypatch):
+    fake_hub(monkeypatch, _FakeModelInfo(files=["gemma-4-E2B_q4_0-it.gguf"], disabled=True))
+
+    with pytest.raises(ValueError, match="has been disabled") as excinfo:
+        validate_hub_source(resolve_model_source(GEMMA_URL), token="hf_explicit")
+    assert excinfo.value.code == "model_disabled"
+
+
+# --------------------------------------------------------------------------- #
+# The handler scripts pass the hf_token variable on only when it is set
+# --------------------------------------------------------------------------- #
+HF_SCRIPTS_DIR = Path(hf_downloader.__file__).parent
+
+
+def _run_hf_script(tmp_path, script, **env):
+    """Run a handler script with a stub ``python`` that prints the arguments it gets."""
+    import subprocess
+
+    stub_dir = tmp_path / "bin"
+    stub_dir.mkdir(exist_ok=True)
+    stub = stub_dir / "python"
+    stub.write_text('#!/bin/sh\nfor arg in "$@"; do echo "$arg"; done\n')
+    stub.chmod(0o755)
+    run_env = {"PATH": f"{stub_dir}{os.pathsep}{os.environ['PATH']}", "model_url": "org/repo:Q4_0", **env}
+    result = subprocess.run(["bash", str(HF_SCRIPTS_DIR / script)], env=run_env, capture_output=True, text=True, check=True)
+    return result.stdout.splitlines()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the handler scripts run in the Linux container")
+@pytest.mark.parametrize("script", ["hf_model_downloader.sh", "hf_model_info.sh"])
+def test_a_set_hf_token_reaches_the_downloader(tmp_path, script):
+    args = _run_hf_script(tmp_path, script, hf_token="hf_secret")
+
+    assert args[args.index("--hf-token") + 1] == "hf_secret"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the handler scripts run in the Linux container")
+@pytest.mark.parametrize("script", ["hf_model_downloader.sh", "hf_model_info.sh"])
+@pytest.mark.parametrize("token", [None, ""], ids=["unset", "empty"])
+def test_without_an_hf_token_the_downloader_runs_anonymously(tmp_path, script, token):
+    env = {} if token is None else {"hf_token": token}
+
+    args = _run_hf_script(tmp_path, script, **env)
+
+    assert "--hf-token" not in args
+    assert args[args.index("--model-url") + 1] == "org/repo:Q4_0"
 
 
 def test_validate_hub_source_reports_an_unreachable_hub_without_blaming_the_url(monkeypatch):
@@ -691,13 +757,14 @@ def test_fallback_model_id_uses_the_key_model_type_as_namespace(tmp_path):
     assert fallback_model_id("llamacpp", [gguf], str(tmp_path)) == "llamacpp:org/repo/m-Q8_0"
 
 
-def test_fallback_model_id_ignores_mmproj(tmp_path):
-    """The mmproj belongs to the main GGUF and must never name the model."""
+def test_fallback_model_id_names_a_download_with_a_projector_as_its_multimodal_model(tmp_path):
+    """The mmproj never names the model, but fetching one installs the GGUF's multimodal
+    model, which the listing and models.ini name with the suffix."""
     files = [
         _place_gguf(tmp_path, "org/repo/mmproj-BF16.gguf"),
         _place_gguf(tmp_path, "org/repo/model-Q4_0.gguf"),
     ]
-    assert fallback_model_id("", files, str(tmp_path)) == "llamacpp:org/repo/model-Q4_0"
+    assert fallback_model_id("", files, str(tmp_path)) == "llamacpp:org/repo/model-Q4_0-multimodal"
 
 
 def test_fallback_model_id_without_any_gguf(tmp_path):
@@ -710,7 +777,9 @@ def test_fallback_model_id_ignores_the_catalog(tmp_path, monkeypatch):
     """The fallback names the user-configured record being written, and a
     user-configured model is named by its path even at a location the catalog
     declares: the record, not the location, decides the name everywhere."""
-    monkeypatch.setattr(hf_downloader, "catalog_gguf_declarations", lambda *a, **k: [("org/repo", "model-Q4_0.gguf", "llamacpp:model-Q4_0")])
+    monkeypatch.setattr(
+        hf_downloader, "catalog_gguf_declarations", lambda *a, **k: [GgufDeclaration("org/repo", "model-Q4_0.gguf", "llamacpp:model-Q4_0")]
+    )
     gguf = _place_gguf(tmp_path, "org/repo/model-Q4_0.gguf")
     assert fallback_model_id("", [gguf], str(tmp_path)) == "llamacpp:org/repo/model-Q4_0"
 
@@ -773,9 +842,24 @@ def test_models_ini_names_curated_files_by_stem_and_ad_hoc_files_by_path(tmp_pat
     generate_models_ini(tmp_path)
 
     config = _read_models_ini(tmp_path)
-    assert sorted(config.sections()) == ["moondream2-f16", "unsloth/Qwen3-GGUF/Qwen3-Q4_0"]
+    assert sorted(config.sections()) == ["moondream2-f16", "moondream2-f16-multimodal", "unsloth/Qwen3-GGUF/Qwen3-Q4_0"]
     assert config["moondream2-f16"]["model"].endswith("moondream2-f16.gguf")
-    assert config["moondream2-f16"]["mmproj"].endswith("moondream2-mmproj-f16.gguf")
+
+
+def test_models_ini_serves_a_gguf_with_a_projector_as_two_models(tmp_path, capsys):
+    """The text model loads the GGUF alone; its multimodal model loads it with the projector."""
+    _place_gguf(tmp_path, f"{GEMMA_REPO}/{GEMMA_TEXT_FILE}")
+    _place_gguf(tmp_path, f"{GEMMA_REPO}/{GEMMA_MMPROJ_FILE}")
+
+    generate_models_ini(tmp_path)
+
+    config = _read_models_ini(tmp_path)
+    assert sorted(config.sections()) == ["gemma-4-E4B_q4_0-it", "gemma-4-E4B_q4_0-it-multimodal"]
+    assert dict(config["gemma-4-E4B_q4_0-it"]) == {"model": (tmp_path / GEMMA_REPO / GEMMA_TEXT_FILE).as_posix()}
+    assert dict(config["gemma-4-E4B_q4_0-it-multimodal"]) == {
+        "model": (tmp_path / GEMMA_REPO / GEMMA_TEXT_FILE).as_posix(),
+        "mmproj": (tmp_path / GEMMA_REPO / GEMMA_MMPROJ_FILE).as_posix(),
+    }
 
 
 def test_models_ini_names_a_recordless_file_by_its_stem(tmp_path, capsys):
@@ -857,6 +941,20 @@ models:
               model_directory: "google/gemma-4-E2B-it-qat-q4_0-gguf"
 """
 
+BACKFILL_MULTIMODAL_ENTRY = """\
+ - "llamacpp:gemma-4-E2B_q4_0-it-multimodal":
+    name: "Gemma 4 E2B Multimodal"
+    deployment:
+      handler: "hf-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              model_url: "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf/blob/ventunosha/gemma-4-E2B_q4_0-it.gguf"
+              model_mmproj_url: "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf/blob/ventunosha/gemma-4-E2B-it-mmproj.gguf"
+              models_repository: "llamacpp"
+              model_directory: "google/gemma-4-E2B-it-qat-q4_0-gguf"
+"""
+
 
 def _backfill_models_list(tmp_path) -> str:
     path = tmp_path / "models-list.yaml"
@@ -881,10 +979,29 @@ def test_backfill_records_an_ootb_model_from_the_catalog(tmp_path, monkeypatch, 
     assert record["model_id"] == "llamacpp:gemma-4-E2B_q4_0-it"
     assert record["model_origin"] == "built_in"
     assert record["handler"] == "hf-handler"
-    assert record["files"] == ["gemma-4-E2B_q4_0-it.gguf", "mmproj-F16.gguf"]
+    # The text model is the GGUF alone: the projector is its multimodal model's.
+    assert record["files"] == ["gemma-4-E2B_q4_0-it.gguf"]
     # The unoq platform's variables, so the outdated check compares this board's.
     assert "unosha" in record["inputs"]["model_url"]
     assert any(e["description"].startswith("Recorded out-of-the-box model") for e in read_events(capsys))
+
+
+def test_backfill_records_the_text_and_the_multimodal_model_of_an_ootb_gguf(tmp_path, monkeypatch):
+    monkeypatch.setenv("BOARD_NAME", "ventunoq")
+    models_dir = tmp_path / "models"
+    _place_gguf(models_dir, "google/gemma-4-E2B-it-qat-q4_0-gguf/gemma-4-E2B_q4_0-it.gguf")
+    _place_gguf(models_dir, "google/gemma-4-E2B-it-qat-q4_0-gguf/gemma-4-E2B-it-mmproj.gguf")
+    catalog = tmp_path / "models-list.yaml"
+    catalog.write_text(BACKFILL_MODELS_LIST + BACKFILL_MULTIMODAL_ENTRY)
+
+    hf_downloader.backfill_ootb_records(models_dir, str(catalog))
+
+    records = metadata_records(read_metadata(str(models_dir / "google" / "gemma-4-E2B-it-qat-q4_0-gguf")))
+    assert [(r["model_id"], r["files"]) for r in records] == [
+        ("llamacpp:gemma-4-E2B_q4_0-it", ["gemma-4-E2B_q4_0-it.gguf"]),
+        ("llamacpp:gemma-4-E2B_q4_0-it-multimodal", ["gemma-4-E2B_q4_0-it.gguf", "gemma-4-E2B-it-mmproj.gguf"]),
+    ]
+    assert "model_mmproj_url" in records[1]["inputs"]
 
 
 def test_backfill_leaves_recorded_and_undeclared_files_alone(tmp_path, monkeypatch):
@@ -1590,6 +1707,185 @@ def test_delete_drops_only_the_deleted_quantizations_record(tmp_path, monkeypatc
 
 
 # --------------------------------------------------------------------------- #
+# main(): a multimodal model over its installed text model
+#
+# The catalog declares gemma-4-E4B twice on the same GGUF: text only, and multimodal
+# with the projector next to it. Installing the multimodal one after the text one only
+# has the projector left to fetch, and must leave the text model installed and recorded
+# whatever happens to that fetch.
+# --------------------------------------------------------------------------- #
+GEMMA_REPO = "google/gemma-4-E4B-it-qat-q4_0-gguf"
+GEMMA_TEXT_FILE = "gemma-4-E4B_q4_0-it.gguf"
+GEMMA_MMPROJ_FILE = "gemma-4-E4B-it-mmproj.gguf"
+GEMMA_TEXT_URL = f"https://huggingface.co/{GEMMA_REPO}/blob/e998672c8018dd704e347d3b6843c112547244d1/{GEMMA_TEXT_FILE}"
+GEMMA_MMPROJ_URL = f"https://huggingface.co/{GEMMA_REPO}/blob/4b4a2c1d584be7264f87aac328a1bc739ce81b6c/{GEMMA_MMPROJ_FILE}"
+GEMMA_TEXT_ID = "llamacpp:gemma-4-E4B_q4_0-it"
+GEMMA_MULTIMODAL_ID = "llamacpp:gemma-4-E4B_q4_0-it-multimodal"
+
+
+@pytest.fixture
+def stub_hub_download(monkeypatch):
+    """Stub the Hub out for the URL syntax: record each file fetched, and create it."""
+    fetched: list[str] = []
+
+    def _download(*, repo_id, filename, local_dir, revision=None, tqdm_class=None):
+        fetched.append(filename)
+        Path(local_dir, filename).write_bytes(b"\0")
+
+    monkeypatch.setattr(hf_downloader, "validate_hub_source", lambda *args, **kwargs: None)
+    monkeypatch.setattr(hf_downloader, "hf_hub_download", _download)
+    monkeypatch.setattr(hf_downloader, "expected_size_mb", lambda *args, **kwargs: None)
+    return fetched
+
+
+def _download_gemma(monkeypatch, models_dir, *, multimodal):
+    """Run the download the catalog declares for one of the two gemma-4-E4B entries.
+
+    The entry is named by the ``model_id`` variable, which the record honours before
+    any catalog lookup: the image's models-list.yaml is not there to match against.
+    """
+    monkeypatch.setenv("model_id", GEMMA_MULTIMODAL_ID if multimodal else GEMMA_TEXT_ID)
+    argv = ["--model-url", GEMMA_TEXT_URL, "--output-dir", str(models_dir)]
+    if multimodal:
+        argv += ["--model-mmproj-url", GEMMA_MMPROJ_URL]
+    _run_main(monkeypatch, *argv)
+
+
+def test_multimodal_download_fetches_only_the_projector_over_the_installed_model(tmp_path, monkeypatch, stub_hub_download):
+    models_dir = tmp_path / "models"
+    _download_gemma(monkeypatch, models_dir, multimodal=False)
+
+    _download_gemma(monkeypatch, models_dir, multimodal=True)
+
+    assert stub_hub_download == [GEMMA_TEXT_FILE, GEMMA_MMPROJ_FILE]
+    repo = models_dir / GEMMA_REPO
+    assert (repo / GEMMA_TEXT_FILE).is_file()
+    assert (repo / GEMMA_MMPROJ_FILE).is_file()
+    assert not (repo / MARKER_NAME).exists()
+
+
+def test_multimodal_download_without_the_model_fetches_both(tmp_path, monkeypatch, stub_hub_download):
+    _download_gemma(monkeypatch, tmp_path / "models", multimodal=True)
+
+    assert stub_hub_download == [GEMMA_TEXT_FILE, GEMMA_MMPROJ_FILE]
+
+
+def test_projector_download_marker_names_only_the_projector(tmp_path, monkeypatch, stub_hub_download):
+    """The marker is what the listing reads as "downloading": the installed text model
+    must keep reading as installed while its projector is fetched next to it."""
+    models_dir = tmp_path / "models"
+    _download_gemma(monkeypatch, models_dir, multimodal=False)
+    repo = models_dir / GEMMA_REPO
+    seen: list[dict] = []
+
+    def _download(*, repo_id, filename, local_dir, revision=None, tqdm_class=None):
+        seen.append(read_marker(str(repo / MARKER_NAME)))
+        Path(local_dir, filename).write_bytes(b"\0")
+
+    monkeypatch.setattr(hf_downloader, "hf_hub_download", _download)
+    _download_gemma(monkeypatch, models_dir, multimodal=True)
+
+    assert [marker["file_patterns"] for marker in seen] == [[GEMMA_MMPROJ_FILE]]
+
+
+def test_a_failed_projector_download_keeps_the_installed_model(tmp_path, monkeypatch, stub_hub_download):
+    """The reported bug: a projector fetch that fails took the text model down with it."""
+    models_dir = tmp_path / "models"
+    _download_gemma(monkeypatch, models_dir, multimodal=False)
+    repo = models_dir / GEMMA_REPO
+
+    def _boom(**_kwargs):
+        raise OSError("connection reset")
+
+    monkeypatch.setattr(hf_downloader, "hf_hub_download", _boom)
+    with pytest.raises(OSError, match="connection reset"):
+        _download_gemma(monkeypatch, models_dir, multimodal=True)
+
+    assert (repo / GEMMA_TEXT_FILE).is_file()
+    assert not (repo / GEMMA_MMPROJ_FILE).exists()
+    assert not (repo / MARKER_NAME).exists()
+    assert [r["model_id"] for r in metadata_records(read_metadata(str(repo)))] == [GEMMA_TEXT_ID]
+
+
+def test_an_interrupted_projector_download_keeps_the_installed_model(tmp_path, monkeypatch, stub_hub_download):
+    """A run killed while fetching the projector leaves its marker; the next run cleans
+    up what that marker names, which must not be the text model."""
+    models_dir = tmp_path / "models"
+    _download_gemma(monkeypatch, models_dir, multimodal=False)
+    repo = models_dir / GEMMA_REPO
+    discard = hf_downloader.discard_incomplete_download
+
+    def _killed(**_kwargs):
+        raise KeyboardInterrupt("received signal 9")
+
+    # A SIGKILL mid-transfer: none of the run's own cleanup gets to run.
+    monkeypatch.setattr(hf_downloader, "hf_hub_download", _killed)
+    monkeypatch.setattr(hf_downloader, "discard_incomplete_download", lambda *args, **kwargs: None)
+    with pytest.raises(KeyboardInterrupt):
+        _download_gemma(monkeypatch, models_dir, multimodal=True)
+    assert (repo / MARKER_NAME).is_file()
+
+    # The next request for the text model finds the marker that run left behind.
+    monkeypatch.setattr(hf_downloader, "discard_incomplete_download", discard)
+    fetched: list[str] = []
+    monkeypatch.setattr(hf_downloader, "hf_hub_download", lambda **kwargs: fetched.append(kwargs["filename"]))
+    _download_gemma(monkeypatch, models_dir, multimodal=False)
+
+    assert fetched == [], "the text model is installed: nothing to fetch"
+    assert (repo / GEMMA_TEXT_FILE).is_file()
+    assert not (repo / MARKER_NAME).exists()
+
+
+def test_multimodal_download_keeps_the_text_models_record(tmp_path, monkeypatch, stub_hub_download):
+    """Both entries are installed on one GGUF, and each keeps its own record."""
+    models_dir = tmp_path / "models"
+    _download_gemma(monkeypatch, models_dir, multimodal=False)
+
+    _download_gemma(monkeypatch, models_dir, multimodal=True)
+
+    records = metadata_records(read_metadata(str(models_dir / GEMMA_REPO)))
+    assert [(r["model_id"], r["files"]) for r in records] == [
+        (GEMMA_TEXT_ID, [GEMMA_TEXT_FILE]),
+        (GEMMA_MULTIMODAL_ID, [GEMMA_MMPROJ_FILE, GEMMA_TEXT_FILE]),
+    ]
+
+
+def test_multimodal_download_reports_the_whole_model(tmp_path, monkeypatch, stub_hub_download, capsys):
+    """Only the projector is fetched, but the model installed is both files."""
+    models_dir = tmp_path / "models"
+    _download_gemma(monkeypatch, models_dir, multimodal=False)
+    read_events(capsys)
+
+    _download_gemma(monkeypatch, models_dir, multimodal=True)
+
+    done = read_events(capsys)[-1]
+    assert done["description"].startswith("Downloaded to:")
+    assert done["model_id"] == GEMMA_MULTIMODAL_ID
+    assert sorted(os.path.basename(a) for a in done["artifacts"]) == [GEMMA_MMPROJ_FILE, GEMMA_TEXT_FILE]
+
+
+def test_key_syntax_fetches_only_the_missing_projector(tmp_path, monkeypatch, stub_download):
+    """The same rule for a compact key: the installed quantization is not fetched again."""
+    models_dir, repo = _qwen_repo(tmp_path, "Qwen3-0.6B-Q4_0.gguf")
+
+    _run_main(monkeypatch, "--model-url", "llamacpp:unsloth/Qwen3-0.6B-GGUF:Q4_0:mmproj-F16.gguf", "--output-dir", str(models_dir))
+
+    assert stub_download == ["mmproj-F16.gguf"]
+    assert (repo / "Qwen3-0.6B-Q4_0.gguf").is_file()
+
+
+def test_deleting_the_multimodal_model_removes_both_files(tmp_path, monkeypatch, stub_hub_download):
+    """Deleting the multimodal entry takes the GGUF it shares with the text one along."""
+    models_dir = tmp_path / "models"
+    _download_gemma(monkeypatch, models_dir, multimodal=False)
+    _download_gemma(monkeypatch, models_dir, multimodal=True)
+
+    _run_main(monkeypatch, "--delete", "--model-url", GEMMA_TEXT_URL, "--model-mmproj-url", GEMMA_MMPROJ_URL, "--output-dir", str(models_dir))
+
+    assert not (models_dir / GEMMA_REPO).exists()
+
+
+# --------------------------------------------------------------------------- #
 # downloaded_size_mb
 # --------------------------------------------------------------------------- #
 def test_downloaded_size_mb_sums_the_files_like_the_listing(tmp_path):
@@ -1634,7 +1930,9 @@ def test_download_event_reports_the_recorded_id_not_the_location(tmp_path, monke
     """A file landing where the catalog declares some entry is not thereby that
     entry: the identity comes from the download's own record, so a request the
     models-list variables do not match stays user-configured and path-named."""
-    monkeypatch.setattr(hf_downloader, "catalog_gguf_declarations", lambda *a, **k: [("unsloth/Qwen3-0.6B-GGUF", None, "llamacpp:Qwen3-0.6B-Q3_K_S")])
+    monkeypatch.setattr(
+        hf_downloader, "catalog_gguf_declarations", lambda *a, **k: [GgufDeclaration("unsloth/Qwen3-0.6B-GGUF", None, "llamacpp:Qwen3-0.6B-Q3_K_S")]
+    )
     models_dir = tmp_path / "models"
     models_dir.mkdir()
 

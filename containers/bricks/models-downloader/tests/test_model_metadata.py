@@ -8,6 +8,7 @@ import json
 import os
 import re
 
+import pytest
 import yaml
 
 from common.model_metadata import (
@@ -418,8 +419,8 @@ def test_redownload_replaces_only_its_own_record(tmp_path):
 
 
 def test_a_new_id_claiming_the_same_file_replaces_the_stale_record(tmp_path):
-    """Two records must never both claim the same main file: whichever download
-    produced the file last is the one that describes it."""
+    """Two records must never both claim the same download: whichever produced the
+    files last is the one that describes them."""
     _write_quant(tmp_path, "Q4_0", ["Qwen3-0.6B-Q4_0.gguf"], model_id="llamacpp:old-name")
     _write_quant(tmp_path, "Q4_0", ["Qwen3-0.6B-Q4_0.gguf"], model_id="llamacpp:new-name")
 
@@ -438,6 +439,19 @@ def test_a_shared_mmproj_keeps_both_records(tmp_path):
         ["gemma-Q4_0.gguf", "mmproj-F16.gguf"],
         ["gemma-Q8_0.gguf", "mmproj-F16.gguf"],
     ]
+
+
+@pytest.mark.parametrize("multimodal_first", [False, True], ids=["text-first", "multimodal-first"])
+def test_a_text_and_a_multimodal_install_of_one_file_keep_both_records(tmp_path, multimodal_first):
+    """The catalog declares one GGUF twice, alone and with its projector: two models,
+    each with its own record, whichever of the two was installed first."""
+    text = ("Q4_0", ["gemma-Q4_0.gguf"], "llamacpp:gemma-Q4_0")
+    multimodal = ("Q4_0", ["gemma-Q4_0.gguf", "mmproj-F16.gguf"], "llamacpp:gemma-Q4_0-multimodal")
+    for quantization, files, model_id in (multimodal, text) if multimodal_first else (text, multimodal):
+        _write_quant(tmp_path, quantization, files, model_id=model_id)
+
+    records = metadata_records(read_metadata(str(tmp_path)))
+    assert sorted(r["model_id"] for r in records) == ["llamacpp:gemma-Q4_0", "llamacpp:gemma-Q4_0-multimodal"]
 
 
 def test_merge_keeps_a_record_that_names_no_files(tmp_path):
