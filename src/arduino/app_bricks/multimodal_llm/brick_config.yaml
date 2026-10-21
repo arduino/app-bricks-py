@@ -8,5 +8,5 @@ ai_frameworks_compatibility:
   - llamacpp
 variables:
 - name: LLAMA_ARG_CTX_SIZE
-  description: Context size
+  description: Context size (llama.cpp only)
   default_value: 16384
