@@ -34,7 +34,7 @@ class Modulino_Thermo(Modulino):
         """Initialize a Modulino_Thermo with the given I2C address.
 
         Args:
-            i2c_address (int): The I2C address of the Modulino_Thermo.
+            i2c_address (int): The I2C address of the Modulino_Thermo. Defaults to 0x44.
         """
         super().__init__("thermo", i2c_address )
 
@@ -97,6 +97,11 @@ class MovementSample:
 class Modulino_Movement(Modulino):
     """Class to handle a Modulino 'movement' sensor."""
     def __init__(self, i2c_address = 0x6A) -> None:
+        """Initialize the Modulino_Movement with the specified I2C address.
+
+        Args:
+            i2c_address (int): The I2C address of the Modulino_Movement. Defaults to 0x6A.
+        """
         super().__init__("movement", i2c_address )
 
     @override
@@ -159,8 +164,12 @@ class Modulino_Movement(Modulino):
 
 class Modulino_Buttons(Modulino):
     """Class to handle a Modulino Buttons."""
-    def __init__(self, i2c_address = 0x3E) -> None:
-        """Initialize the Modulino_Buttons with the specified I2C address."""
+    def __init__(self, i2c_address = 0xFF) -> None:
+        """Initialize the Modulino_Buttons with the specified I2C address.
+
+        Args:
+            i2c_address (int): The I2C address of the Modulino_Buttons. Defaults it will autoscan for the address.
+        """
         super().__init__("buttons", i2c_address )
 
     @override
@@ -227,11 +236,11 @@ class Modulino_Buttons(Modulino):
 
 class Modulino_Joystick(Modulino):
     """Class to handle a Modulino Joystick."""
-    def __init__(self, i2c_address = 0x2C) -> None:
+    def __init__(self, i2c_address = 0xFF) -> None:
         """Initialize the Modulino_Joystick with the given I2C address.
 
         Args:
-            i2c_address (int, optional): The I2C address of the joystick modulino. Defaults to 0x2C.
+            i2c_address (int, optional): The I2C address of the joystick modulino. Defaults it will autoscan for the address.
         """
         super().__init__("joystick", i2c_address )
     @override
@@ -290,7 +299,7 @@ class Modulino_Knob(Modulino):
         """Initialize the Modulino_Knob with the given I2C address.
 
         Args:
-            i2c_address (int, optional): The I2C address of the knob modulino. Defaults to 0xFF.
+            i2c_address (int, optional): The I2C address of the knob modulino. Defaults it will autoscan for the address.
         """
         super().__init__("knob", i2c_address )
 
