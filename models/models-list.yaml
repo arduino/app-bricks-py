@@ -2007,6 +2007,30 @@ models:
        source: "huggingface"
        source-model-id: "Qwen3.5-0.8B-Q4_0"
        source-model-url: "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF"
+ - "llamacpp:MiniCPM5-2B-Q4_K_M":
+    name : "MiniCPM5 2B"
+    description: >-
+      MiniCPM5 2B is a dense two billion parameter language model developed by OpenBMB,
+      built for on-device and resource-constrained deployment.
+      It supports English and Chinese and is strong at coding, mathematics, long-context understanding and tool use.
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:llm"
+        model_configuration:
+          GGML_HEXAGON_DEVICES: 1
+    deployment:
+      handler: "hf-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              model_url: "https://huggingface.co/openbmb/MiniCPM5-2B-GGUF/blob/2079a22f3beaa4e306449978533478fe0522f4b3/MiniCPM5-2B-Q4_K_M.gguf"
+              models_repository: "llamacpp"
+              model_directory: "openbmb/MiniCPM5-2B-GGUF"
+    metadata:
+      model_size_mb: 1489
+      source: "huggingface"
+      source-model-id: "MiniCPM5-2B-GGUF"
+      source-model-url: "https://huggingface.co/openbmb/MiniCPM5-2B-GGUF"
  - "ei:yolox-small-qnn-object-detection":
     name : "General purpose object detection - YoloX small"
     description: "General purpose object detection model based on YoloX-Small. This model is trained on the COCO dataset and can detect 80 different object classes. This version of the model is optimized for NPU acceleration on supported devices, providing faster inference times while maintaining accuracy."
