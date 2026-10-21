@@ -115,7 +115,7 @@ class VisionLanguageModel(LargeLanguageModel):
             TypeError: If `reasoning_effort` is not a ReasoningEffort, str, int, or None.
         """
         try:
-            return self._strip_think(super()._chat_invoke(message=message, images=images, reasoning_effort=reasoning_effort))
+            return super()._chat_invoke(message=message, images=images, reasoning_effort=reasoning_effort)
         except (openai.BadRequestError, openai.APIError) as e:
             self._handle_api_error(logger, e)
 
@@ -138,7 +138,7 @@ class VisionLanguageModel(LargeLanguageModel):
             AlreadyGenerating: If a streaming session is already active.
         """
         try:
-            return self._filter_think(super()._chat_stream_invoke(message=message, images=images))
+            return super()._chat_stream_invoke(message=message, images=images)
         except (openai.BadRequestError, openai.APIError) as e:
             self._handle_api_error(logger, e)
 
