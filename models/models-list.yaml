@@ -1923,11 +1923,10 @@ models:
         - ventunoq:
             variables:
               model_url: "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf/blob/347eef722ec7f151f37d1ef0b5c7c77d8de4efcb/gemma-4-E2B_q4_0-it.gguf"
-              model_mmproj_url: "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf/blob/675cff42a74c774d6cb76f76d8eacb49b48c9b93/gemma-4-E2B-it-mmproj.gguf"
               models_repository: "llamacpp"
               model_directory: "google/gemma-4-E2B-it-qat-q4_0-gguf"
     metadata:
-      model_size_mb: 4417
+      model_size_mb: 3194
       source: "huggingface"
       source-model-id: "gemma-4-E2B-it-qat-q4_0-gguf"
       source-model-url: "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf"
@@ -1951,15 +1950,14 @@ models:
         - ventunoq:
             variables:
               model_url: "https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf/blob/e998672c8018dd704e347d3b6843c112547244d1/gemma-4-E4B_q4_0-it.gguf"
-              model_mmproj_url: "https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf/blob/4b4a2c1d584be7264f87aac328a1bc739ce81b6c/gemma-4-E4B-it-mmproj.gguf"
               models_repository: "llamacpp"
               model_directory: "google/gemma-4-E4B-it-qat-q4_0-gguf"
     metadata:
-      model_size_mb: 6265
+      model_size_mb: 3194
       source: "huggingface"
       source-model-id: "gemma-4-E4B-it-qat-q4_0-gguf"
       source-model-url: "https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf"
- - "llamacpp:gemma-4-E2B-it-Q4_0":
+ - "llamacpp:gemma-4-E2B-it-Q4_0-multimodal":
     name : "Gemma 4 E2B Multimodal"
     description: >-
       Gemma 4 E2B is an efficient, open AI model developed by Google DeepMind, here in the Unsloth GGUF build.
@@ -1968,6 +1966,9 @@ models:
     supported_boards: ["ventunoq"]
     bricks:
       - id: "arduino:multimodal_llm"
+        model_configuration:
+          GGML_HEXAGON_DEVICES: 1
+      - id: "arduino:vlm"
         model_configuration:
           GGML_HEXAGON_DEVICES: 1
     deployment:
@@ -1980,10 +1981,38 @@ models:
               models_repository: "llamacpp"
               model_directory: "unsloth/gemma-4-E2B-it-GGUF"
     metadata:
-      model_size_mb: 3840
+      model_size_mb: 4136
       source: "huggingface"
       source-model-id: "gemma-4-E2B-it-GGUF"
       source-model-url: "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF"
+ - "llamacpp:gemma-4-E4B_q4_0-it-multimodal":
+    name : "Gemma 4 E4B"
+    description: >-
+      Gemma 4 E4B is an efficient, open AI model developed by Google DeepMind.
+      Activating an effective four billion parameters, it is engineered specifically for mobile and edge devices.
+      It's optimized for offline agentic workflows.
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:multimodal_llm"
+        model_configuration:
+          GGML_HEXAGON_DEVICES: 2
+      - id: "arduino:vlm"
+        model_configuration:
+          GGML_HEXAGON_DEVICES: 2
+    deployment:
+      handler: "hf-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              model_url: "https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf/blob/e998672c8018dd704e347d3b6843c112547244d1/gemma-4-E4B_q4_0-it.gguf"
+              model_mmproj_url: "https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf/blob/4b4a2c1d584be7264f87aac328a1bc739ce81b6c/gemma-4-E4B-it-mmproj.gguf"
+              models_repository: "llamacpp"
+              model_directory: "google/gemma-4-E4B-it-qat-q4_0-gguf"
+    metadata:
+      model_size_mb: 5862
+      source: "huggingface"
+      source-model-id: "gemma-4-E4B-it-qat-q4_0-gguf"
+      source-model-url: "https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf"      
  - "llamacpp:gemma-3-1b-it-Q4_0":
      name : "Gemma 3 1B"
      description: >-
@@ -2064,6 +2093,31 @@ models:
       source: "huggingface"
       source-model-id: "MiniCPM5-2B-GGUF"
       source-model-url: "https://huggingface.co/openbmb/MiniCPM5-2B-GGUF"
+ - "llamacpp:LFM2.5-8B-A1B-Q4_0":
+    name : "LFM2.5 8B A1B"
+    description: >-
+      LFM2.5 8B A1B is a hybrid mixture-of-experts model developed by Liquid AI, designed for on-device deployment.
+      It has 8.3 billion parameters in total, of which 1.5 billion are active per token.
+      It is built to power personal assistants that follow complex instructions and chain tool calls, and it supports
+      English, Arabic, Chinese, French, German, Japanese, Korean and Spanish.
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:llm"
+        model_configuration:
+          GGML_HEXAGON_DEVICES: 3
+    deployment:
+      handler: "hf-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              model_url: "https://huggingface.co/LiquidAI/LFM2.5-8B-A1B-GGUF/blob/49c14831707011e64d70b2ebd8462ba08d608434/LFM2.5-8B-A1B-Q4_0.gguf"
+              models_repository: "llamacpp"
+              model_directory: "LiquidAI/LFM2.5-8B-A1B-GGUF"
+    metadata:
+      model_size_mb: 4621
+      source: "huggingface"
+      source-model-id: "LFM2.5-8B-A1B-GGUF"
+      source-model-url: "https://huggingface.co/LiquidAI/LFM2.5-8B-A1B-GGUF"
  - "ei:yolox-small-qnn-object-detection":
     name : "General purpose object detection - YoloX small"
     description: "General purpose object detection model based on YoloX-Small. This model is trained on the COCO dataset and can detect 80 different object classes. This version of the model is optimized for NPU acceleration on supported devices, providing faster inference times while maintaining accuracy."
