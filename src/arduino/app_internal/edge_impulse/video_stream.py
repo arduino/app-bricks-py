@@ -11,6 +11,8 @@ iframe, so the iframe load event fires as it did with the old page, while the st
 completes a document.
 """
 
+from __future__ import annotations
+
 import colorsys
 import random
 import select
@@ -18,8 +20,7 @@ import socket
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import TYPE_CHECKING, Any
 
 import cv2
 import numpy as np
@@ -27,6 +28,9 @@ import numpy as np
 from arduino.app_internal.ei_inference import Box
 from arduino.app_utils.image.colors import color_difference
 from arduino.app_utils import Logger
+
+if TYPE_CHECKING:
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 logger = Logger("VideoStream")
 
@@ -249,6 +253,8 @@ class VideoStreamServer:
 
     def start(self) -> None:
         """Start serving in a background thread."""
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer  # loaded by the first server started, not by every import of the module
+
         stream = self
 
         class Handler(BaseHTTPRequestHandler):
