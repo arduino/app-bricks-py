@@ -177,6 +177,10 @@ class AudioDetector(EdgeImpulseRunnerFacade):
                         self._last_detected[keyword] = now
                         logger.debug(f"Invoking callback for keyword '{keyword}'.")
                         callback()
+                        # What the microphone heard while the callback ran is not classified: a callback
+                        # that takes long (a voice assistant answering) pauses the detection, and the
+                        # windows still holding the keyword must not trigger it again once it returns.
+                        self._buffer.flush()
                     else:
                         self._debounce_until = now + self._debounce_sec
         except Exception as e:

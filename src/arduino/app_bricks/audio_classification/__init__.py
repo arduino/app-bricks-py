@@ -48,6 +48,9 @@ class AudioClassification(AudioDetector):
     def on_detect(self, class_name: str, callback: Callable[[], None]) -> None:
         """Register a callback function to be invoked when a specific class is detected.
 
+        The callback runs in the detection thread, so detection pauses until it returns, and
+        the audio heard meanwhile is discarded.
+
         Args:
             class_name (str): The class to check for in the classification results.
                 Must match one of the classes defined in the loaded model.
