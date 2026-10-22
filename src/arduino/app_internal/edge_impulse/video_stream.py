@@ -22,14 +22,14 @@ import time
 import zlib
 from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import cv2
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
 from arduino.app_internal.ei_inference import Box
+from arduino.app_utils.image import label_font
 from arduino.app_utils.image.colors import color_difference
 from arduino.app_utils import Logger
 
@@ -44,7 +44,6 @@ EMBED_PAGE = b"""<!DOCTYPE html>
 <style>html,body{margin:0;height:100%}img{display:block;width:100%;height:100%;object-fit:contain}</style></head>
 <body><img src="/" alt="video"></body></html>
 """
-TEXT_FONT = Path(__file__).parent / "assets" / "OpenSans-SemiBold.ttf"
 TEXT_HEIGHT = 0.015  # the text of the chips as a share of the frame height: 12 px of a 720p video shown 1440 px wide
 MIN_TEXT_PX = 8
 
@@ -260,15 +259,10 @@ def _text_px(frame_height: int) -> int:
     return max(MIN_TEXT_PX, round(frame_height * TEXT_HEIGHT))
 
 
-@functools.lru_cache(maxsize=16)
-def _font(size: int) -> ImageFont.FreeTypeFont:
-    return ImageFont.truetype(str(TEXT_FONT), size)
-
-
 @functools.lru_cache(maxsize=1024)
 def _rendered(text: str, size: int) -> np.ndarray:
     """The text drawn in the chip font, as the coverage of every pixel in 0..1, one line high."""
-    font = _font(size)
+    font = label_font(size)
     ascent, descent = font.getmetrics()
     canvas = Image.new("L", (max(1, math.ceil(font.getlength(text))), ascent + descent), 0)
     ImageDraw.Draw(canvas).text((0, 0), text, font=font, fill=255)
