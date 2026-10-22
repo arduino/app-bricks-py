@@ -26,7 +26,6 @@ from typing import TYPE_CHECKING, Any
 
 import cv2
 import numpy as np
-from PIL import Image, ImageDraw
 
 from arduino.app_internal.ei_inference import Box
 from arduino.app_utils.image import label_font
@@ -262,6 +261,8 @@ def _text_px(frame_height: int) -> int:
 @functools.lru_cache(maxsize=1024)
 def _rendered(text: str, size: int) -> np.ndarray:
     """The text drawn in the chip font, as the coverage of every pixel in 0..1, one line high."""
+    from PIL import Image, ImageDraw  # loaded by the first chip drawn, that is once a viewer connects
+
     font = label_font(size)
     ascent, descent = font.getmetrics()
     canvas = Image.new("L", (max(1, math.ceil(font.getlength(text))), ascent + descent), 0)
