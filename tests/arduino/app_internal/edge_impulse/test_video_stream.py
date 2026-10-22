@@ -3,6 +3,8 @@
 # SPDX-License-Identifier: MPL-2.0
 
 import http.client
+import subprocess
+import sys
 import threading
 import urllib.error
 import urllib.request
@@ -190,6 +192,18 @@ def test_the_chip_text_follows_the_frame_height():
     assert _text_px(720) == 11, "12 px of a 720p video shown 1440 px wide, the size of the design"
     assert _text_px(1080) == 16
     assert _text_px(480) == MIN_TEXT_PX, "never smaller than the minimum"
+
+
+def test_a_video_brick_loads_pil_only_once_a_chip_is_drawn():
+    """App start time: PIL serves the chip text, so it is not imported before a viewer connects."""
+    probe = (
+        "import sys\nimport arduino.app_internal.edge_impulse.video\n"
+        "before = 'PIL.Image' in sys.modules\n"
+        "from arduino.app_internal.edge_impulse.video_stream import _rendered\n_rendered('Cup #1', 11)\n"
+        "print(before, 'PIL.Image' in sys.modules)"
+    )
+    result = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, timeout=120, check=True)
+    assert result.stdout.split() == ["False", "True"]
 
 
 def test_the_chip_text_renders_in_the_label_font():
