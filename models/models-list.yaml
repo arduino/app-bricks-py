@@ -2112,6 +2112,56 @@ models:
       source: "huggingface"
       source-model-id: "LFM2.5-8B-A1B-GGUF"
       source-model-url: "https://huggingface.co/LiquidAI/LFM2.5-8B-A1B-GGUF"
+ - "llamacpp:Qwen3.5-4B-Q4_K_S":
+    name : "Qwen 3.5 4B"
+    description: >-
+      Qwen 3.5 4B is a language model developed by Alibaba, designed to deliver efficient performance on edge devices.
+      With four billion parameters, it is a hybrid model in which only one layer in four keeps an attention cache,
+      so long conversations need little extra memory.
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:llm"
+        model_configuration:
+          GGML_HEXAGON_DEVICES: 2
+    deployment:
+      handler: "hf-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              model_url: "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/blob/35edb278feb3f797d270a605d9745cab09538c12/Qwen3.5-4B-Q4_K_S.gguf"
+              models_repository: "llamacpp"
+              model_directory: "unsloth/Qwen3.5-4B-GGUF"
+    metadata:
+      model_size_mb: 2471
+      source: "huggingface"
+      source-model-id: "Qwen3.5-4B-GGUF"
+      source-model-url: "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF"
+ - "llamacpp:Qwen3.5-4B-Q4_K_S-multimodal":
+    name : "Qwen 3.5 4B Multimodal"
+    description: >-
+      Qwen 3.5 4B is a language model developed by Alibaba, designed to deliver efficient performance on edge devices.
+      With four billion parameters, it is a hybrid model in which only one layer in four keeps an attention cache,
+      so long conversations need little extra memory.
+      It understands text and images.
+    supported_boards: ["ventunoq"]
+    bricks:
+      - id: "arduino:vlm"
+        model_configuration:
+          GGML_HEXAGON_DEVICES: 3
+    deployment:
+      handler: "hf-handler"
+      platforms:
+        - ventunoq:
+            variables:
+              model_url: "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/blob/35edb278feb3f797d270a605d9745cab09538c12/Qwen3.5-4B-Q4_K_S.gguf"
+              model_mmproj_url: "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/blob/b2413f923af33948a30ef771cdac7bc0f253bc97/mmproj-BF16.gguf"
+              models_repository: "llamacpp"
+              model_directory: "unsloth/Qwen3.5-4B-GGUF"
+    metadata:
+      model_size_mb: 3115
+      source: "huggingface"
+      source-model-id: "Qwen3.5-4B-GGUF"
+      source-model-url: "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF"
  - "ei:yolox-small-qnn-object-detection":
     name : "General purpose object detection - YoloX small"
     description: "General purpose object detection model based on YoloX-Small. This model is trained on the COCO dataset and can detect 80 different object classes. This version of the model is optimized for NPU acceleration on supported devices, providing faster inference times while maintaining accuracy."

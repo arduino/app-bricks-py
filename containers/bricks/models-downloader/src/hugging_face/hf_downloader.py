@@ -90,7 +90,9 @@ files it was fetching, never a sibling quantization that finished earlier, nor t
 of its own model that was already there. The shared ".arduino_metadata.yaml" follows suit:
 every download appends its own record (naming the files it fetched), and a delete drops
 only the records of the files it removed, so no quantization is ever described by
-another one's record.
+another one's record. The text model and the multimodal model of one GGUF each have
+their own record, and a delete of one of them goes by the records (``delete_model``):
+it removes only the files the other model, if the user downloaded it, does not need.
 
 After all files are downloaded, ``models.ini`` is written to ``<output-dir>``
 mapping each model name to its GGUF path, plus a ``<name>-multimodal`` section adding
@@ -128,14 +130,19 @@ from common.download_marker import MARKER_NAME, read_marker, write_marker
 from common.gguf_naming import catalog_gguf_declarations, declaration_covers, gguf_model_name, multimodal_model_name
 from common.model_size import paths_size_mb, size_mb
 from common.model_metadata import (
+    KIND_MULTIMODAL,
+    KIND_TEXT,
     ORIGIN_BUILTIN,
     ORIGIN_USER,
     file_record,
+    forget_model_record,
     identify_model,
     is_bookkeeping_name,
+    metadata_records,
     prune_metadata_records,
     read_metadata,
     record_for_file,
+    recorded_kinds,
     write_metadata,
 )
 from common.models_list import MODELS_LIST_PATH, _iter_platform_variables, load_models_list
@@ -466,10 +473,10 @@ def discard_incomplete_download(output_dir: str, base_dir: str, patterns: list[s
 def prune_emptied_repo_dir(output_dir: str, base_dir: str) -> bool:
     """Drop *output_dir* once its last GGUF is gone; return whether it was removed.
 
-    ``delete_matched_files`` unlinks the model files and prunes empty directories, but
-    the ".arduino_metadata.yaml" record it knows nothing about would keep the repo
-    directory alive as a ghost. Removing the whole directory only when no GGUF is left
-    means a sibling quantization is never touched.
+    ``delete_model`` unlinks the model files and prunes empty directories, but the
+    ".arduino_metadata.yaml" record left behind would keep the repo directory alive as
+    a ghost. Removing the whole directory only when no GGUF is left means a sibling
+    quantization is never touched.
     """
     if not os.path.isdir(output_dir):
         return False
@@ -1408,7 +1415,6 @@ def delete_matched_files(output_dir: str, models_base: str, allow_pattern: str, 
     After deletion, removes any empty subdirectories but never output_dir itself.
     """
     base = Path(output_dir)
-    models_base_path = Path(models_base)
     if not base.exists():
         emit_json_info(f"Directory does not exist, nothing to delete: {output_dir}")
         return
@@ -1416,6 +1422,78 @@ def delete_matched_files(output_dir: str, models_base: str, allow_pattern: str, 
     if not matched:
         emit_json_info(f"No files matching '{allow_pattern}' found in {output_dir}")
         return
+    delete_files(matched, output_dir, models_base, verbose)
+
+
+def projector_in_use(output_dir: str, projector: Path, going: list[Path]) -> bool:
+    """Whether a record of *output_dir* still needs *projector* for a GGUF that stays.
+
+    Every quantization of a repository shares the projector: the record of another
+    installed multimodal quantization names it next to a main file that is neither
+    gone nor *going* with this delete.
+    """
+    base = Path(output_dir)
+    name = projector.name
+    for record in metadata_records(read_metadata(output_dir)):
+        files = [f for f in record.get("files") or [] if isinstance(f, str)]
+        if not any(f.split("/")[-1] == name for f in files):
+            continue
+        for main in (f for f in files if "mmproj" not in f.split("/")[-1]):
+            path = base / main
+            if path.is_file() and path not in going:
+                return True
+    return False
+
+
+def delete_model(output_dir: str, models_base: str, allow_pattern: str, mmproj_allow_pattern: str | None, verbose: bool = False):
+    """Delete the model the patterns name, keeping what the other model of its GGUF needs.
+
+    A GGUF with a projector next to it is two models, downloaded and deleted one at a
+    time, and the records of the repository directory say which of the two the user
+    has (``recorded_kinds``). Deleting the multimodal model (the request names a
+    projector) keeps the GGUF when the text model was downloaded too and removes the
+    projector alone; deleting the text model while the multimodal one was downloaded
+    removes nothing. The deleted model's record goes either way, and a projector another
+    installed quantization's record names stays. A GGUF with no record at all — an
+    install the downloader never recorded — loses the files the patterns name.
+    """
+    base = Path(output_dir)
+    if not base.is_dir():
+        emit_json_info(f"Directory does not exist, nothing to delete: {output_dir}")
+        return
+    kind, other = (KIND_MULTIMODAL, KIND_TEXT) if mmproj_allow_pattern else (KIND_TEXT, KIND_MULTIMODAL)
+
+    def named(pattern: str) -> list[Path]:
+        # Unlike matching_files, a delete also names the quantizations no longer
+        # supported, so a model downloaded before that check existed stays removable.
+        return [p for p in model_files(output_dir) if matches_pattern(p.relative_to(base).as_posix(), pattern)]
+
+    records = read_metadata(output_dir)
+    going: list[Path] = []
+    ggufs = [p for p in named(allow_pattern) if not is_mmproj_file(p.name)]
+    if not ggufs:
+        emit_json_info(f"No files matching '{allow_pattern}' found in {output_dir}")
+    for gguf in ggufs:
+        rel = gguf.relative_to(base).as_posix()
+        if other in recorded_kinds(records, rel):
+            emit_json_info(f"Keeping {rel}: its {other} model stays installed")
+        else:
+            going.append(gguf)
+        forget_model_record(output_dir, rel, kind)
+    if mmproj_allow_pattern:
+        for projector in named(mmproj_allow_pattern):
+            if projector_in_use(output_dir, projector, going):
+                emit_json_info(f"Keeping {projector.relative_to(base).as_posix()}: another installed model uses it")
+            else:
+                going.append(projector)
+    if going:
+        delete_files(going, output_dir, models_base, verbose)
+
+
+def delete_files(matched: list[Path], output_dir: str, models_base: str, verbose: bool = False):
+    """Delete *matched* files, then any subdirectory left empty, but never output_dir itself."""
+    base = Path(output_dir)
+    models_base_path = Path(models_base)
     dirs_to_check: set[Path] = set()
     for f in matched:
         if verbose:
@@ -1750,11 +1828,9 @@ def main():
         refresh_listing_at_exit()
         if args.verbose:
             emit_json_info(f"Deleting files matching '{allow_pattern}' in {output_dir}")
-        delete_matched_files(output_dir, args.output_dir, allow_pattern, args.verbose)
-        if mmproj_allow_pattern:
-            if args.verbose:
-                emit_json_info(f"Deleting mmproj files matching '{mmproj_allow_pattern}' in {output_dir}")
-            delete_matched_files(output_dir, args.output_dir, mmproj_allow_pattern, args.verbose)
+        # The text model and the multimodal model of one GGUF are deleted one at a time:
+        # what goes depends on which of the two the records say the user downloaded.
+        delete_model(output_dir, args.output_dir, allow_pattern, mmproj_allow_pattern, args.verbose)
 
         if prune_emptied_repo_dir(output_dir, args.output_dir):
             if args.verbose:
@@ -1798,6 +1874,19 @@ def main():
             # it, so the two cannot disagree about a repository holding several
             # quantizations.
             identity = identify_model(metadata_env, fallback_model_id=fallback_model_id(source["model_type"], present, args.output_dir))
+            # The files can be there without this model's record: the projector landed
+            # with a sibling quantization, or the text model was deleted while the
+            # multimodal one stayed. Downloading it again is what records it.
+            kind = KIND_MULTIMODAL if mmproj_allow_pattern else KIND_TEXT
+            repo_dir = Path(output_dir).resolve()
+            recorded_files = sorted(Path(p).relative_to(repo_dir).as_posix() for p in present)
+            main_gguf = next((f for f in recorded_files if not is_mmproj_file(f)), None)
+            if main_gguf and kind not in recorded_kinds(read_metadata(output_dir), main_gguf):
+                refresh_listing_at_exit()
+                if write_metadata(output_dir, handler="hf-handler", env=metadata_env, identity=identity, files=recorded_files) is None:
+                    emit_json_error(f"Found {repo_id} installed, but its metadata record could not be written")
+                    raise SystemExit(1)
+                generate_models_ini(Path(args.output_dir))
             emit_json_info(
                 f"Model exists: {repo_id} ({installed})",
                 artifacts=present,

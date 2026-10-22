@@ -12,6 +12,10 @@ import pytest
 import yaml
 
 from common.model_metadata import (
+    KIND_MULTIMODAL,
+    KIND_TEXT,
+    forget_model_record,
+    recorded_kinds,
     METADATA_NAME,
     collect_inputs,
     identify_model,
@@ -583,6 +587,87 @@ def test_prune_is_a_noop_while_every_file_is_present(tmp_path):
 
     prune_metadata_records(str(tmp_path))
     assert (tmp_path / METADATA_NAME).read_text() == before
+
+
+# --------------------------------------------------------------------------- #
+# recorded_kinds / forget_model_record: the two models of one GGUF
+# --------------------------------------------------------------------------- #
+GGUF = "gemma-Q4_0.gguf"
+MMPROJ = "mmproj-F16.gguf"
+TEXT_ID = "llamacpp:gemma-Q4_0"
+MULTIMODAL_ID = "llamacpp:gemma-Q4_0-multimodal"
+
+
+def _records(model_dir):
+    return [(r["model_id"], r["files"]) for r in metadata_records(read_metadata(str(model_dir)))]
+
+
+@pytest.mark.parametrize(
+    ("records", "expected"),
+    [
+        ([], set()),
+        ([(TEXT_ID, [GGUF])], {KIND_TEXT}),
+        ([(MULTIMODAL_ID, [GGUF, MMPROJ])], {KIND_MULTIMODAL}),
+        ([(TEXT_ID, [GGUF]), (MULTIMODAL_ID, [GGUF, MMPROJ])], {KIND_TEXT, KIND_MULTIMODAL}),
+        # Recorded before the catalog split the GGUF into two models: both files under the text id.
+        ([(TEXT_ID, [GGUF, MMPROJ])], {KIND_TEXT, KIND_MULTIMODAL}),
+    ],
+    ids=["none", "text", "multimodal", "both", "legacy-both-under-text-id"],
+)
+def test_recorded_kinds_say_which_models_of_a_gguf_were_downloaded(tmp_path, records, expected):
+    for model_id, files in records:
+        _write_quant(tmp_path, "Q4_0", files, model_id=model_id)
+
+    assert recorded_kinds(read_metadata(str(tmp_path)), GGUF) == expected
+    assert recorded_kinds(read_metadata(str(tmp_path)), "other.gguf") == set()
+
+
+def test_forget_drops_only_the_record_of_the_forgotten_model(tmp_path):
+    _write_quant(tmp_path, "Q4_0", [GGUF], model_id=TEXT_ID)
+    _write_quant(tmp_path, "Q4_0", [GGUF, MMPROJ], model_id=MULTIMODAL_ID)
+
+    forget_model_record(str(tmp_path), GGUF, KIND_MULTIMODAL)
+    assert _records(tmp_path) == [(TEXT_ID, [GGUF])]
+
+    forget_model_record(str(tmp_path), GGUF, KIND_TEXT)
+    assert not (tmp_path / METADATA_NAME).exists()
+
+
+def test_forget_leaves_other_files_and_other_kinds_alone(tmp_path):
+    _write_quant(tmp_path, "Q4_0", [GGUF], model_id=TEXT_ID)
+    _write_quant(tmp_path, "Q8_0", ["gemma-Q8_0.gguf"], model_id="llamacpp:gemma-Q8_0")
+    before = (tmp_path / METADATA_NAME).read_text()
+
+    forget_model_record(str(tmp_path), GGUF, KIND_MULTIMODAL)  # never downloaded
+    assert (tmp_path / METADATA_NAME).read_text() == before
+
+    forget_model_record(str(tmp_path), GGUF, KIND_TEXT)
+    assert _records(tmp_path) == [("llamacpp:gemma-Q8_0", ["gemma-Q8_0.gguf"])]
+
+
+def test_forget_keeps_the_other_half_of_a_record_counting_for_both_models(tmp_path):
+    _write_quant(tmp_path, "Q4_0", [GGUF, MMPROJ], model_id=TEXT_ID)
+
+    forget_model_record(str(tmp_path), GGUF, KIND_MULTIMODAL)
+    assert _records(tmp_path) == [(TEXT_ID, [GGUF])]
+
+    _write_quant(tmp_path, "Q4_0", [GGUF, MMPROJ], model_id=TEXT_ID)
+    forget_model_record(str(tmp_path), GGUF, KIND_TEXT)
+    assert _records(tmp_path) == [(MULTIMODAL_ID, [GGUF, MMPROJ])]
+
+
+@pytest.mark.parametrize("multimodal", [False, True], ids=["text-download", "multimodal-download"])
+def test_recording_one_model_over_a_record_counting_for_both_keeps_the_other(tmp_path, multimodal):
+    """A download re-recording one model of a GGUF must not erase the other model a
+    pre-split record stands for."""
+    _write_quant(tmp_path, "Q4_0", [GGUF, MMPROJ], model_id=TEXT_ID)
+
+    if multimodal:
+        _write_quant(tmp_path, "Q4_0", [GGUF, MMPROJ], model_id=MULTIMODAL_ID)
+    else:
+        _write_quant(tmp_path, "Q4_0", [GGUF], model_id=TEXT_ID)
+
+    assert sorted(_records(tmp_path)) == [(TEXT_ID, [GGUF]), (MULTIMODAL_ID, [GGUF, MMPROJ])]
 
 
 # --------------------------------------------------------------------------- #

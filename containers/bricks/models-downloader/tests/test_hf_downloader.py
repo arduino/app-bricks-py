@@ -1874,15 +1874,118 @@ def test_key_syntax_fetches_only_the_missing_projector(tmp_path, monkeypatch, st
     assert (repo / "Qwen3-0.6B-Q4_0.gguf").is_file()
 
 
-def test_deleting_the_multimodal_model_removes_both_files(tmp_path, monkeypatch, stub_hub_download):
-    """Deleting the multimodal entry takes the GGUF it shares with the text one along."""
+def _delete_gemma(monkeypatch, models_dir, *, multimodal):
+    argv = ["--delete", "--model-url", GEMMA_TEXT_URL, "--output-dir", str(models_dir)]
+    if multimodal:
+        argv += ["--model-mmproj-url", GEMMA_MMPROJ_URL]
+    _run_main(monkeypatch, *argv)
+
+
+def _gemma_records(models_dir):
+    return [(r["model_id"], r["files"]) for r in metadata_records(read_metadata(str(models_dir / GEMMA_REPO)))]
+
+
+def test_deleting_the_multimodal_model_keeps_the_text_model_that_was_downloaded(tmp_path, monkeypatch, stub_hub_download):
+    """Both entries were downloaded: the multimodal delete takes only the projector."""
     models_dir = tmp_path / "models"
     _download_gemma(monkeypatch, models_dir, multimodal=False)
     _download_gemma(monkeypatch, models_dir, multimodal=True)
 
-    _run_main(monkeypatch, "--delete", "--model-url", GEMMA_TEXT_URL, "--model-mmproj-url", GEMMA_MMPROJ_URL, "--output-dir", str(models_dir))
+    _delete_gemma(monkeypatch, models_dir, multimodal=True)
+
+    repo = models_dir / GEMMA_REPO
+    assert (repo / GEMMA_TEXT_FILE).is_file()
+    assert not (repo / GEMMA_MMPROJ_FILE).exists()
+    assert _gemma_records(models_dir) == [(GEMMA_TEXT_ID, [GEMMA_TEXT_FILE])]
+
+
+def test_deleting_the_multimodal_model_alone_removes_both_files(tmp_path, monkeypatch, stub_hub_download):
+    """Only the multimodal entry was downloaded: nothing else needs the GGUF."""
+    models_dir = tmp_path / "models"
+    _download_gemma(monkeypatch, models_dir, multimodal=True)
+
+    _delete_gemma(monkeypatch, models_dir, multimodal=True)
 
     assert not (models_dir / GEMMA_REPO).exists()
+
+
+def test_deleting_the_text_model_keeps_the_files_the_multimodal_model_needs(tmp_path, monkeypatch, stub_hub_download):
+    """The multimodal model loads the same GGUF: the text delete removes nothing but its record."""
+    models_dir = tmp_path / "models"
+    _download_gemma(monkeypatch, models_dir, multimodal=False)
+    _download_gemma(monkeypatch, models_dir, multimodal=True)
+
+    _delete_gemma(monkeypatch, models_dir, multimodal=False)
+
+    repo = models_dir / GEMMA_REPO
+    assert (repo / GEMMA_TEXT_FILE).is_file()
+    assert (repo / GEMMA_MMPROJ_FILE).is_file()
+    assert _gemma_records(models_dir) == [(GEMMA_MULTIMODAL_ID, [GEMMA_MMPROJ_FILE, GEMMA_TEXT_FILE])]
+
+
+def test_deleting_the_text_model_alone_removes_its_file(tmp_path, monkeypatch, stub_hub_download):
+    models_dir = tmp_path / "models"
+    _download_gemma(monkeypatch, models_dir, multimodal=False)
+
+    _delete_gemma(monkeypatch, models_dir, multimodal=False)
+
+    assert not (models_dir / GEMMA_REPO).exists()
+
+
+def test_deleting_the_multimodal_model_recorded_before_the_split_keeps_the_text_model(tmp_path, monkeypatch, stub_hub_download):
+    """A download from before the catalog split recorded both files under the text
+    model's id (the shape found on the boards): it counts as both models."""
+    models_dir = tmp_path / "models"
+    monkeypatch.setenv("model_id", GEMMA_TEXT_ID)
+    _run_main(monkeypatch, "--model-url", GEMMA_TEXT_URL, "--model-mmproj-url", GEMMA_MMPROJ_URL, "--output-dir", str(models_dir))
+    assert _gemma_records(models_dir) == [(GEMMA_TEXT_ID, [GEMMA_MMPROJ_FILE, GEMMA_TEXT_FILE])]
+
+    _delete_gemma(monkeypatch, models_dir, multimodal=True)
+
+    repo = models_dir / GEMMA_REPO
+    assert (repo / GEMMA_TEXT_FILE).is_file()
+    assert not (repo / GEMMA_MMPROJ_FILE).exists()
+    assert _gemma_records(models_dir) == [(GEMMA_TEXT_ID, [GEMMA_TEXT_FILE])]
+
+
+def test_deleting_one_multimodal_quantization_keeps_the_projector_another_one_uses(tmp_path, monkeypatch, stub_download):
+    """Quantizations of a repository share the projector: it stays while a recorded
+    multimodal sibling is installed."""
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    repo = models_dir / "unsloth" / "Qwen3-0.6B-GGUF"
+    _run_main(monkeypatch, "--model-url", "llamacpp:unsloth/Qwen3-0.6B-GGUF:Q4_0:F16", "--output-dir", str(models_dir))
+    _run_main(monkeypatch, "--model-url", "llamacpp:unsloth/Qwen3-0.6B-GGUF:Q8_0:F16", "--output-dir", str(models_dir))
+    assert stub_download == ["*Q4_0*.gguf", "*mmproj*F16*.gguf", "*Q8_0*.gguf"]
+
+    _run_main(monkeypatch, "--delete", "--model-url", "llamacpp:unsloth/Qwen3-0.6B-GGUF:Q4_0:F16", "--output-dir", str(models_dir))
+
+    assert not (repo / "Q4_0.gguf").exists()
+    assert (repo / "Q8_0.gguf").is_file()
+    assert (repo / "mmprojF16.gguf").is_file()
+    assert [r["files"] for r in metadata_records(read_metadata(str(repo)))] == [["Q8_0.gguf", "mmprojF16.gguf"]]
+
+
+def test_asking_for_the_installed_files_again_records_the_missing_model(tmp_path, monkeypatch, stub_hub_download, exit_refreshes):
+    """The projector is already next to the recorded text model (copied by hand, or
+    left by a sibling): the multimodal download fetches nothing, records it, and
+    refreshes the listing that now has one more installed model."""
+    import list_models
+
+    models_dir = tmp_path / "models"
+    _download_gemma(monkeypatch, models_dir, multimodal=False)
+    (models_dir / GEMMA_REPO / GEMMA_MMPROJ_FILE).write_bytes(b"\0")
+    exit_refreshes.clear()
+    monkeypatch.setattr(list_models, "_REFRESH_AT_EXIT", False)
+
+    _download_gemma(monkeypatch, models_dir, multimodal=True)
+
+    assert stub_hub_download == [GEMMA_TEXT_FILE]
+    assert _gemma_records(models_dir) == [
+        (GEMMA_TEXT_ID, [GEMMA_TEXT_FILE]),
+        (GEMMA_MULTIMODAL_ID, [GEMMA_MMPROJ_FILE, GEMMA_TEXT_FILE]),
+    ]
+    assert len(exit_refreshes) == 1
 
 
 # --------------------------------------------------------------------------- #

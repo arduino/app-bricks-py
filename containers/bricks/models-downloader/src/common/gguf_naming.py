@@ -45,14 +45,10 @@ models to backfill.
 
 from typing import NamedTuple
 
-from common.model_metadata import ORIGIN_USER
+from common.model_metadata import MULTIMODAL_SUFFIX, ORIGIN_USER
 from common.models_list import MODELS_LIST_PATH, _iter_platform_variables, get_model_subdir, load_models_list
 
 GGUF_SUFFIX = ".gguf"
-
-# What turns the name of a text model into the name of the same GGUF loaded with its
-# multimodal projector.
-MULTIMODAL_SUFFIX = "-multimodal"
 
 
 def multimodal_model_name(name):

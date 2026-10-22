@@ -8,7 +8,9 @@ Reads models-list.yaml and checks whether each model with a deployment
 section is present under /models (or a custom base path). GGUF models found under
 /models/llamacpp that no entry declares are listed too, since any Hugging Face
 repository can be downloaded ad hoc; ``model_origin`` says which of the two a listed
-model is ("built_in" or "user").
+model is ("built_in" or "user"). A GGUF with a projector next to it is two models,
+and which of them is installed also depends on its download records
+(``find_llamacpp_models``).
 
 Usage:
     python list_models.py
@@ -53,8 +55,11 @@ from common.gguf_naming import (
     multimodal_model_name,
 )
 from common.model_metadata import (
+    KIND_MULTIMODAL,
+    KIND_TEXT,
     ORIGIN_BUILTIN,
     ORIGIN_USER,
+    file_kinds,
     file_record,
     is_bookkeeping_name,
     read_metadata,
@@ -410,6 +415,10 @@ def find_llamacpp_models(models_base_dir, declarations=()):
     standalone models but the multimodal projector of the main GGUF in the same
     directory, which makes that GGUF two models — the text model, the file alone, and
     the multimodal model (``multimodal_model_name``), the file with the projector.
+    Which of the two is installed is decided by the download records of the file
+    (``file_kinds``): a model whose files are there but was never downloaded — the
+    text model deleted while the multimodal one stayed, a projector copied by hand —
+    is listed as not installed. A GGUF without any record is installed by its files.
 
     Models are named with ``gguf_model_name`` from their ".arduino_metadata.yaml"
     download record, mirroring the models.ini sections: the path-qualified name for
@@ -456,6 +465,11 @@ def find_llamacpp_models(models_base_dir, declarations=()):
             # directory is shared by every quantization of a repository: the file is
             # described by its own download's record, never a sibling's.
             record = file_record(full_path, llamacpp_dir)
+            # Which of the two models the records say were downloaded: a model whose
+            # files are there but was never downloaded (the text model deleted while
+            # the multimodal one stayed, a projector copied by hand) is not installed.
+            # A GGUF without any record is installed by its files alone.
+            kinds = file_kinds(full_path, llamacpp_dir)
             # The text model, then the multimodal one when a projector is there: their
             # files are summed in bytes, like the downloader sizes the same files.
             models = [(False, [full_path])] + ([(True, [full_path, mmproj_path])] if mmproj_path else [])
@@ -463,6 +477,8 @@ def find_llamacpp_models(models_base_dir, declarations=()):
                 downloading = marker is not None and any(marker_covers_file(marker, os.path.basename(p)) for p in model_files)
                 if downloading and multimodal == marker_multimodal:
                     marker_listed = True
+                kind = KIND_MULTIMODAL if multimodal else KIND_TEXT
+                installed = not downloading and (not kinds or kind in kinds)
                 model_name = gguf_model_name(rel_path, record)
                 if record is None and downloading:
                     # Landed by a download still in flight: its record is written last,
@@ -475,11 +491,12 @@ def find_llamacpp_models(models_base_dir, declarations=()):
                 disk_size_mb = size_mb(paths_size_bytes(model_files))
                 # The text model's record, the multimodal one's, when each has its own;
                 # the multimodal model never takes the text record, whose inputs name
-                # no projector and would flag it outdated.
-                if multimodal:
-                    own_record = file_record(full_path, llamacpp_dir, multimodal=True)
-                else:
-                    own_record = file_record(full_path, llamacpp_dir, multimodal=False) or record
+                # no projector and would flag it outdated. A record from before the
+                # split names the projector under the text id and counts for the text
+                # model too (see model_metadata.recorded_kinds).
+                own_record = file_record(full_path, llamacpp_dir, multimodal=multimodal)
+                if own_record is None and not multimodal and KIND_TEXT in kinds:
+                    own_record = record
                 entry = {
                     "id": f"llamacpp:{model_name}",
                     "name": model_name,
@@ -490,14 +507,14 @@ def find_llamacpp_models(models_base_dir, declarations=()):
                     # models-list.yaml entry, which makes it a curated model instead.
                     "model_origin": ORIGIN_USER,
                     "path": full_path,
-                    "installed": not downloading,
+                    "installed": installed,
                     "downloading": downloading,
-                    "size_mb": listed_size_mb(not downloading, disk_size_mb, None, marker.get("size_mb") if downloading and marker else None),
+                    "size_mb": listed_size_mb(installed, disk_size_mb, None, marker.get("size_mb") if downloading and marker else None),
                     "_rel_dir": rel_dir,
                     "_filename": f,
                     "_multimodal": multimodal,
                 }
-                if not downloading and disk_size_mb is not None:
+                if installed and disk_size_mb is not None:
                     entry["disk_size_mb"] = disk_size_mb
                 if multimodal:
                     entry["mmproj"] = mmproj_path

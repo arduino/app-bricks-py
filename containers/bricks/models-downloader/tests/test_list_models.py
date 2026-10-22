@@ -1627,6 +1627,45 @@ def test_a_fresh_multimodal_download_reads_as_the_multimodal_model_downloading(t
     assert listed[E4B_TEXT_ID]["installed"] is False
 
 
+def test_the_text_model_deleted_while_the_multimodal_stays_is_not_installed(tmp_path):
+    """Its GGUF is still there, needed by the multimodal model, but the records say only
+    the multimodal one was downloaded: the listing must not say the text model is."""
+    listed = _e4b_listing(tmp_path, E4B_TEXT, E4B_MMPROJ, records=[E4B_MULTIMODAL_RECORD])
+
+    text, multimodal = listed[E4B_TEXT_ID], listed[E4B_MULTIMODAL_ID]
+    assert text["installed"] is False
+    assert "disk_size_mb" not in text
+    assert text["size_mb"] == 4917.0  # the declared size, as for any model not installed
+    assert "download_metadata" not in text
+    assert multimodal["installed"] is True
+    assert multimodal["download_metadata"]["model_id"] == E4B_MULTIMODAL_ID
+
+
+def test_a_projector_next_to_the_text_model_does_not_install_the_multimodal_one(tmp_path):
+    """The projector is on disk (copied by hand) but only the text model was downloaded."""
+    listed = _e4b_listing(tmp_path, E4B_TEXT, E4B_MMPROJ, records=[E4B_TEXT_RECORD])
+
+    assert listed[E4B_TEXT_ID]["installed"] is True
+    assert listed[E4B_MULTIMODAL_ID]["installed"] is False
+    assert "download_metadata" not in listed[E4B_MULTIMODAL_ID]
+
+
+def test_a_record_from_before_the_split_installs_both_models(tmp_path):
+    """Both files under the text id, as the boards downloaded before the catalog split."""
+    listed = _e4b_listing(tmp_path, E4B_TEXT, E4B_MMPROJ, records=[(E4B_TEXT_ID, [E4B_TEXT, E4B_MMPROJ], E4B_MULTIMODAL_ENV)])
+
+    assert listed[E4B_TEXT_ID]["installed"] is True
+    assert listed[E4B_TEXT_ID]["download_metadata"]["model_id"] == E4B_TEXT_ID
+    assert listed[E4B_MULTIMODAL_ID]["installed"] is True
+
+
+def test_a_gguf_without_records_is_installed_by_its_files(tmp_path):
+    listed = _e4b_listing(tmp_path, E4B_TEXT, E4B_MMPROJ)
+
+    assert listed[E4B_TEXT_ID]["installed"] is True
+    assert listed[E4B_MULTIMODAL_ID]["installed"] is True
+
+
 def test_an_ad_hoc_gguf_with_a_projector_lists_as_its_two_models(tmp_path):
     """The ids match what the downloader reports for the same files (fallback_model_id)."""
     from hugging_face.hf_downloader import fallback_model_id
