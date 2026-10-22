@@ -26,6 +26,9 @@ class MultimodalLanguageModel(LargeLanguageModel):
     """
 
     _logger = logger
+    # Each turn would otherwise resend, and the runner re-encode, the images and audio of
+    # every earlier turn: only the latest turn with media keeps them in the history.
+    _latest_media_only = True
 
     def __init__(
         self,
@@ -162,8 +165,11 @@ class MultimodalLanguageModel(LargeLanguageModel):
 
         Configures the Brick to retain a window of previous messages, allowing the
         AI to maintain context across multiple interactions. An optional persistence
-        backend stores the history so it can resume across restarts. Images and audio
-        are kept in the history as base64 data, so long histories of media grow large.
+        backend stores the history so it can resume across restarts. The text of every
+        turn is kept, but only the latest message with images or audio keeps them: in
+        earlier messages each image becomes the text "[image]" and each audio clip
+        "[audio]". The persistence backend stores the placeholders only, so after a
+        restart no media is resent.
 
         Args:
             max_messages (int): The maximum number of messages.

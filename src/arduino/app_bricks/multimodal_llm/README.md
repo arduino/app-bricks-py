@@ -116,7 +116,7 @@ def answer_about_frame(frame_bytes: bytes, question_wav: bytes) -> str:
 
 ### Enable Conversation Memory
 
-Memory is off by default. Use `with_memory()` when follow-up prompts should keep recent context across calls. Pass `persistence=True` to retain memory across restarts: this uses the `SQLStore` brick internally, so no extra setup is required. Images and audio are stored in the history too, so keep the window small.
+Memory is off by default. Use `with_memory()` when follow-up prompts should keep recent context across calls. Pass `persistence=True` to retain memory across restarts: this uses the `SQLStore` brick internally, so no extra setup is required. The text of every turn stays in the history, but only the latest message with images or audio keeps them: in earlier messages each image becomes the text `[image]` and each audio clip `[audio]`. Persisted history stores the placeholders only.
 
 ```python
 from arduino.app_bricks.multimodal_llm import MultimodalLanguageModel
@@ -150,7 +150,7 @@ The Brick is initialized with the following parameters:
 - **`chat(message, images=None, audio=None, reasoning_effort=None)`**: Sends a prompt with optional images and audio, then returns the complete generated response as a string. `reasoning_effort` optionally sets how much a reasoning model thinks before answering, as a discrete level or an integer token budget, when the local runner supports it.
 - **`chat_stream(message, images=None, audio=None)`**: Sends a prompt with optional images and audio, then yields generated text chunks as they arrive.
 - **`stop_stream()`**: Requests cancellation of the active streaming response.
-- **`with_memory(max_messages=0, persistence=None)`**: Enables conversational memory for the instance. `persistence=True` enables persistence with a default database/thread; pass a `MessagePersistence` (importable as `from arduino.app_bricks.cloud_llm.memory import MessagePersistence`) for full control. Pass `max_messages=0` to disable history.
+- **`with_memory(max_messages=0, persistence=None)`**: Enables conversational memory for the instance. `persistence=True` enables persistence with a default database/thread; pass a `MessagePersistence` (importable as `from arduino.app_bricks.cloud_llm.memory import MessagePersistence`) for full control. Pass `max_messages=0` to disable history. Only the latest message with images or audio keeps them; earlier ones keep `[image]` and `[audio]` placeholders.
 - **`clear_memory()`**: Clears the active conversation history.
 - **`list_models()`**: Returns the model identifiers available on the local inference service.
 - **`get_client()`**: Returns the underlying LangChain chat model, or the `Runnable` that binds it to the registered tools when `tools` are set.

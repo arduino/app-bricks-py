@@ -211,3 +211,24 @@ def test_stop_stream_interrupts_generation(brick):
         brick.stop_stream()
 
     assert chunks == ["a"]
+
+
+def _request_parts(request) -> list[list[str]]:
+    """The content part types of each user message of a request."""
+    return [[p["type"] for p in m.content] if isinstance(m.content, list) else ["str"] for m in request if isinstance(m, HumanMessage)]
+
+
+def test_memory_resends_only_the_latest_turn_with_media(brick):
+    """Text turns keep the latest image; a new image replaces the earlier one with a placeholder."""
+    brick.with_memory(max_messages=10)
+    brick._model = RecordingModel(reply="ok")
+
+    brick.chat("What is it?", images=[JPEG])
+    brick.chat("What colour is it?")
+    brick.chat("And this one?", images=[JPEG], audio=[_pcm()])
+
+    first, second, third = brick._model.inputs
+    assert _request_parts(first) == [["image_url", "text"]]
+    assert _request_parts(second) == [["image_url", "text"], ["str"]]
+    assert _request_parts(third) == [["text", "text"], ["str"], ["image_url", "input_audio", "text"]]
+    assert third[0].content[0] == {"type": "text", "text": "[image]"}

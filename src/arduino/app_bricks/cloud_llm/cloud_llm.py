@@ -29,7 +29,7 @@ from .models import (
     ANTHROPIC_DEFAULT_THINKING_BUDGET,
     ANTHROPIC_EFFORT_MAP,
 )
-from .memory import MessagePersistence, SQLMessagePersistence, WindowedChatMessageHistory
+from .memory import MessagePersistence, SQLMessagePersistence, WindowedChatMessageHistory, keep_latest_media
 
 DEFAULT_MEMORY = 10
 
@@ -81,6 +81,11 @@ class CloudLLM:
     """
 
     _logger = logger
+
+    # Whether the conversation history keeps the images and audio of the latest turn that
+    # carries them only, replacing earlier ones with text placeholders (see
+    # WindowedChatMessageHistory). Off: every turn keeps its media.
+    _latest_media_only = False
 
     def __init__(
         self,
@@ -260,6 +265,7 @@ class CloudLLM:
             k=max_messages,
             system_message=self._system_prompt,
             store=store,
+            latest_media_only=self._latest_media_only,
         )
 
         return self
@@ -288,7 +294,6 @@ class CloudLLM:
             logger.info(f"Initializing model {self._model_name}...")
             self._model_loaded = True
 
-        messages = self._history.get_messages()
         audio = as_audio_list(audio)
         if images or audio:
             # Media parts are placed before the text: multimodal models are trained on
@@ -306,7 +311,10 @@ class CloudLLM:
         else:
             message = HumanMessage(content=user_input)
 
-        messages.append(message)
+        messages = self._history.get_messages() + [message]
+        if self._latest_media_only:
+            # A new turn with media replaces the media the history still sends.
+            messages = keep_latest_media(messages)
         self._history.add_messages([message])
 
         return messages
