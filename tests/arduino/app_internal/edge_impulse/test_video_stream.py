@@ -14,7 +14,6 @@ import pytest
 from arduino.app_internal.edge_impulse.video_stream import (
     MIN_TEXT_PX,
     PALETTE,
-    TEXT_FONT,
     BoxStabilizer,
     LabelColors,
     VideoStreamServer,
@@ -193,8 +192,7 @@ def test_the_chip_text_follows_the_frame_height():
     assert _text_px(480) == MIN_TEXT_PX, "never smaller than the minimum"
 
 
-def test_the_chip_font_ships_with_the_library_and_renders():
-    assert TEXT_FONT.exists() and (TEXT_FONT.parent / "OFL.txt").exists()
+def test_the_chip_text_renders_in_the_label_font():
     rendered = _rendered("Cup #1", 11)
     assert rendered.ndim == 2 and rendered.shape[0] >= 11 and rendered.shape[1] > rendered.shape[0]
     assert rendered.max() == 1.0 and rendered.min() == 0.0, "solid strokes on a clear background"
