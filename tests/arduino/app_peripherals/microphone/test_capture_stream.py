@@ -207,6 +207,34 @@ class TestAudioStreaming:
         # Stream should eventually stop (give it time to detect stop)
         time.sleep(0.01)
 
+    def test_stream_ends_when_stopped_while_reading(self):
+        """A stop from another thread landing between the started check and the read (an App
+        shutting a brick down while its loop reads) ends the stream instead of raising."""
+        mic = MockMicrophone()
+        mic.start()
+        read = mic.capture
+
+        def stop_then_read():
+            mic.stop()
+            return read()
+
+        mic.capture = stop_then_read
+
+        assert list(mic.stream()) == []
+
+    def test_stream_still_raises_read_errors_of_a_started_microphone(self):
+        mic = MockMicrophone()
+        mic.start()
+
+        def failing_read():
+            raise MicrophoneReadError("device gone")
+
+        mic.capture = failing_read
+
+        with pytest.raises(MicrophoneReadError, match="device gone"):
+            next(mic.stream())
+        mic.stop()
+
     def test_stream_skips_none_values(self):
         """Test that stream skips None values without yielding them."""
         mic = MockMicrophone()

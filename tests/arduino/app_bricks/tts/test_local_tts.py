@@ -548,3 +548,84 @@ def test_synthesis_streams_from_a_real_http_server(monkeypatch):
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_speak_stream_speaks_each_sentence_while_the_text_still_arrives(monkeypatch):
+    speaker = BlockingSpeaker(buffer_size=4)
+    speaker.release_first_chunk.set()
+    post_calls = []
+    first_synthesized = threading.Event()
+
+    def post_response(url, json, **kwargs):
+        post_calls.append(json["text"])
+        first_synthesized.set()
+        return FakeResponse(content=np.arange(4, dtype=np.int16).tobytes())
+
+    tts = make_tts(monkeypatch, speaker, post_response)
+
+    def answer():
+        yield "Hello wor"
+        yield "ld. How"
+        # The first sentence is complete: it is being spoken before the rest is generated.
+        assert first_synthesized.wait(timeout=2)
+        yield " are you?\nFine"
+
+    spoken = tts.speak_stream(answer())
+
+    assert spoken == "Hello world. How are you? Fine"
+    assert post_calls == ["Hello world.", "How are you?", "Fine"]
+    assert not tts.is_speaking()
+
+
+def test_speak_stream_without_text_says_nothing(monkeypatch):
+    post_calls = []
+
+    def post_response(url, json, **kwargs):
+        post_calls.append(json["text"])
+        return FakeResponse(content=b"")
+
+    tts = make_tts(monkeypatch, BlockingSpeaker(), post_response)
+
+    assert tts.speak_stream(iter(["", "  ", "\n"])) == ""
+    assert post_calls == []
+
+
+def test_speak_stream_stops_reading_the_text_after_cancel(monkeypatch):
+    speaker = BlockingSpeaker(buffer_size=4)
+    speaker.release_first_chunk.set()
+    post_calls = []
+
+    def post_response(url, json, **kwargs):
+        post_calls.append(json["text"])
+        return FakeResponse(content=np.arange(4, dtype=np.int16).tobytes())
+
+    tts = make_tts(monkeypatch, speaker, post_response)
+    read = []
+
+    def answer():
+        yield "One. "
+        tts.cancel()
+        read.append("after cancel")
+        yield "Two. "
+        read.append("never read")
+        yield "Three."
+
+    spoken = tts.speak_stream(answer())
+
+    assert spoken == "One."
+    assert read == ["after cancel"]
+    assert "Two." not in post_calls and "Three." not in post_calls
+
+
+def test_wait_until_done_waits_for_queued_speech(monkeypatch):
+    speaker = BlockingSpeaker(buffer_size=4)
+    pcm_audio = np.arange(12, dtype=np.int16)
+    tts = make_tts(monkeypatch, speaker, lambda url, json, **kwargs: FakeResponse(content=pcm_audio.tobytes()))
+
+    tts.speak("hello", block=False)
+    assert speaker.first_chunk_written.wait(timeout=2)
+
+    assert tts.wait_until_done(timeout=0.05) is False
+    speaker.release_first_chunk.set()
+    assert tts.wait_until_done(timeout=2) is True
+    assert not tts.is_speaking()

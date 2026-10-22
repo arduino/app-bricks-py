@@ -14,6 +14,7 @@ import numpy as np
 
 from ..audio_format import FormatPacked, FormatPlain, parse_format
 from .errors import MicrophoneConfigError, MicrophoneOpenError, MicrophoneReadError
+from .utils import SpeechSegmenter
 from arduino.app_utils import Logger, peripheral
 
 logger = Logger("Microphone")
@@ -209,12 +210,19 @@ class BaseMicrophone(ABC):
         Continuously capture audio chunks from the microphone.
 
         This is a generator that yields audio chunks continuously while the microphone is started.
+        It ends when the microphone is stopped, also when the stop lands while a chunk is
+        being read.
 
         Yields:
             np.ndarray: Audio chunks as numpy arrays.
         """
         while self.is_started():
-            chunk = self.capture()
+            try:
+                chunk = self.capture()
+            except MicrophoneReadError:
+                if self.is_started():
+                    raise
+                return  # stopped by another thread between the check above and the read
             if chunk is not None:
                 yield chunk
             else:
@@ -332,6 +340,65 @@ class BaseMicrophone(ABC):
         """
         pcm_data = self.record_pcm(duration)
         return self._pcm_to_wav(pcm_data)
+
+    def record_until_pause(
+        self,
+        pause_s: float = 1.0,
+        max_s: float = 10.0,
+        min_speech_s: float = 0.3,
+        timeout_s: float = 5.0,
+        wait_while: Callable[[], bool] | None = None,
+    ) -> np.ndarray | None:
+        """
+        Record what the user says, until they pause, and return it as raw PCM.
+
+        Meant for a spoken request: the recording holds everything read from the start,
+        and ends at the first pause of at least ``pause_s`` after ``min_speech_s`` of
+        speech, or ``max_s`` after the speech began. Pauses are told from speech by a
+        :class:`SpeechSegmenter`, which adapts to the noise of the room.
+
+        Args:
+            pause_s (float): Length of the pause that ends the recording, in seconds. Default: 1.0.
+            max_s (float): Longest speech recorded, from its start, in seconds. Default: 10.0.
+            min_speech_s (float): Speech needed for a recording, in seconds: shorter sounds,
+                like a click or a cough, are not one. Default: 0.3.
+            timeout_s (float): How long to wait for speech, in seconds: None is returned when
+                it passes without ``min_speech_s`` of speech. Default: 5.0.
+            wait_while (Callable[[], bool] | None): Called for each chunk read; while it returns
+                True the chunk is neither recorded nor timed, it only teaches the pause detector
+                the noise of the room. Pass ``TextToSpeech.is_speaking`` to start recording when
+                a spoken prompt ends. Default: None, record from the first chunk.
+
+        Returns:
+            np.ndarray | None: The recording in raw ALSA PCM format, like ``record_pcm()``,
+                or None when nobody spoke.
+
+        Raises:
+            MicrophoneReadError: If the microphone is not started.
+            ValueError: If a duration is not > 0.
+        """
+        if min(pause_s, max_s, min_speech_s, timeout_s) <= 0:
+            raise ValueError("Durations must be > 0")
+        if not self.is_started():
+            raise MicrophoneReadError(f"Attempted to read from {self.name} before starting it.")
+
+        segmenter = SpeechSegmenter(pause_s=pause_s, max_s=max_s, min_speech_s=min_speech_s)
+        chunks: list[np.ndarray] = []
+        listened_s = 0.0
+        for chunk in self.stream():
+            if wait_while is not None and wait_while():
+                segmenter.detector.update(chunk, self.sample_rate, self.channels, self.format_is_packed)
+                continue
+            chunks.append(chunk)
+            listened_s += chunk.size / (self.sample_rate * self.channels)
+            if segmenter.update(chunk, self.sample_rate, self.channels, self.format_is_packed):
+                break
+            if segmenter.speech_s < min_speech_s and listened_s >= timeout_s:
+                return None
+        # Also reached when the microphone is stopped while recording.
+        if segmenter.speech_s < min_speech_s:
+            return None
+        return np.concatenate(chunks)
 
     def _pcm_to_wav(self, pcm_audio: np.ndarray) -> np.ndarray:
         """

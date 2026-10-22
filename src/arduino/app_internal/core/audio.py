@@ -139,11 +139,12 @@ class AudioDetector(EdgeImpulseRunnerFacade):
         try:
             for chunk in self._mic.stream():
                 self._buffer.push(chunk)
-        except StopIteration:
-            raise
         except Exception:
             logger.error("Error reading microphone")
             raise
+        # The stream ends when the microphone is stopped, by stop() or by the App shutting
+        # the brick down: there is nothing left to read.
+        raise StopIteration
 
     @brick.loop
     def _inference_loop(self) -> None:
