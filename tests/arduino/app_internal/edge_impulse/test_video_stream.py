@@ -12,7 +12,7 @@ import urllib.request
 import numpy as np
 import pytest
 
-from arduino.app_internal.edge_impulse import BoxStabilizer, LabelColors, VideoStreamServer, draw_detections
+from arduino.app_internal.edge_impulse.video_stream import BoxStabilizer, LabelColors, VideoStreamServer, draw_detections
 from arduino.app_utils.image.colors import color_difference
 from arduino.app_internal.ei_inference import Box
 

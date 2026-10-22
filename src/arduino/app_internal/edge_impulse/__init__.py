@@ -4,15 +4,9 @@
 
 """Base classes of the bricks running Edge Impulse models on the `arduino:edge_impulse` inference service.
 
-`EdgeImpulseModel` holds the model and its connection for any input, `VideoInference` runs it on the frames of a
-camera and serves the video with an overlay; the video bricks of the library build on them, and so can yours.
+`EdgeImpulseModel` holds the model and its connection for any input. `VideoInference` in the `video` module runs it
+on the frames of a camera and serves the video with an overlay; the video bricks of the library build on it, and so
+can yours. The video modules are imported on their own so a brick on `EdgeImpulseModel` alone does not load them.
 """
 
 from .model import EdgeImpulseModel as EdgeImpulseModel
-from .video import AllDetectionsCallback as AllDetectionsCallback
-from .video import DetectionCallback as DetectionCallback
-from .video import VideoInference as VideoInference
-from .video_stream import BoxStabilizer as BoxStabilizer
-from .video_stream import LabelColors as LabelColors
-from .video_stream import VideoStreamServer as VideoStreamServer
-from .video_stream import draw_detections as draw_detections
