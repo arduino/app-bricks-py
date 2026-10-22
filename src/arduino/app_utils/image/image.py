@@ -2,12 +2,16 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
+from __future__ import annotations
+
 import io
 import os
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from PIL import Image, ImageDraw, ImageFont
 from arduino.app_utils import Logger
+
+if TYPE_CHECKING:
+    from PIL import Image, ImageDraw
 
 logger = Logger(__name__)
 
@@ -45,6 +49,8 @@ def get_image_type(image_bytes: bytes | Image.Image) -> str | None:
         str: The image type in lowercase (e.g., 'jpeg', 'png').
         None if the image type cannot be determined.
     """
+    from PIL import Image
+
     try:
         if isinstance(image_bytes, Image.Image):
             # If the input is already a PIL Image, we can directly get its format
@@ -74,6 +80,8 @@ def get_image_bytes(image: str | os.PathLike[str] | Image.Image | bytes | None) 
     """
     if image is None:
         return None
+    from PIL import Image
+
     try:
         match image:
             case Image.Image():
@@ -111,6 +119,8 @@ def draw_bounding_boxes(
         shape (str | None, optional): Shape of the bounding box, Shape.RECTANGLE/"rectangle" or
             Shape.CIRCLE/"circle". Defaults to rectangle, None included, as do unsupported values (with a warning).
     """
+    from PIL import Image, ImageDraw, ImageFont
+
     if isinstance(image, bytes):
         image_box = Image.open(io.BytesIO(image))
     else:
@@ -223,6 +233,7 @@ def draw_anomaly_markers(image: Image.Image | bytes, detection: dict[str, Any] |
     """
     if not detection or "detection" not in detection:
         return None
+    from PIL import Image, ImageDraw
 
     if isinstance(image, bytes):
         image_box = Image.open(io.BytesIO(image))
