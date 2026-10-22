@@ -32,7 +32,8 @@ services:
     security_opt: [no-new-privileges:true]
     healthcheck:
       test: ["CMD", "python3", "-c", "import socket as S;S.socket(S.AF_UNIX).connect('/ipc/ei.sock')"]
-      interval: 15s
+      interval: 5s
       timeout: 3s
       start_period: 30s
+      start_interval: 250ms
       retries: 3
