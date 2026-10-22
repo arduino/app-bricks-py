@@ -79,7 +79,7 @@ the `n_ubatch` of 512 the service runs now.
 | DeepSeek-R1-Distill-Llama-8B | Q4_0 | 4675 MB | 3758 MiB | 512 / 1024 / 2048 MiB | **2 / 3 / >4** | 3 / 3 / 3 |
 | Qwen3-8B | Q4_0 | 4787 MB | 3737 MiB | 576 / 1152 / 2304 MiB | **2 / 3 / >4** | 3 / 3 / 3 |
 | DeepSeek-R1-0528-Qwen3-8B | Q4_0 | 4787 MB | 3737 MiB | 576 / 1152 / 2304 MiB | **2 / 3 / >4** | 3 / 3 / 3 |
-| LFM2.5-8B-A1B | Q4_0 | 4844 MB | 4406 MiB | 48 / 96 / 192 MiB | **2 / 3 / 2** | 3 / 3 / 3 |
+| hybrid MoE 8B | Q4_0 | 4844 MB | 4406 MiB | 48 / 96 / 192 MiB | **2 / 3 / 2** | 3 / 3 / 3 |
 | granite-4.2-8b | Q4_0 | 5055 MB | 4276 MiB | 640 / 1280 / 2560 MiB | **3 / 3 / 4** | 3 / 3 / 4 |
 | gemma-4-E4B-it | Q4_0 | 5154 MB | 2171 → 2731 MiB | 154 / 218 / 346 MiB | **1 / 1 / 1** | 2 / 2 / 2 |
 | Qwen3.5-9B | Q4_0 | 5741 MB | 3771 MiB | 128 / 256 / 512 MiB | **2 / 2 / 2** | 3 / 3 / 3 |
@@ -91,7 +91,7 @@ the `n_ubatch` of 512 the service runs now.
   MBUF 512; `>n` means nothing up to `n` did. Nine configurations loaded on some attempts
   and not on others (see [Where the limit is](#where-the-limit-is)), which is why the
   column reports what always worked rather than what once did. A cell tried only once is
-  weaker evidence: LFM2.5-8B's 8k cell failed on two sessions once, while its 16k cell was
+  weaker evidence: the hybrid MoE 8B's 8k cell failed on two sessions once, while its 16k cell was
   tried on two only once and passed — sampling, not physics.
 - **Sized** is what `configure-llamacpp.py` asks for. Where it is below the Sessions
   column, the cell loaded on some attempts under MBUF 512 and failed on others — a chunk
@@ -134,7 +134,7 @@ Generation speed, for an idea of what the counts cost:
 | Model | Sessions | tok/s |
 |---|:---:|---:|
 | gemma-3-1b, SmolVLM2-500M | 1 | 35, 52 |
-| Qwen3.5-0.8B, LFM2.5-8B-A1B | 1, 3 | 22, 21 |
+| Qwen3.5-0.8B, hybrid MoE 8B | 1, 3 | 22, 21 |
 | granite-4.2-3b, Phi-4-mini, Qwen3-4B | 2-3 | 14, 12, 12 |
 | gemma-4-E4B | 2 | 10.4 |
 | the 8B set (Qwen3, DeepSeek ×2, granite) | 4 | 7 |
@@ -225,7 +225,7 @@ buffer of its own and the 554 of HTP0's — 2600 MiB where weights and KV cache 
 The sizing has no formula for it from the tensor shapes yet, so it charges a flat
 `n_ubatch × 0.6 MiB` per session, twice from two sessions up: 307 and 614 MiB at the
 `n_ubatch` of 512 the service runs. Recalibrate against the `sched_reserve` lines after a
-llama.cpp bump. The first matrix noted compute buffers of up to 863 MiB (LFM2.5-8B, a MoE,
+llama.cpp bump. The first matrix noted compute buffers of up to 863 MiB (the hybrid MoE 8B,
 at `n_ubatch` 256), well over that allowance: the 10% the budget keeps back is what covers a
 model like that, and a re-measured matrix is what would tell whether it is enough.
 
@@ -335,7 +335,7 @@ before every trial. **Nine of the 63 gave different verdicts on different attemp
 
 | Configuration | Busiest session | Attempts |
 |---|---|---|
-| LFM2.5-8B-A1B @8k, 2 sessions | 3132 MiB | pass, fail |
+| hybrid MoE 8B @8k, 2 sessions | 3132 MiB | pass, fail |
 | Qwen3.5-4B Q8_0 @16k, 2 sessions | 2891 MiB | pass, pass, pass, fail, pass |
 | Nemotron-Mini-4B @16k, 2 sessions | 2514 MiB | pass, fail |
 | granite-4.2-3b @8k, 1 session | 2361 MiB | fail, pass, pass, pass, fail |
@@ -590,7 +590,7 @@ first, with `repro.sh` so that a verdict is repeated rather than sampled:
 - The four cells the rule places below the count that always loaded, to confirm that they
   fail under MBUF 512 only: granite-4.2-3b at 8k and Phi-4-mini at 4k on one session,
   Phi-4-mini and Nemotron-Mini-4B at 16k on two.
-- LFM2.5-8B at 16k on three, whose compute buffer was the outlier of the first matrix.
+- The hybrid MoE 8B at 16k on three, whose compute buffer was the outlier of the first matrix.
 - The `sched_reserve: HTPn compute buffer size` lines of every model, to replace the flat
   compute allowance with a fit, or confirm it covers them. It is known not to: gemma-4-E2B
   reserved 552 MiB at `n_ubatch` 512 with an mmproj attached, against 265 MiB at
