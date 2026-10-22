@@ -12,7 +12,7 @@ required_devices:
   - camera
 model_by_boards:
     - platform: ventunoq
-      model: yolox-qnn-object-tracker
+      model: yolox-small-qnn-object-tracker
 ai_frameworks_compatibility:
   - edgeimpulse
 supported_boards: ["ventunoq"]
