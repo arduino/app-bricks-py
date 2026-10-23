@@ -30,9 +30,13 @@ class EdgeImpulseModel:
     app variable the CLI sets to the `.eim` path, with the models list as the fallback; a subclass names it. The
     confidence is the score the results must reach: the service applies it and returns nothing below it.
     Subclasses set their other model parameters in `_configure`, called every time the model is opened.
+
+    The service is reached at the socket of the shared `arduino:edge_impulse` service, or at `SOCKET_PATH` when a
+    brick runs the inference server as its own container and names its socket there.
     """
 
     MODEL_VARIABLE = ""  # the app variable naming the .eim file of the brick, set by each brick class
+    SOCKET_PATH: str | None = None  # the socket of a brick-owned inference server, None for the shared service
 
     _RETRY_SEC = 2.0  # seconds between attempts to reach the inference service
 
@@ -171,7 +175,7 @@ class EdgeImpulseModel:
             ServerError: If the service refuses the model.
             OSError: If the service is not reachable, or the model is not ready in time (TimeoutError).
         """
-        client = InferenceClient(self._model, ei_inference.DEFAULT_SOCKET_PATH, open_timeout=timeout, confidence=self._confidence)
+        client = InferenceClient(self._model, self._socket_path(), open_timeout=timeout, confidence=self._confidence)
         try:
             self._configure(client)
         except BaseException:
@@ -185,6 +189,9 @@ class EdgeImpulseModel:
     def _configure(self, client: InferenceClient) -> None:
         """Set the parameters of the model every time it is opened; the base class has none beyond the confidence."""
 
+    def _socket_path(self) -> str:
+        return self.SOCKET_PATH or ei_inference.DEFAULT_SOCKET_PATH
+
     def _connect(self, running: threading.Event) -> InferenceClient | None:
         """The open connection to the model, or a new one once the service is ready, retrying while `running` is set."""
         client = self._connected()
@@ -196,7 +203,7 @@ class EdgeImpulseModel:
             except ServerError as e:
                 logger.error(f"The inference service refused model '{self._model}' ({e.code}): {e}. Retrying...")
             except OSError:
-                logger.debug(f"Waiting for the inference service at {ei_inference.DEFAULT_SOCKET_PATH}. Retrying...")
+                logger.debug(f"Waiting for the inference service at {self._socket_path()}. Retrying...")
             running.wait(self._RETRY_SEC)
         return None
 
