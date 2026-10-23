@@ -1,0 +1,879 @@
+# SPDX-FileCopyrightText: Copyright (C) Arduino s.r.l. and/or its affiliated companies
+#
+# SPDX-License-Identifier: MPL-2.0
+
+import json
+import math
+import queue
+import threading
+import time
+from pathlib import Path
+
+import numpy as np
+import pytest
+
+from arduino.app_bricks.video_object_tracking import MAX_AREA_POINTS, VideoObjectTracking, VideoObjectTrackingError
+from arduino.app_bricks.video_object_tracking.drawing import DASH_COLOR, EDGE_COLOR
+from arduino.app_internal.edge_impulse.video_stream import PALETTE, LabelColors
+from arduino.app_utils.image.colors import color_difference
+from arduino.app_internal.ei_inference import Box, Result
+
+TIMEOUT = 3.0  # seconds to wait for a callback
+TRACKER = "ootb/ei/tracker"  # the name of the configured model on the service
+RECORDED_WALK = Path(__file__).parent / "data" / "walk_640x480.json"
+RECORDED_TIE = Path(__file__).parent / "data" / "tie_640x480.json"
+CLOCK_START_NS = time.monotonic_ns()  # the capture clock of the replayed results starts here
+# The threshold blocks of a tracking model, as the service reports them
+DETECTION_BLOCK = {"id": 27, "type": "object_detection", "min_score": 0.2}
+TRACKING_BLOCK = {"id": 28, "type": "object_tracking", "max_age": 1, "min_hits": 3, "iou_threshold": 0.3}
+
+
+def _track(label: str = "person", object_id: int = 1, x: int = 0, y: int = 0, width: int = 80, height: int = 200, value: float = 0.9) -> dict:
+    """A tracked object as the service reports it, in frame coordinates."""
+    return {"label": label, "score": value, "x": x, "y": y, "w": width, "h": height, "id": object_id}
+
+
+def _result(tracks: list[dict], seq: int = 1, t: float = 0.0, size: tuple[int, int] = (640, 480)) -> Result:
+    """The result of a frame of `size` (width, height) captured `t` seconds after the clock of the replays started."""
+    return Result(model=TRACKER, seq=seq, ts_ns=CLOCK_START_NS + int(t * 1e9), source_size=size, tracks=[Box(**track) for track in tracks])
+
+
+def _replay(
+    tracker: VideoObjectTracking,
+    frames: list[list[dict]],
+    times: list[float] | None = None,
+    start: float = 0.0,
+    step: float = 0.1,
+    size: tuple[int, int] = (640, 480),
+) -> None:
+    """Feed the brick the results of consecutive frames of `size`, as its receiver does, each captured at its instant
+    in `times` or, without them, every `step` seconds from `start`, a 10 fps camera."""
+    times = [start + i * step for i in range(len(frames))] if times is None else times
+    for seq, (tracks, t) in enumerate(zip(frames, times, strict=True), 1):
+        tracker._process_result(_result(tracks, seq, t, size))
+
+
+def _walk(points: list[tuple[int, int]], label: str = "person", object_id: int = 1, size: tuple[int, int] = (80, 200)) -> list[list[dict]]:
+    return [[_track(label=label, object_id=object_id, x=x, y=y, width=size[0], height=size[1])] for x, y in points]
+
+
+def _straight(start: tuple[int, int], end: tuple[int, int], steps: int) -> list[tuple[int, int]]:
+    return [(round(start[0] + (end[0] - start[0]) * i / steps), round(start[1] + (end[1] - start[1]) * i / steps)) for i in range(steps + 1)]
+
+
+def _recorded(path: Path) -> tuple[list[list[dict]], list[float] | None]:
+    """The frames of a recording and their capture instants, when it has them."""
+    recording = json.loads(path.read_text())
+    fields = recording["track_fields"]
+    frames = [[_track(**dict(zip(fields, track, strict=True))) for track in frame["tracks"]] for frame in recording["frames"]]
+    times = [frame["t"] for frame in recording["frames"]] if "t" in recording["frames"][0] else None
+    return frames, times
+
+
+def _wait_for(condition, timeout: float = TIMEOUT) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if condition():
+            return True
+        time.sleep(0.02)
+    return condition()
+
+
+@pytest.fixture(autouse=True)
+def configured_model(monkeypatch):
+    """The app configured the fake model for the brick, as the CLI does through the model variable."""
+    monkeypatch.setenv("EI_V_OBJ_TRACKING_MODEL", "/models/ootb/ei/tracker.eim")
+
+
+@pytest.fixture
+def service(ei_service, monkeypatch):
+    """The fake service with a 100x100 "tracker" model whose tracks the test sets."""
+    monkeypatch.setattr(VideoObjectTracking, "SOCKET_PATH", ei_service.socket_path)
+    ei_service.models[TRACKER] = {
+        "width": 100,
+        "height": 100,
+        "labels": ["person"],
+        "object_tracking": True,
+        "thresholds": [dict(DETECTION_BLOCK), dict(TRACKING_BLOCK)],
+        "tracks": [],
+    }
+    return ei_service
+
+
+@pytest.fixture
+def tracker(service, camera):
+    """A brick built against the service and not started: the tests feed it results directly."""
+    brick = VideoObjectTracking(camera=camera, stream_port=0)
+    yield brick
+    brick.stop()
+
+
+@pytest.fixture
+def running(service, camera):
+    """A started brick with its tracking loop in a thread, built with the given options."""
+    started = []
+
+    def start(**options):
+        brick = VideoObjectTracking(camera=camera, stream_port=0, **options)
+        brick.start()
+        thread = threading.Thread(target=brick.inference_loop, daemon=True)
+        thread.start()
+        started.append((brick, thread))
+        return brick
+
+    yield start
+    for brick, thread in started:
+        brick.stop()
+        thread.join(TIMEOUT)
+
+
+# ---------------------------------------------------------------- tracked objects
+
+
+def test_tracked_objects_reach_the_callbacks_with_their_ids(running, service, camera):
+    service.models[TRACKER]["tracks"] = [_track(object_id=7, x=10, y=20, width=30, height=40, value=0.75)]
+    received = queue.Queue()
+    brick = running()
+    brick.on_detect_all(lambda detections: received.put(detections))
+    camera.push()
+
+    assert received.get(timeout=TIMEOUT) == {"person": [{"object_id": 7, "confidence": 0.75, "bounding_box_xyxy": (10, 20, 40, 60)}]}
+    assert service.frames[0][2].shape == (120, 160, 3), "the camera frame reaches the service as it is"
+
+
+def test_every_object_of_a_label_is_reported(running, service, camera):
+    service.models[TRACKER]["tracks"] = [_track(object_id=1, x=0), _track(object_id=2, x=300)]
+    received = queue.Queue()
+    brick = running()
+    brick.on_detect_all(lambda detections: received.put(detections))
+    camera.push()
+
+    assert [detection["object_id"] for detection in received.get(timeout=TIMEOUT)["person"]] == [1, 2]
+
+
+def test_track_id_zero_is_reported(running, service, camera):
+    service.models[TRACKER]["tracks"] = [_track(object_id=0)]
+    fired = threading.Event()
+    brick = running()
+    brick.on_detect("person", lambda: fired.set())
+    camera.push()
+
+    assert fired.wait(TIMEOUT)
+
+
+def test_labels_to_track_filters_the_callbacks_too(running, service, camera):
+    service.models[TRACKER]["tracks"] = [_track(label="microwave", object_id=5)]
+    received = queue.Queue()
+    brick = running(labels_to_track=["person"])
+    brick.on_detect_all(lambda detections: received.put(detections))
+    camera.push()
+
+    with pytest.raises(queue.Empty):
+        received.get(timeout=0.3)
+    assert brick.get_unique_objects_count() == {}
+
+
+def test_labels_to_ignore_leave_their_objects_out_of_everything(service, camera):
+    brick = VideoObjectTracking(camera=camera, stream_port=0, labels_to_track=["person", "cup", "dog"], labels_to_ignore=["person", "dog"])
+    received = queue.Queue()
+    try:
+        brick.on_detect_all(lambda detections: received.put(detections))
+        brick.set_rectangular_area(0, 0, 640, 480)
+
+        _replay(brick, [[_track(object_id=1), _track(label="cup", object_id=2, x=300), _track(label="microwave", object_id=3, x=500)]])
+
+        assert set(received.get(timeout=TIMEOUT)) == {"cup"}, "ignored after labels_to_track, which leaves out the microwave"
+        assert brick.get_unique_objects_count() == {"cup": 1}
+        assert brick.get_objects_in_area() == {"cup": 1}
+        assert set(brick._boxes.visible()) == {"cup #2"}, "the ignored objects are not drawn either"
+    finally:
+        brick.stop()
+
+
+def test_the_confidence_is_applied_by_the_service(running, service, camera):
+    service.models[TRACKER]["tracks"] = [_track(value=0.1)]
+    received = queue.Queue()
+    brick = running(confidence=0.9)
+    brick.on_detect_all(lambda detections: received.put(detections))
+    camera.push()
+    with pytest.raises(queue.Empty):
+        received.get(timeout=0.3)
+
+    brick.override_threshold(0.05)
+    assert (TRACKER, {"confidence": 0.05}) in service.configured
+    camera.push()
+    assert received.get(timeout=TIMEOUT)["person"][0]["confidence"] == pytest.approx(0.1)
+
+
+def test_the_video_boxes_carry_the_object_ids(tracker):
+    _replay(tracker, [[_track(object_id=7), _track(label="dog", object_id=2, x=300)]])
+
+    assert set(tracker._boxes.visible()) == {"person #7", "dog #2"}
+
+
+def test_the_objects_of_a_class_share_its_color_on_the_video(tracker):
+    _replay(tracker, [[_track(label="cup", object_id=1, x=100, y=100), _track(label="cup", object_id=2, x=400, y=100)]])
+
+    annotated = tracker._annotate(np.zeros((480, 640, 3), np.uint8))
+
+    assert tuple(annotated[200, 100]) == tuple(annotated[200, 400]) == tracker._colors["cup"], "the left side of both boxes"
+
+
+def test_the_tracked_boxes_are_drawn_on_the_video(tracker):
+    frame = np.zeros((480, 640, 3), np.uint8)
+    assert not tracker._annotate(frame).any(), "without tracked objects the video shows the plain frame"
+
+    _replay(tracker, [[_track(object_id=7)]])
+
+    assert tracker._annotate(frame).any()
+
+
+# ---------------------------------------------------------------- thresholds
+
+
+def test_the_tracker_knobs_are_set_on_the_model_as_soon_as_it_is_opened(tracker, service):
+    assert service.configured == [(TRACKER, {"id": 28, "max_age": 3, "min_hits": 3, "iou_threshold": 0.1})]
+
+
+def test_overrides_reach_the_model_at_runtime(tracker, service):
+    tracker.override_keep_grace(5)
+    tracker.override_min_detections(2)
+    tracker.override_iou_threshold(0.25)
+    tracker.override_threshold(0.7)
+
+    assert service.configured[1:] == [
+        (TRACKER, {"id": 28, "max_age": 5}),
+        (TRACKER, {"id": 28, "min_hits": 2}),
+        (TRACKER, {"id": 28, "iou_threshold": 0.25}),
+        (TRACKER, {"confidence": 0.7}),
+    ]
+    assert service.models[TRACKER]["thresholds"][1]["max_age"] == 5
+
+
+def test_override_values_must_be_numbers(tracker, service):
+    with pytest.raises(TypeError):
+        tracker.override_keep_grace("many")
+    with pytest.raises(TypeError):
+        tracker.override_threshold(True)
+    assert len(service.configured) == 1
+
+
+def test_the_centroid_knob_is_skipped_on_a_bounding_box_model(tracker, service):
+    tracker.override_euclidean_distance_threshold(50)
+
+    assert len(service.configured) == 1
+
+
+def test_a_centroid_model_is_matched_by_distance(service, camera):
+    service.models[TRACKER]["model_type"] = "constrained_object_detection"
+    service.models[TRACKER]["thresholds"] = [
+        dict(DETECTION_BLOCK),
+        {"id": 28, "type": "object_tracking", "max_age": 1, "min_hits": 3, "threshold": 40},
+    ]
+    tracker = VideoObjectTracking(camera=camera, stream_port=0, euclidean_distance_threshold=60)
+    try:
+        assert service.configured[-1] == (TRACKER, {"id": 28, "max_age": 3, "min_hits": 3, "threshold": 60})
+        tracker.override_iou_threshold(0.5)
+        assert len(service.configured) == 1, "the overlap knob is skipped"
+        tracker.override_euclidean_distance_threshold(70)
+        assert service.configured[-1] == (TRACKER, {"id": 28, "threshold": 70})
+    finally:
+        tracker.stop()
+
+
+def test_a_knob_the_tracking_block_does_not_declare_is_refused(service, camera):
+    service.models[TRACKER]["thresholds"] = [dict(DETECTION_BLOCK), {"id": 28, "type": "object_tracking", "max_age": 1, "iou_threshold": 0.3}]
+    tracker = VideoObjectTracking(camera=camera, stream_port=0)
+    try:
+        assert service.configured[-1] == (TRACKER, {"id": 28, "max_age": 3, "iou_threshold": 0.1}), "the knobs the block has are set"
+        with pytest.raises(RuntimeError, match="max_age, iou_threshold"):
+            tracker.override_min_detections(4)
+    finally:
+        tracker.stop()
+
+
+def test_overrides_before_the_connection_are_set_when_the_model_is_opened(service, camera, monkeypatch):
+    monkeypatch.setattr(VideoObjectTracking, "SOCKET_PATH", "/nonexistent/ei.sock")
+    tracker = VideoObjectTracking(camera=camera, stream_port=0)
+    tracker.override_keep_grace(6)
+    assert service.configured == [], "nothing to set on while the service is away"
+
+    monkeypatch.setattr(VideoObjectTracking, "SOCKET_PATH", service.socket_path)
+    monkeypatch.setattr(VideoObjectTracking, "_RETRY_SEC", 0.1)
+    tracker.start()
+    thread = threading.Thread(target=tracker.inference_loop, daemon=True)
+    thread.start()
+    try:
+        assert _wait_for(lambda: len(service.configured) == 1)
+        assert service.configured[0] == (TRACKER, {"id": 28, "max_age": 6, "min_hits": 3, "iou_threshold": 0.1})
+    finally:
+        tracker.stop()
+        thread.join(TIMEOUT)
+
+
+def test_the_crossing_line_is_drawn_on_the_video_once_set(tracker):
+    frame = np.full((480, 640, 3), 128, np.uint8)
+    assert (tracker._annotate(frame) == 128).all(), "without a line and without boxes the video shows the plain frame"
+    tracker.set_vertical_crossing_line(320)
+    annotated = tracker._annotate(frame)
+    assert tuple(annotated[0, 320]) == DASH_COLOR and tuple(annotated[479, 320]) == DASH_COLOR, "the line runs from top to bottom"
+    assert {tuple(pixel) for pixel in annotated[:, 320]} == {DASH_COLOR, EDGE_COLOR, (128, 128, 128)}, "in dashes"
+    assert (frame == 128).all(), "the camera frame itself is left untouched"
+
+
+# ---------------------------------------------------------------- the model
+
+
+def test_a_model_without_the_tracking_block_refuses_to_start(service, camera):
+    service.models[TRACKER]["object_tracking"] = False
+
+    with pytest.raises(VideoObjectTrackingError, match="no object tracking block"):
+        VideoObjectTracking(camera=camera, stream_port=0)
+    assert service.closed.wait(TIMEOUT), "the model is released"
+
+
+def test_an_unreachable_service_lets_the_brick_start(camera, monkeypatch):
+    monkeypatch.setattr(VideoObjectTracking, "SOCKET_PATH", "/nonexistent/ei.sock")
+
+    tracker = VideoObjectTracking(camera=camera, stream_port=0)
+    tracker.stop()
+
+
+def test_a_refused_model_lets_the_brick_start(service, camera, monkeypatch):
+    monkeypatch.setenv("EI_V_OBJ_TRACKING_MODEL", "/models/ootb/ei/nope.eim")
+    tracker = VideoObjectTracking(camera=camera, stream_port=0)
+    tracker.stop()
+
+
+def test_a_new_connection_forgets_the_identifiers_and_keeps_the_counts(running, service, camera, monkeypatch):
+    monkeypatch.setattr(VideoObjectTracking, "_RETRY_SEC", 0.1)
+    service.models[TRACKER]["tracks"] = [_track(object_id=3)]
+    seen = queue.Queue()
+    brick = running()
+    brick.on_detect("person", lambda details: seen.put(details["object_id"]))
+    camera.push()
+    assert seen.get(timeout=TIMEOUT) == 3
+    assert brick.get_unique_objects_count() == {"person": 1}
+
+    service.stop()
+    service.start()
+    for _ in range(10):
+        camera.push()
+        try:
+            seen.get(timeout=0.5)
+            break
+        except queue.Empty:
+            continue
+    else:
+        pytest.fail("no tracked object after the service restarted")
+
+    assert brick.get_unique_objects_count() == {"person": 2}, "the same id on a new run of the tracker is a new object"
+
+
+def test_a_live_track_keeps_its_position_whatever_the_crowd(tracker):
+    tracker.set_vertical_crossing_line(320)
+    crowd = [_track(object_id=100 + i, x=i, y=0) for i in range(200)]
+
+    _replay(tracker, [[_track(object_id=1, x=260, y=140)], crowd, [_track(object_id=1, x=300, y=140)]])
+
+    assert tracker.get_line_crossing_counts() == {"person": {"right": 1, "all": 1}}, "the crossing during the gap is counted"
+    assert tracker.get_unique_objects_count() == {"person": 201}, "the object back from the gap is not counted again"
+
+
+def test_an_id_not_reported_for_a_second_is_forgotten(tracker):
+    _replay(tracker, [[_track(object_id=i, x=200 * i)] for i in range(500)] + [[]] * 10)
+    assert tracker._recent_objects == {499: (200 * 499 + 40, 100)}, "within a second the last id is still kept"
+
+    _replay(tracker, [[]], start=51.0)
+
+    assert tracker._recent_objects == {} and tracker._last_seen == {}
+
+
+# ---------------------------------------------------------------- area
+
+AREA = (200, 200, 400, 400)
+
+
+def _at(x: int, y: int, object_id: int = 1, label: str = "person") -> dict:
+    """A tracked object whose bounding box centre is at (x, y), with the 80x200 box of `_walk`."""
+    return _track(label=label, object_id=object_id, x=x - 40, y=y - 100)
+
+
+def test_an_object_entering_the_area_is_reported_once(tracker):
+    tracker.set_rectangular_area(*AREA)
+
+    _replay(tracker, [[_at(x, 300)] for x in (100, 150, 250, 300, 350, 300)])
+
+    assert tracker.get_area_counts() == {"person": {"entered": 1}}
+    assert tracker.get_objects_in_area() == {"person": 1}
+
+
+def test_an_object_appearing_inside_the_area_enters_it(tracker):
+    tracker.set_rectangular_area(*AREA)
+
+    _replay(tracker, [[_at(300, 300)]])
+
+    assert tracker.get_area_counts() == {"person": {"entered": 1}}
+
+
+def test_an_object_leaving_the_area_exits_it(tracker):
+    tracker.set_rectangular_area(*AREA)
+
+    _replay(tracker, [[_at(x, 300)] for x in (300, 350, 450, 500)])
+
+    assert tracker.get_area_counts() == {"person": {"entered": 1, "exited": 1}}
+    assert tracker.get_objects_in_area() == {}
+
+
+def test_an_object_disappearing_inside_exits_after_a_second_unseen(tracker):
+    tracker.set_rectangular_area(*AREA)
+    _replay(tracker, [[_at(300, 300)]] + [[]] * 10)
+    assert tracker.get_objects_in_area() == {"person": 1}, "within a second the tracker may still bring it back"
+
+    _replay(tracker, [[]], start=1.1)
+
+    assert tracker.get_objects_in_area() == {}
+    assert tracker.get_area_counts() == {"person": {"entered": 1, "exited": 1}}
+
+
+def test_a_centre_wobbling_on_the_border_enters_only_once(tracker):
+    tracker.set_rectangular_area(*AREA)
+
+    _replay(tracker, [[_at(x, 300)] for x in (205, 195, 205, 192, 204)])
+
+    assert tracker.get_area_counts() == {"person": {"entered": 1}}
+    assert tracker.get_objects_in_area() == {"person": 1}
+
+
+def test_setting_the_area_again_counts_the_objects_inside_from_their_next_appearance(tracker):
+    tracker.set_rectangular_area(*AREA)
+    _replay(tracker, [[_at(300, 300)]])
+
+    tracker.set_rectangular_area(*AREA)
+    assert tracker.get_objects_in_area() == {}, "emptied without reporting an exit"
+    _replay(tracker, [[_at(300, 300)]])
+
+    assert tracker.get_area_counts() == {"person": {"entered": 2}}
+
+
+def test_a_new_tracker_run_empties_the_area_without_exits(tracker):
+    tracker.set_rectangular_area(*AREA)
+    _replay(tracker, [[_at(300, 300)]])
+
+    tracker._forget_tracks()
+
+    assert tracker.get_objects_in_area() == {}
+    assert tracker.get_area_counts() == {"person": {"entered": 1}}
+
+
+def test_reset_counters_clears_the_entries_and_exits_but_not_the_objects_inside(tracker):
+    tracker.set_rectangular_area(*AREA)
+    _replay(tracker, [[_at(300, 300)]])
+
+    tracker.reset_counters()
+
+    assert tracker.get_area_counts() == {}
+    assert tracker.get_objects_in_area() == {"person": 1}
+
+
+def test_the_area_follows_only_the_labels_to_track(service, camera):
+    brick = VideoObjectTracking(camera=camera, stream_port=0, labels_to_track=["cup"])
+    try:
+        brick.set_rectangular_area(*AREA)
+        _replay(brick, [[_at(300, 300, object_id=1, label="person"), _at(300, 300, object_id=2, label="cup")]])
+        assert brick.get_area_counts() == {"cup": {"entered": 1}}
+    finally:
+        brick.stop()
+
+
+def test_a_concave_area_leaves_out_its_notch(tracker):
+    tracker.set_area_coordinates([(100, 100), (500, 100), (500, 200), (200, 200), (200, 300), (500, 300), (500, 400), (100, 400)])
+
+    _replay(tracker, [[_at(400, 250, object_id=1), _at(400, 150, object_id=2)]])
+
+    assert tracker.get_objects_in_area() == {"person": 1}, "the object in the notch of the C is outside"
+
+
+def test_the_rectangle_helper_takes_its_corners_in_any_order(tracker):
+    tracker.set_rectangular_area(400, 400, 200, 200)
+
+    _replay(tracker, [[_at(300, 300)]])
+
+    assert tracker.get_objects_in_area() == {"person": 1}
+
+
+def test_an_area_needs_three_distinct_points(tracker):
+    with pytest.raises(ValueError):
+        tracker.set_area_coordinates([(0, 0), (100, 100)])
+    with pytest.raises(ValueError):
+        tracker.set_area_coordinates([(0, 0), (0, 0), (100, 100)])
+    with pytest.raises(ValueError):
+        tracker.set_rectangular_area(100, 100, 100, 300)
+
+
+def _regular_polygon(count: int) -> list[tuple[int, int]]:
+    return [(round(320 + 200 * math.cos(2 * math.pi * k / count)), round(240 + 200 * math.sin(2 * math.pi * k / count))) for k in range(count)]
+
+
+def test_an_area_shaped_like_a_bow_tie_is_refused(tracker):
+    with pytest.raises(ValueError, match="crosses itself"):
+        tracker.set_area_coordinates([(100, 100), (300, 300), (300, 100), (100, 300)])
+
+
+def test_an_area_whose_sides_touch_is_refused(tracker):
+    two_triangles_sharing_a_corner = [(100, 100), (200, 200), (300, 100), (300, 300), (200, 200), (100, 300)]
+    corner_on_another_side = [(100, 100), (300, 100), (300, 300), (200, 100), (100, 300)]
+    for points in (two_triangles_sharing_a_corner, corner_on_another_side):
+        with pytest.raises(ValueError, match="crosses itself"):
+            tracker.set_area_coordinates(points)
+
+
+def test_an_area_whose_side_runs_back_is_refused(tracker):
+    with pytest.raises(ValueError, match="crosses itself"):
+        tracker.set_area_coordinates([(100, 100), (300, 100), (200, 100), (200, 300)])
+
+
+def test_an_area_closed_by_repeating_its_first_point_is_taken(tracker):
+    tracker.set_area_coordinates([(200, 200), (400, 200), (400, 400), (200, 400), (200, 200)])
+
+    _replay(tracker, [[_at(300, 300)]])
+
+    assert tracker.get_objects_in_area() == {"person": 1}
+
+
+def test_an_area_with_a_point_repeated_right_after_itself_is_taken(tracker):
+    tracker.set_area_coordinates([(200, 200), (400, 200), (400, 200), (400, 400), (200, 400)])
+
+    _replay(tracker, [[_at(300, 300)]])
+
+    assert tracker.get_objects_in_area() == {"person": 1}
+
+
+def test_an_area_takes_at_most_max_area_points(tracker):
+    tracker.set_area_coordinates(_regular_polygon(MAX_AREA_POINTS))
+    closed = _regular_polygon(MAX_AREA_POINTS)
+    tracker.set_area_coordinates([*closed, closed[0]])
+
+    with pytest.raises(ValueError, match="at most"):
+        tracker.set_area_coordinates(_regular_polygon(MAX_AREA_POINTS + 1))
+
+
+def test_the_area_callbacks_receive_the_object(tracker):
+    entered, exited = queue.Queue(), queue.Queue()
+
+    def on_enter(event):
+        entered.put(event)
+
+    def on_exit(event):
+        exited.put(event)
+
+    tracker.on_area_enter(on_enter)
+    tracker.on_area_exit(on_exit)
+    tracker.set_rectangular_area(*AREA)
+    _replay(tracker, [[_at(x, 300, object_id=7)] for x in (300, 500)])
+
+    assert entered.get(timeout=TIMEOUT) == {"label": "person", "object_id": 7}
+    assert exited.get(timeout=TIMEOUT) == {"label": "person", "object_id": 7}
+
+
+def test_the_area_callbacks_must_be_functions(tracker):
+    with pytest.raises(TypeError):
+        tracker.on_area_enter("not a function")
+    with pytest.raises(TypeError):
+        tracker.on_area_exit("not a function")
+
+
+def test_a_hidden_line_and_area_still_count(tracker):
+    tracker.set_vertical_crossing_line(320, visible=False)
+    tracker.set_rectangular_area(*AREA, visible=False)
+
+    assert not tracker._annotate(np.zeros((480, 640, 3), np.uint8)).any(), "neither is drawn on the video"
+    _replay(tracker, [[_at(x, 300)] for x in (250, 350)])
+    assert tracker.get_line_crossing_counts() == {"person": {"right": 1, "all": 1}}
+    assert tracker.get_area_counts() == {"person": {"entered": 1}}
+
+
+def test_a_relative_coordinate_outside_0_to_1_is_refused_by_every_method(tracker):
+    for set_outside_the_frame in (
+        lambda: tracker.set_crossing_line_coordinates(0, 0, 1, 1.5, relative=True),
+        lambda: tracker.set_horizontal_crossing_line(-0.1, relative=True),
+        lambda: tracker.set_vertical_crossing_line(320, relative=True),
+        lambda: tracker.set_area_coordinates([(0.2, 0.2), (0.8, 0.2), (0.5, float("nan"))], relative=True),
+        lambda: tracker.set_rectangular_area(0.2, 0.2, 1.2, 0.8, relative=True),
+    ):
+        with pytest.raises(ValueError, match="from 0 to 1"):
+            set_outside_the_frame()
+
+
+@pytest.mark.parametrize("size", [(640, 480), (1280, 720)])
+def test_a_relative_line_and_area_keep_their_place_in_the_frame_at_any_resolution(tracker, size):
+    width, height = size
+    tracker.set_vertical_crossing_line(0.5, relative=True)
+    tracker.set_rectangular_area(0.6, 0.25, 0.9, 0.75, relative=True)
+
+    _replay(tracker, [[_at(round(width * fraction), height // 2)] for fraction in (0.3, 0.45, 0.55, 0.7)], size=size)
+
+    assert tracker.get_line_crossing_counts() == {"person": {"right": 1, "all": 1}}
+    assert tracker.get_area_counts() == {"person": {"entered": 1}}
+
+
+def test_a_relative_line_is_drawn_at_its_fraction_of_any_frame(tracker):
+    tracker.set_vertical_crossing_line(0.25, relative=True)
+
+    for width, height in ((640, 480), (1280, 720)):
+        annotated = tracker._annotate(np.full((height, width, 3), 128, np.uint8))
+        assert tuple(annotated[0, width // 4]) == DASH_COLOR, f"a quarter across the {width}x{height} frame"
+
+
+def test_a_relative_area_whose_side_runs_back_along_a_diagonal_is_refused(tracker):
+    with pytest.raises(ValueError, match="crosses itself"):
+        tracker.set_area_coordinates([(100 / 640, 100 / 480), (300 / 640, 300 / 480), (200 / 640, 200 / 480)], relative=True)
+
+
+def test_setting_again_without_visible_shows_it_again(tracker):
+    tracker.set_rectangular_area(*AREA, visible=False)
+    tracker.set_rectangular_area(*AREA)
+
+    assert tracker._annotate(np.zeros((480, 640, 3), np.uint8))[300, 200].any()
+
+
+def test_the_area_outline_is_drawn_on_the_video_in_dashes(tracker):
+    frame = np.full((480, 640, 3), 128, np.uint8)
+    tracker.set_rectangular_area(*AREA)
+
+    annotated = tracker._annotate(frame)
+
+    assert tuple(annotated[200, 200]) == DASH_COLOR, "a dash at the corner"
+    assert {tuple(pixel) for pixel in annotated[201:400, 200]} == {DASH_COLOR, EDGE_COLOR, (128, 128, 128)}, "the left side, in dashes"
+    assert tuple(annotated[300, 300]) == (128, 128, 128), "the inside stays as the camera shows it"
+    assert (frame == 128).all(), "the camera frame itself is left untouched"
+
+
+def test_the_boxes_are_drawn_over_the_area(tracker):
+    tracker.set_rectangular_area(*AREA)
+    _replay(tracker, [[_track(label="cup", object_id=1, x=250, y=210, width=80, height=90)]])
+
+    annotated = tracker._annotate(np.full((480, 640, 3), 128, np.uint8))
+
+    assert tuple(annotated[200, 252]) == tracker._colors["cup"], "the chip above the box covers the top side of the area"
+
+
+def test_the_box_colors_stay_clearly_different_from_the_dashes_of_the_line_and_the_area(tracker):
+    colors = [tracker._colors[f"label {i}"] for i in range(len(PALETTE))]
+
+    assert set(colors) == set(PALETTE), "no color of the palette is too close to white or black"
+    for color in colors:
+        for drawn in (DASH_COLOR, EDGE_COLOR):
+            assert color_difference(color, drawn) >= LabelColors.MIN_DIFFERENCE, color
+
+
+# ---------------------------------------------------------------- counting
+
+
+def test_each_track_id_is_counted_once(tracker):
+    _replay(tracker, _walk(_straight((0, 240), (400, 240), steps=20)))
+
+    assert tracker.get_unique_objects_count() == {"person": 1}
+
+
+def test_the_same_object_coming_back_with_a_new_id_is_counted_again(tracker):
+    _replay(tracker, _walk(_straight((0, 240), (400, 240), steps=10), object_id=1))
+    _replay(tracker, _walk(_straight((0, 240), (400, 240), steps=10), object_id=2))
+
+    assert tracker.get_unique_objects_count() == {"person": 2}
+
+
+def test_vertical_line_is_crossed_by_the_box_centre(tracker):
+    tracker.set_vertical_crossing_line(320)
+
+    _replay(tracker, _walk(_straight((240, 240), (400, 240), steps=8)))
+
+    assert tracker.get_line_crossing_counts() == {"person": {"right": 1, "all": 1}}
+
+
+def test_a_box_straddling_the_line_is_not_counted_until_its_centre_crosses(tracker):
+    tracker.set_vertical_crossing_line(320)
+
+    _replay(tracker, _walk(_straight((240, 240), (270, 240), steps=6)))
+
+    assert tracker.get_line_crossing_counts() == {}
+
+
+def test_each_crossing_direction_has_its_own_counter(tracker):
+    tracker.set_vertical_crossing_line(320)
+
+    _replay(tracker, _walk(_straight((240, 240), (400, 240), steps=8)))
+    _replay(tracker, _walk(_straight((400, 240), (240, 240), steps=8)))
+
+    assert tracker.get_line_crossing_counts() == {"person": {"left": 1, "right": 1, "all": 2}}
+
+
+def test_horizontal_line_crossings_are_counted_down_and_up(tracker):
+    tracker.set_horizontal_crossing_line(240)
+
+    _replay(tracker, _walk(_straight((100, 100), (100, 300), steps=8)))
+    _replay(tracker, _walk(_straight((100, 300), (100, 100), steps=8)))
+
+    assert tracker.get_line_crossing_counts() == {"person": {"down": 1, "up": 1, "all": 2}}
+
+
+def test_a_line_tilted_less_than_22_5_degrees_is_crossed_up_and_down(tracker):
+    tracker.set_crossing_line_coordinates(0, 200, 640, 260)
+
+    _replay(tracker, _walk(_straight((300, 100), (300, 400), steps=8)))
+    _replay(tracker, _walk(_straight((300, 400), (300, 100), steps=8)))
+
+    assert tracker.get_line_crossing_counts() == {"person": {"down": 1, "up": 1, "all": 2}}
+
+
+def test_a_line_tilted_more_than_22_5_degrees_is_crossed_diagonally(tracker):
+    tracker.set_crossing_line_coordinates(0, 100, 640, 380)
+
+    _replay(tracker, _walk(_straight((300, 0), (300, 400), steps=8)))
+    _replay(tracker, _walk(_straight((300, 400), (300, 0), steps=8)))
+
+    assert tracker.get_line_crossing_counts() == {"person": {"down-left": 1, "up-right": 1, "all": 2}}
+
+
+def test_the_crossing_callback_receives_the_object_and_its_direction(tracker):
+    crossings = []
+    crossed = threading.Event()
+
+    def on_crossing(crossing):
+        crossings.append(crossing)
+        crossed.set()
+
+    tracker.on_line_crossing(on_crossing)
+    tracker.set_vertical_crossing_line(320)
+    _replay(tracker, _walk(_straight((240, 240), (400, 240), steps=8)))
+
+    assert crossed.wait(TIMEOUT)
+    assert crossings == [{"label": "person", "object_id": 1, "direction": "right"}]
+
+
+def test_the_crossing_callback_must_be_a_function(tracker):
+    with pytest.raises(TypeError):
+        tracker.on_line_crossing("not a function")
+
+
+def test_the_line_helpers_count_crossings_anywhere_across_a_wide_frame(tracker):
+    tracker.set_horizontal_crossing_line(240)
+    _replay(tracker, _walk(_straight((1100, 100), (1100, 400), steps=8), object_id=1))
+    tracker.set_vertical_crossing_line(320)
+    _replay(tracker, _walk(_straight((240, 650), (400, 650), steps=8), object_id=2))
+
+    assert tracker.get_line_crossing_counts() == {"person": {"down": 1, "right": 1, "all": 2}}
+
+
+def test_with_no_line_set_nothing_is_counted(tracker):
+    _replay(tracker, _walk([(100, 20), (100, 0), (100, 240)]))
+
+    assert tracker.get_line_crossing_counts() == {}
+
+
+def test_setting_the_line_keeps_the_objects_already_counted(tracker):
+    _replay(tracker, _walk(_straight((0, 240), (200, 240), steps=5), object_id=1))
+    _replay(tracker, _walk(_straight((0, 240), (200, 240), steps=5), object_id=2))
+    assert tracker.get_unique_objects_count() == {"person": 2}
+
+    tracker.set_vertical_crossing_line(320)
+    _replay(tracker, _walk(_straight((200, 240), (400, 240), steps=5), object_id=2))
+
+    assert tracker.get_unique_objects_count() == {"person": 2}
+    assert tracker.get_line_crossing_counts() == {"person": {"right": 1, "all": 1}}
+
+
+def test_direction_is_the_one_seen_on_the_screen(tracker):
+    _replay(tracker, _walk(_straight((0, 240), (400, 240), steps=8)))
+
+    assert tracker.get_objects_directions() == {1: ["right"]}
+
+
+def test_movement_below_the_threshold_reports_no_direction(tracker):
+    _replay(tracker, _walk([(100, 240), (105, 243)]))
+
+    assert tracker.get_objects_directions() == {}
+
+
+def test_a_step_within_22_5_degrees_of_the_diagonal_is_diagonal(tracker):
+    _replay(tracker, _walk([(100, 100), (150, 150), (200, 201), (260, 221)]))
+
+    assert tracker.get_objects_directions() == {1: ["down-right", "right"]}
+
+
+def test_reset_counters_keeps_the_direction_history(tracker):
+    tracker.set_vertical_crossing_line(320)
+    _replay(tracker, _walk(_straight((240, 240), (400, 240), steps=8)))
+
+    tracker.reset_counters()
+
+    assert tracker.get_unique_objects_count() == {}
+    assert tracker.get_line_crossing_counts() == {}
+    assert tracker.get_objects_directions() == {1: ["right"]}
+
+
+def test_recorded_walk_is_one_track_crossing_the_line_eight_times(tracker):
+    tracker.set_vertical_crossing_line(320)
+
+    _replay(tracker, _recorded(RECORDED_WALK)[0])
+
+    assert tracker.get_unique_objects_count() == {"person": 1}
+    assert tracker.get_line_crossing_counts() == {"person": {"left": 4, "right": 4, "all": 8}}
+    assert len(tracker.get_objects_directions()[3]) == 35
+
+
+# ---------------------------------------------------------------- identities
+
+
+def _box(label: str, object_id: int, x: int = 260, y: int = 200) -> dict:
+    """A tracked object with the 80x200 box of `_walk` at (x, y)."""
+    return _track(label=label, object_id=object_id, x=x, y=y)
+
+
+def test_a_new_track_on_a_lost_object_keeps_its_identity(tracker):
+    seen = []
+    tracker.on_detect("bottle", lambda details: seen.append(details["object_id"]))
+    tracker.set_rectangular_area(200, 150, 400, 450)
+
+    _replay(tracker, [[_box("bottle", 1)], [_box("bottle", 1)], [], [], [_box("vase", 2, x=265)], [_box("vase", 2, x=270)]])
+
+    assert tracker.get_unique_objects_count() == {"bottle": 1}, "the vase track continues the bottle"
+    assert tracker.get_area_counts() == {"bottle": {"entered": 1}}
+    assert set(tracker._boxes.visible()) == {"bottle #1"}
+    assert _wait_for(lambda: seen) and set(seen) == {1}
+
+
+def test_keep_identities_off_reports_the_tracks_as_the_tracker_numbers_them(service, camera):
+    tracker = VideoObjectTracking(camera=camera, stream_port=0, keep_identities=False)
+    try:
+        _replay(tracker, [[_box("bottle", 1)], [], [], [_box("vase", 2)]])
+
+        assert tracker.get_unique_objects_count() == {"bottle": 1, "vase": 1}
+    finally:
+        tracker.stop()
+
+
+def test_a_second_track_on_an_object_in_view_is_another_object(tracker):
+    _replay(tracker, [[_box("potted plant", 1)], [_box("potted plant", 1), _box("vase", 2, x=270)]])
+
+    assert tracker.get_unique_objects_count() == {"potted plant": 1, "vase": 1}
+
+
+def test_an_object_out_of_sight_for_more_than_a_second_comes_back_as_a_new_one(tracker):
+    _replay(tracker, [[_box("bottle", 1)]])
+    _replay(tracker, [[_box("bottle", 2)]], start=0.9)
+    _replay(tracker, [[_box("bottle", 3)]], start=2.0)
+
+    assert tracker.get_unique_objects_count() == {"bottle": 2}, "track 2 continued the bottle, track 3 came too late"
+
+
+def test_recorded_tie_is_eight_objects_for_thirteen_tracks(service, camera):
+    frames, times = _recorded(RECORDED_TIE)
+    for keep_identities, expected in ((True, {"tie": 5, "vase": 3}), (False, {"tie": 8, "vase": 6})):
+        tracker = VideoObjectTracking(camera=camera, stream_port=0, labels_to_track=["tie", "vase"], keep_identities=keep_identities)
+        try:
+            _replay(tracker, frames, times=times)
+
+            assert tracker.get_unique_objects_count() == expected, "13 tracks, one of them back after 1.1 s unseen"
+        finally:
+            tracker.stop()

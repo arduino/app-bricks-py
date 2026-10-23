@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-"""App start time: the image adjustments, which need OpenCV, load on first access; the PIL helpers do not need them."""
+"""App start time: the image adjustments, which need OpenCV, load on first access, and PIL only when a helper runs."""
 
 import inspect
 import json
@@ -25,8 +25,14 @@ def _loaded_after(code: str, modules: list[str]) -> dict[str, bool]:
         "from arduino.app_utils.image import draw_bounding_boxes, draw_anomaly_markers, get_image_bytes, get_image_type, Shape, PipeableFunction",
     ],
 )
-def test_the_pil_helpers_do_not_load_opencv(code: str):
-    assert _loaded_after(code, ["cv2", "arduino.app_utils.image.adjustments"]) == {"cv2": False, "arduino.app_utils.image.adjustments": False}
+def test_the_drawing_helpers_load_neither_opencv_nor_pil(code: str):
+    modules = ["cv2", "PIL.Image", "arduino.app_utils.image.adjustments"]
+    assert _loaded_after(code, modules) == dict.fromkeys(modules, False)
+
+
+def test_a_drawing_helper_loads_pil_on_first_call():
+    loaded = _loaded_after("from arduino.app_utils.image import get_image_type\nassert get_image_type(b'not an image') is None", ["PIL.Image", "cv2"])
+    assert loaded == {"PIL.Image": True, "cv2": False}
 
 
 def test_an_adjustment_loads_on_first_access():

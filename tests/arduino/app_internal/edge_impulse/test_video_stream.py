@@ -2,17 +2,28 @@
 #
 # SPDX-License-Identifier: MPL-2.0
 
-import colorsys
 import http.client
-import random
+import subprocess
+import sys
 import threading
 import urllib.error
 import urllib.request
+import zlib
 
 import numpy as np
 import pytest
 
-from arduino.app_internal.edge_impulse.video_stream import BoxStabilizer, LabelColors, VideoStreamServer, draw_detections
+from arduino.app_internal.edge_impulse.video_stream import (
+    MIN_TEXT_PX,
+    PALETTE,
+    BoxStabilizer,
+    LabelColors,
+    VideoStreamServer,
+    _chip_lines,
+    _rendered,
+    _text_px,
+    draw_detections,
+)
 from arduino.app_utils.image.colors import color_difference
 from arduino.app_internal.ei_inference import Box
 
@@ -106,63 +117,57 @@ def test_stop_releases_the_connected_clients(stream):
 # ---------------------------------------------------------------- drawing
 
 
-def test_a_label_keeps_its_random_color_for_the_whole_run():
+def test_a_label_takes_the_palette_color_its_name_hashes_to_for_the_whole_run():
     colors = LabelColors()
-    assert colors["cat"] == colors["cat"]
-    assert colors["cat"] != colors["dog"]
-    assert LabelColors(seed=1)["cat"] == LabelColors(seed=1)["cat"], "reproducible with a seed"
-    assert all(0 <= c <= 255 for c in colors["cat"])
+
+    assert colors["cup"] == PALETTE[zlib.crc32(b"cup") % len(PALETTE)]
+    assert colors["cup"] == colors["cup"]
+    assert LabelColors()["cup"] == colors["cup"], "the same color on every run"
 
 
-def test_the_labels_of_a_run_get_well_separated_hues():
+def test_a_label_whose_color_is_taken_gets_the_next_free_one():
+    start = zlib.crc32(b"bottle") % len(PALETTE)
+    assert zlib.crc32(b"vase") % len(PALETTE) == start, "the two names hash to the same color"
     colors = LabelColors()
-    hues = [colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)[0] for b, g, r in (colors[f"label{i}"] for i in range(8))]
-    for i, a in enumerate(hues):
-        for b in hues[i + 1 :]:
-            assert min(abs(a - b), 1 - abs(a - b)) > 0.04, (a, b)
+
+    assert colors["bottle"] == PALETTE[start]
+    assert colors["vase"] == PALETTE[(start + 1) % len(PALETTE)]
 
 
-def _hue(color: tuple[int, int, int]) -> float:
-    b, g, r = color
-    return colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)[0]
+def test_once_every_color_is_taken_the_palette_starts_again_from_its_first_color():
+    colors = LabelColors()
+
+    assert {colors[f"label{i}"] for i in range(len(PALETTE))} == set(PALETTE)
+    assert colors["one more"] == PALETTE[0]
+    assert colors["and another"] == PALETTE[1]
 
 
-def test_the_label_colors_stay_clearly_different_from_the_colors_to_avoid():
+def test_the_colors_too_close_to_the_ones_to_avoid_are_left_out_of_the_palette():
     yellow, magenta = (0, 255, 255), (255, 0, 255)
-    for seed in range(200):
-        colors = LabelColors(seed=seed, avoid=(yellow, magenta))
-        for i in range(12):
-            color = colors[f"label{i}"]
-            for avoided in (yellow, magenta):
-                assert color_difference(color, avoided) >= LabelColors.MIN_DIFFERENCE, (seed, i, color)
+    colors = LabelColors(avoid=(yellow, magenta))
+
+    used = {colors[f"label{i}"] for i in range(len(PALETTE))}
+
+    assert used < set(PALETTE)
+    for color in used:
+        for avoided in (yellow, magenta):
+            assert color_difference(color, avoided) >= LabelColors.MIN_DIFFERENCE, color
 
 
-def test_without_colors_to_avoid_the_palette_is_the_golden_ratio_walk():
-    seed = 3
-    walk = random.Random(seed)
-    hue = walk.random()
-    expected = []
-    for _ in range(5):
-        r, g, b = colorsys.hsv_to_rgb(hue, walk.uniform(0.35, 0.6), 0.95)
-        expected.append((int(b * 255), int(g * 255), int(r * 255)))
-        hue = (hue + LabelColors.HUE_STEP) % 1.0
+def test_the_boxes_take_the_color_of_their_color_key():
+    colors = LabelColors()
+    detections = {
+        "cup #1": [{"confidence": 0.9, "bounding_box_xyxy": (100, 200, 200, 400)}],
+        "cup #2": [{"confidence": 0.9, "bounding_box_xyxy": (400, 200, 500, 400)}],
+    }
 
-    colors = LabelColors(seed=seed)
+    image = draw_detections(np.zeros((480, 640, 3), np.uint8), detections, colors, color_key=lambda label: label.split(" #")[0])
 
-    assert [colors[f"label{i}"] for i in range(5)] == expected
+    assert tuple(image[300, 100]) == tuple(image[300, 400]) == colors["cup"]
 
 
-def test_avoiding_colors_keeps_the_labels_of_a_run_apart():
-    for seed in range(200):
-        colors = LabelColors(seed=seed, avoid=((0, 255, 255), (255, 0, 255)))
-        hues = [_hue(colors[f"label{i}"]) for i in range(8)]
-        for i, a in enumerate(hues):
-            for b in hues[i + 1 :]:
-                assert min(abs(a - b), 1 - abs(a - b)) > 0.03, (seed, a, b)
-
-
-def test_detections_are_drawn_as_a_box_with_a_label_chip_at_the_top_right():
-    colors = LabelColors(seed=3)
+def test_detections_are_drawn_as_a_box_with_a_label_chip_above_its_top_left_corner():
+    colors = LabelColors()
     frame = np.zeros((480, 640, 3), np.uint8)
     detections = {"cat": [{"confidence": 0.57, "bounding_box_xyxy": (200, 200, 300, 400)}]}
     image = draw_detections(frame, detections, colors)
@@ -170,19 +175,54 @@ def test_detections_are_drawn_as_a_box_with_a_label_chip_at_the_top_right():
     color = colors["cat"]
     assert tuple(image[300, 200]) == color, "left border"
     assert tuple(image[300, 299]) == color, "right border"
-    assert tuple(image[190, 295]) == color, "the chip above the box, at its right corner, has the same color"
-    assert (image[160:199, 200:300] >= 230).all(axis=2).any(), "white text in the chip"
-    assert tuple(image[190, 210]) == (0, 0, 0), "the chip is as wide as its text, not as the box"
+    assert tuple(image[190, 201]) == color, "the chip above the box, at its left corner, has the same color"
+    assert (image[160:199, 200:300].max(axis=2) < 110).any(), "dark text in the chip"
+    assert tuple(image[190, 290]) == (0, 0, 0), "the chip is as wide as its text, not as the box"
     assert tuple(image[150, 250]) == (0, 0, 0), "the chip is compact"
     assert tuple(image[300, 250]) == (0, 0, 0), "the box is not filled"
     assert tuple(image[450, 500]) == (0, 0, 0), "nothing drawn far from the box"
 
 
+def test_the_chip_shows_the_label_with_a_capital_initial_and_the_confidence():
+    assert _chip_lines("cell phone #4", 0.857) == ["Cell phone #4", "(0.86)"]
+    assert _chip_lines("cup #1", 1.0) == ["Cup #1", "(1.00)"]
+
+
+def test_the_chip_text_follows_the_frame_height():
+    assert _text_px(720) == 11, "12 px of a 720p video shown 1440 px wide, the size of the design"
+    assert _text_px(1080) == 16
+    assert _text_px(480) == MIN_TEXT_PX, "never smaller than the minimum"
+
+
+def test_a_video_brick_loads_pil_only_once_a_chip_is_drawn():
+    """App start time: PIL serves the chip text, so it is not imported before a viewer connects."""
+    probe = (
+        "import sys\nimport arduino.app_internal.edge_impulse.video\n"
+        "before = 'PIL.Image' in sys.modules\n"
+        "from arduino.app_internal.edge_impulse.video_stream import _rendered\n_rendered('Cup #1', 11)\n"
+        "print(before, 'PIL.Image' in sys.modules)"
+    )
+    result = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, timeout=120, check=True)
+    assert result.stdout.split() == ["False", "True"]
+
+
+def test_the_chip_text_renders_in_the_label_font():
+    rendered = _rendered("Cup #1", 11)
+    assert rendered.ndim == 2 and rendered.shape[0] >= 11 and rendered.shape[1] > rendered.shape[0]
+    assert rendered.max() == 1.0 and rendered.min() == 0.0, "solid strokes on a clear background"
+
+
 def test_label_chip_moves_inside_the_box_when_there_is_no_room_above():
-    colors = LabelColors(seed=3)
+    colors = LabelColors()
     image = draw_detections(np.zeros((480, 640, 3), np.uint8), {"cat": [{"confidence": 0.9, "bounding_box_xyxy": (10, 5, 200, 300)}]}, colors)
-    assert tuple(image[15, 190]) == colors["cat"], "the chip starts at the top-right corner of the box"
-    assert tuple(image[15, 20]) == (0, 0, 0), "and does not span the box"
+    assert tuple(image[15, 12]) == colors["cat"], "the chip starts at the top-left corner of the box"
+    assert tuple(image[15, 190]) == (0, 0, 0), "and does not span the box"
+
+
+def test_label_chip_stays_inside_the_frame_for_a_box_on_its_right_edge():
+    colors = LabelColors()
+    image = draw_detections(np.zeros((480, 640, 3), np.uint8), {"cat": [{"confidence": 0.9, "bounding_box_xyxy": (620, 200, 639, 300)}]}, colors)
+    assert tuple(image[190, 639]) == colors["cat"], "the chip ends at the right edge of the frame"
 
 
 # ---------------------------------------------------------------- box stabilizer

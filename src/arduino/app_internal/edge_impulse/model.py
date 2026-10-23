@@ -23,6 +23,20 @@ from arduino.app_utils import Logger
 logger = Logger("EdgeImpulseModel")
 
 
+def _checked_confidence(value: object) -> float:
+    """The confidence as a float, once checked against the range the service accepts.
+
+    Raises:
+        TypeError: If the value is not a number.
+        ValueError: If the value is not above 0 and at most 1.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TypeError("Invalid types for value.")
+    if not 0 < value <= 1:
+        raise ValueError(f"The threshold must be above 0 and at most 1, not {value}.")
+    return float(value)
+
+
 class EdgeImpulseModel:
     """A model of the Edge Impulse inference service, `arduino:edge_impulse`, and the connection to it.
 
@@ -48,10 +62,12 @@ class EdgeImpulseModel:
                 tracks reaching the score threshold the model was exported with, and every class score.
 
         Raises:
+            TypeError: If the confidence is not a number.
+            ValueError: If the confidence is not above 0 and at most 1.
             RuntimeError: If no model is configured.
         """
+        self._confidence = None if confidence is None else _checked_confidence(confidence)
         self._model = self._configured_model()
-        self._confidence = confidence
         self._client: InferenceClient | None = None
         self._client_lock = threading.Lock()
 
@@ -112,19 +128,11 @@ class EdgeImpulseModel:
 
         Raises:
             TypeError: If the value is not a number.
-            ValueError: If the value is zero.
+            ValueError: If the value is not above 0 and at most 1.
         """
-        match value:
-            case bool():
-                raise TypeError("Invalid types for value.")
-            case 0:
-                raise ValueError("The threshold must not be zero.")
-            case float() | int():
-                pass
-            case _:
-                raise TypeError("Invalid types for value.")
-        logger.info(f"Overriding detection threshold. New confidence: {value}")
-        self._confidence = float(value)
+        confidence = _checked_confidence(value)
+        logger.info(f"Overriding detection threshold. New confidence: {confidence}")
+        self._confidence = confidence
         client = self._connected()
         if client is None:
             return  # set when the model is opened
@@ -149,11 +157,15 @@ class EdgeImpulseModel:
             Result: The boxes, tracks and class scores reaching the confidence, in the coordinates of the image.
 
         Raises:
-            ServerError: If the service refuses the model or the confidence.
+            TypeError: If the confidence is not a number.
+            ValueError: If the confidence is not above 0 and at most 1.
+            ServerError: If the service refuses the model.
             OSError: If the service is not reachable.
             TimeoutError: If the model or its result do not come in time.
             ConnectionError: If the connection is lost, the next call opens the model again.
         """
+        if confidence is not None:
+            confidence = _checked_confidence(confidence)
         client = self._connected() or self._open(timeout)
         try:
             if confidence is None or confidence == client.confidence:
@@ -192,19 +204,19 @@ class EdgeImpulseModel:
     def _socket_path(self) -> str:
         return self.SOCKET_PATH or ei_inference.DEFAULT_SOCKET_PATH
 
-    def _connect(self, running: threading.Event) -> InferenceClient | None:
-        """The open connection to the model, or a new one once the service is ready, retrying while `running` is set."""
+    def _connect(self, stopped: threading.Event) -> InferenceClient | None:
+        """The open connection to the model, or a new one once the service is ready, retrying until `stopped` is set."""
         client = self._connected()
         if client is not None:
             return client
-        while running.is_set():
+        while not stopped.is_set():
             try:
                 return self._open()
             except ServerError as e:
                 logger.error(f"The inference service refused model '{self._model}' ({e.code}): {e}. Retrying...")
             except OSError:
                 logger.debug(f"Waiting for the inference service at {self._socket_path()}. Retrying...")
-            running.wait(self._RETRY_SEC)
+            stopped.wait(self._RETRY_SEC)
         return None
 
     def _connected(self) -> InferenceClient | None:
