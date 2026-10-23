@@ -18,8 +18,3 @@ ai_frameworks_compatibility:
 supported_boards: ["ventunoq"]
 model_configuration_variables:
   - EI_V_OBJ_TRACKING_MODEL
-variables:
-- name: BIND_ADDRESS
-  description: Bind address of the video stream
-  hidden: true
-  default_value: 0.0.0.0
