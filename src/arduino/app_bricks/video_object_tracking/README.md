@@ -180,7 +180,7 @@ The constructor also accepts the parameters of the tracker inside the model, eac
 
 ## Under the hood
 
-The model runs in the **Edge Impulse inference service** of the app, a container shared by all the Edge Impulse Bricks, on the NPU where the board has one. The Brick sends it the camera frames and gets back the tracked objects in the coordinates of the frame.
+The model runs in the **Edge Impulse inference server**, a container the Brick starts next to the app, on the NPU of the board. The Brick sends it the camera frames and gets back the tracked objects in the coordinates of the frame.
 
 The model is the one selected for the Brick in the app configuration, or the default of the Brick for the board, `yolox-qnn-object-tracker`. A custom model trained with Edge Impulse works as long as it includes the **object tracking** block: the Brick checks this when the app starts and reports a model without it as an error.
 

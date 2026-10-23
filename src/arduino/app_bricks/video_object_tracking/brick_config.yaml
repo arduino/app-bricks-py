@@ -10,7 +10,6 @@ ports:
   - 4912
 required_devices:
   - camera
-requires_services: ["arduino:edge_impulse"]
 model_by_boards:
     - platform: ventunoq
       model: yolox-qnn-object-tracker
