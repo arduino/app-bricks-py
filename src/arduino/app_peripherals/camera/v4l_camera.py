@@ -24,6 +24,10 @@ _VIDIOC_QUERYCAP = 0x80685600  # _IOR('V', 0, struct v4l2_capability)
 _V4L2_CAP_VIDEO_CAPTURE = 0x00000001
 _V4L2_CAP_DEVICE_CAPS = 0x80000000
 
+# Frames the driver queues: at most one frame of latency while keeping the full frame rate.
+# A single buffer makes the driver drop every other frame, halving the rate.
+_DRIVER_BUFFERS = 2
+
 
 class V4LCamera(BaseCamera):
     """
@@ -258,9 +262,7 @@ class V4LCamera(BaseCamera):
             if not self._cap.isOpened():
                 raise RuntimeError(f"Failed to open camera {self.name}")
 
-            # Two buffers: at most one frame of latency while keeping the full frame rate.
-            # A single buffer makes the driver drop every other frame, halving the rate.
-            self._configure(cv2.CAP_PROP_BUFFERSIZE, 2)
+            self._configure(cv2.CAP_PROP_BUFFERSIZE, _DRIVER_BUFFERS)
 
             if self.codec:
 
@@ -320,6 +322,20 @@ class V4LCamera(BaseCamera):
         """Sets a capture property only when it differs: every set makes OpenCV renegotiate the stream format with the driver."""
         if self._cap is not None and self._cap.get(prop) != value:
             self._cap.set(prop, value)
+
+    def _drop_buffered_frames(self, idle_s: float) -> None:
+        """
+        Discard the frames the driver queued while nobody read.
+
+        A driver whose buffers are all full holds on to their frames and drops the new ones, so
+        after a pause the queued frames are as old as the pause. They are grabbed without being
+        decoded. A pause shorter than the time the driver takes to fill its buffers leaves only
+        recent frames, and a camera read in a loop keeps its full frame rate.
+        """
+        if self._cap is None or idle_s < _DRIVER_BUFFERS / self.fps:
+            return
+        for _ in range(_DRIVER_BUFFERS):
+            self._cap.grab()
 
     def _close_camera(self) -> None:
         """Close the V4L camera connection."""
