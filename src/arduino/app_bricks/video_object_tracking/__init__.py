@@ -27,7 +27,7 @@ logger = Logger("VideoObjectTracking")
 
 MODEL_VARIABLE = "EI_V_OBJ_TRACKING_MODEL"
 STREAM_PORT = VideoInference.STREAM_PORT
-STARTUP_TIMEOUT = 10.0  # seconds the constructor waits for the service to open the model, as long as the service gives a .eim to start
+STARTUP_TIMEOUT = 10.0  # seconds the constructor waits for the runner to open the model, as long as the runner gives a .eim to start
 CENTROID_MODEL_TYPE = "constrained_object_detection"  # FOMO reports centroids, matched by distance instead of overlap
 TRACKING_BLOCK = "object_tracking"  # the threshold block holding the tracker knobs
 MAX_AREA_POINTS = 100  # every side of the area is checked against every other one for crossings
@@ -49,7 +49,7 @@ class VideoObjectTracking(VideoInference):
     """Module for object tracking on a **live video stream** using a specified machine learning model.
 
     This brick:
-      - Streams the camera frames to the Edge Impulse inference service, as VideoObjectDetection does.
+      - Streams the camera frames to the Edge Impulse inference server the brick runs in its own container.
       - Receives the objects the model tracks at the confidence of the brick, each with an identity that stays
         the same while it is in view, through a short loss or a change of label.
       - Counts the distinct objects per label and the ones crossing a line, and follows their direction.
@@ -58,6 +58,7 @@ class VideoObjectTracking(VideoInference):
     """
 
     MODEL_VARIABLE = MODEL_VARIABLE
+    SOCKET_PATH = "/app/.cache/video_object_tracking/ei.sock"  # the socket of the runner of brick_compose.yaml
 
     def __init__(
         self,

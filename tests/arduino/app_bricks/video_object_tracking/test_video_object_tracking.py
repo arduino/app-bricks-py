@@ -12,7 +12,6 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-import arduino.app_internal.edge_impulse.client as ei_inference
 from arduino.app_bricks.video_object_tracking import MAX_AREA_POINTS, VideoObjectTracking, VideoObjectTrackingError
 from arduino.app_bricks.video_object_tracking.drawing import DASH_COLOR, EDGE_COLOR
 from arduino.app_internal.edge_impulse.video_stream import PALETTE, LabelColors
@@ -89,7 +88,7 @@ def configured_model(monkeypatch):
 @pytest.fixture
 def service(ei_service, monkeypatch):
     """The fake service with a 100x100 "tracker" model whose tracks the test sets."""
-    monkeypatch.setattr(ei_inference, "DEFAULT_SOCKET_PATH", ei_service.socket_path)
+    monkeypatch.setattr(VideoObjectTracking, "SOCKET_PATH", ei_service.socket_path)
     ei_service.models[TRACKER] = {
         "width": 100,
         "height": 100,
@@ -294,12 +293,12 @@ def test_a_knob_the_tracking_block_does_not_declare_is_refused(service, camera):
 
 
 def test_overrides_before_the_connection_are_set_when_the_model_is_opened(service, camera, monkeypatch):
-    monkeypatch.setattr(ei_inference, "DEFAULT_SOCKET_PATH", "/nonexistent/ei.sock")
+    monkeypatch.setattr(VideoObjectTracking, "SOCKET_PATH", "/nonexistent/ei.sock")
     tracker = VideoObjectTracking(camera=camera, stream_port=0)
     tracker.override_keep_grace(6)
     assert service.configured == [], "nothing to set on while the service is away"
 
-    monkeypatch.setattr(ei_inference, "DEFAULT_SOCKET_PATH", service.socket_path)
+    monkeypatch.setattr(VideoObjectTracking, "SOCKET_PATH", service.socket_path)
     monkeypatch.setattr(VideoObjectTracking, "_RETRY_SEC", 0.1)
     tracker.start()
     thread = threading.Thread(target=tracker.inference_loop, daemon=True)
@@ -334,7 +333,7 @@ def test_a_model_without_the_tracking_block_refuses_to_start(service, camera):
 
 
 def test_an_unreachable_service_lets_the_brick_start(camera, monkeypatch):
-    monkeypatch.setattr(ei_inference, "DEFAULT_SOCKET_PATH", "/nonexistent/ei.sock")
+    monkeypatch.setattr(VideoObjectTracking, "SOCKET_PATH", "/nonexistent/ei.sock")
 
     tracker = VideoObjectTracking(camera=camera, stream_port=0)
     tracker.stop()
