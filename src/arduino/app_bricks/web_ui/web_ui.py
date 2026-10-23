@@ -4,6 +4,7 @@
 
 import os
 import asyncio
+import socket
 import threading
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any
@@ -33,6 +34,64 @@ never completes on its own. The app's shutdown is time-boxed, so the wait has to
 
 FORCE_SHUTDOWN_TIMEOUT_S = 2.5
 """How long to wait, after asking the server to stop, before forcing it to drop connections."""
+
+
+class _Server(uvicorn.Server):
+    """A uvicorn server that stops as soon as it is asked to.
+
+    Uvicorn's own loop looks at `should_exit` once every 100 ms, so a stop waits up to that long
+    before the shutdown even begins: most of what a reload costs. This loop waits on an event
+    instead, which `wake()` sets, and keeps the once-a-second tick uvicorn refreshes its headers on.
+    """
+
+    def __init__(self, config: uvicorn.Config) -> None:
+        super().__init__(config)
+        self._woken: asyncio.Event | None = None
+
+    async def main_loop(self) -> None:
+        self._woken = asyncio.Event()
+        counter = 0
+        while not await self.on_tick(counter):
+            # on_tick refreshes the headers when the counter is a multiple of 10, once a second for uvicorn
+            counter = (counter + 10) % 864000
+            try:
+                await asyncio.wait_for(self._woken.wait(), 1.0)
+            except TimeoutError:
+                pass
+
+    def wake(self) -> None:
+        """Ends the wait of the loop, on the loop's thread: the next tick sees `should_exit`."""
+        if self._woken is not None:
+            self._woken.set()
+
+    async def shutdown(self, sockets: list[socket.socket] | None = None) -> None:
+        """Uvicorn's shutdown, without its fixed 100 ms sleep and its 100 ms polls.
+
+        Mirrors `uvicorn.Server.shutdown` of uvicorn 0.54: stop accepting, ask every connection to
+        close, wait for the connections and the background tasks within the graceful timeout, then
+        the lifespan shutdown. Uvicorn sleeps 100 ms after asking the connections whatever is left,
+        which is most of what the stop of an idle server costs, and polls what remains every 100 ms.
+        """
+        for server in self.servers:
+            server.close()
+        for sock in sockets or []:
+            sock.close()
+        for connection in list(self.server_state.connections):
+            connection.shutdown()
+        try:
+            await asyncio.wait_for(self._wait_connections_and_tasks(), timeout=self.config.timeout_graceful_shutdown)
+        except TimeoutError:
+            logger.debug(f"Cancelling {len(self.server_state.tasks)} running task(s), graceful shutdown timeout exceeded")
+            for task in self.server_state.tasks:
+                task.cancel(msg="Task cancelled, timeout graceful shutdown exceeded")
+        if not self.force_exit:
+            await self.lifespan.shutdown()
+
+    async def _wait_connections_and_tasks(self) -> None:
+        # Nothing to wait on when the server is idle; uvicorn signals neither set, so what is
+        # still open is looked at every 10 ms, within the graceful timeout
+        while (self.server_state.connections or self.server_state.tasks) and not self.force_exit:
+            await asyncio.sleep(0.01)
 
 
 @brick
@@ -111,7 +170,7 @@ class WebUI:
         self._certs_dir_path = os.path.abspath(certs_dir_path)
         self._use_tls = use_tls
         self._protocol = "https" if self._use_tls else "http"
-        self._server: uvicorn.Server | None = None
+        self._server: _Server | None = None
         self._server_loop: asyncio.AbstractEventLoop | None = None
         self._on_connect_cb: Callable[[str], None] | None = None
         self._on_disconnect_cb: Callable[[str], None] | None = None
@@ -171,7 +230,7 @@ class WebUI:
             except Exception as e:
                 raise RuntimeError("Failed to configure TLS certificate. Please check the certs directory.") from e
 
-        self._server = uvicorn.Server(config)
+        self._server = _Server(config)
 
     def stop(self) -> None:
         """Stop the web server.
@@ -191,6 +250,12 @@ class WebUI:
         loop = self._server_loop
         if loop is None or not loop.is_running():
             return  # Not serving, or not yet: there is no connection to wait for
+
+        # The server loop sleeps between its ticks: woken, it sees should_exit at once
+        try:
+            loop.call_soon_threadsafe(server.wake)
+        except RuntimeError:
+            return  # The loop closed in the meantime: the server is down already
 
         # Stop the Socket.IO background task and close the client connections. Without this the
         # server keeps waiting on an open websocket, or on an engine.io long poll parked for up to
