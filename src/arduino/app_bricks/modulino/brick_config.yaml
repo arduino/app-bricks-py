@@ -4,10 +4,6 @@ description: "Modulino Brick enables seamless integration with various Modulino 
 requires_sketch_library:
   - id: Arduino_ModulinoBridge
     version: 0.1.0
-  - id: Arduino_Modulino
-    version: 0.10.0
-  - id: Arduino_RouterBridge
-    version: 0.4.4
 sketch:
   includes: |
     #include <Arduino_ModulinoBridge.h>
