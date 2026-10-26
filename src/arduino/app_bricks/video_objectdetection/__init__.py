@@ -50,6 +50,7 @@ class VideoObjectDetection:
 
     _WS_CONNECT_RETRIES = 5  # Attempts to open a one-shot WebSocket connection to the model runner
     _WS_CONNECT_RETRY_DELAY = 1.0  # Seconds between connection attempts
+    _WS_RECONNECT_DELAY = 0.5  # Seconds before the detection loop reconnects to a model runner that is not accepting connections
 
     def __init__(
         self,
@@ -189,8 +190,10 @@ class VideoObjectDetection:
                 logger.debug(f"WebSocket disconnected cleanly, exiting loop.")
                 return
             except (TimeoutError, ConnectionRefusedError, ConnectionClosedError):
+                # The model runner opens its WebSocket port only after the first frame arrives
+                # over TCP: keep the retry delay short so the first connection follows closely.
                 logger.debug(f"Waiting for model runner. Retrying...")
-                time.sleep(2)
+                time.sleep(self._WS_RECONNECT_DELAY)
                 continue
             except Exception as e:
                 logger.exception(f"Failed to establish WebSocket connection to {self._host}: {e}")
