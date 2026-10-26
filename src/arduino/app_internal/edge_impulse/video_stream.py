@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any
 import cv2
 import numpy as np
 
-from arduino.app_internal.ei_inference import Box
+from .client import Box
 from arduino.app_utils.image.colors import color_difference
 from arduino.app_utils import Logger
 

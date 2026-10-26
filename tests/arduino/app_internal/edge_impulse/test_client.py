@@ -7,7 +7,7 @@ import threading
 import numpy as np
 import pytest
 
-from arduino.app_internal.ei_inference import Box, InferenceClient, ServerError, model_name_from_path
+from arduino.app_internal.edge_impulse.client import Box, InferenceClient, ServerError, model_name_from_path
 
 FRAME = np.zeros((100, 200, 3), np.uint8)  # 200x100 source, twice as wide as the 100x100 model
 

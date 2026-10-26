@@ -16,7 +16,7 @@ import threading
 import numpy as np
 
 from arduino.app_internal.core.module import get_brick_config, get_brick_configured_model, load_model_list
-from arduino.app_internal.ei_inference import InferenceClient, Result, ServerError, model_name_from_path
+from .client import InferenceClient, Result, ServerError, model_name_from_path
 from arduino.app_utils import Logger
 
 logger = Logger("EdgeImpulseModel")

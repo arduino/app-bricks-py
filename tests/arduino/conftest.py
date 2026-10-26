@@ -327,7 +327,7 @@ import socket
 import tempfile
 import threading
 
-from arduino.app_internal.ei_inference import protocol as EI
+from arduino.app_internal.edge_impulse import protocol as EI
 
 
 class FakeInferenceService:

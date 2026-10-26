@@ -14,7 +14,7 @@ import pytest
 
 from arduino.app_internal.edge_impulse.video_stream import BoxStabilizer, LabelColors, VideoStreamServer, draw_detections
 from arduino.app_utils.image.colors import color_difference
-from arduino.app_internal.ei_inference import Box
+from arduino.app_internal.edge_impulse.client import Box
 
 JPEG_A = b"\xff\xd8A\xff\xd9"
 JPEG_B = b"\xff\xd8BB\xff\xd9"

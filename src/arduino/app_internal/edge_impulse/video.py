@@ -14,7 +14,7 @@ from typing import Any
 
 import numpy as np
 
-from arduino.app_internal.ei_inference import InferenceClient, Result
+from .client import InferenceClient, Result
 from arduino.app_peripherals.camera import BaseCamera, Camera
 from arduino.app_utils import Logger, brick
 from arduino.app_utils.image.adjustments import compress_to_jpeg
